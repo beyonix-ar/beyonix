@@ -30,6 +30,8 @@ export const ARGENTINA_PROVINCES = [
 export const FIELD_LIMITS = {
   username: 18,
   name: 60,
+  firstName: 28,
+  lastName: 28,
   street: 40,
   email: 120,
   address: 180,
@@ -153,6 +155,23 @@ function validateCleanText(
   }
 
   return ""
+}
+
+/**
+ * Valida nombre o apellido por separado (formulario de registro en
+ * `app/login/page.tsx`). Se combinan en un único string ("Nombre Apellido")
+ * antes de persistirse -- mismo campo `nombre`/`name` de siempre, ver
+ * `register()` en `context/auth-context.tsx` -- así que comparten el mismo
+ * criterio que `validateRegisterPayload` aplica sobre el nombre completo
+ * (mismo patrón de caracteres permitidos), sólo que evaluado por partes para
+ * poder marcar cuál de las dos falta o es inválida.
+ */
+export function validateNamePart(value: string, label: string) {
+  return validateCleanText(value, label, FIELD_LIMITS.name, {
+    minLength: 2,
+    pattern: /^[\p{L}\p{M}\s'-]+$/u,
+    allowedHint: `Usá solo letras, espacios, apóstrofe o guion en ${label}.`,
+  })
 }
 
 export function validateEmail(email: string) {

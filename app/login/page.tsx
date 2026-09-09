@@ -24,8 +24,9 @@ import {
 
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
 import { PasswordRequirements } from "@/components/password-requirements"
-import { ProvinceSelect } from "@/components/province-select"
+import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { useAuth } from "@/context/auth-context"
+import { useTerritorialSelector } from "@/hooks/use-territorial-selector"
 import {
   EMAIL_CONFIRMATION_CHANNEL,
   EMAIL_CONFIRMATION_STORAGE_KEY,
@@ -37,6 +38,7 @@ import {
   FIELD_LIMITS,
   meetsPasswordRequirements,
   onlyDigits,
+  validateNamePart,
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
 import { formatDeliveryAddress } from "@/lib/delivery-address"
@@ -192,7 +194,8 @@ function LoginContent() {
 
   const [mode, setMode] = useState<"login" | "register">("login")
   const [username, setUsername] = useState("")
-  const [name, setName] = useState("")
+  const [firstName, setFirstName] = useState("")
+  const [lastName, setLastName] = useState("")
   const [dni, setDni] = useState("")
   const [identifier, setIdentifier] = useState("")
   const [email, setEmail] = useState("")
@@ -200,10 +203,7 @@ function LoginContent() {
   const [streetNumber, setStreetNumber] = useState("")
   const [floor, setFloor] = useState("")
   const [apartment, setApartment] = useState("")
-  const [locality, setLocality] = useState("")
-  const [province, setProvince] = useState("")
-  const [postalCode, setPostalCode] = useState("")
-  const [phoneAreaCode, setPhoneAreaCode] = useState("")
+  const territorial = useTerritorialSelector()
   const [phone, setPhone] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -533,6 +533,9 @@ function LoginContent() {
   }
 
   const getRegisterDeliveryAddress = () => {
+    const locality = territorial.locality
+    const province = territorial.province
+    const postalCode = territorial.postalCode
     const hasDeliveryData = [
       street,
       streetNumber,
@@ -569,21 +572,27 @@ function LoginContent() {
   }
 
   const registerDeliveryAddress = getRegisterDeliveryAddress()
-  const registerMobilePhone = `${phoneAreaCode}${phone}`
+  const registerFullName = `${firstName.trim()} ${lastName.trim()}`.trim()
+  const registerNamePartsError =
+    mode === "register"
+      ? validateNamePart(firstName, "tu nombre") ||
+        validateNamePart(lastName, "tu apellido")
+      : ""
   const registerValidationError =
     mode === "register"
-      ? validateRegisterPayload({
+      ? registerNamePartsError ||
+        validateRegisterPayload({
           username,
-          name,
+          name: registerFullName,
           email,
           dni,
           address: registerDeliveryAddress,
           street,
           streetNumber,
-          locality,
-          province,
-          postalCode,
-          phone: registerMobilePhone,
+          locality: territorial.locality,
+          province: territorial.province,
+          postalCode: territorial.postalCode,
+          phone,
           password,
           references,
         })
@@ -628,18 +637,28 @@ function LoginContent() {
       return
     }
 
+    const namePartsError =
+      validateNamePart(firstName, "tu nombre") ||
+      validateNamePart(lastName, "tu apellido")
+
+    if (namePartsError) {
+      setLoading(false)
+      setError(namePartsError)
+      return
+    }
+
     const validationError = validateRegisterPayload({
       username,
-      name,
+      name: registerFullName,
       email,
       dni,
       address: registerDeliveryAddress,
       street,
       streetNumber,
-      locality,
-      province,
-      postalCode,
-      phone: registerMobilePhone,
+      locality: territorial.locality,
+      province: territorial.province,
+      postalCode: territorial.postalCode,
+      phone,
       password,
       references,
     })
@@ -652,7 +671,7 @@ function LoginContent() {
 
     const result = await register({
       username,
-      name,
+      name: registerFullName,
       email,
       dni,
       password,
@@ -661,10 +680,10 @@ function LoginContent() {
       streetNumber,
       floor,
       apartment: apartment.trim().toLocaleUpperCase("es-AR"),
-      locality,
-      postalCode,
-      phone: registerMobilePhone,
-      province,
+      locality: territorial.locality,
+      postalCode: territorial.postalCode,
+      phone,
+      province: territorial.province,
       references,
     })
 
@@ -1072,7 +1091,6 @@ function LoginContent() {
                 </legend>
                 <div className="grid gap-2.5 md:grid-cols-2">
                   <Field name="username" label="Usuario*" type="text" value={username} onChange={setUsername} placeholder="usuario.tech" maxLength={FIELD_LIMITS.username} autoComplete="username" />
-                  <Field name="email" label="Email*" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
                   <div className="relative">
                     <Field
                       name="password"
@@ -1098,79 +1116,196 @@ function LoginContent() {
               </fieldset>
 
               <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
-                <legend className="px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
-                  02 · Datos personales
+                <legend className="px-2 text-[12px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
+                  Datos personales
                 </legend>
                 <div className="grid gap-2.5 md:grid-cols-2">
-                  <Field name="name" label="Nombre y apellido*" type="text" value={name} onChange={setName} placeholder="Nombre Apellido" maxLength={FIELD_LIMITS.name} autoComplete="name" />
+                  <Field name="first-name" label="Nombre*" type="text" value={firstName} onChange={setFirstName} placeholder="Juan" maxLength={FIELD_LIMITS.firstName} autoComplete="given-name" />
+                  <Field name="last-name" label="Apellido*" type="text" value={lastName} onChange={setLastName} placeholder="Pérez" maxLength={FIELD_LIMITS.lastName} autoComplete="family-name" />
                   <Field name="dni" label="DNI*" type="tel" value={dni} onChange={(value) => setDni(onlyDigits(value, FIELD_LIMITS.dni))} placeholder="12345678" maxLength={FIELD_LIMITS.dni} inputMode="numeric" autoComplete="off" />
+                  <Field name="email" label="Email*" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
+                  <Field name="phone" label="Teléfono*" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1123456789" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel-national" />
                 </div>
               </fieldset>
 
               <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
-                <legend className="px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
-                  03 · Datos de entrega
+                <legend className="px-2 text-[12px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
+                  Dirección de entrega
                 </legend>
                 <div className="space-y-2.5">
-                  <div className="grid gap-2.5 md:grid-cols-2">
-                    <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={FIELD_LIMITS.street} autoComplete="address-line1" />
-                    <div className="grid grid-cols-[minmax(5.5rem,1fr)_minmax(4.5rem,0.7fr)_minmax(4.5rem,0.7fr)] gap-2.5">
-                      <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
-                      <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
-                      <Field name="apartment" label="DPTO" type="text" value={apartment} onChange={(value) => setApartment(value.toLocaleUpperCase("es-AR"))} placeholder="B" maxLength={12} autoComplete="off" required={false} />
+                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[minmax(9rem,2.2fr)_minmax(4rem,0.85fr)_minmax(3.5rem,0.65fr)_minmax(3.5rem,0.65fr)]">
+                    <div className="col-span-2 sm:col-span-1">
+                      <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={FIELD_LIMITS.street} autoComplete="address-line1" />
                     </div>
+                    <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />
+                    <Field name="floor" label="Piso" type="text" value={floor} onChange={setFloor} placeholder="3" maxLength={12} autoComplete="off" required={false} />
+                    <Field name="apartment" label="Dpto" type="text" value={apartment} onChange={(value) => setApartment(value.toLocaleUpperCase("es-AR"))} placeholder="B" maxLength={12} autoComplete="off" required={false} />
                   </div>
                   <div className="grid gap-2.5 md:grid-cols-2">
                     <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-white/72">
+                      <label htmlFor="provincia" className="mb-1.5 block text-xs font-semibold text-white/72">
                         Provincia*
                       </label>
-                      <ProvinceSelect value={province} onChange={setProvince} compact appearance="login" />
+                      <GeographicSelect
+                        id="provincia"
+                        value={territorial.province}
+                        options={territorial.provinceOptions}
+                        onChange={territorial.handleProvinceChange}
+                        placeholder="Seleccioná una provincia"
+                        ariaLabel="Seleccionar provincia"
+                      />
                     </div>
-                    <Field name="locality" label="Localidad*" type="text" value={locality} onChange={setLocality} placeholder="Rosario" maxLength={60} autoComplete="address-level2" required />
+                    <div>
+                      <label htmlFor="localidad" className="mb-1.5 block text-xs font-semibold text-white/72">
+                        Localidad*
+                      </label>
+                      {territorial.manualLocalityMode ? (
+                        <>
+                          <input
+                            id="localidad"
+                            name="localidad"
+                            type="text"
+                            aria-label="Localidad"
+                            required
+                            value={territorial.locality}
+                            onChange={(event) => territorial.setLocality(event.target.value)}
+                            placeholder="Ingresá tu localidad"
+                            maxLength={80}
+                            className="beyonix-login-input h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 text-sm text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+                          />
+                          <button
+                            type="button"
+                            onClick={territorial.disableManualLocality}
+                            className="mt-1 cursor-pointer text-[11px] font-semibold text-beyonix-cyan transition-colors hover:text-white"
+                          >
+                            Volver a selección automática
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <GeographicSelect
+                            id="localidad"
+                            value={territorial.locality}
+                            options={territorial.localityOptions}
+                            onChange={territorial.handleLocalityChange}
+                            placeholder="Seleccioná una localidad"
+                            loading={territorial.localitiesLoading}
+                            loadingLabel="Cargando localidades…"
+                            disabled={!territorial.province || territorial.localitiesLoading}
+                            searchable
+                            emptyLabel="No hay localidades disponibles para esta provincia."
+                            errorMessage={territorial.localityLoadError}
+                            ariaLabel="Seleccionar localidad"
+                          />
+                          {territorial.localityLoadError && (
+                            <p className="mt-1 text-[11px] font-semibold text-red-300">
+                              {territorial.localityLoadError}
+                            </p>
+                          )}
+                          {territorial.province && (
+                            <button
+                              type="button"
+                              onClick={territorial.enableManualLocality}
+                              className="mt-1 cursor-pointer text-[11px] font-semibold text-beyonix-cyan transition-colors hover:text-white"
+                            >
+                              ¿No encontrás tu localidad? Ingresar manualmente
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div className="grid gap-2.5 md:grid-cols-2">
-                    <Field name="postal-code" label="Código postal*" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" autoComplete="postal-code" required />
                     <div>
-                      <label className="mb-1.5 block text-xs font-semibold text-white/72">
-                        Teléfono móvil*
+                      <label htmlFor="cpDestino" className="mb-1.5 block text-xs font-semibold text-white/72">
+                        Código postal*
                       </label>
-                      <div className="grid grid-cols-[5rem_minmax(0,1fr)] gap-2">
+                      {territorial.cpEntryIsManual ? (
                         <input
-                          id="phone-area-code"
-                          name="phone-area-code"
+                          id="cpDestino"
+                          name="cpDestino"
                           type="tel"
-                          aria-label="Característica"
+                          aria-label="Código postal"
                           required
-                          value={phoneAreaCode}
-                          placeholder="341"
+                          inputMode="numeric"
+                          value={territorial.postalCode}
+                          onChange={(event) =>
+                            territorial.handlePostalCodeChange(
+                              onlyDigits(event.target.value, 4)
+                            )
+                          }
+                          placeholder="Ej: 9410"
                           maxLength={4}
-                          inputMode="numeric"
-                          autoComplete="tel-area-code"
-                          onChange={(event) => setPhoneAreaCode(onlyDigits(event.target.value, 4))}
                           className="beyonix-login-input h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 text-sm text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
                         />
-                        <input
-                          id="phone"
-                          name="phone"
-                          type="tel"
-                          aria-label="Teléfono móvil"
-                          required
-                          value={phone}
-                          placeholder="6000000"
-                          maxLength={11}
-                          inputMode="numeric"
-                          autoComplete="tel-national"
-                          onChange={(event) => setPhone(onlyDigits(event.target.value, 11))}
-                          className="beyonix-login-input h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 text-sm text-white outline-none transition-all placeholder:text-white/32 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
-                        />
-                      </div>
-                      <p className="mt-1 text-[11px] leading-4 text-white/48">
-                        Ingresá la característica y el número sin 0 ni 15.
-                      </p>
+                      ) : (
+                        <>
+                          <GeographicSelect
+                            id="cpDestino"
+                            value={territorial.postalCode}
+                            options={territorial.postalCodeOptions}
+                            onChange={territorial.handlePostalCodeChange}
+                            placeholder={
+                              territorial.postalCodeLoadError
+                                ? "No disponible"
+                                : territorial.showManualPostalCodeOption
+                                  ? "Sin códigos postales disponibles"
+                                  : "Seleccioná un código postal"
+                            }
+                            loading={territorial.postalCodesLoading}
+                            loadingLabel="Cargando códigos postales…"
+                            disabled={
+                              !territorial.locality ||
+                              territorial.postalCodesLoading ||
+                              territorial.postalCodeOptions.length === 0
+                            }
+                            locked={territorial.postalCodeOptions.length === 1}
+                            compact
+                            errorMessage={territorial.postalCodeLoadError}
+                            ariaLabel="Seleccionar código postal"
+                          />
+                          {territorial.postalCodeLoadError && (
+                            <div className="mt-1 space-y-0.5">
+                              <p className="text-[11px] font-semibold text-red-300">
+                                {territorial.postalCodeLoadError}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                <button
+                                  type="button"
+                                  onClick={territorial.retryPostalCodes}
+                                  className="cursor-pointer text-[11px] font-semibold text-beyonix-cyan transition-colors hover:text-white"
+                                >
+                                  Reintentar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={territorial.enableManualPostalCode}
+                                  className="cursor-pointer text-[11px] font-semibold text-beyonix-cyan transition-colors hover:text-white"
+                                >
+                                  Ingresar código postal manualmente
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {territorial.showManualPostalCodeOption && (
+                            <div className="mt-1 space-y-0.5">
+                              <p className="text-[11px] leading-4 text-white/48">
+                                No encontramos códigos postales para esta localidad.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={territorial.enableManualPostalCode}
+                                className="cursor-pointer text-[11px] font-semibold text-beyonix-cyan transition-colors hover:text-white"
+                              >
+                                Ingresar código postal manualmente
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
-                  <TextareaField name="references" label="Referencias para llegar (máximo 80 caracteres)" value={references} onChange={setReferences} placeholder="Fachada blanca, portón negro, antes de llegar a la esquina." maxLength={80} />
+                  <TextareaField name="references" label="Referencias / Anotaciones (máximo 80 caracteres)" value={references} onChange={setReferences} placeholder="Indicaciones para llegar, aclaraciones sobre el domicilio o el timbre..." maxLength={80} />
                 </div>
               </fieldset>
             </>
