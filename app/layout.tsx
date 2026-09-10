@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next"
+import { headers } from "next/headers"
 import Script from "next/script"
 import { Montserrat } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
@@ -55,9 +56,17 @@ export const viewport: Viewport = {
   initialScale: 1,
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // headers() es obligatorio acá, no defensivo: se probó que sin esta
+  // llamada Next.js prerenderiza esta página como estática (sin nonce
+  // embebido, generado una sola vez en build/ISR) mientras proxy.ts sigue
+  // emitiendo un nonce nuevo en cada request -- un mismatch permanente que
+  // haría fallar en silencio cualquier <script nonce> una vez que la CSP
+  // pase a enforcing. Ver informe de la tarea.
+  const nonce = (await headers()).get("x-nonce") ?? undefined
+
   return (
     <html
       lang="es"
@@ -66,7 +75,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="antialiased">
-        <Script id="beyonix-scroll-restoration" strategy="beforeInteractive">
+        <Script id="beyonix-scroll-restoration" strategy="beforeInteractive" nonce={nonce}>
           {`if ("scrollRestoration" in history) history.scrollRestoration = "manual";`}
         </Script>
         {/*
@@ -79,7 +88,7 @@ export default function RootLayout({
           este script corre fuera del árbol de React, antes de la
           hidratación.
         */}
-        <Script id="beyonix-admin-theme-init" strategy="beforeInteractive">
+        <Script id="beyonix-admin-theme-init" strategy="beforeInteractive" nonce={nonce}>
           {`try {
             var t = window.localStorage.getItem("beyonix-admin-theme");
             document.documentElement.setAttribute(
@@ -100,7 +109,7 @@ export default function RootLayout({
           -- sin esperar a que React hidrate -- para que no haya flash en la
           carga inicial. No afecta al Admin.
         */}
-        <Script id="beyonix-account-theme-init" strategy="beforeInteractive">
+        <Script id="beyonix-account-theme-init" strategy="beforeInteractive" nonce={nonce}>
           {`try {
             var t = window.localStorage.getItem("beyonix-account-theme");
             document.documentElement.setAttribute(

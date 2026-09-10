@@ -25,7 +25,8 @@ function getConfirmationVerificationTypes(type: EmailOtpType) {
 
 function confirmationPage(
   success: boolean,
-  confirmationEvent?: EmailConfirmationEvent
+  confirmationEvent: EmailConfirmationEvent | undefined,
+  nonce: string
 ) {
   const title = success ? "Cuenta confirmada" : "No pudimos confirmar la cuenta"
   const message = success
@@ -36,23 +37,28 @@ function confirmationPage(
     .replaceAll("<", "\\u003c")
   const serializedStorageKey = JSON.stringify(EMAIL_CONFIRMATION_STORAGE_KEY)
   const serializedChannel = JSON.stringify(EMAIL_CONFIRMATION_CHANNEL)
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : ""
 
+  // Sin Google Fonts: esta página se sirve por fuera del árbol de React
+  // (Route Handler, no pasa por app/layout.tsx), así que no tiene acceso a
+  // los archivos woff2 self-hosted que genera next/font/google para
+  // Montserrat (nombres de archivo hasheados en el build, no estables).
+  // Es una pantalla transitoria (se autocierra) fuera de la identidad
+  // visual de marca, así que usar la fuente del sistema evita la
+  // dependencia externa sin necesidad de duplicar los archivos de fuente.
   return `<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${title} | BEYONIX</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <style>
+    <style${nonceAttr}>
       body {
         align-items: center;
         background: #02060d;
         color: #fff;
         display: flex;
-        font-family: Montserrat, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         justify-content: center;
         margin: 0;
         min-height: 100vh;
@@ -71,7 +77,7 @@ function confirmationPage(
     </main>
     ${
       success
-        ? `<script>
+        ? `<script${nonceAttr}>
       try {
         const confirmationEvent = ${serializedEvent};
         localStorage.setItem(
@@ -96,12 +102,15 @@ function confirmationPage(
 }
 
 export async function GET(request: NextRequest) {
+  // Seteado por proxy.ts (ver x-nonce en el request header reescrito ahí);
+  // esta ruta no pasa por app/layout.tsx así que necesita leerlo directo.
+  const nonce = request.headers.get("x-nonce") ?? ""
   const url = new URL(request.url)
   const tokenHash = url.searchParams.get("token_hash")?.trim() ?? ""
   const type = url.searchParams.get("type") as EmailOtpType | null
 
   if (!tokenHash || !type || !CONFIRMATION_TYPES.has(type)) {
-    return new NextResponse(confirmationPage(false), {
+    return new NextResponse(confirmationPage(false, undefined, nonce), {
       status: 400,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     })
@@ -144,7 +153,7 @@ export async function GET(request: NextRequest) {
       status: verificationError?.status,
       code: verificationError?.code,
     })
-    return new NextResponse(confirmationPage(false), {
+    return new NextResponse(confirmationPage(false, undefined, nonce), {
       status: 400,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     })
@@ -174,7 +183,7 @@ export async function GET(request: NextRequest) {
   }
 
   return new NextResponse(
-    confirmationPage(!activationError, confirmationEvent),
+    confirmationPage(!activationError, confirmationEvent, nonce),
     {
       status: activationError ? 500 : 200,
       headers: {
