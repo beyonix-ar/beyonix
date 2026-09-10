@@ -297,7 +297,7 @@ export function SiteHeader() {
                 setUserOpen(false)
               }}
               aria-label="Abrir menú"
-              className="flex size-10 cursor-pointer items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/8 hover:text-white lg:hidden"
+              className="beyonix-site-header-menu-button flex size-10 cursor-pointer items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/8 hover:text-white lg:hidden"
             >
               {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
             </button>
@@ -306,6 +306,13 @@ export function SiteHeader() {
 
         {mobileOpen && (
           <div className="max-h-80vh space-y-1 overflow-y-auto border-t border-white/6 py-3 lg:hidden">
+            <div className="beyonix-site-header-mobile-toggle-row mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/6 px-3 py-2.5">
+              <span className="beyonix-site-header-mobile-toggle-label text-15px font-medium text-[#F8FAFC]/88">
+                Apariencia
+              </span>
+              <AccountThemeToggle />
+            </div>
+
             {[
               { label: "Inicio", href: "/" },
               { label: "Productos", href: "/productos" },

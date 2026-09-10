@@ -49,6 +49,49 @@ function getSafeRedirect(redirect: string | null) {
   return redirect
 }
 
+// Cooldown del botón "Reenviar correo de confirmación": el mínimo real de
+// abuso lo aplica el servidor (ver lib/auth/resend-confirmation-rate-limit.ts);
+// esto es sólo la cuenta regresiva visible, persistida en localStorage para
+// sobrevivir un refresh o quedar sincronizada entre pestañas con el mismo
+// email pendiente.
+const RESEND_CONFIRMATION_COOLDOWN_SECONDS = 30
+const RESEND_CONFIRMATION_COOLDOWN_STORAGE_PREFIX =
+  "beyonix-resend-confirmation-cooldown:"
+
+function getResendCooldownStorageKey(email: string) {
+  return `${RESEND_CONFIRMATION_COOLDOWN_STORAGE_PREFIX}${email}`
+}
+
+function readStoredResendCooldownSeconds(email: string): number {
+  if (typeof window === "undefined" || !email) return 0
+
+  try {
+    const raw = window.localStorage.getItem(getResendCooldownStorageKey(email))
+    if (!raw) return 0
+
+    const deadline = Number(raw)
+    if (!Number.isFinite(deadline)) return 0
+
+    return Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+  } catch {
+    return 0
+  }
+}
+
+function persistResendCooldown(email: string, seconds: number) {
+  if (typeof window === "undefined" || !email) return
+
+  try {
+    window.localStorage.setItem(
+      getResendCooldownStorageKey(email),
+      String(Date.now() + seconds * 1000)
+    )
+  } catch {
+    // Sin localStorage disponible, el cooldown sigue funcionando en memoria
+    // para esta pestaña (el rate limit real de todos modos es server-side).
+  }
+}
+
 function Field({
   name,
   label,
@@ -228,7 +271,9 @@ function LoginContent() {
   const [finishingConfirmation, setFinishingConfirmation] = useState(false)
   const [resendingEmail, setResendingEmail] = useState(false)
   const [resendMessage, setResendMessage] = useState("")
+  const [resendMessageIsError, setResendMessageIsError] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
+  const resendInFlight = useRef(false)
 
   const redirect = getSafeRedirect(searchParams.get("redirect"))
   const verificationEmail = searchParams.get("verificar-email")
@@ -332,6 +377,23 @@ function LoginContent() {
     return () => window.clearTimeout(timeout)
   }, [resendCooldown])
 
+  // Sincroniza el cooldown del reenvío con localStorage: sobrevive a un
+  // refresh y queda al día si otra pestaña con el mismo email pendiente
+  // dispara un reenvío mientras esta sigue abierta.
+  useEffect(() => {
+    if (!confirmationEmail) return
+
+    setResendCooldown(readStoredResendCooldownSeconds(confirmationEmail))
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== getResendCooldownStorageKey(confirmationEmail)) return
+      setResendCooldown(readStoredResendCooldownSeconds(confirmationEmail))
+    }
+
+    window.addEventListener("storage", handleStorage)
+    return () => window.removeEventListener("storage", handleStorage)
+  }, [confirmationEmail])
+
   useEffect(() => {
     if (forgotPasswordCooldown <= 0) return
 
@@ -395,6 +457,7 @@ function LoginContent() {
           setConfirmationValidated(true)
 
           if (!data.tokenHash) {
+            setResendMessageIsError(Boolean(data.error))
             setResendMessage(
               data.error ||
                 "Cuenta confirmada. Estamos preparando tu sesión..."
@@ -406,6 +469,7 @@ function LoginContent() {
 
           confirmationCompletionStarted.current = true
           setFinishingConfirmation(true)
+          setResendMessageIsError(false)
           setResendMessage("Email confirmado. Iniciando sesión...")
 
           localStorage.setItem(
@@ -421,6 +485,7 @@ function LoginContent() {
 
           if (!sessionError) {
             localStorage.removeItem(EMAIL_CONFIRMATION_STORAGE_KEY)
+            setResendMessageIsError(false)
             setResendMessage(
               "Email confirmado. Te llevaremos al Home en un segundo..."
             )
@@ -432,10 +497,12 @@ function LoginContent() {
 
           confirmationCompletionStarted.current = false
           setFinishingConfirmation(false)
+          setResendMessageIsError(true)
           setResendMessage(
             "La cuenta fue confirmada, pero no pudimos iniciar sesión automáticamente."
           )
         } else if (!cancelled && !response.ok && data.error) {
+          setResendMessageIsError(true)
           setResendMessage(data.error)
         }
       } catch {
@@ -523,6 +590,8 @@ function LoginContent() {
     setConfirmationHandoff("")
     setConfirmationValidated(false)
     setFinishingConfirmation(false)
+    setResendMessage("")
+    setResendMessageIsError(false)
     setRedirecting(false)
     navigationStarted.current = false
     confirmationCompletionStarted.current = false
@@ -765,32 +834,63 @@ function LoginContent() {
   }
 
   const handleResendConfirmation = async () => {
-    if (!confirmationEmail || resendingEmail || resendCooldown > 0) return
-
-    setResendingEmail(true)
-    setResendMessage("")
-
-    const { error: resendError } = await supabase.auth.resend({
-      type: "signup",
-      email: confirmationEmail,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    })
-
-    setResendingEmail(false)
-
-    if (resendError) {
-      setResendMessage(
-        resendError.status === 429
-          ? "Esperá unos minutos antes de volver a intentarlo."
-          : "No pudimos reenviar el correo de confirmación."
-      )
+    if (
+      !confirmationEmail ||
+      resendingEmail ||
+      resendCooldown > 0 ||
+      resendInFlight.current
+    ) {
       return
     }
 
-    setResendCooldown(60)
-    setResendMessage("Correo reenviado. Puede demorar unos minutos en llegar.")
+    // Guard sincrónico contra doble click: `resendingEmail` recién se
+    // refleja en `disabled` después del próximo render, así que dos clicks
+    // en el mismo tick todavía podrían pasar el chequeo de arriba.
+    resendInFlight.current = true
+    setResendingEmail(true)
+    setResendMessage("")
+    setResendMessageIsError(false)
+
+    try {
+      const response = await fetch("/api/auth/resend-confirmation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: confirmationEmail }),
+      })
+      const data = (await response.json().catch(() => null)) as
+        | { message?: string; error?: string }
+        | null
+
+      // La protección real contra abuso (piso de 30s + topes por hora/día,
+      // por email e IP) es server-side -- ver
+      // lib/auth/resend-confirmation.ts. La respuesta pública es siempre el
+      // mismo mensaje genérico, exista o no la cuenta, esté o no ya
+      // confirmada, o esté rate-limited.
+      if (!response.ok) {
+        setResendMessageIsError(true)
+        setResendMessage(
+          data?.error || "No pudimos reenviar el correo de confirmación."
+        )
+        return
+      }
+
+      persistResendCooldown(
+        confirmationEmail,
+        RESEND_CONFIRMATION_COOLDOWN_SECONDS
+      )
+      setResendCooldown(RESEND_CONFIRMATION_COOLDOWN_SECONDS)
+      setResendMessage(
+        data?.message || "Correo reenviado. Puede demorar unos minutos en llegar."
+      )
+    } catch {
+      setResendMessageIsError(true)
+      setResendMessage(
+        "No pudimos reenviar el correo. Revisá tu conexión e intentá nuevamente."
+      )
+    } finally {
+      setResendingEmail(false)
+      resendInFlight.current = false
+    }
   }
 
   return (
@@ -887,10 +987,7 @@ function LoginContent() {
               <p
                 role="status"
                 className={`mt-3 text-xs leading-5 ${
-                  resendMessage.startsWith("Correo reenviado") ||
-                  resendMessage.startsWith("Email confirmado")
-                    ? "text-emerald-400"
-                    : "text-red-400"
+                  resendMessageIsError ? "text-red-400" : "text-emerald-400"
                 }`}
               >
                 {resendMessage}
@@ -1028,9 +1125,9 @@ function LoginContent() {
             >
               <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-beyonix-sky/55 to-transparent" />
 
-              <div className={`min-w-0 ${mode === "login" ? "mx-auto max-w-md" : ""}`}>
+              <div className="min-w-0">
                 <div
-                  className={`grid grid-cols-2 rounded-2xl border border-beyonix-blue-light/20 bg-black/24 p-1.5 ${
+                  className={`mx-auto grid max-w-md grid-cols-2 rounded-2xl border border-beyonix-blue-light/20 bg-black/24 p-1.5 ${
                     mode === "login" ? "mb-7" : "mb-4"
                   }`}
                 >
@@ -1063,7 +1160,7 @@ function LoginContent() {
                   </button>
                 </div>
 
-                <div className={mode === "login" ? "mb-7" : "mb-4"}>
+                <div className={mode === "login" ? "mx-auto mb-7 max-w-md" : "mb-4"}>
                   <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-beyonix-cyan">
                     {mode === "login" ? "Qué bueno verte de nuevo" : "Creá tu perfil"}
                   </p>
@@ -1077,6 +1174,7 @@ function LoginContent() {
                   </p>
                 </div>
 
+                <div className={mode === "login" ? "mx-auto max-w-md" : ""}>
                 <form
           key={mode}
           onSubmit={handleSubmit}
@@ -1405,6 +1503,7 @@ function LoginContent() {
                     Acceso seguro. Tus datos están protegidos.
                   </div>
                 )}
+                </div>
               </div>
             </section>
           </div>

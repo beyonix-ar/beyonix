@@ -11093,6 +11093,24 @@ html[data-account-theme="light"][data-account-scope] .beyonix-site-header-cart-b
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header-cart-total {
   color: var(--account-text-primary) !important;
 }
+/* Botón hamburguesa/cerrar del menú mobile: sin esto, el ícono blanco
+   (text-white/80) quedaba invisible sobre el fondo claro del header en
+   Light -- el usuario ni siquiera podía abrir el menú desde el celular. */
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-menu-button {
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-menu-button:hover {
+  color: var(--account-text-primary) !important;
+  background: var(--account-surface-hover) !important;
+}
+/* Fila "Apariencia" del menú mobile (toggle de tema): mismo motivo que el
+   botón de arriba, el label es texto claro fijo en el JSX. */
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-mobile-toggle-label {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-site-header-mobile-toggle-row {
+  border-color: var(--account-border-subtle) !important;
+}
 
 /* Menú de usuario (components/account-menu.tsx) */
 html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-trigger {

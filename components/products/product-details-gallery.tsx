@@ -287,7 +287,7 @@ export function ProductDetailsGallery({
             )}
 
             <span
-              className={`absolute right-3 top-3 rounded-full border px-3.5 py-1.5 text-13px font-black tracking-wide ${stockBadge.className}`}
+              className={`absolute left-3 top-3 rounded-full border px-3.5 py-1.5 text-13px font-black tracking-wide ${stockBadge.className}`}
             >
               {stockBadge.text}
             </span>
