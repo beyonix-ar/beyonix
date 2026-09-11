@@ -101,6 +101,34 @@ export function isMercadoPagoOrderAlreadyConfirmed(
   )
 }
 
+/**
+ * P1: una orden cancelada ANTES de confirmarse (expiración de checkout,
+ * cancelación del cliente o de admin) queda con estado='cancelado' y
+ * financial_status='cancelled' -- ninguno de los dos está en
+ * PAID_ORDER_STATUSES/CONFIRMED_FINANCIAL_STATUSES, así que
+ * isMercadoPagoOrderAlreadyConfirmed() da false y un payment aprobado tardío
+ * (reintento con otra tarjeta sobre la misma preferencia, latencia normal del
+ * webhook, etc.) seguía el camino normal de confirmación y "resucitaba" la
+ * orden a pagado. 'cancelado' es el único valor de estado que usan de forma
+ * consistente la expiración de checkout (lib/orders/mercadopago-expiration.ts)
+ * y las RPC de cancelación de cliente/admin -- por eso alcanza como único
+ * discriminante, sin depender de financial_status (que sí varía: 'cancelled'
+ * si nunca se pagó, 'refund_pending'/'refunded' si ya estaba pagada, pero esos
+ * dos últimos ya están cubiertos por isMercadoPagoOrderAlreadyConfirmed).
+ */
+export function isMercadoPagoOrderCancelled(order: MercadoPagoOrderPaymentRow) {
+  return order.estado === "cancelado"
+}
+
+/**
+ * payment_status que deja una orden cancelada cuando Mercado Pago aprueba un
+ * pago después de la cancelación. El dinero es real y queda auditado
+ * (order_audit_events), pero la orden NO se reactiva: requiere reconciliación
+ * manual, igual que MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS.
+ */
+export const MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS =
+  "approved_after_cancellation"
+
 export async function processApprovedMercadoPagoOrderPayment(
   order: MercadoPagoOrderPaymentRow,
   payment: Pick<

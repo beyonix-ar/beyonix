@@ -9,6 +9,8 @@ import {
 import {
   isInventoryConfirmationConflict,
   isMercadoPagoOrderAlreadyConfirmed,
+  isMercadoPagoOrderCancelled,
+  MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS,
   MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS,
   MercadoPagoInventoryConflictError,
   processApprovedMercadoPagoOrderPayment,
@@ -222,6 +224,65 @@ async function handleWebhook(request: Request) {
         payment.payment_method_id ??
         payment.payment_type_id ??
         null,
+    }
+
+    // P1: una orden cancelada (checkout expirado, cancelación de cliente o de
+    // admin) es un estado terminal -- un pago aprobado tardío sobre la MISMA
+    // preferencia (reintento con otra tarjeta en Checkout Pro, o simple
+    // latencia del webhook) NUNCA la resucita a pagada. El dinero es real: se
+    // registra en auditoría para reconciliación manual, sin tocar
+    // estado/financial_status/stock. isMercadoPagoOrderAlreadyConfirmed() no
+    // cubre este caso porque la orden nunca llegó a confirmarse.
+    if (payment.status === "approved" && isMercadoPagoOrderCancelled(orderRow)) {
+      const { data: lateUpdatedOrder, error: lateUpdateError } = await supabase
+        .from("ordenes")
+        .update({
+          ...paymentPayload,
+          payment_status: MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS,
+        } as never)
+        .eq("id", orderId)
+        .eq("estado", "cancelado")
+        .neq("payment_status", MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS)
+        .select("id")
+        .maybeSingle()
+
+      if (lateUpdateError) {
+        console.error("MERCADOPAGO_APPROVED_AFTER_CANCELLATION_PERSIST_ERROR", {
+          orderId,
+          paymentId: payment.id,
+          message: lateUpdateError.message,
+        })
+        throw lateUpdateError
+      }
+
+      if (lateUpdatedOrder) {
+        await appendOrderAuditEvent(supabase, {
+          orderId,
+          actorType: "system",
+          action: "payment_approved_after_cancellation",
+          previousStatus: orderRow.financial_status ?? "cancelled",
+          newStatus: orderRow.financial_status ?? "cancelled",
+          metadata: {
+            provider: "mercadopago",
+            paymentId: payment.id,
+            paymentStatus: payment.status,
+            transactionAmount: payment.transaction_amount ?? null,
+            reason: "order_already_cancelled_requires_manual_reconciliation",
+          },
+        })
+        console.error("MERCADOPAGO_APPROVED_PAYMENT_AFTER_CANCELLATION", {
+          orderId,
+          paymentId: payment.id,
+        })
+      }
+
+      // 200 a propósito, igual que approved_stock_conflict: reintentar el
+      // mismo webhook no lo va a resolver, necesita criterio humano.
+      return NextResponse.json({
+        ok: true,
+        paymentConfirmed: false,
+        reason: "order_already_cancelled",
+      })
     }
 
     if (payment.status !== "approved") {

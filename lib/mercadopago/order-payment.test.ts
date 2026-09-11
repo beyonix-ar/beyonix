@@ -2,7 +2,10 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import { processApprovedMercadoPagoOrderPayment } from "./order-payment.ts"
+import {
+  isMercadoPagoOrderCancelled,
+  processApprovedMercadoPagoOrderPayment,
+} from "./order-payment.ts"
 
 test("un pago aprobado con monto incorrecto no confirma la orden", async () => {
   let confirmations = 0
@@ -222,4 +225,73 @@ test("CASO I (precio único): el webhook valida el pago contra external_amount_d
   assert.match(webhook, /mercadopago_payment_snapshot/)
   assert.match(webhook, /fee_details/)
   assert.match(webhook, /transaction_details/)
+})
+
+test("isMercadoPagoOrderCancelled reconoce el único estado terminal que usan expiración y cancelación", () => {
+  for (const estado of ["pendiente", "pagado", "preparado", "enviado", "entregado"]) {
+    assert.equal(isMercadoPagoOrderCancelled({ estado, financial_status: null }), false)
+  }
+  assert.equal(isMercadoPagoOrderCancelled({ estado: "cancelado", financial_status: "cancelled" }), true)
+  // También cuando ya estaba pagada y se canceló después (refund_pending):
+  // isMercadoPagoOrderAlreadyConfirmed ya cubre ese caso por financial_status,
+  // pero estado sigue siendo 'cancelado' -- ambos chequeos son compatibles.
+  assert.equal(isMercadoPagoOrderCancelled({ estado: "cancelado", financial_status: "refund_pending" }), true)
+})
+
+// P1: una orden cancelada (checkout expirado, cancelación de cliente o de
+// admin) es terminal. isMercadoPagoOrderAlreadyConfirmed() no la reconoce
+// (nunca llegó a confirmarse), así que sin un guard explícito un payment
+// aprobado tardío -- reintento con otra tarjeta sobre la misma preferencia,
+// o simple latencia del webhook -- seguía el camino normal de confirmación
+// y "resucitaba" la orden a pagado, con efecto directo sobre stock derivado
+// (inventory_order_consumes_stock excluye 'cancelado' explícitamente; una
+// orden pagado NO) y un email de "recibimos tu pedido" al cliente.
+test("un payment aprobado sobre una orden YA CANCELADA no la confirma (P1 pago tardío)", () => {
+  const webhook = readFileSync(
+    new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
+    "utf8",
+  )
+
+  // El guard vive ANTES de la rama que confirma pagos aprobados, y antes de
+  // la rama "no aprobado" (que si tocara primero también sería inocua, pero
+  // el guard debe interceptar el caso peligroso sin depender de ese orden).
+  const guardIndex = webhook.indexOf(
+    'payment.status === "approved" && isMercadoPagoOrderCancelled(orderRow)',
+  )
+  const confirmIndex = webhook.indexOf("processApprovedMercadoPagoOrderPayment(")
+  const nonApprovedIndex = webhook.indexOf('if (payment.status !== "approved")')
+  assert.ok(guardIndex > 0, "el guard debe existir")
+  assert.ok(guardIndex < confirmIndex, "el guard corre antes de confirmar el pago")
+  assert.ok(guardIndex < nonApprovedIndex, "el guard corre antes de la rama no-aprobada")
+
+  // Nunca debe tocar estado/financial_status/stock -- sólo payment_status y
+  // metadata de auditoría, igual que approved_stock_conflict.
+  const guardBlock = webhook.slice(guardIndex, confirmIndex)
+  assert.doesNotMatch(guardBlock, /estado:\s*"pagado"/)
+  assert.doesNotMatch(guardBlock, /cancelled_at:\s*null/)
+  assert.doesNotMatch(guardBlock, /financial_status:\s*"payment_confirmed"/)
+  assert.match(guardBlock, /MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS/)
+  assert.match(guardBlock, /\.eq\("estado", "cancelado"\)/)
+
+  // Idempotente ante reentregas del mismo webhook: no vuelve a auditar ni a
+  // loggear una segunda vez el mismo pago ya registrado.
+  assert.match(
+    guardBlock,
+    /\.neq\("payment_status", MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS\)/,
+  )
+  assert.match(guardBlock, /if \(lateUpdatedOrder\)/)
+
+  // Queda auditado (order_audit_events) y logueado -- nunca en silencio.
+  assert.match(guardBlock, /appendOrderAuditEvent/)
+  assert.match(guardBlock, /action:\s*"payment_approved_after_cancellation"/)
+  assert.match(guardBlock, /MERCADOPAGO_APPROVED_PAYMENT_AFTER_CANCELLATION/)
+
+  // 200 a propósito (como approved_stock_conflict): reintentar el webhook no
+  // resuelve nada por sí solo, requiere criterio humano.
+  assert.match(guardBlock, /paymentConfirmed:\s*false/)
+  assert.match(guardBlock, /reason:\s*"order_already_cancelled"/)
+
+  // Cualquier error al persistir se revisa y se relanza -- nunca falla en
+  // silencio (mismo patrón que approved_stock_conflict).
+  assert.match(guardBlock, /if \(lateUpdateError\)\s*\{[\s\S]{0,200}throw lateUpdateError/)
 })
