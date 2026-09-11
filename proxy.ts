@@ -108,8 +108,13 @@ export async function proxy(request: NextRequest) {
   // generar un nonce criptográfico, armar la CSP completa ni pagar un
   // round-trip a Supabase Auth para una respuesta que se descarta en el acto
   // con un 301. Preserva pathname y query string exactos.
+  //
+  // Usa el header `Host` crudo (`request.headers.get("host")`), NUNCA
+  // `request.nextUrl.hostname` -- confirmado en producción detrás de Nginx
+  // que ese valor no refleja el Host real reenviado por el reverse proxy
+  // (ver lib/canonical-domain.ts para el detalle).
   const canonicalRedirectUrl = getCanonicalWwwRedirectUrl(
-    request.nextUrl.hostname,
+    request.headers.get("host"),
     request.nextUrl.pathname,
     request.nextUrl.search,
   )
