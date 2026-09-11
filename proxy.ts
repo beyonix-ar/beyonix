@@ -7,6 +7,7 @@ import {
   getAdminRouteKeyFromPathname,
 } from "@/lib/admin/admin-routes"
 import { isInternalRole, isUserRole } from "@/lib/auth/roles"
+import { resolveCspMode } from "@/lib/security/csp-mode"
 
 const IS_DEV = process.env.NODE_ENV !== "production"
 
@@ -28,8 +29,10 @@ function generateNonce() {
 }
 
 /**
- * CSP en modo Report-Only. Ver informe de la tarea para el detalle de cada
- * origen permitido y las concesiones deliberadas (media-src, style-src).
+ * Construye la Content-Security-Policy. El modo (Report-Only vs enforcing)
+ * lo decide `resolveCspMode`/CSP_MODE, no esta función -- acá sólo viven las
+ * directivas. Ver informe de la tarea para el detalle de cada origen
+ * permitido y las concesiones deliberadas (media-src, style-src).
  */
 function buildContentSecurityPolicy(nonce: string) {
   const supabaseHttp = SUPABASE_HOST ? `https://${SUPABASE_HOST}` : null
@@ -103,6 +106,14 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const nonce = generateNonce()
   const csp = buildContentSecurityPolicy(nonce)
+  // CSP_MODE=enforce (exacto) envía Content-Security-Policy; cualquier otro
+  // valor -- ausente, vacío, typo -- cae en report-only por fail-safe (ver
+  // lib/security/csp-mode.ts). Nunca se envían las dos cabeceras a la vez:
+  // es un único `set` condicionado al modo resuelto acá.
+  const cspHeaderName =
+    resolveCspMode(process.env.CSP_MODE) === "enforce"
+      ? "Content-Security-Policy"
+      : "Content-Security-Policy-Report-Only"
 
   // El nonce y la CSP se propagan también en los request headers (no sólo
   // en la respuesta) porque el App Router de Next.js lee el nonce desde ahí
@@ -111,12 +122,12 @@ export async function proxy(request: NextRequest) {
   // que busca 'content-security-policy' o 'content-security-policy-report-only').
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set("x-nonce", nonce)
-  requestHeaders.set("content-security-policy-report-only", csp)
+  requestHeaders.set(cspHeaderName.toLowerCase(), csp)
 
   const response = NextResponse.next({
     request: { headers: requestHeaders },
   })
-  response.headers.set("Content-Security-Policy-Report-Only", csp)
+  response.headers.set(cspHeaderName, csp)
 
   const isAdminRoute = pathname.startsWith("/admin")
   const isAccountRoute = pathname.startsWith("/cuenta")
