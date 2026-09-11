@@ -7,6 +7,7 @@ import {
   getAdminRouteKeyFromPathname,
 } from "@/lib/admin/admin-routes"
 import { isInternalRole, isUserRole } from "@/lib/auth/roles"
+import { getCanonicalWwwRedirectUrl } from "@/lib/canonical-domain"
 import { resolveCspMode } from "@/lib/security/csp-mode"
 
 const IS_DEV = process.env.NODE_ENV !== "production"
@@ -103,6 +104,19 @@ function buildContentSecurityPolicy(nonce: string) {
 }
 
 export async function proxy(request: NextRequest) {
+  // Va antes que todo lo demás (nonce/CSP/auth) a propósito: no tiene sentido
+  // generar un nonce criptográfico, armar la CSP completa ni pagar un
+  // round-trip a Supabase Auth para una respuesta que se descarta en el acto
+  // con un 301. Preserva pathname y query string exactos.
+  const canonicalRedirectUrl = getCanonicalWwwRedirectUrl(
+    request.nextUrl.hostname,
+    request.nextUrl.pathname,
+    request.nextUrl.search,
+  )
+  if (canonicalRedirectUrl) {
+    return NextResponse.redirect(canonicalRedirectUrl, 301)
+  }
+
   const pathname = request.nextUrl.pathname
   const nonce = generateNonce()
   const csp = buildContentSecurityPolicy(nonce)
