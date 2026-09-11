@@ -1,6 +1,5 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
-import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -52,10 +51,12 @@ export async function GET(request: Request) {
     "refund_pending_at",
   ].join(", ")
 
-  if (!notificationView) {
-    await expireOverdueTransferOrders(auth.admin)
-  }
-
+  // Mantenimiento (expirar transferencias vencidas sin comprobante) NO corre
+  // acá: GET sólo lee. Lo cubre el cron /api/cron/expire-transfer-orders cada
+  // 15 min (vercel.json), contra la misma lógica de vencimiento -- sin esto,
+  // cada carga normal del panel esperaba una consulta Supabase extra sin
+  // límite acotado en el camino caliente del admin (ver investigación
+  // Gateway Timeout, 2026-09-11).
   let ordersQuery = auth.admin
     .from("ordenes")
     .select(notificationView ? notificationColumns : "*", {

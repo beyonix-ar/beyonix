@@ -212,6 +212,40 @@ test("un pedido que falla no interrumpe el resto del lote", async () => {
   assert.equal(result.statusChanged, 1)
 })
 
+// Investigación Gateway Timeout (2026-09-11): cuando la carga de pedidos
+// fallaba (p. ej. Supabase/PostgREST devolviendo 504 "Gateway Timeout"), el
+// código descartaba el error real y lanzaba siempre el mismo mensaje fijo --
+// imposible de diagnosticar en producción. Ahora el detalle real queda
+// incluido en el mensaje.
+test("un error al cargar el lote propaga el detalle real de Supabase, no un mensaje genérico", async () => {
+  const admin = {
+    from(table: string) {
+      if (table !== "ordenes") throw new Error(`tabla inesperada en el mock: ${table}`)
+      return {
+        select() {
+          const chain = {
+            not: () => chain,
+            or: () => chain,
+            order: () => chain,
+            limit: async () => ({ data: null, error: { message: "Gateway Timeout" } }),
+          }
+          return chain
+        },
+      }
+    },
+  }
+
+  await assert.rejects(
+    runAndreaniTrackingSyncBatch(admin as never, { clientOptions: { env: qaClientEnv } }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error)
+      assert.equal((error as { code?: string }).code, "REQUEST_FAILED")
+      assert.match(error.message, /Gateway Timeout/)
+      return true
+    },
+  )
+})
+
 test("respeta el batchSize pasado por parámetro", async () => {
   const orders: FakeOrdenRow[] = Array.from({ length: 5 }, (_, index) => ({
     id: index + 1,

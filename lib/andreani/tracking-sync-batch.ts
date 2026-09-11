@@ -72,9 +72,13 @@ export async function runAndreaniTrackingSyncBatch(
     .limit(batchSize)
 
   if (error) {
+    // Investigación Gateway Timeout (2026-09-11): este mensaje quedaba fijo
+    // sin importar la causa real -- ocultaba si Supabase/PostgREST había
+    // devuelto un 504 ("Gateway Timeout"), un error de RLS, o cualquier otra
+    // cosa. Se propaga el detalle real (saneado) para que quede diagnosticable.
     throw new AndreaniError(
       "REQUEST_FAILED",
-      "No se pudieron obtener los pedidos Andreani activos para sincronizar.",
+      `No se pudieron obtener los pedidos Andreani activos para sincronizar: ${sanitizeAndreaniMessage(error.message)}`,
     )
   }
 

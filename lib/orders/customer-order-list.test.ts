@@ -75,6 +75,31 @@ test("el listado pliega el vencimiento de transferencias en la misma request (si
   assert.match(route, /expireOverdueTransferOrders\(admin, \{ userId: user\.id \}\)/)
 })
 
+// Investigación Gateway Timeout (2026-09-11): GET /api/admin/pedidos corría
+// expireOverdueTransferOrders en cada carga normal del panel admin (una
+// consulta Supabase de mantenimiento, no de lectura) -- desacoplado: el cron
+// /api/cron/expire-transfer-orders (cada 15 min, vercel.json) ya cubre esa
+// responsabilidad contra la MISMA función, así que no se pierde cobertura.
+test("GET /api/admin/pedidos NO ejecuta mantenimiento de expiración (sólo lee, el cron lo cubre)", () => {
+  const route = source("app/api/admin/pedidos/route.ts")
+
+  assert.doesNotMatch(route, /expireOverdueTransferOrders/)
+  assert.doesNotMatch(route, /from ["']@\/lib\/orders\/transfer-expiration["']/)
+})
+
+test("el cron de expiración de transferencias sigue activo cada 15 minutos contra la misma función", () => {
+  const cronRoute = source("app/api/cron/expire-transfer-orders/route.ts")
+  const vercelConfig = source("vercel.json")
+
+  assert.match(cronRoute, /expireOverdueTransferOrders\(createAdminClient\(\)\)/)
+  assert.match(cronRoute, /isCronRequestAuthorized/)
+  const cronEntry = JSON.parse(vercelConfig).crons.find(
+    (entry: { path: string }) => entry.path === "/api/cron/expire-transfer-orders",
+  )
+  assert.ok(cronEntry, "falta el cron de expiración de transferencias en vercel.json")
+  assert.equal(cronEntry.schedule, "*/15 * * * *")
+})
+
 test("la ruta legacy de vencimiento de transferencias fue eliminada (quedó plegada en /api/orders)", () => {
   assert.throws(() => source("app/api/orders/transfer-expirations/route.ts"))
 })
