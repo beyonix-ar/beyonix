@@ -13,15 +13,14 @@ const SECURITY_HEADERS = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(), payment=(self)",
   },
-  // max-age intencionalmente corto (5 min) y sin includeSubDomains/preload:
-  // primera fase de HSTS mientras el dominio está en medio de una migración
-  // de hosting pendiente (Netlify -> DonWeb, fuera de alcance de esta
-  // tarea). Un max-age largo es difícil de revertir si HTTPS se interrumpe
-  // brevemente durante ese cambio; éste expira solo en minutos. Sólo en
+  // Segunda fase de HSTS (migración Netlify -> DonWeb ya estable): sube de
+  // 5 min a 24hs, todavía sin includeSubDomains/preload -- esos dos siguen
+  // fuera de alcance a propósito, un max-age largo + includeSubDomains es
+  // mucho más difícil de revertir si HTTPS se interrumpe. Sólo en
   // producción: no tiene efecto sobre http (`next dev`), pero se evita
   // igual para no confundir verificaciones locales de headers.
   ...(process.env.NODE_ENV === "production"
-    ? [{ key: "Strict-Transport-Security", value: "max-age=300" }]
+    ? [{ key: "Strict-Transport-Security", value: "max-age=86400" }]
     : []),
 ]
 
