@@ -375,13 +375,17 @@ const EMPTY_COUNT_RESULT = {
   statusText: "OK",
 }
 
+// cliente_username NO es una columna de ordenes -- nunca lo fue (ver
+// lib/supabase/types.ts y app/api/admin/pedidos/route.ts): el username vive
+// en profiles y se resuelve por usuario_id, igual que en ese endpoint. Se
+// incluye usuario_id acá para poder hacer ese mismo lookup donde haga falta.
 const ORDER_SELECT = `
   id,
   estado,
   total,
+  usuario_id,
   cliente_nombre,
   cliente_email,
-  cliente_username,
   payment_id,
   payment_status,
   payment_method_id,
@@ -1561,6 +1565,39 @@ export async function GET(request: Request) {
     },
   ]
   const searchOrders = (searchOrdersResult.data ?? []) as unknown as SupabasePedido[]
+  // El username del cliente no vive en ordenes -- se resuelve por usuario_id
+  // contra profiles, igual que en app/api/admin/pedidos/route.ts. Fallback a
+  // un Map vacío si el lookup falla: no vale la pena tirar todo el dashboard
+  // por no poder indexar el username en la búsqueda de pedidos.
+  const searchOrderUserIds = Array.from(
+    new Set(
+      searchOrders
+        .map((order) => order.usuario_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  )
+  const usernameByUserId = new Map<string, string | null>()
+  if (searchOrderUserIds.length) {
+    const { data: searchOrderProfiles, error: searchOrderProfilesError } =
+      await auth.admin
+        .from("profiles")
+        .select("id, username")
+        .in("id", searchOrderUserIds)
+
+    if (searchOrderProfilesError) {
+      console.warn("DASHBOARD_QUERY_FALLBACK:ordenes_busqueda_usernames", {
+        query: "ordenes_busqueda_usernames",
+        ...getErrorLogDetails(searchOrderProfilesError),
+      })
+    } else {
+      for (const profile of (searchOrderProfiles ?? []) as Array<{
+        id: string
+        username: string | null
+      }>) {
+        usernameByUserId.set(profile.id, profile.username)
+      }
+    }
+  }
   const searchClients = (searchClientsResult.data ?? []) as Array<{
     id: string
     nombre?: string | null
@@ -1582,7 +1619,7 @@ export async function GET(request: Request) {
           String(order.id),
           order.cliente_nombre,
           order.cliente_email,
-          order.cliente_username,
+          order.usuario_id ? usernameByUserId.get(order.usuario_id) : null,
           ...orderItems.map(getOrderItemName),
         ]
           .filter(Boolean)

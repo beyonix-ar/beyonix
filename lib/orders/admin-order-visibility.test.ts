@@ -169,3 +169,28 @@ test("rutas, webhook y base comparten la misma transición administrativa", () =
     /else\s+new\.admin_visible_at := null;/,
   )
 })
+
+test("ORDER_SELECT del dashboard admin nunca pide cliente_username -- no existe como columna de ordenes", () => {
+  // Regresión: ordenes.cliente_username nunca fue una columna real (el
+  // username vive en profiles, resuelto por usuario_id -- ver
+  // app/api/admin/pedidos/route.ts, que sí lo hace bien). Pedirlo en el
+  // .select() de PostgREST rompe la query con 42703 (column does not
+  // exist) y DASHBOARD_QUERY_FALLBACK vacía en silencio "ordenes_recientes",
+  // "pedidos_a_preparar", "facturas_pendientes" y "ordenes_busqueda" a la
+  // vez, porque las cuatro comparten ORDER_SELECT. Mismo patrón de bug ya
+  // cubierto para CUSTOMER_ORDER_DETAIL_SELECT en customer-order-list.test.ts.
+  const adminDashboardSource = readFileSync(
+    new URL("../../app/api/admin/dashboard/route.ts", import.meta.url),
+    "utf8",
+  )
+  const selectMatch = adminDashboardSource.match(
+    /const ORDER_SELECT = `([^`]+)`/,
+  )
+  assert.ok(selectMatch, "no se encontró ORDER_SELECT")
+  const select = selectMatch![1]
+
+  assert.doesNotMatch(select, /(^|[\s,(])cliente_username([\s,)]|$)/)
+  // usuario_id sí tiene que estar: es la FK real que permite resolver el
+  // username contra profiles donde la búsqueda de pedidos lo necesita.
+  assert.match(select, /(^|[\s,(])usuario_id([\s,)]|$)/)
+})
