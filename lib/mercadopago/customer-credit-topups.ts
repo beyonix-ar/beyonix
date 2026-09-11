@@ -42,6 +42,28 @@ export interface CustomerCreditTopupPaymentResult {
   paymentStatus: string
 }
 
+/**
+ * Únicos estados de Mercado Pago que representan una devolución REAL del
+ * dinero ya acreditado -- deben disparar reverse_customer_credit_topup.
+ * Deliberadamente NO incluye:
+ * - pending / in_process / authorized / in_mediation: transitorios, nunca
+ *   deberían aparecer sobre un topup ya 'acreditado' (ese payment_id ya fue
+ *   'approved' antes), pero si llegaran por una notificación fuera de orden
+ *   no representan que el dinero se haya ido -- debitar por esto sería un
+ *   falso positivo.
+ * - cancelled / rejected: en el modelo real de Mercado Pago son estados
+ *   PRE-aprobación (un pago nunca pasa de approved a cancelled/rejected).
+ *   Si aparecieran sobre un topup ya acreditado sería una anomalía de datos
+ *   (entrega fuera de orden, ID reciclado), no una reversa genuina -- se
+ *   ignoran sin tocar el saldo en vez de debitar por accidente.
+ * Mismo criterio que POST_CONFIRMATION_REVERSAL_STATUSES en el webhook de
+ * órdenes (app/api/mercadopago/webhook/route.ts).
+ */
+export const MERCADOPAGO_TOPUP_REVERSAL_STATUSES = new Set([
+  "refunded",
+  "charged_back",
+])
+
 function getAccessToken() {
   const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
   if (!accessToken) throw new Error("MERCADOPAGO_ACCESS_TOKEN no configurado")
@@ -164,13 +186,40 @@ export async function processCustomerCreditTopupPayment(
   }
 
   if (payment.status !== "approved") {
+    // P1: una carga ya acreditada nunca debe quedarse "acreditado" para
+    // siempre si Mercado Pago informa después un estado que representa
+    // devolución real del dinero (MERCADOPAGO_TOPUP_REVERSAL_STATUSES) --
+    // eso dejaba saldo ficticio disponible sin devolución real.
+    // reverse_customer_credit_topup debita el monto acreditado (o lo que
+    // quede disponible, registrando la diferencia como deuda explícita si
+    // el cliente ya lo gastó) de forma transaccional e idempotente. Un
+    // estado transitorio/no-reversivo sobre un topup ya acreditado (ver
+    // MERCADOPAGO_TOPUP_REVERSAL_STATUSES) nunca debita nada.
+    if (topup.status === "acreditado") {
+      if (!MERCADOPAGO_TOPUP_REVERSAL_STATUSES.has(payment.status)) {
+        return { credited: true, duplicated: true, paymentStatus: payment.status }
+      }
+
+      const { data, error } = await admin.rpc("reverse_customer_credit_topup", {
+        p_topup_id: topupId,
+        p_payment_id: String(payment.id),
+        p_payment_status: payment.status,
+      })
+      if (error) throw error
+      return {
+        credited: false,
+        topup: Array.isArray(data) ? data[0] : data,
+        paymentStatus: payment.status,
+      }
+    }
+
     const nextStatus = ["cancelled", "rejected"].includes(payment.status)
       ? "rechazado"
       : topup.status
     const { error: updateError } = await admin
       .from("customer_credit_topups")
       .update({
-        status: topup.status === "acreditado" ? "acreditado" : nextStatus,
+        status: nextStatus,
         mercadopago_payment_id: String(payment.id),
         mercadopago_status: payment.status,
         updated_at: new Date().toISOString(),
@@ -199,9 +248,17 @@ export async function processCustomerCreditTopupPayment(
   )
   if (error) throw error
 
+  const result = Array.isArray(data) ? data[0] : data
+  // 'revertido' es terminal: un approved tardío (reentrega fuera de orden)
+  // nunca vuelve a acreditar saldo, aunque la RPC responda sin error.
+  const reversedAfterTheFact =
+    result && typeof result === "object" && "topup_status" in result
+      ? (result as { topup_status?: string }).topup_status === "revertido"
+      : false
+
   return {
-    credited: true,
-    topup: Array.isArray(data) ? data[0] : data,
+    credited: !reversedAfterTheFact,
+    topup: result,
     paymentStatus: payment.status,
   }
 }
