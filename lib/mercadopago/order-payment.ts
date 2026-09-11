@@ -76,7 +76,8 @@ export function isInventoryConfirmationConflict(error: unknown) {
   return /checkout_stock_insufficient|checkout_variant_required/i.test(message)
 }
 
-function moneyToCents(value: number | null | undefined) {
+/** Compartida con el refund de MP (lib/mercadopago/order-refund.ts): la comparación de montos siempre debe hacerse en centavos, nunca en floats. */
+export function moneyToCents(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return null
   }

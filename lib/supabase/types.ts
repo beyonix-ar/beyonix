@@ -350,6 +350,17 @@ export interface SupabasePedido {
   order_refund_proofs?: SupabaseOrderRefundProof[]
   order_audit_events?: SupabaseOrderAuditEvent[]
   order_credit_notes?: SupabaseOrderCreditNote[]
+  mercadopago_order_refunds?: SupabaseMercadoPagoOrderRefund[]
+}
+
+export interface SupabaseMercadoPagoOrderRefund {
+  id: string
+  order_id: number
+  status: "requested" | "processing" | "confirmed" | "failed" | "needs_reconciliation"
+  amount: number
+  error_code: string | null
+  created_at: string
+  completed_at: string | null
 }
 
 export interface SupabaseOrderCreditNoteItem {

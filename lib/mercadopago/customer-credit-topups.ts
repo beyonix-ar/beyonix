@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "../supabase/admin.ts"
 
 export interface MercadoPagoPaymentFeeDetail {
   type?: string | null

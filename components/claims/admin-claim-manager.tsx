@@ -33,6 +33,7 @@ import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
 import { getOrderClaimResolutionLabel, getPendingRefundNotes } from "@/lib/order-claims"
+import { MercadoPagoRefundAction } from "@/components/claims/mercadopago-refund-action"
 import {
   isClaimVisibleForMode,
   shouldShowReturnInventoryPanel,
@@ -2181,7 +2182,10 @@ export function AdminClaimManager({
                     }
                   />
                 )}
-                {canManageRefund && (
+                {canManageRefund && pedido.payment_method_id === "mercadopago" && (
+                  <MercadoPagoRefundAction pedido={pedido} onUpdated={onInventoryUpdated} />
+                )}
+                {canManageRefund && pedido.payment_method_id !== "mercadopago" && (
                   <div className="rounded-lg border border-emerald-300/20 bg-emerald-950/20 p-2">
                     <p className="text-xs font-black text-white">Reembolso</p>
                     <div className="mt-2 grid gap-2">

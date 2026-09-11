@@ -1302,7 +1302,22 @@ function getOrderPaymentDisplay(pedido: SupabasePedido): OrderPaymentDisplay {
     return { method, statusLabel: "Reembolsado", tone: "returned" }
   }
   if (pedido.financial_status === "refund_pending") {
+    // FASE 2: needs_reconciliation es un incidente que requiere revisión
+    // humana -- nunca debe quedar indistinguible de un reintegro en curso
+    // normal (console.error no alcanza como señal para un admin).
+    const latestMpRefund = (pedido.mercadopago_order_refunds ?? [])[0]
+    if (latestMpRefund?.status === "needs_reconciliation") {
+      return { method, statusLabel: "Reintegro MP: revisar", tone: "danger" }
+    }
     return { method, statusLabel: "Reintegro pendiente", tone: "warning" }
+  }
+  // Llegar hasta acá ya descartó financial_status 'refunded'/'refund_pending'
+  // (los ifs de arriba retornan) -- si además payment_status='refunded', es
+  // un reintegro externo (hecho a mano en el dashboard de Mercado Pago, sin
+  // pasar por la cancelación de BEYONIX). Mostrarlo como "Confirmado" sería
+  // engañoso: el dinero ya no está.
+  if (pedido.payment_status === "refunded") {
+    return { method, statusLabel: "Reintegro externo: revisar", tone: "danger" }
   }
 
   if (isTransferOrder(pedido)) {

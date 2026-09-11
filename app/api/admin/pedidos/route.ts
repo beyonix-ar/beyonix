@@ -158,6 +158,7 @@ export async function GET(request: Request) {
     refundProofsResult,
     auditEventsResult,
     creditNotesResult,
+    mpRefundsResult,
   ] = await Promise.all([
     productIds.length
       ? auth.admin.from("productos").select("*").in("id", productIds)
@@ -200,6 +201,16 @@ export async function GET(request: Request) {
         pedidos.map((pedido) => pedido.id),
       )
       .order("created_at", { ascending: false }),
+    // Sólo lo que necesita el badge/alerta admin -- nunca payment_id ni
+    // idempotency_key (identificadores internos de Mercado Pago) al cliente.
+    auth.admin
+      .from("mercadopago_order_refunds")
+      .select("id, order_id, status, amount, error_code, created_at, completed_at")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id),
+      )
+      .order("created_at", { ascending: false }),
   ])
 
   if (
@@ -210,6 +221,7 @@ export async function GET(request: Request) {
     refundProofsResult.error ||
     auditEventsResult.error
     || creditNotesResult.error
+    || mpRefundsResult.error
   ) {
     return Response.json(
       {
@@ -220,6 +232,7 @@ export async function GET(request: Request) {
           refundProofsResult.error?.message ||
           auditEventsResult.error?.message ||
           creditNotesResult.error?.message ||
+          mpRefundsResult.error?.message ||
           profilesResult.error?.message ||
           "No se pudo cargar el detalle de los productos.",
       },
@@ -327,6 +340,15 @@ export async function GET(request: Request) {
     creditNotesByOrder.set(note.order_id, currentNotes)
   }
 
+  // El más reciente primero (ya viene ordenado desc) -- el admin sólo
+  // necesita el último intento para decidir qué mostrar/permitir.
+  const mpRefundsByOrder = new Map<number, (typeof mpRefundsResult.data)[number][]>()
+  for (const refund of mpRefundsResult.data ?? []) {
+    const current = mpRefundsByOrder.get(refund.order_id) ?? []
+    current.push(refund)
+    mpRefundsByOrder.set(refund.order_id, current)
+  }
+
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
@@ -364,6 +386,7 @@ export async function GET(request: Request) {
       order_refund_proofs: refundProofsByOrder.get(pedido.id) ?? [],
       order_audit_events: auditEventsByOrder.get(pedido.id) ?? [],
       order_credit_notes: creditNotesByOrder.get(pedido.id) ?? [],
+      mercadopago_order_refunds: mpRefundsByOrder.get(pedido.id) ?? [],
     })),
     total: count ?? pedidos.length,
   })
