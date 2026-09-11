@@ -274,7 +274,7 @@ function CheckoutNotice({
       className={cn(
         "checkout-note flex items-start gap-2.5 rounded-lg border px-3.5 py-3 text-sm leading-5",
         tone === "error"
-          ? "border-red-400/24 bg-red-500/10 text-red-200"
+          ? "beyonix-checkout-notice-error border-red-400/24 bg-red-500/10 text-red-200"
           : tone === "warning"
             ? "beyonix-checkout-notice-warning border-amber-300/22 bg-amber-300/[0.055] text-white/82"
             : "border-beyonix-blue-light/16 bg-[#10151C] text-white/68",
@@ -282,7 +282,7 @@ function CheckoutNotice({
       )}
     >
       {tone === "error" ? (
-        <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-300" />
+        <AlertCircle className="beyonix-checkout-notice-error-icon mt-0.5 size-4 shrink-0 text-red-300" />
       ) : tone === "warning" ? (
         <Clock3 className="beyonix-checkout-notice-warning-icon mt-0.5 size-4 shrink-0 text-amber-300" />
       ) : null}

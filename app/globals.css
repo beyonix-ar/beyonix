@@ -763,6 +763,20 @@ html[data-account-theme="light"][data-account-scope] .beyonix-checkout-notice-wa
 html[data-account-theme="light"][data-account-scope] .beyonix-checkout-notice-warning-icon {
   color: #EAB308 !important;
 }
+/* Aviso de error del resumen del pedido (CheckoutNotice tone="error"): en
+   Dark usa un tinte rojo translúcido (bg-red-500/10, text-red-200) pensado
+   para leerse sobre fondo navy -- sobre la superficie clara de Light el
+   mismo texto/fondo queda casi ilegible (rojo pálido sobre blanco). Reusa
+   los tokens --account-danger* ya calibrados para .beyonix-stock-badge-danger
+   (mismo criterio semántico en toda la app), en vez de un rojo nuevo. */
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-notice-error {
+  background: var(--account-danger-bg) !important;
+  border-color: var(--account-danger-border) !important;
+  color: var(--account-danger-text) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-notice-error-icon {
+  color: var(--account-danger) !important;
+}
 html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input {
   background: var(--account-input) !important;
   color: var(--account-text-primary) !important;

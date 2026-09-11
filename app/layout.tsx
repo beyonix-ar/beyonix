@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import Script from "next/script"
 import { Montserrat } from "next/font/google"
-import { Analytics } from "@vercel/analytics/next"
 import { CartProvider } from "@/context/cart-context"
 import { AuthProvider } from "@/context/auth-context"
 import { CustomerCreditProvider } from "@/context/customer-credit-context"
@@ -138,7 +137,6 @@ export default async function RootLayout({
             </AuthProvider>
           </AccountThemeProvider>
         </div>
-        {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
     </html>
   )
