@@ -48,10 +48,10 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   }
 
   const handleForgotPassword = async () => {
-    const normalizedEmail = identifier.trim().toLowerCase()
+    const recoveryIdentifier = identifier.trim()
 
-    if (!normalizedEmail || !normalizedEmail.includes("@")) {
-      setError("Introduce tu email primero.")
+    if (!recoveryIdentifier) {
+      setError("Ingresá tu usuario o email para recuperar la contraseña.")
       setSuccess("")
       return
     }
@@ -61,22 +61,29 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
     setResetLoading(true)
 
     try {
-      localStorage.setItem("beyonix-password-recovery", "true")
+      // Misma ruta server-side que app/login/page.tsx (lib/auth/forgot-password.ts):
+      // aplica rate limiting persistente, resuelve username->email SOLO
+      // server-side y devuelve siempre el mismo mensaje genérico. Antes esta
+      // pantalla llamaba a supabase.auth.resetPasswordForEmail() directo
+      // desde el navegador -- sin rate limit propio (spam de emails a
+      // cualquier dirección) y sólo aceptaba email, nunca username.
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: recoveryIdentifier }),
+      })
+      const data = (await response.json().catch(() => null)) as
+        | { message?: string; error?: string }
+        | null
 
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-        normalizedEmail,
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
-      )
-
-      if (resetError) {
-        localStorage.removeItem("beyonix-password-recovery")
-        setError("No se pudo enviar el email.")
+      if (!response.ok) {
+        setError(data?.error || "No se pudo enviar el email.")
         return
       }
 
-      setSuccess("Te enviamos un email para restablecer tu contraseña.")
+      setSuccess(
+        data?.message || "Te enviamos un email para restablecer tu contraseña."
+      )
     } catch {
       setError("No se pudo enviar el email. Inténtalo de nuevo.")
     } finally {

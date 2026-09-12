@@ -106,6 +106,46 @@ test("los tokens --account-success-*/--account-danger-* tienen valores distintos
   assert.match(lightSuccessText, /#065f46/i)
 })
 
+// --- Causa real del enlace "vencido a los segundos" (auditoría 2026-09-12) ---
+
+test("el template de email usa token_hash apuntando a nuestro dominio, NUNCA ConfirmationURL (GET consumible por escaneo de enlaces)", () => {
+  const template = source("supabase/email-templates/reset-password.html")
+
+  assert.doesNotMatch(template, /href="\{\{\s*\.ConfirmationURL\s*\}\}"/)
+  assert.match(
+    template,
+    /href="\{\{ \.SiteURL \}\}\/reset-password\?token_hash=\{\{ \.TokenHash \}\}&type=recovery"/,
+  )
+})
+
+test("/reset-password delega la decisión del link en lib/auth/recovery-link.ts (resolveRecoveryLink), no reimplementa la lógica inline", () => {
+  const page = source("app/reset-password/page.tsx")
+
+  assert.match(page, /import \{ resolveRecoveryLink \} from "@\/lib\/auth\/recovery-link"/)
+  assert.match(page, /resolveRecoveryLink\(\s*\n?\s*supabase\.auth,/)
+  // La rama de éxito nunca debe reimplementar el chequeo de tokenHash/type acá.
+  assert.doesNotMatch(page, /tokenHash && type === "recovery"/)
+})
+
+test("lib/auth/recovery-link.ts soporta token_hash+type=recovery llamando a verifyOtp (formato que manda el email hoy)", () => {
+  const recoveryLink = source("lib/auth/recovery-link.ts")
+
+  assert.match(recoveryLink, /params\.tokenHash && params\.type === "recovery"/)
+  assert.match(recoveryLink, /auth\.verifyOtp\(\{/)
+  assert.match(recoveryLink, /token_hash: params\.tokenHash,/)
+})
+
+test("el form embebido de /cuenta (auth-forms.tsx) también pasa por el endpoint server-side de recuperación, no llama a resetPasswordForEmail directo", () => {
+  const authForms = source("components/account/auth-forms.tsx")
+
+  assert.doesNotMatch(authForms, /await supabase\.auth\.resetPasswordForEmail/)
+  assert.match(authForms, /\/api\/auth\/forgot-password/)
+  assert.doesNotMatch(
+    authForms,
+    /localStorage\.setItem\("beyonix-password-recovery", "true"\)/,
+  )
+})
+
 test("\"olvidé mi contraseña\" muestra un cartel propio con ícono + título neutro \"Revisá tu correo\" (nunca confirma que la cuenta existe)", () => {
   const login = source("app/login/page.tsx")
 

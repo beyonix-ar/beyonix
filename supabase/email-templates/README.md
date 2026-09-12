@@ -43,11 +43,10 @@ confiable) y exactamente el contenido pedido:
 - Footer: **© BEYONIX** + aviso discreto de que es un correo automático.
 
 **Único CTA: el botón.** Deliberadamente NO hay un link de recuperación
-visible en texto plano como fallback: mostrarlo expondría el host de
-Supabase, el `redirect_to` y el token en la URL a simple vista (capturas de
-pantalla, reenvíos, "mirar por encima del hombro"). El `href` del botón
-sigue llevando `{{ .ConfirmationURL }}` -- el flujo no cambia, sólo deja de
-imprimirse como texto.
+visible en texto plano como fallback: mostrarlo expondría el token en la URL
+a simple vista (capturas de pantalla, reenvíos, "mirar por encima del
+hombro"). El `href` del botón usa `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`
+(no `{{ .ConfirmationURL }}` -- ver el motivo más abajo, sección "IMPORTANTE").
 
 No incluye ningún dato sensible (ni email, ni username, ni nada que
 identifique la cuenta más allá de lo que Supabase ya agrega por variable).
@@ -69,6 +68,46 @@ identifique la cuenta más allá de lo que Supabase ya agrega por variable).
    (`<!-- Template de Supabase Auth...`) hasta la última (`</html>`) —
    incluido el `<!DOCTYPE html>` y el `<head>`.
 4. Guardar.
+
+## IMPORTANTE — por qué el link cambió de `{{ .ConfirmationURL }}` a `{{ .SiteURL }}/reset-password?token_hash=...`
+
+Causa real del enlace "vencido" a los pocos segundos de abrirlo (auditado
+2026-09-12): `{{ .ConfirmationURL }}` apunta al endpoint de Supabase
+(`<proyecto>.supabase.co/auth/v1/verify?token=...&type=recovery`), que
+consume el token de un solo uso con un simple `GET`. Cualquier escaneo
+automático de enlaces del lado del destinatario (Outlook Safe Links, gateways
+antispam corporativos, algunos proxies de email) sigue ese link apenas llega
+el correo -- típicamente en segundos -- y lo invalida antes de que la persona
+lo abra, sin importar cuántos minutos de vigencia tenga configurados el OTP
+en Supabase. No es un bug de estado en `app/reset-password/page.tsx` (se
+auditó completo: no hay doble consumo, no hay carrera con
+`detectSessionInUrl` porque está en `false`, y `window.history.replaceState`
+ya evita reintentos accidentales).
+
+El nuevo link (`{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`)
+apunta directo a nuestro dominio en vez del endpoint de Supabase. Un
+rastreador que sólo hace `GET` sobre esa URL descarga HTML/JS pero no
+ejecuta React ni llama a `verifyOtp()` -- el token recién se consume cuando
+un navegador real carga la página y corre nuestro código (ya preparado para
+este formato). Esto no es una garantía absoluta (un escáner con navegador
+headless real seguiría consumiéndolo), pero elimina la causa más común y es
+el patrón que la propia documentación de Supabase recomienda para este
+problema.
+
+**Dos verificaciones adicionales en el Dashboard, no se pueden hacer desde
+código/CLI:**
+
+1. **Authentication > URL Configuration > Site URL** debe ser exactamente
+   `https://<tu-dominio-de-producción>` (sin `/` final, sin `localhost`).
+   `{{ .SiteURL }}` sale de este campo, NO de `NEXT_PUBLIC_SITE_URL` ni del
+   `redirectTo` que arma el servidor -- si este campo quedó en `localhost`
+   o desactualizado de alguna migración de dominio anterior, el link del
+   email apuntará mal aunque el resto del código esté bien.
+2. **Authentication > Providers > Email > Email OTP Expiration** (segundos):
+   confirmar que sea `>= 900` (15 min). Se pidió 30 min si no hay una razón
+   para menos → dejar `1800`. Esto es independiente de la causa real de arriba
+   (el link ya no debería morir a los segundos), pero define cuánto dura de
+   verdad un enlace que nadie abrió todavía.
 
 ## Por qué el Subject sigue en inglés hasta que lo cambies vos en el Dashboard
 
@@ -92,36 +131,33 @@ ningún workaround de código para esto.
 
 ## Variables usadas (oficiales de Supabase, no inventadas)
 
-El template usa `{{ .ConfirmationURL }}`, la misma variable que trae el
-template default de Supabase para los cuatro tipos de email (Confirm
-signup, Invite, Magic Link, Reset Password). Apunta al endpoint de
-Supabase que valida el token y redirige a la app.
+El template usa `{{ .SiteURL }}` y `{{ .TokenHash }}` para armar el link
+manualmente en vez de `{{ .ConfirmationURL }}` (ver sección "IMPORTANTE"
+arriba: `ConfirmationURL` es GET-consumible por escáneres de email antes de
+que la persona abra el correo).
 
-Otras variables disponibles si en algún momento se necesitan (no usadas acá
-para no romper el flujo actual, que ya sabe manejar `?code=` y
-`#access_token=&type=recovery`):
-
-- `{{ .SiteURL }}` — la Site URL configurada en el proyecto.
-- `{{ .Token }}` / `{{ .TokenHash }}` — el OTP crudo/hasheado, para armar un
-  link manual en vez de `ConfirmationURL`.
+- `{{ .SiteURL }}` — la Site URL configurada en **Authentication > URL
+  Configuration > Site URL** del proyecto. NO es `NEXT_PUBLIC_SITE_URL` del
+  repo ni el `redirectTo` que arma el servidor -- es un campo aparte del
+  Dashboard, hay que confirmarlo ahí.
+- `{{ .TokenHash }}` — el OTP hasheado. `app/reset-password/page.tsx` ya
+  sabe leer `?token_hash=...&type=recovery` y llamar a
+  `supabase.auth.verifyOtp({ token_hash, type: "recovery" })` (mismo código
+  que ya soportaba `?code=` y `#access_token=&type=recovery`, sin cambios
+  necesarios ahí).
 - `{{ .Email }}` — el email del destinatario (no se usa en el cuerpo a
   propósito: no hace falta mostrarlo).
 
 ## Redirect a verificar (importante para que el link no quede roto)
 
-`ConfirmationURL` sólo redirige a una URL que esté en la lista blanca de
-**Authentication > URL Configuration > Redirect URLs** del proyecto.
-Confirmar que esa lista incluya:
+Aunque ya no se usa `{{ .ConfirmationURL }}`, Supabase igual valida que
+`{{ .SiteURL }}` esté en la lista blanca de **Authentication > URL Configuration > Redirect URLs**
+antes de considerar válido cualquier flujo de recuperación. Confirmar que esa
+lista incluya:
 
 ```
 https://<tu-dominio-de-producción>/reset-password
 ```
-
-Esto es además una capa de protección adicional (a nivel Supabase, no sólo
-en el código de la app) contra que un `redirectTo` termine apuntando a un
-dominio no autorizado: aunque el servidor de BEYONIX ya arma `redirectTo`
-con la URL canónica (`NEXT_PUBLIC_SITE_URL`, nunca con el header `Origin` —
-ver `lib/site-url.ts`), Supabase igual lo rechaza si no está en esta lista.
 
 **Sobre el `localhost` que puede aparecer en `redirect_to` al probar en
 desarrollo**: `resolveTrustedSiteUrl` (`lib/site-url.ts`) usa

@@ -20,6 +20,7 @@ import { PasswordRequirements } from "@/components/password-requirements"
 import {
   getInvalidRecoveryLinkMessage,
 } from "@/lib/auth/password-update-messages"
+import { resolveRecoveryLink } from "@/lib/auth/recovery-link"
 import { supabase } from "@/lib/supabase/client"
 import { FIELD_LIMITS, validatePassword } from "@/lib/validation/account-fields"
 
@@ -74,82 +75,39 @@ function ResetPasswordContent() {
       const hashParams = new URLSearchParams(
         window.location.hash.replace(/^#/, "")
       )
-      const code = searchParams.get("code")
-      const tokenHash = searchParams.get("token_hash")
-      const type = searchParams.get("type")
-      const recovery = searchParams.get("recovery")
-      const accessTokenParam = hashParams.get("access_token")
-      const refreshToken = hashParams.get("refresh_token")
-      const hashType = hashParams.get("type")
-      const hashError =
-        hashParams.get("error_description") ||
-        hashParams.get("error")
-      const queryError =
-        searchParams.get("error_description") ||
-        searchParams.get("error")
       const hasRecoveryMarker =
         localStorage.getItem(PASSWORD_RECOVERY_KEY) === "true"
-      const hasRecoveryToken =
-        Boolean(code || tokenHash || accessTokenParam || refreshToken) ||
-        type === "recovery" ||
-        hashType === "recovery" ||
-        recovery === "1"
 
-      if (hashError || queryError) {
-        failRecovery()
-        return
-      }
+      // Lógica de decisión real en lib/auth/recovery-link.ts (testeada ahí
+      // con casos de válido/vencido/ya utilizado/token_hash ausente/type
+      // incorrecto/error de Supabase) -- acá sólo se arman los parámetros
+      // desde la URL y se aplica el resultado al estado de la pantalla.
+      const resolution = await resolveRecoveryLink(
+        supabase.auth,
+        {
+          code: searchParams.get("code"),
+          tokenHash: searchParams.get("token_hash"),
+          type: searchParams.get("type"),
+          recovery: searchParams.get("recovery"),
+          accessToken: hashParams.get("access_token"),
+          refreshToken: hashParams.get("refresh_token"),
+          hashType: hashParams.get("type"),
+          hashError:
+            hashParams.get("error_description") || hashParams.get("error"),
+          queryError:
+            searchParams.get("error_description") ||
+            searchParams.get("error"),
+        },
+        hasRecoveryMarker,
+      )
 
-      if (code) {
-        const { error: exchangeError } =
-          await supabase.auth.exchangeCodeForSession(code)
+      if (!mounted) return
 
-        if (exchangeError) {
-          failRecovery()
-          return
-        }
-
-        await markValidRecovery()
-        window.history.replaceState(null, "", "/reset-password")
-        return
-      }
-
-      if (tokenHash && type === "recovery") {
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type: "recovery",
-        })
-
-        if (verifyError) {
-          failRecovery()
-          return
-        }
-
-        await markValidRecovery()
-        window.history.replaceState(null, "", "/reset-password")
-        return
-      }
-
-      if (accessTokenParam && refreshToken) {
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: accessTokenParam,
-          refresh_token: refreshToken,
-        })
-
-        if (sessionError) {
-          failRecovery()
-          return
-        }
-
-        await markValidRecovery()
-        window.history.replaceState(null, "", "/reset-password")
-        return
-      }
-
-      const { data: existingData } = await supabase.auth.getSession()
-
-      if (existingData.session && (hasRecoveryMarker || hasRecoveryToken)) {
-        await markValidRecovery()
+      if (resolution.status === "valid") {
+        localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
+        setAccessToken(resolution.accessToken)
+        setCanChangePassword(true)
+        setCheckingSession(false)
         window.history.replaceState(null, "", "/reset-password")
         return
       }

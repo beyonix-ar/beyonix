@@ -33,6 +33,7 @@ import {
   type EmailConfirmationEvent,
 } from "@/lib/auth/confirmation-events"
 import { FORGOT_PASSWORD_GENERIC_MESSAGE } from "@/lib/auth/forgot-password-messages"
+import { getSafeRedirect } from "@/lib/auth/safe-redirect"
 import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
@@ -42,12 +43,6 @@ import {
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
 import { formatDeliveryAddress } from "@/lib/delivery-address"
-
-function getSafeRedirect(redirect: string | null) {
-  if (!redirect || redirect.startsWith("/login")) return "/"
-  if (!redirect.startsWith("/")) return "/"
-  return redirect
-}
 
 // Cooldown del botón "Reenviar correo de confirmación": el mínimo real de
 // abuso lo aplica el servidor (ver lib/auth/resend-confirmation-rate-limit.ts);

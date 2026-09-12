@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { normalizeUsername } from "@/lib/auth/username"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 function getBearerToken(request: Request) {
@@ -135,7 +136,7 @@ export async function PATCH(request: Request) {
   const currentDni = onlyDigits(currentProfile?.dni ?? user.user_metadata?.dni, 8) ?? ""
 
   if (optionalText(body.name) !== undefined) payload.nombre = optionalText(body.name)
-  if (optionalText(body.username) !== undefined) payload.username = optionalText(body.username)
+  if (normalizeUsername(body.username) !== undefined) payload.username = normalizeUsername(body.username)
   if (optionalText(body.phone) !== undefined) payload.telefono = optionalText(body.phone)
   if (optionalText(body.street) !== undefined) payload.calle = optionalText(body.street)
   if (optionalText(body.streetNumber) !== undefined) payload.numero = optionalText(body.streetNumber)
@@ -196,6 +197,17 @@ export async function PATCH(request: Request) {
   }
 
   if (updateResult.error || !updateResult.data) {
+    // 23505 = unique_violation. Con profiles_username_lower_unique (ver
+    // migración 20260912120000) esto pasa a ser alcanzable desde acá si dos
+    // cuentas intentan el mismo username (case-insensitive): nunca se debe
+    // mostrar el mensaje crudo de Postgres.
+    if (updateResult.error?.code === "23505") {
+      return NextResponse.json(
+        { error: "Ese nombre de usuario ya está en uso." },
+        { status: 409 },
+      )
+    }
+
     return NextResponse.json(
       { error: updateResult.error?.message || "No se pudo guardar el perfil." },
       { status: 500 },

@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react"
 
+import { normalizeUsername } from "@/lib/auth/username"
 import {
   clearSupabaseBrowserSession,
   getSafeSupabaseSession,
@@ -891,138 +892,96 @@ export function AuthProvider({
       }> => {
         localStorage.removeItem(PASSWORD_RECOVERY_KEY)
 
-        const normalizedIdentifier =
-          identifier.trim().toLowerCase()
+        loginInProgress.current = true
 
-        let loginEmail =
-          normalizedIdentifier
+        // Resolución identificador (email o username) -> cuenta y
+        // verificación de contraseña, 100% server-side (ver
+        // lib/auth/login.ts). Antes esto llamaba a
+        // supabase.rpc("get_profile_email_by_username", ...) directo desde
+        // acá con la anon key: esa función estaba otorgada a
+        // anon/authenticated, así que cualquiera podía resolver el email
+        // real de cualquier username sin autenticarse (ver migración
+        // 20260912120000_lock_username_email_rpc_and_unique_username). El
+        // navegador ahora nunca ve el email resuelto ni puede distinguir
+        // "no existe" de "contraseña incorrecta".
+        let response: Response
 
-        if (!normalizedIdentifier.includes("@")) {
-          const {
-            data: profileEmail,
-            error: profileError,
-          } = await supabase
-            .rpc("get_profile_email_by_username", {
-              username_input: normalizedIdentifier,
-            })
-
-          if (profileError || !profileEmail) {
-            return {
-              ok: false,
-              error:
-                "No existe una cuenta con ese nombre de usuario.",
-            }
-          }
-
-          loginEmail =
-            String(profileEmail).trim().toLowerCase()
-        }
-
-        const { data: isBlocked } =
-          await supabase.rpc(
-            "is_client_registration_blocked",
-            {
-              email_input: loginEmail.includes("@") ? loginEmail : null,
-              username_input: normalizedIdentifier.includes("@")
-                ? null
-                : normalizedIdentifier,
-              phone_input: null,
-            }
-          )
-
-        if (isBlocked) {
+        try {
+          response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifier, password }),
+          })
+        } catch {
+          loginInProgress.current = false
           return {
             ok: false,
-            error:
-              "Esta cuenta no puede acceder a la tienda.",
+            error: "No se pudo iniciar sesión. Revisá tu conexión.",
           }
         }
 
-        loginInProgress.current = true
+        const data = (await response.json().catch(() => null)) as {
+          ok?: boolean
+          error?: string
+          session?: { access_token: string; refresh_token: string }
+        } | null
+
+        if (!response.ok || !data?.ok || !data.session) {
+          loginInProgress.current = false
+          return {
+            ok: false,
+            error: data?.error || "Ocurrió un error al iniciar sesión.",
+          }
+        }
+
         recordSessionStartedAt()
         recordAuthActivity()
 
-        const {
-          data,
-          error,
-        } =
-          await supabase.auth.signInWithPassword(
-            {
-              email:
-                loginEmail,
+        const { data: sessionData, error: setSessionError } =
+          await supabase.auth.setSession(data.session)
 
-              password,
-            }
-          )
-
-        if (error) {
+        if (setSessionError || !sessionData.user) {
           loginInProgress.current = false
           clearAuthActivity()
 
-          if (
-            error.code === "email_not_confirmed" ||
-            error.message.toLowerCase().includes("email not confirmed")
-          ) {
-            return {
-              ok: false,
-              error:
-                "Tenés que confirmar tu correo antes de iniciar sesión.",
-            }
+          return {
+            ok: false,
+            error: "Ocurrió un error al iniciar sesión.",
           }
+        }
 
-          if (
-            error.message.includes(
-              "Invalid login"
-            )
-          ) {
-            return {
-              ok: false,
+        const supabaseUser = sessionData.user
 
-              error:
-                "Email, usuario o contraseña incorrectos.",
-            }
-          }
+        if (!isEmailConfirmed(supabaseUser)) {
+          await supabase.auth.signOut()
+          loginInProgress.current = false
+          clearAuthActivity()
+          setUser(null)
 
           return {
             ok: false,
-
             error:
-              "Ocurrió un error al iniciar sesión.",
+              "Tenés que confirmar tu correo antes de iniciar sesión.",
           }
         }
 
-        if (data.user) {
-          if (!isEmailConfirmed(data.user)) {
-            await supabase.auth.signOut()
-            loginInProgress.current = false
-            clearAuthActivity()
-            setUser(null)
+        if (!isAccountActivated(supabaseUser)) {
+          await supabase.auth.signOut()
+          loginInProgress.current = false
+          clearAuthActivity()
+          setUser(null)
 
-            return {
-              ok: false,
-              error:
-                "Tenés que confirmar tu correo antes de iniciar sesión.",
-            }
+          return {
+            ok: false,
+            error:
+              "Tenés que completar la activación desde el botón del correo antes de iniciar sesión.",
           }
-
-          if (!isAccountActivated(data.user)) {
-            await supabase.auth.signOut()
-            loginInProgress.current = false
-            clearAuthActivity()
-            setUser(null)
-
-            return {
-              ok: false,
-              error:
-                "Tenés que completar la activación desde el botón del correo antes de iniciar sesión.",
-            }
-          }
-
-          await loadProfile(
-            data.user,
-            data.session!.access_token
-          )
         }
+
+        await loadProfile(
+          supabaseUser,
+          sessionData.session!.access_token
+        )
 
         loginInProgress.current = false
 
@@ -1092,7 +1051,7 @@ export function AuthProvider({
               email_input:
                 form.email.trim().toLowerCase(),
               username_input:
-                form.username.trim().toLowerCase(),
+                normalizeUsername(form.username) ?? "",
               phone_input:
                 form.phone?.trim() ?? "",
             }
@@ -1107,7 +1066,10 @@ export function AuthProvider({
         }
 
         registrationInProgress.current = true
-        const username = form.username.trim().toLowerCase()
+        // Misma normalización (trim + lowercase) que app/api/auth/profile/route.ts
+        // (PATCH) y que get_profile_email_by_username()/el índice
+        // profiles_username_lower_unique -- ver lib/auth/username.ts.
+        const username = normalizeUsername(form.username) ?? ""
         const email = form.email.trim().toLowerCase()
         const emailRedirectTo =
           typeof window !== "undefined"

@@ -5,8 +5,19 @@ import test from "node:test"
 const TEMPLATE = readFileSync("supabase/email-templates/reset-password.html", "utf8")
 const README = readFileSync("supabase/email-templates/README.md", "utf8")
 
-test("el template usa la variable oficial de Supabase para el link, no una URL armada a mano", () => {
-  assert.match(TEMPLATE, /\{\{\s*\.ConfirmationURL\s*\}\}/)
+test("el template usa variables oficiales de Supabase (SiteURL + TokenHash) para el link, no una URL armada a mano ni ConfirmationURL", () => {
+  // ConfirmationURL (endpoint hosteado de Supabase, GET de un solo uso) es
+  // la causa real auditada del enlace "vencido a los segundos": cualquier
+  // escaneo automático de enlaces del lado del destinatario lo sigue y
+  // consume el token antes de que la persona lo abra. Ver
+  // supabase/email-templates/README.md, sección "IMPORTANTE". Se chequea
+  // sobre el HTML SIN comentarios: el comentario que documenta esta
+  // decisión menciona ConfirmationURL a propósito, pero es invisible en el
+  // email real -- lo que importa es que no aparezca en ningún href/src.
+  const withoutCommentsPreview = TEMPLATE.replace(/<!--[\s\S]*?-->/g, "")
+  assert.doesNotMatch(withoutCommentsPreview, /\{\{\s*\.ConfirmationURL\s*\}\}/)
+  assert.match(TEMPLATE, /\{\{\s*\.SiteURL\s*\}\}/)
+  assert.match(TEMPLATE, /\{\{\s*\.TokenHash\s*\}\}/)
 
   // Se ignoran namespaces XML estándar del <html> (xmlns="http://www.w3.org/1999/xhtml"),
   // que no son links de la app -- sólo importa que ningún href/src apunte a
@@ -17,8 +28,8 @@ test("el template usa la variable oficial de Supabase para el link, no una URL a
   for (const value of hrefAndSrcValues) {
     assert.match(
       value,
-      /\{\{\s*\.ConfirmationURL\s*\}\}/,
-      `href/src hardcodeado en vez de la variable oficial: ${value}`,
+      /^\{\{ \.SiteURL \}\}\/reset-password\?token_hash=\{\{ \.TokenHash \}\}&type=recovery$/,
+      `href/src hardcodeado en vez de las variables oficiales: ${value}`,
     )
   }
 })
@@ -57,12 +68,14 @@ test("NO hay fallback textual con el link visible: el botón es el único CTA (p
   assert.doesNotMatch(flat, /copi[aá] y peg[aá] este enlace/i)
   assert.doesNotMatch(flat, /en tu navegador/i)
 
-  // La variable oficial aparece EXACTAMENTE una vez en el HTML que
+  // La URL de recuperación aparece EXACTAMENTE una vez en el HTML que
   // realmente se renderiza (el href del botón) -- ninguna segunda vez como
   // texto visible. Los comentarios de documentación que la MENCIONEN (para
   // explicar la decisión) no cuentan: son invisibles en el email real.
-  const confirmationUrlOccurrences = (RENDERED_TEMPLATE.match(/\{\{\s*\.ConfirmationURL\s*\}\}/g) ?? []).length
-  assert.equal(confirmationUrlOccurrences, 1, "ConfirmationURL sólo debe usarse en el href del botón")
+  const recoveryLinkOccurrences = (
+    RENDERED_TEMPLATE.match(/\{\{ \.SiteURL \}\}\/reset-password\?token_hash=/g) ?? []
+  ).length
+  assert.equal(recoveryLinkOccurrences, 1, "el link de recuperación sólo debe usarse en el href del botón")
 })
 
 test("no aparece 'localhost', querystring, ni ninguna URL técnica como texto visible", () => {
