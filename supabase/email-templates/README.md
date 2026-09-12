@@ -87,9 +87,17 @@ nuestro código:
 - **Reset Password** → `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`
   Consumido por `app/reset-password/page.tsx` (vía `lib/auth/recovery-link.ts`),
   ya soporta este formato sin cambios.
-- **Confirm signup** → `{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=signup`
+- **Confirm signup** → `{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=email`
   Consumido por `app/confirmar-email/page.tsx`, ya soporta `token_hash` +
-  `type=signup` sin cambios (`CONFIRMATION_OTP_TYPES` incluye `"signup"`).
+  `type=email` sin cambios (`CONFIRMATION_OTP_TYPES` incluye `"email"`).
+  **Es `type=email`, NO `type=signup`** — aunque el flujo sea "confirmación
+  de signup", la API real de Supabase (`verifyOtp` por `token_hash`) exige
+  `type=email` para este caso; `type=signup` devuelve el mismo error
+  genérico que un token vencido/ya usado aunque el token sea válido y
+  recién emitido (bug real auditado y corregido 2026-09-13, ver
+  `lib/auth/confirmation-link.ts`). `resend({ type: "signup" })` (reenvío,
+  arriba) es una API distinta y ahí sí corresponde `"signup"` — son dos
+  parámetros con el mismo nombre pero significado distinto según el método.
 
 Esta tarea **no modificó ninguna de esas dos rutas** — sólo se preparó el
 HTML del email para apuntar al formato que esas rutas ya sabían recibir.
@@ -106,7 +114,7 @@ Ambos templates usan únicamente:
 - `{{ .TokenHash }}` — el OTP hasheado, específico de cada tipo de email
   (Supabase genera un `TokenHash` distinto para `recovery` y para `signup`).
 
-`type=recovery` y `type=signup` están hardcodeados como texto en cada
+`type=recovery` y `type=email` están hardcodeados como texto en cada
 template (no son variables) porque cada template sólo se envía para su
 propio flujo — no hace falta ni existe una variable de Supabase para eso.
 

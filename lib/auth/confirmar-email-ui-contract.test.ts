@@ -69,11 +69,16 @@ test("después de confirmar correctamente se sigue activando la cuenta vía /api
   assert.doesNotMatch(page, /admin\.updateUserById/)
 })
 
-test("estado de error muestra un mensaje claro, distinto del estado de éxito", () => {
+test("estado de error muestra un mensaje claro, distinto del estado de éxito, con una salida visible (volver al login)", () => {
   const page = source("app/confirmar-email/page.tsx")
 
   assert.match(page, /INVALID_LINK_MESSAGE/)
   assert.match(page, /No pudimos confirmar tu cuenta/)
+  // La pantalla de error no puede dejar al usuario sin ninguna acción: debe
+  // ofrecer un camino de vuelta (no inventa un endpoint de reenvío nuevo --
+  // el reenvío real ya vive en /login).
+  assert.match(page, /<Link\s*\n?\s*href="\/login"/)
+  assert.match(page, /Volver al inicio de sesión/)
 })
 
 test("el token/access_token nunca se pasa a console.log/error/warn/info en este flujo", () => {
@@ -89,7 +94,7 @@ test("el token/access_token nunca se pasa a console.log/error/warn/info en este 
   }
 })
 
-test("lib/auth/confirmation-link.ts soporta token_hash+type=signup llamando a verifyOtp (formato que manda el email hoy)", () => {
+test("lib/auth/confirmation-link.ts soporta token_hash+type=email llamando a verifyOtp (formato que manda el email hoy)", () => {
   const confirmationLink = source("lib/auth/confirmation-link.ts")
 
   assert.match(confirmationLink, /auth\.verifyOtp\(\{/)
@@ -97,14 +102,20 @@ test("lib/auth/confirmation-link.ts soporta token_hash+type=signup llamando a ve
   assert.match(confirmationLink, /getConfirmationOtpType\(params\.type\)/)
 })
 
-test("el template de email de Confirm signup apunta a /confirmar-email con token_hash+type=signup, no a ConfirmationURL ni a app/auth/confirm", () => {
+test("el template de email de Confirm signup apunta a /confirmar-email con token_hash+type=email (NO type=signup), no a ConfirmationURL ni a app/auth/confirm", () => {
   const template = source("supabase/email-templates/confirm-signup.html")
 
   assert.doesNotMatch(template, /href="\{\{\s*\.ConfirmationURL\s*\}\}"/)
   assert.doesNotMatch(template, /\/auth\/confirm\?/)
+  // Bug real auditado y corregido 2026-09-13: type=signup en verifyOtp por
+  // token_hash devuelve "Token has expired or is invalid" aunque el token
+  // sea válido y recién emitido -- la API real de Supabase exige type=email
+  // para este caso (confirmado contra la documentación oficial). El href no
+  // debe volver a usar type=signup.
+  assert.doesNotMatch(template, /href="[^"]*&type=signup"/)
   assert.match(
     template,
-    /href="\{\{ \.SiteURL \}\}\/confirmar-email\?token_hash=\{\{ \.TokenHash \}\}&type=signup"/,
+    /href="\{\{ \.SiteURL \}\}\/confirmar-email\?token_hash=\{\{ \.TokenHash \}\}&type=email"/,
   )
 })
 
@@ -177,12 +188,12 @@ test("/confirmar-email es la única ruta que consume el token_hash/code de Confi
 
   assert.match(
     template,
-    /href="\{\{ \.SiteURL \}\}\/confirmar-email\?token_hash=\{\{ \.TokenHash \}\}&type=signup"/,
+    /href="\{\{ \.SiteURL \}\}\/confirmar-email\?token_hash=\{\{ \.TokenHash \}\}&type=email"/,
   )
   // Única ocurrencia del link real (además de los comentarios explicativos,
   // ya cubiertos por el otro test de este archivo): un solo botón/CTA.
   const hrefs = [...template.matchAll(/href="([^"]*)"/g)].map((m) => m[1])
   assert.deepEqual(hrefs, [
-    "{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=signup",
+    "{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=email",
   ])
 })

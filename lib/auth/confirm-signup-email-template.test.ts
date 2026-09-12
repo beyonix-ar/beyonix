@@ -31,7 +31,7 @@ test("el template usa variables oficiales de Supabase (SiteURL + TokenHash) para
   for (const value of hrefAndSrcValues) {
     assert.match(
       value,
-      /^\{\{ \.SiteURL \}\}\/confirmar-email\?token_hash=\{\{ \.TokenHash \}\}&type=signup$/,
+      /^\{\{ \.SiteURL \}\}\/confirmar-email\?token_hash=\{\{ \.TokenHash \}\}&type=email$/,
       `href/src hardcodeado en vez de las variables oficiales: ${value}`,
     )
   }

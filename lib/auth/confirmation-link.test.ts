@@ -54,15 +54,15 @@ function createFakeAuth(options: FakeAuthOptions = {}) {
   return { auth, calls }
 }
 
-// --- 1. token_hash + type=signup válido ---
+// --- 1. token_hash + type=email válido (formato real del email hoy) ---
 
-test("token_hash + type=signup válido: verifyOtp se llama una sola vez con type=signup y resuelve 'confirmed' con accessToken/userId", async () => {
+test("token_hash + type=email válido: verifyOtp se llama una sola vez con type=email y resuelve 'confirmed' con accessToken/userId", async () => {
   const { auth, calls } = createFakeAuth()
 
   const result = await resolveConfirmationLink(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "abc123",
-    type: "signup",
+    type: "email",
   })
 
   assert.deepEqual(result, {
@@ -71,11 +71,21 @@ test("token_hash + type=signup válido: verifyOtp se llama una sola vez con type
     userId: "user-123",
   })
   assert.equal(calls.verifyOtp.length, 1)
-  assert.deepEqual(calls.verifyOtp[0], { token_hash: "abc123", type: "signup" })
+  assert.deepEqual(calls.verifyOtp[0], { token_hash: "abc123", type: "email" })
   assert.equal(calls.exchangeCodeForSession.length, 0)
 })
 
-test("token_hash SIN type (o type desconocido): por defecto se trata como signup (único flujo que se usa hoy)", async () => {
+// --- Bug real auditado y corregido 2026-09-13: verifyOtp con type=signup
+// (en vez de type=email) para verificar por token_hash el OTP de Confirm
+// Signup devuelve "Token has expired or is invalid" en la API real de
+// Supabase, incluso con un token válido y recién emitido -- confirmado
+// contra la documentación oficial de Supabase (guía "Password-based Auth"/
+// server-side Next.js: el template recomendado usa exactamente
+// `type=email`, no `type=signup`) y contra discusiones de la comunidad que
+// reproducen el mismo requisito. Este test fija el default correcto para
+// que no se reintroduzca sin que se note.
+
+test("token_hash SIN type (o type desconocido): por defecto se trata como email -- NUNCA como signup (causa real del 'enlace vencido' con un token recién emitido)", async () => {
   const { auth, calls } = createFakeAuth()
 
   const result = await resolveConfirmationLink(auth, {
@@ -85,7 +95,7 @@ test("token_hash SIN type (o type desconocido): por defecto se trata como signup
   })
 
   assert.equal(result.status, "confirmed")
-  assert.deepEqual(calls.verifyOtp[0], { token_hash: "abc123", type: "signup" })
+  assert.deepEqual(calls.verifyOtp[0], { token_hash: "abc123", type: "email" })
 })
 
 test("?code= (PKCE) válido: exchangeCodeForSession se llama una sola vez y resuelve 'confirmed'", async () => {
@@ -112,7 +122,7 @@ test("token de signup VENCIDO o YA UTILIZADO: verifyOtp devuelve error -> resuel
   const result = await resolveConfirmationLink(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "vencido",
-    type: "signup",
+    type: "email",
   })
 
   assert.deepEqual(result, { status: "invalid" })
@@ -151,7 +161,7 @@ test("si verifyOtp no devuelve error pero tampoco sesión: igual resuelve 'inval
   const result = await resolveConfirmationLink(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "hash",
-    type: "signup",
+    type: "email",
   })
 
   assert.deepEqual(result, { status: "invalid" })
@@ -163,7 +173,7 @@ test("si verifyOtp no devuelve error pero tampoco usuario: igual resuelve 'inval
   const result = await resolveConfirmationLink(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "hash",
-    type: "signup",
+    type: "email",
   })
 
   assert.deepEqual(result, { status: "invalid" })
@@ -176,10 +186,30 @@ test("con token_hash Y code presentes a la vez: usa token_hash, nunca llama a ex
 
   await resolveConfirmationLink(auth, {
     tokenHash: "unico",
-    type: "signup",
+    type: "email",
     code: "no-deberia-usarse",
   })
 
   assert.equal(calls.verifyOtp.length, 1)
   assert.equal(calls.exchangeCodeForSession.length, 0)
+})
+
+// --- 6. type=signup explícito en la URL: se respeta tal cual llega (pass-through) ---
+
+test("si la URL trae explícitamente type=signup (link viejo, no el que manda el template actual): se pasa tal cual a verifyOtp, no se reinterpreta como email", async () => {
+  const { auth, calls } = createFakeAuth()
+
+  await resolveConfirmationLink(auth, {
+    ...EMPTY_PARAMS,
+    tokenHash: "abc123",
+    type: "signup",
+  })
+
+  // Comportamiento de pass-through documentado: esta función no reescribe
+  // un `type` reconocido que ya viene en la URL, sólo aplica el default
+  // (`email`) cuando falta o es desconocido. Un link con type=signup
+  // realmente enviado seguiría fallando contra la API real de Supabase
+  // -- por eso el template (supabase/email-templates/confirm-signup.html)
+  // es la pieza que se corrigió para nunca generar ese valor.
+  assert.deepEqual(calls.verifyOtp[0], { token_hash: "abc123", type: "signup" })
 })

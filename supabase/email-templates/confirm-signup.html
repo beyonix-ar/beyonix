@@ -100,7 +100,7 @@
                     <tr>
                       <td align="center" bgcolor="#112A43" style="border-radius:12px;background-color:#112A43;border:1px solid rgba(140,200,242,0.45);">
                         <a
-                          href="{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=signup"
+                          href="{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=email"
                           target="_blank"
                           style="display:inline-block;padding:14px 36px;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#F8FAFC;text-decoration:none;border-radius:12px;"
                         >
@@ -127,7 +127,7 @@
                     reenvíos, hombro sobre el hombro). El único CTA es el
                     botón de arriba.
 
-                    El href usa {{ .SiteURL }}/confirmar-email?token_hash=...&type=signup
+                    El href usa {{ .SiteURL }}/confirmar-email?token_hash=...&type=email
                     (NO {{ .ConfirmationURL }}): ConfirmationURL apunta al
                     endpoint de Supabase (<proyecto>.supabase.co/auth/v1/verify),
                     que consume el token de un solo uso con un simple GET --
@@ -140,8 +140,18 @@
                     página no ejecuta JS y no consume el token; recién se
                     consume cuando /confirmar-email llama a verifyOtp() en el
                     navegador real (ver app/confirmar-email/page.tsx, que ya
-                    soporta este formato -- token_hash + type=signup -- sin
+                    soporta este formato -- token_hash + type=email -- sin
                     cambios necesarios ahí).
+
+                    type=email (no type=signup) es el valor que exige la API
+                    real de Supabase Auth para verificar por token_hash el
+                    OTP que emite el signup -- confirmado contra la
+                    documentación oficial de Supabase (guía "Password-based
+                    Auth" / server-side Next.js) y contra la firma real de
+                    verifyOtp en el SDK instalado. type=signup en este mismo
+                    endpoint devuelve "Token has expired or is invalid" (el
+                    mismo error genérico que un token vencido o ya usado)
+                    aunque el token sea válido y recién emitido.
                   -->
                   <p style="margin:0;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:rgba(248,250,252,0.46);text-align:center;">
                     Si no creaste una cuenta en BEYONIX, podés ignorar este correo.

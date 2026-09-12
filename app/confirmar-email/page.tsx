@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react"
 
@@ -194,9 +195,18 @@ function ConfirmEmailContent() {
           </h1>
 
           {error ? (
-            <p className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              {error}
-            </p>
+            <>
+              <p className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                {error}
+              </p>
+
+              <Link
+                href="/login"
+                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50"
+              >
+                Volver al inicio de sesión
+              </Link>
+            </>
           ) : confirmed ? (
             <>
               <p className="mt-3 text-sm leading-6 text-white/60">
@@ -208,7 +218,7 @@ function ConfirmEmailContent() {
               <button
                 type="button"
                 onClick={() => window.close()}
-                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90"
+                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50"
               >
                 Cerrar esta pestaña
               </button>
@@ -225,7 +235,7 @@ function ConfirmEmailContent() {
                 aria-label="Confirmar mi cuenta"
                 onClick={handleConfirmClick}
                 disabled={confirming}
-                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {confirming ? (
                   <Loader2 className="size-4 animate-spin" />

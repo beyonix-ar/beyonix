@@ -867,8 +867,8 @@ function LoginContent() {
         {confirmationEmail ? (
           <div className="login-light-scope login-card relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/26 bg-[linear-gradient(145deg,rgba(12,22,33,0.98),rgba(5,10,16,0.98))] p-6 text-center shadow-[0_30px_90px_rgba(0,0,0,0.5)] sm:p-9">
             <div className="pointer-events-none absolute inset-x-12 top-0 h-px bg-gradient-to-r from-transparent via-beyonix-sky/70 to-transparent" />
-            <div className="mx-auto flex size-16 items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-500/10 shadow-[0_0_28px_rgba(52,211,153,0.1)]">
-              <CheckCircle2 className="size-10 text-emerald-400" strokeWidth={2.25} />
+            <div className="mx-auto flex size-16 items-center justify-center rounded-2xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] shadow-[0_0_28px_rgba(52,211,153,0.1)]">
+              <CheckCircle2 className="size-10 text-[var(--account-success-text)]" strokeWidth={2.25} />
             </div>
 
             <h1 className="mt-5 text-2xl font-bold text-white sm:text-3xl">
@@ -885,7 +885,7 @@ function LoginContent() {
 
             {!confirmationValidated && (
               <>
-                <p className="login-light-scope mt-2 rounded-xl border border-white/8 bg-black px-4 py-3 text-sm font-semibold text-white">
+                <p className="login-light-scope mt-2 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-4 py-3 text-sm font-semibold text-[var(--account-text-primary)]">
                   {confirmationEmail}
                 </p>
 
@@ -894,7 +894,7 @@ function LoginContent() {
                   tenés que abrir el correo de confirmación y validar tu email.
                 </p>
 
-                <p className="mt-3 text-xs leading-5 text-emerald-300/75">
+                <p className="mt-3 text-xs leading-5 font-medium text-[var(--account-success-text)]">
                   Dejá esta pestaña abierta. Cuando confirmes el correo,
                   iniciaremos tu sesión automáticamente y te llevaremos al
                   inicio.
@@ -909,7 +909,7 @@ function LoginContent() {
                   type="button"
                   onClick={handleResendConfirmation}
                   disabled={resendingEmail || resendCooldown > 0}
-                  className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/12 bg-white/5 text-sm font-semibold text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] text-sm font-semibold text-[var(--account-text-primary)] transition-colors duration-200 hover:border-[var(--account-accent)] hover:bg-[var(--account-accent)] hover:text-white active:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--account-border)] disabled:hover:bg-[var(--account-surface-raised)] disabled:hover:text-[var(--account-text-primary)]"
                 >
                   {resendingEmail ? (
                     <Loader2 className="size-4 animate-spin" />
@@ -928,8 +928,10 @@ function LoginContent() {
             {resendMessage && (
               <p
                 role="status"
-                className={`mt-3 text-xs leading-5 ${
-                  resendMessageIsError ? "text-red-400" : "text-emerald-400"
+                className={`mt-3 text-xs leading-5 font-medium ${
+                  resendMessageIsError
+                    ? "text-[var(--account-danger-text)]"
+                    : "text-[var(--account-success-text)]"
                 }`}
               >
                 {resendMessage}
@@ -950,7 +952,7 @@ function LoginContent() {
                 setMode("login")
                 router.replace("/login", { scroll: false })
               }}
-              className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl text-sm font-semibold text-[var(--account-text-secondary)] underline decoration-2 decoration-transparent underline-offset-4 transition-colors duration-200 hover:text-[var(--account-accent)] hover:decoration-[var(--account-accent)] active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Volver al inicio de sesión
             </button>

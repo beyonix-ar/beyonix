@@ -6,8 +6,16 @@
  * cliente de auth fake, sin navegador.
  *
  * Soporta los dos formatos que puede traer el link:
- * 1. `?token_hash=...&type=signup` (el que manda hoy el email de BEYONIX,
- *    ver supabase/email-templates/confirm-signup.html) -> verifyOtp
+ * 1. `?token_hash=...&type=email` (el que manda hoy el email de BEYONIX,
+ *    ver supabase/email-templates/confirm-signup.html) -> verifyOtp.
+ *    IMPORTANTE: es `type=email`, NO `type=signup` -- confirmado contra la
+ *    documentación oficial de Supabase (guía "Password-based Auth"/
+ *    server-side Next.js) y la firma real de `verifyOtp` del SDK instalado.
+ *    `type=signup` en este mismo endpoint (verificación por `token_hash` de
+ *    un OTP de confirmación de cuenta) devuelve el mismo error genérico
+ *    "Token has expired or is invalid" que un token vencido o ya usado,
+ *    incluso con un token recién emitido y válido -- causa real auditada
+ *    del "enlace vencido" reportado 2026-09-13.
  * 2. `?code=...` (PKCE) -> exchangeCodeForSession
  *
  * `type=recovery` NO se maneja acá: app/confirmar-email/page.tsx lo
@@ -24,11 +32,15 @@ const CONFIRMATION_OTP_TYPES = new Set<ConfirmationOtpType>([
   "magiclink",
 ])
 
-/** Si el `type` de la URL no es uno de los conocidos, Confirm signup es el caso por defecto (el único que se usa hoy). */
+/**
+ * Si el `type` de la URL no es uno de los conocidos, se asume `email`: es el
+ * valor real que usa hoy Confirm Signup (el único flujo que se usa) para
+ * verificar por `token_hash` -- NO `signup` (ver comentario del archivo).
+ */
 export function getConfirmationOtpType(type: string | null): ConfirmationOtpType {
   return type && CONFIRMATION_OTP_TYPES.has(type as ConfirmationOtpType)
     ? (type as ConfirmationOtpType)
-    : "signup"
+    : "email"
 }
 
 export interface ConfirmationLinkParams {

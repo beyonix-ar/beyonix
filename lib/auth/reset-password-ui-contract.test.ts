@@ -182,6 +182,61 @@ test("las alertas de error/éxito del login usan los tokens semánticos --accoun
   assert.doesNotMatch(login, /border-red-500\/20 bg-red-500\/10/)
 })
 
+// --- Contraste de la tarjeta "Usuario creado con éxito" (reporte real de usuario, 2026-09-13) ---
+
+test("la tarjeta de confirmación pendiente ('Usuario creado con éxito') usa --account-success-* para el ícono y el mensaje verde, no emerald plano de baja opacidad", () => {
+  const login = source("app/login/page.tsx")
+
+  const cardStart = login.indexOf("Usuario creado con éxito")
+  assert.ok(cardStart >= 0)
+  const cardBlock = login.slice(cardStart - 1200, cardStart + 4000)
+
+  // Ícono superior (check verde).
+  assert.match(cardBlock, /border-\[var\(--account-success-border\)\]/)
+  assert.match(cardBlock, /bg-\[var\(--account-success-bg\)\]/)
+  assert.match(cardBlock, /text-\[var\(--account-success-text\)\]/)
+
+  // Mensaje "Dejá esta pestaña abierta...": ya no el verde pastel ilegible
+  // sobre fondo claro (Light mode no remapea text-emerald-*, sólo
+  // text-white/* -- ver app/globals.css, sección LOGIN/REGISTRO EN LIGHT).
+  assert.doesNotMatch(cardBlock, /text-emerald-300\/75/)
+
+  // Feedback del reenvío (éxito/error) también con tokens semánticos.
+  assert.match(cardBlock, /text-\[var\(--account-danger-text\)\]/)
+})
+
+test("el botón 'Reenviar correo de confirmación' tiene borde/fondo visibles en reposo, hover azul BEYONIX (#112A43 vía --account-accent) con texto blanco, y focus-visible", () => {
+  const login = source("app/login/page.tsx")
+
+  const buttonIndex = login.indexOf("onClick={handleResendConfirmation}")
+  assert.ok(buttonIndex >= 0)
+  const buttonBlock = login.slice(buttonIndex, buttonIndex + 1200)
+
+  assert.match(buttonBlock, /border-\[var\(--account-border\)\]/)
+  assert.match(buttonBlock, /bg-\[var\(--account-surface-raised\)\]/)
+  assert.match(buttonBlock, /text-\[var\(--account-text-primary\)\]/)
+  assert.match(buttonBlock, /hover:bg-\[var\(--account-accent\)\]/)
+  assert.match(buttonBlock, /hover:text-white/)
+  assert.match(buttonBlock, /focus-visible:ring-2/)
+  // El cooldown/disabled sigue intacto y se distingue claramente (no debe
+  // quedar con el hover azul encendido mientras está deshabilitado).
+  assert.match(buttonBlock, /disabled=\{resendingEmail \|\| resendCooldown > 0\}/)
+  assert.match(buttonBlock, /disabled:opacity-50/)
+  assert.match(buttonBlock, /disabled:hover:bg-\[var\(--account-surface-raised\)\]/)
+})
+
+test("'Volver al inicio de sesión' (tarjeta de confirmación pendiente) es una acción secundaria (texto/underline), no un segundo botón sólido compitiendo con 'Reenviar correo'", () => {
+  const login = source("app/login/page.tsx")
+
+  const linkIndex = login.indexOf('aria-label="Volver al inicio de sesión"')
+  assert.ok(linkIndex >= 0)
+  const linkBlock = login.slice(linkIndex, linkIndex + 1100)
+
+  assert.doesNotMatch(linkBlock, /bg-white text-black/)
+  assert.match(linkBlock, /hover:text-\[var\(--account-accent\)\]/)
+  assert.match(linkBlock, /focus-visible:ring-2/)
+})
+
 test("los tokens --account-success-*/--account-danger-* tienen valores distintos (y por lo tanto contraste real) en Light y Dark", () => {
   const css = source("app/globals.css")
 

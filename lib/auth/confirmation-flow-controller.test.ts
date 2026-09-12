@@ -51,13 +51,13 @@ function createFakeAuth(options: FakeAuthOptions = {}) {
 
 // --- 1. abrir /confirmar-email NO llama verifyOtp ---
 
-test("token_hash + type=signup: needsConfirmation=true y verifyOtp NO se llama automáticamente (sólo al crear el controller)", () => {
+test("token_hash + type=email: needsConfirmation=true y verifyOtp NO se llama automáticamente (sólo al crear el controller)", () => {
   const { auth, calls } = createFakeAuth()
 
   const controller = createConfirmationLinkController(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "abc123",
-    type: "signup",
+    type: "email",
   })
 
   assert.equal(controller.needsConfirmation, true)
@@ -72,7 +72,7 @@ test("confirm() llamado una vez (un click) ejecuta verifyOtp exactamente una vez
   const controller = createConfirmationLinkController(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "abc123",
-    type: "signup",
+    type: "email",
   })
 
   const result = await controller.confirm()
@@ -92,7 +92,7 @@ test("doble click (confirm() llamado dos veces seguidas antes de resolver): veri
   const controller = createConfirmationLinkController(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "abc123",
-    type: "signup",
+    type: "email",
   })
 
   const [first, second] = await Promise.all([
@@ -109,7 +109,7 @@ test("confirm() llamado repetidas veces DESPUÉS de ya haber resuelto: sigue sin
   const controller = createConfirmationLinkController(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "abc123",
-    type: "signup",
+    type: "email",
   })
 
   await controller.confirm()
@@ -145,7 +145,7 @@ test("token vencido/ya usado: confirm() resuelve 'invalid' -- la página muestra
   const controller = createConfirmationLinkController(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "vencido",
-    type: "signup",
+    type: "email",
   })
 
   const result = await controller.confirm()
