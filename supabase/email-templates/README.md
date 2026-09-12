@@ -1,180 +1,166 @@
-# Emails de autenticación de BEYONIX — dónde viven y qué falta pegar
+# Emails de autenticación de BEYONIX
 
-## Dónde está esto hoy
+Esta carpeta versiona en Git los templates HTML que se pegan manualmente en
+**Supabase Dashboard > Authentication > Emails**. Supabase Auth dispara estos
+emails automáticamente (no hay código de la app que arme el HTML ni el
+subject); el repo es la fuente de verdad de qué HTML *debería* estar
+configurado, pero **el Dashboard no se sincroniza solo con Git** — cada
+cambio acá requiere volver a copiar el archivo a mano en el Dashboard para
+que tenga efecto en los emails reales.
 
-Se buscó en todo el repo un HTML propio para el email de confirmación de
-cuenta ("Confirm signup") y **no existe ninguno**: no hay `supabase/config.toml`
-con `[auth.email.template.*]`, y el envío del correo de confirmación lo
-dispara Supabase Auth automáticamente al llamar a `supabase.auth.signUp()`
-(ver `context/auth-context.tsx`) usando el template que esté configurado en
+## Qué template corresponde a cada flujo
 
-    Supabase Dashboard > Authentication > Emails > Confirm signup
+| Flujo (Dashboard)            | Archivo                    | ¿Se usa hoy? | Dispara desde |
+|-------------------------------|----------------------------|:---:|---|
+| **Reset Password**            | `reset-password.html`      | Sí  | `lib/auth/forgot-password.ts` → `admin.auth.resetPasswordForEmail()`, vía `app/api/auth/forgot-password/route.ts` |
+| **Confirm signup**             | `confirm-signup.html`      | Sí  | `context/auth-context.tsx` → `supabase.auth.signUp()`; reenvío en `lib/auth/resend-confirmation.ts` y `app/verificar-email/page.tsx` → `supabase.auth.resend({ type: "signup" })` |
+| Email Change / Invite / Magic Link / Reauthentication | *(no existen)* | No | No hay ningún flujo en el código que dispare estos emails. No se crearon templates para evitar archivos muertos. Si en el futuro se habilita alguno de estos flujos, crear el template en ese momento siguiendo el mismo lenguaje visual. |
 
-Es decir: **el HTML actual del email de confirmación vive únicamente en el
-Dashboard remoto de Supabase, no en este repositorio.** No se puede "leer"
-ni copiar desde acá, y por lo tanto no se pudo usar como referencia visual
-exacta como se pidió. Si ese template ya está personalizado con la marca
-BEYONIX, se ve sólo entrando al Dashboard.
+## Cómo aplicar un template (manual, en Supabase Dashboard)
 
-Mismo mecanismo para "Reset Password": `supabase.auth.resetPasswordForEmail()`
-(ahora llamado únicamente server-side, desde
-`lib/auth/forgot-password.ts` vía `app/api/auth/forgot-password/route.ts`)
-dispara el email de recuperación con el template que Supabase tenga
-configurado para `Reset Password`. Hoy ese template está en el default
-genérico de Supabase ("Reset your password") — de ahí el pedido de esta
-tarea.
+**Esto NO se ejecuta remotamente ni por CLI/migración — es un paso manual en el Dashboard.**
 
-## Qué se preparó
+### Reset Password
 
-`reset-password.html` en esta misma carpeta: documento HTML **completo**
-(con `<!DOCTYPE html>`, `<head>` propio con charset/viewport, y estructura
-100% basada en tablas con estilos inline — sin depender de que Supabase
-envuelva el contenido en nada) con la identidad visual de BEYONIX (fondo
-negro, acento azul de marca `#112A43`, tipografía Montserrat con fallback a
-fuentes de sistema — los clientes de email no cargan Google Fonts de forma
-confiable) y exactamente el contenido pedido:
-
-- Wordmark: **BEYONIX**
-- Título: **RESTABLECER CONTRASEÑA**
-- Texto: **Recibimos una solicitud para cambiar la contraseña de tu cuenta.**
-- Botón: **Crear nueva contraseña**
-- **Este enlace es personal y temporal. No lo compartas con nadie.**
-- **Si no solicitaste este cambio, podés ignorar este correo. Tu contraseña actual seguirá funcionando.**
-- Footer: **© BEYONIX** + aviso discreto de que es un correo automático.
-
-**Único CTA: el botón.** Deliberadamente NO hay un link de recuperación
-visible en texto plano como fallback: mostrarlo expondría el token en la URL
-a simple vista (capturas de pantalla, reenvíos, "mirar por encima del
-hombro"). El `href` del botón usa `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`
-(no `{{ .ConfirmationURL }}` -- ver el motivo más abajo, sección "IMPORTANTE").
-
-No incluye ningún dato sensible (ni email, ni username, ni nada que
-identifique la cuenta más allá de lo que Supabase ya agrega por variable).
-
-## Cómo aplicarlo (manual, en Supabase Dashboard)
-
-**Esto NO se ejecutó remotamente.** Pasos exactos:
-
-1. Ir a **Authentication > Emails > Reset Password** en el Dashboard del
-   proyecto de Supabase.
-2. **Subject**: reemplazar por
-
-   ```
-   Restablecer contraseña – BEYONIX
-   ```
-
-3. **Message body (HTML)**: reemplazar el contenido completo por **todo**
-   `supabase/email-templates/reset-password.html`, desde la primera línea
-   (`<!-- Template de Supabase Auth...`) hasta la última (`</html>`) —
-   incluido el `<!DOCTYPE html>` y el `<head>`.
+1. Ir a **Authentication > Emails > Reset Password**.
+2. **Subject**: `Restablecer contraseña – BEYONIX`.
+3. **Message body (HTML)**: reemplazar TODO el contenido por el archivo
+   completo `reset-password.html`, desde la primera línea (`<!-- Template de
+   Supabase Auth...`) hasta la última (`</html>`) — incluido `<!DOCTYPE
+   html>` y el `<head>`.
 4. Guardar.
 
-## IMPORTANTE — por qué el link cambió de `{{ .ConfirmationURL }}` a `{{ .SiteURL }}/reset-password?token_hash=...`
+### Confirm signup
 
-Causa real del enlace "vencido" a los pocos segundos de abrirlo (auditado
-2026-09-12): `{{ .ConfirmationURL }}` apunta al endpoint de Supabase
-(`<proyecto>.supabase.co/auth/v1/verify?token=...&type=recovery`), que
-consume el token de un solo uso con un simple `GET`. Cualquier escaneo
-automático de enlaces del lado del destinatario (Outlook Safe Links, gateways
-antispam corporativos, algunos proxies de email) sigue ese link apenas llega
-el correo -- típicamente en segundos -- y lo invalida antes de que la persona
-lo abra, sin importar cuántos minutos de vigencia tenga configurados el OTP
-en Supabase. No es un bug de estado en `app/reset-password/page.tsx` (se
-auditó completo: no hay doble consumo, no hay carrera con
-`detectSessionInUrl` porque está en `false`, y `window.history.replaceState`
-ya evita reintentos accidentales).
+1. Ir a **Authentication > Emails > Confirm signup**.
+2. **Subject**: `Confirmá tu cuenta – BEYONIX`.
+3. **Message body (HTML)**: reemplazar TODO el contenido por el archivo
+   completo `confirm-signup.html`, desde la primera línea hasta la última
+   (`</html>`) — incluido `<!DOCTYPE html>` y el `<head>`.
+4. Guardar.
 
-El nuevo link (`{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`)
-apunta directo a nuestro dominio en vez del endpoint de Supabase. Un
-rastreador que sólo hace `GET` sobre esa URL descarga HTML/JS pero no
-ejecuta React ni llama a `verifyOtp()` -- el token recién se consume cuando
-un navegador real carga la página y corre nuestro código (ya preparado para
-este formato). Esto no es una garantía absoluta (un escáner con navegador
-headless real seguiría consumiéndolo), pero elimina la causa más común y es
-el patrón que la propia documentación de Supabase recomienda para este
-problema.
-
-**Dos verificaciones adicionales en el Dashboard, no se pueden hacer desde
-código/CLI:**
-
-1. **Authentication > URL Configuration > Site URL** debe ser exactamente
-   `https://<tu-dominio-de-producción>` (sin `/` final, sin `localhost`).
-   `{{ .SiteURL }}` sale de este campo, NO de `NEXT_PUBLIC_SITE_URL` ni del
-   `redirectTo` que arma el servidor -- si este campo quedó en `localhost`
-   o desactualizado de alguna migración de dominio anterior, el link del
-   email apuntará mal aunque el resto del código esté bien.
-2. **Authentication > Providers > Email > Email OTP Expiration** (segundos):
-   confirmar que sea `>= 900` (15 min). Se pidió 30 min si no hay una razón
-   para menos → dejar `1800`. Esto es independiente de la causa real de arriba
-   (el link ya no debería morir a los segundos), pero define cuánto dura de
-   verdad un enlace que nadie abrió todavía.
-
-## Por qué el Subject sigue en inglés hasta que lo cambies vos en el Dashboard
+## Por qué el Subject sólo se puede cambiar en el Dashboard
 
 Verificado en el código, no supuesto:
 
-- `lib/auth/forgot-password.ts` es el ÚNICO lugar del repo que dispara este
-  email, con una sola llamada:
+- `lib/auth/forgot-password.ts` es el único lugar del repo que dispara el
+  email de Reset Password, con una sola llamada:
   `admin.auth.resetPasswordForEmail(email, { redirectTo })`.
-- La firma real de ese método (`node_modules/@supabase/auth-js`) es
-  `resetPasswordForEmail(email: string, options?: { redirectTo?: string; captchaToken?: string })`.
-  **No existe un parámetro de subject, de HTML, ni de "from".** No hay forma
-  de que el código de la app influya en el Subject o el cuerpo del correo.
-- El Subject y el HTML de cada tipo de email (Confirm signup, Reset
-  Password, etc.) son 100% propiedad de la configuración del proyecto en
-  Supabase, no del código de la app ni de este repositorio.
+- `context/auth-context.tsx` (`signUp()`), `lib/auth/resend-confirmation.ts`
+  y `app/verificar-email/page.tsx` (`auth.resend({ type: "signup" })`) son
+  los únicos lugares que disparan el email de Confirm signup.
+- Ninguna de esas firmas reales (`node_modules/@supabase/auth-js`) acepta un
+  parámetro de subject, de HTML, ni de "from". **No existe un parámetro de
+  subject** en ninguna de ellas — el Subject y el HTML de cada tipo de email
+  son 100% propiedad de la configuración del proyecto en Supabase, no del
+  código de la app ni de este repositorio.
 
 **Conclusión: mientras no entres a Authentication > Emails > Reset Password
-y cambies el campo Subject vos mismo, el correo real va a seguir diciendo
-"Reset your password" sin importar qué se cambie en el repo.** No hay
-ningún workaround de código para esto.
+(o > Confirm signup) y cambies el campo Subject vos mismo, el correo real va
+a seguir diciendo el subject que esté guardado ahí, sin importar qué se
+cambie en el repo.** No hay ningún workaround de código para esto.
 
-## Variables usadas (oficiales de Supabase, no inventadas)
+## ⚠️ NO reemplazar `token_hash` / variables a mano
 
-El template usa `{{ .SiteURL }}` y `{{ .TokenHash }}` para armar el link
-manualmente en vez de `{{ .ConfirmationURL }}` (ver sección "IMPORTANTE"
-arriba: `ConfirmationURL` es GET-consumible por escáneres de email antes de
-que la persona abra el correo).
+Los `{{ .SiteURL }}`, `{{ .TokenHash }}`, etc. son variables que Supabase
+interpola automáticamente al enviar el email. **Nunca** pegar un valor fijo,
+un link de ejemplo, ni "completar" la variable a mano en el Dashboard — el
+link dejaría de funcionar para todos los usuarios (token compartido/estático
+en vez de uno único por email). Copiar el HTML tal cual está en el repo.
 
-- `{{ .SiteURL }}` — la Site URL configurada en **Authentication > URL
-  Configuration > Site URL** del proyecto. NO es `NEXT_PUBLIC_SITE_URL` del
-  repo ni el `redirectTo` que arma el servidor -- es un campo aparte del
-  Dashboard, hay que confirmarlo ahí.
-- `{{ .TokenHash }}` — el OTP hasheado. `app/reset-password/page.tsx` ya
-  sabe leer `?token_hash=...&type=recovery` y llamar a
-  `supabase.auth.verifyOtp({ token_hash, type: "recovery" })` (mismo código
-  que ya soportaba `?code=` y `#access_token=&type=recovery`, sin cambios
-  necesarios ahí).
-- `{{ .Email }}` — el email del destinatario (no se usa en el cuerpo a
-  propósito: no hace falta mostrarlo).
+## Por qué ambos templates usan `{{ .SiteURL }}/<ruta>?token_hash=...` en vez de `{{ .ConfirmationURL }}`
+
+`{{ .ConfirmationURL }}` apunta al endpoint de Supabase
+(`<proyecto>.supabase.co/auth/v1/verify?token=...&type=...`), que consume el
+token de un solo uso con un simple `GET`. Cualquier escaneo automático de
+enlaces del lado del destinatario (Outlook Safe Links, gateways antispam
+corporativos, algunos proxies de email) sigue ese link apenas llega el
+correo — típicamente en segundos — y lo invalida antes de que la persona lo
+abra, sin importar el TTL configurado.
+
+Construyendo el link manualmente con `{{ .SiteURL }}` + `{{ .TokenHash }}`
+apuntando directo a nuestro dominio, un rastreador que sólo hace `GET` sobre
+esa URL descarga HTML/JS pero no ejecuta React ni llama a `verifyOtp()` — el
+token recién se consume cuando un navegador real carga la página y corre
+nuestro código:
+
+- **Reset Password** → `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`
+  Consumido por `app/reset-password/page.tsx` (vía `lib/auth/recovery-link.ts`),
+  ya soporta este formato sin cambios.
+- **Confirm signup** → `{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=signup`
+  Consumido por `app/confirmar-email/page.tsx`, ya soporta `token_hash` +
+  `type=signup` sin cambios (`CONFIRMATION_OTP_TYPES` incluye `"signup"`).
+
+Esta tarea **no modificó ninguna de esas dos rutas** — sólo se preparó el
+HTML del email para apuntar al formato que esas rutas ya sabían recibir.
+
+## Variables de Supabase que usa cada template (oficiales, no inventadas)
+
+Ambos templates usan únicamente:
+
+- `{{ .SiteURL }}` — la Site URL configurada en
+  **Authentication > URL Configuration > Site URL** del proyecto. NO es
+  `NEXT_PUBLIC_SITE_URL` del repo ni el `redirectTo`/`emailRedirectTo` que
+  arma el servidor — es un campo aparte del Dashboard, hay que confirmarlo
+  ahí.
+- `{{ .TokenHash }}` — el OTP hasheado, específico de cada tipo de email
+  (Supabase genera un `TokenHash` distinto para `recovery` y para `signup`).
+
+`type=recovery` y `type=signup` están hardcodeados como texto en cada
+template (no son variables) porque cada template sólo se envía para su
+propio flujo — no hace falta ni existe una variable de Supabase para eso.
+
+No se usa `{{ .Token }}` (OTP numérico de 6 dígitos, para flujos de código
+manual) ni `{{ .Data }}` (metadata cruda del usuario) en ninguno de los dos,
+porque ninguno los necesita.
 
 ## Redirect a verificar (importante para que el link no quede roto)
 
-Aunque ya no se usa `{{ .ConfirmationURL }}`, Supabase igual valida que
-`{{ .SiteURL }}` esté en la lista blanca de **Authentication > URL Configuration > Redirect URLs**
-antes de considerar válido cualquier flujo de recuperación. Confirmar que esa
-lista incluya:
+Aunque no se usa `{{ .ConfirmationURL }}`, Supabase igual valida que
+`{{ .SiteURL }}` esté en la lista blanca de
+**Authentication > URL Configuration > Redirect URLs** antes de considerar
+válido el flujo. Confirmar que esa lista incluya:
 
 ```
 https://<tu-dominio-de-producción>/reset-password
+https://<tu-dominio-de-producción>/confirmar-email
 ```
 
-**Sobre el `localhost` que puede aparecer en `redirect_to` al probar en
-desarrollo**: `resolveTrustedSiteUrl` (`lib/site-url.ts`) usa
-`NEXT_PUBLIC_SITE_URL` siempre que esté configurada, sin importar el
-entorno. El header `Origin` del navegador (que en dev suele ser
-`http://localhost:3000` o similar) sólo se usa como último recurso, y
-ÚNICAMENTE cuando `NODE_ENV !== "production"` **y** esa variable no está
-configurada. En producción la función jamás toca `Origin`: si
-`NEXT_PUBLIC_SITE_URL` falta, no es HTTPS, o apunta a `localhost`/`127.0.0.1`,
-devuelve `null` y el llamador corta la operación (falla cerrado, no manda un
-link roto ni inventa un dominio). Esto ya está cubierto por tests en
-`lib/site-url.test.ts` que fijan ambos comportamientos.
+**Sobre el `localhost` que puede aparecer al probar en desarrollo**:
+`resolveTrustedSiteUrl` (`lib/site-url.ts`) usa `NEXT_PUBLIC_SITE_URL`
+siempre que esté configurada, sin importar el entorno. El header `Origin`
+del navegador sólo se usa como último recurso, y únicamente cuando
+`NODE_ENV !== "production"` y esa variable no está configurada. En
+producción, si `NEXT_PUBLIC_SITE_URL` falta, no es HTTPS, o apunta a
+`localhost`/`127.0.0.1`, la función devuelve `null` y el llamador corta la
+operación (falla cerrado). Cubierto por tests en `lib/site-url.test.ts`.
 
-## Si más adelante se quiere alinear "Confirm signup" con el mismo estilo
+También confirmar **Authentication > Providers > Email > Email OTP
+Expiration** (segundos) según la política que se quiera para cada flujo.
 
-`reset-password.html` está armado para ser fácil de adaptar: cambiar sólo
-el ícono/título/texto/botón (bloque central de la tabla) y dejar el resto
-(header BEYONIX, card, footer) igual. No se tocó el template de
-confirmación en esta tarea porque no era el alcance pedido y modificar un
-flujo de autenticación que ya funciona sin pedido explícito no correspondía.
+## Consistencia visual entre ambos templates
+
+`confirm-signup.html` reutiliza exactamente la misma estructura, paleta,
+tipografía y bloques de `reset-password.html` (wordmark BEYONIX, tarjeta
+`#0A0A0A` con borde `rgba(140,200,242,0.16)`, ícono en caja `#112A43`,
+botón "bulletproof" de tabla, texto de seguridad y footer) — sólo cambian
+ícono, título, cuerpo, texto del botón y el footer específico del flujo.
+Cualquier ajuste de estética futuro debería aplicarse a los dos para que no
+se perciban como emails de empresas distintas.
+
+## Notas de compatibilidad (Gmail / Outlook / clientes de email)
+
+- Sin CSS externo, sin JavaScript, sin imágenes externas — todo el layout
+  crítico está en tablas con estilos inline; el único `<style>` del
+  `<head>` es una mejora progresiva (ajuste de padding en mobile vía media
+  query) que no rompe nada si el cliente lo ignora.
+- `meta name="color-scheme"` + `meta name="supported-color-schemes"`
+  (`content="dark"` en ambos) le indican a Gmail/Outlook/Apple Mail que el
+  diseño ya es dark-mode-aware, evitando que esos clientes reinviertan
+  colores automáticamente.
+- La tabla principal usa el patrón "fluid-hybrid" (`width="100%"` +
+  `max-width:480px` en vez de un ancho fijo) para evitar overflow horizontal
+  en pantallas angostas (~375px) en clientes que sí respetan el media query.
+- Botón con celda de tabla de color sólido (no imagen, no `<button>`):
+  100% funcional incluso en Outlook de escritorio, donde el `border-radius`
+  se ignora (esquinas cuadradas) pero el link sigue funcionando.

@@ -107,11 +107,19 @@ test("el template NUNCA incluye datos sensibles (email/username interpolado, tok
   assert.doesNotMatch(TEMPLATE, /\{\{\s*\.Token\s*\}\}/)
 })
 
-test("la documentación es honesta sobre que el email de confirmación vive en el Dashboard, no en el repo", () => {
+test("la documentación refleja que Confirm signup ahora está versionado en el repo (confirm-signup.html), no sólo en el Dashboard", () => {
+  assert.match(README, /confirm-signup\.html/)
+  assert.match(README, /Authentication > Emails > Confirm signup/)
+})
+
+test("la documentación aclara que Email Change/Invite/Magic Link/Reauthentication no se usan y a propósito no tienen template", () => {
   const flatReadme = normalizeWhitespace(README)
 
-  assert.match(flatReadme, /no existe ninguno/i)
-  assert.match(flatReadme, /vive únicamente en el Dashboard/i)
+  assert.match(flatReadme, /Email Change/i)
+  assert.match(flatReadme, /Invite/i)
+  assert.match(flatReadme, /Magic Link/i)
+  assert.match(flatReadme, /Reauthentication/i)
+  assert.match(flatReadme, /no existen/i)
 })
 
 test("la documentación indica el Subject, dónde pegar el HTML, y el chequeo de Redirect URLs", () => {

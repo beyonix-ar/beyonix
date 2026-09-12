@@ -27,11 +27,6 @@ import { PasswordRequirements } from "@/components/password-requirements"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { useAuth } from "@/context/auth-context"
 import { useTerritorialSelector } from "@/hooks/use-territorial-selector"
-import {
-  EMAIL_CONFIRMATION_CHANNEL,
-  EMAIL_CONFIRMATION_STORAGE_KEY,
-  type EmailConfirmationEvent,
-} from "@/lib/auth/confirmation-events"
 import { FORGOT_PASSWORD_GENERIC_MESSAGE } from "@/lib/auth/forgot-password-messages"
 import { getSafeRedirect } from "@/lib/auth/safe-redirect"
 import { supabase } from "@/lib/supabase/client"
@@ -410,20 +405,6 @@ function LoginContent() {
 
     let cancelled = false
     let timeout: number | undefined
-    let channel: BroadcastChannel | null = null
-
-    const isExpectedConfirmation = (
-      value: unknown
-    ): value is EmailConfirmationEvent => {
-      if (!value || typeof value !== "object") return false
-
-      const event = value as Partial<EmailConfirmationEvent>
-
-      return (
-        event.userId === confirmationUserId &&
-        event.email?.trim().toLowerCase() === confirmationEmail
-      )
-    }
 
     const checkConfirmation = async () => {
       if (cancelled || confirmationPollInProgress.current) return
@@ -479,7 +460,6 @@ function LoginContent() {
           if (cancelled) return
 
           if (!sessionError) {
-            localStorage.removeItem(EMAIL_CONFIRMATION_STORAGE_KEY)
             setResendMessageIsError(false)
             setResendMessage(
               "Email confirmado. Te llevaremos al Home en un segundo..."
@@ -511,44 +491,11 @@ function LoginContent() {
       }
     }
 
-    const handleBroadcast = (event: MessageEvent<unknown>) => {
-      if (isExpectedConfirmation(event.data)) {
-        void checkConfirmation()
-      }
-    }
-    const handleStorage = (event: StorageEvent) => {
-      if (
-        event.key !== EMAIL_CONFIRMATION_STORAGE_KEY ||
-        !event.newValue
-      ) {
-        return
-      }
-
-      try {
-        const confirmationEvent = JSON.parse(event.newValue) as unknown
-
-        if (isExpectedConfirmation(confirmationEvent)) {
-          void checkConfirmation()
-        }
-      } catch {
-        // El sondeo periódico queda como respaldo.
-      }
-    }
-
-    if ("BroadcastChannel" in window) {
-      channel = new BroadcastChannel(EMAIL_CONFIRMATION_CHANNEL)
-      channel.addEventListener("message", handleBroadcast)
-    }
-    window.addEventListener("storage", handleStorage)
-
     void checkConfirmation()
 
     return () => {
       cancelled = true
       if (timeout) window.clearTimeout(timeout)
-      channel?.removeEventListener("message", handleBroadcast)
-      channel?.close()
-      window.removeEventListener("storage", handleStorage)
     }
   }, [
     confirmationEmail,

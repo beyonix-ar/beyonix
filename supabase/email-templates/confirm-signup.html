@@ -1,12 +1,12 @@
 <!--
-  Template de Supabase Auth para "Reset Password" (recuperación de
-  contraseña). Documento HTML COMPLETO -- pegar TAL CUAL (incluido
+  Template de Supabase Auth para "Confirm signup" (confirmación de cuenta al
+  registrarse). Documento HTML COMPLETO -- pegar TAL CUAL (incluido
   <!DOCTYPE html>) en:
 
-    Supabase Dashboard > Authentication > Emails > Reset Password
+    Supabase Dashboard > Authentication > Emails > Confirm signup
 
   Ver supabase/email-templates/README.md para el subject exacto, qué líneas
-  copiar, y el chequeo de Redirect URLs que hay que confirmar antes de
+  copiar, y la verificación de Redirect URLs que hay que confirmar antes de
   guardar.
 -->
 <!DOCTYPE html>
@@ -17,7 +17,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="color-scheme" content="dark" />
 <meta name="supported-color-schemes" content="dark" />
-<title>Restablecer contraseña — BEYONIX</title>
+<title>Confirmá tu cuenta — BEYONIX</title>
 <!--[if mso]>
 <noscript>
 <xml>
@@ -50,7 +50,7 @@
 <body style="margin:0;padding:0;background-color:#000000;">
 <!-- Preheader oculto: texto de vista previa en la bandeja de entrada, nunca visible en el cuerpo. -->
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#000000;opacity:0;">
-  Recibimos una solicitud para cambiar la contraseña de tu cuenta de BEYONIX.
+  Confirmá tu correo electrónico para activar tu cuenta de BEYONIX.
 </div>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#000000" style="background-color:#000000;">
@@ -72,7 +72,7 @@
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                     <tr>
                       <td width="52" height="52" bgcolor="#112A43" style="width:52px;height:52px;border-radius:14px;background-color:#112A43;border:1px solid rgba(140,200,242,0.28);text-align:center;vertical-align:middle;">
-                        <span style="font-size:22px;line-height:52px;">&#128274;</span>
+                        <span style="font-size:22px;line-height:52px;">&#9989;</span>
                       </td>
                     </tr>
                   </table>
@@ -81,14 +81,15 @@
               <tr>
                 <td align="center" style="padding-bottom:12px;">
                   <h1 style="margin:0;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:20px;line-height:26px;font-weight:800;letter-spacing:0.03em;text-transform:uppercase;color:#F8FAFC;">
-                    Restablecer contraseña
+                    Confirmá tu cuenta
                   </h1>
                 </td>
               </tr>
               <tr>
                 <td align="center" style="padding-bottom:28px;">
                   <p style="margin:0;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:14px;line-height:22px;color:rgba(248,250,252,0.68);">
-                    Recibimos una solicitud para cambiar la contraseña de tu cuenta.
+                    Gracias por registrarte en BEYONIX. Confirmá tu correo
+                    electrónico para activar tu cuenta.
                   </p>
                 </td>
               </tr>
@@ -99,11 +100,11 @@
                     <tr>
                       <td align="center" bgcolor="#112A43" style="border-radius:12px;background-color:#112A43;border:1px solid rgba(140,200,242,0.45);">
                         <a
-                          href="{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery"
+                          href="{{ .SiteURL }}/confirmar-email?token_hash={{ .TokenHash }}&type=signup"
                           target="_blank"
                           style="display:inline-block;padding:14px 36px;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#F8FAFC;text-decoration:none;border-radius:12px;"
                         >
-                          Crear nueva contraseña
+                          Confirmar mi cuenta
                         </a>
                       </td>
                     </tr>
@@ -121,12 +122,12 @@
                 <td style="padding-bottom:4px;border-top:1px solid rgba(255,255,255,0.08);padding-top:20px;">
                   <!--
                     A propósito NO hay fallback textual con el link visible:
-                    mostrar la URL de recuperación como texto plano expone
-                    el token en querystring a simple vista (capturas de
-                    pantalla, reenvíos, hombro sobre el hombro). El único CTA
-                    es el botón de arriba.
+                    mostrar la URL de confirmación como texto plano expone el
+                    token en querystring a simple vista (capturas de pantalla,
+                    reenvíos, hombro sobre el hombro). El único CTA es el
+                    botón de arriba.
 
-                    El href usa {{ .SiteURL }}/reset-password?token_hash=...
+                    El href usa {{ .SiteURL }}/confirmar-email?token_hash=...&type=signup
                     (NO {{ .ConfirmationURL }}): ConfirmationURL apunta al
                     endpoint de Supabase (<proyecto>.supabase.co/auth/v1/verify),
                     que consume el token de un solo uso con un simple GET --
@@ -137,13 +138,13 @@
                     configurado. Con token_hash el link apunta directo a
                     nuestro dominio: un rastreador que sólo hace GET a la
                     página no ejecuta JS y no consume el token; recién se
-                    consume cuando /reset-password llama a verifyOtp() en el
-                    navegador real (ver app/reset-password/page.tsx, que ya
-                    soporta este formato).
+                    consume cuando /confirmar-email llama a verifyOtp() en el
+                    navegador real (ver app/confirmar-email/page.tsx, que ya
+                    soporta este formato -- token_hash + type=signup -- sin
+                    cambios necesarios ahí).
                   -->
                   <p style="margin:0;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:rgba(248,250,252,0.46);text-align:center;">
-                    Si no solicitaste este cambio, podés ignorar este correo.
-                    Tu contraseña actual seguirá funcionando.
+                    Si no creaste una cuenta en BEYONIX, podés ignorar este correo.
                   </p>
                 </td>
               </tr>
