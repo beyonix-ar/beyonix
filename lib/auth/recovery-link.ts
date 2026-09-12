@@ -58,6 +58,27 @@ export type RecoveryLinkResolution =
   | { status: "valid"; accessToken: string }
   | { status: "invalid" }
 
+/**
+ * Pura, sin I/O: dice si `resolveRecoveryLink(...)` VA a llamar a un método
+ * que consume el token de recuperación (`exchangeCodeForSession`,
+ * `verifyOtp` o `setSession`) para estos params. `app/reset-password/page.tsx`
+ * la usa para decidir si mostrar la pantalla de confirmación humana ANTES de
+ * siquiera invocar `resolveRecoveryLink` -- un GET/render automático (bot,
+ * scanner, prefetch, preview) nunca debe disparar esos tres métodos.
+ *
+ * El único caso que NO requiere confirmación pese a haber "parámetros de
+ * recovery" es el fallback de sesión ya establecida (recarga de la página
+ * tras ya haber confirmado una vez): ese camino sólo llama a `getSession()`,
+ * que es de sólo lectura y no consume nada -- no hace falta gatearlo.
+ */
+export function hasConsumableRecoveryToken(params: RecoveryLinkParams): boolean {
+  return Boolean(
+    params.code ||
+      (params.tokenHash && params.type === "recovery") ||
+      (params.accessToken && params.refreshToken),
+  )
+}
+
 async function markValid(
   auth: RecoveryAuthClient,
 ): Promise<RecoveryLinkResolution> {

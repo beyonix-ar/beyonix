@@ -118,13 +118,65 @@ test("el template de email usa token_hash apuntando a nuestro dominio, NUNCA Con
   )
 })
 
-test("/reset-password delega la decisión del link en lib/auth/recovery-link.ts (resolveRecoveryLink), no reimplementa la lógica inline", () => {
+test("/reset-password delega TODA la decisión del link en el controller (lib/auth/recovery-flow-controller.ts -> lib/auth/recovery-link.ts), no reimplementa la lógica inline", () => {
   const page = source("app/reset-password/page.tsx")
 
-  assert.match(page, /import \{ resolveRecoveryLink \} from "@\/lib\/auth\/recovery-link"/)
-  assert.match(page, /resolveRecoveryLink\(\s*\n?\s*supabase\.auth,/)
+  assert.match(
+    page,
+    /import \{\s*\n?\s*createRecoveryLinkController,/,
+  )
+  assert.match(page, /from "@\/lib\/auth\/recovery-flow-controller"/)
+  assert.match(page, /createRecoveryLinkController\(\s*\n?\s*supabase\.auth,/)
   // La rama de éxito nunca debe reimplementar el chequeo de tokenHash/type acá.
   assert.doesNotMatch(page, /tokenHash && type === "recovery"/)
+  // Tampoco debe llamar a verifyOtp/exchangeCodeForSession/setSession
+  // directo: eso vive exclusivamente en lib/auth/recovery-link.ts.
+  assert.doesNotMatch(page, /supabase\.auth\.verifyOtp/)
+  assert.doesNotMatch(page, /supabase\.auth\.exchangeCodeForSession/)
+  assert.doesNotMatch(page, /supabase\.auth\.setSession/)
+})
+
+test("/reset-password NUNCA llama a controller.confirm() automáticamente cuando needsConfirmation es true: sólo el handler del botón lo hace", () => {
+  const page = source("app/reset-password/page.tsx")
+
+  // El único confirm() incondicional del efecto de montaje vive DESPUÉS del
+  // `return` de la rama needsConfirmation -- nunca antes.
+  const needsConfirmationIndex = page.indexOf("if (controller.needsConfirmation)")
+  const autoConfirmIndex = page.indexOf("void controller.confirm().then(applyResolution)")
+  const clickHandlerIndex = page.indexOf("const handleConfirmRecovery")
+  const clickConfirmIndex = page.indexOf(
+    "void controllerRef.current?.confirm().then(applyResolution)",
+  )
+
+  assert.ok(needsConfirmationIndex >= 0)
+  assert.ok(autoConfirmIndex > needsConfirmationIndex)
+  assert.ok(clickHandlerIndex >= 0)
+  assert.ok(clickConfirmIndex > clickHandlerIndex)
+})
+
+test("el botón de confirmación se deshabilita mientras se procesa el click (confirmingRecovery)", () => {
+  const page = source("app/reset-password/page.tsx")
+
+  assert.match(page, /Continuar con la recuperación/)
+  assert.match(page, /disabled=\{confirmingRecovery\}/)
+  assert.match(page, /setConfirmingRecovery\(true\)/)
+})
+
+test("sin ningún link interno (<Link>) apunta a /reset-password: nada dispara un prefetch de Next.js sobre esta ruta", () => {
+  const filesToCheck = [
+    "app/login/page.tsx",
+    "components/account/auth-forms.tsx",
+    "context/auth-context.tsx",
+  ]
+
+  for (const file of filesToCheck) {
+    const contents = source(file)
+    assert.doesNotMatch(
+      contents,
+      /href="\/reset-password"/,
+      `${file} no debe linkear a /reset-password con <Link> (dispararía prefetch)`,
+    )
+  }
 })
 
 test("lib/auth/recovery-link.ts soporta token_hash+type=recovery llamando a verifyOtp (formato que manda el email hoy)", () => {

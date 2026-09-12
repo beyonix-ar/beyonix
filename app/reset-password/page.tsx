@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import {
@@ -20,7 +20,11 @@ import { PasswordRequirements } from "@/components/password-requirements"
 import {
   getInvalidRecoveryLinkMessage,
 } from "@/lib/auth/password-update-messages"
-import { resolveRecoveryLink } from "@/lib/auth/recovery-link"
+import {
+  createRecoveryLinkController,
+  type RecoveryLinkController,
+} from "@/lib/auth/recovery-flow-controller"
+import { resolveRecoveryLink, type RecoveryLinkParams } from "@/lib/auth/recovery-link"
 import { supabase } from "@/lib/supabase/client"
 import { FIELD_LIMITS, validatePassword } from "@/lib/validation/account-fields"
 
@@ -33,86 +37,133 @@ function ResetPasswordContent() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [checkingSession, setCheckingSession] = useState(true)
+  // true = mostrar la pantalla intermedia con el botón "Continuar con la
+  // recuperación" -- para no confundir con `checkingSession` (loader
+  // genuino, sin decisión tomada todavía).
+  const [needsConfirmation, setNeedsConfirmation] = useState(false)
+  // Mientras el click está en vuelo: el botón queda visible pero
+  // deshabilitado con spinner (en vez de desaparecer de golpe), aunque la
+  // protección real contra doble consumo vive en el controller (más abajo),
+  // no en este flag visual.
+  const [confirmingRecovery, setConfirmingRecovery] = useState(false)
   const [canChangePassword, setCanChangePassword] = useState(false)
   const [accessToken, setAccessToken] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [success, setSuccess] = useState(false)
 
-  useEffect(() => {
-    let mounted = true
+  const mountedRef = useRef(true)
+  // El controlador (lib/auth/recovery-flow-controller.ts) decide una única
+  // vez, al parsear los params en el mount, si hace falta gatear detrás de
+  // un click humano -- y garantiza que confirm() sólo dispare
+  // resolveRecoveryLink() (verifyOtp/exchangeCodeForSession/setSession) una
+  // sola vez sin importar cuántas veces se lo llame.
+  const controllerRef = useRef<RecoveryLinkController | null>(null)
 
-    const markValidRecovery = async () => {
-      const { data } = await supabase.auth.getSession()
-      const token = data.session?.access_token ?? ""
+  const failRecovery = useCallback(() => {
+    localStorage.removeItem(PASSWORD_RECOVERY_KEY)
+    if (!mountedRef.current) return
+    setError(getInvalidRecoveryLinkMessage())
+    setCanChangePassword(false)
+    setNeedsConfirmation(false)
+    setCheckingSession(false)
+  }, [])
 
-      if (!mounted) return
-
-      if (!token) {
-        localStorage.removeItem(PASSWORD_RECOVERY_KEY)
-        setError(getInvalidRecoveryLinkMessage())
-        setCanChangePassword(false)
-        setCheckingSession(false)
-        return
-      }
-
-      localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
-      setAccessToken(token)
-      setCanChangePassword(true)
-      setCheckingSession(false)
-    }
-
-    const failRecovery = () => {
-      localStorage.removeItem(PASSWORD_RECOVERY_KEY)
-      if (mounted) {
-        setError(getInvalidRecoveryLinkMessage())
-        setCanChangePassword(false)
-        setCheckingSession(false)
-      }
-    }
-
-    const prepareSession = async () => {
-      const hashParams = new URLSearchParams(
-        window.location.hash.replace(/^#/, "")
-      )
-      const hasRecoveryMarker =
-        localStorage.getItem(PASSWORD_RECOVERY_KEY) === "true"
-
-      // Lógica de decisión real en lib/auth/recovery-link.ts (testeada ahí
-      // con casos de válido/vencido/ya utilizado/token_hash ausente/type
-      // incorrecto/error de Supabase) -- acá sólo se arman los parámetros
-      // desde la URL y se aplica el resultado al estado de la pantalla.
-      const resolution = await resolveRecoveryLink(
-        supabase.auth,
-        {
-          code: searchParams.get("code"),
-          tokenHash: searchParams.get("token_hash"),
-          type: searchParams.get("type"),
-          recovery: searchParams.get("recovery"),
-          accessToken: hashParams.get("access_token"),
-          refreshToken: hashParams.get("refresh_token"),
-          hashType: hashParams.get("type"),
-          hashError:
-            hashParams.get("error_description") || hashParams.get("error"),
-          queryError:
-            searchParams.get("error_description") ||
-            searchParams.get("error"),
-        },
-        hasRecoveryMarker,
-      )
-
-      if (!mounted) return
+  const applyResolution = useCallback(
+    (resolution: Awaited<ReturnType<typeof resolveRecoveryLink>>) => {
+      if (!mountedRef.current) return
 
       if (resolution.status === "valid") {
         localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
         setAccessToken(resolution.accessToken)
         setCanChangePassword(true)
+        setNeedsConfirmation(false)
         setCheckingSession(false)
         window.history.replaceState(null, "", "/reset-password")
         return
       }
 
       failRecovery()
+    },
+    [failRecovery],
+  )
+
+  const handleConfirmRecovery = useCallback(() => {
+    // Deshabilita el botón en el mismo tick del click (antes del `await`).
+    // La protección real contra doble consumo es el controller (confirm()
+    // cachea la promesa en curso); esto es sólo feedback visual coherente
+    // con el resto del formulario (mismo patrón que el submit de más abajo).
+    setConfirmingRecovery(true)
+    void controllerRef.current?.confirm().then(applyResolution)
+  }, [applyResolution])
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    const markValidRecovery = async () => {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token ?? ""
+
+      if (!mountedRef.current) return
+
+      if (!token) {
+        failRecovery()
+        return
+      }
+
+      localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
+      setAccessToken(token)
+      setCanChangePassword(true)
+      setNeedsConfirmation(false)
+      setCheckingSession(false)
+    }
+
+    const prepareSession = () => {
+      const hashParams = new URLSearchParams(
+        window.location.hash.replace(/^#/, "")
+      )
+      const params: RecoveryLinkParams = {
+        code: searchParams.get("code"),
+        tokenHash: searchParams.get("token_hash"),
+        type: searchParams.get("type"),
+        recovery: searchParams.get("recovery"),
+        accessToken: hashParams.get("access_token"),
+        refreshToken: hashParams.get("refresh_token"),
+        hashType: hashParams.get("type"),
+        hashError:
+          hashParams.get("error_description") || hashParams.get("error"),
+        queryError:
+          searchParams.get("error_description") || searchParams.get("error"),
+      }
+      const hasRecoveryMarker =
+        localStorage.getItem(PASSWORD_RECOVERY_KEY) === "true"
+
+      const controller = createRecoveryLinkController(
+        supabase.auth,
+        params,
+        hasRecoveryMarker,
+      )
+      controllerRef.current = controller
+
+      // Objetivo central de este diseño: un GET/render automático (bot,
+      // escáner de seguridad de email, prefetch, preview) NUNCA debe
+      // ejecutar verifyOtp/exchangeCodeForSession/setSession. Si hay un
+      // token realmente consumible, se detiene acá y espera el click humano
+      // en handleConfirmRecovery -- confirm() es lo único que llama a
+      // resolveRecoveryLink.
+      if (controller.needsConfirmation) {
+        setCheckingSession(false)
+        setNeedsConfirmation(true)
+        return
+      }
+
+      // Nada que consumir acá: o ya viene un error explícito de Supabase
+      // (resuelve a "invalid" sin llamar a ningún método que consuma nada),
+      // o sólo queda el fallback de sesión ya establecida + marca de
+      // localStorage (recarga de la página tras haber confirmado una vez) --
+      // ese camino sólo llama a getSession(), de sólo lectura. Ninguno de
+      // los dos necesita gatearse detrás de un click.
+      void controller.confirm().then(applyResolution)
     }
 
     const {
@@ -126,10 +177,10 @@ function ResetPasswordContent() {
     prepareSession()
 
     return () => {
-      mounted = false
+      mountedRef.current = false
       subscription.unsubscribe()
     }
-  }, [searchParams])
+  }, [searchParams, applyResolution, failRecovery])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -243,6 +294,36 @@ function ResetPasswordContent() {
                     <p className="beyonix-modal-body mt-3 text-sm text-white/60">
                       Validando enlace de recuperación...
                     </p>
+                  </div>
+                ) : needsConfirmation ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-beyonix-blue-light/14 bg-beyonix-surface px-4 py-5 text-center">
+                      <h2 className="beyonix-modal-title text-lg font-bold text-white">
+                        Recuperar contraseña
+                      </h2>
+                      <p className="beyonix-modal-body mt-2 text-sm leading-6 text-white/64">
+                        Para continuar con el cambio de contraseña, confirmá
+                        que querés validar este enlace.
+                      </p>
+                    </div>
+
+                    <BeyonixButton
+                      type="button"
+                      aria-label="Continuar con la recuperación"
+                      onClick={handleConfirmRecovery}
+                      disabled={confirmingRecovery}
+                      size="lg"
+                      className="w-full"
+                    >
+                      {confirmingRecovery ? (
+                        <Loader2 className="size-5 animate-spin" />
+                      ) : (
+                        <>
+                          Continuar con la recuperación
+                          <ArrowRight className="size-4" />
+                        </>
+                      )}
+                    </BeyonixButton>
                   </div>
                 ) : canChangePassword ? (
                   <form onSubmit={handleSubmit} className="space-y-4">
