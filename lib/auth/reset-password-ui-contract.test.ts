@@ -1,10 +1,51 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { join } from "node:path"
 import test from "node:test"
 
 function source(path: string) {
   return readFileSync(path, "utf8")
 }
+
+function listTsFiles(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  const entries = readdirSync(dir)
+  const files: string[] = []
+  for (const entry of entries) {
+    const full = join(dir, entry)
+    if (statSync(full).isDirectory()) {
+      files.push(...listTsFiles(full))
+    } else if (/\.(ts|tsx)$/.test(entry) && !entry.endsWith(".test.ts")) {
+      files.push(full)
+    }
+  }
+  return files
+}
+
+// --- Auditoría 2026-09-13: app/auth/callback/route.ts era código huérfano
+// (0 referencias en todo el repo -- ningún redirectTo/emailRedirectTo
+// apuntaba ahí, sin OAuth configurado) que recreaba exactamente la
+// vulnerabilidad "GET consume el token" ya corregida en el resto del flujo
+// de recovery: llamaba a exchangeCodeForSession(code) de forma
+// INCONDICIONAL en el handler GET, sin ningún gate de click humano. Se
+// eliminó por completo; este test evita que se reintroduzca sin querer
+// (ej. copiar un route.ts viejo desde otra rama) sin que alguien lo note.
+
+test("app/auth/callback no existe (ruta huérfana eliminada que auto-consumía el code de recovery en un GET, sin gate humano)", () => {
+  assert.equal(existsSync("app/auth/callback"), false)
+})
+
+test("ningún route.ts bajo app/ llama a exchangeCodeForSession de forma incondicional en un handler GET -- sólo lib/auth/recovery-link.ts (gateado por click humano) puede consumir un code de recovery", () => {
+  const offenders: string[] = []
+
+  for (const file of listTsFiles("app")) {
+    if (!file.endsWith("route.ts")) continue
+    const contents = source(file)
+    if (contents.includes("exchangeCodeForSession")) offenders.push(file)
+  }
+
+  assert.deepEqual(offenders, [])
+})
 
 test("/reset-password usa el navbar canónico real (SiteHeader), no una copia manual", () => {
   const layoutShell = source("components/layout-shell.tsx")

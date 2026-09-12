@@ -205,6 +205,15 @@
   --account-text-primary: #f8fafc;
   --account-text-secondary: rgba(248, 250, 252, 0.66);
   --account-text-muted: rgba(248, 250, 252, 0.42);
+  /* Existía sólo en el bloque de override de Light más abajo en este mismo
+     archivo (selector data-account-theme + data-account-scope) -- todo uso
+     anterior vivía DENTRO de un selector ya scopeado a ese Light, así que
+     nunca hacía falta un valor Dark. app/reset-password/page.tsx ahora lo
+     usa directo en el className del input (sin scope condicional), así que
+     sin este valor el placeholder quedaría con una custom property
+     indefinida en Dark. Mismo tono que --account-text-muted (blanco ~40%),
+     coherente con el placeholder original (text-white/40). */
+  --account-text-placeholder: rgba(248, 250, 252, 0.4);
   --account-accent: #112a43;
   --account-accent-hover: #183b5e;
   --account-accent-soft: #8cc8f2;
@@ -11810,6 +11819,17 @@ html[data-account-theme="light"][data-account-scope] .beyonix-success-note-icon 
   color: var(--account-success) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-success-note-text {
+  color: var(--account-success-text) !important;
+}
+/* BeyonixIconBox variant="success" (components/beyonix-ui.tsx): el ícono
+   usa text-emerald-100 (verde casi blanco) sobre bg-emerald-500/14 -- en
+   Dark hay contraste real (fondo casi negro detrás), pero en Light queda
+   prácticamente invisible dentro de su propio círculo pálido. Ya existía
+   este mismo override para el shell de Admin (.text-emerald-100 más abajo,
+   html[data-admin-theme="light"]); nunca se había cubierto para el
+   storefront/cuenta (usado, entre otros, por la pantalla de éxito de
+   /reset-password y por components/cart/cart-item.tsx). */
+html[data-account-theme="light"][data-account-scope] .text-emerald-100 {
   color: var(--account-success-text) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-modal-shell {

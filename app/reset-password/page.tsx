@@ -335,7 +335,7 @@ function ResetPasswordContent() {
                     <div>
                       <label
                         htmlFor="new-password"
-                        className="mb-1.5 block text-xs font-semibold text-white/72"
+                        className="mb-1.5 block text-xs font-semibold text-[var(--account-text-secondary)]"
                       >
                         Contraseña nueva
                       </label>
@@ -349,7 +349,7 @@ function ResetPasswordContent() {
                           maxLength={FIELD_LIMITS.password}
                           autoComplete="new-password"
                           onChange={(e) => setPassword(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 pr-11 text-sm text-white outline-none transition-all placeholder:text-white/40 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+                          className="h-11 w-full rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-3.5 pr-11 text-sm text-[var(--account-text-primary)] outline-none transition-all placeholder:text-[var(--account-text-placeholder)] hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
                         />
                         <button
                           type="button"
@@ -357,7 +357,7 @@ function ResetPasswordContent() {
                             showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
                           }
                           onClick={() => setShowPassword((current) => !current)}
-                          className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/6 hover:text-white"
+                          className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
                         >
                           {showPassword ? (
                             <EyeOff className="size-4" />
@@ -373,7 +373,7 @@ function ResetPasswordContent() {
                     <div>
                       <label
                         htmlFor="confirm-password"
-                        className="mb-1.5 block text-xs font-semibold text-white/72"
+                        className="mb-1.5 block text-xs font-semibold text-[var(--account-text-secondary)]"
                       >
                         Repetir contraseña
                       </label>
@@ -387,7 +387,7 @@ function ResetPasswordContent() {
                           maxLength={FIELD_LIMITS.password}
                           autoComplete="new-password"
                           onChange={(e) => setConfirmPassword(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-white/10 bg-[#0b1118] px-3.5 pr-11 text-sm text-white outline-none transition-all placeholder:text-white/40 hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
+                          className="h-11 w-full rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-3.5 pr-11 text-sm text-[var(--account-text-primary)] outline-none transition-all placeholder:text-[var(--account-text-placeholder)] hover:border-beyonix-blue-light/45 focus:border-beyonix-sky/70 focus:ring-2 focus:ring-beyonix-blue-light/24"
                         />
                         <button
                           type="button"
@@ -399,7 +399,7 @@ function ResetPasswordContent() {
                           onClick={() =>
                             setShowConfirmPassword((current) => !current)
                           }
-                          className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-white/55 transition hover:bg-white/6 hover:text-white"
+                          className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
                         >
                           {showConfirmPassword ? (
                             <EyeOff className="size-4" />
@@ -409,14 +409,14 @@ function ResetPasswordContent() {
                         </button>
                       </div>
                       {confirmPassword && password !== confirmPassword && (
-                        <p className="mt-1.5 text-xs text-red-400">
+                        <p className="mt-1.5 text-xs text-[var(--account-danger-text)]">
                           Las contraseñas no coinciden.
                         </p>
                       )}
                     </div>
 
                     {error && (
-                      <div className="flex gap-2 rounded-xl border border-red-500/24 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                      <div className="flex gap-2 rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-sm text-[var(--account-danger-text)]">
                         <AlertCircle className="mt-0.5 size-4 shrink-0" />
                         <span>{error}</span>
                       </div>
@@ -439,20 +439,20 @@ function ResetPasswordContent() {
                       )}
                     </BeyonixButton>
 
-                    <div className="flex items-center justify-center gap-2 border-t border-white/8 pt-4 text-xs text-white/38">
+                    <div className="flex items-center justify-center gap-2 border-t border-[var(--account-border-subtle)] pt-4 text-xs text-[var(--account-text-muted)]">
                       <ShieldCheck className="size-4 text-beyonix-cyan" />
                       Tu contraseña nunca queda guardada en BEYONIX.
                     </div>
                   </form>
                 ) : (
                   <div className="space-y-4">
-                    <div className="flex gap-3 rounded-xl border border-red-500/24 bg-red-500/10 px-4 py-4 text-sm text-red-300">
+                    <div className="flex gap-3 rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-4 text-sm text-[var(--account-danger-text)]">
                       <AlertCircle className="mt-0.5 size-5 shrink-0" />
                       <div>
-                        <p className="font-semibold text-red-200">
+                        <p className="font-semibold text-[var(--account-danger-text)]">
                           {error || getInvalidRecoveryLinkMessage()}
                         </p>
-                        <p className="mt-1 text-xs leading-5 text-red-300/80">
+                        <p className="mt-1 text-xs leading-5 text-[var(--account-danger-text)]">
                           Por seguridad, cada enlace de recuperación sólo se
                           puede usar una vez y vence a los pocos minutos de
                           haberlo recibido.

@@ -63,100 +63,134 @@ function ChangePasswordForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  // Gate síncrono contra doble click/doble submit (mismo patrón que
+  // lib/auth/reset-password-submit.ts): se fija ANTES de cualquier `await`,
+  // así que no depende de que React ya haya aplicado `disabled={loading}`
+  // en el próximo render.
+  const submittingRef = useRef(false)
 
   const handleSubmit = async () => {
-    setError("")
-    setSuccess("")
+    if (submittingRef.current) return
+    submittingRef.current = true
 
-    if (!user?.email) {
-      setError("No se pudo validar el email de la cuenta.")
-      return
-    }
+    try {
+      setError("")
+      setSuccess("")
 
-    if (!currentPassword) {
-      setError("Introduce tu contraseña actual.")
-      return
-    }
+      if (!user?.email) {
+        setError("No se pudo validar el email de la cuenta.")
+        return
+      }
 
-    const passwordError = validateAccountPassword(newPassword)
+      if (!currentPassword) {
+        setError("Introduce tu contraseña actual.")
+        return
+      }
 
-    if (passwordError) {
-      setError(passwordError)
-      return
-    }
+      const passwordError = validateAccountPassword(newPassword)
 
-    if (newPassword !== confirmPassword) {
-      setError("Las contraseñas nuevas no coinciden.")
-      return
-    }
+      if (passwordError) {
+        setError(passwordError)
+        return
+      }
 
-    if (currentPassword === newPassword) {
-      setError("La nueva contraseña debe ser distinta a la actual.")
-      return
-    }
+      if (newPassword !== confirmPassword) {
+        setError("Las contraseñas nuevas no coinciden.")
+        return
+      }
 
-    setLoading(true)
+      if (currentPassword === newPassword) {
+        setError("La nueva contraseña debe ser distinta a la actual.")
+        return
+      }
 
-    const {
-      data: authUserData,
-      error: authUserError,
-    } = await supabase.auth.getUser()
+      setLoading(true)
 
-    if (authUserError) {
+      const {
+        data: authUserData,
+        error: authUserError,
+      } = await supabase.auth.getUser()
+
+      if (authUserError) {
+        setError("No se pudo validar la sesión. Inténtalo de nuevo.")
+        return
+      }
+
+      const lastPasswordChangedAt =
+        authUserData.user?.user_metadata
+          ?.last_password_change_at
+
+      if (
+        typeof lastPasswordChangedAt === "string" &&
+        Number.isFinite(new Date(lastPasswordChangedAt).getTime()) &&
+        Date.now() -
+          new Date(lastPasswordChangedAt).getTime() <
+          PASSWORD_CHANGE_COOLDOWN_MS
+      ) {
+        setError(getPasswordCooldownMessage(lastPasswordChangedAt))
+        return
+      }
+
+      const { error: verifyError } =
+        await supabase.auth.signInWithPassword({
+          email: user.email,
+          password: currentPassword,
+        })
+
+      if (verifyError) {
+        setError("La contraseña actual no es correcta.")
+        return
+      }
+
+      const { error: updateError } =
+        await supabase.auth.updateUser({
+          password: newPassword,
+          // Ya validamos la contraseña actual arriba con un
+          // signInWithPassword de prueba, pero eso es una verificación
+          // PROPIA de la app -- si en el Dashboard de Supabase se activa
+          // "Require current password when updating"
+          // (GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD),
+          // GoTrue exige además este campo en el propio updateUser() o
+          // rechaza el cambio server-side pese a que nuestra verificación ya
+          // dio bien. Enviarlo siempre es inofensivo si la opción está
+          // apagada (GoTrue lo ignora) y evita ese doble gate roto si se
+          // activa en el futuro.
+          current_password: currentPassword,
+          data: {
+            ...authUserData.user?.user_metadata,
+            last_password_change_at: new Date().toISOString(),
+          },
+        })
+
+      if (updateError) {
+        setError("No se pudo actualizar la contraseña. Inténtalo de nuevo.")
+        return
+      }
+
+      // Best-effort: la contraseña ya cambió (lo crítico). Mismo criterio
+      // que la recuperación (lib/auth/reset-password-submit.ts, que hace
+      // esto server-side con admin.auth.admin.signOut(token, "others")) --
+      // acá alcanza con el client-side signOut({scope:"others"}) porque ya
+      // hay una sesión propia autenticada. Un fallo acá nunca debe mostrarse
+      // como si el cambio de contraseña hubiera fallado.
+      try {
+        await supabase.auth.signOut({ scope: "others" })
+      } catch {
+        // Ignorado a propósito -- ver comentario arriba.
+      }
+
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      setSuccess("Contraseña actualizada correctamente.")
+      setTimeout(() => setSuccess(""), 3500)
+    } finally {
+      // Se libera SIEMPRE (éxito, error, o cualquier return temprano) --
+      // antes quedaba en `true` para siempre tras el primer submit (bug: ni
+      // un reintento legítimo tras corregir un error volvía a funcionar).
       setLoading(false)
-      setError("No se pudo validar la sesión. Inténtalo de nuevo.")
-      return
+      submittingRef.current = false
     }
-
-    const lastPasswordChangedAt =
-      authUserData.user?.user_metadata
-        ?.last_password_change_at
-
-    if (
-      typeof lastPasswordChangedAt === "string" &&
-      Number.isFinite(new Date(lastPasswordChangedAt).getTime()) &&
-      Date.now() -
-        new Date(lastPasswordChangedAt).getTime() <
-        PASSWORD_CHANGE_COOLDOWN_MS
-    ) {
-      setLoading(false)
-      setError(getPasswordCooldownMessage(lastPasswordChangedAt))
-      return
-    }
-
-    const { error: verifyError } =
-      await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: currentPassword,
-      })
-
-    if (verifyError) {
-      setLoading(false)
-      setError("La contraseña actual no es correcta.")
-      return
-    }
-
-    const { error: updateError } =
-      await supabase.auth.updateUser({
-        password: newPassword,
-        data: {
-          ...authUserData.user?.user_metadata,
-          last_password_change_at: new Date().toISOString(),
-        },
-      })
-
-    setLoading(false)
-
-    if (updateError) {
-      setError("No se pudo actualizar la contraseña. Inténtalo de nuevo.")
-      return
-    }
-
-    setCurrentPassword("")
-    setNewPassword("")
-    setConfirmPassword("")
-    setSuccess("Contraseña actualizada correctamente.")
-    setTimeout(() => setSuccess(""), 3500)
   }
 
   return (
