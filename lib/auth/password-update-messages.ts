@@ -1,9 +1,9 @@
 /**
- * Traducción de errores de `auth.updateUser`/`admin.updateUserById` a copy en
- * español. Vive acá (no duplicada entre cliente y servidor) porque el
- * servidor ahora es quien realmente aplica el cambio de contraseña
- * (`app/api/auth/reset-password/confirm`); el cliente sólo muestra el
- * mensaje que el servidor devuelve.
+ * Traducción de errores de `auth.updateUser` a copy en español. Usada por
+ * `app/reset-password/page.tsx` (cambio de contraseña por recuperación,
+ * directo contra `supabase.auth.updateUser()` con la sesión que dejó
+ * `verifyOtp()`) y por el resto de los lugares que actualizan contraseña
+ * desde el cliente.
  */
 export function getPasswordUpdateErrorMessage(message: string) {
   const normalizedMessage = message.toLowerCase()

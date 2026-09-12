@@ -9,10 +9,10 @@ import {
 } from "./account-fields.ts"
 
 /**
- * Política de contraseña centralizada -- la misma usada en registro, en el
- * formulario de /reset-password Y en el endpoint server-side
- * app/api/auth/reset-password/confirm (validatePassword). Un solo lugar,
- * probado acá, para que ningún flujo termine con reglas inconsistentes.
+ * Política de contraseña centralizada -- la misma usada en registro y en el
+ * formulario de /reset-password (validatePassword antes de llamar a
+ * supabase.auth.updateUser()). Un solo lugar, probado acá, para que ningún
+ * flujo termine con reglas inconsistentes.
  */
 
 test("contraseña que cumple los 4 requisitos (8+, mayúscula, minúscula, número) es válida", () => {

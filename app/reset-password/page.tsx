@@ -25,6 +25,10 @@ import {
   type RecoveryLinkController,
 } from "@/lib/auth/recovery-flow-controller"
 import { resolveRecoveryLink, type RecoveryLinkParams } from "@/lib/auth/recovery-link"
+import {
+  createPasswordUpdateSubmitter,
+  type PasswordUpdateSubmitter,
+} from "@/lib/auth/reset-password-submit"
 import { supabase } from "@/lib/supabase/client"
 import { FIELD_LIMITS, validatePassword } from "@/lib/validation/account-fields"
 
@@ -47,12 +51,19 @@ function ResetPasswordContent() {
   // no en este flag visual.
   const [confirmingRecovery, setConfirmingRecovery] = useState(false)
   const [canChangePassword, setCanChangePassword] = useState(false)
-  const [accessToken, setAccessToken] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [success, setSuccess] = useState(false)
 
   const mountedRef = useRef(true)
+  // Mismo patrón que el controller de recovery: createPasswordUpdateSubmitter
+  // cachea síncronamente la promesa en curso, así que un doble
+  // click/doble submit nunca dispara updateUser() dos veces (ver
+  // lib/auth/reset-password-submit.ts). Se crea una sola vez con useState
+  // lazy-init, nunca se recrea entre renders.
+  const [submitter] = useState<PasswordUpdateSubmitter>(() =>
+    createPasswordUpdateSubmitter(supabase.auth),
+  )
   // El controlador (lib/auth/recovery-flow-controller.ts) decide una única
   // vez, al parsear los params en el mount, si hace falta gatear detrás de
   // un click humano -- y garantiza que confirm() sólo dispare
@@ -75,7 +86,6 @@ function ResetPasswordContent() {
 
       if (resolution.status === "valid") {
         localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
-        setAccessToken(resolution.accessToken)
         setCanChangePassword(true)
         setNeedsConfirmation(false)
         setCheckingSession(false)
@@ -102,17 +112,15 @@ function ResetPasswordContent() {
 
     const markValidRecovery = async () => {
       const { data } = await supabase.auth.getSession()
-      const token = data.session?.access_token ?? ""
 
       if (!mountedRef.current) return
 
-      if (!token) {
+      if (!data.session) {
         failRecovery()
         return
       }
 
       localStorage.setItem(PASSWORD_RECOVERY_KEY, "true")
-      setAccessToken(token)
       setCanChangePassword(true)
       setNeedsConfirmation(false)
       setCheckingSession(false)
@@ -198,40 +206,37 @@ function ResetPasswordContent() {
       return
     }
 
-    if (!canChangePassword || !accessToken) {
+    if (!canChangePassword) {
       setError(getInvalidRecoveryLinkMessage())
       return
     }
 
     setLoading(true)
 
-    try {
-      const response = await fetch("/api/auth/reset-password/confirm", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ password }),
-      })
-      const data = (await response.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null
+    // submitter.submit() usa directamente la sesión de recuperación que
+    // verifyOtp() ya dejó activa en este mismo cliente
+    // (lib/auth/reset-password-submit.ts, sobre supabase.auth) -- sin
+    // mandar ningún token a nuestro backend, sin service_role. GoTrue
+    // autoriza este cambio de contraseña de forma nativa para una sesión
+    // así de reciente (ver informe de la tarea: session.IsRecovery() +
+    // "recently logged in" exceptúan la reautenticación/contraseña actual
+    // para sesiones de recuperación reales) -- updateUser() sólo puede
+    // modificar al usuario de la sesión activa, nunca otro user_id. Un
+    // doble submit/doble click cae en la misma llamada en curso (cacheada
+    // dentro del submitter), nunca dispara updateUser() dos veces.
+    const result = await submitter.submit(password)
 
-      if (!response.ok || !data?.ok) {
-        setError(data?.error || getInvalidRecoveryLinkMessage())
-        setLoading(false)
-        return
-      }
+    if (!mountedRef.current) return
 
-      localStorage.removeItem(PASSWORD_RECOVERY_KEY)
-      await supabase.auth.signOut()
+    if (result.status === "error") {
+      setError(result.message)
       setLoading(false)
-      setSuccess(true)
-    } catch {
-      setError("No se pudo actualizar la contraseña. Intentá nuevamente.")
-      setLoading(false)
+      return
     }
+
+    localStorage.removeItem(PASSWORD_RECOVERY_KEY)
+    setLoading(false)
+    setSuccess(true)
   }
 
   return (

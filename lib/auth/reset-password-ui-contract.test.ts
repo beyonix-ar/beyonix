@@ -37,12 +37,63 @@ test("/reset-password reutiliza los componentes/tokens de diseño existentes, no
   assert.match(page, /<PasswordRequirements password=\{password\} \/>/)
 })
 
-test("/reset-password nunca llama a supabase.auth.updateUser directo: el cambio de contraseña pasa por el endpoint server-side", () => {
+test("/reset-password cambia la contraseña vía createPasswordUpdateSubmitter (supabase.auth.updateUser real, ver reset-password-submit.ts) -- ya NO pasa por un endpoint server-side con service_role", () => {
   const page = source("app/reset-password/page.tsx")
 
-  assert.doesNotMatch(page, /supabase\.auth\.updateUser/)
-  assert.match(page, /\/api\/auth\/reset-password\/confirm/)
-  assert.match(page, /Authorization: `Bearer \$\{accessToken\}`/)
+  assert.match(page, /from "@\/lib\/auth\/reset-password-submit"/)
+  assert.match(page, /createPasswordUpdateSubmitter\(supabase\.auth\)/)
+  assert.match(page, /submitter\.submit\(password\)/)
+
+  const submitModule = source("lib/auth/reset-password-submit.ts")
+  assert.match(submitModule, /auth\.updateUser\(\{ password \}\)/)
+  assert.match(submitModule, /auth\.signOut\(\)/)
+
+  // No debe quedar ningún rastro del endpoint eliminado, de mandar un
+  // access_token a nuestro backend, ni de admin.updateUserById/service_role
+  // en ningún lugar de este flujo. No se chequea "accessToken" en general:
+  // RecoveryLinkParams.accessToken (el #access_token= del link legado) es
+  // un campo legítimo y distinto, sin relación con el endpoint eliminado.
+  for (const contents of [page, submitModule]) {
+    assert.doesNotMatch(contents, /\/api\/auth\/reset-password\/confirm/)
+    assert.doesNotMatch(contents, /Authorization: `Bearer/)
+    assert.doesNotMatch(contents, /admin\.updateUserById/)
+    // Uso real de service_role (no menciones en comentarios explicando por
+    // qué NO se usa), y sin el cliente admin en absoluto.
+    assert.doesNotMatch(contents, /SUPABASE_SERVICE_ROLE_KEY/)
+    assert.doesNotMatch(contents, /createAdminClient/)
+    assert.doesNotMatch(contents, /isRecoverySessionToken/)
+  }
+  assert.doesNotMatch(page, /fetch\(\s*"\/api\/auth\/reset-password/)
+})
+
+test("la contraseña nunca se pasa a console.log/error/warn/info en el flujo de recovery", () => {
+  const page = source("app/reset-password/page.tsx")
+  const submitModule = source("lib/auth/reset-password-submit.ts")
+
+  for (const contents of [page, submitModule]) {
+    const consoleCalls = [...contents.matchAll(/console\.(log|error|warn|info)\(([^)]*)\)/g)]
+    for (const match of consoleCalls) {
+      assert.doesNotMatch(match[2], /\bpassword\b/i)
+    }
+  }
+})
+
+test("nada en el repo referencia isRecoverySessionToken, recovery-session.ts, ni el endpoint /api/auth/reset-password/confirm eliminados", () => {
+  // Contrato negativo global: si algo los reintrodujera (import roto,
+  // copy-paste de una rama vieja), este test lo detecta.
+  const filesThatMustNotReferenceThem = [
+    "app/reset-password/page.tsx",
+    "lib/auth/reset-password-submit.ts",
+    "lib/auth/password-update-messages.ts",
+    "lib/validation/password-policy.test.ts",
+  ]
+
+  for (const file of filesThatMustNotReferenceThem) {
+    const contents = source(file)
+    assert.doesNotMatch(contents, /isRecoverySessionToken/, file)
+    assert.doesNotMatch(contents, /recovery-session/, file)
+    assert.doesNotMatch(contents, /reset-password-confirm/, file)
+  }
 })
 
 test("estado de enlace inválido/expirado: mensaje claro + botón para pedir uno nuevo, sin continuar en silencio", () => {
