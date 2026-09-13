@@ -21,6 +21,24 @@
  * `type=recovery` NO se maneja acá: app/confirmar-email/page.tsx lo
  * redirige a /reset-password ANTES de crear el controller, porque ese es un
  * flujo completamente distinto (ver lib/auth/recovery-link.ts).
+ *
+ * IMPORTANTE (causa real del falso "enlace vencido" auditada 2026-09-14,
+ * reproducida con cuentas nuevas reales): para `token_hash`+`type=email`,
+ * `verifyOtp` puede confirmar el email exitosamente (Supabase acepta y
+ * consume el token, `error` viene `null`) sin devolver `session`/`user` en
+ * esa misma respuesta -- confirmado contra `auth.users` (email_confirmed_at/
+ * confirmed_at quedan seteados) en dos pruebas controladas donde la UI
+ * mostraba "invalid" igual. Tratar `!data.session || !data.user` como
+ * equivalente a un error real (token vencido/ya usado) es INCORRECTO: son
+ * dos resultados distintos. Por eso, para `token_hash`, sólo un `error`
+ * real de Supabase resuelve "invalid"; la ausencia de sesión/usuario sin
+ * error resuelve "confirmed" con `accessToken`/`userId` en null (ver
+ * `ConfirmationLinkResolution` y app/confirmar-email/page.tsx, que en ese
+ * caso omite la activación server-side por falta de token pero muestra
+ * éxito -- la activación real la completa el polling existente de
+ * /api/auth/confirmation-status en la pestaña original). El flujo `?code=`
+ * (PKCE, sin evidencia de esta misma falla y no usado hoy por el template)
+ * mantiene el criterio estricto anterior.
  */
 
 export type ConfirmationOtpType = "signup" | "email" | "invite" | "magiclink"
@@ -71,7 +89,7 @@ export interface ConfirmationAuthClient {
 }
 
 export type ConfirmationLinkResolution =
-  | { status: "confirmed"; accessToken: string; userId: string }
+  | { status: "confirmed"; accessToken: string | null; userId: string | null }
   | { status: "invalid" }
 
 /**
@@ -88,30 +106,6 @@ export function hasConsumableConfirmationToken(
   return Boolean(params.tokenHash || params.code)
 }
 
-/**
- * TEMPORAL -- diagnóstico de la causa real de "El enlace venció o ya fue
- * utilizado" en Confirm Signup con un token recién emitido (auditoría
- * 2026-09-14, sigue sin resolverse tras corregir type=signup -> type=email).
- * Sólo loguea el `type` usado y los campos seguros del error real de
- * Supabase (`name`/`code`/`status`/`message`) -- NUNCA el `token_hash`, JWT,
- * cookies ni ningún dato de sesión. Sólo corre en el navegador (nunca en los
- * tests, que ejecutan en Node sin `window`) para no ensuciar `npm test`.
- * Remover una vez identificada la causa raíz real.
- */
-function logVerifyFailureDiagnostic(
-  context: "token_hash" | "code",
-  otpType: ConfirmationOtpType | null,
-  error: ConfirmationAuthResult["error"],
-  hasSession: boolean,
-  hasUser: boolean,
-) {
-  if (typeof window === "undefined") return
-
-  console.warn(
-    `CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC context=${context} otpType=${otpType} errorName=${error?.name ?? "null"} errorCode=${error?.code ?? "null"} errorStatus=${error?.status ?? "null"} errorMessage=${JSON.stringify(error?.message ?? null)} hasSession=${hasSession} hasUser=${hasUser}`,
-  )
-}
-
 export async function resolveConfirmationLink(
   auth: ConfirmationAuthClient,
   params: ConfirmationLinkParams,
@@ -123,20 +117,18 @@ export async function resolveConfirmationLink(
       type,
     })
 
-    if (error || !data.session || !data.user) {
-      logVerifyFailureDiagnostic(
-        "token_hash",
-        type,
-        error,
-        Boolean(data.session),
-        Boolean(data.user),
-      )
+    // Sólo un error real de Supabase (token vencido/ya usado/inválido)
+    // resuelve "invalid" -- ver comentario del archivo. Que falte
+    // session/user sin error NO es lo mismo: el email quedó confirmado
+    // igual, sólo que esta respuesta puntual no trae una sesión utilizable
+    // en esta pestaña.
+    if (error) {
       return { status: "invalid" }
     }
     return {
       status: "confirmed",
-      accessToken: data.session.access_token,
-      userId: data.user.id,
+      accessToken: data.session?.access_token ?? null,
+      userId: data.user?.id ?? null,
     }
   }
 
@@ -144,13 +136,6 @@ export async function resolveConfirmationLink(
     const { data, error } = await auth.exchangeCodeForSession(params.code)
 
     if (error || !data.session || !data.user) {
-      logVerifyFailureDiagnostic(
-        "code",
-        null,
-        error,
-        Boolean(data.session),
-        Boolean(data.user),
-      )
       return { status: "invalid" }
     }
     return {

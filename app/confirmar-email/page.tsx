@@ -18,6 +18,8 @@ import { supabase } from "@/lib/supabase/client"
 
 const INVALID_LINK_MESSAGE =
   "El enlace venció o ya fue utilizado. Solicitá un nuevo correo de confirmación."
+const ACTIVATION_ERROR_MESSAGE =
+  "Tu correo fue confirmado, pero no pudimos completar la activación de la cuenta. Intentá iniciar sesión o volvé a intentarlo."
 const AUTH_LAST_ACTIVITY_KEY = "beyonix-auth-last-activity"
 
 function recordConfirmationActivity() {
@@ -96,6 +98,19 @@ function ConfirmEmailContent() {
 
       window.history.replaceState(null, "", "/confirmar-email")
 
+      // verifyOtp confirmó el email (sin error) pero esta respuesta no trajo
+      // sesión utilizable en esta pestaña (ver lib/auth/confirmation-link.ts).
+      // Sin accessToken no hay forma de llamar a /api/auth/confirm-email
+      // desde acá -- la activación y el login real los completa el polling
+      // ya existente de /api/auth/confirmation-status en la pestaña
+      // original. Mostrar éxito acá es correcto: el email SÍ quedó
+      // confirmado.
+      if (!resolution.accessToken || !resolution.userId) {
+        recordConfirmationActivity()
+        setConfirmed(true)
+        return
+      }
+
       try {
         await activateConfirmedAccount(resolution.accessToken)
         await persistActivatedSession(resolution.userId)
@@ -105,7 +120,7 @@ function ConfirmEmailContent() {
       } catch {
         if (!mountedRef.current) return
         setConfirming(false)
-        setError("No pudimos activar tu cuenta. Intentá nuevamente.")
+        setError(ACTIVATION_ERROR_MESSAGE)
       }
     },
     [],

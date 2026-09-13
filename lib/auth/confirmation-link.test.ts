@@ -153,9 +153,18 @@ test("sin token_hash ni code: 'invalid' sin llamar a ningún método de auth", a
   assert.equal(calls.exchangeCodeForSession.length, 0)
 })
 
-// --- 4. estado inconsistente: sin error pero sin sesión/usuario ---
+// --- 4. token_hash: verifyOtp confirma sin error pero sin sesión/usuario en
+// la respuesta -- bug real reproducido 2026-09-14 con dos cuentas nuevas:
+// Supabase acepta y consume el token (email_confirmed_at/confirmed_at
+// quedan seteados en auth.users, last_sign_in_at llega segundos después vía
+// el polling de /api/auth/confirmation-status) sin devolver session/user en
+// ESA respuesta puntual. Tratar esto como "invalid" mostraba "el enlace
+// venció" sobre una confirmación que en los hechos había funcionado. Para
+// token_hash, sólo un error real de Supabase (token vencido/ya usado)
+// resuelve "invalid" -- la ausencia de sesión/usuario sin error resuelve
+// "confirmed" con accessToken/userId en null.
 
-test("si verifyOtp no devuelve error pero tampoco sesión: igual resuelve 'invalid', nunca 'confirmed' sin accessToken", async () => {
+test("token_hash: verifyOtp SIN error pero sin sesión resuelve 'confirmed' con accessToken null (el email quedó confirmado igual)", async () => {
   const { auth } = createFakeAuth({ sessionAfterSuccess: null })
 
   const result = await resolveConfirmationLink(auth, {
@@ -164,16 +173,49 @@ test("si verifyOtp no devuelve error pero tampoco sesión: igual resuelve 'inval
     type: "email",
   })
 
-  assert.deepEqual(result, { status: "invalid" })
+  assert.deepEqual(result, {
+    status: "confirmed",
+    accessToken: null,
+    userId: "user-123",
+  })
 })
 
-test("si verifyOtp no devuelve error pero tampoco usuario: igual resuelve 'invalid'", async () => {
+test("token_hash: verifyOtp SIN error pero sin usuario resuelve 'confirmed' con userId null", async () => {
   const { auth } = createFakeAuth({ userAfterSuccess: null })
 
   const result = await resolveConfirmationLink(auth, {
     ...EMPTY_PARAMS,
     tokenHash: "hash",
     type: "email",
+  })
+
+  assert.deepEqual(result, {
+    status: "confirmed",
+    accessToken: "confirmation-access-token",
+    userId: null,
+  })
+})
+
+test("token_hash: un error real de Supabase (token vencido/ya usado) resuelve 'invalid' incluso si data trae session/user residual", async () => {
+  const { auth } = createFakeAuth({
+    verifyOtpError: { message: "Token has expired or is invalid", code: "otp_expired" },
+  })
+
+  const result = await resolveConfirmationLink(auth, {
+    ...EMPTY_PARAMS,
+    tokenHash: "vencido",
+    type: "email",
+  })
+
+  assert.deepEqual(result, { status: "invalid" })
+})
+
+test("?code= (PKCE): sin error pero sin sesión sigue resolviendo 'invalid' -- este flujo no mostró la falla real y mantiene el criterio estricto", async () => {
+  const { auth } = createFakeAuth({ sessionAfterSuccess: null })
+
+  const result = await resolveConfirmationLink(auth, {
+    ...EMPTY_PARAMS,
+    code: "pkce-code-xyz",
   })
 
   assert.deepEqual(result, { status: "invalid" })

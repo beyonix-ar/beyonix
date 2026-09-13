@@ -450,6 +450,10 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
       </div>
       <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
       <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
+      {/* Requisitos ANTES del campo: el popup de Chrome/Password Manager se
+          ancla debajo del input de contraseña al enfocarlo y lo tapa -- ver
+          auditoría 2026-09-14. Arriba del campo queda siempre visible. */}
+      <PasswordRequirements password={password} />
       <InputField
         label="Contraseña"
         type={showPass ? "text" : "password"}
@@ -469,7 +473,6 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
           </button>
         }
       />
-      <PasswordRequirements password={password} />
 
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">

@@ -225,6 +225,68 @@ test("/confirmar-email usa las variables --account-* (mismas que /login, ya prob
   assert.match(page, /text-\[var\(--account-accent\)\]/)
 })
 
+// --- Falso "enlace vencido" transitorio (reproducido con dos cuentas reales,
+// 2026-09-14): verifyOtp podía confirmar el email exitosamente (sin error)
+// sin devolver session/user en esa respuesta puntual -- lib/auth/
+// confirmation-link.ts ya no trata eso como "invalid". Acá se fija que la
+// página distinga correctamente los 3 desenlaces posibles de finishConfirmation.
+
+test("confirmado sin accessToken/userId en esta pestaña: la página muestra éxito (setConfirmed), nunca el mensaje de enlace vencido", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  const guardIndex = page.indexOf("if (!resolution.accessToken || !resolution.userId)")
+  assert.ok(guardIndex >= 0, "falta el guard que distingue confirmado-sin-sesión de inválido")
+
+  const activateCallIndex = page.indexOf(
+    "await activateConfirmedAccount(resolution.accessToken)",
+  )
+  assert.ok(
+    activateCallIndex > guardIndex,
+    "el guard debe evaluarse antes de intentar activar con un accessToken potencialmente null",
+  )
+
+  const guardBlock = page.slice(guardIndex, activateCallIndex)
+  assert.match(guardBlock, /setConfirmed\(true\)/)
+  assert.doesNotMatch(guardBlock, /setError/)
+})
+
+test("falla de activación DESPUÉS de tener accessToken usa un mensaje distinto de INVALID_LINK_MESSAGE (no dice que el enlace venció)", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  assert.match(page, /const ACTIVATION_ERROR_MESSAGE =/)
+  assert.match(
+    page,
+    /Tu correo fue confirmado, pero no pudimos completar la activación de la cuenta\./,
+  )
+
+  const catchIndex = page.indexOf("} catch {", page.indexOf("await persistActivatedSession"))
+  assert.ok(catchIndex >= 0)
+  const catchBlock = page.slice(catchIndex, catchIndex + 200)
+  assert.match(catchBlock, /setError\(ACTIVATION_ERROR_MESSAGE\)/)
+  assert.doesNotMatch(catchBlock, /setError\(INVALID_LINK_MESSAGE\)/)
+})
+
+test("INVALID_LINK_MESSAGE sólo se usa para un link sin token consumible o un error real de verifyOtp/exchangeCodeForSession -- nunca dentro del guard de confirmado-sin-sesión ni del catch de activación", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  const invalidBranchIndex = page.indexOf('if (resolution.status !== "confirmed")')
+  assert.ok(invalidBranchIndex >= 0)
+
+  // Las dos únicas apariciones legítimas: el mount effect (link sin
+  // token_hash/code) y este branch (error real de verifyOtp/
+  // exchangeCodeForSession). Ninguna otra rama debe agregarla.
+  const usages = [...page.matchAll(/setError\(INVALID_LINK_MESSAGE\)/g)]
+  assert.equal(usages.length, 2, "INVALID_LINK_MESSAGE debe usarse exactamente en esos dos lugares")
+})
+
+test("el diagnóstico temporal CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC fue removido tras identificar y corregir la causa real", () => {
+  const linkModule = source("lib/auth/confirmation-link.ts")
+
+  assert.doesNotMatch(linkModule, /CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC/)
+  assert.doesNotMatch(linkModule, /logVerifyFailureDiagnostic/)
+  assert.doesNotMatch(linkModule, /TEMPORAL/)
+})
+
 test("el botón sólido de /confirmar-email (Confirmar mi cuenta / Cerrar esta pestaña / Volver al inicio de sesión) comparte una sola clase reutilizable y tiene una regla de Light dedicada que NO toca su apariencia en Dark", () => {
   const page = source("app/confirmar-email/page.tsx")
 
