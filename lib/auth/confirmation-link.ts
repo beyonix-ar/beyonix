@@ -102,11 +102,13 @@ function logVerifyFailureDiagnostic(
   context: "token_hash" | "code",
   otpType: ConfirmationOtpType | null,
   error: ConfirmationAuthResult["error"],
+  hasSession: boolean,
+  hasUser: boolean,
 ) {
   if (typeof window === "undefined") return
 
   console.warn(
-    `CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC context=${context} otpType=${otpType} errorName=${error?.name ?? "null"} errorCode=${error?.code ?? "null"} errorStatus=${error?.status ?? "null"} errorMessage=${JSON.stringify(error?.message ?? null)}`,
+    `CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC context=${context} otpType=${otpType} errorName=${error?.name ?? "null"} errorCode=${error?.code ?? "null"} errorStatus=${error?.status ?? "null"} errorMessage=${JSON.stringify(error?.message ?? null)} hasSession=${hasSession} hasUser=${hasUser}`,
   )
 }
 
@@ -122,7 +124,13 @@ export async function resolveConfirmationLink(
     })
 
     if (error || !data.session || !data.user) {
-      logVerifyFailureDiagnostic("token_hash", type, error)
+      logVerifyFailureDiagnostic(
+        "token_hash",
+        type,
+        error,
+        Boolean(data.session),
+        Boolean(data.user),
+      )
       return { status: "invalid" }
     }
     return {
@@ -136,7 +144,13 @@ export async function resolveConfirmationLink(
     const { data, error } = await auth.exchangeCodeForSession(params.code)
 
     if (error || !data.session || !data.user) {
-      logVerifyFailureDiagnostic("code", null, error)
+      logVerifyFailureDiagnostic(
+        "code",
+        null,
+        error,
+        Boolean(data.session),
+        Boolean(data.user),
+      )
       return { status: "invalid" }
     }
     return {
