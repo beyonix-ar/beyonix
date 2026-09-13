@@ -998,6 +998,31 @@ html[data-account-theme="light"][data-account-scope] .login-light-scope .login-s
 html[data-account-theme="light"][data-account-scope] .login-light-scope .login-select-chevron {
   color: var(--account-text-muted) !important;
 }
+
+/* =========================
+   /confirmar-email EN LIGHT
+   =========================
+   El resto de la página (tarjeta, título, texto, ícono) ya usa variables
+   --account-* directamente en el className (adaptan solas). El único botón
+   sólido de esta pantalla (Confirmar mi cuenta / Cerrar esta pestaña /
+   Volver al inicio de sesión, los tres comparten .beyonix-confirm-primary-
+   button) queda con bg-white/text-black fijo a propósito -- funciona bien
+   en Dark (pill blanco sobre tarjeta oscura) pero en Light un botón blanco
+   sobre una tarjeta ya clara queda invisible. Se resuelve sólo acá, sin
+   tocar el className (que debe seguir funcionando igual en Dark). */
+html[data-account-theme="light"][data-account-scope] .confirmar-email-scope .beyonix-confirm-primary-button {
+  background-color: var(--account-accent) !important;
+  color: #ffffff !important;
+}
+html[data-account-theme="light"][data-account-scope] .confirmar-email-scope .beyonix-confirm-primary-button:hover {
+  background-color: var(--account-accent-hover) !important;
+  opacity: 1 !important;
+}
+html[data-account-theme="light"][data-account-scope] .confirmar-email-scope .beyonix-confirm-primary-button:disabled {
+  background-color: var(--account-accent) !important;
+  opacity: 0.5 !important;
+}
+
 html[data-account-theme="light"][data-account-scope] .beyonix-products-shell {
   background: var(--account-surface-raised) !important;
   border-color: var(--account-border) !important;

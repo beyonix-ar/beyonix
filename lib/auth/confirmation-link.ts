@@ -54,7 +54,12 @@ interface ConfirmationAuthResult {
     session: { access_token: string } | null
     user: { id: string } | null
   }
-  error: { message: string; code?: string } | null
+  error: {
+    message: string
+    code?: string
+    name?: string
+    status?: number
+  } | null
 }
 
 export interface ConfirmationAuthClient {
@@ -83,17 +88,43 @@ export function hasConsumableConfirmationToken(
   return Boolean(params.tokenHash || params.code)
 }
 
+/**
+ * TEMPORAL -- diagnóstico de la causa real de "El enlace venció o ya fue
+ * utilizado" en Confirm Signup con un token recién emitido (auditoría
+ * 2026-09-14, sigue sin resolverse tras corregir type=signup -> type=email).
+ * Sólo loguea el `type` usado y los campos seguros del error real de
+ * Supabase (`name`/`code`/`status`/`message`) -- NUNCA el `token_hash`, JWT,
+ * cookies ni ningún dato de sesión. Sólo corre en el navegador (nunca en los
+ * tests, que ejecutan en Node sin `window`) para no ensuciar `npm test`.
+ * Remover una vez identificada la causa raíz real.
+ */
+function logVerifyFailureDiagnostic(
+  context: "token_hash" | "code",
+  otpType: ConfirmationOtpType | null,
+  error: ConfirmationAuthResult["error"],
+) {
+  if (typeof window === "undefined") return
+
+  console.warn(
+    `CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC context=${context} otpType=${otpType} errorName=${error?.name ?? "null"} errorCode=${error?.code ?? "null"} errorStatus=${error?.status ?? "null"} errorMessage=${JSON.stringify(error?.message ?? null)}`,
+  )
+}
+
 export async function resolveConfirmationLink(
   auth: ConfirmationAuthClient,
   params: ConfirmationLinkParams,
 ): Promise<ConfirmationLinkResolution> {
   if (params.tokenHash) {
+    const type = getConfirmationOtpType(params.type)
     const { data, error } = await auth.verifyOtp({
       token_hash: params.tokenHash,
-      type: getConfirmationOtpType(params.type),
+      type,
     })
 
-    if (error || !data.session || !data.user) return { status: "invalid" }
+    if (error || !data.session || !data.user) {
+      logVerifyFailureDiagnostic("token_hash", type, error)
+      return { status: "invalid" }
+    }
     return {
       status: "confirmed",
       accessToken: data.session.access_token,
@@ -104,7 +135,10 @@ export async function resolveConfirmationLink(
   if (params.code) {
     const { data, error } = await auth.exchangeCodeForSession(params.code)
 
-    if (error || !data.session || !data.user) return { status: "invalid" }
+    if (error || !data.session || !data.user) {
+      logVerifyFailureDiagnostic("code", null, error)
+      return { status: "invalid" }
+    }
     return {
       status: "confirmed",
       accessToken: data.session.access_token,

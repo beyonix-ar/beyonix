@@ -183,6 +183,70 @@ test("app/login/page.tsx ya no tiene BroadcastChannel ni el listener de storage 
   assert.match(login, /auth\.verifyOtp\(\{\s*\n?\s*token_hash: data\.tokenHash,\s*\n?\s*type: "magiclink",/)
 })
 
+// --- Light mode ilegible (reporte real de usuario, 2026-09-14) ---
+// La tarjeta usaba bg-beyonix-surface-4 (sí adapta a Light) pero TODO el
+// texto/bordes/íconos eran text-white/border-white/emerald-400/red-400 fijos,
+// sin ninguna regla de override para esta página (a diferencia de
+// .login-light-scope o .checkout-page) -- quedaba texto blanco sobre
+// tarjeta clara. Se resolvió usando las mismas variables --account-* ya
+// probadas en /login, que adaptan solas sin necesitar overrides nuevos,
+// más una regla dedicada sólo para el botón sólido (que en Dark debía
+// seguir siendo bg-white sin cambios).
+
+test("/confirmar-email no tiene texto/bordes/íconos con colores fijos de dark-only (text-white, border-white, emerald-400, red-400, red-500, bg-black) sin contraparte de tema", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  assert.doesNotMatch(page, /text-white\b/)
+  assert.doesNotMatch(page, /text-white\//)
+  assert.doesNotMatch(page, /border-white\//)
+  assert.doesNotMatch(page, /bg-black\b/)
+  assert.doesNotMatch(page, /emerald-400/)
+  assert.doesNotMatch(page, /red-400/)
+  assert.doesNotMatch(page, /red-500/)
+  assert.doesNotMatch(page, /emerald-500/)
+})
+
+test("/confirmar-email usa las variables --account-* (mismas que /login, ya probadas en ambos temas) para fondo de página, tarjeta, texto, bordes e íconos en los 4 estados", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  assert.match(page, /bg-\[var\(--account-background\)\]/)
+  assert.match(page, /bg-\[var\(--account-surface-raised\)\]/)
+  assert.match(page, /border-\[var\(--account-border\)\]/)
+  assert.match(page, /text-\[var\(--account-text-primary\)\]/)
+  assert.match(page, /text-\[var\(--account-text-secondary\)\]/)
+  // Ícono de error (rojo) y de éxito (verde), ambos con tokens semánticos.
+  assert.match(page, /border-\[var\(--account-danger-border\)\]/)
+  assert.match(page, /bg-\[var\(--account-danger-bg\)\]/)
+  assert.match(page, /text-\[var\(--account-danger-text\)\]/)
+  assert.match(page, /border-\[var\(--account-success-border\)\]/)
+  assert.match(page, /bg-\[var\(--account-success-bg\)\]/)
+  assert.match(page, /text-\[var\(--account-success-text\)\]/)
+  // Spinner de loading con acento de marca, no un verde/blanco fijo.
+  assert.match(page, /text-\[var\(--account-accent\)\]/)
+})
+
+test("el botón sólido de /confirmar-email (Confirmar mi cuenta / Cerrar esta pestaña / Volver al inicio de sesión) comparte una sola clase reutilizable y tiene una regla de Light dedicada que NO toca su apariencia en Dark", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  // Los 3 (Link + 2 button) referencian la MISMA variable -- si Dark cambia
+  // para uno, cambia para los 3 automáticamente.
+  const sharedClassNameUses = (
+    page.match(/className=\{primaryButtonClassName\}/g) ?? []
+  ).length
+  assert.equal(sharedClassNameUses, 3, "Link + 2 <button> deben compartir la misma className")
+  assert.match(page, /beyonix-confirm-primary-button/)
+  assert.match(page, /bg-white text-sm font-semibold text-black/)
+
+  const css = source("app/globals.css")
+  const scopeIndex = css.indexOf(
+    'html[data-account-theme="light"][data-account-scope] .confirmar-email-scope .beyonix-confirm-primary-button',
+  )
+  assert.ok(scopeIndex >= 0, "falta la regla de Light para el botón de /confirmar-email")
+  const scopedRule = css.slice(scopeIndex, scopeIndex + 400)
+  assert.match(scopedRule, /background-color:\s*var\(--account-accent\)/)
+  assert.match(scopedRule, /color:\s*#ffffff/)
+})
+
 test("/confirmar-email es la única ruta que consume el token_hash/code de Confirm signup: el template le apunta exclusivamente a ella", () => {
   const template = source("supabase/email-templates/confirm-signup.html")
 

@@ -162,9 +162,12 @@ function ConfirmEmailContent() {
     }
   }, [router, searchParams])
 
+  const primaryButtonClassName =
+    "beyonix-confirm-primary-button mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-colors duration-200 hover:opacity-90 active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50 disabled:cursor-not-allowed disabled:opacity-60"
+
   return (
-    <div className="flex min-h-screen flex-col bg-black">
-      <header className="border-b border-white/10 bg-black">
+    <div className="confirmar-email-scope flex min-h-screen flex-col bg-[var(--account-background)]">
+      <header className="border-b border-[var(--account-border)] bg-[var(--account-background)]">
         <nav className="container mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-center lg:h-18">
             <BeyonixLogoLink />
@@ -173,18 +176,26 @@ function ConfirmEmailContent() {
       </header>
 
       <main className="flex flex-1 items-center justify-center px-4 py-6">
-        <div className="w-full max-w-md rounded-2xl border border-white/10 bg-beyonix-surface-4 p-6 text-center shadow-2xl shadow-black/35">
-          <div className="mx-auto flex size-16 items-center justify-center rounded-full border border-emerald-400/25 bg-emerald-500/10">
+        <div className="w-full max-w-md rounded-2xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] p-6 text-center shadow-2xl shadow-black/35">
+          <div
+            className={`mx-auto flex size-16 items-center justify-center rounded-full border ${
+              error
+                ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]"
+                : confirmed
+                  ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                  : "border-[var(--account-border)] bg-[var(--account-surface-hover)]"
+            }`}
+          >
             {error ? (
-              <AlertCircle className="size-10 text-red-400" />
+              <AlertCircle className="size-10 text-[var(--account-danger-text)]" />
             ) : confirmed ? (
-              <CheckCircle2 className="size-10 text-emerald-400" />
+              <CheckCircle2 className="size-10 text-[var(--account-success-text)]" />
             ) : (
-              <Loader2 className="size-8 animate-spin text-emerald-400" />
+              <Loader2 className="size-8 animate-spin text-[var(--account-accent)]" />
             )}
           </div>
 
-          <h1 className="mt-5 text-2xl font-bold text-white">
+          <h1 className="mt-5 text-2xl font-bold text-[var(--account-text-primary)]">
             {error
               ? "No pudimos confirmar tu cuenta"
               : confirmed
@@ -196,20 +207,17 @@ function ConfirmEmailContent() {
 
           {error ? (
             <>
-              <p className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <p className="mt-4 rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-sm text-[var(--account-danger-text)]">
                 {error}
               </p>
 
-              <Link
-                href="/login"
-                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50"
-              >
+              <Link href="/login" className={primaryButtonClassName}>
                 Volver al inicio de sesión
               </Link>
             </>
           ) : confirmed ? (
             <>
-              <p className="mt-3 text-sm leading-6 text-white/60">
+              <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
                 La pestaña donde te registraste te llevará al Home en un
                 segundo. Esta pestaña se cerrará automáticamente si Chrome lo
                 permite.
@@ -218,14 +226,14 @@ function ConfirmEmailContent() {
               <button
                 type="button"
                 onClick={() => window.close()}
-                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50"
+                className={primaryButtonClassName}
               >
                 Cerrar esta pestaña
               </button>
             </>
           ) : needsConfirmation ? (
             <>
-              <p className="mt-3 text-sm leading-6 text-white/60">
+              <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
                 Para activar tu cuenta de BEYONIX, confirmá que fuiste vos
                 quien se registró.
               </p>
@@ -235,7 +243,7 @@ function ConfirmEmailContent() {
                 aria-label="Confirmar mi cuenta"
                 onClick={handleConfirmClick}
                 disabled={confirming}
-                className="mt-5 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-white text-sm font-semibold text-black transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/50 disabled:cursor-not-allowed disabled:opacity-60"
+                className={primaryButtonClassName}
               >
                 {confirming ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -245,7 +253,7 @@ function ConfirmEmailContent() {
               </button>
             </>
           ) : (
-            <p className="mt-3 text-sm leading-6 text-white/60">
+            <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
               Estamos validando tu email. Te vamos a redirigir automáticamente.
             </p>
           )}
@@ -257,7 +265,7 @@ function ConfirmEmailContent() {
 
 export default function ConfirmEmailPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[var(--account-background)]" />}>
       <ConfirmEmailContent />
     </Suspense>
   )
