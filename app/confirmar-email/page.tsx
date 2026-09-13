@@ -91,6 +91,27 @@ function ConfirmEmailContent() {
       if (!mountedRef.current) return
 
       if (resolution.status !== "confirmed") {
+        // El token de ESTE click puntual falló (ya usado/vencido), pero
+        // puede no ser un fallo real: un doble click, dos pestañas abiertas
+        // desde el mismo link de email, o el polling de la pestaña original
+        // (/api/auth/confirmation-status, que corre en paralelo y también
+        // persiste sesión vía su propio magic link) pueden haber consumido
+        // el flujo de confirmación exitosamente ANTES de que esta respuesta
+        // puntual llegue. Ambos casos comparten `localStorage` en el mismo
+        // navegador/origen -- si ya hay una sesión válida acá, es evidencia
+        // real de que la cuenta SÍ quedó confirmada, no una suposición.
+        const {
+          data: { session: existingSession },
+        } = await supabase.auth.getSession()
+
+        if (!mountedRef.current) return
+
+        if (existingSession) {
+          recordConfirmationActivity()
+          setConfirmed(true)
+          return
+        }
+
         setConfirming(false)
         setError(INVALID_LINK_MESSAGE)
         return
