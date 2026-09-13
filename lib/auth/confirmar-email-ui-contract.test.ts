@@ -287,6 +287,65 @@ test("el diagnóstico temporal CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC fue 
   assert.doesNotMatch(linkModule, /TEMPORAL/)
 })
 
+// --- Flash rojo transitorio entre el click y la confirmación (reportado en
+// producción con 4 cuentas reales, 2026-09-14): mientras la respuesta de
+// verifyOtp todavía está en vuelo, la pantalla debe quedarse en un estado de
+// carga dedicado ("Confirmando tu cuenta..."), nunca pasar preventivamente
+// por el estado de error. `confirming` se evalúa ANTES que
+// `needsConfirmation` tanto en el título como en el cuerpo, así que al
+// hacer click la pantalla del botón se reemplaza por esta pantalla de carga
+// en vez de quedarse mostrando el botón deshabilitado.
+
+test("al hacer click se muestra un estado de carga dedicado ('Confirmando tu cuenta...' / 'Estamos validando tu correo.'), evaluado antes que needsConfirmation", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  const h1Index = page.indexOf("<h1 ")
+  const h1CloseIndex = page.indexOf("</h1>", h1Index)
+  assert.ok(h1Index >= 0 && h1CloseIndex > h1Index, "no se encontró el <h1> del título")
+
+  const titleBlock = page.slice(h1Index, h1CloseIndex)
+  const confirmingInTitleIndex = titleBlock.indexOf("confirming")
+  const needsConfirmationInTitleIndex = titleBlock.indexOf("needsConfirmation")
+  assert.ok(
+    confirmingInTitleIndex > 0 &&
+      confirmingInTitleIndex < needsConfirmationInTitleIndex,
+    "el título debe chequear `confirming` antes que `needsConfirmation`",
+  )
+  assert.match(titleBlock, /"Confirmando tu cuenta\.\.\."/)
+
+  const confirmingBodyIndex = page.indexOf(") : confirming ? (")
+  const needsConfirmationBodyIndex = page.indexOf(") : needsConfirmation ? (")
+  assert.ok(confirmingBodyIndex >= 0, "falta la rama de cuerpo para `confirming`")
+  assert.ok(
+    confirmingBodyIndex < needsConfirmationBodyIndex,
+    "el cuerpo debe chequear `confirming` antes que `needsConfirmation`",
+  )
+
+  const confirmingBodyBlock = page.slice(confirmingBodyIndex, needsConfirmationBodyIndex)
+  assert.match(confirmingBodyBlock, /Estamos validando tu correo\./)
+  assert.doesNotMatch(confirmingBodyBlock, /setError|INVALID_LINK_MESSAGE/)
+})
+
+test("el estado de éxito muestra 'Cuenta verificada con éxito' (no 'Cuenta confirmada')", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  assert.match(page, /"Cuenta verificada con éxito"/)
+  assert.match(page, /Tu cuenta fue confirmada correctamente\./)
+})
+
+test("el cierre automático de la pestaña tras el éxito sigue existiendo sin cambios (timeout de 1500ms atado a `confirmed`)", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  const effectIndex = page.indexOf("if (!confirmed) return")
+  assert.ok(effectIndex >= 0)
+  const effectBlock = page.slice(effectIndex, effectIndex + 300)
+
+  assert.match(effectBlock, /window\.setTimeout\(/)
+  assert.match(effectBlock, /1500/)
+  assert.match(effectBlock, /window\.opener\?\.focus\(\)/)
+  assert.match(effectBlock, /window\.close\(\)/)
+})
+
 test("el botón sólido de /confirmar-email (Confirmar mi cuenta / Cerrar esta pestaña / Volver al inicio de sesión) comparte una sola clase reutilizable y tiene una regla de Light dedicada que NO toca su apariencia en Dark", () => {
   const page = source("app/confirmar-email/page.tsx")
 

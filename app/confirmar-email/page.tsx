@@ -214,10 +214,12 @@ function ConfirmEmailContent() {
             {error
               ? "No pudimos confirmar tu cuenta"
               : confirmed
-                ? "Cuenta confirmada"
-                : needsConfirmation
-                  ? "Confirmá tu cuenta"
-                  : "Confirmando tu cuenta"}
+                ? "Cuenta verificada con éxito"
+                : confirming
+                  ? "Confirmando tu cuenta..."
+                  : needsConfirmation
+                    ? "Confirmá tu cuenta"
+                    : "Confirmando tu cuenta..."}
           </h1>
 
           {error ? (
@@ -233,9 +235,7 @@ function ConfirmEmailContent() {
           ) : confirmed ? (
             <>
               <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
-                La pestaña donde te registraste te llevará al Home en un
-                segundo. Esta pestaña se cerrará automáticamente si Chrome lo
-                permite.
+                Tu cuenta fue confirmada correctamente.
               </p>
 
               <button
@@ -246,6 +246,10 @@ function ConfirmEmailContent() {
                 Cerrar esta pestaña
               </button>
             </>
+          ) : confirming ? (
+            <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
+              Estamos validando tu correo.
+            </p>
           ) : needsConfirmation ? (
             <>
               <p className="mt-3 text-sm leading-6 text-[var(--account-text-secondary)]">
