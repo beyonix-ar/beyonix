@@ -261,7 +261,7 @@ test("falla de activación DESPUÉS de tener accessToken usa un mensaje distinto
 
   const catchIndex = page.indexOf("} catch {", page.indexOf("await persistActivatedSession"))
   assert.ok(catchIndex >= 0)
-  const catchBlock = page.slice(catchIndex, catchIndex + 200)
+  const catchBlock = page.slice(catchIndex, catchIndex + 320)
   assert.match(catchBlock, /setError\(ACTIVATION_ERROR_MESSAGE\)/)
   assert.doesNotMatch(catchBlock, /setError\(INVALID_LINK_MESSAGE\)/)
 })
