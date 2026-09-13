@@ -95,6 +95,15 @@ function ConfirmEmailContent() {
   // resolveConfirmationLink() (verifyOtp/exchangeCodeForSession) una sola
   // vez sin importar cuántas veces se lo llame.
   const controllerRef = useRef<ConfirmationLinkController | null>(null)
+  // true = esta pestaña llegó a tener un token/code consumible en algún
+  // momento (needsConfirmation fue true al menos una vez). Una vez en true,
+  // que el effect de montaje se reejecute y ya no vea token en la URL NUNCA
+  // es un enlace inválido -- es el resultado esperado de
+  // `window.history.replaceState` en finishConfirmation tras un verify
+  // exitoso, que hace que `searchParams` cambie de referencia y el effect
+  // (dependiente de `searchParams`) se vuelva a ejecutar en medio del
+  // flujo. Ver auditoría 2026-09-14 (CONFIRM_FLOW_TEMP_DIAGNOSTIC).
+  const confirmationStartedRef = useRef(false)
   // true = mostrar la pantalla intermedia con el botón "Confirmar mi
   // cuenta" -- distinto de un loader genuino sin decisión tomada todavía.
   const [needsConfirmation, setNeedsConfirmation] = useState(false)
@@ -249,6 +258,14 @@ function ConfirmEmailContent() {
       resetParams.set("type", type)
 
       router.replace(`/reset-password?${resetParams.toString()}`)
+    } else if (confirmationStartedRef.current) {
+      // El flujo ya arrancó con un token válido en esta pestaña (ver
+      // confirmationStartedRef arriba). Este re-run del effect sin token en
+      // la URL es el efecto esperado de haberla limpiado nosotros mismos en
+      // finishConfirmation -- no recrear el controller ni tocar
+      // needsConfirmation/error, para no pisar un flujo de confirmación en
+      // curso o ya exitoso.
+      logStep("mount", "reinit_after_started_noop")
     } else {
       const params: ConfirmationLinkParams = { code, tokenHash, type }
       const controller = createConfirmationLinkController(supabase.auth, params)
@@ -261,6 +278,7 @@ function ConfirmEmailContent() {
       // handleConfirmClick -- confirm() es lo único que llama a
       // resolveConfirmationLink.
       if (controller.needsConfirmation) {
+        confirmationStartedRef.current = true
         logStep("mount", "needs_confirmation")
         setNeedsConfirmation(true)
       } else {

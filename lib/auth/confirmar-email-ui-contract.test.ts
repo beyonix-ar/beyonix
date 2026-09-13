@@ -41,8 +41,11 @@ test("/confirmar-email NUNCA llama a controller.confirm() automáticamente cuand
 
   // El bloque del efecto de montaje, entre needsConfirmation y el cierre del
   // useEffect, nunca debe invocar confirm() incondicionalmente -- sólo
-  // setear needsConfirmation/error según corresponda.
-  const effectEnd = page.indexOf("}, [router, searchParams])")
+  // setear needsConfirmation/error según corresponda. Match por prefijo
+  // (sin exigir el array de deps completo) para no quedar fijado a qué
+  // otras dependencias tenga el effect.
+  const effectEnd = page.indexOf("}, [router, searchParams", needsConfirmationIndex)
+  assert.ok(effectEnd > needsConfirmationIndex, "no se encontró el cierre del useEffect de montaje")
   const mountEffectBody = page.slice(needsConfirmationIndex, effectEnd)
   assert.doesNotMatch(mountEffectBody, /controller\.confirm\(\)/)
 })
@@ -277,6 +280,74 @@ test("INVALID_LINK_MESSAGE sólo se usa para un link sin token consumible o un e
   // exchangeCodeForSession). Ninguna otra rama debe agregarla.
   const usages = [...page.matchAll(/setError\(INVALID_LINK_MESSAGE\)/g)]
   assert.equal(usages.length, 2, "INVALID_LINK_MESSAGE debe usarse exactamente en esos dos lugares")
+})
+
+// --- Race condition real (instrumentación de producción, 2026-09-14):
+// finishConfirmation limpia la URL con `window.history.replaceState` apenas
+// verifyOtp confirma con éxito -- Next.js intercepta esa llamada y
+// `useSearchParams()` devuelve una referencia nueva (ahora vacía), lo que
+// reejecuta el useEffect de montaje (depende de `searchParams`) EN MEDIO
+// del flujo de activación. Sin token en la URL, ese re-run concluía
+// "needsConfirmation=false" y pisaba el éxito en curso con
+// setError(INVALID_LINK_MESSAGE) -- el flash rojo falso, confirmado con
+// CONFIRM_FLOW_TEMP_DIAGNOSTIC mostrando set_error detail=no_consumable_token
+// entre activation_start y activation_success, mismo instanceId. Corregido
+// con confirmationStartedRef: una vez que hubo un token válido en esta
+// pestaña, un re-run del effect sin token es un no-op explícito.
+
+test("confirmationStartedRef existe y se marca true en el mismo momento que needsConfirmation (antes de que pueda ocurrir cualquier click)", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  assert.match(page, /const confirmationStartedRef = useRef\(false\)/)
+
+  const needsConfirmationBlockIndex = page.indexOf("if (controller.needsConfirmation) {")
+  assert.ok(needsConfirmationBlockIndex >= 0)
+  const blockEnd = page.indexOf("} else {", needsConfirmationBlockIndex)
+  const block = page.slice(needsConfirmationBlockIndex, blockEnd)
+
+  assert.match(block, /confirmationStartedRef\.current = true/)
+  assert.match(block, /setNeedsConfirmation\(true\)/)
+})
+
+test("si el flujo de confirmación ya comenzó, una reejecución del effect de montaje sin consumable token NO puede setear INVALID_LINK_MESSAGE (ni recrear el controller, ni tocar needsConfirmation)", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  const noopBranchIndex = page.indexOf("else if (confirmationStartedRef.current) {")
+  assert.ok(noopBranchIndex >= 0, "falta la rama no-op de reinicialización tras arrancar el flujo")
+
+  const realElseIndex = page.indexOf("} else {", noopBranchIndex)
+  assert.ok(realElseIndex > noopBranchIndex)
+
+  const noopBlock = page.slice(noopBranchIndex, realElseIndex)
+  assert.doesNotMatch(noopBlock, /setError/)
+  assert.doesNotMatch(noopBlock, /setNeedsConfirmation/)
+  assert.doesNotMatch(noopBlock, /createConfirmationLinkController/)
+  assert.doesNotMatch(noopBlock, /controllerRef\.current =/)
+
+  // El guard debe evaluarse ANTES de crear un controller nuevo con params
+  // vacíos -- si no, igual se pisaría controllerRef con uno inútil.
+  const createControllerIndex = page.indexOf(
+    "createConfirmationLinkController(supabase.auth, params)",
+  )
+  assert.ok(noopBranchIndex < createControllerIndex)
+})
+
+test("un enlace SIN token/code desde el arranque (confirmationStartedRef nunca llegó a true) sigue mostrando INVALID_LINK_MESSAGE -- caso A intacto", () => {
+  const page = source("app/confirmar-email/page.tsx")
+
+  const noopBranchIndex = page.indexOf("else if (confirmationStartedRef.current) {")
+  const realElseIndex = page.indexOf("} else {", noopBranchIndex)
+  const needsConfirmationIndex = page.indexOf(
+    "if (controller.needsConfirmation)",
+    realElseIndex,
+  )
+  const setErrorIndex = page.indexOf("setError(INVALID_LINK_MESSAGE)", needsConfirmationIndex)
+
+  assert.ok(needsConfirmationIndex > realElseIndex, "falta el chequeo needsConfirmation en la rama real")
+  assert.ok(
+    setErrorIndex > needsConfirmationIndex,
+    "el caso A (sin token desde el arranque) debe seguir seteando INVALID_LINK_MESSAGE",
+  )
 })
 
 test("el diagnóstico temporal CONFIRM_SIGNUP_VERIFY_FAILED_TEMP_DIAGNOSTIC fue removido tras identificar y corregir la causa real", () => {
