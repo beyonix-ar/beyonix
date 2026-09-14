@@ -159,7 +159,7 @@ test("escenario feliz: monto + DNI derivado coinciden -> verified y persiste tra
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [candidate()] },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
   )
 
   assert.equal(result.status, "verified")
@@ -180,11 +180,34 @@ test("sin candidatos en Mercado Pago -> manual_review, no llama a confirm_transf
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [] },
+    { searchTransfers: async () => ({ candidates: [], exhaustive: true }) },
   )
 
   assert.equal(result.status, "manual_review")
   if (result.status === "manual_review") assert.equal(result.reason, "no_candidates")
+  assert.equal(rpcCalls.some((c) => c.name === "confirm_transfer_auto_verification"), false)
+})
+
+test("búsqueda no exhaustiva (se cortó por el tope de páginas sin cubrir toda la ventana) -> manual_review, nunca auto-confirma con un conjunto parcial", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, rpcCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+    },
+  })
+
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    // Aunque venga un candidato que matchearía perfecto, exhaustive=false
+    // tiene que ganar siempre: no se puede demostrar que no había OTRO
+    // candidato ambiguo fuera de lo recorrido.
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: false }) },
+  )
+
+  assert.equal(result.status, "manual_review")
+  if (result.status === "manual_review") assert.equal(result.reason, "search_not_exhaustive")
   assert.equal(rpcCalls.some((c) => c.name === "confirm_transfer_auto_verification"), false)
 })
 
@@ -227,7 +250,7 @@ test("monto informado por el cliente no coincide con el esperado -> manual_revie
     {
       searchTransfers: async () => {
         searchCalled = true
-        return [candidate()]
+        return { candidates: [candidate()], exhaustive: true }
       },
     },
   )
@@ -250,7 +273,7 @@ test("DNI informado con formato inválido -> manual_review sin consultar Mercado
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: { ...declaredValid, dni: "abc" } },
-    { searchTransfers: async () => { searchCalled = true; return [] } },
+    { searchTransfers: async () => { searchCalled = true; return { candidates: [], exhaustive: true } } },
   )
 
   assert.equal(result.status, "manual_review")
@@ -274,22 +297,22 @@ test("transferencia ya usada por otro pedido -> manual_review, nunca acredita do
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [candidate()] },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
   )
 
   assert.equal(result.status, "manual_review")
   if (result.status === "manual_review") assert.equal(result.reason, "payment_id_already_used")
 })
 
-test("stock insuficiente al confirmar (dinero real, sin stock): queda en revisión, nunca se pierde el pago silenciosamente", async () => {
+test("monto esperado cambió entre la lectura previa y la confirmación (AMOUNT_MISMATCH bajo lock) -> manual_review, nunca confirma contra un monto vencido", async () => {
   const orderRow = baseOrderRow()
-  const { admin, updateCalls } = createFakeAdmin({
+  const { admin } = createFakeAdmin({
     orderRow,
     rpcResponses: {
       claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
       confirm_transfer_auto_verification: {
         data: null,
-        error: { message: "CHECKOUT_STOCK_INSUFFICIENT" },
+        error: { message: "AMOUNT_MISMATCH: el monto vigente del pedido no coincide." },
       },
     },
   })
@@ -297,15 +320,54 @@ test("stock insuficiente al confirmar (dinero real, sin stock): queda en revisi�
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [candidate()] },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
   )
 
   assert.equal(result.status, "manual_review")
-  if (result.status === "manual_review") assert.equal(result.reason, "stock_conflict")
-  const stockUpdate = updateCalls.find(
-    (c) => c.table === "ordenes" && c.values.payment_status === TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  if (result.status === "manual_review") assert.equal(result.reason, "expected_amount_changed")
+})
+
+test("stock insuficiente al confirmar (dinero real, sin stock): la RPC ya reclama transfer_matched_payment_id de forma atómica y devuelve la orden en conflicto -- nunca se pierde el pago silenciosamente ni queda sin reservar", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, updateCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+      // Migración 20260914090000: ante conflicto de stock, la RPC ya NO
+      // lanza una excepción -- devuelve la orden actualizada con
+      // payment_status=auto_verified_stock_conflict Y
+      // transfer_matched_payment_id ya reclamado, todo bajo el mismo lock.
+      confirm_transfer_auto_verification: {
+        data: {
+          ...orderRow,
+          payment_status: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+          transfer_matched_payment_id: "177895301225",
+          transfer_verification_status: "manual_review",
+          transfer_verification_failure_reason: "stock_conflict",
+        },
+        error: null,
+      },
+    },
+  })
+
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
   )
-  assert.ok(stockUpdate, "debe marcar el payment_status de conflicto de stock")
+
+  assert.equal(result.status, "manual_review")
+  if (result.status === "manual_review") {
+    assert.equal(result.reason, "stock_conflict")
+    assert.equal(result.order.transfer_matched_payment_id, "177895301225")
+  }
+  // La RPC resolvió todo atómicamente -- el servicio ya no necesita (ni
+  // debe) hacer un UPDATE propio fuera de lock para marcar el conflicto.
+  assert.equal(
+    updateCalls.some((c) => c.table === "ordenes" && c.values.payment_status === TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS),
+    false,
+    "el servicio no debe volver a escribir el conflicto de stock: eso ya lo hizo la RPC bajo lock",
+  )
 })
 
 test("doble click / dos requests simultáneas: la segunda encuentra el lock 'checking' y no dispara otro intento", async () => {
@@ -323,7 +385,7 @@ test("doble click / dos requests simultáneas: la segunda encuentra el lock 'che
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [candidate()] },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
   )
 
   assert.equal(result.status, "checking_in_progress")
@@ -345,7 +407,7 @@ test("rate limit: reintentar demasiado rápido devuelve rate_limited sin llamar 
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => { searchCalled = true; return [] } },
+    { searchTransfers: async () => { searchCalled = true; return { candidates: [], exhaustive: true } } },
   )
 
   assert.equal(result.status, "rate_limited")
@@ -367,7 +429,7 @@ test("máximo de intentos alcanzado -> rejected con mensaje claro, no sigue rein
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [] },
+    { searchTransfers: async () => ({ candidates: [], exhaustive: true }) },
   )
 
   assert.equal(result.status, "rejected")
@@ -388,7 +450,7 @@ test("pedido con el pago ya resuelto (confirmado/rechazado) -> rejected desde el
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [] },
+    { searchTransfers: async () => ({ candidates: [], exhaustive: true }) },
   )
 
   assert.equal(result.status, "rejected")
@@ -406,7 +468,7 @@ test("dos transferencias con el mismo monto (ambiguo) -> manual_review, nunca co
   const result = await attemptTransferAutoVerification(
     admin as never,
     { orderId: 42, declared: declaredValid },
-    { searchTransfers: async () => [candidate({ id: "1" }), candidate({ id: "2" })] },
+    { searchTransfers: async () => ({ candidates: [candidate({ id: "1" }), candidate({ id: "2" })], exhaustive: true }) },
   )
 
   assert.equal(result.status, "manual_review")

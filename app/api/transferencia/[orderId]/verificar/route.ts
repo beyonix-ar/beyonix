@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
-import { attemptTransferAutoVerification } from "@/lib/orders/transfer-verification-service"
+import {
+  attemptTransferAutoVerification,
+  type TransferVerificationAttemptResult,
+} from "@/lib/orders/transfer-verification-service"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -9,6 +12,36 @@ const MAX_TEXT_LENGTH = 200
 
 function normalizeText(value: unknown): string {
   return typeof value === "string" ? value.trim().slice(0, MAX_TEXT_LENGTH) : ""
+}
+
+/**
+ * Respuesta MÍNIMA y explícitamente allowlisteada para el cliente: nunca
+ * incluye la fila de la orden completa. En particular, nunca expone la
+ * metadata interna de conciliación con Mercado Pago (identificación del
+ * pagador original/derivada, payment.id, tipo de operación) -- eso sólo es
+ * visible desde endpoints admin protegidos (el panel de pedidos ya lo lee
+ * ahí con el rol correspondiente). Cualquier dato nuevo que el cliente
+ * llegue a necesitar tiene que agregarse acá de forma explícita, nunca
+ * reenviando la fila.
+ */
+function safeVerificationResponse(
+  result: Extract<TransferVerificationAttemptResult, { status: "verified" | "manual_review" }>,
+) {
+  const verified = result.status === "verified"
+
+  return {
+    status: result.status,
+    verified,
+    manualReviewRequired: !verified,
+    // El pago ya está confirmado -> nunca corresponde ofrecer comprobante.
+    // Cualquier otro resultado (incluido manual_review por conflicto de
+    // stock: la plata ya está identificada, pero el admin puede pedir
+    // evidencia adicional) deja la puerta abierta.
+    proofUploadAvailable: !verified,
+    message: verified
+      ? "Verificamos tu transferencia automáticamente."
+      : "No pudimos validar tu transferencia automáticamente.",
+  }
 }
 
 export async function POST(
@@ -91,26 +124,35 @@ export async function POST(
 
     switch (result.status) {
       case "verified":
-        return NextResponse.json({ status: "verified", order: result.order })
       case "manual_review":
-        return NextResponse.json({
-          status: "manual_review",
-          message: "No pudimos validar tu transferencia automáticamente.",
-          order: result.order,
-        })
+        return NextResponse.json(safeVerificationResponse(result))
       case "rate_limited":
-        return NextResponse.json({ error: result.message }, { status: 429 })
+        // Fallo técnico transitorio: mientras el pago no esté confirmado, el
+        // cliente nunca debe quedar sin salida -- ofrecemos igual el
+        // comprobante como alternativa segura.
+        return NextResponse.json(
+          { error: result.message, proofUploadAvailable: true },
+          { status: 429 },
+        )
       case "checking_in_progress":
-        return NextResponse.json({ error: result.message }, { status: 409 })
+        return NextResponse.json(
+          { error: result.message, proofUploadAvailable: true },
+          { status: 409 },
+        )
       case "rejected":
       default:
-        return NextResponse.json({ error: result.message }, { status: 409 })
+        return NextResponse.json(
+          { error: result.message, proofUploadAvailable: true },
+          { status: 409 },
+        )
     }
   } catch (error) {
     console.error("transfer auto-verification error", error)
 
+    // Error inesperado (500) o Mercado Pago caído: un fallo técnico nunca
+    // debe bloquear al cliente -- el comprobante sigue disponible.
     return NextResponse.json(
-      { error: "No pudimos verificar tu transferencia." },
+      { error: "No pudimos verificar tu transferencia.", proofUploadAvailable: true },
       { status: 500 },
     )
   }

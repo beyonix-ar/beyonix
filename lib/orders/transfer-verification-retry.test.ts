@@ -18,6 +18,20 @@ function createFakeAdmin(rows: Array<Record<string, unknown>>) {
   return { from: () => builder } as never
 }
 
+/** Captura los argumentos de cada llamada al query builder, para poder assertar el filtro SQL en sí (no sólo el resultado final). */
+function createSpyAdmin(rows: Array<Record<string, unknown>>) {
+  const calls: Array<{ method: string; args: unknown[] }> = []
+  const builder: Record<string, (...args: unknown[]) => unknown> = {}
+  for (const method of ["select", "eq", "in", "not", "neq", "lte", "order"]) {
+    builder[method] = (...args: unknown[]) => {
+      calls.push({ method, args })
+      return builder
+    }
+  }
+  builder.limit = () => Promise.resolve({ data: rows, error: null })
+  return { admin: { from: () => builder } as never, calls }
+}
+
 function row(overrides: Record<string, unknown> = {}) {
   return {
     id: 1,
@@ -101,4 +115,46 @@ test("cuenta correctamente los verificados dentro de la corrida", async () => {
 
   assert.equal(result.attempted, 2)
   assert.equal(result.verified, 1)
+})
+
+test("P1 starvation: la propia consulta SQL ya filtra por motivo reintentable -- no depende únicamente del filtro en JS, así que órdenes con motivo permanente nunca ocupan lugar en el batch", async () => {
+  const { admin, calls } = createSpyAdmin([])
+
+  await retryPendingTransferVerifications(admin, {
+    attempt: async () => ({ status: "manual_review", reason: "no_candidates", order: {} as never }),
+  })
+
+  const failureReasonFilter = calls.find(
+    (c) => c.method === "in" && c.args[0] === "transfer_verification_failure_reason",
+  )
+  assert.ok(
+    failureReasonFilter,
+    "debe filtrar por transfer_verification_failure_reason en la propia consulta SQL",
+  )
+  assert.deepEqual(failureReasonFilter!.args[1], ["no_candidates", "mercadopago_unavailable"])
+})
+
+test("nunca corre más allá del presupuesto de tiempo por corrida -- corta antes de agotar todos los candidatos si toma demasiado (deja margen bajo el --max-time del curl del systemd timer)", async () => {
+  const admin = createFakeAdmin([row({ id: 1 }), row({ id: 2 }), row({ id: 3 })])
+  const originalNow = Date.now
+  let fakeNow = 0
+  Date.now = () => fakeNow
+  let attempts = 0
+
+  try {
+    const result = await retryPendingTransferVerifications(admin, {
+      attempt: async () => {
+        attempts += 1
+        // El primer intento ya "tarda" más que el presupuesto -- el segundo
+        // candidato nunca debería ni empezar a procesarse en esta corrida.
+        fakeNow += 100_000
+        return { status: "manual_review", reason: "no_candidates", order: {} as never }
+      },
+    })
+
+    assert.equal(attempts, 1)
+    assert.equal(result.attempted, 1)
+  } finally {
+    Date.now = originalNow
+  }
 })

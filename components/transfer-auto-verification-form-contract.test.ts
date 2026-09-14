@@ -36,3 +36,19 @@ test("el formulario nunca envía el monto como único dato de confianza -- tambi
   assert.match(SOURCE, /dni,/)
   assert.match(SOURCE, /monto: Number\(amount\)/)
 })
+
+test("un fallo técnico (rate limit, verificación en curso, error inesperado del backend, excepción de red) siempre habilita el comprobante como salida segura -- nunca deja al cliente sin ninguna opción", () => {
+  const handleSubmit = SOURCE.slice(
+    SOURCE.indexOf("const handleSubmit"),
+    SOURCE.indexOf("return (", SOURCE.indexOf("const handleSubmit")),
+  )
+
+  // Camino !response.ok (429/409/500): sólo habilita el uploader si el
+  // backend lo marcó disponible -- nunca incondicionalmente (eso rompería
+  // el contrato de "pago ya confirmado -> no corresponde comprobante").
+  assert.match(handleSubmit, /if \(!response\.ok\) \{[\s\S]*?if \(data\.proofUploadAvailable\) setManualReviewActive\(true\)/)
+  // Camino catch (excepción de red / parseo): siempre habilita, no hay
+  // forma de que el backend haya podido decir lo contrario.
+  const catchBlock = handleSubmit.slice(handleSubmit.indexOf("} catch"))
+  assert.match(catchBlock, /setManualReviewActive\(true\)/)
+})

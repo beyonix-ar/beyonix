@@ -33,8 +33,17 @@ Type=oneshot
 # eso el .service queda marcado "failed" (visible en systemctl status).
 # Sin --retry: nunca reintenta agresivamente -- si falla, el próximo tick
 # del timer (~15 min) es el único reintento.
+#
+# --max-time 180: el backend (retryPendingTransferVerifications) se corta
+# solo a los 90s de presupuesto propio (MAX_RETRY_RUN_DURATION_MS, ver
+# lib/orders/transfer-verification-retry.ts) antes de arrancar un candidato
+# más -- 180s le deja a curl margen real por encima de eso (incluye el
+# último candidato ya en curso al cortar el presupuesto interno, más la
+# vuelta de red) para que --fail no dispare por timeout de curl mientras el
+# backend todavía está terminando de forma prolija. Si algún día cambia el
+# presupuesto interno, este valor tiene que seguir siendo mayor.
 ExecStart=/usr/bin/flock -n /run/lock/beyonix-verify-transfer-orders.lock \
-  /usr/bin/curl --fail --silent --show-error --max-time 120 \
+  /usr/bin/curl --fail --silent --show-error --max-time 180 \
   --config /etc/beyonix/curl-verify-transfer-orders.conf \
   -o /dev/null \
   http://127.0.0.1:3000/api/cron/verify-transfer-orders

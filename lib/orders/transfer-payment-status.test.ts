@@ -5,6 +5,7 @@ import {
   getAllowedAdminTransferPaymentStatuses,
   getTransferPaymentTransitionError,
 } from "./transfer-payment-status.ts"
+import { TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS } from "./transfer-verification-reasons.ts"
 
 test("un comprobante en revisión puede ser confirmado por el admin", () => {
   assert.equal(
@@ -62,5 +63,52 @@ test("confirmado es terminal para la ruta administrativa", () => {
   assert.deepEqual(
     getAllowedAdminTransferPaymentStatuses("confirmado", true),
     ["confirmado"],
+  )
+})
+
+test("auto_verified_stock_conflict: un admin puede confirmar o rechazar directamente, sin depender de comprobante (la plata ya está identificada contra Mercado Pago)", () => {
+  assert.equal(
+    getTransferPaymentTransitionError({
+      currentStatus: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+      nextStatus: "confirmado",
+      hasProof: false,
+    }),
+    null,
+  )
+  assert.equal(
+    getTransferPaymentTransitionError({
+      currentStatus: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+      nextStatus: "rechazado",
+      hasProof: false,
+      observation: "Sin stock disponible para reponer.",
+    }),
+    null,
+  )
+  assert.deepEqual(
+    getAllowedAdminTransferPaymentStatuses(TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS, false),
+    ["confirmado", "rechazado"],
+  )
+})
+
+test("auto_verified_stock_conflict: rechazar sigue exigiendo motivo, igual que el resto de los rechazos", () => {
+  assert.match(
+    getTransferPaymentTransitionError({
+      currentStatus: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+      nextStatus: "rechazado",
+      hasProof: false,
+      observation: "",
+    }) ?? "",
+    /motivo/,
+  )
+})
+
+test("auto_verified_stock_conflict: nunca puede saltar directo a en_revision ni a pendiente_comprobante", () => {
+  assert.match(
+    getTransferPaymentTransitionError({
+      currentStatus: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+      nextStatus: "en_revision",
+      hasProof: false,
+    }) ?? "",
+    /sólo puede confirmarse o rechazarse/,
   )
 })

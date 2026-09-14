@@ -84,6 +84,14 @@ test("deriveArgentineDni: identification.type=DNI usa el número tal cual (7-8 d
   assert.equal(result.normalizedNumber, "30111222")
 })
 
+test("deriveArgentineDni: identification.type=DNI de 7 dígitos se devuelve paddeado a 8 con cero inicial (mismo formato que el bloque central del CUIL)", () => {
+  const result = deriveArgentineDni({ type: "DNI", number: "5123456" })
+  assert.equal(result.dni, "05123456")
+  // normalizedNumber conserva el número tal cual vino (sin padding): sólo
+  // `dni` (el candidato usado para comparar) se normaliza.
+  assert.equal(result.normalizedNumber, "5123456")
+})
+
 test("deriveArgentineDni: DNI con longitud inválida no deriva nada", () => {
   const result = deriveArgentineDni({ type: "DNI", number: "123" })
   assert.equal(result.dni, null)
@@ -112,9 +120,9 @@ test("deriveArgentineDni conserva siempre el tipo y número original sin sobresc
   assert.equal(result.dni, "40555666")
 })
 
-test("normalizeDeclaredDni acepta 7 u 8 dígitos con separadores", () => {
+test("normalizeDeclaredDni acepta 7 u 8 dígitos con separadores, y paddea 7 dígitos a 8 con cero inicial", () => {
   assert.equal(normalizeDeclaredDni("30.111.222"), "30111222")
-  assert.equal(normalizeDeclaredDni("5123456"), "5123456")
+  assert.equal(normalizeDeclaredDni("5123456"), "05123456")
 })
 
 test("normalizeDeclaredDni rechaza longitudes inválidas o valores vacíos", () => {
@@ -122,4 +130,14 @@ test("normalizeDeclaredDni rechaza longitudes inválidas o valores vacíos", () 
   assert.equal(normalizeDeclaredDni(""), null)
   assert.equal(normalizeDeclaredDni(null), null)
   assert.equal(normalizeDeclaredDni(undefined), null)
+})
+
+test("P1: un DNI de 7 dígitos declarado por el cliente matchea el mismo DNI derivado de un CUIL con cero inicial en el bloque central (antes fallaba SIEMPRE por padding distinto)", () => {
+  // CUIL real cuyo bloque central de 8 dígitos codifica el DNI "5123456"
+  // (7 dígitos) con un cero inicial: "05123456".
+  const cuilConCeroInicial = buildValidCuil("20", "05123456")
+  const derived = deriveArgentineDni({ type: "CUIL", number: cuilConCeroInicial })
+
+  assert.equal(derived.dni, "05123456")
+  assert.equal(normalizeDeclaredDni("5123456"), derived.dni)
 })

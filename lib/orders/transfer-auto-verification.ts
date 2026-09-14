@@ -11,6 +11,7 @@ import { TRANSFER_PAYMENT_EXPIRATION_HOURS } from "./transfer-expiration.ts"
 
 export {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  RETRYABLE_MANUAL_REVIEW_REASONS,
   isRetryableManualReviewReason,
   getManualReviewCustomerMessage,
   describeManualReviewReason,

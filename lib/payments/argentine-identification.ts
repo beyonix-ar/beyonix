@@ -104,7 +104,11 @@ export function deriveArgentineDni(
       originalType,
       originalNumber,
       normalizedNumber: digits,
-      dni: digits,
+      // Siempre 8 dígitos (con cero inicial si el DNI real tiene 7): mismo
+      // formato que el bloque central del CUIL de abajo, para que ambos
+      // caminos de derivación sean directamente comparables contra
+      // normalizeDeclaredDni() sin falsos negativos por padding distinto.
+      dni: digits.padStart(8, "0"),
       reason: null,
     }
   }
@@ -159,10 +163,24 @@ export function deriveArgentineDni(
   }
 }
 
-/** DNI informado por el cliente en el formulario: solo dígitos, 7-8 caracteres. */
+/**
+ * DNI informado por el cliente en el formulario: sólo dígitos, 7-8
+ * caracteres originalmente, siempre normalizado a 8 dígitos (con cero
+ * inicial si hace falta).
+ *
+ * P1: un DNI de 7 dígitos (ej. "5123456") queda codificado en el CUIL con
+ * un cero inicial (bloque central de 8 dígitos: "05123456" -- estructura
+ * fija de AFIP, ver deriveArgentineDni). Sin este padding, comparar
+ * "5123456" (declarado, 7 dígitos) contra "05123456" (derivado del CUIL de
+ * Mercado Pago, 8 dígitos) fallaba SIEMPRE para cualquier DNI de 7 dígitos
+ * con cero inicial en el bloque del CUIL, mandando a revisión manual
+ * transferencias legítimas. El padding sólo normaliza la REPRESENTACIÓN
+ * del mismo número -- nunca afloja qué se considera un DNI válido (sigue
+ * exigiendo 7-8 dígitos originales antes de paddear).
+ */
 export function normalizeDeclaredDni(value: string | null | undefined): string | null {
   if (!value) return null
   const digits = onlyDigits(value)
   if (digits.length < 7 || digits.length > 8) return null
-  return digits
+  return digits.padStart(8, "0")
 }

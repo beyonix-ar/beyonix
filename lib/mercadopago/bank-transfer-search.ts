@@ -80,8 +80,19 @@ interface MercadoPagoSearchResponse {
 }
 
 const SEARCH_PAGE_LIMIT = 50
-/** Tope defensivo: nunca traer más de 200 movimientos por consulta, aunque la ventana temporal lo permitiera. */
-const MAX_PAGES = 4
+/**
+ * Tope defensivo de PÁGINAS, no "la cantidad correcta de movimientos": sólo
+ * protege contra un loop indefinido si Mercado Pago devolviera siempre
+ * páginas llenas. 2000 movimientos (40 x 50) es un margen amplio sobre lo
+ * esperable para la ventana de conciliación real (TRANSFER_MATCH_LOOKBACK_MINUTES
+ * + TRANSFER_PAYMENT_EXPIRATION_HOURS, ver transfer-auto-verification.ts).
+ * Una auto-confirmación NUNCA debe asumir que este tope alcanzó a cubrir
+ * todo: ver el campo `exhaustive` del resultado -- si se corta acá sin haber
+ * agotado las páginas (última página todavía llena), exhaustive queda en
+ * false y el caller tiene que tratarlo como revisión manual, nunca como
+ * "no hay más candidatos".
+ */
+const MAX_PAGES = 40
 /** Tope defensivo sobre la ventana de fechas en sí -- nunca buscar "todo el historial". */
 const MAX_SEARCH_WINDOW_MS = 31 * 24 * 60 * 60 * 1000
 
@@ -115,9 +126,25 @@ function toCandidate(
   }
 }
 
+export interface BankTransferSearchResult {
+  candidates: MercadoPagoBankTransferCandidate[]
+  /**
+   * true SOLO si se puede demostrar que se recorrió todo el conjunto de
+   * movimientos de la ventana (la API dejó de devolver una página llena, o
+   * paging.total confirma que no queda nada más por traer). false si la
+   * búsqueda se cortó por el tope defensivo de páginas (MAX_PAGES) sin poder
+   * probar que no quedaba ningún otro candidato -- en ese caso el llamador
+   * NUNCA debe auto-confirmar con lo que se llegó a traer: el conjunto
+   * relevante no fue evaluado completamente.
+   */
+  exhaustive: boolean
+}
+
 /**
  * Busca transferencias entrantes aprobadas dentro de una ventana de fechas
- * acotada. Nunca devuelve movimientos fuera de los tipos soportados
+ * acotada, paginando todo lo necesario dentro de esa ventana (hasta
+ * MAX_PAGES como tope defensivo -- ver comentario de la constante). Nunca
+ * devuelve movimientos fuera de los tipos soportados
  * (SUPPORTED_BANK_TRANSFER_KINDS) ni con status distinto de "approved".
  *
  * Filtra en backend (nunca expone la lista completa de movimientos al
@@ -129,7 +156,7 @@ export async function searchIncomingBankTransfers({
 }: {
   beginDate: Date
   endDate: Date
-}): Promise<MercadoPagoBankTransferCandidate[]> {
+}): Promise<BankTransferSearchResult> {
   if (endDate.getTime() <= beginDate.getTime()) {
     throw new Error("Ventana de búsqueda inválida: la fecha de fin debe ser posterior al inicio.")
   }
@@ -138,13 +165,15 @@ export async function searchIncomingBankTransfers({
   }
 
   const candidates: MercadoPagoBankTransferCandidate[] = []
+  let exhaustive = false
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
+    const offset = page * SEARCH_PAGE_LIMIT
     const params = new URLSearchParams({
       sort: "date_created",
       criteria: "desc",
       limit: String(SEARCH_PAGE_LIMIT),
-      offset: String(page * SEARCH_PAGE_LIMIT),
+      offset: String(offset),
       range: "date_created",
       begin_date: beginDate.toISOString(),
       end_date: endDate.toISOString(),
@@ -171,8 +200,22 @@ export async function searchIncomingBankTransfers({
       if (candidate) candidates.push(candidate)
     }
 
-    if (results.length < SEARCH_PAGE_LIMIT) break
+    // Página parcial: no hay más resultados después de ésta -- exhaustivo.
+    if (results.length < SEARCH_PAGE_LIMIT) {
+      exhaustive = true
+      break
+    }
+
+    // Página llena, pero paging.total (cuando la API lo informa) confirma
+    // que ya cubrimos todo lo que hay -- no confiamos ciegamente en esto
+    // como ÚNICA señal (por eso sigue siendo opcional), pero cuando está
+    // presente evita una página final vacía innecesaria.
+    const total = payload.paging?.total
+    if (typeof total === "number" && offset + results.length >= total) {
+      exhaustive = true
+      break
+    }
   }
 
-  return candidates
+  return { candidates, exhaustive }
 }

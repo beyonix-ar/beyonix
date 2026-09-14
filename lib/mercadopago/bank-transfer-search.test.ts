@@ -48,28 +48,70 @@ test("isSupportedBankTransferKind sólo admite los dos tipos comprobados contra 
   assert.equal(isSupportedBankTransferKind(null, null), false)
 })
 
-test("nunca busca más de 200 movimientos (4 páginas x 50) aunque Mercado Pago siga devolviendo páginas llenas", async () => {
+test("nunca busca indefinidamente: se frena en el tope defensivo de páginas (40 x 50 = 2000) si Mercado Pago siempre devuelve páginas llenas, y marca exhaustive=false", async () => {
   let calls = 0
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     calls += 1
     const url = new URL(String(input))
     const offset = Number(url.searchParams.get("offset"))
-    // Siempre devuelve una página LLENA (50), simulando una cuenta con miles
-    // de movimientos -- si no hubiera tope, esto nunca terminaría.
+    // Siempre devuelve una página LLENA (50), simulando una cuenta con
+    // decenas de miles de movimientos -- si no hubiera tope, esto nunca
+    // terminaría.
     const results = Array.from({ length: 50 }, (_, i) => fullPagePayment(offset + i + 1))
-    return jsonResponse({ results, paging: { total: 10_000, offset, limit: 50 } })
+    return jsonResponse({ results, paging: { total: 100_000, offset, limit: 50 } })
   }) as typeof fetch
 
-  const candidates = await searchIncomingBankTransfers({
+  const result = await searchIncomingBankTransfers({
     beginDate: new Date("2026-09-01T00:00:00.000Z"),
     endDate: new Date("2026-09-14T00:00:00.000Z"),
   })
 
-  assert.equal(calls, 4, "debe frenar en el tope de 4 páginas, nunca seguir indefinidamente")
-  assert.equal(candidates.length, 200)
+  assert.equal(calls, 40, "debe frenar en el tope de páginas, nunca seguir indefinidamente")
+  assert.equal(result.candidates.length, 2000)
+  assert.equal(
+    result.exhaustive,
+    false,
+    "se cortó por el tope sin poder demostrar que se cubrió toda la ventana -- nunca se puede auto-confirmar con esto",
+  )
 })
 
-test("una página parcial (menos de 50 resultados) corta la paginación antes de llegar al tope", async () => {
+test("un candidato válido en una página MÁS ALLÁ del viejo tope de 4 páginas (200 movimientos) igual se encuentra, y exhaustive queda en true", async () => {
+  let calls = 0
+  const TARGET_PAGE = 7 // página 8 (offset 350): antes del fix esto NUNCA se recorría.
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls += 1
+    const url = new URL(String(input))
+    const offset = Number(url.searchParams.get("offset"))
+    const page = offset / 50
+
+    if (page < TARGET_PAGE) {
+      // Páginas previas: llenas, pero de movimientos irrelevantes (otro monto).
+      const results = Array.from({ length: 50 }, (_, i) => ({
+        ...fullPagePayment(offset + i + 1),
+        transaction_amount: 111,
+      }))
+      return jsonResponse({ results, paging: { total: 450, offset, limit: 50 } })
+    }
+
+    // Última página (parcial): acá está el candidato real, con el monto buscado.
+    return jsonResponse({
+      results: [fullPagePayment(offset + 1)],
+      paging: { total: 450, offset, limit: 50 },
+    })
+  }) as typeof fetch
+
+  const result = await searchIncomingBankTransfers({
+    beginDate: new Date("2026-09-01T00:00:00.000Z"),
+    endDate: new Date("2026-09-14T00:00:00.000Z"),
+  })
+
+  assert.equal(calls, TARGET_PAGE + 1)
+  assert.equal(result.exhaustive, true)
+  const relevant = result.candidates.filter((c) => c.transactionAmount === 900)
+  assert.equal(relevant.length, 1, "el candidato de la página 8 debe encontrarse, no sólo los de las primeras 4 páginas")
+})
+
+test("una página parcial (menos de 50 resultados) corta la paginación antes de llegar al tope, y exhaustive queda en true", async () => {
   let calls = 0
   globalThis.fetch = (async () => {
     calls += 1
@@ -79,13 +121,34 @@ test("una página parcial (menos de 50 resultados) corta la paginación antes de
     })
   }) as typeof fetch
 
-  const candidates = await searchIncomingBankTransfers({
+  const result = await searchIncomingBankTransfers({
     beginDate: new Date("2026-09-01T00:00:00.000Z"),
     endDate: new Date("2026-09-14T00:00:00.000Z"),
   })
 
   assert.equal(calls, 1)
-  assert.equal(candidates.length, 2)
+  assert.equal(result.candidates.length, 2)
+  assert.equal(result.exhaustive, true)
+})
+
+test("paging.total confirma cobertura completa incluso si la última página vino llena (evita una página final vacía)", async () => {
+  let calls = 0
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    calls += 1
+    const url = new URL(String(input))
+    const offset = Number(url.searchParams.get("offset"))
+    const results = Array.from({ length: 50 }, (_, i) => fullPagePayment(offset + i + 1))
+    // paging.total=50: la única página que existe vino exactamente llena.
+    return jsonResponse({ results, paging: { total: 50, offset, limit: 50 } })
+  }) as typeof fetch
+
+  const result = await searchIncomingBankTransfers({
+    beginDate: new Date("2026-09-01T00:00:00.000Z"),
+    endDate: new Date("2026-09-14T00:00:00.000Z"),
+  })
+
+  assert.equal(calls, 1, "paging.total ya confirma que no hay más: no debe pedir una segunda página vacía")
+  assert.equal(result.exhaustive, true)
 })
 
 test("filtra en backend: nunca incluye movimientos no aprobados ni tipos no soportados", async () => {
@@ -99,13 +162,13 @@ test("filtra en backend: nunca incluye movimientos no aprobados ni tipos no sopo
       paging: { total: 3, offset: 0, limit: 50 },
     })) as typeof fetch
 
-  const candidates = await searchIncomingBankTransfers({
+  const result = await searchIncomingBankTransfers({
     beginDate: new Date("2026-09-01T00:00:00.000Z"),
     endDate: new Date("2026-09-14T00:00:00.000Z"),
   })
 
-  assert.equal(candidates.length, 1)
-  assert.equal(candidates[0].id, "3")
+  assert.equal(result.candidates.length, 1)
+  assert.equal(result.candidates[0].id, "3")
 })
 
 test("rechaza una ventana de búsqueda invertida o demasiado amplia (nunca busca indefinidamente todo el historial)", async () => {

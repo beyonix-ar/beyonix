@@ -19,6 +19,18 @@ const migration = readFileSync(
   ),
   "utf8",
 )
+// Revisión posterior (no aplicada aún remotamente al momento de este
+// commit): revalida monto bajo lock y reclama transfer_matched_payment_id
+// de forma atómica ante conflicto de stock. Se aplica DESPUÉS de la
+// migración original, igual que en el proyecto real (CREATE OR REPLACE
+// sobre una función ya aplicada, nunca reescribe la migración anterior).
+const amountLockMigration = readFileSync(
+  new URL(
+    "../../supabase/migrations/20260914090000_transfer_auto_verification_amount_lock_and_stock_claim.sql",
+    import.meta.url,
+  ),
+  "utf8",
+)
 
 const PAYMENT_ID = "177895301225"
 
@@ -26,6 +38,7 @@ async function setup() {
   const db = new PGlite()
   await db.exec(schema)
   await db.exec(migration)
+  await db.exec(amountLockMigration)
   // Config leída por auth.role() dentro de las funciones (chequeo interno,
   // independiente del rol real de Postgres usado para el ACL de EXECUTE).
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
@@ -314,6 +327,98 @@ test("SQL: confirm_transfer_auto_verification reutiliza exactamente el mismo esq
     assert.equal(order.order_change_status, "change_approved")
     assert.equal(Number(order.order_change_extra_amount), 0)
     assert.equal(order.transfer_verification_status, "auto_verified")
+  } finally {
+    await db.close()
+  }
+})
+
+test("SQL: revalida el monto esperado vigente BAJO LOCK -- si el monto del pedido cambia antes de confirmar, rechaza (AMOUNT_MISMATCH), nunca confía en el monto leído antes del lock", async () => {
+  const db = await setup()
+  try {
+    // Escenario pedido por Codex: la orden inicia en 900 (lo que el caller
+    // leyó antes de consultar Mercado Pago), pero para cuando esta RPC toma
+    // el lock, el monto vigente ya cambió a 1 (ejemplo: admin corrigió el
+    // precio). La transferencia matcheada sigue siendo de 900 -- la RPC debe
+    // rechazar, nunca confirmar contra un monto que dejó de ser el vigente.
+    await insertOrder(db, 1, { total: 900, external_amount_due: 900 })
+    await db.query("update ordenes set total = 1, external_amount_due = 1 where id = 1")
+
+    await assert.rejects(db.query(CONFIRM_SQL, confirmArgs(1)), /AMOUNT_MISMATCH/)
+
+    const order = (
+      await db.query<{ payment_status: string; transfer_matched_payment_id: string | null }>(
+        "select payment_status, transfer_matched_payment_id from ordenes where id=1",
+      )
+    ).rows[0]
+    assert.equal(order.payment_status, "pendiente_comprobante")
+    assert.equal(order.transfer_matched_payment_id, null)
+  } finally {
+    await db.close()
+  }
+})
+
+test("SQL: revalida también contra el monto declarado por el cliente bajo lock (no sólo contra total/external_amount_due)", async () => {
+  const db = await setup()
+  try {
+    await insertOrder(db, 1)
+    await db.query("update ordenes set transfer_amount_declared = 850 where id = 1")
+
+    await assert.rejects(db.query(CONFIRM_SQL, confirmArgs(1)), /AMOUNT_MISMATCH/)
+  } finally {
+    await db.close()
+  }
+})
+
+test("SQL: si el guardián de inventario rechaza la confirmación por falta de stock, igual reclama transfer_matched_payment_id de forma atómica bajo el mismo lock (nunca queda sin reservar)", async () => {
+  const db = await setup()
+  try {
+    await insertOrder(db, 1)
+    await db.query("select set_config('test.simulate_stock_conflict','1',false)")
+
+    const result = await db.query(CONFIRM_SQL, confirmArgs(1))
+    assert.equal(result.rows.length, 1, "no debe lanzar excepción: devuelve la orden con el conflicto ya registrado")
+
+    const order = (
+      await db.query<{
+        payment_status: string
+        estado: string
+        transfer_matched_payment_id: string
+        transfer_verification_status: string
+        transfer_verification_failure_reason: string
+      }>(
+        "select payment_status, estado, transfer_matched_payment_id, transfer_verification_status, transfer_verification_failure_reason from ordenes where id=1",
+      )
+    ).rows[0]
+
+    assert.equal(order.payment_status, "auto_verified_stock_conflict")
+    assert.equal(order.estado, "pendiente", "nunca marca pagado: el guardián de inventario lo rechazó")
+    assert.equal(order.transfer_matched_payment_id, PAYMENT_ID)
+    assert.equal(order.transfer_verification_status, "manual_review")
+    assert.equal(order.transfer_verification_failure_reason, "stock_conflict")
+
+    const auditCount = (
+      await db.query<{ count: number }>(
+        "select count(*)::integer as count from order_audit_events where order_id=1 and action='transfer_auto_verification_stock_conflict'",
+      )
+    ).rows[0].count
+    assert.equal(auditCount, 1)
+  } finally {
+    await db.close()
+  }
+})
+
+test("SQL: tras reclamar por conflicto de stock, ese mismo payment.id nunca puede acreditar otro pedido", async () => {
+  const db = await setup()
+  try {
+    await insertOrder(db, 1)
+    await insertOrder(db, 2)
+    await db.query("select set_config('test.simulate_stock_conflict','1',false)")
+    await db.query(CONFIRM_SQL, confirmArgs(1))
+
+    // El segundo pedido no tiene conflicto de stock simulado -- igual debe
+    // rechazarse porque el payment.id ya quedó reclamado por el pedido 1.
+    await db.query("select set_config('test.simulate_stock_conflict','0',false)")
+    await assert.rejects(db.query(CONFIRM_SQL, confirmArgs(2)), /TRANSFER_PAYMENT_ID_ALREADY_USED/)
   } finally {
     await db.close()
   }

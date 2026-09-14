@@ -56,3 +56,34 @@ test("la conciliación automática nunca reutiliza el webhook de Checkout Pro de
   assert.doesNotMatch(routeSource, /mercadopago\/webhook/)
   assert.doesNotMatch(serviceSource, /external_reference/)
 })
+
+// Test de contrato (falla si el endpoint vuelve a exponer campos sensibles):
+// el cliente sólo puede recibir status/verified/manualReviewRequired/
+// proofUploadAvailable/message -- nunca la fila de la orden completa ni
+// metadata interna de conciliación con Mercado Pago (transfer_match_snapshot,
+// identification original/derivada, transfer_matched_payment_id). Esos
+// datos sólo se ven desde endpoints admin protegidos.
+test("el endpoint nunca reenvía la orden completa ni campos sensibles de conciliación -- respuesta explícitamente allowlisteada", () => {
+  assert.doesNotMatch(routeSource, /NextResponse\.json\(\s*\{\s*[^}]*\border:/)
+  assert.doesNotMatch(routeSource, /result\.order/)
+  assert.doesNotMatch(routeSource, /transfer_match_snapshot/)
+  assert.doesNotMatch(routeSource, /transfer_matched_payment_id/)
+  assert.doesNotMatch(routeSource, /identificationNumber/)
+  assert.doesNotMatch(routeSource, /identificationType/)
+  assert.doesNotMatch(routeSource, /dniDerivado/)
+  assert.doesNotMatch(routeSource, /transfer_payer_dni/)
+
+  assert.match(routeSource, /function safeVerificationResponse/)
+  assert.match(routeSource, /status:\s*result\.status/)
+  assert.match(routeSource, /manualReviewRequired:/)
+  assert.match(routeSource, /proofUploadAvailable/)
+})
+
+test("un fallo técnico (rate limit, verificación en curso, error inesperado) siempre ofrece el comprobante como salida segura -- nunca deja al cliente bloqueado", () => {
+  const errorBranches = routeSource.slice(routeSource.indexOf('case "rate_limited"'))
+  const occurrences = errorBranches.match(/proofUploadAvailable:\s*true/g) ?? []
+  assert.ok(
+    occurrences.length >= 3,
+    "rate_limited, checking_in_progress, rejected/default y el catch(500) deben ofrecer proofUploadAvailable",
+  )
+})

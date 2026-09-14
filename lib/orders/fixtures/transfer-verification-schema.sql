@@ -37,3 +37,26 @@ create table order_audit_events(
   metadata jsonb,
   created_at timestamptz default now()
 );
+
+-- Simulación mínima (NO el trigger real) del guardián de inventario
+-- (validate_inventory_order_confirmation, 20260904090000): sólo existe para
+-- poder probar, contra PostgreSQL real, que confirm_transfer_auto_verification
+-- reclama transfer_matched_payment_id de forma atómica cuando la
+-- confirmación completa es rechazada por falta de stock. Se activa
+-- explícitamente por test vía set_config('test.simulate_stock_conflict', '1', false)
+-- y sólo dispara cuando la fila transiciona a estado='pagado' -- igual
+-- criterio de "sólo al entrar a un estado que consume stock" que
+-- inventory_order_consumes_stock, sin reimplementar esa función completa.
+create or replace function simulate_stock_guard() returns trigger language plpgsql as $$
+begin
+  if new.estado = 'pagado'
+     and coalesce(current_setting('test.simulate_stock_conflict', true), '') = '1' then
+    raise exception 'CHECKOUT_STOCK_INSUFFICIENT';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger simulate_stock_guard
+before update of estado, payment_status on ordenes
+for each row execute function simulate_stock_guard();

@@ -20,7 +20,7 @@ test("transfer-verification-reasons.ts es seguro para importar desde un componen
   assert.doesNotMatch(source, /^import[\s\S]*?from\s+["'][^"']*transfer-expiration[^"']*["']/m)
 })
 
-test("describeManualReviewReason cubre los 10 motivos posibles sin exponer datos de terceros", () => {
+test("describeManualReviewReason cubre los 12 motivos posibles sin exponer datos de terceros", () => {
   const reasons: Array<Parameters<typeof describeManualReviewReason>[0]> = [
     "declared_amount_mismatch",
     "declared_dni_invalid",
@@ -32,6 +32,8 @@ test("describeManualReviewReason cubre los 10 motivos posibles sin exponer datos
     "payment_id_already_used",
     "mercadopago_unavailable",
     "stock_conflict",
+    "search_not_exhaustive",
+    "expected_amount_changed",
   ]
 
   for (const reason of reasons) {
@@ -55,4 +57,9 @@ test("TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS es distinto de cualquier TRANSFER_P
 test("isRetryableManualReviewReason exportado también desde el módulo client-safe coincide con el server", () => {
   assert.equal(isRetryableManualReviewReason("no_candidates"), true)
   assert.equal(isRetryableManualReviewReason("dni_mismatch"), false)
+})
+
+test("search_not_exhaustive y expected_amount_changed nunca son reintentables automáticamente -- requieren revisión humana, no cambian solos con el tiempo", () => {
+  assert.equal(isRetryableManualReviewReason("search_not_exhaustive"), false)
+  assert.equal(isRetryableManualReviewReason("expected_amount_changed"), false)
 })

@@ -176,6 +176,7 @@ type PaymentStatusValue =
   | "en_revision"
   | "confirmado"
   | "rechazado"
+  | "auto_verified_stock_conflict"
 
 const PAYMENT_STATUS_OPTIONS: Array<{
   value: PaymentStatusValue
@@ -204,6 +205,16 @@ const PAYMENT_STATUS_OPTIONS: Array<{
   {
     value: "rechazado",
     label: "Comprobante rechazado",
+    tone: "text-white/82",
+    dot: "bg-red-300/70",
+  },
+  {
+    // Sólo aparece como estado ACTUAL (nunca es un destino elegible: no se
+    // llega acá desde el dropdown, lo fija el backend cuando Mercado Pago
+    // aprueba la transferencia pero el stock ya no alcanza -- ver
+    // getAllowedAdminTransferPaymentStatuses).
+    value: "auto_verified_stock_conflict",
+    label: "Verificada · Conflicto de stock",
     tone: "text-white/82",
     dot: "bg-red-300/70",
   },
@@ -563,6 +574,7 @@ function getPaymentStatusLabel(status?: string | null) {
     charged_back: "Contracargo",
     approved_amount_mismatch: "Monto no coincide (revisar)",
     approved_currency_mismatch: "Moneda no coincide (revisar)",
+    auto_verified_stock_conflict: "Transferencia verificada · Conflicto de stock",
   }
 
   return status ? labels[status] ?? status : "Sin estado"
@@ -1326,6 +1338,9 @@ function getOrderPaymentDisplay(pedido: SupabasePedido): OrderPaymentDisplay {
     if (pedido.payment_status === "vencido_falta_comprobante") {
       return { method, statusLabel: "Cancelado sin comprobante", tone: "danger" }
     }
+    if (pedido.payment_status === "auto_verified_stock_conflict") {
+      return { method, statusLabel: "Conflicto de stock: revisar", tone: "danger" }
+    }
     if (isRejectedPayment(pedido.payment_status)) {
       return { method, statusLabel: "Rechazado", tone: "danger" }
     }
@@ -1392,7 +1407,7 @@ function PaymentStatusDropdown({
     PAYMENT_STATUS_OPTIONS[0]
   const allowedValues = getAllowedAdminTransferPaymentStatuses(value, hasProof)
   const options = PAYMENT_STATUS_OPTIONS.filter((option) =>
-    allowedValues.includes(option.value),
+    (allowedValues as readonly string[]).includes(option.value),
   )
   const menuOptionCount = options.length
 
@@ -4797,7 +4812,9 @@ function PedidoDetailModal({
         ? "rechazado"
         : pedido.payment_status === "en_revision"
           ? "en_revision"
-          : "pendiente_comprobante"
+          : pedido.payment_status === "auto_verified_stock_conflict"
+            ? "auto_verified_stock_conflict"
+            : "pendiente_comprobante"
 
   useEffect(() => {
     const provider = (
@@ -5358,6 +5375,15 @@ function PedidoDetailModal({
                     <p className="admin-order-pg-pending">
                       <Clock3 className="size-3.5 shrink-0" aria-hidden="true" />
                       Todavía no se recibió ningún comprobante de transferencia.
+                    </p>
+                  )}
+                  {transfer && paymentStatusValue === "auto_verified_stock_conflict" && (
+                    <p className="admin-order-pg-rejected">
+                      <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+                      Mercado Pago verificó esta transferencia automáticamente, pero el
+                      stock ya no alcanza para confirmar el pedido. La plata ya está
+                      identificada: repuso stock y confirmá, o rechazá el pedido si no
+                      corresponde cumplirlo.
                     </p>
                   )}
                 </section>

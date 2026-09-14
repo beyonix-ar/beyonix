@@ -2,10 +2,9 @@ import "server-only"
 
 import type { createAdminClient } from "../supabase/admin.ts"
 import type { SupabasePedido } from "../supabase/types.ts"
-import { appendOrderAuditEvent } from "./order-audit.ts"
 import { expireTransferOrderIfNeeded } from "./transfer-expiration.ts"
 import { searchIncomingBankTransfers } from "../mercadopago/bank-transfer-search.ts"
-import type { MercadoPagoBankTransferCandidate } from "../mercadopago/bank-transfer-search.ts"
+import type { BankTransferSearchResult } from "../mercadopago/bank-transfer-search.ts"
 import {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
   getTransferMatchWindow,
@@ -119,7 +118,7 @@ export interface TransferVerificationDependencies {
   searchTransfers?: (window: {
     beginDate: Date
     endDate: Date
-  }) => Promise<MercadoPagoBankTransferCandidate[]>
+  }) => Promise<BankTransferSearchResult>
 }
 
 export async function attemptTransferAutoVerification(
@@ -201,10 +200,10 @@ export async function attemptTransferAutoVerification(
     return finalizeManualReview(admin, orderId, "declared_dni_invalid", order)
   }
 
-  let candidates
+  let searchResult: BankTransferSearchResult
   try {
     const { beginDate, endDate } = getTransferMatchWindow(order.created_at)
-    candidates = await searchTransfers({ beginDate, endDate })
+    searchResult = await searchTransfers({ beginDate, endDate })
   } catch (error) {
     console.error("TRANSFER_AUTO_VERIFICATION_MP_SEARCH_ERROR", {
       orderId,
@@ -213,11 +212,25 @@ export async function attemptTransferAutoVerification(
     return finalizeManualReview(admin, orderId, "mercadopago_unavailable", order)
   }
 
+  // P0: una auto-confirmación sólo puede ocurrir si se puede demostrar que
+  // el conjunto relevante de candidatos fue evaluado completamente (ver
+  // BankTransferSearchResult.exhaustive en bank-transfer-search.ts). Si la
+  // búsqueda se cortó por el tope defensivo de páginas sin poder probarlo,
+  // nunca se auto-confirma con lo que se llegó a traer -- ante la duda,
+  // revisión manual.
+  if (!searchResult.exhaustive) {
+    console.warn("TRANSFER_AUTO_VERIFICATION_SEARCH_NOT_EXHAUSTIVE", {
+      orderId,
+      candidatesFound: searchResult.candidates.length,
+    })
+    return finalizeManualReview(admin, orderId, "search_not_exhaustive", order)
+  }
+
   const matchResult = matchBankTransferPayment({
     expectedAmount,
     declaredAmount: declared.amount,
     declaredDni: declared.dni,
-    candidates,
+    candidates: searchResult.candidates,
   })
 
   if (matchResult.kind === "manual_review") {
@@ -249,38 +262,8 @@ export async function attemptTransferAutoVerification(
       return finalizeManualReview(admin, orderId, "payment_id_already_used", order)
     }
 
-    if (/checkout_stock_insufficient/i.test(confirmError?.message ?? "")) {
-      await admin
-        .from("ordenes")
-        .update({
-          payment_status: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
-          transfer_verification_status: "manual_review",
-          transfer_verification_failure_reason: "stock_conflict",
-        })
-        .eq("id", orderId)
-
-      await appendOrderAuditEvent(admin, {
-        orderId,
-        actorType: "system",
-        action: "transfer_auto_verification_stock_conflict",
-        previousStatus: order.financial_status ?? "pending_payment",
-        newStatus: order.financial_status ?? "pending_payment",
-        metadata: {
-          matchedPaymentId: candidate.id,
-          reason: "inventory_unavailable_at_confirmation",
-        },
-      })
-
-      const { data: refreshed } = await admin
-        .from("ordenes")
-        .select()
-        .eq("id", orderId)
-        .maybeSingle()
-      return {
-        status: "manual_review",
-        reason: "stock_conflict",
-        order: (refreshed as SupabasePedido) ?? order,
-      }
+    if (code === "AMOUNT_MISMATCH") {
+      return finalizeManualReview(admin, orderId, "expected_amount_changed", order)
     }
 
     console.error("TRANSFER_AUTO_VERIFICATION_CONFIRM_ERROR", {
@@ -295,6 +278,20 @@ export async function attemptTransferAutoVerification(
   }
 
   const confirmedOrder = firstRow<SupabasePedido>(confirmedData)!
+
+  // La RPC (migración 20260914090000) reclama transfer_matched_payment_id de
+  // forma atómica -- bajo el mismo lock -- incluso cuando el guardián de
+  // inventario rechaza la confirmación por falta de stock. En ese caso NO
+  // lanza una excepción: devuelve la orden ya actualizada con este
+  // payment_status. Ya no es un error a interpretar acá, sólo un resultado
+  // distinto a "verified".
+  if (confirmedOrder.payment_status === TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS) {
+    return {
+      status: "manual_review",
+      reason: "stock_conflict",
+      order: confirmedOrder,
+    }
+  }
 
   await sendOrderStatusEmail({
     to: confirmedOrder.cliente_email,

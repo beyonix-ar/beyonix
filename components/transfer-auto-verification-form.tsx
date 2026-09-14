@@ -10,7 +10,9 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 
 interface VerifyResponse {
   status?: "verified" | "manual_review"
-  order?: SupabasePedido
+  verified?: boolean
+  manualReviewRequired?: boolean
+  proofUploadAvailable?: boolean
   error?: string
   message?: string
 }
@@ -87,23 +89,34 @@ function TransferAutoVerificationForm({
 
       if (!response.ok) {
         setErrorMessage(data.error || "No pudimos verificar tu transferencia.")
+        // Un fallo técnico (rate limit, verificación en curso, error
+        // inesperado del backend o de Mercado Pago) nunca debe dejar al
+        // cliente sin salida: mientras el pago no esté confirmado, el
+        // comprobante sigue disponible como alternativa segura.
+        if (data.proofUploadAvailable) setManualReviewActive(true)
         return
       }
 
-      if (data.status === "verified" && data.order) {
-        onUpdated(data.order)
+      if (data.status === "verified") {
+        // La respuesta del backend es mínima a propósito (nunca reenvía la
+        // orden completa ni datos de conciliación con Mercado Pago) -- el
+        // padre refresca el pedido desde su propio endpoint seguro.
+        onUpdated(order)
         return
       }
 
       if (data.status === "manual_review") {
         setManualReviewActive(true)
-        if (data.order) onUpdated(data.order)
+        onUpdated(order)
         return
       }
 
       setErrorMessage("No pudimos verificar tu transferencia.")
+      setManualReviewActive(true)
     } catch {
       setErrorMessage("No pudimos verificar tu transferencia. Intentá nuevamente.")
+      // Fallo de red / excepción inesperada: mismo criterio, nunca bloquea.
+      setManualReviewActive(true)
     } finally {
       setSubmitting(false)
     }
