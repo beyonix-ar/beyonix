@@ -1,0 +1,40 @@
+[Unit]
+Description=BEYONIX - Conciliacion automatica de transferencias (verify-transfer-orders)
+After=network.target
+
+[Service]
+Type=oneshot
+
+# CRON_SECRET NUNCA viaja como argumento de curl: si fuera "-H \"Authorization:
+# Bearer ${CRON_SECRET}\"" acá, systemd expande la variable ANTES de ejecutar
+# curl y el valor real queda visible en el argv del proceso (ps aux,
+# /proc/<pid>/cmdline) mientras corre -- aunque sea unos segundos, cualquier
+# usuario del sistema con permiso para leer /proc de ese proceso lo vería.
+#
+# En cambio, el header vive en un archivo de configuración de curl
+# (/etc/beyonix/curl-verify-transfer-orders.conf, permisos 600, root:root,
+# fuera del repo) que curl lee internamente vía --config: nunca aparece en
+# argv, nunca en journalctl, nunca en el repo. Ver deploy/systemd/README.md
+# para el comando exacto que crea ese archivo en la VPS.
+#
+# flock -n: si la corrida anterior todavía sigue activa cuando el timer
+# vuelve a disparar (por ejemplo, un lote grande o Mercado Pago lento),
+# esta corrida se cancela de inmediato en vez de superponerse -- adicional
+# a la protección nativa de systemd (un mismo .service no puede tener dos
+# ExecStart concurrentes) y a la protección propia de la app
+# (claim_transfer_verification_attempt ya serializa por pedido).
+#
+# -o /dev/null: nunca vuelca la respuesta del endpoint a journalctl. El
+# resultado SUCCESS/FAILURE de la corrida se lee del exit code del servicio
+# (systemctl status / journalctl -u), no del cuerpo de la respuesta.
+# --show-error conserva el mensaje corto de error de curl ante una falla
+# (por ejemplo "curl: (22) ... 401") -- nunca incluye el secreto.
+# --fail: cualquier 4xx/5xx hace que curl devuelva código de error, y con
+# eso el .service queda marcado "failed" (visible en systemctl status).
+# Sin --retry: nunca reintenta agresivamente -- si falla, el próximo tick
+# del timer (~15 min) es el único reintento.
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-verify-transfer-orders.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 120 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/verify-transfer-orders

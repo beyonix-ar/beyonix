@@ -16,7 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-import { CustomerPaymentProof } from "@/components/customer-payment-proof"
+import { TransferPaymentSection } from "@/components/transfer-auto-verification-form"
 import {
   BeyonixButton,
 } from "@/components/beyonix-ui"
@@ -693,12 +693,9 @@ function CheckoutSuccessContent() {
                           {orderError}
                         </CheckoutStatusNotice>
                       ) : order ? (
-                        <CustomerPaymentProof
+                        <TransferPaymentSection
                           order={order}
-                          showHeading={false}
-                          hideProofWhenConfirmed
-                          expandUploader
-                          onUploaded={(updatedOrder) =>
+                          onUpdated={(updatedOrder) =>
                             void handleProofUploaded(updatedOrder)
                           }
                         />

@@ -263,6 +263,25 @@ export interface SupabasePedido {
   payment_proof_url?: string | null
   payment_proof_file_name?: string | null
   payment_proof_uploaded_at?: string | null
+  transfer_verification_status?: "pending" | "checking" | "auto_verified" | "manual_review" | null
+  transfer_payer_first_name?: string | null
+  transfer_payer_last_name?: string | null
+  transfer_payer_dni?: string | null
+  transfer_amount_declared?: number | null
+  transfer_verification_attempts?: number | null
+  transfer_last_verification_at?: string | null
+  transfer_verification_failure_reason?: string | null
+  transfer_matched_payment_id?: string | null
+  transfer_match_snapshot?: {
+    operationType?: string | null
+    paymentMethodId?: string | null
+    identificationType?: string | null
+    identificationNumber?: string | null
+    dniDerivado?: string | null
+    bankTransferId?: string | null
+    dateCreated?: string | null
+    dateApproved?: string | null
+  } | null
   financial_status?: OrderFinancialStatus | null
   payment_confirmed_by?: string | null
   payment_confirmed_at?: string | null

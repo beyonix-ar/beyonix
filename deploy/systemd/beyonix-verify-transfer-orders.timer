@@ -1,0 +1,13 @@
+[Unit]
+Description=Corre beyonix-verify-transfer-orders.service cada ~15 minutos
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Unit=beyonix-verify-transfer-orders.service
+# Si la VPS estuvo apagada/el timer inactivo, ejecuta la corrida pendiente al reactivarse
+# en vez de esperar el próximo intervalo completo -- mismo criterio que un cron perdido.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

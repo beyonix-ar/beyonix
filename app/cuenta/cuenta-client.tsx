@@ -1983,15 +1983,28 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             />
                           </>
                         ) : (
-                          <PaymentProofActionButton
-                            orderId={order.id}
-                            onUploaded={handleProofUploaded}
-                            label="Subir comprobante"
-                            className={cn(
-                              beyonixHoverBorder,
-                              "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 disabled:opacity-60",
-                            )}
-                          />
+                          <>
+                            <Link
+                              href={`/checkout/success?method=transferencia&order_id=${order.id}`}
+                              aria-label="Verificar transferencia"
+                              title="Verificar transferencia"
+                              className={cn(
+                                beyonixHoverBorder,
+                                "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500",
+                              )}
+                            >
+                              Verificar transferencia
+                            </Link>
+                            <PaymentProofActionButton
+                              orderId={order.id}
+                              onUploaded={handleProofUploaded}
+                              label="Subir comprobante directamente"
+                              className={cn(
+                                beyonixHoverBorder,
+                                "inline-flex h-9 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-[var(--account-border)] bg-transparent px-4 text-xs font-black text-[var(--account-text-secondary)] hover:bg-[var(--account-surface-hover)] disabled:opacity-60",
+                              )}
+                            />
+                          </>
                         )}
                       </div>
                     </div>

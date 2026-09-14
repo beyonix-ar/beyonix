@@ -64,13 +64,14 @@ export const MERCADOPAGO_TOPUP_REVERSAL_STATUSES = new Set([
   "charged_back",
 ])
 
-function getAccessToken() {
+/** Compartido con lib/mercadopago/bank-transfer-search.ts: nunca imprimir/loguear el valor devuelto. */
+export function getAccessToken() {
   const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
   if (!accessToken) throw new Error("MERCADOPAGO_ACCESS_TOKEN no configurado")
   return accessToken
 }
 
-function mercadoPagoHeaders() {
+export function mercadoPagoHeaders() {
   return {
     Authorization: `Bearer ${getAccessToken()}`,
     Accept: "application/json",

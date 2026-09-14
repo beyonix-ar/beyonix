@@ -80,6 +80,7 @@ import {
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-payment-status"
+import { describeManualReviewReason } from "@/lib/orders/transfer-verification-reasons"
 import { cn } from "@/lib/utils"
 import type {
   SupabaseOrderClaim,
@@ -5360,6 +5361,108 @@ function PedidoDetailModal({
                     </p>
                   )}
                 </section>
+
+                {transfer && (
+                  <section className="admin-order-pg-panel">
+                    <div className="admin-order-pg-header">
+                      <div className="min-w-0">
+                        <p className="admin-order-pg-eyebrow">Transferencia</p>
+                        <p className="admin-order-pg-method-value">
+                          Conciliación automática
+                        </p>
+                      </div>
+                      <span className="inline-flex items-center rounded-full border px-3 py-1.5 text-11px font-black uppercase tracking-wide admin-ds-tone-info">
+                        {pedido.transfer_verification_status === "auto_verified"
+                          ? "Verificada automáticamente"
+                          : pedido.transfer_verification_status === "manual_review"
+                            ? "Requiere revisión manual"
+                            : pedido.transfer_verification_status === "checking"
+                              ? "Verificación en curso"
+                              : "Sin intentos"}
+                      </span>
+                    </div>
+
+                    <div className="admin-order-pg-body">
+                      <div className="admin-order-pg-meta">
+                        <PaymentMetaItem
+                          label="Monto informado por el cliente"
+                          value={
+                            pedido.transfer_amount_declared != null
+                              ? formatPrice(Number(pedido.transfer_amount_declared))
+                              : "No informado"
+                          }
+                        />
+                        <PaymentMetaItem
+                          label="Monto detectado en Mercado Pago"
+                          value={
+                            pedido.transfer_verification_status === "auto_verified" &&
+                            pedido.payment_confirmed_amount != null
+                              ? formatPrice(Number(pedido.payment_confirmed_amount))
+                              : "No detectado"
+                          }
+                        />
+                        <PaymentMetaItem
+                          label="Nombre declarado"
+                          value={pedido.transfer_payer_first_name || "No informado"}
+                        />
+                        <PaymentMetaItem
+                          label="Apellido declarado"
+                          value={pedido.transfer_payer_last_name || "No informado"}
+                        />
+                        <PaymentMetaItem
+                          label="DNI declarado"
+                          value={pedido.transfer_payer_dni || "No informado"}
+                        />
+                        <PaymentMetaItem
+                          label="Identificación de Mercado Pago"
+                          value={
+                            pedido.transfer_match_snapshot?.identificationType &&
+                            pedido.transfer_match_snapshot?.identificationNumber
+                              ? `${pedido.transfer_match_snapshot.identificationType}: ${pedido.transfer_match_snapshot.identificationNumber}`
+                              : "No disponible"
+                          }
+                        />
+                        <PaymentMetaItem
+                          label="DNI derivado"
+                          value={pedido.transfer_match_snapshot?.dniDerivado || "No disponible"}
+                        />
+                        <PaymentMetaItem
+                          label="Mercado Pago payment.id"
+                          value={pedido.transfer_matched_payment_id || "No asignado"}
+                        />
+                        <PaymentMetaItem
+                          label="Tipo de operación"
+                          value={
+                            pedido.transfer_match_snapshot?.operationType &&
+                            pedido.transfer_match_snapshot?.paymentMethodId
+                              ? `${pedido.transfer_match_snapshot.operationType} / ${pedido.transfer_match_snapshot.paymentMethodId}`
+                              : "No disponible"
+                          }
+                        />
+                        <PaymentMetaItem
+                          label="Fecha de aprobación en Mercado Pago"
+                          value={formatOptionalOrderDate(
+                            pedido.transfer_match_snapshot?.dateApproved ?? null,
+                          )}
+                        />
+                        <PaymentMetaItem
+                          label="Intentos de verificación"
+                          value={String(pedido.transfer_verification_attempts ?? 0)}
+                        />
+                        <PaymentMetaItem
+                          label="Motivo de la última revisión manual"
+                          value={
+                            pedido.transfer_verification_status === "manual_review"
+                              ? describeManualReviewReason(
+                                  pedido.transfer_verification_failure_reason ?? null,
+                                )
+                              : "No aplica"
+                          }
+                        />
+                      </div>
+                    </div>
+                  </section>
+                )}
 
                 {nextAction.buttonLabel && (
                   <section className={`admin-order-pg-next admin-order-action-tone-${nextAction.tone}`}>
