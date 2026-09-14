@@ -3073,7 +3073,7 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.76) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]) {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select) {
   background: #112A43 !important;
   background-color: #112A43 !important;
   background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
@@ -3084,7 +3084,7 @@ button.sales-ledger-product-trigger:hover {
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):hover {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):hover {
   background: #1E4D7B !important;
   background-color: #1E4D7B !important;
   background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
@@ -3106,9 +3106,19 @@ button.sales-ledger-product-trigger:hover {
    a fondo navy + texto blanco reafirmado chocaba con el remapeo oscuro de
    su span interno (text-white/82, pensado para fondo claro), dejando texto
    casi negro sobre navy -- excluido para que caiga en el catch-all general
-   en vez de en este caso especial de "botón de marca". */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]),
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]) svg.lucide,
+   en vez de en este caso especial de "botón de marca".
+   Mismo caso para .admin-order-shipping-status-select ("Estado operativo",
+   getOrderStatusSelectClassName en admin-pedidos.tsx, auditoría 2026-09-14):
+   cada variante de estado fija su propio !bg-[#111827]/!bg-beyonix-blue +
+   texto pastel semántico -- este catch-all le pisaba el fondo (gradiente
+   azul BEYONIX en vez del fondo propio de cada estado) y reafirmaba texto
+   blanco que a su vez perdía contra el forzado a --beyonix-text-primary
+   (oscuro en Light) de .admin-order-shipping-refined .admin-control-select
+   span más abajo, dejando texto casi negro sobre navy: "Pago confirmado"
+   ilegible. Excluido para que conserve su propio fondo/texto en los dos
+   temas. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select) svg.lucide,
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
   color: #ffffff !important;
@@ -7528,17 +7538,44 @@ span.admin-claim-status-finalized,
   padding-left: 0.5rem;
 }
 
+/* Tamaño/radio SIN excluir .admin-order-shipping-status-select: "Estado
+   operativo" y "Transportista" deben medir exactamente igual (mismo
+   sistema visual, auditoría 2026-09-15) -- sólo fondo/color se diferencian
+   más abajo. Regresión real detectada: hasta acá, .not(...) también dejaba
+   afuera height/min-height/border-radius, y "Estado operativo" quedaba con
+   el alto base de .admin-ds-control (2.75rem) en vez de este compacto
+   (2rem), más alto que "Transportista" y con una esquina más redondeada. */
 .admin-order-detail-scope .admin-order-shipping-refined .admin-control-select,
 .admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-other-modality {
-  background: var(--beyonix-input-background) !important;
-  background-color: var(--beyonix-input-background) !important;
-  background-image: none !important;
-  border-color: var(--beyonix-border-default) !important;
   border-radius: 0.5rem !important;
   height: 2rem !important;
   min-height: 2rem !important;
+}
+
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:not(.admin-order-shipping-status-select),
+.admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-other-modality {
+  /* --beyonix-input-background es la variable del storefront público (fija,
+     sin versión Light -- ver :root arriba) y NUNCA se le agregó un
+     redefine para el tema Light del admin, a diferencia de
+     --beyonix-border-default/--beyonix-text-primary, que sí lo tienen. Acá
+     eso dejaba los inputs "Otro transportista" (nombre/URL de seguimiento)
+     con fondo casi negro fijo en Light -- un bloque negro real, no sólo
+     bajo contraste (auditoría 2026-09-15). --admin-control sí es
+     theme-aware (compartida por todo el sistema de inputs del admin) y da
+     el mismo gris que ya usa el select "Transportista" al lado. */
+  background: var(--admin-control) !important;
+  background-color: var(--admin-control) !important;
+  background-image: none !important;
+  border-color: var(--beyonix-border-default) !important;
   box-shadow: none !important;
 }
+
+/* .admin-order-shipping-status-select ("Estado operativo") excluido de la
+   regla de arriba: es un chip de estado con su propio fondo semántico por
+   status (getOrderStatusSelectClassName, admin-pedidos.tsx), no un input
+   genérico -- forzarlo acá a var(--beyonix-input-background) le pisaba el
+   fondo propio de cada estado (auditoría 2026-09-14). El tamaño (bloque de
+   arriba) SÍ es compartido; sólo fondo/color quedan aparte. */
 
 .admin-order-detail-scope .admin-order-shipping-refined button.admin-control-select {
   gap: 0.375rem !important;
@@ -7555,13 +7592,13 @@ span.admin-claim-status-finalized,
   height: 0.875rem !important;
 }
 
-.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select,
-.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select span,
-.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select svg {
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:not(.admin-order-shipping-status-select),
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:not(.admin-order-shipping-status-select) span,
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:not(.admin-order-shipping-status-select) svg {
   color: var(--beyonix-text-primary) !important;
 }
 
-.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:hover,
+.admin-order-detail-scope .admin-order-shipping-refined .admin-control-select:not(.admin-order-shipping-status-select):hover,
 .admin-order-detail-scope .admin-order-shipping-refined .admin-order-shipping-other-modality:hover {
   border-color: var(--beyonix-border-interactive) !important;
 }
@@ -10111,7 +10148,9 @@ html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad 
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button:hover,
-html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"] {
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Estado operativo del pedido"] button[aria-selected="true"],
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad logística"] button:hover,
+html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad logística"] button[aria-selected="true"] {
   background: #eaf1fa !important;
   border-color: rgba(30, 58, 95, 0.16) !important;
   color: #0f172a !important;
@@ -10148,6 +10187,15 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select) svg {
   color: var(--admin-text) !important;
 }
+/* "Estado operativo" (.admin-order-shipping-status-select) en Light: NO se
+   repinta por CSS acá -- las utilidades `!` de Tailwind del propio chip
+   (getOrderStatusSelectClassName, admin-pedidos.tsx) viven en la misma capa
+   que las reglas base de .admin-control-select y les ganan por diseño;
+   agregar otro override en globals.css sólo generaba una pelea de cascada
+   más. Se resolvió en el componente: getOrderStatusSelectClassName ahora es
+   theme-aware (recibe el tema de useAdminTheme) y devuelve un badge pastel
+   claro en Light en vez del chip oscuro de Dark (reporte real de usuario,
+   2026-09-15) -- sin tocar Dark. */
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-badge {
   border-color: rgba(5, 150, 105, 0.4) !important;
   background: rgba(16, 185, 129, 0.1) !important;
@@ -10357,6 +10405,13 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(thead, th),
 html[data-admin-theme="light"] .beyonix-admin-main :where(.admin-orders-table-header) {
   background-color: #f7f9fb !important;
   border-color: var(--admin-border-soft) !important;
+  /* La versión dark de esta regla (más arriba, sin scope de tema) sí fija
+     color: rgba(215, 236, 255, 0.62) -- acá nunca se reafirmó para Light,
+     así que thead/th quedaban con ese azul pálido pensado para fondo oscuro
+     sobre el fondo claro de acá: encabezados de tabla casi ilegibles
+     (Historial de compras y cualquier <table> real del admin, auditoría
+     2026-09-14). */
+  color: var(--admin-text-muted) !important;
 }
 html[data-admin-theme="light"] .beyonix-admin-main :where(tr:hover, .admin-orders-list-row:hover, details:hover) {
   background-color: #f1f4f8 !important;

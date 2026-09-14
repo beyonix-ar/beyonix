@@ -195,7 +195,7 @@ export function AdminNotificationBell({
         <div
           className={cn(
             isStorefront ? "beyonix-header-notif-position" : "admin-ds-popover-position",
-            "absolute top-[52px] z-100 w-80 sm:w-96",
+            "absolute top-[52px] z-100 w-72 sm:w-80",
             align === "start" ? "left-0" : "right-0",
           )}
           onMouseEnter={openPopover}

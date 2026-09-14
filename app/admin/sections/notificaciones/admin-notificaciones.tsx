@@ -872,7 +872,7 @@ export function AdminNotificaciones() {
               </AdminSelect>
             </AdminFormField>
 
-            <AdminFormField label="Alcance comercial" className="xl:col-start-2" help={selectedScope.help}>
+            <AdminFormField label="Alcance" className="xl:col-start-2" help={selectedScope.help}>
               <AdminSelect
                 title="Alcance comercial"
                 value={commercialScope}

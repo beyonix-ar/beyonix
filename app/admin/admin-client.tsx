@@ -104,7 +104,9 @@ function SidebarItem({
     <div
       onDragOver={onDragOver}
       onDrop={onDrop}
-      className={`group/nav relative grid grid-cols-[16px_minmax(0,1fr)] items-stretch rounded-2xl transition ${
+      className={`group/nav relative grid ${
+        reorderable ? "grid-cols-[16px_minmax(0,1fr)]" : "grid-cols-1"
+      } items-stretch rounded-2xl transition ${
         dragging ? "opacity-45" : ""
       } ${
         dragOver ? "ring-1 ring-beyonix-sky/55 ring-offset-2 ring-offset-black/40" : ""

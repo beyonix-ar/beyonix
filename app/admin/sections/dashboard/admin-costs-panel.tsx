@@ -515,7 +515,7 @@ function ModernSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
-        className={`${inputClass} flex cursor-pointer items-center justify-between gap-3 hover:bg-beyonix-blue/12 ${compact ? "!h-8 !rounded-lg !px-3 !text-xs" : "px-4"}`}
+        className={`admin-control-select admin-ds-control ${inputClass} flex cursor-pointer items-center justify-between gap-3 ${compact ? "!h-8 !rounded-lg !px-3 !text-xs" : "px-4"}`}
       >
         <span className="w-4 shrink-0" />
         <span className={`min-w-0 flex-1 truncate ${centered ? "text-center" : ""}`}>

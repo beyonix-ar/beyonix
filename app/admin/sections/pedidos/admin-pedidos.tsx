@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { useAdminTheme, type AdminTheme } from "@/context/admin-theme-context"
 import { usePedidos } from "@/hooks/use-pedidos"
 import { AdminClaimManager, PROBLEM_LABELS } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
@@ -4521,8 +4522,20 @@ function AdminOrderSummaryDashboard({
   )
 }
 
-function getOrderStatusSelectClassName(status: string) {
-  const styles: Record<string, string> = {
+// Colores semánticos por estado del select "Estado operativo"
+// (admin-order-shipping-status-select). Theme-aware a propósito: en Dark es
+// un chip oscuro con texto pastel (diseño original); en Light usar el MISMO
+// fondo oscuro se ve como "un bloque negro" desconectado del resto de la
+// pantalla (reporte real de usuario, 2026-09-15), así que Light usa un
+// badge pastel claro (misma fórmula que .admin-order-tone-* ya usada en las
+// listas de pedidos) en vez de intentar reescribir el fondo oscuro por CSS
+// -- las utilidades `!` de Tailwind conviven en la misma capa que las
+// reglas base de .admin-control-select y le ganan por diseño; agregar un
+// override en globals.css para pisarlas de nuevo sólo generaba otra pelea
+// de cascada. Elegir el className correcto en el componente (que ya sabe
+// qué tema está activo vía useAdminTheme) evita esa pelea por completo.
+function getOrderStatusSelectClassName(status: string, theme: AdminTheme) {
+  const darkStyles: Record<string, string> = {
     pendiente:
       "!border-amber-400/35 !bg-[#111827] !text-amber-200 hover:!bg-[#15191F]",
     pagado:
@@ -4548,6 +4561,34 @@ function getOrderStatusSelectClassName(status: string) {
     cancelado:
       "!border-[#9f3546]/70 !bg-[#111827] !text-[#ffc2c8] hover:!bg-[#15191F]",
   }
+  const lightStyles: Record<string, string> = {
+    pendiente:
+      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
+    pagado:
+      "!border-emerald-400/50 !bg-emerald-50 !text-emerald-800 hover:!bg-emerald-100",
+    enviado:
+      "!border-blue-400/50 !bg-blue-50 !text-blue-800 hover:!bg-blue-100",
+    en_camino:
+      "!border-sky-400/50 !bg-sky-50 !text-sky-800 hover:!bg-sky-100",
+    visita_fallida:
+      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
+    en_sucursal:
+      "!border-cyan-400/50 !bg-cyan-50 !text-cyan-800 hover:!bg-cyan-100",
+    retiro_pendiente:
+      "!border-cyan-400/50 !bg-cyan-50 !text-cyan-800 hover:!bg-cyan-100",
+    retiro_vencido:
+      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
+    en_devolucion:
+      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
+    devuelto_beyonix:
+      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
+    entregado:
+      "!border-emerald-400/50 !bg-emerald-50 !text-emerald-800 hover:!bg-emerald-100",
+    cancelado:
+      "!border-red-400/50 !bg-red-50 !text-red-800 hover:!bg-red-100",
+  }
+
+  const styles = theme === "light" ? lightStyles : darkStyles
 
   return styles[status] ?? ""
 }
@@ -4645,6 +4686,7 @@ function PedidoDetailModal({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { theme: adminTheme } = useAdminTheme()
   const items = pedido.orden_items ?? []
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
@@ -5572,7 +5614,7 @@ function PedidoDetailModal({
                 </div>
               </section>
 
-              <section className="admin-order-shipping-card admin-order-shipping-management-card rounded-lg border p-3 lg:col-span-2">
+              <section className="admin-order-shipping-card admin-order-shipping-management-card self-start rounded-lg border p-3 lg:col-span-2">
                 <div className="flex items-center gap-2.5">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
                     <Settings2 className="size-3.5" />
@@ -5597,7 +5639,7 @@ function PedidoDetailModal({
                         compact
                         title="Estado operativo del pedido"
                         value={pedido.estado === "enviado" ? "en_camino" : pedido.estado}
-                        triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado)}`}
+                        triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado, adminTheme)}`}
                         onChange={(value) => onEstadoChange(pedido, value)}
                       >
                         <option value="pendiente">Pendiente</option>
