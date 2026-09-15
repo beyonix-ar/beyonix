@@ -9171,6 +9171,27 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) [class*="text-[#f4b8c0]/"] {
   color: #991b1b !important;
 }
+/* ADMIN_SENSITIVE_DANGER.card/.panel/.panelSoft (notificación urgente en
+   components/admin-notifications-popover.tsx): usan bg-[#0D1117]/
+   bg-[#111827], que SON los mismos hex del catch-all de "panel neutro" de
+   arriba (los reutilizan paneles no-danger legítimos, ej. admin-claim-
+   manager) -- no se puede oscurecer/aclarar ese hex en general sin volver
+   rosa cualquier panel neutro. Se acota con selector compuesto exigiendo
+   TAMBIÉN el border-[#7f2d3a]/N exclusivo de esta familia, para que sólo
+   la notificación danger (fondo+borde juntos) reciba el mismo rosa claro
+   que ya usan .badge/.icon/.action (bg-[#2a1117] -> #fef2f2) en vez de
+   quedar con el fondo neutro plano reportado ("fondo distinto al resto"). */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-\[\#7f2d3a\]\/60.bg-\[\#0D1117\],
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-\[\#7f2d3a\]\/65.bg-\[\#0D1117\] {
+  background-color: #fef2f2 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-\[\#7f2d3a\]\/55.bg-\[\#111827\] {
+  background-color: #fef2f2 !important;
+}
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .border-\[\#7f2d3a\]\/60.bg-\[\#0D1117\]:hover,
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#111820\]:hover {
+  background-color: #fee2e2 !important;
+}
 
 /* ---- 6. Dropdowns / popovers / selects (selector de íconos, Eye de
    rentabilidad, Requisitos, AdminSelect, etc.) ---- */
@@ -9467,7 +9488,7 @@ html[data-admin-theme="light"] .admin-claim-card,
 html[data-admin-theme="light"] .admin-claim-file-row,
 html[data-admin-theme="light"] .admin-claim-chat-bubble {
   border-color: var(--admin-border) !important;
-  background-color: #ffffff !important;
+  background-color: #f6f9fc !important;
 }
 /* Zona de carga de imágenes (Productos/Banners) y tile de miniatura: mismo
    patrón, gradiente/fondo casi negro sin scope de tema. */
@@ -9570,8 +9591,8 @@ html[data-admin-theme="light"] .admin-order-detail-scope .custom-scrollbar {
   background: #eef1f5 !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-panel {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
+  background: linear-gradient(150deg, #ffffff, #f3f7fb) !important;
+  border-color: rgba(30, 58, 95, 0.18) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-summary-layout-bg {
   background: #f7f9fb !important;
@@ -9586,8 +9607,8 @@ html[data-admin-theme="light"] .admin-order-detail-scope aside {
    panel claro; los acentos semánticos (verde positivo, ámbar warning) se
    oscurecen a una variante legible sobre blanco en vez de eliminarse. */
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-summary-view .admin-order-rs-hero {
-  background: linear-gradient(120deg, #eaf1fa, #f7f9fb) !important;
-  border-color: rgba(30, 58, 95, 0.24) !important;
+  background: linear-gradient(120deg, #dfebf8, #eef4fb) !important;
+  border-color: rgba(30, 58, 95, 0.32) !important;
   box-shadow: none !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-eyebrow {
@@ -9606,7 +9627,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-action-
   color: rgba(15, 23, 42, 0.86) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-rows-tight {
-  border-top-color: rgba(30, 58, 95, 0.14) !important;
+  border-top-color: rgba(30, 58, 95, 0.22) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-row span:first-child {
   color: rgba(15, 23, 42, 0.55) !important;
@@ -9683,8 +9704,8 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-warrant
 
 /* Pago (admin-order-pg-*): mismo criterio que Resumen arriba. */
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-pg-panel {
-  background: #ffffff !important;
-  border-color: rgba(30, 58, 95, 0.2) !important;
+  background: linear-gradient(150deg, #ffffff, #f3f7fb) !important;
+  border-color: rgba(30, 58, 95, 0.18) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-eyebrow {
   color: rgba(15, 23, 42, 0.5) !important;
@@ -10570,7 +10591,7 @@ html[data-admin-theme="light"] .admin-ds-skeleton {
 
 /* ---- 11. Atención al cliente (mensajería) ---- */
 html[data-admin-theme="light"] .admin-claim-card {
-  background: #ffffff !important;
+  background: linear-gradient(150deg, #ffffff, #f3f7fb) !important;
 }
 html[data-admin-theme="light"] .admin-claim-help-resolved-card {
   border-color: rgba(5, 150, 105, 0.4) !important;

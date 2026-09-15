@@ -5744,14 +5744,14 @@ function PedidoDetailModal({
             <section className="admin-order-shipping-card admin-order-shipping-overview rounded-lg border p-3">
               <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/60 bg-beyonix-blue-900 text-white">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/60 bg-beyonix-blue-900 text-[var(--beyonix-text-primary)]">
                     <Truck className="size-4" />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-10px font-bold uppercase tracking-widest text-white">
+                    <p className="text-10px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">
                       Envío
                     </p>
-                    <h3 className="mt-0.5 text-base font-black text-white">
+                    <h3 className="mt-0.5 text-base font-black text-[var(--beyonix-text-primary)]">
                       {pedido.shipping_type === "sucursal"
                         ? "Retiro en sucursal"
                         : "Envío a domicilio"}
@@ -5777,14 +5777,14 @@ function PedidoDetailModal({
             <div className="grid gap-2.5 lg:grid-cols-5">
               <section className="admin-order-shipping-card admin-order-shipping-destination-card rounded-lg border p-3 lg:col-span-3">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-[var(--beyonix-text-primary)]">
                     <MapPin className="size-3.5" />
                   </span>
                   <div>
-                    <p className="text-9px font-bold uppercase tracking-widest text-white">
+                    <p className="text-9px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">
                       Destino
                     </p>
-                    <h3 className="mt-0.5 text-sm font-black text-white">
+                    <h3 className="mt-0.5 text-sm font-black text-[var(--beyonix-text-primary)]">
                       Dirección de entrega
                     </h3>
                   </div>
@@ -5796,14 +5796,14 @@ function PedidoDetailModal({
 
               <section className="admin-order-shipping-card admin-order-shipping-management-card self-start rounded-lg border p-3 lg:col-span-2">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-[var(--beyonix-text-primary)]">
                     <Settings2 className="size-3.5" />
                   </span>
                   <div>
-                    <p className="text-9px font-bold uppercase tracking-widest text-white">
+                    <p className="text-9px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">
                       Administración
                     </p>
-                    <h3 className="mt-0.5 text-sm font-black text-white">
+                    <h3 className="mt-0.5 text-sm font-black text-[var(--beyonix-text-primary)]">
                       Gestión logística
                     </h3>
                   </div>
@@ -5875,7 +5875,7 @@ function PedidoDetailModal({
                             }
                             placeholder="Ej: Correo Argentino"
                             aria-label="Nombre del transportista"
-                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-white outline-none placeholder:text-beyonix-gray-500"
+                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-[var(--beyonix-text-primary)] outline-none placeholder:text-beyonix-gray-500"
                           />
                         </label>
 
@@ -5892,7 +5892,7 @@ function PedidoDetailModal({
                             }
                             placeholder="Número de seguimiento"
                             aria-label="Número de envío opcional"
-                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-white outline-none placeholder:text-beyonix-gray-500"
+                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-[var(--beyonix-text-primary)] outline-none placeholder:text-beyonix-gray-500"
                           />
                         </label>
 
@@ -5908,7 +5908,7 @@ function PedidoDetailModal({
                             }
                             placeholder="https://..."
                             aria-label="Página de seguimiento opcional"
-                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-white outline-none placeholder:text-beyonix-gray-500"
+                            className="admin-order-shipping-other-modality mt-1 w-full rounded-lg border px-3 text-10px font-normal text-[var(--beyonix-text-primary)] outline-none placeholder:text-beyonix-gray-500"
                           />
                         </label>
 
@@ -5953,14 +5953,14 @@ function PedidoDetailModal({
 
             <section className="admin-order-shipping-card admin-order-shipping-operation-card rounded-lg border p-3">
               <div className="flex items-center gap-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-white">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-[var(--beyonix-text-primary)]">
                   <Package className="size-3.5" />
                 </span>
                 <div>
-                  <p className="text-9px font-bold uppercase tracking-widest text-white">
+                  <p className="text-9px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">
                     Operación
                   </p>
-                  <h3 className="mt-0.5 text-sm font-black text-white">
+                  <h3 className="mt-0.5 text-sm font-black text-[var(--beyonix-text-primary)]">
                     Datos del envío
                   </h3>
                 </div>
@@ -5992,7 +5992,7 @@ function PedidoDetailModal({
                         onClick={() => void copyTrackingNumber(pedidoTracking.trackingNumber!)}
                         aria-label={`Copiar número de seguimiento del pedido ${pedido.id}`}
                         title={trackingCopied ? "Copiado" : "Copiar seguimiento"}
-                        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-beyonix-gray-300 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/55"
+                        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-beyonix-gray-300 transition-colors hover:text-[var(--beyonix-text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/55"
                       >
                         {trackingCopied ? (
                           <Check className="size-3" />
@@ -6041,7 +6041,7 @@ function PedidoDetailModal({
               )}
 
               <div className="mt-3 border-t border-beyonix-blue-500/30 pt-2.5">
-                <p className="text-10px font-black uppercase tracking-widest text-white">
+                <p className="text-10px font-black uppercase tracking-widest text-[var(--beyonix-text-muted)]">
                   Acciones
                 </p>
                 <div className="admin-order-shipping-actions mt-2 flex flex-wrap gap-2">
@@ -6253,7 +6253,7 @@ function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
 
   return (
     <div>
-      <p className="text-9px font-black uppercase tracking-widest text-white">
+      <p className="text-9px font-black uppercase tracking-widest text-[var(--beyonix-text-muted)]">
         Estado del envío
       </p>
       <ol className="mt-2.5 grid grid-cols-5" aria-label="Progreso del envío">
@@ -6288,7 +6288,7 @@ function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
                       ? "border-beyonix-status-success/70 bg-beyonix-blue-900 text-beyonix-status-success"
                       : current
                         ? "border-beyonix-blue-300 bg-beyonix-blue-700 text-white"
-                        : "border-beyonix-gray-700 bg-beyonix-gray-900 text-white",
+                        : "border-beyonix-gray-700 bg-beyonix-gray-900 text-[var(--beyonix-text-primary)]",
                   )}
                 >
                   {done ? <Check className="size-3" /> : index + 1}
@@ -6308,7 +6308,7 @@ function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
               <span
                 className={cn(
                   "admin-order-shipping-step-label mt-1.5 px-1 font-bold",
-                  "text-white",
+                  "text-[var(--beyonix-text-primary)]",
                 )}
               >
                 {step}
@@ -6335,13 +6335,13 @@ function ShippingMiniCard({
   return (
     <div className="admin-order-shipping-detail min-w-0">
       <div className="flex min-w-0 items-center gap-2">
-        {icon && <span className="text-white">{icon}</span>}
+        {icon && <span className="text-[var(--beyonix-text-primary)]">{icon}</span>}
         <div className="min-w-0">
           <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
             {label}
           </p>
           <div className="mt-0.5 flex items-center gap-1">
-            <p className="truncate text-xs font-black text-white sm:text-sm">
+            <p className="truncate text-xs font-black text-[var(--beyonix-text-primary)] sm:text-sm">
               {value}
             </p>
             {action}
@@ -6364,9 +6364,16 @@ function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
   )
 }
 
+// El camioncito indica exactamente lo que hace needsShippingReminder():
+// factura ya autorizada (con CAE) pero el pedido todavía no se marcó
+// "preparado" ni se despachó -- es decir, ya está listo para prepararse y
+// enviarse. title/aria-label lo hacen explícito en el propio ícono, sin
+// agregar texto suelto que rompa el layout compacto del badge.
 function ShippingReminderBadge({ compact = false }: { compact?: boolean }) {
   return (
     <span
+      title="Facturado: listo para preparar y despachar"
+      aria-label="Facturado: listo para preparar y despachar"
       className={`inline-flex items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] transition-colors hover:border-[#77E6E2]/40 ${
         compact ? "size-4" : "size-7"
       }`}
@@ -6534,10 +6541,10 @@ function CompactAddressValue({
 }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <p className="text-9px font-bold uppercase tracking-widest text-white">
+      <p className="text-9px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">
         {label}
       </p>
-      <p className="mt-0.5 truncate text-sm font-black text-white">
+      <p className="mt-0.5 truncate text-sm font-black text-[var(--beyonix-text-primary)]">
         {value}
       </p>
     </div>

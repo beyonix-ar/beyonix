@@ -497,6 +497,12 @@ export default async function TerminosPage() {
                 imposibilidad objetiva de validación, fraude comprobable o indisponibilidad
                 sobreviniente, restituyendo íntegramente cualquier importe cobrado.
               </p>
+              <p>
+                En la sección &quot;Mis compras&quot; un pedido puede figurar como <strong>rechazado</strong> cuando
+                nunca llegó a confirmarse el pago (por ejemplo, un comprobante de transferencia inválido) —
+                en ese caso no existe ningún cobro que reintegrar — o como <strong>cancelado</strong> cuando el
+                pago ya estaba confirmado, situación en la que aplica el reintegro pendiente descripto arriba.
+              </p>
             </LegalSection>
 
             <LegalSection

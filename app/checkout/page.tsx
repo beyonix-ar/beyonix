@@ -140,7 +140,6 @@ import {
   TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
-import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
 import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
@@ -1833,7 +1832,7 @@ export default function CheckoutPage() {
                             onChange={handlePhoneChange}
                             heightClassName="h-10"
                             outerClassName={cn(
-                              "beyonix-checkout-input rounded-lg border-beyonix-blue-light/18 hover:border-beyonix-blue-light/35 focus-within:border-beyonix-blue-light/65 focus-within:ring-beyonix-blue-light/18",
+                              "beyonix-checkout-input border rounded-lg border-beyonix-blue-light/18 hover:border-beyonix-blue-light/35 focus-within:border-beyonix-blue-light/65 focus-within:ring-beyonix-blue-light/18",
                               invalidField === "telefono" &&
                                 "border-red-400/70 shadow-[0_0_0_2px_rgba(248,113,113,0.1)]",
                             )}
@@ -2336,13 +2335,6 @@ export default function CheckoutPage() {
                       <ShieldCheck className="size-3.5 shrink-0 text-white/45" />
                       Pago protegido por Mercado Pago
                     </p>
-                  )}
-
-                  {selectedPayment === "transferencia" && (
-                    <CheckoutNotice tone="warning">
-                      <strong className="text-white">Horario de validación de comprobantes:</strong>{" "}
-                      {BEYONIX_SUPPORT_HOURS_DETAIL}
-                    </CheckoutNotice>
                   )}
 
                   <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
