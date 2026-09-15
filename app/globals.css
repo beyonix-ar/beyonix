@@ -10945,6 +10945,38 @@ html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-warning 
 html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-info { border-color: rgba(96, 165, 250, 0.54) !important; background: rgba(30, 64, 175, 0.32) !important; color: #bfdbfe !important; }
 html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-muted { border-color: rgba(148, 163, 184, 0.32) !important; background: rgba(15, 23, 42, 0.42) !important; color: rgba(226, 232, 240, 0.76) !important; }
 
+/* Se detectó una SEGUNDA regla, independiente de la de arriba, que también
+   fuerza fondo blanco en estas mismas filas: html[data-admin-theme="light"]
+   .beyonix-admin-main :where(tbody tr, .admin-orders-list-row) (sección
+   "Historial de compras/Detalle comercial", ver esa regla más arriba -- NO
+   se toca, la comparte con <table><tbody><tr> real de otras pantallas). Se
+   le gana acá con selectores más específicos, exclusivos de
+   .admin-orders-list-row, sin tocar esa regla compartida ni ninguna otra
+   tabla. Fondo: el mismo degradé azulado que .admin-solid-surface
+   [class*="bg-zinc-900"] ya pinta en Dark para esta misma fila -- ningún
+   color nuevo. */
+html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row:not(.bg-\[\#0D1117\]) {
+  background: linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
+}
+html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row.border-white\/8 {
+  border-color: rgba(92, 159, 215, 0.28) !important;
+}
+html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row.border-white\/8:hover {
+  border-color: rgba(110, 168, 255, 0.4) !important;
+}
+/* Pedido cancelado / con reclamo (ADMIN_SENSITIVE_DANGER.card, bg-[#0D1117]):
+   misma familia oscura, con su propio acento rojo -- valores calcados de
+   ADMIN_SENSITIVE_DANGER.card (lib/admin/admin-sensitive-visuals.ts), no
+   el azul genérico de arriba. */
+html[data-admin-theme="light"] .admin-orders-list-row.bg-\[\#0D1117\] {
+  background-color: #0D1117 !important;
+  border-color: rgba(127, 45, 58, 0.6) !important;
+}
+html[data-admin-theme="light"] .admin-orders-list-row.bg-\[\#0D1117\]:hover {
+  background-color: #111820 !important;
+  border-color: rgba(159, 53, 70, 0.8) !important;
+}
+
 /* ---- 14. Badges / pills genéricos detectados por forma de clase (no por
    nombre de componente fijo): en dark, esta heurística ya pisa el color de
    cualquier badge redondo con borde a un tono pastel único (#d7ecff, etc.)
