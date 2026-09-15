@@ -10921,9 +10921,6 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellati
    Light, hace falta revertir puntualmente las clases que el catch-all de
    arriba sí oscurece (texto, badges), para no repetir "texto oscuro sobre
    fondo oscuro". */
-html[data-admin-theme="light"] .admin-orders-list-row.bg-\[\#0D1117\] {
-  background-color: #0D1117 !important;
-}
 html[data-admin-theme="light"] .admin-orders-list-row .border-white\/8 { border-color: rgba(255,255,255,0.08) !important; }
 html[data-admin-theme="light"] .admin-orders-list-row .text-white\/38 { color: rgba(255,255,255,0.38) !important; }
 html[data-admin-theme="light"] .admin-orders-list-row .text-white\/48 { color: rgba(255,255,255,0.48) !important; }
@@ -10954,8 +10951,13 @@ html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-muted { 
    .admin-orders-list-row, sin tocar esa regla compartida ni ninguna otra
    tabla. Fondo: el mismo degradé azulado que .admin-solid-surface
    [class*="bg-zinc-900"] ya pinta en Dark para esta misma fila -- ningún
-   color nuevo. */
-html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row:not(.bg-\[\#0D1117\]) {
+   color nuevo.
+   TODAS las filas usan este mismo fondo, sin excepción -- el JSX ya no
+   varía el fondo/borde de la fila por estado (cancelado, reclamo, alerta,
+   etc: eso ahora se ve únicamente vía badges/iconos, ver
+   admin-pedidos.tsx), así que ya no hace falta una variante aparte para
+   ADMIN_SENSITIVE_DANGER.card ni ningún otro tinte. */
+html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row {
   background: linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
 }
 html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row.border-white\/8 {
@@ -10963,18 +10965,6 @@ html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admi
 }
 html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row.border-white\/8:hover {
   border-color: rgba(110, 168, 255, 0.4) !important;
-}
-/* Pedido cancelado / con reclamo (ADMIN_SENSITIVE_DANGER.card, bg-[#0D1117]):
-   misma familia oscura, con su propio acento rojo -- valores calcados de
-   ADMIN_SENSITIVE_DANGER.card (lib/admin/admin-sensitive-visuals.ts), no
-   el azul genérico de arriba. */
-html[data-admin-theme="light"] .admin-orders-list-row.bg-\[\#0D1117\] {
-  background-color: #0D1117 !important;
-  border-color: rgba(127, 45, 58, 0.6) !important;
-}
-html[data-admin-theme="light"] .admin-orders-list-row.bg-\[\#0D1117\]:hover {
-  background-color: #111820 !important;
-  border-color: rgba(159, 53, 70, 0.8) !important;
 }
 
 /* ---- 14. Badges / pills genéricos detectados por forma de clase (no por
@@ -10988,6 +10978,20 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(span, button):not([sty
   border-color: var(--admin-border) !important;
   background-color: #f1f4f8 !important;
   color: var(--admin-text) !important;
+}
+/* Badge "1" del botón del ojo (listado de pedidos): matchea la heurística
+   de arriba (span + rounded-full + border), que lo aplanaría a un gris
+   neutro -- acá se le gana por especificidad para que conserve su color
+   real (rojo=urgente, ámbar=advertencia) también en Light. */
+html[data-admin-theme="light"] .admin-order-eye-attention-badge.admin-order-eye-attention-badge.bg-red-500 {
+  background-color: #ef4444 !important;
+  border-color: rgba(252, 165, 165, 0.6) !important;
+  color: #ffffff !important;
+}
+html[data-admin-theme="light"] .admin-order-eye-attention-badge.admin-order-eye-attention-badge.bg-amber-400 {
+  background-color: #fbbf24 !important;
+  border-color: rgba(253, 230, 138, 0.6) !important;
+  color: #3a2504 !important;
 }
 html[data-admin-theme="light"] .admin-ds-tone-neutral {
   border-color: rgba(100, 116, 139, 0.28) !important;

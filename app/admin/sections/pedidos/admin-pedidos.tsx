@@ -6170,6 +6170,35 @@ function PedidoDetailModal({
   )
 }
 
+/**
+ * Badge "1" sobre el botón del ojo del listado -- puramente indicador
+ * ("requiere atención"), nunca un contador real. severity ya viene
+ * calculado por fila reutilizando hasPendingAttention/attentionTone
+ * (mismas señales que ya elegían el acento de color de la fila antes de
+ * unificarla a un único fondo oscuro), null cuando el pedido no tiene
+ * ninguna alerta pendiente.
+ */
+function OrderEyeAttentionBadge({
+  severity,
+}: {
+  severity: "urgent" | "warning" | null
+}) {
+  if (!severity) return null
+
+  return (
+    <span
+      aria-hidden="true"
+      className={`admin-order-eye-attention-badge pointer-events-none absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full border text-9px font-black leading-none ${
+        severity === "urgent"
+          ? "border-red-300/60 bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.55)]"
+          : "border-amber-200/60 bg-amber-400 text-[#3a2504] shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+      }`}
+    >
+      1
+    </span>
+  )
+}
+
 function PaymentMetaItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="admin-order-pg-meta-item">
@@ -7922,6 +7951,16 @@ export function AdminPedidos({
                   (pedido.estado === "cancelado" && !isRefundedOrder(pedido))
                 const hasPendingClaim = orderHasPendingClaimAction(pedido)
                 const attentionTone = getOrderNotificationTone(pedido)
+                // Mismas dos señales que ya definían el acento de color de la fila
+                // (antes de unificarla a un único fondo oscuro): hasPendingAttention
+                // decide SI hay algo que atender, attentionTone decide QUÉ tan grave
+                // es -- reutilizadas tal cual, sin lógica nueva. Rojo > Ámbar cuando
+                // coinciden varias señales (cancelación/reclamo pisan todo lo demás).
+                const eyeAttentionSeverity: "urgent" | "warning" | null = !hasPendingAttention
+                  ? null
+                  : attentionTone === "cancellation" || attentionTone === "claim"
+                    ? "urgent"
+                    : "warning"
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
                 const showShippingReminder = needsShippingReminder(pedido)
                 const orderDate = formatOrderDateParts(pedido.created_at)
@@ -7929,23 +7968,7 @@ export function AdminPedidos({
                 return (
                   <article
                     key={pedido.id}
-                    className={`admin-orders-list-row min-w-0 overflow-hidden rounded-2xl border p-4 transition sm:p-5 2xl:px-4 2xl:py-4 ${
-                      hasPendingAttention
-                        ? attentionTone === "claim"
-                          ? ADMIN_SENSITIVE_DANGER.card
-                          : attentionTone === "cancellation"
-                            ? ADMIN_SENSITIVE_DANGER.card
-                          : attentionTone === "message"
-                            ? "border-sky-400/35 bg-sky-500/8 shadow-[0_0_16px_rgba(14,165,233,0.12)] hover:bg-sky-500/10"
-                            : attentionTone === "payment"
-                              ? "border-[#2563EB]/35 bg-[#2563EB]/8 shadow-[0_0_16px_rgba(37,99,235,0.12)] hover:bg-[#1D4ED8]/10"
-                              : attentionTone === "invoice"
-                                ? "border-violet-400/35 bg-violet-500/8 shadow-[0_0_16px_rgba(124,58,237,0.12)] hover:bg-violet-500/10"
-                              : attentionTone === "shipping"
-                                ? "border-[#77E6E2]/25 bg-zinc-900/75 hover:border-[#77E6E2]/40"
-                                : "border-[#16A34A]/35 bg-[#16A34A]/8 shadow-[0_0_16px_rgba(22,163,74,0.12)] hover:bg-[#15803D]/10"
-                        : "border-white/8 bg-zinc-900/75 hover:border-beyonix-blue-light/45 hover:bg-zinc-900"
-                    } ${
+                    className={`admin-orders-list-row min-w-0 overflow-hidden rounded-2xl border border-white/8 bg-zinc-900/75 p-4 transition hover:border-beyonix-blue-light/45 hover:bg-zinc-900 sm:p-5 2xl:px-4 2xl:py-4 ${
                       isNewOrder
                         ? "ring-1 ring-emerald-400/65 shadow-[0_0_22px_rgba(52,211,153,0.2)]"
                         : ""
@@ -8020,15 +8043,18 @@ export function AdminPedidos({
                           {pedido.cliente_email || "Cliente sin correo informado"}
                         </p>
                         <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            aria-label={`Ver pedido ${pedido.id}`}
-                            onClick={() => handleOpenPedido(pedido)}
-                            className="admin-orders-action-button flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors"
-                          >
-                            <Eye className="size-3.5" />
-                            Ver
-                          </button>
+                          <span className="relative inline-flex">
+                            <button
+                              type="button"
+                              aria-label={`Ver pedido ${pedido.id}`}
+                              onClick={() => handleOpenPedido(pedido)}
+                              className="admin-orders-action-button flex h-9 cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors"
+                            >
+                              <Eye className="size-3.5" />
+                              Ver
+                            </button>
+                            <OrderEyeAttentionBadge severity={eyeAttentionSeverity} />
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -8099,14 +8125,17 @@ export function AdminPedidos({
                   </div>
 
                   <div className="flex items-center justify-center gap-1">
-                    <button
-                      type="button"
-                      aria-label={`Ver pedido ${pedido.id}`}
-                      onClick={() => handleOpenPedido(pedido)}
-                      className="admin-orders-action-button flex size-8 cursor-pointer items-center justify-center rounded-lg border text-white/68 transition-colors hover:text-beyonix-sky"
-                    >
-                      <Eye className="size-3.5" />
-                    </button>
+                    <span className="relative inline-flex">
+                      <button
+                        type="button"
+                        aria-label={`Ver pedido ${pedido.id}`}
+                        onClick={() => handleOpenPedido(pedido)}
+                        className="admin-orders-action-button flex size-8 cursor-pointer items-center justify-center rounded-lg border text-white/68 transition-colors hover:text-beyonix-sky"
+                      >
+                        <Eye className="size-3.5" />
+                      </button>
+                      <OrderEyeAttentionBadge severity={eyeAttentionSeverity} />
+                    </span>
                   </div>
                 </div>
                   </article>
