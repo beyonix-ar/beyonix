@@ -116,10 +116,13 @@ export async function POST(
     // monto con coma decimal) nunca puede dejar al cliente sin la salida del
     // comprobante manual mientras el pago siga sin confirmarse -- mismo
     // criterio central que usa el resto del sistema (canUploadTransferProof).
-    if (!firstName || !lastName || !dni) {
+    // Nombre y apellido son opcionales: el matching automático usa DNI + monto
+    // (ver attemptTransferAutoVerification); nombre/apellido sólo se guardan
+    // como referencia para una eventual revisión manual.
+    if (!dni) {
       return NextResponse.json(
         {
-          error: "Completá nombre, apellido y DNI.",
+          error: "Indicá el DNI del titular de la transferencia.",
           proofUploadAvailable: canUploadTransferProof(order.payment_status),
         },
         { status: 400 },

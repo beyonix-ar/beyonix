@@ -49,7 +49,7 @@ export function isRetryableManualReviewReason(
  * compartida por el endpoint de verificación automática
  * (app/api/transferencia/[orderId]/verificar/route.ts), el endpoint que
  * recibe el comprobante (app/api/payment-proofs/route.ts) y los componentes
- * de UI (customer-payment-proof.tsx, transfer-auto-verification-form.tsx).
+ * de UI (customer-payment-proof.tsx, components/checkout/transfer-flow.tsx).
  * Antes cada uno mantenía su propia lista hardcodeada, y podían quedar
  * inconsistentes entre sí (ej.: auto_verified_stock_conflict mostraba el
  * uploader en la UI pero el backend respondía 409). Regla general: mientras
