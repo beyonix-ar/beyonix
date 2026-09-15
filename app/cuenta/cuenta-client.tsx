@@ -74,6 +74,7 @@ import {
   TRANSFER_ACCOUNT_HOLDER,
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
+import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
@@ -1622,41 +1623,47 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const shippingChargeDetail = orderDispatched
       ? "El pedido ya fue despachado. Podés cancelar la compra, pero el costo del envío queda a tu cargo."
       : "El envío no figura despachado para esta cancelación."
+    // Rechazado (nunca hubo pago confirmado) vs cancelado (con pago
+    // confirmado) se deriva con el mismo criterio que ya usa el admin --
+    // ver lib/orders/order-cancellation-origin.ts. No es un estado nuevo.
+    const cancellationInfo = deriveOrderCancellationInfo(order.order_audit_events, order)
+    const rejectedByAdmin = cancellationInfo.rejectedByAdmin
     const refundStatusLabel = refunded
       ? "Cancelado · dinero reintegrado"
       : refundPending
         ? "Cancelado · reintegro pendiente"
-        : "Pedido cancelado"
+        : rejectedByAdmin
+          ? "Pedido rechazado"
+          : "Pedido cancelado"
     const headerRefundStatusClassName = refunded
-      ? "border-emerald-300/30 bg-[#123329] text-emerald-50"
+      ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]"
       : refundPending
-        ? "border-amber-300/35 bg-amber-400/12 text-amber-100"
-        : "border-[#3b4656] bg-[#252B33] text-zinc-100"
+        ? "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning-text)]"
+        : rejectedByAdmin
+          ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]"
+          : "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)] text-[var(--account-neutral-text)]"
     return (
-      <main className="relative isolate min-h-screen overflow-hidden bg-[#070B11] px-3 py-24 font-heading sm:px-5 lg:px-8">
+      <main className="relative isolate min-h-screen overflow-hidden bg-[var(--account-background)] px-3 py-24 font-heading sm:px-5 lg:px-8">
         <div className="relative z-20 mx-auto flex min-h-[calc(100vh-12rem)] max-w-[860px] flex-col justify-center">
           <button
             type="button"
             onClick={() => router.push("/cuenta?tab=ordenes")}
-            className="mb-3 inline-flex h-9 w-fit cursor-pointer items-center gap-2 rounded-lg border border-[#2a4b6c] bg-[#132033] px-3.5 text-xs font-medium text-white/84 shadow-sm shadow-black/20 transition-colors hover:border-[#4b78a4] hover:bg-[#1a2c44] hover:text-white"
+            className="mb-3 inline-flex h-9 w-fit cursor-pointer items-center gap-2 rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3.5 text-xs font-medium text-[var(--account-text-secondary)] shadow-sm shadow-black/20 transition-colors hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
           >
             <ChevronLeft className="size-4" />
             Volver a Mis compras
           </button>
 
-          <section
-            className="relative isolate z-30 overflow-hidden rounded-2xl border border-[#223249] !bg-[#101114] bg-none p-3 shadow-[0_18px_44px_#000000] sm:p-4"
-            style={{ backgroundColor: "#101114", backgroundImage: "none" }}
-          >
-            <div className="relative z-20 flex flex-col gap-3 rounded-xl border border-[#2a4c72] bg-[#132238] px-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.28)] sm:flex-row sm:items-center sm:justify-between">
+          <section className="relative isolate z-30 overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.28)] sm:p-4">
+            <div className="relative z-20 flex flex-col gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.16)] sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-10px font-medium uppercase tracking-[0.18em] text-blue-300">
+                <p className="text-10px font-medium uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                   Detalle de compra
                 </p>
-                <h1 className="mt-0.5 text-lg font-bold text-white sm:text-xl">
+                <h1 className="mt-0.5 text-lg font-bold text-[var(--account-text-primary)] sm:text-xl">
                   Pedido #{formatPublicOrderId(order.id)}
                 </h1>
-                <p className="mt-1 text-xs font-normal text-white/62">
+                <p className="mt-1 text-xs font-normal text-[var(--account-text-secondary)]">
                   {formatOrderCardDate(order.created_at)}
                 </p>
               </div>
@@ -1667,53 +1674,63 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 
             <div className="relative z-20 mt-3">
               <div className="space-y-3">
-                <section className={`rounded-xl border px-4 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.28)] ${
+                <section className={`rounded-xl border px-4 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.16)] ${
                   refunded
-                    ? "border-emerald-300/30 bg-[linear-gradient(135deg,#102A22,#0c1519)]"
-                    : refundPending
-                      ? "border-[#315f85] bg-[linear-gradient(135deg,#101a25,#111317)]"
-                      : "border-[#315f85] bg-[linear-gradient(135deg,#111b27,#111317)]"
+                    ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                    : rejectedByAdmin
+                      ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]"
+                      : "border-[var(--account-border)] bg-[var(--account-surface-raised)]"
                 }`}>
                   <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
-                    <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border shadow-[0_0_28px_rgba(120,190,255,0.16)] ${
+                    <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border ${
                       refunded
-                        ? "border-emerald-200/35 bg-[#123329]"
-                        : refundPending
-                          ? "border-[#7fb9ef]/35 bg-[#13263a]"
-                          : "border-[#7fb9ef]/35 bg-[#13263a]"
+                        ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                        : rejectedByAdmin
+                          ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]"
+                          : "border-[var(--account-border)] bg-[var(--account-surface-hover)]"
                     }`}>
-                      <CheckCircle2 className={`size-6 ${refunded ? "text-emerald-200" : "text-[#b8d7f4]"}`} />
+                      <CheckCircle2 className={`size-6 ${
+                        refunded
+                          ? "text-[var(--account-success-text)]"
+                          : rejectedByAdmin
+                            ? "text-[var(--account-danger-text)]"
+                            : "text-[var(--account-accent-soft)]"
+                      }`} />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-10px font-medium uppercase tracking-[0.22em] text-[#9fd8ff]">
+                      <p className="text-10px font-medium uppercase tracking-[0.22em] text-[var(--account-accent-soft)]">
                         Estado de compra
                       </p>
-                      <h2 className="mt-1 text-xl font-bold leading-tight text-white sm:text-2xl">
-                        Pedido cancelado correctamente
+                      <h2 className="mt-1 text-xl font-bold leading-tight text-[var(--account-text-primary)] sm:text-2xl">
+                        {rejectedByAdmin ? "Pedido rechazado" : "Pedido cancelado correctamente"}
                       </h2>
-                      <p className="mt-1.5 max-w-3xl text-sm font-normal leading-5 text-white/78">
+                      <p className="mt-1.5 max-w-3xl text-sm font-normal leading-5 text-[var(--account-text-secondary)]">
                         {refunded
                           ? "El pedido fue cancelado y el dinero ya fue reintegrado."
                           : refundPending
                             ? "La cancelación quedó registrada. Estamos gestionando el reintegro correspondiente."
-                            : "El pedido quedó cancelado y no requiere acciones adicionales."}
+                            : rejectedByAdmin
+                              ? (cancellationInfo.reasonText
+                                  ? `Tu pedido fue rechazado antes de confirmarse el pago. Motivo: ${cancellationInfo.reasonText}.`
+                                  : "Tu pedido fue rechazado antes de confirmarse el pago. No se realizó ningún cobro, así que no hay ningún reintegro pendiente.")
+                              : "El pedido quedó cancelado y no requiere acciones adicionales."}
                       </p>
                       <dl className="mt-4 grid gap-2 text-left sm:grid-cols-2">
-                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
-                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Pedido</dt>
-                          <dd className="mt-1 text-sm font-medium text-white">{formatPublicOrderId(order.id)}</dd>
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Pedido</dt>
+                          <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{formatPublicOrderId(order.id)}</dd>
                         </div>
-                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
-                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Fecha</dt>
-                          <dd className="mt-1 truncate text-sm font-medium text-white">{formatOrderCardDate(order.created_at)}</dd>
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Fecha</dt>
+                          <dd className="mt-1 truncate text-sm font-medium text-[var(--account-text-primary)]">{formatOrderCardDate(order.created_at)}</dd>
                         </div>
-                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
-                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Estado</dt>
-                          <dd className="mt-1 truncate text-sm font-medium text-white">{refundStatusLabel}</dd>
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Estado</dt>
+                          <dd className="mt-1 truncate text-sm font-medium text-[var(--account-text-primary)]">{refundStatusLabel}</dd>
                         </div>
-                        <div className="rounded-lg border border-white/8 bg-black/20 px-3 py-2.5">
-                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[#91a8be]">Total</dt>
-                          <dd className="mt-1 text-sm font-medium text-white">{formatCuentaPrice(Number(order.total ?? 0))}</dd>
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2.5">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Total</dt>
+                          <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{formatCuentaPrice(Number(order.total ?? 0))}</dd>
                         </div>
                       </dl>
                     </div>
@@ -1721,17 +1738,17 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                 </section>
 
                 {refundFlow && (
-                  <section className="rounded-xl border border-[#28435e] bg-[#0f1824] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.26)]">
+                  <section className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.16)]">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="text-10px font-medium uppercase tracking-[0.18em] text-[#9fd8ff]">
+                        <p className="text-10px font-medium uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                           Reintegro
                         </p>
-                        <p className="mt-0.5 text-sm font-medium text-white">
+                        <p className="mt-0.5 text-sm font-medium text-[var(--account-text-primary)]">
                           {refunded ? "Dinero reintegrado" : "Gestión de reintegro pendiente"}
                         </p>
                       </div>
-                      <p className="text-xs font-normal text-[#9fb3c9]">
+                      <p className="text-xs font-normal text-[var(--account-text-secondary)]">
                         {cancellationDate ? formatOrderCardDate(cancellationDate) : "Solicitud recibida"}
                       </p>
                     </div>
@@ -1766,32 +1783,32 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                     )}
 
                     {refundProofError && (
-                      <p className="mt-2 text-xs font-normal text-red-200">
+                      <p className="mt-2 text-xs font-normal text-[var(--account-danger-text)]">
                         {refundProofError}
                       </p>
                     )}
 
                     {order.refund_observation && (
-                      <p className="mt-2 rounded-lg border border-emerald-300/18 bg-[#102A22] px-3 py-2 text-xs font-normal leading-5 text-emerald-50/82">
+                      <p className="mt-2 rounded-lg border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-3 py-2 text-xs font-normal leading-5 text-[var(--account-success-text)]">
                         {order.refund_observation}
                       </p>
                     )}
 
                     {orderDispatched && (
-                      <p className="mt-2 flex gap-2 rounded-lg border border-[#6f4b55]/70 bg-[#21171c] px-3 py-2 text-xs font-normal leading-5 text-[#efd8dd]">
-                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#e9b8c1]" />
+                      <p className="mt-2 flex gap-2 rounded-lg border border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] px-3 py-2 text-xs font-normal leading-5 text-[var(--account-warning-text)]">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--account-warning-text)]" />
                         {shippingChargeDetail}
                       </p>
                     )}
                   </section>
                 )}
 
-              <section className="rounded-xl border border-[#28435e] bg-[#0f1824] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.34)]">
+              <section className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 shadow-[0_14px_36px_rgba(0,0,0,0.2)]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-base font-bold text-white">
+                  <h2 className="text-base font-bold text-[var(--account-text-primary)]">
                     Productos comprados
                   </h2>
-                  <span className="text-xs font-medium text-[#9fb3c9]">
+                  <span className="text-xs font-medium text-[var(--account-text-secondary)]">
                     {productCount} {productCount === 1 ? "producto" : "productos"}
                   </span>
                 </div>
@@ -1804,19 +1821,19 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                     const color = getCuentaItemColor(item)
 
                     return (
-                      <div key={item.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[#31506f] bg-[#162438] px-2.5 py-2 transition-all hover:border-[#4b78a4] hover:bg-[#1b2c44]">
+                      <div key={item.id} className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-2.5 py-2 transition-all hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)]">
                         <div className="flex min-w-0 flex-1 items-center gap-2.5">
                           <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white">
                             {image ? <img src={image} alt={name} className="size-full object-contain" /> : <ShoppingBag className="size-4 text-black/30" />}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-white">{name}</p>
-                            <p className="mt-0.5 truncate text-xs font-normal text-[#b7c6d6]">
+                            <p className="truncate text-sm font-medium text-[var(--account-text-primary)]">{name}</p>
+                            <p className="mt-0.5 truncate text-xs font-normal text-[var(--account-text-secondary)]">
                               {color ? `${color} · ` : ""}Cantidad: {quantity}
                             </p>
                           </div>
                         </div>
-                        <p className="self-center shrink-0 text-right text-sm font-medium text-white">
+                        <p className="self-center shrink-0 text-right text-sm font-medium text-[var(--account-text-primary)]">
                           {formatCuentaPrice(unitPrice * quantity)}
                         </p>
                       </div>

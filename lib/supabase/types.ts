@@ -661,6 +661,8 @@ export interface CustomerOrderSummary {
   andreani_estado?: string | null
   orden_items?: CustomerOrderSummaryItem[]
   order_claims?: CustomerOrderSummaryClaim[]
+  order_audit_events?: SupabaseOrderAuditEvent[]
+  cancellation_requested_by?: string | null
 }
 
 export type OrderClaimType = "transporte_48hs" | "garantia_beyonix"

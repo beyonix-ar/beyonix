@@ -1,5 +1,6 @@
-import type { SupabasePedido } from "@/lib/supabase/types"
+import type { SupabaseOrderAuditEvent, SupabasePedido } from "@/lib/supabase/types"
 import { formatCuentaOrderDate } from "@/lib/account/account-formatters"
+import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { validatePassword } from "@/lib/validation/account-fields"
 
 export type OrderProgressTone = "done" | "current" | "pending" | "danger" | "warning"
@@ -51,16 +52,36 @@ export function isInvoiceAvailable(order: SupabasePedido) {
 type OrderStatusFields = Pick<
   SupabasePedido,
   "estado" | "payment_status" | "financial_status"
->
+> & {
+  cancellation_requested_by?: string | null
+  order_audit_events?: SupabaseOrderAuditEvent[] | null
+}
 
+/**
+ * Rechazado (nunca hubo pago confirmado) vs cancelado (con pago
+ * confirmado) se distingue con el mismo criterio que ya usa el admin en
+ * buildOrderTimeline (order_audit_events), no con un estado nuevo -- ver
+ * lib/orders/order-cancellation-origin.ts.
+ */
 export function getClientOrderStatusBadge(order: OrderStatusFields) {
   const status = order.estado.toLowerCase()
   const paymentStatus = order.payment_status ?? ""
   const financialStatus = order.financial_status ?? ""
 
   if (status === "cancelado") {
+    const cancellationInfo = deriveOrderCancellationInfo(order.order_audit_events, {
+      cancellation_requested_by: order.cancellation_requested_by,
+    })
+
+    if (cancellationInfo.rejectedByAdmin) {
+      return {
+        label: "Pedido rechazado",
+        className: "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]",
+      }
+    }
+
     return {
-      label: "Cancelado",
+      label: "Pedido cancelado",
       className: "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)] text-[var(--account-neutral-text)]",
     }
   }

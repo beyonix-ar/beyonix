@@ -81,6 +81,7 @@ import {
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import {
   ADMIN_ORDER_CANCELLATION_OTHER_REASON,
   ADMIN_ORDER_CANCELLATION_REASONS,
@@ -1590,26 +1591,8 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
   const dispatchedAt = statusAuditDate(["enviado", "en_camino", "shipped", "in_transit"])
   const deliveredAt =
     pedido.delivered_at || statusAuditDate(["entregado", "delivered"])
-  const cancellationAuditEvent = findAuditEvent((event) =>
-    [
-      "cancellation_requested",
-      "cancellation_requested_refund_pending",
-      "order_cancelled_refund_pending",
-      "order_rejected_by_admin",
-      "order_status_changed",
-    ].includes(event.action) &&
-    (
-      event.new_status === "cancelled" ||
-      event.new_status === "refund_pending" ||
-      event.new_status === "cancelado" ||
-      event.metadata?.newEstado === "cancelado"
-    ),
-  )
-  const rejectedByAdmin = cancellationAuditEvent?.action === "order_rejected_by_admin"
-  const cancelledAt =
-    pedido.cancellation_requested_at ||
-    pedido.cancelled_at ||
-    cancellationAuditEvent?.created_at
+  const cancellationInfo = deriveOrderCancellationInfo(auditEvents, pedido)
+  const cancelledAt = cancellationInfo.cancelledAt ?? undefined
   const refundProofAt =
     pedido.refund_uploaded_at ||
     pedido.order_refund_proofs?.[0]?.created_at ||
@@ -1657,43 +1640,8 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     pedido.financial_status === "cancellation_requested" ||
     Boolean(pedido.refund_pending_at) ||
     (hasConfirmedPaymentForRefund && isCancellationFlowOrder(pedido) && !refundedAt)
-  const cancellationOrigin =
-    cancellationAuditEvent?.actor_type === "customer" ||
-    cancellationAuditEvent?.action.startsWith("cancellation_requested")
-      ? "cliente"
-      : cancellationAuditEvent?.actor_type === "admin" ||
-          cancellationAuditEvent?.action === "order_cancelled_refund_pending" ||
-          rejectedByAdmin
-        ? "administrador"
-        : cancellationAuditEvent?.actor_type === "system"
-          ? "automático"
-          : pedido.cancellation_requested_by
-            ? "cliente"
-          : null
-  const cancellationTitle =
-    cancellationOrigin === "administrador" && rejectedByAdmin
-      ? "Pedido rechazado por el administrador"
-      : cancellationOrigin === "cliente"
-        ? "Pedido cancelado por el cliente"
-        : cancellationOrigin === "administrador"
-          ? "Pedido cancelado por el administrador"
-          : cancellationOrigin === "automático"
-            ? "Pedido cancelado automáticamente"
-            : "Pedido cancelado"
-  const cancellationDescription =
-    cancellationOrigin === "administrador" && rejectedByAdmin
-      ? (typeof cancellationAuditEvent?.metadata?.reasonText === "string"
-          ? `Un administrador rechazó el pedido. Motivo: ${cancellationAuditEvent.metadata.reasonText}.`
-          : "Un administrador rechazó el pedido.")
-      : cancellationOrigin === "cliente"
-        ? "El cliente solicitó la cancelación del pedido."
-        : cancellationOrigin === "administrador"
-          ? (typeof cancellationAuditEvent?.metadata?.reasonText === "string"
-              ? `Un administrador canceló el pedido. Motivo: ${cancellationAuditEvent.metadata.reasonText}.`
-              : "Un administrador canceló el pedido.")
-          : cancellationOrigin === "automático"
-            ? "El sistema interrumpió el flujo del pedido."
-            : "La compra fue cancelada."
+  const cancellationTitle = cancellationInfo.title
+  const cancellationDescription = cancellationInfo.description
 
   addEvent({
     key: "order-created",
@@ -2027,6 +1975,8 @@ function RefundManagementPanel({
 
   if (!shouldShow) return null
 
+  const cancellationInfo = deriveOrderCancellationInfo(pedido.order_audit_events, pedido)
+  const rejectedByAdmin = cancellationInfo.rejectedByAdmin
   const refunded = isRefundedOrder(pedido)
   const refundPending = isRefundPendingOrder(pedido)
   const refundCompactStatus = refunded
@@ -2034,13 +1984,15 @@ function RefundManagementPanel({
     : refundPending
       ? "Pendiente"
       : "Finalizado"
-  const cancellationTitle = refunded
-    ? "Reintegro completado"
-    : refundPending
-      ? "Reintegro pendiente"
-      : pedido.financial_status === "cancellation_requested"
-        ? "Cancelación pendiente"
-        : "Cancelación cerrada"
+  const cancellationTitle = rejectedByAdmin
+    ? "Pedido rechazado"
+    : refunded
+      ? "Reintegro completado"
+      : refundPending
+        ? "Reintegro pendiente"
+        : pedido.financial_status === "cancellation_requested"
+          ? "Cancelación pendiente"
+          : "Cancelado, sin gestión pendiente"
   const authorizedExternalCredit = roundCreditMoney(
     getPendingRefundNotes(pedido.order_credit_notes)
       .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
@@ -2055,15 +2007,19 @@ function RefundManagementPanel({
   )
   const creditNoteReadyForRefund = authorizedExternalCredit > 0
   const balanceAlreadyCredited = authorizedBalanceCredit > 0
-  const cancellationCopy = refunded
-    ? balanceAlreadyCredited
-      ? "La nota fue autorizada por ARCA y el saldo se acreditó automáticamente en la cuenta del cliente."
-      : "El comprobante fue registrado y la devolución quedó finalizada."
-    : refundPending && !creditNoteReadyForRefund
-      ? "Primero emití la nota de crédito. No se puede cargar ningún dato del reintegro antes de recibir el CAE."
-      : refundPending
-        ? "La nota fue autorizada. Sólo resta adjuntar el comprobante de la devolución de dinero."
-        : "El pedido está cancelado y no tiene un reintegro pendiente."
+  const cancellationCopy = rejectedByAdmin
+    ? (cancellationInfo.reasonText
+        ? `El pedido fue rechazado porque el pago nunca se confirmó. Motivo: ${cancellationInfo.reasonText}. No hay reintegro ni nota de crédito pendiente: no se registró ningún cobro.`
+        : "El pedido fue rechazado porque el pago nunca se confirmó. No hay reintegro ni nota de crédito pendiente: no se registró ningún cobro.")
+    : refunded
+      ? balanceAlreadyCredited
+        ? "La nota fue autorizada por ARCA y el saldo se acreditó automáticamente en la cuenta del cliente."
+        : "El comprobante fue registrado y la devolución quedó finalizada."
+      : refundPending && !creditNoteReadyForRefund
+        ? "Primero emití la nota de crédito. No se puede cargar ningún dato del reintegro antes de recibir el CAE."
+        : refundPending
+          ? "La nota fue autorizada. Sólo resta adjuntar el comprobante de la devolución de dinero."
+          : "El pedido está cancelado (con pago confirmado) y no tiene un reintegro ni una nota de crédito pendiente."
   const canUploadRefund =
     !refunded &&
     refundPending &&
@@ -2156,7 +2112,7 @@ function RefundManagementPanel({
       <div className="admin-order-cancellation-header border-b pb-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className="admin-order-cancellation-main-icon">
-            {refunded ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
+            {refunded || rejectedByAdmin ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
           </span>
           <div className="min-w-0">
             <p className="text-11px font-bold uppercase tracking-widest text-white/78">
@@ -2179,13 +2135,15 @@ function RefundManagementPanel({
               Acción pendiente
             </p>
             <p className="mt-1 text-sm font-black text-white">
-              {refunded
-                ? "Gestión finalizada. No hay acciones pendientes."
-                : refundPending && !creditNoteReadyForRefund
-                  ? "Emitir y validar la nota de crédito desde Facturación."
-                  : refundPending
-                  ? "Cargar comprobante de reintegro y marcar la devolución como completada."
-                  : "No hay acciones pendientes de reintegro para este pedido."}
+              {rejectedByAdmin
+                ? "No hay ninguna acción financiera pendiente: el pedido se rechazó sin pago confirmado."
+                : refunded
+                  ? "Gestión finalizada. No hay acciones pendientes."
+                  : refundPending && !creditNoteReadyForRefund
+                    ? "Emitir y validar la nota de crédito desde Facturación."
+                    : refundPending
+                    ? "Cargar comprobante de reintegro y marcar la devolución como completada."
+                    : "No hay acciones pendientes de reintegro para este pedido."}
             </p>
             <p className="mt-1 text-xs font-semibold leading-5 text-white/62">
               Método de reintegro: <span className="text-white/86">{refundMethodDisplay}</span>
@@ -2217,7 +2175,7 @@ function RefundManagementPanel({
           label="Cancelación solicitada"
           value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
         />
-        <CancellationMiniCard label="Estado del reintegro" value={refundCompactStatus} valueClassName={refunded ? "text-emerald-100" : "text-amber-100"} />
+        <CancellationMiniCard label="Estado del reintegro" value={rejectedByAdmin ? "No corresponde" : refundCompactStatus} valueClassName={refunded || rejectedByAdmin ? "text-emerald-100" : "text-amber-100"} />
       </div>
 
       <div className="mt-3 grid min-w-0 gap-3">
@@ -2308,7 +2266,7 @@ function RefundManagementPanel({
       <button
         type="button"
         onClick={onOpenBilling}
-        className="admin-order-cancellation-secondary-action mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border px-3 text-xs font-black"
+        className="admin-order-cancellation-secondary-action mt-3 inline-flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-xs font-black"
       >
         <FileText className="size-4" />
         Ver gestión fiscal y devolución
@@ -2422,6 +2380,37 @@ function ResolutionSegment({
     >
       {selected && <Check className="admin-resolution-segment-check size-3" />}
       {children}
+    </button>
+  )
+}
+
+function CreditDestinationOption({
+  selected,
+  disabled,
+  onClick,
+  title,
+  description,
+}: {
+  selected: boolean
+  disabled?: boolean
+  onClick: () => void
+  title: string
+  description: string
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={onClick}
+      className={`admin-credit-destination-option cursor-pointer disabled:cursor-not-allowed ${selected ? "is-selected" : ""}`}
+    >
+      <span className="admin-credit-destination-option-heading">
+        {selected && <Check className="admin-credit-destination-option-check size-3.5" />}
+        {title}
+      </span>
+      <span className="admin-credit-destination-option-description">{description}</span>
     </button>
   )
 }
@@ -3189,7 +3178,7 @@ function BillingManagementPanel({
                   Registrar ajuste administrativo
                 </button>
               ) : (
-                <section className="admin-credit-note-step-card mt-2">
+                <section className="admin-credit-note-step-card admin-credit-note-resolution-panel mt-2">
                   <div className="admin-credit-note-step-heading">
                     <div>
                       <h4>Ajuste administrativo/contable</h4>
@@ -3209,17 +3198,26 @@ function BillingManagementPanel({
                       <option value="ajuste_manual">Ajuste manual</option>
                       <option value="reembolso_excepcional">Reembolso excepcional</option>
                     </select>
+                    <em>
+                      {operationType === "reembolso_excepcional"
+                        ? "Reembolso autorizado por excepción, fuera del flujo normal de reclamo del cliente."
+                        : "Corrección contable o Nota de Crédito manual, sin un reclamo del cliente detrás."}
+                    </em>
                   </label>
 
                   <label className="admin-credit-note-field">
                     <span>Monto</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={manualCreditAmount}
-                      onChange={(event) => setManualCreditAmount(event.target.value)}
-                      placeholder="0,00"
-                    />
+                    <div className="admin-credit-note-money-input">
+                      <b>$</b>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={manualCreditAmount}
+                        onChange={(event) => setManualCreditAmount(event.target.value)}
+                        placeholder="0,00"
+                      />
+                    </div>
+                    <em>Monto total de la Nota de Crédito o del ajuste, en pesos.</em>
                   </label>
 
                   <label className="admin-credit-note-field">
@@ -3227,28 +3225,24 @@ function BillingManagementPanel({
                     <textarea
                       value={creditReason}
                       onChange={(event) => setCreditReason(event.target.value)}
-                      placeholder="Detallá el motivo del ajuste administrativo"
-                      rows={2}
+                      placeholder="Detallá el motivo del ajuste administrativo: qué pasó y por qué se autoriza esta gestión."
+                      rows={4}
                     />
                   </label>
 
-                  <div className="admin-credit-note-steps" aria-label="Destino del importe">
-                    <button
-                      type="button"
-                      aria-current={creditDestination === "customer_balance" ? "step" : undefined}
+                  <div className="admin-credit-destination-group" role="radiogroup" aria-label="Destino del importe">
+                    <CreditDestinationOption
+                      selected={creditDestination === "customer_balance"}
                       onClick={() => setCreditDestination("customer_balance")}
-                      className={`cursor-pointer border-0 bg-transparent p-0 text-left ${creditDestination === "customer_balance" ? "is-current" : ""}`}
-                    >
-                      Saldo a favor del cliente
-                    </button>
-                    <button
-                      type="button"
-                      aria-current={creditDestination === "external_refund" ? "step" : undefined}
+                      title="Saldo a favor del cliente"
+                      description="Acredita el importe como saldo interno de BEYONIX en la cuenta del cliente, disponible para usar en una próxima compra."
+                    />
+                    <CreditDestinationOption
+                      selected={creditDestination === "external_refund"}
                       onClick={() => setCreditDestination("external_refund")}
-                      className={`cursor-pointer border-0 bg-transparent p-0 text-left ${creditDestination === "external_refund" ? "is-current" : ""}`}
-                    >
-                      Reintegro externo
-                    </button>
+                      title="Reintegro externo"
+                      description="Registra que el dinero se devuelve por fuera de BEYONIX (transferencia, Mercado Pago, etc.). Queda pendiente hasta cargar el comprobante."
+                    />
                   </div>
 
                   {message && (
@@ -3508,7 +3502,7 @@ function BillingManagementPanel({
                           disabled={creditNoteProcessing}
                           onClick={() => setCreditDestination("external_refund")}
                         >
-                          Reembolso
+                          Reintegro externo
                         </ResolutionSegment>
                       </div>
                     </div>
@@ -4133,6 +4127,7 @@ function BillingManagementPanel({
               </div>
               <button
                 type="button"
+                className="cursor-pointer"
                 onClick={() => setShowClosedDetail((current) => !current)}
               >
                 {showClosedDetail ? "Ocultar detalle" : "Ver detalle completo"}
@@ -6766,7 +6761,7 @@ function AdminOrderCancelRejectModal({
 
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-red-400/25 bg-[#101010] shadow-2xl shadow-black/80">
+      <div className="admin-cancel-reject-modal w-full max-w-md overflow-hidden rounded-3xl border border-red-400/25 bg-[#101010] shadow-2xl shadow-black/80">
         <div className="border-b border-white/8 bg-[linear-gradient(135deg,#2a1014_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
           <p className="text-11px font-black uppercase tracking-widest text-red-300">
             Acción administrativa
@@ -6819,11 +6814,10 @@ function AdminOrderCancelRejectModal({
             />
           )}
 
-          <div className="rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-xs font-semibold leading-5 text-amber-100">
-            Si el pedido ya tiene pago confirmado, va a quedar con reintegro
-            pendiente -- esto NO dispara un reembolso automático de Mercado
-            Pago ni emite una Nota de Crédito. Esas acciones siguen siendo
-            manuales, desde sus propios botones.
+          <div className="admin-cancel-reject-modal-alert rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-xs font-semibold leading-5 text-amber-100">
+            {isReject
+              ? "Este pedido todavía no tiene un pago confirmado: al rechazarlo no se genera ningún reintegro ni Nota de Crédito, porque no hubo cobro. El stock reservado se libera y el cliente será notificado del rechazo."
+              : "Este pedido ya tiene el pago confirmado: al cancelarlo va a quedar con reintegro pendiente. Esto NO dispara un reembolso automático de Mercado Pago ni emite una Nota de Crédito -- esas acciones siguen siendo manuales, desde sus propios botones en Cancelación y Facturación."}
           </div>
 
           {error && (

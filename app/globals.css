@@ -5162,6 +5162,70 @@ div.claim-form-shell::after {
   gap: 0.3rem;
 }
 
+/* Tarjetas seleccionables "Saldo a favor del cliente" / "Reintegro externo"
+   del ajuste administrativo (BillingManagementPanel) -- antes eran dos
+   botones de texto plano reusando por error la clase del stepper de pasos
+   (.admin-credit-note-steps), sin acento visual de selección ni
+   explicación. Reemplazadas por tarjetas con descripción real, consistente
+   con el acento verde ya usado en .admin-resolution-segment. */
+.admin-credit-destination-group {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.admin-credit-destination-option {
+  background: rgba(3, 10, 17, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.75rem 0.9rem;
+  text-align: left;
+  transition: background 130ms ease, border-color 130ms ease;
+}
+
+.admin-credit-destination-option:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.admin-credit-destination-option.is-selected {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.55);
+}
+
+.admin-credit-destination-option-heading {
+  align-items: center;
+  color: rgba(255, 255, 255, 0.86);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  gap: 0.32rem;
+}
+
+.admin-credit-destination-option.is-selected .admin-credit-destination-option-heading {
+  color: #a7f3d0;
+}
+
+.admin-credit-destination-option-check {
+  color: #a7f3d0;
+  flex-shrink: 0;
+}
+
+.admin-credit-destination-option-description {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.admin-credit-destination-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .admin-resolution-required-field > span {
   color: rgba(255, 255, 255, 0.68);
   font-size: 0.66rem;
@@ -5668,6 +5732,7 @@ div.claim-form-shell::after {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.55rem;
   color: #fff;
+  cursor: pointer;
   display: flex;
   height: 2rem;
   justify-content: center;
@@ -5723,6 +5788,7 @@ div.claim-form-shell::after {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 0.65rem;
   color: #fff;
+  cursor: pointer;
   display: inline-flex;
   font-size: 0.65rem;
   font-weight: 850;
@@ -5734,6 +5800,11 @@ div.claim-form-shell::after {
 .admin-return-confirm-modal footer .is-primary {
   background: #1e4d7b !important;
   border-color: rgba(140, 200, 242, 0.56);
+}
+
+.admin-return-confirm-modal footer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 @container credit-note (min-width: 820px) {
@@ -9942,6 +10013,30 @@ html[data-admin-theme="light"] .admin-resolution-segment.is-selected:not(:disabl
   background: rgba(16, 185, 129, 0.2) !important;
   border-color: rgba(5, 150, 105, 0.6) !important;
 }
+html[data-admin-theme="light"] .admin-credit-destination-option {
+  background: #ffffff !important;
+  border-color: var(--admin-border) !important;
+}
+html[data-admin-theme="light"] .admin-credit-destination-option:not(:disabled):hover {
+  background: #f4f6f8 !important;
+  border-color: var(--admin-border-soft) !important;
+}
+html[data-admin-theme="light"] .admin-credit-destination-option.is-selected {
+  background: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(5, 150, 105, 0.5) !important;
+}
+html[data-admin-theme="light"] .admin-credit-destination-option-heading {
+  color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-destination-option.is-selected .admin-credit-destination-option-heading {
+  color: #065f46 !important;
+}
+html[data-admin-theme="light"] .admin-credit-destination-option-check {
+  color: #047857 !important;
+}
+html[data-admin-theme="light"] .admin-credit-destination-option-description {
+  color: rgba(15, 23, 42, 0.6) !important;
+}
 html[data-admin-theme="light"] .admin-resolution-required-field > span {
   color: rgba(15, 23, 42, 0.68) !important;
 }
@@ -10793,6 +10888,38 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-red-100 { color: #991b1b !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-100 { color: #0369a1 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-100 { color: #065f46 !important; }
+
+/* Modal Rechazar/Cancelar pedido (AdminOrderCancelRejectModal) y pestaña
+   Cancelación (RefundManagementPanel, dentro de .admin-order-cancellation-panel
+   -- ver .admin-order-detail-scope section.admin-order-cancellation-panel más
+   arriba, con fondo oscuro fijo en CUALQUIER tema): son paneles de acción
+   crítica/destructiva diseñados como una isla oscura intencional y
+   consistente en Light y en Dark (mismo criterio que ya usa
+   ForcedStatusConfirmModal). El catch-all de arriba convertía sólo una
+   parte de sus clases (ej. bg-[#101010] sí, pero el gradiente del header y
+   los tonos rojo/ámbar/esmeralda no), dejando texto oscurecido por el
+   catch-all sobre un fondo que seguía oscuro -- ese desajuste era el bug de
+   contraste real reportado en Light. Estas reglas restauran el valor
+   original (el mismo que ya se ve bien en Dark) para las clases realmente
+   usadas en ambos componentes. */
+html[data-admin-theme="light"] .admin-cancel-reject-modal.bg-\[\#101010\] { background-color: #101010 !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/48 { color: rgba(255,255,255,0.48) !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/62 { color: rgba(255,255,255,0.62) !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/68 { color: rgba(255,255,255,0.68) !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/8 { border-color: rgba(255,255,255,0.08) !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/10 { border-color: rgba(255,255,255,0.10) !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .text-amber-100 { color: #fde68a !important; }
+html[data-admin-theme="light"] .admin-cancel-reject-modal .text-red-100 { color: #fecaca !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/45 { color: rgba(255,255,255,0.45) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/52 { color: rgba(255,255,255,0.52) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/54 { color: rgba(255,255,255,0.54) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/58 { color: rgba(255,255,255,0.58) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/62 { color: rgba(255,255,255,0.62) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/86 { color: rgba(255,255,255,0.86) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/88 { color: rgba(255,255,255,0.88) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/90 { color: rgba(255,255,255,0.90) !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-red-100 { color: #fecaca !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-emerald-100 { color: #a7f3d0 !important; }
 
 /* ---- 14. Badges / pills genéricos detectados por forma de clase (no por
    nombre de componente fijo): en dark, esta heurística ya pisa el color de

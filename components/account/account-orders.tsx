@@ -31,6 +31,7 @@ import {
   type CustomerOrderDetailView,
 } from "@/lib/account/account-utils"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
+import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { supabase } from "@/lib/supabase/client"
 import type {
   CustomerOrderSummary,
@@ -193,13 +194,21 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             )
             const orderTracking = resolveOrderTrackingLink(order)
             const hasTrackingNumber = Boolean(orderTracking.trackingNumber)
+            const cancellationInfo =
+              order.estado === "cancelado"
+                ? deriveOrderCancellationInfo(order.order_audit_events, {
+                    cancellation_requested_by: order.cancellation_requested_by,
+                  })
+                : null
             const shippingLabel =
               order.financial_status === "refunded"
                 ? "Dinero reintegrado"
                 : order.financial_status === "refund_pending"
                   ? "Reintegro pendiente"
               : order.estado === "cancelado"
-                ? "Pedido cancelado"
+                ? cancellationInfo?.rejectedByAdmin
+                  ? "Pedido rechazado"
+                  : "Pedido cancelado"
                 : order.payment_status === "rechazado"
                   ? "Comprobante rechazado"
                   : order.estado === "entregado"
@@ -215,7 +224,9 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                 : order.financial_status === "refund_pending"
                   ? "BEYONIX está gestionando la devolución"
               : order.estado === "cancelado"
-                ? "La compra fue cancelada correctamente"
+                ? cancellationInfo?.rejectedByAdmin
+                  ? "El pedido fue rechazado antes de confirmarse el pago"
+                  : "La compra fue cancelada correctamente"
                 : order.payment_status === "rechazado"
                   ? "Podés subir un nuevo comprobante"
                   : order.estado === "entregado" && order.delivered_at
