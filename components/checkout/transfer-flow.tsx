@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
   Loader2,
   LogIn,
@@ -439,6 +440,16 @@ function TransferManualReviewStep({
             </p>
           </div>
 
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left">
+            <Clock className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
+            <p className="text-xs leading-5 text-[var(--account-info-text)]">
+              <strong className="font-bold">Validamos comprobantes en horario comercial.</strong>{" "}
+              Nuestro equipo revisa los pagos {BEYONIX_SUPPORT_HOURS_DETAIL.toLowerCase()}. Podés
+              cargar el comprobante en cualquier momento; si lo hacés fuera de ese horario, lo
+              revisamos apenas retomamos la atención.
+            </p>
+          </div>
+
           {canUpload && (
             <div className="mt-5">
               <p className="text-11px font-bold uppercase tracking-widest text-[var(--account-text-secondary)]">
@@ -463,10 +474,14 @@ function TransferManualReviewStep({
           <CustomerPaymentProof order={order} onUploaded={onUpdated} showHeading={false} expandUploader />
 
           {order.payment_status === "en_revision" && (
-            <p className="mt-3 text-xs leading-5 text-[var(--account-text-secondary)]">
-              Nuestro equipo revisará el pago {BEYONIX_SUPPORT_HOURS_DETAIL.toLowerCase()}. Si
-              necesitamos información adicional, nos contactaremos con vos.
-            </p>
+            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left">
+              <Clock className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
+              <p className="text-xs leading-5 text-[var(--account-info-text)]">
+                <strong className="font-bold">Validamos comprobantes en horario comercial.</strong>{" "}
+                Nuestro equipo revisará el pago {BEYONIX_SUPPORT_HOURS_DETAIL.toLowerCase()}. Si
+                necesitamos información adicional, nos contactaremos con vos.
+              </p>
+            </div>
           )}
 
           <div className="mt-5 grid gap-2.5 sm:grid-cols-2">

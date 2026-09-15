@@ -257,19 +257,50 @@ export function AdminNotificationsPopover({
                         />
                       )}
                     </span>
-                    <span className={cn("mt-0.5 block text-xs font-semibold leading-4", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
+                    <span
+                      className={cn(
+                        "mt-0.5 block text-xs font-semibold leading-4",
+                        isStorefront
+                          ? "beyonix-header-notif-title"
+                          : sensitive
+                            ? "text-[#ffc2c8]"
+                            : "text-white",
+                      )}
+                    >
                       {notification.title}
                     </span>
-                    <span className={cn("mt-0.5 line-clamp-2 block text-11px leading-4", isStorefront ? "beyonix-header-notif-body" : "text-white/65")}>
+                    <span
+                      className={cn(
+                        "mt-0.5 line-clamp-2 block text-11px leading-4",
+                        isStorefront
+                          ? "beyonix-header-notif-body"
+                          : sensitive
+                            ? "text-[#f4b8c0]/72"
+                            : "text-white/65",
+                      )}
+                    >
                       {notification.body}
                     </span>
-                    <span className={cn("mt-1 flex flex-wrap items-center gap-2 text-11px leading-none", isStorefront ? "beyonix-header-notif-muted" : "text-white/42")}>
+                    <span
+                      className={cn(
+                        "mt-1 flex flex-wrap items-center gap-2 text-11px leading-none",
+                        isStorefront
+                          ? "beyonix-header-notif-muted"
+                          : sensitive
+                            ? "text-[#f4b8c0]/72"
+                            : "text-white/42",
+                      )}
+                    >
                       <span>{formatNotificationDate(notification.eventAt)}</span>
                       {notification.actionLabel && (
                         <span
                           className={cn(
                             "font-black",
-                            isStorefront ? "group-hover:text-[var(--beyonix-text-primary)]" : "group-hover:text-white",
+                            isStorefront
+                              ? "group-hover:text-[var(--beyonix-text-primary)]"
+                              : mercadoLibreReturn || sensitive
+                                ? ""
+                                : "group-hover:text-white",
                             mercadoLibreReturn
                               ? ADMIN_ATTENTION_WARNING.label
                               : sensitive

@@ -10919,16 +10919,19 @@ html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/8 { bor
 html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/10 { border-color: rgba(255,255,255,0.10) !important; }
 html[data-admin-theme="light"] .admin-cancel-reject-modal .text-amber-100 { color: #fde68a !important; }
 html[data-admin-theme="light"] .admin-cancel-reject-modal .text-red-100 { color: #fecaca !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/45 { color: rgba(255,255,255,0.45) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/52 { color: rgba(255,255,255,0.52) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/54 { color: rgba(255,255,255,0.54) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/58 { color: rgba(255,255,255,0.58) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/62 { color: rgba(255,255,255,0.62) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/86 { color: rgba(255,255,255,0.86) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/88 { color: rgba(255,255,255,0.88) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/90 { color: rgba(255,255,255,0.90) !important; }
+/* Reemplaza la lista de opacidades puntuales (text-white/45, /52, /58...)
+   por un selector de substring: cualquier text-white/N nuevo que se agregue
+   a futuro en este panel queda cubierto automáticamente, en vez de tener
+   que enumerar cada opacidad una por una (así aparecieron los huecos
+   reales reportados: text-white/68, text-white/84, text-amber-100 y el
+   label text-[#ffb4bd] de "Acción pendiente" quedaban afuera de la lista
+   anterior y quedaban ilegibles en Light). */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel [class*="text-white/"] { color: rgba(255,255,255,0.82) !important; }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-red-100 { color: #fecaca !important; }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-emerald-100 { color: #a7f3d0 !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-amber-100 { color: #fde68a !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel [class*="text-[#ffb4bd]"] { color: #ffb4bd !important; }
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel [class*="text-[#f4b8c0]"] { color: #f4b8c0 !important; }
 
 /* Listado de pedidos (.admin-orders-list-row): cada card de pedido debe
    tener identidad visual fuerte (fondo oscuro) contra el fondo general gris
