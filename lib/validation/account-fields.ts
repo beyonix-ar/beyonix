@@ -1,4 +1,5 @@
 import { hasBlockedWords, validateUsername } from "./content-filter.ts"
+import { isValidArgentineNationalPhone } from "./phone-ar.ts"
 
 export const ARGENTINA_PROVINCES = [
   "Buenos Aires",
@@ -309,8 +310,8 @@ export function validateRegisterPayload(data: RegisterValidationPayload) {
     return "El código postal debe tener entre 4 y 8 números."
   }
 
-  if (!/^\d{8,15}$/.test(data.phone.trim())) {
-    return "El teléfono móvil debe tener entre 8 y 15 números."
+  if (!isValidArgentineNationalPhone(data.phone.trim())) {
+    return "Ingresá un teléfono válido."
   }
 
   const passwordError = validatePassword(data.password)
@@ -402,8 +403,8 @@ export function validateProfilePayload(data: ProfileValidationPayload) {
     return "El código postal debe tener entre 4 y 8 números."
   }
 
-  if (!/^\d{8,15}$/.test(data.phone)) {
-    return "El teléfono móvil debe tener entre 8 y 15 números."
+  if (!isValidArgentineNationalPhone(data.phone)) {
+    return "Ingresá un teléfono válido."
   }
 
   if (data.references?.trim()) {

@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Eye, EyeOff, Hash, Lock, Mail, MapPin, Phone, User } from "lucide-react"
+import { Check, Eye, EyeOff, Hash, Lock, Mail, MapPin, User } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
 import { InputField, TextareaField } from "@/components/account/account-form-fields"
+import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
@@ -449,7 +450,7 @@ export function RegisterForm({ onSwitch }: { onSwitch: () => void }) {
         <ProvinceSelect value={province} onChange={setProvince} />
       </div>
       <InputField label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="1001" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
-      <InputField label="Teléfono móvil" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1100000000" icon={Phone} maxLength={FIELD_LIMITS.phone} inputMode="numeric" />
+      <ArgentinaPhoneInput id="register-form-phone" label="Teléfono móvil" value={phone} onChange={setPhone} />
       {/* Requisitos ANTES del campo: el popup de Chrome/Password Manager se
           ancla debajo del input de contraseña al enfocarlo y lo tapa -- ver
           auditoría 2026-09-14. Arriba del campo queda siempre visible. */}

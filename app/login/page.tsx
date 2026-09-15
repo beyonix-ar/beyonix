@@ -22,7 +22,9 @@ import {
   UserRoundPlus,
 } from "lucide-react"
 
+import { AccountThemeToggle } from "@/components/account/account-theme-toggle"
 import { BeyonixLogoLink } from "@/components/beyonix-logo-link"
+import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { useAuth } from "@/context/auth-context"
@@ -841,14 +843,17 @@ function LoginContent() {
         <nav className="container mx-auto px-4 lg:px-8">
           <div className="flex h-16 items-center justify-between lg:h-18">
             <BeyonixLogoLink />
-            <Link
-              href="/"
-              className="group inline-flex h-10 items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 text-xs font-semibold text-white/62 transition hover:border-beyonix-blue-light/36 hover:bg-beyonix-blue/16 hover:text-white sm:text-sm"
-            >
-              <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
-              <span className="hidden sm:inline">Volver a la tienda</span>
-              <span className="sm:hidden">Volver</span>
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/"
+                className="group inline-flex h-10 items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 text-xs font-semibold text-white/62 transition hover:border-beyonix-blue-light/36 hover:bg-beyonix-blue/16 hover:text-white sm:text-sm"
+              >
+                <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
+                <span className="hidden sm:inline">Volver a la tienda</span>
+                <span className="sm:hidden">Volver</span>
+              </Link>
+              <AccountThemeToggle className="size-10" />
+            </div>
           </div>
         </nav>
       </header>
@@ -1166,7 +1171,18 @@ function LoginContent() {
                   <Field name="last-name" label="Apellido*" type="text" value={lastName} onChange={setLastName} placeholder="Pérez" maxLength={FIELD_LIMITS.lastName} autoComplete="family-name" />
                   <Field name="dni" label="DNI*" type="tel" value={dni} onChange={(value) => setDni(onlyDigits(value, FIELD_LIMITS.dni))} placeholder="12345678" maxLength={FIELD_LIMITS.dni} inputMode="numeric" autoComplete="off" />
                   <Field name="email" label="Email*" type="email" value={email} onChange={setEmail} placeholder="nombre@email.com" maxLength={FIELD_LIMITS.email} autoComplete="email" />
-                  <Field name="phone" label="Teléfono*" type="tel" value={phone} onChange={(value) => setPhone(onlyDigits(value, FIELD_LIMITS.phone))} placeholder="1123456789" maxLength={FIELD_LIMITS.phone} inputMode="numeric" autoComplete="tel-national" />
+                  <ArgentinaPhoneInput
+                    id="phone"
+                    name="phone"
+                    label="Teléfono*"
+                    value={phone}
+                    onChange={setPhone}
+                    labelClassName="mb-1.5 block text-xs font-semibold text-white/72"
+                    outerClassName="beyonix-login-input rounded-xl border border-white/10 hover:border-beyonix-blue-light/45 focus-within:border-beyonix-sky/70"
+                    prefixClassName="border-r border-white/10 text-white/58"
+                    inputClassName="text-white placeholder:text-white/32"
+                    helperClassName="text-11px text-white/42"
+                  />
                 </div>
               </fieldset>
 

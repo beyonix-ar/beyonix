@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { normalizeUsername } from "@/lib/auth/username"
+import { normalizeArgentineNationalPhone } from "@/lib/validation/phone-ar"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 function getBearerToken(request: Request) {
@@ -137,7 +138,12 @@ export async function PATCH(request: Request) {
 
   if (optionalText(body.name) !== undefined) payload.nombre = optionalText(body.name)
   if (normalizeUsername(body.username) !== undefined) payload.username = normalizeUsername(body.username)
-  if (optionalText(body.phone) !== undefined) payload.telefono = optionalText(body.phone)
+  if (optionalText(body.phone) !== undefined) {
+    // Fuente de verdad server-side del formato canónico (ver
+    // lib/validation/phone-ar.ts): nunca confía en que el cliente ya haya
+    // limpiado "+54"/el 0 inicial antes de enviarlo.
+    payload.telefono = normalizeArgentineNationalPhone(optionalText(body.phone)) || null
+  }
   if (optionalText(body.street) !== undefined) payload.calle = optionalText(body.street)
   if (optionalText(body.streetNumber) !== undefined) payload.numero = optionalText(body.streetNumber)
   if (optionalText(body.floor) !== undefined) payload.piso = optionalText(body.floor) || null

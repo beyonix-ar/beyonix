@@ -27,6 +27,7 @@ import type {
 import {
   validateRegisterPayload,
 } from "@/lib/validation/account-fields"
+import { normalizeArgentineNationalPhone } from "@/lib/validation/phone-ar"
 const PASSWORD_RECOVERY_KEY = "beyonix-password-recovery"
 const AUTH_LAST_ACTIVITY_KEY = "beyonix-auth-last-activity"
 const AUTH_SESSION_STARTED_KEY = "beyonix-auth-session-started"
@@ -1081,7 +1082,7 @@ export function AuthProvider({
           username,
           nombre: form.name.trim(),
           dni: form.dni.trim(),
-          telefono: form.phone?.trim() || null,
+          telefono: normalizeArgentineNationalPhone(form.phone) || null,
           calle: form.street?.trim() || null,
           numero: form.streetNumber?.trim() || null,
           piso: form.floor?.trim() || null,

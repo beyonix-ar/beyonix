@@ -5,6 +5,7 @@ import { Footer } from "@/components/footer"
 import {
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
+import { PublicMinimalHeader } from "@/components/public-minimal-header"
 import { cn } from "@/lib/utils"
 
 type CheckoutStatusTone = "success" | "pending" | "failure" | "info"
@@ -54,7 +55,10 @@ export function CheckoutStatusShell({
   return (
     <>
       <main className="min-h-screen bg-[var(--account-background)] px-4 py-6 font-heading text-[var(--account-text-primary)] sm:py-8">
-        <div className="mx-auto w-full max-w-5xl">{children}</div>
+        <div className="mx-auto w-full max-w-5xl">
+          <PublicMinimalHeader className="mb-4 sm:mb-6" />
+          {children}
+        </div>
       </main>
       <Footer />
     </>

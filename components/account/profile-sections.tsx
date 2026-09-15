@@ -11,7 +11,6 @@ import {
   Lock,
   Mail,
   MapPin,
-  Phone,
   ShieldCheck,
   User,
 } from "lucide-react"
@@ -24,6 +23,7 @@ import {
 } from "@/components/account/account-ui"
 import { AccountViewFrame } from "@/components/account/account-view-frame"
 import { InputField, ReadOnlyField, TextareaField } from "@/components/account/account-form-fields"
+import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
 import { ProvinceSelect } from "@/components/province-select"
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -638,17 +638,11 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                   value={user?.email || ""}
                   icon={Mail}
                 />
-                <InputField
+                <ArgentinaPhoneInput
+                  id="profile-phone"
                   label="Teléfono móvil"
-                  type="tel"
                   value={phone}
-                  onChange={(value) =>
-                    setPhone(onlyDigits(value, FIELD_LIMITS.phone))
-                  }
-                  placeholder="1100000000"
-                  icon={Phone}
-                  maxLength={FIELD_LIMITS.phone}
-                  inputMode="numeric"
+                  onChange={setPhone}
                 />
               </div>
             </div>

@@ -57,8 +57,11 @@ import {
   Label,
 } from "@/components/ui/label"
 import { AccountMenu } from "@/components/account-menu"
+import { AccountThemeToggle } from "@/components/account/account-theme-toggle"
 import { BeyonixHeaderLoginLink, BeyonixHeaderRegisterLink } from "@/components/beyonix-ui"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
+import { PublicMinimalHeader } from "@/components/public-minimal-header"
+import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
 import {
   InsufficientStockModal,
   type InsufficientStockModalItem,
@@ -108,6 +111,10 @@ import {
   normalizeArgentineLocality,
   normalizeArgentineLocationKey,
 } from "@/lib/validation/account-fields"
+import {
+  isValidArgentineNationalPhone,
+  normalizeArgentineNationalPhone,
+} from "@/lib/validation/phone-ar"
 import {
   ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE,
   type AndreaniBranchWithDistance,
@@ -367,7 +374,7 @@ function getFirstInvalidCheckoutField(
 ): RequiredCheckoutField | null {
   const nombre = data.nombre.trim()
   const email = data.email.trim()
-  const telefono = data.telefono.replace(/\D/g, "")
+  const telefono = normalizeArgentineNationalPhone(data.telefono)
   const dni = data.dni.replace(/\D/g, "")
   const calle = data.calle.trim()
   const numero = data.numero.trim()
@@ -377,7 +384,7 @@ function getFirstInvalidCheckoutField(
 
   if (nombre.length < 3 || !hasLetters(nombre)) return "nombre"
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "email"
-  if (telefono.length < 8 || telefono.length > 15) return "telefono"
+  if (!isValidArgentineNationalPhone(telefono)) return "telefono"
   if (!/^\d{7,8}$/.test(dni)) return "dni"
   if (calle.length < 2 || calle.length > FIELD_LIMITS.street || !hasLetters(calle)) return "calle"
   if (numero.length < 1) return "numero"
@@ -1178,10 +1185,6 @@ export default function CheckoutPage() {
       normalizedValue = value.trim().toLowerCase()
     }
 
-    if (name === "telefono") {
-      normalizedValue = value.replace(/\D/g, "").slice(0, FIELD_LIMITS.phone)
-    }
-
     if (name === "dni") {
       normalizedValue = value.replace(/\D/g, "").slice(0, 8)
     }
@@ -1238,6 +1241,16 @@ export default function CheckoutPage() {
 
       return next
     })
+  }
+
+  const handlePhoneChange = (nationalDigits: string) => {
+    hasEditedCheckoutFormRef.current = true
+
+    if (invalidField === "telefono") {
+      setInvalidField(null)
+    }
+
+    setFormData((prev) => ({ ...prev, telefono: nationalDigits }))
   }
 
   const handleProvinceChange = (value: string) => {
@@ -1617,7 +1630,8 @@ export default function CheckoutPage() {
   if (items.length === 0) {
     return (
       <>
-        <main className="checkout-page min-h-screen bg-[#05070A] px-4 py-16 font-heading text-white lg:py-24">
+        <main className="checkout-page min-h-screen bg-[#05070A] px-4 py-6 font-heading text-white sm:py-8">
+          <PublicMinimalHeader className="mx-auto mb-10 max-w-md sm:mb-14" />
           <div className="mx-auto max-w-md rounded-xl border border-beyonix-blue-light/18 bg-[#0B1118] p-6 text-center shadow-2xl shadow-black/45">
             <h1 className="mb-3 text-2xl font-bold text-white">
               Tu carrito está vacío
@@ -1674,7 +1688,8 @@ export default function CheckoutPage() {
               BEYONIX
             </Link>
 
-            <div className="relative flex min-w-20 justify-end gap-2">
+            <div className="relative flex min-w-20 items-center justify-end gap-2">
+              <AccountThemeToggle className="size-9" />
               {isInternal && (
                 <AdminNotificationsBell
                   variant="storefront"
@@ -1810,7 +1825,22 @@ export default function CheckoutPage() {
                             <Smartphone aria-hidden="true" className="size-3.5 text-[#4f8cc9]/65" />
                             Teléfono *
                           </Label>
-                          <Input id="telefono" name="telefono" type="tel" inputMode="numeric" className={getCheckoutInputClassName("telefono")} value={formData.telefono} onChange={handleInputChange} maxLength={FIELD_LIMITS.phone} required />
+                          <ArgentinaPhoneInput
+                            id="telefono"
+                            name="telefono"
+                            label={null}
+                            value={formData.telefono}
+                            onChange={handlePhoneChange}
+                            heightClassName="h-10"
+                            outerClassName={cn(
+                              "beyonix-checkout-input rounded-lg border-beyonix-blue-light/18 hover:border-beyonix-blue-light/35 focus-within:border-beyonix-blue-light/65 focus-within:ring-beyonix-blue-light/18",
+                              invalidField === "telefono" &&
+                                "border-red-400/70 shadow-[0_0_0_2px_rgba(248,113,113,0.1)]",
+                            )}
+                            prefixClassName="border-r border-beyonix-blue-light/18 text-white/45"
+                            inputClassName="font-heading text-sm font-semibold text-white placeholder:text-white/36"
+                            helperClassName="text-11px text-white/40"
+                          />
                         </div>
                         <div className="space-y-0.5">
                           <Label htmlFor="dni" className="text-white/75">
