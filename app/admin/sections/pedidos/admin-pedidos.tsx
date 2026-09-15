@@ -3191,13 +3191,16 @@ function BillingManagementPanel({
 
                   <label className="admin-credit-note-field">
                     <span>Tipo de gestión</span>
-                    <select
+                    <AdminSelect
+                      title="Tipo de gestión"
+                      ariaLabel="Seleccionar tipo de gestión"
                       value={operationType}
-                      onChange={(event) => selectOperationType(event.target.value)}
+                      onChange={(value) => selectOperationType(value)}
+                      compact
                     >
                       <option value="ajuste_manual">Ajuste manual</option>
                       <option value="reembolso_excepcional">Reembolso excepcional</option>
-                    </select>
+                    </AdminSelect>
                     <em>
                       {operationType === "reembolso_excepcional"
                         ? "Reembolso autorizado por excepción, fuera del flujo normal de reclamo del cliente."

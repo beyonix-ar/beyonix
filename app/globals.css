@@ -5167,7 +5167,12 @@ div.claim-form-shell::after {
    botones de texto plano reusando por error la clase del stepper de pasos
    (.admin-credit-note-steps), sin acento visual de selección ni
    explicación. Reemplazadas por tarjetas con descripción real, consistente
-   con el acento verde ya usado en .admin-resolution-segment. */
+   con el acento verde ya usado en .admin-resolution-segment.
+   Deliberadamente SIN override de Light: son una isla oscura intencional y
+   consistente en ambos temas del admin (mismo criterio ya usado en
+   AdminOrderCancelRejectModal / admin-order-cancellation-panel) -- todo el
+   contenido interno (título, descripción, check) es claro sobre este fondo
+   oscuro en Light y en Dark, nunca se oscurece. */
 .admin-credit-destination-group {
   display: grid;
   gap: 0.5rem;
@@ -10013,30 +10018,6 @@ html[data-admin-theme="light"] .admin-resolution-segment.is-selected:not(:disabl
   background: rgba(16, 185, 129, 0.2) !important;
   border-color: rgba(5, 150, 105, 0.6) !important;
 }
-html[data-admin-theme="light"] .admin-credit-destination-option {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
-}
-html[data-admin-theme="light"] .admin-credit-destination-option:not(:disabled):hover {
-  background: #f4f6f8 !important;
-  border-color: var(--admin-border-soft) !important;
-}
-html[data-admin-theme="light"] .admin-credit-destination-option.is-selected {
-  background: rgba(16, 185, 129, 0.1) !important;
-  border-color: rgba(5, 150, 105, 0.5) !important;
-}
-html[data-admin-theme="light"] .admin-credit-destination-option-heading {
-  color: var(--admin-text) !important;
-}
-html[data-admin-theme="light"] .admin-credit-destination-option.is-selected .admin-credit-destination-option-heading {
-  color: #065f46 !important;
-}
-html[data-admin-theme="light"] .admin-credit-destination-option-check {
-  color: #047857 !important;
-}
-html[data-admin-theme="light"] .admin-credit-destination-option-description {
-  color: rgba(15, 23, 42, 0.6) !important;
-}
 html[data-admin-theme="light"] .admin-resolution-required-field > span {
   color: rgba(15, 23, 42, 0.68) !important;
 }
@@ -10389,11 +10370,18 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-muted {
   color: rgba(15, 23, 42, 0.68) !important;
 }
 
-/* ---- 10. Pedidos: filas de la tabla + badges semánticos ---- */
-html[data-admin-theme="light"] .admin-orders-list-row {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
-}
+/* ---- 10. Pedidos: filas de la tabla + badges semánticos ----
+   Pedido explícito: cada card de pedido debe tener identidad visual fuerte
+   (fondo oscuro) contra el fondo general gris claro del admin en Light,
+   igual que ya se ve en Dark -- no un fondo blanco plano que se mezcla con
+   el resto de la página. En vez de forzar un blanco acá, se deja que la
+   card use su propio fondo oscuro real (bg-zinc-900/75, o los tintes de
+   atención sky/violeta/#2563EB/#16A34A/ADMIN_SENSITIVE_DANGER ya definidos
+   en el componente) en AMBOS temas -- son los mismos tonos que ya usa el
+   resto del admin (modales, paneles), no un negro plano nuevo. Como esta
+   card queda oscura también en Light, hay que revertir puntualmente las
+   clases que el catch-all de arriba SÍ convierte a oscuro (texto, badges),
+   para no repetir el bug de "texto oscuro sobre fondo oscuro". */
 html[data-admin-theme="light"] .admin-orders-table-header {
   background: #f7f9fb !important;
   border-color: var(--admin-border) !important;
@@ -10920,6 +10908,42 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellati
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-white\/90 { color: rgba(255,255,255,0.90) !important; }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-red-100 { color: #fecaca !important; }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-emerald-100 { color: #a7f3d0 !important; }
+
+/* Listado de pedidos (.admin-orders-list-row): cada card de pedido debe
+   tener identidad visual fuerte (fondo oscuro) contra el fondo general gris
+   claro del admin en Light, igual que ya se ve en Dark -- no un fondo
+   blanco plano que se mezcla con el resto de la página. Se dejó de forzar
+   background:#ffffff (ver sección "10. Pedidos" más arriba) para que la
+   card use su propio fondo oscuro real ya existente (bg-zinc-900/75, o los
+   tintes de atención sky/violeta/#2563EB/#16A34A/ADMIN_SENSITIVE_DANGER,
+   ver admin-pedidos.tsx) en AMBOS temas -- mismos tonos que ya usa el resto
+   del admin, no un negro plano nuevo. Como la card queda oscura también en
+   Light, hace falta revertir puntualmente las clases que el catch-all de
+   arriba sí oscurece (texto, badges), para no repetir "texto oscuro sobre
+   fondo oscuro". */
+html[data-admin-theme="light"] .admin-orders-list-row.bg-\[\#0D1117\] {
+  background-color: #0D1117 !important;
+}
+html[data-admin-theme="light"] .admin-orders-list-row .border-white\/8 { border-color: rgba(255,255,255,0.08) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/38 { color: rgba(255,255,255,0.38) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/48 { color: rgba(255,255,255,0.48) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/52 { color: rgba(255,255,255,0.52) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/68 { color: rgba(255,255,255,0.68) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/92 { color: rgba(255,255,255,0.92) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/95 { color: rgba(255,255,255,0.95) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-emerald-200 { color: #6ee7b7 !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .text-red-100 { color: #fecaca !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge { color: #fff !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--success { border-color: rgba(52, 211, 153, 0.5) !important; background: rgba(6, 78, 59, 0.34) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--warning { border-color: rgba(245, 158, 11, 0.54) !important; background: rgba(120, 53, 15, 0.32) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--danger { border-color: rgba(248, 113, 113, 0.56) !important; background: rgba(127, 29, 29, 0.34) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--info { border-color: rgba(96, 165, 250, 0.54) !important; background: rgba(30, 64, 175, 0.32) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--returned { border-color: rgba(196, 181, 253, 0.55) !important; background: rgba(76, 29, 149, 0.34) !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-danger { border-color: rgba(248, 113, 113, 0.56) !important; background: rgba(127, 29, 29, 0.34) !important; color: #fecaca !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-success { border-color: rgba(52, 211, 153, 0.5) !important; background: rgba(6, 78, 59, 0.34) !important; color: #bbf7d0 !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-warning { border-color: rgba(245, 158, 11, 0.54) !important; background: rgba(120, 53, 15, 0.32) !important; color: #fde68a !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-info { border-color: rgba(96, 165, 250, 0.54) !important; background: rgba(30, 64, 175, 0.32) !important; color: #bfdbfe !important; }
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-muted { border-color: rgba(148, 163, 184, 0.32) !important; background: rgba(15, 23, 42, 0.42) !important; color: rgba(226, 232, 240, 0.76) !important; }
 
 /* ---- 14. Badges / pills genéricos detectados por forma de clase (no por
    nombre de componente fijo): en dark, esta heurística ya pisa el color de
