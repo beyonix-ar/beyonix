@@ -11,6 +11,7 @@ create table ordenes(
   usuario_id uuid,
   cliente_email text,
   cliente_nombre text,
+  created_at timestamptz not null default now(),
   estado text not null default 'pendiente',
   payment_method_id text,
   payment_status text,

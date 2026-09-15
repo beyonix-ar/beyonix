@@ -8,6 +8,10 @@ import {
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
 import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
+import {
+  TRANSFER_PROOF_UPLOAD_ELIGIBLE_PAYMENT_STATUSES,
+  canUploadTransferProof,
+} from "@/lib/orders/transfer-verification-reasons"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { SupabasePedido } from "@/lib/supabase/types"
@@ -18,11 +22,37 @@ function normalizeStoredPath(path: string) {
     : `${PAYMENT_PROOF_BUCKET}/${path}`
 }
 
-const REPLACEABLE_PAYMENT_STATUSES = [
-  "pendiente_comprobante",
-  "en_revision",
-  "rechazado",
-]
+/**
+ * Allowlist explícita: el cliente sólo recibe los campos mínimos necesarios
+ * para reflejar en la UI que el comprobante se subió (estado del pago y
+ * metadata del propio comprobante). La fila de `ordenes` que devuelve
+ * Supabase después del UPDATE trae columnas de conciliación interna
+ * (transfer_match_snapshot, transfer_matched_payment_id, transfer_payer_dni
+ * derivado, etc.) que nunca deben llegar al navegador -- eso sólo se expone
+ * desde endpoints admin protegidos. Cualquier campo nuevo que el cliente
+ * llegue a necesitar tiene que agregarse acá de forma explícita, nunca
+ * reenviando la fila completa.
+ */
+const CLIENT_SAFE_ORDER_FIELDS = [
+  "id",
+  "estado",
+  "payment_method_id",
+  "payment_status",
+  "financial_status",
+  "payment_proof_url",
+  "payment_proof_file_name",
+  "payment_proof_uploaded_at",
+] as const
+
+function toClientSafeOrder(
+  order: SupabasePedido,
+): Pick<SupabasePedido, (typeof CLIENT_SAFE_ORDER_FIELDS)[number]> {
+  const safeOrder = {} as Record<string, unknown>
+  for (const field of CLIENT_SAFE_ORDER_FIELDS) {
+    safeOrder[field] = order[field]
+  }
+  return safeOrder as Pick<SupabasePedido, (typeof CLIENT_SAFE_ORDER_FIELDS)[number]>
+}
 
 async function upsertPaymentProofReceivedNotification(
   admin: ReturnType<typeof createAdminClient>,
@@ -158,11 +188,7 @@ export async function POST(request: Request) {
       )
     }
 
-    if (
-      !REPLACEABLE_PAYMENT_STATUSES.includes(
-        currentOrder.payment_status || "pendiente_comprobante",
-      )
-    ) {
+    if (!canUploadTransferProof(currentOrder.payment_status)) {
       return NextResponse.json(
         { error: "El estado actual del pago no permite reemplazar el comprobante." },
         { status: 409 },
@@ -195,7 +221,7 @@ export async function POST(request: Request) {
       })
       .eq("id", orderId)
       .eq("payment_method_id", "transferencia")
-      .in("payment_status", REPLACEABLE_PAYMENT_STATUSES)
+      .in("payment_status", TRANSFER_PROOF_UPLOAD_ELIGIBLE_PAYMENT_STATUSES)
       .neq("estado", "cancelado")
       .select()
       .maybeSingle()
@@ -234,7 +260,7 @@ export async function POST(request: Request) {
       updatedOrder as SupabasePedido,
     )
 
-    return NextResponse.json({ order: updatedOrder })
+    return NextResponse.json({ order: toClientSafeOrder(updatedOrder as SupabasePedido) })
   } catch (error) {
     console.error("payment proof upload error", error)
 

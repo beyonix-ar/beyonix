@@ -5,6 +5,7 @@ import {
   attemptTransferAutoVerification,
   type TransferVerificationAttemptResult,
 } from "@/lib/orders/transfer-verification-service"
+import { canUploadTransferProof } from "@/lib/orders/transfer-verification-reasons"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -58,14 +59,20 @@ export async function POST(
     const pedidoId = Number(orderId)
 
     if (!Number.isFinite(pedidoId) || pedidoId <= 0) {
-      return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
+      return NextResponse.json(
+        { error: "Pedido inválido.", proofUploadAvailable: true },
+        { status: 400 },
+      )
     }
 
     let body: unknown
     try {
       body = await request.json()
     } catch {
-      return NextResponse.json({ error: "Datos inválidos." }, { status: 400 })
+      return NextResponse.json(
+        { error: "Datos inválidos.", proofUploadAvailable: true },
+        { status: 400 },
+      )
     }
 
     const payload = (body ?? {}) as Record<string, unknown>
@@ -74,24 +81,10 @@ export async function POST(
     const dni = normalizeText(payload.dni)
     const amount = Number(payload.monto)
 
-    if (!firstName || !lastName || !dni) {
-      return NextResponse.json(
-        { error: "Completá nombre, apellido y DNI." },
-        { status: 400 },
-      )
-    }
-
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json(
-        { error: "Indicá el monto transferido." },
-        { status: 400 },
-      )
-    }
-
     const admin = createAdminClient()
     const { data: order, error: orderError } = await admin
       .from("ordenes")
-      .select("id, usuario_id, payment_method_id")
+      .select("id, usuario_id, payment_method_id, payment_status")
       .eq("id", pedidoId)
       .maybeSingle()
 
@@ -111,8 +104,34 @@ export async function POST(
     }
 
     if (order.payment_method_id !== "transferencia") {
+      // Este pedido no pasa por el sistema de comprobantes de transferencia
+      // en absoluto -- nunca corresponde ofrecer el uploader acá.
       return NextResponse.json(
-        { error: "Este pedido no corresponde a transferencia bancaria." },
+        { error: "Este pedido no corresponde a transferencia bancaria.", proofUploadAvailable: false },
+        { status: 400 },
+      )
+    }
+
+    // P1 (segunda auditoría): un error de validación del formulario (ej.:
+    // monto con coma decimal) nunca puede dejar al cliente sin la salida del
+    // comprobante manual mientras el pago siga sin confirmarse -- mismo
+    // criterio central que usa el resto del sistema (canUploadTransferProof).
+    if (!firstName || !lastName || !dni) {
+      return NextResponse.json(
+        {
+          error: "Completá nombre, apellido y DNI.",
+          proofUploadAvailable: canUploadTransferProof(order.payment_status),
+        },
+        { status: 400 },
+      )
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        {
+          error: "Indicá el monto transferido.",
+          proofUploadAvailable: canUploadTransferProof(order.payment_status),
+        },
         { status: 400 },
       )
     }

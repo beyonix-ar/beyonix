@@ -14,6 +14,7 @@ import {
   PaymentProofUploader,
 } from "@/components/payment-proof-uploader"
 import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
+import { canUploadTransferProof } from "@/lib/orders/transfer-verification-reasons"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const PAYMENT_STATUS_CONTENT = {
@@ -48,6 +49,13 @@ const PAYMENT_STATUS_CONTENT = {
     icon: AlertCircle,
     accentClassName: "text-[var(--account-danger)]",
   },
+  auto_verified_stock_conflict: {
+    title: "Pago identificado, revisando stock",
+    description:
+      "Identificamos tu transferencia en Mercado Pago, pero necesitamos revisar el stock antes de confirmar el pedido. Podés subir el comprobante como respaldo adicional.",
+    icon: AlertCircle,
+    accentClassName: "text-[var(--account-warning)]",
+  },
 } as const
 
 export function CustomerPaymentProof({
@@ -80,11 +88,7 @@ export function CustomerPaymentProof({
   const isConfirmed = paymentStatus === "confirmado"
   const isCanceled = (order.estado ?? "").toLowerCase() === "cancelado"
   const showProof = hasProof && !(hideProofWhenConfirmed && isConfirmed)
-  const canReplace = [
-    "pendiente_comprobante",
-    "en_revision",
-    "rechazado",
-  ].includes(paymentStatus) && !isCanceled
+  const canReplace = canUploadTransferProof(paymentStatus) && !isCanceled
   const fileName = order.payment_proof_file_name || "Comprobante de pago"
   const isImage = /\.(jpe?g|png|webp)$/i.test(fileName)
   const [signedUrl, setSignedUrl] = useState("")

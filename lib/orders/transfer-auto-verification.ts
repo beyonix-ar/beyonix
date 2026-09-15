@@ -45,6 +45,29 @@ export function getTransferMatchWindow(orderCreatedAt: string | Date): {
   }
 }
 
+/**
+ * Cutoff de created_at para que una orden todavía pueda tener una ventana de
+ * conciliación vigente (ver getTransferMatchWindow.endDate). Fuente única
+ * usada por el cron de reintentos (transfer-verification-retry.ts) para
+ * filtrar en la propia consulta SQL, ANTES del LIMIT, las órdenes cuya
+ * ventana ya venció -- reintentarlas ahí sólo desperdicia turno del batch,
+ * nunca van a poder conciliarse igual.
+ */
+export function getTransferMatchWindowExpirationCutoff(now: Date = new Date()): Date {
+  return new Date(now.getTime() - TRANSFER_PAYMENT_EXPIRATION_HOURS * 60 * 60 * 1000)
+}
+
+/**
+ * Debe coincidir con el default de p_max_attempts en
+ * claim_transfer_verification_attempt (supabase/migrations/20260913120000_transfer_auto_verification.sql).
+ * Postgres no puede importar una constante de TypeScript, así que este valor
+ * es un duplicado deliberado -- si cambia el default de la RPC, actualizar
+ * acá también. Usado por el cron de reintentos para filtrar en la propia
+ * consulta SQL, ANTES del LIMIT, las órdenes que ya agotaron sus intentos
+ * automáticos (nunca van a poder reclamar un intento nuevo igual).
+ */
+export const TRANSFER_VERIFICATION_MAX_ATTEMPTS = 20
+
 export type TransferAutoVerificationOutcome =
   | {
       kind: "verified"

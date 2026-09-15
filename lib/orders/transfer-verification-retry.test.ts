@@ -12,6 +12,8 @@ function createFakeAdmin(rows: Array<Record<string, unknown>>) {
     not: () => builder,
     neq: () => builder,
     lte: () => builder,
+    lt: () => builder,
+    gte: () => builder,
     order: () => builder,
     limit: () => Promise.resolve({ data: rows, error: null }),
   }
@@ -22,7 +24,7 @@ function createFakeAdmin(rows: Array<Record<string, unknown>>) {
 function createSpyAdmin(rows: Array<Record<string, unknown>>) {
   const calls: Array<{ method: string; args: unknown[] }> = []
   const builder: Record<string, (...args: unknown[]) => unknown> = {}
-  for (const method of ["select", "eq", "in", "not", "neq", "lte", "order"]) {
+  for (const method of ["select", "eq", "in", "not", "neq", "lte", "lt", "gte", "order"]) {
     builder[method] = (...args: unknown[]) => {
       calls.push({ method, args })
       return builder
@@ -38,6 +40,7 @@ function row(overrides: Record<string, unknown> = {}) {
     created_at: new Date().toISOString(),
     payment_status: "pendiente_comprobante",
     transfer_verification_failure_reason: "no_candidates",
+    transfer_verification_attempts: 1,
     transfer_payer_first_name: "Jose",
     transfer_payer_last_name: "Perez",
     transfer_payer_dni: "30111222",
@@ -132,6 +135,45 @@ test("P1 starvation: la propia consulta SQL ya filtra por motivo reintentable --
     "debe filtrar por transfer_verification_failure_reason en la propia consulta SQL",
   )
   assert.deepEqual(failureReasonFilter!.args[1], ["no_candidates", "mercadopago_unavailable"])
+})
+
+test("P1 starvation (segunda auditoría): la consulta SQL también filtra intentos agotados y ventana vencida ANTES del LIMIT, no sólo el motivo", async () => {
+  const { admin, calls } = createSpyAdmin([])
+
+  await retryPendingTransferVerifications(admin, {
+    attempt: async () => ({ status: "manual_review", reason: "no_candidates", order: {} as never }),
+  })
+
+  const attemptsFilter = calls.find(
+    (c) => c.method === "lt" && c.args[0] === "transfer_verification_attempts",
+  )
+  assert.ok(attemptsFilter, "debe filtrar por transfer_verification_attempts en la propia consulta SQL")
+  assert.equal(attemptsFilter!.args[1], 20)
+
+  const windowFilter = calls.find(
+    (c) => c.method === "gte" && c.args[0] === "created_at",
+  )
+  assert.ok(windowFilter, "debe filtrar por ventana de conciliación vigente en la propia consulta SQL")
+  assert.equal(typeof windowFilter!.args[1], "string")
+})
+
+test("P1 starvation (segunda auditoría): 25 órdenes con intentos agotados nunca ocupan el lugar de una orden nueva válida -- la válida SIEMPRE se procesa", async () => {
+  const exhausted = Array.from({ length: 25 }, (_, i) =>
+    row({ id: i + 1, transfer_verification_attempts: 20 }),
+  )
+  const validOrder = row({ id: 999, transfer_verification_attempts: 1 })
+  const admin = createFakeAdmin([...exhausted, validOrder])
+
+  const attempts: number[] = []
+  const result = await retryPendingTransferVerifications(admin, {
+    attempt: async (_admin, { orderId }) => {
+      attempts.push(orderId)
+      return { status: "manual_review", reason: "no_candidates", order: {} as never }
+    },
+  })
+
+  assert.deepEqual(attempts, [999], "la orden válida debe procesarse aunque venga después de 25 agotadas")
+  assert.equal(result.attempted, 1)
 })
 
 test("nunca corre más allá del presupuesto de tiempo por corrida -- corta antes de agotar todos los candidatos si toma demasiado (deja margen bajo el --max-time del curl del systemd timer)", async () => {

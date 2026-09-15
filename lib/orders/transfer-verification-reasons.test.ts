@@ -4,6 +4,7 @@ import test from "node:test"
 
 import {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  canUploadTransferProof,
   describeManualReviewReason,
   getManualReviewCustomerMessage,
   isRetryableManualReviewReason,
@@ -62,4 +63,32 @@ test("isRetryableManualReviewReason exportado también desde el módulo client-s
 test("search_not_exhaustive y expected_amount_changed nunca son reintentables automáticamente -- requieren revisión humana, no cambian solos con el tiempo", () => {
   assert.equal(isRetryableManualReviewReason("search_not_exhaustive"), false)
   assert.equal(isRetryableManualReviewReason("expected_amount_changed"), false)
+})
+
+// canUploadTransferProof: criterio central único, compartido por el
+// endpoint /verificar, el endpoint /payment-proofs y los componentes de UI.
+// Cubre exactamente los escenarios de la segunda auditoría de Codex.
+test("canUploadTransferProof: pendiente_comprobante, en_revision y rechazado admiten comprobante", () => {
+  assert.equal(canUploadTransferProof("pendiente_comprobante"), true)
+  assert.equal(canUploadTransferProof("en_revision"), true)
+  assert.equal(canUploadTransferProof("rechazado"), true)
+})
+
+test("canUploadTransferProof: null/undefined se tratan como pendiente_comprobante (mismo criterio de fallback que el resto del sistema)", () => {
+  assert.equal(canUploadTransferProof(null), true)
+  assert.equal(canUploadTransferProof(undefined), true)
+})
+
+test("canUploadTransferProof: auto_verified_stock_conflict SÍ admite comprobante -- el dinero ya está identificado, pero un admin puede necesitar evidencia adicional (bug Codex: backend y UI antes quedaban inconsistentes acá)", () => {
+  assert.equal(canUploadTransferProof(TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS), true)
+})
+
+test("canUploadTransferProof: un pago ya confirmado NUNCA admite comprobante", () => {
+  assert.equal(canUploadTransferProof("confirmado"), false)
+})
+
+test("canUploadTransferProof: estados desconocidos (ej.: un motivo interno de manual_review pasado por error) no habilitan el uploader por accidente", () => {
+  assert.equal(canUploadTransferProof("manual_review"), false)
+  assert.equal(canUploadTransferProof("mercadopago_unavailable"), false)
+  assert.equal(canUploadTransferProof("search_not_exhaustive"), false)
 })

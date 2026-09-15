@@ -8,8 +8,10 @@ import {
 } from "./transfer-verification-service.ts"
 import {
   getTransferMatchWindow,
+  getTransferMatchWindowExpirationCutoff,
   isRetryableManualReviewReason,
   RETRYABLE_MANUAL_REVIEW_REASONS,
+  TRANSFER_VERIFICATION_MAX_ATTEMPTS,
   type TransferManualReviewReason,
 } from "./transfer-auto-verification.ts"
 
@@ -39,6 +41,7 @@ interface RetryCandidateRow {
   created_at: string
   payment_status: string | null
   transfer_verification_failure_reason: string | null
+  transfer_verification_attempts: number | null
   transfer_payer_first_name: string | null
   transfer_payer_last_name: string | null
   transfer_payer_dni: string | null
@@ -68,6 +71,7 @@ export async function retryPendingTransferVerifications(
 ) {
   const attempt = deps.attempt ?? attemptTransferAutoVerification
   const nowIso = new Date().toISOString()
+  const windowCutoffIso = getTransferMatchWindowExpirationCutoff().toISOString()
   const startedAt = Date.now()
 
   const { data: candidates, error } = await admin
@@ -76,14 +80,17 @@ export async function retryPendingTransferVerifications(
     .eq("payment_method_id", "transferencia")
     .in("payment_status", ["pendiente_comprobante", "en_revision"])
     .eq("transfer_verification_status", "manual_review")
-    // P1 (starvation del cron): filtrar por motivo reintentable ACÁ, en la
-    // propia consulta SQL -- no sólo en JS más abajo. Antes, órdenes con un
-    // motivo PERMANENTE (dni_mismatch, multiple_candidates, etc.) podían
-    // ocupar los primeros N lugares del "order by ... asc" para siempre
-    // (nunca se les vuelve a intentar, así que su transfer_last_verification_at
-    // nunca avanza) y dejar sin turno a las que sí son reintentables. Con
-    // este filtro, esas órdenes permanentes ni siquiera entran al batch.
+    // P1 (starvation del cron, segunda auditoría): filtrar ACÁ, en la propia
+    // consulta SQL, TODO lo que ya no es un candidato real -- no sólo en JS
+    // después del LIMIT. Antes, órdenes con motivo permanente, intentos
+    // agotados o ventana vencida podían ocupar los primeros N lugares del
+    // "order by ... asc" para siempre (nunca se les vuelve a intentar, así
+    // que su transfer_last_verification_at nunca avanza) y dejar sin turno a
+    // las que sí son candidatas reales. Con estos filtros, esas órdenes ni
+    // siquiera entran al batch.
     .in("transfer_verification_failure_reason", RETRYABLE_MANUAL_REVIEW_REASONS)
+    .lt("transfer_verification_attempts", TRANSFER_VERIFICATION_MAX_ATTEMPTS)
+    .gte("created_at", windowCutoffIso)
     .not("transfer_amount_declared", "is", null)
     .not("transfer_payer_dni", "is", null)
     .neq("estado", "cancelado")
@@ -118,6 +125,10 @@ export async function retryPendingTransferVerifications(
       | null
 
     if (!reason || !isRetryableManualReviewReason(reason)) continue
+
+    if ((candidate.transfer_verification_attempts ?? 0) >= TRANSFER_VERIFICATION_MAX_ATTEMPTS) {
+      continue
+    }
 
     const { endDate } = getTransferMatchWindow(candidate.created_at)
     if (endDate.getTime() < Date.now()) continue

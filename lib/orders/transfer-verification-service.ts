@@ -53,12 +53,35 @@ function firstRow<T>(data: T | T[] | null): T | null {
   return Array.isArray(data) ? (data[0] ?? null) : data
 }
 
-async function persistDeclaredInput(
+/**
+ * P0 (tercera auditoría): TODO write perteneciente a un intento de
+ * verificación tiene que quedar fenceado por lease, no sólo confirm/release.
+ * Antes este UPDATE filtraba únicamente por orderId -- un intento viejo (A)
+ * que perdió su lease porque un intento nuevo (B) ya reclamó el mismo pedido
+ * podía seguir corriendo (por ejemplo, todavía terminando de resolver
+ * normalizeDeclaredDni o esperando el turno del event loop) y sobreescribir
+ * acá los datos declarados que B ya había guardado, aunque A ya no fuera el
+ * intento vigente. Ahora exige también transfer_verification_lease_id =
+ * leaseId: si el lease ya no es el vigente, este UPDATE no afecta ninguna
+ * fila (no-op), nunca pisa lo que escribió el intento vigente.
+ *
+ * Sin lease (nunca debería pasar tras un claim exitoso, pero se trata
+ * explícitamente en vez de dejar un camino especial): no se ejecuta ningún
+ * write -- un intento sin lease nunca puede escribir sobre una verificación
+ * reclamada.
+ */
+export async function persistDeclaredInput(
   admin: AdminClient,
   orderId: number,
   declared: TransferVerificationDeclaredInput,
   normalizedDni: string | null,
+  leaseId: string | null,
 ) {
+  if (!leaseId) {
+    console.warn("TRANSFER_VERIFICATION_PERSIST_DECLARED_INPUT_NO_LEASE", { orderId })
+    return
+  }
+
   await admin
     .from("ordenes")
     .update({
@@ -68,14 +91,32 @@ async function persistDeclaredInput(
       transfer_amount_declared: Number.isFinite(declared.amount) ? declared.amount : null,
     })
     .eq("id", orderId)
+    .eq("transfer_verification_lease_id", leaseId)
 }
 
-async function releaseVerificationLock(
+/**
+ * P0 (cuarta auditoría): regla absoluta -- si no hay un lease válido, el
+ * intento NO PUEDE ESCRIBIR NADA. Antes, sin leaseId el filtro de lease se
+ * omitía por completo (`if (leaseId) query = query.eq(...)`) y el UPDATE
+ * quedaba filtrando sólo por id + status='checking': un intento SIN lease
+ * (que nunca debería poder escribir nada) igual podía mover a
+ * manual_review/pending un pedido cuyo "checking" pertenecía a otro intento
+ * (B) vigente, pisando su estado. Ahora, sin lease, se aborta ANTES de
+ * construir el UPDATE -- nunca hay un camino que filtre "sólo por orderId".
+ * Con lease, el filtro por transfer_verification_lease_id es incondicional.
+ */
+export async function releaseVerificationLock(
   admin: AdminClient,
   orderId: number,
   fallbackStatus: "pending" | "manual_review",
   reason: TransferManualReviewReason | null,
+  leaseId: string | null,
 ) {
+  if (!leaseId) {
+    console.warn("TRANSFER_VERIFICATION_RELEASE_LOCK_NO_LEASE", { orderId })
+    return
+  }
+
   await admin
     .from("ordenes")
     .update({
@@ -84,6 +125,7 @@ async function releaseVerificationLock(
     })
     .eq("id", orderId)
     .eq("transfer_verification_status", "checking")
+    .eq("transfer_verification_lease_id", leaseId)
 }
 
 async function finalizeManualReview(
@@ -91,8 +133,9 @@ async function finalizeManualReview(
   orderId: number,
   reason: TransferManualReviewReason,
   fallbackOrder: SupabasePedido,
+  leaseId: string | null,
 ): Promise<TransferVerificationAttemptResult> {
-  await releaseVerificationLock(admin, orderId, "manual_review", reason)
+  await releaseVerificationLock(admin, orderId, "manual_review", reason, leaseId)
   const { data: refreshed } = await admin
     .from("ordenes")
     .select()
@@ -165,8 +208,14 @@ export async function attemptTransferAutoVerification(
     return { status: "rejected", message: "No se pudo iniciar la verificación." }
   }
 
+  // P0 (segunda auditoría): fencing token del intento vigente -- todo
+  // release/confirm posterior de ESTE intento tiene que quedar scopeado a
+  // este lease, para que un intento viejo (reemplazado por uno nuevo) nunca
+  // pueda pisar el estado del intento vigente al terminar tarde.
+  const leaseId = (claimedOrder.transfer_verification_lease_id as string | null) ?? null
+
   const normalizedDni = normalizeDeclaredDni(declared.dni)
-  await persistDeclaredInput(admin, orderId, declared, normalizedDni)
+  await persistDeclaredInput(admin, orderId, declared, normalizedDni, leaseId)
 
   const order = await expireTransferOrderIfNeeded(admin, claimedOrder)
 
@@ -174,7 +223,7 @@ export async function attemptTransferAutoVerification(
     order.estado === "cancelado" ||
     !ELIGIBLE_PAYMENT_STATUSES.has(order.payment_status ?? "")
   ) {
-    await releaseVerificationLock(admin, orderId, "pending", null)
+    await releaseVerificationLock(admin, orderId, "pending", null, leaseId)
     return {
       status: "rejected",
       message: "Tu pedido ya no admite verificación automática.",
@@ -194,10 +243,10 @@ export async function attemptTransferAutoVerification(
     declaredCents === null ||
     declaredCents !== expectedCents
   ) {
-    return finalizeManualReview(admin, orderId, "declared_amount_mismatch", order)
+    return finalizeManualReview(admin, orderId, "declared_amount_mismatch", order, leaseId)
   }
   if (!normalizedDeclaredDniForFastPath) {
-    return finalizeManualReview(admin, orderId, "declared_dni_invalid", order)
+    return finalizeManualReview(admin, orderId, "declared_dni_invalid", order, leaseId)
   }
 
   let searchResult: BankTransferSearchResult
@@ -209,7 +258,7 @@ export async function attemptTransferAutoVerification(
       orderId,
       message: error instanceof Error ? error.message : String(error),
     })
-    return finalizeManualReview(admin, orderId, "mercadopago_unavailable", order)
+    return finalizeManualReview(admin, orderId, "mercadopago_unavailable", order, leaseId)
   }
 
   // P0: una auto-confirmación sólo puede ocurrir si se puede demostrar que
@@ -223,7 +272,7 @@ export async function attemptTransferAutoVerification(
       orderId,
       candidatesFound: searchResult.candidates.length,
     })
-    return finalizeManualReview(admin, orderId, "search_not_exhaustive", order)
+    return finalizeManualReview(admin, orderId, "search_not_exhaustive", order, leaseId)
   }
 
   const matchResult = matchBankTransferPayment({
@@ -234,7 +283,7 @@ export async function attemptTransferAutoVerification(
   })
 
   if (matchResult.kind === "manual_review") {
-    return finalizeManualReview(admin, orderId, matchResult.reason, order)
+    return finalizeManualReview(admin, orderId, matchResult.reason, order, leaseId)
   }
 
   const { candidate, dniDerivation } = matchResult
@@ -252,6 +301,7 @@ export async function attemptTransferAutoVerification(
       p_matched_bank_transfer_id: candidate.bankTransferId,
       p_matched_date_created: candidate.dateCreated,
       p_matched_date_approved: candidate.dateApproved,
+      p_lease_id: leaseId,
     },
   )
 
@@ -259,18 +309,36 @@ export async function attemptTransferAutoVerification(
     const code = extractErrorCode(confirmError?.message)
 
     if (code === "TRANSFER_PAYMENT_ID_ALREADY_USED") {
-      return finalizeManualReview(admin, orderId, "payment_id_already_used", order)
+      return finalizeManualReview(admin, orderId, "payment_id_already_used", order, leaseId)
     }
 
     if (code === "AMOUNT_MISMATCH") {
-      return finalizeManualReview(admin, orderId, "expected_amount_changed", order)
+      return finalizeManualReview(admin, orderId, "expected_amount_changed", order, leaseId)
+    }
+
+    // P0 (tercera auditoría): este intento ya no es (o nunca fue) el
+    // vigente -- otro intento reclamó el pedido y avanzó (o ya confirmó)
+    // mientras éste seguía corriendo, o el lease vigente venció, o el pedido
+    // ya no está en estado "checking". NUNCA se toca el estado de la orden
+    // en ninguno de estos casos: hacerlo podría pisar lo que el intento
+    // vigente ya haya escrito.
+    if (
+      code === "LEASE_EXPIRED" ||
+      code === "LEASE_MISSING" ||
+      code === "LEASE_MISMATCH" ||
+      code === "INVALID_VERIFICATION_STATE"
+    ) {
+      return {
+        status: "rejected",
+        message: "Tu verificación fue reemplazada por un intento más reciente.",
+      }
     }
 
     console.error("TRANSFER_AUTO_VERIFICATION_CONFIRM_ERROR", {
       orderId,
       message: confirmError?.message,
     })
-    await releaseVerificationLock(admin, orderId, "pending", null)
+    await releaseVerificationLock(admin, orderId, "pending", null, leaseId)
     return {
       status: "rejected",
       message: "No se pudo confirmar la transferencia. Intentá nuevamente.",

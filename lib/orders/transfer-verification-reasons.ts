@@ -43,6 +43,38 @@ export function isRetryableManualReviewReason(
   return (RETRYABLE_MANUAL_REVIEW_REASONS as readonly string[]).includes(reason)
 }
 
+/**
+ * Único criterio de "¿este pedido por transferencia puede recibir un
+ * comprobante para revisión manual ahora mismo?" -- fuente única de verdad
+ * compartida por el endpoint de verificación automática
+ * (app/api/transferencia/[orderId]/verificar/route.ts), el endpoint que
+ * recibe el comprobante (app/api/payment-proofs/route.ts) y los componentes
+ * de UI (customer-payment-proof.tsx, transfer-auto-verification-form.tsx).
+ * Antes cada uno mantenía su propia lista hardcodeada, y podían quedar
+ * inconsistentes entre sí (ej.: auto_verified_stock_conflict mostraba el
+ * uploader en la UI pero el backend respondía 409). Regla general: mientras
+ * el pago NO esté confirmado y no haya sido rechazado sin vía de corrección,
+ * el cliente siempre puede subir un comprobante como respaldo -- incluida
+ * una transferencia ya identificada en Mercado Pago pero bloqueada por
+ * conflicto de stock (el dinero es real, un admin puede necesitar ese
+ * comprobante adicional antes de resolver manualmente).
+ */
+export const TRANSFER_PROOF_UPLOAD_ELIGIBLE_PAYMENT_STATUSES = [
+  "pendiente_comprobante",
+  "en_revision",
+  "rechazado",
+  TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+] as const
+
+export function canUploadTransferProof(
+  paymentStatus: string | null | undefined,
+): boolean {
+  const status = paymentStatus || "pendiente_comprobante"
+  return (TRANSFER_PROOF_UPLOAD_ELIGIBLE_PAYMENT_STATUSES as readonly string[]).includes(
+    status,
+  )
+}
+
 /** Copy segura y genérica para el cliente -- nunca expone datos de Mercado Pago ni de otros pedidos. */
 export function getManualReviewCustomerMessage(): string {
   return "No pudimos validar tu transferencia automáticamente."

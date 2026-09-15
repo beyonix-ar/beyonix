@@ -272,6 +272,7 @@ export interface SupabasePedido {
   transfer_last_verification_at?: string | null
   transfer_verification_failure_reason?: string | null
   transfer_matched_payment_id?: string | null
+  transfer_verification_lease_id?: string | null
   transfer_match_snapshot?: {
     operationType?: string | null
     paymentMethodId?: string | null

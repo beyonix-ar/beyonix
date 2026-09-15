@@ -1,7 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { attemptTransferAutoVerification } from "./transfer-verification-service.ts"
+import {
+  attemptTransferAutoVerification,
+  persistDeclaredInput,
+  releaseVerificationLock,
+} from "./transfer-verification-service.ts"
 import { TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS } from "./transfer-auto-verification.ts"
 import type { MercadoPagoBankTransferCandidate } from "../mercadopago/bank-transfer-search.ts"
 
@@ -21,6 +25,7 @@ function baseOrderRow(overrides: Record<string, unknown> = {}) {
     total: 900,
     cliente_email: "cliente@example.com",
     cliente_nombre: "Cliente Test",
+    transfer_verification_lease_id: "lease-1",
     ...overrides,
   }
 }
@@ -456,6 +461,53 @@ test("pedido con el pago ya resuelto (confirmado/rechazado) -> rejected desde el
   assert.equal(result.status, "rejected")
 })
 
+test("propaga el lease id recibido del claim a confirm_transfer_auto_verification (fencing token del intento vigente)", async () => {
+  const orderRow = baseOrderRow({ transfer_verification_lease_id: "lease-xyz" })
+  const { admin, rpcCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+      confirm_transfer_auto_verification: { data: { ...orderRow, payment_status: "confirmado" }, error: null },
+    },
+  })
+
+  await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+
+  const confirmCall = rpcCalls.find((c) => c.name === "confirm_transfer_auto_verification")
+  assert.equal(confirmCall?.args.p_lease_id, "lease-xyz")
+})
+
+test("LEASE_EXPIRED (un intento más nuevo ya reclamó el pedido): rejected SIN tocar el estado de la orden -- nunca pisa lo que el intento vigente ya avanzó", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, updateCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+      confirm_transfer_auto_verification: {
+        data: null,
+        error: { message: "LEASE_EXPIRED: el intento de verificación ya no es válido." },
+      },
+    },
+  })
+
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+
+  assert.equal(result.status, "rejected")
+  assert.equal(
+    updateCalls.some((c) => c.table === "ordenes" && "transfer_verification_status" in c.values),
+    false,
+    "un intento que perdió su lease nunca debe escribir transfer_verification_status -- podría pisar al intento vigente",
+  )
+})
+
 test("dos transferencias con el mismo monto (ambiguo) -> manual_review, nunca confirma al azar", async () => {
   const orderRow = baseOrderRow()
   const { admin, rpcCalls } = createFakeAdmin({
@@ -474,4 +526,157 @@ test("dos transferencias con el mismo monto (ambiguo) -> manual_review, nunca co
   assert.equal(result.status, "manual_review")
   if (result.status === "manual_review") assert.equal(result.reason, "multiple_candidates")
   assert.equal(rpcCalls.some((c) => c.name === "confirm_transfer_auto_verification"), false)
+})
+
+/**
+ * Fake de "ordenes" con semántica de WHERE REAL (a diferencia de
+ * createFakeAdmin de arriba, que aplica cualquier UPDATE incondicionalmente
+ * vía Object.assign, sin mirar los .eq() encadenados). Necesario acá porque
+ * lo que este test verifica es exactamente el comportamiento del WHERE: un
+ * UPDATE cuyo filtro no matchea la fila actual no debe tener efecto alguno
+ * -- eso es lo que en Postgres real se ve como "0 filas afectadas", y es lo
+ * que prueba que persistDeclaredInput queda fenceado por lease.
+ */
+function createRealWhereFakeAdmin(initialRow: Record<string, unknown>) {
+  let row = { ...initialRow }
+  const admin = {
+    from(table: string) {
+      if (table !== "ordenes") {
+        throw new Error(`fake sin soporte para la tabla ${table}`)
+      }
+      const conditions: Array<[string, unknown]> = []
+      let pendingUpdate: Record<string, unknown> | null = null
+      const builder: {
+        update: (values: Record<string, unknown>) => typeof builder
+        eq: (column: string, value: unknown) => typeof builder
+        then: (resolve: (value: { data: unknown; error: null }) => unknown) => unknown
+      } = {
+        update(values) {
+          pendingUpdate = values
+          return builder
+        },
+        eq(column, value) {
+          conditions.push([column, value])
+          return builder
+        },
+        then(resolve) {
+          const matches = conditions.every(([column, value]) => row[column] === value)
+          if (pendingUpdate && matches) {
+            row = { ...row, ...pendingUpdate }
+          }
+          return Promise.resolve({
+            data: matches ? [{ ...row }] : [],
+            error: null,
+          }).then(resolve)
+        },
+      }
+      return builder
+    },
+  }
+  return { admin, getRow: () => ({ ...row }) }
+}
+
+test("FENCING (tercera auditoría): un intento viejo (lease A) nunca puede sobreescribir los datos declarados que ya guardó el intento vigente (lease B)", async () => {
+  const { admin, getRow } = createRealWhereFakeAdmin({
+    id: 42,
+    transfer_verification_lease_id: "lease-B",
+    transfer_amount_declared: null,
+  })
+
+  // 1) A reclamó lease A (ya vencido/reemplazado -- por eso la fila ya tiene
+  //    lease-B, no lease-A).
+  // 2) B obtuvo lease B (ya reflejado en la fila de arriba).
+  // 3) B guarda su monto declarado (900) usando su lease vigente.
+  await persistDeclaredInput(
+    admin as never,
+    42,
+    { firstName: "B", lastName: "Vigente", dni: "30111222", amount: 900 },
+    "30111222",
+    "lease-B",
+  )
+  assert.equal(getRow().transfer_amount_declared, 900, "B debe poder guardar su propio monto")
+
+  // 4) A, todavía corriendo con su lease viejo, intenta guardar 850.
+  await persistDeclaredInput(
+    admin as never,
+    42,
+    { firstName: "A", lastName: "Viejo", dni: "30111222", amount: 850 },
+    "30111222",
+    "lease-A",
+  )
+
+  // 5)/6) El UPDATE de A no debe afectar ninguna fila: el monto sigue siendo
+  // el que guardó B, nunca el de A.
+  assert.equal(
+    getRow().transfer_amount_declared,
+    900,
+    "el intento viejo (lease A) nunca debe poder sobreescribir lo que ya guardó el intento vigente (lease B)",
+  )
+  assert.equal(getRow().transfer_verification_lease_id, "lease-B", "el lease de la fila tampoco cambia")
+
+  // 7) B puede seguir escribiendo normalmente después.
+  await persistDeclaredInput(
+    admin as never,
+    42,
+    { firstName: "B", lastName: "Vigente", dni: "30111222", amount: 950 },
+    "30111222",
+    "lease-B",
+  )
+  assert.equal(getRow().transfer_amount_declared, 950, "B sigue pudiendo escribir con su propio lease")
+})
+
+test("FENCING: persistDeclaredInput sin lease (null) nunca ejecuta ningún write -- un intento sin lease no puede escribir sobre una verificación reclamada", async () => {
+  const { admin, getRow } = createRealWhereFakeAdmin({
+    id: 42,
+    transfer_verification_lease_id: "lease-B",
+    transfer_amount_declared: 900,
+  })
+
+  await persistDeclaredInput(
+    admin as never,
+    42,
+    { firstName: "A", lastName: "SinLease", dni: "30111222", amount: 1 },
+    "30111222",
+    null,
+  )
+
+  assert.equal(getRow().transfer_amount_declared, 900, "sin lease, no debe ejecutarse ningún UPDATE")
+})
+
+test("FENCING (cuarta auditoría): un intento SIN lease (A) que entra por el camino de error/monto inválido nunca puede tocar el status/failure_reason de un intento vigente (B) -- 0 filas afectadas, B queda intacto", async () => {
+  const { admin, getRow } = createRealWhereFakeAdmin({
+    id: 42,
+    // 1) La fila tiene lease B, checking, sin motivo de fallo todavía.
+    transfer_verification_lease_id: "lease-B",
+    transfer_verification_status: "checking",
+    transfer_verification_failure_reason: null,
+    transfer_payer_first_name: "B",
+    transfer_payer_last_name: "Vigente",
+    transfer_payer_dni: "30111222",
+    transfer_amount_declared: 900,
+  })
+
+  // 2)/3) El intento A NO tiene lease (leaseId=null) y entra por el camino
+  // que normalmente usa finalizeManualReview/releaseVerificationLock ante un
+  // monto inválido u otro error -- antes, sin lease, el filtro se omitía y
+  // el UPDATE sólo filtraba por id + status='checking', pudiendo mover el
+  // intento B vigente a manual_review igual.
+  await releaseVerificationLock(
+    admin as never,
+    42,
+    "manual_review",
+    "declared_amount_mismatch",
+    null,
+  )
+
+  // 4) NO debe cambiar status.
+  assert.equal(getRow().transfer_verification_status, "checking", "el status de B no debe tocarse")
+  // 5) NO debe cambiar failure_reason.
+  assert.equal(getRow().transfer_verification_failure_reason, null, "el failure_reason de B no debe tocarse")
+  // 6) NO debe tocar inputs declarados (releaseVerificationLock no los toca
+  // directamente, pero se verifica igual que ningún campo de la fila cambió).
+  assert.equal(getRow().transfer_payer_first_name, "B")
+  assert.equal(getRow().transfer_amount_declared, 900)
+  // 7) B sigue intacto: su lease tampoco cambia.
+  assert.equal(getRow().transfer_verification_lease_id, "lease-B")
 })
