@@ -34,13 +34,6 @@ const formatPriceNumber = (price: number) =>
     maximumFractionDigits: 0,
   }).format(Number.isFinite(price) ? price : 0)
 
-function formatHoursMinutes(ms: number) {
-  const totalMinutes = Math.max(Math.floor(ms / 60000), 0)
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
-  return `${hours} h ${minutes} min`
-}
-
 const inputClassName =
   "h-10 w-full rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] px-3 text-sm text-[var(--account-text-primary)] outline-none transition-colors placeholder:text-[var(--account-text-muted)] focus:border-[var(--account-accent)]"
 const labelClassName =
@@ -131,13 +124,9 @@ function CopyableField({
 
 function TransferInstructionsStep({
   order,
-  remainingMs,
-  deadlineExpired,
   onContinue,
 }: {
   order: SupabasePedido
-  remainingMs: number | null
-  deadlineExpired: boolean
   onContinue: () => void
 }) {
   const [copiedField, setCopiedField] = useState<"alias" | "cvu" | null>(null)
@@ -209,14 +198,6 @@ function TransferInstructionsStep({
       </BeyonixButton>
       <p className="mt-2 text-center text-xs leading-5 text-[var(--account-text-secondary)]">
         Cuando hayas realizado la transferencia, continuá para validar el pago.
-      </p>
-
-      <p className="mt-4 text-center text-11px text-[var(--account-text-secondary)]">
-        {deadlineExpired
-          ? "El plazo para completar el pago venció."
-          : remainingMs !== null
-            ? `Tiempo disponible: ${formatHoursMinutes(remainingMs)}`
-            : "Tenés hasta 48 h para completar el pago."}
       </p>
     </StepCard>
   )
@@ -590,15 +571,11 @@ function TransferFlowMessage({
 
 function TransferStepFlow({
   order,
-  remainingMs,
-  deadlineExpired,
   onUpdated,
   ordersHref,
   homeHref,
 }: {
   order: SupabasePedido
-  remainingMs: number | null
-  deadlineExpired: boolean
   onUpdated: (order: SupabasePedido) => void
   ordersHref: string
   homeHref: string
@@ -643,8 +620,6 @@ function TransferStepFlow({
   return (
     <TransferInstructionsStep
       order={order}
-      remainingMs={remainingMs}
-      deadlineExpired={deadlineExpired}
       onContinue={() => setStep("verify")}
     />
   )
@@ -656,8 +631,6 @@ export function TransferFlow({
   orderError,
   order,
   paymentConfirmed,
-  remainingMs,
-  deadlineExpired,
   onUpdated,
   loginHref,
   ordersHref,
@@ -668,8 +641,6 @@ export function TransferFlow({
   orderError: string
   order: SupabasePedido | null
   paymentConfirmed: boolean
-  remainingMs: number | null
-  deadlineExpired: boolean
   onUpdated: (order: SupabasePedido) => void
   loginHref: string
   ordersHref: string
@@ -708,8 +679,6 @@ export function TransferFlow({
       ) : (
         <TransferStepFlow
           order={order}
-          remainingMs={remainingMs}
-          deadlineExpired={deadlineExpired}
           onUpdated={onUpdated}
           ordersHref={ordersHref}
           homeHref={homeHref}

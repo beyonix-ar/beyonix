@@ -14,9 +14,6 @@ import { useCart } from "@/context/cart-context"
 import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
-const TRANSFER_PAYMENT_WINDOW_MS = 48 * 60 * 60 * 1000
-const COUNTDOWN_TICK_MS = 60 * 1000
-
 function isCheckoutPaymentConfirmed(order: SupabasePedido | null) {
   if (!order) return false
 
@@ -42,9 +39,6 @@ function CheckoutSuccessContent() {
   const [orderLoading, setOrderLoading] = useState(isTransfer)
   const [orderError, setOrderError] = useState("")
   const [sessionExpired, setSessionExpired] = useState(false)
-  const [remainingPaymentMs, setRemainingPaymentMs] = useState<number | null>(
-    null,
-  )
   const paymentConfirmed = isCheckoutPaymentConfirmed(order)
   const successReturnUrl = `/checkout/success${
     searchParams.toString() ? `?${searchParams.toString()}` : ""
@@ -60,9 +54,6 @@ function CheckoutSuccessContent() {
       order.payment_status === "pendiente_comprobante" &&
       !order.payment_proof_url,
   )
-  const deadlineExpired =
-    order?.payment_status === "vencido_falta_comprobante" ||
-    remainingPaymentMs === 0
 
   useEffect(() => {
     if (hasClearedCartRef.current) return
@@ -126,48 +117,6 @@ function CheckoutSuccessContent() {
   }, [isTransfer, orderId])
 
   useEffect(() => {
-    if (!isProofPending || !order?.created_at) {
-      setRemainingPaymentMs(null)
-      return
-    }
-
-    const createdAt = new Date(order.created_at).getTime()
-    if (!Number.isFinite(createdAt)) {
-      setRemainingPaymentMs(null)
-      return
-    }
-
-    // El backend expira transferencias a las 48 h desde created_at.
-    // Si se agrega payment_deadline al modelo, debe usarse aquí directamente.
-    const deadline = createdAt + TRANSFER_PAYMENT_WINDOW_MS
-    let intervalId: number | undefined
-
-    const updateRemainingTime = () => {
-      const nextValue = Math.max(deadline - Date.now(), 0)
-      setRemainingPaymentMs(nextValue)
-
-      if (nextValue === 0 && intervalId !== undefined) {
-        window.clearInterval(intervalId)
-      }
-    }
-
-    updateRemainingTime()
-
-    if (deadline > Date.now()) {
-      // Sólo texto discreto en minutos (ver TransferInstructionsStep) -- no
-      // necesita granularidad de segundos, así que actualiza una vez por
-      // minuto en vez de una vez por segundo.
-      intervalId = window.setInterval(updateRemainingTime, COUNTDOWN_TICK_MS)
-    }
-
-    return () => {
-      if (intervalId !== undefined) {
-        window.clearInterval(intervalId)
-      }
-    }
-  }, [isProofPending, order?.created_at])
-
-  useEffect(() => {
     if (!isProofPending) return
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -220,8 +169,6 @@ function CheckoutSuccessContent() {
           orderError={orderError}
           order={order}
           paymentConfirmed={paymentConfirmed}
-          remainingMs={remainingPaymentMs}
-          deadlineExpired={deadlineExpired}
           onUpdated={(updatedOrder) => void handleProofUploaded(updatedOrder)}
           loginHref={loginHref}
           ordersHref={orderStatusHref}

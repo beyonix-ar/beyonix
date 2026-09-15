@@ -8,31 +8,6 @@ import { SiteHeader } from "@/components/site-header"
 import { Footer } from "@/components/footer"
 import { CookieConsentAlert } from "@/components/cookie-consent-alert"
 import { useClientPresence } from "@/hooks/use-client-presence"
-import { useAuth } from "@/context/auth-context"
-import { useOrderNotifications } from "@/hooks/use-order-notifications"
-import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
-
-function StandaloneAdminNotifications() {
-  const { isInternal } = useAuth()
-  const notifications = useOrderNotifications(isInternal)
-
-  if (!isInternal) return null
-
-  return (
-    <div className="fixed right-4 top-4 z-100">
-      <AdminNotificationsBell
-        variant="storefront"
-        count={notifications.notificationCount}
-        tone={notifications.notificationTone}
-        groups={notifications.notificationGroups}
-        notifications={notifications.notifications}
-        loading={notifications.loading}
-        error={notifications.error}
-        onRetry={notifications.reloadNotificationCount}
-      />
-    </div>
-  )
-}
 
 function forceScrollTop() {
   window.scrollTo(0, 0)
@@ -92,14 +67,12 @@ export function LayoutShell({
 
   useClientPresence(!isAuthPage && !isPasswordReset)
 
-  // Admin layout
+  // Checkout layout: cada página de /checkout* maneja su propio header
+  // (incluida la campana de notificaciones para staff/admin) -- /checkout
+  // en su propio header inline, success/failure/pending vía
+  // components/public-minimal-header.tsx.
   if (isCheckoutPage) {
-    return (
-      <>
-        {pathname !== "/checkout" && <StandaloneAdminNotifications />}
-        {children}
-      </>
-    )
+    return children
   }
 
   // /reset-password se siente parte de BEYONIX desde el primer momento: usa

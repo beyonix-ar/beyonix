@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Ban,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -33,6 +34,7 @@ import {
   Truck,
   Upload,
   X,
+  XCircle,
   type LucideIcon,
 } from "lucide-react"
 
@@ -79,6 +81,13 @@ import {
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import {
+  ADMIN_ORDER_CANCELLATION_OTHER_REASON,
+  ADMIN_ORDER_CANCELLATION_REASONS,
+  canCancelOrder,
+  canRejectOrder,
+  type AdminOrderCancellationAction,
+} from "@/lib/orders/admin-order-cancellation-reasons"
 import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-payment-status"
 import { describeManualReviewReason } from "@/lib/orders/transfer-verification-reasons"
 import { cn } from "@/lib/utils"
@@ -95,6 +104,7 @@ import {
   AdminSearchInput,
   AdminSelect,
   AdminSkeleton,
+  AdminTextarea,
 } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
@@ -1585,6 +1595,7 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       "cancellation_requested",
       "cancellation_requested_refund_pending",
       "order_cancelled_refund_pending",
+      "order_rejected_by_admin",
       "order_status_changed",
     ].includes(event.action) &&
     (
@@ -1594,6 +1605,7 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       event.metadata?.newEstado === "cancelado"
     ),
   )
+  const rejectedByAdmin = cancellationAuditEvent?.action === "order_rejected_by_admin"
   const cancelledAt =
     pedido.cancellation_requested_at ||
     pedido.cancelled_at ||
@@ -1650,7 +1662,8 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     cancellationAuditEvent?.action.startsWith("cancellation_requested")
       ? "cliente"
       : cancellationAuditEvent?.actor_type === "admin" ||
-          cancellationAuditEvent?.action === "order_cancelled_refund_pending"
+          cancellationAuditEvent?.action === "order_cancelled_refund_pending" ||
+          rejectedByAdmin
         ? "administrador"
         : cancellationAuditEvent?.actor_type === "system"
           ? "automático"
@@ -1658,21 +1671,29 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
             ? "cliente"
           : null
   const cancellationTitle =
-    cancellationOrigin === "cliente"
-      ? "Pedido cancelado por el cliente"
-      : cancellationOrigin === "administrador"
-        ? "Pedido cancelado por el administrador"
-        : cancellationOrigin === "automático"
-          ? "Pedido cancelado automáticamente"
-          : "Pedido cancelado"
+    cancellationOrigin === "administrador" && rejectedByAdmin
+      ? "Pedido rechazado por el administrador"
+      : cancellationOrigin === "cliente"
+        ? "Pedido cancelado por el cliente"
+        : cancellationOrigin === "administrador"
+          ? "Pedido cancelado por el administrador"
+          : cancellationOrigin === "automático"
+            ? "Pedido cancelado automáticamente"
+            : "Pedido cancelado"
   const cancellationDescription =
-    cancellationOrigin === "cliente"
-      ? "El cliente solicitó la cancelación del pedido."
-      : cancellationOrigin === "administrador"
-        ? "Un administrador canceló el pedido."
-        : cancellationOrigin === "automático"
-          ? "El sistema interrumpió el flujo del pedido."
-          : "La compra fue cancelada."
+    cancellationOrigin === "administrador" && rejectedByAdmin
+      ? (typeof cancellationAuditEvent?.metadata?.reasonText === "string"
+          ? `Un administrador rechazó el pedido. Motivo: ${cancellationAuditEvent.metadata.reasonText}.`
+          : "Un administrador rechazó el pedido.")
+      : cancellationOrigin === "cliente"
+        ? "El cliente solicitó la cancelación del pedido."
+        : cancellationOrigin === "administrador"
+          ? (typeof cancellationAuditEvent?.metadata?.reasonText === "string"
+              ? `Un administrador canceló el pedido. Motivo: ${cancellationAuditEvent.metadata.reasonText}.`
+              : "Un administrador canceló el pedido.")
+          : cancellationOrigin === "automático"
+            ? "El sistema interrumpió el flujo del pedido."
+            : "La compra fue cancelada."
 
   addEvent({
     key: "order-created",
@@ -4665,6 +4686,7 @@ function PedidoDetailModal({
   onClaimChange,
   onRefundUpdated,
   onWarrantyUpdated,
+  onRequestCancelReject,
   embedded = false,
 }: {
   pedido: SupabasePedido
@@ -4697,6 +4719,10 @@ function PedidoDetailModal({
   onClaimChange: (pedidoId: number, claim: SupabaseOrderClaim) => void
   onRefundUpdated: (order: SupabasePedido) => void
   onWarrantyUpdated: () => Promise<void>
+  onRequestCancelReject: (
+    pedido: SupabasePedido,
+    action: AdminOrderCancellationAction,
+  ) => void
   embedded?: boolean
 }) {
   const router = useRouter()
@@ -5185,6 +5211,33 @@ function PedidoDetailModal({
             </button>
           )}
         </header>
+        {(canRejectOrder(pedido) || canCancelOrder(pedido)) && (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-white/8 bg-[#05070A] px-3 py-2 sm:px-4">
+            <p className="mr-auto text-10px font-bold uppercase tracking-widest text-white/38">
+              Acciones administrativas
+            </p>
+            {canRejectOrder(pedido) && (
+              <button
+                type="button"
+                onClick={() => onRequestCancelReject(pedido, "reject")}
+                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-red-400/25 bg-red-500/6 px-3 text-10px font-black uppercase tracking-wide text-red-200/90 transition-colors hover:border-red-400/55 hover:bg-red-500/14 hover:text-red-100"
+              >
+                <XCircle className="size-3.5" />
+                Rechazar pedido
+              </button>
+            )}
+            {canCancelOrder(pedido) && (
+              <button
+                type="button"
+                onClick={() => onRequestCancelReject(pedido, "cancel")}
+                className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-red-400/25 bg-red-500/6 px-3 text-10px font-black uppercase tracking-wide text-red-200/90 transition-colors hover:border-red-400/55 hover:bg-red-500/14 hover:text-red-100"
+              >
+                <Ban className="size-3.5" />
+                Cancelar pedido
+              </button>
+            )}
+          </div>
+        )}
         <div className={`custom-scrollbar min-h-0 flex-1 bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
           <div
             className={`flex min-w-0 flex-col gap-3 p-2.5 sm:p-3 lg:flex-row ${
@@ -6679,6 +6732,136 @@ function ForcedStatusConfirmModal({
   )
 }
 
+type CancelRejectRequest = {
+  pedido: SupabasePedido
+  action: AdminOrderCancellationAction
+} | null
+
+function AdminOrderCancelRejectModal({
+  request,
+  loading,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  request: CancelRejectRequest
+  loading: boolean
+  error: string
+  onCancel: () => void
+  onConfirm: (reasonCode: string, reasonText: string) => void
+}) {
+  const [reasonCode, setReasonCode] = useState("")
+  const [reasonText, setReasonText] = useState("")
+
+  useEffect(() => {
+    setReasonCode("")
+    setReasonText("")
+  }, [request?.pedido.id, request?.action])
+
+  if (!request) return null
+
+  const isReject = request.action === "reject"
+  const isOtherReason = reasonCode === ADMIN_ORDER_CANCELLATION_OTHER_REASON
+  const canConfirm = reasonCode !== "" && (!isOtherReason || reasonText.trim().length >= 3)
+
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-red-400/25 bg-[#101010] shadow-2xl shadow-black/80">
+        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#2a1014_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
+          <p className="text-11px font-black uppercase tracking-widest text-red-300">
+            Acción administrativa
+          </p>
+          <h2 className="mt-2 text-xl font-black text-white">
+            {isReject ? "Rechazar pedido" : "Cancelar pedido"}
+          </h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+            Esta acción cambiará el estado del pedido #{formatPublicOrderId(request.pedido.id)} y
+            puede afectar stock, pago y facturación.
+          </p>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          <div>
+            <label
+              htmlFor="cancel-reject-reason"
+              className="mb-1.5 block text-10px font-black uppercase tracking-widest text-white/48"
+            >
+              Motivo
+            </label>
+            <AdminSelect
+              title="Motivo"
+              ariaLabel="Motivo"
+              value={reasonCode}
+              onChange={setReasonCode}
+              disabled={loading}
+              compact
+            >
+              <option value="" disabled>
+                Seleccioná un motivo
+              </option>
+              {ADMIN_ORDER_CANCELLATION_REASONS.map((reason) => (
+                <option key={reason.value} value={reason.value}>
+                  {reason.label}
+                </option>
+              ))}
+            </AdminSelect>
+          </div>
+
+          {isOtherReason && (
+            <AdminTextarea
+              title="Detalle del motivo"
+              ariaLabel="Detalle del motivo"
+              value={reasonText}
+              onChange={setReasonText}
+              placeholder="Contanos brevemente el motivo..."
+              maxLength={600}
+              disabled={loading}
+            />
+          )}
+
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-xs font-semibold leading-5 text-amber-100">
+            Si el pedido ya tiene pago confirmado, va a quedar con reintegro
+            pendiente -- esto NO dispara un reembolso automático de Mercado
+            Pago ni emite una Nota de Crédito. Esas acciones siguen siendo
+            manuales, desde sus propios botones.
+          </div>
+
+          {error && (
+            <p className="rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onConfirm(reasonCode, isOtherReason ? reasonText.trim() : "")
+            }
+            disabled={loading || !canConfirm}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-red-400/45 bg-red-500/15 px-4 text-11px font-black uppercase tracking-wide text-red-100 transition-colors hover:border-red-400/70 hover:bg-red-500/25 disabled:cursor-wait disabled:opacity-50"
+          >
+            {loading
+              ? "Procesando..."
+              : isReject
+                ? "Confirmar rechazo"
+                : "Confirmar cancelación"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AdminPedidos({
   initialOrderId,
 }: {
@@ -6732,6 +6915,10 @@ export function AdminPedidos({
   const [trackingStatusRequest, setTrackingStatusRequest] =
     useState<TrackingStatusRequest>(null)
   const [trackingStatusLoading, setTrackingStatusLoading] = useState(false)
+  const [cancelRejectRequest, setCancelRejectRequest] =
+    useState<CancelRejectRequest>(null)
+  const [cancelRejectLoading, setCancelRejectLoading] = useState(false)
+  const [cancelRejectError, setCancelRejectError] = useState("")
 
   useEffect(() => {
     if (loading) return
@@ -7270,6 +7457,63 @@ export function AdminPedidos({
     void reloadPedidos({ silent: true })
   }
 
+  const confirmCancelReject = async (reasonCode: string, reasonText: string) => {
+    if (!cancelRejectRequest) return
+
+    setCancelRejectLoading(true)
+    setCancelRejectError("")
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setCancelRejectError("La sesión administrativa venció.")
+        return
+      }
+
+      const response = await fetch(
+        `/api/admin/pedidos/${cancelRejectRequest.pedido.id}/cancel`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: cancelRejectRequest.action,
+            reasonCode,
+            reasonText,
+          }),
+        },
+      )
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        error?: string
+      }
+
+      if (!response.ok || !data.order) {
+        setCancelRejectError(data.error || "No se pudo procesar la acción.")
+        return
+      }
+
+      handleRefundUpdated(data.order)
+      setNotice({
+        type: "ok",
+        message:
+          cancelRejectRequest.action === "reject"
+            ? "Pedido rechazado."
+            : "Pedido cancelado.",
+      })
+      notifyOrderNotificationsChanged()
+      setCancelRejectRequest(null)
+    } catch {
+      setCancelRejectError("No se pudo procesar la acción.")
+    } finally {
+      setCancelRejectLoading(false)
+    }
+  }
 
   const handleOpenPaymentProof = async (pedidoId: number) => {
     const {
@@ -7505,9 +7749,24 @@ export function AdminPedidos({
           onClaimChange={handleClaimChange}
           onRefundUpdated={handleRefundUpdated}
           onWarrantyUpdated={() => reloadPedidos({ silent: true })}
+          onRequestCancelReject={(pedido, action) =>
+            setCancelRejectRequest({ pedido, action })
+          }
         />
         <ForcedStatusConfirmModal request={forcedStatusRequest} loading={forcedStatusLoading} onCancel={() => setForcedStatusRequest(null)} onConfirm={() => void confirmForcedStatusChange()} />
         <TrackingStatusModal request={trackingStatusRequest} loading={trackingStatusLoading} onCancel={() => setTrackingStatusRequest(null)} onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)} />
+        <AdminOrderCancelRejectModal
+          request={cancelRejectRequest}
+          loading={cancelRejectLoading}
+          error={cancelRejectError}
+          onCancel={() => {
+            setCancelRejectRequest(null)
+            setCancelRejectError("")
+          }}
+          onConfirm={(reasonCode, reasonText) =>
+            void confirmCancelReject(reasonCode, reasonText)
+          }
+        />
       </>
     )
   }
@@ -7902,6 +8161,9 @@ export function AdminPedidos({
           onClaimChange={handleClaimChange}
           onRefundUpdated={handleRefundUpdated}
           onWarrantyUpdated={() => reloadPedidos({ silent: true })}
+          onRequestCancelReject={(pedido, action) =>
+            setCancelRejectRequest({ pedido, action })
+          }
         />
       )}
       <ForcedStatusConfirmModal
@@ -7915,6 +8177,18 @@ export function AdminPedidos({
         loading={trackingStatusLoading}
         onCancel={() => setTrackingStatusRequest(null)}
         onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)}
+      />
+      <AdminOrderCancelRejectModal
+        request={cancelRejectRequest}
+        loading={cancelRejectLoading}
+        error={cancelRejectError}
+        onCancel={() => {
+          setCancelRejectRequest(null)
+          setCancelRejectError("")
+        }}
+        onConfirm={(reasonCode, reasonText) =>
+          void confirmCancelReject(reasonCode, reasonText)
+        }
       />
     </div>
   )
