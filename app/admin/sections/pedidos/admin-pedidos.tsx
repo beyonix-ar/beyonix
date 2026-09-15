@@ -2111,17 +2111,17 @@ function RefundManagementPanel({
     <section className="admin-order-cancellation-panel rounded-xl border p-3">
       <div className="admin-order-cancellation-header border-b pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="admin-order-cancellation-main-icon">
+          <span className={`admin-order-cancellation-main-icon ${refunded || rejectedByAdmin ? "is-success" : ""}`}>
             {refunded || rejectedByAdmin ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
           </span>
           <div className="min-w-0">
-            <p className="text-11px font-bold uppercase tracking-widest text-white/78">
+            <p className="text-11px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
               Cancelación / reintegro
             </p>
-            <h3 className="mt-1 text-base font-black text-white">
+            <h3 className="mt-1 text-base font-black text-[var(--admin-text)]">
               {refundPending ? "Reintegro pendiente" : cancellationTitle}
             </h3>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-[#f4b8c0]/76">
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--admin-text-soft)]">
               {cancellationCopy}
             </p>
           </div>
@@ -2131,10 +2131,10 @@ function RefundManagementPanel({
       <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
-            <p className="text-10px font-black uppercase tracking-widest text-[#ffb4bd]">
+            <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
               Acción pendiente
             </p>
-            <p className="mt-1 text-sm font-black text-white">
+            <p className="mt-1 text-sm font-black text-[var(--admin-text)]">
               {rejectedByAdmin
                 ? "No hay ninguna acción financiera pendiente: el pedido se rechazó sin pago confirmado."
                 : refunded
@@ -2145,15 +2145,15 @@ function RefundManagementPanel({
                     ? "Cargar comprobante de reintegro y marcar la devolución como completada."
                     : "No hay acciones pendientes de reintegro para este pedido."}
             </p>
-            <p className="mt-1 text-xs font-semibold leading-5 text-white/62">
-              Método de reintegro: <span className="text-white/86">{refundMethodDisplay}</span>
+            <p className="mt-1 text-xs font-semibold leading-5 text-[var(--admin-text-soft)]">
+              Método de reintegro: <span className="text-[var(--admin-text)]">{refundMethodDisplay}</span>
             </p>
           </div>
           <div className="admin-order-cancellation-amount-card rounded-xl border px-4 py-3">
             <p className="admin-order-cancellation-amount-label text-10px font-black uppercase tracking-widest">
               Importe resuelto
             </p>
-            <p className="admin-order-cancellation-amount-value mt-1 text-xl font-black text-white">
+            <p className="admin-order-cancellation-amount-value mt-1 text-xl font-black">
               {refundDisplayAmount}
             </p>
           </div>
@@ -2175,12 +2175,12 @@ function RefundManagementPanel({
           label="Cancelación solicitada"
           value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
         />
-        <CancellationMiniCard label="Estado del reintegro" value={rejectedByAdmin ? "No corresponde" : refundCompactStatus} valueClassName={refunded || rejectedByAdmin ? "text-emerald-100" : "text-amber-100"} />
+        <CancellationMiniCard label="Estado del reintegro" value={rejectedByAdmin ? "No corresponde" : refundCompactStatus} valueClassName={refunded || rejectedByAdmin ? "text-[var(--admin-success-text)]" : "text-[var(--admin-warning-text)]"} />
       </div>
 
       <div className="mt-3 grid min-w-0 gap-3">
         <div className="admin-order-cancellation-form-panel min-w-0 rounded-xl border p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-white/84">
+          <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text)]">
             {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
           </p>
           {!refundPending ? (
@@ -2196,10 +2196,10 @@ function RefundManagementPanel({
                   <ShieldCheck className="size-4" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-white">
+                  <p className="text-xs font-black text-[var(--admin-text)]">
                     Reintegro bloqueado hasta recibir el CAE
                   </p>
-                  <p className="mt-1 text-11px font-semibold leading-5 text-white/58">
+                  <p className="mt-1 text-11px font-semibold leading-5 text-[var(--admin-text-soft)]">
                     Emití primero la nota de crédito desde Facturación. El monto y
                     el destino se tomarán automáticamente del comprobante autorizado.
                   </p>
@@ -2210,7 +2210,7 @@ function RefundManagementPanel({
             <>
               <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,26rem)_minmax(12rem,1fr)] sm:items-end">
                 <div className="min-w-0">
-                  <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-white/68">
+                  <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
                     Archivo del comprobante
                   </p>
                   <label className="admin-order-cancellation-file-zone flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2 transition">
@@ -2218,10 +2218,10 @@ function RefundManagementPanel({
                       <Upload className="size-3.5" />
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-xs font-black text-white/90">
+                      <span className="block truncate text-xs font-black text-[var(--admin-text)]">
                         {file ? file.name : "Cargar archivo"}
                       </span>
-                      <span className="mt-0.5 block text-11px font-semibold text-white/54">
+                      <span className="mt-0.5 block text-11px font-semibold text-[var(--admin-text-muted)]">
                         Comprobante JPG, JPEG o PDF para cerrar el reintegro.
                       </span>
                     </span>
@@ -2234,16 +2234,16 @@ function RefundManagementPanel({
                   </label>
                 </div>
                 <div className="admin-order-cancellation-linked-value rounded-xl border px-3 py-2">
-                  <span className="block text-9px font-black uppercase tracking-widest text-white/45">
+                  <span className="block text-9px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
                     Definido por la nota autorizada
                   </span>
-                  <strong className="mt-1 block text-sm font-black text-emerald-100">
+                  <strong className="mt-1 block text-sm font-black text-[var(--admin-success-text)]">
                     {formatPrice(authorizedExternalCredit)}
                   </strong>
                 </div>
               </div>
               {uploadDisabledReason && (
-                <p className="mt-2 text-xs font-semibold text-white/52">
+                <p className="mt-2 text-xs font-semibold text-[var(--admin-text-muted)]">
                   {uploadDisabledReason}
                 </p>
               )}
@@ -2277,8 +2277,8 @@ function RefundManagementPanel({
           role="status"
           className={`mt-3 rounded-lg border px-3 py-2 text-xs font-bold ${
             message.ok
-              ? "border-emerald-300/20 bg-emerald-400/8 text-emerald-100"
-              : "border-red-300/20 bg-red-500/8 text-red-100"
+              ? "border-[var(--admin-success-border)] bg-[var(--admin-success-bg)] text-[var(--admin-success-text)]"
+              : "border-[var(--admin-danger-border)] bg-[var(--admin-danger-bg)] text-[var(--admin-danger-text)]"
           }`}
         >
           {message.text}
@@ -6211,7 +6211,7 @@ function PaymentMetaItem({ label, value }: { label: string; value: string }) {
 function CancellationMiniCard({
   label,
   value,
-  valueClassName = "text-white/88",
+  valueClassName = "text-[var(--admin-text)]",
 }: {
   label: string
   value: string
@@ -6219,7 +6219,7 @@ function CancellationMiniCard({
 }) {
   return (
     <div className="admin-order-cancellation-mini-card rounded-lg border px-3 py-2.5">
-      <p className="text-10px font-bold uppercase tracking-widest text-white/64">
+      <p className="text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
         {label}
       </p>
       <p className={`mt-1 wrap-break-word text-sm font-black ${valueClassName}`}>

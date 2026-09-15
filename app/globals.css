@@ -3143,39 +3143,37 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   border-color: rgba(110, 168, 255, 0.74) !important;
 }
 
+/* Pestaña Cancelación (RefundManagementPanel): reescrito para ser
+   realmente theme-aware con los tokens --admin-* del propio design system
+   del admin (ya redefinidos para Light en .beyonix-admin-main de ese
+   tema, ver sección 1 de este archivo) en vez de hex fijos pensados sólo
+   para Dark. Al heredar los tokens por cascada de variables CSS, no hace
+   falta ningún bloque html[data-admin-theme="light"] aparte para este
+   panel: el mismo valor se resuelve solo según el tema activo. */
 .admin-order-detail-scope section.admin-order-cancellation-panel {
-  --order-cancellation-section-bg: #111111;
-  --order-cancellation-panel-bg: #1b1b1b;
-  --order-cancellation-action-bg: #202020;
-  --order-cancellation-inner-card-bg: #282828;
-  --order-cancellation-field-bg: #101010;
-  background: var(--order-cancellation-section-bg) !important;
-  background-color: var(--order-cancellation-section-bg) !important;
+  background: var(--admin-surface) !important;
   background-image: none !important;
-  border-color: rgba(110, 168, 255, 0.42) !important;
+  border-color: var(--admin-border) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
     0 0 24px rgba(110, 168, 255, 0.07) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-header {
-  border-color: rgba(110, 168, 255, 0.34) !important;
+  border-color: var(--admin-border-strong) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel h3,
 .admin-order-detail-scope .admin-order-cancellation-panel p[class*="tracking-widest"] {
-  color: #fff !important;
+  color: var(--admin-text) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-main-icon {
   align-items: center;
-  background: #2a1117;
-  border: 1px solid rgba(110, 168, 255, 0.42);
+  background: var(--admin-danger-bg);
+  border: 1px solid var(--admin-danger-border);
   border-radius: 9999px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 18px rgba(159, 53, 70, 0.16);
-  color: #ffc2c8;
+  color: var(--admin-danger-text);
   display: inline-flex;
   flex: 0 0 auto;
   height: 52px;
@@ -3183,80 +3181,74 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   width: 52px;
 }
 
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-main-icon.is-success {
+  background: var(--admin-success-bg);
+  border-color: var(--admin-success-border);
+  color: var(--admin-success-text);
+}
+
 .admin-order-detail-scope .admin-order-cancellation-panel :is(.admin-order-cancellation-action-panel, .admin-order-cancellation-form-panel) {
-  background: var(--order-cancellation-panel-bg) !important;
-  background-color: var(--order-cancellation-panel-bg) !important;
+  background: var(--admin-surface-raised) !important;
   background-image: none !important;
-  border-color: rgba(110, 168, 255, 0.38) !important;
+  border-color: var(--admin-border) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-action-panel {
-  background: var(--order-cancellation-action-bg) !important;
-  background-color: var(--order-cancellation-action-bg) !important;
+  background: var(--admin-surface-muted) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-mini-card,
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-amount-card {
-  background: var(--order-cancellation-inner-card-bg) !important;
-  background-color: var(--order-cancellation-inner-card-bg) !important;
-  background-image: linear-gradient(135deg, #282828, #232323) !important;
-  border-color: rgba(110, 168, 255, 0.36) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 12px rgba(110, 168, 255, 0.055) !important;
+  background: var(--admin-surface-muted) !important;
+  background-image: none !important;
+  border-color: var(--admin-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
 }
 
+
 .admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border {
-  background: #047857 !important;
-  background-color: #047857 !important;
-  background-image: linear-gradient(135deg, #047857, #065F46) !important;
-  border-color: rgba(255, 255, 255, 0.42) !important;
-  color: #fff !important;
+  background: var(--admin-success-bg) !important;
+  background-image: none !important;
+  border-color: var(--admin-success-border) !important;
+  color: var(--admin-success-text) !important;
   min-width: min(100%, 14rem);
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border p,
 .admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border .admin-order-cancellation-amount-label,
 .admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-amount-card.rounded-xl.border .admin-order-cancellation-amount-value {
-  color: #fff !important;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+  color: var(--admin-success-text) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-file-zone {
-  background: var(--order-cancellation-field-bg) !important;
-  background-color: var(--order-cancellation-field-bg) !important;
+  background: var(--admin-surface-muted) !important;
   background-image: none !important;
-  border-color: rgba(110, 168, 255, 0.34) !important;
+  border-color: var(--admin-border) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel label.admin-order-cancellation-file-zone.rounded-xl.border {
-  background: #112A43 !important;
-  background-color: #112A43 !important;
-  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  background: var(--admin-brand) !important;
+  background-image: linear-gradient(135deg, var(--admin-brand), var(--admin-brand-hover)) !important;
   border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #ffffff !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel label.admin-order-cancellation-file-zone.rounded-xl.border:hover {
-  background: #1E4D7B !important;
-  background-color: #1E4D7B !important;
-  background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
+  background: var(--admin-brand-hover) !important;
   border-color: rgba(110, 168, 255, 0.74) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-file-icon {
   align-items: center;
-  background: #071527;
-  border: 1px solid rgba(110, 168, 255, 0.58);
+  background: var(--admin-info-bg);
+  border: 1px solid var(--admin-info-border);
   border-radius: 9999px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    0 0 12px rgba(110, 168, 255, 0.12);
-  color: #6EA8FF;
+  color: var(--admin-info-text);
   display: inline-flex;
   flex: 0 0 auto;
   height: 28px;
@@ -3265,16 +3257,16 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-locked {
-  background: linear-gradient(135deg, rgba(56, 38, 10, 0.82), rgba(28, 22, 13, 0.95)) !important;
-  border-color: rgba(245, 193, 90, 0.44) !important;
+  background: var(--admin-warning-bg) !important;
+  border-color: var(--admin-warning-border) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-locked-icon {
   align-items: center;
-  background: #5a3909;
-  border: 1px solid rgba(245, 193, 90, 0.48);
+  background: var(--admin-warning-bg);
+  border: 1px solid var(--admin-warning-border);
   border-radius: 999px;
-  color: #fff;
+  color: var(--admin-warning-text);
   display: inline-flex;
   flex: 0 0 auto;
   height: 2rem;
@@ -3283,54 +3275,47 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-linked-value {
-  background: linear-gradient(135deg, rgba(5, 55, 40, 0.8), rgba(5, 27, 28, 0.95)) !important;
-  border-color: rgba(92, 255, 176, 0.3) !important;
+  background: var(--admin-success-bg) !important;
+  border-color: var(--admin-success-border) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action {
-  background: #112A43 !important;
-  background-color: #112A43 !important;
-  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  background: var(--admin-brand) !important;
+  background-image: linear-gradient(135deg, var(--admin-brand), var(--admin-brand-hover)) !important;
   border-color: rgba(110, 168, 255, 0.58) !important;
-  color: #fff !important;
+  color: #ffffff !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.055),
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action:hover {
-  background: #1E4D7B !important;
+  background: var(--admin-brand-hover) !important;
   border-color: rgba(110, 168, 255, 0.74) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action:disabled {
-  background: #202020 !important;
-  border-color: rgba(110, 168, 255, 0.32) !important;
-  color: rgba(255, 255, 255, 0.54) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 0 10px rgba(110, 168, 255, 0.035) !important;
+  background: var(--admin-surface-muted) !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text-muted) !important;
+  box-shadow: none !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-secondary-action {
-  background: #2a1117 !important;
-  background-color: #2a1117 !important;
-  border-color: rgba(110, 168, 255, 0.46) !important;
-  color: #ffc2c8 !important;
+  background: var(--admin-danger-bg) !important;
+  border-color: var(--admin-danger-border) !important;
+  color: var(--admin-danger-text) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-secondary-action:hover {
-  background: #35151d !important;
-  border-color: rgba(110, 168, 255, 0.7) !important;
-  color: #fff !important;
+  border-color: rgba(220, 38, 38, 0.65) !important;
 }
 
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-empty {
-  background: #202020 !important;
-  background-color: #202020 !important;
+  background: var(--admin-surface-muted) !important;
   background-image: none !important;
-  border-color: rgba(110, 168, 255, 0.28) !important;
-  color: rgba(255, 255, 255, 0.64) !important;
+  border-color: var(--admin-border) !important;
+  color: var(--admin-text-muted) !important;
 }
 
 .admin-order-detail-scope .admin-order-dispatch-badge--delivered {
@@ -10898,19 +10883,18 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-100 { color: #0369a1 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-100 { color: #065f46 !important; }
 
-/* Modal Rechazar/Cancelar pedido (AdminOrderCancelRejectModal) y pestaña
-   Cancelación (RefundManagementPanel, dentro de .admin-order-cancellation-panel
-   -- ver .admin-order-detail-scope section.admin-order-cancellation-panel más
-   arriba, con fondo oscuro fijo en CUALQUIER tema): son paneles de acción
-   crítica/destructiva diseñados como una isla oscura intencional y
+/* Modal Rechazar/Cancelar pedido (AdminOrderCancelRejectModal): modal de
+   acción crítica/destructiva diseñado como una isla oscura intencional y
    consistente en Light y en Dark (mismo criterio que ya usa
    ForcedStatusConfirmModal). El catch-all de arriba convertía sólo una
    parte de sus clases (ej. bg-[#101010] sí, pero el gradiente del header y
-   los tonos rojo/ámbar/esmeralda no), dejando texto oscurecido por el
-   catch-all sobre un fondo que seguía oscuro -- ese desajuste era el bug de
+   los tonos rojo/ámbar no), dejando texto oscurecido por el catch-all
+   sobre un fondo que seguía oscuro -- ese desajuste era el bug de
    contraste real reportado en Light. Estas reglas restauran el valor
    original (el mismo que ya se ve bien en Dark) para las clases realmente
-   usadas en ambos componentes. */
+   usadas acá. La pestaña Cancelación (RefundManagementPanel) YA NO
+   comparte este enfoque -- ver más abajo, ahora usa tokens --admin-*
+   reales en vez de una isla oscura fija. */
 html[data-admin-theme="light"] .admin-cancel-reject-modal.bg-\[\#101010\] { background-color: #101010 !important; }
 html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/48 { color: rgba(255,255,255,0.48) !important; }
 html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/62 { color: rgba(255,255,255,0.62) !important; }
@@ -10919,19 +10903,15 @@ html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/8 { bor
 html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/10 { border-color: rgba(255,255,255,0.10) !important; }
 html[data-admin-theme="light"] .admin-cancel-reject-modal .text-amber-100 { color: #fde68a !important; }
 html[data-admin-theme="light"] .admin-cancel-reject-modal .text-red-100 { color: #fecaca !important; }
-/* Reemplaza la lista de opacidades puntuales (text-white/45, /52, /58...)
-   por un selector de substring: cualquier text-white/N nuevo que se agregue
-   a futuro en este panel queda cubierto automáticamente, en vez de tener
-   que enumerar cada opacidad una por una (así aparecieron los huecos
-   reales reportados: text-white/68, text-white/84, text-amber-100 y el
-   label text-[#ffb4bd] de "Acción pendiente" quedaban afuera de la lista
-   anterior y quedaban ilegibles en Light). */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel [class*="text-white/"] { color: rgba(255,255,255,0.82) !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-red-100 { color: #fecaca !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-emerald-100 { color: #a7f3d0 !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel .text-amber-100 { color: #fde68a !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel [class*="text-[#ffb4bd]"] { color: #ffb4bd !important; }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-cancellation-panel [class*="text-[#f4b8c0]"] { color: #f4b8c0 !important; }
+/* La pestaña Cancelación (.admin-order-cancellation-panel) ya NO vive acá:
+   dejó de ser una isla oscura fija con excepciones de Light parche a
+   parche (text-white/N, text-amber-100, etc. -- ese enfoque volvía a
+   quedar corto cada vez que aparecía una clase nueva). Ahora sus estilos
+   (arriba, sección "Pestaña Cancelación") usan directamente los tokens
+   admin-text, admin-text-soft, admin-text-muted, admin-surface y los
+   admin-success/admin-warning/admin-danger/admin-info del design system
+   del admin, que ya cambian de valor solos según el tema -- sin necesitar
+   overrides de Light separados para este panel. */
 
 /* Listado de pedidos (.admin-orders-list-row): cada card de pedido debe
    tener identidad visual fuerte (fondo oscuro) contra el fondo general gris
