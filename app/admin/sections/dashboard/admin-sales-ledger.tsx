@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react"
 
+import { cn } from "@/lib/utils"
 import { formatPrice } from "../productos/helpers"
 import {
   deleteSalesLedgerRow,
@@ -113,6 +114,9 @@ function formFromRow(row: SalesLedgerRow): SaleForm {
 const inputClass =
   "h-11 w-full min-w-0 rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-3 text-center text-sm font-bold text-white outline-none transition placeholder:text-white/28 hover:border-beyonix-sky/30 focus:border-beyonix-sky/55"
 
+const displayBoxClass =
+  "flex h-11 w-full min-w-0 items-center justify-center rounded-xl border border-beyonix-blue-light/18 bg-[#07111B] px-2 text-sm font-black tabular-nums"
+
 function numeric(value: string) {
   return value.replace(/[^\d.,]/g, "").replace(",", ".")
 }
@@ -131,7 +135,7 @@ function MoneyInput({
   ariaLabel: string
 }) {
   return (
-    <div data-sales-nav-field className="relative min-w-36">
+    <div data-sales-nav-field className="relative min-w-0">
       <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm font-black text-beyonix-sky">
         $
       </span>
@@ -142,8 +146,32 @@ function MoneyInput({
         value={value}
         onChange={(event) => onChange(numeric(event.target.value))}
         placeholder="0,00"
-        className={`${inputClass} min-w-36 px-7 tabular-nums`}
+        className={`${inputClass} px-7 tabular-nums`}
       />
+    </div>
+  )
+}
+
+function Field({
+  label,
+  nav = false,
+  className,
+  children,
+}: {
+  label: string
+  nav?: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div
+      data-sales-nav-field={nav || undefined}
+      className={cn("flex min-w-0 flex-col gap-1.5", className)}
+    >
+      <span className="text-10px font-black uppercase tracking-widest text-white/38">
+        {label}
+      </span>
+      {children}
     </div>
   )
 }
@@ -289,7 +317,7 @@ export function AdminSalesLedger({
   }
 
   const handleFieldNavigation = (
-    event: React.KeyboardEvent<HTMLTableRowElement>,
+    event: React.KeyboardEvent<HTMLDivElement>,
   ) => {
     if (
       !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) ||
@@ -490,7 +518,7 @@ export function AdminSalesLedger({
               {editingId ? "Editar venta" : "Agregar una venta"}
             </p>
             <p className="mt-1 text-xs text-white/42">
-              La nueva venta aparecerá debajo de esta fila.
+              La nueva venta aparecerá debajo, en &quot;Ventas registradas&quot;.
             </p>
           </div>
           {editingId && (
@@ -516,6 +544,205 @@ export function AdminSalesLedger({
           </p>
         )}
 
+        <div
+          onKeyDownCapture={handleFieldNavigation}
+          className="space-y-3 rounded-2xl border border-beyonix-blue-light/16 bg-black/20 p-3 sm:p-3.5"
+        >
+          {/* Fila 1: fecha, producto, sku, costo unitario, cantidad, precio venta */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[1fr_1.7fr_0.9fr_1fr_0.75fr_1fr] lg:gap-2.5">
+            <Field label="Fecha">
+              <div data-sales-nav-field className="w-full">
+                <AdminDatePicker
+                  title={`Fecha de venta ${channel}`}
+                  ariaLabel="Fecha de venta"
+                  value={form.saleDate}
+                  onChange={(value) => update("saleDate", value)}
+                  centered
+                  compact
+                />
+              </div>
+            </Field>
+
+            <Field label="Producto" nav>
+              <AdminSelect
+                title="Producto"
+                ariaLabel="Seleccionar producto"
+                value={form.productId}
+                onChange={selectProduct}
+                centered
+                searchable
+                searchPlaceholder="Buscar por nombre o SKU..."
+                triggerClassName="sales-ledger-product-trigger"
+                optionClassName="sales-ledger-product-option justify-center text-center"
+              >
+                <option value="">Seleccionar producto</option>
+                {catalogOptions.map(({ key, product, variant }) => (
+                  <option
+                    key={key}
+                    value={key}
+                    data-search={`${product.nombre} ${variant?.nombre ?? ""} ${variant?.sku ?? product.sku ?? ""}`}
+                    data-meta={variant?.sku ?? product.sku ?? undefined}
+                    data-selected-label={
+                      variant
+                        ? `${product.nombre} · ${variant.nombre}`
+                        : product.nombre
+                    }
+                  >
+                    {variant
+                      ? `${product.nombre} · ${variant.nombre}`
+                      : product.nombre}
+                  </option>
+                ))}
+              </AdminSelect>
+            </Field>
+
+            <Field label="SKU" nav>
+              <input
+                aria-label="SKU"
+                value={form.sku}
+                onChange={(event) => update("sku", event.target.value)}
+                placeholder="Opcional"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Costo unitario">
+              <MoneyInput value={form.unitCost} onChange={(value) => update("unitCost", value)} ariaLabel="Costo unitario" />
+            </Field>
+
+            <Field label="Cantidad" nav>
+              <input
+                type="text"
+                inputMode="numeric"
+                aria-label="Cantidad vendida"
+                value={form.quantity}
+                onChange={(event) => update("quantity", integer(event.target.value))}
+                className={`${inputClass} px-2 tabular-nums`}
+              />
+            </Field>
+
+            <Field label="Precio venta">
+              <MoneyInput value={form.unitPrice} onChange={(value) => update("unitPrice", value)} ariaLabel="Precio de venta" />
+            </Field>
+          </div>
+
+          {/* Fila 2: envío, comisión, otros gastos, medio de pago, referencia, cliente, notas, total, ganancia, acciones */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-[1fr_0.85fr_1fr_1.4fr_1.3fr_1.4fr_1.5fr_0.75fr_0.8fr_0.7fr] lg:gap-2.5">
+            <Field label="Envío pagado">
+              <MoneyInput value={form.shippingAmount} onChange={(value) => update("shippingAmount", value)} ariaLabel="Envío pagado" />
+            </Field>
+
+            <Field label="Comisión">
+              <div className="flex items-center gap-1.5">
+                <div data-sales-nav-field className="w-16 shrink-0">
+                  <AdminSelect
+                    title="Tipo de comisión"
+                    ariaLabel="Tipo de comisión"
+                    value={form.feeType}
+                    onChange={(value) =>
+                      update(
+                        "feeType",
+                        value === "percent" ? "percent" : "amount",
+                      )
+                    }
+                    triggerClassName="!w-16 !min-w-16 !gap-2 !px-3 !text-sm font-bold"
+                    menuClassName="!w-16"
+                    optionClassName="sales-ledger-fee-option justify-center text-center font-bold [&>svg]:hidden"
+                  >
+                    <option value="amount">$</option>
+                    <option value="percent">%</option>
+                  </AdminSelect>
+                </div>
+                <div data-sales-nav-field className="min-w-0 flex-1">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    aria-label="Valor de la comisión"
+                    value={form.feeValue}
+                    onChange={(event) => update("feeValue", numeric(event.target.value))}
+                    placeholder="0,00"
+                    className={`${inputClass} px-3 tabular-nums`}
+                  />
+                </div>
+              </div>
+            </Field>
+
+            <Field label="Otros gastos">
+              <MoneyInput value={form.otherExpenseAmount} onChange={(value) => update("otherExpenseAmount", value)} ariaLabel="Otros gastos" />
+            </Field>
+
+            <Field label="Medio de pago" nav>
+              <input
+                aria-label="Medio de pago"
+                value={form.paymentMethod}
+                onChange={(event) => update("paymentMethod", event.target.value)}
+                placeholder="Efectivo, transferencia..."
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Referencia" nav>
+              <input
+                aria-label="Referencia"
+                value={form.reference}
+                onChange={(event) => update("reference", event.target.value)}
+                placeholder="N.º de operación"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Cliente" nav>
+              <input
+                aria-label="Cliente"
+                value={form.customerName}
+                onChange={(event) => update("customerName", event.target.value)}
+                placeholder="Nombre y apellido"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Notas" nav>
+              <input
+                aria-label="Notas"
+                value={form.notes}
+                onChange={(event) => update("notes", event.target.value)}
+                placeholder="Observaciones"
+                className={inputClass}
+              />
+            </Field>
+
+            <Field label="Total">
+              <div className={`${displayBoxClass} text-white`}>
+                {formatPrice(draftGross)}
+              </div>
+            </Field>
+
+            <Field label="Ganancia neta">
+              <div
+                className={`${displayBoxClass} ${draftResult >= 0 ? "text-emerald-300" : "text-red-300"}`}
+              >
+                {formatPrice(draftResult)}
+              </div>
+            </Field>
+
+            <Field label="Acciones" nav>
+              <button
+                type="button"
+                aria-label={editingId ? "Guardar cambios" : "Agregar venta"}
+                title={editingId ? "Guardar cambios" : "Agregar venta"}
+                onClick={() => void save()}
+                disabled={saving}
+                className="flex h-11 w-full cursor-pointer items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/15 text-emerald-200 transition hover:bg-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? <RefreshCw className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />}
+              </button>
+            </Field>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[#071018] p-3.5 sm:p-4">
+        <p className="mb-3 text-sm font-black text-white">Ventas registradas</p>
         <div className="sales-ledger-scrollbar overflow-x-auto rounded-2xl border border-beyonix-blue-light/16 bg-black/20">
           <table className="w-full min-w-[1980px] text-center">
             <thead>
@@ -545,175 +772,6 @@ export function AdminSalesLedger({
               </tr>
             </thead>
             <tbody>
-              <tr
-                onKeyDownCapture={handleFieldNavigation}
-                className="border-t border-white/7 bg-beyonix-blue/7"
-              >
-                <td className="p-2">
-                  <div data-sales-nav-field className="w-[150px] min-w-[150px]">
-                    <AdminDatePicker
-                      title={`Fecha de venta ${channel}`}
-                      ariaLabel="Fecha de venta"
-                      value={form.saleDate}
-                      onChange={(value) => update("saleDate", value)}
-                      centered
-                      compact
-                    />
-                  </div>
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <AdminSelect
-                    title="Producto"
-                    ariaLabel="Seleccionar producto"
-                    value={form.productId}
-                    onChange={selectProduct}
-                    centered
-                    searchable
-                    searchPlaceholder="Buscar por nombre o SKU..."
-                    triggerClassName="sales-ledger-product-trigger min-w-56"
-                    optionClassName="sales-ledger-product-option justify-center text-center"
-                  >
-                    <option value="">Seleccionar producto</option>
-                    {catalogOptions.map(({ key, product, variant }) => (
-                      <option
-                        key={key}
-                        value={key}
-                        data-search={`${product.nombre} ${variant?.nombre ?? ""} ${variant?.sku ?? product.sku ?? ""}`}
-                        data-meta={variant?.sku ?? product.sku ?? undefined}
-                        data-selected-label={
-                          variant
-                            ? `${product.nombre} · ${variant.nombre}`
-                            : product.nombre
-                        }
-                      >
-                        {variant
-                          ? `${product.nombre} · ${variant.nombre}`
-                          : product.nombre}
-                      </option>
-                    ))}
-                  </AdminSelect>
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <input
-                    aria-label="SKU"
-                    value={form.sku}
-                    onChange={(event) => update("sku", event.target.value)}
-                    placeholder="Opcional"
-                    className={`${inputClass} min-w-28`}
-                  />
-                </td>
-                <td className="p-2">
-                  <MoneyInput value={form.unitCost} onChange={(value) => update("unitCost", value)} ariaLabel="Costo unitario" />
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    aria-label="Cantidad vendida"
-                    value={form.quantity}
-                    onChange={(event) => update("quantity", integer(event.target.value))}
-                    className={`${inputClass} min-w-16 px-2 tabular-nums`}
-                  />
-                </td>
-                <td className="p-2">
-                  <MoneyInput value={form.unitPrice} onChange={(value) => update("unitPrice", value)} ariaLabel="Precio de venta" />
-                </td>
-                <td className="p-2">
-                  <MoneyInput value={form.shippingAmount} onChange={(value) => update("shippingAmount", value)} ariaLabel="Envío pagado" />
-                </td>
-                <td className="p-2">
-                  <div className="flex min-w-[182px] items-center gap-1.5">
-                    <div data-sales-nav-field className="w-16 shrink-0">
-                    <AdminSelect
-                      title="Tipo de comisión"
-                      ariaLabel="Tipo de comisión"
-                      value={form.feeType}
-                      onChange={(value) =>
-                        update(
-                          "feeType",
-                          value === "percent" ? "percent" : "amount",
-                        )
-                      }
-                      triggerClassName="!w-16 !min-w-16 !gap-2 !px-3 !text-sm font-bold"
-                      menuClassName="!w-16"
-                      optionClassName="sales-ledger-fee-option justify-center text-center font-bold [&>svg]:hidden"
-                    >
-                      <option value="amount">$</option>
-                      <option value="percent">%</option>
-                    </AdminSelect>
-                    </div>
-                    <div data-sales-nav-field className="min-w-28 flex-1">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      aria-label="Valor de la comisión"
-                      value={form.feeValue}
-                      onChange={(event) => update("feeValue", numeric(event.target.value))}
-                      placeholder="0,00"
-                      className={`${inputClass} min-w-28 px-3 tabular-nums`}
-                    />
-                    </div>
-                  </div>
-                </td>
-                <td className="p-2">
-                  <MoneyInput value={form.otherExpenseAmount} onChange={(value) => update("otherExpenseAmount", value)} ariaLabel="Otros gastos" />
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <input
-                    aria-label="Medio de pago"
-                    value={form.paymentMethod}
-                    onChange={(event) => update("paymentMethod", event.target.value)}
-                    placeholder="Efectivo, transferencia..."
-                    className={`${inputClass} min-w-36`}
-                  />
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <input
-                    aria-label="Referencia"
-                    value={form.reference}
-                    onChange={(event) => update("reference", event.target.value)}
-                    placeholder="N.º de operación"
-                    className={`${inputClass} min-w-36`}
-                  />
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <input
-                    aria-label="Cliente"
-                    value={form.customerName}
-                    onChange={(event) => update("customerName", event.target.value)}
-                    placeholder="Nombre y apellido"
-                    className={`${inputClass} min-w-44`}
-                  />
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <input
-                    aria-label="Notas"
-                    value={form.notes}
-                    onChange={(event) => update("notes", event.target.value)}
-                    placeholder="Observaciones"
-                    className={`${inputClass} min-w-48`}
-                  />
-                </td>
-                <td className="px-3 py-2 text-sm font-black tabular-nums text-white">
-                  {formatPrice(draftGross)}
-                </td>
-                <td className={`px-3 py-2 text-sm font-black tabular-nums ${draftResult >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                  {formatPrice(draftResult)}
-                </td>
-                <td data-sales-nav-field className="p-2">
-                  <button
-                    type="button"
-                    aria-label={editingId ? "Guardar cambios" : "Agregar venta"}
-                    title={editingId ? "Guardar cambios" : "Agregar venta"}
-                    onClick={() => void save()}
-                    disabled={saving}
-                    className="flex size-9 cursor-pointer items-center justify-center rounded-lg border border-emerald-400/30 bg-emerald-400/15 text-emerald-200 transition hover:bg-emerald-400/25 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {saving ? <RefreshCw className="size-4 animate-spin" /> : <Check className="size-4" strokeWidth={3} />}
-                  </button>
-                </td>
-              </tr>
-
               {rows.map((row) => {
                 const gross = number(row.gross_amount)
                 const catalogUnitCost = catalogUnitCostFor(row)

@@ -63,7 +63,7 @@ export function AccountMenuIcon({
 }
 
 export const accountMenuItemClass =
-  "group flex items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] outline-none transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)] focus-visible:bg-[rgba(17,42,67,0.75)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+  "group flex cursor-pointer items-center gap-2.5 border-b border-white/8 px-4 py-3 text-sm text-[#F8FAFC] outline-none transition-all duration-200 hover:bg-[rgba(17,42,67,0.75)] hover:text-[#D7ECFF] hover:shadow-[inset_0_0_0_1px_rgba(191,228,255,0.10)] focus-visible:bg-[rgba(17,42,67,0.75)] focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
 export const accountLogoutMenuItemClass = cn(
   accountMenuItemClass,
   "w-full text-left hover:text-red-500 focus-visible:text-red-500",
@@ -163,10 +163,7 @@ export function AccountMenu({
           <Link
             href="/cuenta?tab=cargar-saldo"
             onClick={() => setOpen(false)}
-            className={cn(
-              accountMenuItemClass,
-              "bg-[rgba(17,42,67,0.28)] font-semibold text-beyonix-sky",
-            )}
+            className={cn(accountMenuItemClass, "font-semibold text-beyonix-sky")}
           >
             <AccountMenuIcon Icon={WalletCards} dollarBadge />
             <span className="whitespace-nowrap">
