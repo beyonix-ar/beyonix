@@ -26,6 +26,11 @@ import {
 } from "@/lib/supabase/queries/customer-notifications"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseCustomerNotification } from "@/lib/supabase/types"
+import {
+  ACCOUNT_NOTIFICATION_DANGER,
+  isCustomerNotificationSensitive,
+} from "@/lib/account/account-notification-visuals"
+import { cn } from "@/lib/utils"
 
 interface CustomerNotificationsBellProps {
   userId: string
@@ -421,15 +426,28 @@ export function CustomerNotificationsBell({
               <div className="space-y-1.5">
                 {notifications.map((notification) => {
                   const NotificationIcon = getNotificationIcon(notification.type)
+                  const sensitive = isCustomerNotificationSensitive(notification.type)
 
                   return (
                     <button
                       key={notification.id}
                       type="button"
                       onClick={() => void handleNotificationClick(notification)}
-                      className="beyonix-notifications-item group flex w-full cursor-pointer items-start gap-3 rounded-xl border border-[#303846] bg-[#141820] p-3 text-left transition-colors hover:bg-[#1B2028]"
+                      className={cn(
+                        "group flex w-full cursor-pointer items-start gap-3 rounded-xl border p-3 text-left transition-colors",
+                        sensitive
+                          ? ACCOUNT_NOTIFICATION_DANGER.card
+                          : "beyonix-notifications-item border-[#303846] bg-[#141820] hover:bg-[#1B2028]",
+                      )}
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
+                      <span
+                        className={cn(
+                          "flex size-9 shrink-0 items-center justify-center rounded-lg border",
+                          sensitive
+                            ? ACCOUNT_NOTIFICATION_DANGER.icon
+                            : "border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky",
+                        )}
+                      >
                         <NotificationIcon className="size-4" />
                       </span>
 
@@ -439,7 +457,14 @@ export function CustomerNotificationsBell({
                             {notification.title}
                           </span>
                           {!notification.is_read && (
-                            <span className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)]" />
+                            <span
+                              className={cn(
+                                "mt-1.5 size-2 shrink-0 rounded-full",
+                                sensitive
+                                  ? ACCOUNT_NOTIFICATION_DANGER.dot
+                                  : "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)]",
+                              )}
+                            />
                           )}
                         </span>
                         <span className="beyonix-notifications-item-body mt-0.5 line-clamp-2 block text-xs leading-5 text-[#C8C8C8]">

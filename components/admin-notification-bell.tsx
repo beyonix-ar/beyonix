@@ -15,6 +15,11 @@ import {
   ADMIN_SENSITIVE_DANGER,
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
+import {
+  ACCOUNT_NOTIFICATION_DANGER,
+  ACCOUNT_NOTIFICATION_SUCCESS,
+  ACCOUNT_NOTIFICATION_WARNING,
+} from "@/lib/account/account-notification-visuals"
 import { AdminNotificationsPopover } from "@/components/admin-notifications-popover"
 import { cn } from "@/lib/utils"
 
@@ -156,14 +161,20 @@ export function AdminNotificationBell({
           !isStorefront && "text-white",
           isStorefront && "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]",
           count > 0
-            ? mercadoLibreReturnTone
-              ? ADMIN_ATTENTION_WARNING.action
-              : sensitiveTone
-                ? ADMIN_SENSITIVE_DANGER.action
-                : incomingPaymentTone
-                  ? ADMIN_INCOMING_PAYMENT_BELL_STYLE
-                  : isStorefront
-                    ? STOREFRONT_NEUTRAL_BELL_STYLE
+            ? isStorefront
+              ? mercadoLibreReturnTone
+                ? ACCOUNT_NOTIFICATION_WARNING.trigger
+                : sensitiveTone
+                  ? ACCOUNT_NOTIFICATION_DANGER.trigger
+                  : incomingPaymentTone
+                    ? ACCOUNT_NOTIFICATION_SUCCESS.trigger
+                    : STOREFRONT_NEUTRAL_BELL_STYLE
+              : mercadoLibreReturnTone
+                ? ADMIN_ATTENTION_WARNING.action
+                : sensitiveTone
+                  ? ADMIN_SENSITIVE_DANGER.action
+                  : incomingPaymentTone
+                    ? ADMIN_INCOMING_PAYMENT_BELL_STYLE
                     : ADMIN_NEUTRAL_BELL_STYLE
             : isStorefront
               ? STOREFRONT_NEUTRAL_BELL_STYLE
@@ -175,14 +186,20 @@ export function AdminNotificationBell({
           <span
             className={cn(
               "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-9px font-medium leading-none",
-              mercadoLibreReturnTone
-                ? `${ADMIN_ATTENTION_WARNING.dot} text-black`
-                : sensitiveTone
-                  ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
-                  : incomingPaymentTone
-                    ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
-                    : isStorefront
-                      ? STOREFRONT_NEUTRAL_BADGE_STYLE
+              isStorefront
+                ? mercadoLibreReturnTone
+                  ? ACCOUNT_NOTIFICATION_WARNING.badge
+                  : sensitiveTone
+                    ? ACCOUNT_NOTIFICATION_DANGER.badge
+                    : incomingPaymentTone
+                      ? ACCOUNT_NOTIFICATION_SUCCESS.badge
+                      : STOREFRONT_NEUTRAL_BADGE_STYLE
+                : mercadoLibreReturnTone
+                  ? `${ADMIN_ATTENTION_WARNING.dot} text-black`
+                  : sensitiveTone
+                    ? `${ADMIN_SENSITIVE_DANGER.dot} text-black`
+                    : incomingPaymentTone
+                      ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
                       : ADMIN_NEUTRAL_BADGE_STYLE,
             )}
           >

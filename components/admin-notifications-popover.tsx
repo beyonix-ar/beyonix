@@ -23,6 +23,11 @@ import {
   ADMIN_SENSITIVE_DANGER,
   isAdminSensitiveNotification,
 } from "@/lib/admin/admin-sensitive-visuals"
+import {
+  ACCOUNT_NOTIFICATION_DANGER,
+  ACCOUNT_NOTIFICATION_SUCCESS,
+  ACCOUNT_NOTIFICATION_WARNING,
+} from "@/lib/account/account-notification-visuals"
 import { cn } from "@/lib/utils"
 
 const TYPE_LABELS: Record<AdminNotificationType, string> = {
@@ -194,28 +199,40 @@ export function AdminNotificationsPopover({
                   onClick={() => onNotificationClick(notification)}
                   className={cn(
                     "group flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all",
-                    mercadoLibreReturn
-                      ? ADMIN_ATTENTION_WARNING.card
-                      : sensitive
-                        ? ADMIN_SENSITIVE_DANGER.card
-                        : incomingPayment
-                          ? ADMIN_INCOMING_PAYMENT_STYLE.card
-                          : isStorefront
-                            ? STOREFRONT_CARD_STYLE
+                    isStorefront
+                      ? mercadoLibreReturn
+                        ? ACCOUNT_NOTIFICATION_WARNING.card
+                        : sensitive
+                          ? ACCOUNT_NOTIFICATION_DANGER.card
+                          : incomingPayment
+                            ? ACCOUNT_NOTIFICATION_SUCCESS.card
+                            : STOREFRONT_CARD_STYLE
+                      : mercadoLibreReturn
+                        ? ADMIN_ATTENTION_WARNING.card
+                        : sensitive
+                          ? ADMIN_SENSITIVE_DANGER.card
+                          : incomingPayment
+                            ? ADMIN_INCOMING_PAYMENT_STYLE.card
                             : ADMIN_NEUTRAL_CARD_STYLE,
                   )}
                 >
                   <span
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-lg border",
-                      mercadoLibreReturn
-                        ? ADMIN_ATTENTION_WARNING.icon
-                        : sensitive
-                          ? ADMIN_SENSITIVE_DANGER.icon
-                          : incomingPayment
-                            ? ADMIN_INCOMING_PAYMENT_STYLE.icon
-                            : isStorefront
-                              ? STOREFRONT_ICON_STYLE
+                      isStorefront
+                        ? mercadoLibreReturn
+                          ? ACCOUNT_NOTIFICATION_WARNING.icon
+                          : sensitive
+                            ? ACCOUNT_NOTIFICATION_DANGER.icon
+                            : incomingPayment
+                              ? ACCOUNT_NOTIFICATION_SUCCESS.icon
+                              : STOREFRONT_ICON_STYLE
+                        : mercadoLibreReturn
+                          ? ADMIN_ATTENTION_WARNING.icon
+                          : sensitive
+                            ? ADMIN_SENSITIVE_DANGER.icon
+                            : incomingPayment
+                              ? ADMIN_INCOMING_PAYMENT_STYLE.icon
                               : ADMIN_NEUTRAL_ICON_STYLE,
                     )}
                   >
@@ -227,14 +244,20 @@ export function AdminNotificationsPopover({
                       <span
                         className={cn(
                           "min-w-0 flex-1 text-xs font-bold uppercase tracking-normal leading-4",
-                          mercadoLibreReturn
-                            ? ADMIN_ATTENTION_WARNING.label
-                            : sensitive
-                              ? ADMIN_SENSITIVE_DANGER.label
-                              : incomingPayment
-                                ? ADMIN_INCOMING_PAYMENT_STYLE.label
-                                : isStorefront
-                                  ? "beyonix-header-notif-muted"
+                          isStorefront
+                            ? mercadoLibreReturn
+                              ? ACCOUNT_NOTIFICATION_WARNING.label
+                              : sensitive
+                                ? ACCOUNT_NOTIFICATION_DANGER.label
+                                : incomingPayment
+                                  ? ACCOUNT_NOTIFICATION_SUCCESS.label
+                                  : "beyonix-header-notif-muted"
+                            : mercadoLibreReturn
+                              ? ADMIN_ATTENTION_WARNING.label
+                              : sensitive
+                                ? ADMIN_SENSITIVE_DANGER.label
+                                : incomingPayment
+                                  ? ADMIN_INCOMING_PAYMENT_STYLE.label
                                   : "text-white/64",
                         )}
                       >
@@ -244,14 +267,20 @@ export function AdminNotificationsPopover({
                         <span
                           className={cn(
                             "mt-1 size-1.5 shrink-0 rounded-full",
-                            mercadoLibreReturn
-                              ? ADMIN_ATTENTION_WARNING.dot
-                              : sensitive
-                                ? ADMIN_SENSITIVE_DANGER.dot
-                                : incomingPayment
-                                  ? ADMIN_INCOMING_PAYMENT_STYLE.dot
-                                  : isStorefront
-                                    ? STOREFRONT_DOT_STYLE
+                            isStorefront
+                              ? mercadoLibreReturn
+                                ? ACCOUNT_NOTIFICATION_WARNING.dot
+                                : sensitive
+                                  ? ACCOUNT_NOTIFICATION_DANGER.dot
+                                  : incomingPayment
+                                    ? ACCOUNT_NOTIFICATION_SUCCESS.dot
+                                    : STOREFRONT_DOT_STYLE
+                              : mercadoLibreReturn
+                                ? ADMIN_ATTENTION_WARNING.dot
+                                : sensitive
+                                  ? ADMIN_SENSITIVE_DANGER.dot
+                                  : incomingPayment
+                                    ? ADMIN_INCOMING_PAYMENT_STYLE.dot
                                     : ADMIN_NEUTRAL_DOT_STYLE,
                           )}
                         />
@@ -261,7 +290,11 @@ export function AdminNotificationsPopover({
                       className={cn(
                         "mt-0.5 block text-xs font-semibold leading-4",
                         isStorefront
-                          ? "beyonix-header-notif-title"
+                          ? mercadoLibreReturn
+                            ? ACCOUNT_NOTIFICATION_WARNING.label
+                            : sensitive
+                              ? ACCOUNT_NOTIFICATION_DANGER.label
+                              : "beyonix-header-notif-title"
                           : sensitive
                             ? "text-[#ffc2c8]"
                             : "text-white",
@@ -297,18 +330,26 @@ export function AdminNotificationsPopover({
                           className={cn(
                             "font-black",
                             isStorefront
-                              ? "group-hover:text-[var(--beyonix-text-primary)]"
+                              ? mercadoLibreReturn || sensitive
+                                ? ""
+                                : "group-hover:text-[var(--beyonix-text-primary)]"
                               : mercadoLibreReturn || sensitive
                                 ? ""
                                 : "group-hover:text-white",
-                            mercadoLibreReturn
-                              ? ADMIN_ATTENTION_WARNING.label
-                              : sensitive
-                                ? ADMIN_SENSITIVE_DANGER.label
-                                : incomingPayment
-                                  ? "text-emerald-300"
-                                  : isStorefront
-                                    ? "text-[var(--account-accent-soft)]"
+                            isStorefront
+                              ? mercadoLibreReturn
+                                ? ACCOUNT_NOTIFICATION_WARNING.label
+                                : sensitive
+                                  ? ACCOUNT_NOTIFICATION_DANGER.label
+                                  : incomingPayment
+                                    ? ACCOUNT_NOTIFICATION_SUCCESS.label
+                                    : "text-[var(--account-accent-soft)]"
+                              : mercadoLibreReturn
+                                ? ADMIN_ATTENTION_WARNING.label
+                                : sensitive
+                                  ? ADMIN_SENSITIVE_DANGER.label
+                                  : incomingPayment
+                                    ? "text-emerald-300"
                                     : "text-beyonix-sky",
                           )}
                         >
