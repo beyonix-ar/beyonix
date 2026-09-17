@@ -55,7 +55,10 @@ create table public.ordenes (
   cancellation_requested_at timestamptz,
   cancellation_requested_by uuid,
   refund_pending_at timestamptz,
-  credit_note_required boolean
+  -- NOT NULL: igual que la base real -- ver
+  -- 20260917110000_fix_customer_cancellation_type_and_null_bugs.sql, que
+  -- corrige un bug por el que esta columna podía recibir NULL.
+  credit_note_required boolean not null default false
 );
 
 create table public.orden_items (
@@ -76,7 +79,9 @@ create table public.order_claims (
   admin_needs_action boolean default false,
   admin_response text,
   resolution text,
-  offered_resolutions jsonb default '[]'::jsonb,
+  -- text[], no jsonb: igual que la base real -- ver
+  -- 20260917110000_fix_customer_cancellation_type_and_null_bugs.sql.
+  offered_resolutions text[] default '{}'::text[],
   started_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

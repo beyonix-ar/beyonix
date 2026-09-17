@@ -229,27 +229,38 @@ export async function POST(
     if (message.includes("ORDER_NOT_FOUND")) {
       return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
     }
-    if (
-      message.includes("ORDER_ALREADY_CANCELLED") ||
-      message.includes("ORDER_ALREADY_DISPATCHED")
-    ) {
+    if (message.includes("ORDER_ALREADY_CANCELLED")) {
       return NextResponse.json(
-        { error: "Esta compra ya no se puede cancelar desde la cuenta." },
+        { error: "La compra ya está cancelada." },
         { status: 409 },
       )
     }
-    if (
-      message.includes("ANDREANI_CREATION_IN_PROGRESS") ||
-      message.includes("ANDREANI_RECONCILIATION_REQUIRED")
-    ) {
+    if (message.includes("ORDER_ALREADY_DISPATCHED")) {
       return NextResponse.json(
-        {
-          error:
-            "Tu compra tiene una creación de envío en curso o pendiente de conciliación. Escribinos para resolverlo antes de cancelar.",
-        },
+        { error: "El pedido ya fue despachado y no puede cancelarse desde acá." },
         { status: 409 },
       )
     }
+    if (message.includes("ANDREANI_CREATION_IN_PROGRESS")) {
+      return NextResponse.json(
+        { error: "No podés cancelar mientras se está generando el envío. Probá de nuevo en unos minutos." },
+        { status: 409 },
+      )
+    }
+    if (message.includes("ANDREANI_RECONCILIATION_REQUIRED")) {
+      return NextResponse.json(
+        { error: "El envío necesita revisión antes de poder cancelar. Escribinos para resolverlo." },
+        { status: 409 },
+      )
+    }
+    // Error desconocido: nunca se expone al cliente, pero se registra
+    // completo (código/detalle de Postgres) para poder diagnosticarlo -- sin
+    // este log, un bug real en la RPC es indistinguible de un simple
+    // rechazo de negocio.
+    console.error(
+      "Cancelación de compra: error no reconocido en request_customer_order_cancellation_with_claim",
+      { orderId: order.id, code: cancellationError?.code, message, details: cancellationError?.details, hint: cancellationError?.hint },
+    )
     return NextResponse.json(
       { error: "No se pudo cancelar la compra de forma segura." },
       { status: 500 },

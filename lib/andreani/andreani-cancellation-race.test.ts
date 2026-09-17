@@ -28,6 +28,30 @@ const migrations = [
 const fixMigration = read(
   "supabase/migrations/20260916100000_block_cancellation_during_andreani_creation.sql",
 )
+// Bug de tipo/NULL confirmado contra la base real (offered_resolutions
+// jsonb vs text[], v_invoiced propagando NULL) -- ver
+// 20260917110000_fix_customer_cancellation_type_and_null_bugs.sql.
+const typeFixMigration = read(
+  "supabase/migrations/20260917110000_fix_customer_cancellation_type_and_null_bugs.sql",
+)
+// El bug de tipo/NULL ya estaba presente en 20260825130000 (antes de que
+// existiera el guard B1) -- sin corregirlo, request_customer_order_cancellation_with_claim
+// nunca completaba un INSERT real, sin importar el estado de
+// andreani_creation_status. Para que el escenario "sin el fix B1" siga
+// probando específicamente la carrera (y no quede bloqueado por este bug
+// no relacionado), se aplica esta misma corrección sobre la versión SIN
+// guard, reutilizando el migration histórico ya cargado en `migrations`.
+const legacyTypeFix = read(
+  "supabase/migrations/20260825130000_atomic_customer_cancellation_claim.sql",
+)
+  .replace(
+    "case when v_payment_confirmed then 'reintegro_total' else 'otro' end,\n    '[]'::jsonb,",
+    "case when v_payment_confirmed then 'reintegro_total' else 'otro' end,\n    '{}'::text[],",
+  )
+  .replace(
+    "v_invoiced :=\n    v_order.invoice_status in ('authorized', 'processing')",
+    "v_invoiced :=\n    coalesce(v_order.invoice_status, '') in ('authorized', 'processing')",
+  )
 
 const customer = "10000000-0000-4000-8000-000000000001"
 const admin = "20000000-0000-4000-8000-000000000002"
@@ -39,7 +63,11 @@ async function setup(options: { withFix?: boolean } = {}) {
   const db = new PGlite()
   await db.exec(schema)
   for (const migration of migrations) await db.exec(migration)
-  if (withFix) await db.exec(fixMigration)
+  await db.exec(legacyTypeFix)
+  if (withFix) {
+    await db.exec(fixMigration)
+    await db.exec(typeFixMigration)
+  }
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   return db
 }
