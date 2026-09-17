@@ -77,6 +77,20 @@ export async function GET(request: Request) {
       .range(offset, offset + limit - 1)
   }
 
+  // BLOQUEANTE 2 (auditoría Andreani Parte 3/4): "detección al abrir" -- cada
+  // carga real del panel (no el polling liviano de notificaciones) barre
+  // claims Andreani vencidos (>5 min, sin envío persistido) a
+  // reconciliation_required. 100% local (sin llamar a Andreani), mismo
+  // predicado que ya usaba claim_andreani_shipment_creation -- nunca deja un
+  // pedido reclamable atascado en 'claimed' sólo porque nadie volvió a
+  // intentar generar su envío.
+  if (!notificationView) {
+    const { error: sweepError } = await auth.admin.rpc("sweep_stale_andreani_claims")
+    if (sweepError) {
+      console.error("ANDREANI_STALE_CLAIM_SWEEP_ERROR", { message: sweepError.message })
+    }
+  }
+
   const { data: orderRows, error: ordersError, count } = await ordersQuery
 
   if (ordersError) {

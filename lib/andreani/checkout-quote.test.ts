@@ -76,8 +76,20 @@ const officialBranchResponsePasoDeLosLibres = [
   },
 ]
 
+const defaultTestShippingSettings = {
+  defaultShippingCost: 0,
+  freeShippingMinAmount: 999_999_999,
+  shippingBonusMax: 0,
+  freeShippingMode: "off" as const,
+  logisticsBaseSubsidy: 0,
+}
+
 function quoteAndreaniCheckout(request: Parameters<typeof actualquoteAndreaniCheckout>[0], dependencies: Parameters<typeof actualquoteAndreaniCheckout>[1] = {}) {
-  return actualquoteAndreaniCheckout(request, { getAndreaniCommercialSettings: async () => ({ enabled: true }), ...dependencies })
+  return actualquoteAndreaniCheckout(request, {
+    getAndreaniCommercialSettings: async () => ({ enabled: true }),
+    getShippingSettings: async () => defaultTestShippingSettings,
+    ...dependencies,
+  })
 }
 
 function qaQuoteEnvironment(): NodeJS.ProcessEnv {
@@ -98,6 +110,35 @@ test("un error de lectura comercial bloquea cotizaciones antes de contactar al p
     getAndreaniCommercialSettings: async () => { throw new Error("DB unavailable") },
     quoteTariff: async () => { throw new Error("no debe cotizar") },
   }), (error: unknown) => error instanceof AndreaniError && error.code === "PROVIDER_DISABLED")
+})
+
+test("BLOQUEANTE 1: un error al leer la configuración comercial de envío bloquea la cotización -- nunca firma un importe calculado con defaults", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  await assert.rejects(() =>
+    quoteAndreaniCheckout(
+      {
+        cpDestino: "3230",
+        localidad: "Paso de los Libres",
+        provincia: "Corrientes",
+        items: [{ productId: 10, quantity: 1 }],
+      },
+      {
+        env: qaQuoteEnvironment(),
+        getLocalities: async () => officialLocalityResponse,
+        loadItems: async () => [
+          { product: completeProduct, variant: null, quantity: 1, discountPercent: 0 },
+        ],
+        quoteTariff: async () => ({
+          pesoAforado: "1",
+          tarifaSinIva: { seguroDistribucion: "0", distribucion: "13400", total: "13400" },
+          tarifaConIva: { seguroDistribucion: "0", distribucion: "13500", total: "13500" },
+        }),
+        getShippingSettings: async () => {
+          throw new Error("site_settings no disponible")
+        },
+      },
+    ),
+  )
 })
 
 test("la caché no reutiliza tarifas entre ambientes ni contratos", async () => {
@@ -244,6 +285,73 @@ test("una variante hereda y sobrescribe campos mediante el resolvedor central", 
   })
 })
 
+test("BLOQUEANTE 3: un carrito de hasta 50 kg consolidados se agrega sin bloquear", () => {
+  const result = aggregateAndreaniPackage([
+    { product: { ...completeProduct, peso_empaquetado_kg: 50 }, variant: null, quantity: 1, discountPercent: 0 },
+  ])
+  assert.equal(result.pesoKg, 50)
+})
+
+test("BLOQUEANTE 3: un solo producto de más de 50 kg se rechaza ANTES de cotizar (mismo límite que la creación B2C real)", () => {
+  assert.throws(
+    () =>
+      aggregateAndreaniPackage([
+        { product: { ...completeProduct, peso_empaquetado_kg: 51 }, variant: null, quantity: 1, discountPercent: 0 },
+      ]),
+    (error: unknown) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      /50 kg/.test(error.message),
+  )
+})
+
+test("BLOQUEANTE 3: varias unidades que SUMAN más de 50 kg también se rechazan (peso consolidado, no por unidad)", () => {
+  assert.throws(
+    () =>
+      aggregateAndreaniPackage([
+        { product: { ...completeProduct, peso_empaquetado_kg: 10 }, variant: null, quantity: 6, discountPercent: 0 },
+      ]),
+    (error: unknown) =>
+      error instanceof AndreaniError &&
+      error.code === "VALIDATION_ERROR" &&
+      /50 kg/.test(error.message),
+  )
+})
+
+test("BLOQUEANTE 3: un carrito >50kg no llega a ofrecerse como opción de envío -- quoteAndreaniCheckout rechaza antes de contactar a Andreani", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  let tariffCalls = 0
+  await assert.rejects(
+    () =>
+      quoteAndreaniCheckout(
+        {
+          cpDestino: "3230",
+          localidad: "Paso de los Libres",
+          provincia: "Corrientes",
+          items: [{ productId: 10, quantity: 1 }],
+        },
+        {
+          env: qaQuoteEnvironment(),
+          getLocalities: async () => officialLocalityResponse,
+          loadItems: async () => [
+            {
+              product: { ...completeProduct, peso_empaquetado_kg: 80 },
+              variant: null,
+              quantity: 1,
+              discountPercent: 0,
+            },
+          ],
+          quoteTariff: async () => {
+            tariffCalls += 1
+            throw new Error("no debe cotizar un carrito que no se puede crear después")
+          },
+        },
+      ),
+    (error: unknown) => error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+  )
+  assert.equal(tariffCalls, 0)
+})
+
 test("no cotiza un producto con logística incompleta", () => {
   assert.throws(
     () =>
@@ -308,7 +416,7 @@ test("la cotización usa el paquete agregado, normalizando espacios de la locali
 
   assert.equal(receivedWeight, 2)
   assert.equal(receivedVolume, 12_000)
-  assert.deepEqual(options, [{ type: "domicilio", price: 14_000 }])
+  assert.deepEqual(options, [{ type: "domicilio", price: 14_000, costCharged: 14_000 }])
 })
 
 test("Andreani desactivado comercialmente rechaza cotizar sin llegar a tocar catálogo/tarifa", async () => {
@@ -441,7 +549,7 @@ test("el checkout usa catálogos públicos y tarifas en PROD sin depender de cre
   assert.equal(tariffUrl.searchParams.get("bultos[0][kilos]"), "10")
   assert.equal(tariffUrl.searchParams.get("bultos[0][volumen]"), "1000")
   assert.equal(tariffUrl.searchParams.get("bultos[0][valorDeclarado]"), "50000")
-  assert.deepEqual(options, [{ type: "domicilio", price: 23_000 }])
+  assert.deepEqual(options, [{ type: "domicilio", price: 23_000, costCharged: 23_000 }])
 })
 
 test("reutiliza localidades estables para el mismo código postal", async () => {
@@ -524,7 +632,7 @@ test("reutiliza el destino ya resuelto antes de cotizar", async () => {
   )
 
   assert.equal(duplicateLocalityRequests, 0)
-  assert.deepEqual(options, [{ type: "domicilio", price: 14_000 }])
+  assert.deepEqual(options, [{ type: "domicilio", price: 14_000, costCharged: 14_000 }])
 })
 
 test("deduplica cotizaciones simultáneas idénticas", async () => {
@@ -816,10 +924,11 @@ test("consulta sucursales B2C antes de ofrecer esa modalidad", async () => {
   // resolveAndreaniDestinationBranches.
   assert.deepEqual(branchFilters, { canal: "B2C", seHaceAtencionAlCliente: true })
   assert.deepEqual(options, [
-    { type: "domicilio", price: 14_000 },
+    { type: "domicilio", price: 14_000, costCharged: 14_000 },
     {
       type: "sucursal",
       price: 13_000,
+      costCharged: 13_000,
       // Las sucursales reales ya consultadas para decidir si ofrecer la
       // modalidad ahora se exponen -- antes se descartaban después del
       // chequeo de existencia, dejando al checkout sin ningún dato real

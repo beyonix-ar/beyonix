@@ -812,7 +812,7 @@ test("crea el envío de un pedido sucursal usando el contrato de sucursal y el i
   assert.equal(admin.tables.ordenes.andreani_creation_status, "created")
 })
 
-test("rechaza un pedido con más de 50 kg consolidados sin llamar a la red", async () => {
+test("BLOQUEANTE 3: rechaza un pedido con más de 50 kg consolidados ANTES de reclamar la creación (mismo límite que aplica la creación real) -- nunca gasta un intento de claim en un pedido que nunca va a poder crearse", async () => {
   const admin = createFakeAdmin({
     ordenes: baseOrder() as never,
     orden_items: [
@@ -827,7 +827,11 @@ test("rechaza un pedido con más de 50 kg consolidados sin llamar a la red", asy
     (error: unknown) =>
       error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
   )
-  assert.equal(admin.tables.ordenes.andreani_creation_status, "failed")
+  // Se corta antes de reclamar la creación (aggregateAndreaniPackage, misma
+  // función que ya usa la cotización) -- nunca llega a tocar
+  // andreani_creation_status ni a consumir un intento de claim.
+  assert.equal(admin.claimCalls.length, 0)
+  assert.equal(admin.tables.ordenes.andreani_creation_status, undefined)
 })
 
 test("no duplica el envío si ya hay un reclamo reciente en curso", async () => {

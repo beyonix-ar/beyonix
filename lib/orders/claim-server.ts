@@ -35,6 +35,14 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_REFUND_PENDING: [409, "Primero registrá el reintegro y su comprobante en la gestión de reintegros del pedido."],
   CLAIM_INVALID: [400, "Revisá los datos de la solicitud."],
   CLAIM_CANCELLATION_ACTION: [409, "La cancelación debe aprobarse o rechazarse desde su acción específica."],
+  ANDREANI_CREATION_IN_PROGRESS: [
+    409,
+    "El pedido tiene una creación de envío en curso o pendiente de conciliación. Resolvé primero el estado de Andreani antes de cancelar.",
+  ],
+  ANDREANI_RECONCILIATION_REQUIRED: [
+    409,
+    "El pedido tiene una creación de envío en curso o pendiente de conciliación. Resolvé primero el estado de Andreani antes de cancelar.",
+  ],
 }
 
 export function claimErrorResponse(error: unknown) {

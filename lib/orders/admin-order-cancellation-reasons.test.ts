@@ -6,6 +6,7 @@ import {
   ADMIN_ORDER_CANCELLATION_REASONS,
   canCancelOrder,
   canRejectOrder,
+  isAndreaniCreationBlockingCancellation,
   isOrderAlreadyCancelled,
   isOrderDispatchedForCancellation,
   isOrderInvoicedForCancellation,
@@ -94,6 +95,38 @@ test("9. pedido despachado: ni Rechazar ni Cancelar quedan disponibles", () => {
 test("pedido sin ningún indicio de despacho no queda bloqueado por error", () => {
   assert.equal(isOrderDispatchedForCancellation({ estado: "pendiente" }), false)
   assert.equal(isOrderDispatchedForCancellation({ estado: "pagado", andreani_estado: "Retirado" }), false)
+})
+
+// BLOQUEANTE 1 (auditoría Andreani Parte 3/4): las mismas guardas que ahora
+// bloquean admin_cancel_order/approve_order_claim_cancellation
+// (Parte 1) también ocultan el botón "Cancelar pedido"/"Rechazar pedido"
+// -- para que el admin nunca vea un botón habilitado que el RPC va a
+// rechazar de todos modos.
+test("BLOQUEANTE 1 (Parte 3): claim Andreani en curso o ambiguo oculta Cancelar/Rechazar", () => {
+  const pagadoConClaim = {
+    estado: "pagado",
+    payment_status: "confirmado",
+    andreani_creation_status: "claimed",
+  }
+  const pendienteConReconciliacion = {
+    estado: "pendiente",
+    payment_status: "pendiente_comprobante",
+    andreani_creation_status: "reconciliation_required",
+  }
+
+  assert.equal(canCancelOrder(pagadoConClaim), false)
+  assert.equal(isAndreaniCreationBlockingCancellation(pagadoConClaim), true)
+  assert.equal(canRejectOrder(pendienteConReconciliacion), false)
+  assert.equal(isAndreaniCreationBlockingCancellation(pendienteConReconciliacion), true)
+})
+
+test("un envío 'created' (ya resuelto) no bloquea por este guard -- lo cubre isOrderDispatchedForCancellation vía andreani_envio_id", () => {
+  assert.equal(
+    isAndreaniCreationBlockingCancellation({ andreani_creation_status: "created" }),
+    false,
+  )
+  assert.equal(isAndreaniCreationBlockingCancellation({ andreani_creation_status: "failed" }), false)
+  assert.equal(isAndreaniCreationBlockingCancellation({}), false)
 })
 
 test("los motivos frecuentes incluyen los ejemplos pedidos y 'Otro' habilita texto libre", () => {

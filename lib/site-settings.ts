@@ -294,7 +294,28 @@ export function invalidateSiteSettingsCache() {
   siteSettingsRequest = null
 }
 
-async function loadSiteSettings(): Promise<SiteSettings> {
+export class SiteSettingsUnavailableError extends Error {
+  constructor() {
+    super(
+      "No se pudo leer la configuración comercial. Operación cancelada por seguridad.",
+    )
+    this.name = "SiteSettingsUnavailableError"
+  }
+}
+
+/**
+ * `strict=true` (usado exclusivamente por `getSiteSettings({ fresh: true })`,
+ * la lectura que ya reservan las operaciones financieras -- checkout, cotización
+ * de envío, creación de orden) NUNCA cae a `getFallbackSiteSettings()`: una
+ * falla de lectura ahí significa que no hay forma segura de saber la
+ * configuración comercial vigente (bonificación de envío, recargos de cuotas,
+ * etc.), así que se corta la operación en vez de cobrar con defaults que
+ * pueden no coincidir con lo que el cliente vio. Las lecturas cacheadas
+ * (páginas públicas, paneles de solo lectura) conservan el fallback silencioso:
+ * degradar a un default razonable ahí es preferible a romper el sitio entero
+ * por un hiccup transitorio de lectura.
+ */
+async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
   const requestGeneration = siteSettingsCacheGeneration
 
   try {
@@ -310,7 +331,10 @@ async function loadSiteSettings(): Promise<SiteSettings> {
         "andreani_commercial",
       ])
 
-    if (error) return getFallbackSiteSettings()
+    if (error) {
+      if (strict) throw new SiteSettingsUnavailableError()
+      return getFallbackSiteSettings()
+    }
 
     const settingsByKey = new Map(
       (data ?? []).map((setting) => [setting.key, setting.value]),
@@ -336,7 +360,12 @@ async function loadSiteSettings(): Promise<SiteSettings> {
       }
     }
     return settings
-  } catch {
+  } catch (error) {
+    if (strict) {
+      throw error instanceof SiteSettingsUnavailableError
+        ? error
+        : new SiteSettingsUnavailableError()
+    }
     return getFallbackSiteSettings()
   }
 }
@@ -354,7 +383,7 @@ export function getSiteSettings(
 
   if (!options.fresh && siteSettingsRequest) return siteSettingsRequest
 
-  const request = loadSiteSettings()
+  const request = loadSiteSettings(Boolean(options.fresh))
   if (!options.fresh) {
     siteSettingsRequest = request
     void request.finally(() => {

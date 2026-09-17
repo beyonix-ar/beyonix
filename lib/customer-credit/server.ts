@@ -1,7 +1,7 @@
 import "server-only"
 
 import type { createAdminClient } from "@/lib/supabase/admin"
-import { roundMoney } from "@/lib/customer-credit"
+import { roundMoney } from "../customer-credit.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 

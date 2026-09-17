@@ -39,6 +39,16 @@ export interface CheckoutShippingQuoteBinding {
 export interface CheckoutShippingQuoteOption {
   type: CheckoutShippingType
   price: number
+  /**
+   * Importe final que el cliente vio y aceptó para esta opción (tarifa real
+   * ya con la bonificación/subsidio comercial vigente AL MOMENTO DE COTIZAR
+   * aplicada -- ver calculateCustomerShippingCost). Se firma junto con el
+   * resto del token: si al crear la orden el mismo cálculo (con catálogo o
+   * configuración comercial actuales) da un número distinto, la cotización
+   * se trata como vencida y se exige recotizar -- nunca se persiste
+   * silenciosamente un importe distinto del que el cliente aceptó.
+   */
+  costCharged: number
 }
 
 export interface NormalizedCheckoutShipping {
@@ -64,10 +74,16 @@ interface CanonicalCheckoutShippingQuoteBinding {
 }
 
 interface CheckoutShippingQuoteClaims {
-  version: 1
+  version: 2
   provider: "andreani"
   type: CheckoutShippingType
   costCents: number
+  /**
+   * Importe final aceptado por el cliente (post subsidio/bonificación) al
+   * momento de cotizar. `0` es válido (envío gratis) -- ver
+   * toMoneyCentsAllowingZero.
+   */
+  costChargedCents: number
   expiresAt: number
   binding: CanonicalCheckoutShippingQuoteBinding
 }
@@ -82,7 +98,7 @@ interface CreateCheckoutShippingQuoteOptions
   ttlMs?: number
 }
 
-const CHECKOUT_SHIPPING_QUOTE_VERSION = 1
+const CHECKOUT_SHIPPING_QUOTE_VERSION = 2
 const CHECKOUT_SHIPPING_QUOTE_TTL_MS = 30 * 60 * 1000
 const CHECKOUT_SHIPPING_QUOTE_DOMAIN =
   "beyonix:checkout-shipping-quote:v1\0"
@@ -118,6 +134,13 @@ function getCheckoutShippingQuoteSecret(explicitSecret?: string) {
 
 function toMoneyCents(value: number) {
   if (!Number.isFinite(value) || value <= 0) invalidQuote()
+
+  return toMoneyCentsAllowingZero(value)
+}
+
+/** Igual que toMoneyCents, pero admite 0 -- para costCharged (envío gratis). */
+function toMoneyCentsAllowingZero(value: number) {
+  if (!Number.isFinite(value) || value < 0) invalidQuote()
 
   const cents = Math.round(value * 100)
   if (
@@ -234,6 +257,7 @@ export function createCheckoutShippingQuoteToken(
     provider: "andreani",
     type: option.type,
     costCents: toMoneyCents(option.price),
+    costChargedCents: toMoneyCentsAllowingZero(option.costCharged),
     expiresAt: now + ttlMs,
     binding: canonicalizeQuoteBinding(binding),
   }
@@ -296,6 +320,9 @@ function verifyCheckoutShippingQuote(
     (claims.type === "sucursal" && canonicalBinding.sucursalId === null) ||
     !Number.isSafeInteger(claims.costCents) ||
     claims.costCents <= 0 ||
+    !Number.isSafeInteger(claims.costChargedCents) ||
+    claims.costChargedCents < 0 ||
+    claims.costChargedCents > claims.costCents ||
     JSON.stringify(claims.binding) !== JSON.stringify(canonicalBinding)
   ) {
     invalidQuote()
@@ -305,6 +332,7 @@ function verifyCheckoutShippingQuote(
     provider: claims.provider,
     type: claims.type,
     costReal: claims.costCents / 100,
+    costChargedAtQuote: claims.costChargedCents / 100,
   } as const
 }
 
@@ -321,13 +349,33 @@ export function normalizeCheckoutShipping(
 ): NormalizedCheckoutShipping {
   const verifiedQuote = verifyCheckoutShippingQuote(shipping, binding, options)
   const costReal = verifiedQuote.costReal
-  const costCharged = options.customerCreditApplied
-    ? 0
-    : calculateCustomerShippingCost(
-        productsTotal,
-        costReal,
-        options.settings ?? DEFAULT_SHIPPING_SETTINGS,
-      )
+
+  if (options.customerCreditApplied) {
+    return {
+      provider: verifiedQuote.provider,
+      type: verifiedQuote.type,
+      costReal,
+      costCharged: 0,
+      freeShippingApplied: true,
+    }
+  }
+
+  const costCharged = calculateCustomerShippingCost(
+    productsTotal,
+    costReal,
+    options.settings ?? DEFAULT_SHIPPING_SETTINGS,
+  )
+
+  // El importe final que ve y acepta el cliente se firmó al cotizar. Si
+  // recalcularlo ahora (con el subtotal/configuración comercial VIGENTES al
+  // crear la orden) da un número distinto del que se firmó, algo cambió
+  // entre medio (precio de catálogo, subsidio, umbral de envío gratis) --
+  // nunca se persiste ese importe distinto en silencio: se trata la
+  // cotización como vencida y se exige recotizar.
+  if (Math.round(costCharged * 100) !== Math.round(verifiedQuote.costChargedAtQuote * 100)) {
+    invalidQuote()
+  }
+
   const freeShippingApplied = costCharged === 0
 
   return {

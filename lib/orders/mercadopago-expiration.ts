@@ -15,12 +15,36 @@ interface ExpirableMercadoPagoOrder {
   financial_status?: string | null
   credit_balance_used?: number | null
   mercadopago_preference_expires_at?: string | null
+  andreani_creation_status?: string | null
+  andreani_envio_id?: string | null
 }
 
 const SAFE_TO_EXPIRE_PAYMENT_STATUSES = new Set([
   "cancelled",
   "rejected",
 ])
+
+// Auditoría Andreani Parte 4/4 (hardening final): en operación normal, un
+// pedido nunca llega a andreani_creation_status='claimed'/
+// 'reconciliation_required'/'created' mientras financial_status sigue en
+// 'pending_payment' -- claim_andreani_shipment_creation exige evidencia de
+// pago confirmado (ver supabase/migrations/20260917100000_...). Esta función
+// dependía únicamente de esa invariante indirecta para no cruzarse con un
+// envío Andreani en curso. Acá se agrega la MISMA garantía de forma
+// explícita y local, sin depender de que esa invariante se mantenga para
+// siempre en código futuro que toque pagos MP.
+const ANDREANI_ORDER_IN_PROGRESS_STATUSES = new Set([
+  "claimed",
+  "reconciliation_required",
+  "created",
+])
+
+function isAndreaniShipmentInProgressOrCreated(order: ExpirableMercadoPagoOrder) {
+  return (
+    ANDREANI_ORDER_IN_PROGRESS_STATUSES.has(order.andreani_creation_status ?? "") ||
+    Boolean((order.andreani_envio_id ?? "").toString().trim())
+  )
+}
 
 export function getMercadoPagoAbandonedOrderCutoff(now = new Date()) {
   return new Date(
@@ -37,7 +61,7 @@ export async function expireAbandonedMercadoPagoOrders(
   const { data, error } = await admin
     .from("ordenes")
     .select(
-      "id, estado, payment_status, financial_status, credit_balance_used, mercadopago_preference_expires_at",
+      "id, estado, payment_status, financial_status, credit_balance_used, mercadopago_preference_expires_at, andreani_creation_status, andreani_envio_id",
     )
     .eq("payment_method_id", "mercadopago")
     .eq("estado", "pendiente")
@@ -55,6 +79,8 @@ export async function expireAbandonedMercadoPagoOrders(
   let expired = 0
 
   for (const order of (data ?? []) as ExpirableMercadoPagoOrder[]) {
+    if (isAndreaniShipmentInProgressOrCreated(order)) continue
+
     let payment
 
     try {
@@ -91,6 +117,11 @@ export async function expireAbandonedMercadoPagoOrders(
       .eq("estado", "pendiente")
       .eq("financial_status", "pending_payment")
       .lte("mercadopago_preference_expires_at", cutoff)
+      // Re-chequeo atómico: si entre el SELECT y este UPDATE alguien reclamó
+      // la creación del envío (claim_andreani_shipment_creation), esta
+      // condición ya no matchea y el UPDATE no afecta ninguna fila -- nunca
+      // se cancela un pedido con Andreani en curso o resuelto.
+      .or("andreani_creation_status.is.null,andreani_creation_status.eq.failed,andreani_creation_status.eq.rejected")
       .select("id")
       .maybeSingle()
 

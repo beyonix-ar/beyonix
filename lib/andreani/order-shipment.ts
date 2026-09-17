@@ -24,6 +24,24 @@ import {
   getAndreaniCommercialSettings,
   type AndreaniCommercialSettings,
 } from "../site-settings.ts"
+import {
+  parseArgentineStreetAddress,
+  type ParsedStreetAddress,
+} from "./address-parsing.ts"
+import {
+  ANDREANI_DNI_PATTERN,
+  ANDREANI_EMAIL_MAX_LENGTH,
+  ANDREANI_FLOOR_MAX_LENGTH,
+  ANDREANI_APARTMENT_MAX_LENGTH,
+  ANDREANI_LOCALITY_MAX_LENGTH,
+  ANDREANI_PHONE_MAX_DIGITS,
+  ANDREANI_PHONE_MIN_DIGITS,
+  ANDREANI_POSTAL_CODE_PATTERN,
+  ANDREANI_RECIPIENT_NAME_MAX_LENGTH,
+  ANDREANI_STREET_MAX_LENGTH,
+} from "./shipment-limits.ts"
+
+export { parseArgentineStreetAddress, type ParsedStreetAddress }
 import type {
   AndreaniCreateShipmentInput,
   AndreaniCreateShipmentRequest,
@@ -194,50 +212,6 @@ function normalizePhoneNumber(value: string | null) {
   return digits || undefined
 }
 
-const STREET_NUMBER_PATTERN = /^(.*\S)\s+(\d{1,6}\s*(?:bis)?)$/i
-const FLOOR_PATTERN = /\bpiso\s*n?°?\s*:?\s*([0-9a-záéíóúñ]+)/i
-const APARTMENT_PATTERN =
-  /\b(?:depto|dpto|departamento|apto|apartamento)\s*n?°?\s*:?\s*([0-9a-záéíóúñ]+)/i
-
-export interface ParsedStreetAddress {
-  calle: string
-  numero: string
-  piso?: string
-  departamento?: string
-}
-
-/**
- * BEYONIX persiste la dirección de checkout como texto libre en un único
- * campo. Andreani B2C exige calle/numero (y opcionalmente piso/depto) por
- * separado, así que este parser hace una extracción best-effort sin tocar
- * el checkout congelado.
- */
-export function parseArgentineStreetAddress(raw: string): ParsedStreetAddress {
-  const normalized = raw.trim().replace(/\s+/g, " ")
-  const [mainSegment, ...extraSegments] = normalized
-    .split(",")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-  const extraText = extraSegments.join(" ")
-
-  const floorMatch = extraText.match(FLOOR_PATTERN) ?? normalized.match(FLOOR_PATTERN)
-  const apartmentMatch =
-    extraText.match(APARTMENT_PATTERN) ?? normalized.match(APARTMENT_PATTERN)
-
-  const streetSource = (mainSegment ?? normalized)
-    .replace(FLOOR_PATTERN, "")
-    .replace(APARTMENT_PATTERN, "")
-    .trim()
-  const numberMatch = streetSource.match(STREET_NUMBER_PATTERN)
-
-  return {
-    calle: (numberMatch ? numberMatch[1] : streetSource).trim(),
-    numero: numberMatch?.[2]?.trim() ?? "",
-    piso: floorMatch?.[1],
-    departamento: apartmentMatch?.[1],
-  }
-}
-
 /**
  * Ambiente de CREACIÓN de envíos: independiente de ANDREANI_ENV (login
  * genérico) y de ANDREANI_TARIFF_ENV (cotización, hoy forzada a PROD por
@@ -396,10 +370,11 @@ export function resolveAndreaniShipmentCreationConfig(
   )
 
   if (
-    remitenteNombre.length > 40 ||
-    (remitenteEmail && remitenteEmail.length > 40) ||
+    remitenteNombre.length > ANDREANI_RECIPIENT_NAME_MAX_LENGTH ||
+    (remitenteEmail && remitenteEmail.length > ANDREANI_EMAIL_MAX_LENGTH) ||
     (remitenteTelefono &&
-      (remitenteTelefono.length < 8 || remitenteTelefono.length > 15)) ||
+      (remitenteTelefono.length < ANDREANI_PHONE_MIN_DIGITS ||
+        remitenteTelefono.length > ANDREANI_PHONE_MAX_DIGITS)) ||
     Boolean(remitenteDocumentoTipo) !== Boolean(remitenteDocumentoNumero) ||
     (remitenteDocumentoTipo &&
       !["DNI", "CUIT", "CUIL"].includes(remitenteDocumentoTipo)) ||
@@ -477,13 +452,13 @@ function buildAndreaniShipmentParties(
 
   if (
     !nombreCompleto ||
-    nombreCompleto.length > 40 ||
+    nombreCompleto.length > ANDREANI_RECIPIENT_NAME_MAX_LENGTH ||
     !email ||
-    email.length > 40 ||
+    email.length > ANDREANI_EMAIL_MAX_LENGTH ||
     !telefono ||
-    telefono.length < 8 ||
-    telefono.length > 15 ||
-    !/^\d{7,8}$/.test(dni)
+    telefono.length < ANDREANI_PHONE_MIN_DIGITS ||
+    telefono.length > ANDREANI_PHONE_MAX_DIGITS ||
+    !ANDREANI_DNI_PATTERN.test(dni)
   ) {
     throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
   }
@@ -554,7 +529,7 @@ function buildAndreaniHomeDeliveryEnvio(
   const direccion = requiredText(order.cliente_direccion)
 
   if (
-    !/^\d{4}$/.test(cpDestino) ||
+    !ANDREANI_POSTAL_CODE_PATTERN.test(cpDestino) ||
     !localidad ||
     !provincia ||
     !direccion
@@ -566,11 +541,11 @@ function buildAndreaniHomeDeliveryEnvio(
   if (
     !address.calle ||
     !address.numero ||
-    address.calle.length > 40 ||
-    address.numero.length > 40 ||
-    (address.piso && address.piso.length > 40) ||
-    (address.departamento && address.departamento.length > 40) ||
-    localidad.length > 40
+    address.calle.length > ANDREANI_STREET_MAX_LENGTH ||
+    address.numero.length > ANDREANI_STREET_MAX_LENGTH ||
+    (address.piso && address.piso.length > ANDREANI_FLOOR_MAX_LENGTH) ||
+    (address.departamento && address.departamento.length > ANDREANI_APARTMENT_MAX_LENGTH) ||
+    localidad.length > ANDREANI_LOCALITY_MAX_LENGTH
   ) {
     throw new AndreaniError("VALIDATION_ERROR", MISSING_LOGISTICS_MESSAGE)
   }
@@ -945,11 +920,19 @@ export async function createAndreaniShipmentForOrder(
       andreani_error: null,
     }
 
+    // Defensa en profundidad, no la protección principal (esa vive en el
+    // guard atómico de las RPCs de cancelación, ver
+    // 20260916100000_block_cancellation_during_andreani_creation.sql): además
+    // de id + claim token, exige que el claim siga en 'claimed' -- si algo
+    // más ya lo resolvió (p. ej. el barrido de claims vencidos de
+    // claim_andreani_shipment_creation) entre el POST y este UPDATE, no se
+    // pisa ese resultado con 'created'.
     const { data: persisted, error: persistenceError } = await admin
       .from("ordenes")
       .update(persistedUpdate as never)
       .eq("id", orderId)
       .eq("andreani_creation_claim_token", claimToken)
+      .eq("andreani_creation_status", "claimed")
       .select("id")
       .maybeSingle()
 
@@ -1030,6 +1013,7 @@ export async function createAndreaniShipmentForOrder(
       } as never)
       .eq("id", orderId)
       .eq("andreani_creation_claim_token", claimToken)
+      .eq("andreani_creation_status", "claimed")
 
     throw error
   }

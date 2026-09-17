@@ -1,14 +1,24 @@
 import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
-import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
-import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { canChangeOrderStatus } from "@/lib/orders/order-status-authorization"
 import { activatePendingItemWarranties } from "@/lib/orders/warranty-activation"
 
+// BLOQUEANTE 1 (auditoría Andreani Parte 3/4): "cancelado" NO es un estado
+// operativo más -- deliberadamente NO está en esta lista. Este endpoint
+// genérico no conoce (ni debe reimplementar) las guardas financieras/Andreani
+// de la cancelación real (andreani_creation_status='claimed'/
+// 'reconciliation_required', factura ya autorizada, envío ya despachado,
+// etc.) -- esas guardas viven en una única fuente atómica:
+// public.admin_cancel_order (RPC), expuesta acá por
+// app/api/admin/pedidos/[id]/cancel/route.ts. Antes, un PATCH acá con
+// estado="cancelado" evadía las 3 RPCs seguras (Parte 1) por completo. Se
+// prefiere bloquear el bypass en vez de duplicar esa lógica en un segundo
+// lugar -- ver el check explícito más abajo, antes de esta lista, para un
+// mensaje claro en vez de "estado inválido" genérico.
 const ALLOWED_ORDER_STATUSES = [
   "pendiente",
   "pagado",
@@ -21,7 +31,6 @@ const ALLOWED_ORDER_STATUSES = [
   "en_devolucion",
   "devuelto_beyonix",
   "entregado",
-  "cancelado",
 ]
 
 const DISPATCHED_ORDER_STATUSES = [
@@ -36,6 +45,23 @@ const DISPATCHED_ORDER_STATUSES = [
   "entregado",
 ]
 
+/**
+ * Subconjunto de DISPATCHED_ORDER_STATUSES que representa un evento FÍSICO
+ * de la red Andreani (visita, sucursal, retiro, devolución) -- no tiene
+ * sentido marcarlos si el pedido nunca tuvo un envío Andreani real. "enviado"
+ * queda deliberadamente afuera: es la etiqueta genérica de despacho que
+ * también usa un transportista manual ("Otro" en el selector de modalidad
+ * logística admin), no exclusiva de Andreani.
+ */
+const ANDREANI_PHYSICAL_STATUSES = [
+  "visita_fallida",
+  "en_sucursal",
+  "retiro_pendiente",
+  "retiro_vencido",
+  "en_devolucion",
+  "devuelto_beyonix",
+]
+
 function normalizeExternalUrl(value: unknown) {
   if (typeof value !== "string") return null
 
@@ -43,28 +69,6 @@ function normalizeExternalUrl(value: unknown) {
   if (!trimmed) return null
 
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-}
-
-function isMissingColumnError(error: { message?: string; code?: string } | null) {
-  return (
-    error?.code === "PGRST204" ||
-    error?.message?.includes("schema cache") ||
-    error?.message?.includes("cancelled_at")
-  )
-}
-
-function isOrderInvoiced(order: {
-  invoice_status?: string | null
-  invoice_cae?: string | null
-  invoice_number?: number | null
-  invoice_point?: number | null
-}) {
-  return (
-    order.invoice_status === "authorized" ||
-    order.invoice_status === "processing" ||
-    Boolean(order.invoice_cae) ||
-    Boolean(order.invoice_number && order.invoice_point)
-  )
 }
 
 export async function PATCH(
@@ -87,6 +91,16 @@ export async function PATCH(
 
   if (!Number.isFinite(orderId) || orderId <= 0) {
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
+  }
+
+  if (estado === "cancelado") {
+    return NextResponse.json(
+      {
+        error:
+          "Este endpoint no cancela pedidos. Usá \"Cancelar pedido\" o \"Rechazar pedido\" desde el detalle del pedido.",
+      },
+      { status: 409 },
+    )
   }
 
   if (!ALLOWED_ORDER_STATUSES.includes(estado)) {
@@ -134,7 +148,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, credit_balance_used, order_change_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_estado, andreani_creation_environment, andreani_tracking_event_at")
+    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, order_change_status, andreani_envio_id, andreani_estado, andreani_creation_environment, andreani_tracking_event_at, shipping_provider, envio_proveedor")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -182,35 +196,37 @@ export async function PATCH(
     }
   }
 
-  const cancellingPaidOrder =
-    estado === "cancelado" && isOrderPaymentConfirmed(currentOrder)
-  const nextFinancialStatus =
-    estado === "cancelado"
-      ? cancellingPaidOrder
-        ? "refund_pending"
-        : "cancelled"
-      : currentOrder.financial_status
+  // Estados que sólo tienen sentido si existe un envío Andreani real: un
+  // pedido cuyo transportista es Andreani no puede pasar a "visita fallida"
+  // o "en sucursal" si nunca se generó el envío (andreani_envio_id vacío).
+  // "enviado" queda afuera a propósito (ver ANDREANI_PHYSICAL_STATUSES):
+  // también lo usa un transportista manual ("Otro"), sin andreani_envio_id.
+  if (ANDREANI_PHYSICAL_STATUSES.includes(estado)) {
+    const provider = (
+      currentOrder.shipping_provider ?? currentOrder.envio_proveedor ?? ""
+    )
+      .toString()
+      .toLowerCase()
+    const hasAndreaniShipment = Boolean(
+      (currentOrder.andreani_envio_id ?? "").toString().trim(),
+    )
 
+    if (provider === "andreani" && !hasAndreaniShipment) {
+      return NextResponse.json(
+        {
+          error:
+            "Este pedido usa Andreani pero todavía no tiene un envío generado. Generá el envío antes de marcar este estado.",
+        },
+        { status: 409 },
+      )
+    }
+  }
+
+  // "cancelado" ya fue rechazado más arriba -- estado nunca llega acá con
+  // ese valor. financial_status no lo toca esta ruta (sólo lo tocan las
+  // RPCs guardadas de cancelación).
   const statusUpdate = {
     estado,
-    ...(currentOrder.estado !== estado && estado === "cancelado"
-      ? { cancelled_at: new Date().toISOString() }
-      : {}),
-    ...(estado === "cancelado"
-      ? {
-          financial_status: nextFinancialStatus,
-          cancellation_requested_at: new Date().toISOString(),
-          cancellation_requested_by: auth.user.id,
-          ...(cancellingPaidOrder
-            ? {
-                refund_pending_at: new Date().toISOString(),
-                credit_note_required: isOrderInvoiced(currentOrder),
-              }
-            : {
-                credit_note_required: false,
-              }),
-        }
-      : {}),
     ...(estado === "entregado" && !currentOrder.delivered_at
       ? { delivered_at: new Date().toISOString() }
       : {}),
@@ -224,26 +240,12 @@ export async function PATCH(
       ? { envio_proveedor: shippingProvider }
       : {}),
   }
-  let { data, error } = await auth.admin
+  const { data, error } = await auth.admin
     .from("ordenes")
     .update(statusUpdate)
     .eq("id", orderId)
     .select()
     .single()
-
-  if (isMissingColumnError(error) && "cancelled_at" in statusUpdate) {
-    const fallbackUpdate = { ...statusUpdate }
-    delete (fallbackUpdate as { cancelled_at?: string }).cancelled_at
-    const retryResult = await auth.admin
-      .from("ordenes")
-      .update(fallbackUpdate)
-      .eq("id", orderId)
-      .select()
-      .single()
-
-    data = retryResult.data
-    error = retryResult.error
-  }
 
   if (error || !data) {
     return NextResponse.json(
@@ -266,12 +268,9 @@ export async function PATCH(
       orderId,
       actorType: "admin",
       actorId: auth.user.id,
-      action:
-        estado === "cancelado" && cancellingPaidOrder
-          ? "order_cancelled_refund_pending"
-          : "order_status_changed",
+      action: "order_status_changed",
       previousStatus: currentOrder.financial_status ?? currentOrder.estado,
-      newStatus: nextFinancialStatus ?? estado,
+      newStatus: estado,
       metadata: {
         previousEstado: currentOrder.estado,
         newEstado: estado,
@@ -294,29 +293,6 @@ export async function PATCH(
     })
 
     await sendOrderStateEmail(data)
-
-    if (estado === "cancelado") {
-      const hasAuthorizedInvoice =
-        currentOrder.invoice_status === "authorized" &&
-        Boolean(
-          currentOrder.invoice_cae &&
-            currentOrder.invoice_number &&
-            currentOrder.invoice_point,
-        )
-
-      if (
-        Number(currentOrder.credit_balance_used ?? 0) > 0 &&
-        !hasAuthorizedInvoice
-      ) {
-        await reverseCustomerCreditForOrder(auth.admin, {
-          orderId,
-          description: "Reintegro de saldo por cancelación de compra",
-          createdBy: auth.user.id,
-        })
-      }
-
-      await upsertCustomerCancelledOrderNotification(auth.admin, data)
-    }
   }
 
   return NextResponse.json({ order: data })

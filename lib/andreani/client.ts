@@ -38,6 +38,7 @@ import {
   resolveProductLogistics,
 } from "../shipping/product-logistics.ts"
 import { ProductLogisticsValidationError } from "../shipping/logistics-validation.ts"
+import { ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG } from "./shipment-limits.ts"
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000
@@ -1773,10 +1774,10 @@ export class AndreaniClient {
         item.producto,
         item.variante,
       )
-      if (logistics.pesoKg > 50) {
+      if (logistics.pesoKg > ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG) {
         throw new AndreaniError(
           "VALIDATION_ERROR",
-          "El bulto B2C no puede superar los 50 kg.",
+          `El bulto B2C no puede superar los ${ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG} kg.`,
         )
       }
       return {

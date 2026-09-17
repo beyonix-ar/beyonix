@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const CUSTOMER_ORDER_DETAIL_SELECT =
@@ -73,7 +74,16 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos la compra." }, { status: 404 })
   }
 
-  return NextResponse.json({ order: order as unknown as SupabasePedido }, {
+  const safeOrder = {
+    ...(order as unknown as SupabasePedido),
+    // Auditoría Andreani Parte 4/4: mismo motivo que /api/orders -- ver
+    // lib/orders/customer-order-audit-view.ts.
+    order_audit_events: toCustomerSafeOrderAuditEvents(
+      (order as unknown as SupabasePedido).order_audit_events,
+    ),
+  }
+
+  return NextResponse.json({ order: safeOrder }, {
     headers: { "Cache-Control": "private, no-store" },
   })
 }

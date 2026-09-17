@@ -134,6 +134,14 @@ export interface AndreaniCheckoutQuoteOption {
   type: "domicilio" | "sucursal"
   price: number
   /**
+   * Importe final que paga el cliente para esta opción (price ya con la
+   * bonificación/subsidio comercial vigente aplicada -- ver
+   * calculateCustomerShippingCost). Se firma en el quoteToken de esta misma
+   * opción para poder detectar, al crear la orden, si cambió el catálogo o
+   * la configuración comercial entre medio.
+   */
+  costCharged: number
+  /**
    * Sucursales reales disponibles para la localidad destino cotizada -- sólo
    * presente en la opción "sucursal". Ya se consultaban internamente para
    * decidir si ofrecer la modalidad (ver branchesPromise en

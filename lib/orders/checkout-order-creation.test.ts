@@ -79,6 +79,83 @@ test("normaliza carrito y cliente una sola vez sin perder Unicode", () => {
   assert.equal(getCheckoutOrderCustomerValidationError(customer), "")
 })
 
+test("BLOQUEANTE 2: nombre más largo de lo que Andreani acepta se bloquea en checkout, antes de crear la orden", () => {
+  const customer = normalizeCheckoutOrderCustomer({
+    ...validCustomer,
+    nombre: "A".repeat(41),
+  })
+  assert.match(
+    getCheckoutOrderCustomerValidationError(customer),
+    /no puede superar los 40 caracteres/,
+  )
+})
+
+test("BLOQUEANTE 2: email más largo de lo que Andreani acepta se bloquea en checkout, antes de crear la orden", () => {
+  const customer = normalizeCheckoutOrderCustomer({
+    ...validCustomer,
+    email: `${"a".repeat(35)}@example.com`,
+  })
+  assert.match(
+    getCheckoutOrderCustomerValidationError(customer),
+    /email no puede superar los 40 caracteres/,
+  )
+})
+
+test("BLOQUEANTE 2: una altura de más de 6 dígitos (que Andreani no puede identificar) se bloquea en checkout, antes de crear la orden", () => {
+  const customer = normalizeCheckoutOrderCustomer({
+    ...validCustomer,
+    direccion: "Avenida Córdoba 1234567",
+  })
+  assert.match(
+    getCheckoutOrderCustomerValidationError(customer),
+    /calle y altura reconocibles/,
+  )
+})
+
+test("BLOQUEANTE 2: una dirección sin altura identificable se bloquea en checkout, antes de crear la orden", () => {
+  const customer = normalizeCheckoutOrderCustomer({
+    ...validCustomer,
+    direccion: "Ruta provincial sin altura",
+  })
+  assert.match(
+    getCheckoutOrderCustomerValidationError(customer),
+    /calle y altura reconocibles/,
+  )
+})
+
+test("BLOQUEANTE 2: una localidad más larga de lo que Andreani acepta se bloquea en checkout, antes de crear la orden", () => {
+  const customer = normalizeCheckoutOrderCustomer({
+    ...validCustomer,
+    localidad: "L".repeat(41),
+  })
+  assert.match(
+    getCheckoutOrderCustomerValidationError(customer),
+    /localidad no puede superar los 40 caracteres/,
+  )
+})
+
+test("BLOQUEANTE 2: un código postal que no sean 4 números exactos se bloquea en checkout, antes de crear la orden", () => {
+  const customer = normalizeCheckoutOrderCustomer({
+    ...validCustomer,
+    cpDestino: "323055",
+  })
+  assert.match(
+    getCheckoutOrderCustomerValidationError(customer),
+    /código postal válido de 4 números/,
+  )
+})
+
+test("BLOQUEANTE 2: un cliente que cumple todos los límites reales de Andreani sigue pasando -- domicilio y sucursal no se rompen", () => {
+  const customer = normalizeCheckoutOrderCustomer(validCustomer)
+  assert.equal(getCheckoutOrderCustomerValidationError(customer), "")
+
+  // La validación de cliente es la misma para domicilio y sucursal -- la
+  // sucursal se verifica aparte (resolveCheckoutOrderShippingBranch), nunca
+  // acá -- así que un cliente válido no puede quedar bloqueado por elegir
+  // una modalidad u otra.
+  assert.equal(getCheckoutOrderCustomerValidationError(customer), "")
+})
+
 test("un carrito con más líneas que el tope se rechaza antes de tocar catálogo/base (DoS)", () => {
   const items = Array.from({ length: MAX_CHECKOUT_LINE_ITEMS + 1 }, (_, index) => ({
     productId: index + 1,
@@ -806,7 +883,7 @@ test("el helper común mantiene la validación del envío firmado", () => {
   }
   const quoteToken = createCheckoutShippingQuoteToken(
     binding,
-    { type: "domicilio", price: 12_345.67 },
+    { type: "domicilio", price: 12_345.67, costCharged: 12_345.67 },
   )
   try {
     const shipping = normalizeCheckoutOrderShipping({

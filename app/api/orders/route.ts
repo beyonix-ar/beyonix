@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
+import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
 import type { CustomerOrderSummary } from "@/lib/supabase/types"
 
 const ORDER_LIST_SELECT =
@@ -59,9 +60,16 @@ export async function GET() {
     merged.set(order.id, order)
   }
 
-  const orders = [...merged.values()].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  )
+  const orders = [...merged.values()]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .map((order) => ({
+      ...order,
+      // Auditoría Andreani Parte 4/4: order_audit_events.metadata trae datos
+      // administrativos internos (andreaniSnapshot, notes de conciliación,
+      // reasonCode, source, etc.) que este endpoint de cliente nunca debe
+      // reenviar tal cual -- ver lib/orders/customer-order-audit-view.ts.
+      order_audit_events: toCustomerSafeOrderAuditEvents(order.order_audit_events),
+    }))
 
   return NextResponse.json({ orders })
 }

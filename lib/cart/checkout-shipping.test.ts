@@ -8,6 +8,7 @@ import {
   normalizeCheckoutShipping,
   type CheckoutShippingQuoteBinding,
 } from "./checkout-shipping.ts"
+import { calculateCustomerShippingCost, DEFAULT_SHIPPING_SETTINGS } from "../store-config.ts"
 
 const TEST_SECRET = "beyonix-checkout-shipping-test-secret-2026"
 const NOW = Date.UTC(2026, 7, 15, 12)
@@ -25,20 +26,30 @@ const binding: CheckoutShippingQuoteBinding = {
   ],
 }
 
-function createQuoteToken(price = 18_000) {
+function createQuoteToken(price = 18_000, costCharged = price) {
   return createCheckoutShippingQuoteToken(
     binding,
-    { type: "domicilio", price },
+    { type: "domicilio", price, costCharged },
     { secret: TEST_SECRET, now: NOW },
   )
 }
 
 test("el costo real proviene de la cotización firmada y no del navegador", () => {
+  const settings = {
+    defaultShippingCost: 12_000,
+    freeShippingMinAmount: 80_000,
+    shippingBonusMax: 5_000,
+    freeShippingMode: "full" as const,
+    logisticsBaseSubsidy: 0,
+  }
   const shipping = normalizeCheckoutShipping(
     {
       provider: "andreani",
       type: "domicilio",
-      quoteToken: createQuoteToken(),
+      quoteToken: createQuoteToken(
+        18_000,
+        calculateCustomerShippingCost(100_000, 18_000, settings),
+      ),
       costReal: 1,
     },
     binding,
@@ -46,13 +57,7 @@ test("el costo real proviene de la cotización firmada y no del navegador", () =
     {
       secret: TEST_SECRET,
       now: NOW,
-      settings: {
-        defaultShippingCost: 12_000,
-        freeShippingMinAmount: 80_000,
-        shippingBonusMax: 5_000,
-        freeShippingMode: "full",
-        logisticsBaseSubsidy: 0,
-      },
+      settings,
     },
   )
 
@@ -61,7 +66,17 @@ test("el costo real proviene de la cotización firmada y no del navegador", () =
 })
 
 test("todos los medios de pago consumen la misma cotización verificada", () => {
-  const quoteToken = createQuoteToken(12_345.67)
+  const settings = {
+    defaultShippingCost: 0,
+    freeShippingMinAmount: 999_999,
+    shippingBonusMax: 0,
+    freeShippingMode: "off" as const,
+    logisticsBaseSubsidy: 0,
+  }
+  const quoteToken = createQuoteToken(
+    12_345.67,
+    calculateCustomerShippingCost(20_000, 12_345.67, settings),
+  )
   const paymentMethods = [
     "mercadopago",
     "transferencia",
@@ -78,13 +93,7 @@ test("todos los medios de pago consumen la misma cotización verificada", () => 
         secret: TEST_SECRET,
         now: NOW,
         customerCreditApplied: paymentMethod === "customer_credit",
-        settings: {
-          defaultShippingCost: 0,
-          freeShippingMinAmount: 999_999,
-          shippingBonusMax: 0,
-          freeShippingMode: "off",
-          logisticsBaseSubsidy: 0,
-        },
+        settings,
       },
     ),
   }))
@@ -175,9 +184,104 @@ test("rechaza cotizaciones vencidas", () => {
   )
 })
 
+test("BLOQUEANTE 1: el importe mostrado al cotizar es EXACTAMENTE el que se persiste cuando nada cambió", () => {
+  const settings = {
+    defaultShippingCost: 12_000,
+    freeShippingMinAmount: 80_000,
+    shippingBonusMax: 5_000,
+    freeShippingMode: "full" as const,
+    logisticsBaseSubsidy: 0,
+  }
+  const productsTotal = 100_000
+  const costCharged = calculateCustomerShippingCost(productsTotal, 18_000, settings)
+  const quoteToken = createQuoteToken(18_000, costCharged)
+
+  const shipping = normalizeCheckoutShipping(
+    { provider: "andreani", type: "domicilio", quoteToken },
+    binding,
+    productsTotal,
+    { secret: TEST_SECRET, now: NOW, settings },
+  )
+
+  // El importe "mostrado" (firmado al cotizar) y el "persistido" (recalculado
+  // al crear la orden) son el mismo número exacto -- no una coincidencia,
+  // sino la garantía que exige el fix.
+  assert.equal(shipping.costCharged, costCharged)
+})
+
+test("BLOQUEANTE 1: si la configuración comercial cambia entre cotizar y crear la orden, se exige recotizar (nunca se persiste un importe distinto en silencio)", () => {
+  const settingsAtQuoteTime = {
+    defaultShippingCost: 12_000,
+    freeShippingMinAmount: 80_000,
+    shippingBonusMax: 5_000,
+    freeShippingMode: "full" as const,
+    logisticsBaseSubsidy: 0,
+  }
+  const productsTotal = 100_000
+  const costChargedAtQuoteTime = calculateCustomerShippingCost(
+    productsTotal,
+    18_000,
+    settingsAtQuoteTime,
+  )
+  const quoteToken = createQuoteToken(18_000, costChargedAtQuoteTime)
+
+  // Un admin sube el umbral de envío gratis DESPUÉS de que el cliente cotizó
+  // -- con la config nueva, el mismo carrito ya no califica para bonificación
+  // y el importe recalculado sería mayor al que el cliente vio.
+  const settingsAtOrderCreationTime = {
+    ...settingsAtQuoteTime,
+    freeShippingMinAmount: 500_000,
+  }
+
+  assert.throws(
+    () =>
+      normalizeCheckoutShipping(
+        { provider: "andreani", type: "domicilio", quoteToken },
+        binding,
+        productsTotal,
+        { secret: TEST_SECRET, now: NOW, settings: settingsAtOrderCreationTime },
+      ),
+    CheckoutShippingQuoteError,
+  )
+})
+
+test("BLOQUEANTE 1: si el precio de catálogo cambia el subtotal entre cotizar y crear la orden, se exige recotizar", () => {
+  const settings = {
+    defaultShippingCost: 12_000,
+    freeShippingMinAmount: 80_000,
+    shippingBonusMax: 5_000,
+    freeShippingMode: "full" as const,
+    logisticsBaseSubsidy: 0,
+  }
+  const productsTotalAtQuoteTime = 100_000
+  const costChargedAtQuoteTime = calculateCustomerShippingCost(
+    productsTotalAtQuoteTime,
+    18_000,
+    settings,
+  )
+  const quoteToken = createQuoteToken(18_000, costChargedAtQuoteTime)
+
+  // El precio de un producto del carrito bajó entre que el cliente cotizó y
+  // confirmó la compra: el subtotal recalculado ya no alcanza el mínimo de
+  // envío gratis que sí cumplía al cotizar.
+  const productsTotalAtOrderCreationTime = 50_000
+
+  assert.throws(
+    () =>
+      normalizeCheckoutShipping(
+        { provider: "andreani", type: "domicilio", quoteToken },
+        binding,
+        productsTotalAtOrderCreationTime,
+        { secret: TEST_SECRET, now: NOW, settings },
+      ),
+    CheckoutShippingQuoteError,
+  )
+})
+
 test("firma vinculada a dirección, sucursal idgla, variante, cantidad y vencimiento exacto", () => {
   const bound = { ...binding, direccion: "San Martín 123", sucursalId: 10055 }
-  const quoteToken = createCheckoutShippingQuoteToken(bound, { type: "sucursal", price: 12000 }, { secret: TEST_SECRET, now: NOW })
+  const costCharged = calculateCustomerShippingCost(10000, 12000, DEFAULT_SHIPPING_SETTINGS)
+  const quoteToken = createCheckoutShippingQuoteToken(bound, { type: "sucursal", price: 12000, costCharged }, { secret: TEST_SECRET, now: NOW })
   const shipping = { type: "sucursal" as const, quoteToken }
   assert.equal(normalizeCheckoutShipping(shipping, bound, 10000, { secret: TEST_SECRET, now: NOW }).costReal, 12000)
   for (const changed of [

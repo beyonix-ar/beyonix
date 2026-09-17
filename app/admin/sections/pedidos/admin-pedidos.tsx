@@ -4685,6 +4685,7 @@ function PedidoDetailModal({
   onRefundUpdated,
   onWarrantyUpdated,
   onRequestCancelReject,
+  onRequestAndreaniReconciliation,
   embedded = false,
 }: {
   pedido: SupabasePedido
@@ -4721,6 +4722,7 @@ function PedidoDetailModal({
     pedido: SupabasePedido,
     action: AdminOrderCancellationAction,
   ) => void
+  onRequestAndreaniReconciliation: (pedido: SupabasePedido) => void
   embedded?: boolean
 }) {
   const router = useRouter()
@@ -6075,6 +6077,18 @@ function PedidoDetailModal({
                       </button>
                     )
                   })()}
+                  {pedido.andreani_creation_status === "reconciliation_required" && (
+                    <button
+                      type="button"
+                      aria-label={`Conciliar envío Andreani del pedido ${pedido.id}`}
+                      title="El resultado de la creación quedó ambiguo (timeout/error de red): confirmá con Andreani si el envío existe antes de continuar."
+                      onClick={() => onRequestAndreaniReconciliation(pedido)}
+                      className="admin-order-shipping-refined-action inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/8 px-3 text-11px font-black text-amber-200 transition-colors hover:border-amber-400/55 hover:bg-amber-400/15"
+                    >
+                      <AlertTriangle className="size-4" />
+                      Conciliar envío
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-label={`Consultar envío Andreani del pedido ${pedido.id}`}
@@ -6895,6 +6909,210 @@ function AdminOrderCancelRejectModal({
   )
 }
 
+type AndreaniReconciliationResolution = "created" | "not_created"
+
+/**
+ * BLOQUEANTE 2 (auditoría Andreani Parte 3/4): único lugar de la UI que
+ * puede sacar un pedido de andreani_creation_status='reconciliation_required'.
+ * Nunca reintenta el POST a Andreani -- el admin debe confirmar
+ * explícitamente, por fuera del sistema (con Andreani), si el envío existe
+ * o no. Toda la atomicidad/CAS/auditoría vive server-side
+ * (public.resolve_andreani_reconciliation).
+ */
+function AndreaniReconciliationModal({
+  request,
+  loading,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  request: SupabasePedido | null
+  loading: boolean
+  error: string
+  onCancel: () => void
+  onConfirm: (input: {
+    resolution: AndreaniReconciliationResolution
+    envioId: string
+    tracking: string
+    etiquetaUrl: string
+    notes: string
+  }) => void
+}) {
+  const [resolution, setResolution] = useState<AndreaniReconciliationResolution | null>(null)
+  const [envioId, setEnvioId] = useState("")
+  const [tracking, setTracking] = useState("")
+  const [etiquetaUrl, setEtiquetaUrl] = useState("")
+  const [notes, setNotes] = useState("")
+
+  useEffect(() => {
+    setResolution(null)
+    setEnvioId("")
+    setTracking("")
+    setEtiquetaUrl("")
+    setNotes("")
+  }, [request?.id])
+
+  if (!request) return null
+
+  const canConfirm =
+    resolution !== null &&
+    notes.trim().length >= 5 &&
+    (resolution !== "created" || envioId.trim().length > 0)
+
+  return (
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-amber-400/25 bg-[#101010] shadow-2xl shadow-black/80">
+        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#2a2010_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
+          <p className="text-11px font-black uppercase tracking-widest text-amber-300">
+            Conciliación manual
+          </p>
+          <h2 className="mt-2 text-xl font-black text-white">
+            Resultado de Andreani incierto -- pedido #{formatPublicOrderId(request.id)}
+          </h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+            La última creación de envío quedó sin resultado confirmado (timeout,
+            error de red o respuesta perdida). Antes de continuar, confirmá con
+            Andreani (panel/soporte) si el envío realmente existe.
+          </p>
+        </div>
+
+        <div className="space-y-3 px-5 py-4">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setResolution("created")}
+              disabled={loading}
+              className={`rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-colors disabled:cursor-wait ${
+                resolution === "created"
+                  ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-100"
+                  : "border-white/10 text-white/68 hover:border-white/25"
+              }`}
+            >
+              El envío EXISTE
+              <span className="mt-1 block text-10px font-semibold text-white/45">
+                Confirmé el envío con Andreani y tengo el número real.
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setResolution("not_created")}
+              disabled={loading}
+              className={`rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-colors disabled:cursor-wait ${
+                resolution === "not_created"
+                  ? "border-red-400/60 bg-red-400/10 text-red-100"
+                  : "border-white/10 text-white/68 hover:border-white/25"
+              }`}
+            >
+              Confirmé que NO existe
+              <span className="mt-1 block text-10px font-semibold text-white/45">
+                Andreani no tiene ningún envío para este pedido.
+              </span>
+            </button>
+          </div>
+
+          {resolution === "created" && (
+            <div className="space-y-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-3">
+              <label className="block">
+                <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Número de envío Andreani (real)
+                </span>
+                <input
+                  value={envioId}
+                  onChange={(event) => setEnvioId(event.target.value)}
+                  placeholder="Ej: 360001234567890"
+                  disabled={loading}
+                  className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+                />
+              </label>
+              <label className="block">
+                <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  Tracking (opcional)
+                </span>
+                <input
+                  value={tracking}
+                  onChange={(event) => setTracking(event.target.value)}
+                  placeholder="Ej: 360001234567890"
+                  disabled={loading}
+                  className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+                />
+              </label>
+              <label className="block">
+                <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+                  URL de etiqueta (opcional)
+                </span>
+                <input
+                  value={etiquetaUrl}
+                  onChange={(event) => setEtiquetaUrl(event.target.value)}
+                  placeholder="https://..."
+                  disabled={loading}
+                  className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+                />
+              </label>
+            </div>
+          )}
+
+          {resolution === "not_created" && (
+            <div className="rounded-2xl border border-red-400/20 bg-red-400/5 p-3 text-xs font-semibold leading-5 text-red-100">
+              El pedido va a quedar en un estado reintentable: se puede volver a
+              intentar &ldquo;Generar envío&rdquo; con normalidad. Nunca se libera esto sin
+              tu confirmación explícita.
+            </div>
+          )}
+
+          <label className="block">
+            <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+              Cómo lo confirmaste (queda auditado)
+            </span>
+            <AdminTextarea
+              title="Notas de conciliación"
+              ariaLabel="Notas de conciliación"
+              value={notes}
+              onChange={setNotes}
+              placeholder="Ej: Consulté el panel de Andreani con el idPedido BX-1234 el 17/09 a las 15:20 y..."
+              maxLength={1000}
+              disabled={loading}
+            />
+          </label>
+
+          {error && (
+            <p className="rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+          >
+            Volver
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              resolution &&
+              onConfirm({
+                resolution,
+                envioId: envioId.trim(),
+                tracking: tracking.trim(),
+                etiquetaUrl: etiquetaUrl.trim(),
+                notes: notes.trim(),
+              })
+            }
+            disabled={loading || !canConfirm}
+            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-amber-400/45 bg-amber-500/15 px-4 text-11px font-black uppercase tracking-wide text-amber-100 transition-colors hover:border-amber-400/70 hover:bg-amber-500/25 disabled:cursor-wait disabled:opacity-50"
+          >
+            {loading ? "Conciliando..." : "Confirmar conciliación"}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AdminPedidos({
   initialOrderId,
 }: {
@@ -6952,6 +7170,10 @@ export function AdminPedidos({
     useState<CancelRejectRequest>(null)
   const [cancelRejectLoading, setCancelRejectLoading] = useState(false)
   const [cancelRejectError, setCancelRejectError] = useState("")
+  const [andreaniReconciliationRequest, setAndreaniReconciliationRequest] =
+    useState<SupabasePedido | null>(null)
+  const [andreaniReconciliationLoading, setAndreaniReconciliationLoading] = useState(false)
+  const [andreaniReconciliationError, setAndreaniReconciliationError] = useState("")
 
   useEffect(() => {
     if (loading) return
@@ -7272,6 +7494,27 @@ export function AdminPedidos({
 
     if (estadoActual === nextEstado) return
 
+    // BLOQUEANTE 1 (auditoría Andreani Parte 3/4): "Cancelado" ya no se
+    // aplica vía PATCH genérico de estado (el backend lo rechaza -- ver
+    // app/api/admin/pedidos/[id]/status/route.ts). Se redirige al mismo
+    // flujo seguro que ya usan los botones "Cancelar pedido"/"Rechazar
+    // pedido" (admin_cancel_order, con todas sus guardas: Andreani en
+    // curso, facturado, despachado), en vez de duplicar esa lógica acá.
+    if (nextEstado === "cancelado") {
+      if (canCancelOrder(pedido)) {
+        setCancelRejectRequest({ pedido, action: "cancel" })
+      } else if (canRejectOrder(pedido)) {
+        setCancelRejectRequest({ pedido, action: "reject" })
+      } else {
+        setNotice({
+          type: "error",
+          message:
+            "Este pedido no se puede cancelar desde acá. Usá las acciones administrativas del detalle del pedido para ver el motivo exacto.",
+        })
+      }
+      return
+    }
+
     if (nextEstado === "en_camino") {
       if (isSuperAdmin) {
         setTrackingStatusRequest({
@@ -7548,6 +7791,67 @@ export function AdminPedidos({
     }
   }
 
+  const confirmAndreaniReconciliation = async (input: {
+    resolution: "created" | "not_created"
+    envioId: string
+    tracking: string
+    etiquetaUrl: string
+    notes: string
+  }) => {
+    if (!andreaniReconciliationRequest) return
+
+    setAndreaniReconciliationLoading(true)
+    setAndreaniReconciliationError("")
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        setAndreaniReconciliationError("La sesión administrativa venció.")
+        return
+      }
+
+      const response = await fetch(
+        `/api/admin/pedidos/${andreaniReconciliationRequest.id}/andreani-reconciliation`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            resolution: input.resolution,
+            envioId: input.envioId,
+            tracking: input.tracking,
+            etiquetaUrl: input.etiquetaUrl,
+            notes: input.notes,
+          }),
+        },
+      )
+      const data = (await response.json()) as {
+        order?: SupabasePedido
+        message?: string
+        error?: string
+      }
+
+      if (!response.ok || !data.order) {
+        setAndreaniReconciliationError(data.error || "No se pudo conciliar el pedido.")
+        return
+      }
+
+      handleRefundUpdated(data.order)
+      setNotice({ type: "ok", message: data.message || "Pedido conciliado." })
+      notifyOrderNotificationsChanged()
+      setAndreaniReconciliationRequest(null)
+    } catch {
+      setAndreaniReconciliationError("No se pudo conciliar el pedido.")
+    } finally {
+      setAndreaniReconciliationLoading(false)
+    }
+  }
+
   const handleOpenPaymentProof = async (pedidoId: number) => {
     const {
       data: { session },
@@ -7785,6 +8089,9 @@ export function AdminPedidos({
           onRequestCancelReject={(pedido, action) =>
             setCancelRejectRequest({ pedido, action })
           }
+          onRequestAndreaniReconciliation={(pedido) =>
+            setAndreaniReconciliationRequest(pedido)
+          }
         />
         <ForcedStatusConfirmModal request={forcedStatusRequest} loading={forcedStatusLoading} onCancel={() => setForcedStatusRequest(null)} onConfirm={() => void confirmForcedStatusChange()} />
         <TrackingStatusModal request={trackingStatusRequest} loading={trackingStatusLoading} onCancel={() => setTrackingStatusRequest(null)} onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)} />
@@ -7799,6 +8106,16 @@ export function AdminPedidos({
           onConfirm={(reasonCode, reasonText) =>
             void confirmCancelReject(reasonCode, reasonText)
           }
+        />
+        <AndreaniReconciliationModal
+          request={andreaniReconciliationRequest}
+          loading={andreaniReconciliationLoading}
+          error={andreaniReconciliationError}
+          onCancel={() => {
+            setAndreaniReconciliationRequest(null)
+            setAndreaniReconciliationError("")
+          }}
+          onConfirm={(input) => void confirmAndreaniReconciliation(input)}
         />
       </>
     )
@@ -8197,6 +8514,9 @@ export function AdminPedidos({
           onRequestCancelReject={(pedido, action) =>
             setCancelRejectRequest({ pedido, action })
           }
+          onRequestAndreaniReconciliation={(pedido) =>
+            setAndreaniReconciliationRequest(pedido)
+          }
         />
       )}
       <ForcedStatusConfirmModal
@@ -8222,6 +8542,16 @@ export function AdminPedidos({
         onConfirm={(reasonCode, reasonText) =>
           void confirmCancelReject(reasonCode, reasonText)
         }
+      />
+      <AndreaniReconciliationModal
+        request={andreaniReconciliationRequest}
+        loading={andreaniReconciliationLoading}
+        error={andreaniReconciliationError}
+        onCancel={() => {
+          setAndreaniReconciliationRequest(null)
+          setAndreaniReconciliationError("")
+        }}
+        onConfirm={(input) => void confirmAndreaniReconciliation(input)}
       />
     </div>
   )

@@ -42,6 +42,7 @@ interface OrderForCancellationEligibility {
   andreani_tracking?: string | null
   andreani_envio_id?: string | null
   andreani_estado?: string | null
+  andreani_creation_status?: string | null
   invoice_status?: string | null
   invoice_cae?: string | null
   invoice_number?: number | null
@@ -50,6 +51,22 @@ interface OrderForCancellationEligibility {
   payment_confirmed_amount?: number | null
   paid_at?: string | null
   financial_status?: string | null
+}
+
+/**
+ * Mismo guard que ahora bloquea las 3 RPCs de cancelación (Parte 1,
+ * 20260916100000_block_cancellation_during_andreani_creation.sql): una
+ * creación Andreani en curso o con resultado externo ambiguo. Acá, sólo
+ * evita mostrar/habilitar un botón que la RPC va a rechazar igual --
+ * server-side sigue siendo la única fuente de verdad.
+ */
+export function isAndreaniCreationBlockingCancellation(
+  order: OrderForCancellationEligibility,
+) {
+  return (
+    order.andreani_creation_status === "claimed" ||
+    order.andreani_creation_status === "reconciliation_required"
+  )
 }
 
 /**
@@ -90,7 +107,8 @@ function isSafeToCancelOrReject(order: OrderForCancellationEligibility) {
   return (
     !isOrderAlreadyCancelled(order) &&
     !isOrderInvoicedForCancellation(order) &&
-    !isOrderDispatchedForCancellation(order)
+    !isOrderDispatchedForCancellation(order) &&
+    !isAndreaniCreationBlockingCancellation(order)
   )
 }
 

@@ -19,6 +19,14 @@ import {
   normalizeCheckoutShipping,
   type NormalizedCheckoutShipping,
 } from "../cart/checkout-shipping.ts"
+import { parseArgentineStreetAddress } from "../andreani/address-parsing.ts"
+import {
+  ANDREANI_EMAIL_MAX_LENGTH,
+  ANDREANI_LOCALITY_MAX_LENGTH,
+  ANDREANI_POSTAL_CODE_PATTERN,
+  ANDREANI_RECIPIENT_NAME_MAX_LENGTH,
+  ANDREANI_STREET_MAX_LENGTH,
+} from "../andreani/shipment-limits.ts"
 import {
   resolveVerifiedAndreaniBranch,
   type VerifiedAndreaniBranch,
@@ -294,6 +302,14 @@ export function normalizeCheckoutOrderCustomer(
   }
 }
 
+/**
+ * BLOQUEANTE 2 (auditoría Andreani Parte 2/4): además de "¿está completo?",
+ * valida acá mismo -- ANTES de crear la orden -- que el dato sea compatible
+ * con lo que exige la creación real del envío Andreani (mismos límites de
+ * lib/andreani/shipment-limits.ts que ya usa order-shipment.ts). Antes, un
+ * checkout con nombre/email largos o una altura de 7+ dígitos se completaba
+ * igual y recién fallaba al clickear "Generar envío" en Admin.
+ */
 export function getCheckoutOrderCustomerValidationError(
   customer: NormalizedCheckoutOrderCustomer,
 ) {
@@ -301,11 +317,19 @@ export function getCheckoutOrderCustomerValidationError(
     return "Ingresá el nombre de quien recibe."
   }
 
+  if (customer.cliente_nombre.length > ANDREANI_RECIPIENT_NAME_MAX_LENGTH) {
+    return `El nombre de quien recibe no puede superar los ${ANDREANI_RECIPIENT_NAME_MAX_LENGTH} caracteres.`
+  }
+
   if (
     !customer.cliente_email ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.cliente_email)
   ) {
     return "Ingresá un email válido."
+  }
+
+  if (customer.cliente_email.length > ANDREANI_EMAIL_MAX_LENGTH) {
+    return `El email no puede superar los ${ANDREANI_EMAIL_MAX_LENGTH} caracteres.`
   }
 
   const phone = customer.cliente_telefono?.replace(/\D/g, "") ?? ""
@@ -319,6 +343,30 @@ export function getCheckoutOrderCustomerValidationError(
 
   if (!customer.cliente_direccion || customer.cliente_direccion.length < 5) {
     return "Ingresá una dirección válida."
+  }
+
+  if (!customer.localidad || customer.localidad.length > ANDREANI_LOCALITY_MAX_LENGTH) {
+    return customer.localidad
+      ? `La localidad no puede superar los ${ANDREANI_LOCALITY_MAX_LENGTH} caracteres.`
+      : "Ingresá la localidad de entrega."
+  }
+
+  if (!customer.cp_destino || !ANDREANI_POSTAL_CODE_PATTERN.test(customer.cp_destino.trim())) {
+    return "Ingresá un código postal válido de 4 números."
+  }
+
+  // La altura (numero) sólo se puede identificar con hasta 6 dígitos -- ver
+  // ANDREANI_STREET_NUMBER_MAX_DIGITS en address-parsing.ts. Una dirección
+  // sin altura reconocible, o con calle/altura más larga que el límite real,
+  // se bloquea acá en vez de recién en "Generar envío".
+  const address = parseArgentineStreetAddress(customer.cliente_direccion)
+  if (
+    !address.calle ||
+    !address.numero ||
+    address.calle.length > ANDREANI_STREET_MAX_LENGTH ||
+    address.numero.length > ANDREANI_STREET_MAX_LENGTH
+  ) {
+    return "Ingresá una dirección con calle y altura reconocibles (ej. \"Av. Siempre Viva 742\")."
   }
 
   return ""

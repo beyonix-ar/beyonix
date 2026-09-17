@@ -3,9 +3,50 @@ import test from "node:test"
 
 import {
   DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+  getSiteSettings,
+  invalidateSiteSettingsCache,
   normalizeAndreaniCommercialSettings,
   normalizeSiteSettingsPatch,
+  SiteSettingsUnavailableError,
 } from "./site-settings.ts"
+
+/**
+ * Simula una falla de lectura de site_settings (red, RLS, lo que sea) sin
+ * red real: createAdminClient() (lib/supabase/admin.ts) lanza sin
+ * NEXT_PUBLIC_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY configuradas, que es
+ * exactamente el mismo camino de error que loadSiteSettings ya captura.
+ */
+async function withBrokenSupabaseAdminEnv<T>(run: () => Promise<T>): Promise<T> {
+  const savedUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const savedKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY
+  invalidateSiteSettingsCache()
+
+  try {
+    return await run()
+  } finally {
+    if (savedUrl !== undefined) process.env.NEXT_PUBLIC_SUPABASE_URL = savedUrl
+    if (savedKey !== undefined) process.env.SUPABASE_SERVICE_ROLE_KEY = savedKey
+    invalidateSiteSettingsCache()
+  }
+}
+
+test("BLOQUEANTE 1: getSiteSettings({fresh:true}) (operaciones financieras) falla cerrado -- nunca cae a defaults en silencio", async () => {
+  await withBrokenSupabaseAdminEnv(async () => {
+    await assert.rejects(
+      getSiteSettings({ fresh: true }),
+      SiteSettingsUnavailableError,
+    )
+  })
+})
+
+test("la lectura cacheada (páginas no financieras) conserva el fallback a defaults, no rompe el sitio por un hiccup transitorio", async () => {
+  await withBrokenSupabaseAdminEnv(async () => {
+    const settings = await getSiteSettings()
+    assert.deepEqual(settings.andreaniCommercial, DEFAULT_ANDREANI_COMMERCIAL_SETTINGS)
+  })
+})
 
 test("normalizeAndreaniCommercialSettings acepta enabled true/false explícito", () => {
   assert.deepEqual(normalizeAndreaniCommercialSettings({ enabled: true }), {

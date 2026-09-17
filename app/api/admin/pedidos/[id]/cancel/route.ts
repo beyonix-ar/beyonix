@@ -95,6 +95,18 @@ export async function POST(
         { status: 409 },
       )
     }
+    if (
+      message.includes("ANDREANI_CREATION_IN_PROGRESS") ||
+      message.includes("ANDREANI_RECONCILIATION_REQUIRED")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "El pedido tiene una creación de envío en curso o pendiente de conciliación. Resolvé primero el estado de Andreani antes de cancelar.",
+        },
+        { status: 409 },
+      )
+    }
     if (message.includes("ORDER_ALREADY_PAID_USE_CANCEL")) {
       return NextResponse.json(
         { error: "Este pedido ya tiene pago confirmado: usá \"Cancelar pedido\"." },

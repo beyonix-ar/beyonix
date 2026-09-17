@@ -14,6 +14,9 @@ import {
 } from "../validation/account-fields.ts"
 import { canonicalizeCheckoutQuoteItems } from "../cart/checkout-shipping-items.ts"
 import { getCheckoutOrderItemUnitPrice } from "../orders/conditioned-checkout.ts"
+import { calculateCartTotals } from "../cart/cart-totals.ts"
+import { calculateCustomerShippingCost, type ShippingBonusSettings } from "../store-config.ts"
+import { ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG } from "./shipment-limits.ts"
 
 import {
   AndreaniClient,
@@ -28,6 +31,7 @@ import { geocodeCustomerAddress } from "../geocoding/nominatim.ts"
 import {
   DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
   getAndreaniCommercialSettings,
+  getSiteSettings,
   type AndreaniCommercialSettings,
 } from "../site-settings.ts"
 import type {
@@ -115,6 +119,8 @@ interface CheckoutQuoteDependencies {
   clientOptions?: AndreaniClientOptions
   /** Sólo para tests: evita depender de site_settings real en la base. */
   getAndreaniCommercialSettings?: () => Promise<AndreaniCommercialSettings>
+  /** Sólo para tests: evita depender de site_settings real en la base. */
+  getShippingSettings?: () => Promise<ShippingBonusSettings>
 }
 
 interface TimedCacheEntry<T> {
@@ -643,6 +649,22 @@ export function aggregateAndreaniPackage(
     )
   }
 
+  // BLOQUEANTE 3 (auditoría Andreani Parte 2/4): BEYONIX modela cada pedido
+  // como UN ÚNICO bulto consolidado -- el mismo peso total que se cotiza acá
+  // es el que después intenta crear un solo bulto B2C. La tarifa
+  // (/v1/tarifas, ver requestTariff en client.ts) tolera hasta 1000 kg y
+  // cotizaría igual un carrito que la creación real (B2C, ver crearEnvio)
+  // rechazaría después con "El bulto B2C no puede superar los 50 kg" --
+  // nunca se debe ofrecer/cobrar un envío Andreani que no se pueda crear
+  // después. Se corta ACÁ, antes de llamar a Andreani, con el mismo límite
+  // exacto que ya aplica la creación real (misma constante compartida).
+  if (pesoKg > ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `El carrito pesa ${pesoKg} kg y supera el máximo de ${ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG} kg que admite un envío Andreani. Reducí la cantidad de productos o elegí otro medio de envío.`,
+    )
+  }
+
   return {
     pesoKg: Number(pesoKg.toFixed(3)),
     volumenCm3: Number(volumenCm3.toFixed(3)),
@@ -822,12 +844,33 @@ export async function quoteAndreaniCheckout(
     await validateDestinationPromise
 
     const dbStart = performance.now()
-    const packagePromise = (dependencies.loadItems ?? loadCheckoutItems)(request)
+    const itemsPromise = (dependencies.loadItems ?? loadCheckoutItems)(request)
       .then((items) => {
         mark("db", dbStart)
         return items
       })
-      .then(aggregateAndreaniPackage)
+    const packagePromise = itemsPromise.then(aggregateAndreaniPackage)
+    // Mismo subtotal (misma fórmula que calculateCartTotals, la que usa
+    // checkout-order-creation) que se firma en el quoteToken como el importe
+    // final aceptado -- si cambia entre esta cotización y la creación de la
+    // orden, normalizeCheckoutShipping lo detecta y exige recotizar en vez de
+    // persistir un importe distinto en silencio.
+    const productsTotalPromise = itemsPromise.then(
+      (items) =>
+        calculateCartTotals(
+          items.map((item) => ({
+            product: { id: item.product.id, precio: item.product.precio },
+            quantity: item.quantity,
+          })),
+        ).productsTotal,
+    )
+    // Config comercial vigente, en la misma lectura "fresh" (fail-closed) que
+    // ya reservan las operaciones financieras -- una falla acá corta toda la
+    // cotización en vez de firmar un importe calculado con defaults.
+    const shippingSettingsPromise = (
+      dependencies.getShippingSettings ??
+      (async () => (await getSiteSettings({ fresh: true })).shipping)
+    )()
     const quote =
       dependencies.quoteTariff ??
       ((input: AndreaniTariffRequest) => client.cotizarEnvio(input))
@@ -875,10 +918,22 @@ export async function quoteAndreaniCheckout(
     }
     const domicilioContrato = config.domicilioContrato
     const sucursalContrato = config.sucursalContrato
+    const withCostCharged = async (
+      quoted: { type: AndreaniCheckoutQuoteOption["type"]; price: number },
+    ) => ({
+      ...quoted,
+      costCharged: calculateCustomerShippingCost(
+        await productsTotalPromise,
+        quoted.price,
+        await shippingSettingsPromise,
+      ),
+    })
     const homeQuotePromise = domicilioContrato
       ? Promise.all([packagePromise, authenticationPromise]).then(
           ([packageData]) =>
-            quoteContract("domicilio", domicilioContrato, packageData),
+            quoteContract("domicilio", domicilioContrato, packageData).then(
+              withCostCharged,
+            ),
         )
       : Promise.resolve(null)
     const branchQuotePromise = sucursalContrato
@@ -904,7 +959,9 @@ export async function quoteAndreaniCheckout(
             return point
           })
           const [quoted, origin] = await Promise.all([
-            quoteContract("sucursal", sucursalContrato, packageData),
+            quoteContract("sucursal", sucursalContrato, packageData).then(
+              withCostCharged,
+            ),
             originPromise,
           ])
           // Se exponen las sucursales reales ya consultadas para decidir si

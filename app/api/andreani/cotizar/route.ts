@@ -19,15 +19,16 @@ export async function POST(request: Request) {
     const payload = await request.json()
     const quotedOptions = await quoteAndreaniCheckout(payload)
     const options = quotedOptions.map((option) => {
+      const tokenOption = { type: option.type, price: option.price, costCharged: option.costCharged }
       const branches = option.type === "sucursal" ? option.branches?.map((branch) => ({
         ...branch,
-        quoteToken: createCheckoutShippingQuoteToken({ ...payload, sucursalId: branch.id }, option),
+        quoteToken: createCheckoutShippingQuoteToken({ ...payload, sucursalId: branch.id }, tokenOption),
       })) : undefined
       return {
         ...option,
         branches,
         quoteToken: option.type === "sucursal" ? branches?.[0]?.quoteToken :
-          createCheckoutShippingQuoteToken({ ...payload, sucursalId: null }, option),
+          createCheckoutShippingQuoteToken({ ...payload, sucursalId: null }, tokenOption),
       }
     })
     const environment = resolveAndreaniReferenceEnvironment()

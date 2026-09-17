@@ -33,6 +33,26 @@ type CancelableOrder = {
   paid_at?: string | null
   payment_confirmed_amount?: number | null
   cancelled_at?: string | null
+  cancellation_requested_at?: string | null
+}
+
+/**
+ * Auditoría Andreani Parte 4/4: request_customer_order_cancellation_with_claim
+ * devuelve to_jsonb(v_order), es decir la fila COMPLETA de "ordenes"
+ * (andreani_contrato, andreani_creation_environment,
+ * andreani_creation_claim_token, andreani_creation_attempts, etc.). Nunca se
+ * reenvía esa fila tal cual al cliente -- se arma acá el contrato público
+ * explícito, con sólo lo que "Mis compras" necesita para reflejar el
+ * resultado de la cancelación.
+ */
+function toCustomerCancellationOrderView(order: CancelableOrder) {
+  return {
+    id: order.id,
+    estado: order.estado ?? null,
+    financial_status: order.financial_status ?? null,
+    cancelled_at: order.cancelled_at ?? null,
+    cancellation_requested_at: order.cancellation_requested_at ?? null,
+  }
 }
 
 const DISPATCHED_ORDER_STATUSES = [
@@ -218,6 +238,18 @@ export async function POST(
         { status: 409 },
       )
     }
+    if (
+      message.includes("ANDREANI_CREATION_IN_PROGRESS") ||
+      message.includes("ANDREANI_RECONCILIATION_REQUIRED")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Tu compra tiene una creación de envío en curso o pendiente de conciliación. Escribinos para resolverlo antes de cancelar.",
+        },
+        { status: 409 },
+      )
+    }
     return NextResponse.json(
       { error: "No se pudo cancelar la compra de forma segura." },
       { status: 500 },
@@ -229,7 +261,7 @@ export async function POST(
 
   await notifyCustomerCancellation(admin, updatedOrder)
   return NextResponse.json({
-    order: updatedOrder,
+    order: toCustomerCancellationOrderView(updatedOrder),
     message:
       nextFinancialStatus === "refund_pending"
         ? "Ya recibimos tu solicitud de arrepentimiento y gestionaremos el reintegro."
