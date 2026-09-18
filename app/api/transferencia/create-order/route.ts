@@ -24,9 +24,11 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { createGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import {
   buildCheckoutOrderBase,
+  computeCustomerCheckoutFingerprint,
   getCheckoutOrderCustomerValidationError,
   getCheckoutOrderShippingFields,
   insertCheckoutOrderItemsAndValidateInventory,
+  isDuplicateCustomerCheckoutAttempt,
   loadAndValidateCheckoutOrderCatalog,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
@@ -45,13 +47,17 @@ import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
 import {
   calculateStoreBenefitDiscount,
-  findActiveStoreBenefit,
-  markStoreBenefitAsUsed,
+  claimActiveStoreBenefit,
+  linkStoreBenefitToOrder,
+  releaseStoreBenefitClaim,
 } from "@/lib/customer-store-benefits"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
 
 export async function POST(request: Request) {
+  const admin = createAdminClient()
+  let claimedBenefitId: string | null = null
+
   try {
     const payload = (await request.json()) as CheckoutPayload
     const checkoutSessionId = normalizeReservationSessionId(
@@ -79,7 +85,6 @@ export async function POST(request: Request) {
     }
 
     const supabase = await createClient()
-    const admin = createAdminClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
@@ -117,12 +122,13 @@ export async function POST(request: Request) {
       shippingCost: shipping.shipping_cost_charged,
     })
     const storeBenefit = user
-      ? await findActiveStoreBenefit(
+      ? await claimActiveStoreBenefit(
           admin,
           user.id,
           payload.storeBenefitId,
         )
       : null
+    if (storeBenefit) claimedBenefitId = storeBenefit.id
     const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
       totals.productsTotal,
       storeBenefit?.percent,
@@ -201,6 +207,16 @@ export async function POST(request: Request) {
         storeBenefitDiscountAmount,
         customer,
       }),
+      customer_checkout_fingerprint: computeCustomerCheckoutFingerprint({
+        userId: user?.id ?? null,
+        items,
+        shipping: {
+          provider: shipping.shipping_provider,
+          type: shipping.shipping_type,
+          sucursalId: shipping.andreani_sucursal_id,
+        },
+        storeBenefitId: storeBenefit?.id ?? null,
+      }),
       envio_proveedor: shipping.shipping_provider,
       andreani_costo: shipping.shipping_cost_charged,
       payment_method_id: "transferencia",
@@ -232,6 +248,23 @@ export async function POST(request: Request) {
         code: orderError?.code,
       })
 
+      if (isDuplicateCustomerCheckoutAttempt(orderError)) {
+        return NextResponse.json(
+          {
+            error:
+              "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva.",
+          },
+          { status: 409 },
+        )
+      }
+
+      if (orderError?.code === "23505") {
+        return NextResponse.json(
+          { error: "El pedido ya se está creando. Esperá unos segundos y volvé a intentarlo." },
+          { status: 409, headers: { "Retry-After": "3" } },
+        )
+      }
+
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
 
@@ -257,7 +290,7 @@ export async function POST(request: Request) {
     }
 
     if (storeBenefit) {
-      await markStoreBenefitAsUsed(admin, {
+      await linkStoreBenefitToOrder(admin, {
         benefitId: storeBenefit.id,
         orderId: order.id,
       })
@@ -280,6 +313,17 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("Error creando orden por transferencia", error)
+
+    if (claimedBenefitId) {
+      // Best-effort: si ya se vinculó a una orden real (used_order_id no es
+      // null), releaseStoreBenefitClaim es un no-op por su propio guard --
+      // nunca reactiva un cupón que sí terminó usándose.
+      try {
+        await releaseStoreBenefitClaim(admin, claimedBenefitId)
+      } catch (releaseError) {
+        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+      }
+    }
 
     if (error instanceof InsufficientStockError) {
       return NextResponse.json(

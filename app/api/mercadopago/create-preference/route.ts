@@ -20,9 +20,11 @@ import {
 } from "@/lib/customer-credit/server"
 import {
   buildCheckoutOrderBase,
+  computeCustomerCheckoutFingerprint,
   getCheckoutOrderCustomerValidationError,
   getCheckoutOrderShippingFields,
   insertCheckoutOrderItemsAndValidateInventory,
+  isDuplicateCustomerCheckoutAttempt,
   loadAndValidateCheckoutOrderCatalog,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
@@ -58,8 +60,9 @@ import {
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   calculateStoreBenefitDiscount,
-  findActiveStoreBenefit,
-  markStoreBenefitAsUsed,
+  claimActiveStoreBenefit,
+  linkStoreBenefitToOrder,
+  releaseStoreBenefitClaim,
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
@@ -84,6 +87,7 @@ const mercadoPagoClient = accessToken
 export async function POST(request: Request) {
   let creditAppliedOrderId: number | null = null
   let createdOrderId: number | null = null
+  let claimedBenefitId: string | null = null
 
   try {
     if (!mercadoPagoClient) {
@@ -301,12 +305,13 @@ export async function POST(request: Request) {
       },
     )
     const storeBenefit = user
-      ? await findActiveStoreBenefit(
+      ? await claimActiveStoreBenefit(
           admin,
           user.id,
           payload.storeBenefitId,
         )
       : null
+    if (storeBenefit) claimedBenefitId = storeBenefit.id
     const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
       totals.productsTotal,
       storeBenefit?.percent,
@@ -403,6 +408,16 @@ export async function POST(request: Request) {
         existingAttempts[0]?.id ?? null,
       ),
       mercadopago_checkout_fingerprint: checkoutFingerprint,
+      customer_checkout_fingerprint: computeCustomerCheckoutFingerprint({
+        userId: user?.id ?? null,
+        items,
+        shipping: {
+          provider: shipping.shipping_provider,
+          type: shipping.shipping_type,
+          sucursalId: shipping.andreani_sucursal_id,
+        },
+        storeBenefitId: storeBenefit?.id ?? null,
+      }),
       mercadopago_request_fingerprint:
         getMercadoPagoRequestFingerprint(request),
       mercadopago_preference_claim_token: newPreferenceClaimToken,
@@ -428,6 +443,16 @@ export async function POST(request: Request) {
       .single()
 
     if (orderError || !order) {
+      if (isDuplicateCustomerCheckoutAttempt(orderError)) {
+        return NextResponse.json(
+          {
+            error:
+              "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva.",
+          },
+          { status: 409 },
+        )
+      }
+
       if (isPostgresUniqueViolation(orderError)) {
         return checkoutAttemptInProgressResponse()
       }
@@ -475,7 +500,7 @@ export async function POST(request: Request) {
     createdOrderId = null
 
     if (storeBenefit) {
-      await markStoreBenefitAsUsed(admin, {
+      await linkStoreBenefitToOrder(admin, {
         benefitId: storeBenefit.id,
         orderId: order.id,
       })
@@ -487,6 +512,17 @@ export async function POST(request: Request) {
       reused: false,
     })
   } catch (error) {
+    if (claimedBenefitId) {
+      // Best-effort, mismo criterio que la reversión de saldo de abajo: si
+      // ya se vinculó a una orden real, releaseStoreBenefitClaim es un
+      // no-op por su propio guard.
+      try {
+        await releaseStoreBenefitClaim(createAdminClient(), claimedBenefitId)
+      } catch (releaseError) {
+        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+      }
+    }
+
     if (creditAppliedOrderId) {
       try {
         await reverseCustomerCreditForOrder(createAdminClient(), {

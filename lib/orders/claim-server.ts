@@ -34,6 +34,8 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_CREDIT_PENDING: [409, "Primero debe autorizarse la nota de crédito y acreditarse el saldo."],
   CLAIM_REFUND_PENDING: [409, "Primero registrá el reintegro y su comprobante en la gestión de reintegros del pedido."],
   CLAIM_INVALID: [400, "Revisá los datos de la solicitud."],
+  INVALID_REFUND_DETAILS: [400, "La referencia o la observación son demasiado largas. Acortalas e intentá de nuevo."],
+  MERCADOPAGO_REQUIRES_REAL_REFUND: [409, "Este pedido se pagó con Mercado Pago: reintegralo desde el botón de Mercado Pago, no con un comprobante manual."],
   CLAIM_CANCELLATION_ACTION: [409, "La cancelación debe aprobarse o rechazarse desde su acción específica."],
   ANDREANI_CREATION_IN_PROGRESS: [
     409,
@@ -153,7 +155,15 @@ export async function submitClaimUploadOperation(admin: Admin, actorId: string, 
     const fileMetadata = uploads.map(({ name, type, size }, index) => ({ name, type, size, path: paths[index] }))
     const { data: claimId, error } = kind === "claim" ? await admin.rpc("commit_customer_order_claim", {
       p_operation_id: operation.id, p_actor_id: actorId, p_payload: payload, p_files: fileMetadata,
-    }) : await admin.rpc("commit_order_refund_proof", { p_operation_id: operation.id, p_actor_id: actorId, p_file: { ...fileMetadata[0], expected_note_ids: payload.expectedNoteIds } })
+    }) : await admin.rpc("commit_order_refund_proof", {
+      p_operation_id: operation.id, p_actor_id: actorId, p_file: {
+        ...fileMetadata[0],
+        expected_note_ids: payload.expectedNoteIds,
+        reference: payload.reference,
+        refund_date: payload.refundDate,
+        notes: payload.notes,
+      },
+    })
     if (error || !claimId) throw error ?? new Error("CLAIM_CONFLICT")
     if (kind === "refund" || !payload.claimId) {
       const { data: recipient } = await admin.from("ordenes").select("cliente_email").eq("id", orderId).single()

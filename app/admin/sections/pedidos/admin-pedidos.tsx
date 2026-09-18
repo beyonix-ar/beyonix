@@ -19,6 +19,7 @@ import {
   Eye,
   FileText,
   Info,
+  Landmark,
   LoaderCircle,
   MapPin,
   MessageCircle,
@@ -33,6 +34,7 @@ import {
   ShoppingCart,
   Truck,
   Upload,
+  Wallet,
   X,
   XCircle,
   type LucideIcon,
@@ -82,6 +84,13 @@ import {
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
+import {
+  getCancellationNextAction,
+  getCancellationNextActionCopy,
+  type CancellationNextActionState,
+} from "@/lib/orders/cancellation-next-action"
+import { getCancellationPanelViewModel } from "@/lib/orders/cancellation-panel-view"
+import { getPedidos } from "@/lib/supabase/queries/pedidos"
 import {
   ADMIN_ORDER_CANCELLATION_OTHER_REASON,
   ADMIN_ORDER_CANCELLATION_REASONS,
@@ -617,10 +626,6 @@ function isApprovedPayment(pedido: SupabasePedido) {
   return !isRejectedPayment(pedido.payment_status) && isOrderPaymentConfirmed(pedido)
 }
 
-function isRefundPendingOrder(pedido: SupabasePedido) {
-  return isRefundPaymentAttentionOrder(pedido)
-}
-
 function isRefundedOrder(pedido: SupabasePedido) {
   return pedido.financial_status === "refunded"
 }
@@ -832,7 +837,51 @@ function getExecutiveOrderStatus(pedido: SupabasePedido) {
   return getDisplayedOrderStatus(pedido) === "pagado" ? "Pago confirmado" : getDisplayedOrderStatus(pedido)
 }
 
+const CANCELLATION_NEXT_ACTION_TARGET: Record<
+  "facturacion" | "cancelacion" | "pago",
+  { target: AdminOrderDetailView; buttonLabel: string }
+> = {
+  facturacion: { target: "facturacion", buttonLabel: "Ir a Facturación" },
+  cancelacion: { target: "cancelacion", buttonLabel: "Ir a Cancelación" },
+  pago: { target: "pago", buttonLabel: "Ir a Pago" },
+}
+
+/**
+ * Traduce el estado de getCancellationNextAction (única fuente de verdad,
+ * también usada por las notificaciones del admin) a la recomendación que
+ * ya renderiza esta pantalla. Antes de esto, isRefundPaymentAttentionOrder
+ * generaba siempre el mismo texto genérico ("Cargar comprobante de
+ * reintegro") sin importar si todavía faltaba emitir la nota de crédito,
+ * si había que revisar un refund de Mercado Pago, o si ya estaba todo listo
+ * para cargar el comprobante -- exactamente la falta de precisión que pedía
+ * corregirse acá.
+ */
+function getCancellationRecommendedAction(
+  pedido: SupabasePedido,
+): RecommendedAction | null {
+  const nextAction = getCancellationNextAction(pedido)
+  const copy = getCancellationNextActionCopy(nextAction.state, nextAction.reason)
+  if (!copy) return null
+
+  const { target, buttonLabel } = CANCELLATION_NEXT_ACTION_TARGET[copy.tab]
+  const tone: RecommendedAction["tone"] =
+    nextAction.state === ("wait_credit_note" satisfies CancellationNextActionState)
+      ? "info"
+      : "urgent"
+
+  return {
+    title: copy.title,
+    description: copy.description,
+    target,
+    buttonLabel,
+    tone,
+  }
+}
+
 function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
+  const cancellationAction = getCancellationRecommendedAction(pedido)
+  if (cancellationAction) return cancellationAction
+
   const openClaim = (pedido.order_claims ?? []).find(
     (claim) =>
       claim.admin_needs_action ||
@@ -840,17 +889,21 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
   )
 
   if (openClaim) {
-    // cancelar_compra tiene su propio flujo (RefundManagementPanel /
-    // pestaña "Cancelación") y está excluido de AdminClaimManager modo
-    // "all" (ver isClaimVisibleForMode): enviarlo a "atencion" sería un
-    // callejón sin salida, ahí nunca aparecería listado.
+    // Defensa: getCancellationRecommendedAction ya cubre el caso normal
+    // (financiero pendiente); esto sólo protege contra un claim de
+    // cancelar_compra que quedó sin cerrar aunque el reintegro ya se haya
+    // resuelto (approve_order_claim_cancellation/mutate_admin_order_claim
+    // no lo cierran automáticamente al completarse el reintegro externo).
+    // cancelar_compra está excluido de AdminClaimManager modo "all" (ver
+    // isClaimVisibleForMode): mandarlo a "atencion" sería un callejón sin
+    // salida, ahí nunca aparecería listado.
     if (openClaim.failure_type === "cancelar_compra") {
       return {
-        title: "Resolver solicitud de cancelación",
-        description: "El cliente pidió cancelar la compra y requiere revisión administrativa.",
+        title: "Revisar cancelación",
+        description: "El pedido tiene una solicitud de cancelación asociada.",
         target: "cancelacion",
         buttonLabel: "Ir a Cancelación",
-        tone: "urgent",
+        tone: "info",
       }
     }
 
@@ -872,16 +925,6 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
       description: "Registrá si vuelve al stock disponible o queda dado de baja como pérdida.",
       target: "atencion",
       buttonLabel: "Revisar devolución",
-      tone: "urgent",
-    }
-  }
-
-  if (isRefundPaymentAttentionOrder(pedido)) {
-    return {
-      title: "Cargar comprobante de reintegro",
-      description: "El pedido está cancelado y falta cerrar la devolución al cliente.",
-      target: "cancelacion",
-      buttonLabel: "Ir a Cancelación",
       tone: "urgent",
     }
   }
@@ -1751,27 +1794,78 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       type: "neutral",
     })
   }
+  const latestRefundProof = [...(pedido.order_refund_proofs ?? [])].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  )[0]
   addEvent({
     key: "refund-proof-uploaded",
     title: "Comprobante de reintegro cargado",
     at: refundProofAt || "",
-    description: "El comprobante quedó asociado al pedido.",
+    description: latestRefundProof
+      ? `El comprobante quedó asociado al pedido (${formatPrice(latestRefundProof.amount)}${
+          latestRefundProof.bank_reference ? `, referencia ${latestRefundProof.bank_reference}` : ""
+        }).`
+      : "El comprobante quedó asociado al pedido.",
     type: "success",
   })
   addEvent({
     key: "refund-completed",
     title: "Reintegro completado",
     at: refundCanBeCompleted ? refundedAt || "" : "",
-    description: "La devolución de dinero quedó finalizada.",
+    description: pedido.refund_amount
+      ? `La devolución de dinero quedó finalizada por ${formatPrice(pedido.refund_amount)} (${getPaymentMethodLabel(pedido)}).`
+      : "La devolución de dinero quedó finalizada.",
     type: "success",
   })
   addEvent({
     key: "credit-note-issued",
     title: "Nota de crédito emitida",
     at: creditNoteAt || "",
-    description: "La documentación contable quedó registrada.",
+    description:
+      pedido.credit_note_number || pedido.credit_note_cae
+        ? `La documentación contable quedó registrada${
+            pedido.credit_note_number
+              ? ` (NC C ${String(pedido.invoice_point ?? "").padStart(4, "0")}-${String(pedido.credit_note_number).padStart(8, "0")}${
+                  pedido.credit_note_cae ? `, CAE ${pedido.credit_note_cae}` : ""
+                })`
+              : ` (CAE ${pedido.credit_note_cae})`
+          }.`
+        : "La documentación contable quedó registrada.",
     type: "success",
   })
+  addEvent({
+    key: "balance-restored",
+    title: "Saldo restaurado",
+    at: pedido.customer_credit_restored_at || "",
+    description: `Se acreditó ${formatPrice(pedido.customer_credit_restored_amount ?? 0)} de saldo a favor del cliente.`,
+    type: "success",
+  })
+  for (const mpRefund of pedido.mercadopago_order_refunds ?? []) {
+    addEvent({
+      key: `mp-refund-requested-${mpRefund.id}`,
+      title: "Reintegro por Mercado Pago iniciado",
+      at: mpRefund.created_at || "",
+      description: `Se inició el reintegro de ${formatPrice(mpRefund.amount)} por Mercado Pago.`,
+      type: "success",
+    })
+    if (mpRefund.status === "confirmed") {
+      addEvent({
+        key: `mp-refund-confirmed-${mpRefund.id}`,
+        title: "Reintegro por Mercado Pago confirmado",
+        at: mpRefund.completed_at || "",
+        description: `Mercado Pago confirmó el reintegro de ${formatPrice(mpRefund.amount)}.`,
+        type: "success",
+      })
+    } else if (mpRefund.status === "needs_reconciliation") {
+      addEvent({
+        key: `mp-refund-needs-reconciliation-${mpRefund.id}`,
+        title: "Reintegro por Mercado Pago sin confirmar",
+        at: mpRefund.created_at || "",
+        description: "Mercado Pago no confirmó el resultado; quedó pendiente de revisión manual.",
+        type: "danger",
+      })
+    }
+  }
 
   for (const claim of pedido.order_claims ?? []) {
     const claimIsCancellation = claim.failure_type === "cancelar_compra"
@@ -1954,6 +2048,35 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
   )
 }
 
+const CANCELLATION_PAYMENT_METHOD_DISPLAY: Record<
+  ReturnType<typeof getCancellationPanelViewModel>["paymentMethod"],
+  { label: string; Icon: LucideIcon }
+> = {
+  mercadopago: { label: "Mercado Pago", Icon: CreditCard },
+  transferencia: { label: "Transferencia bancaria", Icon: Landmark },
+  saldo: { label: "Saldo BEYONIX", Icon: Wallet },
+  saldo_transferencia: { label: "Saldo + Transferencia", Icon: Wallet },
+  saldo_mercadopago: { label: "Saldo + Mercado Pago", Icon: Wallet },
+  otro: { label: "Medio de pago", Icon: CreditCard },
+}
+
+const CANCELLATION_STEP_ICON: Record<
+  ReturnType<typeof getCancellationPanelViewModel>["steps"][number]["status"],
+  { Icon: LucideIcon; className: string }
+> = {
+  done: { Icon: CheckCircle2, className: "text-[var(--admin-success-text)]" },
+  pending: { Icon: Clock3, className: "text-[var(--admin-warning-text)]" },
+  processing: { Icon: LoaderCircle, className: "text-[var(--admin-info-text)] animate-spin" },
+  attention: { Icon: AlertTriangle, className: "text-[var(--admin-danger-text)]" },
+}
+
+/**
+ * Flujo guiado paso a paso para la cancelación/reintegro de un pedido.
+ * Toda decisión de negocio (qué paso corresponde, qué importe reintegrar,
+ * qué botón mostrar) viene de getCancellationPanelViewModel/
+ * getCancellationNextAction -- este componente sólo traduce ese modelo a
+ * JSX. Nunca decide una regla financiera por su cuenta.
+ */
 function RefundManagementPanel({
   pedido,
   onRefundUpdated,
@@ -1966,109 +2089,86 @@ function RefundManagementPanel({
   const shouldShow = isCancellationFlowOrder(pedido)
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
+  const [mpAction, setMpAction] = useState<"execute" | "reconcile" | null>(null)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
+  const [reference, setReference] = useState("")
+  const [refundDate, setRefundDate] = useState("")
+  const [notes, setNotes] = useState("")
 
   useEffect(() => {
     setFile(null)
     setMessage(null)
-  }, [pedido.id, pedido.refund_amount, pedido.refund_method])
+    setReference("")
+    setRefundDate("")
+    setNotes("")
+  }, [pedido.id, pedido.refund_amount, pedido.refund_method, pedido.financial_status])
 
   if (!shouldShow) return null
 
   const cancellationInfo = deriveOrderCancellationInfo(pedido.order_audit_events, pedido)
   const rejectedByAdmin = cancellationInfo.rejectedByAdmin
-  const refunded = isRefundedOrder(pedido)
-  const refundPending = isRefundPendingOrder(pedido)
-  const refundCompactStatus = refunded
-    ? "Finalizado"
-    : refundPending
-      ? "Pendiente"
-      : "Finalizado"
-  const cancellationTitle = rejectedByAdmin
-    ? "Pedido rechazado"
-    : refunded
-      ? "Reintegro completado"
-      : refundPending
-        ? "Reintegro pendiente"
-        : pedido.financial_status === "cancellation_requested"
-          ? "Cancelación pendiente"
-          : "Cancelado, sin gestión pendiente"
-  const authorizedExternalCredit = roundCreditMoney(
-    getPendingRefundNotes(pedido.order_credit_notes)
-      .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
-  )
-  const authorizedBalanceCredit = roundCreditMoney(
-    (pedido.order_credit_notes ?? [])
-      .filter(
-        (note) =>
-          note.status === "authorized" && note.destination === "customer_balance",
-      )
-      .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
-  )
-  const creditNoteReadyForRefund = authorizedExternalCredit > 0
-  const balanceAlreadyCredited = authorizedBalanceCredit > 0
-  const cancellationCopy = rejectedByAdmin
-    ? (cancellationInfo.reasonText
-        ? `El pedido fue rechazado porque el pago nunca se confirmó. Motivo: ${cancellationInfo.reasonText}. No hay reintegro ni nota de crédito pendiente: no se registró ningún cobro.`
-        : "El pedido fue rechazado porque el pago nunca se confirmó. No hay reintegro ni nota de crédito pendiente: no se registró ningún cobro.")
-    : refunded
-      ? balanceAlreadyCredited
-        ? "La nota fue autorizada por ARCA y el saldo se acreditó automáticamente en la cuenta del cliente."
-        : "El comprobante fue registrado y la devolución quedó finalizada."
-      : refundPending && !creditNoteReadyForRefund
-        ? "Primero emití la nota de crédito. No se puede cargar ningún dato del reintegro antes de recibir el CAE."
-        : refundPending
-          ? "La nota fue autorizada. Sólo resta adjuntar el comprobante de la devolución de dinero."
-          : "El pedido está cancelado (con pago confirmado) y no tiene un reintegro ni una nota de crédito pendiente."
-  const canUploadRefund =
-    !refunded &&
-    refundPending &&
-    Boolean(file) &&
-    creditNoteReadyForRefund &&
-    !saving
-  const creditNoteSettlementAmount = Number(
-    pedido.refund_amount ??
-      (creditNoteReadyForRefund
-        ? authorizedExternalCredit
-        : authorizedBalanceCredit),
-  )
-  const refundDisplayAmount =
-    creditNoteSettlementAmount > 0
-      ? formatPrice(creditNoteSettlementAmount)
-      : "Pendiente de nota"
-  const refundMethodDisplay =
-    pedido.refund_method ||
-    (balanceAlreadyCredited
-      ? "Saldo en cuenta BEYONIX"
-      : creditNoteReadyForRefund
-        ? "Devolución de dinero"
-        : "Definido por la nota de crédito")
-  const uploadDisabledReason = refunded
-    ? "Gestión finalizada. No hay acciones pendientes."
-    : !refundPending
-      ? "No hay una acción de reintegro pendiente."
-      : !creditNoteReadyForRefund
-        ? "Primero emití y validá en ARCA la nota de crédito. Hasta entonces, el reintegro permanece bloqueado."
-      : !file
-        ? "Seleccioná el comprobante para habilitar la acción."
-        : null
+
+  // Rechazado (nunca hubo pago confirmado): no es un paso financiero, es un
+  // caso aparte que ya tenía su propia narrativa -- se mantiene tal cual.
+  if (rejectedByAdmin) {
+    return (
+      <section className="admin-order-cancellation-panel rounded-xl border p-3">
+        <div className="admin-order-cancellation-header border-b pb-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="admin-order-cancellation-main-icon is-success">
+              <CheckCircle2 className="size-6" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-11px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
+                Cancelación / reintegro
+              </p>
+              <h3 className="mt-1 text-base font-black text-[var(--admin-text)]">Pedido rechazado</h3>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--admin-text-soft)]">
+                {cancellationInfo.reasonText
+                  ? `El pago nunca se confirmó. Motivo: ${cancellationInfo.reasonText}. No hay reintegro ni nota de crédito pendiente: no se registró ningún cobro.`
+                  : "El pago nunca se confirmó. No hay reintegro ni nota de crédito pendiente: no se registró ningún cobro."}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  const model = getCancellationPanelViewModel(pedido)
+  const { label: paymentMethodLabel, Icon: PaymentMethodIcon } =
+    CANCELLATION_PAYMENT_METHOD_DISPLAY[model.paymentMethod]
+
+  const refreshOrder = async () => {
+    try {
+      const result = await getPedidos({ orderId: pedido.id })
+      const fresh = result.pedidos[0] as SupabasePedido | undefined
+      if (fresh) onRefundUpdated(fresh)
+    } catch {
+      // el refresco es una comodidad -- si falla, el mensaje en pantalla ya
+      // informó el resultado y el próximo reload general lo va a sincronizar.
+    }
+  }
 
   const uploadRefundProof = async () => {
     if (!file) {
       setMessage({ ok: false, text: "Subí el comprobante de reintegro." })
       return
     }
-
-    if (!window.confirm(`Confirmá que ya reintegraste ${formatPrice(authorizedExternalCredit)} al cliente. Se registrará el comprobante y se completará esta gestión.`)) return
+    if (
+      !window.confirm(
+        `Vas a registrar un reintegro de ${formatPrice(model.amounts.amountToRefund)}. Confirmá que ya se transfirió al cliente.`,
+      )
+    ) {
+      return
+    }
 
     setSaving(true)
     setMessage(null)
-
     try {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-
       if (!session?.access_token) {
         setMessage({ ok: false, text: "La sesión administrativa venció." })
         return
@@ -2076,28 +2176,31 @@ function RefundManagementPanel({
 
       const formData = new FormData()
       formData.set("file", file)
-      formData.set("expectedNoteIds", JSON.stringify(getPendingRefundNotes(pedido.order_credit_notes).map((note) => note.id)))
+      formData.set(
+        "expectedNoteIds",
+        JSON.stringify(getPendingRefundNotes(pedido.order_credit_notes).map((note) => note.id)),
+      )
+      if (reference.trim()) formData.set("reference", reference.trim())
+      if (refundDate.trim()) formData.set("refundDate", refundDate.trim())
+      if (notes.trim()) formData.set("notes", notes.trim())
 
       const response = await fetch(`/api/admin/pedidos/${pedido.id}/refund`, {
         method: "POST",
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: formData,
       })
-      const data = (await response.json()) as {
-        order?: SupabasePedido
-        error?: string
-      }
+      const data = (await response.json()) as { order?: SupabasePedido; error?: string }
 
       if (!response.ok || !data.order) {
-        setMessage({
-          ok: false,
-          text: data.error || "No se pudo registrar el reintegro.",
-        })
+        setMessage({ ok: false, text: data.error || "No se pudo registrar el reintegro." })
         return
       }
 
       onRefundUpdated(data.order)
       setFile(null)
+      setReference("")
+      setRefundDate("")
+      setNotes("")
       setMessage({ ok: true, text: "Reintegro registrado con comprobante." })
       notifyOrderNotificationsChanged()
     } catch {
@@ -2107,161 +2210,413 @@ function RefundManagementPanel({
     }
   }
 
+  const executeMercadoPagoRefund = async () => {
+    if (
+      !window.confirm(
+        `Mercado Pago devolverá automáticamente ${formatPrice(model.amounts.amountToRefund)} al cliente. ¿Confirmás?`,
+      )
+    ) {
+      return
+    }
+
+    setMpAction("execute")
+    setMessage(null)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(`/api/admin/pedidos/${pedido.id}/mercadopago-refund`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = (await response.json()) as { ok?: boolean; status?: string; error?: string }
+
+      if (!response.ok || !data.ok) {
+        setMessage({
+          ok: false,
+          text:
+            data.status === "needs_reconciliation"
+              ? "Mercado Pago no confirmó el resultado todavía. Va a quedar marcado para revisión."
+              : data.error || "No se pudo ejecutar el reintegro por Mercado Pago.",
+        })
+      } else {
+        setMessage({
+          ok: true,
+          text:
+            data.status === "already_confirmed"
+              ? "El reintegro ya estaba confirmado por Mercado Pago."
+              : "Mercado Pago confirmó el reintegro.",
+        })
+      }
+      await refreshOrder()
+      notifyOrderNotificationsChanged()
+    } catch {
+      setMessage({ ok: false, text: "No se pudo ejecutar el reintegro por Mercado Pago." })
+    } finally {
+      setMpAction(null)
+    }
+  }
+
+  const reconcileMercadoPagoRefund = async () => {
+    setMpAction("reconcile")
+    setMessage(null)
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setMessage({ ok: false, text: "La sesión administrativa venció." })
+        return
+      }
+
+      const response = await fetch(`/api/admin/pedidos/${pedido.id}/mercadopago-refund`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = (await response.json()) as { status?: string; message?: string; error?: string }
+
+      if (data.status === "confirmed") {
+        setMessage({ ok: true, text: "Mercado Pago confirmó el reintegro." })
+      } else if (data.status === "requested") {
+        setMessage({
+          ok: true,
+          text: "Mercado Pago todavía no tiene registro del intento. Podés reintentar el reintegro.",
+        })
+      } else if (data.status === "needs_reconciliation") {
+        setMessage({
+          ok: false,
+          text: "Mercado Pago todavía no confirma el resultado. Probá de nuevo en unos minutos.",
+        })
+      } else {
+        setMessage({ ok: true, text: "No había nada pendiente de conciliar." })
+      }
+      await refreshOrder()
+      notifyOrderNotificationsChanged()
+    } catch {
+      setMessage({ ok: false, text: "No se pudo revisar el reintegro." })
+    } finally {
+      setMpAction(null)
+    }
+  }
+
+  const busy = saving || mpAction !== null
+  const canUploadRefund = model.state === "register_external_refund" && Boolean(file) && !busy
+
   return (
     <section className="admin-order-cancellation-panel rounded-xl border p-3">
       <div className="admin-order-cancellation-header border-b pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`admin-order-cancellation-main-icon ${refunded || rejectedByAdmin ? "is-success" : ""}`}>
-            {refunded || rejectedByAdmin ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
+          <span className={`admin-order-cancellation-main-icon ${model.isFinished ? "is-success" : ""}`}>
+            {model.isFinished ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
           </span>
           <div className="min-w-0">
             <p className="text-11px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
               Cancelación / reintegro
             </p>
             <h3 className="mt-1 text-base font-black text-[var(--admin-text)]">
-              {refundPending ? "Reintegro pendiente" : cancellationTitle}
+              {model.isFinished
+                ? "Proceso finalizado"
+                : model.primaryAction?.label ?? "Sin acciones pendientes"}
             </h3>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--admin-text-soft)]">
-              {cancellationCopy}
+              {model.helperText}
             </p>
           </div>
         </div>
       </div>
 
-      <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0">
-            <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
-              Acción pendiente
-            </p>
-            <p className="mt-1 text-sm font-black text-[var(--admin-text)]">
-              {rejectedByAdmin
-                ? "No hay ninguna acción financiera pendiente: el pedido se rechazó sin pago confirmado."
-                : refunded
-                  ? "Gestión finalizada. No hay acciones pendientes."
-                  : refundPending && !creditNoteReadyForRefund
-                    ? "Emitir y validar la nota de crédito desde Facturación."
-                    : refundPending
-                    ? "Cargar comprobante de reintegro y marcar la devolución como completada."
-                    : "No hay acciones pendientes de reintegro para este pedido."}
-            </p>
-            <p className="mt-1 text-xs font-semibold leading-5 text-[var(--admin-text-soft)]">
-              Método de reintegro: <span className="text-[var(--admin-text)]">{refundMethodDisplay}</span>
-            </p>
-          </div>
-          <div className="admin-order-cancellation-amount-card rounded-xl border px-4 py-3">
-            <p className="admin-order-cancellation-amount-label text-10px font-black uppercase tracking-widest">
-              Importe resuelto
-            </p>
-            <p className="admin-order-cancellation-amount-value mt-1 text-xl font-black">
-              {refundDisplayAmount}
-            </p>
-          </div>
-        </div>
-      </section>
-
+      {/* Ya está hecho */}
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-        <CancellationMiniCard label="Pedido" value={`#${formatPublicOrderId(pedido.id)}`} />
-        <CancellationMiniCard label="Cliente" value={pedido.cliente_nombre || "Cliente sin nombre"} />
-        <CancellationMiniCard
-          label="Contacto"
-          value={[pedido.cliente_email, pedido.cliente_telefono].filter(Boolean).join(" · ") || "No informado"}
-        />
-        <CancellationMiniCard
-          label="Pago confirmado"
-          value={formatOptionalOrderDate(pedido.payment_confirmed_at || pedido.paid_at)}
-        />
-        <CancellationMiniCard
-          label="Cancelación solicitada"
-          value={formatOptionalOrderDate(pedido.cancellation_requested_at || pedido.cancelled_at)}
-        />
-        <CancellationMiniCard label="Estado del reintegro" value={rejectedByAdmin ? "No corresponde" : refundCompactStatus} valueClassName={refunded || rejectedByAdmin ? "text-[var(--admin-success-text)]" : "text-[var(--admin-warning-text)]"} />
+        <CancellationMiniCard label="Pedido cancelado" value="Confirmado" valueClassName="text-[var(--admin-success-text)]" />
+        <div className="admin-order-cancellation-mini-card rounded-lg border px-3 py-2.5">
+          <p className="text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
+            Medio de pago
+          </p>
+          <p className="mt-1 flex items-center gap-1.5 text-sm font-black text-[var(--admin-text)]">
+            <PaymentMethodIcon className="size-3.5" />
+            {paymentMethodLabel}
+          </p>
+        </div>
+        {model.amounts.balanceRestored > 0 && (
+          <CancellationMiniCard
+            label="Saldo restaurado"
+            value={formatPrice(model.amounts.balanceRestored)}
+            valueClassName="text-[var(--admin-success-text)]"
+          />
+        )}
       </div>
 
-      <div className="mt-3 grid min-w-0 gap-3">
-        <div className="admin-order-cancellation-form-panel min-w-0 rounded-xl border p-3">
-          <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text)]">
-            {refunded ? "Reintegro registrado" : "Cargar comprobante de reintegro"}
+      {/* Paso a paso -- oculto si todavía no hay pago confirmado o si ya terminó */}
+      {model.steps.length > 0 && !model.isFinished && (
+        <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
+          <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
+            {model.currentStepIndex !== null
+              ? `Paso ${model.currentStepIndex} de ${model.steps.length}`
+              : null}
           </p>
-          {!refundPending ? (
-            <p className="admin-order-cancellation-empty mt-3 rounded-lg border px-3 py-2 text-xs font-bold leading-5">
-              {refunded
-                ? "No hay acciones pendientes para esta devolución."
-                : "No hay una acción de reintegro pendiente para este pedido."}
-            </p>
-          ) : !creditNoteReadyForRefund ? (
-            <div className="admin-order-cancellation-locked mt-3 rounded-xl border px-4 py-3">
-              <div className="flex items-start gap-3">
-                <span className="admin-order-cancellation-locked-icon">
-                  <ShieldCheck className="size-4" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-[var(--admin-text)]">
-                    Reintegro bloqueado hasta recibir el CAE
-                  </p>
-                  <p className="mt-1 text-11px font-semibold leading-5 text-[var(--admin-text-soft)]">
-                    Emití primero la nota de crédito desde Facturación. El monto y
-                    el destino se tomarán automáticamente del comprobante autorizado.
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,26rem)_minmax(12rem,1fr)] sm:items-end">
-                <div className="min-w-0">
-                  <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
-                    Archivo del comprobante
-                  </p>
-                  <label className="admin-order-cancellation-file-zone flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2 transition">
-                    <span className="admin-order-cancellation-file-icon">
-                      <Upload className="size-3.5" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-black text-[var(--admin-text)]">
-                        {file ? file.name : "Cargar archivo"}
-                      </span>
-                      <span className="mt-0.5 block text-11px font-semibold text-[var(--admin-text-muted)]">
-                        Comprobante JPG, JPEG o PDF para cerrar el reintegro.
-                      </span>
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/jpeg,application/pdf,.jpg,.jpeg,.pdf"
-                      className="sr-only"
-                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                </div>
-                <div className="admin-order-cancellation-linked-value rounded-xl border px-3 py-2">
-                  <span className="block text-9px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
-                    Definido por la nota autorizada
+          <div className="mt-2 flex flex-col gap-2">
+            {model.steps.map((step, index) => {
+              const { Icon: StepIcon, className } = CANCELLATION_STEP_ICON[step.status]
+              return (
+                <div key={step.key} className="flex items-center gap-2.5">
+                  <StepIcon className={`size-4 shrink-0 ${className}`} />
+                  <span className="text-sm font-bold text-[var(--admin-text)]">
+                    {index + 1}. {step.label}
                   </span>
-                  <strong className="mt-1 block text-sm font-black text-[var(--admin-success-text)]">
-                    {formatPrice(authorizedExternalCredit)}
-                  </strong>
                 </div>
-              </div>
-              {uploadDisabledReason && (
-                <p className="mt-2 text-xs font-semibold text-[var(--admin-text-muted)]">
-                  {uploadDisabledReason}
-                </p>
-              )}
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!canUploadRefund}
-                  onClick={() => void uploadRefundProof()}
-                  className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
-                  {saving ? "Guardando..." : "Registrar comprobante y cerrar reintegro"}
-                </button>
-              </div>
-            </>
+              )
+            })}
+          </div>
+          {model.statusNote && (
+            <p className="mt-2 flex items-center gap-2 text-xs font-semibold text-[var(--admin-info-text)]">
+              <LoaderCircle className="size-3.5 animate-spin" />
+              {model.statusNote}
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* Importes -- siempre server-side, nunca editables */}
+      <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+        <CancellationMiniCard label="Total del pedido" value={formatPrice(model.amounts.orderTotal)} />
+        {model.amounts.balanceRestored > 0 && (
+          <CancellationMiniCard label="Pago externo recibido" value={formatPrice(model.amounts.externalPaid)} />
+        )}
+        <div className="admin-order-cancellation-amount-card rounded-xl border px-4 py-3">
+          <p className="admin-order-cancellation-amount-label text-10px font-black uppercase tracking-widest">
+            {model.isFinished ? "Importe reintegrado" : "Importe a reintegrar"}
+          </p>
+          <p className="admin-order-cancellation-amount-value mt-1 text-xl font-black">
+            {model.amounts.amountToRefund > 0
+              ? formatPrice(model.amounts.amountToRefund)
+              : "Pendiente de nota"}
+          </p>
+          {!model.amounts.amountIsFinal && model.amounts.amountToRefund > 0 && (
+            <p className="mt-1 text-9px font-bold uppercase tracking-widest text-[var(--admin-success-text)] opacity-80">
+              Estimado -- se confirma al emitir la nota
+            </p>
           )}
         </div>
       </div>
+
+      {/* Acción principal única */}
+      {!model.isFinished && model.state !== "none" && (
+        <div className="mt-3 grid min-w-0 gap-3">
+          <div className="admin-order-cancellation-form-panel min-w-0 rounded-xl border p-3">
+            {model.primaryAction?.kind === "go_to_billing" && (
+              <>
+                <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text)]">
+                  {model.state === "wait_credit_note" ? "Nota de crédito en trámite" : "Emitir nota de crédito"}
+                </p>
+                <p className="mt-1 text-11px font-semibold leading-5 text-[var(--admin-text-soft)]">
+                  {model.state === "wait_credit_note"
+                    ? "Primero emitiste la nota de crédito. Cuando ARCA entregue el CAE, habilitaremos automáticamente el reintegro."
+                    : "El importe y el destino del reintegro se calculan automáticamente cuando emitas la nota."}
+                </p>
+                {model.state !== "wait_credit_note" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onOpenBilling}
+                      className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition"
+                    >
+                      <FileText className="size-4" />
+                      {model.primaryAction.label}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {model.primaryAction?.kind === "register_external_refund" && (
+              <>
+                <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text)]">
+                  Registrar reintegro
+                </p>
+                <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-[minmax(0,26rem)_minmax(12rem,1fr)] sm:items-end">
+                  <div className="min-w-0">
+                    <p className="mb-1.5 text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
+                      Archivo del comprobante
+                    </p>
+                    <label className="admin-order-cancellation-file-zone flex min-h-10 w-full cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2 transition">
+                      <span className="admin-order-cancellation-file-icon">
+                        <Upload className="size-3.5" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-black text-[var(--admin-text)]">
+                          {file ? file.name : "Cargar archivo"}
+                        </span>
+                        <span className="mt-0.5 block text-11px font-semibold text-[var(--admin-text-muted)]">
+                          Comprobante JPG, JPEG o PDF para cerrar el reintegro.
+                        </span>
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,application/pdf,.jpg,.jpeg,.pdf"
+                        className="sr-only"
+                        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  </div>
+                  <div className="admin-order-cancellation-linked-value rounded-xl border px-3 py-2">
+                    <span className="block text-9px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
+                      {model.amounts.amountFromCreditNote
+                        ? "Importe (definido por la nota autorizada)"
+                        : "Importe (monto confirmado del pago)"}
+                    </span>
+                    <strong className="mt-1 block text-sm font-black text-[var(--admin-success-text)]">
+                      {formatPrice(model.amounts.amountToRefund)}
+                    </strong>
+                  </div>
+                </div>
+                <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <label className="mb-1.5 block text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
+                      Referencia bancaria (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={reference}
+                      onChange={(event) => setReference(event.target.value.slice(0, 120))}
+                      placeholder="Nº de operación / transferencia"
+                      maxLength={120}
+                      className="admin-order-cancellation-file-zone min-h-10 w-full rounded-xl border px-3 py-2 text-xs font-semibold text-[var(--admin-text)]"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <label className="mb-1.5 block text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
+                      Fecha del reintegro (opcional)
+                    </label>
+                    <input
+                      type="date"
+                      value={refundDate}
+                      onChange={(event) => setRefundDate(event.target.value)}
+                      className="admin-order-cancellation-file-zone min-h-10 w-full rounded-xl border px-3 py-2 text-xs font-semibold text-[var(--admin-text)]"
+                    />
+                  </div>
+                  <div className="min-w-0 sm:col-span-1">
+                    <label className="mb-1.5 block text-10px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
+                      Observación (opcional)
+                    </label>
+                    <input
+                      type="text"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value.slice(0, 600))}
+                      placeholder="Notas internas del reintegro"
+                      maxLength={600}
+                      className="admin-order-cancellation-file-zone min-h-10 w-full rounded-xl border px-3 py-2 text-xs font-semibold text-[var(--admin-text)]"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!canUploadRefund}
+                    onClick={() => void uploadRefundProof()}
+                    className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+                    {saving ? "Guardando..." : "Registrar reintegro"}
+                  </button>
+                  {!file && (
+                    <span className="text-xs font-semibold text-[var(--admin-text-muted)]">
+                      Seleccioná el comprobante para habilitar la acción.
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+
+            {model.primaryAction?.kind === "execute_mp_refund" && (
+              <>
+                <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text)]">
+                  Reintegrar por Mercado Pago
+                </p>
+                <p className="mt-1 text-11px font-semibold leading-5 text-[var(--admin-text-soft)]">
+                  Mercado Pago va a devolver automáticamente el dinero al cliente. No hace falta cargar ningún comprobante.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void executeMercadoPagoRefund()}
+                    className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {mpAction === "execute" ? <LoaderCircle className="size-4 animate-spin" /> : <CreditCard className="size-4" />}
+                    {mpAction === "execute" ? "Procesando..." : "Reintegrar por Mercado Pago"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {model.primaryAction?.kind === "reconcile_mp_refund" && (
+              <>
+                <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text)]">
+                  Revisar reintegro de Mercado Pago
+                </p>
+                <p className="mt-1 text-11px font-semibold leading-5 text-[var(--admin-text-soft)]">
+                  Mercado Pago no confirmó el resultado del reintegro anterior. Revisá el estado real antes de reintentar.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void reconcileMercadoPagoRefund()}
+                    className="admin-order-cancellation-primary-action inline-flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border px-4 py-2 text-11px font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {mpAction === "reconcile" ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                    {mpAction === "reconcile" ? "Revisando..." : "Revisar reintegro"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {model.primaryAction === null && model.state === "blocked" && (
+              <p className="admin-order-cancellation-empty mt-1 rounded-lg border px-3 py-2 text-xs font-bold leading-5">
+                {model.helperText}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {model.isFinished && (() => {
+        const latestProof = [...(pedido.order_refund_proofs ?? [])].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        )[0]
+        return (
+          <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
+            <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-success-text)]">
+              <CheckCircle2 className="size-4" />
+              Proceso finalizado
+            </p>
+            <ul className="mt-2 flex flex-col gap-1 text-xs font-semibold text-[var(--admin-text-soft)]">
+              <li>Pedido cancelado</li>
+              {pedido.credit_note_number && (
+                <li>
+                  Nota de crédito: NC C {String(pedido.invoice_point ?? "").padStart(4, "0")}-{String(pedido.credit_note_number).padStart(8, "0")}
+                  {pedido.credit_note_cae && ` (CAE ${pedido.credit_note_cae})`}
+                </li>
+              )}
+              {model.amounts.balanceRestored > 0 && (
+                <li>Saldo restaurado: {formatPrice(model.amounts.balanceRestored)}</li>
+              )}
+              {model.amounts.amountToRefund > 0 && (
+                <li>Reintegro: {formatPrice(model.amounts.amountToRefund)}</li>
+              )}
+              <li>Medio: {paymentMethodLabel}</li>
+              {pedido.refunded_at && <li>Fecha: {formatOptionalOrderDate(pedido.refunded_at)}</li>}
+              {latestProof?.bank_reference && <li>Referencia: {latestProof.bank_reference}</li>}
+              {latestProof?.observation && <li>Observación: {latestProof.observation}</li>}
+            </ul>
+          </section>
+        )
+      })()}
 
       <button
         type="button"

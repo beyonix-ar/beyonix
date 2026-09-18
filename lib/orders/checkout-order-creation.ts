@@ -1,5 +1,7 @@
 import "server-only"
 
+import { createHash } from "node:crypto"
+
 import type { createAdminClient } from "../supabase/admin.ts"
 import type { StoreBenefitRow } from "../customer-store-benefits.ts"
 import {
@@ -615,6 +617,94 @@ export function getCheckoutOrderShippingFields(
     andreani_sucursal_provincia: branch?.provincia ?? null,
     andreani_sucursal_cp: branch?.codigoPostal ?? null,
   }
+}
+
+export interface CustomerCheckoutFingerprintShipping {
+  provider: string
+  type: string
+  sucursalId?: string | number | null
+}
+
+export interface CustomerCheckoutFingerprintInput {
+  userId: string | null
+  items: NormalizedCheckoutOrderItem[]
+  shipping: CustomerCheckoutFingerprintShipping
+  storeBenefitId?: string | null
+}
+
+function normalizeFingerprintItems(items: NormalizedCheckoutOrderItem[]) {
+  return [...items]
+    .map((item) => ({
+      productId: item.productId,
+      quantity: item.quantity,
+      variantId: item.variantId,
+      conditionedStockId: item.conditionedStockId,
+    }))
+    .sort(
+      (left, right) =>
+        left.productId - right.productId ||
+        (left.variantId ?? 0) - (right.variantId ?? 0) ||
+        (left.conditionedStockId ?? "").localeCompare(
+          right.conditionedStockId ?? "",
+        ),
+    )
+}
+
+/**
+ * Segundo eje de deduplicación de checkout, independiente del
+ * `checkout_idempotency_key` (que depende de `reservationSessionId`,
+ * aislado por pestaña vía sessionStorage -- ver auditoría de ventas).
+ * Ancla la identidad de "esta compra" al CLIENTE (usuario_id) y al
+ * contenido exacto del carrito, sin importar en qué pestaña ni con qué
+ * medio de pago se intente. `null` para invitados: sin usuario_id no hay
+ * ninguna señal estable para detectar "misma persona, dos pestañas".
+ *
+ * Respaldado por el índice único parcial
+ * `ordenes_customer_checkout_fingerprint_pending_unique` (sólo mientras
+ * `estado='pendiente'` -- ver
+ * 20260918130000_customer_checkout_fingerprint_dedup.sql), así que la
+ * ventana de deduplicación es el propio ciclo de vida de la orden, no un
+ * plazo arbitrario.
+ */
+export function computeCustomerCheckoutFingerprint({
+  userId,
+  items,
+  shipping,
+  storeBenefitId,
+}: CustomerCheckoutFingerprintInput): string | null {
+  if (!userId) return null
+
+  return `customer-checkout:v1:${createHash("sha256")
+    .update(
+      JSON.stringify({
+        userId,
+        items: normalizeFingerprintItems(items),
+        shipping: {
+          provider: shipping.provider,
+          type: shipping.type,
+          sucursalId: shipping.sucursalId ? String(shipping.sucursalId) : null,
+        },
+        storeBenefitId: storeBenefitId || null,
+      }),
+    )
+    .digest("hex")}`
+}
+
+/**
+ * `error.message` de Postgres para una violación de índice único incluye el
+ * nombre del constraint (`duplicate key value violates unique constraint
+ * "..."`) -- se usa para distinguir esta colisión (misma persona, mismo
+ * carrito, otra pestaña) de la de `checkout_idempotency_key` (mismo
+ * reintento en la MISMA pestaña/sesión), que cada ruta ya maneja con un
+ * mensaje distinto.
+ */
+export function isDuplicateCustomerCheckoutAttempt(
+  error: { code?: string; message?: string } | null,
+) {
+  return (
+    error?.code === "23505" &&
+    Boolean(error.message?.includes("customer_checkout_fingerprint"))
+  )
 }
 
 export function buildCheckoutOrderBase({

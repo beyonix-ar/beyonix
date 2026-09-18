@@ -223,6 +223,10 @@ function reservationError(message?: string) {
       "Solo un superadministrador puede emitir una nota administrativa sin reclamo.",
     CREDIT_NOTE_ADMIN_ITEMS_FORBIDDEN:
       "Un ajuste administrativo sin reclamo no puede incluir productos.",
+    CREDIT_NOTE_EXCEEDS_REFUNDABLE_AMOUNT:
+      "El importe supera lo que todavía falta devolver en dinero externo para este pedido. Si usó saldo a favor, esa parte ya se reintegró automáticamente.",
+    ORDER_ALREADY_REFUNDED:
+      "Este pedido ya fue reintegrado. No se puede emitir otra nota de crédito que mueva dinero.",
   }
   const entry = Object.entries(knownErrors).find(([code]) =>
     message?.includes(code),

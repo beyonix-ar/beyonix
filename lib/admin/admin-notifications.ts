@@ -22,36 +22,38 @@ import {
   getAdminNewOrderEventKey,
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
+import { isClaimVisibleForMode } from "@/lib/orders/claim-visibility"
+import {
+  buildCancellationNotification,
+  buildClaimNotification,
+  claimNeedsAdminAttention,
+  dedupeNotifications,
+  formatOrderId,
+  keepLatestNotificationByOrder,
+  type AdminNotification,
+  type AdminNotificationType,
+} from "@/lib/admin/admin-notification-rules"
+
+export type {
+  AdminNotification,
+  AdminNotificationType,
+} from "@/lib/admin/admin-notification-rules"
+export {
+  buildCancellationNotification,
+  buildClaimNotification,
+  dedupeNotifications,
+  getOperationalPriority,
+  keepLatestNotificationByOrder,
+} from "@/lib/admin/admin-notification-rules"
+export type {
+  CancellationNotificationOrder,
+  ClaimAttentionInput,
+} from "@/lib/admin/admin-notification-rules"
 
 export const ADMIN_NOTIFICATIONS_CHANGED_EVENT =
   "beyonix:admin-notifications-changed"
 
-export type AdminNotificationType =
-  | "order"
-  | "message"
-  | "payment"
-  | "invoice"
-  | "shipping"
-  | "cancellation"
-  | "claim"
-  | "mercadolibre_return"
-  | "inventory"
-
 export type AdminNotificationTone = AdminNotificationType
-
-export interface AdminNotification {
-  id: string
-  type: AdminNotificationType
-  eventKey: string
-  eventAt: string
-  title: string
-  body: string
-  actionLabel?: string
-  actionUrl: string
-  orderId?: number
-  isRead: boolean
-  priority?: "attention"
-}
 
 export type AdminNotificationGroups = Record<AdminNotificationType, number>
 
@@ -267,16 +269,6 @@ function isPaymentReceived(order: {
     )
 }
 
-function hasPaymentProofPendingReview(order: {
-  payment_status?: string | null
-  payment_proof_url?: string | null
-}) {
-  return Boolean(order.payment_proof_url) &&
-    ["en_revision", "pendiente_comprobante", "pending"].includes(
-      order.payment_status ?? "",
-    )
-}
-
 function isRefundPaymentAttentionOrder(order: {
   estado?: string | null
   financial_status?: string | null
@@ -309,28 +301,6 @@ function isAdminCancelledOrder(order: {
   )
 }
 
-function hasCancellationAdminAttention(order: {
-  estado?: string | null
-  financial_status?: string | null
-  payment_status?: string | null
-  payment_proof_url?: string | null
-  paid_at?: string | null
-  payment_confirmed_amount?: number | string | null
-}) {
-  if (order.financial_status === "refunded") return false
-  if (order.financial_status === "refund_pending") return true
-  if (order.financial_status === "cancellation_requested") return true
-
-  return (
-    order.estado === "cancelado" &&
-    (
-      isPaymentReceived(order) ||
-      Number(order.payment_confirmed_amount ?? 0) > 0 ||
-      hasPaymentProofPendingReview(order)
-    )
-  )
-}
-
 function isOrderReadyForShipping(order: {
   estado?: string | null
   financial_status?: string | null
@@ -355,23 +325,6 @@ function isOrderReadyForShipping(order: {
     "cancelado",
     "rechazado",
   ].includes(order.estado ?? "")
-}
-
-function claimNeedsAdminAttention(claim: {
-  admin_needs_action?: boolean | null
-  first_reviewed_at?: string | null
-  last_customer_message_at?: string | null
-  last_admin_response_at?: string | null
-  status?: string | null
-}) {
-  if (claim.admin_needs_action) return true
-  if (["cerrado", "rechazado"].includes(claim.status ?? "")) return false
-  if (!claim.first_reviewed_at) return true
-  return getTime(claim.last_customer_message_at) > getTime(claim.last_admin_response_at)
-}
-
-function formatOrderId(orderId: number) {
-  return `#BX-${1000 + orderId}`
 }
 
 function formatProfileDetails(profile?: CreditAdminProfile | null) {
@@ -750,20 +703,6 @@ function applyReads(
     .sort(sortByEventDate)
 }
 
-function dedupeNotifications(notifications: AdminNotification[]) {
-  const seen = new Set<string>()
-  return notifications.filter((notification) => {
-    const key =
-      notification.type === "claim" && notification.orderId
-        ? `${notification.type}:${notification.eventKey}:${notification.orderId}`
-        : `${notification.type}:${notification.eventKey}`
-
-    if (seen.has(key)) return false
-    seen.add(key)
-    return true
-  })
-}
-
 function isPendingAdminTask(notification: AdminNotification) {
   return (
     notification.type === "payment" ||
@@ -774,102 +713,6 @@ function isPendingAdminTask(notification: AdminNotification) {
     notification.type === "mercadolibre_return" ||
     notification.type === "inventory"
   )
-}
-
-function getOperationalPriority(notification: AdminNotification) {
-  if (notification.type === "claim") return 5
-  if (notification.type === "mercadolibre_return") return 5
-  if (notification.type === "inventory") return 5
-  if (notification.type === "payment") return 4
-  if (notification.type === "shipping") return 3
-  if (notification.type === "message") return 2
-  if (notification.type === "invoice") return 1
-  if (notification.type === "cancellation") return 1
-  return 0
-}
-
-function keepLatestNotificationByOrder(notifications: AdminNotification[]) {
-  const byOrder = new Map<number, AdminNotification>()
-  const withoutOrder: AdminNotification[] = []
-
-  for (const notification of notifications) {
-    if (!notification.orderId) {
-      withoutOrder.push(notification)
-      continue
-    }
-
-    const current = byOrder.get(notification.orderId)
-    const notificationTime = getTime(notification.eventAt)
-    const currentTime = getTime(current?.eventAt)
-    if (
-      !current ||
-      notificationTime > currentTime ||
-      (notificationTime === currentTime &&
-        getOperationalPriority(notification) > getOperationalPriority(current))
-    ) {
-      byOrder.set(notification.orderId, notification)
-    }
-  }
-
-  return [...withoutOrder, ...byOrder.values()].sort(sortByEventDate)
-}
-
-function getCancellationNotificationContent(
-  order: {
-    id: number
-    payment_status?: string | null
-    payment_proof_url?: string | null
-    paid_at?: string | null
-    payment_confirmed_amount?: number | string | null
-    financial_status?: string | null
-  },
-) {
-  const orderCode = formatOrderId(order.id)
-
-  if (order.financial_status === "refund_pending") {
-    return {
-      title: "Pedido cancelado con pago confirmado - reintegro pendiente",
-      body: `${orderCode} requiere reintegro pendiente. Revisá el comprobante de pago y cargá el comprobante de reintegro.`,
-      priority: "attention" as const,
-    }
-  }
-
-  if (order.financial_status === "cancellation_requested") {
-    if (isPaymentReceived(order) || Number(order.payment_confirmed_amount ?? 0) > 0) {
-      return {
-        title: "Pedido cancelado con pago confirmado - reintegro pendiente",
-        body: `${orderCode} requiere reintegro pendiente. Revisá el comprobante de pago y cargá el comprobante de reintegro.`,
-        priority: "attention" as const,
-      }
-    }
-
-    return {
-      title: "Pedido cancelado con comprobante pendiente",
-      body: `${orderCode} fue cancelado con comprobante enviado. Revisá si corresponde confirmar el pago y reintegrar.`,
-      priority: "attention" as const,
-    }
-  }
-
-  if (isPaymentReceived(order)) {
-    return {
-      title: "Compra cancelada con pago recibido",
-      body: `El pedido ${orderCode} fue cancelado por el cliente y tiene un pago recibido. Revisá la gestión del reintegro o crédito.`,
-      priority: "attention" as const,
-    }
-  }
-
-  if (hasPaymentProofPendingReview(order)) {
-    return {
-      title: "Compra cancelada con comprobante cargado",
-      body: `El pedido ${orderCode} fue cancelado por el cliente y tenía un comprobante pendiente de revisión.`,
-      priority: "attention" as const,
-    }
-  }
-
-  return {
-    title: "Compra cancelada",
-    body: `El pedido ${orderCode} fue cancelado por el cliente.`,
-  }
 }
 
 function getTone(
@@ -1046,72 +889,13 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         })
       }
 
-      if (hasCancellationAdminAttention(order)) {
-        const cancelledAt =
-          (order as {
-            cancelled_at?: string | null
-            cancellation_requested_at?: string | null
-            refund_pending_at?: string | null
-          }).refund_pending_at ||
-          (order as {
-            cancelled_at?: string | null
-            cancellation_requested_at?: string | null
-            refund_pending_at?: string | null
-          }).cancellation_requested_at ||
-          (order as { cancelled_at?: string | null }).cancelled_at
-
-        if (!cancelledAt) continue
-        const cancellationContent = getCancellationNotificationContent({
-          id: orderId,
-          payment_status: order.payment_status,
-          payment_proof_url: order.payment_proof_url,
-          paid_at: order.paid_at,
-          payment_confirmed_amount: order.payment_confirmed_amount,
-          financial_status: order.financial_status,
-        })
-        const refundAttention = isRefundPaymentAttentionOrder(order)
-        const notificationType: AdminNotificationType = "cancellation"
-        const eventKey =
-          refundAttention
-            ? `cancellation-refund:${orderId}`
-            : `order-cancelled:${orderId}`
-
-        notifications.push({
-          id: eventKey,
-          type: notificationType,
-          eventKey,
-          eventAt: String(cancelledAt),
-          title: cancellationContent.title,
-          body: cancellationContent.body,
-          actionLabel: "Ver cancelación",
-          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=cancelacion`,
-          orderId,
-          isRead: false,
-          priority: cancellationContent.priority,
-        })
-      }
+      const cancellationNotification = buildCancellationNotification(order)
+      if (cancellationNotification) notifications.push(cancellationNotification)
     }
 
     for (const claim of claims) {
-      if (!claimNeedsAdminAttention(claim)) continue
-
-      const orderId = Number(claim.order_id)
-      const helpMessage = claim.failure_type === "consulta_pedido"
-      notifications.push({
-        id: `claim:${claim.id}`,
-        type: "claim",
-        eventKey: `claim:${claim.id}`,
-        eventAt: String(
-          claim.last_customer_message_at || claim.created_at,
-        ),
-        title: helpMessage ? "Mensaje de ayuda por responder" : "Reclamo por responder",
-        body: helpMessage
-          ? `El mensaje de ayuda del pedido ${formatOrderId(orderId)} requiere atención.`
-          : `El reclamo del pedido ${formatOrderId(orderId)} requiere atención.`,
-        actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=reclamos`,
-        orderId,
-        isRead: false,
-      })
+      const claimNotification = buildClaimNotification(claim)
+      if (claimNotification) notifications.push(claimNotification)
     }
 
     for (const message of customerMessages) {
@@ -1119,6 +903,11 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       if (!claim?.first_reviewed_at) continue
       if (!claimNeedsAdminAttention(claim)) continue
       if (!orderIds.has(Number(claim.order_id))) continue
+      // Mismo motivo que en el loop de claims de arriba: un mensaje del
+      // cliente en el claim de cancelar_compra (la RPC de cancelación
+      // siempre inserta uno con el motivo) no debe generar una notificación
+      // hacia "Atención al cliente".
+      if (!isClaimVisibleForMode(claim.failure_type, "all")) continue
 
       const orderId = Number(claim.order_id)
       const body =

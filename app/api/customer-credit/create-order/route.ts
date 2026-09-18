@@ -18,8 +18,9 @@ import {
 } from "@/lib/customer-credit/server"
 import {
   calculateStoreBenefitDiscount,
-  findActiveStoreBenefit,
-  markStoreBenefitAsUsed,
+  claimActiveStoreBenefit,
+  linkStoreBenefitToOrder,
+  releaseStoreBenefitClaim,
 } from "@/lib/customer-store-benefits"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
@@ -30,9 +31,11 @@ import {
 } from "@/lib/payments/transfer"
 import {
   buildCheckoutOrderBase,
+  computeCustomerCheckoutFingerprint,
   getCheckoutOrderCustomerValidationError,
   getCheckoutOrderShippingFields,
   insertCheckoutOrderItemsAndValidateInventory,
+  isDuplicateCustomerCheckoutAttempt,
   loadAndValidateCheckoutOrderCatalog,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
@@ -65,6 +68,7 @@ export async function POST(request: Request) {
 
   let orderId: number | null = null
   let creditApplied = false
+  let claimedBenefitId: string | null = null
   const admin = createAdminClient()
 
   try {
@@ -120,11 +124,12 @@ export async function POST(request: Request) {
     const totals = calculateCartTotals(catalog.cartRows, {
       shippingCost: shipping.shipping_cost_charged,
     })
-    const storeBenefit = await findActiveStoreBenefit(
+    const storeBenefit = await claimActiveStoreBenefit(
       admin,
       user.id,
       payload.storeBenefitId
     )
+    if (storeBenefit) claimedBenefitId = storeBenefit.id
     const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
       totals.productsTotal,
       storeBenefit?.percent
@@ -198,12 +203,39 @@ export async function POST(request: Request) {
           pricingPaymentMethod === "transferencia"
             ? transferPaymentTotals.discount
             : 0,
+        customer_checkout_fingerprint: computeCustomerCheckoutFingerprint({
+          userId: user.id,
+          items,
+          shipping: {
+            provider: shipping.shipping_provider,
+            type: shipping.shipping_type,
+            sucursalId: shipping.andreani_sucursal_id,
+          },
+          storeBenefitId: storeBenefit?.id ?? null,
+        }),
         ...shipping,
       } as never)
       .select()
       .single()
 
     if (orderError || !order) {
+      if (isDuplicateCustomerCheckoutAttempt(orderError)) {
+        return NextResponse.json(
+          {
+            error:
+              "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva.",
+          },
+          { status: 409 },
+        )
+      }
+
+      if (orderError?.code === "23505") {
+        return NextResponse.json(
+          { error: "El pedido ya se está creando. Esperá unos segundos y volvé a intentarlo." },
+          { status: 409, headers: { "Retry-After": "3" } },
+        )
+      }
+
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
 
@@ -245,7 +277,7 @@ export async function POST(request: Request) {
     }
 
     if (storeBenefit) {
-      await markStoreBenefitAsUsed(admin, {
+      await linkStoreBenefitToOrder(admin, {
         benefitId: storeBenefit.id,
         orderId: order.id,
       })
@@ -279,6 +311,17 @@ export async function POST(request: Request) {
       redirect_url: `/checkout/success?method=customer_credit&order_id=${order.id}`,
     })
   } catch (error) {
+    if (claimedBenefitId) {
+      // Best-effort, igual que la reversión de saldo de abajo: si ya se
+      // vinculó a una orden real, releaseStoreBenefitClaim es un no-op por
+      // su propio guard.
+      try {
+        await releaseStoreBenefitClaim(admin, claimedBenefitId)
+      } catch (releaseError) {
+        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+      }
+    }
+
     if (orderId && creditApplied) {
       try {
         await reverseCustomerCreditForOrder(admin, {

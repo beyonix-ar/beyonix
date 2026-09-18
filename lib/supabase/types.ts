@@ -237,6 +237,7 @@ export interface SupabasePedido {
   checkout_idempotency_key?: string | null
   mercadopago_checkout_fingerprint?: string | null
   mercadopago_request_fingerprint?: string | null
+  customer_checkout_fingerprint?: string | null
   mercadopago_preference_id?: string | null
   mercadopago_init_point?: string | null
   mercadopago_preference_expires_at?: string | null
@@ -371,6 +372,10 @@ export interface SupabasePedido {
   order_audit_events?: SupabaseOrderAuditEvent[]
   order_credit_notes?: SupabaseOrderCreditNote[]
   mercadopago_order_refunds?: SupabaseMercadoPagoOrderRefund[]
+  /** Monto real restaurado en customer_credit_movements (movement_type='reversal') al cancelar -- fuente de verdad, nunca una estimación. null si no hubo saldo a favor usado en el pedido. */
+  customer_credit_restored_amount?: number | null
+  /** created_at del mismo movimiento 'reversal' -- sólo para mostrar la fecha real en el historial, nunca para decidir nada. */
+  customer_credit_restored_at?: string | null
 }
 
 export interface SupabaseMercadoPagoOrderRefund {
@@ -463,6 +468,8 @@ export interface SupabaseOrderRefundProof {
   amount: number
   method?: string | null
   observation?: string | null
+  bank_reference?: string | null
+  refund_date?: string | null
   signedUrl?: string | null
   created_at: string
 }

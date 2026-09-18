@@ -8,7 +8,7 @@ create table auth.users(id uuid primary key,email text,email_confirmed_at timest
 create table profiles(id uuid primary key references auth.users(id),email text unique,rol text not null default 'cliente');
 create function is_current_user_internal() returns boolean language sql security definer set search_path=public as $$ select coalesce((select rol in ('operador','admin','super_admin') from profiles where id=auth.uid()),false) $$;
 create table ordenes(id bigint primary key,usuario_id uuid,cliente_email text,estado text,delivered_at timestamptz,total numeric default 100,
-tracking_number text,andreani_tracking text,andreani_envio_id text,andreani_estado text,invoice_status text,invoice_cae text,invoice_number integer,invoice_point integer,paid_at timestamptz,payment_status text,credit_balance_used numeric default 0,cancelled_at timestamptz,cancellation_requested_at timestamptz,cancellation_requested_by uuid,refund_pending_at timestamptz,
+tracking_number text,andreani_tracking text,andreani_envio_id text,andreani_estado text,invoice_status text,invoice_cae text,invoice_number integer,invoice_point integer,paid_at timestamptz,payment_status text,credit_balance_used numeric default 0,external_amount_due numeric,payment_confirmed_amount numeric,cancelled_at timestamptz,cancellation_requested_at timestamptz,cancellation_requested_by uuid,refund_pending_at timestamptz,
 financial_status text,credit_note_required boolean,credit_note_amount numeric,refund_proof_url text,refund_proof_file_name text,
 refund_proof_mime_type text,refund_proof_file_size bigint,refund_amount numeric,refund_method text,refund_uploaded_by uuid,
 refund_uploaded_at timestamptz,refunded_at timestamptz,refunded_by uuid);

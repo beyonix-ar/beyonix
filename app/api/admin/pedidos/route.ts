@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     "invoice_status",
     "invoice_cae",
     "invoice_created_at",
+    "credit_note_required",
     "cancelled_at",
     "cancellation_requested_at",
     "refund_pending_at",
@@ -103,24 +104,55 @@ export async function GET(request: Request) {
   }
 
   if (notificationView) {
-    const { data: claims, error: claimsError } = await auth.admin
-      .from("order_claims")
-      .select("*, order_claim_messages(*)")
-      .in(
-        "order_id",
-        pedidos.map((pedido) => pedido.id),
-      )
-      .order("created_at", { ascending: false })
+    const orderIds = pedidos.map((pedido) => pedido.id)
+    const [claimsResult, creditNotesResult, mpRefundsResult] = await Promise.all([
+      auth.admin
+        .from("order_claims")
+        .select("*, order_claim_messages(*)")
+        .in("order_id", orderIds)
+        .order("created_at", { ascending: false }),
+      // Sólo lo que necesita getCancellationNextAction para decidir el
+      // siguiente paso -- nunca datos fiscales/comerciales completos de la NC.
+      auth.admin
+        .from("order_credit_notes")
+        .select("order_id, status, destination, settlement_status, total_amount")
+        .in("order_id", orderIds),
+      // Mismas columnas que ya expone el listado completo (nunca payment_id
+      // ni idempotency_key de Mercado Pago).
+      auth.admin
+        .from("mercadopago_order_refunds")
+        .select("id, order_id, status, amount, error_code, created_at, completed_at")
+        .in("order_id", orderIds)
+        .order("created_at", { ascending: false }),
+    ])
 
-    if (claimsError) {
-      return Response.json({ error: claimsError.message }, { status: 500 })
+    if (claimsResult.error) {
+      return Response.json({ error: claimsResult.error.message }, { status: 500 })
+    }
+    if (creditNotesResult.error) {
+      return Response.json({ error: creditNotesResult.error.message }, { status: 500 })
+    }
+    if (mpRefundsResult.error) {
+      return Response.json({ error: mpRefundsResult.error.message }, { status: 500 })
     }
 
-    const claimsByOrder = new Map<number, typeof claims>()
-    for (const claim of claims ?? []) {
+    const claimsByOrder = new Map<number, typeof claimsResult.data>()
+    for (const claim of claimsResult.data ?? []) {
       const current = claimsByOrder.get(claim.order_id) ?? []
       current.push(claim)
       claimsByOrder.set(claim.order_id, current)
+    }
+    const creditNotesByOrder = new Map<number, typeof creditNotesResult.data>()
+    for (const note of creditNotesResult.data ?? []) {
+      const current = creditNotesByOrder.get(note.order_id) ?? []
+      current.push(note)
+      creditNotesByOrder.set(note.order_id, current)
+    }
+    const mpRefundsByOrder = new Map<number, typeof mpRefundsResult.data>()
+    for (const refund of mpRefundsResult.data ?? []) {
+      const current = mpRefundsByOrder.get(refund.order_id) ?? []
+      current.push(refund)
+      mpRefundsByOrder.set(refund.order_id, current)
     }
 
     return Response.json({
@@ -128,6 +160,8 @@ export async function GET(request: Request) {
         ...pedido,
         total: auth.profile.rol === "operador" ? 0 : pedido.total,
         order_claims: claimsByOrder.get(pedido.id) ?? [],
+        order_credit_notes: creditNotesByOrder.get(pedido.id) ?? [],
+        mercadopago_order_refunds: mpRefundsByOrder.get(pedido.id) ?? [],
         orden_items: [],
         order_refund_proofs: [],
         order_audit_events: [],
@@ -173,6 +207,7 @@ export async function GET(request: Request) {
     auditEventsResult,
     creditNotesResult,
     mpRefundsResult,
+    creditReversalsResult,
   ] = await Promise.all([
     productIds.length
       ? auth.admin.from("productos").select("*").in("id", productIds)
@@ -225,6 +260,18 @@ export async function GET(request: Request) {
         pedidos.map((pedido) => pedido.id),
       )
       .order("created_at", { ascending: false }),
+    // Fuente de verdad del saldo restaurado al cliente al cancelar: el
+    // movimiento 'reversal' que reverse_customer_credit_for_order() persiste
+    // (nunca una estimación derivada de total/externo -- ver
+    // cancellation-panel-view.ts).
+    auth.admin
+      .from("customer_credit_movements")
+      .select("order_id, amount, created_at")
+      .eq("movement_type", "reversal")
+      .in(
+        "order_id",
+        pedidos.map((pedido) => pedido.id),
+      ),
   ])
 
   if (
@@ -236,6 +283,7 @@ export async function GET(request: Request) {
     auditEventsResult.error
     || creditNotesResult.error
     || mpRefundsResult.error
+    || creditReversalsResult.error
   ) {
     return Response.json(
       {
@@ -247,6 +295,7 @@ export async function GET(request: Request) {
           auditEventsResult.error?.message ||
           creditNotesResult.error?.message ||
           mpRefundsResult.error?.message ||
+          creditReversalsResult.error?.message ||
           profilesResult.error?.message ||
           "No se pudo cargar el detalle de los productos.",
       },
@@ -363,6 +412,18 @@ export async function GET(request: Request) {
     mpRefundsByOrder.set(refund.order_id, current)
   }
 
+  // source_key es único por pedido (ver 057_customer_credit_balance.sql), así
+  // que a lo sumo hay una fila -- sumamos igual para no asumir cardinalidad.
+  const creditReversalByOrder = new Map<number, number>()
+  const creditReversalAtByOrder = new Map<number, string>()
+  for (const movement of creditReversalsResult.data ?? []) {
+    const current = creditReversalByOrder.get(movement.order_id) ?? 0
+    creditReversalByOrder.set(movement.order_id, current + Number(movement.amount))
+    if (!creditReversalAtByOrder.has(movement.order_id)) {
+      creditReversalAtByOrder.set(movement.order_id, movement.created_at)
+    }
+  }
+
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
@@ -401,6 +462,8 @@ export async function GET(request: Request) {
       order_audit_events: auditEventsByOrder.get(pedido.id) ?? [],
       order_credit_notes: creditNotesByOrder.get(pedido.id) ?? [],
       mercadopago_order_refunds: mpRefundsByOrder.get(pedido.id) ?? [],
+      customer_credit_restored_amount: creditReversalByOrder.get(pedido.id) ?? null,
+      customer_credit_restored_at: creditReversalAtByOrder.get(pedido.id) ?? null,
     })),
     total: count ?? pedidos.length,
   })

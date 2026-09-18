@@ -14,7 +14,10 @@ import { PGlite } from "@electric-sql/pglite"
 // las migraciones. No hay red, credenciales ni llamadas a Mercado Pago.
 
 const root = process.cwd()
-const read = (path: string) => readFileSync(join(root, path), "utf8")
+// Normaliza CRLF -> LF: en checkouts Windows estos archivos tienen \r\n, y
+// las aserciones de este test están escritas contra \n (literales e
+// implícitas via \s*\n\s*/[\s\S]{0,N}), así que \r\n de más las rompe.
+const read = (path: string) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n")
 const fixture = read("lib/mercadopago/fixtures/order-refund-rpc.sql")
 const migration = read("supabase/migrations/20260911170000_mercadopago_order_refunds.sql")
 const phase2Migration = read("supabase/migrations/20260911180000_mercadopago_refund_phase2.sql")

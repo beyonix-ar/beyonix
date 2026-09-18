@@ -7,8 +7,10 @@ import { STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 import {
   buildCheckoutOrderBase,
   buildCheckoutOrderItemsPayload,
+  computeCustomerCheckoutFingerprint,
   getCheckoutOrderCustomerValidationError,
   getCheckoutOrderShippingFields,
+  isDuplicateCustomerCheckoutAttempt,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
@@ -984,6 +986,163 @@ test("los endpoints delegan los bloques equivalentes y conservan lo específico"
         shippingFieldsIndex >= 0 &&
         branchResolveIndex < shippingFieldsIndex,
       `${route.path}: la sucursal debe resolverse ANTES de persistir los campos de envío`,
+    )
+  }
+})
+
+// FASE 1 (hardening P0 de ventas, Auditoría 2/7): dos pestañas del mismo
+// carrito podían generar dos órdenes reales -- checkout_idempotency_key y el
+// fingerprint de Mercado Pago dependen de reservationSessionId, aislado por
+// pestaña vía sessionStorage. computeCustomerCheckoutFingerprint es el
+// segundo eje de dedupe, anclado al usuario + contenido del carrito, sin
+// importar la pestaña. Respaldado por el índice único parcial de
+// 20260918130000_customer_checkout_fingerprint_dedup.sql (probado con la
+// migración real en lib/orders/customer-checkout-fingerprint-dedup.test.ts).
+
+function fingerprintItem(overrides: Partial<{
+  productId: number
+  quantity: number
+  variantId: number | null
+  conditionedStockId: string | null
+}> = {}) {
+  return {
+    productId: 1,
+    quantity: 1,
+    variantId: null,
+    conditionedStockId: null,
+    ...overrides,
+  }
+}
+
+test("computeCustomerCheckoutFingerprint: invitado (sin userId) siempre da null -- no hay identidad estable para deduplicar entre pestañas", () => {
+  const fingerprint = computeCustomerCheckoutFingerprint({
+    userId: null,
+    items: [fingerprintItem()],
+    shipping: { provider: "andreani", type: "domicilio" },
+    storeBenefitId: null,
+  })
+  assert.equal(fingerprint, null)
+})
+
+test("computeCustomerCheckoutFingerprint: mismo usuario + mismo carrito -- mismo fingerprint sin importar el orden de los items", () => {
+  const base = {
+    userId: "user-1",
+    shipping: { provider: "andreani", type: "domicilio" },
+    storeBenefitId: null,
+  }
+  const a = computeCustomerCheckoutFingerprint({
+    ...base,
+    items: [fingerprintItem({ productId: 1 }), fingerprintItem({ productId: 2 })],
+  })
+  const b = computeCustomerCheckoutFingerprint({
+    ...base,
+    items: [fingerprintItem({ productId: 2 }), fingerprintItem({ productId: 1 })],
+  })
+  assert.ok(a)
+  assert.equal(a, b)
+})
+
+test("computeCustomerCheckoutFingerprint: distinto usuario -- distinto fingerprint aunque el carrito sea idéntico", () => {
+  const items = [fingerprintItem()]
+  const shipping = { provider: "andreani", type: "domicilio" }
+  const a = computeCustomerCheckoutFingerprint({ userId: "user-1", items, shipping, storeBenefitId: null })
+  const b = computeCustomerCheckoutFingerprint({ userId: "user-2", items, shipping, storeBenefitId: null })
+  assert.notEqual(a, b)
+})
+
+test("computeCustomerCheckoutFingerprint: distinta cantidad, variante o envío -- distinto fingerprint (no es sólo por producto)", () => {
+  const base = {
+    userId: "user-1",
+    shipping: { provider: "andreani", type: "domicilio" },
+    storeBenefitId: null,
+  }
+  const reference = computeCustomerCheckoutFingerprint({ ...base, items: [fingerprintItem({ quantity: 1 })] })
+
+  assert.notEqual(reference, computeCustomerCheckoutFingerprint({ ...base, items: [fingerprintItem({ quantity: 2 })] }))
+  assert.notEqual(
+    reference,
+    computeCustomerCheckoutFingerprint({ ...base, items: [fingerprintItem({ variantId: 5 })] }),
+  )
+  assert.notEqual(
+    reference,
+    computeCustomerCheckoutFingerprint({
+      ...base,
+      items: [fingerprintItem()],
+      shipping: { provider: "andreani", type: "sucursal", sucursalId: "123" },
+    }),
+  )
+  assert.notEqual(
+    reference,
+    computeCustomerCheckoutFingerprint({ ...base, items: [fingerprintItem()], storeBenefitId: "coupon-1" }),
+  )
+})
+
+test("computeCustomerCheckoutFingerprint: intento cross-payment-method -- mismo fingerprint para MP y transferencia del mismo carrito (a propósito, el medio de pago no forma parte del hash)", () => {
+  const items = [fingerprintItem()]
+  const shipping = { provider: "andreani", type: "domicilio" }
+  // El medio de pago nunca es un input del fingerprint: si lo fuera, un
+  // cliente podría abrir MP en una pestaña y transferencia en otra para el
+  // mismo carrito sin que el índice único los detecte como duplicados.
+  const a = computeCustomerCheckoutFingerprint({ userId: "user-1", items, shipping, storeBenefitId: null })
+  const b = computeCustomerCheckoutFingerprint({ userId: "user-1", items, shipping, storeBenefitId: null })
+  assert.equal(a, b)
+})
+
+test("isDuplicateCustomerCheckoutAttempt: sólo true para la violación del índice de fingerprint, no para cualquier 23505", () => {
+  assert.equal(
+    isDuplicateCustomerCheckoutAttempt({
+      code: "23505",
+      message:
+        'duplicate key value violates unique constraint "ordenes_customer_checkout_fingerprint_pending_unique"',
+    }),
+    true,
+  )
+  assert.equal(
+    isDuplicateCustomerCheckoutAttempt({
+      code: "23505",
+      message: 'duplicate key value violates unique constraint "ordenes_checkout_idempotency_unique"',
+    }),
+    false,
+  )
+  assert.equal(isDuplicateCustomerCheckoutAttempt(null), false)
+  assert.equal(isDuplicateCustomerCheckoutAttempt({ code: "23503" }), false)
+})
+
+test("los 3 endpoints de checkout usan computeCustomerCheckoutFingerprint y manejan su violación de unicidad con un mensaje claro", () => {
+  const routes = [
+    "../../app/api/mercadopago/create-preference/route.ts",
+    "../../app/api/transferencia/create-order/route.ts",
+    "../../app/api/customer-credit/create-order/route.ts",
+  ]
+
+  for (const path of routes) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8")
+    assert.match(source, /computeCustomerCheckoutFingerprint\(/, `${path}: falta computeCustomerCheckoutFingerprint`)
+    assert.match(source, /customer_checkout_fingerprint:/, `${path}: no persiste el fingerprint en la orden`)
+    assert.match(
+      source,
+      /isDuplicateCustomerCheckoutAttempt\(/,
+      `${path}: no maneja la violación del índice de fingerprint`,
+    )
+  }
+})
+
+test("los 3 endpoints de checkout usan claimActiveStoreBenefit (nunca el viejo findActiveStoreBenefit de sólo lectura)", () => {
+  const routes = [
+    "../../app/api/mercadopago/create-preference/route.ts",
+    "../../app/api/transferencia/create-order/route.ts",
+    "../../app/api/customer-credit/create-order/route.ts",
+  ]
+
+  for (const path of routes) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8")
+    assert.match(source, /claimActiveStoreBenefit\(/, `${path}: falta claimActiveStoreBenefit`)
+    assert.match(source, /linkStoreBenefitToOrder\(/, `${path}: falta linkStoreBenefitToOrder`)
+    assert.match(source, /releaseStoreBenefitClaim\(/, `${path}: falta releaseStoreBenefitClaim en el catch`)
+    assert.doesNotMatch(
+      source,
+      /findActiveStoreBenefit\(|markStoreBenefitAsUsed\(/,
+      `${path}: todavía usa las funciones viejas (SELECT + UPDATE tardío -- la carrera del cupón)`,
     )
   }
 })

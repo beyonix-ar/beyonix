@@ -8,10 +8,15 @@ import test from "node:test"
 // directamente en los tests de este proyecto (ver el resto de tests de esta
 // carpeta y de components/claims, todos de contrato).
 
+// Normaliza CRLF -> LF: en checkouts Windows este archivo tiene \r\n, y la
+// última prueba de este archivo mide distancia entre marcadores con
+// indexOf/comparaciones de posición pensadas contra \n -- con \r\n de más
+// (2 bytes en vez de 1 por línea) el conteo se corre y las comparaciones
+// fallan aunque el orden real sea correcto.
 const source = readFileSync(
   new URL("./admin-pedidos.tsx", import.meta.url),
   "utf8",
-)
+).replace(/\r\n/g, "\n")
 
 test("needs_reconciliation muestra una señal clara y distinta de un reintegro pendiente normal", () => {
   assert.match(

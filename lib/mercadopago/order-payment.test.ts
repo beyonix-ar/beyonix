@@ -118,10 +118,14 @@ test("una carrera perdida se trata como webhook duplicado", async () => {
 })
 
 test("el webhook duplicado no crea stock ni factura como efecto lateral", () => {
+  // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
+  // terminadores \r\n, y los regex/indexOf de estos tests están escritos
+  // contra \n (tanto por matches literales como por límites de cuantificador
+  // tipo {0,200}, que con \r\n de más se corren de rango).
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
-  )
+  ).replace(/\r\n/g, "\n")
 
   assert.doesNotMatch(
     webhook,
@@ -134,10 +138,14 @@ test("el webhook duplicado no crea stock ni factura como efecto lateral", () => 
 })
 
 test("la persistencia de approved_stock_conflict revisa el error y nunca falla en silencio", () => {
+  // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
+  // terminadores \r\n, y los regex/indexOf de estos tests están escritos
+  // contra \n (tanto por matches literales como por límites de cuantificador
+  // tipo {0,200}, que con \r\n de más se corren de rango).
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
-  )
+  ).replace(/\r\n/g, "\n")
 
   // BUG CONFIRMADO CONTRA LA BASE REAL: ordenes_admin_visibility_payment_check
   // (20260815140000) rechazaba payment_status='approved_stock_conflict'
@@ -169,10 +177,14 @@ test("el constraint de admin_visible_at acepta los tres estados de conflicto pos
 })
 
 test("un reintegro/contracargo notificado DESPUÉS de confirmado no se descarta en silencio", () => {
+  // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
+  // terminadores \r\n, y los regex/indexOf de estos tests están escritos
+  // contra \n (tanto por matches literales como por límites de cuantificador
+  // tipo {0,200}, que con \r\n de más se corren de rango).
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
-  )
+  ).replace(/\r\n/g, "\n")
 
   // El branch de reverso post-confirmación vive DENTRO del "ya confirmado",
   // así que nunca puede faltar el chequeo de pertenencia contra el
@@ -194,10 +206,14 @@ test("un reintegro/contracargo notificado DESPUÉS de confirmado no se descarta 
 })
 
 test("refunded y charged_back quedan modelados como reversos post-confirmación, no como estados de pre-aprobación", () => {
+  // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
+  // terminadores \r\n, y los regex/indexOf de estos tests están escritos
+  // contra \n (tanto por matches literales como por límites de cuantificador
+  // tipo {0,200}, que con \r\n de más se corren de rango).
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
-  )
+  ).replace(/\r\n/g, "\n")
 
   assert.match(
     webhook,
@@ -206,10 +222,14 @@ test("refunded y charged_back quedan modelados como reversos post-confirmación,
 })
 
 test("CASO I (precio único): el webhook valida el pago contra external_amount_due/total (el precio público del pedido), nunca recalcula por cuotas/porcentajes", () => {
+  // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
+  // terminadores \r\n, y los regex/indexOf de estos tests están escritos
+  // contra \n (tanto por matches literales como por límites de cuantificador
+  // tipo {0,200}, que con \r\n de más se corren de rango).
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
-  )
+  ).replace(/\r\n/g, "\n")
 
   // Bajo el modelo de precio público único, total/external_amount_due YA SON
   // el precio público (create-preference no le suma recargo por cuotas, ver
@@ -247,10 +267,14 @@ test("isMercadoPagoOrderCancelled reconoce el único estado terminal que usan ex
 // (inventory_order_consumes_stock excluye 'cancelado' explícitamente; una
 // orden pagado NO) y un email de "recibimos tu pedido" al cliente.
 test("un payment aprobado sobre una orden YA CANCELADA no la confirma (P1 pago tardío)", () => {
+  // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
+  // terminadores \r\n, y los regex/indexOf de estos tests están escritos
+  // contra \n (tanto por matches literales como por límites de cuantificador
+  // tipo {0,200}, que con \r\n de más se corren de rango).
   const webhook = readFileSync(
     new URL("../../app/api/mercadopago/webhook/route.ts", import.meta.url),
     "utf8",
-  )
+  ).replace(/\r\n/g, "\n")
 
   // El guard vive ANTES de la rama que confirma pagos aprobados, y antes de
   // la rama "no aprobado" (que si tocara primero también sería inocua, pero

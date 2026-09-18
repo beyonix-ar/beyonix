@@ -16,7 +16,10 @@ import test from "node:test"
 // order_claim_operations, notas de crédito, comprobante, notificación).
 
 const root = process.cwd()
-const read = (path: string) => readFileSync(join(root, path), "utf8")
+// Normaliza CRLF -> LF: en checkouts Windows estos archivos tienen \r\n, y
+// guardBlock (línea de abajo) está escrito con \n literal -- con \r\n el
+// .replace() nunca matchea y la comparación byte a byte falla siempre.
+const read = (path: string) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n")
 const originalMigration = read("supabase/migrations/20260906100000_claims_final_security.sql")
 const newMigration = read("supabase/migrations/20260911190000_lock_manual_refund_proof_for_mercadopago.sql")
 
