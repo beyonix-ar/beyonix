@@ -7,14 +7,31 @@ import {
   type StandaloneCostRow,
 } from "@/lib/business/standalone-cost-items"
 import {
+  buildProductCostLedgers,
+  getHistoricalUnitCost,
+  getReceivedCostContribution,
+  resolveReportedUnitCost,
+} from "@/lib/business/product-costs"
+import {
   calculateExternalSaleProfitability,
   getExternalSaleMerchandiseCost,
   resolveExternalSaleUnitCost,
 } from "@/lib/business/external-sale-profitability"
 import {
+  calculateMarketplaceNet,
+  calculateMercadoPagoFees,
+  calculatePendingRefundAdjustment,
+  calculateTrueProfit,
+  calculateWebNetSales,
+  getOrderRevenueReversal,
+  getProductExpenseEconomicCost,
+  type OrderRevenueReversal,
+} from "@/lib/business/dashboard-financials"
+import {
   getMercadoLibreCostableUnits,
   getMercadoLibreCostMapping,
   getMercadoLibreRefundAmount,
+  type MercadoLibrePhysicalReview,
 } from "@/lib/mercadolibre/sale-costing"
 import type {
   SupabasePedido,
@@ -93,14 +110,21 @@ interface DashboardFinancialSummary {
   shippingCost: number
   shippingBalance: number
   transferDiscounts: number
+  webMercadoPagoFees: number
   marketplaceFees: number
+  marketplaceRefunds: number
   salesFees: number
   marketplaceShipping: number
   marketplaceNet: number
   externalNet: number
   inventoryPurchases: number
   costOfGoodsSold: number
+  /** Auditoría 4/7: ingreso de ítems ya recibidos físicamente pero todavía
+   * sin nota de crédito autorizada -- ya restado de trueProfit para no
+   * mostrar ganancia artificial mientras la NC está pendiente. */
+  pendingReturnAdjustment: number
   operatingExpensesPaid: number
+  productExpenseEconomicCost: number
   operatingExpensesPending: number
   knownOperatingResult: number
   trueProfit: number | null
@@ -131,6 +155,17 @@ interface ExpenseRow {
   expense_date: string
   amount: number
   status: "pendiente" | "pagado"
+  expense_type: "money" | "product" | null
+  product_id: number | null
+  variant_id: number | null
+  quantity: number | null
+}
+
+interface MercadoLibreReturnReviewRow {
+  mercadolibre_sale_id: string
+  sellable_quantity: number
+  discounted_quantity: number
+  non_sellable_quantity: number
 }
 
 interface AuthorizedCreditNoteRow {
@@ -144,74 +179,6 @@ interface AuthorizedCreditNoteRow {
     quantity: number
     total_amount: number | string
   }>
-}
-
-interface CostLedgerPoint {
-  date: number
-  quantity: number
-  cost: number
-}
-
-function buildCostLedgers(rows: ProductCostRow[]) {
-  const grouped = new Map<string, ProductCostRow[]>()
-  rows.forEach((row) => {
-    if (row.product_id == null) return
-    const key = row.variant_id ? `v:${row.variant_id}` : `p:${row.product_id}`
-    const values = grouped.get(key) ?? []
-    values.push(row)
-    grouped.set(key, values)
-  })
-
-  const ledgers = new Map<string, CostLedgerPoint[]>()
-  grouped.forEach((values, key) => {
-    let quantity = 0
-    let cost = 0
-    const points = values
-      .sort((a, b) => a.purchase_date.localeCompare(b.purchase_date))
-      .map((row) => {
-        quantity += Number(row.quantity ?? 0)
-        cost += Number(row.total_cost ?? 0)
-        return {
-          date: new Date(`${row.purchase_date}T00:00:00-03:00`).getTime(),
-          quantity,
-          cost,
-        }
-      })
-    ledgers.set(key, points)
-  })
-  return ledgers
-}
-
-function getUnitCost(
-  ledgers: Map<string, CostLedgerPoint[]>,
-  productId: number,
-  variantId: number | null | undefined,
-  saleDate: string,
-) {
-  const timestamp = new Date(saleDate).getTime()
-  const keys = variantId ? [`v:${variantId}`, `p:${productId}`] : [`p:${productId}`]
-
-  for (const key of keys) {
-    const points = ledgers.get(key)
-    if (!points?.length) continue
-
-    let low = 0
-    let high = points.length - 1
-    let match: CostLedgerPoint | null = null
-    while (low <= high) {
-      const middle = Math.floor((low + high) / 2)
-      if (points[middle].date <= timestamp) {
-        match = points[middle]
-        low = middle + 1
-      } else {
-        high = middle - 1
-      }
-    }
-
-    if (match?.quantity) return match.cost / match.quantity
-  }
-
-  return null
 }
 
 function getPaymentMethodLabel(order: SupabasePedido | undefined) {
@@ -426,6 +393,7 @@ const ORDER_ITEM_SELECT = `
   precio,
   return_restocked_quantity,
   return_written_off_quantity,
+  costo_unitario_historico,
   productos(id, nombre, categorias(nombre)),
   producto_variantes(nombre)
 `
@@ -436,6 +404,7 @@ const FINANCIAL_ORDER_SELECT = `
   total,
   original_total,
   credit_balance_used,
+  customer_credit_restored_amount,
   external_amount_due,
   payment_status,
   payment_method_id,
@@ -446,6 +415,7 @@ const FINANCIAL_ORDER_SELECT = `
   refund_amount,
   refund_pending_at,
   refunded_at,
+  mercadopago_payment_snapshot,
   shipping_provider,
   envio_proveedor,
   shipping_cost_real,
@@ -696,7 +666,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("mercadolibre_sales")
-              .select("id, sale_date, imported_at, order_id, product_id, product_name, sku, quantity, gross_amount, fee_amount, shipping_amount, net_amount, raw_data")
+              .select("id, sale_date, imported_at, order_id, product_id, product_name, sku, quantity, gross_amount, fee_amount, shipping_amount, net_amount, raw_data, costo_unitario_historico")
               .order("id", { ascending: true })
               .range(from, to),
         )
@@ -710,7 +680,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("external_sales")
-              .select("id, sale_date, product_id, variant_id, product_name, sku, quantity, unit_cost, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference")
+              .select("id, sale_date, product_id, variant_id, product_name, sku, quantity, unit_cost, costo_unitario_historico, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference, status")
               .order("id", { ascending: true })
               .range(from, to),
         )
@@ -783,7 +753,9 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("product_cost_entries")
-              .select("id, product_id, variant_id, article_name, sku, purchase_date, quantity, total_cost, created_at")
+              .select(
+                "id, product_id, variant_id, article_name, sku, purchase_date, quantity, received_quantity, reception_status, total_cost, created_at",
+              )
               .order("purchase_date", { ascending: true })
               .range(from, to),
         )
@@ -794,11 +766,30 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("business_expenses")
-              .select("expense_date, amount, status")
+              .select(
+                "expense_date, amount, status, expense_type, product_id, variant_id, quantity",
+              )
               .order("expense_date", { ascending: true })
               .range(from, to),
         )
       : Promise.resolve({ rows: [] as ExpenseRow[], complete: true }),
+    sensitive
+      ? fetchAllDashboardRows<MercadoLibreReturnReviewRow>(
+          "revisiones_devolucion_ml",
+          (from, to) =>
+            auth.admin
+              .from("inventory_return_movements")
+              .select(
+                "mercadolibre_sale_id, sellable_quantity, discounted_quantity, non_sellable_quantity",
+              )
+              .not("mercadolibre_sale_id", "is", null)
+              .order("mercadolibre_sale_id", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({
+          rows: [] as MercadoLibreReturnReviewRow[],
+          complete: true,
+        }),
     sensitive
       ? fetchAllDashboardRows<AuthorizedCreditNoteRow>(
           "notas_credito_autorizadas",
@@ -854,6 +845,7 @@ export async function GET(request: Request) {
       creditNotePendingCountResult,
       productCostsScan,
       expensesScan,
+      mlReturnReviewScan,
       authorizedCreditNotesScan,
     ],
   ] = await Promise.all([primaryDataPromise, financialDataPromise])
@@ -867,7 +859,14 @@ export async function GET(request: Request) {
   const mlRows = sensitive
     ? marketplaceScan.rows
     : (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>
-  const externalRows = externalSalesScan.rows
+  // Auditoría 5/7 (P1): reverse_external_sale marca status='reversed' en vez
+  // de borrar la fila (ver 20260921100000_external_sale_reversal.sql) --
+  // esas ventas ya no son ingreso real y se excluyen de los totales
+  // financieros, igual que una orden cancelada. El registro histórico sigue
+  // existiendo en la tabla, sólo no suma acá.
+  const externalRows = externalSalesScan.rows.filter(
+    (row) => row.status !== "reversed",
+  )
   const financialOrders = financialOrdersScan.rows
   const paidCandidateOrders = sensitive
     ? financialOrders.filter(isPaidOrder)
@@ -910,25 +909,71 @@ export async function GET(request: Request) {
   const webOrdersWithoutItems = paidCandidateOrders.filter(
     (order) => !itemsByOrderId.has(order.id),
   )
-  const costLedgers = buildCostLedgers(productCostsScan.rows)
+  // Auditoría 5/7 (P0): fuente única de "cuánto de esta orden dejó de ser
+  // ingreso real" -- reemplaza los dos mecanismos que existían antes
+  // (webCompletedRefunds calculado más abajo + pendingRefunds informativo
+  // nunca restado) por una sola clasificación por orden, con ramas mutuamente
+  // excluyentes (ver getOrderRevenueReversal). Se calcula acá, antes del
+  // loop de ítems, porque pendingReturnAdjustment (ajuste físico por ítem, de
+  // 4/7) debe excluir las órdenes que ya están bajo una reversión a nivel de
+  // toda la orden -- si no, una orden cancelada con reintegro pendiente que
+  // además tuviera ítems con recepción física registrada se descontaría dos
+  // veces por caminos distintos.
+  const orderRevenueReversalById = new Map<number, OrderRevenueReversal>()
+  for (const order of paidCandidateOrders) {
+    orderRevenueReversalById.set(
+      order.id,
+      getOrderRevenueReversal(order, authorizedCreditByOrder.get(order.id) ?? 0),
+    )
+  }
+  const mlReturnReviewBySaleId = new Map<string, MercadoLibrePhysicalReview>()
+  for (const review of mlReturnReviewScan.rows) {
+    if (!review.mercadolibre_sale_id) continue
+    mlReturnReviewBySaleId.set(String(review.mercadolibre_sale_id), {
+      sellableQuantity: Math.max(0, Number(review.sellable_quantity ?? 0)),
+      discountedQuantity: Math.max(0, Number(review.discounted_quantity ?? 0)),
+      nonSellableQuantity: Math.max(0, Number(review.non_sellable_quantity ?? 0)),
+    })
+  }
+  const costLedgers = buildProductCostLedgers(productCostsScan.rows)
   const itemUnitCosts = new Map<number, number | null>()
   const marketplaceMerchandiseCosts = new Map<string, number | null>()
   let coveredUnits = 0
   let webUnits = 0
   let costOfGoodsSold = 0
+  // P0 confirmado en Auditoría 4/7: costOfGoodsSold ya descontaba
+  // return_restocked_quantity, pero el INGRESO (webGrossSales) recién se
+  // ajusta cuando la nota de crédito llega a `authorized` -- que puede
+  // tardar o no llegar nunca. En la ventana entre "recepción física
+  // confirmada" y "NC autorizada" (el orden normal de operación, no un caso
+  // extremo) el dashboard mostraba ganancia íntegra por una venta ya
+  // devuelta. pendingReturnAdjustment neteA conservadoramente esa ventana
+  // en trueProfit, sin tocar grossSales/netSales -- así que cuando la NC
+  // finalmente se autoriza y webCompletedRefunds la resta, no se descuenta
+  // dos veces (acá sólo se ajusta la porción todavía NO cubierta por una NC
+  // autorizada; en cuanto lo está, el ajuste de este ítem vuelve a 0).
+  let pendingReturnAdjustment = 0
   items.forEach((item) => {
     const quantity = Math.max(Number(item.cantidad ?? 0), 0)
     const restockedQuantity = Math.min(
       quantity,
       Math.max(Number(item.return_restocked_quantity ?? 0), 0),
     )
+    const writtenOffQuantity = Math.min(
+      Math.max(0, quantity - restockedQuantity),
+      Math.max(Number(item.return_written_off_quantity ?? 0), 0),
+    )
     const costableQuantity = Math.max(0, quantity - restockedQuantity)
     const order = paidOrdersById.get(item.orden_id)
-    const unitCost = getUnitCost(
+    const dynamicUnitCost = getHistoricalUnitCost(
       costLedgers,
       item.producto_id,
       item.variante_id,
       order?.paid_at ?? order?.created_at ?? new Date().toISOString(),
+    )
+    const unitCost = resolveReportedUnitCost(
+      item.costo_unitario_historico,
+      dynamicUnitCost,
     )
     webUnits += costableQuantity
     if (unitCost != null) {
@@ -936,14 +981,30 @@ export async function GET(request: Request) {
       costOfGoodsSold += unitCost * costableQuantity
     }
     itemUnitCosts.set(item.id, unitCost)
+
+    const receivedQuantity = restockedQuantity + writtenOffQuantity
+    // La orden ya está bajo una reversión completa (pendiente o autorizada,
+    // ver orderRevenueReversalById más arriba): su ingreso ya se está
+    // descontando entero por ese camino, así que un ajuste adicional por
+    // ítem duplicaría el descuento.
+    const orderReversalStatus = order
+      ? orderRevenueReversalById.get(order.id)?.status
+      : undefined
+    pendingReturnAdjustment += calculatePendingRefundAdjustment({
+      unitPrice: Number(item.precio ?? 0),
+      receivedQuantity,
+      creditedQuantity: Number(creditedQuantityByItem.get(item.id) ?? 0),
+      orderReversalStatus: orderReversalStatus ?? "none",
+    })
   })
 
   let marketplaceCostableUnits = 0
   mlRows.forEach((row) => {
-    const costableUnits = getMercadoLibreCostableUnits(row)
+    const physicalReview = mlReturnReviewBySaleId.get(String(row.id)) ?? null
+    const costableUnits = getMercadoLibreCostableUnits(row, physicalReview)
     const mapping = getMercadoLibreCostMapping(row)
     const saleDate = String(row.sale_date ?? row.imported_at ?? "")
-    const unitCost =
+    const dynamicUnitCost =
       mapping && saleDate
         ? mapping.standalone_key
           ? getStandaloneHistoricalUnitCost(
@@ -952,7 +1013,7 @@ export async function GET(request: Request) {
               saleDate,
             )
           : mapping.product_id
-            ? getUnitCost(
+            ? getHistoricalUnitCost(
                 costLedgers,
                 mapping.product_id,
                 mapping.variant_id,
@@ -960,6 +1021,8 @@ export async function GET(request: Request) {
               )
             : null
         : null
+    const snapshot = row.costo_unitario_historico as number | null | undefined
+    const unitCost = resolveReportedUnitCost(snapshot, dynamicUnitCost)
     const merchandiseCost =
       costableUnits === 0
         ? 0
@@ -992,10 +1055,12 @@ export async function GET(request: Request) {
     // venta, igual que web y ML, para no depender de un unit_cost tipeado a
     // mano que puede quedar desactualizado respecto de compras posteriores.
     // Sólo se usa el valor cargado a mano cuando la venta no está catalogada.
-    const historicalUnitCost =
+    const dynamicUnitCost =
       productId && saleDate
-        ? getUnitCost(costLedgers, productId, variantId, saleDate)
+        ? getHistoricalUnitCost(costLedgers, productId, variantId, saleDate)
         : null
+    const snapshot = row.costo_unitario_historico as number | null | undefined
+    const historicalUnitCost = resolveReportedUnitCost(snapshot, dynamicUnitCost)
     const unitCost = resolveExternalSaleUnitCost({
       productId,
       historicalUnitCost,
@@ -1013,17 +1078,41 @@ export async function GET(request: Request) {
 
   const totalCostableUnits =
     webUnits + marketplaceCostableUnits + externalUnits
-  const costCoveragePercent = totalCostableUnits > 0
-    ? (coveredUnits / totalCostableUnits) * 100
-    : 100
-  const inventoryPurchases = productCostsScan.rows.reduce(
-    (total, row) => total + Number(row.total_cost ?? 0),
-    0,
-  )
-  const operatingExpensesPaid = expensesScan.rows.reduce(
-    (total, row) => total + (row.status === "pagado" ? Number(row.amount ?? 0) : 0),
-    0,
-  )
+  // Sólo mercadería efectivamente incorporada al inventario: las compras
+  // `pendiente`/`anulada` no suman (nunca entraron), y las `parcial` sólo
+  // aportan la porción realmente recibida -- misma semántica que el costo
+  // de venta (getReceivedCostContribution), para no mostrar como "comprado"
+  // dinero comprometido en mercadería que todavía no llegó o fue anulada.
+  const inventoryPurchases = productCostsScan.rows.reduce((total, row) => {
+    const contribution = getReceivedCostContribution(row)
+    return contribution ? total + contribution.cost : total
+  }, 0)
+  // Auditoría 5/7 (P1): un gasto tipo "producto" (donación/sorteo) tiene
+  // amount=0 forzado por el esquema (la salida de caja real es $0) -- pero
+  // el costo económico de esa mercadería es real y hasta ahora nunca
+  // impactaba el resultado. Se calcula con el mismo costo histórico que
+  // cualquier otro canal y se suma a los gastos operativos, nunca al importe
+  // cobrado (sigue siendo $0).
+  let productExpenseCostableUnits = 0
+  let productExpenseCoveredUnits = 0
+  const productExpenseEconomicCost = expensesScan.rows.reduce((total, row) => {
+    if (row.expense_type !== "product" || !row.product_id) return total
+    const quantity = Math.max(0, Number(row.quantity ?? 0))
+    productExpenseCostableUnits += quantity
+    const unitCost = getHistoricalUnitCost(
+      costLedgers,
+      row.product_id,
+      row.variant_id,
+      row.expense_date,
+    )
+    if (unitCost != null) productExpenseCoveredUnits += quantity
+    return total + getProductExpenseEconomicCost(row.quantity, unitCost)
+  }, 0)
+  const operatingExpensesPaid =
+    expensesScan.rows.reduce(
+      (total, row) => total + (row.status === "pagado" ? Number(row.amount ?? 0) : 0),
+      0,
+    ) + productExpenseEconomicCost
   const operatingExpensesPending = expensesScan.rows.reduce(
     (total, row) => total + (row.status === "pendiente" ? Number(row.amount ?? 0) : 0),
     0,
@@ -1090,26 +1179,25 @@ export async function GET(request: Request) {
       total + Number(order.original_total ?? order.total ?? 0),
     0,
   )
-  const webCompletedRefunds = paidCandidateOrders.reduce(
-    (total, order) => {
-      const authorizedCredit = authorizedCreditByOrder.get(order.id) ?? 0
-      if (authorizedCredit > 0) return total + authorizedCredit
-
-      const nonInvoicedRefund =
-        order.invoice_status !== "authorized" &&
-        (order.financial_status === "refunded" || order.refunded_at)
-          ? Number(order.refund_amount ?? order.total ?? 0)
-          : 0
-      return total + nonInvoicedRefund
-    },
-    0,
-  )
-  const pendingRefundOrders = paidCandidateOrders.filter(
-    (order) => order.financial_status === "refund_pending",
-  )
-  const pendingRefunds = pendingRefundOrders.reduce(
-    (total, order) => total + Number(order.refund_amount ?? order.total ?? 0),
-    0,
+  // Auditoría 5/7 (P0): antes había dos mecanismos separados
+  // (webCompletedRefunds acá + pendingRefunds más abajo, nunca restado de
+  // trueProfit) -- ahora ambos vienen de orderRevenueReversalById, la misma
+  // clasificación construida arriba antes del loop de ítems. Ramas
+  // mutuamente excluyentes por diseño: ninguna orden puede sumar en las dos.
+  const webCompletedRefunds = paidCandidateOrders.reduce((total, order) => {
+    const reversal = orderRevenueReversalById.get(order.id)
+    return reversal?.status === "completed" ? total + reversal.amount : total
+  }, 0)
+  const pendingRefunds = paidCandidateOrders.reduce((total, order) => {
+    const reversal = orderRevenueReversalById.get(order.id)
+    return reversal?.status === "pending" ? total + reversal.amount : total
+  }, 0)
+  const webRevenueReversed = webCompletedRefunds + pendingRefunds
+  // Comisión real de Mercado Pago (P0): se resta siempre que exista el
+  // snapshot del webhook, sin importar si la orden luego se canceló --
+  // Mercado Pago no devuelve su comisión sobre un pago reintegrado.
+  const webMercadoPagoFees = calculateMercadoPagoFees(
+    paidCandidateOrders.map((order) => order.mercadopago_payment_snapshot),
   )
   const externalCollected = paidCandidateOrders.reduce(
     (total, order) =>
@@ -1153,18 +1241,16 @@ export async function GET(request: Request) {
     (total, row) => total + Number(row.shipping_amount ?? 0),
     0,
   )
-  const marketplaceNet = mlRows.reduce((total, row) => {
-    const gross = Number(row.gross_amount ?? 0)
-    const fee = Number(row.fee_amount ?? 0)
-    const shipping = Number(row.shipping_amount ?? 0)
-    const storedNet = row.net_amount
-
-    return total + Number(storedNet ?? gross - fee - shipping)
-  }, 0)
   const marketplaceRefunds = mlRows.reduce(
     (total, row) => total + getMercadoLibreRefundAmount(row),
     0,
   )
+  const marketplaceNet = calculateMarketplaceNet({
+    grossSales: marketplaceGrossSales,
+    fees: marketplaceFees,
+    shipping: marketplaceShipping,
+    refunds: marketplaceRefunds,
+  })
   const externalGrossSales = externalRows.reduce(
     (total, row) => total + Number(row.gross_amount ?? 0),
     0,
@@ -1186,8 +1272,10 @@ export async function GET(request: Request) {
     externalFees -
     externalShipping -
     externalOtherExpenses
-  const webNetSales =
-    webGrossSales - webCompletedRefunds - transferDiscounts
+  const webNetSales = calculateWebNetSales({
+    grossSales: webGrossSales,
+    revenueReversed: webRevenueReversed,
+  })
   const grossSales =
     webGrossSales + marketplaceGrossSales + externalGrossSales
   const netSales = webNetSales + marketplaceNet + externalNet
@@ -1218,23 +1306,36 @@ export async function GET(request: Request) {
     orderItemsScan.complete &&
     authorizedCreditNotesScan.complete &&
     marketplaceScan.complete &&
+    mlReturnReviewScan.complete &&
     externalSalesScan.complete &&
     productCostsScan.complete &&
     expensesScan.complete
-  const knownOperatingResult = netSales - webShippingCost
+  const knownOperatingResult = netSales - webShippingCost - webMercadoPagoFees
+  const adjustedCostableUnits = totalCostableUnits + productExpenseCostableUnits
+  const adjustedCoveredUnits = coveredUnits + productExpenseCoveredUnits
+  const adjustedCostCoveragePercent = adjustedCostableUnits > 0
+    ? (adjustedCoveredUnits / adjustedCostableUnits) * 100
+    : 100
   const hasFullCostCoverage =
     scanComplete &&
     webOrdersWithoutItems.length === 0 &&
-    costCoveragePercent >= 99.999
+    adjustedCostCoveragePercent >= 99.999
   const trueProfit = hasFullCostCoverage
-    ? knownOperatingResult - costOfGoodsSold - operatingExpensesPaid
+    ? calculateTrueProfit({
+        netSales,
+        webShippingCost,
+        costOfGoodsSold,
+        operatingExpenses: operatingExpensesPaid,
+        pendingReturnAdjustment,
+        mercadoPagoFees: webMercadoPagoFees,
+      })
     : null
   const financialWarnings = [
     ...(!scanComplete
       ? ["La lectura histórica o las tablas de costos están incompletas. Aplicá la migración pendiente y revisá el servidor."]
       : []),
-    ...(costCoveragePercent < 99.999
-      ? [`Los costos cubren el ${costCoveragePercent.toFixed(1)}% de las unidades vendidas. Completá las compras faltantes para obtener rentabilidad exacta.`]
+    ...(adjustedCostCoveragePercent < 99.999
+      ? [`Los costos cubren el ${adjustedCostCoveragePercent.toFixed(1)}% de las unidades vendidas o entregadas como gasto. Completá las compras faltantes para obtener rentabilidad exacta.`]
       : []),
     ...(webOrdersWithoutItems.length > 0
       ? [`${webOrdersWithoutItems.length} pedidos pagos no tienen detalle de artículos y no pueden costearse.`]
@@ -1260,6 +1361,9 @@ export async function GET(request: Request) {
     ...(negativeStockItems > 0
       ? [`${negativeStockItems} productos o variantes tienen stock negativo.`]
       : []),
+    ...(pendingReturnAdjustment > 0
+      ? [`${pendingReturnAdjustment.toLocaleString("es-AR", { style: "currency", currency: "ARS" })} en ventas ya recibidas físicamente en devolución están descontados de la ganancia a la espera de su nota de crédito.`]
+      : []),
   ]
   const financialSummary: DashboardFinancialSummary = {
     webGrossSales,
@@ -1275,14 +1379,18 @@ export async function GET(request: Request) {
     shippingCost: webShippingCost + marketplaceShipping + externalShipping,
     shippingBalance: shippingCharged - webShippingCost,
     transferDiscounts,
+    webMercadoPagoFees,
     marketplaceFees,
-    salesFees: marketplaceFees + externalFees,
+    marketplaceRefunds,
+    salesFees: webMercadoPagoFees + marketplaceFees + externalFees,
     marketplaceShipping,
     marketplaceNet,
     externalNet,
     inventoryPurchases,
     costOfGoodsSold,
+    pendingReturnAdjustment,
     operatingExpensesPaid,
+    productExpenseEconomicCost,
     operatingExpensesPending,
     knownOperatingResult,
     trueProfit,
@@ -1290,7 +1398,7 @@ export async function GET(request: Request) {
       trueProfit != null && grossSales > 0
         ? (trueProfit / grossSales) * 100
         : null,
-    costCoveragePercent,
+    costCoveragePercent: adjustedCostCoveragePercent,
     invoicedAmount: invoicedOrders.reduce(
       (total, order) => total + Number(order.original_total ?? order.total ?? 0),
       0,

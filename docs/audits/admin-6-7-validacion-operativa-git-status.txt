@@ -1,0 +1,108 @@
+ M app/admin/admin-client.tsx
+ M app/admin/components/admin-controls.tsx
+ M app/admin/sections/auditoria/audit-helpers.ts
+ M app/admin/sections/clientes/admin-clientes.tsx
+ M app/admin/sections/dashboard/admin-costs-panel.tsx
+ M app/admin/sections/dashboard/admin-dashboard.tsx
+ M app/admin/sections/dashboard/admin-mercadolibre-sales.tsx
+ M app/admin/sections/dashboard/admin-sales-ledger.tsx
+ M app/admin/sections/facturacion/admin-facturacion.tsx
+ M app/admin/sections/modificaciones/admin-modificaciones.tsx
+ M app/admin/sections/modificaciones/andreani-integration-card.tsx
+ M app/admin/sections/pedidos/admin-pedidos.tsx
+ M app/admin/sections/productos/admin-productos.tsx
+ M app/admin/sections/productos/productos-row.tsx
+ M app/admin/sections/productos/productos-toolbar.tsx
+ M app/api/admin/conditioned-stock/[id]/route.ts
+ M app/api/admin/costs/route.ts
+ M app/api/admin/dashboard/route.ts
+ M app/api/admin/mercadolibre-sales/[id]/return-review/route.ts
+ M app/api/admin/mercadolibre-sales/route.ts
+ M app/api/admin/orders/[id]/credit-note/route.ts
+ M app/api/admin/pedidos/[id]/return-inventory/[itemId]/route.ts
+ M app/api/admin/pedidos/route.ts
+ M app/api/admin/products/[id]/route.ts
+ M app/api/admin/products/[id]/variants/[variantId]/route.ts
+ M app/api/admin/sales-ledger/route.ts
+ M components/admin-notification-bell.tsx
+ M components/admin-notifications-popover.tsx
+ M components/claims/admin-claim-manager.tsx
+ M hooks/use-admin-notifications.ts
+ M hooks/use-pedidos.ts
+ M lib/admin/admin-notification-rules.ts
+ M lib/admin/admin-notifications.ts
+ M lib/business/commercial-circuit-consistency.test.ts
+ M lib/business/idempotency-attempt.ts
+ M lib/business/product-costs.test.ts
+ M lib/business/product-costs.ts
+ M lib/business/standalone-cost-items.ts
+ M lib/mercadolibre/sale-costing.ts
+ M lib/orders/claim-server.ts
+ M lib/supabase/queries/business-costs.ts
+ M lib/supabase/queries/dashboard.ts
+ M lib/supabase/queries/mercadolibre-sales.ts
+ M lib/supabase/queries/pedidos.ts
+ M lib/supabase/queries/sales-ledger.ts
+ M lib/supabase/types.ts
+ M next-env.d.ts
+ M package-lock.json
+ M package.json
+?? app/admin/components/admin-responsive-table.tsx
+?? app/admin/components/force-delete-dialog.tsx
+?? app/admin/components/operational-progress.tsx
+?? app/admin/sections/pedidos/order-replacements.tsx
+?? app/api/admin/destructive-operations/
+?? app/api/admin/pedidos/[id]/replacements/
+?? app/api/admin/sales-ledger/[id]/
+?? docs/audits/admin-6-7-recuperacion-2026-09-20.md
+?? docs/audits/admin-6-7-validacion-operativa-2026-09-20.md
+?? docs/audits/admin-6-7-validacion-operativa-git-status.txt
+?? docs/audits/admin-6-7-validacion-operativa-rollback.sql
+?? lib/admin/admin-capabilities.ts
+?? lib/admin/admin-destructive-sql.test.ts
+?? lib/admin/admin-error-integration.test.tsx
+?? lib/admin/admin-ml-integration.test.tsx
+?? lib/admin/admin-operation-ui.test.tsx
+?? lib/admin/admin-order-search.test.ts
+?? lib/admin/admin-permissions-integration.test.ts
+?? lib/admin/admin-responsive.browser.test.tsx
+?? lib/admin/billing-errors.ts
+?? lib/admin/destructive-operations.ts
+?? lib/admin/modal-focus.ts
+?? lib/admin/order-operational-progress.ts
+?? lib/admin/request-error.ts
+?? lib/business/dashboard-financials.test.ts
+?? lib/business/dashboard-financials.ts
+?? lib/business/dashboard-timezone.test.ts
+?? lib/business/dashboard-timezone.ts
+?? lib/business/dashboard-ui-contract.test.ts
+?? lib/business/external-sale-reversal.test.ts
+?? lib/business/fixtures/
+?? lib/business/historical-cost-snapshot.test.ts
+?? lib/business/purchase-cost-audit.test.ts
+?? lib/business/return-profitability.test.ts
+?? lib/business/return-profitability.ts
+?? lib/business/standalone-cost-items.test.ts
+?? lib/mercadolibre/return-review-client.ts
+?? lib/mercadolibre/return-review-immutability.test.ts
+?? lib/orders/credit-note-reception.test.ts
+?? lib/orders/credit-note-reception.ts
+?? lib/orders/fixtures/return-reception-schema.sql
+?? lib/orders/order-replacements.test.ts
+?? lib/orders/return-reception-unification.test.ts
+?? supabase/migrations/20260918140000_historical_cost_snapshot.sql
+?? supabase/migrations/20260918150000_purchase_inventory_refresh_reproducibility.sql
+?? supabase/migrations/20260918160000_attach_purchase_cost_audit_trigger.sql
+?? supabase/migrations/20260918170000_force_delete_purchase_impact_check.sql
+?? supabase/migrations/20260918180000_revoke_direct_writes_on_product_cost_entries.sql
+?? supabase/migrations/20260919100000_deterministic_historical_cost_snapshot.sql
+?? supabase/migrations/20260920100000_inventory_return_movements_reproducibility.sql
+?? supabase/migrations/20260920110000_unify_return_reception_rpc.sql
+?? supabase/migrations/20260920120000_ml_return_review_immutability.sql
+?? supabase/migrations/20260920130000_credit_note_reception_exception_reason.sql
+?? supabase/migrations/20260920140000_order_replacements.sql
+?? supabase/migrations/20260921100000_external_sale_reversal.sql
+?? supabase/migrations/20260922100000_admin_confirmed_force_delete.sql
+?? supabase/migrations/20260922110000_admin_order_search.sql
+?? supabase/migrations/20260922120000_replacement_operation_guard.sql
+?? supabase/migrations/20260922130000_replacement_admin_audit.sql

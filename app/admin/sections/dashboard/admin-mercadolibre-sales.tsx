@@ -41,6 +41,7 @@ import {
 } from "@/lib/mercadolibre/returns"
 import { summarizeMercadoLibreCosting } from "@/lib/mercadolibre/sale-costing"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
+import { AdminResponsiveTable } from "../../components/admin-responsive-table"
 import {
   deleteAllMercadoLibreSales,
   deleteMercadoLibreSale,
@@ -346,6 +347,7 @@ export function AdminMercadoLibreSales() {
   const [reviewingReturn, setReviewingReturn] =
     useState<StoredMercadoLibreSale | null>(null)
   const [savingReturnReview, setSavingReturnReview] = useState(false)
+  const returnReviewInFlight = useRef(false)
   const [receivedReturnQuantity, setReceivedReturnQuantity] = useState("0")
   const [sellableReturnQuantity, setSellableReturnQuantity] = useState("0")
   const [discountedReturnQuantity, setDiscountedReturnQuantity] = useState("0")
@@ -355,6 +357,7 @@ export function AdminMercadoLibreSales() {
   const [returnDiscountReason, setReturnDiscountReason] = useState("")
   const [returnNonSellableReason, setReturnNonSellableReason] = useState("")
   const [returnReviewNotes, setReturnReviewNotes] = useState("")
+  const [returnCorrectionReason, setReturnCorrectionReason] = useState("")
   const [returnOccurredAt, setReturnOccurredAt] = useState("")
   const [pendingDelete, setPendingDelete] =
     useState<StoredMercadoLibreSale | null>(null)
@@ -557,6 +560,7 @@ export function AdminMercadoLibreSales() {
     setReturnDiscountReason(review?.discount_reason ?? "")
     setReturnNonSellableReason(review?.non_sellable_reason ?? "")
     setReturnReviewNotes(review?.review_notes ?? "")
+    setReturnCorrectionReason("")
     setReturnOccurredAt(dateTimeLocalValue(review?.occurred_at))
     setError("")
   }, [])
@@ -577,7 +581,8 @@ export function AdminMercadoLibreSales() {
   }, [notificationSaleId, openReturnReview, sales])
 
   const saveReturnReview = async () => {
-    if (!reviewingReturn) return
+    if (!reviewingReturn || returnReviewInFlight.current) return
+    returnReviewInFlight.current = true
     try {
       setSavingReturnReview(true)
       setError("")
@@ -595,6 +600,10 @@ export function AdminMercadoLibreSales() {
         occurredAt: returnOccurredAt
           ? new Date(returnOccurredAt).toISOString()
           : null,
+        expectedApprovedAt: reviewingReturn.return_review?.approved_at ?? null,
+        correctionReason: reviewingReturn.return_review
+          ? returnCorrectionReason
+          : null,
       })
       setReviewingReturn(null)
       setSuccess("Revisión física guardada y stock actualizado.")
@@ -607,6 +616,7 @@ export function AdminMercadoLibreSales() {
           : "No se pudo guardar la revisión física.",
       )
     } finally {
+      returnReviewInFlight.current = false
       setSavingReturnReview(false)
     }
   }
@@ -749,6 +759,7 @@ export function AdminMercadoLibreSales() {
       number(discountedReturnQuantity),
   )
   const returnReviewValid =
+    (!reviewingReturn?.return_review || returnCorrectionReason.trim().length >= 3) &&
     receivedReturn >= 0 &&
     receivedReturn <= number(reviewingReturn?.quantity) &&
     classifiedReturn <= receivedReturn &&
@@ -764,6 +775,21 @@ export function AdminMercadoLibreSales() {
       number(nonSellableReturnQuantity) === 0 ||
       Boolean(returnNonSellableReason.trim())
     )
+
+  if (!loading && error && sales.length === 0) {
+    return (
+      <div className="rounded-2xl border border-red-400/25 bg-red-400/10 p-6 text-center text-red-100">
+        <p className="text-sm font-bold">{error}</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-4 inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-red-300/30 px-4 text-xs font-black"
+        >
+          <RefreshCw className="size-3.5" /> Reintentar
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="admin-dashboard-panel admin-mercadolibre-sales space-y-3">
@@ -1113,6 +1139,7 @@ export function AdminMercadoLibreSales() {
           </div>
         ) : (
           <div className="sales-ledger-scrollbar overflow-x-auto rounded-2xl border border-white/8">
+            <AdminResponsiveTable labels={["Venta", "Fecha", "Estado", "Producto / SKU", "Unidades", "Ingreso productos", "Cargos ML", "Envío descontado", "Reembolsos", "Total ML", "Costo mercadería", "Ganancia", "Comprador", "Acciones"]}>
             <table className="min-w-[1720px] w-full text-center text-xs">
               <thead className="bg-beyonix-blue/18 text-9px font-black uppercase tracking-widest text-white/42">
                 <tr>
@@ -1269,6 +1296,7 @@ export function AdminMercadoLibreSales() {
                 })}
               </tbody>
             </table>
+            </AdminResponsiveTable>
           </div>
         )}
       </section>
@@ -1312,6 +1340,31 @@ export function AdminMercadoLibreSales() {
         }
       >
         <div className="space-y-4">
+          {error && <div role="alert" className="rounded-xl border border-red-400/25 p-3 text-sm text-red-200">{error}<button type="button" disabled={savingReturnReview} className="ml-3 underline" onClick={async () => {
+            try {
+              const fresh = await getMercadoLibreSales()
+              setSales(fresh.rows)
+              const current = fresh.rows.find((sale) => sale.id === reviewingReturn?.id)
+              if (current) openReturnReview(current)
+              else setError("La venta ya no existe. Cerrá esta revisión y actualizá el listado.")
+            } catch { setError("No se pudieron recargar los datos. Reintentá.") }
+          }}>Recargar datos</button></div>}
+          {reviewingReturn?.return_review && (
+            <section className="rounded-xl border border-amber-300/25 bg-amber-300/8 p-3">
+              <label className="text-10px font-black uppercase tracking-wider text-amber-100">
+                Motivo de la corrección (mínimo 3 caracteres)
+              </label>
+              <p className="mt-1 text-xs text-white/58">
+                Esta devolución ya fue revisada. Explicá por qué necesitás cambiar la clasificación anterior.
+              </p>
+              <textarea
+                value={returnCorrectionReason}
+                onChange={(event) => setReturnCorrectionReason(event.target.value.slice(0, 500))}
+                placeholder="Ej.: se comprobó que una unidad tenía una rotura no visible en la primera revisión."
+                className="mt-2 min-h-20 w-full rounded-xl border border-amber-300/20 bg-[#07111B] p-3 text-sm text-white outline-none focus:border-amber-200/55"
+              />
+            </section>
+          )}
           <section className="rounded-2xl border border-beyonix-blue-light/16 bg-black/20 p-3">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>

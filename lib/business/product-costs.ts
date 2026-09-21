@@ -17,6 +17,18 @@ export interface ProductCostLedgerRow {
   total_cost: number
 }
 
+/**
+ * Subconjunto de columnas que `getReceivedCostContribution` necesita.
+ * Permite reutilizar la misma semántica de recepción para filas que no son
+ * `ProductCostLedgerRow` completas (por ejemplo artículos sueltos/no
+ * catalogados en `lib/business/standalone-cost-items.ts`), sin duplicar la
+ * lógica de qué parte de una compra representa mercadería recibida.
+ */
+export type ReceivableCostRow = Pick<
+  ProductCostLedgerRow,
+  "quantity" | "received_quantity" | "reception_status" | "total_cost"
+>
+
 interface ProductCostLedgerPoint {
   date: number
   quantity: number
@@ -42,7 +54,7 @@ export type ProductCostLedgers = Map<string, ProductCostLedgerPoint[]>
  * Devuelve `null` cuando la fila no aporta nada al costo. Nunca inventa
  * costos ni asume 0 como "costo conocido".
  */
-export function getReceivedCostContribution(row: ProductCostLedgerRow) {
+export function getReceivedCostContribution(row: ReceivableCostRow) {
   const quantity = Number(row.quantity ?? 0)
   if (!Number.isFinite(quantity) || quantity <= 0) return null
 
@@ -108,7 +120,14 @@ export function getHistoricalUnitCost(
   variantId: number | null | undefined,
   saleDate: string,
 ) {
-  const timestamp = new Date(saleDate).getTime()
+  // Las fuentes con precisión de fecha (ventas externas y gastos de producto)
+  // representan todo ese día comercial argentino. Tomar YYYY-MM-DD como UTC
+  // medianoche las ubicaría tres horas antes de una compra del mismo día.
+  const timestamp = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(saleDate)
+      ? `${saleDate}T23:59:59.999-03:00`
+      : saleDate,
+  ).getTime()
   if (!Number.isFinite(timestamp)) return null
 
   const keys = variantId ? [`v:${variantId}`, `p:${productId}`] : [`p:${productId}`]
@@ -135,6 +154,22 @@ export function getHistoricalUnitCost(
   }
 
   return null
+}
+
+/**
+ * Costo unitario a usar para REPORTAR una venta ya ocurrida (COGS/ganancia
+ * mostrados en dashboard, ML, ventas externas): preferí siempre el snapshot
+ * persistido (congelado la primera vez que la venta se reportó), y sólo si
+ * todavía no existe, el recálculo dinámico contra el libro de compras
+ * vigente. Nunca al revés -- una vez congelado, editar o borrar una compra
+ * pasada no puede reescribir una ganancia ya reportada (ver migración
+ * 20260918140000_historical_cost_snapshot.sql).
+ */
+export function resolveReportedUnitCost(
+  snapshot: number | null | undefined,
+  dynamic: number | null,
+): number | null {
+  return snapshot != null ? snapshot : dynamic
 }
 
 export interface ProductVariantSummary {

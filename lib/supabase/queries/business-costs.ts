@@ -181,9 +181,11 @@ export async function updateBusinessCost(payload: Record<string, unknown>) {
 export async function deleteBusinessCost(
   kind: "product" | "expense",
   id: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; confirmImpact?: boolean } = {},
 ) {
-  const query = options.force ? "&force=true" : ""
+  const query =
+    (options.force ? "&force=true" : "") +
+    (options.confirmImpact ? "&confirmImpact=true" : "")
   return request(
     `/api/admin/costs?kind=${kind}&id=${encodeURIComponent(id)}${query}`,
     { method: "DELETE" },

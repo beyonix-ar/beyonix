@@ -8,6 +8,9 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import Image from "next/image"
+import { useAuth } from "@/context/auth-context"
+import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
+import { ForceDeleteDialog } from "../../components/force-delete-dialog"
 
 import {
   Check,
@@ -172,6 +175,8 @@ export function ProductosRow({
   onMerge,
   onToggleActivo,
 }: ProductosRowProps) {
+  const { user } = useAuth()
+  const { canManageCatalog } = getAdminCapabilities(user?.rol)
   const [open, setOpen] =
     useState(false)
 
@@ -561,7 +566,7 @@ export function ProductosRow({
       setDeletingVariantId(variante.id)
       setVariantError("")
       await deleteProductoVariante(producto.id, variante.id, {
-        force: isSuperAdmin,
+        force: false,
       })
     } catch (error) {
       setVariantError(
@@ -882,6 +887,7 @@ export function ProductosRow({
               ? "Desactivar producto"
               : "Activar producto"
           }
+          disabled={!canManageCatalog}
           onClick={() =>
             onToggleActivo(producto)
           }
@@ -905,7 +911,7 @@ export function ProductosRow({
         </button>
 
         <div className="admin-product-actions flex items-center justify-center gap-1.5">
-          <button
+          {canManageCatalog && <button
             type="button"
             aria-label={`Editar ${producto.nombre}`}
             title={`Editar ${producto.nombre}`}
@@ -915,7 +921,7 @@ export function ProductosRow({
             className="flex size-9 items-center justify-center rounded-xl border border-beyonix-sky/25 bg-beyonix-blue/10 text-beyonix-sky transition-colors hover:border-beyonix-sky/50 hover:bg-beyonix-blue/20 hover:text-white cursor-pointer"
           >
             <Pencil className="size-3.5" />
-          </button>
+          </button>}
 
           <AdminRowMenu
             ariaLabel={`Más acciones para ${producto.nombre}`}
@@ -936,14 +942,14 @@ export function ProductosRow({
                     },
                   ] satisfies AdminRowMenuEntry[])
                 : []),
-              { key: "divider-eliminar", divider: true },
+              ...(canManageCatalog ? [{ key: "divider-eliminar", divider: true },
               {
                 key: "eliminar",
                 label: "Eliminar",
                 icon: <Trash2 className="size-3.5" />,
                 tone: "danger",
                 onSelect: () => onDelete(producto.id),
-              },
+              }] satisfies AdminRowMenuEntry[] : []),
             ]}
           />
         </div>
@@ -985,11 +991,11 @@ export function ProductosRow({
                               : "Inactiva"
                       }
                       stateTone={commerciallyActive ? "active" : "inactive"}
-                      stateDisabled={savingVariantId === variante.id}
+                      stateDisabled={!canManageCatalog || savingVariantId === variante.id}
                       onToggleState={() => void toggleVariant(variante)}
                       dropId={variante.id}
                       leadingAccessory={
-                        variantes.length > 1 ? (
+                        canManageCatalog && variantes.length > 1 ? (
                           <button
                             type="button"
                             title="Arrastrar para cambiar el orden"
@@ -1010,7 +1016,7 @@ export function ProductosRow({
                           <span aria-hidden="true" className="size-9 shrink-0" />
                         )
                       }
-                      actions={
+                      actions={canManageCatalog ?
                         <>
                           <button
                             type="button"
@@ -1050,7 +1056,7 @@ export function ProductosRow({
                               },
                             ]}
                           />
-                        </>
+                        </> : null
                       }
                     />
                   )
@@ -1217,7 +1223,7 @@ export function ProductosRow({
                   tone="discounted"
                   stateLabel={savingConditionedId === item.id ? "Guardando…" : item.active ? "Activa" : "Inactiva"}
                   stateTone={item.active ? "active" : "inactive"}
-                  stateDisabled={savingConditionedId === item.id}
+                  stateDisabled={!canManageCatalog || savingConditionedId === item.id}
                   onToggleState={() => void toggleConditionedStock(item)}
                   leadingAccessory={<span aria-hidden="true" className="size-10 shrink-0" />}
                   actions={
@@ -1233,6 +1239,7 @@ export function ProductosRow({
                       </button>
                       <button
                         type="button"
+                        hidden={!canManageCatalog}
                         title="Editar esta unidad con descuento"
                         aria-label="Editar unidad con descuento"
                         disabled={savingConditionedId === item.id}
@@ -1246,6 +1253,7 @@ export function ProductosRow({
                       </button>
                       <button
                         type="button"
+                        hidden={!canManageCatalog}
                         title="Quitar esta unidad del inventario con descuento"
                         aria-label="Eliminar unidad con descuento"
                         disabled={savingConditionedId === item.id}
@@ -1263,7 +1271,8 @@ export function ProductosRow({
         </div>
       )}
 
-      {pendingVariantDelete &&
+      {pendingVariantDelete && isSuperAdmin && <ForceDeleteDialog kind="variant" id={String(pendingVariantDelete.id)} onClose={() => setPendingVariantDelete(null)} onDeleted={() => { setLocalVariantes((current) => current.filter((item) => item.id !== pendingVariantDelete.id)); window.dispatchEvent(new Event("products-updated")) }} />}
+      {pendingVariantDelete && !isSuperAdmin &&
         createPortal(
           <AdminModal
             open

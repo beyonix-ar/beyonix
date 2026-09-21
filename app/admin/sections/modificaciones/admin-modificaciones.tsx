@@ -178,6 +178,7 @@ export function AdminModificaciones() {
   )
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
@@ -205,7 +206,9 @@ export function AdminModificaciones() {
 
   const loadSettings = async () => {
     setLoading(true)
+    setLoaded(false)
     setError("")
+    try {
 
     const {
       data: { session },
@@ -218,6 +221,7 @@ export function AdminModificaciones() {
     }
 
     const response = await fetch("/api/admin/settings", {
+      signal: AbortSignal.timeout(25_000),
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -244,7 +248,13 @@ export function AdminModificaciones() {
     applyInstallmentsFinancing(
       data.settings.installmentsFinancing ?? DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
     )
+    setLoaded(true)
     setLoading(false)
+    } catch {
+      setError("No se pudo cargar la configuración. Revisá la conexión y reintentá.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -252,9 +262,11 @@ export function AdminModificaciones() {
   }, [])
 
   const saveSettings = async () => {
+    if (!loaded || loading || saving) return
     setSaving(true)
     setMessage("")
     setError("")
+    try {
 
     const nextShipping: ShippingBonusSettings = {
       defaultShippingCost: normalizeAmount(defaultShippingCost),
@@ -302,6 +314,7 @@ export function AdminModificaciones() {
 
     const response = await fetch("/api/admin/settings", {
       method: "PATCH",
+      signal: AbortSignal.timeout(25_000),
       headers: {
         Authorization: `Bearer ${session.access_token}`,
         "Content-Type": "application/json",
@@ -337,6 +350,11 @@ export function AdminModificaciones() {
     )
     setMessage("Configuración actualizada. Los textos y cálculos ya usan estos valores.")
     setSaving(false)
+    } catch {
+      setError("No se pudo confirmar el guardado. Recargá la configuración para comprobar los valores antes de reintentar.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   const previewInstallmentsFinancing: InstallmentsFinancingSettings = {
@@ -362,7 +380,7 @@ export function AdminModificaciones() {
       type="button"
       size="sm"
       onClick={() => void saveSettings()}
-      disabled={loading || saving}
+      disabled={!loaded || loading || saving}
       className="shrink-0"
     >
       <Save className="size-3.5" />
@@ -380,7 +398,7 @@ export function AdminModificaciones() {
       {message ? (
         <AdminInfoBlock tone="success" className="py-2 text-xs">{message}</AdminInfoBlock>
       ) : null}
-      {error ? <AdminInfoBlock tone="danger" className="py-2 text-xs">{error}</AdminInfoBlock> : null}
+      {error ? <AdminInfoBlock tone="danger" className="py-2 text-xs">{error}<button type="button" disabled={loading || saving} onClick={() => void loadSettings()} className="ml-3 underline">Recargar configuración</button></AdminInfoBlock> : null}
 
       <AndreaniIntegrationCard />
 
@@ -419,7 +437,7 @@ export function AdminModificaciones() {
               label="Disponible desde"
               tone="available"
               value={availableStockThreshold}
-              disabled={loading || saving}
+              disabled
               onChange={(value) => {
                 const normalized = normalizeTwoDigits(value)
                 const nextValue = Math.max(2, normalizeAmount(normalized))
@@ -457,6 +475,9 @@ export function AdminModificaciones() {
         actions={saveButton}
       >
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <AdminFormField label="Costo de envío predeterminado" help="Valor de referencia; las cotizaciones de Andreani usan el costo informado por el transportista.">
+            <AdminTextInput title="Costo de envío predeterminado" placeholder="0" value={defaultShippingCost} inputMode="decimal" disabled={loading || saving} onChange={setDefaultShippingCost} />
+          </AdminFormField>
           <AdminFormField
             label="Compra mínima"
             help="Activa la bonificación."
@@ -680,6 +701,12 @@ export function AdminModificaciones() {
         </p>
       </AdminSection>
 
+      <AdminSection compact title="Recargas de saldo por Mercado Pago" description="Condiciones comerciales de las recargas; no modifica las credenciales de pago." actions={saveButton}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AdminFormField label="Recargo de la recarga (%)" help="Entre 0 y 100%."><AdminTextInput title="Recargo de recargas MP" placeholder="0" value={mercadoPagoSurchargePercent} inputMode="decimal" disabled={loading || saving} onChange={setMercadoPagoSurchargePercent} /></AdminFormField>
+          <AdminFormField label="Importe mínimo de recarga" help="Importe en pesos."><AdminTextInput title="Importe mínimo MP" placeholder="0" value={mercadoPagoMinimumAmount} inputMode="decimal" disabled={loading || saving} onChange={setMercadoPagoMinimumAmount} /></AdminFormField>
+        </div>
+      </AdminSection>
       <AdminSection
         compact
         icon={<ImageIcon className="size-3.5" />}

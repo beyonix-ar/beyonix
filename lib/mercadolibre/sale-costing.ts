@@ -56,10 +56,40 @@ export function getMercadoLibreCostMapping(
   }
 }
 
+export interface MercadoLibrePhysicalReview {
+  sellableQuantity: number
+  discountedQuantity: number
+  nonSellableQuantity: number
+}
+
+/**
+ * Auditoría 5/7 (P1): review_mercadolibre_return ya clasifica físicamente
+ * cada devolución (sellable/discounted/no vendible, ver
+ * inventory_return_movements), pero el costeo del dashboard sólo miraba el
+ * status/return_units autoreportado por Mercado Libre -- todo o nada, sin
+ * distinguir una unidad que volvió a stock vendible (costo recuperado) de
+ * una dada de baja (costo no recuperado). Cuando existe una revisión física
+ * real para la venta, prevalece sobre el autoreporte: sellable + discounted
+ * son costo recuperado (misma semántica que restockedQuantity en
+ * devoluciones web -- discounted también recupera costo porque pasa a stock
+ * condicionado para reventa, no se pierde), sólo non_sellable se mantiene
+ * costeable.
+ */
 export function getMercadoLibreCostableUnits(
   row: Record<string, unknown>,
+  physicalReview?: MercadoLibrePhysicalReview | null,
 ) {
   const quantity = Math.max(0, Math.trunc(number(row.quantity)))
+
+  if (physicalReview) {
+    const recoveredUnits = Math.min(
+      quantity,
+      Math.max(0, physicalReview.sellableQuantity) +
+        Math.max(0, physicalReview.discountedQuantity),
+    )
+    return Math.max(0, quantity - recoveredUnits)
+  }
+
   const parsed = rawObject(rawObject(row.raw_data).parsed)
   const status = normalizedText(parsed.status)
   const cancelled = status.includes("cancel") || status.includes("anulad")

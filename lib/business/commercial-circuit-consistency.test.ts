@@ -19,6 +19,35 @@ function source(relativePath: string) {
 }
 
 const dashboardRoute = source("app/api/admin/dashboard/route.ts")
+const mercadoLibreSalesRoute = source("app/api/admin/mercadolibre-sales/route.ts")
+
+// Auditoría 3/7 (P0 confirmado y corregido en Fase 1): dashboard/route.ts
+// reimplementaba localmente el cálculo de costo histórico (buildCostLedgers/
+// getUnitCost) sin filtrar reception_status/received_quantity, divergiendo
+// de la lógica canónica. Los tests de abajo son un CONTRATO ESTRUCTURAL
+// sobre el código fuente (no ejecutan el handler, que hace decenas de
+// llamadas a Supabase y no es practicable importar fuera de Next.js) -- la
+// garantía de comportamiento real vive en product-costs.test.ts, que ejercita
+// las mismas funciones que estos archivos importan. Lo que este archivo
+// verifica es que NO exista una reimplementación local paralela y que el
+// SELECT a product_cost_entries traiga las columnas que esa lógica necesita.
+
+test("dashboard NO reimplementa localmente el cálculo de costo -- usa las funciones canónicas de product-costs.ts", () => {
+  assert.match(
+    dashboardRoute,
+    /import \{\s*[\s\S]*?buildProductCostLedgers,[\s\S]*?getHistoricalUnitCost,[\s\S]*?getReceivedCostContribution,[\s\S]*?\} from "@\/lib\/business\/product-costs"/,
+  )
+  assert.doesNotMatch(dashboardRoute, /function buildCostLedgers\(/)
+  assert.doesNotMatch(dashboardRoute, /function getUnitCost\(/)
+  assert.match(dashboardRoute, /getHistoricalUnitCost\(\s*costLedgers,\s*productId,\s*variantId,\s*saleDate,?\s*\)/)
+})
+
+test("el SELECT de dashboard a product_cost_entries incluye reception_status y received_quantity (contrato de columnas del P0)", () => {
+  assert.match(
+    dashboardRoute,
+    /\.from\("product_cost_entries"\)\s*\.select\(\s*"id, product_id, variant_id, article_name, sku, purchase_date, quantity, received_quantity, reception_status, total_cost, created_at",?\s*\)/,
+  )
+})
 
 test("las ventas externas catalogadas usan el mismo libro de compras que web y ML", () => {
   assert.match(
@@ -27,13 +56,25 @@ test("las ventas externas catalogadas usan el mismo libro de compras que web y M
   )
   assert.match(
     dashboardRoute,
-    /getUnitCost\(costLedgers, productId, variantId, saleDate\)/,
+    /getHistoricalUnitCost\(costLedgers, productId, variantId, saleDate\)/,
   )
   assert.match(dashboardRoute, /resolveExternalSaleUnitCost\(\{/)
   assert.match(
     dashboardRoute,
     /externalMerchandiseCosts\.set\(String\(row\.id\), merchandiseCost\)/,
   )
+})
+
+// Auditoría 3/7 (P0-2, Fase 1): mercadolibre-sales/route.ts SÍ usaba las
+// funciones canónicas, pero su SELECT a product_cost_entries no traía
+// reception_status/received_quantity -- mismo efecto práctico que el P0 del
+// dashboard (getReceivedCostContribution trata undefined como "recibida" al
+// 100%).
+test("mercadolibre-sales trae reception_status/received_quantity en AMBOS SELECT a product_cost_entries", () => {
+  const matches = [
+    ...mercadoLibreSalesRoute.matchAll(/\.from\("product_cost_entries"\)[\s\S]{0,200}?received_quantity, reception_status/g),
+  ]
+  assert.equal(matches.length, 2, "el SELECT del listado y el de vinculación (link) deben traer ambas columnas")
 })
 
 test("el costo y la ganancia por venta externa no duplican el descuento del costo", () => {

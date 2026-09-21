@@ -29,6 +29,8 @@ import {
 } from "@/app/admin/components/admin-controls"
 import { formatPrice } from "@/app/admin/sections/productos/helpers"
 import { useAuth } from "@/context/auth-context"
+import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
+import { OperationalProgress } from "@/app/admin/components/operational-progress"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
@@ -39,6 +41,10 @@ import {
   shouldShowReturnInventoryPanel,
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
+import {
+  getOrCreateIdempotencyAttempt,
+  type IdempotencyAttempt,
+} from "@/lib/business/idempotency-attempt"
 import { supabase } from "@/lib/supabase/client"
 import type {
   OrderClaimResolution,
@@ -342,12 +348,9 @@ type ReturnInventoryDraft = {
 }
 
 function getReturnInventoryDraft(item: SupabasePedidoItem): ReturnInventoryDraft {
-  const restocked = Number(item.return_restocked_quantity ?? 0)
-  const writtenOff = Number(item.return_written_off_quantity ?? 0)
-
   return {
-    received: String(restocked + writtenOff),
-    goodCondition: String(restocked),
+    received: "0",
+    goodCondition: "0",
     note: item.return_inventory_note ?? "",
   }
 }
@@ -409,7 +412,7 @@ function getClaimAffectedItems(
     }))
 }
 
-function ReturnInventoryPanel({
+export function ReturnInventoryPanel({
   pedido,
   claim,
   canManage,
@@ -445,6 +448,7 @@ function ReturnInventoryPanel({
   const [savingItemId, setSavingItemId] = useState<number | null>(null)
   const [confirmationItemId, setConfirmationItemId] = useState<number | null>(null)
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null)
+  const returnReceptionAttemptsRef = useRef<Record<number, IdempotencyAttempt | null>>({})
 
   useEffect(() => {
     const nextAffectedItems = getClaimAffectedItems(claim, orderItems)
@@ -616,12 +620,16 @@ function ReturnInventoryPanel({
     const restocked = Number(draft.goodCondition || 0)
     const writtenOff = received - restocked
     const claimedQuantity = affectedQuantityById.get(Number(item.id)) ?? 0
-    const previouslyProcessed = Boolean(item.return_inventory_processed_at)
+    // Devoluciones parciales sucesivas: ya no es "una sola vez por ítem" --
+    // el tope es lo reclamado MENOS lo ya registrado en eventos anteriores.
+    const alreadyReturned =
+      Number(item.return_restocked_quantity ?? 0) + Number(item.return_written_off_quantity ?? 0)
+    const remaining = claimedQuantity - alreadyReturned
 
-    if (previouslyProcessed) {
+    if (remaining <= 0) {
       setNotice({
         ok: false,
-        message: "Esta recepción ya fue registrada. Corregí el stock desde Productos.",
+        message: "Ya se registró la recepción completa de este producto para el reclamo.",
       })
       return
     }
@@ -636,10 +644,10 @@ function ReturnInventoryPanel({
       return
     }
 
-    if (received > claimedQuantity) {
+    if (received > remaining) {
       setNotice({
         ok: false,
-        message: "Las unidades recibidas no pueden superar las unidades reclamadas.",
+        message: `Quedan ${remaining} unidad(es) disponibles para registrar de este producto.`,
       })
       return
     }
@@ -652,7 +660,7 @@ function ReturnInventoryPanel({
       return
     }
 
-    if (!previouslyProcessed && received === 0) {
+    if (received === 0) {
       setNotice({
         ok: false,
         message: "Indicá al menos una unidad recibida para registrar la devolución.",
@@ -684,6 +692,13 @@ function ReturnInventoryPanel({
         return
       }
 
+      const attempt = getOrCreateIdempotencyAttempt(
+        returnReceptionAttemptsRef.current[item.id] ?? null,
+        { itemId: item.id, restocked, writtenOff, note: draft.note.trim() },
+        "return",
+      )
+      returnReceptionAttemptsRef.current[item.id] = attempt
+
       const response = await fetch(
         `/api/admin/pedidos/${pedido.id}/return-inventory/${item.id}`,
         {
@@ -697,6 +712,7 @@ function ReturnInventoryPanel({
             restockedQuantity: restocked,
             writtenOffQuantity: writtenOff,
             note: draft.note.trim(),
+            idempotencyKey: attempt.key,
           }),
         },
       )
@@ -710,6 +726,9 @@ function ReturnInventoryPanel({
         return
       }
 
+      // Éxito: la próxima carga sobre este ítem (si queda remanente) es un
+      // evento nuevo, no un reintento -- necesita una key nueva.
+      returnReceptionAttemptsRef.current[item.id] = null
       setNotice({
         ok: true,
         message: "Recepción guardada y stock actualizado correctamente.",
@@ -733,10 +752,7 @@ function ReturnInventoryPanel({
   const confirmationReceived = Number(confirmationDraft?.received || 0)
   const confirmationRestocked = Number(confirmationDraft?.goodCondition || 0)
   const confirmationWrittenOff = confirmationReceived - confirmationRestocked
-  const confirmationCurrentRestocked = Number(
-    confirmationItem?.return_restocked_quantity ?? 0,
-  )
-  const confirmationStockDelta = confirmationRestocked - confirmationCurrentRestocked
+  const confirmationStockDelta = confirmationRestocked
   const confirmationProductStock = Number(confirmationItem?.productos?.stock ?? 0)
   const confirmationVariantStock = Number(
     confirmationItem?.producto_variantes?.stock ?? 0,
@@ -745,11 +761,19 @@ function ReturnInventoryPanel({
     confirmationItem?.conditioned_name?.trim() ||
     confirmationItem?.producto_variantes?.nombre?.trim() ||
     "Variante seleccionada"
-  const hasPendingInventory = items.some((item) => !item.return_inventory_processed_at)
+  const hasPendingInventory = items.some((item) => (affectedQuantityById.get(Number(item.id)) ?? 0) > Number(item.return_restocked_quantity ?? 0) + Number(item.return_written_off_quantity ?? 0))
 
   return (
     <>
       <section className="admin-claim-card mx-3 mb-3 rounded-xl border p-3 sm:mx-4 sm:mb-4">
+      <OperationalProgress steps={[
+        { label: "Recepción", complete: items.length > 0 && !hasPendingInventory },
+        ...(["reintegro_total", "reintegro_parcial", "cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "") ? [
+          { label: "Nota de crédito", complete: Boolean(pedido.order_credit_notes?.some((note) => note.claim_id === claim.id && note.status === "authorized")) },
+          ...(["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") ? [{ label: "Reintegro", complete: Boolean(claim.refund_completed_at) }] : []),
+        ] : []),
+        ...(["cambio_producto", "envio_unidad_faltante"].includes(claim.resolution ?? "") ? [{ label: "Entrega del reemplazo", complete: claim.status === "cerrado" || claim.status === "reemplazo_enviado" }] : []),
+      ]} />
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-10px font-black uppercase tracking-widest text-blue-200/75">
@@ -848,7 +872,7 @@ function ReturnInventoryPanel({
                       </span>
                       <span className="mt-0.5 block truncate text-10px font-semibold text-white/52">
                         {variantName || "Sin variante"} · Compradas: {purchasedQuantity}
-                        {locked ? " · Recepción cerrada" : ""}
+                        {locked ? " · Con recepción registrada" : ""}
                       </span>
                     </span>
                   </label>
@@ -937,12 +961,15 @@ function ReturnInventoryPanel({
               item.producto_variantes?.nombre?.trim() ||
               "Variante seleccionada"
             const saving = savingItemId === item.id
-            const inventoryLocked = Boolean(item.return_inventory_processed_at)
+            // Devoluciones parciales sucesivas: "procesado" ya no es un
+            // booleano único -- el ítem sigue disponible mientras quede
+            // remanente entre lo reclamado y lo efectivamente registrado.
+            const remainingQuantity = claimedQuantity - receivedQuantity
+            const inventoryLocked = Boolean(item.return_inventory_processed_at) && remainingQuantity <= 0
             const draftReceived = Number(draft.received || 0)
             const draftGoodCondition = Number(draft.goodCondition || 0)
             const draftWrittenOff = Math.max(draftReceived - draftGoodCondition, 0)
-            const currentRestocked = Number(item.return_restocked_quantity ?? 0)
-            const pendingStockDelta = draftGoodCondition - currentRestocked
+            const pendingStockDelta = draftGoodCondition
             const nextProductStock = productStock + pendingStockDelta
             const nextVariantStock = variantStock + pendingStockDelta
             const singleUnitCondition =
@@ -991,6 +1018,9 @@ function ReturnInventoryPanel({
                       <span className="font-semibold text-white/55"> · {variantName}</span>
                     )}
                   </p>
+                  <p className="mt-1 text-11px font-semibold text-white/55">
+                    Vendió {item.cantidad} · Cliente reclama {claimedQuantity} · Recibimos {receivedQuantity} · Queda recibir {Math.max(0, remainingQuantity)}
+                  </p>
                   <div className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2.5 ${resultTone}`}>
                     {onlyRestocked ? (
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
@@ -1022,7 +1052,7 @@ function ReturnInventoryPanel({
                       {item.conditioned_name?.trim() ||
                         item.producto_variantes?.nombre?.trim() ||
                         "Sin variante"}{" "}
-                      · Reclamadas: {claimedQuantity}
+                      · Vendió {item.cantidad} · Cliente reclama {claimedQuantity} · Recibimos {receivedQuantity} · Queda recibir {Math.max(0, remainingQuantity)}
                     </p>
                     <p className="mt-1 text-11px font-semibold text-blue-100/72">
                       {item.variante_id
@@ -1114,13 +1144,13 @@ function ReturnInventoryPanel({
                     <div className="mt-2 flex flex-wrap items-end gap-x-8 gap-y-2">
                       <label className="block w-fit">
                         <span className="text-10px font-black uppercase tracking-wide text-blue-200">
-                          Unidades recibidas
+                          Unidades recibidas en esta entrega
                         </span>
                         <div className="mt-1.5 w-20">
                           <input
                             type="number"
                             min={0}
-                            max={claimedQuantity}
+                            max={Math.max(0, remainingQuantity)}
                             step={1}
                             inputMode="numeric"
                             value={draft.received}
@@ -1176,7 +1206,7 @@ function ReturnInventoryPanel({
                 {canManage && !inventoryLocked && (
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-10px font-semibold leading-4 text-white/45">
-                      Revisá los datos antes de guardar: la recepción quedará cerrada definitivamente.
+                      Registrá sólo las unidades de esta entrega, sin sumar las anteriores. Si queda remanente, podrás registrar otra recepción.
                     </p>
                     <button
                       type="button"
@@ -1269,7 +1299,7 @@ function ReturnInventoryPanel({
             </div>
 
             <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-400/8 px-3 py-2 text-11px font-bold leading-4 text-amber-100">
-              Al confirmar, esta recepción quedará cerrada y no podrá modificarse desde el reclamo.
+              Al confirmar se registra la recepción y su impacto de stock. Si queda remanente reclamado, podrás registrar una nueva recepción. No se borra el historial anterior.
             </p>
 
             <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -1311,7 +1341,8 @@ export function AdminClaimManager({
   onInventoryUpdated?: () => void | Promise<void>
   onOpenBilling: () => void
 }) {
-  const { isAdmin } = useAuth()
+  const { user } = useAuth()
+  const isAdmin = getAdminCapabilities(user?.rol).canManageReturns
   const allClaims = pedido.order_claims ?? []
   const claims = allClaims.filter((item) => isClaimVisibleForMode(item.failure_type, mode))
   const [claimId, setClaimId] = useState<number | null>(claims[0]?.id ?? null)
@@ -2134,21 +2165,22 @@ export function AdminClaimManager({
                   </>
                 )}
                 {canCompleteReplacementSolution && (
+                  <div className="space-y-3">
                   <DecisionButton
                     icon={<PackageCheck className="size-4" />}
-                    title={claim.resolution === "envio_unidad_faltante" ? "Marcar unidad enviada" : "Marcar producto reemplazado"}
-                    description={claim.resolution === "envio_unidad_faltante" ? "Confirmar que se envió o entregó la unidad faltante." : "Confirmar que se envió o entregó la nueva unidad."}
+                    title="Registrar reemplazo con salida de stock"
+                    description="Elegí el producto, revisá las unidades y confirmá el retiro de stock antes de coordinar la entrega."
                     tone="success"
                     disabled={saving}
-                    onClick={() =>
-                      setPendingConfirmation({
-                        title: claim.resolution === "envio_unidad_faltante" ? "Marcar unidad enviada" : "Marcar producto reemplazado",
-                        description: "Esto finaliza el reclamo y notifica al cliente que la gestión quedó completada. No se puede deshacer desde acá.",
-                        confirmLabel: "Confirmar y finalizar",
-                        run: markAcceptedSolutionDone,
-                      })
-                    }
+                    onClick={() => document.getElementById(`order-replacements-${pedido.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
                   />
+                  <button type="button" disabled={saving} className="text-sm underline" onClick={() => setPendingConfirmation({
+                    title: "Confirmar entrega del reemplazo",
+                    description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
+                    confirmLabel: "Ya fue enviado o entregado",
+                    run: markAcceptedSolutionDone,
+                  })}>Ya registré el reemplazo: confirmar envío o entrega</button>
+                  </div>
                 )}
                 {canIssueCreditNote && (
                   <DecisionButton

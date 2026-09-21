@@ -370,10 +370,24 @@ export async function DELETE(
   if ("error" in auth) return auth.error
 
   const { id } = await context.params
+  // Auditoría 4/7 (Fase 4, punto 9): archivar/quitar una unidad con
+  // descuento ya reingresada no puede quedar sin motivo -- antes esta
+  // acción no pedía ninguno. Se guarda en review_notes (antes/después ya
+  // queda en audit_logs vía el trigger genérico adjuntado en
+  // 20260920100000).
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+  const correctionReason = optionalText(body?.reason, 500)
+  if (!correctionReason || correctionReason.length < 5) {
+    return Response.json(
+      { error: "Indicá el motivo para archivar o quitar esta unidad con descuento (mínimo 5 caracteres)." },
+      { status: 400 },
+    )
+  }
+
   const { data: current, error: currentError } = await auth.admin
     .from("inventory_return_movements")
     .select(
-      "id, discounted_quantity, non_sellable_quantity, non_sellable_reason",
+      "id, discounted_quantity, non_sellable_quantity, non_sellable_reason, review_notes",
     )
     .eq("id", id)
     .maybeSingle()
@@ -403,10 +417,13 @@ export async function DELETE(
     .eq("id", id)
     .maybeSingle()
 
+  const notesWithCorrection = (current.review_notes ? `${current.review_notes}\n---\n` : "") +
+    `Corrección: ${correctionReason}`
+
   if (Number(availability?.sold_quantity ?? 0) > 0) {
     const { error } = await auth.admin
       .from("inventory_return_movements")
-      .update({ conditioned_active: false })
+      .update({ conditioned_active: false, review_notes: notesWithCorrection.slice(0, 1000) })
       .eq("id", id)
 
     if (error) {
@@ -426,6 +443,7 @@ export async function DELETE(
       discount_percent: null,
       discount_reason: null,
       conditioned_active: false,
+      review_notes: notesWithCorrection.slice(0, 1000),
     })
     .eq("id", id)
 

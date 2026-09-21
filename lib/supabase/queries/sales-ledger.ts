@@ -43,6 +43,12 @@ export interface SalesLedgerRow {
   notes: string | null
   created_at: string
   updated_at: string | null
+  status?: "completed" | "reversed"
+  reversed_at?: string | null
+  reversed_by?: string | null
+  reversed_by_name?: string | null
+  reversal_reason?: string | null
+  reversal_amount?: number | null
 }
 
 export interface SalesLedgerData {
@@ -82,9 +88,11 @@ export async function getSalesLedger() {
 export async function saveSalesLedgerRow(
   payload: Record<string, unknown>,
   id?: string,
+  idempotencyKey?: string,
 ) {
   return request("/api/admin/sales-ledger", {
     method: id ? "PATCH" : "POST",
+    headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
     body: JSON.stringify(id ? { ...payload, id } : payload),
   })
 }
@@ -94,4 +102,15 @@ export async function deleteSalesLedgerRow(channel: SalesLedgerChannel, id: stri
     `/api/admin/sales-ledger?channel=${channel}&id=${encodeURIComponent(id)}`,
     { method: "DELETE" },
   )
+}
+
+export async function reverseExternalSale(
+  id: string,
+  reason: string,
+  idempotencyKey: string,
+) {
+  return request(`/api/admin/sales-ledger/${encodeURIComponent(id)}/reverse`, {
+    method: "POST",
+    body: JSON.stringify({ reason, idempotencyKey }),
+  })
 }

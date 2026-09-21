@@ -3,6 +3,8 @@
 import {
   Children,
   isValidElement,
+  useId,
+  useEffectEvent,
   useEffect,
   useRef,
   useState,
@@ -24,6 +26,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { activateModalFocus } from "@/lib/admin/modal-focus"
 
 export const adminPageClassName = "space-y-6 p-4 sm:p-6 lg:p-8"
 
@@ -524,7 +527,7 @@ export function AdminSelect({
               )}
             </div>
           </div>,
-          document.body
+          wrapperRef.current?.closest('[role="dialog"]') ?? document.body
         )}
     </div>
   )
@@ -685,7 +688,7 @@ export function AdminRowMenu({
               ),
             )}
           </div>,
-          document.body,
+          wrapperRef.current?.closest('[role="dialog"]') ?? document.body,
         )}
     </div>
   )
@@ -1117,11 +1120,29 @@ export function AdminModal({
   footer,
   onClose,
 }: AdminModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const titleId = useId()
+  const descriptionId = useId()
+  const closeModal = useEffectEvent(onClose)
+
+  useEffect(() => {
+    if (!open) return
+
+    const dialog = dialogRef.current
+    if (dialog) return activateModalFocus(dialog, () => closeModal())
+  }, [open])
+
   if (!open) return null
 
   return (
     <div className="admin-portal-scope fixed inset-0 z-100 flex items-center justify-center bg-black/86 px-4 backdrop-blur-sm">
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
         className={cn(
           adminCardClassName,
           "custom-scrollbar max-h-[calc(100dvh-2rem)] w-full overflow-y-auto shadow-2xl shadow-black",
@@ -1139,9 +1160,9 @@ export function AdminModal({
                 {eyebrow}
               </p>
             )}
-            <h2 className={cn("font-black text-white", compact ? "text-lg" : "text-2xl")}>{title}</h2>
+            <h2 id={titleId} className={cn("font-black text-white", compact ? "text-lg" : "text-2xl")}>{title}</h2>
             {description && (
-              <p className={cn("text-white/58", compact ? "mt-1 text-xs leading-5" : "mt-2 text-sm leading-6")}>
+              <p id={descriptionId} className={cn("text-white/58", compact ? "mt-1 text-xs leading-5" : "mt-2 text-sm leading-6")}>
                 {description}
               </p>
             )}

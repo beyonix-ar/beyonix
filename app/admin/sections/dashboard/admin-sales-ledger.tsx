@@ -7,22 +7,27 @@ import {
   Package,
   Pencil,
   RefreshCw,
+  RotateCcw,
   ShoppingBag,
   X,
 } from "lucide-react"
+
+import { getOrCreateIdempotencyAttempt, type IdempotencyAttempt } from "@/lib/business/idempotency-attempt"
 
 import { cn } from "@/lib/utils"
 import { formatPrice } from "../productos/helpers"
 import {
   deleteSalesLedgerRow,
   getSalesLedger,
+  reverseExternalSale,
   saveSalesLedgerRow,
   type SalesLedgerCatalogProduct,
   type SalesLedgerChannel,
   type SalesLedgerRow,
 } from "@/lib/supabase/queries/sales-ledger"
 import { AdminDatePicker } from "../../components/admin-date-picker"
-import { AdminSelect } from "../../components/admin-controls"
+import { AdminResponsiveTable } from "../../components/admin-responsive-table"
+import { AdminSelect, AdminModal, AdminDangerButton, AdminSecondaryButton } from "../../components/admin-controls"
 
 interface SaleForm {
   saleDate: string
@@ -189,8 +194,13 @@ export function AdminSalesLedger({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [reversingId, setReversingId] = useState<string | null>(null)
+  const [pendingReversal, setPendingReversal] = useState<SalesLedgerRow | null>(null)
+  const [reversalReason, setReversalReason] = useState("")
+  const reversalInFlight = useRef(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const reversalKeys = useRef(new Map<string, string>())
 
   const catalogOptions = useMemo<SalesLedgerCatalogOption[]>(
     () =>
@@ -251,7 +261,7 @@ export function AdminSalesLedger({
 
   const totals = useMemo(
     () =>
-      rows.reduce(
+      rows.filter((row) => row.status !== "reversed").reduce(
         (acc, row) => {
           const gross = number(row.gross_amount)
           const catalogUnitCost = catalogUnitCostFor(row)
@@ -310,7 +320,10 @@ export function AdminSalesLedger({
     }))
   }
 
+  const creationAttempt = useRef<IdempotencyAttempt | null>(null)
+
   const reset = () => {
+    creationAttempt.current = null
     setForm(emptyForm())
     setEditingId(null)
     setError("")
@@ -390,8 +403,7 @@ export function AdminSalesLedger({
         )
       }
       const selectedProduct = selection?.product
-      await saveSalesLedgerRow(
-        {
+      const payload = {
           channel,
           ...form,
           productId:
@@ -404,9 +416,11 @@ export function AdminSalesLedger({
           feeType: form.feeType,
           feeValue: number(form.feeValue),
           otherExpenseAmount: number(form.otherExpenseAmount),
-        },
-        editingId ?? undefined,
-      )
+        }
+      if (!editingId && channel === "external") {
+        creationAttempt.current = getOrCreateIdempotencyAttempt(creationAttempt.current, payload, "external-sale")
+      }
+      await saveSalesLedgerRow(payload, editingId ?? undefined, creationAttempt.current?.key)
       setSuccess(editingId ? "Venta actualizada correctamente." : "Venta agregada correctamente.")
       reset()
       await load()
@@ -459,6 +473,55 @@ export function AdminSalesLedger({
     }
   }
 
+  const reverse = async (row: SalesLedgerRow) => {
+    if (reversalInFlight.current || row.status === "reversed") return
+    const reason = reversalReason.trim()
+    if (reason.length < 10) {
+      setError("El motivo de reversión debe tener al menos 10 caracteres.")
+      return
+    }
+
+    reversalInFlight.current = true
+    const idempotencyKey =
+      reversalKeys.current.get(row.id) ?? crypto.randomUUID()
+    reversalKeys.current.set(row.id, idempotencyKey)
+    setReversingId(row.id)
+    setError("")
+    setSuccess("")
+    try {
+      await reverseExternalSale(row.id, reason, idempotencyKey)
+      setPendingReversal(null)
+      reversalKeys.current.delete(row.id)
+      if (editingId === row.id) reset()
+      setSuccess("Venta reversada. El ingreso dejó de computar y el stock fue recalculado.")
+      await load()
+    } catch (reverseError) {
+      setError(
+        reverseError instanceof Error
+          ? reverseError.message
+          : "No se pudo reversar la venta.",
+      )
+    } finally {
+      reversalInFlight.current = false
+      setReversingId(null)
+    }
+  }
+
+  if (!loading && error && rows.length === 0) {
+    return (
+      <div className="rounded-2xl border border-red-400/25 bg-red-400/10 p-6 text-center text-red-100">
+        <p className="text-sm font-bold">{error}</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-4 inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-red-300/30 px-4 text-xs font-black"
+        >
+          <RefreshCw className="size-3.5" /> Reintentar
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="admin-dashboard-panel admin-sales-ledger space-y-3">
       <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[linear-gradient(145deg,rgba(7,16,24,0.9),rgba(3,7,13,0.98))] p-3.5">
@@ -478,7 +541,9 @@ export function AdminSalesLedger({
             <p className="mt-1.5 text-10px font-black uppercase tracking-widest text-white/40">
               Ventas registradas
             </p>
-            <p className="mt-1 text-xl font-black text-white">{rows.length}</p>
+            <p className="mt-1 text-xl font-black text-white">
+              {rows.filter((row) => row.status !== "reversed").length}
+            </p>
           </div>
           <div className="rounded-xl border border-white/8 bg-black/25 p-2.5 text-center">
             <Package className="mx-auto size-4 text-beyonix-sky" />
@@ -744,6 +809,7 @@ export function AdminSalesLedger({
       <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[#071018] p-3.5 sm:p-4">
         <p className="mb-3 text-sm font-black text-white">Ventas registradas</p>
         <div className="sales-ledger-scrollbar overflow-x-auto rounded-2xl border border-beyonix-blue-light/16 bg-black/20">
+          <AdminResponsiveTable labels={["Fecha", "Producto", "SKU", "Costo unitario", "Cantidad", "Precio venta", "Envío pagado", "Comisión", "Otros gastos", "Medio de pago", "Referencia", "Cliente", "Notas", "Total", "Ganancia neta", "Acciones"]}>
           <table className="w-full min-w-[1980px] text-center">
             <thead>
               <tr className="text-10px font-black uppercase tracking-widest text-white/38">
@@ -773,6 +839,7 @@ export function AdminSalesLedger({
             </thead>
             <tbody>
               {rows.map((row) => {
+                const reversed = row.status === "reversed"
                 const gross = number(row.gross_amount)
                 const catalogUnitCost = catalogUnitCostFor(row)
                 const effectiveUnitCost =
@@ -788,11 +855,12 @@ export function AdminSalesLedger({
                 return (
                   <tr
                     key={row.id}
-                    className={`border-t border-white/6 text-xs text-white/62 transition hover:bg-white/3 ${editingId === row.id ? "bg-beyonix-blue/12" : ""}`}
+                    className={`border-t border-white/6 text-xs text-white/62 transition hover:bg-white/3 ${editingId === row.id ? "bg-beyonix-blue/12" : ""} ${reversed ? "opacity-55" : ""}`}
                   >
                     <td className="whitespace-nowrap px-3 py-3 text-center">{dateOnly(row.sale_date).split("-").reverse().join("/")}</td>
                     <td className="max-w-60 px-3 py-3 text-center font-black text-white">
                       <span className="block truncate" title={row.product_name}>{row.product_name}</span>
+                      {reversed && <details className="mt-1 text-xs text-amber-200"><summary>Reversada · Ver detalle</summary><p className="whitespace-normal">{row.reversal_reason}</p><p>{row.reversed_at ? new Date(row.reversed_at).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }) : "Fecha no disponible"}</p><p>Responsable: {row.reversed_by_name || row.reversed_by || "No informado"}</p><p>Importe revertido: {formatPrice(number(row.reversal_amount))}</p><p>{row.product_id ? `${row.quantity} unidades retiradas del registro de ventas; stock recalculado.` : "Sin movimiento de stock de catálogo."}</p></details>}
                     </td>
                     <td className="px-3 py-3">{row.sku || "—"}</td>
                     <td className="px-3 py-3 tabular-nums">{formatPrice(effectiveUnitCost)}</td>
@@ -826,20 +894,35 @@ export function AdminSalesLedger({
                           aria-label={`Editar venta de ${row.product_name}`}
                           title="Editar"
                           onClick={() => edit(row)}
+                          disabled={reversed}
                           className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-beyonix-sky/22 bg-beyonix-blue/24 text-beyonix-sky transition hover:border-beyonix-sky/45 hover:bg-beyonix-blue/40"
                         >
                           <Pencil className="size-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          aria-label={`Eliminar venta de ${row.product_name}`}
-                          title="Eliminar"
-                          onClick={() => void remove(row)}
-                          disabled={deletingId === row.id}
-                          className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/20 bg-red-400/8 text-red-300 transition hover:border-red-400/40 hover:bg-red-400/15 disabled:opacity-50"
-                        >
-                          {deletingId === row.id ? <RefreshCw className="size-3.5 animate-spin" /> : <X className="size-3.5" strokeWidth={2.5} />}
-                        </button>
+                        {channel === "external" && !reversed && (
+                          <button
+                            type="button"
+                            aria-label={`Reversar venta de ${row.product_name}`}
+                            title="Reversar venta"
+                            onClick={() => { setPendingReversal(row); setReversalReason(""); setError("") }}
+                            disabled={reversingId === row.id}
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-amber-300/25 bg-amber-300/8 text-amber-200 disabled:opacity-50"
+                          >
+                            <RotateCcw className={`size-3.5 ${reversingId === row.id ? "animate-spin" : ""}`} />
+                          </button>
+                        )}
+                        {channel !== "external" && (
+                          <button
+                            type="button"
+                            aria-label={`Eliminar venta de ${row.product_name}`}
+                            title="Eliminar"
+                            onClick={() => void remove(row)}
+                            disabled={deletingId === row.id}
+                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-red-400/20 bg-red-400/8 text-red-300 transition hover:border-red-400/40 hover:bg-red-400/15 disabled:opacity-50"
+                          >
+                            {deletingId === row.id ? <RefreshCw className="size-3.5 animate-spin" /> : <X className="size-3.5" strokeWidth={2.5} />}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -847,6 +930,7 @@ export function AdminSalesLedger({
               })}
             </tbody>
           </table>
+          </AdminResponsiveTable>
           {!loading && rows.length === 0 && (
             <div className="border-t border-white/7 px-5 py-10 text-center">
               <ShoppingBag className="mx-auto size-7 text-white/22" />
@@ -866,6 +950,9 @@ export function AdminSalesLedger({
           )}
         </div>
       </section>
+      <AdminModal open={pendingReversal !== null} title="Reversar venta externa" onClose={() => { if (!reversingId) setPendingReversal(null) }} footer={<div className="flex flex-wrap justify-end gap-2"><AdminSecondaryButton disabled={Boolean(reversingId)} onClick={() => setPendingReversal(null)}>Cancelar</AdminSecondaryButton><AdminDangerButton disabled={Boolean(reversingId) || reversalReason.trim().length < 10} onClick={() => { if (pendingReversal) void reverse(pendingReversal) }}>{reversingId ? "Reversando…" : "Confirmar reversión"}</AdminDangerButton></div>}>
+        {pendingReversal && <div className="space-y-3 text-sm"><p className="font-bold">{pendingReversal.product_name} · {pendingReversal.sku || "Sin SKU"}</p><p>Vas a revertir {formatPrice(number(pendingReversal.gross_amount))} de ingresos y {pendingReversal.quantity} unidades.</p><p>{pendingReversal.product_id ? `Se devolverán ${pendingReversal.quantity} unidades al cálculo de stock. Las reservas existentes siguen vigentes.` : "Esta venta no está vinculada al catálogo: no se restaurará stock."}</p><p className="text-amber-200">Se conserva el historial y la venta no podrá editarse. Esta operación no reintegra dinero automáticamente al cliente.</p><label className="block">Motivo obligatorio (mínimo 10 caracteres)<textarea data-autofocus value={reversalReason} disabled={Boolean(reversingId)} onChange={(event) => setReversalReason(event.target.value)} className="mt-2 w-full rounded-xl border border-white/20 bg-black/30 p-3" /></label>{error && <p role="alert" className="text-red-200">{error}</p>}</div>}
+      </AdminModal>
     </div>
   )
 }

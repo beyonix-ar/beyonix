@@ -20,11 +20,23 @@ export async function PATCH(
     restockedQuantity?: unknown
     writtenOffQuantity?: unknown
     note?: unknown
+    idempotencyKey?: unknown
   }
   const claimId = Number(body.claimId)
   const restockedQuantity = Number(body.restockedQuantity)
   const writtenOffQuantity = Number(body.writtenOffQuantity)
   const note = typeof body.note === "string" ? body.note.trim().slice(0, 1000) : ""
+  const idempotencyKey =
+    typeof body.idempotencyKey === "string" && /^[A-Za-z0-9._:-]{8,240}$/.test(body.idempotencyKey)
+      ? body.idempotencyKey
+      : null
+
+  if (!idempotencyKey) {
+    return NextResponse.json(
+      { error: "La operación no tiene una clave de idempotencia válida." },
+      { status: 400 },
+    )
+  }
 
   if (
     !Number.isInteger(orderId) ||
@@ -99,9 +111,36 @@ export async function PATCH(
     )
   }
 
-  if (processedQuantity > claimedQuantity) {
+  // Devoluciones parciales sucesivas: el tope es lo reclamado MENOS lo que
+  // ya se registró en eventos anteriores sobre este mismo ítem, no sólo lo
+  // reclamado a secas (record_order_item_return_reception vuelve a validar
+  // esto server-side de forma atómica; este chequeo es sólo para dar un
+  // mensaje temprano y claro antes de llamar a la RPC).
+  const { data: existingItem, error: existingItemError } = await auth.admin
+    .from("orden_items")
+    .select("return_restocked_quantity, return_written_off_quantity")
+    .eq("id", orderItemId)
+    .eq("orden_id", orderId)
+    .maybeSingle()
+  if (existingItemError) {
     return NextResponse.json(
-      { error: "La recepción no puede superar la cantidad incluida en el reclamo." },
+      { error: "No se pudo verificar lo ya registrado para este producto." },
+      { status: 500 },
+    )
+  }
+  const alreadyReturned =
+    Number(existingItem?.return_restocked_quantity ?? 0) +
+    Number(existingItem?.return_written_off_quantity ?? 0)
+  const remaining = claimedQuantity - alreadyReturned
+
+  if (processedQuantity > remaining) {
+    return NextResponse.json(
+      {
+        error:
+          remaining <= 0
+            ? "Ya se registró la recepción completa de este producto para el reclamo."
+            : `Quedan ${remaining} unidad(es) disponibles para registrar de este producto.`,
+      },
       { status: 400 },
     )
   }
@@ -114,6 +153,7 @@ export async function PATCH(
     p_written_off_quantity: writtenOffQuantity,
     p_note: note,
     p_processed_by: auth.user.id,
+    p_idempotency_key: idempotencyKey,
   })
 
   if (error || !data) {

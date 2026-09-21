@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import {
   buildProductCostLedgers,
   getHistoricalUnitCost,
+  resolveReportedUnitCost,
   type ProductCostLedgerRow,
 } from "@/lib/business/product-costs"
 import {
@@ -30,6 +31,7 @@ const SELECT = [
   "sku",
   "quantity",
   "unit_cost",
+  "costo_unitario_historico",
   "gross_amount",
   "fee_amount",
   "shipping_amount",
@@ -153,7 +155,9 @@ export async function GET(request: Request) {
       .order("nombre", { ascending: true }),
     auth.admin
       .from("product_cost_entries")
-      .select("id, product_id, variant_id, article_name, sku, purchase_date, quantity, total_cost, created_at")
+      .select(
+        "id, product_id, variant_id, article_name, sku, purchase_date, quantity, received_quantity, reception_status, total_cost, created_at",
+      )
       .order("purchase_date", { ascending: true })
       .limit(10000),
   ])
@@ -230,7 +234,7 @@ export async function GET(request: Request) {
     const mapping: MercadoLibreCostMapping | null =
       getMercadoLibreCostMapping(row)
     const costableUnits = getMercadoLibreCostableUnits(row)
-    const unitCost = mapping && row.sale_date
+    const dynamicUnitCost = mapping && row.sale_date
       ? mapping.standalone_key
         ? getStandaloneHistoricalUnitCost(
             allCostRows,
@@ -246,6 +250,8 @@ export async function GET(request: Request) {
             )
           : null
       : null
+    const snapshot = row.costo_unitario_historico as number | null | undefined
+    const unitCost = resolveReportedUnitCost(snapshot, dynamicUnitCost)
 
     return {
       ...row,
@@ -396,7 +402,9 @@ export async function PATCH(request: Request) {
 
   let productCostsQuery = auth.admin
     .from("product_cost_entries")
-    .select("id, product_id, variant_id, article_name, sku, purchase_date, quantity, total_cost, created_at")
+    .select(
+      "id, product_id, variant_id, article_name, sku, purchase_date, quantity, received_quantity, reception_status, total_cost, created_at",
+    )
     .order("purchase_date", { ascending: true })
     .limit(10000)
   if (standaloneKey) {
@@ -458,6 +466,13 @@ export async function PATCH(request: Request) {
       .update({
         product_id: clearMapping || standaloneKey ? null : productId,
         unit_cost: Math.round(unitCost * 100) / 100,
+        // Vincular (o revincular) es una acción explícita y deliberada del
+        // admin: congela el costo histórico en ese momento, protegiéndolo de
+        // ediciones futuras de la compra. Desvincular limpia el snapshot
+        // porque deja de representar el producto original.
+        costo_unitario_historico: clearMapping
+          ? null
+          : Math.round(unitCost * 100) / 100,
         raw_data: raw,
       })
       .eq("id", row.id)

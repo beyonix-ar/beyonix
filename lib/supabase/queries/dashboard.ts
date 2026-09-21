@@ -110,14 +110,18 @@ export interface DashboardFinancialSummary {
   shippingCost: number
   shippingBalance: number
   transferDiscounts: number
+  webMercadoPagoFees: number
   marketplaceFees: number
+  marketplaceRefunds: number
   salesFees: number
   marketplaceShipping: number
   marketplaceNet: number
   externalNet: number
   inventoryPurchases: number
   costOfGoodsSold: number
+  pendingReturnAdjustment: number
   operatingExpensesPaid: number
+  productExpenseEconomicCost: number
   operatingExpensesPending: number
   knownOperatingResult: number
   trueProfit: number | null

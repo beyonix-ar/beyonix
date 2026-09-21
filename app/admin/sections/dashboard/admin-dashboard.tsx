@@ -35,7 +35,15 @@ import {
   type DashboardCommercialSale,
   type DashboardRecentActivity,
 } from "@/lib/supabase/queries/dashboard"
+import {
+  argentinaDateKey,
+  getArgentinaDateParts,
+  isSameArgentinaDay,
+  matchesArgentinaMetricMonth,
+  matchesArgentinaMetricYear,
+} from "@/lib/business/dashboard-timezone"
 import { useDashboard } from "@/hooks/use-dashboard"
+import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { formatPrice } from "../productos/helpers"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { AdminDatePicker } from "../../components/admin-date-picker"
@@ -136,27 +144,6 @@ function formatRelativeTime(value: string) {
   if (diffDays < 7) return `Hace ${diffDays} d`
 
   return formatDate(value)
-}
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  )
-}
-
-function matchesMetricMonth(date: Date, selectedMonth: string, selectedYear: string, today: Date) {
-  const metricMonth = selectedMonth ? Number(selectedMonth) : today.getMonth()
-  const metricYear = selectedYear ? Number(selectedYear) : today.getFullYear()
-
-  return date.getMonth() === metricMonth && date.getFullYear() === metricYear
-}
-
-function matchesMetricYear(date: Date, selectedYear: string, today: Date) {
-  const metricYear = selectedYear ? Number(selectedYear) : today.getFullYear()
-
-  return date.getFullYear() === metricYear
 }
 
 function maskAmount(value: string, hidden: boolean) {
@@ -712,7 +699,7 @@ function groupEvolutionSales(
   const totals = new Map<string, number>()
 
   rows.forEach((row) => {
-    const dateKey = row.date.slice(0, 10)
+    const dateKey = argentinaDateKey(row.date)
     const key = grouping === "month" ? dateKey.slice(0, 7) : dateKey
 
     if (!/^\d{4}-\d{2}(?:-\d{2})?$/.test(key)) return
@@ -2991,18 +2978,36 @@ export function AdminDashboard() {
     }
   }, [requestedTab])
 
-  if (loading || !stats || !financialSummary) return <Skeleton />
-  const sensitive = role === "admin" || role === "super_admin"
+  if (loading) return <Skeleton />
+  if (error && (!stats || !financialSummary)) {
+    return (
+      <div className="rounded-2xl border border-red-400/25 bg-red-400/10 p-8 text-center text-red-100">
+        <p className="text-base font-black">No se pudo cargar el dashboard.</p>
+        <p className="mt-2 text-sm text-red-100/70">Los importes no están disponibles; no se muestran valores en cero.</p>
+        <button
+          type="button"
+          onClick={() => void reloadDashboard()}
+          className="mt-5 inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-red-300/30 px-4 text-xs font-black"
+        >
+          <RefreshCw className="size-4" /> Reintentar
+        </button>
+      </div>
+    )
+  }
+  if (!stats || !financialSummary) return null
+  const sensitive = getAdminCapabilities(role).canManageFinancials
+  const canViewAudit = getAdminCapabilities(role).canViewAudit
   const today = new Date()
   const hasCustomDateFilter = Boolean(from || to)
 
   const filteredSales = commercialSales.filter((sale) => {
     const date = new Date(sale.date)
+    const dateKey = argentinaDateKey(date)
     return (
-      (!from || date >= new Date(`${from}T00:00:00`)) &&
-      (!to || date <= new Date(`${to}T23:59:59`)) &&
-      (hasCustomDateFilter || !month || date.getMonth() === Number(month)) &&
-      (hasCustomDateFilter || !year || date.getFullYear() === Number(year)) &&
+      (!from || dateKey >= from) &&
+      (!to || dateKey <= to) &&
+      (hasCustomDateFilter || !month || getArgentinaDateParts(date).month === Number(month)) &&
+      (hasCustomDateFilter || !year || getArgentinaDateParts(date).year === Number(year)) &&
       (channel === "todos" || sale.channel === channel) &&
       (!product || sale.productName === product) &&
       (!category || sale.categoryName === category)
@@ -3022,7 +3027,7 @@ export function AdminDashboard() {
   ).sort() as string[]
   const yearOptions = Array.from(
     new Set(
-      commercialSales.map((sale) => String(new Date(sale.date).getFullYear()))
+      commercialSales.map((sale) => String(getArgentinaDateParts(sale.date).year))
     )
   ).sort((a, b) => Number(b) - Number(a))
   const filteredSalesWithDate = filteredSales.map((sale) => ({
@@ -3031,13 +3036,13 @@ export function AdminDashboard() {
   }))
   const commercialStats = {
     facturacionDiaria: filteredSalesWithDate
-      .filter(({ date }) => isSameDay(date, today))
+      .filter(({ date }) => isSameArgentinaDay(date, today))
       .reduce((total, { sale }) => total + sale.grossAmount, 0),
     facturacionMensual: filteredSalesWithDate
-      .filter(({ date }) => matchesMetricMonth(date, month, year, today))
+      .filter(({ date }) => matchesArgentinaMetricMonth(date, month, year, today))
       .reduce((total, { sale }) => total + sale.grossAmount, 0),
     facturacionAnual: filteredSalesWithDate
-      .filter(({ date }) => matchesMetricYear(date, year, today))
+      .filter(({ date }) => matchesArgentinaMetricYear(date, year, today))
       .reduce((total, { sale }) => total + sale.grossAmount, 0),
     facturacionTotalFiltrada: filteredSales.reduce((total, sale) => total + sale.grossAmount, 0),
     ventas: filteredSales.length,
@@ -3304,7 +3309,7 @@ export function AdminDashboard() {
               </div>
             </section>
             <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
-              <SectionHeader eyebrow="Actividad" title="Actividad reciente" action={<button type="button" onClick={() => onNavigate("auditoria")} className="admin-ds-button admin-ds-button-secondary inline-flex cursor-pointer items-center gap-2 px-3 text-xs font-black transition">Ver auditoría <ArrowRight className="size-3.5" /></button>} />
+              <SectionHeader eyebrow="Actividad" title="Actividad reciente" action={canViewAudit ? <button type="button" onClick={() => onNavigate("auditoria")} className="admin-ds-button admin-ds-button-secondary inline-flex cursor-pointer items-center gap-2 px-3 text-xs font-black transition">Ver auditoría <ArrowRight className="size-3.5" /></button> : undefined} />
               <div className="custom-scrollbar max-h-360px space-y-3 overflow-y-auto pr-1">
                 {recentActivity.length ? recentActivity.map((item) => <ActivityItem key={item.id} item={item} />) : <EmptyState icon={<Clock className="size-5" />} title="No hay actividad reciente" description="Los movimientos operativos se mostrarán en este panel." />}
               </div>
@@ -3406,7 +3411,7 @@ export function AdminDashboard() {
                         <option value="">Todos los años</option>
                         {(yearOptions.length
                           ? yearOptions
-                          : [String(today.getFullYear())]
+                          : [String(getArgentinaDateParts(today).year)]
                         ).map((option) => (
                           <option key={option} value={option}>
                             {option}
@@ -3581,7 +3586,18 @@ export function AdminDashboard() {
                         const rowTicket = sale.quantity ? sale.grossAmount / sale.quantity : 0
                         return (
                           <tr key={sale.id} className="border-t border-white/6">
-                            <td className="px-4 py-3 font-bold text-white">{sale.productName}</td>
+                            <td className="px-4 py-3 font-bold text-white">
+                              <span className="block">{sale.productName}</span>
+                              {sale.channel === "BEYONIX Web" && sale.orderId && (
+                                <button
+                                  type="button"
+                                  onClick={() => router.push(`/admin/pedidos/${encodeURIComponent(sale.orderId!)}`)}
+                                  className="mt-1 cursor-pointer text-10px font-black uppercase tracking-wide text-beyonix-sky hover:text-white"
+                                >
+                                  Ver pedido
+                                </button>
+                              )}
+                            </td>
                             <td className="px-4 py-3 text-white/62">{sale.channel}</td>
                             <td className="px-4 py-3 text-center text-white/62">{sale.paymentMethod}</td>
                             <td className="px-4 py-3 text-center text-white/62">{sale.quantity}</td>

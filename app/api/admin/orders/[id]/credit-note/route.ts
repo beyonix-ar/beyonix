@@ -28,33 +28,35 @@ import {
   isPhysicallyReceivedStatus,
   normalizeStockDestination,
 } from "@/lib/orders/return-reception"
+import {
+  getAvailableToCreditQuantity,
+  getReceptionApprovalGateError,
+  getReceptionExceptionError,
+} from "@/lib/orders/credit-note-reception"
 
 export const runtime = "nodejs"
 
 type CreditNoteDestination = "external_refund" | "customer_balance"
-type InventoryReturnMovement = {
-  source_key: string
-  order_id: number
-  order_item_id: number
-  product_id: number
-  variant_id: number | null
-  quantity: number
-  received_quantity: number
-  sellable_quantity: number
-  discounted_quantity: number
-  non_sellable_quantity: number
-  discount_percent: number | null
-  discount_reason: string | null
-  non_sellable_reason: string | null
-  review_notes: string | null
-  occurred_at: string
-  conditioned_active: boolean
-  conditioned_name: string | null
-  conditioned_sku: string | null
-  conditioned_color_hex: string | null
-  conditioned_images: string[]
-  approved_by: string
-  approved_at: string
+// Auditoría 4/7: parámetros para record_order_item_return_reception (la
+// autoridad única de recepción física), no una fila cruda de
+// inventory_return_movements -- esa tabla ahora la escribe sólo la RPC.
+type PendingReturnMovement = {
+  creditItemId: number
+  orderId: number
+  orderItemId: number
+  variantIdOverride: number | null
+  sellableQuantity: number
+  discountedQuantity: number
+  nonSellableQuantity: number
+  discountPercent: number | null
+  discountReason: string | null
+  nonSellableReason: string | null
+  reviewNotes: string | null
+  occurredAt: string
+  conditionedName: string | null
+  conditionedSku: string | null
+  conditionedColorHex: string | null
+  conditionedImages: string[]
 }
 
 type CreditNoteRequest = {
@@ -74,6 +76,7 @@ type CreditNoteRequest = {
   new_shipping_cost?: unknown
   reception_status?: unknown
   reception_exception?: unknown
+  reception_exception_reason?: unknown
   reception_date?: unknown
   reception_notes?: unknown
   physical_condition?: unknown
@@ -355,14 +358,18 @@ export async function POST(
     "producto_aprobado",
     "aprobado_parcial",
   ].includes(receptionStatus)
-  if (!receptionApproved && !receptionException) {
-    return NextResponse.json(
-      {
-        error:
-          "La nota queda bloqueada hasta recibir y aprobar el producto. Usá la excepción administrativa únicamente si corresponde.",
-      },
-      { status: 409 },
-    )
+  const receptionExceptionReason = optionalText(body.reception_exception_reason, 500)
+  const approvalGateError = getReceptionApprovalGateError(receptionApproved, receptionException)
+  if (approvalGateError) {
+    return NextResponse.json({ error: approvalGateError }, { status: 409 })
+  }
+  // Auditoría 4/7 (Fase 2, punto 5): reception_exception=true saltea la
+  // exigencia de recepción física aprobada -- no puede ser una salida
+  // fácil sin dejar rastro. Motivo obligatorio (queda auditado junto con
+  // created_by/created_at, que ya identifican actor y fecha).
+  const exceptionReasonError = getReceptionExceptionError(receptionException, receptionExceptionReason)
+  if (exceptionReasonError) {
+    return NextResponse.json({ error: exceptionReasonError }, { status: 400 })
   }
 
   const [{ data: order, error: orderError }, { data: orderItems, error: itemsError }] =
@@ -607,6 +614,61 @@ export async function POST(
   if (!Array.isArray(expectedNoteIds) || expectedNoteIds.some((id) => typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))) {
     return NextResponse.json({ error: "Actualizá la gestión fiscal antes de emitir la nota." }, { status: 409 })
   }
+
+  // Auditoría 4/7 (Fase 2, punto 4): si ESTE ítem ya tiene una recepción
+  // física registrada de una gestión anterior (inventory_return_movements),
+  // la NC no puede acreditar más unidades que las que realmente se
+  // recibieron menos lo ya comprometido por otras notas -- un admin
+  // tipeando una cantidad mayor no puede generar crédito de más. No aplica
+  // a la recepción que está ocurriendo en ESTA misma request (todavía no
+  // existe la fila: se crea más abajo, después de autorizar la NC, con el
+  // mismo número que se valida acá).
+  if (selectedItems.length > 0 && !receptionException) {
+    const orderItemIds = selectedItems.map((item) => item.order_item_id)
+    const [{ data: priorReceptions, error: priorReceptionsError }, { data: committedNoteItems, error: committedError }] =
+      await Promise.all([
+        auth.admin
+          .from("inventory_return_movements")
+          .select("order_item_id, received_quantity")
+          .in("order_item_id", orderItemIds),
+        auth.admin
+          .from("order_credit_note_items")
+          .select("order_item_id, quantity, order_credit_notes!inner(status)")
+          .in("order_item_id", orderItemIds)
+          .in("order_credit_notes.status", ["processing", "authorized"]),
+      ])
+    if (priorReceptionsError || committedError) {
+      return NextResponse.json(
+        { error: "No se pudo verificar la recepción física ya registrada." },
+        { status: 500 },
+      )
+    }
+    const receivedByItem = new Map<number, number>()
+    for (const row of priorReceptions ?? []) {
+      const itemId = Number(row.order_item_id)
+      receivedByItem.set(itemId, (receivedByItem.get(itemId) ?? 0) + Number(row.received_quantity ?? 0))
+    }
+    const committedByItem = new Map<number, number>()
+    for (const row of committedNoteItems ?? []) {
+      const itemId = Number(row.order_item_id)
+      committedByItem.set(itemId, (committedByItem.get(itemId) ?? 0) + Number(row.quantity ?? 0))
+    }
+    for (const item of selectedItems) {
+      const received = receivedByItem.get(item.order_item_id)
+      if (received == null) continue // sin recepción previa: nada que cruzar todavía.
+      const committed = committedByItem.get(item.order_item_id) ?? 0
+      const availableToCredit = getAvailableToCreditQuantity(received, committed)
+      if (item.quantity > availableToCredit) {
+        return NextResponse.json(
+          {
+            error: `Este producto ya tiene una recepción física registrada: sólo quedan ${availableToCredit} unidad(es) disponibles para acreditar (de ${received} recibidas).`,
+          },
+          { status: 409 },
+        )
+      }
+    }
+  }
+
   const { data: reservedNote, error: reservationFailure } = await auth.admin
     .rpc("begin_partial_credit_note", {
       p_order_id: orderId,
@@ -653,6 +715,7 @@ export async function POST(
       management_status: managementStatus,
       reception_status: receptionStatus,
       reception_exception: receptionException,
+      reception_exception_reason: receptionException ? receptionExceptionReason : null,
       reception_date: optionalText(body.reception_date, 10),
       reception_notes: optionalText(body.reception_notes, 2000),
       physical_condition: optionalText(body.physical_condition, 500),
@@ -820,14 +883,14 @@ export async function POST(
 
     const physicallyReceived = isPhysicallyReceivedStatus(receptionStatus)
     if (physicallyReceived && stockDestination !== "no_reingresar") {
-      // La reserva fiscal bloquea nuevas recepciones del reclamo. Releer evita
-      // duplicar una recepción canónica terminada antes de tomar esa reserva.
-      const { data: receivedItems, error: receivedItemsError } = await auth.admin
-        .from("orden_items").select("id,return_inventory_processed_at")
-        .eq("orden_id", orderId)
-      if (receivedItemsError) throw new Error("No se pudo verificar la recepción registrada.")
-      const previouslyReceived = new Set((receivedItems ?? [])
-        .filter((item) => item.return_inventory_processed_at).map((item) => Number(item.id)))
+      // Auditoría 4/7 (P0): antes esta ruta hacía un upsert directo a
+      // inventory_return_movements, un segundo escritor de stock paralelo a
+      // process_claim_return_inventory (vía /return-inventory/[itemId]) sin
+      // ninguna coordinación entre ambos -- podía duplicar el reingreso de
+      // stock del mismo ítem. Ahora las dos rutas pasan por la misma
+      // autoridad (record_order_item_return_reception), que toma lock,
+      // valida la cantidad acumulada contra lo vendido y es idempotente por
+      // clave -- no hace falta prefiltrar por "ya recibido alguna vez".
       const orderItemsById = new Map(
         items.map((item) => [Number(item.id), item]),
       )
@@ -867,7 +930,7 @@ export async function POST(
           const quantity = Number(
             creditItem.approved_quantity ?? creditItem.quantity ?? 0,
           )
-          if (!orderItem || quantity <= 0 || previouslyReceived.has(Number(orderItem.id))) return null
+          if (!orderItem || quantity <= 0) return null
 
           const product = productsById.get(Number(orderItem.producto_id))
           const variant =
@@ -910,58 +973,89 @@ export async function POST(
           const baseSku = variant?.sku || product?.sku || `DEV-${orderItem.id}`
 
           return {
-            source_key: `credit-note-item:${creditItem.id}`,
-            order_id: orderId,
-            order_item_id: Number(orderItem.id),
-            product_id: Number(orderItem.producto_id),
-            variant_id: returnVariantId,
-            quantity: sellableQuantity + discountedQuantity,
-            received_quantity: quantity,
-            sellable_quantity: sellableQuantity,
-            discounted_quantity: discountedQuantity,
-            non_sellable_quantity: nonSellableQuantity,
-            discount_percent:
+            creditItemId: creditItem.id,
+            orderId,
+            orderItemId: Number(orderItem.id),
+            // Sólo se manda cuando difiere de orden_items.variante_id (ítem
+            // vendido desde stock condicionado) -- la RPC usa
+            // v_item.variante_id por defecto en el resto de los casos.
+            variantIdOverride:
+              typeof orderItem.variante_id === "number" ? null : returnVariantId,
+            sellableQuantity,
+            discountedQuantity,
+            nonSellableQuantity,
+            discountPercent:
               discountedQuantity > 0 ? conditionedDiscountPercent : null,
-            discount_reason: discountReason,
-            non_sellable_reason: nonSellableReason,
-            review_notes: optionalText(body.reception_notes, 1000),
-            occurred_at: occurredAt,
-            conditioned_active: discountedQuantity > 0,
-            conditioned_name:
+            discountReason,
+            nonSellableReason,
+            reviewNotes: optionalText(body.reception_notes, 1000),
+            occurredAt,
+            conditionedName:
               discountedQuantity > 0
                 ? `${baseName || "Producto devuelto"} · Con descuento`
                 : null,
-            conditioned_sku:
+            conditionedSku:
               discountedQuantity > 0
                 ? `${baseSku}-DEV-${creditItem.id}`.slice(0, 120)
                 : null,
-            conditioned_color_hex:
+            conditionedColorHex:
               discountedQuantity > 0
                 ? variant?.color_hex || "#808080"
                 : null,
-            conditioned_images:
+            conditionedImages:
               discountedQuantity > 0 && Array.isArray(variant?.imagenes)
                 ? variant.imagenes
                 : [],
-            approved_by: auth.user.id,
-            approved_at: authorizedAt,
           }
         })
         .filter(
-          (
-            movement: InventoryReturnMovement | null,
-          ): movement is InventoryReturnMovement => Boolean(movement),
+          (movement: PendingReturnMovement | null): movement is PendingReturnMovement =>
+            Boolean(movement),
         )
 
       if (returnMovements.length) {
-        const { error: stockMovementError } = await auth.admin
-          .from("inventory_return_movements")
-          .upsert(returnMovements, { onConflict: "source_key" })
-
-        if (stockMovementError) {
-          throw new Error(
-            "La nota fue autorizada, pero no se pudo registrar el reingreso de stock.",
+        // Una llamada por ítem a la autoridad única (record_order_item_
+        // return_reception) en vez del upsert directo de antes. Si el ítem
+        // ya fue recibido en su totalidad por otra vía (p. ej. ya se
+        // procesó desde /return-inventory/[itemId] mientras se autorizaba
+        // esta NC), la propia RPC lo rechaza con RETURN_EXCEEDS_REMAINING --
+        // se trata como informativo (el reingreso ya ocurrió, no hay nada
+        // que duplicar), no como un error que deba abortar la NC ya
+        // autorizada en ARCA.
+        for (const movement of returnMovements) {
+          const { error: stockMovementError } = await auth.admin.rpc(
+            "record_order_item_return_reception",
+            {
+              p_order_id: movement.orderId,
+              p_order_item_id: movement.orderItemId,
+              p_sellable_quantity: movement.sellableQuantity,
+              p_discounted_quantity: movement.discountedQuantity,
+              p_non_sellable_quantity: movement.nonSellableQuantity,
+              p_idempotency_key: `credit-note-item:${movement.creditItemId}`,
+              p_processed_by: auth.user.id,
+              p_note: movement.reviewNotes,
+              p_discount_percent: movement.discountPercent,
+              p_discount_reason: movement.discountReason,
+              p_non_sellable_reason: movement.nonSellableReason,
+              p_conditioned_name: movement.conditionedName,
+              p_conditioned_sku: movement.conditionedSku,
+              p_conditioned_color_hex: movement.conditionedColorHex,
+              p_conditioned_images: movement.conditionedImages,
+              p_occurred_at: movement.occurredAt,
+              p_variant_id_override: movement.variantIdOverride,
+            },
           )
+
+          if (stockMovementError) {
+            const alreadyHandled = /RETURN_EXCEEDS_REMAINING/.test(
+              stockMovementError.message ?? "",
+            )
+            if (!alreadyHandled) {
+              throw new Error(
+                "La nota fue autorizada, pero no se pudo registrar el reingreso de stock.",
+              )
+            }
+          }
         }
 
         await auth.admin

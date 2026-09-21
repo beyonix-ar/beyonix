@@ -75,6 +75,7 @@ export function useAdminNotifications(enabled = true) {
       return
     }
 
+    setLoading(true)
     try {
       const summary = await getAdminNotifications()
       if (currentRequestId !== requestId.current) return
@@ -91,7 +92,7 @@ export function useAdminNotifications(enabled = true) {
         "ADMIN_NOTIFICATIONS_LOAD_ERROR",
         getSupabaseErrorDetails(loadError),
       )
-      setError("No pudimos cargar las notificaciones.")
+      setError("No se pudieron cargar las alertas.")
     } finally {
       if (currentRequestId === requestId.current) setLoading(false)
     }
@@ -179,6 +180,7 @@ export function useAdminNotifications(enabled = true) {
     notifications,
     loading,
     error,
+    status: loading ? "loading" : error ? "error" : notifications.length ? "loaded" : "empty",
     reloadNotifications: loadNotifications,
   }
 }

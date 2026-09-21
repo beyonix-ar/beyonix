@@ -260,3 +260,10 @@ export function keepLatestNotificationByOrder(notifications: AdminNotification[]
 
   return [...withoutOrder, ...byOrder.values()].sort(sortByEventDate)
 }
+
+export function keepDistinctOperationalTasks(notifications: AdminNotification[]) {
+  return dedupeNotifications(notifications).sort((a, b) =>
+    Number(Boolean(b.stale)) - Number(Boolean(a.stale)) ||
+    getOperationalPriority(b) - getOperationalPriority(a) || sortByEventDate(a, b),
+  )
+}

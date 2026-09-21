@@ -13,6 +13,8 @@ import {
   AdminPrimaryButton,
   AdminSection,
   AdminStatusIndicator,
+  AdminModal,
+  AdminSecondaryButton,
 } from "../../components/admin-controls"
 
 async function getAccessToken() {
@@ -30,16 +32,17 @@ export function AndreaniIntegrationCard() {
   const [error, setError] = useState("")
   const [commercialEnabled, setCommercialEnabled] = useState<boolean | null>(null)
   const [togglingCommercial, setTogglingCommercial] = useState(false)
+  const [confirmCommercial, setConfirmCommercial] = useState(false)
   const requestInFlight = useRef(false)
 
   const loadStatus = useCallback(async () => {
+    try {
     const token = await getAccessToken()
     if (!token) {
       setError("No se pudo validar la sesión administrativa.")
       return
     }
 
-    try {
       const [integrationResponse, settingsResponse] = await Promise.all([
         fetch("/api/admin/integrations/andreani/test", {
           headers: { Authorization: `Bearer ${token}` },
@@ -106,6 +109,7 @@ export function AndreaniIntegrationCard() {
       }
 
       setCommercialEnabled(nextEnabled)
+      setConfirmCommercial(false)
     } catch {
       setError("No se pudo actualizar la disponibilidad comercial de Andreani.")
     } finally {
@@ -198,7 +202,7 @@ export function AndreaniIntegrationCard() {
             ) : (
               <Cable className="size-3.5" />
             )}
-            {testing ? "Probando…" : "Probar conexión"}
+            {testing ? "Probando QA…" : "Probar conexión QA"}
           </AdminPrimaryButton>
         </div>
       }
@@ -217,7 +221,7 @@ export function AndreaniIntegrationCard() {
         >
           <p className="font-bold">{lastTest.message}</p>
           <p className="mt-0.5 text-12px opacity-70">
-            Última prueba: {new Date(lastTest.testedAt).toLocaleString("es-AR")}
+            Última prueba en {lastTest.environment}: {new Date(lastTest.testedAt).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}
           </p>
         </AdminInfoBlock>
       ) : integration ? (
@@ -227,7 +231,7 @@ export function AndreaniIntegrationCard() {
       ) : null}
 
       <AdminInfoBlock
-        tone={commercialEnabled === false ? "warning" : "success"}
+        tone={commercialEnabled === null ? "info" : commercialEnabled === false ? "warning" : "success"}
         icon={
           commercialEnabled === false ? (
             <ShieldAlert className="size-3.5" />
@@ -239,7 +243,7 @@ export function AndreaniIntegrationCard() {
       >
         <div>
           <p className="font-bold">
-            {commercialEnabled === false
+            {commercialEnabled === null ? "Consultando disponibilidad comercial…" : commercialEnabled === false
               ? "Andreani desactivado comercialmente"
               : "Andreani activo comercialmente"}
           </p>
@@ -252,7 +256,7 @@ export function AndreaniIntegrationCard() {
         <AdminPrimaryButton
           type="button"
           size="sm"
-          onClick={() => void toggleCommercialEnabled()}
+          onClick={() => setConfirmCommercial(true)}
           disabled={togglingCommercial || commercialEnabled === null}
           className="shrink-0"
         >
@@ -283,10 +287,16 @@ export function AndreaniIntegrationCard() {
           </p>
         </AdminInfoBlock>
       ) : null}
+      <p className="mt-2 text-xs text-white/65">La prueba de conexión verifica QA (pruebas). La creación en PROD requiere una prueba controlada con sus propias credenciales, contrato y sucursal; un resultado QA exitoso no valida PROD.</p>
+      <AdminModal open={confirmCommercial} title={commercialEnabled ? "Desactivar Andreani" : "Activar Andreani"} onClose={() => { if (!togglingCommercial) setConfirmCommercial(false) }} footer={<div className="flex gap-2"><AdminSecondaryButton disabled={togglingCommercial} onClick={() => setConfirmCommercial(false)}>Cancelar</AdminSecondaryButton><AdminPrimaryButton disabled={togglingCommercial} onClick={() => void toggleCommercialEnabled()}>{togglingCommercial ? "Guardando…" : "Confirmar cambio"}</AdminPrimaryButton></div>}>
+        <p>{commercialEnabled ? "Se dejarán de ofrecer cotizaciones y crear envíos nuevos. El seguimiento de envíos existentes continuará funcionando." : "Se habilitarán cotizaciones y envíos nuevos con la configuración vigente. Verificá que el ambiente de creación indicado sea el esperado."}</p>
+        {error && <p role="alert">{error}</p>}
+      </AdminModal>
 
       {error ? (
         <AdminInfoBlock tone="danger" className="mt-2 py-2 text-xs">
           {error}
+          <button type="button" onClick={() => void loadStatus()} className="ml-3 underline">Reintentar consulta</button>
         </AdminInfoBlock>
       ) : null}
     </AdminSection>

@@ -28,7 +28,15 @@ const COMMON_SALES_COLUMNS = [
   "updated_at",
 ]
 
-const EXTERNAL_SALES_COLUMNS = [...COMMON_SALES_COLUMNS, "created_at"].join(", ")
+const EXTERNAL_SALES_COLUMNS = [
+  ...COMMON_SALES_COLUMNS,
+  "created_at",
+  "status",
+  "reversed_at",
+  "reversed_by",
+  "reversal_reason",
+  "reversal_amount",
+].join(", ")
 const ML_SALES_COLUMNS = [
   ...COMMON_SALES_COLUMNS,
   "raw_data",
@@ -104,9 +112,7 @@ function missingExtendedColumns(message: string) {
 }
 
 function missingExternalVariantColumn(message: string) {
-  return /variant_id.*external_sales|external_sales.*variant_id|schema cache.*variant_id/i.test(
-    message,
-  )
+  return /variant_id.*external_sales|external_sales.*variant_id|schema cache.*variant_id/i.test(message)
 }
 
 function packLegacyPayload(payload: Record<string, unknown>) {
@@ -137,6 +143,8 @@ function normalizeResponseRow(row: Record<string, unknown>) {
   const mappedVariantId = optionalPositiveInteger(rawMapping?.variant_id)
   const publicRow = { ...row }
   delete publicRow.raw_data
+  delete publicRow.creation_request
+  delete publicRow.creation_idempotency_key
 
   const rawNotes = typeof row.notes === "string" ? row.notes : ""
   if (!rawNotes.startsWith(LEGACY_META_PREFIX)) {
@@ -289,6 +297,9 @@ function normalizePayload(body: Record<string, unknown>, userId: string, updatin
 }
 
 function databaseError(message: string) {
+  if (/IDEMPOTENCY_PAYLOAD_MISMATCH|EXTERNAL_SALE_ALREADY_REVERSED/.test(message)) {
+    return errorResponse("La operación cambió o la venta fue reversada. Actualizá los datos.", 409)
+  }
   if (/STOCK_INSUFICIENTE/i.test(message)) {
     return errorResponse(
       "La venta supera el stock disponible del producto o de la variante.",
@@ -298,6 +309,12 @@ function databaseError(message: string) {
   if (/source_key|prepare_manual_mercadolibre_sale_identity/i.test(message)) {
     return errorResponse(
       "Falta aplicar la migración 20260801100000_inventory_sale_write_guards.sql en Supabase.",
+      503,
+    )
+  }
+  if (/status|reversed_at|reversed_by|reversal_reason|reversal_amount/i.test(message)) {
+    return errorResponse(
+      "Falta aplicar la migración 20260921100000_external_sale_reversal.sql en Supabase.",
       503,
     )
   }
@@ -457,11 +474,18 @@ export async function GET(request: Request) {
     producto_variantes: [],
   }))
 
+  const externalRows = (resolvedExternalResult.data ?? []) as unknown as Record<string, unknown>[]
+  const reversalActors = [...new Set(externalRows.map((row) => row.reversed_by).filter((id): id is string => typeof id === "string"))]
+  const actorNames = new Map<string, string>()
+  if (reversalActors.length) {
+    const { data: actors } = await auth.admin.from("profiles").select("id,nombre,email").in("id", reversalActors)
+    for (const actor of actors ?? []) actorNames.set(actor.id, actor.nombre || actor.email || "Administrador")
+  }
   return Response.json({
     catalog: [...storeCatalog, ...standaloneCatalog].sort((a, b) =>
       a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
     ),
-    externalSales: ((resolvedExternalResult.data ?? []) as unknown as Record<string, unknown>[]).map(normalizeResponseRow),
+    externalSales: externalRows.map((row) => ({ ...normalizeResponseRow(row), reversed_by_name: actorNames.get(String(row.reversed_by)) ?? null })),
     mlSales: ((resolvedMlResult.data ?? []) as unknown as Record<string, unknown>[]).map(normalizeResponseRow),
   })
 }
@@ -510,6 +534,16 @@ export async function POST(request: Request) {
     }
   })()
 
+  if (saleChannel === "external") {
+    const key = request.headers.get("Idempotency-Key")?.trim()
+    if (!key || key.length < 8 || key.length > 240) return errorResponse("Falta una clave de operación válida.")
+    const { data, error } = await auth.admin.rpc("create_external_sale_idempotent", {
+      p_payload: payload, p_actor_id: auth.user.id, p_idempotency_key: key,
+    })
+    if (error) return databaseError(error.message)
+    return Response.json({ item: normalizeResponseRow(data as Record<string, unknown>) }, { status: 201 })
+  }
+
   let result = await auth.admin
     .from(tableFor(saleChannel))
     .insert(payload)
@@ -517,7 +551,7 @@ export async function POST(request: Request) {
       columnsFor(
         saleChannel,
         true,
-        saleChannel !== "external" || variantId != null,
+        true,
       ),
     )
     .single()
@@ -530,7 +564,7 @@ export async function POST(request: Request) {
         columnsFor(
           saleChannel,
           false,
-          saleChannel !== "external" || variantId != null,
+          true,
         ),
       )
       .single()
@@ -595,28 +629,21 @@ export async function PATCH(request: Request) {
       : { ...normalizedValue, variant_id: null }
   }
 
+  if (saleChannel === "external") {
+    const { data, error } = await auth.admin.from("external_sales")
+      .update(payload).eq("id", id).eq("status", "completed")
+      .select(columnsFor("external")).returns<Record<string, unknown>[]>().maybeSingle()
+    if (error) return databaseError(error.message)
+    if (!data) return errorResponse("La venta ya no existe o fue reversada. Actualizá los datos.", 409)
+    return Response.json({ item: normalizeResponseRow(data) })
+  }
+
   let result = await auth.admin
     .from(tableFor(saleChannel))
     .update(payload)
     .eq("id", id)
     .select(columnsFor(saleChannel))
     .single()
-
-  if (
-    saleChannel === "external" &&
-    variantId == null &&
-    result.error &&
-    missingExternalVariantColumn(result.error.message)
-  ) {
-    const legacyPayload = { ...payload }
-    delete legacyPayload.variant_id
-    result = await auth.admin
-      .from("external_sales")
-      .update(legacyPayload)
-      .eq("id", id)
-      .select(columnsFor("external", true, false))
-      .single()
-  }
 
   if (result.error && missingExtendedColumns(result.error.message)) {
     result = await auth.admin
@@ -627,7 +654,7 @@ export async function PATCH(request: Request) {
         columnsFor(
           saleChannel,
           false,
-          saleChannel !== "external" || variantId != null,
+          true,
         ),
       )
       .single()
@@ -645,6 +672,12 @@ export async function DELETE(request: Request) {
   const saleChannel = channel(url.searchParams.get("channel"))
   const id = url.searchParams.get("id")
   if (!saleChannel || !id) return errorResponse("La venta indicada no es válida.")
+  if (saleChannel === "external") {
+    return errorResponse(
+      "Las ventas externas no se eliminan: usá la reversión formal para preservar el historial.",
+      405,
+    )
+  }
 
   const { error } = await auth.admin.from(tableFor(saleChannel)).delete().eq("id", id)
   if (error) return databaseError(error.message)

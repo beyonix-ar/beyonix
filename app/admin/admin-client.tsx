@@ -219,6 +219,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
   } = useAdminNotifications(hasResolvedInternalAccess)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [invoicePendingCount, setInvoicePendingCount] = useState(0)
+  const [invoiceCountError, setInvoiceCountError] = useState(false)
   const [navigationOrder, setNavigationOrder] = useState<AdminRouteKey[]>([])
   const [draggedSection, setDraggedSection] = useState<AdminRouteKey | null>(null)
   const [dragOverSection, setDragOverSection] = useState<AdminRouteKey | null>(null)
@@ -235,7 +236,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
       } = await supabase.auth.getSession()
 
       if (!session?.access_token) {
-        setInvoicePendingCount(0)
+        setInvoiceCountError(true)
         return
       }
 
@@ -248,7 +249,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
       })
 
       if (!response.ok) {
-        setInvoicePendingCount(0)
+        setInvoiceCountError(true)
         return
       }
 
@@ -257,8 +258,9 @@ export function AdminClient({ children }: { children: ReactNode }) {
       }
 
       setInvoicePendingCount(Number(data.count ?? 0))
+      setInvoiceCountError(false)
     } catch {
-      setInvoicePendingCount(0)
+      setInvoiceCountError(true)
     }
   }, [hasResolvedInternalAccess, isOperator])
 
@@ -286,7 +288,8 @@ export function AdminClient({ children }: { children: ReactNode }) {
       notificationGroups.mercadolibre_return ?? 0
     const clientNotificationCount = notifications.filter((notification) =>
       notification.actionUrl === ADMIN_ROUTES.clientes ||
-      notification.actionUrl.startsWith(`${ADMIN_ROUTES.clientes}?`),
+      notification.actionUrl.startsWith(`${ADMIN_ROUTES.clientes}?`) ||
+      notification.actionUrl.startsWith(`${ADMIN_ROUTES.clientes}#`),
     ).length
     const productNotificationCount = notifications.filter((notification) =>
       notification.actionUrl === ADMIN_ROUTES.productos ||
@@ -357,9 +360,9 @@ export function AdminClient({ children }: { children: ReactNode }) {
       {
         key: "facturacion",
         label: "Facturación",
-        description: "Facturas C pendientes",
+        description: invoiceCountError ? "No se pudo cargar el contador. Abrí para reintentar." : "Facturas C pendientes",
         icon: <FileText className="size-4" />,
-        notificationCount: invoicePendingCount,
+        notificationCount: invoiceCountError ? undefined : invoicePendingCount,
         notificationTone: "invoice",
       },
       {
@@ -387,7 +390,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ]
         : []),
     ]
-  }, [invoicePendingCount, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications])
+  }, [invoicePendingCount, invoiceCountError, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications])
 
   useEffect(() => {
     if (!isSuperAdmin) {

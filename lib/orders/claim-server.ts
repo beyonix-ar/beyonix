@@ -45,6 +45,14 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
     409,
     "El pedido tiene una creación de envío en curso o pendiente de conciliación. Resolvé primero el estado de Andreani antes de cancelar.",
   ],
+  // record_order_item_return_reception / process_claim_return_inventory
+  // (Auditoría 4/7): antes caían al 500 genérico porque no estaban acá.
+  RETURN_FORBIDDEN: [403, "No tenés permisos para registrar esta recepción."],
+  RETURN_IDEMPOTENCY_KEY_REQUIRED: [400, "Falta la clave de idempotencia de la recepción."],
+  "No se encontró el producto dentro del pedido.": [404, "No se encontró el producto dentro del pedido."],
+  "Las cantidades de la devolución no pueden ser negativas.": [400, "Las cantidades de la devolución no pueden ser negativas."],
+  "Indicá el motivo de la baja o pérdida.": [400, "Indicá el motivo de la baja o pérdida."],
+  "Indicá al menos una unidad recibida para registrar la devolución.": [400, "Indicá al menos una unidad recibida para registrar la devolución."],
 }
 
 export function claimErrorResponse(error: unknown) {
@@ -53,6 +61,11 @@ export function claimErrorResponse(error: unknown) {
   const known = CLAIM_ERRORS[message]
   if (known) return NextResponse.json({ error: known[1] }, { status: known[0] })
   if (candidate?.code === "23505") return NextResponse.json({ error: CLAIM_ERRORS.CLAIM_EXISTS[1] }, { status: 409 })
+  // record_order_item_return_reception: "RETURN_EXCEEDS_REMAINING: quedan N
+  // unidad(es) disponibles..." -- prefijo fijo que controlamos nosotros, el
+  // resto son sólo números, seguro de mostrar directamente al admin.
+  const exceedsRemaining = message.match(/^RETURN_EXCEEDS_REMAINING:\s*(.+)/)
+  if (exceedsRemaining) return NextResponse.json({ error: exceedsRemaining[1] }, { status: 409 })
   console.error("CLAIM_OPERATION_FAILED", { code: candidate?.code ?? "unexpected" })
   return NextResponse.json({ error: "No se pudo completar la solicitud. Revisá el seguimiento antes de reintentar." }, { status: 500 })
 }

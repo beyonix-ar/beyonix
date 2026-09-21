@@ -623,6 +623,12 @@ export interface SupabasePedidoItem {
   warranty_expires_at?: string | null
   warranty_months?: number | null
   warranty_status?: "pending_delivery" | "active" | "expired" | "voided" | null
+  /**
+   * Costo unitario histórico congelado la primera vez que se reportó esta
+   * venta (ver migración 20260918140000). `null` = todavía sin congelar,
+   * se sigue recalculando dinámicamente contra `product_cost_entries`.
+   */
+  costo_unitario_historico?: number | null
   productos?: SupabaseProducto | null
   producto_variantes?: SupabaseProductoVariante | null
 }

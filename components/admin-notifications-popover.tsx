@@ -121,7 +121,7 @@ export function AdminNotificationsPopover({
           {isStorefront ? "Notificaciones" : "Notificaciones admin"}
         </p>
         <p className={cn("mt-0.5 text-10px", isStorefront ? "beyonix-header-notif-muted" : "text-white/50")}>
-          {notifications.length > 0
+          {error ? "No se pudieron cargar las alertas" : loading ? "Cargando alertas…" : notifications.length > 0
             ? `${notifications.length} pendientes`
             : "Todo está al día"}
         </p>
@@ -143,7 +143,7 @@ export function AdminNotificationsPopover({
         ) : error ? (
           <div className="px-4 py-8 text-center">
             <p className={cn("text-sm font-semibold", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
-              No pudimos cargar las notificaciones
+              No se pudieron cargar las alertas
             </p>
             {onRetry && (
               <button

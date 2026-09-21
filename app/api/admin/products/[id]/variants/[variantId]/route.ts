@@ -469,50 +469,7 @@ export async function DELETE(
   }
 
   if (force) {
-    const existing = await auth.admin
-      .from("producto_variantes")
-      .select("id")
-      .eq("id", variantId)
-      .eq("producto_id", productId)
-      .maybeSingle()
-
-    if (existing.error) {
-      return Response.json(
-        { error: "No se pudo verificar la variante." },
-        { status: 500 },
-      )
-    }
-    if (!existing.data) {
-      return Response.json(
-        { error: "La variante ya no existe." },
-        { status: 404 },
-      )
-    }
-
-    const { error: forceError } = await auth.admin.rpc(
-      "force_delete_product_variant_super_admin",
-      {
-        p_variant_id: variantId,
-        p_actor_id: auth.user.id,
-      },
-    )
-
-    if (forceError) {
-      const missingMigration =
-        /force_delete_product_variant_super_admin|schema cache|PGRST202/i.test(
-          forceError.message,
-        )
-      return Response.json(
-        {
-          error: missingMigration
-            ? "Falta aplicar la migración 20260817100000_super_admin_force_delete.sql."
-            : forceError.message || "No se pudo eliminar definitivamente la variante.",
-        },
-        { status: missingMigration ? 503 : 409 },
-      )
-    }
-
-    return Response.json({ deleted: true })
+    return Response.json({ error: "Esta operación requiere consultar el impacto actual y escribir la confirmación desde el diálogo de eliminación." }, { status: 409 })
   }
 
   const { data: deleted, error: deleteError } = await auth.admin

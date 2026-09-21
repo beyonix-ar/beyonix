@@ -20,6 +20,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Trash2,
   WalletCards,
@@ -45,7 +46,9 @@ import {
 } from "@/lib/business/idempotency-attempt"
 import { formatPrice } from "../productos/helpers"
 import { AdminDatePicker } from "../../components/admin-date-picker"
+import { AdminResponsiveTable } from "../../components/admin-responsive-table"
 import { useAuth } from "@/context/auth-context"
+import { ForceDeleteDialog } from "../../components/force-delete-dialog"
 import {
   AdminDangerButton,
   AdminModal,
@@ -570,7 +573,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     { kind: CostMode; id: string; message: string } | null
   >(null)
   const [pendingForceDelete, setPendingForceDelete] = useState<
-    { kind: CostMode; id: string } | null
+    { kind: CostMode; id: string; impactWarning?: string } | null
   >(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [purchaseSort, setPurchaseSort] = useState<PurchaseSortKey>("date")
@@ -1261,32 +1264,26 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  const confirmForceRemove = async () => {
-    if (!pendingForceDelete) return
-    const { kind, id } = pendingForceDelete
-    try {
-      setDeletingId(id)
-      setError("")
-      await deleteBusinessCost(kind, id, { force: true })
-      if (editingProductId === id) resetProductForm()
-      await load()
-      onChanged?.()
-      setPendingForceDelete(null)
-    } catch (forceCause) {
-      setError(
-        forceCause instanceof Error
-          ? forceCause.message
-          : "No se pudo forzar la eliminación de la compra.",
-      )
-    } finally {
-      setDeletingId(null)
-    }
-  }
 
   if (loading && !data) {
     return (
       <div className="flex min-h-200px items-center justify-center rounded-2xl border border-beyonix-blue-light/16 bg-[#071018]">
         <Loader2 className="size-6 animate-spin text-beyonix-sky" />
+      </div>
+    )
+  }
+
+  if (!loading && error && !data) {
+    return (
+      <div className="rounded-2xl border border-red-400/25 bg-red-400/10 p-6 text-center text-red-100">
+        <p className="text-sm font-bold">{error}</p>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="mt-4 inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl border border-red-300/30 px-4 text-xs font-black"
+        >
+          <RefreshCw className="size-3.5" /> Reintentar
+        </button>
       </div>
     )
   }
@@ -1520,6 +1517,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               </span>
             </div>
             <div className="overflow-x-auto rounded-2xl border border-white/7">
+              <AdminResponsiveTable labels={["Fecha", "Artículo", "SKU", "Recibida / comprada", "Unitario", "Extras", "Total", "Proveedor", "Acción"]}>
               <table className="w-full min-w-1100px text-sm">
                 <thead className="bg-black/30 text-10px uppercase tracking-widest text-white/42">
                   <tr>
@@ -1579,6 +1577,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 </thead>
                 <tbody className="[&_td]:align-middle [&_td]:text-center [&_td:nth-child(2)]:text-left">{sortedProductCosts.map((item) => { const articleLabel = getProductCostName(item); const extras = Number(item.freight_cost) + Number(item.tax_cost) + Number(item.commission_cost) + Number(item.other_cost); const received = Number(item.received_quantity ?? item.quantity); const receptionLabel = item.reception_status === "anulada" ? "Anulada" : item.reception_status === "pendiente" ? "Pendiente" : item.reception_status === "parcial" ? "Parcial" : "Recibida"; return <tr key={item.id} className="border-t border-white/6 text-white/65"><td className="px-3 py-3">{item.purchase_date}</td><td className="px-3 py-3 font-bold text-white">{articleLabel}</td><td className="px-3 py-3 font-semibold text-white/55">{item.sku || "—"}</td><td className="px-3 py-3 tabular-nums"><span className="block">{received}/{item.quantity}</span><span className="text-10px font-bold text-white/40">{receptionLabel}</span></td><td className="px-3 py-3 tabular-nums"><span className="flex w-full items-center justify-center">{formatPrice(Number(item.unit_cost))}</span></td><td className="px-3 py-3 tabular-nums">{formatPrice(extras)}</td><td className="px-3 py-3 font-black tabular-nums text-white">{formatPrice(Number(item.total_cost))}</td><td className="px-3 py-3">{item.supplier || "—"}</td><td className="px-3 py-3"><div className="flex items-center justify-center gap-1.5"><button type="button" aria-label="Editar compra" onClick={() => editProduct(item)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-beyonix-sky/30 text-beyonix-sky transition hover:bg-beyonix-sky/10"><Pencil className="size-3.5" /></button><button type="button" aria-label="Eliminar compra" disabled={deletingId === item.id} onClick={() => requestRemove("product", item.id)} className="inline-flex size-8 cursor-pointer items-center justify-center rounded-xl border border-red-400/25 text-red-300 transition hover:bg-red-400/10 disabled:cursor-wait disabled:opacity-50">{deletingId === item.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}</button></div></td></tr>})}</tbody>
               </table>
+              </AdminResponsiveTable>
               {!sortedProductCosts.length && (
                 <p className="px-4 py-8 text-center text-sm text-white/42">
                   {data?.productCosts.length
@@ -1799,46 +1798,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
           document.body,
         )}
 
-      {pendingForceDelete &&
-        createPortal(
-          <AdminModal
-            open
-            compact
-            title="Forzar eliminación"
-            description="Esta compra ya tiene stock consumido por ventas posteriores."
-            onClose={() => {
-              if (!deletingId) setPendingForceDelete(null)
-            }}
-            footer={
-              <div className="flex items-center justify-end gap-2">
-                <AdminSecondaryButton
-                  disabled={Boolean(deletingId)}
-                  onClick={() => setPendingForceDelete(null)}
-                >
-                  Cancelar
-                </AdminSecondaryButton>
-                <AdminDangerButton
-                  disabled={Boolean(deletingId)}
-                  onClick={() => void confirmForceRemove()}
-                >
-                  {deletingId ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-4" />
-                  )}
-                  {deletingId ? "Forzando…" : "Forzar eliminación"}
-                </AdminDangerButton>
-              </div>
-            }
-          >
-            <p className="text-sm text-white/60">
-              Como <span className="font-bold text-white">SUPER ADMIN</span> podés
-              forzar la eliminación de todos modos: es una acción permanente y
-              puede dejar el stock derivado en negativo.
-            </p>
-          </AdminModal>,
-          document.body,
-        )}
+      {pendingForceDelete && <ForceDeleteDialog kind="purchase" id={pendingForceDelete.id} onClose={() => setPendingForceDelete(null)} onDeleted={async () => { if (editingProductId === pendingForceDelete.id) resetProductForm(); await load(); onChanged?.() }} />}
     </div>
   )
 }

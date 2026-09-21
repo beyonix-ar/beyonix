@@ -109,6 +109,7 @@ const humanTableNames: Record<string, string> = {
   configuracion_visual: "Configuración visual",
   customer_notification_campaigns: "Campaña de notificaciones",
   hero_banners: "Banner",
+  inventory_return_movements: "Devolución física",
   inventory_variant_allocations: "Asignación de inventario",
   mercadolibre_sales: "Venta de MercadoLibre",
   metodos_envio: "Método de envío",
@@ -130,10 +131,6 @@ const ignoredFields = new Set([
   "created_at",
   "id",
   "idempotency_key",
-  // Redundantes con "Cantidad" para el flujo actual de compras (siempre
-  // coinciden con quantity: no hay recepción parcial en la UI todavía).
-  "received_quantity",
-  "reception_status",
   "record_id",
   "table_name",
   "updated_at",
@@ -398,6 +395,25 @@ const fieldOrderByTable: Record<string, string[]> = {
     "created_by",
     "purchase_date",
   ],
+  inventory_return_movements: [
+    "order_id",
+    "order_item_id",
+    "mercadolibre_sale_id",
+    "product_id",
+    "variant_id",
+    "received_quantity",
+    "sellable_quantity",
+    "discounted_quantity",
+    "non_sellable_quantity",
+    "discount_percent",
+    "discount_reason",
+    "non_sellable_reason",
+    "review_notes",
+    "approved_by",
+    "approved_at",
+    "occurred_at",
+    "source_key",
+  ],
 }
 
 // getPreviewFields recorta a este máximo para no saturar la vista con
@@ -405,6 +421,7 @@ const fieldOrderByTable: Record<string, string[]> = {
 // columnas relevantes) necesitan mostrar todo el snapshot.
 const previewFieldLimits: Record<string, number> = {
   product_cost_entries: 30,
+  inventory_return_movements: 30,
 }
 
 function sortFieldsForTable(tableName: string, fields: string[]) {
@@ -467,6 +484,9 @@ export function formatAuditDescription(
   if (log.table_name === "categorias") return formatCategorySummary(log)
   if (log.table_name === "product_cost_entries") return formatCostEntrySummary(log, maps)
   if (log.table_name === "business_expenses") return formatExpenseSummary(log)
+  if (log.table_name === "inventory_return_movements") return formatReturnMovementSummary(log, maps)
+  const operational = formatOperationalSummary(log)
+  if (operational) return operational
 
   return formatGenericSummary(log, maps)
 }
@@ -478,6 +498,31 @@ export function formatAuditDescription(
 function getBulkEventType(log: SupabaseAuditLog) {
   const eventType = log.after_data?.event_type
   return typeof eventType === "string" && eventType ? eventType : null
+}
+
+function formatOperationalSummary(log: SupabaseAuditLog): AuditDescription | null {
+  const data = (log.action === "DELETE" ? log.before_data : log.after_data) ?? {}
+  const labels: Record<string, string> = {
+    external_sales: data.status === "reversed" ? "Venta externa reversada" : "Venta externa registrada / actualizada",
+    order_replacements: "Reemplazo registrado", order_credit_notes: "Nota de crédito",
+    mercadopago_order_refunds: "Reintegro por Mercado Pago", order_refund_proofs: "Comprobante de reintegro",
+    order_claims: "Reclamo actualizado", mercadolibre_return_reviews: "Revisión física de Mercado Libre",
+    admin_destructive_operations: "Eliminación irreversible confirmada",
+  }
+  const title = labels[log.table_name]
+  if (!title) return null
+  const lines: string[] = []
+  const orderId = Number(data.order_id ?? data.original_order_id)
+  if (orderId > 0) lines.push(`Pedido ${formatPublicOrderId(orderId)}`)
+  if (data.product_name) lines.push(String(data.product_name))
+  if (data.quantity != null) lines.push(`${Number(data.quantity)} unidades`)
+  const amount = data.reversal_amount ?? data.amount ?? data.net_amount
+  if (amount != null) lines.push(`Importe: ${formatARS(Number(amount))}`)
+  const reason = data.reversal_reason ?? data.correction_reason ?? data.reason ?? data.notes
+  if (reason) lines.push(`Motivo / detalle: ${formatHumanValue(reason)}`)
+  if (data.status) lines.push(`Estado: ${formatHumanValue(data.status)}`)
+  if (data.received_quantity != null) lines.push(`Recibidas: ${Number(data.received_quantity)} · Vendibles: ${Number(data.sellable_quantity ?? 0)} · Con descuento: ${Number(data.discounted_quantity ?? 0)} · No vendibles: ${Number(data.non_sellable_quantity ?? 0)}`)
+  return { title, lines }
 }
 
 function formatProductSummary(log: SupabaseAuditLog): AuditDescription {
@@ -642,9 +687,43 @@ function formatCostEntrySummary(log: SupabaseAuditLog, maps: AuditEntityMaps): A
   const totalCost = Number(data?.total_cost ?? 0)
   const lines: string[] = []
   if (quantity > 0) lines.push(`${quantity} unidad${quantity === 1 ? "" : "es"} · ${formatARS(totalCost)}`)
+  if (data?.received_quantity != null) lines.push(`Recibidas: ${Number(data.received_quantity)} · Pendientes: ${Math.max(0, quantity - Number(data.received_quantity))}`)
+  if (data?.reception_status) lines.push(`Recepción: ${formatHumanValue(data.reception_status)}`)
 
   return {
     title: `${log.action === "INSERT" ? "Compra registrada" : "Compra modificada"} · ${label}`,
+    lines,
+  }
+}
+
+// Auditoría 4/7 (Fase 4, punto 8): antes, un movimiento de devolución
+// (inventory_return_movements) caía en formatGenericSummary -- título
+// técnico genérico -- pese a ya tener trigger de auditoría (ver
+// 20260920100000_inventory_return_movements_reproducibility.sql). Mismo
+// patrón que formatCostEntrySummary: nombre real del producto/variante y
+// el detalle de la clasificación (sano/con descuento/roto).
+function formatReturnMovementSummary(log: SupabaseAuditLog, maps: AuditEntityMaps): AuditDescription {
+  const data = log.action === "DELETE" ? log.before_data : log.after_data
+  const label = getCostEntryLabel(data, maps)
+
+  if (log.action === "DELETE") return { title: `Devolución eliminada · ${label}`, lines: [] }
+
+  const sellable = Number(data?.sellable_quantity ?? 0)
+  const discounted = Number(data?.discounted_quantity ?? 0)
+  const nonSellable = Number(data?.non_sellable_quantity ?? 0)
+  const lines: string[] = []
+  if (sellable > 0) lines.push(`+${sellable} al stock vendible`)
+  if (discounted > 0) lines.push(`${discounted} con descuento`)
+  if (nonSellable > 0) lines.push(`${nonSellable} no vendible / de baja`)
+  if (!lines.length) {
+    const received = Number(data?.received_quantity ?? 0)
+    if (received > 0) lines.push(`${received} unidad${received === 1 ? "" : "es"} recibida${received === 1 ? "" : "s"}`)
+  }
+  if (data?.review_notes) lines.push(String(data.review_notes))
+  if (data?.mercadolibre_sale_id) lines.push(`Venta de Mercado Libre: ${String(data.mercadolibre_sale_id)}`)
+
+  return {
+    title: `${log.action === "INSERT" ? "Devolución recibida" : "Devolución corregida"} · ${label}`,
     lines,
   }
 }
@@ -1087,6 +1166,7 @@ export function canUndoAuditLog(log: SupabaseAuditLog) {
 const paymentAdjacentTables = new Set([
   "business_expenses",
   "customer_credit_movements",
+  "inventory_return_movements",
   "inventory_variant_allocations",
   "mercadolibre_sales",
   "product_cost_entries",

@@ -29,7 +29,7 @@ import {
   claimNeedsAdminAttention,
   dedupeNotifications,
   formatOrderId,
-  keepLatestNotificationByOrder,
+  keepDistinctOperationalTasks,
   type AdminNotification,
   type AdminNotificationType,
 } from "@/lib/admin/admin-notification-rules"
@@ -100,13 +100,6 @@ const EMPTY_GROUPS: AdminNotificationGroups = {
   claim: 0,
   mercadolibre_return: 0,
   inventory: 0,
-}
-
-const EMPTY_SUMMARY: AdminNotificationSummary = {
-  count: 0,
-  tone: "order",
-  groups: EMPTY_GROUPS,
-  notifications: [],
 }
 
 const LOCAL_READ_PREFIX = "beyonix-admin-notification-read"
@@ -381,6 +374,7 @@ async function getCreditAdminNotifications() {
       "ADMIN_CREDIT_TOPUPS_LOAD_ERROR",
       getSupabaseErrorDetails(topupsError),
     )
+    throw new Error("No se pudieron cargar las alertas de pagos.")
   }
 
   const topupRows = (topups ?? []) as CustomerCreditTopupNotificationRow[]
@@ -398,7 +392,7 @@ async function getCreditAdminNotifications() {
       title: "Nuevo comprobante para cargar saldo",
       body: `${formatProfileDetails(profile)} · Revisá la transferencia e ingresá el monto recibido${topup.proof_file_name ? ` · Archivo: ${topup.proof_file_name}` : ""}`,
       actionLabel: "Revisar en Clientes",
-      actionUrl: ADMIN_ROUTES.clientes,
+      actionUrl: `${ADMIN_ROUTES.clientes}#topup-${encodeURIComponent(topup.id)}`,
       isRead: false,
     })
   }
@@ -438,10 +432,10 @@ async function getMercadoLibreReturnNotifications() {
 
     if (error) {
       console.warn(
-        "ADMIN_MERCADOLIBRE_RETURNS_LOAD_ERROR",
+      "ADMIN_MERCADOLIBRE_RETURNS_LOAD_ERROR",
         getSupabaseErrorDetails(error),
       )
-      return []
+      throw new Error("No se pudieron cargar las alertas de Mercado Libre.")
     }
 
     sales.push(
@@ -466,10 +460,10 @@ async function getMercadoLibreReturnNotifications() {
 
     if (error) {
       console.warn(
-        "ADMIN_MERCADOLIBRE_RETURN_REVIEWS_LOAD_ERROR",
+      "ADMIN_MERCADOLIBRE_RETURN_REVIEWS_LOAD_ERROR",
         getSupabaseErrorDetails(error),
       )
-      return []
+      throw new Error("No se pudieron cargar las revisiones de Mercado Libre.")
     }
 
     reviews.push(
@@ -544,9 +538,10 @@ type InventoryVariantDiagnosticNotificationRow = {
 
 async function getInventoryIntegrityNotifications() {
   const session = await getSafeSupabaseSession()
-  if (!session?.access_token) return []
+  if (!session?.access_token) throw new Error("La sesión administrativa venció.")
 
   const response = await fetch("/api/admin/inventory/notification-diagnostics", {
+    signal: AbortSignal.timeout(25_000),
     headers: { Authorization: `Bearer ${session.access_token}` },
     cache: "no-store",
   })
@@ -556,7 +551,7 @@ async function getInventoryIntegrityNotifications() {
       "ADMIN_INVENTORY_INTEGRITY_LOAD_ERROR",
       { status: response.status },
     )
-    return []
+    throw new Error("No se pudieron cargar las alertas de inventario.")
   }
 
   const result = (await response.json()) as {
@@ -762,7 +757,10 @@ function buildSummary(notifications: AdminNotification[]): AdminNotificationSumm
 export async function getAdminNotifications(): Promise<AdminNotificationSummary> {
   try {
     const adminId = await getCurrentAdminId()
-    if (!adminId) return EMPTY_SUMMARY
+    if (!adminId) throw new Error("La sesión administrativa venció.")
+    const { data: profile, error: profileError } = await supabase.from("profiles").select("rol").eq("id", adminId).single()
+    if (profileError || !profile) throw new Error("No se pudieron comprobar los permisos de alertas.")
+    const financialAlerts = profile.rol === "admin" || profile.rol === "super_admin"
 
     const [
       pedidos,
@@ -773,9 +771,9 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     ] = await Promise.all([
       getPedidos({ notificationView: true }),
       getOrderLastSeenAt(adminId),
-      getCreditAdminNotifications(),
-      getMercadoLibreReturnNotifications(),
-      getInventoryIntegrityNotifications(),
+      financialAlerts ? getCreditAdminNotifications() : Promise.resolve([]),
+      financialAlerts ? getMercadoLibreReturnNotifications() : Promise.resolve([]),
+      financialAlerts ? getInventoryIntegrityNotifications() : Promise.resolve([]),
     ])
 
     const orders = pedidos.pedidos.filter(isOrderVisible)
@@ -928,8 +926,8 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       })
     }
 
-    const dedupedNotifications = dedupeNotifications(notifications)
-    const latestNotifications = keepLatestNotificationByOrder(dedupedNotifications)
+    const dedupedNotifications = dedupeNotifications(notifications.filter((notification) => financialAlerts || !["payment", "invoice", "cancellation"].includes(notification.type)))
+    const latestNotifications = keepDistinctOperationalTasks(dedupedNotifications)
     const reads = await loadReads(adminId, latestNotifications)
     const unreadNotifications = applyReads(latestNotifications, reads)
     return buildSummary(
@@ -943,7 +941,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       "ADMIN_NOTIFICATIONS_UNEXPECTED_ERROR",
       getSupabaseErrorDetails(error),
     )
-    return EMPTY_SUMMARY
+    throw new Error("No se pudieron cargar las alertas. Reintentá la consulta.")
   }
 }
 

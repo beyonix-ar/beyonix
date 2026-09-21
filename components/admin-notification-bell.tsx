@@ -151,7 +151,7 @@ export function AdminNotificationBell({
     >
       <button
         type="button"
-        aria-label="Abrir notificaciones administrativas"
+        aria-label={error ? "No se pudieron cargar las alertas. Abrir para reintentar" : "Abrir notificaciones administrativas"}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         onFocus={openPopover}
@@ -182,7 +182,8 @@ export function AdminNotificationBell({
         )}
       >
         <Bell className="size-4" />
-        {count > 0 && (
+        {error && <span role="status" className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 text-xs text-white">!</span>}
+        {!error && !loading && count > 0 && (
           <span
             className={cn(
               "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-9px font-medium leading-none",

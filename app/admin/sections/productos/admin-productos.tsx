@@ -5,6 +5,8 @@ import Image from "next/image"
 import { Check, ImageIcon, Search } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
+import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
+import { ForceDeleteDialog } from "../../components/force-delete-dialog"
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductColors } from "@/hooks/use-product-colors"
 import { useSiteSettings } from "@/hooks/use-site-settings"
@@ -119,7 +121,8 @@ function mergeProductColors(
 }
 
 export function AdminProductos() {
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, user } = useAuth()
+  const { canManageCatalog } = getAdminCapabilities(user?.rol)
   const { stock: stockSettings } = useSiteSettings()
   const { categorias } = useCategorias()
   const storedColorOptions = useProductColors()
@@ -266,7 +269,7 @@ export function AdminProductos() {
   const confirmDelete = async () => {
     if (!pendingDelete) return
     setDeletingId(pendingDelete.id)
-    const deleted = await deleteProducto(pendingDelete.id, isSuperAdmin)
+    const deleted = await deleteProducto(pendingDelete.id)
     setDeletingId(null)
     if (deleted) setPendingDelete(null)
   }
@@ -386,7 +389,8 @@ export function AdminProductos() {
         onActiveFilterChange={setActiveFilter}
         onFeaturedFilterChange={setFeaturedFilter}
         onVariantFilterChange={setVariantFilter}
-        onViewChange={setView}
+        onViewChange={(next) => { if (next === "productos" || canManageCatalog) setView(next) }}
+        canManage={canManageCatalog}
         onCreateCategory={() => setCreateCategorySignal((current) => current + 1)}
       />
 
@@ -462,8 +466,9 @@ export function AdminProductos() {
         </>
       )}
 
+      {pendingDelete && isSuperAdmin && <ForceDeleteDialog kind="product" id={String(pendingDelete.id)} onClose={() => setPendingDelete(null)} onDeleted={async () => { await reloadProductos() }} />}
       <AdminModal
-        open={Boolean(pendingDelete)}
+        open={Boolean(pendingDelete) && !isSuperAdmin}
         compact
         title="Eliminar producto"
         onClose={() => {

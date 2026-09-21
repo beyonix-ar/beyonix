@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
+import { OrderReplacements } from "./order-replacements"
+import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
+import { humanizeBillingError } from "@/lib/admin/billing-errors"
+import { getCancellationProgress } from "@/lib/admin/order-operational-progress"
+import { OperationalProgress } from "../../components/operational-progress"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertTriangle,
@@ -1945,6 +1950,10 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
   })
 
   const uniqueEvents = new Map<string, OrderTimelineEvent>()
+  for (const event of auditEvents.filter((entry) => entry.action === "order_replacement_created")) {
+    addEvent({ key: `replacement:${event.created_at}:${event.metadata?.replacementVariantId}`, title: "Reemplazo registrado", at: event.created_at,
+      description: `${Number(event.metadata?.quantity || 0)} unidades retiradas de stock para el reemplazo. Coordiná su entrega por separado.`, type: "success" })
+  }
   for (const event of events) {
     const dedupeKey = `${event.key}:${event.at}`
     if (!uniqueEvents.has(dedupeKey)) uniqueEvents.set(dedupeKey, event)
@@ -4590,7 +4599,7 @@ function BillingManagementPanel({
           )}
           {pedido.credit_note_error && !creditNoteIssued && (
             <p className="mt-3 rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
-              {pedido.credit_note_error}
+              {humanizeBillingError(pedido.credit_note_error)}
             </p>
           )}
         </div>
@@ -4765,6 +4774,8 @@ function AdminOrderSummaryDashboard({
   financialBreakdown: ReturnType<typeof getOrderFinancialBreakdown>
   onGoToView: (view: AdminOrderDetailView) => void
 }) {
+  const { user } = useAuth()
+  const canManageFinancials = getAdminCapabilities(user?.rol).canManageFinancials
   const action = getOrderRecommendedAction(pedido)
   const latestActivity = getOrderLatestActivity(pedido)
   const mainStatus = getExecutiveOrderStatus(pedido)
@@ -4826,7 +4837,7 @@ function AdminOrderSummaryDashboard({
         <div className="admin-order-rs-action">
           <p className="admin-order-rs-eyebrow">Próxima acción</p>
           <p className="admin-order-rs-action-title">{action.title}</p>
-          {action.buttonLabel && (
+          {action.buttonLabel && (canManageFinancials || !["pago", "facturacion", "cancelacion"].includes(action.target)) && (
             <button
               type="button"
               onClick={() => onGoToView(action.target)}
@@ -5084,6 +5095,8 @@ function PedidoDetailModal({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { theme: adminTheme } = useAdminTheme()
+  const { user: currentAdmin } = useAuth()
+  const capabilities = getAdminCapabilities(currentAdmin?.rol)
   const items = pedido.orden_items ?? []
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
@@ -5183,8 +5196,8 @@ function PedidoDetailModal({
         ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
         : []),
       { view: "historial" as const, label: "Historial", icon: Clock3, badge: null },
-    ],
-    [showOrderSummaryIndicator, tabState],
+    ].filter((tab) => capabilities.canManageFinancials || !["pago", "facturacion", "cancelacion"].includes(tab.view)),
+    [showOrderSummaryIndicator, tabState, capabilities.canManageFinancials],
   )
   const paymentStatusValue =
     pedido.payment_status === "confirmado" || pedido.payment_status === "approved"
@@ -5647,6 +5660,7 @@ function PedidoDetailModal({
             </aside>
 
             <div className="admin-order-detail-content min-w-0 flex-1">
+          <OperationalProgress steps={getCancellationProgress(pedido)} />
           {activeView === "resumen" && (
             <AdminOrderSummaryDashboard
               pedido={pedido}
@@ -5655,7 +5669,7 @@ function PedidoDetailModal({
             />
           )}
 
-          {activeView === "pago" && (() => {
+          {activeView === "pago" && capabilities.canManageFinancials && (() => {
             const transfer = isTransferOrder(pedido)
             const nextAction = getOrderRecommendedAction(pedido)
 
@@ -5919,7 +5933,7 @@ function PedidoDetailModal({
             )
           })()}
 
-          {activeView === "facturacion" && (
+          {activeView === "facturacion" && capabilities.canManageFinancials && (
             <BillingManagementPanel
               pedido={pedido}
               isSuperAdmin={isSuperAdmin}
@@ -5933,7 +5947,7 @@ function PedidoDetailModal({
             />
           )}
 
-          {activeView === "cancelacion" && (
+          {activeView === "cancelacion" && capabilities.canManageFinancials && (
             <RefundManagementPanel
               pedido={pedido}
               onRefundUpdated={onRefundUpdated}
@@ -5941,6 +5955,7 @@ function PedidoDetailModal({
             />
           )}
 
+          {["atencion", "envio", "historial"].includes(activeView) && <OrderReplacements pedido={pedido} onUpdated={onWarrantyUpdated} />}
           {activeView === "atencion" && (
           <AdminClaimManager
             pedido={pedido}
@@ -7476,7 +7491,11 @@ export function AdminPedidos({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isAdmin, isSuperAdmin } = useAuth()
+  const { user, isSuperAdmin } = useAuth()
+  const isAdmin = getAdminCapabilities(user?.rol).canManageFinancials
+  const [search, setSearch] = useState("")
+  const [serverSearch, setServerSearch] = useState("")
+  useEffect(() => { const timer = setTimeout(() => setServerSearch(search.trim()), 350); return () => clearTimeout(timer) }, [search])
   const {
     pedidos,
     total,
@@ -7486,8 +7505,7 @@ export function AdminPedidos({
     error,
     updatePedidoEstado,
     reloadPedidos,
-  } = usePedidos({ orderId: initialOrderId })
-  const [search, setSearch] = useState("")
+  } = usePedidos({ orderId: initialOrderId, search: serverSearch })
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [attentionFilter, setAttentionFilter] =
     useState<AdminNotificationTone | "all">(() => {
@@ -7820,7 +7838,7 @@ export function AdminPedidos({
       ]
         .join(" ")
         .toLowerCase()
-      const matchesSearch = [
+      const matchesSearch = serverSearch.length > 0 || [
         searchableText.includes(normalizedSearch),
         compactSearch.length > 0 && searchableText.replace(/[#\s-]/g, "").includes(compactSearch),
       ].some(Boolean)
@@ -7838,7 +7856,7 @@ export function AdminPedidos({
 
       return matchesSearch && matchesStatus && matchesAttention
     })
-  }, [attentionFilter, attentionLastSeenAt, attentionOrderIds, pedidos, search, statusFilter])
+  }, [attentionFilter, attentionLastSeenAt, attentionOrderIds, pedidos, search, serverSearch, statusFilter])
 
   const handleEstadoChange = async (
     pedido: SupabasePedido,
@@ -8266,10 +8284,7 @@ export function AdminPedidos({
       const data = (await response.json()) as { error?: string }
 
       if (!response.ok) {
-        const detail = data.error || "No se pudo emitir factura."
-        const message = /ARCA_|configur|CUIT|PTO_VTA|cert|private/i.test(detail)
-          ? `Revisar configuración fiscal. ${detail}`
-          : detail
+        const message = humanizeBillingError(data.error)
 
         setNotice({ type: "error", message })
         return { ok: false, message }
@@ -8281,7 +8296,7 @@ export function AdminPedidos({
       return { ok: true, message }
     } catch (error) {
       console.error("ADMIN_INVOICE_ISSUE_ERROR", error)
-      const message = "Error de conexión con ARCA. Inténtalo de nuevo."
+      const message = humanizeBillingError(error)
       setNotice({ type: "error", message })
       return { ok: false, message }
     }
@@ -8407,6 +8422,9 @@ export function AdminPedidos({
       return <div className="flex min-h-[50vh] items-center justify-center"><LoaderCircle className="size-8 animate-spin text-beyonix-sky" /></div>
     }
 
+    if (error) {
+      return <div role="alert" className="space-y-4 p-6"><p>{error}</p><button type="button" onClick={() => void reloadPedidos()} className="admin-ds-button admin-ds-button-secondary">Reintentar carga</button><button type="button" onClick={() => router.push("/admin/pedidos")} className="ml-3 underline">Volver a pedidos</button></div>
+    }
     if (!previewPedido) {
       return <div className="p-6"><button type="button" onClick={() => router.push("/admin/pedidos")} className="cursor-pointer text-sm font-bold text-beyonix-sky">← Volver a pedidos</button><p className="mt-4 text-sm text-white/60">No encontramos este pedido.</p></div>
     }
@@ -8488,7 +8506,7 @@ export function AdminPedidos({
               <AdminSearchInput
                 title="Buscar pedido"
                 ariaLabel="Buscar pedido"
-                placeholder="Buscar pedido, cliente o producto"
+                placeholder="Pedido, cliente, SKU, tracking, factura o pago MP"
                 value={search}
                 onChange={setSearch}
               />

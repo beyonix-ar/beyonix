@@ -26,8 +26,20 @@ export async function GET(request: Request) {
   const requestedLimit = Number(url.searchParams.get("limit") ?? 50)
   const requestedOffset = Number(url.searchParams.get("offset") ?? 0)
   const orderId = Number(url.searchParams.get("id"))
+  const search = (url.searchParams.get("search") ?? "").trim()
+  if (!Number.isFinite(requestedLimit) || !Number.isFinite(requestedOffset) || !Number.isSafeInteger(orderId) || orderId < 0) return Response.json({ error: "Los filtros del pedido no son válidos." }, { status: 400 })
+  if (search.length > 160) return Response.json({ error: "La búsqueda es demasiado larga." }, { status: 400 })
+  let searchTotal: number | null = null
+  let searchIds: number[] | null = null
   const limit = Math.min(100, Math.max(10, Math.floor(requestedLimit)))
   const offset = Math.max(0, Math.floor(requestedOffset))
+  if (search.length > 0 && !notificationView && !orderId) {
+    const { data, error } = await auth.admin.rpc("search_admin_orders", { p_search: search, p_limit: limit, p_offset: offset })
+    if (error || !data || !Array.isArray(data.ids) || !data.ids.every((id: unknown) => typeof id === "number" && Number.isSafeInteger(id)) || !Number.isFinite(Number(data.total))) return Response.json({ error: "No se pudo realizar la búsqueda. Reintentá la consulta." }, { status: 500 })
+    searchIds = data.ids as number[]
+    searchTotal = Number(data.total)
+    if (!searchIds.length) return Response.json({ pedidos: [], total: searchTotal })
+  }
   const notificationColumns = [
     "id",
     "created_at",
@@ -71,6 +83,8 @@ export async function GET(request: Request) {
       .limit(500)
   } else if (Number.isInteger(orderId) && orderId > 0) {
     ordersQuery = ordersQuery.eq("id", orderId)
+  } else if (searchIds) {
+    ordersQuery = ordersQuery.in("id", searchIds).order("admin_visible_at", { ascending: false }).order("id", { ascending: false })
   } else {
     ordersQuery = ordersQuery
       .not("admin_visible_at", "is", null)
@@ -100,7 +114,8 @@ export async function GET(request: Request) {
 
   const pedidos = (orderRows ?? []) as unknown as SupabasePedido[]
   if (!pedidos.length) {
-    return Response.json({ pedidos, total: notificationView ? 0 : count ?? 0 })
+    if (orderId > 0) return Response.json({ error: "El pedido no existe." }, { status: 404 })
+    return Response.json({ pedidos, total: notificationView ? 0 : searchTotal ?? count ?? 0 })
   }
 
   if (notificationView) {
@@ -465,6 +480,6 @@ export async function GET(request: Request) {
       customer_credit_restored_amount: creditReversalByOrder.get(pedido.id) ?? null,
       customer_credit_restored_at: creditReversalAtByOrder.get(pedido.id) ?? null,
     })),
-    total: count ?? pedidos.length,
+    total: searchTotal ?? count ?? pedidos.length,
   })
 }

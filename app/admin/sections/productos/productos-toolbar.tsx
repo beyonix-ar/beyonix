@@ -26,6 +26,7 @@ type VariantFilter = "todas" | "sin_variantes"
 type ProductView = "productos" | "categorias"
 
 interface ProductosToolbarProps {
+  canManage: boolean
   search: string
   colorSearch: string
   colorOptions: ProductColorOption[]
@@ -58,6 +59,7 @@ interface ProductosToolbarProps {
 }
 
 export function ProductosToolbar({
+  canManage,
   search,
   colorSearch,
   colorOptions,
@@ -107,7 +109,7 @@ export function ProductosToolbar({
                 <Package className="size-3.5" />
                 Productos
               </button>
-              <button
+              {canManage && <button
                 type="button"
                 aria-label="Ver categorías"
                 onClick={() => onViewChange("categorias")}
@@ -119,7 +121,7 @@ export function ProductosToolbar({
               >
                 <FolderOpen className="size-3.5" />
                 Categorías
-              </button>
+              </button>}
             </div>
 
             {view === "categorias" && (

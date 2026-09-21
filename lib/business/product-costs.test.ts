@@ -9,6 +9,7 @@ import {
   getTargetMarginCostBasisError,
   getWorstCaseKnownCost,
   resolveProductVariantCosts,
+  resolveReportedUnitCost,
   resolveTargetMarginCostBasis,
   type ProductCostLedgerRow,
 } from "./product-costs.ts"
@@ -389,6 +390,70 @@ test("margen objetivo permitido cuando TODAS las variantes vendibles tienen cost
   assert.equal(basis.ok, true)
   if (!basis.ok) return
   assert.equal(basis.cost, 1200)
+})
+
+// --- Snapshot de costo histórico (Auditoría 3/7, Fase 2) -----------------
+
+test("resolveReportedUnitCost: el snapshot congelado gana siempre sobre el recálculo dinámico", () => {
+  assert.equal(resolveReportedUnitCost(1000, 1500), 1000)
+})
+
+test("resolveReportedUnitCost: sin snapshot, cae al recálculo dinámico (compatibilidad con ventas históricas)", () => {
+  assert.equal(resolveReportedUnitCost(null, 1500), 1500)
+  assert.equal(resolveReportedUnitCost(undefined, 1500), 1500)
+})
+
+test("resolveReportedUnitCost: sin snapshot y sin poder recalcular, no inventa un costo", () => {
+  assert.equal(resolveReportedUnitCost(null, null), null)
+})
+
+test("resolveReportedUnitCost: un snapshot en 0 es un valor real, no se lo trata como ausente", () => {
+  assert.equal(resolveReportedUnitCost(0, 1500), 0)
+})
+
+// --- Caso obligatorio (Auditoría 3/7 Fase 1, revalidado en Fase 5): compra
+// A 100u @ $1.000 recibida + compra B 50u @ $3.000 pendiente, venta de 10u
+// @ $3.000. Usa las funciones canónicas REALES (las mismas que dashboard/
+// route.ts y mercadolibre-sales/route.ts importan tras la Fase 1 -- ya no
+// hay una reimplementación local que pueda divergir). ---
+
+test("CASO OBLIGATORIO 1: compra pendiente NO se usa para costear -- costo=$1.000, COGS=$10.000, ganancia=$20.000, margen=66,67%", () => {
+  const ledgers = buildProductCostLedgers([
+    row({ product_id: 100, purchase_date: "2026-01-01", quantity: 100, total_cost: 100_000, reception_status: "recibida" }),
+    row({ product_id: 100, purchase_date: "2026-01-15", quantity: 50, total_cost: 150_000, reception_status: "pendiente", received_quantity: 0 }),
+  ])
+
+  const unitCost = getHistoricalUnitCost(ledgers, 100, null, "2026-02-01")
+  assert.equal(unitCost, 1000)
+
+  const cogs = unitCost! * 10
+  assert.equal(cogs, 10_000)
+
+  // Igual fórmula que calculateExternalSaleProfitability/dashboard: ganancia
+  // = (bruto - comisión - envío - otros gastos) - costo de mercadería.
+  const grossAmount = 10 * 3000
+  const profit = grossAmount - cogs
+  assert.equal(profit, 20_000)
+  assert.equal(Math.round((profit / grossAmount) * 100 * 100) / 100, 66.67)
+})
+
+test("CASO OBLIGATORIO 2: compra con received_quantity=25 de 50 prorratea sólo la mitad del costo", () => {
+  const ledgers = buildProductCostLedgers([
+    row({ product_id: 101, purchase_date: "2026-01-01", quantity: 100, total_cost: 100_000, reception_status: "recibida" }),
+    row({
+      product_id: 101,
+      purchase_date: "2026-01-15",
+      quantity: 50,
+      total_cost: 150_000,
+      reception_status: "parcial",
+      received_quantity: 25,
+    }),
+  ])
+
+  // 100u a $1.000 ($100.000) + 25u recibidas de la parcial, prorrateando
+  // $150.000 * 25/50 = $75.000 => 125u por $175.000 = $1.400/u.
+  const unitCost = getHistoricalUnitCost(ledgers, 101, null, "2026-02-01")
+  assert.equal(unitCost, 1400)
 })
 
 test("producto sin ningún costo: se distingue de 'falta el costo de una variante'", () => {

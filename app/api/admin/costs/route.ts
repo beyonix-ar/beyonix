@@ -612,29 +612,8 @@ export async function DELETE(request: Request) {
     )
   }
 
-  if (force && kind === "product") {
-    const { error: forceError } = await auth.admin.rpc(
-      "force_delete_purchase_super_admin",
-      {
-        p_purchase_id: id,
-        p_actor_id: auth.user.id,
-      },
-    )
-    if (forceError) {
-      const missingMigration =
-        /force_delete_purchase_super_admin|schema cache|PGRST202/i.test(
-          forceError.message,
-        )
-      return Response.json(
-        {
-          error: missingMigration
-            ? "Falta aplicar la migración 20260817140000_fix_force_delete_article_name_and_purchase_delete.sql."
-            : forceError.message || "No se pudo eliminar definitivamente la compra.",
-        },
-        { status: missingMigration ? 503 : 409 },
-      )
-    }
-    return Response.json({ success: true })
+  if (force) {
+    return Response.json({ error: "Esta operación requiere consultar el impacto actual y escribir la confirmación desde el diálogo de eliminación." }, { status: 409 })
   }
 
   if (kind === "expense") {

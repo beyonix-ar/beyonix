@@ -1,3 +1,5 @@
+import { getReceivedCostContribution } from "./product-costs.ts"
+
 export interface StandaloneCostRow {
   id: string
   product_id: number | null
@@ -7,6 +9,10 @@ export interface StandaloneCostRow {
   purchase_date: string
   quantity: number
   total_cost: number
+  /** Unidades efectivamente recibidas. `null` en filas históricas previas a la columna. */
+  received_quantity: number | null
+  /** `null` se interpreta como 'recibida' (default NOT NULL de la tabla). */
+  reception_status: string | null
   created_at?: string | null
 }
 
@@ -66,6 +72,14 @@ export function buildStandaloneCostItems(rows: StandaloneCostRow[]) {
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }))
 }
 
+/**
+ * Costo histórico ponderado de un artículo suelto/no catalogado, con la
+ * misma semántica de recepción que `getHistoricalUnitCost` (compras
+ * `pendiente`/`anulada` no aportan, `parcial` prorratea por
+ * `received_quantity`). Usa `getReceivedCostContribution` -- fuente única
+ * compartida con `lib/business/product-costs.ts` -- para no duplicar esa
+ * lógica ni divergir de ella.
+ */
 export function getStandaloneHistoricalUnitCost(
   rows: StandaloneCostRow[],
   key: string,
@@ -86,8 +100,10 @@ export function getStandaloneHistoricalUnitCost(
     .sort((a, b) => a.purchase_date.localeCompare(b.purchase_date))
 
   eligible.forEach((row) => {
-    quantity += Number(row.quantity ?? 0)
-    cost += Number(row.total_cost ?? 0)
+    const contribution = getReceivedCostContribution(row)
+    if (!contribution) return
+    quantity += contribution.quantity
+    cost += contribution.cost
   })
 
   return quantity > 0 ? cost / quantity : null

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   Ban,
   CheckCircle2,
@@ -200,6 +200,18 @@ function CreditTopupsPanel({
   const [amounts, setAmounts] = useState<Record<string, string>>({})
   const [topupToReject, setTopupToReject] = useState<CustomerCreditTopupReview | null>(null)
   const hasPendingTopups = topups.length > 0
+  useEffect(() => {
+    const focusTopup = () => {
+      const target = window.location.hash.slice(1)
+      if (!target.startsWith("topup-")) return
+      const row = document.getElementById(target)
+      row?.scrollIntoView({ block: "center" })
+      row?.focus({ preventScroll: true })
+    }
+    focusTopup()
+    window.addEventListener("hashchange", focusTopup)
+    return () => window.removeEventListener("hashchange", focusTopup)
+  }, [topups])
 
   return (
     <>
@@ -276,7 +288,7 @@ function CreditTopupsPanel({
                 const amount = amounts[topup.id] ?? ""
 
                 return (
-                  <tr key={topup.id} className="bg-[#0D131A] transition hover:bg-[#111B25]">
+                  <tr key={topup.id} id={`topup-${topup.id}`} tabIndex={-1} className="bg-[#0D131A] transition hover:bg-[#111B25] target:outline target:outline-2 target:outline-beyonix-sky">
                     <td className="px-3 py-3">
                       <p className="truncate text-xs font-black uppercase text-white/90">
                         {profile?.username || "Sin usuario"}

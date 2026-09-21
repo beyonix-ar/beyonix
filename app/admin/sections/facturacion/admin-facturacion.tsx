@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { AlertTriangle, ExternalLink, FileText, LoaderCircle, RefreshCw } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
+import { humanizeBillingError } from "@/lib/admin/billing-errors"
 import {
   adminPageClassName,
   AdminBadge,
@@ -61,7 +62,7 @@ function getInvoiceStatusTone(status?: PendingInvoiceOrder["invoice_status"]) {
 }
 
 function getInvoiceErrorText(order: PendingInvoiceOrder) {
-  if (order.invoice_error?.trim()) return order.invoice_error.trim()
+  if (order.invoice_error?.trim()) return humanizeBillingError(order.invoice_error)
   if (order.invoice_status === "error") return "Error sin detalle registrado."
   return ""
 }
@@ -70,6 +71,7 @@ export function AdminFacturacion() {
   const router = useRouter()
   const [orders, setOrders] = useState<PendingInvoiceOrder[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState("")
   const [notice, setNotice] = useState<Notice>(null)
   const [search, setSearch] = useState("")
   const [issuingId, setIssuingId] = useState<number | null>(null)
@@ -87,6 +89,7 @@ export function AdminFacturacion() {
       }
 
       const response = await fetch("/api/admin/facturacion", {
+        signal: AbortSignal.timeout(25_000),
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
@@ -101,14 +104,9 @@ export function AdminFacturacion() {
       }
 
       setOrders(data.orders ?? [])
+      setLoadError("")
     } catch (error) {
-      setNotice({
-        type: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "No se pudieron cargar las facturas pendientes.",
-      })
+      setLoadError(error instanceof Error && /sesión/i.test(error.message) ? error.message : "No se pudieron cargar las facturas pendientes. Reintentá la consulta.")
     } finally {
       setLoading(false)
     }
@@ -187,7 +185,7 @@ export function AdminFacturacion() {
         type: "error",
         message:
           error instanceof Error
-            ? error.message
+            ? humanizeBillingError(error)
             : "No se pudo emitir la factura.",
       })
       await loadOrders({ silent: true })
@@ -237,6 +235,8 @@ export function AdminFacturacion() {
 
         {loading ? (
           <AdminSkeleton rows={8} className="p-3" />
+        ) : loadError ? (
+          <div role="alert" className="p-6 text-center"><p>{loadError}</p><AdminSecondaryButton className="mt-3" onClick={() => void loadOrders()}>Reintentar carga</AdminSecondaryButton></div>
         ) : filteredOrders.length === 0 ? (
           <AdminEmptyState
             icon={<FileText className="size-5" />}

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import { AdminRequestError } from "@/lib/admin/request-error"
 
 import type {
   SupabasePedido,
@@ -9,21 +10,24 @@ export async function getPedidos({
   limit = 50,
   offset = 0,
   orderId,
+  search = "",
 }: {
   notificationView?: boolean
   limit?: number
   offset?: number
   orderId?: number
+  search?: string
 } = {}) {
   const {
     data: { session },
   } = await supabase.auth.getSession()
 
   if (!session?.access_token) {
-    throw new Error("La sesión administrativa venció.")
+    throw new AdminRequestError(401, "La sesión administrativa venció.")
   }
 
   const params = new URLSearchParams()
+  if (search.trim().length > 0) params.set("search", search.trim())
   if (notificationView) {
     params.set("view", "notifications")
   } else if (orderId) {
@@ -40,6 +44,7 @@ export async function getPedidos({
       Authorization: `Bearer ${session.access_token}`,
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(25_000),
   })
   const data = (await response.json()) as {
     pedidos?: SupabasePedido[]
@@ -48,7 +53,7 @@ export async function getPedidos({
   }
 
   if (!response.ok) {
-    throw new Error(data.error || "No se pudieron cargar los pedidos.")
+    throw new AdminRequestError(response.status, data.error || "No se pudieron cargar los pedidos.")
   }
 
   return {

@@ -137,46 +137,7 @@ export async function DELETE(
     .eq("producto_id", productId)
 
   if (force) {
-    const { error: forceError } = await auth.admin.rpc(
-      "force_delete_product_super_admin",
-      {
-        p_product_id: productId,
-        p_actor_id: auth.user.id,
-      },
-    )
-
-    if (forceError) {
-      const missingMigration =
-        /force_delete_product_super_admin|schema cache|PGRST202/i.test(
-          forceError.message,
-        )
-      return Response.json(
-        {
-          error: missingMigration
-            ? "Falta aplicar la migración 20260817100000_super_admin_force_delete.sql."
-            : forceError.message ||
-              "No se pudo eliminar definitivamente el producto.",
-        },
-        { status: missingMigration ? 503 : 409 },
-      )
-    }
-
-    const paths = (images ?? [])
-      .map((image) =>
-        typeof image.url === "string"
-          ? image.url.split("/imagenes-productos/")[1]
-          : null,
-      )
-      .filter((path): path is string => Boolean(path))
-
-    if (paths.length > 0) {
-      await auth.admin.storage.from("imagenes-productos").remove(paths)
-    }
-
-    return Response.json({
-      mode: "deleted",
-      message: `Se eliminó definitivamente “${product.nombre}”. Las compras, ventas y devoluciones asociadas se conservan desvinculadas para mantener la trazabilidad.`,
-    })
+    return Response.json({ error: "Esta operación requiere consultar el impacto actual y escribir la confirmación desde el diálogo de eliminación." }, { status: 409 })
   }
 
   const { error: deleteError } = await auth.admin

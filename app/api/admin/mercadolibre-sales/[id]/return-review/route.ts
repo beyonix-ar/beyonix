@@ -41,6 +41,23 @@ export async function POST(
   const discountReason = optionalText(body?.discountReason, 300)
   const nonSellableReason = optionalText(body?.nonSellableReason, 300)
   const occurredAt = optionalDateTime(body?.occurredAt)
+  // Auditoría 4/7 (P0): control optimista -- el admin manda el approved_at
+  // que vio en pantalla (null si es la primera revisión). Si alguien más ya
+  // corrigió mientras tanto, la RPC rechaza con ML_RETURN_CONFLICT en vez
+  // de pisar en silencio la clasificación del otro admin.
+  const expectedApprovedAt = optionalDateTime(body?.expectedApprovedAt)
+  const correctionReason = optionalText(body?.correctionReason, 500)
+
+  if (!body || !("expectedApprovedAt" in body) || expectedApprovedAt === undefined) {
+    return Response.json(
+      { error: "No se pudo verificar el estado actual de la revisión." },
+      { status: 400 },
+    )
+  }
+
+  if (expectedApprovedAt && (correctionReason?.length ?? 0) < 3) {
+    return Response.json({ error: "Esta devolución ya tiene una revisión registrada: indicá el motivo de la corrección." }, { status: 400 })
+  }
 
   if (
     receivedQuantity == null ||
@@ -153,6 +170,8 @@ export async function POST(
       p_notes: optionalText(body?.notes, 1000),
       p_occurred_at: occurredAt,
       p_reviewed_by: auth.user.id,
+      p_expected_approved_at: expectedApprovedAt,
+      p_correction_reason: correctionReason,
     },
   )
 
@@ -165,6 +184,8 @@ export async function POST(
       )
     const missingProductLink =
       /Primero vinculá|debe estar vinculada a un producto/i.test(error.message)
+    const conflict = /ML_RETURN_CONFLICT/.test(error.message)
+    const correctionReasonRequired = /ML_RETURN_CORRECTION_REASON_REQUIRED/.test(error.message)
     return Response.json(
       {
         error: outdatedConditionConstraint
@@ -173,6 +194,10 @@ export async function POST(
             ? "Falta aplicar la migración 20260801091000_mercadolibre_returns_and_bulk_delete.sql."
             : missingProductLink
               ? "Primero vinculá el SKU de la venta con un producto antes de guardar la revisión física."
+            : conflict
+              ? "Esta devolución fue modificada por otro administrador. Recargá los datos antes de continuar."
+            : correctionReasonRequired
+              ? "Esta devolución ya tiene una revisión registrada: indicá el motivo de la corrección."
             : /STOCK_INSUFICIENTE/i.test(error.message)
               ? "No hay stock suficiente para reclasificar esta devolución."
               : "No se pudo guardar la revisión física.",
@@ -182,6 +207,10 @@ export async function POST(
           ? 503
           : missingProductLink
             ? 409
+          : conflict
+            ? 409
+          : correctionReasonRequired
+            ? 400
           : /STOCK_INSUFICIENTE/i.test(error.message)
             ? 409
             : 500,

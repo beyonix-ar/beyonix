@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase/client"
 import type { MercadoLibreImportRow } from "@/lib/mercadolibre/sales-report"
 import { validateMercadoLibreImportBatch } from "@/lib/mercadolibre/import-integrity"
+import { buildReturnReviewRequest, type ReturnReviewPayload } from "@/lib/mercadolibre/return-review-client"
+import { AdminRequestError } from "@/lib/admin/request-error"
 
 export interface StoredMercadoLibreSale {
   id: string
@@ -84,10 +86,11 @@ async function request(path: string, init?: RequestInit) {
       ...init?.headers,
     },
     cache: "no-store",
+    signal: init?.signal ?? AbortSignal.timeout(30_000),
   })
   const data = (await response.json().catch(() => null)) as Record<string, unknown> | null
   if (!response.ok) {
-    throw new Error(
+    throw new AdminRequestError(response.status,
       typeof data?.error === "string" ? data.error : "No se pudo completar la operación.",
     )
   }
@@ -170,23 +173,8 @@ export async function saveMercadoLibreCostMapping(
 
 export async function saveMercadoLibreReturnReview(
   saleId: string,
-  payload: {
-    receivedQuantity: number
-    sellableQuantity: number
-    discountedQuantity: number
-    nonSellableQuantity: number
-    discountPercent: number | null
-    discountReason: string
-    nonSellableReason: string
-    notes: string
-    occurredAt?: string | null
-  },
+  payload: ReturnReviewPayload,
 ) {
-  return request(
-    `/api/admin/mercadolibre-sales/${encodeURIComponent(saleId)}/return-review`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  )
+  const operation = buildReturnReviewRequest(saleId, payload)
+  return request(operation.path, operation.init)
 }
