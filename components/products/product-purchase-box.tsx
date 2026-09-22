@@ -21,7 +21,6 @@ interface ProductPurchaseBoxProps {
   /** CFTEA anual (%), sólo cuando hay financiación real (nunca en 1 pago). */
   cfteaPercent?: number | null
   priceWithoutNationalTaxesCash?: number | null
-  priceWithoutNationalTaxesFinanced?: number | null
   isInCart?: boolean
   cartQuantity?: number
   maxReached?: boolean
@@ -46,6 +45,14 @@ function formatPercent(value: number) {
   }).format(value)
 }
 
+/** "10" -> "10%", "7.5" -> "7,5%" -- nunca fuerza un decimal ",0" innecesario. */
+function formatOffPercent(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
 export function ProductPurchaseBox({
   price,
   originalPrice,
@@ -55,7 +62,6 @@ export function ProductPurchaseBox({
   installmentPlans = [],
   cfteaPercent = null,
   priceWithoutNationalTaxesCash = null,
-  priceWithoutNationalTaxesFinanced = null,
   isInCart = false,
   cartQuantity = 0,
   maxReached = false,
@@ -117,34 +123,24 @@ export function ProductPurchaseBox({
         )}
       </div>
 
-      {priceWithoutNationalTaxesCash != null && (
-        <p className="mb-2 text-10px font-medium leading-4 text-white/40">
-          Precio sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxesCash)}
-        </p>
-      )}
-
       {transferPrice != null && transferPrice < price && (
-        <p className="beyonix-modal-body mb-3 text-13px font-semibold text-emerald-300">
+        <p className="beyonix-modal-body mb-2 text-13px font-semibold text-white/85">
           Transferencia {formatPrice(transferPrice)}{" "}
-          <span className="text-11px font-medium text-emerald-300/75">
-            ({formatPercent(transferDiscountPercent)}% OFF)
+          <span className="beyonix-success-text text-emerald-400 font-bold">
+            ({formatOffPercent(transferDiscountPercent)}% OFF)
           </span>
         </p>
       )}
 
       {!!maxInstallmentPlan && financedPrice != null && (
-        <div className="mb-3">
+        <div className="mb-2">
+          {/* Concepto de cara al cliente: "Hasta N cuotas de $X", nunca
+              "precio financiado" (texto técnico) ni "sin interés" -- el
+              financiado es mayor al contado por diseño (cubre el costo de
+              MP), así que "sin interés" sería una leyenda falsa. */}
           <p className="beyonix-modal-title text-14px font-semibold text-white">
-            Hasta {maxInstallmentPlan.count} cuotas fijas de {formatPrice(maxInstallmentPlan.amount)}
+            Hasta {maxInstallmentPlan.count} cuotas de {formatPrice(maxInstallmentPlan.amount)}
           </p>
-          <p className="beyonix-modal-body mt-0.5 text-12px font-medium text-white/60">
-            Precio financiado: {formatPrice(financedPrice)}
-          </p>
-          {priceWithoutNationalTaxesFinanced != null && (
-            <p className="mt-0.5 text-10px font-medium leading-4 text-white/40">
-              Precio sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxesFinanced)}
-            </p>
-          )}
 
           {installmentPlans.length > 1 && (
             <button
@@ -163,7 +159,7 @@ export function ProductPurchaseBox({
             <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
               {installmentPlans.map((plan) => (
                 <li key={plan.count} className="beyonix-modal-body text-12px font-medium text-white/70">
-                  {plan.count} cuotas fijas de {formatPrice(plan.amount)}
+                  {plan.count} cuotas de {formatPrice(plan.amount)}
                 </li>
               ))}
             </ul>
@@ -173,11 +169,17 @@ export function ProductPurchaseBox({
               nunca se puede decir "sin interés" -- se muestra el costo
               financiero total efectivo anual en su lugar. */}
           {cfteaPercent != null && (
-            <p className="mt-2 text-10px font-medium leading-4 text-white/45">
-              Costo financiero total efectivo anual (CFTEA): {formatPercent(cfteaPercent)}%
+            <p className="beyonix-modal-muted mt-1 text-10px font-medium leading-4 text-white/45">
+              CFTEA: {formatPercent(cfteaPercent)}%
             </p>
           )}
         </div>
+      )}
+
+      {priceWithoutNationalTaxesCash != null && (
+        <p className="beyonix-modal-muted mb-3 text-10px font-medium leading-4 text-white/40">
+          Precio s/imp. nac.: {formatPrice(priceWithoutNationalTaxesCash)}
+        </p>
       )}
 
       <div className="beyonix-modal-muted mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-12px font-medium text-white/45">

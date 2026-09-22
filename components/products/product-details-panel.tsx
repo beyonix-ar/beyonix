@@ -199,10 +199,6 @@ export function ProductDetailsPanel({
     cashPrice,
     pricing.nationalTaxesIncidencePercent,
   )
-  const priceWithoutNationalTaxesFinanced =
-    financedPrice != null
-      ? getPriceWithoutNationalTaxes(financedPrice, pricing.nationalTaxesIncidencePercent)
-      : null
   const hasVariants =
     colors.length > 1 || colors[0]?.value !== DEFAULT_VARIANT_VALUE
   const productSpecifications =
@@ -299,7 +295,6 @@ export function ProductDetailsPanel({
           installmentPlans={installmentPlans}
           cfteaPercent={cftea}
           priceWithoutNationalTaxesCash={priceWithoutNationalTaxesCash}
-          priceWithoutNationalTaxesFinanced={priceWithoutNationalTaxesFinanced}
           isInCart={isInCart}
           cartQuantity={cartQuantity}
           maxReached={
