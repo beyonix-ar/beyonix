@@ -161,7 +161,7 @@ export function AccountMenu({
             Mi cuenta
           </Link>
           <Link
-            href="/cuenta?tab=cargar-saldo"
+            href="/cuenta?tab=saldo"
             onClick={() => setOpen(false)}
             className={cn(accountMenuItemClass, "font-semibold text-beyonix-sky")}
           >

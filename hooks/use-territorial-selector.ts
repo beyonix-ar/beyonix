@@ -44,10 +44,24 @@ export const TERRITORIAL_PROVINCE_OPTIONS: TerritorialSelectOption[] =
     return { value, label: value }
   })
 
-export function useTerritorialSelector() {
-  const [province, setProvinceValue] = useState("")
-  const [locality, setLocalityValue] = useState("")
-  const [postalCode, setPostalCodeValue] = useState("")
+export interface TerritorialSelectorInitialValue {
+  province?: string
+  locality?: string
+  postalCode?: string
+}
+
+export function useTerritorialSelector(
+  initial?: TerritorialSelectorInitialValue,
+) {
+  // Sólo se lee en el primer render (mismo contrato que useState): sirve
+  // para hidratar el selector con datos históricos ya guardados (ver
+  // components/account/profile-sections.tsx MisDatos), nunca para
+  // resincronizar en caliente si el valor inicial cambia después.
+  const [province, setProvinceValue] = useState(initial?.province ?? "")
+  const [locality, setLocalityValue] = useState(initial?.locality ?? "")
+  const [postalCode, setPostalCodeValue] = useState(
+    initial?.postalCode ?? "",
+  )
 
   const provinceRef = useRef(province)
   const localityRef = useRef(locality)
@@ -104,19 +118,24 @@ export function useTerritorialSelector() {
       setLocalityOptions(localities)
 
       const prevLocality = localityRef.current
-      const prevPostalCode = postalCodeRef.current
       if (!prevLocality) return
 
       const canonical = findCanonicalLocality(localities, prevLocality)
-      if (
-        (canonical?.name ?? "") === prevLocality &&
-        (canonical || !prevPostalCode)
-      ) {
+
+      if (!canonical) {
+        // Valor existente (por ejemplo, histórico) que no aparece en el
+        // catálogo de esta provincia -- nunca se pisa en silencio: se
+        // conserva tal cual estaba y pasa a modo manual (mismo criterio que
+        // enableManualLocality, pero sin vaciar el valor).
+        setManualLocalityMode(true)
+        setLocalityLoadError("")
+        setLocalitiesLoading(false)
         return
       }
 
-      setLocality(canonical?.name ?? "")
-      if (!canonical) setPostalCode("")
+      if (canonical.name !== prevLocality) {
+        setLocality(canonical.name)
+      }
     }
 
     const cached = peekLocalitiesForProvince(currentProvince)
@@ -171,15 +190,27 @@ export function useTerritorialSelector() {
       )
       setPostalCodeOptions(postalCodes)
 
+      const prevPostalCode = postalCodeRef.current
       const nextPostalCode = resolvePostalCodeFromCatalog(
         postalCodes,
-        postalCodeRef.current,
+        prevPostalCode,
       )
       const canonicalLocality = normalizeArgentineLocality(result.locality)
 
+      if (!nextPostalCode && prevPostalCode) {
+        // Código postal existente (por ejemplo, histórico) que no aparece en
+        // el catálogo de esta localidad -- nunca se pisa en silencio: se
+        // conserva tal cual estaba y pasa a modo manual.
+        setManualPostalCodeMode(true)
+        if (canonicalLocality !== localityRef.current) {
+          setLocality(canonicalLocality)
+        }
+        return
+      }
+
       if (
         canonicalLocality !== localityRef.current ||
-        nextPostalCode !== postalCodeRef.current
+        nextPostalCode !== prevPostalCode
       ) {
         setLocality(canonicalLocality)
         setPostalCode(nextPostalCode)

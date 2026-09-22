@@ -165,10 +165,6 @@ function KeyFact({
 export default async function TerminosPage() {
   const siteSettings = await getSiteSettings()
   const shippingSettings = siteSettings.shipping
-  const mercadoPagoSurchargePercent =
-    siteSettings.customerCreditPayments.mercadoPagoSurchargePercent
-  const mercadoPagoMinimumAmount =
-    siteSettings.customerCreditPayments.mercadoPagoMinimumAmount
   const isShippingBonusEnabled = shippingSettings.freeShippingMode === "full"
   const shippingBenefitText = isShippingBonusEnabled
     ? `Desde ${formatARS(shippingSettings.freeShippingMinAmount)}`
@@ -472,8 +468,10 @@ export default async function TerminosPage() {
                 serán revisados durante la siguiente jornada de atención.
               </p>
               <div className="beyonix-terms-highlight rounded-xl border border-[#49A9E8]/30 bg-[#0D2D43]/45 p-4 text-sm leading-6 text-white/68">
-                <strong className="text-white">Cargas de saldo mediante Mercado Pago.</strong>{" "}
-                El importe mínimo es de {formatARS(mercadoPagoMinimumAmount)}. Si el cliente elige este canal, se informa antes de pagar una comisión de Mercado Pago actualmente establecida en {mercadoPagoSurchargePercent}%. Este adicional se suma al total cobrado y no forma parte del saldo acreditado en BEYONIX. Mercado Pago y, cuando corresponda, la entidad emisora deciden la aprobación o el rechazo; BEYONIX no interviene en esa decisión. La acreditación se realiza automáticamente únicamente después de que el servidor de BEYONIX verifica con Mercado Pago el estado aprobado, la referencia, la moneda y el importe exacto de la operación. El regreso del navegador a BEYONIX o una pantalla de éxito, por sí solos, no acreditan saldo. Los pagos pendientes, rechazados o cancelados no generan saldo. Ante un reintegro, contracargo o reversión posterior informado por el proveedor, BEYONIX podrá ajustar el saldo relacionado o someter el caso a revisión, sin afectar los derechos legales del cliente. El porcentaje y el mínimo aplicables serán siempre los exhibidos antes de confirmar la operación.
+                <strong className="text-white">Origen del saldo a favor.</strong>{" "}
+                El cliente no puede cargar saldo por su cuenta ni por ningún medio de pago. El saldo a favor
+                sólo se genera por reintegros, devoluciones, cancelaciones u otros créditos otorgados
+                directamente por BEYONIX, y queda disponible para aplicarse en compras futuras.
               </div>
             </LegalSection>
 

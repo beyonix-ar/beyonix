@@ -1,7 +1,7 @@
 ﻿"use client"
 // @refresh reset
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -9,22 +9,17 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  Clock3,
   Coins,
-  Copy,
   CreditCard,
   Download,
   Eye,
   Heart,
   IdCard,
-  Landmark,
-  Loader2,
   LockKeyhole,
   LogOut,
   MessageCircle,
   ShieldCheck,
   ShoppingBag,
-  UploadCloud,
   User,
 } from "lucide-react"
 
@@ -50,13 +45,8 @@ import {
 import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
-import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
-import {
-  formatARS,
-  roundMoney,
-} from "@/lib/customer-credit"
-import { useSiteSettings } from "@/hooks/use-site-settings"
+import { formatARS } from "@/lib/customer-credit"
 import {
   formatCuentaPrice,
   formatOrderCardDate,
@@ -69,11 +59,6 @@ import {
   isInvoiceAvailable,
 } from "@/lib/account/account-utils"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
-import {
-  TRANSFER_ALIAS,
-  TRANSFER_ACCOUNT_HOLDER,
-  TRANSFER_CVU,
-} from "@/lib/payments/transfer"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
@@ -83,7 +68,6 @@ type ProfileView =
   | "home"
   | "ordenes"
   | "saldo"
-  | "cargar-saldo"
   | "datos"
   | "seguridad"
 
@@ -260,10 +244,8 @@ function OrderPageLoadingState({ variant = "detail" }: { variant?: "detail" | "c
 
 function MiSaldo({
   onBack,
-  onLoadBalance,
 }: {
   onBack: () => void
-  onLoadBalance: () => void
 }) {
   const customerCredit = useCustomerCredit()
 
@@ -279,915 +261,32 @@ function MiSaldo({
         <AccountPageHeader
           eyebrow="Mi cuenta"
           title="Saldo de cuenta"
-          description="Cargá saldo en tu cuenta y usalo cuando quieras para comprar en BEYONIX."
+          description="Usalo cuando quieras para comprar en BEYONIX."
           className="border-transparent bg-transparent p-0 shadow-none"
         />
 
-        <div className="mt-5 flex flex-col gap-4 rounded-2xl border border-beyonix-blue-light/25 bg-[linear-gradient(135deg,#112A43,#0B1724)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div>
-            <p className="text-10px font-semibold uppercase tracking-widest text-beyonix-sky/75">
-              Disponible
+        <div className="mt-5 rounded-2xl border border-beyonix-blue-light/25 bg-[linear-gradient(135deg,#112A43,#0B1724)] p-5 sm:p-6">
+          <p className="text-10px font-semibold uppercase tracking-widest text-beyonix-sky/75">
+            Saldo disponible
+          </p>
+          <div className="mt-2">
+            <p className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+              {customerCredit.loading ? "Cargando…" : formatARS(customerCredit.balance)}
             </p>
-            <div className="mt-2">
-              <p className="text-3xl font-black tracking-tight text-white sm:text-4xl">
-                {customerCredit.loading ? "Cargando…" : formatARS(customerCredit.balance)}
+            {customerCredit.error ? (
+              <p className="mt-2 text-xs text-red-200">{customerCredit.error}</p>
+            ) : (
+              <p className="mt-2 text-xs leading-5 text-white/60">
+                Tu saldo se aplica directamente al momento de pagar.
               </p>
-              {customerCredit.error ? (
-                <p className="mt-2 text-xs text-red-200">{customerCredit.error}</p>
-              ) : (
-                <p className="mt-2 text-xs leading-5 text-white/60">
-                  Tu saldo se aplica directamente al momento de pagar.
-                </p>
-              )}
-            </div>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={onLoadBalance}
-            className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-beyonix-blue-light/40 bg-[#173C5A] px-5 text-sm font-semibold text-white transition hover:border-beyonix-sky/60 hover:bg-[#1C486B] sm:self-auto"
-          >
-            <Landmark className="size-4" aria-hidden="true" />
-            Cargar saldo
-          </button>
         </div>
 
-        <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-4 py-4 sm:px-5">
-          <p className="text-sm font-semibold text-[var(--account-text-primary)]">¿Cómo funciona?</p>
-
-          <div className="relative mt-4 grid gap-5 sm:grid-cols-3 sm:gap-0">
-            <div className="pointer-events-none absolute left-[16.66%] right-[16.66%] top-6 hidden h-px bg-[var(--account-success)]/65 sm:block" />
-            {[
-              {
-                number: "01",
-                title: "Cargá saldo",
-                description: "Hacé clic en “Cargar saldo” y seguí las instrucciones.",
-                icon: Coins,
-              },
-              {
-                number: "02",
-                title: "Lo acreditamos",
-                description: "Cuando confirmemos tu pago, el saldo aparecerá en tu cuenta.",
-                icon: CheckCircle2,
-              },
-              {
-                number: "03",
-                title: "Usalo en tus compras",
-                description: "Elegí tu saldo disponible al momento de pagar.",
-                icon: ShoppingBag,
-              },
-            ].map((step) => (
-              <div
-                key={step.number}
-                className="relative z-10 flex min-w-0 items-start gap-3.5 sm:flex-col sm:items-center sm:px-5 sm:text-center"
-              >
-                <div className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)] shadow-sm shadow-black/10">
-                  <step.icon className="size-5.5" strokeWidth={2.1} aria-hidden="true" />
-                </div>
-                <div className="min-w-0 sm:mt-2.5">
-                  <p className="text-xs font-bold tabular-nums tracking-[0.14em] text-[var(--account-success-text)]">
-                    {step.number}
-                  </p>
-                  <h2 className="mt-1 text-sm font-semibold text-[var(--account-text-primary)]">
-                    {step.title}
-                  </h2>
-                  <p className="mt-1.5 text-xs leading-5 text-[var(--account-text-secondary)]">
-                    {step.description}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        <p className="mt-4 text-xs leading-5 text-[var(--account-text-muted)]">
+          El saldo a favor puede generarse por reintegros o créditos otorgados por BEYONIX.
+        </p>
       </AccountCard>
-    </AccountPageContainer>
-  )
-}
-
-const MERCADOPAGO_ACTIVE_TOPUP_KEY = "beyonix:mercadopago-active-topup"
-
-function CargarSaldo({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth()
-  const searchParams = useSearchParams()
-  const { balance: customerCreditBalance, reload: reloadCustomerCredit } =
-    useCustomerCredit()
-  const { customerCreditPayments } = useSiteSettings()
-  const proofInputRef = useRef<HTMLInputElement>(null)
-  const proofDragDepthRef = useRef(0)
-  const loadingTopupsRef = useRef(false)
-  const creditedTopupIdsRef = useRef<Set<string>>(new Set())
-  const [proofFile, setProofFile] = useState<File | null>(null)
-  const [lastSubmittedTopupId, setLastSubmittedTopupId] = useState<string | null>(null)
-  const [isDraggingProof, setIsDraggingProof] = useState(false)
-  const [copiedTransferField, setCopiedTransferField] = useState<"alias" | "cvu" | null>(null)
-  const [topups, setTopups] = useState<Array<{
-    id: string
-    amount?: number | string | null
-    proof_file_name?: string | null
-    proof_signed_url?: string | null
-    status: string
-    payment_method?: "transfer" | "mercadopago" | null
-    gross_amount?: number | string | null
-    surcharge_percent?: number | string | null
-    surcharge_amount?: number | string | null
-    mercadopago_payment_id?: string | null
-    mercadopago_status?: string | null
-    created_at: string
-  }>>([])
-  const [error, setError] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState<"transfer" | "mercadopago">("transfer")
-  const [mercadoPagoAmount, setMercadoPagoAmount] = useState("")
-  const [redirectingToMercadoPago, setRedirectingToMercadoPago] = useState(false)
-  const [mercadoPagoReconciliation, setMercadoPagoReconciliation] = useState<
-    "idle" | "checking" | "credited" | "pending" | "error"
-  >("idle")
-  const reconciledReturnRef = useRef<string | null>(null)
-  const abandoningTopupRef = useRef(false)
-  const mercadoPagoSurchargePercent =
-    customerCreditPayments.mercadoPagoSurchargePercent
-  const mercadoPagoMinimumAmount =
-    customerCreditPayments.mercadoPagoMinimumAmount
-  const mercadoPagoCreditAmount = roundMoney(
-    Number(mercadoPagoAmount.replace(/\./g, "").replace(",", ".")) || 0,
-  )
-  const mercadoPagoSurchargeAmount = roundMoney(
-    mercadoPagoCreditAmount * (mercadoPagoSurchargePercent / 100),
-  )
-  const mercadoPagoTotal = roundMoney(
-    mercadoPagoCreditAmount + mercadoPagoSurchargeAmount,
-  )
-  const mercadoPagoReturnStatus = searchParams.get("mp")
-  const mercadoPagoReturnTopupId = searchParams.get("topup")
-  const mercadoPagoReturnPaymentId =
-    searchParams.get("payment_id") || searchParams.get("collection_id")
-  const latestTopup = topups.find(
-    (topup) => topup.payment_method !== "mercadopago",
-  )
-  const hasSubmittedProof = Boolean(lastSubmittedTopupId || latestTopup)
-  const validationFinished = Boolean(
-    latestTopup && ["acreditado", "rechazado"].includes(latestTopup.status),
-  )
-  const timelineSteps = [
-    {
-      title: "Transferí",
-      icon: Landmark,
-      completed: true,
-      current: !hasSubmittedProof,
-    },
-    {
-      title: "Subí el comprobante",
-      icon: UploadCloud,
-      completed: hasSubmittedProof,
-      current: false,
-    },
-    {
-      title: "Validamos",
-      icon: Clock3,
-      completed: validationFinished,
-      current: hasSubmittedProof && !validationFinished,
-    },
-    {
-      title: "Saldo acreditado",
-      icon: Coins,
-      completed: latestTopup?.status === "acreditado",
-      current: false,
-    },
-  ]
-
-  const loadTopups = useCallback(async () => {
-    if (loadingTopupsRef.current) return
-    loadingTopupsRef.current = true
-
-    try {
-      const response = await fetch("/api/customer-credit/topups?page=1", {
-        cache: "no-store",
-      })
-      const data = (await response.json()) as {
-        topups?: typeof topups
-        pagination?: {
-          total?: number
-          total_pages?: number
-        }
-        error?: string
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "No pudimos actualizar el estado de la carga.")
-      }
-
-      const nextTopups = data.topups ?? []
-      const nextCreditedIds = new Set(
-        nextTopups
-          .filter((topup) => topup.status === "acreditado")
-          .map((topup) => topup.id),
-      )
-      const hasNewAccreditedTopup = [...nextCreditedIds].some(
-        (id) => !creditedTopupIdsRef.current.has(id),
-      )
-
-      creditedTopupIdsRef.current = nextCreditedIds
-      setTopups(nextTopups)
-      if (hasNewAccreditedTopup) void reloadCustomerCredit()
-    } catch (loadError) {
-      console.error("No se pudo actualizar el estado de las cargas", loadError)
-    } finally {
-      loadingTopupsRef.current = false
-    }
-  }, [reloadCustomerCredit])
-
-  useEffect(() => {
-    void loadTopups()
-    const intervalId = window.setInterval(() => void loadTopups(), 5000)
-    return () => window.clearInterval(intervalId)
-  }, [loadTopups])
-
-  useEffect(() => {
-    function clearStoredTopup() {
-      try {
-        window.sessionStorage.removeItem(MERCADOPAGO_ACTIVE_TOPUP_KEY)
-      } catch {
-        // El almacenamiento puede estar bloqueado por la configuración del navegador.
-      }
-    }
-
-    async function restoreAfterMercadoPago() {
-      setRedirectingToMercadoPago(false)
-
-      if (mercadoPagoReturnStatus) {
-        clearStoredTopup()
-        return
-      }
-
-      let storedTopupId = ""
-      try {
-        const storedValue = window.sessionStorage.getItem(
-          MERCADOPAGO_ACTIVE_TOPUP_KEY,
-        )
-        if (storedValue) {
-          const parsed = JSON.parse(storedValue) as { topupId?: string }
-          storedTopupId = parsed.topupId?.trim() ?? ""
-        }
-      } catch {
-        clearStoredTopup()
-      }
-
-      if (!storedTopupId || abandoningTopupRef.current) return
-
-      abandoningTopupRef.current = true
-      setPaymentMethod("mercadopago")
-
-      try {
-        const response = await fetch(
-          "/api/customer-credit/mercadopago/abandon",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ topupId: storedTopupId }),
-          },
-        )
-        const data = (await response.json()) as {
-          cancelled?: boolean
-          credited?: boolean
-          error?: string
-        }
-        if (!response.ok) {
-          throw new Error(data.error ?? "No pudimos cerrar el intento de pago.")
-        }
-
-        clearStoredTopup()
-        setError(
-          data.credited
-            ? "El pago fue aprobado y el saldo se acreditó correctamente."
-            : data.cancelled
-              ? "El intento de pago se canceló. No se generó ningún cargo."
-              : "El pago quedó en verificación con Mercado Pago.",
-        )
-        await Promise.all([loadTopups(), reloadCustomerCredit()])
-      } catch (restoreError) {
-        console.error("No se pudo cerrar el checkout abandonado", restoreError)
-        setError(
-          restoreError instanceof Error
-            ? restoreError.message
-            : "No pudimos cerrar el intento de pago.",
-        )
-      } finally {
-        abandoningTopupRef.current = false
-      }
-    }
-
-    const handlePageShow = () => void restoreAfterMercadoPago()
-    window.addEventListener("pageshow", handlePageShow)
-    void restoreAfterMercadoPago()
-
-    return () => window.removeEventListener("pageshow", handlePageShow)
-  }, [
-    loadTopups,
-    mercadoPagoReturnStatus,
-    reloadCustomerCredit,
-  ])
-
-  useEffect(() => {
-    if (
-      !user ||
-      !mercadoPagoReturnTopupId ||
-      !["success", "pending"].includes(mercadoPagoReturnStatus ?? "") ||
-      reconciledReturnRef.current === mercadoPagoReturnTopupId
-    ) {
-      return
-    }
-
-    reconciledReturnRef.current = mercadoPagoReturnTopupId
-    setMercadoPagoReconciliation("checking")
-
-    void fetch("/api/customer-credit/mercadopago/reconcile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        topupId: mercadoPagoReturnTopupId,
-        paymentId: mercadoPagoReturnPaymentId || undefined,
-      }),
-    })
-      .then(async (response) => {
-        const data = (await response.json()) as {
-          credited?: boolean
-          paymentStatus?: string
-          error?: string
-        }
-        if (!response.ok) throw new Error(data.error ?? "No pudimos verificar el pago.")
-
-        setMercadoPagoReconciliation(data.credited ? "credited" : "pending")
-        await Promise.all([loadTopups(), reloadCustomerCredit()])
-      })
-      .catch((reconciliationError) => {
-        console.error("No se pudo reconciliar el pago de Mercado Pago", reconciliationError)
-        setMercadoPagoReconciliation("error")
-      })
-  }, [
-    loadTopups,
-    mercadoPagoReturnPaymentId,
-    mercadoPagoReturnStatus,
-    mercadoPagoReturnTopupId,
-    reloadCustomerCredit,
-    user,
-  ])
-
-  useEffect(() => {
-    if (!user) return
-
-    const channel = supabase
-      .channel(`customer-credit-topups-${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "customer_credit_topups",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          void loadTopups()
-          void reloadCustomerCredit()
-        },
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
-  }, [loadTopups, reloadCustomerCredit, user])
-
-  async function copyTransferValue(field: "alias" | "cvu", value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopiedTransferField(field)
-      window.setTimeout(() => {
-        setCopiedTransferField((current) => current === field ? null : current)
-      }, 1800)
-    } catch {
-      setError("No pudimos copiar el dato. Seleccionalo manualmente.")
-    }
-  }
-
-  async function submitTopupProof(file: File) {
-    if (saving) return
-
-    const previousProofFile = proofFile
-    const replaceTopupId = lastSubmittedTopupId
-    setProofFile(file)
-    setError("")
-    setSaving(true)
-
-    try {
-      const formData = new FormData()
-      formData.set("file", file)
-      if (replaceTopupId) formData.set("replace_topup_id", replaceTopupId)
-
-      const response = await fetch("/api/customer-credit/topups", {
-        method: "POST",
-        body: formData,
-      })
-      const data = (await response.json()) as {
-        error?: string
-        topup?: { id?: string }
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "No se pudo enviar el comprobante.")
-      }
-
-      setLastSubmittedTopupId(data.topup?.id ?? replaceTopupId)
-      if (proofInputRef.current) proofInputRef.current.value = ""
-      await loadTopups()
-    } catch (submitError) {
-      setProofFile(previousProofFile)
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "No se pudo enviar el comprobante.",
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  function selectAndUploadProof(file?: File | null) {
-    if (!file || saving) return
-    void submitTopupProof(file)
-  }
-
-  async function startMercadoPagoTopup() {
-    if (redirectingToMercadoPago) return
-
-    if (mercadoPagoCreditAmount < mercadoPagoMinimumAmount) {
-      setError(
-        `La carga mínima mediante Mercado Pago es de ${formatARS(mercadoPagoMinimumAmount)}.`,
-      )
-      return
-    }
-
-    setError("")
-    setRedirectingToMercadoPago(true)
-
-    try {
-      const response = await fetch(
-        "/api/customer-credit/mercadopago/preference",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount: mercadoPagoCreditAmount,
-            expectedSurchargePercent: mercadoPagoSurchargePercent,
-            expectedMinimumAmount: mercadoPagoMinimumAmount,
-          }),
-        },
-      )
-      const data = (await response.json()) as {
-        init_point?: string
-        topup_id?: string
-        error?: string
-      }
-
-      if (!response.ok || !data.init_point || !data.topup_id) {
-        throw new Error(data.error ?? "No pudimos iniciar el pago.")
-      }
-
-      try {
-        window.sessionStorage.setItem(
-          MERCADOPAGO_ACTIVE_TOPUP_KEY,
-          JSON.stringify({ topupId: data.topup_id, startedAt: Date.now() }),
-        )
-      } catch {
-        // La vuelta sigue funcionando mediante las URLs de retorno y el webhook.
-      }
-
-      window.location.assign(data.init_point)
-    } catch (paymentError) {
-      try {
-        window.sessionStorage.removeItem(MERCADOPAGO_ACTIVE_TOPUP_KEY)
-      } catch {
-        // Sin acción adicional.
-      }
-      setError(
-        paymentError instanceof Error
-          ? paymentError.message
-          : "No pudimos iniciar el pago con Mercado Pago.",
-      )
-      setRedirectingToMercadoPago(false)
-    }
-  }
-
-  return (
-    <AccountPageContainer className="max-w-[1120px] space-y-4 pb-6">
-      <div className="flex flex-col gap-3 sm:relative sm:block">
-        <AccountBackButton
-          onClick={onBack}
-          label="Volver a mi cuenta"
-          className="h-9 w-fit rounded-full border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3.5 text-xs font-semibold text-[var(--account-text-secondary)] shadow-sm shadow-black/25 transition hover:-translate-y-0.5 hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)] sm:absolute sm:right-0 sm:top-0"
-        />
-        <header className="px-1 pb-0.5 sm:pr-48">
-          <p className="text-9px font-bold uppercase tracking-[0.2em] text-[var(--account-accent-soft)]">
-            Saldo de tu cuenta
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <h1 className="text-2xl font-black tracking-tight text-[var(--account-text-primary)]">Cargar saldo</h1>
-            <span className="inline-flex h-7 items-center rounded-full border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] px-3 text-xs font-bold text-[var(--account-text-secondary)]">
-              Saldo actual: {formatARS(customerCreditBalance)}
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-[var(--account-text-muted)]">
-            Elegí cómo querés cargar saldo en tu cuenta.
-          </p>
-        </header>
-      </div>
-
-      {mercadoPagoReturnStatus ? (
-        <div
-          className={cn(
-            "rounded-xl border px-4 py-3 text-xs font-semibold",
-            mercadoPagoReturnStatus === "success"
-              ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)] text-[var(--account-success-text)]"
-              : mercadoPagoReturnStatus === "pending"
-                ? "border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning-text)]"
-                : "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]",
-          )}
-        >
-          {mercadoPagoReconciliation === "checking"
-            ? "Estamos verificando el pago directamente con Mercado Pago."
-            : mercadoPagoReconciliation === "credited"
-              ? "Pago aprobado y saldo acreditado correctamente en tu cuenta."
-              : mercadoPagoReconciliation === "error"
-                ? "Mercado Pago informó el regreso, pero la verificación sigue pendiente. No vuelvas a pagar: el sistema reintentará automáticamente."
-                : mercadoPagoReturnStatus === "success"
-                  ? "Mercado Pago recibió el pago. El saldo se actualizará automáticamente al confirmarse la aprobación."
-                  : mercadoPagoReturnStatus === "pending"
-                    ? "El pago quedó pendiente en Mercado Pago. Se acreditará automáticamente si luego resulta aprobado."
-                    : "Mercado Pago no aprobó el pago. No se acreditó saldo en tu cuenta."}
-        </div>
-      ) : null}
-
-      <div className="customer-credit-master-surface space-y-4 rounded-3xl border border-[#203A50] p-4 shadow-[0_28px_80px_rgba(0,0,0,0.48)] sm:p-5">
-        <div
-          className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-2"
-          role="group"
-          aria-label="Método para cargar saldo"
-        >
-          <button
-            type="button"
-            aria-pressed={paymentMethod === "transfer"}
-            onClick={() => {
-              setPaymentMethod("transfer")
-              setError("")
-            }}
-            className={cn(
-              "flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
-              paymentMethod === "transfer"
-                ? "border-[var(--account-border-highlight)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]"
-                : "border-transparent bg-[var(--account-surface-raised)] hover:border-[var(--account-border)] hover:bg-[var(--account-surface-hover)]",
-            )}
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#173B5C] text-white">
-              <Landmark className="size-4.5" />
-            </span>
-            <span>
-              <span className="block text-sm font-black text-[var(--account-text-primary)]">Transferencia</span>
-              <span className="mt-0.5 block text-[13px] font-semibold text-[var(--account-success-text)]">
-                SIN RECARGO
-              </span>
-            </span>
-          </button>
-          <button
-            type="button"
-            aria-pressed={paymentMethod === "mercadopago"}
-            onClick={() => {
-              setPaymentMethod("mercadopago")
-              setError("")
-            }}
-            className={cn(
-              "flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
-              paymentMethod === "mercadopago"
-                ? "border-[var(--account-border-highlight)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]"
-                : "border-transparent bg-[var(--account-surface-raised)] hover:border-[var(--account-border)] hover:bg-[var(--account-surface-hover)]",
-            )}
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#0E4D73] text-white">
-              <CreditCard className="size-4.5" />
-            </span>
-            <span>
-              <span className="block text-sm font-black text-[var(--account-text-primary)]">Mercado Pago</span>
-              <span className="mt-0.5 block text-xs font-semibold text-[var(--account-accent-soft)]">
-                {mercadoPagoSurchargePercent}% de recargo
-              </span>
-            </span>
-          </button>
-        </div>
-
-        {paymentMethod === "transfer" ? (
-          <>
-            <ol className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-border-subtle)] sm:grid-cols-4">
-              {timelineSteps.map((step) => {
-                const StepIcon = step.icon
-                const active = step.completed || step.current
-                return (
-                  <li
-                    key={step.title}
-                    className="flex min-h-12 items-center gap-2 bg-[var(--account-surface-raised)] px-3 py-2.5 sm:justify-center"
-                  >
-                    <span
-                      className={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-full border",
-                        active
-                          ? "border-[var(--account-border-highlight)] bg-[var(--account-accent)] text-white"
-                          : "border-[var(--account-border)] bg-[var(--account-surface)] text-[var(--account-text-muted)]",
-                      )}
-                    >
-                      <StepIcon className="size-3.5" />
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[11px] font-bold leading-4",
-                        active ? "text-[var(--account-text-primary)]" : "text-[var(--account-text-muted)]",
-                      )}
-                    >
-                      {step.title}
-                    </span>
-                  </li>
-                )
-              })}
-            </ol>
-
-            <div className="grid items-stretch overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] lg:grid-cols-2">
-              <section className="flex min-h-[280px] flex-col p-4 sm:p-5 lg:border-r lg:border-[var(--account-border-subtle)]">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
-                    <Landmark className="size-4" />
-                  </span>
-                  <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
-                      Transferencia
-                    </p>
-                    <h2 className="mt-0.5 text-base font-bold text-[var(--account-text-primary)]">Datos bancarios</h2>
-                  </div>
-                </div>
-                <div className="mt-4 flex-1 overflow-hidden rounded-xl bg-[var(--account-surface)] shadow-[inset_0_0_0_1px_var(--account-border-subtle)]">
-                  {[
-                    { label: "Alias", value: TRANSFER_ALIAS, field: "alias" as const },
-                    { label: "CVU", value: TRANSFER_CVU, field: "cvu" as const },
-                    { label: "Titular", value: TRANSFER_ACCOUNT_HOLDER, field: null },
-                  ].map((item, index) => (
-                    <div
-                      key={item.label}
-                      className={cn(
-                        "group flex min-h-[58px] items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-[var(--account-surface-hover)]",
-                        index > 0 && "border-t border-[var(--account-border-subtle)]",
-                      )}
-                    >
-                      <span className="text-xs font-semibold text-[var(--account-text-muted)]">{item.label}</span>
-                      <div className="flex min-w-0 items-center justify-end gap-3">
-                        <span
-                          className={cn(
-                            "truncate text-right text-sm font-semibold text-[var(--account-text-primary)]",
-                            item.field === "cvu" && "tabular-nums",
-                            item.label === "Titular" && "uppercase",
-                          )}
-                        >
-                          {item.value}
-                        </span>
-                        {item.field ? (
-                          <button
-                            type="button"
-                            onClick={() => void copyTransferValue(item.field, item.value)}
-                            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-secondary)] transition-all hover:border-[var(--account-border-strong)] hover:bg-[var(--account-accent)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--account-focus-ring)]"
-                            aria-label={`Copiar ${item.label.toLowerCase()}`}
-                            title={copiedTransferField === item.field ? "Copiado" : `Copiar ${item.label}`}
-                          >
-                            {copiedTransferField === item.field ? (
-                              <CheckCircle2 className="size-3.5" />
-                            ) : (
-                              <Copy className="size-3.5" />
-                            )}
-                          </button>
-                        ) : (
-                          <span className="size-8 shrink-0" aria-hidden="true" />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="flex min-h-[280px] flex-col border-t border-[var(--account-border-subtle)] p-4 sm:p-5 lg:border-t-0">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-[#112A43] text-white">
-                    <UploadCloud className="size-4" />
-                  </span>
-                  <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
-                      Comprobante
-                    </p>
-                    <h2 className="mt-0.5 text-base font-bold text-[var(--account-text-primary)]">Subí tu comprobante</h2>
-                  </div>
-                </div>
-                <input
-                  ref={proofInputRef}
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="hidden"
-                  onChange={(event) => selectAndUploadProof(event.target.files?.[0])}
-                />
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => proofInputRef.current?.click()}
-                  onDragEnter={(event) => {
-                    event.preventDefault()
-                    proofDragDepthRef.current += 1
-                    setIsDraggingProof(true)
-                  }}
-                  onDragOver={(event) => {
-                    event.preventDefault()
-                    event.dataTransfer.dropEffect = "copy"
-                  }}
-                  onDragLeave={(event) => {
-                    event.preventDefault()
-                    proofDragDepthRef.current = Math.max(0, proofDragDepthRef.current - 1)
-                    if (proofDragDepthRef.current === 0) setIsDraggingProof(false)
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault()
-                    proofDragDepthRef.current = 0
-                    setIsDraggingProof(false)
-                    selectAndUploadProof(event.dataTransfer.files?.[0])
-                  }}
-                  className={cn(
-                    "group mt-4 flex min-h-36 w-full flex-1 flex-col items-center justify-center rounded-xl border border-dashed bg-[var(--account-surface)] px-5 py-4 text-center transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--account-focus-ring)] disabled:cursor-wait disabled:hover:translate-y-0",
-                    isDraggingProof
-                      ? "border-[var(--account-border-highlight)] bg-[var(--account-surface-highlight)] shadow-[var(--account-glow-subtle)]"
-                      : "border-[var(--account-border-strong)] hover:border-[var(--account-border-highlight)] hover:bg-[var(--account-surface-hover)]",
-                  )}
-                >
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-[var(--account-accent)] text-white transition-transform duration-200 group-hover:scale-105">
-                    {saving ? (
-                      <Loader2 className="size-5 animate-spin" />
-                    ) : lastSubmittedTopupId && proofFile ? (
-                      <CheckCircle2 className="size-5" />
-                    ) : (
-                      <UploadCloud className="size-5" />
-                    )}
-                  </span>
-                  <span className="mt-2 max-w-full truncate text-sm font-bold text-[var(--account-text-primary)]">
-                    {saving
-                      ? "Enviando comprobante..."
-                      : proofFile?.name ?? "Arrastrá el archivo o hacé clic"}
-                  </span>
-                  <span className="mt-1.5 text-xs text-[var(--account-text-muted)]">
-                    {lastSubmittedTopupId && proofFile && !saving
-                      ? "Comprobante enviado correctamente"
-                      : "Seleccioná tu comprobante de transferencia"}
-                  </span>
-                  {!lastSubmittedTopupId || !proofFile ? (
-                    <span className="mt-2 text-9px font-semibold uppercase tracking-[0.16em] text-[var(--account-text-muted)]">
-                      JPG · PNG · PDF
-                    </span>
-                  ) : null}
-                </button>
-                {lastSubmittedTopupId && !saving ? (
-                  <div className="mt-3 flex items-center justify-center gap-2 text-center">
-                    <span className="text-xs text-[var(--account-text-muted)]">¿Archivo incorrecto?</span>
-                    <button
-                      type="button"
-                      onClick={() => proofInputRef.current?.click()}
-                      className="text-xs font-bold text-[var(--account-accent-soft)] transition hover:text-[var(--account-text-primary)] focus-visible:outline-none focus-visible:underline"
-                    >
-                      Cambiarlo
-                    </button>
-                  </div>
-                ) : null}
-                {error ? (
-                  <p className="mt-3 text-center text-xs text-[var(--account-danger-text)]">{error}</p>
-                ) : null}
-              </section>
-            </div>
-
-            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl px-4 py-3 sm:items-center">
-              <Clock3 className="mt-0.5 size-4.5 shrink-0 text-[var(--account-info-text)] sm:mt-0" />
-              <p className="text-xs leading-5 text-[var(--account-text-secondary)]">
-                Validamos transferencias de lunes a viernes, de 8:00 a 20:00 h.
-                Fuera de ese horario se procesan el próximo día hábil.
-              </p>
-            </div>
-          </>
-        ) : (
-          <>
-            <ol className="grid gap-px overflow-hidden rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-border-subtle)] sm:grid-cols-3">
-              {[
-                ["1", "Ingresá el saldo"],
-                ["2", "Pagá en Mercado Pago"],
-                ["3", "Acreditación automática"],
-              ].map(([number, title]) => (
-                <li
-                  key={number}
-                  className="flex min-h-12 items-center gap-2 bg-[var(--account-surface-raised)] px-3 py-2.5 sm:justify-center"
-                >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-[var(--account-border-highlight)] bg-[var(--account-accent)] text-[11px] font-black text-white">
-                    {number}
-                  </span>
-                  <span className="text-[11px] font-bold leading-4 text-[var(--account-text-primary)]">{title}</span>
-                </li>
-              ))}
-            </ol>
-
-            <div className="grid items-stretch overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] lg:grid-cols-2">
-              <section className="flex min-h-[300px] flex-col p-4 sm:p-5 lg:border-r lg:border-[var(--account-border-subtle)]">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-xl bg-[#0E4D73] text-white">
-                    <CreditCard className="size-4.5" />
-                  </span>
-                  <div>
-                    <p className="text-10px font-bold uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
-                      Mercado Pago
-                    </p>
-                    <h2 className="mt-0.5 text-base font-bold text-[var(--account-text-primary)]">
-                      ¿Cuánto saldo querés cargar?
-                    </h2>
-                  </div>
-                </div>
-                <label
-                  className="mt-5 flex items-center justify-between gap-3 text-xs font-bold text-[var(--account-text-secondary)]"
-                  htmlFor="mercadopago-credit-amount"
-                >
-                  <span>Saldo a acreditar</span>
-                  <span className="rounded-full border border-[var(--account-border)] bg-[var(--account-surface)] px-2.5 py-1 text-10px font-black text-[var(--account-accent-soft)]">
-                    Mínimo: {formatARS(mercadoPagoMinimumAmount)}
-                  </span>
-                </label>
-                <div className="mt-2 flex h-12 items-center rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-4 focus-within:border-[var(--account-border-strong)] focus-within:ring-2 focus-within:ring-[var(--account-focus-ring)]">
-                  <span className="mr-2 text-sm font-bold text-[var(--account-accent-soft)]">$</span>
-                  <input
-                    id="mercadopago-credit-amount"
-                    value={mercadoPagoAmount}
-                    onChange={(event) =>
-                      setMercadoPagoAmount(event.target.value.replace(/[^\d.,]/g, ""))
-                    }
-                    inputMode="decimal"
-                    placeholder="100.000"
-                    className="min-w-0 flex-1 bg-transparent text-base font-bold text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)]"
-                  />
-                </div>
-                {mercadoPagoCreditAmount > 0 &&
-                mercadoPagoCreditAmount < mercadoPagoMinimumAmount ? (
-                  <p className="mt-2 text-xs font-semibold text-[var(--account-warning-text)]">
-                    Ingresá al menos {formatARS(mercadoPagoMinimumAmount)} para continuar.
-                  </p>
-                ) : null}
-                {error ? <p className="mt-3 text-xs text-[var(--account-danger-text)]">{error}</p> : null}
-              </section>
-
-              <section className="flex min-h-[300px] flex-col border-t border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-4 sm:p-5 lg:border-t-0">
-                <p className="text-10px font-black uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
-                  Resumen
-                </p>
-                <dl className="mt-5 space-y-3 text-xs">
-                  <div className="flex items-center justify-between gap-4 text-[var(--account-text-secondary)]">
-                    <dt>Saldo a acreditar</dt>
-                    <dd className="font-bold text-[var(--account-text-primary)]">{formatARS(mercadoPagoCreditAmount)}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 text-[var(--account-text-secondary)]">
-                    <dt>Comisión Mercado Pago ({mercadoPagoSurchargePercent}%)</dt>
-                    <dd className="font-bold text-[var(--account-text-primary)]">{formatARS(mercadoPagoSurchargeAmount)}</dd>
-                  </div>
-                  <div className="flex items-center justify-between gap-4 border-t border-[var(--account-border)] pt-4">
-                    <dt className="font-bold text-[var(--account-text-primary)]">Total a pagar</dt>
-                    <dd className="text-lg font-black text-[var(--account-accent-soft)]">{formatARS(mercadoPagoTotal)}</dd>
-                  </div>
-                </dl>
-                <button
-                  type="button"
-                  disabled={
-                    redirectingToMercadoPago ||
-                    mercadoPagoCreditAmount < mercadoPagoMinimumAmount
-                  }
-                  onClick={() => void startMercadoPagoTopup()}
-                  className="mt-auto inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#69A5D0] bg-[#146B9B] px-4 text-sm font-black text-white shadow-[0_0_20px_rgba(73,169,232,0.18)] transition hover:-translate-y-0.5 hover:bg-[#197DB3] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
-                >
-                  {redirectingToMercadoPago ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <CreditCard className="size-4" />
-                  )}
-                  {redirectingToMercadoPago ? "Abriendo Mercado Pago..." : "Continuar en Mercado Pago"}
-                </button>
-              </section>
-            </div>
-
-            <div className="customer-credit-info-blue flex items-start gap-3 rounded-xl px-4 py-3 sm:items-center">
-              <CheckCircle2 className="mt-0.5 size-4.5 shrink-0 text-[var(--account-info-text)] sm:mt-0" />
-              <p className="text-xs leading-5 text-[var(--account-text-secondary)]">
-                El saldo se acredita cuando Mercado Pago confirma el pago.
-              </p>
-            </div>
-          </>
-        )}
-      </div>
     </AccountPageContainer>
   )
 }
@@ -1216,15 +315,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
   }
 
   if (view === "ordenes") return <MisOrdenes onBack={() => goToView("home")} />
-  if (view === "saldo") {
-    return (
-      <MiSaldo
-        onBack={() => goToView("home")}
-        onLoadBalance={() => goToView("cargar-saldo")}
-      />
-    )
-  }
-  if (view === "cargar-saldo") return <CargarSaldo onBack={() => goToView("home")} />
+  if (view === "saldo") return <MiSaldo onBack={() => goToView("home")} />
   if (view === "datos") return <MisDatos onBack={() => goToView("home")} />
   if (view === "seguridad") return <Seguridad onBack={() => goToView("home")} />
 
@@ -1278,8 +369,8 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
 
           <button
             type="button"
-            aria-label="Ver y cargar saldo"
-            onClick={() => goToView("cargar-saldo")}
+            aria-label="Ver saldo"
+            onClick={() => goToView("saldo")}
             className="group mt-4 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3 py-2.5 text-left transition hover:border-beyonix-blue-light/45 hover:bg-[var(--account-surface-hover)]"
           >
             <span className="flex min-w-0 items-center gap-3">
@@ -1296,7 +387,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
               </span>
             </span>
             <span className="inline-flex shrink-0 items-center gap-1 text-10px font-semibold text-[var(--account-accent-soft)] transition group-hover:text-[var(--account-text-primary)]">
-              Cargar saldo
+              Ver saldo
               <ChevronRight className="size-3.5" />
             </span>
           </button>
@@ -2332,7 +1423,6 @@ export function CuentaClient() {
   const initialView: ProfileView =
     tabParam === "ordenes" ||
     tabParam === "saldo" ||
-    tabParam === "cargar-saldo" ||
     tabParam === "datos" ||
     tabParam === "seguridad"
       ? tabParam

@@ -75,10 +75,13 @@ test("fuera de producción el Origin sirve como fallback de desarrollo", () => {
 })
 
 test("las rutas sensibles ya no construyen URLs desde el header Origin", () => {
+  // app/api/customer-credit/mercadopago/preference/route.ts quedó fuera de
+  // esta lista: la carga de saldo por parte del cliente está deshabilitada
+  // (ver lib/mercadopago/customer-credit-topup-attempt.test.ts) y esa ruta
+  // ya no construye ninguna URL, confiable o no.
   const sensitiveRoutes = [
     "app/api/auth/forgot-password/route.ts",
     "app/api/mercadopago/create-preference/route.ts",
-    "app/api/customer-credit/mercadopago/preference/route.ts",
   ]
 
   for (const route of sensitiveRoutes) {

@@ -11,6 +11,7 @@ export function InputField({
   icon: Icon,
   rightElement,
   error,
+  success,
   maxLength,
   inputMode,
   className,
@@ -23,6 +24,8 @@ export function InputField({
   icon: ElementType
   rightElement?: ReactNode
   error?: string
+  /** Estado visual positivo (borde/foco verde), ej. confirmación de contraseña que coincide. Independiente de `error`. */
+  success?: boolean
   maxLength?: number
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"]
   className?: string
@@ -33,10 +36,12 @@ export function InputField({
         {label}
       </label>
       <div
-        className={`relative flex h-11 items-center rounded-xl border bg-[var(--account-input)] transition-colors focus-within:border-[var(--account-border-strong)] focus-within:ring-3 focus-within:ring-[var(--account-focus-ring)] ${
+        className={`relative flex h-11 items-center rounded-xl border bg-[var(--account-input)] transition-colors focus-within:ring-3 ${
           error
-            ? "border-[var(--account-danger-border)]"
-            : "border-[var(--account-border)] hover:border-[var(--account-border-strong)]"
+            ? "border-[var(--account-danger-border)] focus-within:border-[var(--account-danger-border)] focus-within:ring-[var(--account-danger-border)]/20"
+            : success
+              ? "border-[var(--account-success-border)] focus-within:border-[var(--account-success-border)] focus-within:ring-[var(--account-success-border)]/20"
+              : "border-[var(--account-border)] hover:border-[var(--account-border-strong)] focus-within:border-[var(--account-border-strong)] focus-within:ring-[var(--account-focus-ring)]"
         }`}
       >
         <Icon className="pointer-events-none absolute left-3.5 size-4 text-[var(--account-text-muted)]" />

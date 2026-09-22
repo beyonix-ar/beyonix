@@ -381,7 +381,7 @@ export function SiteHeader() {
                     Mi cuenta ({userLabel.toUpperCase()})
                   </Link>
                   <Link
-                    href="/cuenta?tab=cargar-saldo"
+                    href="/cuenta?tab=saldo"
                     onClick={() => setMobileOpen(false)}
                     className={cn(
                       "group flex items-center gap-2.5 rounded-lg bg-[rgba(17,42,67,0.28)] px-2 py-3 text-15px font-semibold text-beyonix-sky hover:bg-white/5 hover:text-white",

@@ -24,17 +24,20 @@ import {
 import { AccountViewFrame } from "@/components/account/account-view-frame"
 import { InputField, ReadOnlyField, TextareaField } from "@/components/account/account-form-fields"
 import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
-import { ProvinceSelect } from "@/components/province-select"
+import { PasswordRequirements } from "@/components/password-requirements"
+import { GeographicSelect } from "@/components/checkout/geographic-select"
+import { useTerritorialSelector } from "@/hooks/use-territorial-selector"
 import { supabase } from "@/lib/supabase/client"
+import { getPasswordUpdateErrorMessage } from "@/lib/auth/password-update-messages"
 import {
   buildDeliveryAddressDraft,
   nonEmptyAccountText,
   uppercaseAccountText,
-  validateAccountPassword,
   validateDeliveryAddress,
 } from "@/lib/account/account-utils"
 import {
   FIELD_LIMITS,
+  meetsPasswordRequirements,
   onlyDigits,
   validateProfilePayload,
 } from "@/lib/validation/account-fields"
@@ -53,11 +56,8 @@ function getPasswordCooldownMessage(lastChangedAt: string) {
 }
 
 function ChangePasswordForm() {
-  const { user } = useAuth()
-  const [currentPassword, setCurrentPassword] = useState("")
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [showCurrent, setShowCurrent] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -69,6 +69,13 @@ function ChangePasswordForm() {
   // en el próximo render.
   const submittingRef = useRef(false)
 
+  const isPasswordValid =
+    newPassword.length > 0 && meetsPasswordRequirements(newPassword)
+  const confirmHasValue = confirmPassword.length > 0
+  const passwordsMatch = confirmHasValue && newPassword === confirmPassword
+  const passwordsMismatch = confirmHasValue && newPassword !== confirmPassword
+  const canSubmit = isPasswordValid && passwordsMatch
+
   const handleSubmit = async () => {
     if (submittingRef.current) return
     submittingRef.current = true
@@ -77,35 +84,25 @@ function ChangePasswordForm() {
       setError("")
       setSuccess("")
 
-      if (!user?.email) {
-        setError("No se pudo validar el email de la cuenta.")
-        return
-      }
-
-      if (!currentPassword) {
-        setError("Introduce tu contraseña actual.")
-        return
-      }
-
-      const passwordError = validateAccountPassword(newPassword)
-
-      if (passwordError) {
-        setError(passwordError)
+      if (!meetsPasswordRequirements(newPassword)) {
+        setError("La contraseña no cumple los requisitos.")
         return
       }
 
       if (newPassword !== confirmPassword) {
-        setError("Las contraseñas nuevas no coinciden.")
-        return
-      }
-
-      if (currentPassword === newPassword) {
-        setError("La nueva contraseña debe ser distinta a la actual.")
+        setError("Las contraseñas no coinciden.")
         return
       }
 
       setLoading(true)
 
+      // supabase.auth.updateUser() opera sobre la sesión activa del usuario
+      // autenticado (JWT de la cookie/localStorage de Supabase) -- es el
+      // flujo correcto para que un usuario ya logueado cambie su propia
+      // contraseña sin reingresar la actual. GoTrue rechaza la llamada si no
+      // hay sesión válida, así que un usuario no autenticado nunca puede
+      // llegar a este punto (y este componente sólo se renderiza dentro de
+      // /cuenta, que ya exige sesión).
       const {
         data: authUserData,
         error: authUserError,
@@ -131,31 +128,9 @@ function ChangePasswordForm() {
         return
       }
 
-      const { error: verifyError } =
-        await supabase.auth.signInWithPassword({
-          email: user.email,
-          password: currentPassword,
-        })
-
-      if (verifyError) {
-        setError("La contraseña actual no es correcta.")
-        return
-      }
-
       const { error: updateError } =
         await supabase.auth.updateUser({
           password: newPassword,
-          // Ya validamos la contraseña actual arriba con un
-          // signInWithPassword de prueba, pero eso es una verificación
-          // PROPIA de la app -- si en el Dashboard de Supabase se activa
-          // "Require current password when updating"
-          // (GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_CURRENT_PASSWORD),
-          // GoTrue exige además este campo en el propio updateUser() o
-          // rechaza el cambio server-side pese a que nuestra verificación ya
-          // dio bien. Enviarlo siempre es inofensivo si la opción está
-          // apagada (GoTrue lo ignora) y evita ese doble gate roto si se
-          // activa en el futuro.
-          current_password: currentPassword,
           data: {
             ...authUserData.user?.user_metadata,
             last_password_change_at: new Date().toISOString(),
@@ -163,7 +138,7 @@ function ChangePasswordForm() {
         })
 
       if (updateError) {
-        setError("No se pudo actualizar la contraseña. Inténtalo de nuevo.")
+        setError(getPasswordUpdateErrorMessage(updateError.message))
         return
       }
 
@@ -179,7 +154,6 @@ function ChangePasswordForm() {
         // Ignorado a propósito -- ver comentario arriba.
       }
 
-      setCurrentPassword("")
       setNewPassword("")
       setConfirmPassword("")
       setSuccess("Contraseña actualizada correctamente.")
@@ -195,45 +169,28 @@ function ChangePasswordForm() {
 
   return (
     <div className="space-y-4">
-      <InputField
-        label="Contraseña actual"
-        type={showCurrent ? "text" : "password"}
-        value={currentPassword}
-        onChange={setCurrentPassword}
-        placeholder="Contraseña actual"
-        icon={Lock}
-        maxLength={FIELD_LIMITS.password}
-        rightElement={
-          <button
-            type="button"
-            aria-label="Mostrar u ocultar contraseña actual"
-            onClick={() => setShowCurrent((value) => !value)}
-            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
-          >
-            {showCurrent ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
-        }
-      />
-
-      <InputField
-        label="Nueva contraseña"
-        type={showNew ? "text" : "password"}
-        value={newPassword}
-        onChange={setNewPassword}
-        placeholder="Mínimo 8 caracteres"
-        icon={Lock}
-        maxLength={FIELD_LIMITS.password}
-        rightElement={
-          <button
-            type="button"
-            aria-label="Mostrar u ocultar nueva contraseña"
-            onClick={() => setShowNew((value) => !value)}
-            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
-          >
-            {showNew ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
-        }
-      />
+      <div>
+        <InputField
+          label="Nueva contraseña"
+          type={showNew ? "text" : "password"}
+          value={newPassword}
+          onChange={setNewPassword}
+          placeholder="Mínimo 8 caracteres"
+          icon={Lock}
+          maxLength={FIELD_LIMITS.password}
+          rightElement={
+            <button
+              type="button"
+              aria-label="Mostrar u ocultar nueva contraseña"
+              onClick={() => setShowNew((value) => !value)}
+              className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
+            >
+              {showNew ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          }
+        />
+        <PasswordRequirements password={newPassword} />
+      </div>
 
       <InputField
         label="Confirmar nueva contraseña"
@@ -243,26 +200,28 @@ function ChangePasswordForm() {
         placeholder="Repetí la nueva contraseña"
         icon={Lock}
         maxLength={FIELD_LIMITS.password}
+        error={passwordsMismatch ? "Las contraseñas no coinciden." : undefined}
+        success={passwordsMatch}
         rightElement={
-          <button
-            type="button"
-            aria-label="Mostrar u ocultar confirmación"
-            onClick={() => setShowConfirm((value) => !value)}
-            className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
-          >
-            {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-          </button>
+          <div className="flex items-center gap-1">
+            {passwordsMatch && (
+              <Check
+                aria-hidden="true"
+                className="size-4 text-[var(--account-success-text)]"
+                strokeWidth={2.5}
+              />
+            )}
+            <button
+              type="button"
+              aria-label="Mostrar u ocultar confirmación"
+              onClick={() => setShowConfirm((value) => !value)}
+              className="flex size-7 cursor-pointer items-center justify-center rounded-lg text-[var(--account-text-muted)] transition-colors hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
+            >
+              {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
         }
       />
-
-      <div className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3">
-        <p className="text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
-          Requisitos
-        </p>
-        <p className="mt-2 text-sm leading-6 text-[var(--account-text-secondary)]">
-          Mínimo 8 caracteres, una mayúscula y al menos un número. Puede cambiarse una vez cada 15 días.
-        </p>
-      </div>
 
       {error && (
         <AccountCard padding="sm" className="border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]">
@@ -279,12 +238,12 @@ function ChangePasswordForm() {
       <BeyonixButton
         type="button"
         aria-label="Cambiar contraseña"
-        disabled={loading}
+        disabled={loading || !canSubmit}
         onClick={handleSubmit}
         size="lg"
         fullWidth
       >
-        {loading ? "Validando..." : "Cambiar contraseña"}
+        {loading ? "Actualizando..." : "Cambiar contraseña"}
       </BeyonixButton>
     </div>
   )
@@ -341,10 +300,17 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
   const [dni, setDni] = useState(
     onlyDigits(user?.dni ?? "", FIELD_LIMITS.dni)
   )
-  const [province, setProvince] = useState(
-    uppercaseAccountText(nonEmptyAccountText(user?.province) ?? "")
-  )
-  const [postalCode, setPostalCode] = useState(user?.postalCode ?? "")
+  // Mismo sistema que Registrarse/Checkout (hooks/use-territorial-selector.ts
+  // + components/checkout/geographic-select.tsx): provincia sólo puede venir
+  // del listado de Andreani, localidad/CP se resuelven automáticamente por
+  // catálogo con fallback manual explícito. Se hidrata UNA sola vez con el
+  // valor histórico guardado -- si no matchea contra el catálogo actual, el
+  // hook pasa solo a modo manual conservando el valor (nunca lo pisa).
+  const territorial = useTerritorialSelector({
+    province: uppercaseAccountText(nonEmptyAccountText(user?.province) ?? ""),
+    locality: uppercaseAccountText(nonEmptyAccountText(user?.city) ?? ""),
+    postalCode: user?.postalCode ?? "",
+  })
   const [street, setStreet] = useState(
     uppercaseAccountText(nonEmptyAccountText(user?.street) ?? "")
   )
@@ -359,9 +325,6 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       nonEmptyAccountText(user?.apartment) ?? ""
     )
   )
-  const [locality, setLocality] = useState(
-    uppercaseAccountText(nonEmptyAccountText(user?.city) ?? "")
-  )
   const [references, setReferences] = useState(
     uppercaseAccountText(user?.references ?? "")
   )
@@ -375,13 +338,13 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
   const formSignature = [
     phone,
     dni,
-    province,
-    postalCode,
+    territorial.province,
+    territorial.postalCode,
     street,
     streetNumber,
     floor,
     apartment,
-    locality,
+    territorial.locality,
     references,
   ].join("|")
   const savedSignatureRef = useRef("")
@@ -389,8 +352,6 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     setPhone(user?.phone ?? "")
     setDni(onlyDigits(user?.dni ?? "", FIELD_LIMITS.dni))
-    setProvince(uppercaseAccountText(nonEmptyAccountText(user?.province) ?? ""))
-    setPostalCode(user?.postalCode ?? "")
     setStreet(
       uppercaseAccountText(nonEmptyAccountText(user?.street) ?? "")
     )
@@ -402,9 +363,6 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       uppercaseAccountText(
         nonEmptyAccountText(user?.apartment) ?? ""
       )
-    )
-    setLocality(
-      uppercaseAccountText(nonEmptyAccountText(user?.city) ?? "")
     )
     setReferences(uppercaseAccountText(user?.references ?? ""))
     setAvatarUrl(user?.avatarUrl ?? "")
@@ -429,9 +387,9 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
       numero: streetNumber,
       piso: floor,
       departamento: apartment,
-      localidad: locality,
-      province,
-      postalCode,
+      localidad: territorial.locality,
+      province: territorial.province,
+      postalCode: territorial.postalCode,
       references,
     })
 
@@ -441,13 +399,13 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
     }
 
     const deliveryAddress = buildDeliveryAddressDraft({
-      postalCode,
+      postalCode: territorial.postalCode,
       street,
       streetNumber,
       floor,
       apartment,
-      locality,
-      province,
+      locality: territorial.locality,
+      province: territorial.province,
     })
     const deliveryError = validateDeliveryAddress(deliveryAddress)
 
@@ -457,12 +415,13 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
     }
 
     try {
-      const normalizedProvince = uppercaseAccountText(province.trim())
+      const normalizedProvince = uppercaseAccountText(territorial.province.trim())
       const normalizedStreet = uppercaseAccountText(street.trim())
       const normalizedFloor = uppercaseAccountText(floor.trim())
       const normalizedApartment = uppercaseAccountText(apartment.trim())
-      const normalizedLocality = uppercaseAccountText(locality.trim())
+      const normalizedLocality = uppercaseAccountText(territorial.locality.trim())
       const normalizedReferences = uppercaseAccountText(references.trim())
+      const normalizedPostalCode = territorial.postalCode.trim()
       await updateUser({
         phone,
         dni: normalizedDni,
@@ -472,14 +431,14 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
         floor: normalizedFloor,
         apartment: normalizedApartment,
         city: normalizedLocality,
-        postalCode,
+        postalCode: normalizedPostalCode,
         references: normalizedReferences,
       })
       savedSignatureRef.current = [
         phone,
         normalizedDni,
         normalizedProvince,
-        postalCode,
+        normalizedPostalCode,
         normalizedStreet,
         streetNumber,
         normalizedFloor,
@@ -665,14 +624,159 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
               <InputField className="md:col-span-2 xl:col-span-2" label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
               <InputField className="md:col-span-2 xl:col-span-2" label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
               <InputField className="md:col-span-2 xl:col-span-3" label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(uppercaseAccountText(value))} placeholder="B" icon={Hash} maxLength={12} />
-              <InputField className="md:col-span-2 xl:col-span-2" label="Código postal" type="tel" value={postalCode} onChange={(value) => setPostalCode(onlyDigits(value, FIELD_LIMITS.postalCode))} placeholder="2000" icon={Hash} maxLength={FIELD_LIMITS.postalCode} inputMode="numeric" />
-              <InputField className="md:col-span-4 xl:col-span-4" label="Localidad" type="text" value={locality} onChange={(value) => setLocality(uppercaseAccountText(value))} placeholder="Rosario" icon={MapPin} maxLength={60} />
               <div className="space-y-1 md:col-span-2 xl:col-span-3">
                 <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
-                  Provincia / Región
+                  Provincia
                 </label>
-                <ProvinceSelect value={province} onChange={(value) => setProvince(uppercaseAccountText(value))} />
+                <GeographicSelect
+                  id="mis-datos-provincia"
+                  value={territorial.province}
+                  options={territorial.provinceOptions}
+                  onChange={territorial.handleProvinceChange}
+                  placeholder="Seleccioná una provincia"
+                  ariaLabel="Seleccionar provincia"
+                />
               </div>
+
+              <div className="space-y-1 md:col-span-4 xl:col-span-4">
+                {territorial.manualLocalityMode ? (
+                  <>
+                    <InputField
+                      label="Localidad"
+                      type="text"
+                      value={territorial.locality}
+                      onChange={(value) => territorial.setLocality(uppercaseAccountText(value))}
+                      placeholder="Rosario"
+                      icon={MapPin}
+                      maxLength={60}
+                    />
+                    <button
+                      type="button"
+                      onClick={territorial.disableManualLocality}
+                      className="cursor-pointer text-11px font-semibold text-[var(--account-accent-soft)] transition-colors hover:text-[var(--account-text-primary)]"
+                    >
+                      Volver a selección automática
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
+                      Localidad
+                    </label>
+                    <GeographicSelect
+                      id="mis-datos-localidad"
+                      value={territorial.locality}
+                      options={territorial.localityOptions}
+                      onChange={territorial.handleLocalityChange}
+                      placeholder="Seleccioná una localidad"
+                      loading={territorial.localitiesLoading}
+                      loadingLabel="Cargando localidades…"
+                      disabled={!territorial.province || territorial.localitiesLoading}
+                      searchable
+                      emptyLabel="No hay localidades disponibles para esta provincia."
+                      errorMessage={territorial.localityLoadError}
+                      ariaLabel="Seleccionar localidad"
+                    />
+                    {territorial.localityLoadError && (
+                      <p className="text-11px font-semibold text-[var(--account-danger-text)]">
+                        {territorial.localityLoadError}
+                      </p>
+                    )}
+                    {territorial.province && (
+                      <button
+                        type="button"
+                        onClick={territorial.enableManualLocality}
+                        className="cursor-pointer text-11px font-semibold text-[var(--account-accent-soft)] transition-colors hover:text-[var(--account-text-primary)]"
+                      >
+                        ¿No encontrás tu localidad? Ingresar manualmente
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-1 md:col-span-2 xl:col-span-2">
+                {territorial.cpEntryIsManual ? (
+                  <InputField
+                    label="Código postal"
+                    type="tel"
+                    value={territorial.postalCode}
+                    onChange={(value) => territorial.handlePostalCodeChange(onlyDigits(value, FIELD_LIMITS.postalCode))}
+                    placeholder="2000"
+                    icon={Hash}
+                    maxLength={FIELD_LIMITS.postalCode}
+                    inputMode="numeric"
+                  />
+                ) : (
+                  <>
+                    <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
+                      Código postal
+                    </label>
+                    <GeographicSelect
+                      id="mis-datos-cp"
+                      value={territorial.postalCode}
+                      options={territorial.postalCodeOptions}
+                      onChange={territorial.handlePostalCodeChange}
+                      placeholder={
+                        territorial.postalCodeLoadError
+                          ? "No disponible"
+                          : territorial.showManualPostalCodeOption
+                            ? "Sin códigos disponibles"
+                            : "Seleccioná un código postal"
+                      }
+                      loading={territorial.postalCodesLoading}
+                      loadingLabel="Cargando códigos postales…"
+                      disabled={
+                        !territorial.locality ||
+                        territorial.postalCodesLoading ||
+                        territorial.postalCodeOptions.length === 0
+                      }
+                      locked={territorial.postalCodeOptions.length === 1}
+                      compact
+                      errorMessage={territorial.postalCodeLoadError}
+                      ariaLabel="Seleccionar código postal"
+                    />
+                    {territorial.postalCodeLoadError && (
+                      <div className="space-y-0.5">
+                        <p className="text-11px font-semibold text-[var(--account-danger-text)]">
+                          {territorial.postalCodeLoadError}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                          <button
+                            type="button"
+                            onClick={territorial.retryPostalCodes}
+                            className="cursor-pointer text-11px font-semibold text-[var(--account-accent-soft)] transition-colors hover:text-[var(--account-text-primary)]"
+                          >
+                            Reintentar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={territorial.enableManualPostalCode}
+                            className="cursor-pointer text-11px font-semibold text-[var(--account-accent-soft)] transition-colors hover:text-[var(--account-text-primary)]"
+                          >
+                            Ingresar manualmente
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {territorial.showManualPostalCodeOption && (
+                      <div className="space-y-0.5">
+                        <p className="text-11px leading-4 text-[var(--account-text-muted)]">
+                          No encontramos códigos postales para esta localidad.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={territorial.enableManualPostalCode}
+                          className="cursor-pointer text-11px font-semibold text-[var(--account-accent-soft)] transition-colors hover:text-[var(--account-text-primary)]"
+                        >
+                          Ingresar código postal manualmente
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
               <TextareaField
                 className="md:col-span-6 xl:col-span-12"
                 label="Referencias para llegar"

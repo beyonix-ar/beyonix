@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server"
 
-import {
-  getPaymentProofValidationError,
-  sanitizePaymentProofFileName,
-} from "@/lib/payments/transfer"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -101,144 +97,20 @@ export async function GET(request: Request) {
   })
 }
 
-export async function POST(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.json({ error: "No autorizado." }, { status: 401 })
-  }
-
-  const formData = await request.formData()
-  const file = formData.get("file")
-  const replaceTopupIdValue = formData.get("replace_topup_id")
-  const replaceTopupId =
-    typeof replaceTopupIdValue === "string" ? replaceTopupIdValue.trim() : ""
-
-  if (
-    replaceTopupId &&
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      replaceTopupId,
-    )
-  ) {
-    return NextResponse.json({ error: "El comprobante a reemplazar no es válido." }, { status: 400 })
-  }
-
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { error: "Subí el comprobante de transferencia." },
-      { status: 400 },
-    )
-  }
-
-  const validationError = getPaymentProofValidationError(file)
-
-  if (validationError) {
-    return NextResponse.json({ error: validationError }, { status: 400 })
-  }
-
-  const admin = createAdminClient()
-  const safeName = sanitizePaymentProofFileName(file.name)
-  const path = `${user.id}/${Date.now()}-${safeName}`
-  const { error: uploadError } = await admin.storage
-    .from(TOPUP_PROOF_BUCKET)
-    .upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-    })
-
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 })
-  }
-
-  const storedPath = `${TOPUP_PROOF_BUCKET}/${path}`
-
-  if (replaceTopupId) {
-    const { data: previousTopup, error: previousTopupError } = await admin
-      .from("customer_credit_topups")
-      .select("id, proof_url, status, payment_method")
-      .eq("id", replaceTopupId)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    if (
-      previousTopupError ||
-      !previousTopup ||
-      previousTopup.status !== "en_revision" ||
-      previousTopup.payment_method !== "transfer"
-    ) {
-      await admin.storage.from(TOPUP_PROOF_BUCKET).remove([path])
-      return NextResponse.json(
-        { error: "Este comprobante ya no se puede reemplazar." },
-        { status: 409 },
-      )
-    }
-
-    const { data: replacedTopup, error: replaceError } = await admin
-      .from("customer_credit_topups")
-      .update({
-        proof_url: storedPath,
-        proof_file_name: file.name,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", replaceTopupId)
-      .eq("user_id", user.id)
-      .eq("status", "en_revision")
-      .eq("payment_method", "transfer")
-      .select(TOPUP_SELECT)
-      .maybeSingle()
-
-    if (replaceError || !replacedTopup) {
-      await admin.storage.from(TOPUP_PROOF_BUCKET).remove([path])
-      return NextResponse.json(
-        { error: replaceError?.message ?? "No se pudo reemplazar el comprobante." },
-        { status: replaceError ? 500 : 409 },
-      )
-    }
-
-    const previousPath = getProofStoragePath(previousTopup.proof_url)
-    if (previousPath && previousPath !== path) {
-      await admin.storage.from(TOPUP_PROOF_BUCKET).remove([previousPath])
-    }
-
-    return NextResponse.json({
-      topup: {
-        ...replacedTopup,
-        proof_signed_url: await getSignedProofUrl(admin, replacedTopup.proof_url),
-      },
-    })
-  }
-
-  const { data, error } = await admin
-    .from("customer_credit_topups")
-    .insert({
-      user_id: user.id,
-      amount: null,
-      customer_name: null,
-      customer_dni: null,
-      proof_url: storedPath,
-      proof_file_name: file.name,
-      status: "en_revision",
-      payment_method: "transfer",
-    })
-    .select(TOPUP_SELECT)
-    .single()
-
-  if (error || !data) {
-    await admin.storage.from(TOPUP_PROOF_BUCKET).remove([path])
-
-    return NextResponse.json(
-      { error: error?.message ?? "No se pudo registrar la carga." },
-      { status: 500 },
-    )
-  }
-
-  return NextResponse.json({
-    topup: {
-      ...data,
-      proof_signed_url: await getSignedProofUrl(admin, data.proof_url),
+// Decisión de negocio: los clientes ya no pueden cargar saldo por ningún
+// medio (transferencia, Mercado Pago ni ningún otro). El saldo a favor sólo
+// puede acreditarse por gestión interna de BEYONIX (reintegro, devolución,
+// compensación, ajuste administrativo -- ver
+// app/api/admin/clientes/saldos/route.ts y
+// app/api/admin/customer-credit/route.ts). El GET de arriba se deja activo y
+// de sólo lectura para que el historial de cargas previas siga siendo
+// consultable.
+export async function POST() {
+  return NextResponse.json(
+    {
+      error:
+        "La carga de saldo por parte del cliente está deshabilitada. El saldo a favor se acredita únicamente por gestión interna de BEYONIX.",
     },
-  })
+    { status: 410 },
+  )
 }

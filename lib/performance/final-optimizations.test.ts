@@ -45,10 +45,13 @@ test("el catálogo server-first usa el rango real y evita recargar categorías",
 test("settings no conserva HTTP stale y las operaciones financieras leen fresco", () => {
   const publicRoute = source("app/api/store/settings/route.ts")
   const adminRoute = source("app/api/admin/settings/route.ts")
+  // app/api/customer-credit/mercadopago/preference/route.ts quedó fuera de
+  // esta lista: la carga de saldo por parte del cliente está deshabilitada
+  // (ver lib/mercadopago/customer-credit-topup-attempt.test.ts) y esa ruta
+  // ya no lee site settings.
   const criticalRoutes = [
     "app/api/transferencia/create-order/route.ts",
     "app/api/customer-credit/create-order/route.ts",
-    "app/api/customer-credit/mercadopago/preference/route.ts",
     "app/api/mercadopago/create-preference/route.ts",
   ]
 

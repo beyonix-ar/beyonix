@@ -21,7 +21,7 @@ test("operaciones de recarga diferentes nunca comparten la clave", () => {
   )
 })
 
-test("la ruta envía la clave al SDK y resuelve carreras antes de crear", () => {
+test("la ruta de preferencia de Mercado Pago está deshabilitada para el cliente (cambio de negocio: sin carga de saldo iniciada por el cliente)", () => {
   const route = readFileSync(
     new URL(
       "../../app/api/customer-credit/mercadopago/preference/route.ts",
@@ -29,16 +29,12 @@ test("la ruta envía la clave al SDK y resuelve carreras antes de crear", () => 
     ),
     "utf8",
   )
-  const insertAt = route.search(
-    /\.from\("customer_credit_topups"\)\s*\.insert\(/,
-  )
-  const conflictAt = route.indexOf('insertError.code === "23505"')
-  const preferenceAt = route.indexOf("preference.create({")
 
-  assert.ok(insertAt >= 0 && conflictAt > insertAt && preferenceAt > conflictAt)
-  assert.match(
+  assert.match(route, /status:\s*410/)
+  assert.doesNotMatch(route, /preference\.create\(/)
+  assert.doesNotMatch(
     route,
-    /requestOptions:\s*{\s*idempotencyKey:\s*getCustomerCreditTopupPreferenceIdempotencyKey\(topupId\)/,
+    /\.from\("customer_credit_topups"\)\s*\.insert\(/,
   )
 })
 
