@@ -592,16 +592,17 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                     icon={IdCard}
                   />
                 )}
-                <ReadOnlyField
-                  label="Email"
-                  value={user?.email || ""}
-                  icon={Mail}
-                />
                 <ArgentinaPhoneInput
                   id="profile-phone"
                   label="Teléfono móvil"
                   value={phone}
                   onChange={setPhone}
+                />
+                <ReadOnlyField
+                  className="sm:col-span-2 xl:col-span-2"
+                  label="Email"
+                  value={user?.email || ""}
+                  icon={Mail}
                 />
               </div>
             </div>
@@ -624,7 +625,8 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
               <InputField className="md:col-span-2 xl:col-span-2" label="Número" type="text" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" icon={Hash} maxLength={8} inputMode="numeric" />
               <InputField className="md:col-span-2 xl:col-span-2" label="Piso opcional" type="text" value={floor} onChange={(value) => setFloor(uppercaseAccountText(value))} placeholder="3" icon={Hash} maxLength={12} />
               <InputField className="md:col-span-2 xl:col-span-3" label="Departamento opcional" type="text" value={apartment} onChange={(value) => setApartment(uppercaseAccountText(value))} placeholder="B" icon={Hash} maxLength={12} />
-              <div className="space-y-1 md:col-span-2 xl:col-span-3">
+              <div className="grid gap-2.5 md:col-span-6 md:grid-cols-[1fr_1.8fr_0.7fr] xl:col-span-12">
+              <div className="min-w-0 space-y-1">
                 <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
                   Provincia
                 </label>
@@ -638,7 +640,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                 />
               </div>
 
-              <div className="space-y-1 md:col-span-4 xl:col-span-4">
+              <div className="min-w-0 space-y-1">
                 {territorial.manualLocalityMode ? (
                   <>
                     <InputField
@@ -695,7 +697,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                 )}
               </div>
 
-              <div className="space-y-1 md:col-span-2 xl:col-span-2">
+              <div className="min-w-0 space-y-1">
                 {territorial.cpEntryIsManual ? (
                   <InputField
                     label="Código postal"
@@ -722,7 +724,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                           ? "No disponible"
                           : territorial.showManualPostalCodeOption
                             ? "Sin códigos disponibles"
-                            : "Seleccioná un código postal"
+                            : "Seleccioná"
                       }
                       loading={territorial.postalCodesLoading}
                       loadingLabel="Cargando códigos postales…"
@@ -775,6 +777,7 @@ export function MisDatos({ onBack }: { onBack: () => void }) {
                     )}
                   </>
                 )}
+              </div>
               </div>
 
               <TextareaField

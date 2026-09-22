@@ -112,13 +112,18 @@ export function ReadOnlyField({
   className?: string
 }) {
   return (
-    <div className={cn("space-y-1", className)}>
+    <div className={cn("min-w-0 space-y-1", className)}>
       <label className="block text-11px font-semibold uppercase tracking-widest text-[var(--account-text-muted)]">
         {label}
       </label>
       <div className="flex h-11 items-center gap-2 rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5">
         <Icon className="size-4 shrink-0 text-[var(--account-text-muted)]" />
-        <span className="truncate text-sm font-medium text-[var(--account-text-secondary)]">{value}</span>
+        <span
+          title={value}
+          className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--account-text-secondary)]"
+        >
+          {value}
+        </span>
       </div>
       {help && <p className="text-11px text-[var(--account-text-muted)]">{help}</p>}
     </div>
