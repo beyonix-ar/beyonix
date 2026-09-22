@@ -261,6 +261,7 @@ export interface SupabasePedido {
     transferDiscountPercent?: number | null
     nationalTaxesIncidencePercent?: number | null
     cftea?: { monthlyRate: number; annualPercent: number } | null
+    installmentsRoundingAdjustment?: number | null
     priceWithoutNationalTaxes?: { cash: number; financed: number | null } | null
   } | null
   mercadopago_payment_snapshot?: {

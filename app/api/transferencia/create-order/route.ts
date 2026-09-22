@@ -209,6 +209,7 @@ export async function POST(request: Request) {
       transferDiscountPercent,
       nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
       cftea: null,
+      installmentsRoundingAdjustment: 0,
       priceWithoutNationalTaxes: {
         cash: getPriceWithoutNationalTaxes(
           cashTotalBeforeTransferDiscount,

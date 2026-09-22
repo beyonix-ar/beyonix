@@ -92,6 +92,7 @@ import {
   getCartFinancedTotal,
   getInstallmentAmount,
   getMaxEligibleInstallmentCount,
+  roundUpCheckoutTotalForInstallments,
   getPriceWithoutNationalTaxes,
 } from "@/lib/pricing/financed-pricing"
 import {
@@ -795,7 +796,36 @@ export default function CheckoutPage() {
   // intento real de pago (ver handleSubmit): no hay ninguna validación
   // proactiva de stock mientras el cliente completa el Checkout.
   const hasKnownStockConflict = insufficientStockItems.length > 0
-  const finalTotal = customerCreditApplication.externalAmountDue
+  // Mismo ajuste de redondeo final de cuotas que create-preference (fuente
+  // de verdad): una sola vez, sobre lo que se cobra después de saldo.
+  const installmentsCheckoutTotals =
+    isMercadoPagoPayment && effectiveInstallmentsModality != null && cartFinancedTotal != null
+      ? roundUpCheckoutTotalForInstallments({
+          total: totalBeforeCustomerCredit,
+          customerCreditApplied: customerCreditApplication.appliedAmount,
+          offeredCounts: cartInstallmentEligibility,
+        })
+      : null
+  const finalTotal =
+    installmentsCheckoutTotals?.externalAmountDue ?? customerCreditApplication.externalAmountDue
+  // Con cuotas, el saldo aplicado se ajusta al múltiplo de las cuotas (ver
+  // roundUpCheckoutTotalForInstallments); el mismo que aplica create-preference.
+  const appliedCustomerCredit =
+    installmentsCheckoutTotals?.customerCreditApplied ?? customerCreditApplication.appliedAmount
+  const installmentsRoundingAdjustment = installmentsCheckoutTotals?.roundingAdjustment ?? 0
+  // Opciones de cuotas antes de elegir una: el mismo cálculo que tendría el
+  // cobro si se eligiera cualquiera de ellas (el total no depende de la cuota).
+  const installmentOptionsTotals =
+    isMercadoPagoPayment && cartFinancedTotal != null
+      ? roundUpCheckoutTotalForInstallments({
+          total: cartFinancedTotal,
+          customerCreditApplied: getMaxApplicableCustomerCredit(
+            customerCredit.balance,
+            cartFinancedTotal,
+          ),
+          offeredCounts: cartInstallmentEligibility,
+        })
+      : null
   // Informativo ("Pagás N cuotas de $X"): divide lo que efectivamente se
   // termina cobrando (ya neto de saldo a favor) por la cantidad de cuotas
   // elegida -- el total financiado en sí NO cambia según cuántas cuotas se
@@ -804,12 +834,15 @@ export default function CheckoutPage() {
     effectiveInstallmentsModality && cartFinancedTotal != null
       ? getInstallmentAmount(finalTotal, effectiveInstallmentsModality)
       : null
-  // Disclosure legal (CFTEA / precio sin impuestos): se calcula sobre los
-  // totales ANTES de saldo a favor -- describe el producto financiero en sí,
-  // no un residuo que depende de un beneficio ajeno a la financiación.
+  // Disclosure legal (CFTEA): se calcula sobre el total financiado ANTES de
+  // saldo a favor -- describe el producto financiero en sí, no un residuo que
+  // depende de un beneficio ajeno a la financiación -- pero YA con el ajuste
+  // de redondeo final de cuotas: el mismo total canónico que resumen, cuotas
+  // y Mercado Pago (roundUpCheckoutTotalForInstallments).
+  const legalFinancedTotal = installmentsCheckoutTotals?.total ?? null
   const legalInstallmentAmount =
-    effectiveInstallmentsModality && cartFinancedTotal != null
-      ? getInstallmentAmount(cartFinancedTotal, effectiveInstallmentsModality)
+    effectiveInstallmentsModality && legalFinancedTotal != null
+      ? getInstallmentAmount(legalFinancedTotal, effectiveInstallmentsModality)
       : null
   const cfteaPercent =
     effectiveInstallmentsModality &&
@@ -2359,8 +2392,8 @@ export default function CheckoutPage() {
 
                         {cartInstallmentEligibility.map((count) => {
                           const installmentAmount =
-                            cartFinancedTotal != null
-                              ? getInstallmentAmount(cartFinancedTotal, count)
+                            installmentOptionsTotals != null
+                              ? getInstallmentAmount(installmentOptionsTotals.externalAmountDue, count)
                               : null
                           if (installmentAmount === null) return null
 
@@ -2388,9 +2421,9 @@ export default function CheckoutPage() {
                           )
                         })}
                       </div>
-                      {cartFinancedTotal != null && (
+                      {installmentOptionsTotals != null && (
                         <p className="text-11px font-medium text-white/45">
-                          Precio financiado: {formatPrice(cartFinancedTotal)}
+                          Precio financiado: {formatPrice(installmentOptionsTotals.total)}
                         </p>
                       )}
                     </div>
@@ -2400,7 +2433,7 @@ export default function CheckoutPage() {
                     <p className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] px-3 py-2 text-11px font-medium leading-5 text-white/55">
                       Costo financiero total efectivo anual (CFTEA): {cfteaPercent.toFixed(1)}%.
                       Precio de contado {formatPrice(cashTotalBeforeCredit)} — precio financiado en{" "}
-                      {effectiveInstallmentsModality} cuotas {formatPrice(cartFinancedTotal ?? 0)}.
+                      {effectiveInstallmentsModality} cuotas {formatPrice(legalFinancedTotal ?? 0)}.
                     </p>
                   )}
 
@@ -2801,20 +2834,30 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                 )}
-                {customerCreditApplication.appliedAmount > 0 && (
+                {appliedCustomerCredit > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
                       Saldo a favor
                     </span>
                     <span className="font-semibold text-emerald-400">
-                      -{formatPrice(customerCreditApplication.appliedAmount)}
+                      -{formatPrice(appliedCustomerCredit)}
+                    </span>
+                  </div>
+                )}
+                {installmentsRoundingAdjustment > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">
+                      Redondeo de cuotas
+                    </span>
+                    <span className="font-semibold text-white">
+                      +{formatPrice(installmentsRoundingAdjustment)}
                     </span>
                   </div>
                 )}
                 <Separator className="bg-beyonix-blue-light/12" />
                 <div className="flex items-end justify-between pt-0.5 font-heading text-white">
                   <span className="font-bold">
-                    {customerCreditApplication.appliedAmount > 0
+                    {appliedCustomerCredit > 0
                       ? "Total a pagar"
                       : "Total"}
                   </span>

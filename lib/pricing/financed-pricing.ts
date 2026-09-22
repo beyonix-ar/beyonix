@@ -19,6 +19,8 @@
  *    que el máximo, el fee REAL que cobra Mercado Pago es menor al usado para
  *    calcular el precio: la diferencia es margen adicional intencional (ver
  *    `mercadopago_payment_snapshot`, fuente de verdad del fee real).
+ *    El resultado se redondea HACIA ARRIBA al múltiplo común de las cuotas
+ *    (`getFinancedPriceDivisor`), así N cuotas x monto cierran exacto.
  *
  * El precio financiado NUNCA se persiste como columna -- se deriva siempre de
  * precio + config vigente, igual que el precio por margen objetivo
@@ -26,6 +28,7 @@
  */
 
 import {
+  INSTALLMENT_COUNTS,
   getEffectiveInstallmentPercent,
   getEligibleInstallmentCounts,
   type EligibleInstallmentsProduct,
@@ -77,7 +80,9 @@ export function getFinancedFeeRate(
 
 /**
  * Precio financiado total (constante sin importar qué cuota elija el
- * cliente). `null` si el producto no tiene ninguna cuota habilitada, si el
+ * cliente), en pesos enteros y redondeado hacia arriba al múltiplo de
+ * `getFinancedPriceDivisor(maxCount)` -- nunca se ajustan cuotas
+ * individuales para esconder diferencias. `null` si el producto no tiene ninguna cuota habilitada, si el
  * contado no es válido, o si la tasa efectiva es matemáticamente imposible
  * de "resolver" (>=100%, config extrema).
  */
@@ -94,37 +99,120 @@ export function getFinancedPrice(
   const feeRate = getFinancedFeeRate(maxCount, config)
   if (feeRate >= 1) return null
 
-  return Math.round(safeCash / (1 - feeRate))
+  // Tolerancia de punto flotante: un gross-up que da 63018.0000000001 no
+  // debe saltar al múltiplo siguiente.
+  const grossUpPesos = Math.ceil(safeCash / (1 - feeRate) - 1e-6)
+  const divisor = getFinancedPriceDivisor(maxCount)
+
+  return Math.ceil(grossUpPesos / divisor) * divisor
 }
 
-/** División simple redondeada al peso -- uso informativo (labels de cuotas). Ver `getInstallmentAmounts` para la variante que garantiza que la suma cierre exacto. */
+function greatestCommonDivisor(a: number, b: number): number {
+  return b === 0 ? a : greatestCommonDivisor(b, a % b)
+}
+
+/**
+ * Múltiplo al que se redondea HACIA ARRIBA el financiado: mínimo común
+ * múltiplo de todas las cantidades de cuotas <= `maxCount` (máx. 6 -> 6,
+ * máx. 3 -> 6, máx. 2 -> 2). Cubre cualquier combinación habilitada con ese
+ * máximo, así que cada cuota ofrecida divide el total EXACTO, sin residuo:
+ * el total financiado es idéntico elija el cliente 2, 3 o 6 cuotas.
+ */
+export function getFinancedPriceDivisor(maxCount: InstallmentCount): number {
+  return getInstallmentCountsDivisor(
+    INSTALLMENT_COUNTS.filter((count) => count <= maxCount),
+  )
+}
+
+/** Mínimo común múltiplo de las cuotas dadas (`1` si no hay ninguna). */
+export function getInstallmentCountsDivisor(
+  counts: readonly InstallmentCount[],
+): number {
+  return counts.reduce(
+    (lcm, count) => (lcm * count) / greatestCommonDivisor(lcm, count),
+    1,
+  )
+}
+
+export interface InstallmentsRoundedCheckoutTotal {
+  /** Total de la orden (antes de saldo a favor), ya con `roundingAdjustment` incluido. */
+  total: number
+  /** Lo que efectivamente se cobra por Mercado Pago: `total - customerCreditApplied`. */
+  externalAmountDue: number
+  /** Saldo a favor que efectivamente se aplica (<= el solicitado). */
+  customerCreditApplied: number
+  /** Ajuste de redondeo final de cuotas (>= 0, menor a divisor centavos). */
+  roundingAdjustment: number
+}
+
+/**
+ * AJUSTE DE REDONDEO FINAL DE CUOTAS del checkout financiado, en centavos
+ * enteros y con divisor = mínimo común de las cuotas OFRECIDAS (no de la
+ * elegida, así 2/3/6 cobran el mismo total):
+ *
+ * - `total` (productos financiados + envío - beneficio) se lleva HACIA ARRIBA
+ *   al próximo múltiplo del divisor, UNA sola vez. No depende del saldo.
+ * - El saldo a favor aplicado se lleva HACIA ABAJO al múltiplo del divisor
+ *   (a lo sumo divisor-1 centavos quedan en la billetera, nunca se pierden).
+ *
+ * Así `total`, saldo y `externalAmountDue = total - saldo` son TODOS
+ * divisibles por cada cuota ofrecida, y se conserva
+ * `total = externalAmountDue + saldo` (invariante que recalculan las RPC de
+ * saldo a favor sobre `original_total`): si `reverse_customer_credit_for_order`
+ * restaura `external_amount_due = original_total`, el monto restaurado sigue
+ * dividiendo exacto sin repetir esta lógica en SQL. Si el saldo cubre todo
+ * no hay nada que financiar ni redondear. Nunca toca el envío.
+ */
+export function roundUpCheckoutTotalForInstallments({
+  total,
+  customerCreditApplied,
+  offeredCounts,
+}: {
+  total: number
+  customerCreditApplied: number
+  offeredCounts: readonly InstallmentCount[]
+}): InstallmentsRoundedCheckoutTotal {
+  const totalCents = toCents(total)
+  const requestedCreditCents = Math.min(toCents(customerCreditApplied), totalCents)
+
+  if (requestedCreditCents >= totalCents) {
+    return {
+      total: totalCents / 100,
+      externalAmountDue: 0,
+      customerCreditApplied: requestedCreditCents / 100,
+      roundingAdjustment: 0,
+    }
+  }
+
+  const divisor = getInstallmentCountsDivisor(offeredCounts)
+  const roundedTotalCents = Math.ceil(totalCents / divisor) * divisor
+  const creditCents = Math.floor(requestedCreditCents / divisor) * divisor
+
+  return {
+    total: roundedTotalCents / 100,
+    externalAmountDue: (roundedTotalCents - creditCents) / 100,
+    customerCreditApplied: creditCents / 100,
+    roundingAdjustment: (roundedTotalCents - totalCents) / 100,
+  }
+}
+
+function toCents(amount: number): number {
+  return Number.isFinite(amount) ? Math.max(Math.round(amount * 100), 0) : 0
+}
+
+/**
+ * Monto de cada cuota: división EXACTA, sin redondear, del total canónico
+ * (`getFinancedPrice` o `roundUpCheckoutTotalForInstallments`, que ya
+ * garantizan divisibilidad al centavo). Nunca se ajusta una cuota para que
+ * cierre: si el total no divide, el error está en el total, no acá.
+ */
 export function getInstallmentAmount(
   financedPrice: number,
   count: InstallmentCount,
 ): number | null {
   if (!Number.isFinite(financedPrice) || financedPrice <= 0) return null
 
-  return Math.round(financedPrice / count)
-}
-
-/**
- * Igual que `getInstallmentAmount` pero devuelve las `count` cuotas
- * individuales, con la ÚLTIMA absorbiendo el residuo de redondeo: la suma de
- * este array siempre es exactamente `Math.round(financedPrice)`, nunca un
- * total distinto al informado (regla de centavos/checkout).
- */
-export function getInstallmentAmounts(
-  financedPrice: number,
-  count: InstallmentCount,
-): number[] | null {
-  if (!Number.isFinite(financedPrice) || financedPrice <= 0) return null
-
-  const base = Math.round(financedPrice / count)
-  const amounts = new Array<number>(count).fill(base)
-  const roundedTotal = Math.round(financedPrice)
-  amounts[count - 1] += roundedTotal - base * count
-
-  return amounts
+  return toCents(financedPrice) / count / 100
 }
 
 export interface InstallmentPlan {

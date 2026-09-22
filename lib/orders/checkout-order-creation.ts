@@ -213,6 +213,12 @@ export interface CheckoutOrderPricingSnapshot {
   transferDiscountPercent: number
   nationalTaxesIncidencePercent: number
   cftea: { monthlyRate: number; annualPercent: number } | null
+  /**
+   * Ajuste de redondeo final de cuotas (`roundUpCheckoutTotalForInstallments`)
+   * ya incluido en `ordenes.total`/`external_amount_due`; 0 sin cuotas.
+   * Permite reconstruir el total histórico sin tocar el envío persistido.
+   */
+  installmentsRoundingAdjustment: number
   priceWithoutNationalTaxes: { cash: number; financed: number | null }
 }
 

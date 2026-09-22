@@ -591,6 +591,7 @@ test("buildCheckoutOrderBase persiste el snapshot de financiación: surcharge RE
     transferDiscountPercent: 10,
     nationalTaxesIncidencePercent: 21,
     cftea: { monthlyRate: 0.05, annualPercent: 79.6 },
+    installmentsRoundingAdjustment: 0,
     priceWithoutNationalTaxes: { cash: 61_983, financed: 74_380 },
   }
   const financed = buildCheckoutOrderBase({

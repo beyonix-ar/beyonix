@@ -188,8 +188,11 @@ test("CASO E: la ganancia en PESOS de la cuota máxima es idéntica a la de cont
   // MÁXIMA -- por construcción, netAmount = financedPrice*(1-feeRate6) ==
   // price (contado, sin ninguna comisión) exacto, así que su ganancia en
   // pesos coincide con "precio de contado - costo" (no con mp_unico, que
-  // tiene su PROPIA comisión de 8% aunque sea pago único).
-  assert.ok(Math.abs(mp6.profitAmount - (price - cost)) < 1)
+  // tiene su PROPIA comisión de 8% aunque sea pago único). El financiado se
+  // redondea HACIA ARRIBA al múltiplo de 6 (getFinancedPriceDivisor), así
+  // que la ganancia nunca queda por debajo y la excede en menos de $6.
+  assert.ok(mp6.profitAmount >= price - cost - 1e-6)
+  assert.ok(mp6.profitAmount - (price - cost) < 6)
   assert.ok(mp6.profitAmount > mpUnico.profitAmount)
   // Pero mp_2 y mp_3 usan la MISMA base financiada (financedPrice de la
   // cuota 6) con una tasa REAL menor (18%/21% vs 31%) -- más ganancia en

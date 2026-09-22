@@ -7,9 +7,9 @@ import {
   getCartFinancedTotal,
   getCashPrice,
   getFinancedFeeRate,
+  getFinancedPriceDivisor,
   getFinancedPrice,
   getInstallmentAmount,
-  getInstallmentAmounts,
   getInstallmentPlans,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
@@ -54,7 +54,8 @@ test("getCashPrice / getMaxEligibleInstallmentCount: básicos", () => {
 test("CASO B: getFinancedPrice usa la tasa efectiva de la cuota máxima habilitada", () => {
   assert.equal(getFinancedFeeRate(2, REAL_CONFIG), 0.18)
   const financedPrice = getFinancedPrice(100_000, 2, REAL_CONFIG)
-  assert.equal(financedPrice, Math.round(100_000 / 0.82))
+  // 121951,22 -> hacia arriba al múltiplo de 2.
+  assert.equal(financedPrice, 121_952)
   assert.ok(financedPrice! > 100_000)
 })
 
@@ -74,13 +75,8 @@ test("CASO C: con máximo 3 cuotas habilitado, 2 y 3 cuotas dividen el mismo pre
     [2, 3],
   )
   for (const plan of plans) {
-    assert.ok(Math.abs(plan.amount * plan.count - financedPrice) < plan.count)
+    assert.equal(plan.amount * plan.count, financedPrice)
   }
-
-  const amounts2 = getInstallmentAmounts(financedPrice, 2)!
-  const amounts3 = getInstallmentAmounts(financedPrice, 3)!
-  assert.equal(amounts2.reduce((a, b) => a + b, 0), Math.round(financedPrice))
-  assert.equal(amounts3.reduce((a, b) => a + b, 0), Math.round(financedPrice))
 })
 
 // CASO D: máximo 6 -> 2, 3 y 6 cuotas comparten el MISMO total financiado.
@@ -99,15 +95,7 @@ test("CASO D: con máximo 6 cuotas habilitado, 2, 3 y 6 cuotas dividen el mismo 
     [2, 3, 6],
   )
   for (const plan of plans) {
-    // La suma nunca coincide EXACTO al centavo con la división simple si no
-    // divide justo -- tolerancia de "count" pesos, nunca se infla el total.
-    assert.ok(Math.abs(plan.amount * plan.count - financedPrice) < plan.count)
-  }
-
-  for (const count of [2, 3, 6] as const) {
-    const amounts = getInstallmentAmounts(financedPrice, count)!
-    assert.equal(amounts.length, count)
-    assert.equal(amounts.reduce((a, b) => a + b, 0), Math.round(financedPrice))
+    assert.equal(plan.amount * plan.count, financedPrice)
   }
 })
 
@@ -119,8 +107,8 @@ test("CASO E: elegir menos cuotas que el máximo sólo divide distinto -- el tot
   const amount2 = getInstallmentAmount(financedPrice, 2)!
   const amount6 = getInstallmentAmount(financedPrice, 6)!
 
-  assert.ok(Math.abs(amount2 * 2 - financedPrice) < 2)
-  assert.ok(Math.abs(amount6 * 6 - financedPrice) < 6)
+  assert.equal(amount2 * 2, financedPrice)
+  assert.equal(amount6 * 6, financedPrice)
   // 2 cuotas valen bastante más cada una que 6 cuotas del MISMO total.
   assert.ok(amount2 > amount6 * 2)
 })
@@ -246,26 +234,115 @@ test("regla legal: nunca se muestra CFTEA en pago único (1 cuota) ni cuando no 
   assert.equal(calculateCftea(100_000, 15_000, 6), null)
 })
 
-// CASO N: centavos y redondeo -- la suma de las cuotas SIEMPRE coincide
-// exacto con el total redondeado, sin importar si divide justo.
-test("CASO N: getInstallmentAmounts ajusta la ÚLTIMA cuota para que la suma cierre exacto, incluso cuando no divide justo", () => {
-  const financedPrice = 70_003 // no divide exacto por 6
-  const amounts = getInstallmentAmounts(financedPrice, 6)!
-
-  assert.equal(amounts.length, 6)
-  assert.equal(amounts.reduce((a, b) => a + b, 0), financedPrice)
-  // Las primeras 5 son la división simple redondeada; sólo la última absorbe el residuo.
-  const base = Math.round(financedPrice / 6)
-  assert.deepEqual(amounts.slice(0, 5), [base, base, base, base, base])
+// CASO N: nunca se ajusta una cuota individual -- getInstallmentAmount es
+// una división exacta del total canónico.
+test("CASO N: getInstallmentAmount divide exacto, sin redondear ni ajustar cuotas", () => {
+  assert.equal(getInstallmentAmount(63_018, 6), 10_503)
+  assert.equal(getInstallmentAmount(63_018.06, 6), 10_503.01)
+  assert.equal(getInstallmentAmount(63_018.06, 3), 21_006.02)
+  assert.equal(getInstallmentAmount(63_018.06, 2), 31_509.03)
 })
 
 test("montos inválidos (0, negativo, NaN) no generan cuotas", () => {
   assert.equal(getInstallmentAmount(0, 3), null)
   assert.equal(getInstallmentAmount(-100, 3), null)
   assert.equal(getInstallmentAmount(Number.NaN, 3), null)
-  assert.equal(getInstallmentAmounts(0, 3), null)
 })
 
 test("producto sin ninguna cuota habilitada no genera planes de financiación", () => {
   assert.deepEqual(getInstallmentPlans(product(), 75_000, REAL_CONFIG), [])
+})
+
+// CASO O: el total financiado es IDÉNTICO sin importar cuántas cuotas se
+// elijan -- ni $1 de diferencia. Regla: redondeo hacia arriba al múltiplo
+// común de las cuotas, nunca ajuste de cuotas individuales.
+test("CASO O: getFinancedPriceDivisor es el mínimo común múltiplo de las cuotas <= máximo", () => {
+  assert.equal(getFinancedPriceDivisor(2), 2)
+  assert.equal(getFinancedPriceDivisor(3), 6)
+  assert.equal(getFinancedPriceDivisor(6), 6)
+})
+
+test("CASO O (obligatorio): máximo 6 -> 2, 3 y 6 cuotas cierran EXACTO el mismo total financiado", () => {
+  const prod = product({
+    cuotas_2_habilitadas: true,
+    cuotas_3_habilitadas: true,
+    cuotas_6_habilitadas: true,
+  })
+
+  for (const cashPrice of [1, 999, 45_677, 51_673, 63_014, 100_000, 1_234_567]) {
+    const financedTotal = getFinancedPrice(cashPrice, 6, REAL_CONFIG)!
+    const installment2 = getInstallmentAmount(financedTotal, 2)!
+    const installment3 = getInstallmentAmount(financedTotal, 3)!
+    const installment6 = getInstallmentAmount(financedTotal, 6)!
+
+    assert.ok(Number.isInteger(financedTotal))
+    assert.equal(installment2 * 2, financedTotal)
+    assert.equal(installment3 * 3, financedTotal)
+    assert.equal(installment6 * 6, financedTotal)
+    assert.equal(installment2 * 2, installment3 * 3)
+    assert.equal(installment3 * 3, installment6 * 6)
+
+    for (const plan of getInstallmentPlans(prod, cashPrice, REAL_CONFIG)) {
+      assert.equal(plan.amount * plan.count, financedTotal)
+    }
+  }
+})
+
+test("CASO O: el ajuste es HACIA ARRIBA y como máximo divisor-1 pesos sobre el gross-up", () => {
+  for (const maxCount of [2, 3, 6] as const) {
+    for (const cashPrice of [1, 12_345, 51_673, 100_000, 987_654]) {
+      const grossUp = cashPrice / (1 - getFinancedFeeRate(maxCount, REAL_CONFIG))
+      const financedTotal = getFinancedPrice(cashPrice, maxCount, REAL_CONFIG)!
+      const divisor = getFinancedPriceDivisor(maxCount)
+
+      assert.equal(financedTotal % divisor, 0)
+      assert.ok(financedTotal >= grossUp)
+      assert.ok(financedTotal - grossUp < divisor)
+    }
+  }
+})
+
+test("CASO O: máximo 3 -> 2 y 3 cuotas cierran exacto; máximo 2 -> divisible por 2", () => {
+  for (const cashPrice of [7, 45_677, 100_001]) {
+    const financedAt3 = getFinancedPrice(cashPrice, 3, REAL_CONFIG)!
+    assert.equal(getInstallmentAmount(financedAt3, 2)! * 2, financedAt3)
+    assert.equal(getInstallmentAmount(financedAt3, 3)! * 3, financedAt3)
+
+    const financedAt2 = getFinancedPrice(cashPrice, 2, REAL_CONFIG)!
+    assert.equal(getInstallmentAmount(financedAt2, 2)! * 2, financedAt2)
+  }
+})
+
+test("CASO O: un gross-up que ya es múltiplo exacto no sube al múltiplo siguiente", () => {
+  // fee 0 (config degenerada): el gross-up es el contado mismo.
+  const zeroFee: InstallmentsFinancingConfig = {
+    baseProcessingPercent: 0,
+    ivaPercent: 0,
+    surchargePercentByCount: { 2: 0, 3: 0, 6: 0 },
+  }
+  assert.equal(getFinancedPrice(63_018, 6, zeroFee), 63_018)
+  assert.equal(getFinancedPrice(63_014, 6, zeroFee), 63_018)
+})
+
+test("CASO O: carrito mixto -- cada línea conserva la divisibilidad y el total cierra exacto con cualquier cuota ofrecida al carrito", () => {
+  const lines = [
+    { cashPrice: 63_014, maxEligibleCount: 6 as const, quantity: 3 },
+    { cashPrice: 45_677, maxEligibleCount: 3 as const, quantity: 2 },
+    { cashPrice: 12_345, maxEligibleCount: 2 as const, quantity: 1 },
+  ]
+
+  for (const line of lines) {
+    const perUnit = getFinancedPrice(line.cashPrice, line.maxEligibleCount, REAL_CONFIG)!
+    assert.equal(perUnit % getFinancedPriceDivisor(line.maxEligibleCount), 0)
+  }
+
+  // El carrito sólo ofrece la intersección de cuotas (acá: 2), que divide
+  // exacto a cada línea -- por lo tanto también a la suma.
+  const total = getCartFinancedTotal(lines, REAL_CONFIG)
+  assert.equal(getInstallmentAmount(total, 2)! * 2, total)
+
+  // Sin la línea de máximo 2, el carrito ofrece 2 y 3: ambas cierran exacto.
+  const totalMax3 = getCartFinancedTotal(lines.slice(0, 2), REAL_CONFIG)
+  assert.equal(getInstallmentAmount(totalMax3, 2)! * 2, totalMax3)
+  assert.equal(getInstallmentAmount(totalMax3, 3)! * 3, totalMax3)
 })

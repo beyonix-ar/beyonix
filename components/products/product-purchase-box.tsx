@@ -38,6 +38,9 @@ function formatPrice(price: number) {
   }).format(price)
 }
 
+/** Línea "CFTEA: x%" de la ficha oculta temporalmente, pendiente de definición legal. */
+const SHOW_CFTEA_ON_PRODUCT = false
+
 function formatPercent(value: number) {
   return new Intl.NumberFormat("es-AR", {
     minimumFractionDigits: 1,
@@ -167,8 +170,9 @@ export function ProductPurchaseBox({
 
           {/* Requisito legal Argentina: al haber precio financiado > contado,
               nunca se puede decir "sin interés" -- se muestra el costo
-              financiero total efectivo anual en su lugar. */}
-          {cfteaPercent != null && (
+              financiero total efectivo anual en su lugar. Oculto
+              temporalmente (SHOW_CFTEA_ON_PRODUCT); el cálculo sigue vivo. */}
+          {SHOW_CFTEA_ON_PRODUCT && cfteaPercent != null && (
             <p className="beyonix-modal-muted mt-1 text-10px font-medium leading-4 text-white/45">
               CFTEA: {formatPercent(cfteaPercent)}%
             </p>

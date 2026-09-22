@@ -47,6 +47,7 @@ import {
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
   getTransferPrice,
+  roundUpCheckoutTotalForInstallments,
   type InstallmentCount,
 } from "@/lib/pricing/financed-pricing"
 import type { CheckoutOrderPricingSnapshot } from "@/lib/orders/checkout-order-creation"
@@ -382,35 +383,6 @@ export async function POST(request: Request) {
 
     const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
     const nationalTaxesIncidencePercent = siteSettings.pricing.nationalTaxesIncidencePercent
-    const cftea =
-      requestedInstallmentsModality != null && financedTotal != null
-        ? (() => {
-            const installmentAmount = getInstallmentAmount(financedTotal, requestedInstallmentsModality)
-            const annualPercent =
-              installmentAmount != null
-                ? calculateCftea(cashTotal, installmentAmount, requestedInstallmentsModality)
-                : null
-            return annualPercent != null
-              ? { monthlyRate: Math.pow(1 + annualPercent / 100, 1 / 12) - 1, annualPercent }
-              : null
-          })()
-        : null
-    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
-      cashPriceTotal: cashTotal,
-      transferPriceTotal: getTransferPrice(cashTotal, transferDiscountPercent),
-      financedPriceTotal: financedTotal,
-      maxInstallmentCount: cartMaxEligibleCount,
-      transferDiscountPercent,
-      nationalTaxesIncidencePercent,
-      cftea,
-      priceWithoutNationalTaxes: {
-        cash: getPriceWithoutNationalTaxes(cashTotal, nationalTaxesIncidencePercent),
-        financed:
-          financedTotal != null
-            ? getPriceWithoutNationalTaxes(financedTotal, nationalTaxesIncidencePercent)
-            : null,
-      },
-    }
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({
@@ -449,13 +421,63 @@ export async function POST(request: Request) {
       )
     }
 
+    // Ajuste de redondeo final de cuotas, una única vez y sobre el monto
+    // final a cobrar (ver roundUpCheckoutTotalForInstallments): depende de
+    // las cuotas OFRECIDAS al carrito, no de la elegida, así 2/3/6 cobran el
+    // mismo total. Pago único/contado nunca se redondea.
+    const checkoutTotals =
+      requestedInstallmentsModality != null && financedTotal != null
+        ? roundUpCheckoutTotalForInstallments({
+            total: totalAfterStoreBenefit,
+            customerCreditApplied: customerCreditApplication.appliedAmount,
+            offeredCounts: cartInstallmentEligibility,
+          })
+        : {
+            total: totalAfterStoreBenefit,
+            externalAmountDue: customerCreditApplication.externalAmountDue,
+            customerCreditApplied: customerCreditApplication.appliedAmount,
+            roundingAdjustment: 0,
+          }
+    // CFTEA sobre el MISMO total financiado final que se muestra y se cobra
+    // (ya con el ajuste de redondeo de cuotas), antes de saldo a favor.
+    const cftea =
+      requestedInstallmentsModality != null && financedTotal != null
+        ? (() => {
+            const installmentAmount = getInstallmentAmount(checkoutTotals.total, requestedInstallmentsModality)
+            const annualPercent =
+              installmentAmount != null
+                ? calculateCftea(cashTotal, installmentAmount, requestedInstallmentsModality)
+                : null
+            return annualPercent != null
+              ? { monthlyRate: Math.pow(1 + annualPercent / 100, 1 / 12) - 1, annualPercent }
+              : null
+          })()
+        : null
+    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
+      cashPriceTotal: cashTotal,
+      transferPriceTotal: getTransferPrice(cashTotal, transferDiscountPercent),
+      financedPriceTotal: financedTotal,
+      maxInstallmentCount: cartMaxEligibleCount,
+      transferDiscountPercent,
+      nationalTaxesIncidencePercent,
+      cftea,
+      installmentsRoundingAdjustment: checkoutTotals.roundingAdjustment,
+      priceWithoutNationalTaxes: {
+        cash: getPriceWithoutNationalTaxes(cashTotal, nationalTaxesIncidencePercent),
+        financed:
+          financedTotal != null
+            ? getPriceWithoutNationalTaxes(financedTotal, nationalTaxesIncidencePercent)
+            : null,
+      },
+    }
+
     const newPreferenceClaimToken = randomUUID()
     const orderPayload = {
       ...buildCheckoutOrderBase({
         userId: user?.id ?? null,
-        total: totalAfterStoreBenefit,
-        externalAmountDue: customerCreditApplication.externalAmountDue,
-        creditBalanceUsed: customerCreditApplication.appliedAmount,
+        total: checkoutTotals.total,
+        externalAmountDue: checkoutTotals.externalAmountDue,
+        creditBalanceUsed: checkoutTotals.customerCreditApplied,
         paymentMethodId: "mercadopago",
         reservationSessionId: checkoutSessionId,
         storeBenefit,
@@ -552,11 +574,11 @@ export async function POST(request: Request) {
       reservationSessionId: checkoutSessionId,
     })
 
-    if (user && customerCreditApplication.appliedAmount > 0) {
+    if (user && checkoutTotals.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {
         userId: user.id,
         orderId: order.id,
-        amount: customerCreditApplication.appliedAmount,
+        amount: checkoutTotals.customerCreditApplied,
         description: `Saldo a favor aplicado al pedido BX-${1000 + order.id}`,
         sourceKey: `order:${order.id}:customer-credit:debit`,
       })
@@ -568,8 +590,8 @@ export async function POST(request: Request) {
       admin,
       order: {
         ...(order as MercadoPagoCheckoutOrderRow),
-        external_amount_due: customerCreditApplication.externalAmountDue,
-        credit_balance_used: customerCreditApplication.appliedAmount,
+        external_amount_due: checkoutTotals.externalAmountDue,
+        credit_balance_used: checkoutTotals.customerCreditApplied,
       },
       payload,
       request,
