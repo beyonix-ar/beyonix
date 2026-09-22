@@ -104,12 +104,13 @@ export async function resolveTargetMarginPrice({
     }
   }
 
-  const { installmentsFinancing } = await getSiteSettings({ fresh: true })
+  const { installmentsFinancing, pricing } = await getSiteSettings({ fresh: true })
   const result = calculateTargetMarginPrice({
     cost: basis.cost,
     targetMarginPercent,
     eligibleInstallmentCounts,
     config: installmentsFinancing,
+    transferDiscountPercent: pricing.transferDiscountPercent,
   })
 
   if (!result) {

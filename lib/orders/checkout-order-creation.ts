@@ -123,7 +123,7 @@ export interface CheckoutOrderRequestPayload {
   customerCreditAmount?: number | string | null
   customer?: CheckoutOrderCustomerInput
   shipping?: CheckoutOrderShippingInput
-  /** Modalidad de cuotas sin interés elegida por el cliente (null = pago único). Se revalida íntegramente server-side -- nunca se confía en este valor. */
+  /** Modalidad de cuotas elegida por el cliente (null = pago único). Se revalida íntegramente server-side -- nunca se confía en este valor. */
   installmentsModality?: number | string | null
 }
 
@@ -205,11 +205,23 @@ interface CheckoutOrderShippingParams {
   settings: ShippingBonusSettings
 }
 
+export interface CheckoutOrderPricingSnapshot {
+  cashPriceTotal: number
+  transferPriceTotal: number | null
+  financedPriceTotal: number | null
+  maxInstallmentCount: InstallmentCount | null
+  transferDiscountPercent: number
+  nationalTaxesIncidencePercent: number
+  cftea: { monthlyRate: number; annualPercent: number } | null
+  priceWithoutNationalTaxes: { cash: number; financed: number | null }
+}
+
 interface CheckoutOrderInstallmentsParams {
   count: InstallmentCount
   percent: number
   productsBaseAmount: number
   surchargeAmount: number
+  maxEligibleCount: InstallmentCount | null
 }
 
 interface CheckoutOrderBaseParams {
@@ -226,6 +238,7 @@ interface CheckoutOrderBaseParams {
   storeBenefitDiscountAmount: number
   customer: NormalizedCheckoutOrderCustomer
   installments?: CheckoutOrderInstallmentsParams | null
+  pricingSnapshot?: CheckoutOrderPricingSnapshot | null
 }
 
 interface PersistCheckoutOrderItemsParams {
@@ -718,6 +731,7 @@ export function buildCheckoutOrderBase({
   storeBenefitDiscountAmount,
   customer,
   installments,
+  pricingSnapshot,
 }: CheckoutOrderBaseParams) {
   return {
     usuario_id: userId,
@@ -743,6 +757,8 @@ export function buildCheckoutOrderBase({
     installments_percent: installments?.percent ?? null,
     installments_products_base_amount: installments?.productsBaseAmount ?? null,
     installments_surcharge_amount: installments?.surchargeAmount ?? null,
+    installments_max_eligible_count: installments?.maxEligibleCount ?? null,
+    pricing_snapshot: pricingSnapshot ?? null,
     ...customer,
   }
 }

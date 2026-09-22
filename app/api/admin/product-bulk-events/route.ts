@@ -156,7 +156,7 @@ function validatePayload(payload: {
   }
 
   if (payload.actionKind === "installments" && ![2, 3, 6].includes(payload.installments ?? 0)) {
-    return "Elegí 2, 3 o 6 cuotas sin interés."
+    return "Elegí 2, 3 o 6 cuotas."
   }
 
   if (payload.durationDays !== null && (payload.durationDays < 1 || payload.durationDays > 365)) {

@@ -7,14 +7,21 @@ import { BeyonixButton } from "@/components/beyonix-ui"
 
 import { ProductCartToggleButton } from "./product-cart-toggle-button"
 import { getDiscountPercent } from "@/lib/products/product-variants"
+import type { InstallmentPlan } from "@/lib/pricing/financed-pricing"
 
 interface ProductPurchaseBoxProps {
   price: number
   originalPrice?: number
-  /** Mayor modalidad de cuotas habilitada, ya formateada (ver `getMaxInstallmentPlanLabel`). */
-  maxInstallmentLabel?: string | null
-  /** Todas las modalidades habilitadas, para el detalle desplegable "Ver opciones". */
-  installmentsLabels?: string[]
+  transferPrice?: number | null
+  transferDiscountPercent?: number
+  /** Precio financiado total (constante, calculado con la cuota máxima habilitada). `null` si el producto no financia. */
+  financedPrice?: number | null
+  /** Todas las modalidades habilitadas, en orden ascendente, mismo `financedPrice`. */
+  installmentPlans?: InstallmentPlan[]
+  /** CFTEA anual (%), sólo cuando hay financiación real (nunca en 1 pago). */
+  cfteaPercent?: number | null
+  priceWithoutNationalTaxesCash?: number | null
+  priceWithoutNationalTaxesFinanced?: number | null
   isInCart?: boolean
   cartQuantity?: number
   maxReached?: boolean
@@ -32,11 +39,23 @@ function formatPrice(price: number) {
   }).format(price)
 }
 
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
 export function ProductPurchaseBox({
   price,
   originalPrice,
-  maxInstallmentLabel = null,
-  installmentsLabels = [],
+  transferPrice = null,
+  transferDiscountPercent = 0,
+  financedPrice = null,
+  installmentPlans = [],
+  cfteaPercent = null,
+  priceWithoutNationalTaxesCash = null,
+  priceWithoutNationalTaxesFinanced = null,
   isInCart = false,
   cartQuantity = 0,
   maxReached = false,
@@ -76,6 +95,7 @@ export function ProductPurchaseBox({
   }
 
   const discount = getDiscountPercent(price, originalPrice)
+  const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
 
   return (
     <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
@@ -97,13 +117,36 @@ export function ProductPurchaseBox({
         )}
       </div>
 
-      {!!maxInstallmentLabel && (
+      {priceWithoutNationalTaxesCash != null && (
+        <p className="mb-2 text-10px font-medium leading-4 text-white/40">
+          Precio sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxesCash)}
+        </p>
+      )}
+
+      {transferPrice != null && transferPrice < price && (
+        <p className="beyonix-modal-body mb-3 text-13px font-semibold text-emerald-300">
+          Transferencia {formatPrice(transferPrice)}{" "}
+          <span className="text-11px font-medium text-emerald-300/75">
+            ({formatPercent(transferDiscountPercent)}% OFF)
+          </span>
+        </p>
+      )}
+
+      {!!maxInstallmentPlan && financedPrice != null && (
         <div className="mb-3">
           <p className="beyonix-modal-title text-14px font-semibold text-white">
-            {maxInstallmentLabel}
+            Hasta {maxInstallmentPlan.count} cuotas fijas de {formatPrice(maxInstallmentPlan.amount)}
           </p>
+          <p className="beyonix-modal-body mt-0.5 text-12px font-medium text-white/60">
+            Precio financiado: {formatPrice(financedPrice)}
+          </p>
+          {priceWithoutNationalTaxesFinanced != null && (
+            <p className="mt-0.5 text-10px font-medium leading-4 text-white/40">
+              Precio sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxesFinanced)}
+            </p>
+          )}
 
-          {installmentsLabels.length > 1 && (
+          {installmentPlans.length > 1 && (
             <button
               type="button"
               onClick={() => setShowInstallmentOptions((current) => !current)}
@@ -116,14 +159,23 @@ export function ProductPurchaseBox({
             </button>
           )}
 
-          {showInstallmentOptions && installmentsLabels.length > 1 && (
+          {showInstallmentOptions && installmentPlans.length > 1 && (
             <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
-              {installmentsLabels.map((label) => (
-                <li key={label} className="beyonix-modal-body text-12px font-medium text-white/70">
-                  {label}
+              {installmentPlans.map((plan) => (
+                <li key={plan.count} className="beyonix-modal-body text-12px font-medium text-white/70">
+                  {plan.count} cuotas fijas de {formatPrice(plan.amount)}
                 </li>
               ))}
             </ul>
+          )}
+
+          {/* Requisito legal Argentina: al haber precio financiado > contado,
+              nunca se puede decir "sin interés" -- se muestra el costo
+              financiero total efectivo anual en su lugar. */}
+          {cfteaPercent != null && (
+            <p className="mt-2 text-10px font-medium leading-4 text-white/45">
+              Costo financiero total efectivo anual (CFTEA): {formatPercent(cfteaPercent)}%
+            </p>
           )}
         </div>
       )}

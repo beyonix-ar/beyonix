@@ -69,8 +69,16 @@ import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
 } from "@/lib/products/product-variants"
-import { getInstallmentPlanLabels, getMaxInstallmentPlanLabel } from "@/lib/products/installments"
+import {
+  calculateCftea,
+  getFinancedPrice,
+  getInstallmentPlans,
+  getMaxEligibleInstallmentCount,
+  getPriceWithoutNationalTaxes,
+  getTransferPrice,
+} from "@/lib/pricing/financed-pricing"
 import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 
 interface ProductDetailsPanelProps {
   product: SupabaseProducto
@@ -172,15 +180,29 @@ export function ProductDetailsPanel({
   const displayedColorName = formatColorName(
     previewedColor?.name ?? selectedOption?.name ?? "",
   )
-  const installmentsPrice = selectedOption?.price ?? product.precio
-  const installmentsLabels = getInstallmentPlanLabels(
-    product,
-    installmentsPrice,
+  const { installmentsFinancing, pricing } = useSiteSettings()
+  const cashPrice = selectedOption?.price ?? product.precio
+  const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
+  const maxEligibleInstallmentCount = getMaxEligibleInstallmentCount(product)
+  const financedPrice = getFinancedPrice(
+    cashPrice,
+    maxEligibleInstallmentCount,
+    installmentsFinancing,
   )
-  const maxInstallmentLabel = getMaxInstallmentPlanLabel(
-    product,
-    installmentsPrice,
+  const installmentPlans = getInstallmentPlans(product, cashPrice, installmentsFinancing)
+  const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
+  const cftea =
+    maxInstallmentPlan && maxInstallmentPlan.count > 1
+      ? calculateCftea(cashPrice, maxInstallmentPlan.amount, maxInstallmentPlan.count)
+      : null
+  const priceWithoutNationalTaxesCash = getPriceWithoutNationalTaxes(
+    cashPrice,
+    pricing.nationalTaxesIncidencePercent,
   )
+  const priceWithoutNationalTaxesFinanced =
+    financedPrice != null
+      ? getPriceWithoutNationalTaxes(financedPrice, pricing.nationalTaxesIncidencePercent)
+      : null
   const hasVariants =
     colors.length > 1 || colors[0]?.value !== DEFAULT_VARIANT_VALUE
   const productSpecifications =
@@ -265,14 +287,19 @@ export function ProductDetailsPanel({
 
       <div className="beyonix-modal-header border-t border-white/7">
         <ProductPurchaseBox
-          price={selectedOption?.price ?? product.precio}
+          price={cashPrice}
           originalPrice={
             selectedOption?.originalPrice ??
             product.precio_anterior ??
             undefined
           }
-          maxInstallmentLabel={maxInstallmentLabel}
-          installmentsLabels={installmentsLabels}
+          transferPrice={transferPrice}
+          transferDiscountPercent={pricing.transferDiscountPercent}
+          financedPrice={financedPrice}
+          installmentPlans={installmentPlans}
+          cfteaPercent={cftea}
+          priceWithoutNationalTaxesCash={priceWithoutNationalTaxesCash}
+          priceWithoutNationalTaxesFinanced={priceWithoutNationalTaxesFinanced}
           isInCart={isInCart}
           cartQuantity={cartQuantity}
           maxReached={

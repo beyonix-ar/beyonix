@@ -221,7 +221,7 @@ test("refunded y charged_back quedan modelados como reversos post-confirmación,
   )
 })
 
-test("CASO I (precio único): el webhook valida el pago contra external_amount_due/total (el precio público del pedido), nunca recalcula por cuotas/porcentajes", () => {
+test("CASO I: el webhook valida el pago contra external_amount_due/total (el total ya calculado -- contado o financiado -- al crear la preferencia), nunca recalcula por cuotas/porcentajes", () => {
   // .replace normaliza CRLF -> LF: en checkouts Windows este archivo tiene
   // terminadores \r\n, y los regex/indexOf de estos tests están escritos
   // contra \n (tanto por matches literales como por límites de cuantificador
@@ -231,8 +231,8 @@ test("CASO I (precio único): el webhook valida el pago contra external_amount_d
     "utf8",
   ).replace(/\r\n/g, "\n")
 
-  // Bajo el modelo de precio público único, total/external_amount_due YA SON
-  // el precio público (create-preference no le suma recargo por cuotas, ver
+  // total/external_amount_due YA incluyen el gross-up financiado cuando
+  // corresponde (calculado server-side en create-preference, ver
   // lib/orders/checkout-order-creation.test.ts) -- el webhook simplemente
   // compara el pago real contra esos campos, sin importarle nunca
   // cuotas/porcentajes/config financiera.

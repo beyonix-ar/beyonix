@@ -7,6 +7,7 @@ interface ProductCardPricingProps {
   originalPrice?: number
   discountPercentage?: number | null
   installmentLabel?: string | null
+  priceWithoutNationalTaxes?: number | null
 
   quantity: number
   maxReached?: boolean
@@ -28,6 +29,7 @@ export function ProductCardPricing({
   originalPrice,
   discountPercentage,
   installmentLabel = null,
+  priceWithoutNationalTaxes = null,
 
   quantity,
   maxReached = false,
@@ -50,6 +52,12 @@ export function ProductCardPricing({
               {formatPrice(price)}
             </p>
           </div>
+
+          {priceWithoutNationalTaxes != null && (
+            <p className="text-9px font-medium leading-3 text-white/35">
+              Sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxes)}
+            </p>
+          )}
 
           {!!originalPrice &&
             originalPrice >

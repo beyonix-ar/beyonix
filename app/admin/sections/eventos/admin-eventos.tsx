@@ -83,8 +83,8 @@ const ACTION_OPTIONS: Array<{
   },
   {
     value: "installments",
-    label: "Cuotas sin interés",
-    help: "Activa 3 o 6 cuotas sin interés.",
+    label: "Cuotas",
+    help: "Activa 3 o 6 cuotas.",
   },
 ]
 
@@ -173,7 +173,7 @@ function formatEventDetail(event: SupabaseProductBulkEvent) {
   }
 
   if (actionKind === "installments") {
-    return `${event.installments ?? 3} cuotas sin interés`
+    return `${event.installments ?? 3} cuotas`
   }
 
   return getActionLabel(actionKind)
@@ -637,9 +637,9 @@ export function AdminEventos() {
                       setForm((current) => ({ ...current, installments: value }))
                     }
                   >
-                    <option value="2">2 cuotas sin interés</option>
-                    <option value="3">3 cuotas sin interés</option>
-                    <option value="6">6 cuotas sin interés</option>
+                    <option value="2">2 cuotas</option>
+                    <option value="3">3 cuotas</option>
+                    <option value="6">6 cuotas</option>
                   </AdminSelect>
                 </AdminFormField>
               )}

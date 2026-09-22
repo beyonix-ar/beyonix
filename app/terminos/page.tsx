@@ -38,7 +38,6 @@ import {
 import {
   PAYMENT_PROOF_ALLOWED_EXTENSIONS,
   PAYMENT_PROOF_MAX_SIZE,
-  TRANSFER_DISCOUNT_PERCENT,
 } from "@/lib/payments/transfer"
 import { TRANSPORT_CLAIM_WINDOW_HOURS } from "@/lib/order-claims"
 import { DEFAULT_PRODUCT_WARRANTY_MONTHS } from "@/lib/orders/warranty"
@@ -222,7 +221,7 @@ export default async function TerminosPage() {
             <KeyFact
               icon={BadgeDollarSign}
               label="Transferencia"
-              value={`${TRANSFER_DISCOUNT_PERCENT}% OFF`}
+              value={`${siteSettings.pricing.transferDiscountPercent}% OFF`}
               detail="Sobre productos; el envío se calcula por separado."
             />
             <KeyFact
@@ -443,7 +442,7 @@ export default async function TerminosPage() {
                 </div>
                 <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><Landmark className="size-4 text-beyonix-cyan" /><strong className="text-white">Transferencia bancaria</strong></div>
-                  <p className="mt-2 text-xs leading-6 text-white/58">Aplica un {TRANSFER_DISCOUNT_PERCENT}% de descuento sobre el importe de productos que efectivamente se pague por transferencia. El envío y otros conceptos se calculan por separado.</p>
+                  <p className="mt-2 text-xs leading-6 text-white/58">Aplica un {siteSettings.pricing.transferDiscountPercent}% de descuento sobre el importe de productos que efectivamente se pague por transferencia. El envío y otros conceptos se calculan por separado.</p>
                 </div>
               </div>
               <p>

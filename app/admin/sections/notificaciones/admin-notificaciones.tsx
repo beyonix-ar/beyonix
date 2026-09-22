@@ -106,7 +106,7 @@ const TYPE_OPTIONS: Array<{
   {
     value: "cuotas",
     label: "Cuotas",
-    description: "Financiación sin interés",
+    description: "Financiación en cuotas",
     icon: CheckCircle2,
   },
   {
@@ -807,7 +807,7 @@ export function AdminNotificaciones() {
       <AdminPageHeader
         eyebrow="Comunicación"
         title="Notificaciones"
-        description="Creá campañas breves para promociones, eventos, descuentos, cuotas sin interés o productos destacados. Las publicaciones llegan al panel de notificaciones de cada cliente."
+        description="Creá campañas breves para promociones, eventos, descuentos, cuotas o productos destacados. Las publicaciones llegan al panel de notificaciones de cada cliente."
         className="[&_h1]:text-2xl [&_p:last-child]:max-w-2xl [&_p:last-child]:text-xs [&_p:last-child]:leading-5"
       />
 

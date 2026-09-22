@@ -39,10 +39,17 @@ import {
   deleteIncompleteCheckoutOrder,
   MissingReservationSessionError,
 } from "@/lib/orders/checkout-inventory"
+import { getCartInstallmentEligibility, getEffectiveInstallmentPercent } from "@/lib/products/installments"
 import {
-  getCartInstallmentEligibility,
-  getEffectiveInstallmentPercent,
-} from "@/lib/products/installments"
+  calculateCftea,
+  getCartFinancedTotal,
+  getInstallmentAmount,
+  getMaxEligibleInstallmentCount,
+  getPriceWithoutNationalTaxes,
+  getTransferPrice,
+  type InstallmentCount,
+} from "@/lib/pricing/financed-pricing"
+import type { CheckoutOrderPricingSnapshot } from "@/lib/orders/checkout-order-creation"
 import {
   MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
   MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR,
@@ -316,25 +323,94 @@ export async function POST(request: Request) {
       totals.productsTotal,
       storeBenefit?.percent,
     )
-    // Base financiable: productos netos (después de descuentos/beneficio de
-    // tienda) + envío EFECTIVAMENTE cobrado al cliente (ya bonificado/gratis
-    // si corresponde -- shipping.shipping_cost_charged nunca es el costo
-    // bruto de Andreani). El % de financiación se aplica sobre esta base
-    // completa porque Mercado Pago cobra su costo real sobre TODO el importe
-    // que efectivamente procesa, no sólo sobre los productos.
+    // Contado: productos netos (después de descuentos/beneficio de tienda) +
+    // envío EFECTIVAMENTE cobrado al cliente (ya bonificado/gratis si
+    // corresponde -- shipping.shipping_cost_charged nunca es el costo bruto
+    // de Andreani). El envío SIEMPRE se cobra a costo real, sin importar el
+    // método de pago -- nunca lleva recargo por financiación.
     const productsNet = Math.max(
       totals.productsTotal - storeBenefitDiscountAmount,
       0,
     )
-    const financableBase = productsNet + totals.shipping
+    const cashTotal = roundMoney(productsNet + totals.shipping)
 
-    // PRECIO PÚBLICO ÚNICO: la modalidad de cuotas ya se validó contra el
-    // catálogo real más arriba (antes del fingerprint) y sólo determina
-    // `payment_methods.installments`/`default_installments` de la
-    // preferencia -- nunca recalcula el monto. El total que se cobra
-    // (financableBase) es el mismo elija el cliente pago único, 2, 3 o 6
-    // cuotas.
-    const totalAfterStoreBenefit = roundMoney(financableBase)
+    // Financiado: suma de los precios financiados INDIVIDUALES de cada línea
+    // del carrito (cada uno calculado con SU propio máximo de cuotas), nunca
+    // recalculado con la tasa del mínimo común del carrito (ver
+    // getCartFinancedTotal). El beneficio de tienda es un % uniforme sobre
+    // TODO el carrito: como el gross-up es lineal, aplicar ese mismo % sobre
+    // el total financiado crudo equivale exactamente a aplicarlo línea por
+    // línea antes de financiar (regla: nunca financiar sobre un precio "de
+    // lista" cuando el efectivo está rebajado).
+    const rawCartFinancedTotal = getCartFinancedTotal(
+      catalog.cartRows.map((row) => ({
+        cashPrice: row.unitPrice,
+        maxEligibleCount: getMaxEligibleInstallmentCount(row.product),
+        quantity: row.quantity,
+      })),
+      siteSettings.installmentsFinancing,
+    )
+    const financedStoreBenefitDiscount = calculateStoreBenefitDiscount(
+      rawCartFinancedTotal,
+      storeBenefit?.percent,
+    )
+    const financedProductsNet = Math.max(
+      rawCartFinancedTotal - financedStoreBenefitDiscount,
+      0,
+    )
+    const financedTotal =
+      rawCartFinancedTotal > 0
+        ? roundMoney(financedProductsNet + totals.shipping)
+        : null
+
+    // Cuota máxima ofrecida al carrito (mínimo común entre productos -- ver
+    // getCartInstallmentEligibility más arriba, ya usada para validar
+    // `requestedInstallmentsModality`).
+    const cartInstallmentEligibility = getCartInstallmentEligibility(catalog.products)
+    const cartMaxEligibleCount: InstallmentCount | null = cartInstallmentEligibility.length
+      ? (Math.max(...cartInstallmentEligibility) as InstallmentCount)
+      : null
+
+    // El total que efectivamente se cobra: financiado si el cliente eligió
+    // cuotas, contado en cualquier otro caso (débito/tarjeta 1 pago). Nunca
+    // se le suma nada más en Mercado Pago (evita doble recargo) -- este
+    // monto YA es el total final.
+    const totalAfterStoreBenefit =
+      requestedInstallmentsModality != null && financedTotal != null
+        ? financedTotal
+        : cashTotal
+
+    const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
+    const nationalTaxesIncidencePercent = siteSettings.pricing.nationalTaxesIncidencePercent
+    const cftea =
+      requestedInstallmentsModality != null && financedTotal != null
+        ? (() => {
+            const installmentAmount = getInstallmentAmount(financedTotal, requestedInstallmentsModality)
+            const annualPercent =
+              installmentAmount != null
+                ? calculateCftea(cashTotal, installmentAmount, requestedInstallmentsModality)
+                : null
+            return annualPercent != null
+              ? { monthlyRate: Math.pow(1 + annualPercent / 100, 1 / 12) - 1, annualPercent }
+              : null
+          })()
+        : null
+    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
+      cashPriceTotal: cashTotal,
+      transferPriceTotal: getTransferPrice(cashTotal, transferDiscountPercent),
+      financedPriceTotal: financedTotal,
+      maxInstallmentCount: cartMaxEligibleCount,
+      transferDiscountPercent,
+      nationalTaxesIncidencePercent,
+      cftea,
+      priceWithoutNationalTaxes: {
+        cash: getPriceWithoutNationalTaxes(cashTotal, nationalTaxesIncidencePercent),
+        financed:
+          financedTotal != null
+            ? getPriceWithoutNationalTaxes(financedTotal, nationalTaxesIncidencePercent)
+            : null,
+      },
+    }
     const customerCreditApplication =
       requestedCredit > 0
         ? calculateCustomerCreditApplication({
@@ -385,23 +461,27 @@ export async function POST(request: Request) {
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
-        // Snapshot histórico bajo el modelo de precio público único: `count`
-        // conserva la modalidad elegida y `percent` el costo interno de MP
-        // en ese momento (ver getEffectiveInstallmentPercent) -- puramente
-        // informativo, ya NO se usa para aumentar el total. surchargeAmount
-        // es siempre 0 porque nunca se le cobra de más al cliente por elegir
-        // cuotas; productsBaseAmount == el mismo precio público del pedido.
-        installments: requestedInstallmentsModality
-          ? {
-              count: requestedInstallmentsModality,
-              percent: getEffectiveInstallmentPercent(
-                requestedInstallmentsModality,
-                siteSettings.installmentsFinancing,
-              ),
-              productsBaseAmount: financableBase,
-              surchargeAmount: 0,
-            }
-          : null,
+        // Snapshot histórico: `count` es la modalidad EFECTIVAMENTE elegida;
+        // `percent` es el costo interno de MP para la cuota MÁXIMA habilitada
+        // (la que determinó el gross-up, ver getEffectiveInstallmentPercent)
+        // -- el fee REAL de la cuota elegida vive en
+        // mercadopago_payment_snapshot (capturado por el webhook), nunca acá.
+        // surchargeAmount = financedTotal - cashTotal, el recargo real
+        // cobrado al cliente por financiar.
+        installments:
+          requestedInstallmentsModality != null && financedTotal != null && cartMaxEligibleCount != null
+            ? {
+                count: requestedInstallmentsModality,
+                percent: getEffectiveInstallmentPercent(
+                  cartMaxEligibleCount,
+                  siteSettings.installmentsFinancing,
+                ),
+                productsBaseAmount: cashTotal,
+                surchargeAmount: roundMoney(financedTotal - cashTotal),
+                maxEligibleCount: cartMaxEligibleCount,
+              }
+            : null,
+        pricingSnapshot,
       }),
       checkout_idempotency_key: getMercadoPagoCheckoutIdempotencyKey(
         checkoutFingerprint,

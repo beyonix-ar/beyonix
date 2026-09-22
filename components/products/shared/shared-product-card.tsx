@@ -25,8 +25,14 @@ import {
   getDefaultVariantOption,
   getDiscountPercent,
 } from "@/lib/products/product-variants"
-import { getMaxInstallmentPlanLabel } from "@/lib/products/installments"
+import {
+  getFinancedPrice,
+  getInstallmentAmount,
+  getMaxEligibleInstallmentCount,
+  getPriceWithoutNationalTaxes,
+} from "@/lib/pricing/financed-pricing"
 import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 
 interface SharedProductCardProps {
   product: SupabaseProducto
@@ -64,6 +70,7 @@ export default function SharedProductCard({
     increaseQuantity,
     decreaseQuantity,
   } = useCart()
+  const { installmentsFinancing, pricing } = useSiteSettings()
   const feedbackTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isFavorite, setIsFavorite] =
@@ -91,9 +98,23 @@ export default function SharedProductCard({
     defaultVariant.price,
     defaultVariant.originalPrice
   )
-  const installmentLabel = getMaxInstallmentPlanLabel(
-    product,
+  const maxEligibleInstallmentCount = getMaxEligibleInstallmentCount(product)
+  const financedPrice = getFinancedPrice(
     defaultVariant.price,
+    maxEligibleInstallmentCount,
+    installmentsFinancing,
+  )
+  const maxInstallmentAmount =
+    financedPrice != null && maxEligibleInstallmentCount != null
+      ? getInstallmentAmount(financedPrice, maxEligibleInstallmentCount)
+      : null
+  const installmentLabel =
+    maxEligibleInstallmentCount != null && maxInstallmentAmount != null
+      ? `Hasta ${maxEligibleInstallmentCount} cuotas de $${maxInstallmentAmount.toLocaleString("es-AR")}`
+      : null
+  const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
+    defaultVariant.price,
+    pricing.nationalTaxesIncidencePercent,
   )
 
   useEffect(() => {
@@ -309,6 +330,7 @@ export default function SharedProductCard({
               installmentLabel={
                 installmentLabel
               }
+              priceWithoutNationalTaxes={priceWithoutNationalTaxes}
               quantity={quantity}
               maxReached={
                 defaultVariant.stock < 1 ||

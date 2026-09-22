@@ -11,15 +11,18 @@ import {
 import {
   DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
   DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
+  DEFAULT_PRICING_SETTINGS,
   DEFAULT_STOCK_SETTINGS,
   type CustomerCreditPaymentSettings,
   type InstallmentsFinancingSettings,
+  type PricingSettings,
   type StockSettings,
 } from "@/lib/site-settings"
 import {
-  getEffectiveInstallmentPercent,
-  getPlainInstallmentAmount,
-} from "@/lib/products/installments"
+  getFinancedPrice,
+  getInstallmentAmount,
+  getTransferPrice,
+} from "@/lib/pricing/financed-pricing"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
   AdminFormField,
@@ -39,6 +42,7 @@ interface SettingsResponse {
     customerCreditPayments?: CustomerCreditPaymentSettings
     stock?: StockSettings
     installmentsFinancing?: InstallmentsFinancingSettings
+    pricing?: PricingSettings
   }
   error?: string
 }
@@ -167,6 +171,12 @@ export function AdminModificaciones() {
   const [surcharge6Percent, setSurcharge6Percent] = useState(
     String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[6]),
   )
+  const [transferDiscountPercent, setTransferDiscountPercent] = useState(
+    String(DEFAULT_PRICING_SETTINGS.transferDiscountPercent),
+  )
+  const [nationalTaxesIncidencePercent, setNationalTaxesIncidencePercent] = useState(
+    String(DEFAULT_PRICING_SETTINGS.nationalTaxesIncidencePercent),
+  )
   const [criticalStockThreshold, setCriticalStockThreshold] = useState(
     String(DEFAULT_STOCK_SETTINGS.criticalStockThreshold),
   )
@@ -202,6 +212,11 @@ export function AdminModificaciones() {
     setSurcharge2Percent(String(next.surchargePercentByCount[2]))
     setSurcharge3Percent(String(next.surchargePercentByCount[3]))
     setSurcharge6Percent(String(next.surchargePercentByCount[6]))
+  }
+
+  const applyPricing = (next: PricingSettings) => {
+    setTransferDiscountPercent(String(next.transferDiscountPercent))
+    setNationalTaxesIncidencePercent(String(next.nationalTaxesIncidencePercent))
   }
 
   const loadSettings = async () => {
@@ -248,6 +263,7 @@ export function AdminModificaciones() {
     applyInstallmentsFinancing(
       data.settings.installmentsFinancing ?? DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
     )
+    applyPricing(data.settings.pricing ?? DEFAULT_PRICING_SETTINGS)
     setLoaded(true)
     setLoading(false)
     } catch {
@@ -295,6 +311,10 @@ export function AdminModificaciones() {
         6: normalizePercentage(surcharge6Percent),
       },
     }
+    const nextPricing: PricingSettings = {
+      transferDiscountPercent: normalizePercentage(transferDiscountPercent),
+      nationalTaxesIncidencePercent: normalizePercentage(nationalTaxesIncidencePercent),
+    }
 
     if (nextStock.criticalStockThreshold >= nextStock.lowStockThreshold) {
       setError("El límite de stock crítico debe ser menor que el de stock bajo.")
@@ -324,6 +344,7 @@ export function AdminModificaciones() {
         customerCreditPayments: nextCustomerCreditPayments,
         stock: nextStock,
         installmentsFinancing: nextInstallmentsFinancing,
+        pricing: nextPricing,
       }),
     })
     const data = (await response.json()) as SettingsResponse
@@ -348,6 +369,7 @@ export function AdminModificaciones() {
     applyInstallmentsFinancing(
       data.settings.installmentsFinancing ?? nextInstallmentsFinancing,
     )
+    applyPricing(data.settings.pricing ?? nextPricing)
     setMessage("Configuración actualizada. Los textos y cálculos ya usan estos valores.")
     setSaving(false)
     } catch {
@@ -584,7 +606,7 @@ export function AdminModificaciones() {
         icon={<CreditCard className="size-3.5" />}
         eyebrow="Comercial"
         title="Financiación Mercado Pago"
-        description="Costos reales de Mercado Pago usados para armar las cuotas sin interés."
+        description="Costos reales de Mercado Pago usados para calcular el precio financiado en cuotas."
         actions={saveButton}
       >
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -680,24 +702,100 @@ export function AdminModificaciones() {
         </div>
 
         <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
-          Precio público único: el total NO cambia según la cantidad de
-          cuotas. Para un producto de ejemplo de {formatARS(installmentsPreviewAmount)}:{" "}
-          {([2, 3, 6] as const).map((count, index) => {
-            const installmentAmount = getPlainInstallmentAmount(
+          Estos porcentajes son costos internos utilizados para calcular el
+          precio financiado. El cliente no ve estos porcentajes. Ejemplo con
+          las 6 cuotas habilitadas, sobre un contado de{" "}
+          {formatARS(installmentsPreviewAmount)}:{" "}
+          {(() => {
+            const financedPreview = getFinancedPrice(
               installmentsPreviewAmount,
-              count,
+              6,
+              previewInstallmentsFinancing,
             )
-            if (installmentAmount === null) return null
+            if (financedPreview === null) return null
             return (
-              <span key={count}>
-                {index > 0 && " · "}
-                <strong className="text-beyonix-cyan">
-                  {count} cuotas de {formatARS(installmentAmount)}
-                </strong>{" "}
-                (costo interno MP {getEffectiveInstallmentPercent(count, previewInstallmentsFinancing)}%)
-              </span>
+              <>
+                Financiado <strong className="text-beyonix-cyan">{formatARS(financedPreview)}</strong>
+                {" — "}
+                {([2, 3, 6] as const).map((count, index) => {
+                  const installmentAmount = getInstallmentAmount(financedPreview, count)
+                  if (installmentAmount === null) return null
+                  return (
+                    <span key={count}>
+                      {index > 0 && " · "}
+                      <strong className="text-beyonix-cyan">
+                        {count} cuotas de {formatARS(installmentAmount)}
+                      </strong>
+                    </span>
+                  )
+                })}
+              </>
             )
-          })}
+          })()}
+        </p>
+      </AdminSection>
+
+      <AdminSection
+        compact
+        icon={<CreditCard className="size-3.5" />}
+        eyebrow="Comercial"
+        title="Precios y transferencia"
+        description="Descuento por transferencia y leyenda legal de precio sin impuestos nacionales."
+        actions={saveButton}
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <AdminFormField
+            label="Descuento por transferencia"
+            help="Sobre el precio de contado."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Descuento por transferencia"
+              ariaLabel="Descuento por transferencia"
+              value={withInputSymbol(transferDiscountPercent, "%")}
+              placeholder="% 10"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) => setTransferDiscountPercent(value.replace(/[^0-9,.]/g, ""))}
+            />
+          </AdminFormField>
+
+          <AdminFormField
+            label="Incidencia de impuestos nacionales"
+            help="Sólo para la leyenda 'Precio sin impuestos nacionales'. Confirmalo con tu contador."
+            labelClassName={compactLabelClassName}
+            helpClassName={compactHelpClassName}
+          >
+            <AdminTextInput
+              title="Incidencia de impuestos nacionales"
+              ariaLabel="Incidencia de impuestos nacionales para exhibición"
+              value={withInputSymbol(nationalTaxesIncidencePercent, "%")}
+              placeholder="% 21"
+              inputMode="decimal"
+              className={`text-center font-bold ${compactInputClassName}`}
+              disabled={loading || saving}
+              onChange={(value) =>
+                setNationalTaxesIncidencePercent(value.replace(/[^0-9,.]/g, ""))
+              }
+            />
+          </AdminFormField>
+        </div>
+
+        <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
+          Este valor se utiliza únicamente para calcular la leyenda legal
+          &quot;PRECIO SIN IMPUESTOS NACIONALES&quot;. Confirmalo con tu contador.
+          Ejemplo sobre {formatARS(installmentsPreviewAmount)}:{" "}
+          <strong className="text-beyonix-cyan">
+            {formatARS(
+              getTransferPrice(
+                installmentsPreviewAmount,
+                normalizePercentage(transferDiscountPercent),
+              ),
+            )}
+          </strong>{" "}
+          por transferencia.
         </p>
       </AdminSection>
 

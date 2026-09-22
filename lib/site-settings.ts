@@ -14,6 +14,19 @@ export interface SiteSettings {
   stock: StockSettings
   installmentsFinancing: InstallmentsFinancingSettings
   andreaniCommercial: AndreaniCommercialSettings
+  pricing: PricingSettings
+}
+
+/**
+ * Configuración central de precios reutilizada por
+ * `lib/pricing/financed-pricing.ts` en producto/carrito/checkout. Reemplaza
+ * el 10% que antes vivía hardcodeado como `TRANSFER_DISCOUNT` en
+ * `lib/store-config.ts` y agrega la incidencia de impuestos nacionales para
+ * la leyenda legal "PRECIO SIN IMPUESTOS NACIONALES".
+ */
+export interface PricingSettings {
+  transferDiscountPercent: number
+  nationalTaxesIncidencePercent: number
 }
 
 /**
@@ -51,6 +64,13 @@ export const DEFAULT_INSTALLMENTS_FINANCING_SETTINGS: InstallmentsFinancingSetti
   baseProcessingPercent: 6.42,
   ivaPercent: 21,
   surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 },
+}
+
+export const DEFAULT_PRICING_SETTINGS: PricingSettings = {
+  // Mismo 10% que antes vivía hardcodeado en TRANSFER_DISCOUNT (store-config.ts).
+  transferDiscountPercent: 10,
+  // Default razonable (alícuota general de IVA); el admin debe confirmarlo con su contador.
+  nationalTaxesIncidencePercent: 21,
 }
 
 export const DEFAULT_STOCK_SETTINGS: StockSettings = {
@@ -186,6 +206,24 @@ export function normalizeInstallmentsFinancingSettings(
   }
 }
 
+export function normalizePricingSettings(value: unknown): PricingSettings {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {}
+
+  return {
+    transferDiscountPercent: normalizeCostPercentage(
+      source.transferDiscountPercent,
+      DEFAULT_PRICING_SETTINGS.transferDiscountPercent,
+    ),
+    nationalTaxesIncidencePercent: normalizeCostPercentage(
+      source.nationalTaxesIncidencePercent,
+      DEFAULT_PRICING_SETTINGS.nationalTaxesIncidencePercent,
+    ),
+  }
+}
+
 export function normalizeStockSettings(value: unknown): StockSettings {
   const source =
     value && typeof value === "object"
@@ -239,6 +277,7 @@ export function getFallbackSiteSettings(): SiteSettings {
     stock: DEFAULT_STOCK_SETTINGS,
     installmentsFinancing: DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
     andreaniCommercial: DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+    pricing: DEFAULT_PRICING_SETTINGS,
   }
 }
 
@@ -248,6 +287,7 @@ const SITE_SETTING_KEYS = {
   stock: "stock",
   installmentsFinancing: "installments_financing",
   andreaniCommercial: "andreani_commercial",
+  pricing: "pricing",
 } as const
 
 /** Escribe sólo los grupos enviados; otros PATCH concurrentes no pierden sus cambios. */
@@ -265,6 +305,7 @@ export function normalizeSiteSettingsPatch(body: unknown) {
     stock: normalizeStockSettings,
     installmentsFinancing: normalizeInstallmentsFinancingSettings,
     andreaniCommercial: normalizeAndreaniCommercialSettings,
+    pricing: normalizePricingSettings,
   }
   return (Object.keys(SITE_SETTING_KEYS) as Array<keyof typeof SITE_SETTING_KEYS>)
     .filter((key) => Object.hasOwn(input, key))
@@ -329,6 +370,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         "stock",
         "installments_financing",
         "andreani_commercial",
+        "pricing",
       ])
 
     if (error) {
@@ -351,6 +393,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
       andreaniCommercial: normalizeAndreaniCommercialSettings(
         settingsByKey.get("andreani_commercial"),
       ),
+      pricing: normalizePricingSettings(settingsByKey.get("pricing")),
     }
 
     if (requestGeneration === siteSettingsCacheGeneration) {

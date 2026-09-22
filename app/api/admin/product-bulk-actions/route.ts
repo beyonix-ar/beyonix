@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   }
 
   if (actionKind === "installments" && ![2, 3, 6].includes(installments)) {
-    return Response.json({ error: "Elegí 2, 3 o 6 cuotas sin interés." }, { status: 400 })
+    return Response.json({ error: "Elegí 2, 3 o 6 cuotas." }, { status: 400 })
   }
 
   let query = auth.admin

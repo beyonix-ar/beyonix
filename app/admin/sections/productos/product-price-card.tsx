@@ -62,7 +62,6 @@ interface ProductPriceCardProps {
   knownUnitCost: number | null | undefined
   targetMarginResult: TargetMarginPriceResult | null
   profitabilitySimulation: ProductProfitabilitySimulation | null
-  profitabilityPrice: number | null
   priceFormatter: Intl.NumberFormat
   variantCostsDiffer: boolean
   realVariantCosts: ProductVariantCostInfo[]
@@ -93,7 +92,6 @@ export function ProductPriceCard({
   knownUnitCost,
   targetMarginResult,
   profitabilitySimulation,
-  profitabilityPrice,
   priceFormatter,
   variantCostsDiffer,
   realVariantCosts,
@@ -160,7 +158,6 @@ export function ProductPriceCard({
           </div>
           <ProfitabilityPopover
             simulation={profitabilitySimulation}
-            price={profitabilityPrice}
             priceFormatter={priceFormatter}
           />
         </div>

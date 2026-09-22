@@ -1,9 +1,6 @@
-import { TRANSFER_DISCOUNT } from "../store-config.ts"
-
 export const TRANSFER_ALIAS = "BEYONIX"
 export const TRANSFER_ACCOUNT_HOLDER = "Lucas Espinosa"
 export const TRANSFER_CVU = "0000003100060656803844"
-export const TRANSFER_DISCOUNT_PERCENT = TRANSFER_DISCOUNT * 100
 export const PAYMENT_PROOF_BUCKET = "payment-proofs"
 export const PAYMENT_PROOF_MAX_SIZE = 5 * 1024 * 1024
 
@@ -20,25 +17,30 @@ export const PAYMENT_PROOF_ALLOWED_EXTENSIONS = [
   "pdf",
 ]
 
-export function calculateTransferDiscount(productsTotal: number) {
+export function calculateTransferDiscount(
+  productsTotal: number,
+  transferDiscountPercent: number,
+) {
   const safeProductsTotal = Number.isFinite(productsTotal)
     ? Math.max(productsTotal, 0)
     : 0
+  const rate = Number.isFinite(transferDiscountPercent)
+    ? Math.max(0, Math.min(100, transferDiscountPercent)) / 100
+    : 0
 
-  return Math.round(
-    safeProductsTotal * TRANSFER_DISCOUNT,
-  )
+  return Math.round(safeProductsTotal * rate)
 }
 
 export function calculateTransferPaymentTotal(
   productsTotal: number,
   shipping: number,
+  transferDiscountPercent: number,
 ) {
   const safeProductsTotal = Number.isFinite(productsTotal)
     ? Math.max(productsTotal, 0)
     : 0
   const safeShipping = Number.isFinite(shipping) ? Math.max(shipping, 0) : 0
-  const discount = calculateTransferDiscount(safeProductsTotal)
+  const discount = calculateTransferDiscount(safeProductsTotal, transferDiscountPercent)
 
   return {
     discount,
@@ -50,10 +52,12 @@ export function calculateTransferPaymentTotalAfterCustomerCredit({
   productsTotal,
   shipping,
   customerCreditAmount,
+  transferDiscountPercent,
 }: {
   productsTotal: number
   shipping: number
   customerCreditAmount: number
+  transferDiscountPercent: number
 }) {
   const safeProductsTotal = Number.isFinite(productsTotal)
     ? Math.max(productsTotal, 0)
@@ -75,7 +79,7 @@ export function calculateTransferPaymentTotalAfterCustomerCredit({
     safeShipping - creditAppliedToShipping,
     0,
   )
-  const discount = calculateTransferDiscount(productsPaidByTransfer)
+  const discount = calculateTransferDiscount(productsPaidByTransfer, transferDiscountPercent)
 
   return {
     discount,

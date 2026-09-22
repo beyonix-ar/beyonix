@@ -85,9 +85,15 @@ import {
 } from "@/lib/cart/cart-totals"
 import {
   getCartInstallmentEligibility,
-  getPlainInstallmentAmount,
   type InstallmentCount,
 } from "@/lib/products/installments"
+import {
+  calculateCftea,
+  getCartFinancedTotal,
+  getInstallmentAmount,
+  getMaxEligibleInstallmentCount,
+  getPriceWithoutNationalTaxes,
+} from "@/lib/pricing/financed-pricing"
 import {
   calculateStoreBenefitDiscount,
   getStoreBenefitLabel,
@@ -137,7 +143,6 @@ import {
   type CheckoutQuoteRawOption,
 } from "@/lib/andreani/checkout-quote-client"
 import {
-  TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import {
@@ -215,20 +220,22 @@ function getStockIndicatorSymbol(status: StockStatus) {
   return ""
 }
 
-const paymentMethods = [
-  {
-    id: "mercadopago",
-    name: "Mercado Pago",
-    description: "Pagá con saldo en Mercado Pago o con tarjeta",
-    icon: Smartphone,
-  },
-  {
-    id: "transferencia",
-    name: "Transferencia bancaria",
-    description: `Transferencia bancaria con ${TRANSFER_DISCOUNT_PERCENT}% OFF`,
-    icon: Landmark,
-  },
-]
+function getPaymentMethods(transferDiscountPercent: number) {
+  return [
+    {
+      id: "mercadopago",
+      name: "Mercado Pago",
+      description: "Pagá con saldo en Mercado Pago o con tarjeta",
+      icon: Smartphone,
+    },
+    {
+      id: "transferencia",
+      name: "Transferencia bancaria",
+      description: `Transferencia bancaria con ${transferDiscountPercent}% OFF`,
+      icon: Landmark,
+    },
+  ]
+}
 
 const checkoutInputClassName =
   "beyonix-checkout-input h-10 rounded-lg border-beyonix-blue-light/18 bg-[#10151C] font-heading text-sm font-semibold text-white placeholder:text-white/36 hover:border-beyonix-blue-light/35 focus-visible:border-beyonix-blue-light/65 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/18"
@@ -417,6 +424,7 @@ export default function CheckoutPage() {
   } = useCart()
   const customerCredit = useCustomerCredit()
   const siteSettings = useSiteSettings()
+  const paymentMethods = getPaymentMethods(siteSettings.pricing.transferDiscountPercent)
 
   const [mounted, setMounted] =
     useState(false)
@@ -724,27 +732,52 @@ export default function CheckoutPage() {
     cartInstallmentEligibility.includes(installmentsModality)
       ? installmentsModality
       : null
-  // PRECIO PÚBLICO ÚNICO: elegir cuotas nunca recalcula el total -- el
-  // total que paga el cliente es siempre totalBeforeTransferDiscount (menos
-  // el descuento por transferencia cuando corresponde), sin importar la
-  // modalidad de Mercado Pago elegida. Ver auditoría de precio único en
-  // lib/products/installments.ts.
-  const totalBeforeTransferDiscount = productsTotalAfterStoreBenefit + totals.shipping
+  // Contado: base para 1 pago/débito y para el descuento de transferencia.
+  const cashTotalBeforeCredit = productsTotalAfterStoreBenefit + totals.shipping
+  // Financiado: suma de los precios financiados INDIVIDUALES de cada línea
+  // del carrito (cada una con SU propio máximo de cuotas), nunca recalculado
+  // con la tasa del mínimo común del carrito -- ver getCartFinancedTotal. El
+  // envío siempre se suma a costo real, sin recargo. Sólo informativo hasta
+  // que el servidor (create-preference) recalcula todo de nuevo antes de
+  // cobrar.
+  const cartFinancedProductsTotal = getCartFinancedTotal(
+    items.map((item) => ({
+      cashPrice: item.unitPrice ?? item.product.precio,
+      maxEligibleCount: getMaxEligibleInstallmentCount(item.product),
+      quantity: item.quantity,
+    })),
+    siteSettings.installmentsFinancing,
+  )
+  const cartFinancedStoreBenefitDiscount = calculateStoreBenefitDiscount(
+    cartFinancedProductsTotal,
+    selectedStoreBenefit?.percent,
+  )
+  const cartFinancedProductsNet = Math.max(
+    cartFinancedProductsTotal - cartFinancedStoreBenefitDiscount,
+    0,
+  )
+  const cartFinancedTotal =
+    cartFinancedProductsTotal > 0 ? cartFinancedProductsNet + totals.shipping : null
+  const totalBeforeCustomerCreditByMethod =
+    isMercadoPagoPayment && effectiveInstallmentsModality != null && cartFinancedTotal != null
+      ? cartFinancedTotal
+      : cashTotalBeforeCredit
   const maxApplicableCustomerCredit = getMaxApplicableCustomerCredit(
     customerCredit.balance,
-    totalBeforeTransferDiscount,
+    totalBeforeCustomerCreditByMethod,
   )
   const transferPaymentTotals = calculateTransferPaymentTotalAfterCustomerCredit({
     productsTotal: productsTotalAfterStoreBenefit,
     shipping: totals.shipping,
     customerCreditAmount: maxApplicableCustomerCredit,
+    transferDiscountPercent: siteSettings.pricing.transferDiscountPercent,
   })
   const transferDiscountAmount = isTransferPayment
     ? transferPaymentTotals.discount
     : 0
   const totalBeforeCustomerCredit = isTransferPayment
-    ? totalBeforeTransferDiscount - transferDiscountAmount
-    : totalBeforeTransferDiscount
+    ? totalBeforeCustomerCreditByMethod - transferDiscountAmount
+    : totalBeforeCustomerCreditByMethod
   const customerCreditApplication = calculateCustomerCreditApplication({
     availableBalance: customerCredit.balance,
     eligibleTotal: totalBeforeCustomerCredit,
@@ -763,12 +796,32 @@ export default function CheckoutPage() {
   // proactiva de stock mientras el cliente completa el Checkout.
   const hasKnownStockConflict = insufficientStockItems.length > 0
   const finalTotal = customerCreditApplication.externalAmountDue
-  // Puramente informativo ("Pagás N cuotas de $X"): finalTotal (lo que
-  // realmente se envía a Mercado Pago) nunca cambia por la modalidad
-  // elegida -- sólo se divide para mostrar el valor de cada cuota.
-  const displayInstallmentAmount = effectiveInstallmentsModality
-    ? getPlainInstallmentAmount(finalTotal, effectiveInstallmentsModality)
-    : null
+  // Informativo ("Pagás N cuotas de $X"): divide lo que efectivamente se
+  // termina cobrando (ya neto de saldo a favor) por la cantidad de cuotas
+  // elegida -- el total financiado en sí NO cambia según cuántas cuotas se
+  // elijan (ver getCartFinancedTotal).
+  const displayInstallmentAmount =
+    effectiveInstallmentsModality && cartFinancedTotal != null
+      ? getInstallmentAmount(finalTotal, effectiveInstallmentsModality)
+      : null
+  // Disclosure legal (CFTEA / precio sin impuestos): se calcula sobre los
+  // totales ANTES de saldo a favor -- describe el producto financiero en sí,
+  // no un residuo que depende de un beneficio ajeno a la financiación.
+  const legalInstallmentAmount =
+    effectiveInstallmentsModality && cartFinancedTotal != null
+      ? getInstallmentAmount(cartFinancedTotal, effectiveInstallmentsModality)
+      : null
+  const cfteaPercent =
+    effectiveInstallmentsModality &&
+    effectiveInstallmentsModality > 1 &&
+    cashTotalBeforeCredit > 0 &&
+    legalInstallmentAmount != null
+      ? calculateCftea(cashTotalBeforeCredit, legalInstallmentAmount, effectiveInstallmentsModality)
+      : null
+  const priceWithoutNationalTaxesTotal = getPriceWithoutNationalTaxes(
+    finalTotal,
+    siteSettings.pricing.nationalTaxesIncidencePercent,
+  )
 
   useEffect(() => {
     if (customerCredit.loading) return
@@ -2305,10 +2358,10 @@ export default function CheckoutPage() {
                         </button>
 
                         {cartInstallmentEligibility.map((count) => {
-                          const installmentAmount = getPlainInstallmentAmount(
-                            totalBeforeTransferDiscount,
-                            count,
-                          )
+                          const installmentAmount =
+                            cartFinancedTotal != null
+                              ? getInstallmentAmount(cartFinancedTotal, count)
+                              : null
                           if (installmentAmount === null) return null
 
                           return (
@@ -2325,7 +2378,7 @@ export default function CheckoutPage() {
                             >
                               <span className="min-w-0">
                                 <span className="block font-semibold text-white">
-                                  Hasta {count} cuotas
+                                  {count} cuotas fijas
                                 </span>
                                 <span className="mt-1 block text-sm text-white/45">
                                   {formatPrice(installmentAmount)} por cuota
@@ -2335,7 +2388,20 @@ export default function CheckoutPage() {
                           )
                         })}
                       </div>
+                      {cartFinancedTotal != null && (
+                        <p className="text-11px font-medium text-white/45">
+                          Precio financiado: {formatPrice(cartFinancedTotal)}
+                        </p>
+                      )}
                     </div>
+                  )}
+
+                  {effectiveInstallmentsModality && cfteaPercent != null && (
+                    <p className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] px-3 py-2 text-11px font-medium leading-5 text-white/55">
+                      Costo financiero total efectivo anual (CFTEA): {cfteaPercent.toFixed(1)}%.
+                      Precio de contado {formatPrice(cashTotalBeforeCredit)} — precio financiado en{" "}
+                      {effectiveInstallmentsModality} cuotas {formatPrice(cartFinancedTotal ?? 0)}.
+                    </p>
                   )}
 
                   {isMercadoPagoPayment && (
@@ -2728,7 +2794,7 @@ export default function CheckoutPage() {
                 {transferDiscountAmount > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
-                      Transferencia {TRANSFER_DISCOUNT_PERCENT}% OFF
+                      Transferencia {siteSettings.pricing.transferDiscountPercent}% OFF
                     </span>
                     <span className="font-semibold text-emerald-400">
                       -{formatPrice(transferDiscountAmount)}
@@ -2762,6 +2828,9 @@ export default function CheckoutPage() {
                     {formatPrice(displayInstallmentAmount)}
                   </p>
                 )}
+                <p className="text-right text-10px font-medium text-white/40">
+                  Precio sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxesTotal)}
+                </p>
               </div>
 
               {checkoutError && (

@@ -300,7 +300,7 @@ export function ProductosRow({
   ].filter(Boolean)
   const installmentsLabel =
     enabledInstallmentCounts.length > 0
-      ? `${enabledInstallmentCounts.join("/")} cuotas sin interés`
+      ? `Hasta ${enabledInstallmentCounts.join("/")} cuotas`
       : "Sin cuotas"
   const commercialSubtitle = `${categoryLabel} · ${installmentsLabel}`
   const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {

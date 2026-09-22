@@ -13,7 +13,6 @@ import type { ProductProfitabilitySimulation } from "@/lib/pricing/product-prici
 
 interface ProfitabilityPopoverProps {
   simulation: ProductProfitabilitySimulation | null
-  price: number | null
   priceFormatter: Intl.NumberFormat
 }
 
@@ -31,7 +30,6 @@ const CLOSE_DELAY_MS = 150
  */
 export function ProfitabilityPopover({
   simulation,
-  price,
   priceFormatter,
 }: ProfitabilityPopoverProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -176,10 +174,12 @@ export function ProfitabilityPopover({
               <div className="space-y-1">
                 {simulation.scenarios.map((scenario) => {
                   const isWorstCase = scenario.id === simulation.worstCase.id
-                  const safePrice = price ?? 0
-                  const feeAmount = (safePrice * scenario.ratePercent) / 100
+                  // Cada escenario usa SU propio precio (contado o
+                  // financiado, ver PaymentScenarioPriceBasis) -- nunca el
+                  // `price` compartido del padre, que sólo es el contado.
+                  const feeAmount = (scenario.price * scenario.ratePercent) / 100
                   const chargedAmount =
-                    scenario.kind === "discount" ? safePrice - feeAmount : safePrice
+                    scenario.kind === "discount" ? scenario.price - feeAmount : scenario.price
 
                   return (
                     <div

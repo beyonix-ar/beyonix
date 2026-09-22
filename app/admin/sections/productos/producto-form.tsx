@@ -48,10 +48,13 @@ import {
 import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
+import { getEffectiveInstallmentPercent } from "@/lib/products/installments"
 import {
-  getEffectiveInstallmentPercent,
-  getPlainInstallmentAmount,
-} from "@/lib/products/installments"
+  getFinancedPrice,
+  getInstallmentPlans,
+  getMaxEligibleInstallmentCount,
+  getTransferPrice,
+} from "@/lib/pricing/financed-pricing"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
   normalizeLogisticsDecimalInput,
@@ -110,7 +113,7 @@ export function ProductoForm({
   const previewObjectUrls = useRef<string[]>([])
   const leaveEditor = onCancel
   const finishProductSave = onSaved
-  const { installmentsFinancing } = useSiteSettings()
+  const { installmentsFinancing, pricing } = useSiteSettings()
 
   const {
     form,
@@ -175,6 +178,33 @@ export function ProductoForm({
     ],
     [form.cuotas2, form.cuotas3, form.cuotas6],
   )
+  const maxEligibleInstallmentCount = getMaxEligibleInstallmentCount({
+    cuotas_2_habilitadas: form.cuotas2,
+    cuotas_3_habilitadas: form.cuotas3,
+    cuotas_6_habilitadas: form.cuotas6,
+  })
+  const cashPricePreview =
+    Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : null
+  const transferPricePreview =
+    cashPricePreview != null
+      ? getTransferPrice(cashPricePreview, pricing.transferDiscountPercent)
+      : null
+  const financedPricePreview =
+    cashPricePreview != null
+      ? getFinancedPrice(cashPricePreview, maxEligibleInstallmentCount, installmentsFinancing)
+      : null
+  const installmentPlansPreview =
+    cashPricePreview != null
+      ? getInstallmentPlans(
+          {
+            cuotas_2_habilitadas: form.cuotas2,
+            cuotas_3_habilitadas: form.cuotas3,
+            cuotas_6_habilitadas: form.cuotas6,
+          },
+          cashPricePreview,
+          installmentsFinancing,
+        )
+      : []
   const targetMarginPercentValue = form.targetMarginPercent
     ? Number(form.targetMarginPercent)
     : null
@@ -193,6 +223,7 @@ export function ProductoForm({
             targetMarginPercent: targetMarginPercentValue,
             eligibleInstallmentCounts,
             config: installmentsFinancing,
+            transferDiscountPercent: pricing.transferDiscountPercent,
           })
         : null,
     [
@@ -201,6 +232,7 @@ export function ProductoForm({
       targetMarginPercentValue,
       eligibleInstallmentCounts,
       installmentsFinancing,
+      pricing.transferDiscountPercent,
     ],
   )
   // En modo margen objetivo, el precio público es SIEMPRE el que calcula el
@@ -224,6 +256,7 @@ export function ProductoForm({
           cost: knownUnitCost ?? null,
           eligibleInstallmentCounts,
           config: installmentsFinancing,
+          transferDiscountPercent: pricing.transferDiscountPercent,
         })
       : null
   // Regla de negocio puramente de UI: el precio anterior (el que se muestra
@@ -648,7 +681,6 @@ export function ProductoForm({
                 knownUnitCost={knownUnitCost}
                 targetMarginResult={targetMarginResult}
                 profitabilitySimulation={profitabilitySimulation}
-                profitabilityPrice={profitabilityPrice}
                 priceFormatter={productPriceFormatter}
                 variantCostsDiffer={variantCostsDiffer}
                 realVariantCosts={realVariantCosts}
@@ -671,14 +703,14 @@ export function ProductoForm({
                     ]
                   ).map((toggle) => {
                     const active = form[toggle.key]
-                    // Precio público único: la cuota que ve el cliente es
-                    // simplemente currentPrice / count, nunca un total
-                    // financiado distinto (ver auditoría de precio único en
-                    // lib/products/installments.ts).
-                    const installmentAmount =
-                      active && Number.isFinite(currentPrice) && currentPrice > 0
-                        ? getPlainInstallmentAmount(currentPrice, toggle.count)
-                        : null
+                    // Precio financiado (derivado, nunca editable a mano):
+                    // constante sin importar la cuota elegida -- ver
+                    // lib/pricing/financed-pricing.ts. La cuota mostrada acá
+                    // es ese total dividido por `toggle.count`.
+                    const installmentAmount = active
+                      ? (installmentPlansPreview.find((plan) => plan.count === toggle.count)
+                          ?.amount ?? null)
+                      : null
 
                     return (
                       <AdminSecondaryButton
@@ -708,6 +740,33 @@ export function ProductoForm({
                     )
                   })}
                 </div>
+                {cashPricePreview != null && (
+                  <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-white/8 bg-white/[0.02] p-2">
+                    <div>
+                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Contado</p>
+                      <p className="text-sm font-black text-white">
+                        {productPriceFormatter.format(cashPricePreview)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Transferencia</p>
+                      <p className="text-sm font-black text-white">
+                        {transferPricePreview != null
+                          ? productPriceFormatter.format(transferPricePreview)
+                          : "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Financiado</p>
+                      <p className="text-sm font-black text-white">
+                        {financedPricePreview != null
+                          ? productPriceFormatter.format(financedPricePreview)
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
                   <p className="text-xs font-medium leading-5 text-white">
                     {[

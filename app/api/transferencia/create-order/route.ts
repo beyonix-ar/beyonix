@@ -17,7 +17,6 @@ import {
 } from "@/lib/customer-credit/server"
 import {
   TRANSFER_ALIAS,
-  TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
@@ -36,8 +35,10 @@ import {
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   InvalidCheckoutItemsError,
+  type CheckoutOrderPricingSnapshot,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
+import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import {
   MissingReservationSessionError,
   normalizeReservationSessionId,
@@ -102,6 +103,7 @@ export async function POST(request: Request) {
     const baseTotals = calculateCartTotals(catalog.cartRows)
     const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const siteSettings = await getSiteSettings({ fresh: true })
+    const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,
@@ -154,6 +156,7 @@ export async function POST(request: Request) {
       productsTotal: productsTotalAfterStoreBenefit,
       shipping: totals.shipping,
       customerCreditAmount: creditBeforeTransferDiscount.appliedAmount,
+      transferDiscountPercent,
     })
     const transferDiscountAmount = transferPaymentTotals.discount
     const transferTotal = roundMoney(
@@ -195,6 +198,25 @@ export async function POST(request: Request) {
       )
     }
 
+    const cashTotalBeforeTransferDiscount = roundMoney(
+      productsTotalAfterStoreBenefit + totals.shipping,
+    )
+    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
+      cashPriceTotal: cashTotalBeforeTransferDiscount,
+      transferPriceTotal: transferTotal,
+      financedPriceTotal: null,
+      maxInstallmentCount: null,
+      transferDiscountPercent,
+      nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
+      cftea: null,
+      priceWithoutNationalTaxes: {
+        cash: getPriceWithoutNationalTaxes(
+          cashTotalBeforeTransferDiscount,
+          siteSettings.pricing.nationalTaxesIncidencePercent,
+        ),
+        financed: null,
+      },
+    }
     const orderPayload = {
       ...buildCheckoutOrderBase({
         userId: user?.id ?? null,
@@ -206,6 +228,7 @@ export async function POST(request: Request) {
         storeBenefit,
         storeBenefitDiscountAmount,
         customer,
+        pricingSnapshot,
       }),
       customer_checkout_fingerprint: computeCustomerCheckoutFingerprint({
         userId: user?.id ?? null,
@@ -223,7 +246,7 @@ export async function POST(request: Request) {
       payment_type_id: null,
       payment_status: "pendiente_comprobante",
       transfer_alias: TRANSFER_ALIAS,
-      transfer_discount_percent: TRANSFER_DISCOUNT_PERCENT,
+      transfer_discount_percent: transferDiscountPercent,
       transfer_discount_amount: transferDiscountAmount,
       ...shipping,
     }

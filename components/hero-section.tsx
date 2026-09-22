@@ -16,10 +16,15 @@ import {
   BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
-import { getMaxInstallmentPlanLabel } from "@/lib/products/installments"
+import {
+  getFinancedPrice,
+  getInstallmentAmount,
+  getMaxEligibleInstallmentCount,
+} from "@/lib/pricing/financed-pricing"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
 import type { SupabaseProducto } from "@/lib/supabase/types"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 
 const trustItems = [
   {
@@ -81,9 +86,22 @@ export function HeroSection({
     ? Math.round((1 - finalPrice / originalPrice) * 100)
     : 0
   const hasSale = discountPercentage > 0
-  const installmentLabel = featuredProduct
-    ? getMaxInstallmentPlanLabel(featuredProduct, finalPrice)
+  const { installmentsFinancing } = useSiteSettings()
+  const maxEligibleInstallmentCount = featuredProduct
+    ? getMaxEligibleInstallmentCount(featuredProduct)
     : null
+  const featuredFinancedPrice =
+    featuredProduct && maxEligibleInstallmentCount != null
+      ? getFinancedPrice(finalPrice, maxEligibleInstallmentCount, installmentsFinancing)
+      : null
+  const featuredInstallmentAmount =
+    featuredFinancedPrice != null && maxEligibleInstallmentCount != null
+      ? getInstallmentAmount(featuredFinancedPrice, maxEligibleInstallmentCount)
+      : null
+  const installmentLabel =
+    maxEligibleInstallmentCount != null && featuredInstallmentAmount != null
+      ? `Hasta ${maxEligibleInstallmentCount} cuotas de ${formatPrice(featuredInstallmentAmount)}`
+      : null
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {

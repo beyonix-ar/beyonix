@@ -26,7 +26,6 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   TRANSFER_ALIAS,
-  TRANSFER_DISCOUNT_PERCENT,
   calculateTransferPaymentTotalAfterCustomerCredit,
 } from "@/lib/payments/transfer"
 import {
@@ -43,8 +42,10 @@ import {
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   InvalidCheckoutItemsError,
+  type CheckoutOrderPricingSnapshot,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
+import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
@@ -144,11 +145,16 @@ export async function POST(request: Request) {
       eligibleTotal: productsTotalAfterStoreBenefit + totals.shipping,
       requestedAmount: requestedCredit,
     })
+    const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
     const transferPaymentTotals = calculateTransferPaymentTotalAfterCustomerCredit({
       productsTotal: productsTotalAfterStoreBenefit,
       shipping: totals.shipping,
       customerCreditAmount: creditBeforeTransferDiscount.appliedAmount,
+      transferDiscountPercent,
     })
+    const cashTotalBeforeTransferDiscount = roundMoney(
+      productsTotalAfterStoreBenefit + totals.shipping,
+    )
     const orderTotal = roundMoney(
       pricingPaymentMethod === "transferencia"
         ? productsTotalAfterStoreBenefit +
@@ -161,6 +167,23 @@ export async function POST(request: Request) {
       eligibleTotal: orderTotal,
       requestedAmount: requestedCredit,
     })
+    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
+      cashPriceTotal: cashTotalBeforeTransferDiscount,
+      transferPriceTotal:
+        pricingPaymentMethod === "transferencia" ? orderTotal : null,
+      financedPriceTotal: null,
+      maxInstallmentCount: null,
+      transferDiscountPercent,
+      nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
+      cftea: null,
+      priceWithoutNationalTaxes: {
+        cash: getPriceWithoutNationalTaxes(
+          cashTotalBeforeTransferDiscount,
+          siteSettings.pricing.nationalTaxesIncidencePercent,
+        ),
+        financed: null,
+      },
+    }
 
     if (
       creditApplication.appliedAmount <= 0 ||
@@ -186,6 +209,7 @@ export async function POST(request: Request) {
           storeBenefit,
           storeBenefitDiscountAmount,
           customer,
+          pricingSnapshot,
         }),
         envio_proveedor: shipping.shipping_provider,
         andreani_costo: shipping.shipping_cost_charged,
@@ -197,7 +221,7 @@ export async function POST(request: Request) {
           pricingPaymentMethod === "transferencia" ? TRANSFER_ALIAS : null,
         transfer_discount_percent:
           pricingPaymentMethod === "transferencia"
-            ? TRANSFER_DISCOUNT_PERCENT
+            ? transferDiscountPercent
             : null,
         transfer_discount_amount:
           pricingPaymentMethod === "transferencia"

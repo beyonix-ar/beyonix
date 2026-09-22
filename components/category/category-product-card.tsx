@@ -14,7 +14,11 @@ import {
   getProductVariantOptions,
   getVariantOptionByValue,
 } from "@/lib/products/product-variants"
-import { getInstallmentPlanLabels } from "@/lib/products/installments"
+import {
+  getInstallmentPlans,
+  getPriceWithoutNationalTaxes,
+} from "@/lib/pricing/financed-pricing"
+import { useSiteSettings } from "@/hooks/use-site-settings"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -40,6 +44,7 @@ export function CategoryProductCard({
   onOpenPreview,
 }: CategoryProductCardProps) {
   const { addToCart } = useCart()
+  const { installmentsFinancing, pricing } = useSiteSettings()
 
   const colors = useMemo(
     () => getProductVariantOptions(product),
@@ -61,9 +66,17 @@ export function CategoryProductCard({
   )
 
   const images = activeVariant.images
-  const installmentsLabels = getInstallmentPlanLabels(
+  const installmentPlans = getInstallmentPlans(
     product,
     activeVariant.price,
+    installmentsFinancing,
+  )
+  const installmentsLabels = installmentPlans.map(
+    (plan) => `Hasta ${plan.count} cuotas de ${formatPrice(plan.amount)}`,
+  )
+  const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
+    activeVariant.price,
+    pricing.nationalTaxesIncidencePercent,
   )
 
   const handleAddToCart = () => {
@@ -126,6 +139,9 @@ export function CategoryProductCard({
           <div className="space-y-1">
             <span className="block text-18px font-bold text-foreground">
               {formatPrice(activeVariant.price)}
+            </span>
+            <span className="block text-9px font-medium text-muted-foreground/60">
+              Sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxes)}
             </span>
 
             {activeVariant.originalPrice ? (

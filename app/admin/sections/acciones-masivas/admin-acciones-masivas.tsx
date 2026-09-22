@@ -66,8 +66,8 @@ const ACTION_OPTIONS: Array<{
   },
   {
     value: "installments",
-    label: "Cuotas sin interés",
-    help: "Activa 3 o 6 cuotas sin interés en los productos alcanzados.",
+    label: "Cuotas",
+    help: "Activa 3 o 6 cuotas en los productos alcanzados.",
   },
   {
     value: "clear_offer",
@@ -225,7 +225,7 @@ export function AdminAccionesMasivas() {
       <AdminPageHeader
         eyebrow="Comercial"
         title="Editor masivo"
-        description="Aplicá descuentos, aumentos, bajas de precio o cuotas sin interés a muchos productos sin editarlos uno por uno."
+        description="Aplicá descuentos, aumentos, bajas de precio o cuotas a muchos productos sin editarlos uno por uno."
       />
 
       {(feedback || error) && (
@@ -279,9 +279,9 @@ export function AdminAccionesMasivas() {
             {actionKind === "installments" && (
               <AdminFormField label="Cuotas">
                 <AdminSelect title="Cuotas" value={installments} onChange={setInstallments}>
-                  <option value="2">2 cuotas sin interés</option>
-                  <option value="3">3 cuotas sin interés</option>
-                  <option value="6">6 cuotas sin interés</option>
+                  <option value="2">2 cuotas</option>
+                  <option value="3">3 cuotas</option>
+                  <option value="6">6 cuotas</option>
                 </AdminSelect>
               </AdminFormField>
             )}

@@ -223,12 +223,6 @@ export function hasFreeShipping(
   return getShippingCost(subtotal, settings) === 0
 }
 
-// DESCUENTO DE TRANSFERENCIA: 10%
-export const TRANSFER_DISCOUNT = 0.10
-
-// TEXTO AUTOMATICO DEL DESCUENTO (se actualiza solo)
-export const TRANSFER_DISCOUNT_LABEL = `${TRANSFER_DISCOUNT * 100}%`
-
 // ================================
 // CAMPANAS FUTURAS
 // SOLO UNA DEBE ESTAR ACTIVA = 1

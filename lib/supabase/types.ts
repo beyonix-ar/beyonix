@@ -252,6 +252,17 @@ export interface SupabasePedido {
   installments_percent?: number | null
   installments_products_base_amount?: number | null
   installments_surcharge_amount?: number | null
+  installments_max_eligible_count?: 2 | 3 | 6 | null
+  pricing_snapshot?: {
+    cashPriceTotal?: number | null
+    transferPriceTotal?: number | null
+    financedPriceTotal?: number | null
+    maxInstallmentCount?: 2 | 3 | 6 | null
+    transferDiscountPercent?: number | null
+    nationalTaxesIncidencePercent?: number | null
+    cftea?: { monthlyRate: number; annualPercent: number } | null
+    priceWithoutNationalTaxes?: { cash: number; financed: number | null } | null
+  } | null
   mercadopago_payment_snapshot?: {
     installments?: number | null
     transaction_amount?: number | null

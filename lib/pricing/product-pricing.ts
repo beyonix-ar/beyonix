@@ -1,4 +1,4 @@
-import { TRANSFER_DISCOUNT, roundUpToCommercialEnding } from "../store-config.ts"
+import { roundUpToCommercialEnding } from "../store-config.ts"
 import {
   INSTALLMENT_COUNTS,
   getEffectiveInstallmentPercent,
@@ -6,6 +6,7 @@ import {
   type InstallmentCount,
   type InstallmentsFinancingConfig,
 } from "../products/installments.ts"
+import { getFinancedPrice } from "./financed-pricing.ts"
 
 /**
  * "discount": la tasa reduce lo que el cliente efectivamente paga (ej.
@@ -19,14 +20,32 @@ import {
  */
 export type PaymentScenarioKind = "discount" | "fee"
 
+/**
+ * "cash": el precio de este escenario es el CONTADO (transferencia y MP 1
+ * pago son descuentos/comisiones sobre el mismo precio de contado). "financed":
+ * el precio de este escenario es el FINANCIADO (constante, calculado con la
+ * cuota MÁXIMA habilitada -- ver `lib/pricing/financed-pricing.ts`), nunca el
+ * contado. Por construcción del gross-up, la ganancia en PESOS de la cuota
+ * máxima es idéntica a la de contado (financedPrice*(1-feeRate) = cashPrice
+ * exacto) -- su margen % es más bajo sólo porque se divide por un ingreso
+ * mayor, no porque haya menos ganancia real. Por eso los escenarios
+ * "financed" NUNCA participan de "peor escenario" ni de la resolución de
+ * precio por margen objetivo (ver `calculateTargetMarginPrice`): son
+ * puramente informativos.
+ */
+export type PaymentScenarioPriceBasis = "cash" | "financed"
+
 export interface PaymentScenarioRate {
   id: string
   label: string
   ratePercent: number
   kind: PaymentScenarioKind
+  priceBasis: PaymentScenarioPriceBasis
 }
 
 export interface PaymentScenarioResult extends PaymentScenarioRate {
+  /** Precio efectivamente usado en este escenario (contado o financiado, según `priceBasis`). */
+  price: number
   profitAmount: number
   marginPercent: number
 }
@@ -128,19 +147,22 @@ export function calculatePriceFromTargetMargin(
 export function getPaymentScenarioRates(
   eligibleInstallmentCounts: InstallmentCount[],
   config: InstallmentsFinancingConfig,
+  transferDiscountPercent: number,
 ): PaymentScenarioRate[] {
   const scenarios: PaymentScenarioRate[] = [
     {
       id: "transferencia",
       label: "Transferencia",
-      ratePercent: TRANSFER_DISCOUNT * 100,
+      ratePercent: transferDiscountPercent,
       kind: "discount",
+      priceBasis: "cash",
     },
     {
       id: "mp_unico",
       label: "Mercado Pago — 1 pago",
       ratePercent: getSinglePaymentEffectivePercent(config),
       kind: "fee",
+      priceBasis: "cash",
     },
   ]
 
@@ -151,6 +173,7 @@ export function getPaymentScenarioRates(
       label: `Mercado Pago — ${count} cuotas`,
       ratePercent: getEffectiveInstallmentPercent(count, config),
       kind: "fee",
+      priceBasis: "financed",
     })
   }
 
@@ -158,41 +181,63 @@ export function getPaymentScenarioRates(
 }
 
 export interface SimulateProductProfitabilityInput {
+  /** Precio de CONTADO (nunca el financiado -- ese se deriva acá mismo para la cuota máxima). */
   price: number
   /** `null`/desconocido cuando el producto no tiene costo cargado en Compras -- nunca se inventa un costo. */
   cost: number | null
   eligibleInstallmentCounts: InstallmentCount[]
   config: InstallmentsFinancingConfig
+  transferDiscountPercent: number
 }
 
 /**
- * Rentabilidad de un precio ya definido (modo manual), desglosada por medio
- * de pago. `worstCase` es el escenario con MENOR margen resultante (no
- * necesariamente el de mayor tasa nominal, aunque en la práctica coinciden)
- * -- es el piso real de rentabilidad de ese precio. `null` sólo si el costo
- * es desconocido.
+ * Rentabilidad de un precio de contado ya definido (modo manual o margen
+ * objetivo), desglosada por medio de pago. Los escenarios de cuotas usan el
+ * precio FINANCIADO (constante, derivado de la cuota máxima habilitada), no
+ * el de contado -- ver `PaymentScenarioPriceBasis`.
+ *
+ * `worstCase` es el escenario con MENOR margen resultante ENTRE LOS DE BASE
+ * CONTADO (transferencia/MP 1 pago) -- el piso real de rentabilidad de ese
+ * precio. Los escenarios financiados quedan afuera de "peor caso" a
+ * propósito: por construcción del gross-up, su ganancia en pesos es igual o
+ * mayor a la de contado; su margen % es más bajo sólo porque se divide por
+ * un ingreso mayor, nunca por pérdida real (no es un caso "peor", es
+ * aritmética distinta). `null` sólo si el costo es desconocido.
  */
 export function simulateProductProfitability({
   price,
   cost,
   eligibleInstallmentCounts,
   config,
+  transferDiscountPercent,
 }: SimulateProductProfitabilityInput): ProductProfitabilitySimulation | null {
   if (cost == null || !Number.isFinite(cost) || cost < 0) return null
 
-  const scenarios = getPaymentScenarioRates(eligibleInstallmentCounts, config).map(
-    (scenario) => {
-      const { profitAmount, marginPercent } = calculateMarginFromPrice(
-        price,
-        cost,
-        scenario.ratePercent,
-        scenario.kind,
-      )
-      return { ...scenario, profitAmount, marginPercent }
-    },
-  )
+  const maxEligibleCount = eligibleInstallmentCounts.length
+    ? (Math.max(...eligibleInstallmentCounts) as InstallmentCount)
+    : null
+  const financedPrice = getFinancedPrice(price, maxEligibleCount, config)
 
-  const worstCase = scenarios.reduce((worst, current) =>
+  const scenarios = getPaymentScenarioRates(
+    eligibleInstallmentCounts,
+    config,
+    transferDiscountPercent,
+  ).map((scenario) => {
+    const scenarioPrice =
+      scenario.priceBasis === "financed" && financedPrice != null
+        ? financedPrice
+        : price
+    const { profitAmount, marginPercent } = calculateMarginFromPrice(
+      scenarioPrice,
+      cost,
+      scenario.ratePercent,
+      scenario.kind,
+    )
+    return { ...scenario, price: scenarioPrice, profitAmount, marginPercent }
+  })
+
+  const cashBasisScenarios = scenarios.filter((scenario) => scenario.priceBasis === "cash")
+  const worstCase = cashBasisScenarios.reduce((worst, current) =>
     current.marginPercent < worst.marginPercent ? current : worst,
   )
 
@@ -204,24 +249,33 @@ export interface CalculateTargetMarginPriceInput {
   targetMarginPercent: number
   eligibleInstallmentCounts: InstallmentCount[]
   config: InstallmentsFinancingConfig
+  transferDiscountPercent: number
 }
 
 /**
- * Precio público único que garantiza (como mínimo) el margen objetivo en
- * TODOS los medios de pago habilitados. `null` si el costo no es válido o si
- * el margen objetivo es matemáticamente inalcanzable para alguno de ellos.
+ * Precio de CONTADO que garantiza (como mínimo) el margen objetivo en
+ * transferencia y MP 1 pago -- las únicas dos modalidades que comparten base
+ * de precio (contado) y por lo tanto son comparables en margen %. `null` si
+ * el costo no es válido o si el margen objetivo es inalcanzable en alguna de
+ * las dos.
+ *
+ * Las modalidades de cuotas NO participan de esta resolución: su precio
+ * (financiado, derivado de la cuota máxima habilitada) se calcula aparte y,
+ * por construcción del gross-up, siempre preserva como mínimo la misma
+ * ganancia en PESOS que el contado -- nunca hace falta "proteger" ese
+ * escenario con un precio más alto (ver `simulateProductProfitability`).
  *
  * El "peor escenario" NO es simplemente el de mayor `ratePercent`: una tasa
  * "discount" (transferencia) y una "fee" (Mercado Pago) definen el margen
  * sobre bases distintas (ver `calculateMarginFromPrice`), así que una tasa
  * nominal menor puede igual exigir un precio mayor para el mismo margen
  * objetivo. Por eso se resuelve el precio que exige CADA modalidad por
- * separado y se toma el mayor -- ese precio, por construcción, deja a todas
- * las demás modalidades con margen igual o superior al objetivo.
+ * separado y se toma el mayor -- ese precio, por construcción, deja a la otra
+ * modalidad con margen igual o superior al objetivo.
  *
  * El precio matemático se redondea hacia arriba a la terminación comercial
  * ($...900) y el margen que se devuelve es el REAL resultante después de ese
- * redondeo (recalculado sobre todas las modalidades, no sólo la que fijó el
+ * redondeo (recalculado sobre ambas modalidades, no sólo la que fijó el
  * precio), no el objetivo sin redondear.
  */
 export function calculateTargetMarginPrice({
@@ -229,10 +283,15 @@ export function calculateTargetMarginPrice({
   targetMarginPercent,
   eligibleInstallmentCounts,
   config,
+  transferDiscountPercent,
 }: CalculateTargetMarginPriceInput): TargetMarginPriceResult | null {
   if (!Number.isFinite(cost) || cost <= 0) return null
 
-  const rates = getPaymentScenarioRates(eligibleInstallmentCounts, config)
+  const rates = getPaymentScenarioRates(
+    eligibleInstallmentCounts,
+    config,
+    transferDiscountPercent,
+  ).filter((scenario) => scenario.priceBasis === "cash")
 
   let bindingScenario: PaymentScenarioRate | null = null
   let requiredPrice = -Infinity
@@ -244,8 +303,8 @@ export function calculateTargetMarginPrice({
       scenario.ratePercent,
       scenario.kind,
     )
-    // Si el margen objetivo es inalcanzable para CUALQUIER modalidad
-    // habilitada, no hay un precio único que cumpla la garantía prometida.
+    // Si el margen objetivo es inalcanzable para CUALQUIER modalidad de
+    // contado, no hay un precio único que cumpla la garantía prometida.
     if (scenarioPrice == null) return null
 
     if (scenarioPrice > requiredPrice) {
