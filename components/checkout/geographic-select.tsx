@@ -306,12 +306,12 @@ export function GeographicSelect({
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => selectOption(option)}
                 className={cn(
-                  "flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beyonix-blue-light/35",
+                  "flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beyonix-blue-light/35",
                   selected
                     ? "bg-[#112A43] text-[#F8FAFC] shadow-[inset_0_0_0_1px_rgba(148,197,255,0.22)]"
                     : active
-                      ? "bg-[#101923] text-[#D7ECFF]"
-                      : "text-white/72 hover:bg-[#101923] hover:text-[#D7ECFF]",
+                      ? "bg-beyonix-blue-light/10 text-[#D7ECFF]"
+                      : "text-white/72 hover:bg-beyonix-blue-light/10 hover:text-[#D7ECFF]",
                 )}
               >
                 <span className="min-w-0 truncate">{option.label}</span>

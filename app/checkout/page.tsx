@@ -1701,7 +1701,15 @@ export default function CheckoutPage() {
                   onRetry={adminNotifications.reloadNotificationCount}
                 />
               )}
-              {user ? (
+              {isLoading ? (
+                <div
+                  aria-hidden="true"
+                  className="hidden h-11 w-36 items-center gap-2 rounded-full border border-white/8 bg-white/5 px-3 sm:flex"
+                >
+                  <span className="size-7 shrink-0 animate-pulse rounded-full bg-white/10" />
+                  <span className="h-2.5 w-16 animate-pulse rounded-full bg-white/10" />
+                </div>
+              ) : user ? (
                 <AccountMenu />
               ) : (
                 <div className="hidden items-center gap-2 sm:flex">

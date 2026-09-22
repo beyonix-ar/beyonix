@@ -3256,8 +3256,10 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   width: 28px;
 }
 
-.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-locked {
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-locked,
+.admin-order-detail-scope .admin-order-cancellation-panel div.admin-order-cancellation-locked.rounded-xl.border {
   background: var(--admin-warning-bg) !important;
+  background-image: none !important;
   border-color: var(--admin-warning-border) !important;
 }
 
@@ -3311,7 +3313,8 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   border-color: rgba(220, 38, 38, 0.65) !important;
 }
 
-.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-empty {
+.admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-empty,
+.admin-order-detail-scope .admin-order-cancellation-panel p.admin-order-cancellation-empty.rounded-lg.border {
   background: var(--admin-surface-muted) !important;
   background-image: none !important;
   border-color: var(--admin-border) !important;
@@ -6285,7 +6288,9 @@ div.claim-form-shell::after {
   --admin-level-1: rgba(5, 12, 20, 0.98);
   --admin-level-2: rgba(8, 18, 29, 0.98);
   --admin-level-3: rgba(13, 27, 42, 0.98);
-  --admin-success-bg: rgba(3, 58, 41, 0.86);
+  --admin-success-bg: rgba(16, 185, 129, 0.14);
+  --admin-success-border: rgba(52, 211, 153, 0.38);
+  --admin-success-text: #7DFFBF;
   --admin-warning-bg: rgba(86, 52, 9, 0.86);
   --admin-danger-bg: rgba(89, 24, 34, 0.86);
   --admin-info-bg: rgba(10, 35, 58, 0.9);

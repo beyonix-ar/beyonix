@@ -231,7 +231,15 @@ export function SiteHeader() {
             <AccountThemeToggle className="hidden lg:flex" />
 
             <div className="relative hidden lg:block">
-              {user ? (
+              {isLoading ? (
+                <div
+                  aria-hidden="true"
+                  className="flex h-11 w-36 items-center gap-2 rounded-full border border-white/8 bg-white/5 px-3"
+                >
+                  <span className="size-7 shrink-0 animate-pulse rounded-full bg-white/10" />
+                  <span className="h-2.5 w-16 animate-pulse rounded-full bg-white/10" />
+                </div>
+              ) : user ? (
                 <AccountMenu
                   open={userOpen}
                   onOpenChange={(next) => {
@@ -253,7 +261,7 @@ export function SiteHeader() {
                   unreadNotificationsCount={unreadNotifications}
                 />
               ) : (
-                <div className="flex items-center gap-2" aria-busy={isLoading}>
+                <div className="flex items-center gap-2">
                   <BeyonixHeaderLoginLink href="/login" />
                   <BeyonixHeaderRegisterLink href="/login?mode=register" />
                 </div>
@@ -351,7 +359,15 @@ export function SiteHeader() {
             )}
 
             <div className="mt-2 border-t border-white/6 pt-2">
-              {user ? (
+              {isLoading ? (
+                <div
+                  className="grid gap-2 px-2 py-3 sm:grid-cols-2"
+                  aria-hidden="true"
+                >
+                  <div className="h-10 animate-pulse rounded-lg bg-white/5" />
+                  <div className="h-10 animate-pulse rounded-lg bg-white/5" />
+                </div>
+              ) : user ? (
                 <>
                   <Link
                     href="/cuenta"
@@ -449,10 +465,7 @@ export function SiteHeader() {
                   </button>
                 </>
               ) : (
-                <div
-                  className="grid gap-2 px-2 py-3 sm:grid-cols-2"
-                  aria-busy={isLoading}
-                >
+                <div className="grid gap-2 px-2 py-3 sm:grid-cols-2">
                   <Link
                     href="/login"
                     onClick={() => setMobileOpen(false)}

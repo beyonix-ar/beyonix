@@ -283,7 +283,7 @@ export function BeyonixHeaderLoginLink({
     <Link
       href={href}
       className={cn(
-        "beyonix-modal-body flex h-11 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:text-white",
+        "beyonix-modal-body flex h-11 cursor-pointer items-center gap-2 rounded-full px-3.5 text-sm font-medium text-white/78 hover:bg-beyonix-blue/10 hover:text-white",
         beyonixHoverBorder,
         className
       )}
@@ -305,7 +305,7 @@ export function BeyonixHeaderRegisterLink({
     <Link
       href={href}
       className={cn(
-        "flex h-11 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover",
+        "flex h-11 cursor-pointer items-center rounded-full border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-sm font-semibold text-white outline-none transition-all hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:border-beyonix-blue-light focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
         className
       )}
     >
