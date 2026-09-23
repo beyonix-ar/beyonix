@@ -233,6 +233,92 @@ test("un pago aprobado tardío puede recuperar una orden expirada", async () => 
   assert.match(webhook, /estado: "pagado",\s+cancelled_at: null,/)
 })
 
+test("checkout abandonado (nunca se intentó el pago) -- preferencia vencida, permite reclamar una nueva sobre la misma orden", () => {
+  const decision = getMercadoPagoCheckoutAttemptDecision(
+    {
+      id: 25,
+      estado: "pendiente",
+      financial_status: "pending_payment",
+      payment_status: "preference_created",
+      payment_method_id: "mercadopago",
+      mercadopago_init_point: "https://mercadopago.example/checkout/25",
+      mercadopago_preference_expires_at: "2026-08-15T13:00:00.000Z",
+    },
+    new Date("2026-08-15T14:00:00.000Z"),
+  )
+
+  assert.deepEqual(decision, { kind: "claim_preference" })
+})
+
+test("pago rechazado por Mercado Pago -- permite reintentar sobre la misma orden", () => {
+  const decision = getMercadoPagoCheckoutAttemptDecision({
+    id: 25,
+    estado: "pendiente",
+    financial_status: "pending_payment",
+    payment_status: "rejected",
+    payment_method_id: "mercadopago",
+    mercadopago_preference_expires_at: "2026-08-15T13:00:00.000Z",
+  })
+
+  assert.deepEqual(decision, { kind: "claim_preference" })
+})
+
+test("intento cancelado desde Checkout Pro -- permite reintentar sobre la misma orden", () => {
+  const decision = getMercadoPagoCheckoutAttemptDecision({
+    id: 25,
+    estado: "pendiente",
+    financial_status: "pending_payment",
+    payment_status: "cancelled",
+    payment_method_id: "mercadopago",
+    mercadopago_preference_expires_at: "2026-08-15T13:00:00.000Z",
+  })
+
+  assert.deepEqual(decision, { kind: "claim_preference" })
+})
+
+test("pago aprobado -- un segundo intento queda bloqueado (nunca 'claim_preference' ni 'reuse')", () => {
+  const decision = getMercadoPagoCheckoutAttemptDecision({
+    id: 25,
+    estado: "pagado",
+    financial_status: "payment_confirmed",
+    payment_status: "approved",
+    payment_method_id: "mercadopago",
+  })
+
+  assert.deepEqual(decision, { kind: "already_paid" })
+})
+
+test("pago aprobado con conflicto de stock -- NUNCA se trata como reintentable (dinero real sin resolver)", () => {
+  // approved_stock_conflict: MP ya aprobó y cobró, pero el inventario no
+  // pudo confirmar la orden. Debe quedar 'unavailable' (bloqueo genérico),
+  // nunca 'claim_preference' -- lo contrario permitiría generar una SEGUNDA
+  // preferencia de cobro mientras el primer pago real sigue sin resolverse.
+  const decision = getMercadoPagoCheckoutAttemptDecision({
+    id: 25,
+    estado: "pendiente",
+    financial_status: "pending_payment",
+    payment_status: "approved_stock_conflict",
+    payment_method_id: "mercadopago",
+  })
+
+  assert.deepEqual(decision, { kind: "unavailable" })
+})
+
+test("pago realmente en curso en Mercado Pago (pending/in_process) -- sigue bloqueado, no es un abandono", () => {
+  for (const paymentStatus of ["pending", "in_process", "in_mediation", "authorized"]) {
+    const decision = getMercadoPagoCheckoutAttemptDecision({
+      id: 25,
+      estado: "pendiente",
+      financial_status: "pending_payment",
+      payment_status: paymentStatus,
+      payment_method_id: "mercadopago",
+      mercadopago_preference_expires_at: "2026-08-15T13:00:00.000Z",
+    })
+
+    assert.deepEqual(decision, { kind: "in_progress" })
+  }
+})
+
 test("una sesión inválida no puede eludir la idempotencia", () => {
   assert.equal(normalizeMercadoPagoCheckoutSessionId(null), null)
   assert.equal(normalizeMercadoPagoCheckoutSessionId("corta"), null)

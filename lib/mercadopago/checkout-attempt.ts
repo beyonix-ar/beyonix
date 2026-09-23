@@ -43,6 +43,7 @@ export interface MercadoPagoCheckoutAttemptRow {
   financial_status?: string | null
   payment_status?: string | null
   payment_method_id?: string | null
+  mercadopago_checkout_fingerprint?: string | null
   mercadopago_init_point?: string | null
   mercadopago_preference_expires_at?: string | null
   mercadopago_preference_claimed_at?: string | null
@@ -182,10 +183,24 @@ export function getMercadoPagoCheckoutAttemptDecision(
     return { kind: "in_progress" }
   }
 
+  // "rejected"/"cancelled" llegan acá vía webhook (pago rechazado por el
+  // medio de pago, o cancelado desde Checkout Pro) sin que la orden deje de
+  // estar `estado='pendiente'` -- el webhook sólo persiste `payment_status`
+  // en ese camino (ver app/api/mercadopago/webhook/route.ts, rama
+  // `payment.status !== "approved"`), a propósito, porque un pago puede
+  // reintentarse con otro medio sobre la MISMA preferencia. Tratarlos como
+  // "unavailable" dejaba la orden bloqueando para siempre cualquier
+  // reintento (índice único de `customer_checkout_fingerprint`) pese a que
+  // ya no hay ningún pago activo ni dinero real involucrado: son tan
+  // reutilizables como una preferencia simplemente vencida.
   if (
-    ["pending_checkout", "preference_created", "preference_error"].includes(
-      order.payment_status ?? "pending_checkout",
-    )
+    [
+      "pending_checkout",
+      "preference_created",
+      "preference_error",
+      "rejected",
+      "cancelled",
+    ].includes(order.payment_status ?? "pending_checkout")
   ) {
     return { kind: "claim_preference" }
   }

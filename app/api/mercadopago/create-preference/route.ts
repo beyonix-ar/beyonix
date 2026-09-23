@@ -84,6 +84,7 @@ interface MercadoPagoCheckoutOrderRow
   cliente_email?: string | null
   cliente_nombre?: string | null
   mercadopago_preference_generation?: number | null
+  customer_checkout_fingerprint?: string | null
 }
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
@@ -237,66 +238,14 @@ export async function POST(request: Request) {
     })
 
     if (activeAttempt) {
-      const decision = getMercadoPagoCheckoutAttemptDecision(activeAttempt)
-
-      if (decision.kind === "reuse") {
-        return NextResponse.json({
-          init_point: decision.initPoint,
-          order_id: activeAttempt.id,
-          reused: true,
-        })
-      }
-
-      if (decision.kind === "in_progress") {
-        return checkoutAttemptInProgressResponse()
-      }
-
-      const claimToken = randomUUID()
-      const { data: generation, error: claimError } = await admin.rpc(
-        "claim_mercadopago_order_preference",
-        {
-          p_order_id: activeAttempt.id,
-          p_checkout_fingerprint: checkoutFingerprint,
-          p_claim_token: claimToken,
-        },
-      )
-
-      if (claimError) {
-        throw new Error(
-          claimError.message || "No se pudo renovar el intento de pago.",
-        )
-      }
-
-      const preferenceGeneration = Number(generation ?? 0)
-      if (preferenceGeneration <= 0) {
-        return checkoutAttemptInProgressResponse()
-      }
-
-      try {
-        const result = await createAndPersistMercadoPagoPreference({
-          client: mercadoPagoClient,
-          admin,
-          order: activeAttempt,
-          payload,
-          request,
-          checkoutFingerprint,
-          claimToken,
-          preferenceGeneration,
-        })
-
-        return NextResponse.json({
-          init_point: result.initPoint,
-          order_id: activeAttempt.id,
-          reused: true,
-        })
-      } catch (error) {
-        await releaseMercadoPagoPreferenceClaim(
-          admin,
-          activeAttempt.id,
-          claimToken,
-        )
-        throw error
-      }
+      const response = await resolveMercadoPagoOrderAttempt({
+        client: mercadoPagoClient,
+        admin,
+        order: activeAttempt,
+        payload,
+        request,
+      })
+      if (response) return response
     }
 
     const rateLimitResponse = await enforceMercadoPagoCheckoutRateLimits({
@@ -546,6 +495,49 @@ export async function POST(request: Request) {
 
     if (orderError || !order) {
       if (isDuplicateCustomerCheckoutAttempt(orderError)) {
+        // El beneficio ya se había marcado 'used' más arriba (antes del
+        // INSERT); si la orden no se llegó a crear, nunca se linkea a nada y
+        // quedaría 'used' para siempre sin ninguna compra real detrás.
+        if (claimedBenefitId) {
+          try {
+            await releaseStoreBenefitClaim(admin, claimedBenefitId)
+          } catch (releaseError) {
+            console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+          }
+          claimedBenefitId = null
+        }
+
+        // El choque es contra `customer_checkout_fingerprint` (usuario +
+        // carrito + envío/beneficio), un eje de deduplicación MÁS ANGOSTO
+        // que `mercadopago_checkout_fingerprint` (que además incluye sesión,
+        // datos de contacto, costo de envío exacto y cuotas -- ver
+        // computeCustomerCheckoutFingerprint). Por eso puede chocar acá
+        // aunque `existingAttempts` no haya encontrado nada: la orden que
+        // realmente choca puede tener una huella de MP distinta (p.ej. el
+        // envío se recotizó al volver de Mercado Pago) pero sigue siendo la
+        // MISMA orden pendiente de este mismo cliente. Se le aplica la
+        // misma decisión (reuse/claim_preference/in_progress/already_paid)
+        // que a un intento encontrado por la huella de MP, en vez de
+        // bloquear ciegamente un intento en realidad abandonado/reutilizable.
+        const conflictFingerprint = orderPayload.customer_checkout_fingerprint
+        if (conflictFingerprint) {
+          const conflictOrder = await findConflictingMercadoPagoOrder(
+            admin,
+            conflictFingerprint,
+          )
+
+          if (conflictOrder?.payment_method_id === "mercadopago") {
+            const response = await resolveMercadoPagoOrderAttempt({
+              client: mercadoPagoClient,
+              admin,
+              order: conflictOrder,
+              payload,
+              request,
+            })
+            if (response) return response
+          }
+        }
+
         return NextResponse.json(
           {
             error:
@@ -556,6 +548,14 @@ export async function POST(request: Request) {
       }
 
       if (isPostgresUniqueViolation(orderError)) {
+        if (claimedBenefitId) {
+          try {
+            await releaseStoreBenefitClaim(admin, claimedBenefitId)
+          } catch (releaseError) {
+            console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+          }
+          claimedBenefitId = null
+        }
         return checkoutAttemptInProgressResponse()
       }
 
@@ -676,7 +676,7 @@ export async function POST(request: Request) {
 }
 
 const MERCADOPAGO_ATTEMPT_SELECT =
-  "id, estado, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_init_point, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count" as const
+  "id, estado, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_init_point, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count" as const
 
 async function loadMercadoPagoCheckoutAttempts(
   admin: ReturnType<typeof createAdminClient>,
@@ -695,6 +695,130 @@ async function loadMercadoPagoCheckoutAttempts(
   }
 
   return (data ?? []) as MercadoPagoCheckoutOrderRow[]
+}
+
+/**
+ * Busca la orden 'pendiente' que realmente choca contra el índice único de
+ * `customer_checkout_fingerprint` (usuario + carrito + envío/beneficio). Es
+ * un lookup best-effort para poder aplicar la misma decisión que un intento
+ * encontrado por la huella de Mercado Pago -- si no encuentra nada (por
+ * ejemplo, la orden se resolvió en el instante entre el INSERT fallido y
+ * este SELECT), el llamador cae al mensaje de bloqueo genérico existente.
+ */
+async function findConflictingMercadoPagoOrder(
+  admin: ReturnType<typeof createAdminClient>,
+  customerCheckoutFingerprint: string,
+) {
+  const { data, error } = await admin
+    .from("ordenes")
+    .select(MERCADOPAGO_ATTEMPT_SELECT)
+    .eq("customer_checkout_fingerprint", customerCheckoutFingerprint)
+    .eq("estado", "pendiente")
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(
+      error.message || "No se pudo verificar la compra en curso.",
+    )
+  }
+
+  return data as MercadoPagoCheckoutOrderRow | null
+}
+
+/**
+ * Aplica `getMercadoPagoCheckoutAttemptDecision` a una orden MP existente
+ * (encontrada por la huella de MP o por la de cliente+carrito) y devuelve la
+ * respuesta HTTP correspondiente, o `null` si la orden no es reusable ni
+ * bloqueante por sí misma (`unavailable` -- p.ej. un pago aprobado con
+ * conflicto de stock, que nunca debe tratarse como reintentable).
+ */
+async function resolveMercadoPagoOrderAttempt({
+  client,
+  admin,
+  order,
+  payload,
+  request,
+}: {
+  client: MercadoPagoConfig
+  admin: ReturnType<typeof createAdminClient>
+  order: MercadoPagoCheckoutOrderRow
+  payload: CheckoutPayload
+  request: Request
+}): Promise<Response | null> {
+  const decision = getMercadoPagoCheckoutAttemptDecision(order)
+
+  if (decision.kind === "already_paid") {
+    return NextResponse.json(
+      { error: "Esta compra ya fue pagada y no puede iniciarse nuevamente." },
+      { status: 409 },
+    )
+  }
+
+  if (decision.kind === "reuse") {
+    return NextResponse.json({
+      init_point: decision.initPoint,
+      order_id: order.id,
+      reused: true,
+    })
+  }
+
+  if (decision.kind === "in_progress") {
+    return checkoutAttemptInProgressResponse()
+  }
+
+  if (decision.kind !== "claim_preference") {
+    return null
+  }
+
+  // La RPC exige que `p_checkout_fingerprint` coincida EXACTO con el valor
+  // ya persistido en la orden (ver claim_mercadopago_order_preference) --
+  // nunca el fingerprint recién calculado del request actual, que puede
+  // diferir (por eso esta orden se encontró por otra vía).
+  const orderFingerprint = order.mercadopago_checkout_fingerprint
+  if (!orderFingerprint) return null
+
+  const claimToken = randomUUID()
+  const { data: generation, error: claimError } = await admin.rpc(
+    "claim_mercadopago_order_preference",
+    {
+      p_order_id: order.id,
+      p_checkout_fingerprint: orderFingerprint,
+      p_claim_token: claimToken,
+    },
+  )
+
+  if (claimError) {
+    throw new Error(
+      claimError.message || "No se pudo renovar el intento de pago.",
+    )
+  }
+
+  const preferenceGeneration = Number(generation ?? 0)
+  if (preferenceGeneration <= 0) {
+    return checkoutAttemptInProgressResponse()
+  }
+
+  try {
+    const result = await createAndPersistMercadoPagoPreference({
+      client,
+      admin,
+      order,
+      payload,
+      request,
+      checkoutFingerprint: orderFingerprint,
+      claimToken,
+      preferenceGeneration,
+    })
+
+    return NextResponse.json({
+      init_point: result.initPoint,
+      order_id: order.id,
+      reused: true,
+    })
+  } catch (error) {
+    await releaseMercadoPagoPreferenceClaim(admin, order.id, claimToken)
+    throw error
+  }
 }
 
 async function releaseMercadoPagoPreferenceClaim(
