@@ -100,7 +100,7 @@ export function HeroSection({
       : null
   const installmentLabel =
     maxEligibleInstallmentCount != null && featuredInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} cuotas de ${formatPrice(featuredInstallmentAmount)}`
+      ? `Hasta ${maxEligibleInstallmentCount} cuotas sin interés de ${formatPrice(featuredInstallmentAmount)}`
       : null
 
   const openFeaturedProduct = () => {

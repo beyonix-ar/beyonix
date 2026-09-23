@@ -826,7 +826,7 @@ export default function CheckoutPage() {
           offeredCounts: cartInstallmentEligibility,
         })
       : null
-  // Informativo ("Pagás N cuotas de $X"): divide lo que efectivamente se
+  // Informativo ("N cuotas sin interés de $X"): divide lo que efectivamente se
   // termina cobrando (ya neto de saldo a favor) por la cantidad de cuotas
   // elegida -- el total financiado en sí NO cambia según cuántas cuotas se
   // elijan (ver getCartFinancedTotal).
@@ -2358,7 +2358,7 @@ export default function CheckoutPage() {
                             </span>
                             <span className="mt-1 block text-sm text-white/45">
                               {bestCartInstallmentCount
-                                ? `Tarjeta o saldo en cuenta · Hasta ${bestCartInstallmentCount} cuotas`
+                                ? `Tarjeta o saldo en cuenta · Hasta ${bestCartInstallmentCount} cuotas sin interés`
                                 : method.description}
                             </span>
                           </span>
@@ -2411,7 +2411,7 @@ export default function CheckoutPage() {
                             >
                               <span className="min-w-0">
                                 <span className="block font-semibold text-white">
-                                  {count} cuotas fijas
+                                  {count} cuotas sin interés
                                 </span>
                                 <span className="mt-1 block text-sm text-white/45">
                                   {formatPrice(installmentAmount)} por cuota
@@ -2867,7 +2867,7 @@ export default function CheckoutPage() {
                 </div>
                 {displayInstallmentAmount !== null && effectiveInstallmentsModality && (
                   <p className="text-right text-11px font-semibold text-beyonix-sky">
-                    Pagás {effectiveInstallmentsModality} cuotas de{" "}
+                    {effectiveInstallmentsModality} cuotas sin interés de{" "}
                     {formatPrice(displayInstallmentAmount)}
                   </p>
                 )}

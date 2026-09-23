@@ -72,7 +72,7 @@ export function CategoryProductCard({
     installmentsFinancing,
   )
   const installmentsLabels = installmentPlans.map(
-    (plan) => `Hasta ${plan.count} cuotas de ${formatPrice(plan.amount)}`,
+    (plan) => `Hasta ${plan.count} cuotas sin interés de ${formatPrice(plan.amount)}`,
   )
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     activeVariant.price,

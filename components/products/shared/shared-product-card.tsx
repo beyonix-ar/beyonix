@@ -110,7 +110,7 @@ export default function SharedProductCard({
       : null
   const installmentLabel =
     maxEligibleInstallmentCount != null && maxInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} cuotas de $${maxInstallmentAmount.toLocaleString("es-AR")}`
+      ? `Hasta ${maxEligibleInstallmentCount} cuotas sin interés de $${maxInstallmentAmount.toLocaleString("es-AR")}`
       : null
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     defaultVariant.price,

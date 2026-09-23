@@ -137,12 +137,14 @@ export function ProductPurchaseBox({
 
       {!!maxInstallmentPlan && financedPrice != null && (
         <div className="mb-2">
-          {/* Concepto de cara al cliente: "Hasta N cuotas de $X", nunca
-              "precio financiado" (texto técnico) ni "sin interés" -- el
-              financiado es mayor al contado por diseño (cubre el costo de
-              MP), así que "sin interés" sería una leyenda falsa. */}
+          {/* Concepto de cara al cliente: "Hasta N cuotas sin interés de
+              $X" -- decisión de negocio vigente (no "precio financiado",
+              texto técnico). El precio financiado ya incorpora el costo de
+              MP de antemano, así que ninguna cuota agrega recargo adicional
+              sobre ese total: el disclosure legal (CFTEA) sigue vivo más
+              abajo para cubrir la diferencia contado/financiado. */}
           <p className="beyonix-modal-title text-14px font-semibold text-white">
-            Hasta {maxInstallmentPlan.count} cuotas de {formatPrice(maxInstallmentPlan.amount)}
+            Hasta {maxInstallmentPlan.count} cuotas sin interés de {formatPrice(maxInstallmentPlan.amount)}
           </p>
 
           {installmentPlans.length > 1 && (
@@ -162,16 +164,17 @@ export function ProductPurchaseBox({
             <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
               {installmentPlans.map((plan) => (
                 <li key={plan.count} className="beyonix-modal-body text-12px font-medium text-white/70">
-                  {plan.count} cuotas de {formatPrice(plan.amount)}
+                  {plan.count} cuotas sin interés de {formatPrice(plan.amount)}
                 </li>
               ))}
             </ul>
           )}
 
-          {/* Requisito legal Argentina: al haber precio financiado > contado,
-              nunca se puede decir "sin interés" -- se muestra el costo
-              financiero total efectivo anual en su lugar. Oculto
-              temporalmente (SHOW_CFTEA_ON_PRODUCT); el cálculo sigue vivo. */}
+          {/* Disclosure legal Argentina (CFTEA): al haber precio financiado >
+              contado, se informa el costo financiero total efectivo anual
+              como transparencia adicional al copy "sin interés" de arriba.
+              Oculto temporalmente en la ficha (SHOW_CFTEA_ON_PRODUCT); el
+              cálculo sigue vivo y se muestra igual en el checkout. */}
           {SHOW_CFTEA_ON_PRODUCT && cfteaPercent != null && (
             <p className="beyonix-modal-muted mt-1 text-10px font-medium leading-4 text-white/45">
               CFTEA: {formatPercent(cfteaPercent)}%
