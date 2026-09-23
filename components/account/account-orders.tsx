@@ -27,9 +27,11 @@ import {
 import {
   getClientOrderStatusBadge,
   getCuentaItemImage,
+  getOrderPaymentTotalDisplay,
   getPaymentProgressLabel,
   type CustomerOrderDetailView,
 } from "@/lib/account/account-utils"
+import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { supabase } from "@/lib/supabase/client"
@@ -200,6 +202,14 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                     cancellation_requested_by: order.cancellation_requested_by,
                   })
                 : null
+            // "Preparando envío" implica un proceso operativo que todavía no
+            // arrancó mientras el pago no esté confirmado (ver
+            // isOrderPaymentConfirmed) -- un intento de Mercado Pago
+            // pendiente/abandonado/rechazado y reclamable (fix de
+            // reintentos MP) queda en estado='pendiente' sin que eso
+            // signifique que ya se está preparando nada.
+            const paymentConfirmed = isOrderPaymentConfirmed(order)
+            const paymentTotalDisplay = getOrderPaymentTotalDisplay(order)
             const shippingLabel =
               order.financial_status === "refunded"
                 ? "Dinero reintegrado"
@@ -211,7 +221,9 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   : "Pedido cancelado"
                 : order.payment_status === "rechazado"
                   ? "Comprobante rechazado"
-                  : order.estado === "entregado"
+                  : !paymentConfirmed
+                    ? getPaymentProgressLabel(order)
+                    : order.estado === "entregado"
                 ? "Entregado"
                 : order.estado === "en_camino" || order.estado === "enviado"
                   ? "En camino"
@@ -229,7 +241,9 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   : "La compra fue cancelada correctamente"
                 : order.payment_status === "rechazado"
                   ? "Podés subir un nuevo comprobante"
-                  : order.estado === "entregado" && order.delivered_at
+                  : !paymentConfirmed
+                    ? "Te avisaremos cuando se haya aprobado."
+                    : order.estado === "entregado" && order.delivered_at
                 ? formatOrderCardDate(order.delivered_at).split(" · ")[0]
                 : hasTrackingNumber
                   ? null
@@ -265,9 +279,9 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                         </span>
                       </div>
                     </div>
-                    <div className="shrink-0 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.18)] sm:w-36">
-                      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-[var(--account-success-text)]">Total pagado</p>
-                      <p className="mt-1 text-lg font-black leading-none tracking-tight text-[var(--account-success-text)]">{formatCuentaPrice(Number(order.total ?? 0))}</p>
+                    <div className={`shrink-0 rounded-xl border px-3 py-2.5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_10px_24px_rgba(0,0,0,0.18)] sm:w-36 ${paymentTotalDisplay.boxClassName}`}>
+                      <p className={`text-[9px] font-black uppercase tracking-[0.18em] ${paymentTotalDisplay.textClassName}`}>{paymentTotalDisplay.label}</p>
+                      <p className={`mt-1 text-lg font-black leading-none tracking-tight ${paymentTotalDisplay.textClassName}`}>{formatCuentaPrice(Number(order.total ?? 0))}</p>
                     </div>
                   </div>
 

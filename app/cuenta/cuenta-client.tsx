@@ -56,6 +56,7 @@ import {
   getClientOrderStatusBadge,
   getCuentaItemColor,
   getCuentaItemImage,
+  getOrderPaymentTotalDisplay,
   isInvoiceAvailable,
 } from "@/lib/account/account-utils"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
@@ -665,6 +666,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const paymentStatus = (order.payment_status ?? "pendiente_comprobante").toLowerCase()
   const isTransferPayment = order.payment_method_id === "transferencia"
   const paymentConfirmed = isOrderPaymentConfirmed(order)
+  const paymentTotalDisplay = getOrderPaymentTotalDisplay(order)
   const status = getClientOrderStatusBadge(order)
   const isCancelled = (order.estado ?? "").toLowerCase() === "cancelado"
   const orderDelivered = isOrderDetailDelivered(order)
@@ -964,10 +966,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--account-text-secondary)]"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>
             </div>
             <div className="flex flex-col gap-2 lg:items-end">
-              <div className="flex min-h-16 items-center justify-center rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-5 py-3 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-48">
+              <div className={`flex min-h-16 items-center justify-center rounded-xl border px-5 py-3 text-center shadow-[0_14px_32px_rgba(16,185,129,0.1)] lg:min-w-48 ${paymentTotalDisplay.boxClassName}`}>
                 <div>
-                  <p className="text-10px font-semibold uppercase tracking-[0.16em] text-[var(--account-success-text)]">Total pagado</p>
-                  <p className="mt-1.5 text-xl font-bold leading-none text-[var(--account-success-text)]">{formatCuentaPrice(Number(order.total))}</p>
+                  <p className={`text-10px font-semibold uppercase tracking-[0.16em] ${paymentTotalDisplay.textClassName}`}>{paymentTotalDisplay.label}</p>
+                  <p className={`mt-1.5 text-xl font-bold leading-none ${paymentTotalDisplay.textClassName}`}>{formatCuentaPrice(Number(order.total))}</p>
                 </div>
               </div>
             </div>
@@ -1247,7 +1249,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             <section className="customer-order-payment-summary rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-[var(--account-text-primary)]">Resumen de pago</h2>
               <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Productos</dt><dd className="font-semibold text-[var(--account-text-primary)]">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Envío</dt><dd className="font-semibold text-[var(--account-text-primary)]">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-[var(--account-success-text)]"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}{creditBalanceUsed > 0 && <div className="flex justify-between gap-3 text-[var(--account-success-text)]"><dt>Saldo a favor</dt><dd className="font-semibold">− {formatCuentaPrice(creditBalanceUsed)}</dd></div>}{creditBalanceUsed > 0 && externalAmountDue > 0 && <div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Diferencia pagada</dt><dd className="font-semibold text-[var(--account-text-primary)]">{formatCuentaPrice(externalAmountDue)}</dd></div>}</dl>
-              <div className="mt-3.5 flex items-center justify-between gap-3 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-3.5 py-3"><span className="text-10px font-semibold uppercase tracking-widest text-[var(--account-success-text)]">Total pagado</span><strong className="text-base font-bold text-[var(--account-text-primary)]">{formatCuentaPrice(Number(order.total))}</strong></div>
+              <div className={`mt-3.5 flex items-center justify-between gap-3 rounded-xl border px-3.5 py-3 ${paymentTotalDisplay.boxClassName}`}><span className={`text-10px font-semibold uppercase tracking-widest ${paymentTotalDisplay.textClassName}`}>{paymentTotalDisplay.label}</span><strong className="text-base font-bold text-[var(--account-text-primary)]">{formatCuentaPrice(Number(order.total))}</strong></div>
             </section>
 
             {showClaimHelp && (

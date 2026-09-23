@@ -1,7 +1,8 @@
-import type { SupabaseOrderAuditEvent, SupabasePedido } from "@/lib/supabase/types"
-import { formatCuentaOrderDate } from "@/lib/account/account-formatters"
-import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
-import { validatePassword } from "@/lib/validation/account-fields"
+import type { SupabaseOrderAuditEvent, SupabasePedido } from "../supabase/types.ts"
+import { formatCuentaOrderDate } from "./account-formatters.ts"
+import { deriveOrderCancellationInfo } from "../orders/order-cancellation-origin.ts"
+import { isOrderPaymentConfirmed } from "../orders/order-payment-status.ts"
+import { validatePassword } from "../validation/account-fields.ts"
 
 export type OrderProgressTone = "done" | "current" | "pending" | "danger" | "warning"
 
@@ -158,6 +159,41 @@ export function getClientOrderStatusBadge(order: OrderStatusFields) {
     label: "Pedido registrado",
     className:
       "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)] text-[var(--account-neutral-text)]",
+  }
+}
+
+export interface OrderPaymentTotalDisplay {
+  label: string
+  /** Borde + fondo del contenedor de la caja de total. */
+  boxClassName: string
+  /** Color de texto (label y monto) -- separado del borde/fondo para que cada
+   * caja conserve su propio tamaño/tipografía sin duplicar la lógica de tono. */
+  textClassName: string
+}
+
+/**
+ * Única fuente de verdad de "¿decimos 'Total pagado'?" para historial y
+ * detalle de compra (ver isOrderPaymentConfirmed -- la misma que ya usa
+ * showPaymentProofSection en cuenta-client.tsx y el cancel de admin/cliente).
+ * Nunca `estado`/`estado==='pagado'` solo: un intento de Mercado Pago
+ * abandonado o rechazado queda en `estado='pendiente'` (reclamable, ver fix
+ * de reintentos MP) sin que eso implique que se cobró algo.
+ */
+export function getOrderPaymentTotalDisplay(
+  order: Parameters<typeof isOrderPaymentConfirmed>[0],
+): OrderPaymentTotalDisplay {
+  if (isOrderPaymentConfirmed(order)) {
+    return {
+      label: "Total pagado",
+      boxClassName: "border-[var(--account-success-border)] bg-[var(--account-success-bg)]",
+      textClassName: "text-[var(--account-success-text)]",
+    }
+  }
+
+  return {
+    label: "Total del pedido",
+    boxClassName: "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)]",
+    textClassName: "text-[var(--account-neutral-text)]",
   }
 }
 
