@@ -456,18 +456,28 @@ function CheckoutPaymentInfoLink({
   )
 }
 
+/**
+ * Indicador visual del radio nativo (que queda sr-only dentro del label):
+ * círculo vacío sin elegir; círculo lleno con un check al elegir.
+ */
 function CheckoutRadioIndicator({ checked }: { checked: boolean }) {
   return (
     <span
       aria-hidden="true"
+      data-checked={checked ? "true" : "false"}
       className={cn(
-        "checkout-choice-radio flex size-4 shrink-0 items-center justify-center rounded-full border-2",
+        "checkout-choice-radio flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
         checked
           ? "border-[var(--checkout-choice-indicator)] bg-[var(--checkout-choice-indicator)]"
           : "border-[var(--checkout-choice-indicator-idle)]",
       )}
     >
-      {checked && <span className="size-1.5 rounded-full bg-[var(--checkout-choice-indicator-dot)]" />}
+      {checked && (
+        <Check
+          strokeWidth={3.5}
+          className="checkout-choice-radio-check size-3 text-[var(--checkout-choice-indicator-dot)]"
+        />
+      )}
     </span>
   )
 }

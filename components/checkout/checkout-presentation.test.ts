@@ -88,7 +88,7 @@ function hexLuminance(hex: string) {
 
 test("5-6. en light la opción elegida es sobria: fondo blanco/gris muy claro, borde BEYONIX y texto oscuro", () => {
   const lightTokens = css.match(
-    /html\[data-account-theme="light"\]\[data-account-scope\] \{\n  --checkout-choice-selected-bg: (#[0-9a-f]{6});/,
+    /html\[data-account-theme="light"\]\[data-account-scope\] \{\n(?:  \/\*[\s\S]*?\*\/\n)?  --checkout-choice-selected-bg: (#[0-9a-f]{6});/,
   )
   assert.ok(lightTokens, "token light de fondo seleccionado")
   assert.ok(hexLuminance(lightTokens[1]) > 0.95, `${lightTokens[1]} debe ser blanco o gris muy claro`)
@@ -124,7 +124,8 @@ test("7-8. transferencia: '¡Mejor precio!' y 'Incluye N% de descuento' dinámic
     /className="font-semibold text-\[var\(--checkout-offer-text\)\]"\s*>\s*\{siteSettings\.pricing\.transferDiscountPercent\}% de descuento/,
   )
   assert.doesNotMatch(list, /10%/)
-  assert.match(css, /--checkout-offer-text: var\(--account-success-text\);/)
+  // Verde claro y vivo en light (no el verde oscuro de estados).
+  assert.match(css, /--checkout-offer-text: #16a34a;/)
 })
 
 // ─────────────────────────────────────────────────────────────

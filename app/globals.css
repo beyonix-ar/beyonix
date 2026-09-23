@@ -12258,12 +12258,57 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-notice
   --checkout-offer-text: #34d399;
 }
 html[data-account-theme="light"][data-account-scope] {
-  --checkout-choice-selected-bg: #f6f9fc;
-  --checkout-choice-selected-border: #5a9bd0;
-  --checkout-choice-indicator: #1e5f8c;
-  --checkout-choice-indicator-idle: #7aa6c9;
+  /* Seleccionada en Light: celeste casi blanco + borde azul BEYONIX marcado
+     (nunca fondo navy). Hover sin elegir: apenas un tinte celeste. */
+  --checkout-choice-selected-bg: #eaf4fd;
+  --checkout-choice-selected-border: #2f6fa3;
+  --checkout-choice-hover-bg: #f5f9fe;
+  --checkout-choice-hover-border: #9cc3e4;
+  --checkout-choice-indicator: #2f6fa3;
+  --checkout-choice-indicator-idle: #8fb3d3;
   --checkout-choice-indicator-dot: #ffffff;
-  --checkout-offer-text: var(--account-success-text);
+  /* Beneficio de transferencia: verde claro y vivo (no el verde oscuro de
+     los textos de estado), legible en negrita sobre blanco/celeste. */
+  --checkout-offer-text: #16a34a;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice:not(.checkout-option-selected):hover {
+  background-color: var(--checkout-choice-hover-bg) !important;
+  border-color: var(--checkout-choice-hover-border) !important;
+}
+/* Links "Ver medios" / "Ver cuotas": azul identificable también dentro de la
+   tarjeta seleccionada (celeste). */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice [class~="text-beyonix-sky"] {
+  color: #1e5f8c !important;
+}
+/* Modales informativos del paso de pago ("Ver medios", "Ver cuotas") y de
+   confirmación, sólo en Light: filas blancas bien separadas, texto oscuro. */
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal {
+  background: #ffffff !important;
+  border-color: rgba(30, 58, 95, 0.18) !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-list {
+  background: #ffffff !important;
+  border-color: #dbe4ee !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-list > li + li {
+  border-top: 1px solid #e8eef5 !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-list > li {
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-title {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-body {
+  color: var(--beyonix-light-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-muted {
+  color: var(--beyonix-light-text-muted) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-close:hover {
+  background: #eef3f8 !important;
 }
 .checkout-choice.checkout-option-selected {
   background-color: var(--checkout-choice-selected-bg);

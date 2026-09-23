@@ -54,7 +54,7 @@ export function PaymentInfoModal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="beyonix-modal-shell relative z-10 w-[min(400px,calc(100vw-32px))] rounded-2xl border border-beyonix-blue-light/24 bg-[#080D13] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.72)]"
+        className="beyonix-modal-shell checkout-info-modal relative z-10 w-[min(400px,calc(100vw-32px))] rounded-2xl border border-beyonix-blue-light/24 bg-[#080D13] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.72)]"
       >
         <div className="flex items-center gap-2.5">
           <h2 className="beyonix-modal-title flex-1 text-[15px] font-bold leading-tight text-white">

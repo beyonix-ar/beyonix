@@ -379,3 +379,82 @@ test("31-35. huellas, retry, refresco de precios, revalidación de transferencia
   assert.equal(pricing.financed?.preferenceMaxInstallments, 6)
   assert.equal(pricing.cash.preferenceMaxInstallments, 1)
 })
+
+// ─────────────────────────────────────────────────────────────
+// AJUSTE VISUAL LIGHT (contratos de clases/tokens, no pixel perfect)
+// ─────────────────────────────────────────────────────────────
+
+const css = readSource("../../app/globals.css")
+const LIGHT_SCOPE = 'html[data-account-theme="light"][data-account-scope]'
+
+function lightTokens() {
+  const start = css.indexOf(`${LIGHT_SCOPE} {\n  /* Seleccionada en Light`)
+  assert.ok(start > 0, "bloque de tokens light del paso de pago")
+  return css.slice(start, css.indexOf("\n}\n", start))
+}
+
+function luminance(hex: string) {
+  const [r, g, b] = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255)
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+test("visual 1-2. seleccionada en light: celeste muy claro (no navy), borde azul marcado y texto de alto contraste", () => {
+  const tokens = lightTokens()
+  const bg = tokens.match(/--checkout-choice-selected-bg: (#[0-9a-f]{6});/)?.[1]
+  const border = tokens.match(/--checkout-choice-selected-border: (#[0-9a-f]{6});/)?.[1]
+  assert.ok(bg && border)
+  assert.ok(luminance(bg) > 0.9, `${bg} debe ser casi blanco`)
+  assert.ok(parseInt(bg.slice(5, 7), 16) > parseInt(bg.slice(1, 3), 16), `${bg} debe tender a celeste`)
+  assert.notEqual(bg.toLowerCase(), "#112a43")
+  assert.ok(luminance(border) < 0.45, `${border} debe ser un azul marcado`)
+  assert.match(css, /\.checkout-choice\.checkout-option-selected \{\n  background-color: var\(--checkout-choice-selected-bg\) !important;/)
+  // Texto dentro de la seleccionada: título oscuro y helper gris oscuro.
+  assert.match(css, /\.checkout-choice\.checkout-option-selected \[class~="text-white"\],[\s\S]{0,200}color: var\(--account-text-primary\) !important;/)
+  assert.match(css, /\.checkout-choice\.checkout-option-selected \[class~="text-white\/55"\] \{\n  color: var\(--beyonix-light-text-secondary\) !important;/)
+  // Hover sin elegir: tinte claro, nunca el navy /38 de dark.
+  assert.match(css, /\.checkout-choice:not\(\.checkout-option-selected\):hover \{\n  background-color: var\(--checkout-choice-hover-bg\) !important;/)
+  // Links "Ver medios"/"Ver cuotas" siguen azules.
+  assert.match(css, /\.checkout-page \.checkout-choice \[class~="text-beyonix-sky"\] \{\n  color: #1e5f8c !important;/)
+})
+
+test("visual 3. el radio elegido muestra un check (radio nativo sigue siendo el control accesible)", () => {
+  const start = checkout.indexOf("function CheckoutRadioIndicator(")
+  const indicator = checkout.slice(start, checkout.indexOf("\n}\n", start))
+  assert.match(indicator, /aria-hidden="true"/)
+  assert.match(indicator, /\{checked && \(\s*<Check[\s\S]*className="checkout-choice-radio-check/)
+  assert.match(indicator, /bg-\[var\(--checkout-choice-indicator\)\]/)
+  const cardStart = checkout.indexOf("function CheckoutPaymentOptionCard(")
+  const card = checkout.slice(cardStart, checkout.indexOf("\n}\n", cardStart))
+  assert.match(card, /type="radio"[\s\S]*className="sr-only"/)
+  assert.match(card, /has-\[:focus-visible\]:ring-2/)
+})
+
+test("visual 4. el descuento de transferencia usa el token verde claro (light) y conserva el de dark", () => {
+  assert.match(lightTokens(), /--checkout-offer-text: #16a34a;/)
+  assert.match(css, /:root \{\n  --checkout-choice-selected-bg: #112a43;[\s\S]{0,300}--checkout-offer-text: #34d399;/)
+  assert.equal((checkout.match(/text-\[var\(--checkout-offer-text\)\]/g) ?? []).length, 2)
+})
+
+test("visual 5. dark mode intacto: tokens y estilo base de la seleccionada sin cambios", () => {
+  assert.match(
+    css,
+    /:root \{\n  --checkout-choice-selected-bg: #112a43;\n  --checkout-choice-selected-border: #4f83ad;\n  --checkout-choice-indicator: #4f83ad;/,
+  )
+  assert.match(css, /\.checkout-option-selected \{\n  background-color: #112A43;/)
+  // Todo el ajuste nuevo está scopeado a light.
+  for (const rule of [".checkout-info-modal {", ".checkout-choice:not(.checkout-option-selected):hover {"]) {
+    const index = css.indexOf(rule)
+    assert.ok(index > 0)
+    assert.equal(css.slice(css.lastIndexOf("\n", index) + 1, index).startsWith(LIGHT_SCOPE), true, rule)
+  }
+})
+
+test("visual 6. los modales siguen con el mismo componente y quedan blancos/prolijos en light", () => {
+  const modal = readSource("./payment-info-modal.tsx")
+  assert.match(modal, /className="beyonix-modal-shell checkout-info-modal /)
+  assert.match(modal, /role="dialog"/)
+  assert.match(modal, /\{footer \?\? \(/)
+  assert.match(css, /\.checkout-info-modal \{\n  background: #ffffff !important;/)
+  assert.match(css, /\.checkout-info-modal \.beyonix-modal-list > li \+ li \{\n  border-top: 1px solid #e8eef5 !important;/)
+  assert.equal((checkout.match(/<PaymentInfoModal/g) ?? []).length, 3)
+})
