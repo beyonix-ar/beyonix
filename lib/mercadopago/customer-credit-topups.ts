@@ -1,4 +1,9 @@
 import { createAdminClient } from "../supabase/admin.ts"
+import {
+  isMercadoPagoPaymentForOrder,
+  type MercadoPagoPaymentOwnershipOrder,
+} from "./order-payment.ts"
+import { getMercadoPagoOrderPaymentSearchReferences } from "./order-reference.ts"
 
 export interface MercadoPagoPaymentFeeDetail {
   type?: string | null
@@ -17,6 +22,7 @@ export interface MercadoPagoPayment {
   external_reference?: string | null
   payment_method_id?: string | null
   payment_type_id?: string | null
+  date_created?: string | null
   date_approved?: string | null
   transaction_amount?: number | null
   transaction_amount_refunded?: number | null
@@ -101,7 +107,7 @@ export async function getMercadoPagoPayment(paymentId: string) {
   return (await response.json()) as MercadoPagoPayment
 }
 
-export async function findMercadoPagoPaymentByExternalReference(
+async function searchMercadoPagoPaymentsByExternalReference(
   externalReference: string,
 ) {
   const params = new URLSearchParams({
@@ -121,14 +127,57 @@ export async function findMercadoPagoPaymentByExternalReference(
 
   if (!response.ok) throw new Error(`Mercado Pago respondió ${response.status}`)
   const payload = (await response.json()) as MercadoPagoSearchResponse
-  const matchingPayments = payload.results?.filter(
+  return payload.results?.filter(
     (payment) => payment.external_reference === externalReference,
   ) ?? []
+}
+
+function pickMostRelevantPayment(payments: MercadoPagoPayment[]) {
   return (
-    matchingPayments.find((payment) => payment.status === "approved") ??
-    matchingPayments.find((payment) => payment.status === "pending") ??
-    matchingPayments[0] ??
+    payments.find((payment) => payment.status === "approved") ??
+    payments.find((payment) => payment.status === "pending") ??
+    payments[0] ??
     null
+  )
+}
+
+/**
+ * Para referencias únicas por diseño (cargas de saldo: `credit-topup:<uuid>`).
+ * Para pedidos usar SIEMPRE findMercadoPagoPaymentForOrder: el id de orden
+ * puede reutilizarse y la referencia sola no prueba que el pago sea suyo.
+ */
+export async function findMercadoPagoPaymentByExternalReference(
+  externalReference: string,
+) {
+  return pickMostRelevantPayment(
+    await searchMercadoPagoPaymentsByExternalReference(externalReference),
+  )
+}
+
+function getPaymentCreatedAt(payment: MercadoPagoPayment) {
+  const createdAt = Date.parse(payment.date_created ?? "")
+  return Number.isFinite(createdAt) ? createdAt : 0
+}
+
+/**
+ * Último pago relevante de Mercado Pago que pertenece REALMENTE a esta orden
+ * (isMercadoPagoPaymentForOrder): busca bajo cada referencia posible de la
+ * orden (`order:<uuid>` y, sólo si es legada, su id numérico) y descarta
+ * pagos de una orden anterior con el mismo número.
+ */
+export async function findMercadoPagoPaymentForOrder(
+  order: MercadoPagoPaymentOwnershipOrder,
+) {
+  const searches = await Promise.all(
+    getMercadoPagoOrderPaymentSearchReferences(order).map((reference) =>
+      searchMercadoPagoPaymentsByExternalReference(reference),
+    ),
+  )
+  return pickMostRelevantPayment(
+    searches
+      .flat()
+      .filter((payment) => isMercadoPagoPaymentForOrder(payment, order))
+      .sort((left, right) => getPaymentCreatedAt(right) - getPaymentCreatedAt(left)),
   )
 }
 

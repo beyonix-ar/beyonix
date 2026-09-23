@@ -1,4 +1,9 @@
 import type { MercadoPagoPayment } from "./customer-credit-topups.ts"
+import {
+  matchMercadoPagoOrderExternalReference,
+  normalizeMercadoPagoOrderReference,
+  type MercadoPagoOrderReferenceFields,
+} from "./order-reference.ts"
 
 export interface MercadoPagoOrderPaymentRow {
   estado: string
@@ -91,6 +96,82 @@ export function moneyToCents(value: number | null | undefined) {
   }
 
   return cents
+}
+
+export interface MercadoPagoPaymentOwnershipPayment {
+  external_reference?: string | null
+  date_created?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+export interface MercadoPagoPaymentOwnershipOrder extends MercadoPagoOrderReferenceFields {
+  created_at?: string | null
+  mercadopago_checkout_fingerprint?: string | null
+}
+
+/**
+ * Margen para diferencias de reloj entre Mercado Pago y la base: un pago
+ * legítimo siempre es posterior a la creación de su orden (la preferencia se
+ * crea después del INSERT), así que sólo se descartan pagos claramente
+ * anteriores.
+ */
+const PAYMENT_BEFORE_ORDER_TOLERANCE_MS = 5 * 60 * 1000
+
+/**
+ * ¿Este pago de Mercado Pago pertenece REALMENTE a esta orden?
+ *
+ * - Órdenes nuevas: `external_reference` debe ser `order:<mercadopago_reference>`;
+ *   una referencia numérica nunca alcanza, aunque coincida con el id.
+ * - Órdenes legadas (sin UUID): referencia numérica = id, que puede haberse
+ *   reutilizado (p. ej. después de reiniciar la numeración de pedidos).
+ * - Orden legada con UUID asignado después de creada: además de
+ *   `order:<uuid>`, acepta su referencia numérica histórica sólo con la
+ *   huella de checkout presente en ambos lados y coincidente.
+ *
+ * En todos los casos exige además:
+ * - si la preferencia llevó `metadata.checkout_fingerprint` (todas las
+ *   órdenes de checkout lo llevan) y la orden tiene huella, que coincidan;
+ * - que el pago no sea anterior a la creación de la orden.
+ */
+export function isMercadoPagoPaymentForOrder(
+  payment: MercadoPagoPaymentOwnershipPayment,
+  order: MercadoPagoPaymentOwnershipOrder,
+) {
+  const referenceMatch = matchMercadoPagoOrderExternalReference(payment.external_reference, order)
+  if (!referenceMatch) return false
+
+  const paymentFingerprint = payment.metadata?.checkout_fingerprint
+  if (
+    referenceMatch === "legacy_numeric" &&
+    normalizeMercadoPagoOrderReference(order.mercadopago_reference) &&
+    (typeof paymentFingerprint !== "string" ||
+      paymentFingerprint.length === 0 ||
+      paymentFingerprint !== order.mercadopago_checkout_fingerprint)
+  ) {
+    return false
+  }
+
+  if (
+    typeof paymentFingerprint === "string" &&
+    paymentFingerprint.length > 0 &&
+    typeof order.mercadopago_checkout_fingerprint === "string" &&
+    order.mercadopago_checkout_fingerprint.length > 0 &&
+    paymentFingerprint !== order.mercadopago_checkout_fingerprint
+  ) {
+    return false
+  }
+
+  const paymentCreatedAt = Date.parse(payment.date_created ?? "")
+  const orderCreatedAt = Date.parse(order.created_at ?? "")
+  if (
+    Number.isFinite(paymentCreatedAt) &&
+    Number.isFinite(orderCreatedAt) &&
+    paymentCreatedAt < orderCreatedAt - PAYMENT_BEFORE_ORDER_TOLERANCE_MS
+  ) {
+    return false
+  }
+
+  return true
 }
 
 export function isMercadoPagoOrderAlreadyConfirmed(

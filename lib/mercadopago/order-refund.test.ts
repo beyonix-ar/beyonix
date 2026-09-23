@@ -25,6 +25,19 @@ function fakeAdmin(options: {
       throw new Error(`rpc inesperada en el mock: ${name}`)
     },
     from: (table: string) => {
+      if (table === "ordenes") {
+        // Orden legada (sin UUID): la referencia numérica sigue siendo válida.
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { id: orderId, mercadopago_reference: null, mercadopago_reference_assigned_at: null },
+                error: null,
+              }),
+            }),
+          }),
+        }
+      }
       if (table !== "mercadopago_order_refunds") throw new Error(`tabla inesperada en el mock: ${table}`)
       return {
         select: () => ({

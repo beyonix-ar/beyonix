@@ -8,6 +8,10 @@ import {
 } from "./customer-credit-topups.ts"
 import { moneyToCents } from "./order-payment.ts"
 import {
+  matchMercadoPagoOrderExternalReference,
+  type MercadoPagoOrderReferenceFields,
+} from "./order-reference.ts"
+import {
   createMercadoPagoRefund,
   getMercadoPagoRefundStatus,
   type MercadoPagoRefundOutcome,
@@ -49,6 +53,20 @@ interface RefundDependencies {
     paymentId: string,
     refundId: string | null,
   ) => ReturnType<typeof getMercadoPagoRefundStatus>
+  getOrderReference?: (orderId: number) => Promise<MercadoPagoOrderReferenceFields | null>
+}
+
+async function loadOrderReference(
+  admin: AdminClient,
+  orderId: number,
+): Promise<MercadoPagoOrderReferenceFields | null> {
+  const { data, error } = await admin
+    .from("ordenes")
+    .select("id, mercadopago_reference, mercadopago_reference_assigned_at")
+    .eq("id", orderId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return data as MercadoPagoOrderReferenceFields | null
 }
 
 /**
@@ -59,12 +77,18 @@ interface RefundDependencies {
  */
 function validateRefundablePayment(
   payment: MercadoPagoPayment,
-  params: { orderId: number; expectedPaymentId: string; expectedAmount: number },
+  params: {
+    order: MercadoPagoOrderReferenceFields
+    expectedPaymentId: string
+    expectedAmount: number
+  },
 ): string | null {
   if (String(payment.id) !== params.expectedPaymentId) {
     return "PAYMENT_ID_MISMATCH"
   }
-  if (payment.external_reference !== String(params.orderId)) {
+  // order:<uuid> para órdenes nuevas; la numérica sólo para órdenes legadas
+  // (ver matchMercadoPagoOrderExternalReference).
+  if (!matchMercadoPagoOrderExternalReference(payment.external_reference, params.order)) {
     return "EXTERNAL_REFERENCE_MISMATCH"
   }
   if (payment.status !== "approved") {
@@ -113,6 +137,8 @@ export async function refundMercadoPagoOrderPayment(
 ): Promise<MercadoPagoOrderRefundResult> {
   const getPayment = deps.getPayment ?? getMercadoPagoPayment
   const createRefund = deps.createRefund ?? createMercadoPagoRefund
+  const getOrderReference =
+    deps.getOrderReference ?? ((orderId: number) => loadOrderReference(admin, orderId))
 
   const { data: beginData, error: beginError } = await admin.rpc(
     "begin_mercadopago_order_refund",
@@ -137,8 +163,12 @@ export async function refundMercadoPagoOrderPayment(
   }
 
   let payment: MercadoPagoPayment
+  let order: MercadoPagoOrderReferenceFields | null
   try {
-    payment = await getPayment(attempt.payment_id)
+    ;[payment, order] = await Promise.all([
+      getPayment(attempt.payment_id),
+      getOrderReference(params.orderId),
+    ])
   } catch (error) {
     await admin.rpc("record_mercadopago_order_refund_result", {
       p_refund_id: attempt.refund_id,
@@ -149,8 +179,18 @@ export async function refundMercadoPagoOrderPayment(
     return { kind: "unknown", reason: "PAYMENT_LOOKUP_FAILED" }
   }
 
+  if (!order) {
+    await admin.rpc("record_mercadopago_order_refund_result", {
+      p_refund_id: attempt.refund_id,
+      p_outcome: "failed",
+      p_error_code: "ORDER_NOT_FOUND",
+      p_error_message: "No se encontró la orden del reintegro; no se llegó a contactar el refund de Mercado Pago.",
+    })
+    return { kind: "validation_failed", reason: "ORDER_NOT_FOUND" }
+  }
+
   const validationError = validateRefundablePayment(payment, {
-    orderId: params.orderId,
+    order,
     expectedPaymentId: attempt.payment_id,
     expectedAmount: attempt.amount,
   })

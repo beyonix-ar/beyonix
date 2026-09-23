@@ -71,6 +71,10 @@ import {
   supersedeStaleMercadoPagoOrder,
   type SupersedableMercadoPagoOrder,
 } from "@/lib/mercadopago/checkout-supersede"
+import {
+  ensureMercadoPagoOrderReference,
+  getMercadoPagoOrderExternalReference,
+} from "@/lib/mercadopago/order-reference"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   claimActiveStoreBenefit,
@@ -675,7 +679,7 @@ async function releaseStoreBenefitClaimSafely(admin: AdminClient, benefitId: str
 }
 
 const MERCADOPAGO_ATTEMPT_SELECT =
-  "id, estado, total, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count, pricing_snapshot, store_benefit_id, andreani_creation_status, andreani_envio_id" as const
+  "id, created_at, estado, total, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count, pricing_snapshot, store_benefit_id, andreani_creation_status, andreani_envio_id" as const
 
 async function loadMercadoPagoCheckoutAttempts(
   admin: AdminClient,
@@ -945,6 +949,11 @@ async function createAndPersistMercadoPagoPreference({
       "La URL pública del sitio no está configurada; no se puede iniciar el pago.",
     )
   }
+  // external_reference = order:<uuid>, nunca el id numérico (reutilizable).
+  // Las órdenes nuevas ya traen el UUID; a una orden legada se le asigna acá,
+  // antes de emitir la preferencia (ver ensureMercadoPagoOrderReference).
+  const orderReference = await ensureMercadoPagoOrderReference(admin, order)
+  const externalReference = getMercadoPagoOrderExternalReference(orderReference)
   const createdAt = new Date()
   const expiresAt = getMercadoPagoPreferenceExpiration(createdAt)
   const preference = new Preference(client)
@@ -955,7 +964,7 @@ async function createAndPersistMercadoPagoPreference({
   const paymentMethods = getMercadoPagoPreferenceInstallments(order)
   const result = await preference.create({
     body: {
-      external_reference: String(order.id),
+      external_reference: externalReference,
       items: [
         {
           id: `order-${order.id}`,
@@ -988,11 +997,12 @@ async function createAndPersistMercadoPagoPreference({
       metadata: {
         flow: "checkout_order",
         order_id: order.id,
+        order_reference: orderReference.mercadopago_reference,
         checkout_fingerprint: checkoutFingerprint,
       },
     },
     requestOptions: {
-      idempotencyKey: `beyonix-order-${order.id}-preference-${preferenceGeneration}`,
+      idempotencyKey: `beyonix-order-${orderReference.mercadopago_reference}-preference-${preferenceGeneration}`,
     },
   })
 

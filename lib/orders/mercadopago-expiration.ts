@@ -1,7 +1,7 @@
 import "server-only"
 
 import { reverseCustomerCreditForOrder } from "../customer-credit/server.ts"
-import { findMercadoPagoPaymentByExternalReference } from "../mercadopago/customer-credit-topups.ts"
+import { findMercadoPagoPaymentForOrder } from "../mercadopago/customer-credit-topups.ts"
 import { MERCADOPAGO_ABANDONED_ORDER_GRACE_HOURS } from "../mercadopago/checkout-attempt.ts"
 import { appendOrderAuditEvent } from "./order-audit.ts"
 import type { createAdminClient } from "../supabase/admin.ts"
@@ -10,6 +10,10 @@ type AdminClient = ReturnType<typeof createAdminClient>
 
 interface ExpirableMercadoPagoOrder {
   id: number
+  created_at?: string | null
+  mercadopago_checkout_fingerprint?: string | null
+  mercadopago_reference?: string | null
+  mercadopago_reference_assigned_at?: string | null
   estado: string
   payment_status?: string | null
   financial_status?: string | null
@@ -61,7 +65,7 @@ export async function expireAbandonedMercadoPagoOrders(
   const { data, error } = await admin
     .from("ordenes")
     .select(
-      "id, estado, payment_status, financial_status, credit_balance_used, mercadopago_preference_expires_at, andreani_creation_status, andreani_envio_id",
+      "id, created_at, estado, payment_status, financial_status, credit_balance_used, mercadopago_preference_expires_at, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, andreani_creation_status, andreani_envio_id",
     )
     .eq("payment_method_id", "mercadopago")
     .eq("estado", "pendiente")
@@ -84,9 +88,9 @@ export async function expireAbandonedMercadoPagoOrders(
     let payment
 
     try {
-      payment = await findMercadoPagoPaymentByExternalReference(
-        String(order.id),
-      )
+      // Sólo pagos de ESTA orden: un pago aprobado de una orden vieja con el
+      // mismo número (ids reutilizados) no puede frenar la expiración.
+      payment = await findMercadoPagoPaymentForOrder(order)
     } catch (reconciliationError) {
       console.warn("MERCADOPAGO_ABANDONED_ORDER_RECONCILIATION_ERROR", {
         orderId: order.id,

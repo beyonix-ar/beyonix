@@ -235,8 +235,9 @@ test("el webhook sigue confirmando la orden indicada por external_reference", as
     },
   )
 
-  assert.match(webhook, /const orderId = Number\(payment\.external_reference\)/)
-  assert.match(webhook, /\.eq\("id", orderId\)/)
+  assert.match(webhook, /parseMercadoPagoExternalReference\(payment\.external_reference\)/)
+  assert.match(webhook, /orderQuery\.eq\("mercadopago_reference", externalReference\.reference\)/)
+  assert.match(webhook, /orderQuery\.eq\("id", externalReference\.orderId\)/)
   assert.deepEqual(result, { kind: "confirmed", confirmedAmount: 25_000 })
   assert.equal(confirmedAmount, 25_000)
 })

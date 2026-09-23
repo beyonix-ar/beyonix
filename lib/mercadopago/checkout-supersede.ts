@@ -10,7 +10,7 @@ import {
   type MercadoPagoCheckoutAttemptRow,
 } from "./checkout-attempt.ts"
 import {
-  findMercadoPagoPaymentByExternalReference,
+  findMercadoPagoPaymentForOrder,
   mercadoPagoHeaders,
 } from "./customer-credit-topups.ts"
 
@@ -35,6 +35,9 @@ const ANDREANI_IN_PROGRESS_STATUSES = new Set([
 ])
 
 export interface SupersedableMercadoPagoOrder extends MercadoPagoCheckoutAttemptRow {
+  created_at?: string | null
+  mercadopago_reference?: string | null
+  mercadopago_reference_assigned_at?: string | null
   total?: number | null
   external_amount_due?: number | null
   credit_balance_used?: number | null
@@ -55,8 +58,12 @@ export type SupersedeMercadoPagoOrderResult =
 export interface SupersedeMercadoPagoOrderDependencies {
   /** Vence la preferencia en Mercado Pago para que el link viejo deje de aceptar pagos. */
   expirePreference: (preferenceId: string, now: Date) => Promise<void>
-  /** Último pago registrado en Mercado Pago para `external_reference = orderId`, o null. */
-  findPayment: (orderId: number) => Promise<{ status: string } | null>
+  /**
+   * Último pago de Mercado Pago que pertenece REALMENTE a esta orden (no sólo
+   * con la misma referencia numérica: los ids de orden pueden reutilizarse).
+   * Busca por la referencia canónica de la orden (`order:<uuid>`).
+   */
+  findPayment: (order: SupersedableMercadoPagoOrder) => Promise<{ status: string } | null>
 }
 
 /**
@@ -88,7 +95,7 @@ export async function expireMercadoPagoPreference(preferenceId: string, now: Dat
 export function createMercadoPagoSupersedeDependencies(): SupersedeMercadoPagoOrderDependencies {
   return {
     expirePreference: expireMercadoPagoPreference,
-    findPayment: (orderId) => findMercadoPagoPaymentByExternalReference(String(orderId)),
+    findPayment: (order) => findMercadoPagoPaymentForOrder(order),
   }
 }
 
@@ -156,7 +163,7 @@ export async function supersedeStaleMercadoPagoOrder(
 
   let payment: { status: string } | null
   try {
-    payment = await dependencies.findPayment(order.id)
+    payment = await dependencies.findPayment(order)
   } catch (error) {
     console.error("MERCADOPAGO_SUPERSEDE_PAYMENT_LOOKUP_ERROR", {
       orderId: order.id,

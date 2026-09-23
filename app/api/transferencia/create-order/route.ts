@@ -74,7 +74,7 @@ const ORDER_BEING_CREATED_MESSAGE =
   "El pedido ya se está creando. Esperá unos segundos y volvé a intentarlo."
 
 const PENDING_ORDER_SELECT =
-  "id, estado, usuario_id, total, external_amount_due, credit_balance_used, payment_method_id, payment_status, financial_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, transfer_amount_declared, store_benefit_id, checkout_idempotency_key, pricing_snapshot, installments_count, mercadopago_checkout_fingerprint, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, andreani_creation_status, andreani_envio_id"
+  "id, created_at, estado, usuario_id, total, external_amount_due, credit_balance_used, payment_method_id, payment_status, financial_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, transfer_amount_declared, store_benefit_id, checkout_idempotency_key, pricing_snapshot, installments_count, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, andreani_creation_status, andreani_envio_id"
 
 function normalizeExpectedTotal(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0

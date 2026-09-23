@@ -10,12 +10,14 @@ import {
   isInventoryConfirmationConflict,
   isMercadoPagoOrderAlreadyConfirmed,
   isMercadoPagoOrderCancelled,
+  isMercadoPagoPaymentForOrder,
   MERCADOPAGO_APPROVED_AFTER_CANCELLATION_STATUS,
   MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS,
   MercadoPagoInventoryConflictError,
   processApprovedMercadoPagoOrderPayment,
 } from "@/lib/mercadopago/order-payment"
 import { reconcileMercadoPagoOrderRefund } from "@/lib/mercadopago/order-refund"
+import { parseMercadoPagoExternalReference } from "@/lib/mercadopago/order-reference"
 import {
   claimMercadoPagoWebhookDelivery,
   releaseMercadoPagoWebhookDelivery,
@@ -26,6 +28,10 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 interface OrderRow {
   id: number
+  created_at?: string | null
+  mercadopago_checkout_fingerprint?: string | null
+  mercadopago_reference?: string | null
+  mercadopago_reference_assigned_at?: string | null
   estado: string
   total?: number | null
   external_amount_due?: number | null
@@ -126,31 +132,39 @@ async function handleWebhook(request: Request) {
 
     const payment = await getMercadoPagoPayment(paymentId)
 
-    if (payment.external_reference?.startsWith("credit-topup:")) {
+    // A) credit-topup:<uuid> -> carga de saldo.
+    // B) order:<uuid>        -> orden por mercadopago_reference (órdenes nuevas).
+    // C) numérica            -> camino legado por id; isMercadoPagoPaymentForOrder
+    //    la rechaza si la orden nació con UUID.
+    const externalReference = parseMercadoPagoExternalReference(payment.external_reference)
+
+    if (externalReference.kind === "credit_topup") {
       const result = await processCustomerCreditTopupPayment(payment)
       return NextResponse.json({ ok: true, ...result })
     }
 
-    const orderId = Number(payment.external_reference)
-
-    if (!Number.isFinite(orderId)) {
+    if (externalReference.kind === "invalid") {
       console.log("Webhook sin external_reference válido", payment.id)
       return NextResponse.json({ ok: true })
     }
 
     const supabase = createAdminClient()
 
-    const { data: order, error: orderError } = await supabase
+    const orderQuery = supabase
       .from("ordenes")
-      .select("id, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status")
-      .eq("id", orderId)
-      .single()
+      .select("id, created_at, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at")
+    const { data: order, error: orderError } = await (
+      externalReference.kind === "order"
+        ? orderQuery.eq("mercadopago_reference", externalReference.reference)
+        : orderQuery.eq("id", externalReference.orderId)
+    ).single()
 
     if (orderError || !order) {
-      throw new Error(`Orden ${orderId} no encontrada`)
+      throw new Error(`Orden para la referencia ${payment.external_reference} no encontrada`)
     }
 
     const orderRow = order as OrderRow
+    const orderId = orderRow.id
 
     if (orderRow.payment_method_id !== "mercadopago") {
       console.warn("Webhook de Mercado Pago para una orden de otro medio", {
@@ -159,6 +173,19 @@ async function handleWebhook(request: Request) {
         paymentMethodId: orderRow.payment_method_id,
       })
       return NextResponse.json({ ok: true, ignored: true })
+    }
+
+    // Una referencia numérica es el id de la orden y los ids pueden
+    // reutilizarse (reinicio de numeración): un pago de una orden anterior con
+    // el mismo número nunca puede confirmar, marcar en conflicto ni reintegrar
+    // la orden actual. 200 a propósito: reintentar no lo cambia.
+    if (!isMercadoPagoPaymentForOrder(payment, orderRow)) {
+      console.warn("MERCADOPAGO_WEBHOOK_PAYMENT_NOT_FOR_ORDER", {
+        orderId,
+        paymentId: payment.id,
+        paymentStatus: payment.status,
+      })
+      return NextResponse.json({ ok: true, ignored: true, reason: "payment_not_for_order" })
     }
 
     if (isMercadoPagoOrderAlreadyConfirmed(orderRow)) {

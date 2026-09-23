@@ -236,6 +236,8 @@ export interface SupabasePedido {
   payment_type_id?: string | null
   checkout_idempotency_key?: string | null
   mercadopago_checkout_fingerprint?: string | null
+  mercadopago_reference?: string | null
+  mercadopago_reference_assigned_at?: string | null
   mercadopago_request_fingerprint?: string | null
   customer_checkout_fingerprint?: string | null
   mercadopago_preference_id?: string | null
