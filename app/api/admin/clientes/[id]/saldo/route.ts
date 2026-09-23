@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { parseMoneyAmount } from "@/lib/customer-credit"
 import {
   createCustomerCreditMovement,
   getCustomerCreditBalance,
@@ -10,10 +11,6 @@ interface RouteContext {
   params: Promise<{ id: string }>
 }
 
-function normalizeAmount(value: unknown) {
-  const parsed = Number(String(value ?? "").replace(/\./g, "").replace(",", "."))
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0
-}
 
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireAdmin(request)
@@ -26,7 +23,7 @@ export async function POST(request: Request, context: RouteContext) {
     description?: unknown
   }
   const operation = body.operation === "debit" ? "debit" : "credit"
-  const amount = normalizeAmount(body.amount)
+  const amount = parseMoneyAmount(body.amount) ?? 0
   const submittedDescription = String(body.description ?? "").trim().slice(0, 300)
   const description = submittedDescription.length >= 3 ? submittedDescription : (
     operation === "credit"

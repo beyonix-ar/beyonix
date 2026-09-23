@@ -36,7 +36,11 @@ import {
 import { AndreaniError } from "../andreani/client.ts"
 import { assertCatalogStock, STOCK_CHANGED_MESSAGE } from "../cart/stock-status.ts"
 import { getColorName } from "../products/variant-color.ts"
-import type { InstallmentCount } from "../products/installments.ts"
+import type {
+  InstallmentCount,
+  InstallmentsFinancingConfig,
+} from "../products/installments.ts"
+import type { MercadoPagoPaymentModality } from "../pricing/checkout-pricing.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import type { ShippingBonusSettings } from "../store-config.ts"
 import {
@@ -123,21 +127,17 @@ export interface CheckoutOrderRequestPayload {
   customerCreditAmount?: number | string | null
   customer?: CheckoutOrderCustomerInput
   shipping?: CheckoutOrderShippingInput
-  /** Modalidad de cuotas elegida por el cliente (null = pago único). Se revalida íntegramente server-side -- nunca se confía en este valor. */
+  /** Legado (clientes previos al modelo contado/cuotas): una cuota 2/3/6 equivale a `mercadoPagoMode: "financed"`. */
   installmentsModality?: number | string | null
-}
-
-/**
- * Normaliza y valida la modalidad pedida por el cliente contra los valores
- * posibles (2/3/6). Cualquier otro valor (incluida manipulación desde el
- * navegador) se trata como "sin modalidad" -- nunca como un error silencioso
- * que continúe con un número inventado.
- */
-export function normalizeRequestedInstallmentsModality(
-  value: number | string | null | undefined,
-): InstallmentCount | null {
-  const parsed = Number(value)
-  return parsed === 2 || parsed === 3 || parsed === 6 ? parsed : null
+  /** Modalidad de Mercado Pago elegida: "cash" (al contado) o "financed" (en cuotas). Se revalida server-side. */
+  mercadoPagoMode?: string | null
+  /**
+   * Total que el cliente vio en pantalla. NUNCA se usa para cobrar: sólo
+   * para rechazar el pago (409 PRICING_CHANGED) si el total recalculado en
+   * el servidor es distinto, así Mercado Pago nunca recibe un monto que el
+   * cliente no vio.
+   */
+  expectedTotal?: number | null
 }
 
 export interface NormalizedCheckoutOrderItem {
@@ -220,10 +220,25 @@ export interface CheckoutOrderPricingSnapshot {
    */
   installmentsRoundingAdjustment: number
   priceWithoutNationalTaxes: { cash: number; financed: number | null }
+  /**
+   * Campos aditivos de órdenes Mercado Pago creadas con el modelo
+   * contado/cuotas (ver `buildMercadoPagoPricingSnapshot` en
+   * lib/pricing/checkout-pricing.ts). Opcionales: los pedidos previos no los
+   * tienen y no se reescriben.
+   */
+  mercadoPagoModality?: MercadoPagoPaymentModality
+  finalTotal?: number
+  externalAmountDue?: number
+  customerCreditApplied?: number
+  preferenceMaxInstallments?: number
+  cfteaByCount?: Partial<Record<InstallmentCount, number>> | null
+  installmentsFinancing?: InstallmentsFinancingConfig
+  economicFingerprint?: string
 }
 
 interface CheckoutOrderInstallmentsParams {
-  count: InstallmentCount
+  /** Cuota elegida; `null` cuando el cliente la elige dentro de Checkout Pro (modalidad "en cuotas"). */
+  count: InstallmentCount | null
   percent: number
   productsBaseAmount: number
   surchargeAmount: number

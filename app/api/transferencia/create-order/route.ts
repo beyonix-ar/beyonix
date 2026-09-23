@@ -6,19 +6,16 @@ import {
 import { AndreaniError } from "@/lib/andreani/client"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
-import {
-  calculateCustomerCreditApplication,
-  normalizeMoney,
-  roundMoney,
-} from "@/lib/customer-credit"
+import { normalizeMoney, roundMoney } from "@/lib/customer-credit"
 import {
   applyCustomerCreditToOrder,
   getCustomerCreditBalance,
 } from "@/lib/customer-credit/server"
+import { TRANSFER_ALIAS } from "@/lib/payments/transfer"
 import {
-  TRANSFER_ALIAS,
-  calculateTransferPaymentTotalAfterCustomerCredit,
-} from "@/lib/payments/transfer"
+  buildTransferEconomicState,
+  calculateTransferCheckoutPricing,
+} from "@/lib/payments/transfer-checkout"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { createGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import {
@@ -38,7 +35,18 @@ import {
   type CheckoutOrderPricingSnapshot,
   type CheckoutOrderRequestPayload,
 } from "@/lib/orders/checkout-order-creation"
-import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
+import {
+  createTransferEconomicFingerprint,
+  getPendingTransferCheckoutAction,
+  getTransferCheckoutIdempotencyKey,
+  supersedeStaleTransferOrder,
+  type PendingCheckoutOrderRow,
+} from "@/lib/orders/transfer-checkout-attempt"
+import {
+  createMercadoPagoSupersedeDependencies,
+  supersedeStaleMercadoPagoOrder,
+  type SupersedableMercadoPagoOrder,
+} from "@/lib/mercadopago/checkout-supersede"
 import {
   MissingReservationSessionError,
   normalizeReservationSessionId,
@@ -47,14 +55,42 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
 import {
-  calculateStoreBenefitDiscount,
   claimActiveStoreBenefit,
+  findCheckoutStoreBenefit,
   linkStoreBenefitToOrder,
   releaseStoreBenefitClaim,
+  type CheckoutStoreBenefitPreview,
 } from "@/lib/customer-store-benefits"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
+type AdminClient = ReturnType<typeof createAdminClient>
+type PendingOrder = PendingCheckoutOrderRow & SupersedableMercadoPagoOrder
 
+const ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE =
+  "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva."
+const ORDER_BEING_CREATED_MESSAGE =
+  "El pedido ya se está creando. Esperá unos segundos y volvé a intentarlo."
+
+const PENDING_ORDER_SELECT =
+  "id, estado, usuario_id, total, external_amount_due, credit_balance_used, payment_method_id, payment_status, financial_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, transfer_amount_declared, store_benefit_id, checkout_idempotency_key, pricing_snapshot, installments_count, mercadopago_checkout_fingerprint, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, andreani_creation_status, andreani_envio_id"
+
+function normalizeExpectedTotal(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? roundMoney(value)
+    : null
+}
+
+/**
+ * Crea el pedido por transferencia. El servidor es la fuente de verdad: en
+ * cada click recalcula todo con datos actuales (catálogo, envío, beneficio,
+ * saldo, % de transferencia) y arma una huella económica. Un pedido
+ * pendiente previo de la MISMA compra:
+ * - con la misma huella -> se devuelve ese mismo pedido (doble click, dos
+ *   pestañas, reintento): nunca se duplica;
+ * - con otra huella (precio/envío/descuento cambió) o un intento de Mercado
+ *   Pago -> se da de baja de forma segura si no tiene ningún rastro de pago,
+ *   y se continúa con el total actual; nunca bloquea indefinidamente.
+ */
 export async function POST(request: Request) {
   const admin = createAdminClient()
   let claimedBenefitId: string | null = null
@@ -90,6 +126,14 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
 
+    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    if (requestedCredit > 0 && !user) {
+      return NextResponse.json(
+        { error: "Iniciá sesión para usar tu saldo a favor." },
+        { status: 401 },
+      )
+    }
+
     const catalog = await loadAndValidateCheckoutOrderCatalog(
       supabase,
       admin,
@@ -101,9 +145,10 @@ export async function POST(request: Request) {
       },
     )
     const baseTotals = calculateCartTotals(catalog.cartRows)
-    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
     const siteSettings = await getSiteSettings({ fresh: true })
     const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
+    const nationalTaxesIncidencePercent =
+      siteSettings.pricing.nationalTaxesIncidencePercent
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,
@@ -123,115 +168,13 @@ export async function POST(request: Request) {
     const totals = calculateCartTotals(catalog.cartRows, {
       shippingCost: shipping.shipping_cost_charged,
     })
-    const storeBenefit = user
-      ? await claimActiveStoreBenefit(
-          admin,
-          user.id,
-          payload.storeBenefitId,
-        )
+
+    // ── Beneficio (leído SIN reclamar) y pedido pendiente de esta compra ──
+    const benefitPreview = user
+      ? await findCheckoutStoreBenefit(admin, user.id, payload.storeBenefitId)
       : null
-    if (storeBenefit) claimedBenefitId = storeBenefit.id
-    const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
-      totals.productsTotal,
-      storeBenefit?.percent,
-    )
-    const productsTotalAfterStoreBenefit = Math.max(
-      totals.productsTotal - storeBenefitDiscountAmount,
-      0,
-    )
-    const availableCredit = user
-      ? await getCustomerCreditBalance(admin, user.id)
-      : 0
-    const creditBeforeTransferDiscount =
-      requestedCredit > 0
-        ? calculateCustomerCreditApplication({
-            availableBalance: availableCredit,
-            eligibleTotal: productsTotalAfterStoreBenefit + totals.shipping,
-            requestedAmount: requestedCredit,
-          })
-        : {
-            appliedAmount: 0,
-          }
-    const transferPaymentTotals = calculateTransferPaymentTotalAfterCustomerCredit({
-      productsTotal: productsTotalAfterStoreBenefit,
-      shipping: totals.shipping,
-      customerCreditAmount: creditBeforeTransferDiscount.appliedAmount,
-      transferDiscountPercent,
-    })
-    const transferDiscountAmount = transferPaymentTotals.discount
-    const transferTotal = roundMoney(
-      productsTotalAfterStoreBenefit + totals.shipping - transferDiscountAmount
-    )
-    const customerCreditApplication =
-      requestedCredit > 0
-        ? calculateCustomerCreditApplication({
-            availableBalance: availableCredit,
-            eligibleTotal: transferTotal,
-            requestedAmount: requestedCredit,
-          })
-        : {
-            appliedAmount: 0,
-            externalAmountDue: transferTotal,
-          }
-
-    if (requestedCredit > 0 && !user) {
-      return NextResponse.json(
-        { error: "Iniciá sesión para usar tu saldo a favor." },
-        { status: 401 },
-      )
-    }
-
-    if (
-      requestedCredit > 0 &&
-      Math.abs(customerCreditApplication.appliedAmount - requestedCredit) > 0.009
-    ) {
-      return NextResponse.json(
-        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
-        { status: 409 },
-      )
-    }
-
-    if (customerCreditApplication.externalAmountDue <= 0) {
-      return NextResponse.json(
-        { error: "El saldo cubre el total. Confirmá la compra con saldo a favor." },
-        { status: 400 },
-      )
-    }
-
-    const cashTotalBeforeTransferDiscount = roundMoney(
-      productsTotalAfterStoreBenefit + totals.shipping,
-    )
-    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
-      cashPriceTotal: cashTotalBeforeTransferDiscount,
-      transferPriceTotal: transferTotal,
-      financedPriceTotal: null,
-      maxInstallmentCount: null,
-      transferDiscountPercent,
-      nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
-      cftea: null,
-      installmentsRoundingAdjustment: 0,
-      priceWithoutNationalTaxes: {
-        cash: getPriceWithoutNationalTaxes(
-          cashTotalBeforeTransferDiscount,
-          siteSettings.pricing.nationalTaxesIncidencePercent,
-        ),
-        financed: null,
-      },
-    }
-    const orderPayload = {
-      ...buildCheckoutOrderBase({
-        userId: user?.id ?? null,
-        total: transferTotal,
-        externalAmountDue: customerCreditApplication.externalAmountDue,
-        creditBalanceUsed: customerCreditApplication.appliedAmount,
-        paymentMethodId: "transferencia",
-        reservationSessionId: checkoutSessionId,
-        storeBenefit,
-        storeBenefitDiscountAmount,
-        customer,
-        pricingSnapshot,
-      }),
-      customer_checkout_fingerprint: computeCustomerCheckoutFingerprint({
+    const customerFingerprintFor = (benefitId: string | null) =>
+      computeCustomerCheckoutFingerprint({
         userId: user?.id ?? null,
         items,
         shipping: {
@@ -239,8 +182,165 @@ export async function POST(request: Request) {
           type: shipping.shipping_type,
           sucursalId: shipping.andreani_sucursal_id,
         },
-        storeBenefitId: storeBenefit?.id ?? null,
+        storeBenefitId: benefitId,
+      })
+
+    let customerCheckoutFingerprint = customerFingerprintFor(benefitPreview?.id ?? null)
+    let pendingOrder = customerCheckoutFingerprint
+      ? await findPendingCheckoutOrder(admin, customerCheckoutFingerprint)
+      : null
+    let storeBenefit: CheckoutStoreBenefitPreview | null = null
+
+    if (benefitPreview?.status === "active") {
+      storeBenefit = benefitPreview
+    } else if (benefitPreview?.status === "used") {
+      if (pendingOrder && benefitPreview.used_order_id === pendingOrder.id) {
+        storeBenefit = benefitPreview
+      } else {
+        // Cupón usado por otra compra: no aplica (mismo criterio que un
+        // claim fallido) y la identidad de la compra va sin cupón.
+        customerCheckoutFingerprint = customerFingerprintFor(null)
+        pendingOrder = customerCheckoutFingerprint
+          ? await findPendingCheckoutOrder(admin, customerCheckoutFingerprint)
+          : null
+      }
+    }
+
+    // ── Total actual (mismas fórmulas de siempre, lib/payments/transfer-checkout.ts) ──
+    const pricing = calculateTransferCheckoutPricing({
+      productsTotal: totals.productsTotal,
+      shippingCharged: totals.shipping,
+      storeBenefitPercent: storeBenefit?.percent ?? null,
+      requestedCustomerCredit: requestedCredit,
+      transferDiscountPercent,
+      nationalTaxesIncidencePercent,
+    })
+
+    if (pricing.requestedCreditExceedsTotal) {
+      return NextResponse.json(
+        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+        { status: 409 },
+      )
+    }
+
+    if (pricing.externalAmountDue <= 0) {
+      return NextResponse.json(
+        { error: "El saldo cubre el total. Confirmá la compra con saldo a favor." },
+        { status: 400 },
+      )
+    }
+
+    // El total que vio el cliente sólo sirve para no registrar un pedido
+    // por un monto distinto del que tenía en pantalla. Se corta antes de
+    // cualquier efecto (baja de pedidos viejos, claims, inserts).
+    const expectedTotal = normalizeExpectedTotal(payload.expectedTotal)
+    if (
+      expectedTotal != null &&
+      Math.abs(expectedTotal - pricing.externalAmountDue) > 0.009
+    ) {
+      return NextResponse.json(
+        {
+          code: "PRICING_CHANGED",
+          error:
+            "Los precios o condiciones de tu compra se actualizaron. Revisá el nuevo total antes de confirmar.",
+          total: pricing.externalAmountDue,
+        },
+        { status: 409 },
+      )
+    }
+
+    const economicFingerprint = createTransferEconomicFingerprint(
+      buildTransferEconomicState({
+        lines: catalog.cartRows.map((row, index) => ({
+          productId: items[index].productId,
+          variantId: items[index].variantId,
+          conditionedStockId: items[index].conditionedStockId,
+          quantity: row.quantity,
+          unitPrice: row.unitPrice,
+        })),
+        shipping: {
+          provider: normalizedShipping.provider,
+          type: normalizedShipping.type,
+          sucursalId: shippingBranch?.id ?? null,
+          costReal: normalizedShipping.costReal,
+          costCharged: normalizedShipping.costCharged,
+          freeShippingApplied: normalizedShipping.freeShippingApplied,
+        },
+        customer: { ...customer },
+        storeBenefit: storeBenefit
+          ? { id: storeBenefit.id, percent: storeBenefit.percent }
+          : null,
+        requestedCustomerCredit: requestedCredit,
+        pricing,
+        nationalTaxesIncidencePercent,
       }),
+    )
+
+    // ── Pedido pendiente previo de esta misma compra ──
+    let supersededOrder: PendingOrder | null = null
+    if (pendingOrder) {
+      const response = await resolvePendingOrder(admin, pendingOrder, economicFingerprint)
+      if (response) return response
+      supersededOrder = pendingOrder
+    }
+
+    // ── Reclamos atómicos: el estado real tiene que seguir siendo el calculado ──
+    const claimedBenefit =
+      user && storeBenefit
+        ? await claimActiveStoreBenefit(admin, user.id, storeBenefit.id)
+        : null
+    if (claimedBenefit) claimedBenefitId = claimedBenefit.id
+
+    if (storeBenefit && claimedBenefit?.percent !== storeBenefit.percent) {
+      if (claimedBenefitId) {
+        await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
+        claimedBenefitId = null
+      }
+      return NextResponse.json(
+        {
+          code: "PRICING_CHANGED",
+          error: "Tu beneficio ya no está disponible. Revisá el total antes de confirmar.",
+        },
+        { status: 409 },
+      )
+    }
+
+    if (user && requestedCredit > 0) {
+      const balance = await getCustomerCreditBalance(admin, user.id)
+      if (balance + 0.009 < requestedCredit) {
+        if (claimedBenefitId) {
+          await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
+          claimedBenefitId = null
+        }
+        return NextResponse.json(
+          { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+          { status: 409 },
+        )
+      }
+    }
+
+    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
+      ...pricing.pricingSnapshot,
+      economicFingerprint,
+    }
+    const orderPayload = {
+      ...buildCheckoutOrderBase({
+        userId: user?.id ?? null,
+        total: pricing.transferTotal,
+        externalAmountDue: pricing.externalAmountDue,
+        creditBalanceUsed: pricing.customerCreditApplied,
+        paymentMethodId: "transferencia",
+        reservationSessionId: checkoutSessionId,
+        storeBenefit: claimedBenefit,
+        storeBenefitDiscountAmount: pricing.storeBenefitDiscountAmount,
+        customer,
+        pricingSnapshot,
+      }),
+      checkout_idempotency_key: getTransferCheckoutIdempotencyKey(
+        checkoutSessionId,
+        supersededOrder,
+      ),
+      customer_checkout_fingerprint: customerCheckoutFingerprint,
       envio_proveedor: shipping.shipping_provider,
       andreani_costo: shipping.shipping_cost_charged,
       payment_method_id: "transferencia",
@@ -248,7 +348,7 @@ export async function POST(request: Request) {
       payment_status: "pendiente_comprobante",
       transfer_alias: TRANSFER_ALIAS,
       transfer_discount_percent: transferDiscountPercent,
-      transfer_discount_amount: transferDiscountAmount,
+      transfer_discount_amount: pricing.transferDiscountAmount,
       ...shipping,
     }
 
@@ -272,19 +372,36 @@ export async function POST(request: Request) {
         code: orderError?.code,
       })
 
+      if (claimedBenefitId) {
+        await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
+        claimedBenefitId = null
+      }
+
       if (isDuplicateCustomerCheckoutAttempt(orderError)) {
+        // Carrera (doble click / dos pestañas): otro request creó el pedido
+        // de esta misma compra entre la búsqueda y este INSERT. Si es
+        // idéntico, se devuelve ese; nunca se duplica ni se da de baja acá.
+        const conflictOrder = customerCheckoutFingerprint
+          ? await findPendingCheckoutOrder(admin, customerCheckoutFingerprint)
+          : null
+
+        if (
+          conflictOrder &&
+          getPendingTransferCheckoutAction(conflictOrder, economicFingerprint) ===
+            "resume_equivalent"
+        ) {
+          return existingTransferOrderResponse(conflictOrder)
+        }
+
         return NextResponse.json(
-          {
-            error:
-              "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva.",
-          },
-          { status: 409 },
+          { error: ORDER_BEING_CREATED_MESSAGE },
+          { status: 409, headers: { "Retry-After": "3" } },
         )
       }
 
       if (orderError?.code === "23505") {
         return NextResponse.json(
-          { error: "El pedido ya se está creando. Esperá unos segundos y volvé a intentarlo." },
+          { error: ORDER_BEING_CREATED_MESSAGE },
           { status: 409, headers: { "Retry-After": "3" } },
         )
       }
@@ -303,19 +420,19 @@ export async function POST(request: Request) {
       insertErrorMessage: "No se pudieron crear los items de la orden.",
     })
 
-    if (user && customerCreditApplication.appliedAmount > 0) {
+    if (user && pricing.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {
         userId: user.id,
         orderId: order.id,
-        amount: customerCreditApplication.appliedAmount,
+        amount: pricing.customerCreditApplied,
         description: `Saldo a favor aplicado al pedido BX-${1000 + order.id}`,
         sourceKey: `order:${order.id}:customer-credit:debit`,
       })
     }
 
-    if (storeBenefit) {
+    if (claimedBenefit) {
       await linkStoreBenefitToOrder(admin, {
-        benefitId: storeBenefit.id,
+        benefitId: claimedBenefit.id,
         orderId: order.id,
       })
     }
@@ -342,11 +459,7 @@ export async function POST(request: Request) {
       // Best-effort: si ya se vinculó a una orden real (used_order_id no es
       // null), releaseStoreBenefitClaim es un no-op por su propio guard --
       // nunca reactiva un cupón que sí terminó usándose.
-      try {
-        await releaseStoreBenefitClaim(admin, claimedBenefitId)
-      } catch (releaseError) {
-        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
-      }
+      await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
     }
 
     if (error instanceof InsufficientStockError) {
@@ -380,4 +493,124 @@ export async function POST(request: Request) {
       { status: stockConflict || quoteConflict || branchConflict ? 409 : 500 },
     )
   }
+}
+
+async function releaseStoreBenefitClaimSafely(admin: AdminClient, benefitId: string) {
+  try {
+    await releaseStoreBenefitClaim(admin, benefitId)
+  } catch (releaseError) {
+    console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+  }
+}
+
+async function findPendingCheckoutOrder(
+  admin: AdminClient,
+  customerCheckoutFingerprint: string,
+) {
+  const { data, error } = await admin
+    .from("ordenes")
+    .select(PENDING_ORDER_SELECT)
+    .eq("customer_checkout_fingerprint", customerCheckoutFingerprint)
+    .eq("estado", "pendiente")
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message || "No se pudo verificar la compra en curso.")
+  }
+
+  return data as PendingOrder | null
+}
+
+/**
+ * El pedido pendiente de la misma compra sólo corresponde a usuarios
+ * autenticados (`customer_checkout_fingerprint` es null para invitados), así
+ * que nunca hace falta un token de invitado para devolverlo.
+ */
+function existingTransferOrderResponse(order: Pick<PendingOrder, "id">) {
+  return NextResponse.json({
+    order_id: order.id,
+    redirect_url: `/checkout/success?method=transferencia&order_id=${order.id}`,
+    guest_token: null,
+    reused: true,
+  })
+}
+
+/**
+ * Devuelve la respuesta si el pedido pendiente resuelve la request (mismo
+ * pedido, o no se puede dar de baja), o `null` si se dio de baja y hay que
+ * crear el pedido nuevo con los valores actuales.
+ */
+async function resolvePendingOrder(
+  admin: AdminClient,
+  order: PendingOrder,
+  economicFingerprint: string,
+): Promise<Response | null> {
+  const action = getPendingTransferCheckoutAction(order, economicFingerprint)
+
+  if (action === "resume_equivalent") {
+    return existingTransferOrderResponse(order)
+  }
+
+  if (action === "other_payment_method") {
+    return NextResponse.json(
+      { error: ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE },
+      { status: 409 },
+    )
+  }
+
+  if (action === "mercadopago_attempt") {
+    const result = await supersedeStaleMercadoPagoOrder(admin, order, {
+      dependencies: createMercadoPagoSupersedeDependencies(),
+      currentEconomicFingerprint: economicFingerprint,
+    })
+
+    switch (result) {
+      case "superseded":
+        return null
+      case "already_paid":
+        return NextResponse.json(
+          { error: "Esta compra ya fue pagada con Mercado Pago." },
+          { status: 409 },
+        )
+      case "payment_in_process":
+        return NextResponse.json(
+          {
+            error:
+              "Tenés un pago de Mercado Pago en proceso para esta compra. Esperá a que se resuelva antes de elegir transferencia.",
+          },
+          { status: 409 },
+        )
+      case "busy":
+        return NextResponse.json(
+          { error: ORDER_BEING_CREATED_MESSAGE },
+          { status: 409, headers: { "Retry-After": "3" } },
+        )
+      default:
+        return NextResponse.json(
+          { error: ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE },
+          { status: 409 },
+        )
+    }
+  }
+
+  const result = await supersedeStaleTransferOrder(admin, order, {
+    currentEconomicFingerprint: economicFingerprint,
+  })
+
+  if (result === "superseded") return null
+
+  if (result === "payment_in_review") {
+    return NextResponse.json(
+      {
+        error:
+          "Ya tenés un pedido por transferencia de esta compra con un pago informado. Continuá con ese pedido desde Mis compras.",
+      },
+      { status: 409 },
+    )
+  }
+
+  return NextResponse.json(
+    { error: ORDER_BEING_CREATED_MESSAGE },
+    { status: 409, headers: { "Retry-After": "3" } },
+  )
 }

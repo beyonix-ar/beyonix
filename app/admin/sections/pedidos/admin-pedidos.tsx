@@ -585,6 +585,7 @@ function getPaymentStatusLabel(status?: string | null) {
     rechazado: "Comprobante rechazado",
     vencido_falta_comprobante: "Cancelado por falta de pago",
     checkout_expired: "Pago vencido sin completar",
+    checkout_superseded: "Reemplazado por precios actualizados",
     pending_checkout: "Iniciando pago",
     preference_created: "Pago iniciado, sin completar",
     preference_error: "Error al iniciar el pago",

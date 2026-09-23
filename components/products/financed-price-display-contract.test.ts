@@ -90,41 +90,47 @@ test("ningún consumidor de precios financiados hace redondeos o ajustes ±1 pro
 test("checkout y create-preference aplican el MISMO ajuste final de redondeo de cuotas, sobre las cuotas ofrecidas", () => {
   const route = readSource("../../app/api/mercadopago/create-preference/route.ts")
   const checkout = readSource("../../app/checkout/page.tsx")
+  const pricing = readSource("../../lib/pricing/checkout-pricing.ts")
 
+  // Una única implementación del ajuste (lib/pricing/checkout-pricing.ts),
+  // compartida por servidor y cliente.
+  assert.match(pricing, /roundUpCheckoutTotalForInstallments\(\{/)
+  assert.match(pricing, /offeredCounts: cartInstallmentEligibility/)
+  assert.match(pricing, /roundingAdjustment: rounded\.roundingAdjustment/)
   for (const source of [route, checkout]) {
-    assert.match(source, /roundUpCheckoutTotalForInstallments\(\{/)
-    assert.match(source, /offeredCounts: cartInstallmentEligibility/)
+    assert.match(source, /calculateMercadoPagoCheckoutPricing\(\{/)
+    assert.doesNotMatch(source, /roundUpCheckoutTotalForInstallments\(/)
   }
 
   // Server: el total persistido, lo cobrado y lo enviado a MP salen del ajuste.
-  assert.match(route, /total: checkoutTotals\.total,/)
-  assert.match(route, /externalAmountDue: checkoutTotals\.externalAmountDue,/)
-  assert.match(route, /external_amount_due: checkoutTotals\.externalAmountDue,/)
-  assert.match(route, /installmentsRoundingAdjustment: checkoutTotals\.roundingAdjustment/)
+  assert.match(route, /total: quote\.total,/)
+  assert.match(route, /externalAmountDue: quote\.externalAmountDue,/)
+  assert.match(route, /external_amount_due: quote\.externalAmountDue,/)
+  assert.match(pricing, /installmentsRoundingAdjustment: quote\.roundingAdjustment/)
   assert.match(route, /unit_price:\s*externalAmountDue/)
   // El envío persistido nunca se recalcula con el ajuste ni con fee de MP.
-  assert.doesNotMatch(route, /shipping_cost_charged[^\n]*(roundingAdjustment|checkoutTotals)/)
+  assert.doesNotMatch(route, /shipping_cost_charged[^\n]*(roundingAdjustment|quote\.)/)
 
   // Cliente: el total mostrado es el mismo externalAmountDue ajustado.
-  assert.match(checkout, /installmentsCheckoutTotals\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
+  assert.match(checkout, /mercadoPagoQuote\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
 
   // Saldo a favor: el aplicado (y persistido) es el ajustado al múltiplo de cuotas.
-  assert.match(route, /creditBalanceUsed: checkoutTotals\.customerCreditApplied,/)
-  assert.match(route, /amount: checkoutTotals\.customerCreditApplied,/)
-  assert.match(route, /credit_balance_used: checkoutTotals\.customerCreditApplied,/)
-  assert.match(checkout, /installmentsCheckoutTotals\?\.customerCreditApplied \?\? customerCreditApplication\.appliedAmount/)
+  assert.match(route, /creditBalanceUsed: quote\.customerCreditApplied,/)
+  assert.match(route, /amount: quote\.customerCreditApplied,/)
+  assert.match(route, /credit_balance_used: quote\.customerCreditApplied,/)
+  assert.match(checkout, /mercadoPagoQuote\?\.customerCreditApplied \?\? customerCreditApplication\.appliedAmount/)
 })
 
 test("CFTEA: el precio financiado informado es el MISMO total final ajustado que se cobra", () => {
-  const route = readSource("../../app/api/mercadopago/create-preference/route.ts")
   const checkout = readSource("../../app/checkout/page.tsx")
+  const pricing = readSource("../../lib/pricing/checkout-pricing.ts")
 
-  assert.match(route, /getInstallmentAmount\(checkoutTotals\.total, requestedInstallmentsModality\)/)
-  assert.match(checkout, /const legalFinancedTotal = installmentsCheckoutTotals\?\.total \?\? null/)
-  assert.match(checkout, /getInstallmentAmount\(legalFinancedTotal, effectiveInstallmentsModality\)/)
-  assert.match(checkout, /cuotas \{formatPrice\(legalFinancedTotal \?\? 0\)\}/)
+  // Cada plan usa el total final ajustado (antes de saldo) contra el contado.
+  assert.match(pricing, /const legalAmount = getInstallmentAmount\(rounded\.total, count\)/)
+  assert.match(pricing, /calculateCftea\(cashTotal, legalAmount, count\)/)
+  assert.match(checkout, /precio financiado\{" "\}\s*\{formatPrice\(mercadoPagoFinancedQuote\.total\)\}/)
   // Nunca el financiado crudo (sin ajuste de redondeo) en el disclosure legal.
-  assert.doesNotMatch(checkout, /getInstallmentAmount\(cartFinancedTotal/)
   assert.doesNotMatch(checkout, /formatPrice\(cartFinancedTotal/)
-  assert.doesNotMatch(route, /getInstallmentAmount\(financedTotal/)
+  assert.doesNotMatch(checkout, /formatPrice\(mercadoPagoPricing\.financedTotal/)
+  assert.doesNotMatch(pricing, /getInstallmentAmount\(financedTotal/)
 })

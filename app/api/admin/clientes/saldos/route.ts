@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { parseMoneyAmount } from "@/lib/customer-credit"
 import { getCustomerCreditBalance } from "@/lib/customer-credit/server"
 import type { createAdminClient } from "@/lib/supabase/admin"
 
@@ -26,10 +27,6 @@ type CreditTopupRow = {
   created_at: string
 }
 
-function normalizeAmount(value: unknown) {
-  const parsed = Number(String(value ?? "").replace(/\./g, "").replace(",", "."))
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0
-}
 
 async function getSignedProofUrl(
   admin: AdminClient,
@@ -131,7 +128,7 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const amount = action === "approve" ? normalizeAmount(body.amount) : null
+    const amount = action === "approve" ? (parseMoneyAmount(body.amount) ?? 0) : null
 
     if (action === "approve" && (!amount || amount <= 0)) {
       return NextResponse.json(

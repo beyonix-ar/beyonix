@@ -83,18 +83,15 @@ import {
 import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
+import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import {
-  getCartInstallmentEligibility,
-  type InstallmentCount,
-} from "@/lib/products/installments"
-import {
-  calculateCftea,
-  getCartFinancedTotal,
-  getInstallmentAmount,
-  getMaxEligibleInstallmentCount,
-  roundUpCheckoutTotalForInstallments,
-  getPriceWithoutNationalTaxes,
-} from "@/lib/pricing/financed-pricing"
+  calculateMercadoPagoCheckoutPricing,
+  getMercadoPagoModeQuote,
+  type CheckoutPricingLine,
+  type MercadoPagoCheckoutMode,
+} from "@/lib/pricing/checkout-pricing"
+import { COMMERCIAL_UPDATE_NOTICE } from "@/lib/cart/cart-catalog-refresh"
+import { useCommercialRefresh } from "@/hooks/use-commercial-refresh"
 import {
   calculateStoreBenefitDiscount,
   getStoreBenefitLabel,
@@ -305,6 +302,22 @@ function CheckoutNotice({
   )
 }
 
+function CheckoutRadioIndicator({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-full border",
+        checked
+          ? "border-beyonix-blue-light bg-beyonix-blue-light"
+          : "border-beyonix-blue-light/55",
+      )}
+    >
+      {checked && <span className="size-1.5 rounded-full bg-white" />}
+    </span>
+  )
+}
+
 const CHECKOUT_EMAIL = "beyonix.ar@gmail.com"
 const CHECKOUT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CHECKOUT_EMAIL)}&su=${encodeURIComponent("Consulta sobre mi compra en BEYONIX")}`
 
@@ -435,8 +448,21 @@ export default function CheckoutPage() {
     setSelectedPayment,
   ] = useState("")
 
-  const [installmentsModality, setInstallmentsModality] =
-    useState<InstallmentCount | null>(null)
+  const [mercadoPagoMode, setMercadoPagoMode] =
+    useState<MercadoPagoCheckoutMode>("cash")
+  // Aviso de "precios o condiciones actualizados" (refresco en vivo o 409
+  // PRICING_CHANGED del servidor): un total nunca cambia en silencio.
+  const [commercialUpdateNotice, setCommercialUpdateNotice] =
+    useState<string | null>(null)
+  // Total recalculado por el servidor en un 409 PRICING_CHANGED, ligado al
+  // total que mostraba la pantalla en ese momento. Si después del refresco
+  // la pantalla sigue mostrando lo mismo, se reenvía el total del servidor
+  // (el cliente ya lo vio en el aviso); si la pantalla cambió, se usa el
+  // nuevo total de pantalla.
+  const [serverConfirmedTotal, setServerConfirmedTotal] = useState<{
+    displayedTotal: number
+    serverTotal: number
+  } | null>(null)
 
   const [
     isProcessing,
@@ -718,50 +744,41 @@ export default function CheckoutPage() {
   )
   const isTransferPayment = selectedPayment === "transferencia"
   const isMercadoPagoPayment = selectedPayment === "mercadopago"
-  // Sólo informativo para pintar la UI (qué botones mostrar/habilitar): la
-  // fuente de verdad real es el recálculo server-side en create-preference,
-  // que vuelve a validar esto mismo contra el catálogo real antes de cobrar.
-  const cartInstallmentEligibility = getCartInstallmentEligibility(
-    items.map((item) => item.product),
-  )
-  // Nunca confía en el estado crudo: si el pago no es Mercado Pago, o el
-  // carrito cambió y esa modalidad dejó de estar disponible, se trata como
-  // "sin modalidad" acá mismo (además de revalidarse íntegramente server-side).
-  const effectiveInstallmentsModality =
-    isMercadoPagoPayment &&
-    installmentsModality &&
-    cartInstallmentEligibility.includes(installmentsModality)
-      ? installmentsModality
-      : null
-  // Contado: base para 1 pago/débito y para el descuento de transferencia.
-  const cashTotalBeforeCredit = productsTotalAfterStoreBenefit + totals.shipping
-  // Financiado: suma de los precios financiados INDIVIDUALES de cada línea
-  // del carrito (cada una con SU propio máximo de cuotas), nunca recalculado
-  // con la tasa del mínimo común del carrito -- ver getCartFinancedTotal. El
-  // envío siempre se suma a costo real, sin recargo. Sólo informativo hasta
-  // que el servidor (create-preference) recalcula todo de nuevo antes de
-  // cobrar.
-  const cartFinancedProductsTotal = getCartFinancedTotal(
-    items.map((item) => ({
-      cashPrice: item.unitPrice ?? item.product.precio,
-      maxEligibleCount: getMaxEligibleInstallmentCount(item.product),
-      quantity: item.quantity,
-    })),
-    siteSettings.installmentsFinancing,
-  )
-  const cartFinancedStoreBenefitDiscount = calculateStoreBenefitDiscount(
-    cartFinancedProductsTotal,
-    selectedStoreBenefit?.percent,
-  )
-  const cartFinancedProductsNet = Math.max(
-    cartFinancedProductsTotal - cartFinancedStoreBenefitDiscount,
-    0,
-  )
-  const cartFinancedTotal =
-    cartFinancedProductsTotal > 0 ? cartFinancedProductsNet + totals.shipping : null
+  // Mismo cálculo canónico que create-preference (lib/pricing/checkout-pricing.ts).
+  // Acá es sólo informativo: el servidor recalcula TODO con datos actuales
+  // de la base al presionar Pagar y nunca cobra lo que mande el navegador.
+  const checkoutPricingLines: CheckoutPricingLine[] = items.map((item) => ({
+    productId: item.product.id,
+    variantId: item.variantId,
+    conditionedStockId: item.conditionedStockId,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice ?? item.product.precio,
+    installments: item.product,
+  }))
+  const checkoutPricingSettings = {
+    installmentsFinancing: siteSettings.installmentsFinancing,
+    transferDiscountPercent: siteSettings.pricing.transferDiscountPercent,
+    nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
+  }
+  const mercadoPagoPricingBeforeCredit = calculateMercadoPagoCheckoutPricing({
+    lines: checkoutPricingLines,
+    shippingCharged: totals.shipping,
+    storeBenefitPercent: selectedStoreBenefit?.percent ?? null,
+    requestedCustomerCredit: 0,
+    settings: checkoutPricingSettings,
+  })
+  // "En cuotas" sólo existe si todo el carrito admite financiación; si deja
+  // de estar disponible (Admin cambió cuotas), se vuelve a "Al contado".
+  const effectiveMercadoPagoMode: MercadoPagoCheckoutMode =
+    mercadoPagoMode === "financed" && mercadoPagoPricingBeforeCredit.financed
+      ? "financed"
+      : "cash"
+  const cashTotalBeforeCredit = mercadoPagoPricingBeforeCredit.cashTotal
   const totalBeforeCustomerCreditByMethod =
-    isMercadoPagoPayment && effectiveInstallmentsModality != null && cartFinancedTotal != null
-      ? cartFinancedTotal
+    isMercadoPagoPayment &&
+    effectiveMercadoPagoMode === "financed" &&
+    mercadoPagoPricingBeforeCredit.financedTotal != null
+      ? mercadoPagoPricingBeforeCredit.financedTotal
       : cashTotalBeforeCredit
   const maxApplicableCustomerCredit = getMaxApplicableCustomerCredit(
     customerCredit.balance,
@@ -796,65 +813,53 @@ export default function CheckoutPage() {
   // intento real de pago (ver handleSubmit): no hay ninguna validación
   // proactiva de stock mientras el cliente completa el Checkout.
   const hasKnownStockConflict = insufficientStockItems.length > 0
-  // Mismo ajuste de redondeo final de cuotas que create-preference (fuente
-  // de verdad): una sola vez, sobre lo que se cobra después de saldo.
-  const installmentsCheckoutTotals =
-    isMercadoPagoPayment && effectiveInstallmentsModality != null && cartFinancedTotal != null
-      ? roundUpCheckoutTotalForInstallments({
-          total: totalBeforeCustomerCredit,
-          customerCreditApplied: customerCreditApplication.appliedAmount,
-          offeredCounts: cartInstallmentEligibility,
-        })
-      : null
+  // Con saldo a favor: mismo pedido de saldo que se envía al servidor
+  // (customerCreditAmount), mismas dos modalidades calculadas con él.
+  const mercadoPagoPricing = calculateMercadoPagoCheckoutPricing({
+    lines: checkoutPricingLines,
+    shippingCharged: totals.shipping,
+    storeBenefitPercent: selectedStoreBenefit?.percent ?? null,
+    requestedCustomerCredit: customerCreditApplication.appliedAmount,
+    settings: checkoutPricingSettings,
+  })
+  const mercadoPagoCashQuote = mercadoPagoPricing.cash
+  const mercadoPagoFinancedQuote = mercadoPagoPricing.financed
+  const mercadoPagoQuote = isMercadoPagoPayment
+    ? getMercadoPagoModeQuote(mercadoPagoPricing, effectiveMercadoPagoMode)
+    : null
+  const isMercadoPagoFinanced = mercadoPagoQuote?.mode === "financed"
   const finalTotal =
-    installmentsCheckoutTotals?.externalAmountDue ?? customerCreditApplication.externalAmountDue
+    mercadoPagoQuote?.externalAmountDue ?? customerCreditApplication.externalAmountDue
   // Con cuotas, el saldo aplicado se ajusta al múltiplo de las cuotas (ver
   // roundUpCheckoutTotalForInstallments); el mismo que aplica create-preference.
   const appliedCustomerCredit =
-    installmentsCheckoutTotals?.customerCreditApplied ?? customerCreditApplication.appliedAmount
-  const installmentsRoundingAdjustment = installmentsCheckoutTotals?.roundingAdjustment ?? 0
-  // Opciones de cuotas antes de elegir una: el mismo cálculo que tendría el
-  // cobro si se eligiera cualquiera de ellas (el total no depende de la cuota).
-  const installmentOptionsTotals =
-    isMercadoPagoPayment && cartFinancedTotal != null
-      ? roundUpCheckoutTotalForInstallments({
-          total: cartFinancedTotal,
-          customerCreditApplied: getMaxApplicableCustomerCredit(
-            customerCredit.balance,
-            cartFinancedTotal,
-          ),
-          offeredCounts: cartInstallmentEligibility,
-        })
-      : null
-  // Informativo ("N cuotas sin interés de $X"): divide lo que efectivamente se
-  // termina cobrando (ya neto de saldo a favor) por la cantidad de cuotas
-  // elegida -- el total financiado en sí NO cambia según cuántas cuotas se
-  // elijan (ver getCartFinancedTotal).
-  const displayInstallmentAmount =
-    effectiveInstallmentsModality && cartFinancedTotal != null
-      ? getInstallmentAmount(finalTotal, effectiveInstallmentsModality)
-      : null
-  // Disclosure legal (CFTEA): se calcula sobre el total financiado ANTES de
-  // saldo a favor -- describe el producto financiero en sí, no un residuo que
-  // depende de un beneficio ajeno a la financiación -- pero YA con el ajuste
-  // de redondeo final de cuotas: el mismo total canónico que resumen, cuotas
-  // y Mercado Pago (roundUpCheckoutTotalForInstallments).
-  const legalFinancedTotal = installmentsCheckoutTotals?.total ?? null
-  const legalInstallmentAmount =
-    effectiveInstallmentsModality && legalFinancedTotal != null
-      ? getInstallmentAmount(legalFinancedTotal, effectiveInstallmentsModality)
-      : null
-  const cfteaPercent =
-    effectiveInstallmentsModality &&
-    effectiveInstallmentsModality > 1 &&
-    cashTotalBeforeCredit > 0 &&
-    legalInstallmentAmount != null
-      ? calculateCftea(cashTotalBeforeCredit, legalInstallmentAmount, effectiveInstallmentsModality)
-      : null
+    mercadoPagoQuote?.customerCreditApplied ?? customerCreditApplication.appliedAmount
+  const installmentsRoundingAdjustment = mercadoPagoQuote?.roundingAdjustment ?? 0
+  const maxInstallmentPlan = isMercadoPagoFinanced
+    ? mercadoPagoPricing.installmentPlans.find(
+        (plan) => plan.count === mercadoPagoPricing.maxInstallmentCount,
+      ) ?? null
+    : null
+  // Total que se envía como `expectedTotal` (Mercado Pago y transferencia):
+  // sólo para que el servidor rechace (409) si recalcula otro monto; nunca
+  // se usa para cobrar.
+  const expectedCheckoutTotal =
+    serverConfirmedTotal &&
+    Math.abs(serverConfirmedTotal.displayedTotal - finalTotal) <= 0.009
+      ? serverConfirmedTotal.serverTotal
+      : finalTotal
   const priceWithoutNationalTaxesTotal = getPriceWithoutNationalTaxes(
     finalTotal,
     siteSettings.pricing.nationalTaxesIncidencePercent,
   )
+
+  // Cambios administrativos (precio, stock, cuotas, fees, transferencia,
+  // envío) mientras el checkout está abierto: se refrescan carrito y
+  // configuración y se avisa. Sólo UX -- Pagar revalida todo server-side.
+  const refreshCommercialData = useCommercialRefresh({
+    enabled: mounted && isCartReady && items.length > 0,
+    onChange: () => setCommercialUpdateNotice(COMMERCIAL_UPDATE_NOTICE),
+  })
 
   useEffect(() => {
     if (customerCredit.loading) return
@@ -1534,7 +1539,8 @@ export default function CheckoutPage() {
           storeBenefitId: selectedStoreBenefit?.id ?? null,
           paymentMethodId: selectedPayment || "customer_credit",
           customerCreditAmount: customerCreditApplication.appliedAmount,
-          installmentsModality: effectiveInstallmentsModality,
+          mercadoPagoMode: effectiveMercadoPagoMode,
+          expectedTotal: customerCreditCoversTotal ? undefined : expectedCheckoutTotal,
           items: items.map((item) => ({
             productId: item.product.id,
             quantity: item.quantity,
@@ -1553,6 +1559,23 @@ export default function CheckoutPage() {
         Array.isArray(data.items)
       ) {
         setInsufficientStockItems(data.items)
+        return
+      }
+
+      // El servidor recalculó con datos actuales y el total no coincide con
+      // el que estaba en pantalla: no se redirige a pagar. Se refrescan
+      // catálogo/configuración y se muestra el nuevo total antes de reintentar.
+      if (response.status === 409 && data?.code === "PRICING_CHANGED") {
+        const serverTotal = Number(data.total)
+        if (Number.isFinite(serverTotal)) {
+          setServerConfirmedTotal({ displayedTotal: finalTotal, serverTotal })
+        }
+        setCommercialUpdateNotice(
+          Number.isFinite(serverTotal)
+            ? `${COMMERCIAL_UPDATE_NOTICE} Nuevo total: ${formatPrice(serverTotal)}. Revisalo y volvé a presionar Pagar.`
+            : data.error || COMMERCIAL_UPDATE_NOTICE,
+        )
+        void refreshCommercialData(true)
         return
       }
 
@@ -2323,30 +2346,33 @@ export default function CheckoutPage() {
                     Método de pago
                   </h2>
 
-                  <div className="grid gap-3">
+                  <div className="grid gap-3" role="radiogroup" aria-label="Método de pago">
                     {paymentMethods.map((method) => {
                       const bestCartInstallmentCount =
-                        method.id === "mercadopago" && cartInstallmentEligibility.length > 0
-                          ? Math.max(...cartInstallmentEligibility)
+                        method.id === "mercadopago"
+                          ? mercadoPagoPricingBeforeCredit.maxInstallmentCount
                           : null
+                      const isSelected = selectedPayment === method.id
 
                       return (
                         <button
                           key={method.id}
                           type="button"
+                          role="radio"
+                          aria-checked={isSelected}
                           onClick={() =>
                             setSelectedPayment(method.id)
                           }
                           className={cn(
                             checkoutOptionClassName,
                             "items-center gap-3 p-4",
-                            selectedPayment === method.id &&
+                            isSelected &&
                               checkoutOptionSelectedClassName
                           )}
                         >
                           <span className={cn(
                             "flex size-11 shrink-0 items-center justify-center rounded-xl",
-                            selectedPayment === method.id
+                            isSelected
                               ? "bg-beyonix-blue-light text-white"
                               : "bg-black/35 text-white/65"
                           )}>
@@ -2367,73 +2393,109 @@ export default function CheckoutPage() {
                     })}
                   </div>
 
-                  {isMercadoPagoPayment && cartInstallmentEligibility.length > 0 && (
+                  {isMercadoPagoPayment && (
                     <div className="space-y-2">
-                      <p className="text-sm font-semibold text-white/70">
-                        Modalidad de pago
+                      <p
+                        id="checkout-mercadopago-mode-label"
+                        className="text-sm font-semibold text-white/70"
+                      >
+                        Cómo querés pagar con Mercado Pago
                       </p>
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      {/* Sólo DOS decisiones reales: al contado o en cuotas.
+                          La cantidad final de cuotas se elige dentro de
+                          Mercado Pago; las filas de cuotas son informativas. */}
+                      <div
+                        className="grid gap-2"
+                        role="radiogroup"
+                        aria-labelledby="checkout-mercadopago-mode-label"
+                      >
                         <button
                           type="button"
-                          onClick={() => setInstallmentsModality(null)}
+                          role="radio"
+                          aria-checked={effectiveMercadoPagoMode === "cash"}
+                          data-mercadopago-mode="cash"
+                          onClick={() => setMercadoPagoMode("cash")}
                           className={cn(
                             checkoutOptionClassName,
                             "items-center gap-3 p-3.5",
-                            effectiveInstallmentsModality === null &&
+                            effectiveMercadoPagoMode === "cash" &&
                               checkoutOptionSelectedClassName,
                           )}
                         >
-                          <span className="min-w-0">
+                          <CheckoutRadioIndicator checked={effectiveMercadoPagoMode === "cash"} />
+                          <span className="min-w-0 flex-1">
                             <span className="block font-semibold text-white">
-                              Pago único
+                              Al contado
                             </span>
+                            <span className="mt-0.5 block text-sm text-white/45">
+                              Débito, crédito en 1 pago o dinero en cuenta
+                            </span>
+                          </span>
+                          <span className="shrink-0 font-heading text-base font-bold text-white">
+                            {formatPrice(mercadoPagoCashQuote.externalAmountDue)}
                           </span>
                         </button>
 
-                        {cartInstallmentEligibility.map((count) => {
-                          const installmentAmount =
-                            installmentOptionsTotals != null
-                              ? getInstallmentAmount(installmentOptionsTotals.externalAmountDue, count)
-                              : null
-                          if (installmentAmount === null) return null
-
-                          return (
+                        {mercadoPagoFinancedQuote && mercadoPagoPricing.maxInstallmentCount != null && (
+                          <div
+                            className={cn(
+                              "checkout-option rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] transition-all",
+                              effectiveMercadoPagoMode === "financed" &&
+                                checkoutOptionSelectedClassName,
+                            )}
+                          >
                             <button
-                              key={count}
                               type="button"
-                              onClick={() => setInstallmentsModality(count)}
-                              className={cn(
-                                checkoutOptionClassName,
-                                "items-center gap-3 p-3.5",
-                                effectiveInstallmentsModality === count &&
-                                  checkoutOptionSelectedClassName,
-                              )}
+                              role="radio"
+                              aria-checked={effectiveMercadoPagoMode === "financed"}
+                              data-mercadopago-mode="financed"
+                              onClick={() => setMercadoPagoMode("financed")}
+                              className="flex w-full cursor-pointer items-center gap-3 rounded-lg p-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/22"
                             >
-                              <span className="min-w-0">
+                              <CheckoutRadioIndicator checked={effectiveMercadoPagoMode === "financed"} />
+                              <span className="min-w-0 flex-1">
                                 <span className="block font-semibold text-white">
-                                  {count} cuotas sin interés
+                                  En cuotas
                                 </span>
-                                <span className="mt-1 block text-sm text-white/45">
-                                  {formatPrice(installmentAmount)} por cuota
+                                <span className="mt-0.5 block text-sm text-white/45">
+                                  Hasta {mercadoPagoPricing.maxInstallmentCount} cuotas sin interés
                                 </span>
                               </span>
+                              <span className="shrink-0 font-heading text-base font-bold text-white">
+                                {formatPrice(mercadoPagoFinancedQuote.externalAmountDue)}
+                              </span>
                             </button>
-                          )
-                        })}
+                            <ul
+                              aria-label="Cuotas disponibles (la cantidad se elige en Mercado Pago)"
+                              className="space-y-0.5 px-3.5 pb-3 pl-10 text-sm text-white/55"
+                            >
+                              {mercadoPagoPricing.installmentPlans.map((plan) => (
+                                <li key={plan.count} data-installment-plan={plan.count}>
+                                  {plan.count} cuotas de{" "}
+                                  <span className="font-semibold text-white/75">
+                                    {formatPrice(plan.amount)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
-                      {installmentOptionsTotals != null && (
-                        <p className="text-11px font-medium text-white/45">
-                          Precio financiado: {formatPrice(installmentOptionsTotals.total)}
-                        </p>
-                      )}
                     </div>
                   )}
 
-                  {effectiveInstallmentsModality && cfteaPercent != null && (
+                  {isMercadoPagoFinanced && mercadoPagoFinancedQuote && (
                     <p className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] px-3 py-2 text-11px font-medium leading-5 text-white/55">
-                      Costo financiero total efectivo anual (CFTEA): {cfteaPercent.toFixed(1)}%.
-                      Precio de contado {formatPrice(cashTotalBeforeCredit)} — precio financiado en{" "}
-                      {effectiveInstallmentsModality} cuotas {formatPrice(legalFinancedTotal ?? 0)}.
+                      Costo financiero total efectivo anual (CFTEA):{" "}
+                      {mercadoPagoPricing.installmentPlans
+                        .flatMap((plan) =>
+                          plan.cfteaPercent != null
+                            ? [`${plan.count} cuotas ${plan.cfteaPercent.toFixed(1)}%`]
+                            : [],
+                        )
+                        .join(" · ")}
+                      . Precio de contado {formatPrice(cashTotalBeforeCredit)} — precio financiado{" "}
+                      {formatPrice(mercadoPagoFinancedQuote.total)}.
                     </p>
                   )}
 
@@ -2865,16 +2927,33 @@ export default function CheckoutPage() {
                     {formatPrice(finalTotal)}
                   </span>
                 </div>
-                {displayInstallmentAmount !== null && effectiveInstallmentsModality && (
-                  <p className="text-right text-11px font-semibold text-beyonix-sky">
-                    {effectiveInstallmentsModality} cuotas sin interés de{" "}
-                    {formatPrice(displayInstallmentAmount)}
+                {mercadoPagoQuote && (
+                  <p
+                    className="text-right text-11px font-semibold text-beyonix-sky"
+                    data-mercadopago-summary={mercadoPagoQuote.mode}
+                  >
+                    {isMercadoPagoFinanced && maxInstallmentPlan
+                      ? `Hasta ${maxInstallmentPlan.count} cuotas sin interés de ${formatPrice(maxInstallmentPlan.amount)}`
+                      : "Pago con Mercado Pago al contado"}
                   </p>
                 )}
                 <p className="text-right text-10px font-medium text-white/40">
                   Precio sin impuestos nacionales: {formatPrice(priceWithoutNationalTaxesTotal)}
                 </p>
               </div>
+
+              {commercialUpdateNotice && (
+                <CheckoutNotice tone="warning" className="mt-4">
+                  <span role="status">{commercialUpdateNotice}</span>{" "}
+                  <button
+                    type="button"
+                    onClick={() => setCommercialUpdateNotice(null)}
+                    className="cursor-pointer text-xs font-semibold underline underline-offset-2"
+                  >
+                    Entendido
+                  </button>
+                </CheckoutNotice>
+              )}
 
               {checkoutError && (
                 <CheckoutNotice tone="error" className="mt-4">

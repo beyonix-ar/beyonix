@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -27,6 +28,8 @@ import {
   getProductStock,
 } from "@/lib/cart/stock-status"
 import { createCartSessionId } from "@/lib/cart/cart-session-id"
+import { reconcileCartWithCatalog } from "@/lib/cart/cart-catalog-refresh"
+import { getStoreCartProducts } from "@/lib/supabase/queries/store"
 
 export interface CartItem {
   product: SupabaseProducto
@@ -40,6 +43,12 @@ export interface CartItem {
   unitPrice: number
   originalUnitPrice: number | null
   discountReason: string | null
+}
+
+export interface CartCatalogRefreshResult {
+  /** Cambió precio, cuotas, stock o se quitó alguna línea del carrito. */
+  changed: boolean
+  removedCount: number
 }
 
 interface CartContextType {
@@ -57,6 +66,8 @@ interface CartContextType {
   getQuantity: (productId: number, color: string) => number
   isInCart: (productId: number, color: string) => boolean
   clearCart: () => void
+  /** Vuelve a leer el catálogo vigente de los productos del carrito (sólo UX: pagar siempre revalida server-side). */
+  refreshCartCatalog: () => Promise<CartCatalogRefreshResult>
   openCart: () => void
   closeCart: () => void
 }
@@ -206,6 +217,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
   const [hasHydrated, setHasHydrated] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const cartRef = useRef<CartItem[]>([])
+
+  useEffect(() => {
+    cartRef.current = cart
+  }, [cart])
 
   useEffect(() => {
     try {
@@ -457,6 +473,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
     })
   }, [currentUserId])
 
+  const refreshCartCatalog = useCallback(async (): Promise<CartCatalogRefreshResult> => {
+    const productIds = cartRef.current.map((item) => item.product.id)
+    if (!productIds.length) return { changed: false, removedCount: 0 }
+
+    const freshProducts = await getStoreCartProducts(productIds)
+    const snapshot = reconcileCartWithCatalog(cartRef.current, freshProducts)
+    if (!snapshot.changed) return { changed: false, removedCount: 0 }
+
+    // Se reconcilia sobre el estado MÁS reciente (el cliente pudo cambiar
+    // cantidades mientras volvía la consulta); sin cambios -> misma
+    // referencia, sin re-render.
+    setCart((prev) => reconcileCartWithCatalog(prev, freshProducts).items)
+    return { changed: true, removedCount: snapshot.removed.length }
+  }, [])
+
   const { total, itemCount } = useMemo(() => {
     return cart.reduce(
       (acc, item) => {
@@ -485,6 +516,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         getQuantity,
         isInCart,
         clearCart,
+        refreshCartCatalog,
         openCart: () => setIsOpen(true),
         closeCart: () => setIsOpen(false),
       }}

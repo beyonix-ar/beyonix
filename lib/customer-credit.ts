@@ -50,14 +50,59 @@ export function roundMoney(value: number) {
   return Math.round(value * 100) / 100
 }
 
+const ES_AR_THOUSANDS_ONLY = /^\d{1,3}(\.\d{3})+$/
+const ES_AR_WITH_DECIMAL_COMMA = /^(\d{1,3}(\.\d{3})+|\d+),\d{1,2}$/
+const PLAIN_DECIMAL = /^\d+(\.\d{1,2})?$/
+
+/**
+ * Parser canónico de montos en PESOS (nunca centavos), redondeado a 2
+ * decimales. Única implementación para montos que llegan de un request:
+ *
+ * - `number` (JSON): se toma tal cual -- `1500.5` es $1.500,50. Antes se
+ *   pasaba por `String()` y se borraban los puntos como si fueran miles,
+ *   leyendo `1500.5` como $15.005.
+ * - `string`, formato es-AR o decimal simple:
+ *   "1500", "1500.5", "1500.50", "0.5" (punto decimal con 1-2 dígitos),
+ *   "1.500", "1.500.000" (punto de miles, grupos de 3),
+ *   "1500,5", "1.500,50" (coma decimal).
+ *   Espacios y "$" iniciales se ignoran.
+ *
+ * Fail-closed: cualquier otra forma (letras, negativos, separadores
+ * ambiguos como "1,500.50" o "1.50.0", más de 2 decimales, NaN/Infinity)
+ * devuelve `null` -- nunca se "adivina" un monto.
+ */
+export function parseMoneyAmount(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value >= 0 ? roundMoney(value) : null
+  }
+
+  if (typeof value !== "string") return null
+
+  const text = value.trim().replace(/^\$\s*/, "")
+  if (!text) return null
+
+  let normalized: string | null = null
+  if (PLAIN_DECIMAL.test(text)) {
+    normalized = text
+  } else if (ES_AR_THOUSANDS_ONLY.test(text)) {
+    normalized = text.replace(/\./g, "")
+  } else if (ES_AR_WITH_DECIMAL_COMMA.test(text)) {
+    normalized = text.replace(/\./g, "").replace(",", ".")
+  }
+
+  if (normalized == null) return null
+
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? roundMoney(parsed) : null
+}
+
+/**
+ * Monto en PESOS estrictamente positivo, o 0 si no hay un monto válido
+ * (contrato histórico de los checkouts: 0 = "no usar saldo").
+ */
 export function normalizeMoney(value: unknown) {
-  if (typeof value !== "number" && typeof value !== "string") return 0
-
-  const parsed = Number(String(value).replace(/\./g, "").replace(",", "."))
-
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0
-
-  return roundMoney(parsed)
+  const parsed = parseMoneyAmount(value)
+  return parsed != null && parsed > 0 ? parsed : 0
 }
 
 export function formatARS(value: number) {

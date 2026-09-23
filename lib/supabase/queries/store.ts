@@ -47,6 +47,37 @@ export async function getStoreProductos(
   return attachProductReviewSummaries(products)
 }
 
+const CART_PRODUCT_SELECT = `
+  *,
+  imagenes_producto(*),
+  producto_variantes(*)
+`
+
+/**
+ * Catálogo vigente de los productos del carrito (precio, variantes, stock,
+ * cuotas y stock condicionado) para refrescar carrito/checkout abiertos.
+ * Sólo productos activos: uno desactivado no vuelve y se quita del carrito.
+ */
+export async function getStoreCartProducts(productIds: number[]) {
+  const ids = [...new Set(productIds.filter((id) => Number.isFinite(id)))]
+  if (!ids.length) return []
+
+  const { data, error } = await supabase
+    .from("productos")
+    .select(CART_PRODUCT_SELECT)
+    .in("id", ids)
+    .eq("activo", true)
+
+  if (error) {
+    throw error
+  }
+
+  return attachStoreConditionedStock(
+    supabase,
+    (data || []) as SupabaseProducto[],
+  )
+}
+
 export async function getFeaturedProductos() {
   const { data, error } =
     await supabase

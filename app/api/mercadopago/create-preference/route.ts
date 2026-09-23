@@ -8,11 +8,7 @@ import { CheckoutShippingQuoteError } from "@/lib/cart/checkout-shipping"
 import { AndreaniError } from "@/lib/andreani/client"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
-import {
-  calculateCustomerCreditApplication,
-  normalizeMoney,
-  roundMoney,
-} from "@/lib/customer-credit"
+import { normalizeMoney, roundMoney } from "@/lib/customer-credit"
 import {
   applyCustomerCreditToOrder,
   getCustomerCreditBalance,
@@ -29,63 +25,85 @@ import {
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
   normalizeCheckoutOrderShipping,
-  normalizeRequestedInstallmentsModality,
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
   InvalidCheckoutItemsError,
   type CheckoutOrderRequestPayload,
+  type NormalizedCheckoutOrderItem,
+  type PreparedCheckoutOrderCatalog,
 } from "@/lib/orders/checkout-order-creation"
 import {
   deleteIncompleteCheckoutOrder,
   MissingReservationSessionError,
 } from "@/lib/orders/checkout-inventory"
-import { getCartInstallmentEligibility, getEffectiveInstallmentPercent } from "@/lib/products/installments"
 import {
-  calculateCftea,
-  getCartFinancedTotal,
-  getInstallmentAmount,
-  getMaxEligibleInstallmentCount,
-  getPriceWithoutNationalTaxes,
-  getTransferPrice,
-  roundUpCheckoutTotalForInstallments,
-  type InstallmentCount,
-} from "@/lib/pricing/financed-pricing"
-import type { CheckoutOrderPricingSnapshot } from "@/lib/orders/checkout-order-creation"
+  buildCheckoutEconomicState,
+  buildMercadoPagoPricingSnapshot,
+  calculateMercadoPagoCheckoutPricing,
+  getMercadoPagoModeQuote,
+  getMercadoPagoOrderInstallmentsFields,
+  getMercadoPagoPreferenceInstallments,
+  normalizeMercadoPagoCheckoutMode,
+  type CheckoutPricingLine,
+  type CheckoutPricingSettings,
+} from "@/lib/pricing/checkout-pricing"
 import {
   MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
   MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR,
   MERCADOPAGO_MAX_ATTEMPTS_PER_IP_PER_HOUR,
   MERCADOPAGO_MAX_GLOBAL_ATTEMPTS_PER_HOUR,
+  createCheckoutEconomicFingerprint,
   createMercadoPagoCheckoutFingerprint,
   getMercadoPagoCheckoutAttemptDecision,
   getMercadoPagoCheckoutIdempotencyKey,
   getMercadoPagoPreferenceExpiration,
   getMercadoPagoRequestFingerprint,
+  getPendingCustomerCheckoutOrderAction,
+  isEconomicallyEquivalentAttempt,
   isPostgresUniqueViolation,
   normalizeMercadoPagoCheckoutSessionId,
   type MercadoPagoCheckoutAttemptRow,
 } from "@/lib/mercadopago/checkout-attempt"
+import {
+  createMercadoPagoSupersedeDependencies,
+  supersedeStaleMercadoPagoOrder,
+  type SupersedableMercadoPagoOrder,
+} from "@/lib/mercadopago/checkout-supersede"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
-  calculateStoreBenefitDiscount,
   claimActiveStoreBenefit,
+  findCheckoutStoreBenefit,
   linkStoreBenefitToOrder,
   releaseStoreBenefitClaim,
+  type CheckoutStoreBenefitPreview,
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
+type AdminClient = ReturnType<typeof createAdminClient>
 
 interface MercadoPagoCheckoutOrderRow
-  extends MercadoPagoCheckoutAttemptRow {
+  extends MercadoPagoCheckoutAttemptRow, SupersedableMercadoPagoOrder {
   external_amount_due?: number | null
   credit_balance_used?: number | null
   cliente_email?: string | null
   cliente_nombre?: string | null
   mercadopago_preference_generation?: number | null
   customer_checkout_fingerprint?: string | null
+  pricing_snapshot?: {
+    economicFingerprint?: string | null
+    mercadoPagoModality?: string | null
+    preferenceMaxInstallments?: number | null
+  } | null
 }
+
+const ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE =
+  "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva."
+const ALREADY_PAID_MESSAGE =
+  "Esta compra ya fue pagada y no puede iniciarse nuevamente."
+const PRICING_CHANGED_MESSAGE =
+  "Los precios o condiciones de tu compra se actualizaron. Revisá el nuevo total antes de pagar."
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
 
@@ -93,6 +111,36 @@ const mercadoPagoClient = accessToken
   ? new MercadoPagoConfig({ accessToken })
   : null
 
+function normalizeExpectedTotal(value: unknown) {
+  const parsed = typeof value === "number" ? value : Number.NaN
+  return Number.isFinite(parsed) && parsed >= 0 ? roundMoney(parsed) : null
+}
+
+function buildCheckoutPricingLines(
+  items: NormalizedCheckoutOrderItem[],
+  catalog: PreparedCheckoutOrderCatalog,
+): CheckoutPricingLine[] {
+  // `cartRows` se arma con `items.map` (mismo orden, misma longitud).
+  return catalog.cartRows.map((row, index) => ({
+    productId: items[index].productId,
+    variantId: items[index].variantId,
+    conditionedStockId: items[index].conditionedStockId,
+    quantity: row.quantity,
+    unitPrice: row.unitPrice,
+    installments: row.product,
+  }))
+}
+
+/**
+ * Crea (o retoma) el intento de pago de Mercado Pago. El servidor es la
+ * ÚNICA fuente de verdad: en CADA click en "Pagar" se recalcula todo con
+ * datos actuales de la base (catálogo, variantes, stock, envío, beneficio,
+ * saldo, configuración de cuotas/fees/transferencia) y se arma una huella
+ * económica determinística. Una orden pendiente previa se reutiliza SÓLO si
+ * su huella económica coincide exactamente; si no, se da de baja de forma
+ * segura (`supersedeStaleMercadoPagoOrder`) y se crea una nueva con los
+ * valores actuales. Nunca se confía en montos enviados por el navegador.
+ */
 export async function POST(request: Request) {
   let creditAppliedOrderId: number | null = null
   let createdOrderId: number | null = null
@@ -148,19 +196,33 @@ export async function POST(request: Request) {
       data: { user },
     } = await supabase.auth.getUser()
 
+    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    if (requestedCredit > 0 && !user) {
+      return NextResponse.json(
+        { error: "Iniciá sesión para usar tu saldo a favor." },
+        { status: 401 },
+      )
+    }
+
+    // ── 1. Estado comercial ACTUAL (nunca lo que mandó el navegador) ──
     const catalog = await loadAndValidateCheckoutOrderCatalog(
       supabase,
       admin,
       items,
     )
-    const baseTotals = calculateCartTotals(catalog.cartRows)
-    const requestedCredit = normalizeMoney(payload.customerCreditAmount)
+    const pricingLines = buildCheckoutPricingLines(items, catalog)
     const siteSettings = await getSiteSettings({ fresh: true })
+    const pricingSettings: CheckoutPricingSettings = {
+      installmentsFinancing: siteSettings.installmentsFinancing,
+      transferDiscountPercent: siteSettings.pricing.transferDiscountPercent,
+      nationalTaxesIncidencePercent:
+        siteSettings.pricing.nationalTaxesIncidencePercent,
+    }
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,
       items,
-      productsTotal: baseTotals.productsTotal,
+      productsTotal: calculateCartTotals(catalog.cartRows).productsTotal,
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
     })
@@ -172,71 +234,152 @@ export async function POST(request: Request) {
       normalizedShipping,
       shippingBranch,
     )
-    // Se valida acá (antes de calcular el fingerprint) para que la
-    // modalidad forme parte de la identidad del intento de pago: si el
-    // cliente cambia de "pago único" a "3 cuotas" para el mismo carrito, el
-    // fingerprint tiene que cambiar y generar una orden nueva -- nunca
-    // reusar/"reclamar" una orden vieja calculada con otra modalidad.
-    const requestedInstallmentsModality = normalizeRequestedInstallmentsModality(
+    const mode = normalizeMercadoPagoCheckoutMode(
+      payload.mercadoPagoMode,
       payload.installmentsModality,
     )
-    if (
-      requestedInstallmentsModality &&
-      !getCartInstallmentEligibility(catalog.products).includes(
-        requestedInstallmentsModality,
-      )
-    ) {
+
+    // ── 2. Beneficio de tienda y orden pendiente de esta misma compra ──
+    // El cupón se LEE sin reclamarlo: si está vinculado a la orden pendiente
+    // de esta misma compra, sigue aplicando (se reutiliza esa orden o se
+    // libera al darla de baja).
+    const benefitPreview = user
+      ? await findCheckoutStoreBenefit(admin, user.id, payload.storeBenefitId)
+      : null
+    const customerFingerprintFor = (benefitId: string | null) =>
+      computeCustomerCheckoutFingerprint({
+        userId: user?.id ?? null,
+        items,
+        shipping: {
+          provider: shipping.shipping_provider,
+          type: shipping.shipping_type,
+          sucursalId: shipping.andreani_sucursal_id,
+        },
+        storeBenefitId: benefitId,
+      })
+
+    let customerCheckoutFingerprint = customerFingerprintFor(
+      benefitPreview?.id ?? null,
+    )
+    let pendingOrder = customerCheckoutFingerprint
+      ? await findPendingCustomerCheckoutOrder(admin, customerCheckoutFingerprint)
+      : null
+    let storeBenefit: CheckoutStoreBenefitPreview | null = null
+
+    if (benefitPreview?.status === "active") {
+      storeBenefit = benefitPreview
+    } else if (benefitPreview?.status === "used") {
+      if (pendingOrder && benefitPreview.used_order_id === pendingOrder.id) {
+        storeBenefit = benefitPreview
+      } else {
+        // Cupón usado por otra compra: no aplica (mismo criterio que un
+        // claim fallido) y la identidad de la compra va sin cupón.
+        customerCheckoutFingerprint = customerFingerprintFor(null)
+        pendingOrder = customerCheckoutFingerprint
+          ? await findPendingCustomerCheckoutOrder(admin, customerCheckoutFingerprint)
+          : null
+      }
+    }
+
+    // ── 3. Precio canónico y huella económica ──
+    const pricing = calculateMercadoPagoCheckoutPricing({
+      lines: pricingLines,
+      shippingCharged: shipping.shipping_cost_charged,
+      storeBenefitPercent: storeBenefit?.percent ?? null,
+      requestedCustomerCredit: requestedCredit,
+      settings: pricingSettings,
+    })
+    const quote = getMercadoPagoModeQuote(pricing, mode)
+
+    if (!quote) {
       return NextResponse.json(
         {
           error:
-            "Esa cantidad de cuotas no está disponible para los productos de tu carrito.",
+            "La financiación en cuotas no está disponible para los productos de tu carrito.",
         },
         { status: 400 },
       )
     }
 
-    const checkoutFingerprint = createMercadoPagoCheckoutFingerprint({
-      sessionId: checkoutSessionId,
-      userId: user?.id ?? null,
-      items,
-      customer: { ...customer },
-      productsTotal: baseTotals.productsTotal,
-      shipping: {
-        provider: normalizedShipping.provider,
-        type: normalizedShipping.type,
-        costReal: normalizedShipping.costReal,
-        costCharged: normalizedShipping.costCharged,
-        freeShippingApplied: normalizedShipping.freeShippingApplied,
-        sucursalId: shippingBranch?.id ?? null,
-      },
-      storeBenefitId: payload.storeBenefitId?.trim() || null,
-      requestedCredit,
-      installmentsModality: requestedInstallmentsModality,
-    })
-    const existingAttempts = await loadMercadoPagoCheckoutAttempts(
-      admin,
-      checkoutFingerprint,
-    )
-    const paidAttempt = existingAttempts.find(
-      (attempt) =>
-        getMercadoPagoCheckoutAttemptDecision(attempt).kind ===
-        "already_paid",
-    )
-
-    if (paidAttempt) {
+    if (quote.requestedCreditExceedsTotal) {
       return NextResponse.json(
-        { error: "Esta compra ya fue pagada y no puede iniciarse nuevamente." },
+        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
         { status: 409 },
       )
     }
 
-    const activeAttempt = existingAttempts.find((attempt) => {
-      const decision = getMercadoPagoCheckoutAttemptDecision(attempt)
-      return ["reuse", "in_progress", "claim_preference"].includes(
-        decision.kind,
+    if (quote.externalAmountDue <= 0) {
+      return NextResponse.json(
+        { error: "El saldo cubre el total. Confirmá la compra con saldo a favor." },
+        { status: 400 },
       )
+    }
+
+    // El total que vio el cliente sólo sirve para NO cobrar algo distinto
+    // de lo que tenía en pantalla (admin cambió algo mientras tanto). Se
+    // corta antes de cualquier efecto (reuso, baja, claims, órdenes).
+    const expectedTotal = normalizeExpectedTotal(payload.expectedTotal)
+    if (
+      expectedTotal != null &&
+      Math.abs(expectedTotal - quote.externalAmountDue) > 0.009
+    ) {
+      return NextResponse.json(
+        {
+          code: "PRICING_CHANGED",
+          error: PRICING_CHANGED_MESSAGE,
+          total: quote.externalAmountDue,
+          mode,
+        },
+        { status: 409 },
+      )
+    }
+
+    const economicFingerprint = createCheckoutEconomicFingerprint(
+      buildCheckoutEconomicState({
+        lines: pricingLines,
+        shipping: {
+          provider: normalizedShipping.provider,
+          type: normalizedShipping.type,
+          sucursalId: shippingBranch?.id ?? null,
+          costReal: normalizedShipping.costReal,
+          costCharged: normalizedShipping.costCharged,
+          freeShippingApplied: normalizedShipping.freeShippingApplied,
+        },
+        storeBenefit: storeBenefit
+          ? { id: storeBenefit.id, percent: storeBenefit.percent }
+          : null,
+        requestedCustomerCredit: requestedCredit,
+        mode,
+        pricing,
+        settings: pricingSettings,
+      }),
+    )
+    const checkoutFingerprint = createMercadoPagoCheckoutFingerprint({
+      sessionId: checkoutSessionId,
+      userId: user?.id ?? null,
+      customer: { ...customer },
+      economicFingerprint,
     })
 
+    // ── 4. Reintento idéntico (misma pestaña, mismas condiciones) ──
+    const existingAttempts = await loadMercadoPagoCheckoutAttempts(
+      admin,
+      checkoutFingerprint,
+    )
+    if (
+      existingAttempts.some(
+        (attempt) =>
+          getMercadoPagoCheckoutAttemptDecision(attempt).kind === "already_paid",
+      )
+    ) {
+      return NextResponse.json({ error: ALREADY_PAID_MESSAGE }, { status: 409 })
+    }
+
+    const activeAttempt = existingAttempts.find((attempt) =>
+      ["reuse", "in_progress", "claim_preference"].includes(
+        getMercadoPagoCheckoutAttemptDecision(attempt).kind,
+      ),
+    )
     if (activeAttempt) {
       const response = await resolveMercadoPagoOrderAttempt({
         client: mercadoPagoClient,
@@ -244,6 +387,20 @@ export async function POST(request: Request) {
         order: activeAttempt,
         payload,
         request,
+        economicFingerprint,
+      })
+      if (response) return response
+    }
+
+    // ── 5. Orden pendiente de esta misma compra (otra pestaña o intento viejo) ──
+    if (pendingOrder && pendingOrder.id !== activeAttempt?.id) {
+      const response = await resolvePendingCustomerCheckoutOrder({
+        client: mercadoPagoClient,
+        admin,
+        order: pendingOrder,
+        payload,
+        request,
+        economicFingerprint,
       })
       if (response) return response
     }
@@ -255,203 +412,65 @@ export async function POST(request: Request) {
     })
     if (rateLimitResponse) return rateLimitResponse
 
-    const totals = calculateCartTotals(
-      catalog.cartRows,
-      {
-        shippingCost: shipping.shipping_cost_charged,
-      },
-    )
-    const storeBenefit = user
-      ? await claimActiveStoreBenefit(
-          admin,
-          user.id,
-          payload.storeBenefitId,
-        )
-      : null
-    if (storeBenefit) claimedBenefitId = storeBenefit.id
-    const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
-      totals.productsTotal,
-      storeBenefit?.percent,
-    )
-    // Contado: productos netos (después de descuentos/beneficio de tienda) +
-    // envío EFECTIVAMENTE cobrado al cliente (ya bonificado/gratis si
-    // corresponde -- shipping.shipping_cost_charged nunca es el costo bruto
-    // de Andreani). El envío SIEMPRE se cobra a costo real, sin importar el
-    // método de pago -- nunca lleva recargo por financiación.
-    const productsNet = Math.max(
-      totals.productsTotal - storeBenefitDiscountAmount,
-      0,
-    )
-    const cashTotal = roundMoney(productsNet + totals.shipping)
-
-    // Financiado: suma de los precios financiados INDIVIDUALES de cada línea
-    // del carrito (cada uno calculado con SU propio máximo de cuotas), nunca
-    // recalculado con la tasa del mínimo común del carrito (ver
-    // getCartFinancedTotal). El beneficio de tienda es un % uniforme sobre
-    // TODO el carrito: como el gross-up es lineal, aplicar ese mismo % sobre
-    // el total financiado crudo equivale exactamente a aplicarlo línea por
-    // línea antes de financiar (regla: nunca financiar sobre un precio "de
-    // lista" cuando el efectivo está rebajado).
-    const rawCartFinancedTotal = getCartFinancedTotal(
-      catalog.cartRows.map((row) => ({
-        cashPrice: row.unitPrice,
-        maxEligibleCount: getMaxEligibleInstallmentCount(row.product),
-        quantity: row.quantity,
-      })),
-      siteSettings.installmentsFinancing,
-    )
-    const financedStoreBenefitDiscount = calculateStoreBenefitDiscount(
-      rawCartFinancedTotal,
-      storeBenefit?.percent,
-    )
-    const financedProductsNet = Math.max(
-      rawCartFinancedTotal - financedStoreBenefitDiscount,
-      0,
-    )
-    const financedTotal =
-      rawCartFinancedTotal > 0
-        ? roundMoney(financedProductsNet + totals.shipping)
+    // ── 6. Reclamos atómicos: el estado real tiene que seguir siendo el calculado ──
+    const claimedBenefit =
+      user && storeBenefit
+        ? await claimActiveStoreBenefit(admin, user.id, storeBenefit.id)
         : null
+    if (claimedBenefit) claimedBenefitId = claimedBenefit.id
 
-    // Cuota máxima ofrecida al carrito (mínimo común entre productos -- ver
-    // getCartInstallmentEligibility más arriba, ya usada para validar
-    // `requestedInstallmentsModality`).
-    const cartInstallmentEligibility = getCartInstallmentEligibility(catalog.products)
-    const cartMaxEligibleCount: InstallmentCount | null = cartInstallmentEligibility.length
-      ? (Math.max(...cartInstallmentEligibility) as InstallmentCount)
-      : null
-
-    // El total que efectivamente se cobra: financiado si el cliente eligió
-    // cuotas, contado en cualquier otro caso (débito/tarjeta 1 pago). Nunca
-    // se le suma nada más en Mercado Pago (evita doble recargo) -- este
-    // monto YA es el total final.
-    const totalAfterStoreBenefit =
-      requestedInstallmentsModality != null && financedTotal != null
-        ? financedTotal
-        : cashTotal
-
-    const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
-    const nationalTaxesIncidencePercent = siteSettings.pricing.nationalTaxesIncidencePercent
-    const customerCreditApplication =
-      requestedCredit > 0
-        ? calculateCustomerCreditApplication({
-            availableBalance: user
-              ? await getCustomerCreditBalance(admin, user.id)
-              : 0,
-            eligibleTotal: totalAfterStoreBenefit,
-            requestedAmount: requestedCredit,
-          })
-        : {
-            appliedAmount: 0,
-            externalAmountDue: totalAfterStoreBenefit,
-          }
-
-    if (requestedCredit > 0 && !user) {
+    if (storeBenefit && claimedBenefit?.percent !== storeBenefit.percent) {
+      if (claimedBenefitId) {
+        await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
+        claimedBenefitId = null
+      }
       return NextResponse.json(
-        { error: "Iniciá sesión para usar tu saldo a favor." },
-        { status: 401 },
-      )
-    }
-
-    if (
-      requestedCredit > 0 &&
-      Math.abs(customerCreditApplication.appliedAmount - requestedCredit) > 0.009
-    ) {
-      return NextResponse.json(
-        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+        {
+          code: "PRICING_CHANGED",
+          error: "Tu beneficio ya no está disponible. Revisá el total antes de pagar.",
+        },
         { status: 409 },
       )
     }
 
-    if (customerCreditApplication.externalAmountDue <= 0) {
-      return NextResponse.json(
-        { error: "El saldo cubre el total. Confirmá la compra con saldo a favor." },
-        { status: 400 },
-      )
+    if (user && requestedCredit > 0) {
+      const balance = await getCustomerCreditBalance(admin, user.id)
+      if (balance + 0.009 < requestedCredit) {
+        if (claimedBenefitId) {
+          await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
+          claimedBenefitId = null
+        }
+        return NextResponse.json(
+          { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+          { status: 409 },
+        )
+      }
     }
 
-    // Ajuste de redondeo final de cuotas, una única vez y sobre el monto
-    // final a cobrar (ver roundUpCheckoutTotalForInstallments): depende de
-    // las cuotas OFRECIDAS al carrito, no de la elegida, así 2/3/6 cobran el
-    // mismo total. Pago único/contado nunca se redondea.
-    const checkoutTotals =
-      requestedInstallmentsModality != null && financedTotal != null
-        ? roundUpCheckoutTotalForInstallments({
-            total: totalAfterStoreBenefit,
-            customerCreditApplied: customerCreditApplication.appliedAmount,
-            offeredCounts: cartInstallmentEligibility,
-          })
-        : {
-            total: totalAfterStoreBenefit,
-            externalAmountDue: customerCreditApplication.externalAmountDue,
-            customerCreditApplied: customerCreditApplication.appliedAmount,
-            roundingAdjustment: 0,
-          }
-    // CFTEA sobre el MISMO total financiado final que se muestra y se cobra
-    // (ya con el ajuste de redondeo de cuotas), antes de saldo a favor.
-    const cftea =
-      requestedInstallmentsModality != null && financedTotal != null
-        ? (() => {
-            const installmentAmount = getInstallmentAmount(checkoutTotals.total, requestedInstallmentsModality)
-            const annualPercent =
-              installmentAmount != null
-                ? calculateCftea(cashTotal, installmentAmount, requestedInstallmentsModality)
-                : null
-            return annualPercent != null
-              ? { monthlyRate: Math.pow(1 + annualPercent / 100, 1 / 12) - 1, annualPercent }
-              : null
-          })()
-        : null
-    const pricingSnapshot: CheckoutOrderPricingSnapshot = {
-      cashPriceTotal: cashTotal,
-      transferPriceTotal: getTransferPrice(cashTotal, transferDiscountPercent),
-      financedPriceTotal: financedTotal,
-      maxInstallmentCount: cartMaxEligibleCount,
-      transferDiscountPercent,
-      nationalTaxesIncidencePercent,
-      cftea,
-      installmentsRoundingAdjustment: checkoutTotals.roundingAdjustment,
-      priceWithoutNationalTaxes: {
-        cash: getPriceWithoutNationalTaxes(cashTotal, nationalTaxesIncidencePercent),
-        financed:
-          financedTotal != null
-            ? getPriceWithoutNationalTaxes(financedTotal, nationalTaxesIncidencePercent)
-            : null,
-      },
-    }
-
+    // ── 7. Orden nueva con los valores actuales ──
+    const pricingSnapshot = buildMercadoPagoPricingSnapshot({
+      pricing,
+      mode,
+      settings: pricingSettings,
+      economicFingerprint,
+    })
     const newPreferenceClaimToken = randomUUID()
     const orderPayload = {
       ...buildCheckoutOrderBase({
         userId: user?.id ?? null,
-        total: checkoutTotals.total,
-        externalAmountDue: checkoutTotals.externalAmountDue,
-        creditBalanceUsed: checkoutTotals.customerCreditApplied,
+        total: quote.total,
+        externalAmountDue: quote.externalAmountDue,
+        creditBalanceUsed: quote.customerCreditApplied,
         paymentMethodId: "mercadopago",
         reservationSessionId: checkoutSessionId,
-        storeBenefit,
-        storeBenefitDiscountAmount,
+        storeBenefit: claimedBenefit,
+        storeBenefitDiscountAmount: pricing.storeBenefitDiscountAmount,
         customer,
-        // Snapshot histórico: `count` es la modalidad EFECTIVAMENTE elegida;
-        // `percent` es el costo interno de MP para la cuota MÁXIMA habilitada
-        // (la que determinó el gross-up, ver getEffectiveInstallmentPercent)
-        // -- el fee REAL de la cuota elegida vive en
-        // mercadopago_payment_snapshot (capturado por el webhook), nunca acá.
-        // surchargeAmount = financedTotal - cashTotal, el recargo real
-        // cobrado al cliente por financiar.
-        installments:
-          requestedInstallmentsModality != null && financedTotal != null && cartMaxEligibleCount != null
-            ? {
-                count: requestedInstallmentsModality,
-                percent: getEffectiveInstallmentPercent(
-                  cartMaxEligibleCount,
-                  siteSettings.installmentsFinancing,
-                ),
-                productsBaseAmount: cashTotal,
-                surchargeAmount: roundMoney(financedTotal - cashTotal),
-                maxEligibleCount: cartMaxEligibleCount,
-              }
-            : null,
+        installments: getMercadoPagoOrderInstallmentsFields(
+          pricing,
+          mode,
+          siteSettings.installmentsFinancing,
+        ),
         pricingSnapshot,
       }),
       checkout_idempotency_key: getMercadoPagoCheckoutIdempotencyKey(
@@ -459,16 +478,7 @@ export async function POST(request: Request) {
         existingAttempts[0]?.id ?? null,
       ),
       mercadopago_checkout_fingerprint: checkoutFingerprint,
-      customer_checkout_fingerprint: computeCustomerCheckoutFingerprint({
-        userId: user?.id ?? null,
-        items,
-        shipping: {
-          provider: shipping.shipping_provider,
-          type: shipping.shipping_type,
-          sucursalId: shipping.andreani_sucursal_id,
-        },
-        storeBenefitId: storeBenefit?.id ?? null,
-      }),
+      customer_checkout_fingerprint: customerCheckoutFingerprint,
       mercadopago_request_fingerprint:
         getMercadoPagoRequestFingerprint(request),
       mercadopago_preference_claim_token: newPreferenceClaimToken,
@@ -494,68 +504,44 @@ export async function POST(request: Request) {
       .single()
 
     if (orderError || !order) {
+      if (claimedBenefitId) {
+        await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
+        claimedBenefitId = null
+      }
+
       if (isDuplicateCustomerCheckoutAttempt(orderError)) {
-        // El beneficio ya se había marcado 'used' más arriba (antes del
-        // INSERT); si la orden no se llegó a crear, nunca se linkea a nada y
-        // quedaría 'used' para siempre sin ninguna compra real detrás.
-        if (claimedBenefitId) {
-          try {
-            await releaseStoreBenefitClaim(admin, claimedBenefitId)
-          } catch (releaseError) {
-            console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
-          }
-          claimedBenefitId = null
-        }
+        // Carrera: otra pestaña/request creó la orden pendiente de esta
+        // misma compra entre la búsqueda (paso 5) y este INSERT. Sólo se
+        // retoma si es económicamente idéntica; si no, nunca se reutiliza
+        // (ni se da de baja acá: la acaban de crear) -- el cliente reintenta.
+        const conflictOrder = customerCheckoutFingerprint
+          ? await findPendingCustomerCheckoutOrder(admin, customerCheckoutFingerprint)
+          : null
 
-        // El choque es contra `customer_checkout_fingerprint` (usuario +
-        // carrito + envío/beneficio), un eje de deduplicación MÁS ANGOSTO
-        // que `mercadopago_checkout_fingerprint` (que además incluye sesión,
-        // datos de contacto, costo de envío exacto y cuotas -- ver
-        // computeCustomerCheckoutFingerprint). Por eso puede chocar acá
-        // aunque `existingAttempts` no haya encontrado nada: la orden que
-        // realmente choca puede tener una huella de MP distinta (p.ej. el
-        // envío se recotizó al volver de Mercado Pago) pero sigue siendo la
-        // MISMA orden pendiente de este mismo cliente. Se le aplica la
-        // misma decisión (reuse/claim_preference/in_progress/already_paid)
-        // que a un intento encontrado por la huella de MP, en vez de
-        // bloquear ciegamente un intento en realidad abandonado/reutilizable.
-        const conflictFingerprint = orderPayload.customer_checkout_fingerprint
-        if (conflictFingerprint) {
-          const conflictOrder = await findConflictingMercadoPagoOrder(
+        if (
+          conflictOrder?.payment_method_id === "mercadopago" &&
+          isEconomicallyEquivalentAttempt(conflictOrder, economicFingerprint)
+        ) {
+          const response = await resolveMercadoPagoOrderAttempt({
+            client: mercadoPagoClient,
             admin,
-            conflictFingerprint,
-          )
-
-          if (conflictOrder?.payment_method_id === "mercadopago") {
-            const response = await resolveMercadoPagoOrderAttempt({
-              client: mercadoPagoClient,
-              admin,
-              order: conflictOrder,
-              payload,
-              request,
-            })
-            if (response) return response
-          }
+            order: conflictOrder,
+            payload,
+            request,
+            economicFingerprint,
+          })
+          if (response) return response
         }
 
-        return NextResponse.json(
-          {
-            error:
-              "Ya tenés otra compra en curso con estos mismos productos. Continuá con esa compra o cancelala antes de iniciar una nueva.",
-          },
-          { status: 409 },
-        )
+        return conflictOrder?.payment_method_id === "mercadopago"
+          ? checkoutAttemptInProgressResponse()
+          : NextResponse.json(
+              { error: ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE },
+              { status: 409 },
+            )
       }
 
       if (isPostgresUniqueViolation(orderError)) {
-        if (claimedBenefitId) {
-          try {
-            await releaseStoreBenefitClaim(admin, claimedBenefitId)
-          } catch (releaseError) {
-            console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
-          }
-          claimedBenefitId = null
-        }
         return checkoutAttemptInProgressResponse()
       }
 
@@ -574,11 +560,11 @@ export async function POST(request: Request) {
       reservationSessionId: checkoutSessionId,
     })
 
-    if (user && checkoutTotals.customerCreditApplied > 0) {
+    if (user && quote.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {
         userId: user.id,
         orderId: order.id,
-        amount: checkoutTotals.customerCreditApplied,
+        amount: quote.customerCreditApplied,
         description: `Saldo a favor aplicado al pedido BX-${1000 + order.id}`,
         sourceKey: `order:${order.id}:customer-credit:debit`,
       })
@@ -590,8 +576,9 @@ export async function POST(request: Request) {
       admin,
       order: {
         ...(order as MercadoPagoCheckoutOrderRow),
-        external_amount_due: checkoutTotals.externalAmountDue,
-        credit_balance_used: checkoutTotals.customerCreditApplied,
+        external_amount_due: quote.externalAmountDue,
+        credit_balance_used: quote.customerCreditApplied,
+        pricing_snapshot: pricingSnapshot,
       },
       payload,
       request,
@@ -601,9 +588,9 @@ export async function POST(request: Request) {
     })
     createdOrderId = null
 
-    if (storeBenefit) {
+    if (claimedBenefit) {
       await linkStoreBenefitToOrder(admin, {
-        benefitId: storeBenefit.id,
+        benefitId: claimedBenefit.id,
         orderId: order.id,
       })
     }
@@ -618,11 +605,7 @@ export async function POST(request: Request) {
       // Best-effort, mismo criterio que la reversión de saldo de abajo: si
       // ya se vinculó a una orden real, releaseStoreBenefitClaim es un
       // no-op por su propio guard.
-      try {
-        await releaseStoreBenefitClaim(createAdminClient(), claimedBenefitId)
-      } catch (releaseError) {
-        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
-      }
+      await releaseStoreBenefitClaimSafely(createAdminClient(), claimedBenefitId)
     }
 
     if (creditAppliedOrderId) {
@@ -675,11 +658,19 @@ export async function POST(request: Request) {
   }
 }
 
+async function releaseStoreBenefitClaimSafely(admin: AdminClient, benefitId: string) {
+  try {
+    await releaseStoreBenefitClaim(admin, benefitId)
+  } catch (releaseError) {
+    console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+  }
+}
+
 const MERCADOPAGO_ATTEMPT_SELECT =
-  "id, estado, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_init_point, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count" as const
+  "id, estado, total, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count, pricing_snapshot, store_benefit_id, andreani_creation_status, andreani_envio_id" as const
 
 async function loadMercadoPagoCheckoutAttempts(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: AdminClient,
   checkoutFingerprint: string,
 ) {
   const { data, error } = await admin
@@ -698,15 +689,12 @@ async function loadMercadoPagoCheckoutAttempts(
 }
 
 /**
- * Busca la orden 'pendiente' que realmente choca contra el índice único de
- * `customer_checkout_fingerprint` (usuario + carrito + envío/beneficio). Es
- * un lookup best-effort para poder aplicar la misma decisión que un intento
- * encontrado por la huella de Mercado Pago -- si no encuentra nada (por
- * ejemplo, la orden se resolvió en el instante entre el INSERT fallido y
- * este SELECT), el llamador cae al mensaje de bloqueo genérico existente.
+ * Orden 'pendiente' de esta misma compra según el índice único de
+ * `customer_checkout_fingerprint` (usuario + carrito + envío/beneficio, SIN
+ * precios -- por eso nunca alcanza por sí sola para reutilizarla).
  */
-async function findConflictingMercadoPagoOrder(
-  admin: ReturnType<typeof createAdminClient>,
+async function findPendingCustomerCheckoutOrder(
+  admin: AdminClient,
   customerCheckoutFingerprint: string,
 ) {
   const { data, error } = await admin
@@ -726,11 +714,88 @@ async function findConflictingMercadoPagoOrder(
 }
 
 /**
- * Aplica `getMercadoPagoCheckoutAttemptDecision` a una orden MP existente
- * (encontrada por la huella de MP o por la de cliente+carrito) y devuelve la
- * respuesta HTTP correspondiente, o `null` si la orden no es reusable ni
- * bloqueante por sí misma (`unavailable` -- p.ej. un pago aprobado con
- * conflicto de stock, que nunca debe tratarse como reintentable).
+ * Decide qué hacer con la orden pendiente de esta misma compra encontrada
+ * por `customer_checkout_fingerprint`:
+ * - económicamente idéntica -> misma decisión que un reintento (reuse /
+ *   claim_preference / in_progress / already_paid): dos pestañas siguen
+ *   siendo idempotentes;
+ * - económicamente distinta -> NUNCA se reutiliza: se da de baja de forma
+ *   segura y se devuelve `null` para crear una orden nueva con los valores
+ *   actuales (o se responde "en proceso"/"ya pagada" si no se puede).
+ */
+async function resolvePendingCustomerCheckoutOrder({
+  client,
+  admin,
+  order,
+  payload,
+  request,
+  economicFingerprint,
+}: {
+  client: MercadoPagoConfig
+  admin: AdminClient
+  order: MercadoPagoCheckoutOrderRow
+  payload: CheckoutPayload
+  request: Request
+  economicFingerprint: string
+}): Promise<Response | null> {
+  const action = getPendingCustomerCheckoutOrderAction(order, economicFingerprint)
+
+  if (action === "other_payment_method") {
+    return NextResponse.json(
+      { error: ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE },
+      { status: 409 },
+    )
+  }
+
+  if (action === "resume_equivalent") {
+    const response = await resolveMercadoPagoOrderAttempt({
+      client,
+      admin,
+      order,
+      payload,
+      request,
+      economicFingerprint,
+    })
+    return (
+      response ??
+      NextResponse.json({ error: ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE }, { status: 409 })
+    )
+  }
+
+  const result = await supersedeStaleMercadoPagoOrder(admin, order, {
+    dependencies: createMercadoPagoSupersedeDependencies(),
+    currentEconomicFingerprint: economicFingerprint,
+  })
+
+  switch (result) {
+    case "superseded":
+      return null
+    case "already_paid":
+      return NextResponse.json({ error: ALREADY_PAID_MESSAGE }, { status: 409 })
+    case "payment_in_process":
+      return NextResponse.json(
+        {
+          error:
+            "Tenés un pago de Mercado Pago en proceso para esta compra. Esperá a que se resuelva antes de iniciar otro.",
+        },
+        { status: 409 },
+      )
+    case "busy":
+      return checkoutAttemptInProgressResponse()
+    default:
+      return NextResponse.json(
+        { error: ANOTHER_PURCHASE_IN_PROGRESS_MESSAGE },
+        { status: 409 },
+      )
+  }
+}
+
+/**
+ * Aplica `getMercadoPagoCheckoutAttemptDecision` a una orden MP existente y
+ * devuelve la respuesta HTTP correspondiente, o `null` si no es reusable ni
+ * bloqueante por sí misma (`unavailable`). Exige equivalencia económica
+ * exacta: una orden con otro estado económico nunca se reutiliza ni se le
+ * genera una preferencia nueva con su monto viejo.
  */
 async function resolveMercadoPagoOrderAttempt({
   client,
@@ -738,20 +803,23 @@ async function resolveMercadoPagoOrderAttempt({
   order,
   payload,
   request,
+  economicFingerprint,
 }: {
   client: MercadoPagoConfig
-  admin: ReturnType<typeof createAdminClient>
+  admin: AdminClient
   order: MercadoPagoCheckoutOrderRow
   payload: CheckoutPayload
   request: Request
+  economicFingerprint: string
 }): Promise<Response | null> {
   const decision = getMercadoPagoCheckoutAttemptDecision(order)
 
   if (decision.kind === "already_paid") {
-    return NextResponse.json(
-      { error: "Esta compra ya fue pagada y no puede iniciarse nuevamente." },
-      { status: 409 },
-    )
+    return NextResponse.json({ error: ALREADY_PAID_MESSAGE }, { status: 409 })
+  }
+
+  if (!isEconomicallyEquivalentAttempt(order, economicFingerprint)) {
+    return null
   }
 
   if (decision.kind === "reuse") {
@@ -773,7 +841,7 @@ async function resolveMercadoPagoOrderAttempt({
   // La RPC exige que `p_checkout_fingerprint` coincida EXACTO con el valor
   // ya persistido en la orden (ver claim_mercadopago_order_preference) --
   // nunca el fingerprint recién calculado del request actual, que puede
-  // diferir (por eso esta orden se encontró por otra vía).
+  // diferir por sesión/contacto (otra pestaña) aunque la economía sea igual.
   const orderFingerprint = order.mercadopago_checkout_fingerprint
   if (!orderFingerprint) return null
 
@@ -822,7 +890,7 @@ async function resolveMercadoPagoOrderAttempt({
 }
 
 async function releaseMercadoPagoPreferenceClaim(
-  admin: ReturnType<typeof createAdminClient>,
+  admin: AdminClient,
   orderId: number,
   claimToken: string,
 ) {
@@ -848,7 +916,7 @@ async function createAndPersistMercadoPagoPreference({
   preferenceGeneration,
 }: {
   client: MercadoPagoConfig
-  admin: ReturnType<typeof createAdminClient>
+  admin: AdminClient
   order: MercadoPagoCheckoutOrderRow
   payload: CheckoutPayload
   request: Request
@@ -872,17 +940,11 @@ async function createAndPersistMercadoPagoPreference({
   const createdAt = new Date()
   const expiresAt = getMercadoPagoPreferenceExpiration(createdAt)
   const preference = new Preference(client)
-  // Forzamos siempre payment_methods.installments: sin esto, Checkout Pro
-  // puede ofrecer sus propias cuotas (con o sin interés propio) fuera del
-  // control de BEYONIX en CUALQUIER compra, incluso una que nunca eligió
-  // financiación. "1" = pago único; "installments_count" = exactamente la
-  // modalidad que ya quedó calculada y persistida en la orden. Son las
-  // opciones oficiales de Checkout Pro (tope + preselección); no existe un
-  // "mínimo forzado" en la API -- el cliente todavía podría bajar la
-  // cantidad de cuotas en la página de Mercado Pago según el medio de pago.
-  const requestedInstallments = order.installments_count
-    ? Number(order.installments_count)
-    : 1
+  // payment_methods.installments SIEMPRE explícito y derivado de lo
+  // persistido en la orden (nunca del request): al contado = 1 (Checkout
+  // Pro no puede financiar el precio de contado); en cuotas = cuota máxima
+  // elegible del carrito, y el cliente elige dentro de Mercado Pago.
+  const paymentMethods = getMercadoPagoPreferenceInstallments(order)
   const result = await preference.create({
     body: {
       external_reference: String(order.id),
@@ -905,10 +967,7 @@ async function createAndPersistMercadoPagoPreference({
           number: payload.customer?.telefono,
         },
       },
-      payment_methods: {
-        installments: requestedInstallments,
-        default_installments: requestedInstallments,
-      },
+      payment_methods: paymentMethods,
       back_urls: {
         success: `${siteUrl}/checkout/success`,
         failure: `${siteUrl}/checkout/failure`,
@@ -966,7 +1025,7 @@ async function enforceMercadoPagoCheckoutRateLimits({
   userId,
   requestFingerprint,
 }: {
-  admin: ReturnType<typeof createAdminClient>
+  admin: AdminClient
   userId: string | null
   requestFingerprint: string | null
 }) {

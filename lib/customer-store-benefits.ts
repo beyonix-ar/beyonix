@@ -1,3 +1,5 @@
+import type { createAdminClient } from "./supabase/admin.ts"
+
 export type StoreBenefitType = "discount"
 
 export interface StoreBenefitRow {
@@ -107,6 +109,64 @@ export async function linkStoreBenefitToOrder(
 
   if (error || !data) {
     throw new Error("No se pudo marcar el beneficio como usado.")
+  }
+}
+
+export interface CheckoutStoreBenefitPreview
+  extends Pick<StoreBenefitRow, "id" | "code" | "benefit_type" | "percent" | "status"> {
+  used_order_id: number | null
+}
+
+/**
+ * Lectura SIN reclamar del cupón pedido, para poder calcular el estado
+ * económico del checkout antes de decidir si un intento previo se reutiliza
+ * o se reemplaza. Devuelve el cupón activo, o el ya reclamado por una orden
+ * (`used_order_id`) -- quien llama decide si esa orden es el intento
+ * pendiente de esta misma compra (en cuyo caso el cupón sigue aplicando).
+ */
+export async function findCheckoutStoreBenefit(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  benefitId?: string | null,
+): Promise<CheckoutStoreBenefitPreview | null> {
+  const id = benefitId?.trim()
+  if (!id) return null
+
+  const { data, error } = await admin
+    .from("customer_store_benefits")
+    .select("id, code, benefit_type, percent, status, used_order_id")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("benefit_type", "discount")
+    .in("status", ["active", "used"])
+    .maybeSingle()
+
+  if (error) {
+    throw new Error("No se pudo validar el beneficio seleccionado.")
+  }
+
+  return (data as CheckoutStoreBenefitPreview | null) ?? null
+}
+
+/**
+ * Devuelve a 'active' el cupón que tenía vinculado una orden pendiente que
+ * se da de baja por haber quedado económicamente obsoleta (la MISMA compra
+ * continúa en una orden nueva que lo vuelve a reclamar). El guard
+ * `used_order_id = orderId` evita tocar un cupón ya reasignado.
+ */
+export async function restoreStoreBenefitFromSupersededOrder(
+  admin: ReturnType<typeof createAdminClient>,
+  { benefitId, orderId }: { benefitId: string; orderId: number },
+) {
+  const { error } = await admin
+    .from("customer_store_benefits")
+    .update({ status: "active", used_at: null, used_order_id: null } as never)
+    .eq("id", benefitId)
+    .eq("status", "used")
+    .eq("used_order_id", orderId)
+
+  if (error) {
+    throw new Error("No se pudo liberar el beneficio de la compra anterior.")
   }
 }
 

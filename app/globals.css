@@ -8,6 +8,17 @@
 ========================= */
 :root {
   --background: oklch(0.08 0 0);
+  /* Tokens de texto para LIGHT (Admin y tienda/cuenta/checkout los
+     referencian sólo dentro de sus scopes claros; dark no los usa):
+     - secondary: texto secundario/descriptivo, ~85% negro sobre blanco.
+     - muted: metadata/captions, apenas por debajo (~82%) para conservar
+       jerarquía sin volver a un gris lavado.
+     - disabled/placeholder: se mantienen claramente más claros -- un
+       control deshabilitado o un placeholder nunca deben parecer valor. */
+  --beyonix-light-text-secondary: #262b33;
+  --beyonix-light-text-muted: #2b3039;
+  --beyonix-light-text-disabled: rgba(15, 23, 42, 0.55);
+  --beyonix-light-text-placeholder: #5b6472;
   --foreground: oklch(0.98 0 0);
   --card: oklch(0.12 0 0);
   --card-foreground: oklch(0.98 0 0);
@@ -289,12 +300,17 @@
   --spacing-product-gallery-spacer: 5%;
   --spacing-product-gallery-thumbs: 10%;
 
-  --text-10px: 10px;
-  --text-11px: 11px;
-  --text-12px: 12px;
-  --text-12-5px: 12.5px;
-  --text-13px: 13px;
-  --text-13-5px: 13.5px;
+  /* Escala de texto CHICO +1px respecto del nombre de la utilidad
+     (legibilidad): text-8px..text-13-5px y text-xs renderizan 1px más.
+     Sólo tamaños de captions/labels/metadata; text-sm (14px) y mayores
+     -- cuerpo, botones, títulos y precios -- no cambian. */
+  --text-xs: 0.8125rem;
+  --text-10px: 11px;
+  --text-11px: 12px;
+  --text-12px: 13px;
+  --text-12-5px: 13.5px;
+  --text-13px: 14px;
+  --text-13-5px: 14.5px;
   --text-14px: 14px;
   --text-15px: 15px;
   --text-16px: 16px;
@@ -304,8 +320,8 @@
   --text-25px: 25px;
   --text-26px: 26px;
   --text-28px: 28px;
-  --text-8px: 8px;
-  --text-9px: 9px;
+  --text-8px: 9px;
+  --text-9px: 10px;
 
   --shadow-beyonix-color-selected: 0 0 10px rgba(74, 144, 184, 0.3);
   --shadow-beyonix-slider: 0 0 6px rgba(0, 174, 239, 0.22);
@@ -646,7 +662,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-search-input {
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-search-input::placeholder {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-placeholder) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-search-button {
   color: var(--account-accent) !important;
@@ -3299,7 +3315,7 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
 .admin-order-detail-scope .admin-order-cancellation-panel .admin-order-cancellation-primary-action:disabled {
   background: var(--admin-surface-muted) !important;
   border-color: var(--admin-border) !important;
-  color: var(--admin-text-muted) !important;
+  color: var(--admin-text-disabled, var(--admin-text-muted)) !important;
   box-shadow: none !important;
 }
 
@@ -7724,7 +7740,7 @@ span.admin-claim-status-finalized,
   background: var(--beyonix-surface-muted) !important;
   background-color: var(--beyonix-surface-muted) !important;
   border-color: var(--beyonix-border-subtle) !important;
-  color: var(--beyonix-text-muted) !important;
+  color: var(--beyonix-text-disabled, var(--beyonix-text-muted)) !important;
 }
 
 /* El diálogo de reseñas debe cubrir por completo el contenido de la página. */
@@ -8582,8 +8598,9 @@ html[data-admin-theme="light"] .beyonix-admin-shell .beyonix-admin-main {
   --admin-border-soft: rgba(30, 58, 95, 0.15);
   --admin-border-strong: rgba(30, 58, 95, 0.36);
   --admin-text: #0f172a;
-  --admin-text-soft: rgba(15, 23, 42, 0.68);
-  --admin-text-muted: rgba(15, 23, 42, 0.62);
+  --admin-text-soft: var(--beyonix-light-text-secondary);
+  --admin-text-muted: var(--beyonix-light-text-muted);
+  --admin-text-disabled: var(--beyonix-light-text-disabled);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
   --admin-success-bg: rgba(16, 185, 129, 0.1);
@@ -8611,6 +8628,7 @@ html[data-admin-theme="light"] .beyonix-admin-shell .beyonix-admin-main {
    todo lo que cuelga de .beyonix-admin-shell -- sidebar incluido -- reciba
    el valor claro. ---- */
 html[data-admin-theme="light"] .beyonix-admin-shell {
+  --muted-foreground: var(--beyonix-light-text-secondary);
   /* El shell trae "text-white" fijo en su propio className (ver
      admin-client.tsx) como color de texto DEFAULT para todo lo que cuelga
      de él y no declara su propio color -- ej. un <p> con sólo "text-12px
@@ -8633,8 +8651,9 @@ html[data-admin-theme="light"] .beyonix-admin-shell {
   --admin-border-soft: rgba(30, 58, 95, 0.15);
   --admin-border-strong: rgba(30, 58, 95, 0.36);
   --admin-text: #0f172a;
-  --admin-text-soft: rgba(15, 23, 42, 0.68);
-  --admin-text-muted: rgba(15, 23, 42, 0.62);
+  --admin-text-soft: var(--beyonix-light-text-secondary);
+  --admin-text-muted: var(--beyonix-light-text-muted);
+  --admin-text-disabled: var(--beyonix-light-text-disabled);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
   --beyonix-page-background: #eef1f5;
@@ -8647,8 +8666,9 @@ html[data-admin-theme="light"] .beyonix-admin-shell {
   --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
   --beyonix-border-active: rgba(30, 58, 95, 0.5);
   --beyonix-text-primary: #0f172a;
-  --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
-  --beyonix-text-muted: rgba(15, 23, 42, 0.6);
+  --beyonix-text-secondary: var(--beyonix-light-text-secondary);
+  --beyonix-text-muted: var(--beyonix-light-text-muted);
+  --beyonix-text-disabled: var(--beyonix-light-text-disabled);
   --beyonix-brand-primary: #112a43;
   --beyonix-brand-hover: #183b5e;
   --beyonix-brand-active: #1e4d7b;
@@ -8709,7 +8729,7 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .b
   background-color: #f7f9fb !important;
 }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-beyonix-gray-300 {
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 /* text-beyonix-status-{success,pending,danger}: var(--beyonix-success/
    -warning/-danger), colores medio-saturados (#34d399/#f59e0b/#ef4444)
@@ -8761,8 +8781,9 @@ html[data-admin-theme="light"] .admin-portal-scope {
   --admin-border-soft: rgba(30, 58, 95, 0.15);
   --admin-border-strong: rgba(30, 58, 95, 0.36);
   --admin-text: #0f172a;
-  --admin-text-soft: rgba(15, 23, 42, 0.68);
-  --admin-text-muted: rgba(15, 23, 42, 0.62);
+  --admin-text-soft: var(--beyonix-light-text-secondary);
+  --admin-text-muted: var(--beyonix-light-text-muted);
+  --admin-text-disabled: var(--beyonix-light-text-disabled);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
   --beyonix-page-background: #eef1f5;
@@ -8775,8 +8796,9 @@ html[data-admin-theme="light"] .admin-portal-scope {
   --beyonix-border-interactive: rgba(30, 58, 95, 0.34);
   --beyonix-border-active: rgba(30, 58, 95, 0.5);
   --beyonix-text-primary: #0f172a;
-  --beyonix-text-secondary: rgba(15, 23, 42, 0.66);
-  --beyonix-text-muted: rgba(15, 23, 42, 0.6);
+  --beyonix-text-secondary: var(--beyonix-light-text-secondary);
+  --beyonix-text-muted: var(--beyonix-light-text-muted);
+  --beyonix-text-disabled: var(--beyonix-light-text-disabled);
   --beyonix-brand-primary: #112a43;
   --beyonix-brand-hover: #183b5e;
   --beyonix-brand-active: #1e4d7b;
@@ -8845,7 +8867,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card {
   box-shadow: var(--admin-glow) !important;
 }
 html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card p:first-child {
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
@@ -9210,7 +9232,7 @@ html[data-admin-theme="light"] .admin-ds-select-search-icon {
   color: #1e4d7b !important;
 }
 html[data-admin-theme="light"] .admin-ds-select-search-clear {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-ds-select-search-clear:hover {
   background: rgba(30, 58, 95, 0.1) !important;
@@ -9264,10 +9286,10 @@ html[data-admin-theme="light"] .beyonix-admin-sidebar :where(.border) {
    así que no los agarra la sección de utilidades más abajo) -- título e
    ícono casi blancos sobre card clara si no se pisan acá. */
 html[data-admin-theme="light"] .admin-ds-nav-item-muted {
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-ds-nav-icon-muted {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-ds-nav-item:hover .admin-ds-nav-icon-muted {
   border-color: rgba(30, 58, 95, 0.32) !important;
@@ -9602,13 +9624,13 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
   box-shadow: none !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-eyebrow {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-title {
   color: #0f172a !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-meta {
-  color: rgba(15, 23, 42, 0.58) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-meta-dot {
   color: rgba(15, 23, 42, 0.3) !important;
@@ -9620,7 +9642,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-rows-ti
   border-top-color: rgba(30, 58, 95, 0.22) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-row span:first-child {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-row span:last-child {
   color: rgba(15, 23, 42, 0.9) !important;
@@ -9638,7 +9660,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-hr {
   background: repeating-linear-gradient(90deg, rgba(30, 58, 95, 0.18) 0 6px, transparent 6px 12px) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-label {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-positive .admin-order-rs-total-label {
   color: #047857 !important;
@@ -9651,13 +9673,13 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-p
   text-shadow: none !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-total-context {
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-name {
   color: #0f172a !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-sub {
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-faint {
   color: rgba(15, 23, 42, 0.4) !important;
@@ -9673,7 +9695,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-warrant
   border-top-color: rgba(30, 58, 95, 0.12) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-head {
-  color: rgba(15, 23, 42, 0.42) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-thumb {
   background: #f1f4f8 !important;
@@ -9683,13 +9705,13 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-color,
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-qty {
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-product-num {
   color: rgba(15, 23, 42, 0.85) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-warranty-meta {
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 
 /* Pago (admin-order-pg-*): mismo criterio que Resumen arriba. */
@@ -9698,7 +9720,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
   border-color: rgba(30, 58, 95, 0.18) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-eyebrow {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-method-value {
   color: #0f172a !important;
@@ -9717,7 +9739,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta {
   border-left-color: rgba(30, 58, 95, 0.16) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta-label {
-  color: rgba(15, 23, 42, 0.48) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-meta-value {
   color: rgba(15, 23, 42, 0.88) !important;
@@ -9748,7 +9770,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-next-ti
   color: #0f172a !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-pg-next-desc {
-  color: rgba(15, 23, 42, 0.58) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 
 /* Facturación (admin-order-bl-*) */
@@ -9802,7 +9824,7 @@ html[data-admin-theme="light"] .admin-credit-note-header {
   border-bottom-color: var(--admin-border) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-balance span {
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-balance strong {
   color: var(--admin-text) !important;
@@ -9814,13 +9836,13 @@ html[data-admin-theme="light"] .admin-credit-note-steps {
   border-bottom-color: var(--admin-border) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-steps > button {
-  color: rgba(15, 23, 42, 0.42) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-steps b,
 html[data-admin-theme="light"] .admin-credit-note-step-heading > span {
   background: #eef1f5 !important;
   border-color: var(--admin-border) !important;
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-steps > button.is-current,
 html[data-admin-theme="light"] .admin-credit-note-steps > button.is-complete {
@@ -9833,7 +9855,7 @@ html[data-admin-theme="light"] .admin-credit-note-steps > button.is-complete b {
   color: #fff !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-wizard-hint {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-wizard-next {
   background: #112a43 !important;
@@ -9867,10 +9889,10 @@ html[data-admin-theme="light"] .admin-credit-note-step-heading h4 {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-step-heading p {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-product-head {
-  color: rgba(15, 23, 42, 0.45) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-product {
   border-top-color: var(--admin-border-soft) !important;
@@ -9884,7 +9906,7 @@ html[data-admin-theme="light"] .admin-credit-note-product.is-selected {
 }
 html[data-admin-theme="light"] .admin-credit-note-product-available,
 html[data-admin-theme="light"] .admin-credit-note-product-price {
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-product-total {
   color: var(--admin-text) !important;
@@ -9900,7 +9922,7 @@ html[data-admin-theme="light"] .admin-credit-note-product-copy h5 {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-product-copy p {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-counter {
   background: #ffffff !important;
@@ -9922,7 +9944,7 @@ html[data-admin-theme="light"] .admin-credit-note-counter strong {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-guidance {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-disclosure {
   color: #183b5e !important;
@@ -9938,7 +9960,7 @@ html[data-admin-theme="light"] .admin-credit-note-inspection-meta {
 }
 html[data-admin-theme="light"] .admin-credit-note-resolution-panel label > span,
 html[data-admin-theme="light"] .admin-credit-note-field > span {
-  color: rgba(15, 23, 42, 0.68) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-resolution-panel label > span small {
   color: #183b5e !important;
@@ -9974,7 +9996,7 @@ html[data-admin-theme="light"] .admin-credit-note-money-input b {
   color: #183b5e !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-resolution-panel em {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-resolution-panel .admin-credit-note-field > span small {
   color: #183b5e !important;
@@ -9983,7 +10005,7 @@ html[data-admin-theme="light"] .admin-resolution-context {
   background: rgba(17, 42, 67, 0.06) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-context-label {
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-context-value {
   color: var(--admin-text) !important;
@@ -9992,7 +10014,7 @@ html[data-admin-theme="light"] .admin-resolution-context-code {
   color: #183b5e !important;
 }
 html[data-admin-theme="light"] .admin-resolution-context-meta {
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-decisions {
   background: #f7f9fb !important;
@@ -10004,7 +10026,7 @@ html[data-admin-theme="light"] .admin-resolution-question {
   border-left-color: var(--admin-border-soft) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-question-label {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-question:not(:first-child) .admin-resolution-question-label::before {
   color: #183b5e !important;
@@ -10014,7 +10036,7 @@ html[data-admin-theme="light"] .admin-resolution-segmented {
   border-color: var(--admin-border) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-segment {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-segment:not(:disabled):hover {
   background: #ffffff !important;
@@ -10030,7 +10052,7 @@ html[data-admin-theme="light"] .admin-resolution-segment.is-selected:not(:disabl
   border-color: rgba(5, 150, 105, 0.6) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-required-field > span {
-  color: rgba(15, 23, 42, 0.68) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-resolution-compact-input {
   background: #ffffff !important;
@@ -10041,7 +10063,7 @@ html[data-admin-theme="light"] .admin-resolution-advanced-panel {
   border-top-color: var(--admin-border-soft) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-review dt {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-review dd {
   color: var(--admin-text) !important;
@@ -10068,7 +10090,7 @@ html[data-admin-theme="light"] .admin-credit-note-submit:disabled {
   color: rgba(15, 23, 42, 0.4) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-secure-copy {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-error {
   color: #991b1b !important;
@@ -10084,7 +10106,7 @@ html[data-admin-theme="light"] .admin-credit-note-history p strong {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-history p span {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-credit-note-history-list button {
   background: #ffffff !important;
@@ -10114,7 +10136,7 @@ html[data-admin-theme="light"] .admin-return-exception-row span {
 }
 html[data-admin-theme="light"] .admin-return-check-row small,
 html[data-admin-theme="light"] .admin-return-exception-row small {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-return-exception-row {
   background: rgba(245, 158, 11, 0.1) !important;
@@ -10142,7 +10164,7 @@ html[data-admin-theme="light"] .admin-return-closed-summary h4 {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-return-closed-summary span {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-return-closed-summary button {
   background: #112a43 !important;
@@ -10164,7 +10186,7 @@ html[data-admin-theme="light"] .admin-return-timeline-events strong {
   color: var(--admin-text) !important;
 }
 html[data-admin-theme="light"] .admin-return-timeline-events small {
-  color: rgba(15, 23, 42, 0.5) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-return-timeline details {
   border-top-color: var(--admin-border-soft) !important;
@@ -10177,7 +10199,7 @@ html[data-admin-theme="light"] .admin-return-timeline details p {
 }
 html[data-admin-theme="light"] .admin-return-timeline details b,
 html[data-admin-theme="light"] .admin-return-timeline details code {
-  color: rgba(15, 23, 42, 0.62) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-return-confirm-modal {
   background: #ffffff !important;
@@ -10200,7 +10222,7 @@ html[data-admin-theme="light"] .admin-return-confirm-modal dl {
   border-color: var(--admin-border) !important;
 }
 html[data-admin-theme="light"] .admin-return-confirm-modal dt {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-return-confirm-modal dd {
   color: var(--admin-text) !important;
@@ -10289,7 +10311,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-badge {
   color: #065f46 !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-subtitle {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-panel .admin-order-bl-alert {
   border-top-color: rgba(220, 38, 38, 0.24) !important;
@@ -10308,13 +10330,13 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-
   border-left-color: rgba(30, 58, 95, 0.16) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-meta-label {
-  color: rgba(15, 23, 42, 0.48) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-meta-value {
   color: rgba(15, 23, 42, 0.88) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item {
-  color: rgba(15, 23, 42, 0.55) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-title {
   color: rgba(15, 23, 42, 0.82) !important;
@@ -10337,7 +10359,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-
 }
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--gray,
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-bl-status-item--gray .admin-order-bl-status-badge {
-  color: rgba(15, 23, 42, 0.42) !important;
+  color: var(--beyonix-light-text-muted) !important;
 }
 
 /* Badges de tono (admin-order-tone-*): estado/despacho en varias pestañas */
@@ -10378,7 +10400,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-order-tone-muted {
   border-color: rgba(100, 116, 139, 0.32) !important;
   background: rgba(100, 116, 139, 0.1) !important;
   background-color: rgba(100, 116, 139, 0.1) !important;
-  color: rgba(15, 23, 42, 0.68) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 
 /* ---- 10. Pedidos: filas de la tabla + badges semánticos ----
@@ -10572,10 +10594,10 @@ html[data-admin-theme="light"] .admin-ds-skeleton {
   html[data-admin-theme="light"] .beyonix-admin-main .admin-products-table
     .admin-product-row-grid
     > [data-label]::before {
-    color: rgba(15, 23, 42, 0.5) !important;
+    color: var(--beyonix-light-text-muted) !important;
   }
   html[data-admin-theme="light"] .beyonix-admin-main .admin-variant-compact > [data-label]::before {
-    color: rgba(15, 23, 42, 0.42) !important;
+    color: var(--beyonix-light-text-muted) !important;
   }
 }
 
@@ -10706,37 +10728,37 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .b
    invisibles" en la auditoría). Curva con piso ~60% (single mínimo legible
    para texto chico) y techo ~97%, monótona creciente para conservar el
    orden/jerarquía relativo entre variantes. --- */
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/15 { color: color-mix(in oklab, var(--admin-text) 60%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/18 { color: color-mix(in oklab, var(--admin-text) 61%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/20 { color: color-mix(in oklab, var(--admin-text) 62%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/22 { color: color-mix(in oklab, var(--admin-text) 63%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/24 { color: color-mix(in oklab, var(--admin-text) 64%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/25 { color: color-mix(in oklab, var(--admin-text) 65%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/28 { color: color-mix(in oklab, var(--admin-text) 66%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/30 { color: color-mix(in oklab, var(--admin-text) 67%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/32 { color: color-mix(in oklab, var(--admin-text) 68%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/34 { color: color-mix(in oklab, var(--admin-text) 69%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/35 { color: color-mix(in oklab, var(--admin-text) 69%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/36 { color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/38 { color: color-mix(in oklab, var(--admin-text) 70%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/40 { color: color-mix(in oklab, var(--admin-text) 71%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/42 { color: color-mix(in oklab, var(--admin-text) 72%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/44 { color: color-mix(in oklab, var(--admin-text) 73%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/45 { color: color-mix(in oklab, var(--admin-text) 74%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/46 { color: color-mix(in oklab, var(--admin-text) 74%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/48 { color: color-mix(in oklab, var(--admin-text) 75%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/50 { color: color-mix(in oklab, var(--admin-text) 76%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/52 { color: color-mix(in oklab, var(--admin-text) 77%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/54 { color: color-mix(in oklab, var(--admin-text) 78%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/55 { color: color-mix(in oklab, var(--admin-text) 78%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/56 { color: color-mix(in oklab, var(--admin-text) 79%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/58 { color: color-mix(in oklab, var(--admin-text) 80%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/60 { color: color-mix(in oklab, var(--admin-text) 81%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/62 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/64 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/65 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/66 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/68 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/15 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/18 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/20 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/22 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/24 { color: color-mix(in oklab, var(--admin-text) 82%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/25 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/28 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/30 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/32 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/34 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/35 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/36 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/38 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/40 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/42 { color: color-mix(in oklab, var(--admin-text) 83%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/44 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/45 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/46 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/48 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/50 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/52 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/54 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/55 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/56 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/58 { color: color-mix(in oklab, var(--admin-text) 84%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/60 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/62 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/64 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/65 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/66 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/68 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/70 { color: color-mix(in oklab, var(--admin-text) 85%, transparent) !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/72 { color: color-mix(in oklab, var(--admin-text) 86%, transparent) !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-white\/74 { color: color-mix(in oklab, var(--admin-text) 87%, transparent) !important; }
@@ -11005,7 +11027,7 @@ html[data-admin-theme="light"] .admin-order-eye-attention-badge.admin-order-eye-
 html[data-admin-theme="light"] .admin-ds-tone-neutral {
   border-color: rgba(100, 116, 139, 0.28) !important;
   background-color: rgba(100, 116, 139, 0.1) !important;
-  color: rgba(15, 23, 42, 0.68) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-ds-tone-info,
 html[data-admin-theme="light"] .beyonix-admin-main :where(span, div, p, button)[class*="border-beyonix-blue-light"],
@@ -11040,7 +11062,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope nav button.bg-beyonix-b
 }
 html[data-admin-theme="light"] .admin-order-detail-scope nav button.border-transparent {
   border-color: transparent !important;
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope nav button.border-transparent:hover {
   border-color: rgba(30, 58, 95, 0.28) !important;
@@ -11053,7 +11075,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope nav button.border-trans
 html[data-admin-theme="light"] .admin-dashboard-tabs button.border-transparent {
   border-color: transparent !important;
   background: transparent !important;
-  color: rgba(15, 23, 42, 0.6) !important;
+  color: var(--beyonix-light-text-secondary) !important;
   box-shadow: none !important;
 }
 html[data-admin-theme="light"] .admin-dashboard-tabs button.border-transparent:hover {
@@ -11157,8 +11179,9 @@ html[data-account-theme="light"][data-account-scope] {
   /* Segunda pasada visual (ver --muted-foreground más arriba, mismo
      motivo): antes rgba(15,23,42,0.66) resolvía demasiado claro sobre
      fondos claros/blancos. Sólido para no depender del fondo detrás. */
-  --beyonix-text-secondary: #3f4652;
-  --beyonix-text-muted: rgba(15, 23, 42, 0.6);
+  --beyonix-text-secondary: var(--beyonix-light-text-secondary);
+  --beyonix-text-muted: var(--beyonix-light-text-muted);
+  --beyonix-text-disabled: var(--beyonix-light-text-disabled);
   /* text-beyonix-cyan/text-beyonix-sky compilaban a un literal fijo
      (#4A90B8/#8CC8F2) porque @theme inline los declaraba sin indirección a
      una variable de :root -- por eso nunca heredaban Light pese a que el
@@ -11207,7 +11230,7 @@ html[data-account-theme="light"][data-account-scope] {
      según el fondo detrás (blanco de card vs. off-white de body vs. gris
      de surface-hover). --beyonix-text-muted/--account-text-muted (tier de
      metadata) quedan intactos a propósito. */
-  --muted-foreground: #3f4652;
+  --muted-foreground: var(--beyonix-light-text-secondary);
   /* Mismo motivo que .beyonix-admin-shell (ver sección "Tokens --beyonix-*"
      más arriba): el shell no fija color de texto por className propio, pero
      los <main> internos sí traen "text-white" fijo -- se corrigen ahí (ver
@@ -11226,15 +11249,16 @@ html[data-account-theme="light"][data-account-scope] {
   --account-border-highlight: rgba(30, 77, 123, 0.55);
   --account-text-primary: #0f172a;
   /* Mismo ajuste que --beyonix-text-secondary (ver comentario arriba). */
-  --account-text-secondary: #3f4652;
-  --account-text-muted: rgba(15, 23, 42, 0.55);
+  --account-text-secondary: var(--beyonix-light-text-secondary);
+  --account-text-muted: var(--beyonix-light-text-muted);
+  --account-text-disabled: var(--beyonix-light-text-disabled);
   /* Placeholder de inputs/selects de Checkout (Provincia/Localidad/Código
      postal, y cualquier <input> con .beyonix-checkout-input): tono propio,
      más oscuro que --account-text-muted (~52% negro, calibrado para
      metadata/disabled) y más claro que --account-text-secondary -- el
      placeholder necesita distinguirse de un valor ya seleccionado sin
      confundirse con texto disabled. ~60% negro. */
-  --account-text-placeholder: #5b6472;
+  --account-text-placeholder: var(--beyonix-light-text-placeholder);
   --account-accent: #112a43;
   --account-accent-hover: #183b5e;
   --account-accent-soft: #1e4d7b;
@@ -11331,7 +11355,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-review-textarea {
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-review-textarea::placeholder {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-placeholder) !important;
 }
 /* Subtítulos de las 3 cards de confianza del Hero ("Productos elegidos con
    criterio", etc.): .beyonix-modal-muted (tier ~55% negro, pensado para
@@ -11527,7 +11551,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-
   background: var(--account-surface-highlight) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-item-stepper-btn:disabled {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-disabled) !important;
 }
 /* Selector de cantidad +/- de producto (cards, quick view, PDP) --
    ProductCartToggleButton (components/products/product-cart-toggle-button.tsx).
@@ -11554,7 +11578,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn:en
   background: var(--account-surface-highlight) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-btn:disabled {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-disabled) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-qty-stepper-value {
   background: var(--account-surface) !important;
@@ -12178,7 +12202,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-select-portal inpu
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input::placeholder {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-placeholder) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-select-portal svg[class*="text-white"] {
   color: var(--account-text-muted) !important;
@@ -12192,5 +12216,27 @@ html[data-account-theme="light"][data-account-scope] .beyonix-select-portal inpu
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-select-portal input::placeholder {
-  color: var(--account-text-muted) !important;
+  color: var(--account-text-placeholder) !important;
+}
+
+/* =========================
+   LIGHT: DISABLED Y PLACEHOLDER SIGUEN DISTINGUIBLES
+   =========================
+   El texto secundario/muted de light subió a ~85%/~82% negro. Los remaps
+   por bucket ([class~="text-white/45"] -> --account-text-muted, etc.)
+   también alcanzan a controles deshabilitados y placeholders, que tienen
+   que seguir viéndose deshabilitados / no-valor. :not(#\#) suma
+   especificidad de id (sin depender de ningún id real) para ganarle a
+   esos remaps con scope de página. */
+html[data-account-theme="light"][data-account-scope] :is(button, input, select, textarea, [role="button"], [role="radio"], [role="tab"]):is(:disabled, [aria-disabled="true"]):not(#\#),
+html[data-account-theme="light"][data-account-scope] :is(button, [role="button"], [role="radio"], [role="tab"]):is(:disabled, [aria-disabled="true"]) *:not(#\#) {
+  color: var(--account-text-disabled) !important;
+}
+html[data-account-theme="light"][data-account-scope] :is(input, textarea)::placeholder {
+  color: var(--account-text-placeholder) !important;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-notice {
+  color: var(--account-text-primary) !important;
+  background: var(--account-warning-bg, rgba(245, 158, 11, 0.12)) !important;
+  border-color: var(--account-warning-border, rgba(217, 119, 6, 0.4)) !important;
 }

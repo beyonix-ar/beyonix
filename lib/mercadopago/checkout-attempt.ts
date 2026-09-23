@@ -3,6 +3,10 @@ import "server-only"
 import { createHash } from "node:crypto"
 
 import { isMercadoPagoOrderAlreadyConfirmed } from "./order-payment.ts"
+import {
+  stableStringify,
+  type CheckoutEconomicState,
+} from "../pricing/checkout-pricing.ts"
 
 export const MERCADOPAGO_PREFERENCE_LIFETIME_MINUTES = 30
 export const MERCADOPAGO_PREFERENCE_CLAIM_TIMEOUT_MINUTES = 5
@@ -13,28 +17,18 @@ export const MERCADOPAGO_MAX_ATTEMPTS_PER_DAY = 25
 export const MERCADOPAGO_MAX_ATTEMPTS_PER_IP_PER_HOUR = 20
 export const MERCADOPAGO_MAX_GLOBAL_ATTEMPTS_PER_HOUR = 150
 
+/**
+ * Identidad de un intento de pago: sesión/pestaña + cliente + datos de
+ * contacto + ESTADO ECONÓMICO completo (`createCheckoutEconomicFingerprint`).
+ * La versión 1 sólo incluía `productsTotal` y el envío: un cambio de fee de
+ * Mercado Pago, cuotas máximas, IVA o transferencia dejaba la misma huella y
+ * reutilizaba una preferencia creada con otro total.
+ */
 export interface MercadoPagoCheckoutFingerprintInput {
   sessionId: string
   userId: string | null
-  items: Array<{
-    productId: number
-    quantity: number
-    variantId: number | null
-    conditionedStockId: string | null
-  }>
   customer: Record<string, string | null>
-  productsTotal: number
-  shipping: {
-    provider: string
-    type: string
-    costReal: number
-    costCharged: number
-    freeShippingApplied: boolean
-    sucursalId?: string | null
-  }
-  storeBenefitId: string | null
-  requestedCredit: number
-  installmentsModality: number | null
+  economicFingerprint: string
 }
 
 export interface MercadoPagoCheckoutAttemptRow {
@@ -50,25 +44,73 @@ export interface MercadoPagoCheckoutAttemptRow {
   installments_count?: number | null
 }
 
+/**
+ * Qué hacer con una orden pendiente del mismo cliente+carrito cuyas
+ * condiciones económicas ya NO son las actuales:
+ * - `supersede`: sin pago activo -> se cancela y se crea un intento nuevo.
+ * - `busy`: hay un pago/claim en curso -> esperar, nunca cancelar.
+ * - `already_paid`: ya se pagó -> bloquear.
+ * - `blocked`: estado no reutilizable ni cancelable automáticamente.
+ * Reutiliza exactamente la misma clasificación que
+ * `getMercadoPagoCheckoutAttemptDecision` (una preferencia viva que en el
+ * caso equivalente se reutilizaría, acá se da de baja).
+ */
+export type PendingCustomerCheckoutOrderAction =
+  | "other_payment_method"
+  | "resume_equivalent"
+  | "supersede_stale"
+
+/**
+ * Orden pendiente del mismo cliente+carrito (índice de
+ * `customer_checkout_fingerprint`, que NO incluye precios): sólo se retoma
+ * si su huella económica es idéntica a la actual (dos pestañas, reintento
+ * sin cambios). Cualquier diferencia económica -> se reemplaza.
+ */
+export function getPendingCustomerCheckoutOrderAction(
+  order: {
+    payment_method_id?: string | null
+    pricing_snapshot?: { economicFingerprint?: string | null } | null
+  },
+  currentEconomicFingerprint: string,
+): PendingCustomerCheckoutOrderAction {
+  if (order.payment_method_id !== "mercadopago") return "other_payment_method"
+
+  return isEconomicallyEquivalentAttempt(order, currentEconomicFingerprint)
+    ? "resume_equivalent"
+    : "supersede_stale"
+}
+
+export type StaleMercadoPagoAttemptAction =
+  | "supersede"
+  | "busy"
+  | "already_paid"
+  | "blocked"
+
+export function getStaleMercadoPagoAttemptAction(
+  order: MercadoPagoCheckoutAttemptRow,
+  now = new Date(),
+): StaleMercadoPagoAttemptAction {
+  const decision = getMercadoPagoCheckoutAttemptDecision(order, now)
+
+  switch (decision.kind) {
+    case "already_paid":
+      return "already_paid"
+    case "in_progress":
+      return "busy"
+    case "reuse":
+    case "claim_preference":
+      return "supersede"
+    default:
+      return "blocked"
+  }
+}
+
 export type MercadoPagoCheckoutAttemptDecision =
   | { kind: "already_paid" }
   | { kind: "reuse"; initPoint: string }
   | { kind: "in_progress" }
   | { kind: "claim_preference" }
   | { kind: "unavailable" }
-
-function normalizeFingerprintItems(
-  items: MercadoPagoCheckoutFingerprintInput["items"],
-) {
-  return [...items].sort(
-    (left, right) =>
-      left.productId - right.productId ||
-      (left.variantId ?? 0) - (right.variantId ?? 0) ||
-      (left.conditionedStockId ?? "").localeCompare(
-        right.conditionedStockId ?? "",
-      ),
-  )
-}
 
 export function normalizeMercadoPagoCheckoutSessionId(value: unknown) {
   if (typeof value !== "string") return null
@@ -84,13 +126,53 @@ export function createMercadoPagoCheckoutFingerprint(
 ) {
   return createHash("sha256")
     .update(
-      JSON.stringify({
-        version: 1,
-        ...input,
-        items: normalizeFingerprintItems(input.items),
+      stableStringify({
+        version: 2,
+        sessionId: input.sessionId,
+        userId: input.userId,
+        customer: input.customer,
+        economicFingerprint: input.economicFingerprint,
       }),
     )
     .digest("hex")
+}
+
+export const CHECKOUT_ECONOMIC_FINGERPRINT_PREFIX = "checkout-economics:v2:"
+
+/**
+ * Hash determinístico del estado económico canónico
+ * (`buildCheckoutEconomicState`). Se persiste en
+ * `pricing_snapshot.economicFingerprint` y es la ÚNICA condición bajo la
+ * cual una orden pendiente puede reutilizarse: si difiere, las condiciones
+ * comerciales cambiaron y el intento previo queda obsoleto.
+ */
+export function createCheckoutEconomicFingerprint(state: CheckoutEconomicState) {
+  return `${CHECKOUT_ECONOMIC_FINGERPRINT_PREFIX}${createHash("sha256")
+    .update(stableStringify(state))
+    .digest("hex")}`
+}
+
+export function getOrderEconomicFingerprint(order: {
+  pricing_snapshot?: { economicFingerprint?: string | null } | null
+}) {
+  const value = order.pricing_snapshot?.economicFingerprint
+  return typeof value === "string" &&
+    value.startsWith(CHECKOUT_ECONOMIC_FINGERPRINT_PREFIX)
+    ? value
+    : null
+}
+
+/**
+ * ¿La orden pendiente fue creada exactamente bajo las condiciones económicas
+ * actuales? Órdenes sin huella económica (anteriores a esta versión) nunca
+ * se consideran equivalentes: no hay forma de demostrar que su total siga
+ * vigente.
+ */
+export function isEconomicallyEquivalentAttempt(
+  order: { pricing_snapshot?: { economicFingerprint?: string | null } | null },
+  currentEconomicFingerprint: string,
+) {
+  return getOrderEconomicFingerprint(order) === currentEconomicFingerprint
 }
 
 export function getMercadoPagoCheckoutIdempotencyKey(

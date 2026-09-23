@@ -36,10 +36,33 @@ let sharedSettingsCache: {
   at: number
 } | null = null
 
+let lastSettingsData: SiteSettingsResponse | null = null
+
+type SiteSettingsListener = (data: SiteSettingsResponse) => void
+const siteSettingsListeners = new Set<SiteSettingsListener>()
+
 export function invalidateSiteSettingsClientCache() {
   sharedSettingsGeneration += 1
   sharedSettingsCache = null
   sharedSettingsRequest = null
+}
+
+/**
+ * Relee la configuración ignorando la caché de 15 s y la propaga a TODOS los
+ * `useSiteSettings` montados (checkout, resumen del carrito, etc.). Usado por
+ * el refresco comercial de carrito/checkout; es sólo UX -- los cobros
+ * siempre releen la configuración server-side.
+ */
+export async function refreshSiteSettings() {
+  const previous = lastSettingsData
+  invalidateSiteSettingsClientCache()
+  const data = await fetchSiteSettings()
+  const changed = JSON.stringify(previous ?? null) !== JSON.stringify(data)
+  // Sin cambios no se notifica: nada se re-renderiza.
+  if (changed) {
+    for (const listener of siteSettingsListeners) listener(data)
+  }
+  return { data, changed }
 }
 
 function fetchSiteSettings() {
@@ -66,6 +89,7 @@ function fetchSiteSettings() {
       if (requestGeneration === sharedSettingsGeneration) {
         sharedSettingsCache = { data, at: Date.now() }
       }
+      lastSettingsData = data
       return data
     })
     .finally(() => {
@@ -97,25 +121,29 @@ export function useSiteSettings() {
   useEffect(() => {
     let active = true
 
+    const applySettings = (data: SiteSettingsResponse) => {
+      if (!active) return
+      if (data.settings?.shipping) {
+        setShipping(data.settings.shipping)
+      }
+      if (data.settings?.customerCreditPayments) {
+        setCustomerCreditPayments(data.settings.customerCreditPayments)
+      }
+      if (data.settings?.stock) {
+        setStock(data.settings.stock)
+      }
+      if (data.settings?.installmentsFinancing) {
+        setInstallmentsFinancing(data.settings.installmentsFinancing)
+      }
+      if (data.settings?.pricing) {
+        setPricing(data.settings.pricing)
+      }
+    }
+
+    siteSettingsListeners.add(applySettings)
+
     fetchSiteSettings()
-      .then((data) => {
-        if (!active) return
-        if (data.settings?.shipping) {
-          setShipping(data.settings.shipping)
-        }
-        if (data.settings?.customerCreditPayments) {
-          setCustomerCreditPayments(data.settings.customerCreditPayments)
-        }
-        if (data.settings?.stock) {
-          setStock(data.settings.stock)
-        }
-        if (data.settings?.installmentsFinancing) {
-          setInstallmentsFinancing(data.settings.installmentsFinancing)
-        }
-        if (data.settings?.pricing) {
-          setPricing(data.settings.pricing)
-        }
-      })
+      .then(applySettings)
       .catch(() => {
         if (!active) return
         setShipping(DEFAULT_SHIPPING_SETTINGS)
@@ -130,6 +158,7 @@ export function useSiteSettings() {
 
     return () => {
       active = false
+      siteSettingsListeners.delete(applySettings)
     }
   }, [])
 

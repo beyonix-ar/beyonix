@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
+  createCheckoutEconomicFingerprint,
   createMercadoPagoCheckoutFingerprint,
   getMercadoPagoCheckoutAttemptDecision,
   getMercadoPagoCheckoutIdempotencyKey,
@@ -10,46 +11,88 @@ import {
   type MercadoPagoCheckoutFingerprintInput,
 } from "./checkout-attempt.ts"
 import { processApprovedMercadoPagoOrderPayment } from "./order-payment.ts"
+import {
+  buildCheckoutEconomicState,
+  calculateMercadoPagoCheckoutPricing,
+  type MercadoPagoCheckoutMode,
+} from "../pricing/checkout-pricing.ts"
+
+const DEFAULT_FINANCING = {
+  baseProcessingPercent: 6.42,
+  ivaPercent: 21,
+  surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 },
+}
+
+const baseCustomer = {
+  cliente_nombre: "María Muñoz",
+  cliente_email: "maria@example.com",
+  cliente_telefono: "+54 11 5555-1234",
+  cliente_dni: "30123456",
+  cliente_direccion: "Avenida Córdoba 1234",
+  cp_destino: "3230",
+  localidad: "Paso de los Libres",
+  provincia: "Corrientes",
+}
+
+function economicFingerprintFor({
+  quantity = 2,
+  mode = "cash",
+}: { quantity?: number; mode?: MercadoPagoCheckoutMode } = {}) {
+  const lines = [
+    {
+      productId: 10,
+      variantId: 4,
+      conditionedStockId: null,
+      quantity,
+      unitPrice: 10_000,
+      installments: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true },
+    },
+  ]
+  const settings = {
+    installmentsFinancing: DEFAULT_FINANCING,
+    transferDiscountPercent: 10,
+    nationalTaxesIncidencePercent: 21,
+  }
+  const pricing = calculateMercadoPagoCheckoutPricing({
+    lines,
+    shippingCharged: 5_000,
+    storeBenefitPercent: null,
+    requestedCustomerCredit: 0,
+    settings,
+  })
+  return createCheckoutEconomicFingerprint(
+    buildCheckoutEconomicState({
+      lines,
+      shipping: {
+        provider: "andreani",
+        type: "domicilio",
+        sucursalId: null,
+        costReal: 5_000,
+        costCharged: 5_000,
+        freeShippingApplied: false,
+      },
+      storeBenefit: null,
+      requestedCustomerCredit: 0,
+      mode,
+      pricing,
+      settings,
+    }),
+  )
+}
 
 const checkout: MercadoPagoCheckoutFingerprintInput = {
   sessionId: "4cb6ca5a-f946-4a56-9f3f-5e65c48e41c8",
   userId: null,
-  items: [
-    {
-      productId: 10,
-      quantity: 2,
-      variantId: 4,
-      conditionedStockId: null,
-    },
-  ],
-  customer: {
-    cliente_nombre: "María Muñoz",
-    cliente_email: "maria@example.com",
-    cliente_telefono: "+54 11 5555-1234",
-    cliente_dni: "30123456",
-    cliente_direccion: "Avenida Córdoba 1234",
-    cp_destino: "3230",
-    localidad: "Paso de los Libres",
-    provincia: "Corrientes",
-  },
-  productsTotal: 20_000,
-  shipping: {
-    provider: "andreani",
-    type: "domicilio",
-    costReal: 5_000,
-    costCharged: 5_000,
-    freeShippingApplied: false,
-  },
-  storeBenefitId: null,
-  requestedCredit: 0,
-  installmentsModality: null,
+  customer: baseCustomer,
+  economicFingerprint: economicFingerprintFor(),
 }
 
 test("el mismo checkout genera una única identidad reutilizable", () => {
   const firstFingerprint = createMercadoPagoCheckoutFingerprint(checkout)
   const repeatedFingerprint = createMercadoPagoCheckoutFingerprint({
     ...checkout,
-    items: [...checkout.items].reverse(),
+    customer: Object.fromEntries(Object.entries(baseCustomer).reverse()),
+    economicFingerprint: economicFingerprintFor(),
   })
 
   assert.equal(firstFingerprint, repeatedFingerprint)
@@ -111,7 +154,7 @@ test("compras diferentes no comparten huella ni clave idempotente", () => {
   const firstFingerprint = createMercadoPagoCheckoutFingerprint(checkout)
   const differentFingerprint = createMercadoPagoCheckoutFingerprint({
     ...checkout,
-    items: [{ ...checkout.items[0], quantity: 3 }],
+    economicFingerprint: economicFingerprintFor({ quantity: 3 }),
   })
 
   assert.notEqual(firstFingerprint, differentFingerprint)
@@ -121,23 +164,17 @@ test("compras diferentes no comparten huella ni clave idempotente", () => {
   )
 })
 
-test("cambiar la modalidad de cuotas para el mismo carrito genera una huella distinta", () => {
-  // Si no fuera así, elegir "3 cuotas" después de haber iniciado un intento
-  // en "pago único" (mismo carrito) reusaría/reclamaría la orden vieja, sin
-  // aplicar nunca la financiación recién elegida.
-  const singlePayment = createMercadoPagoCheckoutFingerprint(checkout)
-  const threeInstallments = createMercadoPagoCheckoutFingerprint({
+test("cambiar la modalidad contado/cuotas para el mismo carrito genera una huella distinta", () => {
+  // Si no fuera así, elegir "en cuotas" después de haber iniciado un intento
+  // "al contado" (mismo carrito) reusaría/reclamaría la orden vieja,
+  // cobrando el total de la otra modalidad.
+  const cash = createMercadoPagoCheckoutFingerprint(checkout)
+  const financed = createMercadoPagoCheckoutFingerprint({
     ...checkout,
-    installmentsModality: 3,
-  })
-  const sixInstallments = createMercadoPagoCheckoutFingerprint({
-    ...checkout,
-    installmentsModality: 6,
+    economicFingerprint: economicFingerprintFor({ mode: "financed" }),
   })
 
-  assert.notEqual(singlePayment, threeInstallments)
-  assert.notEqual(singlePayment, sixInstallments)
-  assert.notEqual(threeInstallments, sixInstallments)
+  assert.notEqual(cash, financed)
 })
 
 test("la base bloquea dobles inserts y el claim de preferencia es atómico", () => {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { parseMoneyAmount, roundMoney } from "@/lib/customer-credit"
 import {
   createCustomerCreditMovement,
   getCustomerCreditBalance,
@@ -13,15 +14,6 @@ import type { createAdminClient } from "@/lib/supabase/admin"
 type AdminClient = ReturnType<typeof createAdminClient>
 
 type CreditAction = "issue" | "reverse"
-
-function normalizeAmount(value: unknown) {
-  const parsed =
-    typeof value === "number"
-      ? value
-      : Number(String(value ?? "").replace(/\./g, "").replace(",", "."))
-
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0
-}
 
 function isCreditAction(value: unknown): value is CreditAction {
   return value === "issue" || value === "reverse"
@@ -174,7 +166,7 @@ export async function POST(request: Request) {
         movement.movement_type === "expiration"
           ? "reversal"
           : "debit"
-      const amount = normalizeAmount(movement.amount)
+      const amount = roundMoney(Number(movement.amount))
 
       await createCustomerCreditMovement(auth.admin, {
         userId: movement.user_id,
@@ -206,7 +198,7 @@ export async function POST(request: Request) {
     }
 
     const userId = typeof body.userId === "string" ? body.userId.trim() : ""
-    const amount = normalizeAmount(body.amount)
+    const amount = parseMoneyAmount(body.amount) ?? 0
     const description =
       typeof body.description === "string" ? body.description.trim() : ""
     const movementType = isMovementType(body.movementType)

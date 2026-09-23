@@ -30,6 +30,11 @@ interface CartDrawerProps {
 
   items: CartItem[]
 
+  /** Aviso "precios o condiciones actualizados" del refresco en vivo. */
+  commercialUpdateNotice?: string | null
+
+  onDismissCommercialUpdateNotice?: () => void
+
   onUpdateQuantity: (
     productId: number,
     color: string,
@@ -46,6 +51,8 @@ export function CartDrawer({
   isOpen,
   onClose,
   items,
+  commercialUpdateNotice = null,
+  onDismissCommercialUpdateNotice,
   onUpdateQuantity,
   onRemoveItem,
 }: CartDrawerProps) {
@@ -149,6 +156,24 @@ export function CartDrawer({
             <X className="size-5" />
           </Button>
         </div>
+
+        {commercialUpdateNotice && (
+          <div
+            role="status"
+            className="beyonix-cart-drawer-notice flex items-start justify-between gap-3 border-b border-amber-300/22 bg-amber-300/[0.07] px-4 py-2.5 text-sm text-white/82"
+          >
+            <span>{commercialUpdateNotice}</span>
+            {onDismissCommercialUpdateNotice && (
+              <button
+                type="button"
+                onClick={onDismissCommercialUpdateNotice}
+                className="shrink-0 cursor-pointer text-xs font-semibold underline underline-offset-2"
+              >
+                Entendido
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Empty */}
         {items.length === 0 ? (

@@ -640,40 +640,25 @@ test("create-preference recalcula la modalidad server-side y nunca confía en el
     "utf8",
   )
 
-  // La elegibilidad se recalcula contra el catálogo real (nunca contra lo
-  // que mandó el navegador) y se rechaza si no coincide.
-  assert.match(source, /getCartInstallmentEligibility\(catalog\.products\)/)
-  assert.match(source, /status: 400/)
-  // El % vigente sale de la configuración global fresca, nunca del payload.
+  // La modalidad del navegador sólo elige entre "cash"/"financed" (cualquier
+  // otro valor es contado); la elegibilidad de cuotas y el total salen del
+  // cálculo canónico contra el catálogo real y la configuración fresca.
+  assert.match(source, /normalizeMercadoPagoCheckoutMode\(\s*payload\.mercadoPagoMode,\s*payload\.installmentsModality,?\s*\)/)
+  assert.match(source, /calculateMercadoPagoCheckoutPricing\(\{/)
+  assert.match(source, /getSiteSettings\(\{ fresh: true \}\)/)
   assert.match(source, /siteSettings\.installmentsFinancing/)
   assert.doesNotMatch(source, /payload\.installmentsFinancing/)
   assert.doesNotMatch(source, /payload\.percent/)
   assert.doesNotMatch(source, /payload\.total\b/)
-  // La preferencia fuerza payment_methods.installments/default_installments
-  // (nunca deja que Mercado Pago ofrezca sus propias cuotas sin control).
-  assert.match(source, /payment_methods:\s*\{/)
-  assert.match(source, /default_installments/)
-  // Pago único (sin modalidad elegida) siempre manda installments = 1, no
-  // "sin restricción": el precio base nunca se financia por accidente.
-  assert.match(
-    source,
-    /order\.installments_count[\s\S]{0,20}\?[\s\S]{0,20}Number\(order\.installments_count\)[\s\S]{0,10}:\s*1/,
-  )
-  // La modalidad pedida por el navegador siempre pasa por el normalizador
-  // (2|3|6 o null) antes de usarse -- nunca un número crudo del payload.
-  assert.match(
-    source,
-    /normalizeRequestedInstallmentsModality\([\s\S]{0,30}payload\.installmentsModality/,
-  )
-  // Reversión deliberada del modelo de precio único: el total SÍ se
-  // recalcula por la modalidad de cuotas -- financiado (getCartFinancedTotal)
-  // cuando el cliente elige cuotas, contado en cualquier otro caso. El
-  // gross-up vive server-side en este módulo, nunca en el cliente.
-  assert.match(source, /getCartFinancedTotal\(/)
-  assert.match(
-    source,
-    /requestedInstallmentsModality != null && financedTotal != null[\s\S]{0,10}\? financedTotal[\s\S]{0,10}: cashTotal/,
-  )
+  // expectedTotal sólo sirve para RECHAZAR (409), nunca para cobrar.
+  assert.match(source, /code: "PRICING_CHANGED"/)
+  assert.doesNotMatch(source, /unit_price:\s*[^,\n]*expected/i)
+  // La preferencia fuerza payment_methods (1 al contado, tope = cuota
+  // máxima en cuotas), derivado de lo persistido en la orden.
+  assert.match(source, /payment_methods: paymentMethods/)
+  assert.match(source, /getMercadoPagoPreferenceInstallments\(order\)/)
+  // "En cuotas" no disponible para el carrito -> 400 antes de crear nada.
+  assert.match(source, /if \(!quote\) \{[\s\S]{0,200}status: 400/)
 })
 
 test("una modalidad pedida pero no habilitada en ningún producto del carrito se rechaza ANTES de crear la orden", () => {
@@ -682,12 +667,7 @@ test("una modalidad pedida pero no habilitada en ningún producto del carrito se
     "utf8",
   )
 
-  // El rechazo (400) ocurre antes del insert de la orden: nunca se le crea
-  // un pedido -- ni se le cobra nada -- al cliente por una modalidad que
-  // ningún producto del carrito habilita.
-  const eligibilityCheckIndex = source.indexOf(
-    "getCartInstallmentEligibility(catalog.products)",
-  )
+  const eligibilityCheckIndex = source.indexOf("if (!quote) {")
   const orderInsertIndex = source.indexOf(".insert(orderPayload")
   assert.ok(eligibilityCheckIndex >= 0 && orderInsertIndex >= 0)
   assert.ok(eligibilityCheckIndex < orderInsertIndex)
@@ -708,31 +688,24 @@ test("CASO C: el unit_price mandado a Mercado Pago es externalAmountDue -- ya in
   assert.doesNotMatch(source, /unit_price:\s*[^,\n]*surcharge/i)
 })
 
-test("en el Checkout, elegir cuotas por Mercado Pago SÍ recalcula el total (modelo financiado) -- transferencia sigue siendo un descuento aparte sobre el contado", () => {
+test("en el Checkout, elegir 'En cuotas' por Mercado Pago SÍ recalcula el total (modelo financiado) -- transferencia sigue siendo un descuento aparte sobre el contado", () => {
   const page = readFileSync(
     new URL("../../app/checkout/page.tsx", import.meta.url),
     "utf8",
   )
 
-  // El gross-up en sí vive en lib/pricing/financed-pricing.ts (server +
-  // cliente comparten el mismo módulo), nunca reimplementado acá.
+  // El cálculo vive en lib/pricing/checkout-pricing.ts (MISMO módulo que usa
+  // create-preference), nunca reimplementado acá.
   assert.doesNotMatch(page, /calculateInstallmentPlan/)
   assert.doesNotMatch(page, /calculateFinancedTotal/)
-  assert.match(page, /getCartFinancedTotal\(/)
+  assert.doesNotMatch(page, /getCartFinancedTotal\(/)
+  assert.match(page, /calculateMercadoPagoCheckoutPricing\(\{/)
 
-  // El total antes de saldo a favor pasa a ser el financiado SÓLO cuando hay
-  // modalidad de cuotas elegida por Mercado Pago -- nunca para
-  // transferencia/pago único, que siguen usando el contado.
+  // El total antes de saldo a favor pasa a ser el financiado SÓLO con
+  // Mercado Pago "En cuotas" -- nunca para transferencia/contado.
   assert.match(
     page,
-    /const totalBeforeCustomerCreditByMethod =[\s\S]{0,10}isMercadoPagoPayment && effectiveInstallmentsModality != null && cartFinancedTotal != null[\s\S]{0,10}\? cartFinancedTotal[\s\S]{0,10}: cashTotalBeforeCredit/,
-  )
-
-  // "Pagás N cuotas de $X" sigue siendo informativo: divide finalTotal, no
-  // lo reconstruye a partir de una cuota.
-  assert.match(
-    page,
-    /getInstallmentAmount\(finalTotal, effectiveInstallmentsModality\)/,
+    /const totalBeforeCustomerCreditByMethod =[\s\S]{0,30}isMercadoPagoPayment &&[\s\S]{0,10}effectiveMercadoPagoMode === "financed" &&[\s\S]{0,80}\? mercadoPagoPricingBeforeCredit\.financedTotal[\s\S]{0,10}: cashTotalBeforeCredit/,
   )
 })
 
@@ -943,13 +916,20 @@ test("los endpoints delegan los bloques equivalentes y conservan lo específico"
     },
     {
       path: "../../app/api/transferencia/create-order/route.ts",
-      specific: /calculateTransferPaymentTotalAfterCustomerCredit\(/,
+      // Las fórmulas de transferencia viven en lib/payments/transfer-checkout.ts
+      // (ver assert de abajo), extraídas sin cambios desde esta ruta.
+      specific: /calculateTransferCheckoutPricing\(/,
     },
     {
       path: "../../app/api/customer-credit/create-order/route.ts",
       specific: /payment_confirmed_with_customer_credit/,
     },
   ]
+
+  assert.match(
+    readFileSync(new URL("../payments/transfer-checkout.ts", import.meta.url), "utf8"),
+    /calculateTransferPaymentTotalAfterCustomerCredit\(/,
+  )
 
   for (const route of routes) {
     const source = readFileSync(new URL(route.path, import.meta.url), "utf8")
