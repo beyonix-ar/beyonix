@@ -88,6 +88,11 @@ import {
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import {
+  formatAdminPendingActionCount,
+  getAdminPendingOrderActions,
+  type AdminPendingOrderAction,
+} from "@/lib/orders/admin-pending-actions"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import {
   getCancellationNextAction,
@@ -1143,28 +1148,6 @@ type AdminNotificationTone =
   | "shipping"
   | "cancellation"
   | "claim"
-
-function getOrderNotificationTone(pedido: SupabasePedido): AdminNotificationTone {
-  if (isAdminCancelledOrder(pedido)) return "cancellation"
-  if (needsShippingReminder(pedido)) return "shipping"
-
-  const hasIssue =
-    orderHasPendingClaimAction(pedido) ||
-    Boolean(pedido.return_requested_at && !pedido.return_resolved_at) ||
-    isRejectedPayment(pedido.payment_status)
-
-  if (hasIssue) return "claim"
-
-  const hasPaymentProofToReview =
-    Boolean(pedido.payment_proof_url) &&
-    pedido.payment_status === "en_revision"
-
-  if (hasPaymentProofToReview) return "payment"
-
-  if (needsInvoiceReminder(pedido)) return "invoice"
-
-  return "order"
-}
 
 function orderMatchesNotificationTone(
   pedido: SupabasePedido,
@@ -6564,22 +6547,29 @@ function PedidoDetailModal({
  * ninguna alerta pendiente.
  */
 function OrderEyeAttentionBadge({
-  severity,
+  actions,
 }: {
-  severity: "urgent" | "warning" | null
+  actions: AdminPendingOrderAction[]
 }) {
-  if (!severity) return null
+  const count = actions.length
+  if (count === 0) return null
+
+  const urgent = actions.some((action) => action.urgent)
+  const label = formatAdminPendingActionCount(count)
 
   return (
     <span
-      aria-hidden="true"
-      className={`admin-order-eye-attention-badge pointer-events-none absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full border text-9px font-black leading-none ${
-        severity === "urgent"
+      role="status"
+      aria-label={label}
+      title={`${label}: ${actions.map((action) => action.label).join(" · ")}`}
+      data-pending-action-count={count}
+      className={`admin-order-eye-attention-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-9px font-black leading-none ${
+        urgent
           ? "border-red-300/60 bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.55)]"
           : "border-amber-200/60 bg-amber-400 text-[#3a2504] shadow-[0_0_8px_rgba(245,158,11,0.5)]"
       }`}
     >
-      1
+      {count}
     </span>
   )
 }
@@ -8642,23 +8632,12 @@ export function AdminPedidos({
 
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
-                const hasPendingAttention =
-                  attentionOrderIds.has(pedido.id) ||
-                  needsInvoiceReminder(pedido) ||
-                  needsShippingReminder(pedido) ||
-                  (pedido.estado === "cancelado" && !isRefundedOrder(pedido))
                 const hasPendingClaim = orderHasPendingClaimAction(pedido)
-                const attentionTone = getOrderNotificationTone(pedido)
-                // Mismas dos señales que ya definían el acento de color de la fila
-                // (antes de unificarla a un único fondo oscuro): hasPendingAttention
-                // decide SI hay algo que atender, attentionTone decide QUÉ tan grave
-                // es -- reutilizadas tal cual, sin lógica nueva. Rojo > Ámbar cuando
-                // coinciden varias señales (cancelación/reclamo pisan todo lo demás).
-                const eyeAttentionSeverity: "urgent" | "warning" | null = !hasPendingAttention
-                  ? null
-                  : attentionTone === "cancellation" || attentionTone === "claim"
-                    ? "urgent"
-                    : "warning"
+                // Contador del ojo = acciones administrativas PENDIENTES reales,
+                // derivadas del estado actual (lib/orders/admin-pending-actions.ts);
+                // nunca notificaciones leídas/no leídas ni historial. Rojo si
+                // alguna involucra dinero, cancelación o reclamo.
+                const pendingActions = getAdminPendingOrderActions(pedido)
                 const showInvoiceReminder = needsInvoiceReminder(pedido)
                 const showShippingReminder = needsShippingReminder(pedido)
                 const orderDate = formatOrderDateParts(pedido.created_at)
@@ -8751,7 +8730,7 @@ export function AdminPedidos({
                               <Eye className="size-3.5" />
                               Ver
                             </button>
-                            <OrderEyeAttentionBadge severity={eyeAttentionSeverity} />
+                            <OrderEyeAttentionBadge actions={pendingActions} />
                           </span>
                         </div>
                       </div>
@@ -8832,7 +8811,7 @@ export function AdminPedidos({
                       >
                         <Eye className="size-3.5" />
                       </button>
-                      <OrderEyeAttentionBadge severity={eyeAttentionSeverity} />
+                      <OrderEyeAttentionBadge actions={pendingActions} />
                     </span>
                   </div>
                 </div>
