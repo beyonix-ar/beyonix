@@ -31,6 +31,8 @@ import {
   type CheckoutOrderRequestPayload,
   type NormalizedCheckoutOrderItem,
   type PreparedCheckoutOrderCatalog,
+  CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE,
+  hasAcceptedCheckoutTerms,
 } from "@/lib/orders/checkout-order-creation"
 import {
   deleteIncompleteCheckoutOrder,
@@ -168,6 +170,12 @@ export async function POST(request: Request) {
     }
 
     const payload = (await request.json()) as CheckoutPayload
+    if (!hasAcceptedCheckoutTerms(payload)) {
+      return NextResponse.json(
+        { code: "TERMS_NOT_ACCEPTED", error: CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE },
+        { status: 400 },
+      )
+    }
     const checkoutSessionId = normalizeMercadoPagoCheckoutSessionId(
       payload.reservationSessionId,
     )

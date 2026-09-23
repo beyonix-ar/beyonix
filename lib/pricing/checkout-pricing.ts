@@ -35,6 +35,7 @@ import {
 import {
   calculateCftea,
   getCartFinancedTotal,
+  getFinancedPrice,
   getInstallmentAmount,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
@@ -128,6 +129,8 @@ export interface MercadoPagoCheckoutPricing {
   productsTotal: number
   /** Beneficio de tienda sobre el total de CONTADO de productos. */
   storeBenefitDiscountAmount: number
+  /** Mismo beneficio aplicado sobre los productos FINANCIADOS (el que usa `financedTotal`). */
+  financedStoreBenefitDiscountAmount: number
   shippingCharged: number
   /** Productos netos + envío, a precio de contado. */
   cashTotal: number
@@ -202,14 +205,15 @@ export function calculateMercadoPagoCheckoutPricing({
     cartInstallmentEligibility.length
       ? cartInstallmentEligibility[cartInstallmentEligibility.length - 1]
       : null
+  const financedStoreBenefitDiscountAmount = calculateStoreBenefitDiscount(
+    rawFinancedProducts,
+    storeBenefitPercent,
+  )
   const financedTotal =
     rawFinancedProducts > 0 && maxInstallmentCount != null
       ? roundMoney(
-          Math.max(
-            rawFinancedProducts -
-              calculateStoreBenefitDiscount(rawFinancedProducts, storeBenefitPercent),
-            0,
-          ) + shipping,
+          Math.max(rawFinancedProducts - financedStoreBenefitDiscountAmount, 0) +
+            shipping,
         )
       : null
 
@@ -284,6 +288,7 @@ export function calculateMercadoPagoCheckoutPricing({
   return {
     productsTotal,
     storeBenefitDiscountAmount,
+    financedStoreBenefitDiscountAmount,
     shippingCharged: shipping,
     cashTotal,
     financedTotal,
@@ -293,6 +298,124 @@ export function calculateMercadoPagoCheckoutPricing({
     financed,
     installmentPlans,
   }
+}
+
+/**
+ * Filas del "Resumen del pedido" (sólo presentación): Productos − Beneficio
+ * + Envío = Total, EXACTO, con los mismos valores canónicos que se cobran.
+ *
+ * - Al contado: productos a precio de contado.
+ * - En cuotas: productos a precio FINANCIADO (suma de los financiados
+ *   canónicos de cada línea, `getCartFinancedTotal`) incluyendo el ajuste
+ *   de redondeo de cuotas, que pertenece al monto financiado. El envío
+ *   nunca se financia: se muestra (y se cobra) a su costo real.
+ *
+ * El total es antes de saldo a favor (el saldo se muestra aparte).
+ */
+export interface CheckoutSummaryBreakdown {
+  productsSubtotal: number
+  storeBenefitDiscount: number
+  shipping: number
+  total: number
+}
+
+export function getMercadoPagoSummaryBreakdown(
+  pricing: MercadoPagoCheckoutPricing,
+  mode: MercadoPagoCheckoutMode,
+): CheckoutSummaryBreakdown {
+  const financed = mode === "financed" ? pricing.financed : null
+
+  if (!financed) {
+    return {
+      productsSubtotal: pricing.productsTotal,
+      storeBenefitDiscount: pricing.storeBenefitDiscountAmount,
+      shipping: pricing.shippingCharged,
+      total: pricing.cash.total,
+    }
+  }
+
+  return {
+    productsSubtotal: roundMoney(
+      financed.total - pricing.shippingCharged + pricing.financedStoreBenefitDiscountAmount,
+    ),
+    storeBenefitDiscount: pricing.financedStoreBenefitDiscountAmount,
+    shipping: pricing.shippingCharged,
+    total: financed.total,
+  }
+}
+
+/**
+ * Reparte `targetTotal` (pesos) entre líneas en proporción a `weights`,
+ * trabajando en centavos enteros (método del mayor resto): la suma de las
+ * partes es EXACTAMENTE `targetTotal`. Si los pesos ya suman el objetivo,
+ * cada línea recibe su propio valor sin cambios.
+ */
+export function allocateAmountAcrossLines(weights: number[], targetTotal: number): number[] {
+  const weightCents = weights.map((weight) =>
+    Number.isFinite(weight) ? Math.max(Math.round(weight * 100), 0) : 0,
+  )
+  const targetCents = Number.isFinite(targetTotal) ? Math.max(Math.round(targetTotal * 100), 0) : 0
+  const totalWeight = weightCents.reduce((sum, weight) => sum + weight, 0)
+
+  if (weights.length === 0) return []
+  if (totalWeight === 0) {
+    return weights.map((_, index) => (index === 0 ? targetCents / 100 : 0))
+  }
+
+  const exactShares = weightCents.map((weight) => (targetCents * weight) / totalWeight)
+  const allocated = exactShares.map((share) => Math.floor(share))
+  let leftover = targetCents - allocated.reduce((sum, value) => sum + value, 0)
+  const byRemainder = exactShares
+    .map((share, index) => ({ index, remainder: share - Math.floor(share) }))
+    .sort((left, right) => right.remainder - left.remainder || left.index - right.index)
+
+  for (const { index } of byRemainder) {
+    if (leftover <= 0) break
+    allocated[index] += 1
+    leftover -= 1
+  }
+
+  return allocated.map((cents) => cents / 100)
+}
+
+export type CheckoutSummaryMode = "cash" | "financed" | "transfer"
+
+/**
+ * Importe de cada línea del resumen según la modalidad elegida (sólo
+ * presentación; nunca toca el precio real del producto):
+ * - contado: precio de contado de la línea;
+ * - cuotas: precio financiado canónico de la línea (`getFinancedPrice` con
+ *   SU cuota máxima, igual que `getCartFinancedTotal`); el ajuste de
+ *   redondeo de cuotas (centavos) se reparte entre las líneas;
+ * - transferencia: el descuento canónico (calculado sobre el total de
+ *   productos) se reparte en proporción al precio de contado de cada línea.
+ * Las líneas suman EXACTAMENTE `productsSubtotal` (la fila "Productos").
+ */
+export function getCheckoutSummaryLineAmounts({
+  lines,
+  mode,
+  installmentsFinancing,
+  productsSubtotal,
+}: {
+  lines: CheckoutPricingLine[]
+  mode: CheckoutSummaryMode
+  installmentsFinancing: InstallmentsFinancingConfig
+  productsSubtotal: number
+}): number[] {
+  const weights = lines.map((line) => {
+    const cashUnit = getEffectiveUnitPrice(line)
+    const quantity = Math.max(0, line.quantity)
+    if (mode !== "financed") return cashUnit * quantity
+
+    const financedUnit = getFinancedPrice(
+      cashUnit,
+      getMaxEligibleInstallmentCount(line.installments),
+      installmentsFinancing,
+    )
+    return (financedUnit ?? cashUnit) * quantity
+  })
+
+  return allocateAmountAcrossLines(weights, productsSubtotal)
 }
 
 export function getMercadoPagoModeQuote(

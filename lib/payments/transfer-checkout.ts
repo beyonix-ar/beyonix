@@ -108,6 +108,33 @@ export function calculateTransferCheckoutPricing({
 
 export type TransferCheckoutPricing = ReturnType<typeof calculateTransferCheckoutPricing>
 
+/**
+ * Filas del "Resumen del pedido" para transferencia (sólo presentación). El
+ * descuento por transferencia se calcula únicamente sobre productos
+ * (`calculateTransferPaymentTotalAfterCustomerCredit`; el envío nunca se
+ * descuenta), así que se muestra ya aplicado en "Productos":
+ * Productos (con descuento) − Beneficio + Envío = Total, exacto.
+ */
+export function getTransferSummaryBreakdown({
+  productsTotal,
+  storeBenefitDiscountAmount,
+  shipping,
+  transferDiscountAmount,
+}: {
+  productsTotal: number
+  storeBenefitDiscountAmount: number
+  shipping: number
+  transferDiscountAmount: number
+}) {
+  const productsSubtotal = roundMoney(Math.max(productsTotal - transferDiscountAmount, 0))
+  return {
+    productsSubtotal,
+    storeBenefitDiscount: storeBenefitDiscountAmount,
+    shipping,
+    total: roundMoney(productsSubtotal - storeBenefitDiscountAmount + shipping),
+  }
+}
+
 export interface TransferEconomicLine {
   productId: number
   variantId: number | null

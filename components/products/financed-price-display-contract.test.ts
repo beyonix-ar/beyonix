@@ -128,7 +128,12 @@ test("CFTEA: el precio financiado informado es el MISMO total final ajustado que
   // Cada plan usa el total final ajustado (antes de saldo) contra el contado.
   assert.match(pricing, /const legalAmount = getInstallmentAmount\(rounded\.total, count\)/)
   assert.match(pricing, /calculateCftea\(cashTotal, legalAmount, count\)/)
-  assert.match(checkout, /precio financiado\{" "\}\s*\{formatPrice\(mercadoPagoFinancedQuote\.total\)\}/)
+  // El checkout muestra el precio financiado de la opción "En cuotas" con el
+  // total final ajustado (el mismo que se cobra) y el CFTEA sale de los
+  // planes canónicos, nunca recalculado en la UI.
+  assert.match(checkout, /formatPrice\(financedPreviewQuote\.externalAmountDue\)/)
+  assert.match(checkout, /formatCfteaPercent\(plan\.cfteaPercent\)/)
+  assert.doesNotMatch(checkout, /calculateCftea\(/)
   // Nunca el financiado crudo (sin ajuste de redondeo) en el disclosure legal.
   assert.doesNotMatch(checkout, /formatPrice\(cartFinancedTotal/)
   assert.doesNotMatch(checkout, /formatPrice\(mercadoPagoPricing\.financedTotal/)

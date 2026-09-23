@@ -20,34 +20,44 @@ function extractBlock(source: string, startMarker: string) {
 // UI de Mercado Pago
 // ─────────────────────────────────────────────────────────────
 
-test("sólo Mercado Pago y Transferencia son métodos principales", () => {
-  const methods = extractBlock(checkout, "function getPaymentMethods(")
-  const ids = [...methods.matchAll(/id: "([^"]+)"/g)].map((match) => match[1])
-  assert.deepEqual(ids, ["mercadopago", "transferencia"])
-})
-
-test("Mercado Pago tiene únicamente dos decisiones: Al contado / En cuotas", () => {
-  const modes = [...checkout.matchAll(/data-mercadopago-mode="([^"]+)"/g)].map((match) => match[1])
-  assert.deepEqual(modes, ["cash", "financed"])
-  assert.match(checkout, /Cómo querés pagar con Mercado Pago/)
-  assert.match(checkout, />\s*Al contado\s*</)
-  assert.match(checkout, />\s*En cuotas\s*</)
-  // El título viejo y los botones de pago único/2/3/6 ya no existen.
-  assert.doesNotMatch(checkout, /Modalidad de pago/)
-  assert.doesNotMatch(checkout, /Pago único/)
-  assert.doesNotMatch(checkout, /setInstallmentsModality/)
-  assert.doesNotMatch(checkout, /installmentsModality:/)
+test("se muestran exactamente tres opciones: transferencia, Mercado Pago al contado y en cuotas (sin MODO)", () => {
+  const options = [...checkout.matchAll(/option="([^"]+)"\n/g)].map((match) => match[1])
+  assert.deepEqual(options, ["transferencia", "mercadopago_cash", "mercadopago_financed"])
+  assert.match(checkout, /title="Depósito \/ Transferencia"/)
+  assert.match(checkout, /title="Mercado Pago al contado"/)
+  assert.match(checkout, /title="Mercado Pago en cuotas"/)
+  assert.doesNotMatch(checkout, /\bMODO\b/)
+  // Sólo dos medios reales por debajo; el payload sigue siendo el mismo.
+  assert.match(checkout, /const CHECKOUT_PAYMENT_METHOD_IDS = \["mercadopago", "transferencia"\] as const/)
   assert.match(checkout, /mercadoPagoMode: effectiveMercadoPagoMode,/)
+  assert.doesNotMatch(checkout, /Modalidad de pago/)
+  assert.doesNotMatch(checkout, /setInstallmentsModality/)
 })
 
-test("las filas 2/3/6 cuotas son sólo informativas (no son botones ni radios ni cambian estado)", () => {
-  const start = checkout.indexOf("mercadoPagoPricing.installmentPlans.map((plan) => (")
-  assert.ok(start >= 0)
-  const rows = checkout.slice(start, checkout.indexOf("</ul>", start))
-  assert.match(rows, /<li key=\{plan\.count\} data-installment-plan=\{plan\.count\}>/)
-  assert.doesNotMatch(rows, /onClick|role="radio"|<button|aria-checked|set[A-Z]\w*\(/)
-  assert.match(rows, /\{plan\.count\} cuotas de\{" "\}/)
-  assert.match(rows, /formatPrice\(plan\.amount\)/)
+test("una sola elección (radio nativo) y sin estado extra: la opción se deriva del estado existente", () => {
+  assert.equal((checkout.match(/name="checkout-payment-option"/g) ?? []).length, 1)
+  assert.match(checkout, /type="radio"/)
+  assert.match(
+    checkout,
+    /const selectedPaymentOption = getCheckoutPaymentOption\(\s*selectedPayment,\s*effectiveMercadoPagoMode,\s*\)/,
+  )
+  assert.doesNotMatch(checkout, /useState<CheckoutPaymentOption/)
+})
+
+test("el detalle de cuotas es informativo: modal con filas <li>, sin controles ni estado de pago", () => {
+  const rowsStart = checkout.indexOf("{plans.map((plan) => (")
+  assert.ok(rowsStart > 0)
+  const rows = checkout.slice(rowsStart, checkout.indexOf("</ul>", rowsStart))
+  assert.match(rows, /<li\s+key=\{plan\.count\}\s+data-installment-plan=\{plan\.count\}/)
+  assert.doesNotMatch(rows, /onClick|role="radio"|<button|<input|aria-checked|set[A-Z]\w*\(/)
+  // El modal sólo abre/cierra información: nunca cambia medio ni modalidad.
+  assert.match(checkout, /useState<"installments" \| "mercadopago_cash" \| null>\(null\)/)
+  const infoLinkStart = checkout.indexOf("function CheckoutPaymentInfoLink(")
+  const infoLink = checkout.slice(infoLinkStart, checkout.indexOf("\n}\n", infoLinkStart))
+  assert.match(infoLink, /type="button"/)
+  assert.doesNotMatch(infoLink, /setSelectedPayment|setMercadoPagoMode/)
+  const modal = readSource("./payment-info-modal.tsx")
+  assert.doesNotMatch(modal, /setSelectedPayment|setMercadoPagoMode|type="radio"/)
 })
 
 test("resumen: contado dice 'Pago con Mercado Pago al contado'; cuotas 'Hasta N cuotas sin interés de $X'", () => {
@@ -57,9 +67,14 @@ test("resumen: contado dice 'Pago con Mercado Pago al contado'; cuotas 'Hasta N 
   assert.match(checkout, /mercadoPagoQuote\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
 })
 
-test("CFTEA sólo se muestra en cuotas; al contado no hay disclosure de financiación", () => {
-  assert.match(checkout, /\{isMercadoPagoFinanced && mercadoPagoFinancedQuote && \(\s*<p[^>]*>\s*Costo financiero total efectivo anual \(CFTEA\)/)
-  assert.doesNotMatch(checkout, /cfteaPercent != null && \(/)
+test("CFTEA: discreto, dentro del detalle de cuotas y nunca en la pantalla principal", () => {
+  assert.equal((checkout.match(/data-cftea-disclosure/g) ?? []).length, 1)
+  const modalStart = checkout.indexOf('{paymentInfoModal === "installments" && financedPreviewQuote && (')
+  const modalEnd = checkout.indexOf("</PaymentInfoModal>", modalStart)
+  assert.ok(modalStart > 0 && checkout.indexOf("data-cftea-disclosure") > modalStart && checkout.indexOf("data-cftea-disclosure") < modalEnd)
+  assert.match(checkout, /CFTEA: \{cfteaSummary\}/)
+  assert.doesNotMatch(checkout, /Costo financiero total efectivo anual/)
+  assert.doesNotMatch(checkout, /— precio financiado/)
 })
 
 // ─────────────────────────────────────────────────────────────

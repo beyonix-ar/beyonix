@@ -138,6 +138,19 @@ export interface CheckoutOrderRequestPayload {
    * cliente no vio.
    */
   expectedTotal?: number | null
+  /** Aceptación explícita de términos y condiciones (checkbox obligatorio del checkout). */
+  termsAccepted?: boolean | null
+}
+
+export const CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE =
+  "Para continuar tenés que aceptar los términos y condiciones."
+
+/**
+ * Los tres flujos de compra (transferencia, Mercado Pago y saldo a favor)
+ * exigen la aceptación explícita: sólo `true` literal cuenta.
+ */
+export function hasAcceptedCheckoutTerms(payload: Pick<CheckoutOrderRequestPayload, "termsAccepted">) {
+  return payload.termsAccepted === true
 }
 
 export interface NormalizedCheckoutOrderItem {

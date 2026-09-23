@@ -12240,3 +12240,97 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-notice
   background: var(--account-warning-bg, rgba(245, 158, 11, 0.12)) !important;
   border-color: var(--account-warning-border, rgba(217, 119, 6, 0.4)) !important;
 }
+
+/* =========================
+   CHECKOUT: SELECCIÓN EN "MÉTODO DE PAGO"
+   =========================
+   Mercado Pago, sus opciones (Al contado / En cuotas) y Transferencia usan
+   .checkout-choice. Tokens semánticos: en Dark se conserva exactamente el
+   navy de .checkout-option-selected; en Light la opción elegida se marca con
+   fondo celeste muy claro + borde/radio azul BEYONIX y texto oscuro (nunca
+   texto blanco sobre azul oscuro). Envío sigue usando el estilo anterior. */
+:root {
+  --checkout-choice-selected-bg: #112a43;
+  --checkout-choice-selected-border: #4f83ad;
+  --checkout-choice-indicator: #4f83ad;
+  --checkout-choice-indicator-idle: rgba(79, 131, 173, 0.55);
+  --checkout-choice-indicator-dot: #ffffff;
+  --checkout-offer-text: #34d399;
+}
+html[data-account-theme="light"][data-account-scope] {
+  --checkout-choice-selected-bg: #f6f9fc;
+  --checkout-choice-selected-border: #5a9bd0;
+  --checkout-choice-indicator: #1e5f8c;
+  --checkout-choice-indicator-idle: #7aa6c9;
+  --checkout-choice-indicator-dot: #ffffff;
+  --checkout-offer-text: var(--account-success-text);
+}
+.checkout-choice.checkout-option-selected {
+  background-color: var(--checkout-choice-selected-bg);
+  border-color: var(--checkout-choice-selected-border);
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice.checkout-option-selected {
+  background-color: var(--checkout-choice-selected-bg) !important;
+  border-color: var(--checkout-choice-selected-border) !important;
+  box-shadow: 0 0 0 1px var(--checkout-choice-selected-border) !important;
+}
+/* Sobre celeste claro el texto vuelve a ser oscuro (anula el "texto blanco
+   sobre navy" que .checkout-option-selected restituye más arriba). */
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice.checkout-option-selected [class~="text-white"],
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice.checkout-option-selected [class~="text-white/75"] {
+  color: var(--account-text-primary) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice.checkout-option-selected [class~="text-white/45"],
+html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice.checkout-option-selected [class~="text-white/55"] {
+  color: var(--beyonix-light-text-secondary) !important;
+}
+/* Badges chicos de las opciones de pago ("¡Mejor precio!", "1 pago",
+   "Hasta N cuotas sin interés"): pill discreta, colores por tema. */
+:root {
+  --checkout-badge-success-fg: #6ee7b7;
+  --checkout-badge-success-bg: rgba(16, 185, 129, 0.12);
+  --checkout-badge-success-border: rgba(16, 185, 129, 0.3);
+  --checkout-badge-info-fg: #93c5fd;
+  --checkout-badge-info-bg: rgba(59, 130, 246, 0.12);
+  --checkout-badge-info-border: rgba(59, 130, 246, 0.3);
+  --checkout-badge-neutral-fg: rgba(248, 250, 252, 0.78);
+  --checkout-badge-neutral-bg: rgba(255, 255, 255, 0.06);
+  --checkout-badge-neutral-border: rgba(255, 255, 255, 0.14);
+}
+html[data-account-theme="light"][data-account-scope] {
+  --checkout-badge-success-fg: #065f46;
+  --checkout-badge-success-bg: #ecfdf5;
+  --checkout-badge-success-border: #a7f3d0;
+  --checkout-badge-info-fg: #1e4d7b;
+  --checkout-badge-info-bg: #eaf3fb;
+  --checkout-badge-info-border: #bcd7ee;
+  --checkout-badge-neutral-fg: #334155;
+  --checkout-badge-neutral-bg: #f1f5f9;
+  --checkout-badge-neutral-border: #e2e8f0;
+}
+.checkout-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid;
+  border-radius: 9999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.checkout-badge-success {
+  color: var(--checkout-badge-success-fg);
+  background-color: var(--checkout-badge-success-bg);
+  border-color: var(--checkout-badge-success-border);
+}
+.checkout-badge-info {
+  color: var(--checkout-badge-info-fg);
+  background-color: var(--checkout-badge-info-bg);
+  border-color: var(--checkout-badge-info-border);
+}
+.checkout-badge-neutral {
+  color: var(--checkout-badge-neutral-fg);
+  background-color: var(--checkout-badge-neutral-bg);
+  border-color: var(--checkout-badge-neutral-border);
+}

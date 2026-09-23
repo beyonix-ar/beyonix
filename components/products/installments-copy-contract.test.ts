@@ -49,10 +49,10 @@ test("tarjetas de catálogo (shared-product-card, category-product-card) y hero 
 test("checkout: Mercado Pago en cuotas, método de pago y resumen dicen 'sin interés' -- el CFTEA no se tocó", () => {
   const checkout = readSource("../../app/checkout/page.tsx")
 
-  // Opción "En cuotas": "Hasta N cuotas sin interés".
+  // Opción "Mercado Pago en cuotas": badge "Hasta N cuotas sin interés" y
+  // detalle "N cuotas sin interés de $X" (modal informativo).
   assert.match(checkout, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} cuotas sin interés/)
-  // Selector de medio de pago ("Tarjeta o saldo en cuenta · Hasta N cuotas...").
-  assert.match(checkout, /Hasta \$\{bestCartInstallmentCount\} cuotas sin interés/)
+  assert.match(checkout, /\{plan\.count\} cuotas sin interés de/)
   // Resumen del pedido en cuotas: "Hasta N cuotas sin interés de $X".
   assert.match(
     checkout,
@@ -60,18 +60,18 @@ test("checkout: Mercado Pago en cuotas, método de pago y resumen dicen 'sin int
   )
   assert.doesNotMatch(checkout, /cuotas fijas/)
 
-  // CFTEA: disclosure legal intacta, redactada aparte del copy comercial.
-  assert.match(checkout, /Costo financiero total efectivo anual \(CFTEA\):\{" "\}/)
-  assert.match(checkout, /`\$\{plan\.count\} cuotas \$\{plan\.cfteaPercent\.toFixed\(1\)\}%`/)
-  assert.match(
-    checkout,
-    /Precio de contado \{formatPrice\(cashTotalBeforeCredit\)\} — precio financiado\{" "\}/,
-  )
+  // CFTEA: disclosure legal intacta (compacta, en el detalle de cuotas),
+  // redactada aparte del copy comercial: 1 decimal es-AR por plan.
+  assert.match(checkout, /CFTEA: \{cfteaSummary\}/)
+  assert.match(checkout, /`\$\{plan\.count\} cuotas \$\{formatCfteaPercent\(plan\.cfteaPercent\)\}%`/)
+  assert.match(checkout, /minimumFractionDigits: 1,\s*maximumFractionDigits: 1,/)
 
-  // Transferencia sigue mostrando su propio descuento, sin relación con cuotas.
+  // Transferencia sigue mostrando su propio descuento, sin relación con cuotas:
+  // en la opción de pago y como nota bajo "Productos" del resumen.
+  assert.match(checkout, /\{siteSettings\.pricing\.transferDiscountPercent\}% de descuento/)
   assert.match(
     checkout,
-    /Transferencia \{siteSettings\.pricing\.transferDiscountPercent\}% OFF/,
+    /Incluye \{siteSettings\.pricing\.transferDiscountPercent\}% OFF por transferencia/,
   )
 })
 

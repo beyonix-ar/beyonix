@@ -22,6 +22,7 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  CreditCard,
   Home,
   IdCard,
   Instagram,
@@ -36,6 +37,8 @@ import {
   Trash2,
   Truck,
   UserRound,
+  Wallet,
+  type LucideIcon,
 } from "lucide-react"
 
 import {
@@ -58,10 +61,11 @@ import {
 } from "@/components/ui/label"
 import { AccountMenu } from "@/components/account-menu"
 import { AccountThemeToggle } from "@/components/account/account-theme-toggle"
-import { BeyonixHeaderLoginLink, BeyonixHeaderRegisterLink } from "@/components/beyonix-ui"
+import { BeyonixButton, BeyonixHeaderLoginLink, BeyonixHeaderRegisterLink } from "@/components/beyonix-ui"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { PublicMinimalHeader } from "@/components/public-minimal-header"
 import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
+import { PaymentInfoModal } from "@/components/checkout/payment-info-modal"
 import {
   InsufficientStockModal,
   type InsufficientStockModalItem,
@@ -84,9 +88,13 @@ import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
 import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
+import { getTransferSummaryBreakdown } from "@/lib/payments/transfer-checkout"
 import {
   calculateMercadoPagoCheckoutPricing,
   getMercadoPagoModeQuote,
+  getMercadoPagoSummaryBreakdown,
+  getCheckoutSummaryLineAmounts,
+  type CheckoutInstallmentPlan,
   type CheckoutPricingLine,
   type MercadoPagoCheckoutMode,
 } from "@/lib/pricing/checkout-pricing"
@@ -190,6 +198,15 @@ function formatPrice(
   ).format(safePrice)
 }
 
+const cfteaPercentFormatter = new Intl.NumberFormat("es-AR", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+})
+
+function formatCfteaPercent(value: number) {
+  return cfteaPercentFormatter.format(value)
+}
+
 function getShippingOptionLabel(type: ShippingType) {
   return type === "domicilio" ? "Envío a domicilio" : "Entrega en sucursal"
 }
@@ -218,21 +235,26 @@ function getStockIndicatorSymbol(status: StockStatus) {
   return ""
 }
 
-function getPaymentMethods(transferDiscountPercent: number) {
-  return [
-    {
-      id: "mercadopago",
-      name: "Mercado Pago",
-      description: "Pagá con saldo en Mercado Pago o con tarjeta",
-      icon: Smartphone,
-    },
-    {
-      id: "transferencia",
-      name: "Transferencia bancaria",
-      description: `Transferencia bancaria con ${transferDiscountPercent}% OFF`,
-      icon: Landmark,
-    },
-  ]
+/**
+ * Opciones de pago VISIBLES (3): el cliente elige una sola. Por debajo se
+ * siguen representando con el estado existente -- medio `mercadopago` /
+ * `transferencia` + modalidad de Mercado Pago `cash` / `financed` --, así
+ * que el backend y el payload no cambian.
+ */
+type CheckoutPaymentOption =
+  | "transferencia"
+  | "mercadopago_cash"
+  | "mercadopago_financed"
+
+const CHECKOUT_PAYMENT_METHOD_IDS = ["mercadopago", "transferencia"] as const
+
+function getCheckoutPaymentOption(
+  selectedPayment: string,
+  mercadoPagoMode: MercadoPagoCheckoutMode,
+): CheckoutPaymentOption | null {
+  if (selectedPayment === "transferencia") return "transferencia"
+  if (selectedPayment !== "mercadopago") return null
+  return mercadoPagoMode === "financed" ? "mercadopago_financed" : "mercadopago_cash"
 }
 
 const checkoutInputClassName =
@@ -302,18 +324,150 @@ function CheckoutNotice({
   )
 }
 
+/**
+ * Tarjeta de una opción de pago: radio nativo (teclado y lectores de
+ * pantalla funcionan sin estado extra) envuelto en un label grande y
+ * clickeable. `action` (p. ej. "Ver cuotas") es un botón aparte: al estar
+ * dentro del label no selecciona la opción, sólo abre información.
+ */
+function CheckoutPaymentOptionCard({
+  option,
+  checked,
+  onSelect,
+  icon: Icon,
+  title,
+  description,
+  badge,
+  highlight,
+  action,
+}: {
+  option: CheckoutPaymentOption
+  checked: boolean
+  onSelect: (option: CheckoutPaymentOption) => void
+  icon: LucideIcon
+  title: string
+  description: string
+  badge?: ReactNode
+  highlight?: ReactNode
+  action?: ReactNode
+}) {
+  return (
+    <label
+      data-payment-option={option}
+      className={cn(
+        checkoutOptionClassName,
+        "checkout-choice items-start gap-3 p-4 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-beyonix-blue-light/40",
+        checked && checkoutOptionSelectedClassName,
+      )}
+    >
+      <input
+        type="radio"
+        name="checkout-payment-option"
+        value={option}
+        checked={checked}
+        onChange={() => onSelect(option)}
+        className="sr-only"
+      />
+      <span className="mt-0.5">
+        <CheckoutRadioIndicator checked={checked} />
+      </span>
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-black/35 text-white/65">
+        <Icon aria-hidden="true" className="size-4.5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-semibold text-white">{title}</span>
+          {badge}
+        </span>
+        <span className="mt-0.5 block text-sm text-white/55">{description}</span>
+        {highlight && <span className="mt-1 block text-sm text-white/55">{highlight}</span>}
+        {action}
+      </span>
+    </label>
+  )
+}
+
+/** Cuotas SÓLO informativas: filas de texto, sin controles ni estado. */
+function InstallmentPlanList({ plans }: { plans: CheckoutInstallmentPlan[] }) {
+  return (
+    <ul
+      data-installment-plans
+      className="beyonix-modal-list mt-3 divide-y divide-white/[0.06] rounded-lg border border-white/8 bg-white/[0.03] px-3"
+    >
+      {plans.map((plan) => (
+        <li
+          key={plan.count}
+          data-installment-plan={plan.count}
+          className="flex items-center justify-between gap-3 py-2 text-[13px]"
+        >
+          <span className="beyonix-modal-title text-white/90">
+            {plan.count} cuotas sin interés de
+          </span>
+          <span className="beyonix-modal-title font-semibold text-white">
+            {formatPrice(plan.amount)}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** Advertencia obligatoria del modal "en cuotas" (Checkout Pro permite 1 pago sobre el total financiado). */
+const MERCADOPAGO_FINANCED_TOTAL_WARNING =
+  "Si dentro de Mercado Pago elegís pagar en 1 solo pago o con dinero en cuenta, se mantendrá este total financiado."
+
+/** Medios que admite la preferencia al contado (installments=1). */
+const MERCADOPAGO_CASH_MEDIA = [
+  "Dinero disponible en tu cuenta de Mercado Pago",
+  "Tarjeta de débito",
+  "Tarjeta de crédito en 1 pago",
+] as const
+
+function MercadoPagoCashMediaList() {
+  return (
+    <ul className="beyonix-modal-list divide-y divide-white/[0.06] rounded-lg border border-white/8 bg-white/[0.03] px-3">
+      {MERCADOPAGO_CASH_MEDIA.map((medium) => (
+        <li key={medium} className="beyonix-modal-title py-2 text-[13px] text-white/90">
+          {medium}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function CheckoutPaymentInfoLink({
+  onClick,
+  children,
+}: {
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.preventDefault()
+        onClick()
+      }}
+      className="mt-1 cursor-pointer text-xs font-semibold text-beyonix-sky underline-offset-2 hover:underline"
+    >
+      {children}
+    </button>
+  )
+}
+
 function CheckoutRadioIndicator({ checked }: { checked: boolean }) {
   return (
     <span
       aria-hidden="true"
       className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded-full border",
+        "checkout-choice-radio flex size-4 shrink-0 items-center justify-center rounded-full border-2",
         checked
-          ? "border-beyonix-blue-light bg-beyonix-blue-light"
-          : "border-beyonix-blue-light/55",
+          ? "border-[var(--checkout-choice-indicator)] bg-[var(--checkout-choice-indicator)]"
+          : "border-[var(--checkout-choice-indicator-idle)]",
       )}
     >
-      {checked && <span className="size-1.5 rounded-full bg-white" />}
+      {checked && <span className="size-1.5 rounded-full bg-[var(--checkout-choice-indicator-dot)]" />}
     </span>
   )
 }
@@ -438,7 +592,6 @@ export default function CheckoutPage() {
   } = useCart()
   const customerCredit = useCustomerCredit()
   const siteSettings = useSiteSettings()
-  const paymentMethods = getPaymentMethods(siteSettings.pricing.transferDiscountPercent)
 
   const [mounted, setMounted] =
     useState(false)
@@ -450,6 +603,18 @@ export default function CheckoutPage() {
 
   const [mercadoPagoMode, setMercadoPagoMode] =
     useState<MercadoPagoCheckoutMode>("cash")
+  // Aceptación de términos ligada a la sesión de checkout (cartSessionId):
+  // se conserva al cambiar de medio/modalidad y queda sin efecto sola en una
+  // compra/sesión nueva (clearCart genera otro id). Nunca se persiste.
+  const [termsAcceptedSessionId, setTermsAcceptedSessionId] =
+    useState<string | null>(null)
+  const termsAccepted =
+    Boolean(cartSessionId) && termsAcceptedSessionId === cartSessionId
+  // Confirmación antes de ir a Mercado Pago (la preferencia se crea al confirmar).
+  const [mercadoPagoConfirmOpen, setMercadoPagoConfirmOpen] = useState(false)
+  // Detalle informativo abierto ("Ver cuotas" / "Ver medios"): no afecta el pago.
+  const [paymentInfoModal, setPaymentInfoModal] =
+    useState<"installments" | "mercadopago_cash" | null>(null)
   // Aviso de "precios o condiciones actualizados" (refresco en vivo o 409
   // PRICING_CHANGED del servidor): un total nunca cambia en silencio.
   const [commercialUpdateNotice, setCommercialUpdateNotice] =
@@ -806,9 +971,7 @@ export default function CheckoutPage() {
     customerCreditApplication.externalAmountDue === 0
   const isSelectedPaymentValid =
     customerCreditCoversTotal ||
-    paymentMethods.some(
-      (method) => method.id === selectedPayment,
-    )
+    CHECKOUT_PAYMENT_METHOD_IDS.some((methodId) => methodId === selectedPayment)
   // El modal de "Stock insuficiente" solo puede aparecer como respuesta al
   // intento real de pago (ver handleSubmit): no hay ninguna validación
   // proactiva de stock mientras el cliente completa el Checkout.
@@ -822,8 +985,6 @@ export default function CheckoutPage() {
     requestedCustomerCredit: customerCreditApplication.appliedAmount,
     settings: checkoutPricingSettings,
   })
-  const mercadoPagoCashQuote = mercadoPagoPricing.cash
-  const mercadoPagoFinancedQuote = mercadoPagoPricing.financed
   const mercadoPagoQuote = isMercadoPagoPayment
     ? getMercadoPagoModeQuote(mercadoPagoPricing, effectiveMercadoPagoMode)
     : null
@@ -834,7 +995,74 @@ export default function CheckoutPage() {
   // roundUpCheckoutTotalForInstallments); el mismo que aplica create-preference.
   const appliedCustomerCredit =
     mercadoPagoQuote?.customerCreditApplied ?? customerCreditApplication.appliedAmount
-  const installmentsRoundingAdjustment = mercadoPagoQuote?.roundingAdjustment ?? 0
+  // Opción visible elegida, derivada del estado existente (no hay estado nuevo).
+  const selectedPaymentOption = getCheckoutPaymentOption(
+    selectedPayment,
+    effectiveMercadoPagoMode,
+  )
+  const isMercadoPagoFinancingAvailable = mercadoPagoPricingBeforeCredit.financed != null
+  const selectPaymentOption = (option: CheckoutPaymentOption) => {
+    if (option === "transferencia") {
+      setSelectedPayment("transferencia")
+      return
+    }
+    setSelectedPayment("mercadopago")
+    setMercadoPagoMode(option === "mercadopago_financed" ? "financed" : "cash")
+  }
+  // Filas del resumen: Productos − Beneficio + Envío = Total, exacto y con
+  // los valores canónicos de la modalidad elegida (contado, financiado o
+  // con descuento por transferencia).
+  const checkoutSummary = isTransferPayment
+    ? getTransferSummaryBreakdown({
+        productsTotal: totals.productsTotal,
+        storeBenefitDiscountAmount,
+        shipping: totals.shipping,
+        transferDiscountAmount,
+      })
+    : getMercadoPagoSummaryBreakdown(
+        mercadoPagoPricing,
+        isMercadoPagoPayment ? effectiveMercadoPagoMode : "cash",
+      )
+  // Importe de cada línea del resumen en la modalidad elegida: suma
+  // exactamente la fila "Productos" (cálculo canónico, sólo presentación).
+  const summaryLineAmounts = getCheckoutSummaryLineAmounts({
+    lines: checkoutPricingLines,
+    mode: isTransferPayment
+      ? "transfer"
+      : isMercadoPagoPayment && effectiveMercadoPagoMode === "financed"
+        ? "financed"
+        : "cash",
+    installmentsFinancing: siteSettings.installmentsFinancing,
+    productsSubtotal: checkoutSummary.productsSubtotal,
+  })
+  // Cuotas informativas ("Ver cuotas") con el MISMO saldo a favor que se
+  // aplicaría al elegir "en cuotas" (el checkout aplica siempre el máximo
+  // aplicable sobre el total de la modalidad): así coinciden con lo que se
+  // va a cobrar, esté elegida o no esa opción. Idéntico a mercadoPagoPricing
+  // cuando "en cuotas" ya está seleccionada.
+  const financedPreviewPricing = calculateMercadoPagoCheckoutPricing({
+    lines: checkoutPricingLines,
+    shippingCharged: totals.shipping,
+    storeBenefitPercent: selectedStoreBenefit?.percent ?? null,
+    requestedCustomerCredit:
+      mercadoPagoPricingBeforeCredit.financedTotal != null
+        ? getMaxApplicableCustomerCredit(
+            customerCredit.balance,
+            mercadoPagoPricingBeforeCredit.financedTotal,
+          )
+        : 0,
+    settings: checkoutPricingSettings,
+  })
+  const financedPreviewQuote = financedPreviewPricing.financed
+  // Disclosure CFTEA compacto: sólo presentación de los valores canónicos
+  // (calculateCftea sin cambios), 1 decimal es-AR como en el resto del sitio.
+  const cfteaSummary = financedPreviewPricing.installmentPlans
+    .flatMap((plan) =>
+      plan.cfteaPercent != null
+        ? [`${plan.count} cuotas ${formatCfteaPercent(plan.cfteaPercent)}%`]
+        : [],
+    )
+    .join(" · ")
   const maxInstallmentPlan = isMercadoPagoFinanced
     ? mercadoPagoPricing.installmentPlans.find(
         (plan) => plan.count === mercadoPagoPricing.maxInstallmentCount,
@@ -1481,18 +1709,39 @@ export default function CheckoutPage() {
     )
   }
 
-  const handleSubmit = async (
-    e: React.FormEvent
-  ) => {
+  const canSubmitCheckout =
+    isFormValid &&
+    !isProcessing &&
+    !hasKnownStockConflict &&
+    isSelectedPaymentValid &&
+    termsAccepted
+
+  // "Pagar": valida y, si es Mercado Pago, primero abre la confirmación. La
+  // preferencia se crea recién en submitCheckout (al confirmar): cancelar el
+  // modal no crea ni reutiliza ningún intento de pago.
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
     if (submissionInFlightRef.current) return
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid) return
+    if (!termsAccepted) return
 
     if (hasBlockedWords(formData.direccion)) {
       setCheckoutError("La dirección contiene texto no permitido.")
       return
     }
+
+    if (!customerCreditCoversTotal && selectedPayment === "mercadopago") {
+      setMercadoPagoConfirmOpen(true)
+      return
+    }
+
+    void submitCheckout()
+  }
+
+  const submitCheckout = async () => {
+    if (submissionInFlightRef.current) return
+    if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid || !termsAccepted) return
 
     submissionInFlightRef.current = true
     setIsProcessing(true)
@@ -1540,6 +1789,7 @@ export default function CheckoutPage() {
           paymentMethodId: selectedPayment || "customer_credit",
           customerCreditAmount: customerCreditApplication.appliedAmount,
           mercadoPagoMode: effectiveMercadoPagoMode,
+          termsAccepted: true,
           expectedTotal: customerCreditCoversTotal ? undefined : expectedCheckoutTotal,
           items: items.map((item) => ({
             productId: item.product.id,
@@ -1629,6 +1879,7 @@ export default function CheckoutPage() {
     } finally {
       submissionInFlightRef.current = false
       setIsProcessing(false)
+      setMercadoPagoConfirmOpen(false)
     }
   }
 
@@ -2346,157 +2597,107 @@ export default function CheckoutPage() {
                     Método de pago
                   </h2>
 
-                  <div className="grid gap-3" role="radiogroup" aria-label="Método de pago">
-                    {paymentMethods.map((method) => {
-                      const bestCartInstallmentCount =
-                        method.id === "mercadopago"
-                          ? mercadoPagoPricingBeforeCredit.maxInstallmentCount
-                          : null
-                      const isSelected = selectedPayment === method.id
+                  {/* Lista simple de 3 opciones (radio nativo): el cliente
+                      elige UNA. Sin paneles anidados: el detalle de cuotas y
+                      de medios es informativo y vive en un modal chico. */}
+                  <fieldset className="grid gap-3" data-payment-options>
+                    <legend className="sr-only">Elegí cómo pagar</legend>
 
-                      return (
-                        <button
-                          key={method.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={isSelected}
-                          onClick={() =>
-                            setSelectedPayment(method.id)
-                          }
-                          className={cn(
-                            checkoutOptionClassName,
-                            "items-center gap-3 p-4",
-                            isSelected &&
-                              checkoutOptionSelectedClassName
-                          )}
-                        >
-                          <span className={cn(
-                            "flex size-11 shrink-0 items-center justify-center rounded-xl",
-                            isSelected
-                              ? "bg-beyonix-blue-light text-white"
-                              : "bg-black/35 text-white/65"
-                          )}>
-                            <method.icon className="size-5" />
-                          </span>
-                          <span className="min-w-0">
-                            <span className="block font-semibold text-white">
-                              {method.name}
-                            </span>
-                            <span className="mt-1 block text-sm text-white/45">
-                              {bestCartInstallmentCount
-                                ? `Tarjeta o saldo en cuenta · Hasta ${bestCartInstallmentCount} cuotas sin interés`
-                                : method.description}
-                            </span>
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {isMercadoPagoPayment && (
-                    <div className="space-y-2">
-                      <p
-                        id="checkout-mercadopago-mode-label"
-                        className="text-sm font-semibold text-white/70"
-                      >
-                        Cómo querés pagar con Mercado Pago
-                      </p>
-                      {/* Sólo DOS decisiones reales: al contado o en cuotas.
-                          La cantidad final de cuotas se elige dentro de
-                          Mercado Pago; las filas de cuotas son informativas. */}
-                      <div
-                        className="grid gap-2"
-                        role="radiogroup"
-                        aria-labelledby="checkout-mercadopago-mode-label"
-                      >
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={effectiveMercadoPagoMode === "cash"}
-                          data-mercadopago-mode="cash"
-                          onClick={() => setMercadoPagoMode("cash")}
-                          className={cn(
-                            checkoutOptionClassName,
-                            "items-center gap-3 p-3.5",
-                            effectiveMercadoPagoMode === "cash" &&
-                              checkoutOptionSelectedClassName,
-                          )}
-                        >
-                          <CheckoutRadioIndicator checked={effectiveMercadoPagoMode === "cash"} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block font-semibold text-white">
-                              Al contado
-                            </span>
-                            <span className="mt-0.5 block text-sm text-white/45">
-                              Débito, crédito en 1 pago o dinero en cuenta
-                            </span>
-                          </span>
-                          <span className="shrink-0 font-heading text-base font-bold text-white">
-                            {formatPrice(mercadoPagoCashQuote.externalAmountDue)}
-                          </span>
-                        </button>
-
-                        {mercadoPagoFinancedQuote && mercadoPagoPricing.maxInstallmentCount != null && (
-                          <div
-                            className={cn(
-                              "checkout-option rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] transition-all",
-                              effectiveMercadoPagoMode === "financed" &&
-                                checkoutOptionSelectedClassName,
-                            )}
+                    <CheckoutPaymentOptionCard
+                      option="transferencia"
+                      checked={selectedPaymentOption === "transferencia"}
+                      onSelect={selectPaymentOption}
+                      icon={Landmark}
+                      title="Depósito / Transferencia"
+                      description="En cuenta bancaria o virtual"
+                      badge={<span className="checkout-badge checkout-badge-success">¡Mejor precio!</span>}
+                      highlight={
+                        <>
+                          Incluye{" "}
+                          <span
+                            data-transfer-discount-highlight
+                            className="font-semibold text-[var(--checkout-offer-text)]"
                           >
-                            <button
-                              type="button"
-                              role="radio"
-                              aria-checked={effectiveMercadoPagoMode === "financed"}
-                              data-mercadopago-mode="financed"
-                              onClick={() => setMercadoPagoMode("financed")}
-                              className="flex w-full cursor-pointer items-center gap-3 rounded-lg p-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/22"
-                            >
-                              <CheckoutRadioIndicator checked={effectiveMercadoPagoMode === "financed"} />
-                              <span className="min-w-0 flex-1">
-                                <span className="block font-semibold text-white">
-                                  En cuotas
-                                </span>
-                                <span className="mt-0.5 block text-sm text-white/45">
-                                  Hasta {mercadoPagoPricing.maxInstallmentCount} cuotas sin interés
-                                </span>
-                              </span>
-                              <span className="shrink-0 font-heading text-base font-bold text-white">
-                                {formatPrice(mercadoPagoFinancedQuote.externalAmountDue)}
-                              </span>
-                            </button>
-                            <ul
-                              aria-label="Cuotas disponibles (la cantidad se elige en Mercado Pago)"
-                              className="space-y-0.5 px-3.5 pb-3 pl-10 text-sm text-white/55"
-                            >
-                              {mercadoPagoPricing.installmentPlans.map((plan) => (
-                                <li key={plan.count} data-installment-plan={plan.count}>
-                                  {plan.count} cuotas de{" "}
-                                  <span className="font-semibold text-white/75">
-                                    {formatPrice(plan.amount)}
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                            {siteSettings.pricing.transferDiscountPercent}% de descuento
+                          </span>
+                        </>
+                      }
+                    />
+
+                    <CheckoutPaymentOptionCard
+                      option="mercadopago_cash"
+                      checked={selectedPaymentOption === "mercadopago_cash"}
+                      onSelect={selectPaymentOption}
+                      icon={Wallet}
+                      title="Mercado Pago al contado"
+                      description="Débito, crédito en 1 pago o dinero en cuenta"
+                      badge={<span className="checkout-badge checkout-badge-neutral">1 pago</span>}
+                      action={
+                        <CheckoutPaymentInfoLink onClick={() => setPaymentInfoModal("mercadopago_cash")}>
+                          Ver medios
+                        </CheckoutPaymentInfoLink>
+                      }
+                    />
+
+                    {isMercadoPagoFinancingAvailable &&
+                      mercadoPagoPricing.maxInstallmentCount != null && (
+                        <CheckoutPaymentOptionCard
+                          option="mercadopago_financed"
+                          checked={selectedPaymentOption === "mercadopago_financed"}
+                          onSelect={selectPaymentOption}
+                          icon={CreditCard}
+                          title="Mercado Pago en cuotas"
+                          description="Pagá con tarjeta vía Mercado Pago"
+                          badge={
+                            <span className="checkout-badge checkout-badge-info">
+                              Hasta {mercadoPagoPricing.maxInstallmentCount} cuotas sin interés
+                            </span>
+                          }
+                          action={
+                            <CheckoutPaymentInfoLink onClick={() => setPaymentInfoModal("installments")}>
+                              Ver cuotas
+                            </CheckoutPaymentInfoLink>
+                          }
+                        />
+                      )}
+                  </fieldset>
+
+                  {paymentInfoModal === "installments" && financedPreviewQuote && (
+                    <PaymentInfoModal
+                      title="Cuotas con Mercado Pago"
+                      onClose={() => setPaymentInfoModal(null)}
+                    >
+                      <p className="beyonix-modal-body text-[13px] leading-5 text-white/65">
+                        Precio en cuotas:{" "}
+                        <span className="font-semibold text-white">
+                          {formatPrice(financedPreviewQuote.externalAmountDue)}
+                        </span>
+                        . La cantidad de cuotas la elegís dentro de Mercado Pago.
+                      </p>
+                      <InstallmentPlanList plans={financedPreviewPricing.installmentPlans} />
+                      {/* Disclosure legal (CFTEA): discreto y junto al detalle
+                          de cuotas. Fórmula sin cambios; 1 decimal es-AR. */}
+                      {cfteaSummary && (
+                        <p
+                          data-cftea-disclosure
+                          className="beyonix-modal-muted mt-2.5 text-[11px] leading-4 text-white/45"
+                        >
+                          CFTEA: {cfteaSummary}
+                        </p>
+                      )}
+                    </PaymentInfoModal>
                   )}
 
-                  {isMercadoPagoFinanced && mercadoPagoFinancedQuote && (
-                    <p className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] px-3 py-2 text-11px font-medium leading-5 text-white/55">
-                      Costo financiero total efectivo anual (CFTEA):{" "}
-                      {mercadoPagoPricing.installmentPlans
-                        .flatMap((plan) =>
-                          plan.cfteaPercent != null
-                            ? [`${plan.count} cuotas ${plan.cfteaPercent.toFixed(1)}%`]
-                            : [],
-                        )
-                        .join(" · ")}
-                      . Precio de contado {formatPrice(cashTotalBeforeCredit)} — precio financiado{" "}
-                      {formatPrice(mercadoPagoFinancedQuote.total)}.
-                    </p>
+                  {paymentInfoModal === "mercadopago_cash" && (
+                    <PaymentInfoModal
+                      title="Mercado Pago al contado"
+                      onClose={() => setPaymentInfoModal(null)}
+                    >
+                      <MercadoPagoCashMediaList />
+                      <p className="beyonix-modal-muted mt-2.5 text-[12px] leading-5 text-white/55">
+                        Es el precio de contado: se paga en un solo pago, sin cuotas.
+                      </p>
+                    </PaymentInfoModal>
                   )}
 
                   {isMercadoPagoPayment && (
@@ -2505,6 +2706,35 @@ export default function CheckoutPage() {
                       Pago protegido por Mercado Pago
                     </p>
                   )}
+
+                  {/* Obligatorio para las 3 opciones: sin aceptar, "Pagar"
+                      queda deshabilitado (y el servidor exige el flag). */}
+                  <label
+                    data-terms-acceptance
+                    className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] px-3.5 py-3 text-sm text-white/75"
+                  >
+                    <input
+                      type="checkbox"
+                      name="checkout-terms-accepted"
+                      checked={termsAccepted}
+                      onChange={(event) =>
+                        setTermsAcceptedSessionId(event.target.checked ? cartSessionId : null)
+                      }
+                      className="mt-0.5 size-4 shrink-0 cursor-pointer accent-[var(--checkout-choice-indicator)]"
+                    />
+                    <span>
+                      Al comprar, aceptás los{" "}
+                      <Link
+                        href="/terminos"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-semibold text-beyonix-sky underline underline-offset-2"
+                      >
+                        términos y condiciones
+                      </Link>
+                      .
+                    </span>
+                  </label>
 
                   <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
@@ -2588,19 +2818,11 @@ export default function CheckoutPage() {
                     type="submit"
                     className={cn(
                       "h-10 min-w-180px px-5 text-sm",
-                      isFormValid &&
-                      !isProcessing &&
-                      !hasKnownStockConflict &&
-                      isSelectedPaymentValid
+                      canSubmitCheckout
                         ? checkoutPrimaryButtonClassName
                         : cn(checkoutSecondaryButtonClassName, checkoutDisabledButtonClassName)
                     )}
-                    disabled={
-                      !isFormValid ||
-                      isProcessing ||
-                      hasKnownStockConflict ||
-                      !isSelectedPaymentValid
-                    }
+                    disabled={!canSubmitCheckout}
                   >
                     {isProcessing ? (
                       <>
@@ -2637,7 +2859,7 @@ export default function CheckoutPage() {
               </div>
 
               <div className="custom-scrollbar max-h-[clamp(300px,38vh,390px)] space-y-1.5 overflow-y-auto pr-1">
-                {items.map((item) => {
+                {items.map((item, itemIndex) => {
                   const isMaxQuantity =
                     item.quantity >= MAX_CART_ITEM_QUANTITY
                   const stockStatus = getStockStatus(item.product, item.color)
@@ -2715,7 +2937,9 @@ export default function CheckoutPage() {
                           </div>
                         </div>
                         <span className="shrink-0 text-sm font-semibold text-white">
-                          {formatPrice(item.unitPrice * item.quantity)}
+                          {/* Importe de la línea en la modalidad elegida: las
+                              líneas suman exactamente la fila "Productos". */}
+                          {formatPrice(summaryLineAmounts[itemIndex] ?? item.unitPrice * item.quantity)}
                         </span>
                       </div>
 
@@ -2804,26 +3028,31 @@ export default function CheckoutPage() {
               <Separator className="my-2 bg-beyonix-blue-light/12" />
 
               <div className="space-y-1 rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118] px-3 py-2.5 text-sm shadow-inner shadow-black/20">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="text-white">{formatPrice(totals.subtotal)}</span>
-                </div>
-                {totals.discount > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Descuento</span>
-                    <span className="font-semibold text-emerald-400">
-                      -{formatPrice(totals.discount)}
+                {/* Productos − Beneficio + Envío (− Saldo) = Total, con el
+                    precio de productos de la modalidad elegida: contado,
+                    financiado (Mercado Pago en cuotas) o con descuento por
+                    transferencia. El envío nunca se financia ni se descuenta. */}
+                <div className="space-y-0.5">
+                  <div className="flex justify-between" data-summary-row="products">
+                    <span className="text-muted-foreground">Productos</span>
+                    <span className="text-white">
+                      {formatPrice(checkoutSummary.productsSubtotal)}
                     </span>
                   </div>
-                )}
-                {selectedStoreBenefit && storeBenefitDiscountAmount > 0 && (
+                  {isTransferPayment && transferDiscountAmount > 0 && (
+                    <p className="text-right text-11px font-semibold text-[var(--checkout-offer-text)]">
+                      Incluye {siteSettings.pricing.transferDiscountPercent}% OFF por transferencia
+                    </p>
+                  )}
+                </div>
+                {selectedStoreBenefit && checkoutSummary.storeBenefitDiscount > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
                       {getStoreBenefitLabel()}{" "}
                       {selectedStoreBenefit.percent}%
                     </span>
                     <span className="font-semibold text-emerald-400">
-                      -{formatPrice(storeBenefitDiscountAmount)}
+                      -{formatPrice(checkoutSummary.storeBenefitDiscount)}
                     </span>
                   </div>
                 )}
@@ -2886,16 +3115,6 @@ export default function CheckoutPage() {
                     </p>
                   )}
                 </div>
-                {transferDiscountAmount > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      Transferencia {siteSettings.pricing.transferDiscountPercent}% OFF
-                    </span>
-                    <span className="font-semibold text-emerald-400">
-                      -{formatPrice(transferDiscountAmount)}
-                    </span>
-                  </div>
-                )}
                 {appliedCustomerCredit > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
@@ -2903,16 +3122,6 @@ export default function CheckoutPage() {
                     </span>
                     <span className="font-semibold text-emerald-400">
                       -{formatPrice(appliedCustomerCredit)}
-                    </span>
-                  </div>
-                )}
-                {installmentsRoundingAdjustment > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">
-                      Redondeo de cuotas
-                    </span>
-                    <span className="font-semibold text-white">
-                      +{formatPrice(installmentsRoundingAdjustment)}
                     </span>
                   </div>
                 )}
@@ -2961,22 +3170,88 @@ export default function CheckoutPage() {
                 </CheckoutNotice>
               )}
 
-              <p className="mt-2.5 text-center text-xs text-muted-foreground">
-                Al completar tu compra aceptás nuestros{" "}
-                <Link
-                  href="/terminos"
-                  className="font-medium text-foreground underline underline-offset-4 transition-colors hover:text-white"
-                >
-                  términos y condiciones
-                </Link>
-                .
-              </p>
             </aside>
           </form>
         </div>
       </div>
       </main>
       <Footer />
+      {/* Confirmación ANTES de ir a Mercado Pago: la preferencia se crea
+          recién al confirmar (submitCheckout). "Volver" no llama al servidor. */}
+      {mercadoPagoConfirmOpen && mercadoPagoQuote && (
+        <PaymentInfoModal
+          title="Vas a continuar a Mercado Pago"
+          onClose={() => {
+            if (!isProcessing) setMercadoPagoConfirmOpen(false)
+          }}
+          footer={
+            <div className="grid gap-2">
+              <BeyonixButton
+                variant="primary"
+                size="md"
+                className="w-full"
+                data-confirm-mercadopago
+                disabled={isProcessing}
+                onClick={() => void submitCheckout()}
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Redirigiendo…
+                  </>
+                ) : (
+                  "Continuar a Mercado Pago"
+                )}
+              </BeyonixButton>
+              <BeyonixButton
+                variant="outline"
+                size="md"
+                className="w-full"
+                disabled={isProcessing}
+                onClick={() => setMercadoPagoConfirmOpen(false)}
+              >
+                Volver
+              </BeyonixButton>
+            </div>
+          }
+        >
+          {isMercadoPagoFinanced ? (
+            <div data-mercadopago-confirm="financed">
+              <p className="beyonix-modal-body text-[13px] leading-5 text-white/65">
+                Elegiste pagar en cuotas.
+              </p>
+              <p className="beyonix-modal-title mt-2 text-[15px] font-bold text-white">
+                Total financiado: {formatPrice(finalTotal)}
+              </p>
+              {maxInstallmentPlan && (
+                <p className="beyonix-modal-body mt-0.5 text-[13px] text-white/65">
+                  Hasta {maxInstallmentPlan.count} cuotas sin interés.
+                </p>
+              )}
+              <InstallmentPlanList plans={mercadoPagoPricing.installmentPlans} />
+              <p
+                data-financed-total-warning
+                className="beyonix-modal-body mt-3 rounded-lg border border-amber-300/22 bg-amber-300/[0.055] px-3 py-2 text-[12px] leading-5 text-white/75"
+              >
+                {MERCADOPAGO_FINANCED_TOTAL_WARNING}
+              </p>
+            </div>
+          ) : (
+            <div data-mercadopago-confirm="cash">
+              <p className="beyonix-modal-body text-[13px] leading-5 text-white/65">
+                Elegiste pagar al contado.
+              </p>
+              <p className="beyonix-modal-title mt-2 text-[15px] font-bold text-white">
+                Total: {formatPrice(finalTotal)}
+              </p>
+              <p className="beyonix-modal-body mb-2 mt-3 text-[13px] text-white/65">
+                Dentro de Mercado Pago elegí:
+              </p>
+              <MercadoPagoCashMediaList />
+            </div>
+          )}
+        </PaymentInfoModal>
+      )}
       {insufficientStockItems.length > 0 && (
         <InsufficientStockModal
           items={insufficientStockItems}

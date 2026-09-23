@@ -44,6 +44,8 @@ import {
   InvalidCheckoutItemsError,
   type CheckoutOrderPricingSnapshot,
   type CheckoutOrderRequestPayload,
+  CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE,
+  hasAcceptedCheckoutTerms,
 } from "@/lib/orders/checkout-order-creation"
 import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -74,6 +76,12 @@ export async function POST(request: Request) {
 
   try {
     const payload = (await request.json()) as CheckoutPayload
+    if (!hasAcceptedCheckoutTerms(payload)) {
+      return NextResponse.json(
+        { code: "TERMS_NOT_ACCEPTED", error: CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE },
+        { status: 400 },
+      )
+    }
     const items = normalizeCheckoutOrderItems(payload.items)
     const customer = normalizeCheckoutOrderCustomer(payload.customer)
     const customerError = getCheckoutOrderCustomerValidationError(customer)
