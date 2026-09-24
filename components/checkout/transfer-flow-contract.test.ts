@@ -33,11 +33,14 @@ test("un fallo técnico (rate limit, verificación en curso, error inesperado de
   assert.match(catchBlock, /onManualReview\(\)/)
 })
 
-test("el formulario nunca envía el monto como único dato de confianza -- también viaja DNI (nombre/apellido son opcionales, sólo para revisión manual)", () => {
-  assert.match(SOURCE, /nombre: firstName/)
-  assert.match(SOURCE, /apellido: lastName/)
-  assert.match(SOURCE, /dni,/)
-  assert.match(SOURCE, /monto: Number\(amount\)/)
+test("el formulario envía los 4 datos obligatorios del titular ya validados (nombre, apellido, DNI/CUIT y monto)", () => {
+  assert.match(SOURCE, /const declaration = validateTransferDeclaration\(\{/)
+  assert.match(SOURCE, /nombre: declaration\.value\.firstName/)
+  assert.match(SOURCE, /apellido: declaration\.value\.lastName/)
+  assert.match(SOURCE, /dni: declaration\.value\.document/)
+  // Texto crudo: el servidor lo lee con el parser es-AR ("1.500,50").
+  assert.match(SOURCE, /monto: amount,/)
+  assert.doesNotMatch(SOURCE, /\(opcional\)/)
 })
 
 test("si el pedido ya tiene comprobante subido o el pago ya fue resuelto, el flujo muestra el paso de revisión (no el formulario de verificación)", () => {

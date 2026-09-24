@@ -25,6 +25,11 @@ import {
   TRANSFER_ALIAS,
   TRANSFER_CVU,
 } from "@/lib/payments/transfer"
+import {
+  TRANSFER_HOLDER_NAME_MAX_LENGTH,
+  validateTransferDeclaration,
+  type TransferDeclarationField,
+} from "@/lib/payments/transfer-declaration"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const TRANSFER_ELIGIBLE_PAYMENT_STATUSES = ["pendiente_comprobante", "en_revision"]
@@ -119,6 +124,63 @@ function CopyableField({
         )}
         <span className="hidden sm:inline">{copied ? "Copiado" : "Copiar"}</span>
       </button>
+    </div>
+  )
+}
+
+function TransferDeclarationInput({
+  id,
+  label,
+  hint,
+  value,
+  onChange,
+  error,
+  inputMode,
+  maxLength,
+  autoComplete,
+  disabled,
+}: {
+  id: string
+  label: string
+  hint: string
+  value: string
+  onChange: (value: string) => void
+  error?: string
+  inputMode?: "numeric" | "decimal"
+  maxLength?: number
+  autoComplete?: string
+  disabled: boolean
+}) {
+  const hintId = `${id}-hint`
+  const errorId = `${id}-error`
+
+  return (
+    <div>
+      <label className={labelClassName} htmlFor={id}>
+        {label}
+      </label>
+      <input
+        id={id}
+        className={`${inputClassName} mt-1 ${error ? "border-[var(--account-danger)]" : ""}`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        required
+        aria-required="true"
+        aria-invalid={error ? "true" : "false"}
+        aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        autoComplete={autoComplete}
+        disabled={disabled}
+      />
+      <p id={hintId} className="mt-1 text-xs leading-4 text-[var(--account-text-secondary)]">
+        {hint}
+      </p>
+      {error && (
+        <p id={errorId} role="alert" className="mt-1 text-xs font-medium text-[var(--account-danger)]">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
@@ -223,11 +285,29 @@ function TransferVerificationStep({
   )
   const [phase, setPhase] = useState<"idle" | "submitting" | "confirming">("idle")
   const [errorMessage, setErrorMessage] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<TransferDeclarationField, string>>
+  >({})
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (phase !== "idle") return
 
+    // Misma validación que el servidor (lib/payments/transfer-declaration.ts):
+    // los 4 datos del titular son obligatorios.
+    const declaration = validateTransferDeclaration({
+      nombre: firstName,
+      apellido: lastName,
+      dni,
+      monto: amount,
+    })
+    if (!declaration.ok) {
+      setFieldErrors(declaration.errors)
+      setErrorMessage("")
+      return
+    }
+
+    setFieldErrors({})
     setPhase("submitting")
     setErrorMessage("")
 
@@ -239,21 +319,31 @@ function TransferVerificationStep({
           "Content-Type": "application/json",
           ...(guestToken ? { "x-guest-order-token": guestToken } : {}),
         },
+        // Valores ya normalizados; el monto viaja como texto para que el
+        // servidor lo lea con el mismo parser es-AR ("1.500,50").
         body: JSON.stringify({
-          nombre: firstName,
-          apellido: lastName,
-          dni,
-          monto: Number(amount),
+          nombre: declaration.value.firstName,
+          apellido: declaration.value.lastName,
+          dni: declaration.value.document,
+          monto: amount,
         }),
       })
 
       const data = (await response.json()) as {
         status?: "verified" | "manual_review"
         error?: string
+        fieldErrors?: Partial<Record<TransferDeclarationField, string>>
         proofUploadAvailable?: boolean
       }
 
       if (!response.ok) {
+        // Error de validación del servidor: el cliente corrige en el mismo
+        // formulario (no es un fallo técnico).
+        if (response.status === 400 && data.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
+          setFieldErrors(data.fieldErrors)
+          setPhase("idle")
+          return
+        }
         setErrorMessage(data.error || "No pudimos verificar tu transferencia.")
         // Un fallo técnico (rate limit, verificación en curso, error
         // inesperado del backend o de Mercado Pago) nunca debe dejar al
@@ -307,74 +397,66 @@ function TransferVerificationStep({
       <h1 className="text-center text-xl font-bold text-[var(--account-text-primary)] sm:text-2xl">
         Validá tu transferencia
       </h1>
-      <p className="mx-auto mt-1.5 max-w-xs text-center text-sm leading-5 text-[var(--account-text-secondary)]">
-        Completá los datos de la transferencia para que podamos verificar el pago automáticamente.
+      <p className="mx-auto mt-1.5 max-w-sm text-center text-sm leading-5 text-[var(--account-text-secondary)]">
+        Completá los datos del <strong className="font-semibold text-[var(--account-text-primary)]">titular de la cuenta desde donde salió el dinero</strong>{" "}
+        para que podamos verificar el pago.
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClassName} htmlFor="transfer-verify-monto">
-              Monto transferido
-            </label>
-            <input
-              id="transfer-verify-monto"
-              className={`${inputClassName} mt-1`}
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              required
-              inputMode="decimal"
-              disabled={submitting}
-            />
-          </div>
-          <div>
-            <label className={labelClassName} htmlFor="transfer-verify-dni">
-              DNI
-            </label>
-            <input
-              id="transfer-verify-dni"
-              className={`${inputClassName} mt-1`}
-              value={dni}
-              onChange={(event) => setDni(event.target.value)}
-              required
-              inputMode="numeric"
-              maxLength={10}
-              disabled={submitting}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClassName} htmlFor="transfer-verify-nombre">
-              Nombre (opcional)
-            </label>
-            <input
-              id="transfer-verify-nombre"
-              className={`${inputClassName} mt-1`}
-              value={firstName}
-              onChange={(event) => setFirstName(event.target.value)}
-              maxLength={200}
-              disabled={submitting}
-            />
-          </div>
-          <div>
-            <label className={labelClassName} htmlFor="transfer-verify-apellido">
-              Apellido (opcional)
-            </label>
-            <input
-              id="transfer-verify-apellido"
-              className={`${inputClassName} mt-1`}
-              value={lastName}
-              onChange={(event) => setLastName(event.target.value)}
-              maxLength={200}
-              disabled={submitting}
-            />
-          </div>
-        </div>
-        <p className="text-xs leading-5 text-[var(--account-text-secondary)]">
-          Los datos opcionales pueden ayudarnos si necesitamos revisar el pago manualmente.
+      <div
+        data-transfer-holder-notice
+        className="mt-4 flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
+      >
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
+        <p className="text-xs leading-5 text-[var(--account-info-text)]">
+          <strong className="font-bold">Estos datos pueden ser distintos a los de la persona que realizó la compra.</strong>{" "}
+          Si otra persona transfirió desde su cuenta, ingresá los datos de esa persona.
         </p>
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
+        <TransferDeclarationInput
+          id="transfer-verify-nombre"
+          label="Nombre del titular"
+          hint="Nombre de la persona titular de la cuenta bancaria o billetera desde donde realizaste la transferencia."
+          value={firstName}
+          onChange={setFirstName}
+          error={fieldErrors.firstName}
+          autoComplete="off"
+          maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
+          disabled={submitting}
+        />
+        <TransferDeclarationInput
+          id="transfer-verify-apellido"
+          label="Apellido del titular"
+          hint="Apellido de la persona titular de la cuenta bancaria o billetera desde donde realizaste la transferencia."
+          value={lastName}
+          onChange={setLastName}
+          error={fieldErrors.lastName}
+          autoComplete="off"
+          maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
+          disabled={submitting}
+        />
+        <TransferDeclarationInput
+          id="transfer-verify-dni"
+          label="DNI/CUIT del titular"
+          hint="Ingresá el documento del titular de la cuenta desde donde se realizó la transferencia."
+          value={dni}
+          onChange={setDni}
+          error={fieldErrors.document}
+          inputMode="numeric"
+          maxLength={13}
+          disabled={submitting}
+        />
+        <TransferDeclarationInput
+          id="transfer-verify-monto"
+          label="Monto exacto transferido"
+          hint="Ingresá exactamente el importe enviado."
+          value={amount}
+          onChange={setAmount}
+          error={fieldErrors.amount}
+          inputMode="decimal"
+          disabled={submitting}
+        />
 
         {errorMessage && (
           <p className="text-xs font-medium text-[var(--account-danger)]">{errorMessage}</p>
@@ -459,14 +541,18 @@ function TransferManualReviewStep({
             </div>
           )}
 
+          {/* Secundario real (borde + texto con contraste en light y dark);
+              antes era un link de texto casi invisible en dark. */}
           {onRetry && (
-            <button
+            <BeyonixButton
               type="button"
+              variant="outline"
               onClick={onRetry}
-              className="mt-4 w-full cursor-pointer text-center text-xs font-semibold text-[var(--account-accent)] hover:underline"
+              data-transfer-retry
+              className="transfer-retry-button mt-4 h-11 w-full"
             >
-              Volver a intentar con otros datos
-            </button>
+              Corregir datos de la transferencia
+            </BeyonixButton>
           )}
         </>
       ) : (

@@ -458,3 +458,47 @@ test("visual 6. los modales siguen con el mismo componente y quedan blancos/prol
   assert.match(css, /\.checkout-info-modal \.beyonix-modal-list > li \+ li \{\n  border-top: 1px solid #e8eef5 !important;/)
   assert.equal((checkout.match(/<PaymentInfoModal/g) ?? []).length, 3)
 })
+
+function contrastRatio(foreground: string, background: string) {
+  const channel = (value: number) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+  const relative = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((index) => channel(parseInt(hex.slice(index, index + 2), 16) / 255))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const [light, dark] = [relative(foreground), relative(background)].sort((a, b) => b - a)
+  return (light + 0.05) / (dark + 0.05)
+}
+
+test("visual 7. confirmación en cuotas: advertencia destacada con ¡ATENCIÓN! y texto sin cambios", () => {
+  const modalStart = checkout.indexOf("{mercadoPagoConfirmOpen && mercadoPagoQuote && (")
+  const modal = checkout.slice(modalStart, checkout.indexOf("</PaymentInfoModal>", modalStart))
+  const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
+  const warning = financed.slice(financed.indexOf("data-financed-total-warning"))
+  assert.match(warning, /className="checkout-financed-warning mt-3 flex/)
+  assert.match(warning, /<AlertTriangle[\s\S]*?className="checkout-financed-warning-icon/)
+  assert.match(warning, /data-financed-total-warning-title[\s\S]*?>\s*¡ATENCIÓN!\s*</)
+  assert.match(warning, /className="checkout-financed-warning-text[^"]*">\s*\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)
+  assert.match(financed, /role="note"\s+aria-labelledby="financed-total-warning-title"/)
+  // Sin utilidades que el tema Light reescribe dentro del bloque.
+  assert.doesNotMatch(warning.slice(0, warning.indexOf("</div>\n              </div>")), /text-white|bg-amber-|border-amber-/)
+
+  // Colores explícitos y legibles en ambos temas, con acento lateral.
+  assert.match(css, /\n\.checkout-financed-warning \{\n  background: rgba\(245, 158, 11, 0\.16\);\n  border: 1px solid rgba\(251, 191, 36, 0\.55\);\n  border-left: 4px solid #f59e0b;/)
+  assert.ok(contrastRatio("#fef3c7", "#2a1d06") >= 7)
+  assert.ok(css.includes(`${LIGHT_SCOPE} .checkout-info-modal .checkout-financed-warning {\n  background: #fff4d6 !important;`))
+  assert.match(css, /\.checkout-financed-warning-text \{\n  color: #451a03 !important;/)
+  assert.match(css, /\.checkout-financed-warning-title \{\n  color: #92400e !important;/)
+  assert.ok(contrastRatio("#451a03", "#fff4d6") >= 7)
+  assert.ok(contrastRatio("#92400e", "#fff4d6") >= 4.5)
+})
+
+test("visual 8. 'Ver cuotas': precio y aclaración en líneas propias, sin oración partida", () => {
+  const start = checkout.indexOf('title="Cuotas con Mercado Pago"')
+  const intro = checkout.slice(start, checkout.indexOf("<InstallmentPlanList", start))
+  assert.match(intro, /data-installments-intro/)
+  assert.match(intro, />\s*Precio en cuotas\s*</)
+  assert.match(intro, /\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
+  assert.match(intro, /<p className="beyonix-modal-body mt-1[^"]*">\s*La cantidad de cuotas la elegís dentro de Mercado Pago\.\s*<\/p>/)
+  // Nada de "Precio en cuotas: $X. La cantidad…" pegado al precio.
+  assert.doesNotMatch(intro, /Precio en cuotas:|\n\s*\. La cantidad/)
+})

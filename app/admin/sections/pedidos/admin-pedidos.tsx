@@ -113,6 +113,7 @@ import {
 } from "@/lib/orders/admin-order-cancellation-reasons"
 import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-payment-status"
 import { describeManualReviewReason } from "@/lib/orders/transfer-verification-reasons"
+import { getTransferDeclarationView } from "@/lib/orders/transfer-declaration-view"
 import { cn } from "@/lib/utils"
 import type {
   SupabaseOrderClaim,
@@ -5699,25 +5700,6 @@ function PedidoDetailModal({
                             label="Fecha de pago"
                             value={formatOptionalOrderDate(pedido.paid_at)}
                           />
-                          <div className="admin-order-pg-meta-item">
-                            <p className="admin-order-pg-meta-label">Comprobante</p>
-                            <div className="admin-order-pg-meta-proof">
-                              <span className="admin-order-pg-meta-value">
-                                {pedido.payment_proof_file_name || "Sin comprobante"}
-                              </span>
-                              {pedido.payment_proof_url && (
-                                <button
-                                  type="button"
-                                  aria-label={`Ver comprobante del pedido ${pedido.id}`}
-                                  onClick={() => void handleViewPaymentProof()}
-                                  className="admin-order-pg-proof-button"
-                                >
-                                  <Download className="size-3.5" />
-                                  Ver comprobante
-                                </button>
-                              )}
-                            </div>
-                          </div>
                         </>
                       ) : (
                         <>
@@ -5771,6 +5753,78 @@ function PedidoDetailModal({
                   )}
                 </section>
 
+                {transfer && (() => {
+                  // Datos del TITULAR de la cuenta desde donde salió el dinero
+                  // (declarados por el cliente), para conciliar a mano contra
+                  // el extracto: nombre, DNI/CUIT, importe y comprobante.
+                  const declaration = getTransferDeclarationView(pedido)
+
+                  return (
+                    <section className="admin-order-pg-panel" data-transfer-declaration>
+                      <div className="admin-order-pg-header">
+                        <div className="min-w-0">
+                          <p className="admin-order-pg-eyebrow">Titular de la cuenta de origen</p>
+                          <p className="admin-order-pg-method-value">Datos de la transferencia</p>
+                        </div>
+                      </div>
+
+                      <div className="admin-order-pg-body">
+                        <p className="admin-order-pg-next-desc">
+                          Declarados por el cliente. Pueden ser distintos a los de la persona que
+                          realizó la compra.
+                        </p>
+                        <div className="admin-order-pg-meta">
+                          <PaymentMetaItem label="Nombre del titular" value={declaration.firstName} />
+                          <PaymentMetaItem label="Apellido del titular" value={declaration.lastName} />
+                          <PaymentMetaItem label="DNI/CUIT del titular" value={declaration.document} />
+                          <PaymentMetaItem
+                            label="Monto declarado"
+                            value={
+                              declaration.declaredAmount != null
+                                ? formatPrice(declaration.declaredAmount)
+                                : "No informado"
+                            }
+                          />
+                          <PaymentMetaItem
+                            label="Fecha y hora de carga"
+                            value={
+                              declaration.declaredAt
+                                ? formatOptionalOrderDate(declaration.declaredAt)
+                                : "No informado"
+                            }
+                          />
+                          <PaymentMetaItem
+                            label="Estado de verificación"
+                            value={`${getPaymentStatusLabel(pedido.payment_status)} · ${declaration.verificationLabel}`}
+                          />
+                          <div className="admin-order-pg-meta-item" data-transfer-declaration-proof>
+                            <p className="admin-order-pg-meta-label">Comprobante</p>
+                            <div className="admin-order-pg-meta-proof">
+                              <span className="admin-order-pg-meta-value">
+                                {declaration.proof.fileName}
+                                {declaration.proof.uploadedAt
+                                  ? ` · ${formatOptionalOrderDate(declaration.proof.uploadedAt)}`
+                                  : ""}
+                              </span>
+                              {declaration.proof.attached && (
+                                <button
+                                  type="button"
+                                  aria-label={`Ver comprobante del pedido ${pedido.id}`}
+                                  onClick={() => void handleViewPaymentProof()}
+                                  className="admin-order-pg-proof-button"
+                                >
+                                  <Download className="size-3.5" />
+                                  Ver comprobante
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </section>
+                  )
+                })()}
+
                 {transfer && (
                   <section className="admin-order-pg-panel">
                     <div className="admin-order-pg-header">
@@ -5794,14 +5848,6 @@ function PedidoDetailModal({
                     <div className="admin-order-pg-body">
                       <div className="admin-order-pg-meta">
                         <PaymentMetaItem
-                          label="Monto informado por el cliente"
-                          value={
-                            pedido.transfer_amount_declared != null
-                              ? formatPrice(Number(pedido.transfer_amount_declared))
-                              : "No informado"
-                          }
-                        />
-                        <PaymentMetaItem
                           label="Monto detectado en Mercado Pago"
                           value={
                             pedido.transfer_verification_status === "auto_verified" &&
@@ -5809,18 +5855,6 @@ function PedidoDetailModal({
                               ? formatPrice(Number(pedido.payment_confirmed_amount))
                               : "No detectado"
                           }
-                        />
-                        <PaymentMetaItem
-                          label="Nombre declarado"
-                          value={pedido.transfer_payer_first_name || "No informado"}
-                        />
-                        <PaymentMetaItem
-                          label="Apellido declarado"
-                          value={pedido.transfer_payer_last_name || "No informado"}
-                        />
-                        <PaymentMetaItem
-                          label="DNI declarado"
-                          value={pedido.transfer_payer_dni || "No informado"}
                         />
                         <PaymentMetaItem
                           label="Identificación de Mercado Pago"

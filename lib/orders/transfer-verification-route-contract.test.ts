@@ -32,7 +32,8 @@ test("el endpoint sólo admite pedidos por transferencia bancaria", () => {
 test("el endpoint nunca usa el monto informado por el cliente como fuente de verdad -- sólo lo pasa como dato declarado", () => {
   assert.doesNotMatch(routeSource, /payload\.total/)
   assert.doesNotMatch(routeSource, /payload\.external_amount_due/)
-  assert.match(routeSource, /declared:\s*\{\s*firstName,\s*lastName,\s*dni,\s*amount\s*\}/)
+  // Datos ya validados y normalizados (lib/payments/transfer-declaration.ts).
+  assert.match(routeSource, /declared:\s*\{\s*firstName,\s*lastName,\s*dni: document,\s*amount\s*\}/)
 })
 
 test("el monto esperado real siempre se calcula desde la orden en base de datos, nunca desde el request", () => {

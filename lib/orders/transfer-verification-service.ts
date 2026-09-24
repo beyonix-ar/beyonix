@@ -11,7 +11,10 @@ import {
   matchBankTransferPayment,
   type TransferManualReviewReason,
 } from "./transfer-auto-verification.ts"
-import { normalizeDeclaredDni } from "../payments/argentine-identification.ts"
+import {
+  normalizeDeclaredDni,
+  parseDeclaredPayerDocument,
+} from "../payments/argentine-identification.ts"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
 import { moneyToCents } from "../mercadopago/order-payment.ts"
 
@@ -74,7 +77,7 @@ export async function persistDeclaredInput(
   admin: AdminClient,
   orderId: number,
   declared: TransferVerificationDeclaredInput,
-  normalizedDni: string | null,
+  declaredDocument: string | null,
   leaseId: string | null,
 ) {
   if (!leaseId) {
@@ -87,7 +90,7 @@ export async function persistDeclaredInput(
     .update({
       transfer_payer_first_name: declared.firstName.trim().slice(0, 200) || null,
       transfer_payer_last_name: declared.lastName.trim().slice(0, 200) || null,
-      transfer_payer_dni: normalizedDni ?? (declared.dni.trim().slice(0, 20) || null),
+      transfer_payer_dni: declaredDocument ?? (declared.dni.trim().slice(0, 20) || null),
       transfer_amount_declared: Number.isFinite(declared.amount) ? declared.amount : null,
     })
     .eq("id", orderId)
@@ -214,8 +217,10 @@ export async function attemptTransferAutoVerification(
   // pueda pisar el estado del intento vigente al terminar tarde.
   const leaseId = (claimedOrder.transfer_verification_lease_id as string | null) ?? null
 
-  const normalizedDni = normalizeDeclaredDni(declared.dni)
-  await persistDeclaredInput(admin, orderId, declared, normalizedDni, leaseId)
+  // Se guarda el documento tal como lo declaró el cliente (DNI o CUIT/CUIL
+  // normalizado), no el DNI derivado: el admin concilia contra lo informado.
+  const declaredDocument = parseDeclaredPayerDocument(declared.dni)?.number ?? null
+  await persistDeclaredInput(admin, orderId, declared, declaredDocument, leaseId)
 
   const order = await expireTransferOrderIfNeeded(admin, claimedOrder)
 

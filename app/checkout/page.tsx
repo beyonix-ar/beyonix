@@ -18,6 +18,7 @@ import {
 
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -2677,13 +2678,21 @@ export default function CheckoutPage() {
                       title="Cuotas con Mercado Pago"
                       onClose={() => setPaymentInfoModal(null)}
                     >
-                      <p className="beyonix-modal-body text-[13px] leading-5 text-white/65">
-                        Precio en cuotas:{" "}
-                        <span className="font-semibold text-white">
-                          {formatPrice(financedPreviewQuote.externalAmountDue)}
-                        </span>
-                        . La cantidad de cuotas la elegís dentro de Mercado Pago.
-                      </p>
+                      {/* Precio y aclaración en dos líneas propias: el precio
+                          nunca queda partido a mitad de una oración. */}
+                      <div data-installments-intro>
+                        <p className="flex items-baseline justify-between gap-3">
+                          <span className="beyonix-modal-body text-[13px] text-white/65">
+                            Precio en cuotas
+                          </span>
+                          <span className="beyonix-modal-title shrink-0 text-[15px] font-bold text-white">
+                            {formatPrice(financedPreviewQuote.externalAmountDue)}
+                          </span>
+                        </p>
+                        <p className="beyonix-modal-body mt-1 text-[12px] leading-5 text-white/65">
+                          La cantidad de cuotas la elegís dentro de Mercado Pago.
+                        </p>
+                      </div>
                       <InstallmentPlanList plans={financedPreviewPricing.installmentPlans} />
                       {/* Disclosure legal (CFTEA): discreto y junto al detalle
                           de cuotas. Fórmula sin cambios; 1 decimal es-AR. */}
@@ -3239,12 +3248,29 @@ export default function CheckoutPage() {
                 </p>
               )}
               <InstallmentPlanList plans={mercadoPagoPricing.installmentPlans} />
-              <p
+              <div
+                role="note"
+                aria-labelledby="financed-total-warning-title"
                 data-financed-total-warning
-                className="beyonix-modal-body mt-3 rounded-lg border border-amber-300/22 bg-amber-300/[0.055] px-3 py-2 text-[12px] leading-5 text-white/75"
+                className="checkout-financed-warning mt-3 flex gap-2.5 px-3 py-2.5"
               >
-                {MERCADOPAGO_FINANCED_TOTAL_WARNING}
-              </p>
+                <AlertTriangle
+                  aria-hidden="true"
+                  className="checkout-financed-warning-icon mt-0.5 size-4 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p
+                    id="financed-total-warning-title"
+                    data-financed-total-warning-title
+                    className="checkout-financed-warning-title text-[12px] font-black tracking-wide"
+                  >
+                    ¡ATENCIÓN!
+                  </p>
+                  <p className="checkout-financed-warning-text mt-0.5 text-[13px] font-semibold leading-5">
+                    {MERCADOPAGO_FINANCED_TOTAL_WARNING}
+                  </p>
+                </div>
+              </div>
             </div>
           ) : (
             <div data-mercadopago-confirm="cash">

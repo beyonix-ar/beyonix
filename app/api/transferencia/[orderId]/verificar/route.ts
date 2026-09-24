@@ -6,14 +6,9 @@ import {
   type TransferVerificationAttemptResult,
 } from "@/lib/orders/transfer-verification-service"
 import { canUploadTransferProof } from "@/lib/orders/transfer-verification-reasons"
+import { validateTransferDeclaration } from "@/lib/payments/transfer-declaration"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
-
-const MAX_TEXT_LENGTH = 200
-
-function normalizeText(value: unknown): string {
-  return typeof value === "string" ? value.trim().slice(0, MAX_TEXT_LENGTH) : ""
-}
 
 /**
  * Respuesta MÍNIMA y explícitamente allowlisteada para el cliente: nunca
@@ -76,10 +71,6 @@ export async function POST(
     }
 
     const payload = (body ?? {}) as Record<string, unknown>
-    const firstName = normalizeText(payload.nombre)
-    const lastName = normalizeText(payload.apellido)
-    const dni = normalizeText(payload.dni)
-    const amount = Number(payload.monto)
 
     const admin = createAdminClient()
     const { data: order, error: orderError } = await admin
@@ -116,32 +107,29 @@ export async function POST(
     // monto con coma decimal) nunca puede dejar al cliente sin la salida del
     // comprobante manual mientras el pago siga sin confirmarse -- mismo
     // criterio central que usa el resto del sistema (canUploadTransferProof).
-    // Nombre y apellido son opcionales: el matching automático usa DNI + monto
-    // (ver attemptTransferAutoVerification); nombre/apellido sólo se guardan
-    // como referencia para una eventual revisión manual.
-    if (!dni) {
+    // Datos del TITULAR de la cuenta desde donde salió la transferencia:
+    // nombre, apellido, DNI/CUIT y monto son obligatorios (misma validación
+    // que el formulario, ver lib/payments/transfer-declaration.ts). El
+    // matching automático usa DNI + monto; nombre y apellido quedan para la
+    // conciliación manual del admin.
+    const declaration = validateTransferDeclaration(payload)
+    if (!declaration.ok) {
+      const [field, message] = Object.entries(declaration.errors)[0] ?? []
       return NextResponse.json(
         {
-          error: "Indicá el DNI del titular de la transferencia.",
+          error: message ?? "Revisá los datos de la transferencia.",
+          field,
+          fieldErrors: declaration.errors,
           proofUploadAvailable: canUploadTransferProof(order.payment_status),
         },
         { status: 400 },
       )
     }
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json(
-        {
-          error: "Indicá el monto transferido.",
-          proofUploadAvailable: canUploadTransferProof(order.payment_status),
-        },
-        { status: 400 },
-      )
-    }
-
+    const { firstName, lastName, document, amount } = declaration.value
     const result = await attemptTransferAutoVerification(admin, {
       orderId: pedidoId,
-      declared: { firstName, lastName, dni, amount },
+      declared: { firstName, lastName, dni: document, amount },
     })
 
     switch (result.status) {

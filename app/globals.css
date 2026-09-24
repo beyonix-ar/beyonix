@@ -12501,6 +12501,66 @@ html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyon
 html[data-account-theme="light"][data-account-scope] .checkout-info-modal .beyonix-modal-close:hover {
   background: #eef3f8 !important;
 }
+/* Advertencia "¡ATENCIÓN!" del modal de confirmación en cuotas: si dentro de
+   Mercado Pago se paga en 1 pago, se mantiene el total financiado. Clases
+   propias (sin utilidades text-white o bg-amber con opacidad, que el tema Light
+   reescribe); ámbar marcado con acento lateral en ambos temas. Contrastes:
+   Dark #fef3c7 / #fcd34d sobre ámbar oscuro > 10:1; Light #451a03 y #92400e
+   sobre #fff4d6 > 6:1. */
+.checkout-financed-warning {
+  background: rgba(245, 158, 11, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  border-left: 4px solid #f59e0b;
+  border-radius: 0.625rem;
+}
+.checkout-financed-warning .checkout-financed-warning-icon {
+  color: #fbbf24;
+}
+.checkout-financed-warning .checkout-financed-warning-title {
+  color: #fcd34d;
+}
+.checkout-financed-warning .checkout-financed-warning-text {
+  color: #fef3c7;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .checkout-financed-warning {
+  background: #fff4d6 !important;
+  border-color: #f59e0b !important;
+  border-left-color: #d97706 !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .checkout-financed-warning .checkout-financed-warning-icon {
+  color: #b45309 !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .checkout-financed-warning .checkout-financed-warning-title {
+  color: #92400e !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-info-modal .checkout-financed-warning .checkout-financed-warning-text {
+  color: #451a03 !important;
+}
+/* "Corregir datos de la transferencia" (paso de revisión manual de la
+   transferencia): secundario claramente visible en ambos temas. Antes era un
+   link con --account-accent, que en Dark es navy (#112a43) sobre fondo casi
+   negro -- prácticamente invisible. Contrastes: Dark #e2f1fc sobre
+   #0d1117 > 15:1 (borde celeste 55%); Light #112a43 sobre #ffffff > 14:1. */
+[data-transfer-retry].transfer-retry-button {
+  background-color: rgba(140, 200, 242, 0.08) !important;
+  border: 1px solid rgba(140, 200, 242, 0.55) !important;
+  color: #e2f1fc !important;
+}
+[data-transfer-retry].transfer-retry-button:hover {
+  background-color: rgba(140, 200, 242, 0.16) !important;
+  border-color: rgba(140, 200, 242, 0.8) !important;
+  color: #ffffff !important;
+}
+html[data-account-theme="light"] [data-transfer-retry].transfer-retry-button {
+  background-color: #ffffff !important;
+  border-color: #2f6fa3 !important;
+  color: #112a43 !important;
+}
+html[data-account-theme="light"] [data-transfer-retry].transfer-retry-button:hover {
+  background-color: #eaf4fd !important;
+  border-color: #1e5f8c !important;
+  color: #0f172a !important;
+}
 .checkout-choice.checkout-option-selected {
   background-color: var(--checkout-choice-selected-bg);
   border-color: var(--checkout-choice-selected-border);

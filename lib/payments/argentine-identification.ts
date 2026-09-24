@@ -179,8 +179,53 @@ export function deriveArgentineDni(
  * exigiendo 7-8 dígitos originales antes de paddear).
  */
 export function normalizeDeclaredDni(value: string | null | undefined): string | null {
+  return parseDeclaredPayerDocument(value)?.dni ?? null
+}
+
+export interface DeclaredPayerDocument {
+  kind: "dni" | "cuit"
+  /** Documento tal como se persiste: DNI con 8 dígitos o CUIT/CUIL con 11. */
+  number: string
+  /**
+   * DNI usado para conciliar contra Mercado Pago. En un CUIT/CUIL de persona
+   * física es su bloque central (misma regla que deriveArgentineDni); en uno
+   * de persona jurídica es null (no hay DNI que comparar).
+   */
+  dni: string | null
+}
+
+/**
+ * Documento del TITULAR de la cuenta desde donde salió la transferencia:
+ * DNI (7-8 dígitos, paddeado a 8) o CUIT/CUIL (11 dígitos con dígito
+ * verificador válido). Separadores ("30.111.222", "20-30111222-7") se
+ * ignoran. Cualquier otra cosa es inválida (null) -- nunca se adivina.
+ */
+export function parseDeclaredPayerDocument(
+  value: string | null | undefined,
+): DeclaredPayerDocument | null {
   if (!value) return null
   const digits = onlyDigits(value)
-  if (digits.length < 7 || digits.length > 8) return null
-  return digits.padStart(8, "0")
+
+  if (digits.length >= 7 && digits.length <= 8) {
+    const dni = digits.padStart(8, "0")
+    return { kind: "dni", number: dni, dni }
+  }
+
+  if (digits.length === 11 && isValidCuilChecksum(digits)) {
+    const derived = deriveArgentineDni({ type: "CUIT", number: digits })
+    return { kind: "cuit", number: digits, dni: derived.dni }
+  }
+
+  return null
+}
+
+/** "30111222" -> "30.111.222"; "20301112227" -> "20-30111222-7". */
+export function formatDeclaredPayerDocument(value: string | null | undefined): string | null {
+  const document = parseDeclaredPayerDocument(value)
+  if (!document) return value?.trim() || null
+  if (document.kind === "cuit") {
+    return `${document.number.slice(0, 2)}-${document.number.slice(2, 10)}-${document.number.slice(10)}`
+  }
+  const dni = document.number.replace(/^0/, "")
+  return dni.replace(/\B(?=(\d{3})+(?!\d))/g, ".")
 }
