@@ -5139,6 +5139,13 @@ function PedidoDetailModal({
     replacements: RegisteredReplacement[] | null
     state: ReplacementLoadState
   } | null>(null)
+  // Pedido de apertura del formulario de reemplazo desde "Gestionar reclamo"
+  // (paso 2): el nonce distingue cada click y el ítem llega preseleccionado.
+  const [replacementOpenRequest, setReplacementOpenRequest] = useState<{
+    orderId: number
+    nonce: number
+    orderItemId: number | null
+  } | null>(null)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     Boolean(pedido.payment_proof_url) &&
@@ -5983,6 +5990,7 @@ function PedidoDetailModal({
               pedido={pedido}
               onUpdated={onWarrantyUpdated}
               onReplacementsChange={(replacements, state) => setOrderReplacements({ orderId: pedido.id, replacements, state })}
+              openRequest={replacementOpenRequest?.orderId === pedido.id ? replacementOpenRequest : null}
             />
           )}
           {activeView === "atencion" && (
@@ -5994,6 +6002,16 @@ function PedidoDetailModal({
             onOpenBilling={() => showDetailView("facturacion")}
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
             onInventoryUpdated={onWarrantyUpdated}
+            onRegisterReplacement={
+              capabilities.canManageReplacements
+                ? (orderItemId) =>
+                    setReplacementOpenRequest((current) => ({
+                      orderId: pedido.id,
+                      nonce: (current?.nonce ?? 0) + 1,
+                      orderItemId,
+                    }))
+                : undefined
+            }
           />
           )}
 

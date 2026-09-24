@@ -218,10 +218,11 @@ test("flujo del reclamo: tooltips, pills y contadores legibles; ayuda accesible"
     assert.ok(pill(tone) >= 4.5, `pill${tone}`)
   }
 
-  const tip = sliceFunction(claims, "function ClaimHelpTip(")
+  const tip = readSource("../../components/claims/help-tip.tsx")
+  assert.match(claims, /import \{ HelpTip \} from "@\/components\/claims\/help-tip"/)
   assert.match(tip, /aria-describedby=\{tooltipId\}/)
   assert.match(tip, /role="tooltip"/)
-  assert.match(tip, /event\.key === "Escape"/)
+  assert.match(tip, /event\.key !== "Escape"/)
   assert.match(tip, /admin-claim-help-trigger admin-claim-flow-control/)
 })
 

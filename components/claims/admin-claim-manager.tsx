@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import {
   Check,
   CheckCircle2,
   ChevronDown,
-  CircleQuestionMark,
   ClipboardList,
   CreditCard,
   Download,
@@ -64,6 +63,7 @@ import {
 import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
+import { HelpTip } from "@/components/claims/help-tip"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -446,32 +446,6 @@ function getReceptionTotals(entries: Array<{ item: SupabasePedidoItem; quantity:
       received: totals.received + Math.min(quantity, getReturnedQuantity(item)),
     }),
     { claimed: 0, received: 0 },
-  )
-}
-
-// Ayuda contextual: ícono con tooltip que aparece en hover y en foco de
-// teclado (Escape lo cierra). Sólo CSS, sin dependencias nuevas; el texto
-// queda enlazado por aria-describedby para lectores de pantalla.
-function ClaimHelpTip({ label, children }: { label: string; children: string }) {
-  const tooltipId = useId()
-
-  return (
-    <span className="admin-claim-help">
-      <button
-        type="button"
-        aria-label={`Ayuda: ${label}`}
-        aria-describedby={tooltipId}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") event.currentTarget.blur()
-        }}
-        className="admin-claim-help-trigger admin-claim-flow-control"
-      >
-        <CircleQuestionMark className="size-3.5" />
-      </button>
-      <span role="tooltip" id={tooltipId} className="admin-claim-help-bubble">
-        {children}
-      </span>
-    </span>
   )
 }
 
@@ -1376,6 +1350,7 @@ export function AdminClaimManager({
   onOpenBilling,
   registeredReplacements = null,
   replacementLoadState,
+  onRegisterReplacement,
 }: {
   pedido: SupabasePedido
   mode?: "all" | "messaging" | "claims"
@@ -1385,6 +1360,8 @@ export function AdminClaimManager({
   /** Reemplazos del pedido ya cargados por OrderReplacements; null = desconocido. */
   registeredReplacements?: RegisteredReplacement[] | null
   replacementLoadState?: ReplacementLoadState
+  /** Abre directamente el formulario de reemplazo (OrderReplacements), con el ítem reclamado si es uno solo. */
+  onRegisterReplacement?: (orderItemId: number | null) => void
 }) {
   const { user } = useAuth()
   const isAdmin = getAdminCapabilities(user?.rol).canManageReturns
@@ -2264,7 +2241,15 @@ export function AdminClaimManager({
                     replacementLoadState={replacementLoadState}
                     saving={saving}
                     onGoToReception={() => document.getElementById(`claim-reception-${claim.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    onRegisterReplacement={() => document.getElementById(`order-replacements-${pedido.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    onRegisterReplacement={() => {
+                      // Abre el formulario real; el scroll a la sección queda sólo
+                      // como respaldo si no hay gestor de reemplazos (permisos).
+                      if (onRegisterReplacement) {
+                        onRegisterReplacement(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)
+                        return
+                      }
+                      document.getElementById(`order-replacements-${pedido.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }}
                     onConfirmDelivery={() => setPendingConfirmation({
                       title: "Confirmar entrega del reemplazo",
                       description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
@@ -2564,7 +2549,7 @@ export function ReplacementFlowSteps({
     description: missingUnit
       ? "Elegí la unidad que recibirá el cliente y descontala del stock."
       : "Elegí qué producto recibirá el cliente y descontalo del stock.",
-    help: "Te lleva a “Reemplazos del pedido”: ahí elegís la variante que recibe el cliente y se descuenta del stock. No crea un envío.",
+    help: "Abre el formulario “Reemplazo del pedido”: ahí elegís la variante que recibe el cliente y se descuenta del stock. No crea un envío.",
     state: flow.replacement,
     doneLabel: "Registrado",
     progress: replacedUnits !== null && replacedUnits > 0 ? `${replacedUnits} de ${claimedUnits}` : null,
@@ -2615,7 +2600,7 @@ export function ReplacementFlowSteps({
                   <p className="admin-claim-flow-title">{step.title}</p>
                   <span className="flex shrink-0 items-center gap-1">
                     <FlowStepBadge step={step} active={active} />
-                    <ClaimHelpTip label={step.title}>{step.help}</ClaimHelpTip>
+                    <HelpTip label={step.title}>{step.help}</HelpTip>
                   </span>
                 </div>
                 {step.state !== "done" && (
@@ -2659,9 +2644,9 @@ export function ReplacementFlowSteps({
                   <span className="admin-claim-pill is-neutral is-small">
                     {finalizeBlocked ? <><Lock className="size-3" />Bloqueado</> : "Alternativa"}
                   </span>
-                  <ClaimHelpTip label="Finalizar reclamo">
+                  <HelpTip label="Finalizar reclamo">
                     Cierra el reclamo sin usar “Confirmar envío o entrega”. Podés dejar un mensaje opcional al cliente.
-                  </ClaimHelpTip>
+                  </HelpTip>
                 </span>
               </div>
               <p className="admin-claim-flow-text">Cerrá el caso con un mensaje opcional al cliente.</p>

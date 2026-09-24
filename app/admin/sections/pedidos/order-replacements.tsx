@@ -1,13 +1,17 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
+import { ChevronDown, Minus, PackageSearch, Plus, Repeat2, X } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
+import { activateModalFocus } from "@/lib/admin/modal-focus"
 import { AdminRequestError } from "@/lib/admin/request-error"
 import { supabase } from "@/lib/supabase/client"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import type { SupabasePedido } from "@/lib/supabase/types"
-import { AdminModal, AdminPrimaryButton, AdminSecondaryButton } from "../../components/admin-controls"
+import { HelpTip } from "@/components/claims/help-tip"
+import { AdminSecondaryButton } from "../../components/admin-controls"
 
 type Variant = { id: number; nombre: string; sku: string | null; stock: number; productos: { nombre: string } | { nombre: string }[] }
 type Replacement = RegisteredReplacement & { id: number; original_order_id: number; claim_id: number | null; replacement_variant_id: number; reason: string; unit_cost: number | null; created_at: string; notes: string | null }
@@ -27,11 +31,19 @@ async function requestReplacements(orderId: number, search: string, body?: Recor
   return data as ReplacementData
 }
 
+/** Pedido externo de apertura del formulario (paso 2 de "Gestionar reclamo"). */
+export interface ReplacementOpenRequest {
+  nonce: number
+  orderItemId: number | null
+}
+
 interface OrderReplacementsProps {
   pedido: SupabasePedido
   onUpdated: () => Promise<void>
   /** Informa los reemplazos ya cargados (null si no se pudieron cargar) para mostrar el progreso del reclamo sin otro fetch. */
   onReplacementsChange?: (replacements: RegisteredReplacement[] | null, state: ReplacementLoadState) => void
+  /** Cada nonce nuevo abre este mismo formulario (con el ítem reclamado preseleccionado si llega). */
+  openRequest?: ReplacementOpenRequest | null
 }
 
 export function OrderReplacements(props: OrderReplacementsProps) {
@@ -40,7 +52,9 @@ export function OrderReplacements(props: OrderReplacementsProps) {
   return allowed ? <OrderReplacementManager {...props} /> : null
 }
 
-export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChange }: OrderReplacementsProps) {
+const variantProductName = (row: Variant) => (Array.isArray(row.productos) ? row.productos[0] : row.productos)?.nombre
+
+export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChange, openRequest = null }: OrderReplacementsProps) {
   const [data, setData] = useState<ReplacementData | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -81,6 +95,18 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     const timer = setTimeout(() => void load(), 300)
     return () => { clearTimeout(timer); generation.value++; onReplacementsChangeRef.current?.(null, "loading") }
   }, [load])
+  // Apertura desde el paso 2 del reclamo: mismo efecto que el botón
+  // "Registrar reemplazo" de la sección (abrir, sin confirmación pendiente);
+  // si llega el ítem reclamado y todavía no se eligió uno, se preselecciona.
+  const handledOpenNonce = useRef(openRequest?.nonce ?? 0)
+  useEffect(() => {
+    if (!openRequest || openRequest.nonce === handledOpenNonce.current) return
+    handledOpenNonce.current = openRequest.nonce
+    setOpen(true); setConfirm(false)
+    if (openRequest.orderItemId !== null && !attempt.current) {
+      setItemId((current) => current || String(openRequest.orderItemId))
+    }
+  }, [openRequest])
   const item = pedido.orden_items?.find((candidate) => candidate.id === Number(itemId))
   const matchingClaims = (pedido.order_claims ?? []).filter((claim) =>
     claim.resolution === "cambio_producto" && !["cerrado", "rechazado"].includes(claim.status) &&
@@ -110,28 +136,250 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     }
     finally { setSaving(false); inFlight.current = false }
   }
+
+  // Sólo presentación: motivo por el que "Revisar reemplazo" está deshabilitado,
+  // en el mismo orden que el formulario (mismas condiciones que `valid`).
+  const quantityLimit = Math.min(availableOriginal, variant?.stock || 0)
+  const missing = !item
+    ? "Seleccioná el ítem original."
+    : matchingClaims.length > 1
+      ? "Este ítem tiene más de un reclamo de cambio abierto."
+      : reason.trim().length < 10
+        ? "Escribí el motivo del reemplazo (mínimo 10 caracteres)."
+        : !variant
+          ? "Seleccioná un producto de reemplazo."
+          : !(Number.isInteger(count) && count > 0)
+            ? "Indicá una cantidad válida."
+            : count > availableOriginal
+              ? "La cantidad supera las unidades disponibles para reemplazar."
+              : count > variant.stock
+                ? "No hay stock suficiente del producto elegido."
+                : loading
+                  ? "Cargando datos…"
+                  : null
+  const primaryDisabled = saving || (!attempt.current && !valid)
+  const formLocked = saving || confirm || Boolean(attempt.current)
+  const closeModal = () => { if (!saving) setOpen(false) }
+  const stepQuantity = (delta: number) => {
+    const next = (Number.isInteger(count) ? count : 0) + delta
+    setQuantity(String(Math.max(1, quantityLimit > 0 ? Math.min(next, quantityLimit) : next)))
+  }
+
   return <section id={`order-replacements-${pedido.id}`} className="my-3 rounded-xl border border-white/15 p-4">
     <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">Reemplazos del pedido</h3><AdminSecondaryButton onClick={() => { setOpen(true); setConfirm(false) }}>Registrar reemplazo</AdminSecondaryButton></div>
     {loading && <p role="status">Cargando reemplazos…</p>}
     {error && <p role="alert" className="my-2 text-red-200">{error} <button type="button" onClick={() => void load()} className="underline">Recargar datos</button></p>}
     {!loading && !error && data?.replacements.length === 0 && <p className="mt-2 text-sm">Todavía no hay reemplazos registrados.</p>}
     <ul className="mt-3 space-y-2 text-sm">{data?.replacements.map((row) => <li key={row.id} className="rounded border border-white/10 p-2">{new Date(row.created_at).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })} · {row.quantity} unidades · {row.reason === "garantia" ? "Garantía" : "Cambio"} · Variante #{row.replacement_variant_id}<p>{row.notes}</p><p>Costo económico registrado: {row.unit_cost == null ? "No disponible" : new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(row.unit_cost * row.quantity)}</p><p>Salida de stock registrada. Coordiná la entrega del reemplazo; esto no crea un envío ni reutiliza la etiqueta del pedido original.</p></li>)}</ul>
-    <AdminModal open={open} title={`Reemplazo del pedido #${pedido.id}`} onClose={() => { if (!saving) setOpen(false) }} footer={<div className="flex flex-wrap justify-end gap-2"><AdminSecondaryButton disabled={saving} onClick={() => setOpen(false)}>Cerrar</AdminSecondaryButton><AdminPrimaryButton disabled={saving || (!attempt.current && !valid)} onClick={() => { if (confirm || attempt.current) void submit(); else setConfirm(true) }}>{saving ? "Registrando…" : confirm || attempt.current ? "Confirmar retiro de stock" : "Revisar reemplazo"}</AdminPrimaryButton></div>}>
-      <div className="space-y-3 text-sm">
-        {error && <p role="alert" className="text-red-200">{error}</p>}
-        <fieldset disabled={saving || confirm || Boolean(attempt.current)} className="grid gap-3">
-          <label>Ítem original<select className="block w-full rounded bg-[#101820] p-2" value={itemId} onChange={(event) => setItemId(event.target.value)}><option value="">Elegir producto vendido</option>{pedido.orden_items?.map((row) => <option key={row.id} value={row.id}>{row.productos?.nombre} · {row.producto_variantes?.nombre} · Vendió {row.cantidad}</option>)}</select></label>
-          <p>Recibimos {received} · Ya reemplazadas {used} · Disponibles para reemplazar {availableOriginal}</p>
-          <label><input type="checkbox" checked={warranty} onChange={(event) => setWarranty(event.target.checked)} /> Garantía sin exigir recepción física previa</label>
-          <label>Motivo (mínimo 10 caracteres)<textarea className="block w-full rounded bg-[#101820] p-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-          <label>Buscar variante por nombre<input className="block w-full rounded bg-[#101820] p-2" value={search} onChange={(event) => { setSearch(event.target.value); setVariantId("") }} /></label>
-          <label>Producto / variante de reemplazo<select className="block w-full rounded bg-[#101820] p-2" value={variantId} onChange={(event) => setVariantId(event.target.value)}><option value="">Elegir variante (hasta 100 resultados)</option>{data?.variants.map((row) => <option key={row.id} value={row.id}>{(Array.isArray(row.productos) ? row.productos[0] : row.productos)?.nombre} · {row.nombre} · {row.sku} · Stock {row.stock}</option>)}</select></label>
-          <label>Cantidad<input className="block w-full rounded bg-[#101820] p-2" type="number" min={1} max={Math.min(availableOriginal, variant?.stock || 0)} value={quantity} onChange={(event) => setQuantity(event.target.value)} /></label>
-          <p>Stock vendible normal: {variant?.stock ?? "Elegí una variante"} · Stock resultante: {variant && Number.isInteger(count) ? variant.stock - count : "—"}. El servidor valida el stock nuevamente y registra el costo histórico.</p>
-        </fieldset>
-        {confirm && <div role="status" className="rounded border border-amber-300/40 p-3">Vas a retirar {count} unidades de SKU {variant?.sku || variant?.nombre} para reemplazar {count} unidades del pedido #{pedido.id}. No se genera un cobro ni un envío automático.{!attempt.current && <button className="ml-2 underline" type="button" onClick={() => setConfirm(false)}>Corregir</button>}</div>}
-        {attempt.current && <p>Hay un intento pendiente de confirmar. El reintento conserva la misma operación para no descontar stock dos veces.</p>}
-      </div>
-    </AdminModal>
+    <ReplacementDialog
+      open={open}
+      title={`Reemplazo del pedido #${pedido.id}`}
+      onClose={closeModal}
+      footer={
+        <>
+          {missing && !attempt.current && !confirm && !saving && (
+            <p className="admin-replacement-modal__missing" id={`replacement-missing-${pedido.id}`}>{missing}</p>
+          )}
+          <div className="admin-replacement-modal__actions">
+            <button type="button" disabled={saving} onClick={() => setOpen(false)} className="admin-replacement-modal__button is-secondary">Cancelar</button>
+            <button
+              type="button"
+              disabled={primaryDisabled}
+              aria-describedby={missing && !attempt.current && !confirm ? `replacement-missing-${pedido.id}` : undefined}
+              onClick={() => { if (confirm || attempt.current) void submit(); else setConfirm(true) }}
+              className="admin-replacement-modal__button is-primary"
+            >
+              {saving ? "Registrando…" : confirm || attempt.current ? "Confirmar retiro de stock" : "Revisar reemplazo"}
+            </button>
+          </div>
+        </>
+      }
+    >
+      {error && <p role="alert" className="admin-replacement-modal__alert">{error}</p>}
+      <fieldset disabled={formLocked} className="admin-replacement-modal__form">
+        <section className="admin-replacement-modal__section" aria-labelledby={`replacement-original-${pedido.id}`}>
+          <p className="admin-replacement-modal__section-title" id={`replacement-original-${pedido.id}`}>Producto original</p>
+          <label className="admin-replacement-modal__field">
+            <FieldLabel text="Ítem original" help="Seleccioná el producto original del pedido que estás reemplazando." />
+            <SelectControl value={itemId} onChange={setItemId}>
+              <option value="">Elegir producto vendido</option>
+              {pedido.orden_items?.map((row) => <option key={row.id} value={row.id}>{row.productos?.nombre} · {row.producto_variantes?.nombre} · Vendió {row.cantidad}</option>)}
+            </SelectControl>
+          </label>
+          <dl className="admin-replacement-modal__stats" aria-label="Unidades del ítem original">
+            <div className="admin-replacement-modal__stat"><dt>Recibimos</dt><dd>{received}</dd></div>
+            <div className="admin-replacement-modal__stat"><dt>Ya reemplazadas</dt><dd>{used}</dd></div>
+            <div className={`admin-replacement-modal__stat ${availableOriginal > 0 ? "is-positive" : "is-empty"}`}><dt>Disponibles para reemplazar</dt><dd>{availableOriginal}</dd></div>
+          </dl>
+          <div className="admin-replacement-modal__check-row">
+            <label className="admin-replacement-modal__check">
+              <input type="checkbox" checked={warranty} onChange={(event) => setWarranty(event.target.checked)} />
+              <span>Continuar sin recepción previa</span>
+            </label>
+            <HelpTip label="Continuar sin recepción previa">
+              Usá esta opción sólo cuando BEYONIX autorice enviar el reemplazo sin esperar la devolución física del producto original.
+            </HelpTip>
+          </div>
+        </section>
+
+        <section className="admin-replacement-modal__section">
+          <label className="admin-replacement-modal__field">
+            <FieldLabel text="Motivo del reemplazo" help="Explicá brevemente por qué se entrega una nueva unidad. Este dato queda registrado internamente." />
+            <textarea
+              className="admin-replacement-modal__control admin-replacement-modal__textarea"
+              rows={3}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              aria-describedby={`replacement-reason-helper-${pedido.id}`}
+            />
+            <span className="admin-replacement-modal__helper" id={`replacement-reason-helper-${pedido.id}`}>Mínimo 10 caracteres.</span>
+          </label>
+        </section>
+
+        <section className="admin-replacement-modal__section" aria-labelledby={`replacement-product-${pedido.id}`}>
+          <p className="admin-replacement-modal__section-title" id={`replacement-product-${pedido.id}`}>Producto de reemplazo</p>
+          <label className="admin-replacement-modal__field">
+            <FieldLabel text="Buscar producto de reemplazo" help="Buscá por nombre, modelo o variante para encontrar el producto que recibirá el cliente." />
+            <span className="admin-replacement-modal__search">
+              <PackageSearch className="admin-replacement-modal__search-icon" aria-hidden="true" />
+              <input
+                className="admin-replacement-modal__control"
+                value={search}
+                placeholder="Ej.: Trípode inteligente negro"
+                onChange={(event) => { setSearch(event.target.value); setVariantId("") }}
+              />
+            </span>
+          </label>
+          <label className="admin-replacement-modal__field">
+            <FieldLabel text="Producto de reemplazo" help="Elegí exactamente qué producto o variante se descontará del stock y se enviará al cliente." />
+            <SelectControl value={variantId} onChange={setVariantId}>
+              <option value="">Elegir variante (hasta 100 resultados)</option>
+              {data?.variants.map((row) => <option key={row.id} value={row.id}>{variantProductName(row)} · {row.nombre} · {row.sku} · Stock {row.stock}</option>)}
+            </SelectControl>
+          </label>
+          {variant && (
+            <div className="admin-replacement-modal__selection" aria-live="polite">
+              <p className="admin-replacement-modal__selection-name">{variantProductName(variant) ?? "Producto"}</p>
+              <p className="admin-replacement-modal__selection-meta">
+                <span>{variant.nombre}</span>
+                {variant.sku && <span>SKU {variant.sku}</span>}
+                <span>Stock {variant.stock}</span>
+              </p>
+            </div>
+          )}
+          <div className="admin-replacement-modal__field">
+            <FieldLabel text="Cantidad" help="Indicá cuántas unidades vas a entregar como reemplazo." htmlFor={`replacement-quantity-${pedido.id}`} />
+            <span className="admin-replacement-modal__quantity">
+              <button type="button" aria-label="Restar una unidad" onClick={() => stepQuantity(-1)} disabled={formLocked || count <= 1} className="admin-replacement-modal__quantity-button"><Minus aria-hidden="true" /></button>
+              <input
+                id={`replacement-quantity-${pedido.id}`}
+                className="admin-replacement-modal__control admin-replacement-modal__quantity-input"
+                type="number"
+                min={1}
+                max={quantityLimit}
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+              <button type="button" aria-label="Sumar una unidad" onClick={() => stepQuantity(1)} disabled={formLocked || quantityLimit <= 0 || count >= quantityLimit} className="admin-replacement-modal__quantity-button"><Plus aria-hidden="true" /></button>
+            </span>
+          </div>
+        </section>
+
+        <section className={`admin-replacement-modal__stock ${variant ? "" : "is-empty"}`} aria-live="polite">
+          <div className="admin-replacement-modal__stock-head">
+            <p className="admin-replacement-modal__section-title">Stock</p>
+            <HelpTip label="Stock">El stock se valida nuevamente al confirmar. El sistema registra también el costo histórico del reemplazo.</HelpTip>
+          </div>
+          {variant ? (
+            <div className="admin-replacement-modal__stock-grid">
+              <div className="admin-replacement-modal__stock-tile"><p>Stock disponible</p><strong>{variant.stock} {variant.stock === 1 ? "unidad" : "unidades"}</strong></div>
+              <div className="admin-replacement-modal__stock-tile is-result"><p>Stock después del reemplazo</p><strong>{Number.isInteger(count) ? `${variant.stock - count} ${variant.stock - count === 1 ? "unidad" : "unidades"}` : "—"}</strong></div>
+            </div>
+          ) : (
+            <p className="admin-replacement-modal__stock-empty">Seleccioná un producto para calcular el stock.</p>
+          )}
+        </section>
+      </fieldset>
+      {confirm && <div role="status" className="admin-replacement-modal__confirm">Vas a retirar {count} unidades de SKU {variant?.sku || variant?.nombre} para reemplazar {count} unidades del pedido #{pedido.id}. No se genera un cobro ni un envío automático.{!attempt.current && <button className="admin-replacement-modal__link" type="button" onClick={() => setConfirm(false)}>Corregir</button>}</div>}
+      {attempt.current && <p className="admin-replacement-modal__pending">Hay un intento pendiente de confirmar. El reintento conserva la misma operación para no descontar stock dos veces.</p>}
+    </ReplacementDialog>
   </section>
+}
+
+function FieldLabel({ text, help, htmlFor }: { text: string; help: string; htmlFor?: string }) {
+  const content = <span className="admin-replacement-modal__label-text">{text}</span>
+  return (
+    <span className="admin-replacement-modal__label">
+      {htmlFor ? <label htmlFor={htmlFor}>{content}</label> : content}
+      <HelpTip label={text}>{help}</HelpTip>
+    </span>
+  )
+}
+
+function SelectControl({ value, onChange, children }: { value: string; onChange: (value: string) => void; children: ReactNode }) {
+  return (
+    <span className="admin-replacement-modal__select">
+      <select className="admin-replacement-modal__control" value={value} onChange={(event) => onChange(event.target.value)}>
+        {children}
+      </select>
+      <ChevronDown className="admin-replacement-modal__select-icon" aria-hidden="true" />
+    </span>
+  )
+}
+
+/**
+ * Presentación del formulario de reemplazo: se monta con Portal en
+ * document.body (fuera del detalle de pedido y sus reglas contextuales), con
+ * estilos propios admin-replacement-modal__* para Light/Dark. Foco atrapado y
+ * Escape con el mismo helper que AdminModal (activateModalFocus).
+ */
+function ReplacementDialog({
+  open,
+  title,
+  onClose,
+  footer,
+  children,
+}: {
+  open: boolean
+  title: string
+  onClose: () => void
+  footer: ReactNode
+  children: ReactNode
+}) {
+  const dialogRef = useRef<HTMLElement>(null)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose })
+  useEffect(() => {
+    if (!open || !dialogRef.current) return
+    return activateModalFocus(dialogRef.current, () => onCloseRef.current())
+  }, [open])
+
+  if (!open || typeof document === "undefined") return null
+
+  return createPortal(
+    <div className="admin-replacement-modal__backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="order-replacement-title"
+        tabIndex={-1}
+        className="admin-replacement-modal"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="admin-replacement-modal__header">
+          <span className="admin-replacement-modal__icon" aria-hidden="true"><Repeat2 /></span>
+          <div className="admin-replacement-modal__heading">
+            <p className="admin-replacement-modal__eyebrow">Cambio de producto</p>
+            <h2 id="order-replacement-title" className="admin-replacement-modal__title">{title}</h2>
+            <p className="admin-replacement-modal__subtitle">Registrá qué unidad recibe el cliente y descontala del stock.</p>
+          </div>
+          <button type="button" aria-label="Cerrar" onClick={onClose} className="admin-replacement-modal__close"><X aria-hidden="true" /></button>
+        </header>
+        <div className="admin-replacement-modal__body">{children}</div>
+        <footer className="admin-replacement-modal__footer">{footer}</footer>
+      </section>
+    </div>,
+    document.body,
+  )
 }
