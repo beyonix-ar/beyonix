@@ -6548,6 +6548,16 @@ div.claim-form-shell::after {
   border-left: 3px solid #7DFFBF !important;
 }
 
+/* Sin utilidades rounded-full/border en el marcado: el catch-all
+   .beyonix-admin-main span[class*="rounded-full"][class*="border"] pisaba
+   el tono y todos los estados se veían del mismo color. */
+.admin-order-detail-scope .admin-order-status-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+}
+
 .admin-order-detail-scope .admin-order-status-badge-info {
   background-color: rgba(10, 35, 58, 0.9) !important;
   border-color: rgba(140, 200, 242, 0.36) !important;
@@ -6558,6 +6568,26 @@ div.claim-form-shell::after {
   background-color: rgba(89, 24, 34, 0.9) !important;
   border-color: rgba(248, 113, 113, 0.42) !important;
   color: #FFB4BD !important;
+}
+
+/* Tonos del badge de estado de RESUMEN (getExecutiveOrderStatus ->
+   lib/orders/admin-order-status-presentation.ts). */
+.admin-order-detail-scope .admin-order-status-badge-success {
+  background-color: rgba(6, 78, 59, 0.9) !important;
+  border-color: rgba(52, 211, 153, 0.5) !important;
+  color: #BBF7D0 !important;
+}
+
+.admin-order-detail-scope .admin-order-status-badge-warning {
+  background-color: rgba(92, 45, 10, 0.9) !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+  color: #FDE68A !important;
+}
+
+.admin-order-detail-scope .admin-order-status-badge-neutral {
+  background-color: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(148, 163, 184, 0.42) !important;
+  color: #E2E8F0 !important;
 }
 
 /* Resumen (admin-order-rs-*): scoped rewrite for the pedido summary tab.
@@ -7358,6 +7388,33 @@ div.claim-form-shell::after {
 
 .admin-order-detail-scope .admin-order-bl-status-item--gray .admin-order-bl-status-badge {
   color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* Badge de DESPACHO (getDispatchAlert): radio y borde propios, sin
+   utilidades rounded-full/border en el marcado. Con ellas el catch-all
+   .beyonix-admin-main span[class*="rounded-full"][class*="border"] pisaba
+   el tono y todos los estados logísticos se veían iguales. */
+/* Forma propia de pills e indicadores de pedidos: evita la heur?stica global.
+   Los tonos se reutilizan de admin-order-tone-*; no modifica otros m?dulos. */
+.admin-order-pill {
+  border: 1px solid transparent;
+  border-radius: 9999px;
+}
+
+.admin-order-shipping-reminder {
+  background-color: rgba(119, 230, 226, 0.05);
+  border-color: rgba(119, 230, 226, 0.25);
+  color: #77e6e2;
+}
+
+/* Los recordatorios viven en las filas oscuras tambi?n en Light. */
+.admin-order-shipping-reminder:hover {
+  border-color: rgba(119, 230, 226, 0.4);
+}
+
+.admin-order-dispatch-badge {
+  border: 1px solid transparent;
+  border-radius: 9999px;
 }
 
 .beyonix-admin-main .admin-order-dispatch-badge.admin-order-tone-danger,
@@ -9629,6 +9686,33 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-eyebrow
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-title {
   color: #0f172a !important;
 }
+/* Badge de estado de RESUMEN en Light: fondo claro + texto oscuro del mismo
+   tono (contraste >= 7:1). */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-status-badge-danger {
+  background-color: #fee2e2 !important;
+  border-color: #f87171 !important;
+  color: #991b1b !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-status-badge-success {
+  background-color: #dcfce7 !important;
+  border-color: #4ade80 !important;
+  color: #166534 !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-status-badge-warning {
+  background-color: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  color: #92400e !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-status-badge-info {
+  background-color: #dbeafe !important;
+  border-color: #60a5fa !important;
+  color: #1e40af !important;
+}
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-status-badge-neutral {
+  background-color: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+  color: #334155 !important;
+}
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-rs-meta {
   color: var(--beyonix-light-text-secondary) !important;
 }
@@ -10910,26 +10994,126 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-sky-100 { color: #0369a1 !important; }
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .text-emerald-100 { color: #065f46 !important; }
 
-/* Modal Rechazar/Cancelar pedido (AdminOrderCancelRejectModal): modal de
-   acción crítica/destructiva diseñado como una isla oscura intencional y
-   consistente en Light y en Dark (mismo criterio que ya usa
-   ForcedStatusConfirmModal). El catch-all de arriba convertía sólo una
-   parte de sus clases (ej. bg-[#101010] sí, pero el gradiente del header y
-   los tonos rojo/ámbar no), dejando texto oscurecido por el catch-all
-   sobre un fondo que seguía oscuro -- ese desajuste era el bug de
-   contraste real reportado en Light. Estas reglas restauran el valor
-   original (el mismo que ya se ve bien en Dark) para las clases realmente
-   usadas acá. La pestaña Cancelación (RefundManagementPanel) YA NO
-   comparte este enfoque -- ver más abajo, ahora usa tokens --admin-*
-   reales en vez de una isla oscura fija. */
-html[data-admin-theme="light"] .admin-cancel-reject-modal.bg-\[\#101010\] { background-color: #101010 !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/48 { color: rgba(255,255,255,0.48) !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/62 { color: rgba(255,255,255,0.62) !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .text-white\/68 { color: rgba(255,255,255,0.68) !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/8 { border-color: rgba(255,255,255,0.08) !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .border-white\/10 { border-color: rgba(255,255,255,0.10) !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .text-amber-100 { color: #fde68a !important; }
-html[data-admin-theme="light"] .admin-cancel-reject-modal .text-red-100 { color: #fecaca !important; }
+/* Modal Rechazar/Cancelar pedido (AdminOrderCancelRejectModal): isla
+   oscura intencional, idéntica en Light y en Dark (acción destructiva). Usa
+   clases propias (admin-cancel-reject-modal__*) con colores explícitos en
+   vez de utilidades text-white/N o bg-red-500/N: los catch-all de Light
+   reescriben esas utilidades y dejaban texto oscuro sobre fondo oscuro y un
+   botón rojo lavado. Cada regla aplica igual a ambos temas. Contrastes
+   (WCAG): título #fff y subtítulo #e5e7eb sobre el header > 13:1;
+   advertencia #fde68a sobre ámbar oscuro > 10:1; botón #fff sobre #dc2626
+   4.8:1 (hover #b91c1c 6.5:1). */
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal {
+  background: #121418 !important;
+  border: 1px solid rgba(248, 113, 113, 0.38) !important;
+  border-radius: 1.5rem !important;
+  color: #f3f4f6 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__header {
+  background: linear-gradient(135deg, #3b1218 0%, #1d1216 58%, #121418 100%) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__eyebrow {
+  color: #fca5a5 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__title {
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__subtitle {
+  color: #e5e7eb !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__label {
+  color: #d1d5db !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__select {
+  min-height: 2.5rem !important;
+  height: 2.5rem !important;
+  padding-inline: 0.75rem !important;
+  background-color: #1b1f26 !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #f9fafb !important;
+  font-size: 0.8125rem !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__select:hover,
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__select:focus-visible {
+  background-color: #222834 !important;
+  border-color: rgba(252, 165, 165, 0.6) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__select svg {
+  color: #fca5a5 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu.admin-ds-select-menu {
+  background-color: #1b1f26 !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55) !important;
+}
+/* Las 6 opciones de motivo entran completas, sin scroll interno. */
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu .admin-select-scrollbar {
+  max-height: 16rem !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu :is(.admin-ds-select-option, .admin-ds-select-option-selected) {
+  height: 2.25rem !important;
+  color: #f3f4f6 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu .admin-ds-select-option:hover,
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu .admin-ds-select-option:focus-visible {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu .admin-ds-select-option-selected {
+  background: rgba(220, 38, 38, 0.22) !important;
+  border-color: rgba(248, 113, 113, 0.45) !important;
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal__menu .admin-ds-select-option-selected svg {
+  color: #fca5a5 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__alert {
+  background: rgba(120, 53, 15, 0.42) !important;
+  border: 1px solid rgba(252, 211, 77, 0.4) !important;
+  border-radius: 1rem !important;
+  color: #fde68a !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__error {
+  background-color: rgba(127, 29, 29, 0.5) !important;
+  border-color: rgba(248, 113, 113, 0.5) !important;
+  color: #fecaca !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__footer {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__back {
+  background-color: transparent !important;
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  color: #f3f4f6 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__back:not(:disabled):hover {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__confirm {
+  background-color: #dc2626 !important;
+  border-color: #f87171 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 22px rgba(220, 38, 38, 0.3) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__confirm:not(:disabled):hover {
+  background-color: #b91c1c !important;
+  border-color: #fca5a5 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-cancel-reject-modal .admin-cancel-reject-modal__confirm:disabled {
+  background-color: #5f1d22 !important;
+  border-color: rgba(248, 113, 113, 0.35) !important;
+  color: #fecaca !important;
+  box-shadow: none !important;
+}
 /* La pestaña Cancelación (.admin-order-cancellation-panel) ya NO vive acá:
    dejó de ser una isla oscura fija con excepciones de Light parche a
    parche (text-white/N, text-amber-100, etc. -- ese enfoque volvía a
@@ -10967,11 +11151,14 @@ html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badg
 html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--danger { border-color: rgba(248, 113, 113, 0.56) !important; background: rgba(127, 29, 29, 0.34) !important; }
 html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--info { border-color: rgba(96, 165, 250, 0.54) !important; background: rgba(30, 64, 175, 0.32) !important; }
 html[data-admin-theme="light"] .admin-orders-list-row .admin-order-semantic-badge--returned { border-color: rgba(196, 181, 253, 0.55) !important; background: rgba(76, 29, 149, 0.34) !important; }
-html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-danger { border-color: rgba(248, 113, 113, 0.56) !important; background: rgba(127, 29, 29, 0.34) !important; color: #fecaca !important; }
-html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-success { border-color: rgba(52, 211, 153, 0.5) !important; background: rgba(6, 78, 59, 0.34) !important; color: #bbf7d0 !important; }
-html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-warning { border-color: rgba(245, 158, 11, 0.54) !important; background: rgba(120, 53, 15, 0.32) !important; color: #fde68a !important; }
-html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-info { border-color: rgba(96, 165, 250, 0.54) !important; background: rgba(30, 64, 175, 0.32) !important; color: #bfdbfe !important; }
-html[data-admin-theme="light"] .admin-orders-list-row .admin-order-tone-muted { border-color: rgba(148, 163, 184, 0.32) !important; background: rgba(15, 23, 42, 0.42) !important; color: rgba(226, 232, 240, 0.76) !important; }
+/* .beyonix-admin-main iguala la especificidad de la regla Light genérica de
+   .admin-order-dispatch-badge.admin-order-tone-* y, por estar después, gana:
+   la card del listado es oscura también en Light. */
+html[data-admin-theme="light"] .beyonix-admin-main .admin-orders-list-row .admin-order-tone-danger { border-color: rgba(248, 113, 113, 0.56) !important; background: rgba(127, 29, 29, 0.34) !important; color: #fecaca !important; }
+html[data-admin-theme="light"] .beyonix-admin-main .admin-orders-list-row .admin-order-tone-success { border-color: rgba(52, 211, 153, 0.5) !important; background: rgba(6, 78, 59, 0.34) !important; color: #bbf7d0 !important; }
+html[data-admin-theme="light"] .beyonix-admin-main .admin-orders-list-row .admin-order-tone-warning { border-color: rgba(245, 158, 11, 0.54) !important; background: rgba(120, 53, 15, 0.32) !important; color: #fde68a !important; }
+html[data-admin-theme="light"] .beyonix-admin-main .admin-orders-list-row .admin-order-tone-info { border-color: rgba(96, 165, 250, 0.54) !important; background: rgba(30, 64, 175, 0.32) !important; color: #bfdbfe !important; }
+html[data-admin-theme="light"] .beyonix-admin-main .admin-orders-list-row .admin-order-tone-muted { border-color: rgba(148, 163, 184, 0.32) !important; background: rgba(15, 23, 42, 0.42) !important; color: rgba(226, 232, 240, 0.76) !important; }
 
 /* Se detectó una SEGUNDA regla, independiente de la de arriba, que también
    fuerza fondo blanco en estas mismas filas: html[data-admin-theme="light"]
@@ -11010,19 +11197,23 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(span, button):not([sty
   background-color: #f1f4f8 !important;
   color: var(--admin-text) !important;
 }
-/* Badge "1" del botón del ojo (listado de pedidos): matchea la heurística
-   de arriba (span + rounded-full + border), que lo aplanaría a un gris
-   neutro -- acá se le gana por especificidad para que conserve su color
-   real (rojo=urgente, ámbar=advertencia) también en Light. */
-html[data-admin-theme="light"] .admin-order-eye-attention-badge.admin-order-eye-attention-badge.bg-red-500 {
-  background-color: #ef4444 !important;
-  border-color: rgba(252, 165, 165, 0.6) !important;
-  color: #ffffff !important;
+/* Contador del ojo: forma y tonos propios en ambos temas, sin utilidades
+   que activen la heurística global de badges. */
+.admin-order-eye-attention-badge {
+  border: 1px solid transparent;
+  border-radius: 9999px;
 }
-html[data-admin-theme="light"] .admin-order-eye-attention-badge.admin-order-eye-attention-badge.bg-amber-400 {
-  background-color: #fbbf24 !important;
-  border-color: rgba(253, 230, 138, 0.6) !important;
-  color: #3a2504 !important;
+.admin-order-eye-attention-badge--critical {
+  background-color: #dc2626;
+  border-color: rgba(252, 165, 165, 0.6);
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.55);
+}
+.admin-order-eye-attention-badge--warning {
+  background-color: #fbbf24;
+  border-color: rgba(253, 230, 138, 0.6);
+  color: #3a2504;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
 }
 html[data-admin-theme="light"] .admin-ds-tone-neutral {
   border-color: rgba(100, 116, 139, 0.28) !important;

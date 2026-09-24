@@ -73,10 +73,7 @@ import {
   markAdminClaimNotificationsRead,
   markAdminOrderNewNotificationRead,
 } from "@/lib/admin/admin-notifications"
-import {
-  ADMIN_SENSITIVE_DANGER,
-  isAdminSensitiveStatus,
-} from "@/lib/admin/admin-sensitive-visuals"
+import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import {
   allocateEffectiveOrderItemAmounts,
   calculatePartialLineAmount,
@@ -94,6 +91,12 @@ import {
   type AdminPendingOrderAction,
 } from "@/lib/orders/admin-pending-actions"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
+import {
+  ADMIN_EXECUTIVE_STATUS,
+  getAdminDispatchStatus,
+  getAdminExecutiveStatusFromEstado,
+  type AdminOrderStatusPresentation,
+} from "@/lib/orders/admin-order-status-presentation"
 import {
   getCancellationNextAction,
   getCancellationNextActionCopy,
@@ -177,21 +180,6 @@ const SHIPPING_DISPATCHED_STATUSES = [
   "entregado",
   ...SHIPPING_INCIDENT_STATUSES,
 ] as const
-const SHIPPING_STATUS_LABELS: Record<string, string> = {
-  pendiente: "Pendiente",
-  pagado: "Pago confirmado",
-  preparado: "Preparado",
-  enviado: "Enviado",
-  en_camino: "En camino",
-  visita_fallida: "Visita fallida",
-  en_sucursal: "En sucursal",
-  retiro_pendiente: "Retiro pendiente",
-  retiro_vencido: "Retiro vencido",
-  en_devolucion: "En devolución",
-  devuelto_beyonix: "Devuelto a BEYONIX",
-  entregado: "Entregado",
-  cancelado: "Cancelado",
-}
 type AdminOrderDetailView =
   | "resumen"
   | "pago"
@@ -486,7 +474,7 @@ function getWarrantyVisual(item: SupabasePedidoItem) {
     return {
       label: "Garantía anulada",
       daysRemaining: null,
-      className: "border-white/12 bg-white/5 text-white/48",
+      className: "admin-order-tone-muted",
     }
   }
 
@@ -494,7 +482,7 @@ function getWarrantyVisual(item: SupabasePedidoItem) {
     return {
       label: "Pendiente de entrega",
       daysRemaining: null,
-      className: "border-white/12 bg-white/5 text-white/58",
+      className: "admin-order-tone-muted",
     }
   }
 
@@ -504,7 +492,7 @@ function getWarrantyVisual(item: SupabasePedidoItem) {
     return {
       label: "Garantía vencida",
       daysRemaining,
-      className: "border-red-400/20 bg-red-400/8 text-red-200",
+      className: "admin-order-tone-danger",
     }
   }
 
@@ -512,14 +500,14 @@ function getWarrantyVisual(item: SupabasePedidoItem) {
     return {
       label: "Próxima a vencer",
       daysRemaining,
-      className: "border-amber-300/25 bg-amber-400/10 text-amber-100",
+      className: "admin-order-tone-warning",
     }
   }
 
   return {
     label: "Garantía activa",
     daysRemaining,
-    className: "border-emerald-400/20 bg-emerald-400/8 text-emerald-200",
+    className: "admin-order-tone-success",
   }
 }
 
@@ -827,25 +815,34 @@ type RecommendedAction = {
   tone: "urgent" | "warning" | "info" | "success"
 }
 
-function getExecutiveOrderStatus(pedido: SupabasePedido) {
-  if (pedido.estado === "cancelado" && isRefundedOrder(pedido)) return "Cancelado · Reintegrado"
-  if (pedido.estado === "cancelado" && isRefundPaymentAttentionOrder(pedido)) {
-    return "Cancelado · Reintegro pendiente"
+/**
+ * Estado del badge de RESUMEN: misma prioridad de siempre, ahora con tono
+ * (lib/orders/admin-order-status-presentation.ts) para distinguirlo de un
+ * vistazo.
+ */
+function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresentation {
+  if (pedido.estado === "cancelado" && isRefundedOrder(pedido)) {
+    return ADMIN_EXECUTIVE_STATUS.cancelled_refunded
   }
-  if (isRefundedOrder(pedido)) return "Reintegrado"
-  if (isRefundPaymentAttentionOrder(pedido)) return "Reintegro pendiente"
-  if (pedido.financial_status === "cancellation_requested") return "Cancelación solicitada"
+  if (pedido.estado === "cancelado" && isRefundPaymentAttentionOrder(pedido)) {
+    return ADMIN_EXECUTIVE_STATUS.cancelled_refund_pending
+  }
+  if (isRefundedOrder(pedido)) return ADMIN_EXECUTIVE_STATUS.refunded
+  if (isRefundPaymentAttentionOrder(pedido)) return ADMIN_EXECUTIVE_STATUS.refund_pending
+  if (pedido.financial_status === "cancellation_requested") {
+    return ADMIN_EXECUTIVE_STATUS.cancellation_requested
+  }
   const pendingClaim = (pedido.order_claims ?? []).find((claim) => claim.admin_needs_action)
   if (pendingClaim) {
     return pendingClaim.failure_type === "consulta_pedido"
-      ? "Mensaje de ayuda"
-      : "Reclamo abierto"
+      ? ADMIN_EXECUTIVE_STATUS.help_message
+      : ADMIN_EXECUTIVE_STATUS.claim_open
   }
-  if (isRejectedPayment(pedido.payment_status)) return "Pago rechazado"
-  if (needsCreditNoteReminder(pedido)) return "Falta nota de crédito"
-  if (needsInvoiceReminder(pedido)) return "Factura pendiente"
-  if (needsShippingReminder(pedido)) return "Envío pendiente"
-  return getDisplayedOrderStatus(pedido) === "pagado" ? "Pago confirmado" : getDisplayedOrderStatus(pedido)
+  if (isRejectedPayment(pedido.payment_status)) return ADMIN_EXECUTIVE_STATUS.payment_rejected
+  if (needsCreditNoteReminder(pedido)) return ADMIN_EXECUTIVE_STATUS.credit_note_missing
+  if (needsInvoiceReminder(pedido)) return ADMIN_EXECUTIVE_STATUS.invoice_pending
+  if (needsShippingReminder(pedido)) return ADMIN_EXECUTIVE_STATUS.shipping_pending
+  return getAdminExecutiveStatusFromEstado(getDisplayedOrderStatus(pedido))
 }
 
 const CANCELLATION_NEXT_ACTION_TARGET: Record<
@@ -1224,49 +1221,24 @@ async function runAndreaniAction(action: AndreaniAction, pedidoId: number) {
   }
 }
 
+/**
+ * Columna DESPACHO / cabecera de Envío: sólo estado logístico
+ * (getAdminDispatchStatus). La cancelación se ve en ESTADO, nunca acá.
+ */
 function getDispatchAlert(pedido: SupabasePedido) {
-  if (isAdminCancelledOrder(pedido)) {
-    return {
-      label: "Cancelado",
-      className: ADMIN_STATUS_BADGES.danger,
-    }
-  }
-
-  if (pedido.estado === "entregado" || pedido.delivered_at) {
-    return {
-      label: "Entregado",
-      className: `${ADMIN_STATUS_BADGES.success} admin-order-dispatch-badge--delivered`,
-    }
-  }
-
-  if (pedido.estado === "en_camino") {
-    return {
-      label: "En camino",
-      className: ADMIN_STATUS_BADGES.info,
-    }
-  }
-
-  if (SHIPPING_INCIDENT_STATUSES.includes(pedido.estado as typeof SHIPPING_INCIDENT_STATUSES[number])) {
-    const warningStatuses = ["visita_fallida", "retiro_vencido", "en_devolucion"]
-
-    return {
-      label: SHIPPING_STATUS_LABELS[pedido.estado] ?? pedido.estado,
-      className: warningStatuses.includes(pedido.estado)
-        ? ADMIN_STATUS_BADGES.warning
-        : ADMIN_STATUS_BADGES.info,
-    }
-  }
-
-  if (pedido.estado === "enviado") {
-    return {
-      label: "Enviado",
-      className: ADMIN_STATUS_BADGES.info,
-    }
-  }
+  const dispatch = getAdminDispatchStatus(pedido, {
+    awaitingDispatch: isOrderPaymentConfirmed(pedido) && !isAdminCancelledOrder(pedido),
+  })
+  const toneClass =
+    dispatch.tone === "neutral" ? ADMIN_STATUS_BADGES.muted : ADMIN_STATUS_BADGES[dispatch.tone]
 
   return {
-    label: "Pendiente",
-    className: ADMIN_STATUS_BADGES.warning,
+    key: dispatch.key,
+    label: dispatch.label,
+    className:
+      dispatch.key === "delivered"
+        ? `${toneClass} admin-order-dispatch-badge--delivered`
+        : toneClass,
   }
 }
 
@@ -1960,27 +1932,27 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
   const typeStyles = {
     success: {
       Icon: Check,
-      dotClass: "border-emerald-300/28 bg-emerald-400/8 text-emerald-100",
+      dotClass: "admin-order-tone-success",
       connectorClass: "bg-emerald-300/12",
     },
     pending: {
       Icon: Clock3,
-      dotClass: "border-amber-300/24 bg-amber-400/8 text-amber-100",
+      dotClass: "admin-order-tone-warning",
       connectorClass: "bg-amber-300/12",
     },
     neutral: {
       Icon: Clock3,
-      dotClass: "border-white/18 bg-white/5 text-white/58",
+      dotClass: "admin-order-tone-muted",
       connectorClass: "bg-white/10",
     },
     danger: {
       Icon: X,
-      dotClass: ADMIN_SENSITIVE_DANGER.icon,
+      dotClass: "admin-order-tone-danger",
       connectorClass: "bg-[#9f3546]/28",
     },
     info: {
       Icon: Info,
-      dotClass: "border-sky-300/20 bg-sky-400/7 text-sky-100",
+      dotClass: "admin-order-tone-info",
       connectorClass: "bg-sky-300/10",
     },
   } satisfies Record<
@@ -2016,7 +1988,7 @@ function OrderTimeline({ pedido }: { pedido: SupabasePedido }) {
                 />
               )}
               <span
-                className={`relative mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full border ${visual.dotClass}`}
+                className={`relative mt-0.5 inline-flex size-4 shrink-0 items-center justify-center admin-order-pill ${visual.dotClass}`}
               >
                 <Icon className="size-2.5" strokeWidth={3} />
               </span>
@@ -4803,12 +4775,10 @@ function AdminOrderSummaryDashboard({
           <p className="admin-order-rs-eyebrow">Pedido</p>
           <div className="flex flex-wrap items-center gap-2.5">
             <h3 className="admin-order-rs-title">#{formatPublicOrderId(pedido.id)}</h3>
-            <span className={`admin-order-status-badge rounded-full border px-2.5 py-0.5 text-10px font-black uppercase tracking-wide ${
-              isAdminSensitiveStatus(mainStatus)
-                ? "admin-order-status-badge-danger"
-                : "admin-order-status-badge-info"
-            }`}>
-              {mainStatus}
+            <span
+              className={`admin-order-status-badge admin-order-status-badge-${mainStatus.tone} px-2.5 py-0.5 text-10px font-black uppercase tracking-wide`}
+            >
+              {mainStatus.label}
             </span>
           </div>
           <p className="admin-order-rs-meta">
@@ -5084,7 +5054,14 @@ function PedidoDetailModal({
   const items = pedido.orden_items ?? []
   const financialBreakdown = getOrderFinancialBreakdown(pedido)
   const dispatch = getDispatchAlert(pedido)
-  const DispatchIcon = dispatch.label === "Entregado" ? CheckCircle2 : AlertTriangle
+  const DispatchIcon =
+    dispatch.key === "delivered"
+      ? CheckCircle2
+      : dispatch.key === "delivery_incident" || dispatch.key === "returning"
+        ? AlertTriangle
+        : dispatch.key === "not_shipped"
+          ? Clock3
+          : Truck
   const tracking = pedido.andreani_tracking || pedido.tracking_number
   const pedidoTracking = resolveOrderTrackingLink(pedido)
   const savedShippingProvider = (
@@ -5676,10 +5653,10 @@ function PedidoDetailModal({
                         />
                       ) : (
                         <span
-                          className={`inline-flex items-center rounded-full border px-3 py-1.5 text-11px font-black uppercase tracking-wide ${
+                          className={`inline-flex items-center admin-order-pill px-3 py-1.5 text-11px font-black uppercase tracking-wide ${
                             isPaymentStatusMismatch(pedido.payment_status)
-                              ? "border-red-400/45 bg-red-500/10 text-red-200"
-                              : "admin-ds-tone-info"
+                              ? "admin-order-tone-danger"
+                              : "admin-order-tone-info"
                           }`}
                         >
                           {getPaymentStatusLabel(pedido.payment_status)}
@@ -5803,7 +5780,7 @@ function PedidoDetailModal({
                           Conciliación automática
                         </p>
                       </div>
-                      <span className="inline-flex items-center rounded-full border px-3 py-1.5 text-11px font-black uppercase tracking-wide admin-ds-tone-info">
+                      <span className="inline-flex items-center admin-order-pill px-3 py-1.5 text-11px font-black uppercase tracking-wide admin-order-tone-info">
                         {pedido.transfer_verification_status === "auto_verified"
                           ? "Verificada automáticamente"
                           : pedido.transfer_verification_status === "manual_review"
@@ -6061,7 +6038,7 @@ function PedidoDetailModal({
                           </div>
                           <div className="flex shrink-0 items-center gap-2">
                             <span
-                              className={`inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-10px font-black uppercase tracking-wide ${visual.className}`}
+                              className={`inline-flex w-fit items-center admin-order-pill px-2 py-0.5 text-10px font-black uppercase tracking-wide ${visual.className}`}
                             >
                               {visual.label}
                             </span>
@@ -6116,7 +6093,7 @@ function PedidoDetailModal({
                 </div>
                 <span
                   className={cn(
-                    "admin-order-dispatch-badge inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-11px font-black uppercase tracking-wide",
+                    "admin-order-dispatch-badge inline-flex w-fit items-center gap-2 px-3 py-1 text-11px font-black uppercase tracking-wide",
                     dispatch.className,
                   )}
                 >
@@ -6563,10 +6540,10 @@ function OrderEyeAttentionBadge({
       aria-label={label}
       title={`${label}: ${actions.map((action) => action.label).join(" · ")}`}
       data-pending-action-count={count}
-      className={`admin-order-eye-attention-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full border px-1 text-9px font-black leading-none ${
+      className={`admin-order-eye-attention-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center px-1 text-9px font-black leading-none ${
         urgent
-          ? "border-red-300/60 bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.55)]"
-          : "border-amber-200/60 bg-amber-400 text-[#3a2504] shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+          ? "admin-order-eye-attention-badge--critical"
+          : "admin-order-eye-attention-badge--warning"
       }`}
     >
       {count}
@@ -6658,12 +6635,12 @@ function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
                 />
                 <span
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full border text-9px font-black",
+                    "flex size-7 shrink-0 items-center justify-center admin-order-pill text-9px font-black",
                     done
-                      ? "border-beyonix-status-success/70 bg-beyonix-blue-900 text-beyonix-status-success"
+                      ? "admin-order-tone-success"
                       : current
-                        ? "border-beyonix-blue-300 bg-beyonix-blue-700 text-white"
-                        : "border-beyonix-gray-700 bg-beyonix-gray-900 text-[var(--beyonix-text-primary)]",
+                        ? "admin-order-tone-info"
+                        : "admin-order-tone-muted",
                   )}
                 >
                   {done ? <Check className="size-3" /> : index + 1}
@@ -6730,7 +6707,7 @@ function ShippingMiniCard({
 function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-full border border-amber-300/35 bg-amber-400/10 text-amber-100 shadow-[0_0_12px_rgba(245,158,11,0.12)] transition-colors hover:border-amber-300/55 ${
+      className={`inline-flex items-center justify-center admin-order-pill admin-order-tone-warning ${
         compact ? "size-4" : "size-7"
       }`}
     >
@@ -6749,7 +6726,7 @@ function ShippingReminderBadge({ compact = false }: { compact?: boolean }) {
     <span
       title="Facturado: listo para preparar y despachar"
       aria-label="Facturado: listo para preparar y despachar"
-      className={`inline-flex items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/5 text-[#77E6E2] transition-colors hover:border-[#77E6E2]/40 ${
+      className={`inline-flex items-center justify-center admin-order-pill admin-order-shipping-reminder ${
         compact ? "size-4" : "size-7"
       }`}
     >
@@ -7175,28 +7152,28 @@ function AdminOrderCancelRejectModal({
 
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="admin-cancel-reject-modal w-full max-w-md overflow-hidden rounded-3xl border border-red-400/25 bg-[#101010] shadow-2xl shadow-black/80">
-        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#2a1014_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
-          <p className="text-11px font-black uppercase tracking-widest text-red-300">
+      <div className="admin-cancel-reject-modal w-full max-w-md overflow-hidden shadow-2xl shadow-black/80">
+        <div className="admin-cancel-reject-modal__header border-b px-5 py-4">
+          <p className="admin-cancel-reject-modal__eyebrow text-11px font-black uppercase tracking-widest">
             Acción administrativa
           </p>
-          <h2 className="mt-2 text-xl font-black text-white">
+          <h2 className="admin-cancel-reject-modal__title mt-2 text-xl font-black">
             {isReject ? "Rechazar pedido" : "Cancelar pedido"}
           </h2>
-          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+          <p className="admin-cancel-reject-modal__subtitle mt-2 text-sm font-semibold leading-6">
             Esta acción cambiará el estado del pedido #{formatPublicOrderId(request.pedido.id)} y
             puede afectar stock, pago y facturación.
           </p>
         </div>
 
         <div className="space-y-3 px-5 py-4">
-          <div>
-            <label
-              htmlFor="cancel-reject-reason"
-              className="mb-1.5 block text-10px font-black uppercase tracking-widest text-white/48"
+          <div className="admin-cancel-reject-modal__reason max-w-[18rem]">
+            <p
+              id="cancel-reject-reason-label"
+              className="admin-cancel-reject-modal__label mb-1.5 block text-10px font-black uppercase tracking-widest"
             >
               Motivo
-            </label>
+            </p>
             <AdminSelect
               title="Motivo"
               ariaLabel="Motivo"
@@ -7204,6 +7181,8 @@ function AdminOrderCancelRejectModal({
               onChange={setReasonCode}
               disabled={loading}
               compact
+              triggerClassName="admin-cancel-reject-modal__select"
+              menuClassName="admin-cancel-reject-modal__menu"
             >
               <option value="" disabled>
                 Seleccioná un motivo
@@ -7228,25 +7207,25 @@ function AdminOrderCancelRejectModal({
             />
           )}
 
-          <div className="admin-cancel-reject-modal-alert rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-xs font-semibold leading-5 text-amber-100">
+          <div className="admin-cancel-reject-modal__alert p-3 text-xs font-semibold leading-5">
             {isReject
               ? "Este pedido todavía no tiene un pago confirmado: al rechazarlo no se genera ningún reintegro ni Nota de Crédito, porque no hubo cobro. El stock reservado se libera y el cliente será notificado del rechazo."
               : "Este pedido ya tiene el pago confirmado: al cancelarlo va a quedar con reintegro pendiente. Esto NO dispara un reembolso automático de Mercado Pago ni emite una Nota de Crédito -- esas acciones siguen siendo manuales, desde sus propios botones en Cancelación y Facturación."}
           </div>
 
           {error && (
-            <p className="rounded-lg border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-bold text-red-100">
+            <p role="alert" className="admin-cancel-reject-modal__error rounded-lg border px-3 py-2 text-xs font-bold">
               {error}
             </p>
           )}
         </div>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+        <div className="admin-cancel-reject-modal__footer flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+            className="admin-cancel-reject-modal__back inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait disabled:opacity-50"
           >
             Volver
           </button>
@@ -7256,7 +7235,7 @@ function AdminOrderCancelRejectModal({
               onConfirm(reasonCode, isOtherReason ? reasonText.trim() : "")
             }
             disabled={loading || !canConfirm}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-red-400/45 bg-red-500/15 px-4 text-11px font-black uppercase tracking-wide text-red-100 transition-colors hover:border-red-400/70 hover:bg-red-500/25 disabled:cursor-wait disabled:opacity-50"
+            className="admin-cancel-reject-modal__confirm inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed"
           >
             {loading
               ? "Procesando..."
@@ -8659,14 +8638,14 @@ export function AdminPedidos({
                               {formatPublicOrderId(pedido.id)}
                             </p>
                             {isNewOrder && (
-                              <span className="rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-1 text-9px font-black uppercase tracking-wide text-emerald-200">
+                              <span className="admin-order-pill admin-order-tone-success px-2 py-1 text-9px font-black uppercase tracking-wide">
                                 Nuevo pedido
                               </span>
                             )}
                             {showInvoiceReminder && <InvoiceReminderBell />}
                             {showShippingReminder && <ShippingReminderBadge />}
                             <EstadoBadge pedido={pedido} />
-                            {hasPendingClaim && <span className="admin-order-pending-claim-badge rounded-full border border-red-400/80 bg-red-950/75 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
+                            {hasPendingClaim && <span className="admin-order-pending-claim-badge admin-order-pill px-2 py-1 text-[10px] font-black uppercase tracking-wide shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -8704,7 +8683,7 @@ export function AdminPedidos({
                         <MobileOrderField label="Despacho">
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <span
-                              className={`admin-order-dispatch-badge inline-flex items-center gap-1 rounded-full border px-2 py-1 text-9px font-black uppercase tracking-wide ${dispatch.className}`}
+                              className={`admin-order-dispatch-badge inline-flex items-center gap-1 px-2 py-1 text-9px font-black uppercase tracking-wide ${dispatch.className}`}
                             >
                               {dispatch.label}
                             </span>
@@ -8752,11 +8731,11 @@ export function AdminPedidos({
                         {formatPublicOrderNumber(pedido.id)}
                       </p>
                       {isNewOrder && (
-                        <span className="mt-1 inline-flex rounded-full border border-emerald-400/35 bg-emerald-500/15 px-2 py-0.5 text-9px font-black uppercase tracking-wide text-emerald-200">
+                        <span className="mt-1 inline-flex admin-order-pill admin-order-tone-success px-2 py-0.5 text-9px font-black uppercase tracking-wide">
                           Nuevo
                         </span>
                       )}
-                      {hasPendingClaim && <span className="admin-order-pending-claim-badge mt-1 inline-flex rounded-full border border-red-400/80 bg-red-950/75 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-red-100 shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
+                      {hasPendingClaim && <span className="admin-order-pending-claim-badge mt-1 inline-flex admin-order-pill px-2 py-0.5 text-[9px] font-black uppercase tracking-wide shadow-[0_0_14px_rgba(248,113,113,0.22)]">Reclamo pendiente</span>}
                     </div>
                   </div>
 
@@ -8785,7 +8764,7 @@ export function AdminPedidos({
 
                   <div className="text-center">
                     <span
-                      className={`admin-order-dispatch-badge inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-10px font-black uppercase tracking-wide ${dispatch.className}`}
+                      className={`admin-order-dispatch-badge inline-flex items-center gap-1 px-2.5 py-1 text-10px font-black uppercase tracking-wide ${dispatch.className}`}
                     >
                       {dispatch.label}
                     </span>
