@@ -1578,13 +1578,22 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
   padding: clamp(1rem, 2.2vw, 2rem) !important;
 }
 
+/* Superficies legacy del admin: la geometría (radio) vale en ambos temas;
+   los COLORES son de Dark y se acotan con :where(html:not(light)) -- :where
+   no suma especificidad, así que la cascada de Dark queda idéntica, y en
+   Light ya no pintan el gradiente navy debajo/encima de las superficies
+   claras (causa del texto oscuro sobre navy en Atención al cliente). */
 .admin-ds-surface,
 .admin-ds-card,
 .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"] {
+  border-radius: var(--admin-radius-lg) !important;
+}
+
+:where(html:not([data-admin-theme="light"])) :is(.admin-ds-surface, .admin-ds-card),
+:where(html:not([data-admin-theme="light"])) .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"] {
   background:
     linear-gradient(145deg, rgba(7, 17, 27, 0.98), rgba(4, 10, 17, 0.98)) !important;
   border-color: var(--admin-border) !important;
-  border-radius: var(--admin-radius-lg) !important;
   box-shadow: var(--admin-glow) !important;
 }
 
@@ -1600,10 +1609,14 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
 
 .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
   :where(section, article, aside, details, div, label)[class*="rounded"][class*="border"] {
+  border-radius: var(--admin-radius) !important;
+}
+
+:where(html:not([data-admin-theme="light"])) .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
+  :where(section, article, aside, details, div, label)[class*="rounded"][class*="border"] {
   background:
     linear-gradient(145deg, rgba(11, 22, 34, 0.98), rgba(6, 13, 22, 0.98)) !important;
   border-color: var(--admin-border-soft) !important;
-  border-radius: var(--admin-radius) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025) !important;
 }
 
@@ -2103,7 +2116,9 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
   border-color: var(--admin-border-soft) !important;
 }
 
-.beyonix-admin-main .admin-claim-composer {
+/* Barra del composer: color de Dark (en Light hereda el tono de sección
+   del panel del chat). :where no suma especificidad: Dark queda igual. */
+:where(html:not([data-admin-theme="light"])) .beyonix-admin-main .admin-claim-composer {
   background-color: rgba(6, 13, 22, 0.96) !important;
 }
 
@@ -10121,6 +10136,12 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-pa
   border-color: rgba(217, 119, 6, 0.4) !important;
   color: #92400e !important;
 }
+/* Fondo de la miniatura del producto afectado: blanco en ambos temas (la
+   utilidad bg-white se remapea a oscuro en Light). */
+.admin-claim-summary-thumb {
+  background: #ffffff;
+}
+
 html[data-admin-theme="light"] .admin-claim-chat-thread {
   background: var(--bx-surface-card) !important;
 }
@@ -13028,7 +13049,7 @@ html[data-account-theme="light"][data-account-scope] {
 .admin-claim-reception-item {
   --claim-flow-title: #f8fafc;
   --claim-flow-text: rgba(226, 232, 240, 0.74);
-  --claim-flow-muted: rgba(226, 232, 240, 0.54);
+  --claim-flow-muted: rgba(226, 232, 240, 0.62);
   --claim-flow-line: rgba(148, 163, 184, 0.2);
   --claim-flow-surface: rgba(15, 23, 42, 0.55);
   --claim-flow-surface-strong: rgba(17, 42, 67, 0.42);
@@ -13059,7 +13080,7 @@ html[data-admin-theme="light"] .admin-claim-stepper,
 html[data-admin-theme="light"] .admin-claim-reception-item {
   --claim-flow-title: #0f172a;
   --claim-flow-text: #475569;
-  --claim-flow-muted: #64748b;
+  --claim-flow-muted: #475569;
   --claim-flow-line: var(--bx-border-card);
   --claim-flow-surface: var(--bx-surface-card);
   --claim-flow-surface-strong: var(--bx-surface-raised);
@@ -13648,7 +13669,7 @@ html[data-admin-theme="light"] .admin-claim-section-icon.admin-claim-section-ico
 .admin-claim-flow-button:disabled {
   --claim-button-bg: rgba(255, 255, 255, 0.03);
   --claim-button-border: rgba(255, 255, 255, 0.1);
-  --claim-button-text: rgba(255, 255, 255, 0.42);
+  --claim-button-text: rgba(255, 255, 255, 0.6);
   --claim-button-shadow: none;
   cursor: not-allowed;
 }

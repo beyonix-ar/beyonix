@@ -2029,7 +2029,7 @@ export function AdminClaimManager({
       {!helpMessage && !cancellation && (
         <div className="admin-claim-summary grid gap-3 border-b p-3 sm:p-4 md:grid-cols-3">
           <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
-            <p className="text-10px font-black uppercase text-white/45">Pedido</p>
+            <p className="text-10px font-black uppercase text-white/62">Pedido</p>
             <p className="mt-1 text-xs font-bold text-white">{formatDate(pedido.created_at)}</p>
             <p className="mt-1 text-xs font-semibold text-white/70">{pedido.estado}</p>
             <p className="mt-1 text-xs font-semibold text-white/70">
@@ -2039,13 +2039,13 @@ export function AdminClaimManager({
           </section>
 
           <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
-            <p className="text-10px font-black uppercase text-white/45">Motivo del reclamo</p>
+            <p className="text-10px font-black uppercase text-white/62">Motivo del reclamo</p>
             <p className="mt-1 text-xs font-bold text-white">{PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}</p>
             <p className="mt-1 text-[11px] leading-4 text-white/60 line-clamp-3">{claim.description}</p>
           </section>
 
           <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
-            <p className="text-10px font-black uppercase text-white/45">Producto afectado</p>
+            <p className="text-10px font-black uppercase text-white/62">Producto afectado</p>
             {summaryAffectedItems.length === 0 ? (
               <p className="mt-1.5 text-xs font-semibold text-white/70">Pedido completo</p>
             ) : (
@@ -2056,7 +2056,7 @@ export function AdminClaimManager({
                   const sku = item.conditioned_sku || item.producto_variantes?.sku
                   return (
                     <li key={item.id} className="flex items-center gap-2">
-                      <span className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10 bg-white">
+                      <span className="admin-claim-summary-thumb flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10">
                         {image ? (
                           <img src={image} alt="" className="size-full object-contain" />
                         ) : (
@@ -2161,7 +2161,7 @@ export function AdminClaimManager({
           <section className={`admin-claim-card rounded-xl border p-2.5 ${helpResolved ? "admin-claim-help-resolved-card" : "bx-surface bx-surface-section"}`}>
             <h4 className="text-sm font-black text-white">Mensajería</h4>
             <div className={`mt-2 rounded-lg px-2.5 py-1.5 ${helpResolved ? "admin-claim-help-resolved-state" : "bg-black/20"}`}>
-              <p className="text-10px font-black uppercase text-white/45">Estado actual</p>
+              <p className="text-10px font-black uppercase text-white/62">Estado actual</p>
               <p className="mt-0.5 text-xs font-black text-white">{getStatusLabel(claim)}</p>
             </div>
             {canCloseConversation ? (
@@ -2375,7 +2375,7 @@ export function AdminClaimManager({
 
             {canCloseConversation && (
               <div className="mt-2 border-t border-white/10 pt-2">
-                <p className="mb-2 text-10px font-black uppercase text-white/45">Gestionar conversación</p>
+                <p className="mb-2 text-10px font-black uppercase text-white/62">Gestionar conversación</p>
                 <DecisionButton
                   icon={<CheckCircle2 className="size-4" />}
                   title="Cerrar conversación"
