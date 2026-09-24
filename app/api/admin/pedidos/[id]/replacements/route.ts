@@ -2,18 +2,26 @@ import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 
+const DIFFERENT_PRODUCT_ERROR =
+  "El reemplazo tiene que ser del mismo producto reclamado. Para otro producto, gestioná la devolución con Nota de Crédito / saldo a favor."
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin(request)
   if ("error" in auth) return auth.error
   const orderId = Number((await params).id)
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
-  const search = new URL(request.url).searchParams.get("search")?.trim().slice(0, 120) || ""
-  const [history, variants] = await Promise.all([
+  const [history, items] = await Promise.all([
     auth.admin.from("order_replacements").select("id,original_order_id,original_order_item_id,claim_id,replacement_variant_id,quantity,reason,unit_cost,created_at,notes").eq("original_order_id", orderId).order("created_at", { ascending: false }),
-    auth.admin.from("producto_variantes").select("id,nombre,sku,stock,productos!inner(nombre,activo)").eq("activo", true).eq("productos.activo", true)
-      .ilike("nombre", `%${search.replace(/[\\%_]/g, "\\$&")}%`).order("nombre").limit(100),
+    auth.admin.from("orden_items").select("producto_id").eq("orden_id", orderId),
   ])
-  if (history.error || variants.error) return NextResponse.json({ error: "No se pudieron cargar los reemplazos. Reintentá." }, { status: 500 })
+  if (history.error || items.error) return NextResponse.json({ error: "No se pudieron cargar los reemplazos. Reintentá." }, { status: 500 })
+  // Un reemplazo es siempre del mismo producto reclamado: sólo se ofrecen las
+  // variantes activas de los productos de este pedido (sin buscador global).
+  const productIds = [...new Set(items.data.map((row) => Number(row.producto_id)).filter((id) => Number.isSafeInteger(id) && id > 0))]
+  if (productIds.length === 0) return NextResponse.json({ replacements: history.data, variants: [] })
+  const variants = await auth.admin.from("producto_variantes").select("id,producto_id,nombre,sku,stock,productos!inner(nombre,activo)")
+    .in("producto_id", productIds).eq("activo", true).eq("productos.activo", true).order("nombre").limit(500)
+  if (variants.error) return NextResponse.json({ error: "No se pudieron cargar los reemplazos. Reintentá." }, { status: 500 })
   return NextResponse.json({ replacements: history.data, variants: variants.data })
 }
 
@@ -67,6 +75,26 @@ export async function POST(
       { error: "La operación no tiene una clave de idempotencia válida." },
       { status: 400 },
     )
+  }
+  if (reason === "otro_producto") {
+    return NextResponse.json({ error: DIFFERENT_PRODUCT_ERROR }, { status: 400 })
+  }
+
+  // Regla "mismo producto" server-side: la variante enviada tiene que ser del
+  // producto del ítem original. La RPC sólo la ejecuta service_role y esta ruta
+  // es su único llamador, así que el control vale para todo alta de reemplazo.
+  const [originalItem, replacementVariant] = await Promise.all([
+    auth.admin.from("orden_items").select("producto_id").eq("id", orderItemId).eq("orden_id", orderId).maybeSingle(),
+    auth.admin.from("producto_variantes").select("producto_id").eq("id", replacementVariantId).maybeSingle(),
+  ])
+  if (originalItem.error || replacementVariant.error) {
+    return NextResponse.json({ error: "No se pudo verificar el reemplazo. Reintentá." }, { status: 500 })
+  }
+  if (!originalItem.data) {
+    return NextResponse.json({ error: "No se encontró el producto dentro del pedido original." }, { status: 400 })
+  }
+  if (!replacementVariant.data || Number(replacementVariant.data.producto_id) !== Number(originalItem.data.producto_id)) {
+    return NextResponse.json({ error: DIFFERENT_PRODUCT_ERROR }, { status: 400 })
   }
 
   const { data, error } = await auth.admin.rpc("create_order_replacement", {

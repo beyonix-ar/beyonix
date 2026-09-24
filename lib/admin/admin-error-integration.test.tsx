@@ -75,12 +75,13 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
         assert.equal(body.replacementVariantId, 9)
         assert.equal(body.quantity, 1)
         assert.equal(body.claimId, 1)
+        assert.notEqual(body.reason, "otro_producto")
         assert.ok(body.idempotencyKey)
         replacementCalls++
         return Response.json({ replacement: { id: 1 } })
       }
       if (replacementLoadFails) return Response.json({ error: "No se pudieron verificar los reemplazos" }, { status: 500 })
-      return Response.json({ replacements: [], variants: [{ id: 9, nombre: "Azul", sku: "REP-9", stock: 5, productos: { nombre: "Reemplazo Ñandú" } }] })
+      return Response.json({ replacements: [], variants: [{ id: 9, producto_id: 1, nombre: "Azul", sku: "REP-9", stock: 5, productos: { nombre: "Reemplazo Ñandú" } }] })
     }
     if (path === "/api/admin/pedidos/123/return-inventory/7") {
       const body = JSON.parse(String(init?.body))
@@ -194,8 +195,9 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)) })
     await act(async () => [...document.querySelectorAll("button")].find((button) => button.textContent === "Registrar reemplazo")!.click())
     const replacementDialog = document.querySelector('[role="dialog"]')!
-    const selects = replacementDialog.querySelectorAll("select")
-    await act(async () => { selects[0].value = "7"; selects[0].dispatchEvent(new dom.window.Event("change", { bubbles: true })); selects[1].value = "9"; selects[1].dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
+    // Un solo ítem y una sola variante del mismo producto: nada que seleccionar.
+    assert.equal(replacementDialog.querySelectorAll("select").length, 0)
+    assert.match(replacementDialog.textContent || "", /Reemplazo Ñandú|Vendió 3/)
     const replacementReason = replacementDialog.querySelector("textarea")!
     await act(async () => { textareaSetter.call(replacementReason, "Cambio por falla de fábrica"); replacementReason.dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
     const reviewReplacement = [...replacementDialog.querySelectorAll("button")].find((button) => button.textContent === "Revisar reemplazo")!

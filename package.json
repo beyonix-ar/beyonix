@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "pretest": "node --conditions=react-server --test --experimental-strip-types lib/business/dashboard-financials.test.ts lib/business/dashboard-timezone.test.ts lib/business/dashboard-ui-contract.test.ts lib/business/external-sale-reversal.test.ts && npm run test:admin && npm run test:hardening",
-    "test:admin": "tsx --test lib/admin/admin-ml-integration.test.tsx lib/admin/admin-operation-ui.test.tsx lib/admin/admin-error-integration.test.tsx && node --test --experimental-strip-types lib/admin/admin-order-search.test.ts lib/admin/admin-destructive-sql.test.ts && node --conditions=react-server --import tsx --test lib/admin/admin-permissions-integration.test.ts",
+    "test:admin": "tsx --test lib/admin/admin-ml-integration.test.tsx lib/admin/admin-operation-ui.test.tsx lib/admin/admin-error-integration.test.tsx && node --test --experimental-strip-types lib/admin/admin-order-search.test.ts lib/admin/admin-destructive-sql.test.ts && node --conditions=react-server --import tsx --test lib/admin/admin-permissions-integration.test.ts lib/admin/replacement-route.test.ts",
     "test:admin:browser": "tsx --test lib/admin/admin-responsive.browser.test.tsx lib/admin/admin-claim-layout.browser.test.tsx lib/theme/surface-hierarchy.browser.test.tsx lib/admin/reception-modal.browser.test.tsx lib/admin/claims-contrast.browser.test.tsx lib/admin/replacement-modal.browser.test.tsx",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "node scripts/run-node-tests.mjs",

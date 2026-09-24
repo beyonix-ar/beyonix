@@ -15003,8 +15003,7 @@ html[data-admin-theme="light"] .admin-replacement-modal {
   resize: vertical;
 }
 
-.admin-replacement-modal__select,
-.admin-replacement-modal__search {
+.admin-replacement-modal__select {
   position: relative;
   display: block;
 }
@@ -15021,8 +15020,7 @@ html[data-admin-theme="light"] .admin-replacement-modal {
   color: var(--replacement-modal-field-text);
 }
 
-.admin-replacement-modal__select-icon,
-.admin-replacement-modal__search-icon {
+.admin-replacement-modal__select-icon {
   position: absolute;
   top: 50%;
   width: 1rem;
@@ -15035,14 +15033,6 @@ html[data-admin-theme="light"] .admin-replacement-modal {
 
 .admin-replacement-modal__select-icon {
   right: 0.875rem;
-}
-
-.admin-replacement-modal__search-icon {
-  left: 0.875rem;
-}
-
-.admin-replacement-modal__search .admin-replacement-modal__control {
-  padding-left: 2.5rem;
 }
 
 .admin-replacement-modal__stats {
@@ -15232,7 +15222,8 @@ html[data-admin-theme="light"] .admin-replacement-modal {
   font-weight: 700;
 }
 
-.admin-replacement-modal__confirm {
+.admin-replacement-modal__confirm,
+.admin-replacement-modal__notice {
   padding: 0.75rem 0.875rem;
   border: 1px solid var(--replacement-modal-warning-border);
   border-radius: 0.75rem;

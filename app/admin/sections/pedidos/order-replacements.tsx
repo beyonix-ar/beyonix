@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { ChevronDown, Minus, PackageSearch, Plus, Repeat2, X } from "lucide-react"
+import { ChevronDown, Minus, Plus, Repeat2, X } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { activateModalFocus } from "@/lib/admin/modal-focus"
@@ -14,14 +14,15 @@ import type { SupabasePedido } from "@/lib/supabase/types"
 import { HelpTip } from "@/components/claims/help-tip"
 import { AdminSecondaryButton } from "../../components/admin-controls"
 
-type Variant = { id: number; nombre: string; sku: string | null; stock: number; productos: { nombre: string } | { nombre: string }[] }
+// Variantes activas de los productos del pedido (el servidor no ofrece otras).
+type Variant = { id: number; producto_id: number; nombre: string; sku: string | null; stock: number; productos: { nombre: string } | { nombre: string }[] }
 type Replacement = RegisteredReplacement & { id: number; original_order_id: number; claim_id: number | null; replacement_variant_id: number; reason: string; unit_cost: number | null; created_at: string; notes: string | null }
 type ReplacementData = { replacements: Replacement[]; variants: Variant[] }
 
-async function requestReplacements(orderId: number, search: string, body?: Record<string, unknown>) {
+async function requestReplacements(orderId: number, body?: Record<string, unknown>) {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) throw new Error("Tu sesión venció. Volvé a iniciar sesión.")
-  const response = await fetch(`/api/admin/pedidos/${orderId}/replacements?search=${encodeURIComponent(search)}`, {
+  const response = await fetch(`/api/admin/pedidos/${orderId}/replacements`, {
     method: body ? "POST" : "GET", signal: AbortSignal.timeout(25_000), cache: "no-store",
     headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
@@ -55,6 +56,9 @@ export function OrderReplacements(props: OrderReplacementsProps) {
 
 const variantProductName = (row: Variant) => (Array.isArray(row.productos) ? row.productos[0] : row.productos)?.nombre
 
+const VARIANT_HELP =
+  "Elegí la variante del mismo producto que se descontará del stock y se enviará al cliente. Si el cliente quiere otro producto diferente, gestioná la devolución mediante Nota de Crédito / saldo a favor."
+
 export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChange, openRequest = null }: OrderReplacementsProps) {
   const [data, setData] = useState<ReplacementData | null>(null)
   const [error, setError] = useState("")
@@ -62,7 +66,6 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
   const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [confirm, setConfirm] = useState(false)
-  const [search, setSearch] = useState("")
   const [itemId, setItemId] = useState("")
   const [variantId, setVariantId] = useState("")
   const [quantity, setQuantity] = useState("1")
@@ -78,7 +81,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     setLoading(true); setError("")
     onReplacementsChangeRef.current?.(null, "loading")
     try {
-      const next = await requestReplacements(pedido.id, search)
+      const next = await requestReplacements(pedido.id)
       if (version === loadVersion.current.value) {
         setData(next)
         onReplacementsChangeRef.current?.(next.replacements, "ready")
@@ -89,7 +92,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
       onReplacementsChangeRef.current?.(null, "error")
     } }
     finally { if (version === loadVersion.current.value) setLoading(false) }
-  }, [pedido.id, search])
+  }, [pedido.id])
   useEffect(() => {
     const generation = loadVersion.current
     onReplacementsChangeRef.current?.(null, "loading")
@@ -109,11 +112,28 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     handledOpenNonce.current = openRequest.nonce
     openReplacementModal(openRequest.orderItemId)
   }, [openRequest, openReplacementModal])
-  const item = pedido.orden_items?.find((candidate) => candidate.id === Number(itemId))
-  const matchingClaims = (pedido.order_claims ?? []).filter((claim) =>
-    claim.resolution === "cambio_producto" && !["cerrado", "rechazado"].includes(claim.status) &&
+  const orderItems = pedido.orden_items ?? []
+  const openChangeClaims = (pedido.order_claims ?? []).filter((claim) =>
+    claim.resolution === "cambio_producto" && !["cerrado", "rechazado"].includes(claim.status))
+  // Ítem original fijo (sin selector) cuando no hay nada que elegir: pedido de
+  // un solo ítem, o un único ítem reclamado en los cambios abiertos.
+  const claimedItemIds = [...new Set(openChangeClaims.flatMap((claim) =>
+    (claim.affected_items ?? []).filter((affected) => affected.quantity > 0).map((affected) => affected.order_item_id)))]
+  const fixedItem = orderItems.length === 1
+    ? orderItems[0]
+    : claimedItemIds.length === 1 ? orderItems.find((candidate) => candidate.id === claimedItemIds[0]) : undefined
+  const item = fixedItem ?? orderItems.find((candidate) => candidate.id === Number(itemId))
+  const matchingClaims = openChangeClaims.filter((claim) =>
     claim.affected_items?.some((affected) => affected.order_item_id === item?.id && affected.quantity > 0))
-  const variant = data?.variants.find((candidate) => candidate.id === Number(variantId))
+  // Reemplazo = mismo producto: sólo variantes del producto del ítem original.
+  const productVariants = item ? (data?.variants ?? []).filter((candidate) => Number(candidate.producto_id) === Number(item.producto_id)) : []
+  const originalVariant = item?.variante_id ? productVariants.find((candidate) => candidate.id === item.variante_id) : undefined
+  // Por defecto: la única variante, o la misma que compró el cliente si tiene
+  // stock. Nunca se cambia sola a otra variante.
+  const defaultVariant = productVariants.length === 1
+    ? productVariants[0]
+    : originalVariant && originalVariant.stock > 0 ? originalVariant : undefined
+  const variant = variantId ? productVariants.find((candidate) => candidate.id === Number(variantId)) : defaultVariant
   const used = data?.replacements.filter((row) => row.original_order_item_id === item?.id).reduce((sum, row) => sum + row.quantity, 0) || 0
   const received = Number(item?.return_restocked_quantity || 0) + Number(item?.return_written_off_quantity || 0)
   const availableOriginal = Math.max(0, Math.min(Number(item?.cantidad || 0), warranty ? Number(item?.cantidad || 0) : received) - used)
@@ -124,12 +144,12 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     if (!attempt.current && item && variant) attempt.current = { key: crypto.randomUUID(), payload: {
       orderItemId: item.id, replacementVariantId: variant.id, quantity: count,
       ...(matchingClaims.length === 1 ? { claimId: matchingClaims[0].id } : {}),
-      reason: warranty ? "garantia" : item.variante_id === variant.id ? "mismo_producto" : "otro_producto", notes: reason.trim(),
+      reason: warranty ? "garantia" : item.variante_id === variant.id ? "mismo_producto" : "otra_variante", notes: reason.trim(),
     } }
     if (!attempt.current) return
     inFlight.current = true; setSaving(true); setError("")
     try {
-      await requestReplacements(pedido.id, "", { ...attempt.current.payload, idempotencyKey: attempt.current.key })
+      await requestReplacements(pedido.id, { ...attempt.current.payload, idempotencyKey: attempt.current.key })
       attempt.current = null; setOpen(false); setConfirm(false)
       await load(); await onUpdated()
     } catch (cause) {
@@ -142,23 +162,46 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
   // Sólo presentación: motivo por el que "Revisar reemplazo" está deshabilitado,
   // en el mismo orden que el formulario (mismas condiciones que `valid`).
   const quantityLimit = Math.min(availableOriginal, variant?.stock || 0)
+  const variantsLoaded = Boolean(data)
+  const noVariants = Boolean(item) && variantsLoaded && productVariants.length === 0
+  const productOutOfStock = productVariants.length > 0 && productVariants.every((candidate) => candidate.stock <= 0)
+  // La variante que compró el cliente no puede enviarse: se avisa y el admin
+  // elige otra del mismo producto (no se reemplaza sola).
+  const originalNotice = !item?.variante_id || !variantsLoaded || productVariants.length <= 1 || productOutOfStock
+    ? null
+    : !originalVariant
+      ? "La variante original ya no está disponible. Elegí otra variante del mismo producto."
+      : originalVariant.stock <= 0
+        ? `La variante original (${originalVariant.nombre}) no tiene stock disponible. Elegí otra variante del mismo producto.`
+        : null
+  const noVariantsMessage = "Este producto no tiene variantes activas para realizar el reemplazo."
+  const productOutOfStockMessage = "No hay stock disponible de este producto para realizar el reemplazo."
+  const variantOutOfStockMessage = "Esta variante no tiene stock disponible."
   const missing = !item
     ? "Seleccioná el ítem original."
-    : matchingClaims.length > 1
-      ? "Este ítem tiene más de un reclamo de cambio abierto."
-      : reason.trim().length < 10
-        ? "Escribí el motivo del reemplazo (mínimo 10 caracteres)."
-        : !variant
-          ? "Seleccioná un producto de reemplazo."
-          : !(Number.isInteger(count) && count > 0)
-            ? "Indicá una cantidad válida."
-            : count > availableOriginal
-              ? "La cantidad supera las unidades disponibles para reemplazar."
-              : count > variant.stock
-                ? "No hay stock suficiente del producto elegido."
-                : loading
-                  ? "Cargando datos…"
-                  : null
+    : !variantsLoaded
+      ? "Cargando datos…"
+      : matchingClaims.length > 1
+        ? "Este ítem tiene más de un reclamo de cambio abierto."
+        : noVariants
+          ? noVariantsMessage
+          : productOutOfStock
+            ? productOutOfStockMessage
+            : reason.trim().length < 10
+              ? "Escribí el motivo del reemplazo (mínimo 10 caracteres)."
+              : !variant
+                ? "Seleccioná la variante a enviar."
+                : variant.stock <= 0
+                  ? variantOutOfStockMessage
+                  : !(Number.isInteger(count) && count > 0)
+                    ? "Indicá una cantidad válida."
+                    : count > availableOriginal
+                      ? "La cantidad supera las unidades pendientes de reemplazo."
+                      : count > variant.stock
+                        ? "No hay stock suficiente de la variante elegida."
+                        : loading
+                          ? "Cargando datos…"
+                          : null
   const primaryDisabled = saving || (!attempt.current && !valid)
   const formLocked = saving || confirm || Boolean(attempt.current)
   const closeModal = () => { if (!saving) setOpen(false) }
@@ -201,17 +244,28 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
       <fieldset disabled={formLocked} className="admin-replacement-modal__form">
         <section className="admin-replacement-modal__section" aria-labelledby={`replacement-original-${pedido.id}`}>
           <p className="admin-replacement-modal__section-title" id={`replacement-original-${pedido.id}`}>Producto original</p>
-          <label className="admin-replacement-modal__field">
-            <FieldLabel text="Ítem original" help="Seleccioná el producto original del pedido que estás reemplazando." />
-            <SelectControl value={itemId} onChange={setItemId}>
-              <option value="">Elegir producto vendido</option>
-              {pedido.orden_items?.map((row) => <option key={row.id} value={row.id}>{row.productos?.nombre} · {row.producto_variantes?.nombre} · Vendió {row.cantidad}</option>)}
-            </SelectControl>
-          </label>
+          {fixedItem ? (
+            <div className="admin-replacement-modal__selection" data-testid="replacement-original-item">
+              <p className="admin-replacement-modal__selection-name">{fixedItem.productos?.nombre ?? (originalVariant && variantProductName(originalVariant)) ?? "Producto"}</p>
+              <p className="admin-replacement-modal__selection-meta">
+                {(fixedItem.producto_variantes?.nombre ?? originalVariant?.nombre) && <span>{fixedItem.producto_variantes?.nombre ?? originalVariant?.nombre}</span>}
+                {originalVariant?.sku && <span>SKU {originalVariant.sku}</span>}
+                <span>Vendió {fixedItem.cantidad}</span>
+              </p>
+            </div>
+          ) : (
+            <label className="admin-replacement-modal__field">
+              <FieldLabel text="Ítem original" help="Seleccioná el producto original del pedido que estás reemplazando." />
+              <SelectControl value={itemId} onChange={(value) => { setItemId(value); setVariantId("") }}>
+                <option value="">Elegir producto vendido</option>
+                {orderItems.map((row) => <option key={row.id} value={row.id}>{row.productos?.nombre} · {row.producto_variantes?.nombre} · Vendió {row.cantidad}</option>)}
+              </SelectControl>
+            </label>
+          )}
           <dl className="admin-replacement-modal__stats" aria-label="Unidades del ítem original">
             <div className="admin-replacement-modal__stat"><dt>Recibimos</dt><dd>{received}</dd></div>
             <div className="admin-replacement-modal__stat"><dt>Ya reemplazadas</dt><dd>{used}</dd></div>
-            <div className={`admin-replacement-modal__stat ${availableOriginal > 0 ? "is-positive" : "is-empty"}`}><dt>Disponibles para reemplazar</dt><dd>{availableOriginal}</dd></div>
+            <div className={`admin-replacement-modal__stat ${availableOriginal > 0 ? "is-positive" : "is-empty"}`}><dt>Pendientes de reemplazo</dt><dd>{availableOriginal}</dd></div>
           </dl>
           <div className="admin-replacement-modal__check-row">
             <label className="admin-replacement-modal__check">
@@ -238,37 +292,47 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
           </label>
         </section>
 
-        <section className="admin-replacement-modal__section" aria-labelledby={`replacement-product-${pedido.id}`}>
-          <p className="admin-replacement-modal__section-title" id={`replacement-product-${pedido.id}`}>Producto de reemplazo</p>
-          <label className="admin-replacement-modal__field">
-            <FieldLabel text="Buscar producto de reemplazo" help="Buscá por nombre, modelo o variante para encontrar el producto que recibirá el cliente." />
-            <span className="admin-replacement-modal__search">
-              <PackageSearch className="admin-replacement-modal__search-icon" aria-hidden="true" />
-              <input
-                className="admin-replacement-modal__control"
-                value={search}
-                placeholder="Ej.: Trípode inteligente negro"
-                onChange={(event) => { setSearch(event.target.value); setVariantId("") }}
-              />
-            </span>
-          </label>
-          <label className="admin-replacement-modal__field">
-            <FieldLabel text="Producto de reemplazo" help="Elegí exactamente qué producto o variante se descontará del stock y se enviará al cliente." />
-            <SelectControl value={variantId} onChange={setVariantId}>
-              <option value="">Elegir variante (hasta 100 resultados)</option>
-              {data?.variants.map((row) => <option key={row.id} value={row.id}>{variantProductName(row)} · {row.nombre} · {row.sku} · Stock {row.stock}</option>)}
-            </SelectControl>
-          </label>
+        <section className="admin-replacement-modal__section">
+          {productVariants.length > 1 ? (
+            <label className="admin-replacement-modal__field">
+              <FieldLabel text="Variante a enviar" help={VARIANT_HELP} />
+              <SelectControl value={variant ? String(variant.id) : ""} onChange={setVariantId}>
+                <option value="">Elegir variante</option>
+                {productVariants.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.nombre}{row.id === item?.variante_id ? " (original)" : ""}{row.sku ? ` · SKU ${row.sku}` : ""} · {row.stock > 0 ? `Stock ${row.stock}` : "Sin stock"}
+                  </option>
+                ))}
+              </SelectControl>
+            </label>
+          ) : (
+            <div className="admin-replacement-modal__field">
+              <FieldLabel text="Variante a enviar" help={VARIANT_HELP} />
+              {!item ? (
+                <p className="admin-replacement-modal__helper">Elegí el ítem original para ver sus variantes.</p>
+              ) : !variantsLoaded ? (
+                <p className="admin-replacement-modal__helper">Cargando variantes…</p>
+              ) : noVariants ? (
+                <p className="admin-replacement-modal__notice" role="note">{noVariantsMessage}</p>
+              ) : null}
+            </div>
+          )}
           {variant && (
-            <div className="admin-replacement-modal__selection" aria-live="polite">
-              <p className="admin-replacement-modal__selection-name">{variantProductName(variant) ?? "Producto"}</p>
+            <div className="admin-replacement-modal__selection" aria-live="polite" data-testid="replacement-variant">
+              <p className="admin-replacement-modal__selection-name">{variant.nombre}</p>
               <p className="admin-replacement-modal__selection-meta">
-                <span>{variant.nombre}</span>
                 {variant.sku && <span>SKU {variant.sku}</span>}
-                <span>Stock {variant.stock}</span>
+                <span>{variant.stock > 0 ? `Stock ${variant.stock}` : "Sin stock"}</span>
               </p>
             </div>
           )}
+          {productOutOfStock ? (
+            <p className="admin-replacement-modal__notice" role="note">{productOutOfStockMessage}</p>
+          ) : variant && variant.stock <= 0 ? (
+            <p className="admin-replacement-modal__notice" role="note">{variantOutOfStockMessage}</p>
+          ) : originalNotice ? (
+            <p className="admin-replacement-modal__notice" role="note">{originalNotice}</p>
+          ) : null}
           <div className="admin-replacement-modal__field">
             <FieldLabel text="Cantidad" help="Indicá cuántas unidades vas a entregar como reemplazo." htmlFor={`replacement-quantity-${pedido.id}`} />
             <span className="admin-replacement-modal__quantity">
@@ -298,7 +362,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
               <div className="admin-replacement-modal__stock-tile is-result"><p>Stock después del reemplazo</p><strong>{Number.isInteger(count) ? `${variant.stock - count} ${variant.stock - count === 1 ? "unidad" : "unidades"}` : "—"}</strong></div>
             </div>
           ) : (
-            <p className="admin-replacement-modal__stock-empty">Seleccioná un producto para calcular el stock.</p>
+            <p className="admin-replacement-modal__stock-empty">Seleccioná la variante a enviar para calcular el stock.</p>
           )}
         </section>
       </fieldset>

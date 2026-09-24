@@ -52,33 +52,53 @@ window.__scrollIntoViewCalls = 0
 const nativeScrollIntoView = Element.prototype.scrollIntoView
 Element.prototype.scrollIntoView = function (...args) { window.__scrollIntoViewCalls++; return nativeScrollIntoView.apply(this, args) }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+
+// Escenarios (?scenario=): el pedido tiene el trípode (producto 1, ítem 71,
+// reclamado) y un aro de luz (producto 2, ítem 72). El GET, como el servidor,
+// devuelve variantes activas de AMBOS productos: el modal debe filtrar.
+const scenario = new URLSearchParams(location.search).get("scenario") || "normal"
+const v = (id, producto_id, nombre, sku, stock) => ({ id, producto_id, nombre, sku, stock, productos: { nombre: producto_id === 1 ? "Trípode Ñandú" : "Aro de luz" } })
+const aro = v(20, 2, "Blanco", "ARO1", 4)
+const variantsByScenario = {
+  normal: [v(9, 1, "Negro", "TRIO1", 3), v(10, 1, "Azul", "TRIO2", 1), v(11, 1, "Rojo", "TRIO3", 0), aro],
+  multi: [v(9, 1, "Negro", "TRIO1", 3), v(10, 1, "Azul", "TRIO2", 1), aro],
+  "original-sin-stock": [v(9, 1, "Negro", "TRIO1", 0), v(10, 1, "Azul", "TRIO2", 2), v(11, 1, "Rojo", "TRIO3", 0), aro],
+  "una-variante": [v(9, 1, "Negro", "TRIO1", 3), aro],
+  "sin-variantes": [v(30, 1, "Única", "TRIPODE", 2), aro],
+  "sin-stock": [v(9, 1, "Negro", "TRIO1", 0), v(10, 1, "Azul", "TRIO2", 0), aro],
+  "sin-variantes-activas": [aro],
+}
+// Historial del flujo anterior (reason otro_producto) sobre el aro.
+const history = scenario === "multi"
+  ? [{ id: 3, original_order_id: 500, original_order_item_id: 72, claim_id: null, replacement_variant_id: 999, quantity: 1, reason: "otro_producto", unit_cost: 1000, created_at: "2026-09-21T10:00:00Z", notes: "Reemplazo previo por otro producto" }]
+  : []
+
 window.fetch = async (input, init) => {
   const url = String(input)
   if (url.includes("/replacements")) {
     if (init && init.method === "POST") { window.__posts.push(JSON.parse(init.body)); return json({ ok: true }) }
-    return json({
-      replacements: [],
-      variants: [
-        { id: 9, nombre: "Negro", sku: "REP-9", stock: 5, productos: { nombre: "Trípode inteligente" } },
-        { id: 10, nombre: "Blanco", sku: "REP-10", stock: 1, productos: [{ nombre: "Trípode inteligente" }] },
-      ],
-    })
+    return json({ replacements: history, variants: variantsByScenario[scenario] })
   }
   return json({ error: "sin datos en el test" }, 404)
 }
 
 const producto = { id: 1, nombre: "Trípode Ñandú", slug: "t", descripcion: null, precio: 20000, precio_anterior: null, descuento: null, cuotas_2_habilitadas: false, cuotas_3_habilitadas: false, cuotas_6_habilitadas: false, stock: 4, categoria_id: null, destacado: false, activo: true, imagen_principal: null, video_url: null, created_at: "2026-09-01" }
+const productoAro = { ...producto, id: 2, nombre: "Aro de luz", slug: "a" }
+const withoutVariants = scenario === "sin-variantes"
 const claim = {
   id: 900, order_id: 500, user_id: "c", claim_type: "garantia_beyonix", failure_type: "falla",
   status: "aprobado", resolution: "cambio_producto", description: "Producto afectado: Trípode Ñandú\\n\\nNo gira.",
-  affected_items: [{ order_item_id: 71, quantity: 1 }],
+  affected_items: scenario === "multi" ? [{ order_item_id: 71, quantity: 1 }, { order_item_id: 72, quantity: 1 }] : [{ order_item_id: 71, quantity: 1 }],
   order_claim_messages: [], order_claim_files: [],
   created_at: "2026-09-20T10:00:00Z", updated_at: "2026-09-20T10:05:00Z",
 }
 const pedido = {
-  id: 500, usuario_id: null, estado: "entregado", total: 60000, created_at: "2026-09-19T12:00:00Z",
+  id: 500, usuario_id: null, estado: "entregado", total: 80000, created_at: "2026-09-19T12:00:00Z",
   payment_method_id: "mercadopago", shipping_type: "domicilio",
-  orden_items: [{ id: 71, orden_id: 500, producto_id: 1, variante_id: 9, cantidad: 3, precio: 20000, productos: producto, producto_variantes: { nombre: "Negro" }, return_restocked_quantity: 1, return_written_off_quantity: 0 }],
+  orden_items: [
+    { id: 71, orden_id: 500, producto_id: 1, variante_id: withoutVariants ? null : 9, cantidad: 3, precio: 20000, productos: producto, producto_variantes: withoutVariants ? null : { nombre: "Negro" }, return_restocked_quantity: 1, return_written_off_quantity: 0 },
+    { id: 72, orden_id: 500, producto_id: 2, variante_id: 20, cantidad: 2, precio: 20000, productos: productoAro, producto_variantes: { nombre: "Blanco" }, return_restocked_quantity: 1, return_written_off_quantity: 0 },
+  ],
   order_claims: [claim],
 }
 
@@ -218,14 +238,14 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(theme: "dark" | "light", width = 1440, height = 1000, stylesheet = css): Promise<Page> {
+async function open(theme: "dark" | "light", width = 1440, height = 1000, stylesheet = css, scenario = "normal"): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height } })
   // Origen localhost = contexto seguro (crypto.randomUUID, como en producción HTTPS).
   const html = pageHtml(theme, stylesheet, bundle)
   await page.route("**/*", (route) =>
-    route.request().url() === "http://localhost/replacement" ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
+    new URL(route.request().url()).href.startsWith("http://localhost/replacement") ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
   )
-  await page.goto("http://localhost/replacement")
+  await page.goto(`http://localhost/replacement?scenario=${scenario}`)
   await page.waitForSelector(".admin-claim-flow")
   return page
 }
@@ -234,19 +254,26 @@ const stepButton = (page: Page) => page.locator(".admin-claim-flow button", { ha
 const dialog = (page: Page) => page.locator('[role="dialog"]')
 
 async function openFromStep(page: Page) {
+  // Datos cargados (el GET lleva un debounce de 300 ms): lista o estado vacío.
+  await page.waitForFunction(`(() => {
+    const section = document.getElementById("order-replacements-500")
+    return Boolean(section && (section.querySelector("li") || section.textContent.includes("Todavía no hay reemplazos")))
+  })()`)
   const button = stepButton(page)
   await button.scrollIntoViewIfNeeded()
   await page.evaluate("window.__scrollIntoViewCalls = 0")
   await button.click()
   await dialog(page).waitFor()
   // El GET de variantes lleva un debounce de 300 ms.
-  await page.locator('[role="dialog"] select').nth(1).locator("option", { hasText: "REP-9" }).waitFor({ state: "attached" })
+  await page.waitForFunction(`!document.querySelector('[role="dialog"]').textContent.includes("Cargando")`)
 }
+
+const variantSelect = (page: Page) => dialog(page).locator("select").last()
 
 async function fillValidForm(page: Page) {
   const modal = dialog(page)
   await modal.locator("textarea").fill("La unidad llegó con el motor dañado.")
-  await modal.locator("select").nth(1).selectOption("9")
+  await variantSelect(page).selectOption("9")
   // Deja terminar la transición de color del botón primario (150 ms).
   await page.waitForTimeout(250)
 }
@@ -360,8 +387,8 @@ for (const [cssName, stylesheet] of Object.entries(stylesheets)) {
           await page.mouse.wheel(0, 600)
           await page.waitForTimeout(150)
           assert.equal((await snapshot(page)).scrollY, before.scrollY, "fondo quieto con la rueda")
-          const expectedItem = trigger === "paso 2" ? "71" : ""
-          assert.equal(await dialog(page).locator("select").first().inputValue(), expectedItem, "preselección del ítem reclamado")
+          // Único ítem reclamado: el original se muestra fijo con ambos botones.
+          assert.match(await dialog(page).getByTestId("replacement-original-item").innerText(), /Trípode Ñandú/)
         } finally {
           await page.close()
         }
@@ -421,92 +448,208 @@ for (const [cssName, stylesheet] of Object.entries(stylesheets)) {
   })
 }
 
-test("selects, cantidad, stock y confirmación conservan la lógica existente", async () => {
+const REASON = "La unidad llegó con el motor dañado."
+const statTexts = async (page: Page) =>
+  (await dialog(page).locator(".admin-replacement-modal__stat").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
+const optionTexts = async (page: Page) =>
+  (await variantSelect(page).locator("option").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
+const stockText = async (page: Page) => (await dialog(page).locator(".admin-replacement-modal__stock").innerText()).replace(/\s+/g, " ")
+const primaryButton = (page: Page) => dialog(page).locator(".admin-replacement-modal__button.is-primary")
+const missingText = (page: Page) => dialog(page).locator(".admin-replacement-modal__missing")
+const noticeText = (page: Page) => dialog(page).locator(".admin-replacement-modal__notice")
+
+async function submitAndReadPayload(page: Page) {
+  await primaryButton(page).click()
+  await primaryButton(page).click()
+  await dialog(page).waitFor({ state: "detached" })
+  const posts = (await page.evaluate("window.__posts")) as Array<Record<string, unknown>>
+  assert.equal(posts.length, 1)
+  const { idempotencyKey, ...payload } = posts[0]
+  assert.equal(typeof idempotencyKey, "string")
+  return payload
+}
+
+test("caso normal: ítem fijo, sin buscador, variante original preseleccionada y mismo payload", async () => {
   const page = await open("dark")
   try {
     await openFromStep(page)
     const modal = dialog(page)
-    const primary = modal.locator(".admin-replacement-modal__button.is-primary")
-    const missing = modal.locator(".admin-replacement-modal__missing")
+    // 1. Un solo ítem reclamado: informativo, sin selector de ítem.
+    assert.match(await modal.getByTestId("replacement-original-item").innerText(), /Trípode Ñandú[\s\S]*Negro[\s\S]*SKU TRIO1/)
+    assert.equal(await modal.locator("select").count(), 1, "sólo el select de variante")
+    // 3. Sin buscador global.
+    assert.equal(await modal.locator('input:not([type="checkbox"]):not([type="number"])').count(), 0)
+    assert.equal(await modal.getByText("Buscar producto de reemplazo").count(), 0)
+    assert.equal(await modal.getByText("Producto de reemplazo", { exact: true }).count(), 0)
+    // 14. Pendientes de reemplazo = cálculo actual (recibidas − ya reemplazadas).
+    assert.deepEqual(await statTexts(page), ["Recibimos 1", "Ya reemplazadas 0", "Pendientes de reemplazo 1"])
+    // 4. Sólo variantes del mismo producto (no el aro del mismo pedido).
+    assert.deepEqual(await optionTexts(page), [
+      "Elegir variante",
+      "Negro (original) · SKU TRIO1 · Stock 3",
+      "Azul · SKU TRIO2 · Stock 1",
+      "Rojo · SKU TRIO3 · Sin stock",
+    ])
+    // 5. Variante original con stock: preseleccionada.
+    assert.equal(await variantSelect(page).inputValue(), "9")
+    assert.match(await stockText(page), /Stock disponible 3 unidades Stock después del reemplazo 2 unidades/)
+    assert.equal(await missingText(page).innerText(), "Escribí el motivo del reemplazo (mínimo 10 caracteres).")
 
-    // Estado inicial: stats del ítem y stock neutral.
-    const stats = await modal.locator(".admin-replacement-modal__stat").allInnerTexts()
-    assert.deepEqual(stats.map((text) => text.replace(/\s+/g, " ").trim()), ["Recibimos 1", "Ya reemplazadas 0", "Disponibles para reemplazar 1"])
-    assert.match(await modal.locator(".admin-replacement-modal__stock").innerText(), /Seleccioná un producto para calcular el stock\./)
-    assert.equal(await primary.isDisabled(), true)
-    assert.equal(await missing.innerText(), "Escribí el motivo del reemplazo (mínimo 10 caracteres).")
+    await modal.locator("textarea").fill(REASON)
+    assert.equal(await primaryButton(page).isEnabled(), true)
+    assert.equal(await missingText(page).count(), 0)
 
-    await modal.locator("textarea").fill("La unidad llegó con el motor dañado.")
-    assert.equal(await missing.innerText(), "Seleccioná un producto de reemplazo.")
-
-    // Variante: resumen con nombre, variante, SKU y stock.
-    await modal.locator("select").nth(1).selectOption("9")
-    const summary = await modal.locator(".admin-replacement-modal__selection").innerText()
-    assert.match(summary, /Trípode inteligente/)
-    assert.match(summary, /Negro/)
-    assert.match(summary, /SKU REP-9/)
-    assert.match(summary, /Stock 5/)
-    assert.match(await modal.locator(".admin-replacement-modal__stock").innerText(), /Stock disponible\s*5 unidades[\s\S]*Stock después del reemplazo\s*4 unidades/)
-    assert.equal(await primary.isEnabled(), true)
-    assert.equal(await missing.count(), 0)
-
-    // Buscar vuelve a limpiar la variante elegida (misma lógica que antes).
-    await modal.locator('input[placeholder="Ej.: Trípode inteligente negro"]').fill("negro")
-    assert.equal(await modal.locator("select").nth(1).inputValue(), "")
-    assert.equal(await primary.isDisabled(), true)
-    await modal.locator("select").nth(1).locator("option", { hasText: "REP-9" }).waitFor({ state: "attached" })
-    await modal.locator("select").nth(1).selectOption("9")
-
-    // Cantidad: límites min/max y validación (sólo 1 recibida).
+    // 12. Cantidad no supera pendientes (1 recibida).
     const quantity = modal.locator('input[type="number"]')
-    assert.equal(await quantity.getAttribute("min"), "1")
+    assert.equal(await quantity.inputValue(), "1", "arranca en 1")
     assert.equal(await quantity.getAttribute("max"), "1")
     assert.equal(await modal.getByRole("button", { name: "Sumar una unidad" }).isDisabled(), true)
     await quantity.fill("2")
-    assert.equal(await primary.isDisabled(), true)
-    assert.equal(await missing.innerText(), "La cantidad supera las unidades disponibles para reemplazar.")
+    assert.equal(await primaryButton(page).isDisabled(), true)
+    assert.equal(await missingText(page).innerText(), "La cantidad supera las unidades pendientes de reemplazo.")
     await quantity.fill("0")
-    assert.equal(await missing.innerText(), "Indicá una cantidad válida.")
-    await quantity.fill("1.5")
-    assert.equal(await primary.isDisabled(), true)
+    assert.equal(await missingText(page).innerText(), "Indicá una cantidad válida.")
 
-    // "Continuar sin recepción previa" (garantía) habilita las 3 vendidas.
+    // "Continuar sin recepción previa": 3 pendientes, sigue siendo el mismo producto.
     await modal.getByLabel("Continuar sin recepción previa", { exact: true }).check()
     await quantity.fill("1")
     assert.equal(await quantity.getAttribute("max"), "3")
+    assert.equal(await optionTexts(page).then((options) => options.length), 4, "mismas variantes con garantía")
     await modal.getByRole("button", { name: "Sumar una unidad" }).click()
     await modal.getByRole("button", { name: "Sumar una unidad" }).click()
     assert.equal(await quantity.inputValue(), "3")
-    assert.equal(await modal.getByRole("button", { name: "Sumar una unidad" }).isDisabled(), true, "tope en 3")
-    assert.match(await modal.locator(".admin-replacement-modal__stock").innerText(), /Stock después del reemplazo\s*2 unidades/)
-    await modal.getByRole("button", { name: "Restar una unidad" }).click()
-    assert.equal(await quantity.inputValue(), "2")
+    assert.match(await stockText(page), /Stock después del reemplazo 0 unidades/)
 
-    // Stock de la variante manda: la de stock 1 limita a 1.
-    await modal.locator("select").nth(1).selectOption("10")
+    // 13. Cantidad no supera stock: Azul tiene 1.
+    await variantSelect(page).selectOption("10")
     assert.equal(await quantity.getAttribute("max"), "1")
-    assert.equal(await missing.innerText(), "No hay stock suficiente del producto elegido.")
-    await modal.locator("select").nth(1).selectOption("9")
+    assert.equal(await missingText(page).innerText(), "No hay stock suficiente de la variante elegida.")
+    // 11. Variante con stock 0: bloquea con mensaje claro.
+    await variantSelect(page).selectOption("11")
+    assert.equal(await primaryButton(page).isDisabled(), true)
+    assert.equal(await missingText(page).innerText(), "Esta variante no tiene stock disponible.")
+    assert.equal(await noticeText(page).innerText(), "Esta variante no tiene stock disponible.")
 
-    // Revisar -> confirmar: mismo texto y mismo payload que antes.
-    await primary.click()
-    assert.match(await modal.getByRole("status").innerText(), /Vas a retirar 2 unidades de SKU REP-9 para reemplazar 2 unidades del pedido #500\./)
+    await variantSelect(page).selectOption("9")
+    await quantity.fill("2")
+    await primaryButton(page).click()
+    assert.match(await modal.getByRole("status").innerText(), /Vas a retirar 2 unidades de SKU TRIO1 para reemplazar 2 unidades del pedido #500\./)
     assert.equal(await modal.locator("textarea").isDisabled(), true, "formulario bloqueado durante la confirmación")
-    assert.equal(await primary.innerText(), "Confirmar retiro de stock")
-    await primary.click()
+    assert.equal(await primaryButton(page).innerText(), "Confirmar retiro de stock")
+    await primaryButton(page).click()
     await dialog(page).waitFor({ state: "detached" })
     const posts = (await page.evaluate("window.__posts")) as Array<Record<string, unknown>>
-    assert.equal(posts.length, 1)
     const { idempotencyKey, ...payload } = posts[0]
     assert.equal(typeof idempotencyKey, "string")
-    assert.deepEqual(payload, {
-      orderItemId: 71,
-      replacementVariantId: 9,
-      quantity: 2,
-      claimId: 900,
-      reason: "garantia",
-      notes: "La unidad llegó con el motor dañado.",
-    })
+    assert.deepEqual(payload, { orderItemId: 71, replacementVariantId: 9, quantity: 2, claimId: 900, reason: "garantia", notes: REASON })
+  } finally {
+    await page.close()
+  }
+})
+
+test("variante original sin stock: no se cambia sola; se puede elegir otra del mismo producto", async () => {
+  const page = await open("light", 1440, 1000, css, "original-sin-stock")
+  try {
+    await openFromStep(page)
+    const modal = dialog(page)
+    // 6. Sin preselección silenciosa + aviso claro.
+    assert.equal(await variantSelect(page).inputValue(), "")
+    assert.equal(await noticeText(page).innerText(), "La variante original (Negro) no tiene stock disponible. Elegí otra variante del mismo producto.")
+    await modal.locator("textarea").fill(REASON)
+    assert.equal(await primaryButton(page).isDisabled(), true)
+    assert.equal(await missingText(page).innerText(), "Seleccioná la variante a enviar.")
+    assert.match(await stockText(page), /Seleccioná la variante a enviar para calcular el stock\./)
+    // 7. Otra variante del mismo producto.
+    await variantSelect(page).selectOption("10")
+    assert.match(await stockText(page), /Stock disponible 2 unidades Stock después del reemplazo 1 unidad/)
+    assert.equal(await primaryButton(page).isEnabled(), true)
+    assert.deepEqual(await submitAndReadPayload(page), { orderItemId: 71, replacementVariantId: 10, quantity: 1, claimId: 900, reason: "otra_variante", notes: REASON })
+  } finally {
+    await page.close()
+  }
+})
+
+test("varios ítems reclamados: pide el ítem original y filtra variantes por su producto; historial previo intacto", async () => {
+  const page = await open("dark", 1440, 1000, css, "multi")
+  try {
+    await openFromStep(page)
+    const modal = dialog(page)
+    // 2. Selector de ítem original.
+    assert.equal(await modal.getByTestId("replacement-original-item").count(), 0)
+    const itemSelect = modal.locator("select").first()
+    assert.equal(await itemSelect.inputValue(), "")
+    assert.equal(await missingText(page).innerText(), "Seleccioná el ítem original.")
+    assert.match(await modal.innerText(), /Elegí el ítem original para ver sus variantes\./)
+
+    // 15. Historial del flujo anterior (otro_producto) se sigue listando y contando.
+    await itemSelect.selectOption("72")
+    assert.deepEqual(await statTexts(page), ["Recibimos 1", "Ya reemplazadas 1", "Pendientes de reemplazo 0"])
+    // Aro: una sola variante -> automática, sin select de variante.
+    assert.equal(await modal.locator("select").count(), 1)
+    assert.match(await modal.getByTestId("replacement-variant").innerText(), /Blanco[\s\S]*SKU ARO1[\s\S]*Stock 4/)
+
+    await itemSelect.selectOption("71")
+    assert.deepEqual(await optionTexts(page), ["Elegir variante", "Negro (original) · SKU TRIO1 · Stock 3", "Azul · SKU TRIO2 · Stock 1"])
+    assert.equal(await variantSelect(page).inputValue(), "9")
+    await modal.locator("textarea").fill(REASON)
+    assert.deepEqual(await submitAndReadPayload(page), { orderItemId: 71, replacementVariantId: 9, quantity: 1, claimId: 900, reason: "mismo_producto", notes: REASON })
+  } finally {
+    await page.close()
+  }
+  const history = await open("dark", 1440, 1000, css, "multi")
+  try {
+    await history.getByText("Reemplazo previo por otro producto").waitFor()
+    assert.match(await history.locator("#order-replacements-500").innerText(), /1 unidades · Cambio · Variante #999/)
+  } finally {
+    await history.close()
+  }
+})
+
+for (const [scenarioName, variantLabel, sku] of [["una-variante", "Negro", "TRIO1"], ["sin-variantes", "Única", "TRIPODE"]] as const) {
+  test(`${scenarioName}: la variante se toma automáticamente, sin select`, async () => {
+    const page = await open("dark", 1440, 1000, css, scenarioName)
+    try {
+      await openFromStep(page)
+      const modal = dialog(page)
+      // 9 / 10. Selección automática informativa.
+      assert.equal(await modal.locator("select").count(), 0)
+      assert.match(await modal.getByTestId("replacement-variant").innerText(), new RegExp(`${variantLabel}[\\s\\S]*SKU ${sku}`))
+      await modal.locator("textarea").fill(REASON)
+      assert.equal(await primaryButton(page).isEnabled(), true)
+      const payload = await submitAndReadPayload(page)
+      assert.equal(payload.replacementVariantId, scenarioName === "una-variante" ? 9 : 30)
+      assert.equal(payload.reason, scenarioName === "una-variante" ? "mismo_producto" : "otra_variante")
+    } finally {
+      await page.close()
+    }
+  })
+}
+
+test("sin stock en ninguna variante del producto: bloquea con mensaje claro", async () => {
+  const page = await open("light", 1440, 1000, css, "sin-stock")
+  try {
+    await openFromStep(page)
+    const modal = dialog(page)
+    await modal.locator("textarea").fill(REASON)
+    assert.equal(await variantSelect(page).inputValue(), "", "no elige una variante sin stock")
+    assert.equal(await noticeText(page).innerText(), "No hay stock disponible de este producto para realizar el reemplazo.")
+    assert.equal(await missingText(page).innerText(), "No hay stock disponible de este producto para realizar el reemplazo.")
+    await variantSelect(page).selectOption("10")
+    assert.equal(await primaryButton(page).isDisabled(), true)
+  } finally {
+    await page.close()
+  }
+})
+
+test("producto sin variantes activas: informa y no permite confirmar", async () => {
+  const page = await open("dark", 1440, 1000, css, "sin-variantes-activas")
+  try {
+    await openFromStep(page)
+    const modal = dialog(page)
+    await modal.locator("textarea").fill(REASON)
+    assert.equal(await modal.locator("select").count(), 0)
+    assert.equal(await noticeText(page).innerText(), "Este producto no tiene variantes activas para realizar el reemplazo.")
+    assert.equal(await primaryButton(page).isDisabled(), true)
   } finally {
     await page.close()
   }
@@ -520,11 +663,9 @@ test("tooltips (?) aparecen con hover y con foco de teclado, sin recortarse", as
       const tips = dialog(page).locator(".admin-claim-help")
       const labels = await dialog(page).locator(".admin-claim-help-trigger").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")))
       assert.deepEqual(labels, [
-        "Ayuda: Ítem original",
         "Ayuda: Continuar sin recepción previa",
         "Ayuda: Motivo del reemplazo",
-        "Ayuda: Buscar producto de reemplazo",
-        "Ayuda: Producto de reemplazo",
+        "Ayuda: Variante a enviar",
         "Ayuda: Cantidad",
         "Ayuda: Stock",
       ])
