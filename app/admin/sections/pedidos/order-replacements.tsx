@@ -5,11 +5,12 @@ import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { AdminRequestError } from "@/lib/admin/request-error"
 import { supabase } from "@/lib/supabase/client"
+import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { AdminModal, AdminPrimaryButton, AdminSecondaryButton } from "../../components/admin-controls"
 
 type Variant = { id: number; nombre: string; sku: string | null; stock: number; productos: { nombre: string } | { nombre: string }[] }
-type Replacement = { id: number; original_order_item_id: number; replacement_variant_id: number; quantity: number; reason: string; unit_cost: number | null; created_at: string; notes: string | null }
+type Replacement = RegisteredReplacement & { id: number; original_order_id: number; claim_id: number | null; replacement_variant_id: number; reason: string; unit_cost: number | null; created_at: string; notes: string | null }
 type ReplacementData = { replacements: Replacement[]; variants: Variant[] }
 
 async function requestReplacements(orderId: number, search: string, body?: Record<string, unknown>) {
@@ -22,10 +23,16 @@ async function requestReplacements(orderId: number, search: string, body?: Recor
   })
   const data = await response.json()
   if (!response.ok) throw new AdminRequestError(response.status, data.error || "No se pudo completar la operación. Recargá los datos.")
+  if (!body && (!Array.isArray(data.replacements) || !Array.isArray(data.variants))) throw new Error("No se pudieron verificar los reemplazos. Reintentá.")
   return data as ReplacementData
 }
 
-interface OrderReplacementsProps { pedido: SupabasePedido; onUpdated: () => Promise<void> }
+interface OrderReplacementsProps {
+  pedido: SupabasePedido
+  onUpdated: () => Promise<void>
+  /** Informa los reemplazos ya cargados (null si no se pudieron cargar) para mostrar el progreso del reclamo sin otro fetch. */
+  onReplacementsChange?: (replacements: RegisteredReplacement[] | null, state: ReplacementLoadState) => void
+}
 
 export function OrderReplacements(props: OrderReplacementsProps) {
   const { user } = useAuth()
@@ -33,7 +40,7 @@ export function OrderReplacements(props: OrderReplacementsProps) {
   return allowed ? <OrderReplacementManager {...props} /> : null
 }
 
-export function OrderReplacementManager({ pedido, onUpdated }: OrderReplacementsProps) {
+export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChange }: OrderReplacementsProps) {
   const [data, setData] = useState<ReplacementData | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -49,32 +56,46 @@ export function OrderReplacementManager({ pedido, onUpdated }: OrderReplacements
   const attempt = useRef<{ key: string; payload: Record<string, unknown> } | null>(null)
   const inFlight = useRef(false)
   const loadVersion = useRef({ value: 0 })
+  const onReplacementsChangeRef = useRef(onReplacementsChange)
+  useEffect(() => { onReplacementsChangeRef.current = onReplacementsChange })
   const load = useCallback(async () => {
     const version = ++loadVersion.current.value
     setLoading(true); setError("")
+    onReplacementsChangeRef.current?.(null, "loading")
     try {
       const next = await requestReplacements(pedido.id, search)
-      if (version === loadVersion.current.value) setData(next)
+      if (version === loadVersion.current.value) {
+        setData(next)
+        onReplacementsChangeRef.current?.(next.replacements, "ready")
+      }
     }
-    catch (cause) { if (version === loadVersion.current.value) { setData(null); setError(cause instanceof Error ? cause.message : "No se pudieron cargar los reemplazos.") } }
+    catch (cause) { if (version === loadVersion.current.value) {
+      setData(null); setError(cause instanceof Error ? cause.message : "No se pudieron cargar los reemplazos.")
+      onReplacementsChangeRef.current?.(null, "error")
+    } }
     finally { if (version === loadVersion.current.value) setLoading(false) }
   }, [pedido.id, search])
   useEffect(() => {
     const generation = loadVersion.current
+    onReplacementsChangeRef.current?.(null, "loading")
     const timer = setTimeout(() => void load(), 300)
-    return () => { clearTimeout(timer); generation.value++ }
+    return () => { clearTimeout(timer); generation.value++; onReplacementsChangeRef.current?.(null, "loading") }
   }, [load])
   const item = pedido.orden_items?.find((candidate) => candidate.id === Number(itemId))
+  const matchingClaims = (pedido.order_claims ?? []).filter((claim) =>
+    claim.resolution === "cambio_producto" && !["cerrado", "rechazado"].includes(claim.status) &&
+    claim.affected_items?.some((affected) => affected.order_item_id === item?.id && affected.quantity > 0))
   const variant = data?.variants.find((candidate) => candidate.id === Number(variantId))
   const used = data?.replacements.filter((row) => row.original_order_item_id === item?.id).reduce((sum, row) => sum + row.quantity, 0) || 0
   const received = Number(item?.return_restocked_quantity || 0) + Number(item?.return_written_off_quantity || 0)
   const availableOriginal = Math.max(0, Math.min(Number(item?.cantidad || 0), warranty ? Number(item?.cantidad || 0) : received) - used)
   const count = Number(quantity)
-  const valid = Boolean(item && variant && Number.isInteger(count) && count > 0 && count <= availableOriginal && count <= variant.stock && reason.trim().length >= 10 && !loading)
+  const valid = Boolean(item && variant && matchingClaims.length <= 1 && Number.isInteger(count) && count > 0 && count <= availableOriginal && count <= variant.stock && reason.trim().length >= 10 && !loading)
   const submit = async () => {
     if (inFlight.current || (!attempt.current && !valid)) return
     if (!attempt.current && item && variant) attempt.current = { key: crypto.randomUUID(), payload: {
       orderItemId: item.id, replacementVariantId: variant.id, quantity: count,
+      ...(matchingClaims.length === 1 ? { claimId: matchingClaims[0].id } : {}),
       reason: warranty ? "garantia" : item.variante_id === variant.id ? "mismo_producto" : "otro_producto", notes: reason.trim(),
     } }
     if (!attempt.current) return

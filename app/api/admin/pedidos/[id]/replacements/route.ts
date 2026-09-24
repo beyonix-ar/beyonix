@@ -9,7 +9,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
   const search = new URL(request.url).searchParams.get("search")?.trim().slice(0, 120) || ""
   const [history, variants] = await Promise.all([
-    auth.admin.from("order_replacements").select("id,original_order_item_id,replacement_variant_id,quantity,reason,unit_cost,created_at,notes").eq("original_order_id", orderId).order("created_at", { ascending: false }),
+    auth.admin.from("order_replacements").select("id,original_order_id,original_order_item_id,claim_id,replacement_variant_id,quantity,reason,unit_cost,created_at,notes").eq("original_order_id", orderId).order("created_at", { ascending: false }),
     auth.admin.from("producto_variantes").select("id,nombre,sku,stock,productos!inner(nombre,activo)").eq("activo", true).eq("productos.activo", true)
       .ilike("nombre", `%${search.replace(/[\\%_]/g, "\\$&")}%`).order("nombre").limit(100),
   ])

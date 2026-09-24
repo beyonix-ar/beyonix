@@ -20,6 +20,11 @@ async function setup() {
     await db.exec(readFileSync(new URL("../../supabase/migrations/20260906090000_claim_case_type_transitions.sql", import.meta.url), "utf8"))
     await db.exec(readFileSync(new URL("../../supabase/migrations/20260906100000_claims_final_security.sql", import.meta.url), "utf8"))
     await db.exec(readFileSync(new URL("../../supabase/migrations/20260906110000_claim_credit_note_snapshot.sql", import.meta.url), "utf8"))
+    await db.exec(`create table order_replacements (
+      original_order_id bigint references ordenes(id), original_order_item_id bigint references orden_items(id),
+      claim_id bigint references order_claims(id), quantity integer not null check(quantity>0)
+    )`)
+    await db.exec(readFileSync(new URL("../../supabase/migrations/20260924150000_claim_product_change_requires_replacement.sql", import.meta.url), "utf8"))
   } catch (error) {
     await db.close()
     throw new Error(error instanceof Error ? error.message : "Migration failed")
@@ -50,6 +55,81 @@ async function row(db: PGlite, id: number) {
 async function mutate(db: PGlite,id: number,version: string,patch: Record<string,unknown>,actor=admin) {
   return db.query("select mutate_admin_order_claim($1,$2,$3,$4)",[id,actor,version,JSON.stringify(patch)])
 }
+
+test("SQL cambio: sin reemplazo no cierra, no cambia datos ni genera mensajes/notificaciones", async () => {
+  const db = await setup()
+  try {
+    await db.exec("create trigger test_claim_notification after insert on order_claim_messages for each row execute function notify_customer_claim_message()")
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "cambio_producto" })
+    const snapshot = async () => Promise.all([
+      db.query("select * from order_claims order by id"),
+      db.query("select * from order_claim_messages order by id"),
+      db.query("select * from customer_notifications order by source_key"),
+      db.query("select * from order_audit_events order by id"),
+    ]).then((results) => results.map((result) => result.rows))
+    const before = await snapshot()
+    const version = (await row(db, id)).version
+    for (const patch of [{ status: "cerrado" }, { status: "cerrado", resolution: "otro", admin_response: "Resuelto", append_message: true }]) {
+      await assert.rejects(mutate(db, id, version, patch), /CLAIM_REPLACEMENT_REQUIRED/)
+      assert.deepEqual(await snapshot(), before)
+    }
+    await db.query("insert into order_replacements values(1,1,$1,1)", [id])
+    await assert.rejects(mutate(db, id, version, { status: "cerrado" }, operator), /CLAIM_FORBIDDEN/)
+    await mutate(db, id, version, { status: "cerrado" })
+    assert.equal((await row(db, id)).status, "cerrado")
+    assert.equal((await db.query("select * from order_claim_messages where message='BEYONIX finalizó el reclamo.'")).rows.length, 1)
+    assert.equal((await db.query("select * from customer_notifications where type='claim_response'")).rows.length, 1)
+  } finally { await db.close() }
+})
+
+test("SQL cambio: históricos sólo por pedido e ítem explícito y sin otro reclamo formal", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "cambio_producto" })
+    // Una consulta histórica no vuelve ambiguo el reclamo formal.
+    await db.query("insert into order_claims(order_id,user_id,claim_type,failure_type,description,status) values(1,$1,'transporte_48hs','consulta_pedido','Consulta anterior','cerrado')", [customer])
+    await db.exec("insert into order_replacements values(2,2,null,1)")
+    await assert.rejects(mutate(db, id, (await row(db, id)).version, { status: "cerrado" }), /CLAIM_REPLACEMENT_REQUIRED/)
+    await db.exec("insert into order_replacements values(1,1,null,1)")
+    await db.query("update order_claims set affected_items='[]' where id=$1", [id])
+    await assert.rejects(mutate(db, id, (await row(db, id)).version, { status: "cerrado" }), /CLAIM_REPLACEMENT_REQUIRED/)
+    await db.query("update order_claims set affected_items='[{\"order_item_id\":1,\"quantity\":1}]' where id=$1", [id])
+    await mutate(db, id, (await row(db, id)).version, { status: "cerrado" })
+    assert.equal((await row(db, id)).status, "cerrado")
+  } finally { await db.close() }
+})
+
+test("SQL cambio: otro claim, otro ítem o un histórico ambiguo no autorizan el cierre", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "cambio_producto" })
+    const previous = await db.query<{id: number}>("insert into order_claims(order_id,user_id,claim_type,failure_type,description,status,affected_items) values(1,$1,'garantia_beyonix','falla','Caso histórico','cerrado','[{\"order_item_id\":1,\"quantity\":1}]') returning id", [customer])
+    const version = (await row(db, id)).version
+    await db.query("insert into order_replacements values(1,1,$1,1)", [previous.rows[0].id])
+    await assert.rejects(mutate(db, id, version, { status: "cerrado" }), /CLAIM_REPLACEMENT_REQUIRED/)
+    await db.exec("insert into order_replacements values(1,1,null,1)")
+    await assert.rejects(mutate(db, id, version, { status: "cerrado" }), /CLAIM_REPLACEMENT_REQUIRED/)
+    await db.exec("insert into orden_items(id,orden_id,cantidad) values(3,1,1)")
+    await db.query("insert into order_replacements values(1,3,$1,1),(2,2,$1,1)", [id])
+    await assert.rejects(mutate(db, id, version, { status: "cerrado" }), /CLAIM_REPLACEMENT_REQUIRED/)
+    await db.query("insert into order_replacements values(1,1,$1,1)", [id])
+    await mutate(db, id, version, { status: "cerrado" })
+    assert.equal((await row(db, id)).status, "cerrado")
+  } finally { await db.close() }
+})
+
+test("SQL cambio: no altera el cierre de unidad faltante", async () => {
+  const db = await setup()
+  try {
+    const id = await create(db)
+    await mutate(db, id, (await row(db, id)).version, { status: "aprobado", resolution: "envio_unidad_faltante" })
+    await mutate(db, id, (await row(db, id)).version, { status: "cerrado" })
+    assert.equal((await row(db, id)).status, "cerrado")
+  } finally { await db.close() }
+})
 
 test("SQL: ownership e items ajenos fallan sin crear reclamos", async () => {
   const db=await setup()

@@ -166,6 +166,7 @@ const TEST_FILES = [
   "lib/orders/return-reception.test.ts",
   "lib/orders/claim-visibility.test.ts",
   "lib/orders/claim-polling.test.ts",
+  "lib/orders/claim-replacement-flow.test.ts",
   "lib/business/commercial-circuit-consistency.test.ts",
   "lib/business/product-costs.test.ts",
   "lib/business/standalone-cost-items.test.ts",

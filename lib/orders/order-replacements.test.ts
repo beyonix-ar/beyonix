@@ -117,9 +117,10 @@ test("reemplazo: original recibido -> salida de stock exactamente una vez, costo
       created_by: string
       created_at: string
       reason: string
+      claim_id: number
     }>(
-      "select quantity, unit_cost, created_by, created_at, reason from create_order_replacement($1,$2,$3,1,'otro_producto',$4,$5)",
-      [orderId, itemId, replacementVariantId, superAdmin, "replacement-attempt-1"],
+      "select quantity, unit_cost, created_by, created_at, reason, claim_id from create_order_replacement($1,$2,$3,1,'otro_producto',$4,$5,null,null,$6)",
+      [orderId, itemId, replacementVariantId, superAdmin, "replacement-attempt-1", claimId],
     )
 
     assert.equal(rows[0].quantity, 1)
@@ -127,6 +128,7 @@ test("reemplazo: original recibido -> salida de stock exactamente una vez, costo
     assert.equal(rows[0].created_by, superAdmin, "actor registrado")
     assert.ok(rows[0].created_at, "fecha registrada")
     assert.equal(rows[0].reason, "otro_producto")
+    assert.equal(rows[0].claim_id, claimId, "el vínculo al reclamo queda persistido junto a la salida de stock")
 
     const stock = await db.query<{ stock: number }>(
       "select stock from producto_variantes where id=$1",

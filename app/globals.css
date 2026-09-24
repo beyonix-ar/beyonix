@@ -2471,7 +2471,7 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
 
 @media (min-width: 1280px) {
   .admin-claim-workspace {
-    grid-template-columns: minmax(0, 2.55fr) minmax(260px, 1fr);
+    grid-template-columns: minmax(0, 1.85fr) minmax(320px, 1fr);
   }
 }
 
@@ -3241,7 +3241,7 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.76) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button) {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control) {
   background: #112A43 !important;
   background-color: #112A43 !important;
   background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
@@ -3252,7 +3252,7 @@ button.sales-ledger-product-trigger:hover {
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):hover {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control):hover {
   background: #1E4D7B !important;
   background-color: #1E4D7B !important;
   background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
@@ -3288,9 +3288,11 @@ button.sales-ledger-product-trigger:hover {
    Mismo caso para .admin-claim-decision-button ("Gestionar reclamo"):
    cada acción tiene su tono semántico (verde válido, rojo no corresponde,
    neutro finalizar) y este catch-all las volvía a todas navy + texto
-   blanco en ambos temas; en Light además chocaba con sus tonos claros. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button),
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button) svg.lucide,
+   blanco en ambos temas; en Light además chocaba con sus tonos claros.
+   Idem .admin-claim-flow-control (pasos del reclamo y opciones "Volver al
+   stock"/"Dar de baja"): primario/secundario/semántico propio por tema. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control) svg.lucide,
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
   color: #ffffff !important;
@@ -12938,4 +12940,590 @@ html[data-account-theme="light"][data-account-scope] {
   color: var(--checkout-badge-neutral-fg);
   background-color: var(--checkout-badge-neutral-bg);
   border-color: var(--checkout-badge-neutral-border);
+}
+
+/* ==========================================================================
+   Reclamos: flujo operativo ("Gestionar reclamo") y "Recepción del producto
+   original" (components/claims/admin-claim-manager.tsx).
+   Clases propias con colores por tema: el marcado no usa rounded+border,
+   text-white/N ni fondos hex que las reglas globales del admin reescriben en
+   Light. Los botones llevan .admin-claim-flow-control, excluido del
+   catch-all navy de botones del detalle de pedido.
+   ========================================================================== */
+.admin-claim-flow,
+.admin-claim-stepper,
+.admin-claim-reception-item {
+  --claim-flow-title: #ffffff;
+  --claim-flow-text: rgba(255, 255, 255, 0.7);
+  --claim-flow-muted: rgba(255, 255, 255, 0.52);
+  --claim-flow-line: rgba(255, 255, 255, 0.12);
+  --claim-flow-done: #6ee7b7;
+  --claim-flow-done-bg: rgba(16, 185, 129, 0.16);
+  --claim-flow-done-border: rgba(52, 211, 153, 0.5);
+  --claim-flow-partial: #fcd34d;
+  --claim-flow-danger: #fca5a5;
+  --claim-flow-current-bg: #1f5686;
+  --claim-flow-current-border: rgba(140, 200, 242, 0.8);
+  --claim-flow-active-bg: rgba(47, 116, 171, 0.12);
+  --claim-flow-active-border: rgba(140, 200, 242, 0.35);
+}
+
+html[data-admin-theme="light"] .admin-claim-flow,
+html[data-admin-theme="light"] .admin-claim-stepper,
+html[data-admin-theme="light"] .admin-claim-reception-item {
+  --claim-flow-title: #0f172a;
+  --claim-flow-text: #475569;
+  --claim-flow-muted: #64748b;
+  --claim-flow-line: #e2e8f0;
+  --claim-flow-done: #047857;
+  --claim-flow-done-bg: #d1fae5;
+  --claim-flow-done-border: #34d399;
+  --claim-flow-partial: #b45309;
+  --claim-flow-danger: #b91c1c;
+  --claim-flow-current-bg: #112a43;
+  --claim-flow-current-border: #112a43;
+  --claim-flow-active-bg: #eff6ff;
+  --claim-flow-active-border: #bfdbfe;
+}
+
+/* ---- Stepper compacto ---- */
+.admin-claim-stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+}
+
+.admin-claim-stepper-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--claim-flow-muted) !important;
+}
+
+.admin-claim-stepper-item + .admin-claim-stepper-item::before {
+  content: "";
+  width: 1.25rem;
+  height: 1px;
+  margin-right: 0.125rem;
+  background: var(--claim-flow-line);
+}
+
+.admin-claim-stepper-item.is-done { color: var(--claim-flow-text) !important; }
+.admin-claim-stepper-item.is-current { color: var(--claim-flow-title) !important; font-weight: 900; }
+
+.admin-claim-stepper-dot {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border: 1px solid var(--claim-flow-line);
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 900;
+  color: var(--claim-flow-muted) !important;
+}
+
+.admin-claim-stepper-item.is-done .admin-claim-stepper-dot {
+  border-color: var(--claim-flow-done-border);
+  background: var(--claim-flow-done-bg);
+  color: var(--claim-flow-done) !important;
+}
+
+.admin-claim-stepper-item.is-current .admin-claim-stepper-dot {
+  border-color: var(--claim-flow-current-border);
+  background: var(--claim-flow-current-bg);
+  color: #ffffff !important;
+}
+
+/* ---- Pasos de "Gestionar reclamo" ---- */
+.admin-claim-flow {
+  margin-top: 0.5rem;
+}
+
+.admin-claim-flow-heading {
+  margin-bottom: 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--claim-flow-muted) !important;
+}
+
+.admin-claim-flow-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.admin-claim-flow-step {
+  display: flex;
+  gap: 0.625rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+}
+
+.admin-claim-flow-step.is-active {
+  border-color: var(--claim-flow-active-border);
+  background: var(--claim-flow-active-bg);
+}
+
+.admin-claim-flow-marker {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border: 1px solid var(--claim-flow-line);
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  color: var(--claim-flow-muted) !important;
+}
+
+.admin-claim-flow-step.is-current .admin-claim-flow-marker {
+  border-color: var(--claim-flow-current-border);
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-flow-step.is-active .admin-claim-flow-marker {
+  background: var(--claim-flow-current-bg);
+  color: #ffffff !important;
+}
+
+.admin-claim-flow-step.is-done .admin-claim-flow-marker {
+  border-color: var(--claim-flow-done-border);
+  background: var(--claim-flow-done-bg);
+  color: var(--claim-flow-done) !important;
+}
+
+.admin-claim-flow-title {
+  font-size: 0.75rem;
+  font-weight: 900;
+  line-height: 1.5rem;
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-flow-step.is-pending .admin-claim-flow-title {
+  color: var(--claim-flow-muted) !important;
+}
+
+.admin-claim-flow-text {
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  color: var(--claim-flow-text) !important;
+}
+
+.admin-claim-flow-status {
+  font-size: 0.625rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--claim-flow-muted) !important;
+}
+
+.admin-claim-flow-status.is-done { color: var(--claim-flow-done) !important; }
+.admin-claim-flow-status.is-partial { color: var(--claim-flow-partial) !important; }
+
+.admin-claim-flow-footer {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.625rem 0;
+  border-top: 1px solid var(--claim-flow-line);
+}
+
+/* Icono check de los marcadores: hereda el color del marcador (el remapeo
+   genérico de svg.lucide en Light lo pintaría con --admin-text). */
+.admin-claim-flow .admin-claim-flow-marker.admin-claim-flow-marker svg.lucide.lucide,
+.admin-claim-stepper .admin-claim-stepper-dot.admin-claim-stepper-dot svg.lucide.lucide {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+html[data-admin-theme="light"] .admin-claim-flow .admin-claim-flow-marker.admin-claim-flow-marker svg.lucide.lucide,
+html[data-admin-theme="light"] .admin-claim-stepper .admin-claim-stepper-dot.admin-claim-stepper-dot svg.lucide.lucide {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* ---- Botones del flujo: primario (acción actual) / secundario / deshabilitado ---- */
+.admin-claim-flow-button {
+  --claim-button-bg: rgba(140, 200, 242, 0.06);
+  --claim-button-bg-hover: rgba(140, 200, 242, 0.13);
+  --claim-button-border: rgba(140, 200, 242, 0.32);
+  --claim-button-border-hover: rgba(140, 200, 242, 0.6);
+  --claim-button-text: #dbeafe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  margin-top: 0.5rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--claim-button-border) !important;
+  border-radius: 0.5rem;
+  background: var(--claim-button-bg) !important;
+  box-shadow: none !important;
+  color: var(--claim-button-text) !important;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.admin-claim-flow-button.is-primary {
+  --claim-button-bg: linear-gradient(180deg, #2f74ab, #1f5686);
+  --claim-button-bg-hover: linear-gradient(180deg, #3582bd, #23609a);
+  --claim-button-border: rgba(140, 200, 242, 0.65);
+  --claim-button-border-hover: rgba(191, 228, 255, 0.9);
+  --claim-button-text: #ffffff;
+}
+
+.admin-claim-flow-button:hover:not(:disabled) {
+  border-color: var(--claim-button-border-hover) !important;
+  background: var(--claim-button-bg-hover) !important;
+}
+
+.admin-claim-flow-button:focus-visible {
+  outline: 2px solid var(--claim-button-border-hover);
+  outline-offset: 2px;
+}
+
+.admin-claim-flow-button:disabled {
+  --claim-button-bg: rgba(255, 255, 255, 0.03);
+  --claim-button-border: rgba(255, 255, 255, 0.1);
+  --claim-button-text: rgba(255, 255, 255, 0.42);
+  cursor: not-allowed;
+}
+
+html[data-admin-theme="light"] .admin-claim-flow-button {
+  --claim-button-bg: #ffffff;
+  --claim-button-bg-hover: #f1f5f9;
+  --claim-button-border: #94a3b8;
+  --claim-button-border-hover: #112a43;
+  --claim-button-text: #112a43;
+}
+
+html[data-admin-theme="light"] .admin-claim-flow-button.is-primary {
+  --claim-button-bg: #112a43;
+  --claim-button-bg-hover: #183b5e;
+  --claim-button-border: #112a43;
+  --claim-button-border-hover: #183b5e;
+  --claim-button-text: #ffffff;
+}
+
+html[data-admin-theme="light"] .admin-claim-flow-button:disabled {
+  --claim-button-bg: #f1f5f9;
+  --claim-button-border: #e2e8f0;
+  --claim-button-text: #475569;
+}
+
+/* ---- Recepción del producto original ---- */
+.admin-claim-reception-heading {
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: #ffffff !important;
+}
+
+.admin-claim-reception-subtitle {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.68) !important;
+}
+
+.admin-claim-reception-note {
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #93c5fd !important;
+}
+
+html[data-admin-theme="light"] .admin-claim-reception-heading { color: #0f172a !important; }
+html[data-admin-theme="light"] .admin-claim-reception-subtitle { color: #475569 !important; }
+html[data-admin-theme="light"] .admin-claim-reception-note { color: #1e40af !important; }
+
+.admin-claim-reception-item {
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+html[data-admin-theme="light"] .admin-claim-reception-item {
+  border-color: #e2e8f0;
+  background: #f8fafc;
+}
+
+.admin-claim-reception-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-reception-meta {
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--claim-flow-text) !important;
+}
+
+.admin-claim-reception-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.admin-claim-reception-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--claim-flow-line);
+  border-radius: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--claim-flow-text) !important;
+}
+
+.admin-claim-reception-count strong {
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-reception-count.is-pending strong { color: var(--claim-flow-partial) !important; }
+.admin-claim-reception-count.is-complete strong { color: var(--claim-flow-done) !important; }
+
+.admin-claim-reception-question {
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-reception-label {
+  display: block;
+  font-size: 0.625rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--claim-flow-text) !important;
+}
+
+.admin-claim-reception-label.is-restock { color: var(--claim-flow-done) !important; }
+.admin-claim-reception-label.is-writeoff { color: var(--claim-flow-danger) !important; }
+
+.admin-claim-reception-writeoff {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.admin-claim-reception-writeoff strong {
+  display: grid;
+  place-items: center;
+  width: 5rem;
+  height: 2.25rem;
+  font-size: 0.875rem;
+  font-weight: 900;
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-reception-hint {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  color: var(--claim-flow-text) !important;
+}
+
+/* El texto vacío ("sin productos") vive fuera de un item: toma los tonos por tema directo. */
+.admin-claim-card > div > .admin-claim-reception-hint { color: rgba(255, 255, 255, 0.7) !important; }
+html[data-admin-theme="light"] .admin-claim-card > div > .admin-claim-reception-hint { color: #475569 !important; }
+
+/* Resultado de una recepción completa. */
+.admin-claim-reception-feedback {
+  --claim-feedback-bg: rgba(59, 130, 246, 0.08);
+  --claim-feedback-border: rgba(147, 197, 253, 0.28);
+  --claim-feedback-icon: #93c5fd;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--claim-feedback-border);
+  border-radius: 0.5rem;
+  background: var(--claim-feedback-bg);
+}
+
+.admin-claim-reception-feedback.is-restock {
+  --claim-feedback-bg: rgba(16, 185, 129, 0.08);
+  --claim-feedback-border: rgba(52, 211, 153, 0.3);
+  --claim-feedback-icon: #6ee7b7;
+}
+
+.admin-claim-reception-feedback.is-writeoff {
+  --claim-feedback-bg: rgba(239, 68, 68, 0.08);
+  --claim-feedback-border: rgba(248, 113, 113, 0.3);
+  --claim-feedback-icon: #fca5a5;
+}
+
+html[data-admin-theme="light"] .admin-claim-reception-feedback {
+  --claim-feedback-bg: #eff6ff;
+  --claim-feedback-border: #bfdbfe;
+  --claim-feedback-icon: #1d4ed8;
+}
+
+html[data-admin-theme="light"] .admin-claim-reception-feedback.is-restock {
+  --claim-feedback-bg: #ecfdf5;
+  --claim-feedback-border: #6ee7b7;
+  --claim-feedback-icon: #047857;
+}
+
+html[data-admin-theme="light"] .admin-claim-reception-feedback.is-writeoff {
+  --claim-feedback-bg: #fef2f2;
+  --claim-feedback-border: #fca5a5;
+  --claim-feedback-icon: #b91c1c;
+}
+
+.admin-claim-reception-feedback-title {
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: var(--claim-flow-title) !important;
+}
+
+.admin-claim-reception-feedback-text {
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--claim-flow-text) !important;
+}
+
+.admin-claim-reception-feedback.admin-claim-reception-feedback svg.lucide.lucide,
+html[data-admin-theme="light"] .admin-claim-reception-feedback.admin-claim-reception-feedback svg.lucide.lucide {
+  color: var(--claim-feedback-icon) !important;
+  stroke: var(--claim-feedback-icon) !important;
+}
+
+/* ---- Opciones "Volver al stock" / "Dar de baja" ---- */
+.admin-claim-choice {
+  --claim-choice-bg: rgba(255, 255, 255, 0.03);
+  --claim-choice-border: rgba(255, 255, 255, 0.14);
+  --claim-choice-border-hover: rgba(52, 211, 153, 0.5);
+  --claim-choice-title: #ffffff;
+  --claim-choice-text: rgba(255, 255, 255, 0.66);
+  --claim-choice-icon: #6ee7b7;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--claim-choice-border) !important;
+  border-radius: 0.5rem;
+  background: var(--claim-choice-bg) !important;
+  box-shadow: none !important;
+  color: var(--claim-choice-title) !important;
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.admin-claim-choice.is-writeoff {
+  --claim-choice-border-hover: rgba(248, 113, 113, 0.5);
+  --claim-choice-icon: #fca5a5;
+}
+
+.admin-claim-choice:hover:not(:disabled) {
+  border-color: var(--claim-choice-border-hover) !important;
+}
+
+.admin-claim-choice:focus-visible {
+  outline: 2px solid var(--claim-choice-border-hover);
+  outline-offset: 2px;
+}
+
+.admin-claim-choice.is-restock[aria-pressed="true"] {
+  --claim-choice-bg: rgba(16, 185, 129, 0.14);
+  --claim-choice-border: rgba(52, 211, 153, 0.75);
+  --claim-choice-title: #d1fae5;
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.35) !important;
+}
+
+.admin-claim-choice.is-writeoff[aria-pressed="true"] {
+  --claim-choice-bg: rgba(239, 68, 68, 0.12);
+  --claim-choice-border: rgba(248, 113, 113, 0.7);
+  --claim-choice-title: #fee2e2;
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.32) !important;
+}
+
+.admin-claim-choice:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-claim-choice-title {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 900;
+  color: var(--claim-choice-title) !important;
+}
+
+.admin-claim-choice-text {
+  display: block;
+  margin-top: 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1rem;
+  color: var(--claim-choice-text) !important;
+}
+
+.admin-claim-choice.admin-claim-choice svg.admin-claim-choice-icon.admin-claim-choice-icon.lucide,
+html[data-admin-theme="light"] .admin-claim-choice.admin-claim-choice svg.admin-claim-choice-icon.admin-claim-choice-icon.lucide {
+  margin-top: 0.0625rem;
+  color: var(--claim-choice-icon) !important;
+  stroke: var(--claim-choice-icon) !important;
+}
+
+html[data-admin-theme="light"] .admin-claim-choice {
+  --claim-choice-bg: #ffffff;
+  --claim-choice-border: #cbd5e1;
+  --claim-choice-border-hover: #10b981;
+  --claim-choice-title: #0f172a;
+  --claim-choice-text: #475569;
+  --claim-choice-icon: #047857;
+}
+
+html[data-admin-theme="light"] .admin-claim-choice.is-writeoff {
+  --claim-choice-border-hover: #ef4444;
+  --claim-choice-icon: #b91c1c;
+}
+
+html[data-admin-theme="light"] .admin-claim-choice.is-restock[aria-pressed="true"] {
+  --claim-choice-bg: #ecfdf5;
+  --claim-choice-border: #10b981;
+  --claim-choice-title: #065f46;
+  box-shadow: inset 0 0 0 1px #10b981 !important;
+}
+
+html[data-admin-theme="light"] .admin-claim-choice.is-writeoff[aria-pressed="true"] {
+  --claim-choice-bg: #fef2f2;
+  --claim-choice-border: #ef4444;
+  --claim-choice-title: #991b1b;
+  box-shadow: inset 0 0 0 1px #ef4444 !important;
+}
+
+/* Aviso de éxito del panel de reclamos (antes compartía el tono de alerta). */
+.admin-claim-notice-success {
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 0.5rem;
+  background: rgba(16, 185, 129, 0.08);
+  color: #a7f3d0 !important;
+}
+
+html[data-admin-theme="light"] .admin-claim-notice-success {
+  border-color: #6ee7b7;
+  background: #ecfdf5;
+  color: #065f46 !important;
 }

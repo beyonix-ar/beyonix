@@ -2,6 +2,42 @@ import assert from "node:assert/strict"
 import test, { mock } from "node:test"
 import { AuthClient } from "@supabase/supabase-js"
 
+test("cambio: PATCH real devuelve 409 sin consultar destinatario ni enviar email cuando la RPC rechaza", async () => {
+  const previousEnv = { ...process.env }
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://replacement-test.invalid"
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service"
+  process.env.RESEND_API_KEY = "test-email"
+  process.env.STORE_EMAIL_FROM = "test@example.test"
+  const claims = mock.method(AuthClient.prototype, "getClaims", async () => ({ data: { claims: { sub: "actor" } }, error: null }))
+  const requests: string[] = []
+  const fetchMock = mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname
+    requests.push(path)
+    if (path === "/rest/v1/profiles") return Response.json({ id: "actor", rol: "admin" })
+    if (path === "/rest/v1/rpc/mutate_admin_order_claim") {
+      const body = JSON.parse(String(init?.body))
+      assert.equal(body.p_patch.status, "cerrado")
+      return Response.json({ message: "CLAIM_REPLACEMENT_REQUIRED", code: "P0001" }, { status: 400 })
+    }
+    throw new Error(`No debería continuar después del rechazo: ${path}`)
+  })
+  try {
+    const { PATCH } = await import("../../app/api/admin/order-claims/[claimId]/route")
+    const response = await PATCH(new Request("http://localhost/api/admin/order-claims/1", {
+      method: "PATCH", headers: { Authorization: "Bearer test", "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "cerrado", resolution: "cambio_producto", expectedUpdatedAt: "2026-09-24T12:00:00Z", append_message: true, admin_response: "Resuelto" }),
+    }), { params: Promise.resolve({ claimId: "1" }) })
+    assert.equal(response.status, 409)
+    assert.match((await response.json()).error, /Primero registrá un reemplazo/)
+    assert.deepEqual(requests, ["/rest/v1/profiles", "/rest/v1/rpc/mutate_admin_order_claim"])
+  } finally {
+    claims.mock.restore(); fetchMock.mock.restore()
+    for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "RESEND_API_KEY", "STORE_EMAIL_FROM"]) {
+      if (previousEnv[key] === undefined) delete process.env[key]; else process.env[key] = previousEnv[key]
+    }
+  }
+})
+
 test("cierre operativo: las rutas reales rechazan al operador antes de acceder a datos", async () => {
   const previousEnv = { ...process.env }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://roles-test.invalid"
@@ -42,4 +78,3 @@ test("cierre operativo: las rutas reales rechazan al operador antes de acceder a
     }
   }
 })
-

@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import {
+  Check,
   CheckCircle2,
   ChevronDown,
   CreditCard,
@@ -30,7 +31,6 @@ import {
 import { formatPrice } from "@/app/admin/sections/productos/helpers"
 import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
-import { OperationalProgress } from "@/app/admin/components/operational-progress"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import { notifyOrderNotificationsChanged } from "@/lib/admin/order-notifications"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
@@ -41,6 +41,17 @@ import {
   shouldShowReturnInventoryPanel,
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
+import {
+  getClaimProgressSteps,
+  getReplacementFlow,
+  sumReplacedUnits,
+  sumClaimReplacedUnits,
+  type ClaimProgressStep,
+  type ClaimStepState,
+  type RegisteredReplacement,
+  type ReplacementFlow,
+  type ReplacementLoadState,
+} from "@/lib/orders/claim-replacement-flow"
 import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import {
   getOrCreateIdempotencyAttempt,
@@ -413,15 +424,69 @@ function getClaimAffectedItems(
     }))
 }
 
+function getReturnedQuantity(item: SupabasePedidoItem) {
+  return Number(item.return_restocked_quantity ?? 0) + Number(item.return_written_off_quantity ?? 0)
+}
+
+function getReceptionTotals(entries: Array<{ item: SupabasePedidoItem; quantity: number }>) {
+  return entries.reduce(
+    (totals, { item, quantity }) => ({
+      claimed: totals.claimed + quantity,
+      received: totals.received + Math.min(quantity, getReturnedQuantity(item)),
+    }),
+    { claimed: 0, received: 0 },
+  )
+}
+
+function ClaimStepper({ steps }: { steps: ClaimProgressStep[] }) {
+  if (steps.length === 0) return null
+
+  return (
+    <ol aria-label="Progreso del reclamo" className="admin-claim-stepper">
+      {steps.map((step, index) => (
+        <li
+          key={step.key}
+          aria-current={step.state === "current" ? "step" : undefined}
+          className={`admin-claim-stepper-item is-${step.state}`}
+        >
+          <span className="admin-claim-stepper-dot" aria-hidden="true">
+            {step.state === "done" ? <Check className="size-3" strokeWidth={3} /> : index + 1}
+          </span>
+          <span className="admin-claim-stepper-label">{step.label}</span>
+          <span className="sr-only">
+            {step.state === "done" ? " (completado)" : step.state === "current" ? " (paso actual)" : " (pendiente)"}
+          </span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function ReceptionCounts({ claimed, received }: { claimed: number; received: number }) {
+  const pending = Math.max(0, claimed - received)
+
+  return (
+    <p className="admin-claim-reception-counts">
+      <span className="admin-claim-reception-count">Reclamadas <strong>{claimed}</strong></span>
+      <span className="admin-claim-reception-count">Recibidas <strong>{received}</strong></span>
+      <span className={`admin-claim-reception-count ${pending > 0 ? "is-pending" : "is-complete"}`}>
+        Pendientes <strong>{pending}</strong>
+      </span>
+    </p>
+  )
+}
+
 export function ReturnInventoryPanel({
   pedido,
   claim,
   canManage,
+  registeredReplacements = null,
   onUpdated,
 }: {
   pedido: SupabasePedido
   claim: SupabaseOrderClaim
   canManage: boolean
+  registeredReplacements?: RegisteredReplacement[] | null
   onUpdated?: () => void | Promise<void>
 }) {
   const orderItems = pedido.orden_items ?? []
@@ -762,36 +827,39 @@ export function ReturnInventoryPanel({
     confirmationItem?.conditioned_name?.trim() ||
     confirmationItem?.producto_variantes?.nombre?.trim() ||
     "Variante seleccionada"
-  const hasPendingInventory = items.some((item) => (affectedQuantityById.get(Number(item.id)) ?? 0) > Number(item.return_restocked_quantity ?? 0) + Number(item.return_written_off_quantity ?? 0))
+  const receptionTotals = getReceptionTotals(
+    items.map((item) => ({ item, quantity: affectedQuantityById.get(Number(item.id)) ?? 0 })),
+  )
+  const hasPendingInventory = receptionTotals.received < receptionTotals.claimed
+  const progressSteps = getClaimProgressSteps({
+    status: claim.status,
+    resolution: claim.resolution,
+    claimedUnits: receptionTotals.claimed,
+    receivedUnits: receptionTotals.received,
+    replacedUnits: claim.resolution === "cambio_producto"
+      ? sumClaimReplacedUnits(registeredReplacements, claim, pedido.order_claims ?? [])
+      : sumReplacedUnits(registeredReplacements, items.map((item) => Number(item.id))),
+    creditNoteAuthorized: Boolean(
+      pedido.order_credit_notes?.some((note) => note.claim_id === claim.id && note.status === "authorized"),
+    ),
+    refundCompleted: Boolean(claim.refund_completed_at),
+  })
 
   return (
     <>
-      <section className="admin-claim-card mx-3 mb-3 rounded-xl border p-3 sm:mx-4 sm:mb-4">
-      <OperationalProgress steps={[
-        { label: "Recepción", complete: items.length > 0 && !hasPendingInventory },
-        ...(["reintegro_total", "reintegro_parcial", "cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "") ? [
-          { label: "Nota de crédito", complete: Boolean(pedido.order_credit_notes?.some((note) => note.claim_id === claim.id && note.status === "authorized")) },
-          ...(["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") ? [{ label: "Reintegro", complete: Boolean(claim.refund_completed_at) }] : []),
-        ] : []),
-        ...(["cambio_producto", "envio_unidad_faltante"].includes(claim.resolution ?? "") ? [{ label: "Entrega del reemplazo", complete: claim.status === "cerrado" || claim.status === "reemplazo_enviado" }] : []),
-      ]} />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <section
+        id={`claim-reception-${claim.id}`}
+        className="admin-claim-card mx-3 mb-3 rounded-xl border p-3 sm:mx-4 sm:mb-4"
+      >
+      <ClaimStepper steps={progressSteps} />
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-10px font-black uppercase tracking-widest text-blue-200/75">
-            Recepción e inventario
+          <h4 className="admin-claim-reception-heading">Recepción del producto original</h4>
+          <p className="admin-claim-reception-subtitle">
+            Registrá cómo volvió el producto que entregó el cliente.
           </p>
-          <h4 className="mt-1 text-sm font-black text-white">
-            Productos incluidos en el reclamo
-          </h4>
-          <p className="mt-1 text-xs font-semibold text-blue-100/75">
-            {claim.affected_items_updated_at
-              ? "Selección corregida por administración."
-              : "Selección declarada por el cliente."}
-          </p>
-          {hasPendingInventory && (
-            <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-white/62">
-              Registrá el destino cuando el producto vuelva físicamente a BEYONIX. Lo revendible suma stock; lo dañado queda asentado como baja o pérdida y no vuelve al stock disponible.
-            </p>
+          {claim.affected_items_updated_at && (
+            <p className="admin-claim-reception-note">Productos corregidos por administración.</p>
           )}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
@@ -952,15 +1020,18 @@ export function ReturnInventoryPanel({
             const draft = drafts[item.id] ?? getReturnInventoryDraft(item)
             const productName = item.productos?.nombre ?? `Producto #${item.producto_id}`
             const claimedQuantity = affectedQuantityById.get(Number(item.id)) ?? 0
-            const receivedQuantity =
-              Number(item.return_restocked_quantity ?? 0) +
-              Number(item.return_written_off_quantity ?? 0)
+            const receivedQuantity = getReturnedQuantity(item)
             const productStock = Number(item.productos?.stock ?? 0)
             const variantStock = Number(item.producto_variantes?.stock ?? 0)
             const variantName =
               item.conditioned_name?.trim() ||
               item.producto_variantes?.nombre?.trim() ||
               "Variante seleccionada"
+            const variantSku = item.conditioned_sku?.trim() || item.producto_variantes?.sku?.trim()
+            const itemMeta = [
+              item.conditioned_name?.trim() || item.producto_variantes?.nombre?.trim(),
+              variantSku ? `SKU ${variantSku}` : null,
+            ].filter((part): part is string => Boolean(part)).join(" · ")
             const saving = savingItemId === item.id
             // Devoluciones parciales sucesivas: "procesado" ya no es un
             // booleano único -- el ítem sigue disponible mientras quede
@@ -970,15 +1041,28 @@ export function ReturnInventoryPanel({
             const draftReceived = Number(draft.received || 0)
             const draftGoodCondition = Number(draft.goodCondition || 0)
             const draftWrittenOff = Math.max(draftReceived - draftGoodCondition, 0)
-            const pendingStockDelta = draftGoodCondition
-            const nextProductStock = productStock + pendingStockDelta
-            const nextVariantStock = variantStock + pendingStockDelta
+            const nextProductStock = productStock + draftGoodCondition
+            const nextVariantStock = variantStock + draftGoodCondition
             const singleUnitCondition =
               claimedQuantity === 1 && draftReceived === 1
                 ? draftGoodCondition === 1
                   ? "yes"
                   : "no"
                 : null
+            const noteRequired = draftWrittenOff > 0
+            const missingStep =
+              claimedQuantity === 1
+                ? !singleUnitCondition
+                  ? "Elegí qué hacer con la unidad."
+                  : null
+                : !(draftReceived > 0)
+                  ? "Indicá cuántas unidades llegaron."
+                  : null
+            const missingReason =
+              missingStep ??
+              (noteRequired && draft.note.trim().length < 3
+                ? "Indicá el motivo de la baja en la observación."
+                : null)
 
             if (inventoryLocked) {
               const restockedQuantity = Number(item.return_restocked_quantity ?? 0)
@@ -987,12 +1071,12 @@ export function ReturnInventoryPanel({
               const onlyWrittenOff = writtenOffQuantity > 0 && restockedQuantity === 0
               const resultLabel = onlyRestocked
                 ? claimedQuantity === 1
-                  ? "Sí, volvió al stock"
+                  ? "Volvió al stock"
                   : `${restockedQuantity} unidades volvieron al stock`
                 : onlyWrittenOff
                   ? claimedQuantity === 1
-                    ? "No, se dio de baja"
-                    : `${writtenOffQuantity} unidades se dieron de baja`
+                    ? "Dada de baja"
+                    : `${writtenOffQuantity} unidades dadas de baja`
                   : `${restockedQuantity} al stock · ${writtenOffQuantity} de baja`
               const impactParts = [
                 restockedQuantity > 0
@@ -1002,27 +1086,18 @@ export function ReturnInventoryPanel({
                   ? `${writtenOffQuantity} ${writtenOffQuantity === 1 ? "unidad registrada" : "unidades registradas"} como baja o pérdida`
                   : null,
               ].filter((part): part is string => Boolean(part))
-              const resultTone = onlyRestocked
-                ? "border-emerald-300/24 bg-emerald-400/8 text-emerald-100"
-                : onlyWrittenOff
-                  ? "border-red-300/24 bg-red-400/8 text-red-100"
-                  : "border-blue-300/24 bg-blue-400/8 text-blue-100"
+              const resultTone = onlyRestocked ? "is-restock" : onlyWrittenOff ? "is-writeoff" : "is-mixed"
 
               return (
-                <article
-                  key={`return-inventory-${item.id}`}
-                  className="rounded-lg border border-white/9 bg-black/20 p-3"
-                >
-                  <p className="text-sm font-black text-white">
-                    {productName}
-                    {item.variante_id && (
-                      <span className="font-semibold text-white/55"> · {variantName}</span>
-                    )}
-                  </p>
-                  <p className="mt-1 text-11px font-semibold text-white/55">
-                    Vendió {item.cantidad} · Cliente reclama {claimedQuantity} · Recibimos {receivedQuantity} · Queda recibir {Math.max(0, remainingQuantity)}
-                  </p>
-                  <div className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2.5 ${resultTone}`}>
+                <article key={`return-inventory-${item.id}`} className="admin-claim-reception-item">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="admin-claim-reception-title">{productName}</p>
+                      {itemMeta && <p className="admin-claim-reception-meta">{itemMeta}</p>}
+                    </div>
+                    <ReceptionCounts claimed={claimedQuantity} received={receivedQuantity} />
+                  </div>
+                  <div className={`admin-claim-reception-feedback mt-2 ${resultTone}`}>
                     {onlyRestocked ? (
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
                     ) : onlyWrittenOff ? (
@@ -1031,13 +1106,8 @@ export function ReturnInventoryPanel({
                       <PackageCheck className="mt-0.5 size-4 shrink-0" />
                     )}
                     <div>
-                      <p className="text-10px font-black uppercase tracking-wide opacity-75">
-                        Opción elegida
-                      </p>
-                      <p className="mt-0.5 text-sm font-black text-white">{resultLabel}</p>
-                      <p className="mt-1 text-11px font-semibold leading-4 text-white/64">
-                        Impacto: {impactParts.join(" · ")}.
-                      </p>
+                      <p className="admin-claim-reception-feedback-title">Recepción completa · {resultLabel}</p>
+                      <p className="admin-claim-reception-feedback-text">{impactParts.join(" · ")}.</p>
                     </div>
                   </div>
                 </article>
@@ -1045,108 +1115,67 @@ export function ReturnInventoryPanel({
             }
 
             return (
-              <article key={`return-inventory-${item.id}`} className="rounded-lg border border-white/9 bg-black/20 p-3">
+              <article key={`return-inventory-${item.id}`} className="admin-claim-reception-item">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-black text-white">{productName}</p>
-                    <p className="mt-1 text-11px font-semibold text-white/55">
-                      {item.conditioned_name?.trim() ||
-                        item.producto_variantes?.nombre?.trim() ||
-                        "Sin variante"}{" "}
-                      · Vendió {item.cantidad} · Cliente reclama {claimedQuantity} · Recibimos {receivedQuantity} · Queda recibir {Math.max(0, remainingQuantity)}
-                    </p>
-                    <p className="mt-1 text-11px font-semibold text-blue-100/72">
-                      {item.variante_id
-                        ? `Stock general: ${productStock} · ${variantName}: ${variantStock}`
-                        : `Stock actual: ${productStock}`}
-                    </p>
-                  </div>
-                  {item.return_inventory_processed_at && (
-                    <div className="shrink-0 rounded-lg border border-emerald-300/18 bg-emerald-400/8 px-2.5 py-1.5 text-right">
-                      <p className="text-10px font-black uppercase text-emerald-100">Recepción registrada</p>
-                      <p className="mt-0.5 text-10px font-semibold text-white/58">
-                        {formatDate(item.return_inventory_processed_at)} · {receivedQuantity}/{claimedQuantity} unidades
+                    <p className="admin-claim-reception-title">{productName}</p>
+                    {itemMeta && <p className="admin-claim-reception-meta">{itemMeta}</p>}
+                    {item.return_inventory_processed_at && (
+                      <p className="admin-claim-reception-meta">
+                        Última recepción: {formatDate(item.return_inventory_processed_at)}
                       </p>
-                    </div>
-                  )}
+                    )}
+                  </div>
+                  <ReceptionCounts claimed={claimedQuantity} received={receivedQuantity} />
                 </div>
 
                 {claimedQuantity === 1 ? (
                   <div className="mt-3">
-                    <p className="text-xs font-black text-white">
-                      ¿El producto llegó en buenas condiciones y se puede revender?
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                    <p className="admin-claim-reception-question">¿Qué hacemos con esta unidad?</p>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       <button
                         type="button"
-                        disabled={!canManage || saving || inventoryLocked}
+                        disabled={!canManage || saving}
                         aria-pressed={singleUnitCondition === "yes"}
                         onClick={() => selectSingleUnitCondition(item, true)}
-                        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                          singleUnitCondition === "yes"
-                            ? "!border-emerald-300/80 !bg-emerald-500/25 !text-emerald-50 ring-2 ring-emerald-300/25"
-                            : "border-white/12 bg-[#101820] text-white/70 hover:border-emerald-300/45"
-                        }`}
+                        className="admin-claim-choice admin-claim-flow-control is-restock"
                       >
-                        <CheckCircle2 className="size-4" />
-                        Sí, vuelve al stock
+                        <CheckCircle2 className="admin-claim-choice-icon size-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="admin-claim-choice-title">Volver al stock</span>
+                          <span className="admin-claim-choice-text">Producto en buen estado y apto para venta.</span>
+                        </span>
                       </button>
                       <button
                         type="button"
-                        disabled={!canManage || saving || inventoryLocked}
+                        disabled={!canManage || saving}
                         aria-pressed={singleUnitCondition === "no"}
                         onClick={() => selectSingleUnitCondition(item, false)}
-                        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-4 text-xs font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                          singleUnitCondition === "no"
-                            ? "!border-red-300/80 !bg-red-500/22 !text-red-50 ring-2 ring-red-300/25"
-                            : "border-white/12 bg-[#101820] text-white/70 hover:border-red-300/45"
-                        }`}
+                        className="admin-claim-choice admin-claim-flow-control is-writeoff"
                       >
-                        <XCircle className="size-4" />
-                        No, dar de baja
+                        <XCircle className="admin-claim-choice-icon size-4 shrink-0" />
+                        <span className="min-w-0">
+                          <span className="admin-claim-choice-title">Dar de baja</span>
+                          <span className="admin-claim-choice-text">Producto dañado o no apto para volver a venderse.</span>
+                        </span>
                       </button>
                     </div>
                     {singleUnitCondition && (
-                      <div
-                        className={`mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 ${
-                          singleUnitCondition === "yes"
-                            ? "border-emerald-300/24 bg-emerald-400/8"
-                            : "border-red-300/24 bg-red-400/8"
-                        }`}
-                      >
-                        {singleUnitCondition === "yes" ? (
-                          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-200" />
-                        ) : (
-                          <XCircle className="mt-0.5 size-4 shrink-0 text-red-200" />
-                        )}
-                        <div>
-                          <p className="text-xs font-black text-white">Opción seleccionada</p>
-                          <p className="mt-0.5 text-11px font-semibold leading-4 text-white/64">
-                            {singleUnitCondition === "yes"
-                              ? item.variante_id
-                                ? `Al guardar, el stock general pasará de ${productStock} a ${nextProductStock} y la variante ${variantName} de ${variantStock} a ${nextVariantStock}.`
-                                : `Al guardar, el stock pasará de ${productStock} a ${nextProductStock}.`
-                              : item.variante_id
-                                ? `Al guardar, la unidad quedará dada de baja. El stock general pasará de ${productStock} a ${nextProductStock} y la variante ${variantName} de ${variantStock} a ${nextVariantStock}. Completá la observación con el motivo.`
-                                : `Al guardar, la unidad quedará dada de baja y el stock pasará de ${productStock} a ${nextProductStock}. Completá la observación con el motivo.`}
-                          </p>
-                          <p className="mt-1 text-10px font-black uppercase tracking-wide text-white/45">
-                            El cambio se aplica al presionar Guardar recepción.
-                          </p>
-                        </div>
-                      </div>
+                      <p className="admin-claim-reception-hint mt-2">
+                        {singleUnitCondition === "yes"
+                          ? item.variante_id
+                            ? `Stock: ${productStock} → ${nextProductStock} · ${variantName}: ${variantStock} → ${nextVariantStock}`
+                            : `Stock: ${productStock} → ${nextProductStock}`
+                          : "La unidad no vuelve al stock."}
+                      </p>
                     )}
                   </div>
                 ) : (
                   <div className="mt-3">
-                    <p className="text-xs font-black text-white">
-                      ¿Cuántas unidades de este producto recibió BEYONIX y cuántas llegaron bien?
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-end gap-x-8 gap-y-2">
+                    <p className="admin-claim-reception-question">¿Qué hacemos con las unidades que llegaron?</p>
+                    <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
                       <label className="block w-fit">
-                        <span className="text-10px font-black uppercase tracking-wide text-blue-200">
-                          Unidades recibidas en esta entrega
-                        </span>
+                        <span className="admin-claim-reception-label">Llegaron ahora</span>
                         <div className="mt-1.5 w-20">
                           <input
                             type="number"
@@ -1155,16 +1184,14 @@ export function ReturnInventoryPanel({
                             step={1}
                             inputMode="numeric"
                             value={draft.received}
-                            disabled={!canManage || saving || inventoryLocked}
+                            disabled={!canManage || saving}
                             onChange={(event) => updateDraft(item, "received", event.target.value)}
                             className={`${adminControlClassName} h-9 min-h-9 px-2 text-center text-xs`}
                           />
                         </div>
                       </label>
                       <label className="block w-fit">
-                        <span className="text-10px font-black uppercase tracking-wide text-emerald-200">
-                          Llegaron bien — suben stock
-                        </span>
+                        <span className="admin-claim-reception-label is-restock">Vuelven al stock</span>
                         <div className="mt-1.5 w-20">
                           <input
                             type="number"
@@ -1173,65 +1200,62 @@ export function ReturnInventoryPanel({
                             step={1}
                             inputMode="numeric"
                             value={draft.goodCondition}
-                            disabled={!canManage || saving || inventoryLocked}
+                            disabled={!canManage || saving}
                             onChange={(event) => updateDraft(item, "goodCondition", event.target.value)}
                             className={`${adminControlClassName} h-9 min-h-9 px-2 text-center text-xs`}
                           />
                         </div>
                       </label>
-                      <div className="rounded-lg border border-red-300/18 bg-red-500/7 px-3 py-2">
-                        <p className="text-10px font-black uppercase tracking-wide text-red-200">
-                          Baja o pérdida
-                        </p>
-                        <p className="mt-1 text-sm font-black text-white">{draftWrittenOff}</p>
-                      </div>
+                      <p className="admin-claim-reception-writeoff">
+                        <span className="admin-claim-reception-label is-writeoff">Se dan de baja</span>
+                        <strong>{draftWrittenOff}</strong>
+                      </p>
                     </div>
+                    <p className="admin-claim-reception-hint mt-2">
+                      Si recibís el pedido en partes, registrá sólo las unidades que llegaron ahora.
+                    </p>
                   </div>
                 )}
 
-                <label className="mt-2 block">
-                  <span className="text-10px font-black uppercase tracking-wide text-white/48">
-                    Observación interna
+                <label className="mt-3 block">
+                  <span className="admin-claim-reception-label">
+                    Observación interna {noteRequired ? "(obligatoria para dar de baja)" : "(opcional)"}
                   </span>
                   <textarea
                     value={draft.note}
-                    disabled={!canManage || saving || inventoryLocked}
+                    disabled={!canManage || saving}
                     maxLength={1000}
                     rows={2}
                     onChange={(event) => updateDraft(item, "note", event.target.value)}
-                    placeholder="Ej.: packaging completo y sin uso, golpeado, faltan accesorios..."
+                    placeholder="Ej.: producto golpeado, faltan accesorios…"
                     className="mt-1.5 w-full resize-none rounded-lg border border-white/10 bg-[#101820] px-3 py-2 text-xs font-semibold text-white outline-none placeholder:text-white/35 focus:border-blue-300/45 disabled:cursor-not-allowed disabled:opacity-55"
                   />
                 </label>
 
-                {canManage && !inventoryLocked && (
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-10px font-semibold leading-4 text-white/45">
-                      Registrá sólo las unidades de esta entrega, sin sumar las anteriores. Si queda remanente, podrás registrar otra recepción.
-                    </p>
+                {canManage && (
+                  <div className="mt-3 flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+                    {missingReason && (
+                      <p className="admin-claim-reception-hint" id={`reception-missing-${item.id}`}>
+                        {missingReason}
+                      </p>
+                    )}
                     <button
                       type="button"
-                      disabled={savingItemId !== null}
+                      disabled={savingItemId !== null || Boolean(missingReason)}
+                      aria-describedby={missingReason ? `reception-missing-${item.id}` : undefined}
                       onClick={() => void saveItem(item)}
-                      className="admin-ds-button admin-ds-button-primary h-9 px-3 text-10px font-black disabled:cursor-wait disabled:opacity-45"
+                      className="admin-ds-button admin-ds-button-primary inline-flex h-9 items-center gap-2 px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"
                     >
-                      {saving ? "Guardando..." : "Guardar recepción"}
+                      <PackageCheck className="size-4" />
+                      {saving ? "Guardando..." : "Confirmar recepción"}
                     </button>
-                  </div>
-                )}
-                {inventoryLocked && (
-                  <div className="mt-2 rounded-lg border border-blue-300/15 bg-[#112A43]/22 px-3 py-2">
-                    <p className="text-xs font-black text-blue-100">Recepción cerrada</p>
-                    <p className="mt-1 text-11px font-semibold leading-4 text-white/58">
-                      Este registro ya no se puede modificar desde el reclamo. Si necesitás corregir una cantidad, hacelo desde Productos.
-                    </p>
                   </div>
                 )}
               </article>
             )
           })
         ) : (
-          <p className="rounded-lg border border-white/8 bg-black/20 px-3 py-2 text-xs font-semibold text-white/55">
+          <p className="admin-claim-reception-hint">
             Este reclamo no tiene productos seleccionados. Usá “Corregir productos” para indicarlos.
           </p>
         )}
@@ -1335,12 +1359,17 @@ export function AdminClaimManager({
   onClaimChange,
   onInventoryUpdated,
   onOpenBilling,
+  registeredReplacements = null,
+  replacementLoadState,
 }: {
   pedido: SupabasePedido
   mode?: "all" | "messaging" | "claims"
   onClaimChange: (claim: SupabaseOrderClaim) => void
   onInventoryUpdated?: () => void | Promise<void>
   onOpenBilling: () => void
+  /** Reemplazos del pedido ya cargados por OrderReplacements; null = desconocido. */
+  registeredReplacements?: RegisteredReplacement[] | null
+  replacementLoadState?: ReplacementLoadState
 }) {
   const { user } = useAuth()
   const isAdmin = getAdminCapabilities(user?.rol).canManageReturns
@@ -1370,6 +1399,9 @@ export function AdminClaimManager({
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("")
+  // Último mensaje de éxito: el aviso se pinta en verde sólo si es ése;
+  // cualquier error posterior lo reemplaza y vuelve al tono de alerta.
+  const [successNotice, setSuccessNotice] = useState("")
   const decisionVersionRef = useRef<string | null>(null)
   const responseVersionRef = useRef<string | null>(null)
   const chatRef = useRef<HTMLDivElement>(null)
@@ -1490,6 +1522,13 @@ export function AdminClaimManager({
     successMessage: string,
   ) => {
     if (!claim) return false
+    if (overrides.status === "cerrado" && claim.resolution === "cambio_producto" && (
+      (replacementLoadState && replacementLoadState !== "ready") ||
+      (sumClaimReplacedUnits(registeredReplacements, claim, allClaims) ?? 0) <= 0
+    )) {
+      setNotice("Primero verificá y registrá el reemplazo de este reclamo antes de finalizarlo.")
+      return false
+    }
     setSaving(true)
     setNotice("")
 
@@ -1545,6 +1584,7 @@ export function AdminClaimManager({
       decisionVersionRef.current = null
       responseVersionRef.current = null
       setRejectionReason(data.claim.rejection_reason ?? "")
+      setSuccessNotice(successMessage)
       setNotice(successMessage)
       notifyOrderNotificationsChanged()
       return true
@@ -1671,7 +1711,8 @@ export function AdminClaimManager({
           ? { credit_note_amount: creditNoteAmount }
           : {}),
       },
-      "Solución aprobada por BEYONIX.",
+      // Sin aviso: el panel ya muestra "Solución aprobada" y los pasos siguientes.
+      "",
     )
     if (sent) {
       clearResponse()
@@ -1801,6 +1842,7 @@ export function AdminClaimManager({
       }
 
       setRefundProofFile(null)
+      setSuccessNotice("Comprobante de reintegro cargado.")
       setNotice("Comprobante de reintegro cargado.")
       await onInventoryUpdated?.()
       notifyOrderNotificationsChanged()
@@ -1891,6 +1933,21 @@ export function AdminClaimManager({
   const canCompleteReplacementSolution =
     canCompleteAcceptedSolution &&
     (claim.resolution === "cambio_producto" || claim.resolution === "envio_unidad_faltante")
+  const summaryReceptionTotals = getReceptionTotals(summaryAffectedItems)
+  const replacedUnits = claim.resolution === "cambio_producto" ? sumClaimReplacedUnits(
+    registeredReplacements, claim, allClaims,
+  ) : sumReplacedUnits(
+    registeredReplacements,
+    summaryAffectedItems.map(({ item }) => Number(item.id)),
+  )
+  const replacementFlow = getReplacementFlow({
+    status: claim.status,
+    resolution: claim.resolution,
+    claimedUnits: summaryReceptionTotals.claimed,
+    receivedUnits: summaryReceptionTotals.received,
+    replacedUnits,
+    replacementLoadState,
+  })
   const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
   const canIssueCreditNote =
     isAdmin && !closed &&
@@ -2117,13 +2174,17 @@ export function AdminClaimManager({
 
             {claim.resolution && claim.resolution !== "rechazado" && (
               <div className="admin-claim-resolution-box mt-2 px-2.5 py-2">
-                <p className="admin-claim-resolution-label text-10px font-black uppercase">Decisión tomada</p>
+                <p className="admin-claim-resolution-label text-10px font-black uppercase">
+                  {claim.resolution === "otro" ? "Decisión tomada" : "Solución aprobada"}
+                </p>
                 <p className="admin-claim-resolution-value mt-0.5 text-xs font-black">
                   {getOrderClaimResolutionLabel(claim.resolution)}
                 </p>
-                <p className="admin-claim-resolution-next mt-1 text-[11px] font-semibold leading-4">
-                  {getResolutionNextStep(claim)}
-                </p>
+                {!canCompleteReplacementSolution && (
+                  <p className="admin-claim-resolution-next mt-1 text-[11px] font-semibold leading-4">
+                    {getResolutionNextStep(claim)}
+                  </p>
+                )}
               </div>
             )}
 
@@ -2169,22 +2230,24 @@ export function AdminClaimManager({
                   </>
                 )}
                 {canCompleteReplacementSolution && (
-                  <div className="space-y-3">
-                  <DecisionButton
-                    icon={<PackageCheck className="size-4" />}
-                    title="Registrar reemplazo con salida de stock"
-                    description="Elegí el producto, revisá las unidades y confirmá el retiro de stock antes de coordinar la entrega."
-                    tone="success"
-                    disabled={saving}
-                    onClick={() => document.getElementById(`order-replacements-${pedido.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                  <ReplacementFlowSteps
+                    flow={replacementFlow}
+                    missingUnit={claim.resolution === "envio_unidad_faltante"}
+                    claimedUnits={summaryReceptionTotals.claimed}
+                    receivedUnits={summaryReceptionTotals.received}
+                    replacedUnits={replacedUnits}
+                    replacementLoadState={replacementLoadState}
+                    saving={saving}
+                    onGoToReception={() => document.getElementById(`claim-reception-${claim.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    onRegisterReplacement={() => document.getElementById(`order-replacements-${pedido.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                    onConfirmDelivery={() => setPendingConfirmation({
+                      title: "Confirmar entrega del reemplazo",
+                      description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
+                      confirmLabel: "Ya fue enviado o entregado",
+                      run: markAcceptedSolutionDone,
+                    })}
+                    onFinalize={canCloseClaim ? () => openDecision("close") : undefined}
                   />
-                  <button type="button" disabled={saving} className="text-sm underline" onClick={() => setPendingConfirmation({
-                    title: "Confirmar entrega del reemplazo",
-                    description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
-                    confirmLabel: "Ya fue enviado o entregado",
-                    run: markAcceptedSolutionDone,
-                  })}>Ya registré el reemplazo: confirmar envío o entrega</button>
-                  </div>
                 )}
                 {canIssueCreditNote && (
                   <DecisionButton
@@ -2264,13 +2327,13 @@ export function AdminClaimManager({
                     </div>
                   </div>
                 )}
-                {canCloseClaim && (
+                {canCloseClaim && !canCompleteReplacementSolution && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
                     title="Finalizar reclamo"
                     description="Bloquear nuevas acciones y dejarlo visible en el historial."
                     tone="primary"
-                    disabled={saving}
+                    disabled={saving || (claim.resolution === "cambio_producto" && !replacementFlow.canConfirmDelivery)}
                     onClick={() => openDecision("close")}
                   />
                 )}
@@ -2308,11 +2371,18 @@ export function AdminClaimManager({
           pedido={pedido}
           claim={claim}
           canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
+          registeredReplacements={registeredReplacements}
           onUpdated={onInventoryUpdated}
         />
       )}
 
-      {notice && <p className={`mx-3 mb-3 rounded-lg border px-3 py-2 text-xs font-bold text-white sm:mx-4 sm:mb-4 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>{notice}</p>}
+      {notice && (
+        notice === successNotice ? (
+          <p role="status" className="admin-claim-notice-success mx-3 mb-3 px-3 py-2 text-xs font-bold sm:mx-4 sm:mb-4">{notice}</p>
+        ) : (
+          <p role="alert" className={`mx-3 mb-3 rounded-lg border px-3 py-2 text-xs font-bold text-white sm:mx-4 sm:mb-4 ${ADMIN_SENSITIVE_DANGER.panelSoft}`}>{notice}</p>
+        )
+      )}
 
       {previewFile && (
         <FilePreviewModal file={files.find((file) => file.id === previewFile.id) ?? previewFile} onClose={() => setPreviewFile(null)} />
@@ -2335,6 +2405,7 @@ export function AdminClaimManager({
         <ClaimActionModal
           action={decisionAction}
           saving={saving}
+          closeBlocked={claim.resolution === "cambio_producto" && !replacementFlow.canConfirmDelivery}
           message={decisionMessage}
           reason={decisionReason}
           resolution={decisionResolution}
@@ -2368,7 +2439,7 @@ export function AdminClaimManager({
               </AdminSecondaryButton>
               <AdminButton
                 variant="primary"
-                disabled={saving}
+                disabled={saving || (claim.resolution === "cambio_producto" && !replacementFlow.canConfirmDelivery)}
                 onClick={async () => {
                   await pendingConfirmation.run()
                   setPendingConfirmation(null)
@@ -2383,6 +2454,164 @@ export function AdminClaimManager({
         </AdminModal>
       )}
     </section>
+  )
+}
+
+type ReplacementFlowStepView = {
+  key: string
+  title: string
+  description: string
+  state: ClaimStepState
+  status: string | null
+  partial: boolean
+  action?: { label: string; enabled: boolean; onClick: () => void }
+}
+
+export function ReplacementFlowSteps({
+  flow,
+  missingUnit,
+  claimedUnits,
+  receivedUnits,
+  replacedUnits,
+  replacementLoadState,
+  saving,
+  onGoToReception,
+  onRegisterReplacement,
+  onConfirmDelivery,
+  onFinalize,
+}: {
+  flow: ReplacementFlow
+  missingUnit: boolean
+  claimedUnits: number
+  receivedUnits: number
+  replacedUnits: number | null
+  replacementLoadState?: ReplacementLoadState
+  saving: boolean
+  onGoToReception: () => void
+  onRegisterReplacement: () => void
+  onConfirmDelivery: () => void
+  onFinalize?: () => void
+}) {
+  const steps: ReplacementFlowStepView[] = []
+
+  if (flow.requiresReception) {
+    steps.push({
+      key: "reception",
+      title: "Recibir producto original",
+      description: "Registrá en qué estado volvió, en la sección de recepción.",
+      state: flow.reception,
+      status:
+        flow.reception === "done"
+          ? "Recibido"
+          : claimedUnits === 0
+            ? "Sin productos"
+            : receivedUnits > 0
+              ? `${receivedUnits} de ${claimedUnits}`
+              : "Pendiente",
+      partial: flow.reception !== "done" && receivedUnits > 0,
+      action: { label: "Ir a recepción", enabled: true, onClick: onGoToReception },
+    })
+  }
+
+  steps.push({
+    key: "replacement",
+    title: missingUnit ? "Preparar unidad faltante" : "Preparar reemplazo",
+    description: missingUnit
+      ? "Elegí la unidad que recibirá el cliente y descontala del stock."
+      : "Elegí qué producto recibirá el cliente y descontalo del stock.",
+    state: flow.replacement,
+    status:
+      flow.replacement === "done"
+        ? "Registrado"
+        : !flow.canRegisterReplacement
+          ? "Después de la recepción"
+          : replacedUnits === null
+            ? null
+            : replacedUnits > 0
+              ? `${replacedUnits} de ${claimedUnits}`
+              : "Pendiente",
+    partial: flow.replacement !== "done" && (replacedUnits ?? 0) > 0,
+    action: { label: "Registrar reemplazo", enabled: flow.canRegisterReplacement, onClick: onRegisterReplacement },
+  })
+
+  steps.push({
+    key: "delivery",
+    title: missingUnit ? "Entregar unidad faltante" : "Entregar reemplazo",
+    description: "Confirmalo cuando ya esté enviado o entregado. Esto finaliza el reclamo.",
+    state: flow.delivery,
+    status: !missingUnit && (replacedUnits === null || replacementLoadState === "loading" || replacementLoadState === "error")
+      ? replacementLoadState === "error"
+        ? "No pudimos verificar el reemplazo. Reintentá antes de continuar."
+        : "Verificando reemplazo…"
+      : flow.canConfirmDelivery ? "Pendiente" : "Después del reemplazo",
+    partial: false,
+    action: { label: "Confirmar envío o entrega", enabled: flow.canConfirmDelivery, onClick: onConfirmDelivery },
+  })
+
+  const primaryKey = steps.find((step) => step.state === "current" && step.action?.enabled)?.key
+
+  return (
+    <div className="admin-claim-flow">
+      <p className="admin-claim-flow-heading">Próximos pasos</p>
+      <ol className="admin-claim-flow-list">
+        {steps.map((step, index) => {
+          const active = step.key === primaryKey
+          return (
+            <li
+              key={step.key}
+              aria-current={active ? "step" : undefined}
+              className={`admin-claim-flow-step is-${step.state} ${active ? "is-active" : ""}`}
+            >
+              <span className="admin-claim-flow-marker" aria-hidden="true">
+                {step.state === "done" ? <Check className="size-3.5" strokeWidth={3} /> : index + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <p className="admin-claim-flow-title">{step.title}</p>
+                  {step.status && (
+                    <span
+                      className={`admin-claim-flow-status ${
+                        step.state === "done" ? "is-done" : step.partial ? "is-partial" : "is-pending"
+                      }`}
+                    >
+                      {step.status}
+                    </span>
+                  )}
+                </div>
+                {step.state !== "done" && (
+                  <>
+                    <p className="admin-claim-flow-text">{step.description}</p>
+                    {step.action && (
+                      <button
+                        type="button"
+                        disabled={saving || !step.action.enabled}
+                        onClick={step.action.onClick}
+                        className={`admin-claim-flow-button admin-claim-flow-control ${active ? "is-primary" : "is-secondary"}`}
+                      >
+                        {step.action.label}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      {onFinalize && (
+        <div className="admin-claim-flow-footer">
+          <button
+            type="button"
+            disabled={saving || (!missingUnit && !flow.canConfirmDelivery)}
+            onClick={onFinalize}
+            className="admin-claim-flow-button admin-claim-flow-control is-secondary"
+          >
+            Finalizar reclamo
+          </button>
+          <p className="admin-claim-flow-text">Cierra el caso con un mensaje opcional al cliente.</p>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -2637,6 +2866,7 @@ function CloseConversationModal({
 function ClaimActionModal({
   action,
   saving,
+  closeBlocked = false,
   message,
   reason,
   resolution,
@@ -2651,6 +2881,7 @@ function ClaimActionModal({
 }: {
   action: ClaimAction
   saving: boolean
+  closeBlocked?: boolean
   message: string
   reason: string
   resolution: Exclude<OrderClaimResolution, "rechazado">
@@ -2698,6 +2929,7 @@ function ClaimActionModal({
   const creditNoteAmountNumber = Number(creditNoteAmount.replace(",", ".").trim())
   const confirmDisabled =
     saving ||
+    (action === "close" && closeBlocked) ||
     (action === "reject" && message.trim().length < 5) ||
     (action === "reject_cancellation" && message.trim().length < 5) ||
     (action === "approve_cancellation" && !cancellationCanBeApproved) ||

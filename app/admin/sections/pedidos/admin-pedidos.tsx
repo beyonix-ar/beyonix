@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
 import { OrderReplacements } from "./order-replacements"
+import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { humanizeBillingError } from "@/lib/admin/billing-errors"
 import { getCancellationProgress } from "@/lib/admin/order-operational-progress"
@@ -5118,6 +5119,11 @@ function PedidoDetailModal({
       getAdminOrderDetailView(searchParams.get("tab")),
     )
   const [detailMenuCollapsed, setDetailMenuCollapsed] = useState(false)
+  const [orderReplacements, setOrderReplacements] = useState<{
+    orderId: number
+    replacements: RegisteredReplacement[] | null
+    state: ReplacementLoadState
+  } | null>(null)
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     Boolean(pedido.payment_proof_url) &&
@@ -5950,11 +5956,19 @@ function PedidoDetailModal({
             />
           )}
 
-          {["atencion", "envio", "historial"].includes(activeView) && <OrderReplacements pedido={pedido} onUpdated={onWarrantyUpdated} />}
+          {["atencion", "envio", "historial"].includes(activeView) && (
+            <OrderReplacements
+              pedido={pedido}
+              onUpdated={onWarrantyUpdated}
+              onReplacementsChange={(replacements, state) => setOrderReplacements({ orderId: pedido.id, replacements, state })}
+            />
+          )}
           {activeView === "atencion" && (
           <AdminClaimManager
             pedido={pedido}
             mode="all"
+            registeredReplacements={orderReplacements?.orderId === pedido.id ? orderReplacements.replacements : null}
+            replacementLoadState={orderReplacements?.orderId === pedido.id ? orderReplacements.state : "loading"}
             onOpenBilling={() => showDetailView("facturacion")}
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
             onInventoryUpdated={onWarrantyUpdated}

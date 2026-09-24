@@ -150,6 +150,53 @@ test("el catch-all de botones del detalle ya no aplasta las acciones del reclamo
   const occurrences = css.split(catchAll).length - 1
   assert.equal(occurrences, 4)
   assert.equal(css.split(`${catchAll}:not(.admin-claim-decision-button)`).length - 1, occurrences)
+  assert.equal(css.split(`${catchAll}:not(.admin-claim-decision-button):not(.admin-claim-flow-control)`).length - 1, occurrences)
+})
+
+test("flujo del reclamo: botones y opciones con clases propias, excluidos del catch-all", () => {
+  const flow = sliceFunction(claims, "function ReplacementFlowSteps(")
+  const flowClasses = [...flow.matchAll(/className=(?:"([^"]+)"|\{`([^`]+)`\})/g)].map((match) => match[1] ?? match[2]).join(" ")
+  assert.doesNotMatch(flowClasses, /text-white|rounded-lg|\bborder\b|bg-\[#/)
+  assert.match(flow, /admin-claim-flow-button admin-claim-flow-control \$\{active \? "is-primary" : "is-secondary"\}/)
+  assert.match(flow, /"Confirmar envío o entrega"/)
+  assert.match(flow, /"Registrar reemplazo"/)
+  assert.doesNotMatch(claims, /Ya registré el reemplazo|Registrar reemplazo con salida de stock|Guardar recepción|Solución aprobada por BEYONIX/)
+
+  const panel = sliceFunction(claims, "export function ReturnInventoryPanel(")
+  assert.match(panel, /Recepción del producto original/)
+  assert.match(panel, /¿Qué hacemos con esta unidad\?/)
+  assert.equal(panel.split("admin-claim-choice admin-claim-flow-control").length - 1, 2)
+  assert.doesNotMatch(panel, /Vendió \{|Solución aprobada/)
+})
+
+test("flujo del reclamo: primario, secundario, deshabilitado y opciones legibles en ambos temas", () => {
+  const button = (selector: string) => {
+    const body = ruleBody(selector)
+    return { bg: hex(body, "--claim-button-bg"), text: hex(body, "--claim-button-text") }
+  }
+  const lightPrimary = button('html[data-admin-theme="light"] .admin-claim-flow-button.is-primary')
+  assert.ok(contrast(lightPrimary.text, lightPrimary.bg) >= 7)
+  const lightSecondary = button('html[data-admin-theme="light"] .admin-claim-flow-button')
+  assert.ok(contrast(lightSecondary.text, lightSecondary.bg) >= 7)
+  const lightDisabled = button('html[data-admin-theme="light"] .admin-claim-flow-button:disabled')
+  assert.ok(contrast(lightDisabled.text, lightDisabled.bg) >= 4.5)
+  assert.notEqual(lightDisabled.bg, lightPrimary.bg)
+  for (const stop of ["#2f74ab", "#1f5686"]) assert.ok(contrast("#ffffff", stop) >= 4.5, stop)
+
+  const choice = (selector: string) => {
+    const body = ruleBody(selector)
+    return { bg: hex(body, "--claim-choice-bg"), title: hex(body, "--claim-choice-title") }
+  }
+  const restock = choice('html[data-admin-theme="light"] .admin-claim-choice.is-restock[aria-pressed="true"]')
+  const writeoff = choice('html[data-admin-theme="light"] .admin-claim-choice.is-writeoff[aria-pressed="true"]')
+  assert.ok(contrast(restock.title, restock.bg) >= 7)
+  assert.ok(contrast(writeoff.title, writeoff.bg) >= 7)
+  assert.notEqual(restock.bg, writeoff.bg)
+  const lightChoice = ruleBody('html[data-admin-theme="light"] .admin-claim-choice')
+  assert.ok(contrast(hex(lightChoice, "--claim-choice-text"), hex(lightChoice, "--claim-choice-bg")) >= 4.5)
+
+  const success = ruleBody('html[data-admin-theme="light"] .admin-claim-notice-success')
+  assert.ok(contrast(hex(success, "color"), hex(success, "background")) >= 7)
 })
 
 test("modal de seguimiento: comparte la isla admin-status-modal y no usa utilidades interceptadas", () => {

@@ -30,6 +30,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_TRANSITION: [409, "El cambio de estado no está permitido."],
   CLAIM_INVALID_AMOUNT: [400, "El importe no es válido para este pedido."],
   CLAIM_ECONOMIC_CLOSE: [409, "Confirmá la resolución desde la gestión de reintegro o nota de crédito."],
+  CLAIM_REPLACEMENT_REQUIRED: [409, "Primero registrá un reemplazo para los productos de este reclamo antes de confirmar el envío o finalizarlo."],
   CLAIM_RESOLUTION_LOCKED: [409, "La resolución económica ya está en proceso y no puede reemplazarse."],
   CLAIM_CREDIT_PENDING: [409, "Primero debe autorizarse la nota de crédito y acreditarse el saldo."],
   CLAIM_REFUND_PENDING: [409, "Primero registrá el reintegro y su comprobante en la gestión de reintegros del pedido."],
