@@ -120,6 +120,8 @@ const TEST_FILES = [
   "components/account/account-orders-payment-status-contract.test.ts",
   "lib/admin/admin-server-boundaries.test.ts",
   "lib/admin/admin-theme.test.ts",
+  "lib/admin/admin-legibility-islands.test.ts",
+  "lib/admin/claim-reply-draft.test.ts",
   "lib/orders/checkout-inventory.test.ts",
   "lib/orders/inventory-confirmation-guard.test.ts",
   "lib/orders/checkout-order-schema-contract.test.ts",
@@ -195,7 +197,13 @@ const TEST_FILES = [
   "app/admin/sections/pedidos/admin-pedidos-refund-details-contract.test.ts",
 ]
 
-const missing = TEST_FILES.filter((file) => !existsSync(file))
+// Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
+// --conditions=react-server (los hooks de cliente no existen en ese build).
+const TSX_TEST_FILES = [
+  "components/claims/claim-reply-draft.test.tsx",
+]
+
+const missing = [...TEST_FILES, ...TSX_TEST_FILES].filter((file) => !existsSync(file))
 if (missing.length > 0) {
   console.error(`Tests listados que no existen:\n${missing.join("\n")}`)
   process.exit(1)
@@ -206,6 +214,11 @@ const result = spawnSync(
   ["--conditions=react-server", "--test", "--experimental-strip-types", ...TEST_FILES],
   { stdio: "inherit" },
 )
-
 if (result.error) throw result.error
-process.exit(result.status ?? 1)
+
+const tsxResult = spawnSync(process.execPath, ["--import", "tsx", "--test", ...TSX_TEST_FILES], {
+  stdio: "inherit",
+})
+if (tsxResult.error) throw tsxResult.error
+
+process.exit((result.status ?? 1) || (tsxResult.status ?? 1))

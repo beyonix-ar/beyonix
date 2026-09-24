@@ -2124,47 +2124,199 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
     linear-gradient(145deg, rgba(8, 18, 29, 0.98), rgba(5, 11, 19, 0.98)) !important;
 }
 
+/* Botones de decisión de "Gestionar reclamo" (DecisionButton en
+   components/claims/admin-claim-manager.tsx). Radio, borde, fondo y colores
+   de texto viven acá, por tono y por tema, a través de variables: el
+   marcado ya no usa rounded+border ni text-white/N. Antes el tema Light
+   reescribía esos text-white a oscuro pero dejaba los fondos oscuros de
+   tono (#075032, #6f1d1d, #112A43) -> texto oscuro sobre fondo oscuro. */
 .admin-claim-decision-button {
+  --claim-decision-bg: #162230;
+  --claim-decision-border: rgba(255, 255, 255, 0.16);
+  --claim-decision-border-hover: rgba(255, 255, 255, 0.4);
+  --claim-decision-title: #ffffff;
+  --claim-decision-text: rgba(255, 255, 255, 0.82);
+  --claim-decision-icon-bg: rgba(255, 255, 255, 0.12);
+  --claim-decision-icon: #ffffff;
   width: 100%;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  color: #ffffff !important;
+  border: 1px solid var(--claim-decision-border) !important;
+  border-radius: 0.5rem;
+  background: var(--claim-decision-bg) !important;
+  color: var(--claim-decision-title) !important;
 }
 
 .admin-claim-decision-button:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.34) !important;
+  border-color: var(--claim-decision-border-hover) !important;
 }
 
-.admin-claim-decision-button.is-secondary {
-  background: #162230 !important;
+.admin-claim-decision-button:focus-visible {
+  outline: 2px solid var(--claim-decision-border-hover);
+  outline-offset: 2px;
+}
+
+.admin-claim-decision-button:disabled {
+  opacity: 0.6;
+}
+
+.admin-claim-decision-button .admin-claim-decision-title {
+  color: var(--claim-decision-title) !important;
+}
+
+.admin-claim-decision-button .admin-claim-decision-description {
+  color: var(--claim-decision-text) !important;
+}
+
+.admin-claim-decision-button .admin-claim-decision-icon {
+  border-radius: 0.375rem;
+  background: var(--claim-decision-icon-bg) !important;
+  color: var(--claim-decision-icon) !important;
 }
 
 .admin-claim-decision-button.is-warning {
-  background: #6b420d !important;
+  --claim-decision-bg: #6b420d;
+  --claim-decision-border: rgba(251, 191, 36, 0.45);
+  --claim-decision-border-hover: rgba(251, 191, 36, 0.8);
 }
 
 .admin-claim-decision-button.is-success {
-  background: #075032 !important;
+  --claim-decision-bg: #075032;
+  --claim-decision-border: rgba(52, 211, 153, 0.45);
+  --claim-decision-border-hover: rgba(52, 211, 153, 0.85);
 }
 
 .admin-claim-decision-button.is-danger {
-  background: #6f1d1d !important;
+  --claim-decision-bg: #6f1d1d;
+  --claim-decision-border: rgba(248, 113, 113, 0.45);
+  --claim-decision-border-hover: rgba(248, 113, 113, 0.85);
 }
 
 .admin-claim-decision-button.is-primary {
-  background: #112A43 !important;
+  --claim-decision-bg: #112a43;
+  --claim-decision-border: rgba(140, 200, 242, 0.45);
+  --claim-decision-border-hover: rgba(140, 200, 242, 0.85);
 }
 
 .admin-claim-decision-button.is-disabled-muted:disabled {
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  background: #171717 !important;
-  color: rgba(255, 255, 255, 0.42) !important;
-  opacity: 1 !important;
+  --claim-decision-bg: #171717;
+  --claim-decision-border: rgba(255, 255, 255, 0.08);
+  --claim-decision-title: rgba(255, 255, 255, 0.55);
+  --claim-decision-text: rgba(255, 255, 255, 0.55);
+  --claim-decision-icon: rgba(255, 255, 255, 0.55);
+  opacity: 1;
 }
 
-.admin-claim-decision-button.is-disabled-muted:disabled > span,
-.admin-claim-decision-button.is-disabled-muted:disabled span {
-  color: rgba(255, 255, 255, 0.42) !important;
+/* Light: fondo claro del tono + texto oscuro del mismo tono (>= 4.5:1). */
+html[data-admin-theme="light"] .admin-claim-decision-button {
+  --claim-decision-bg: #ffffff;
+  --claim-decision-border: #cbd5e1;
+  --claim-decision-border-hover: #64748b;
+  --claim-decision-title: #0f172a;
+  --claim-decision-text: #475569;
+  --claim-decision-icon-bg: #f1f5f9;
+  --claim-decision-icon: #334155;
 }
+
+html[data-admin-theme="light"] .admin-claim-decision-button.is-warning {
+  --claim-decision-bg: #fffbeb;
+  --claim-decision-border: #f59e0b;
+  --claim-decision-border-hover: #b45309;
+  --claim-decision-title: #92400e;
+  --claim-decision-text: #92400e;
+  --claim-decision-icon-bg: #fef3c7;
+  --claim-decision-icon: #b45309;
+}
+
+html[data-admin-theme="light"] .admin-claim-decision-button.is-success {
+  --claim-decision-bg: #ecfdf5;
+  --claim-decision-border: #34d399;
+  --claim-decision-border-hover: #047857;
+  --claim-decision-title: #065f46;
+  --claim-decision-text: #047857;
+  --claim-decision-icon-bg: #d1fae5;
+  --claim-decision-icon: #047857;
+}
+
+html[data-admin-theme="light"] .admin-claim-decision-button.is-danger {
+  --claim-decision-bg: #fef2f2;
+  --claim-decision-border: #f87171;
+  --claim-decision-border-hover: #b91c1c;
+  --claim-decision-title: #991b1b;
+  --claim-decision-text: #b91c1c;
+  --claim-decision-icon-bg: #fee2e2;
+  --claim-decision-icon: #b91c1c;
+}
+
+html[data-admin-theme="light"] .admin-claim-decision-button.is-primary {
+  --claim-decision-bg: #f1f5f9;
+  --claim-decision-border: #94a3b8;
+  --claim-decision-border-hover: #1e3a5f;
+  --claim-decision-title: #0f172a;
+  --claim-decision-text: #334155;
+  --claim-decision-icon-bg: #e2e8f0;
+  --claim-decision-icon: #1e3a5f;
+}
+
+html[data-admin-theme="light"] .admin-claim-decision-button.is-disabled-muted:disabled {
+  --claim-decision-bg: #f1f5f9;
+  --claim-decision-border: #e2e8f0;
+  --claim-decision-title: #475569;
+  --claim-decision-text: #475569;
+  --claim-decision-icon-bg: #e2e8f0;
+  --claim-decision-icon: #475569;
+}
+
+/* Cajas informativas del panel: estado actual, decisión tomada y reclamo
+   finalizado (antes bg-black/20, text-blue-200/75, text-[#D7FFFD]...). */
+.admin-claim-status-box,
+.admin-claim-resolution-box,
+.admin-claim-closed-note {
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+}
+
+.admin-claim-status-box {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+}
+.admin-claim-status-label { color: rgba(255, 255, 255, 0.62) !important; }
+.admin-claim-status-value { color: #ffffff !important; }
+
+.admin-claim-resolution-box {
+  border-color: rgba(147, 197, 253, 0.25);
+  background: rgba(17, 42, 67, 0.45);
+}
+.admin-claim-resolution-label { color: #93c5fd !important; }
+.admin-claim-resolution-value { color: #ffffff !important; }
+.admin-claim-resolution-next { color: rgba(255, 255, 255, 0.78) !important; }
+
+.admin-claim-closed-note {
+  border-color: rgba(119, 230, 226, 0.25);
+  background: rgba(119, 230, 226, 0.06);
+}
+.admin-claim-closed-title { color: #d7fffd !important; }
+.admin-claim-closed-text { color: rgba(255, 255, 255, 0.72) !important; }
+
+html[data-admin-theme="light"] .admin-claim-status-box {
+  border-color: #e2e8f0;
+  background: #f1f5f9;
+}
+html[data-admin-theme="light"] .admin-claim-status-label { color: #475569 !important; }
+html[data-admin-theme="light"] .admin-claim-status-value { color: #0f172a !important; }
+
+html[data-admin-theme="light"] .admin-claim-resolution-box {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+html[data-admin-theme="light"] .admin-claim-resolution-label { color: #1e40af !important; }
+html[data-admin-theme="light"] .admin-claim-resolution-value { color: #0f172a !important; }
+html[data-admin-theme="light"] .admin-claim-resolution-next { color: #334155 !important; }
+
+html[data-admin-theme="light"] .admin-claim-closed-note {
+  border-color: #67e8f9;
+  background: #ecfeff;
+}
+html[data-admin-theme="light"] .admin-claim-closed-title { color: #155e75 !important; }
+html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !important; }
 
 .admin-claim-action-confirm-ok {
   background: #112A43 !important;
@@ -3089,7 +3241,7 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.76) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select) {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button) {
   background: #112A43 !important;
   background-color: #112A43 !important;
   background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
@@ -3100,7 +3252,7 @@ button.sales-ledger-product-trigger:hover {
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):hover {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):hover {
   background: #1E4D7B !important;
   background-color: #1E4D7B !important;
   background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
@@ -3132,9 +3284,13 @@ button.sales-ledger-product-trigger:hover {
    (oscuro en Light) de .admin-order-shipping-refined .admin-control-select
    span más abajo, dejando texto casi negro sobre navy: "Pago confirmado"
    ilegible. Excluido para que conserve su propio fondo/texto en los dos
-   temas. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select),
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select) svg.lucide,
+   temas.
+   Mismo caso para .admin-claim-decision-button ("Gestionar reclamo"):
+   cada acción tiene su tono semántico (verde válido, rojo no corresponde,
+   neutro finalizar) y este catch-all las volvía a todas navy + texto
+   blanco en ambos temas; en Light además chocaba con sus tonos claros. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button) svg.lucide,
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
   color: #ffffff !important;
@@ -11113,6 +11269,131 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .t
   border-color: rgba(248, 113, 113, 0.35) !important;
   color: #fecaca !important;
   box-shadow: none !important;
+}
+/* Modales de estado de despacho (ForcedStatusConfirmModal: "Marcar
+   Entregado / En camino"; TrackingStatusModal: "Cargar seguimiento"): isla
+   oscura intencional, igual en Light y en Dark, con acento azul BEYONIX
+   (acción administrativa, no destructiva). Mismo criterio que
+   .admin-cancel-reject-modal: clases propias con colores explícitos. Antes el
+   tema Light oscurecía text-white/N sobre el header oscuro y pasaba
+   bg-beyonix-blue a celeste pálido con el texto blanco. Contrastes (WCAG):
+   título #fff y subtítulo #e5e7eb sobre el header > 11:1; botón #fff sobre
+   #2f6fa3 5.3:1 (hover #245a86 7:1). */
+:is(html, html[data-admin-theme="light"]) .admin-status-modal {
+  background: #10151c !important;
+  border: 1px solid rgba(140, 200, 242, 0.35) !important;
+  border-radius: 1.5rem !important;
+  color: #f3f4f6 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__header {
+  background: linear-gradient(135deg, #123150 0%, #141b24 58%, #10151c 100%) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__eyebrow {
+  color: #7dd3fc !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__title {
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__subtitle {
+  color: #e5e7eb !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__customer {
+  background: #182029 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 1rem !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__label {
+  color: #cbd5e1 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__customer-name {
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__warning {
+  background: rgba(120, 53, 15, 0.42) !important;
+  border: 1px solid rgba(252, 211, 77, 0.4) !important;
+  border-radius: 1rem !important;
+  color: #fde68a !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__footer {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__cancel {
+  background: transparent !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-radius: 0.75rem !important;
+  color: #f3f4f6 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__cancel:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.45) !important;
+  color: #ffffff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__confirm {
+  background: #2f6fa3 !important;
+  border: 1px solid #8cc8f2 !important;
+  border-radius: 0.75rem !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 22px rgba(47, 111, 163, 0.3) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__confirm:not(:disabled):hover {
+  background: #245a86 !important;
+  border-color: #bfe4ff !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal :is(.admin-status-modal__cancel, .admin-status-modal__confirm):focus-visible {
+  outline: 2px solid #8cc8f2 !important;
+  outline-offset: 2px;
+}
+/* Mientras confirma (disabled): atenuado pero legible, nunca texto lavado. */
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__confirm:disabled {
+  background: #1d3f5e !important;
+  border-color: rgba(140, 200, 242, 0.45) !important;
+  color: #d7ecff !important;
+  box-shadow: none !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__cancel:disabled {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: #cbd5e1 !important;
+}
+/* Campos de TrackingStatusModal (misma isla admin-status-modal). Sólo el
+   input lleva !important: la regla global de inputs del admin
+   (.beyonix-admin-main :where(input...), fondo/borde/color/placeholder/foco)
+   ya lo usa y en Light pintaba el campo claro dentro del modal oscuro.
+   Label y nota no tienen reglas globales que los pisen. Contrastes: label
+   #cbd5e1 sobre #10151c > 11:1; texto #fff y placeholder #94a3b8 sobre
+   #182029 > 15:1 y > 6:1; nota #cbd5e1 sobre #182029 > 10:1. */
+/* letter-spacing = tracking-widest, sin la utilidad: la regla global de
+   "eyebrows" (.beyonix-admin-main :where(span)[class*="tracking-widest"])
+   le forzaba --admin-text-muted con !important. */
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__field-label {
+  color: #cbd5e1;
+  letter-spacing: 0.1em;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__input {
+  background-color: #182029 !important;
+  border: 1px solid rgba(140, 200, 242, 0.35) !important;
+  border-radius: 0.75rem !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  color-scheme: dark;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__input::placeholder {
+  color: #94a3b8 !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__input:hover {
+  background-color: #1b2430 !important;
+  border-color: rgba(140, 200, 242, 0.55) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__input:focus,
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__input:focus-visible {
+  border-color: #8cc8f2 !important;
+  box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.25) !important;
+}
+:is(html, html[data-admin-theme="light"]) .admin-status-modal .admin-status-modal__note {
+  background: #182029;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  color: #cbd5e1;
 }
 /* La pestaña Cancelación (.admin-order-cancellation-panel) ya NO vive acá:
    dejó de ser una isla oscura fija con excepciones de Light parche a

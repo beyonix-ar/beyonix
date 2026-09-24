@@ -41,6 +41,7 @@ import {
   shouldShowReturnInventoryPanel,
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
+import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -1347,7 +1348,11 @@ export function AdminClaimManager({
   const claims = allClaims.filter((item) => isClaimVisibleForMode(item.failure_type, mode))
   const [claimId, setClaimId] = useState<number | null>(claims[0]?.id ?? null)
   const claim = claims.find((item) => item.id === claimId) ?? claims[0]
-  const [response, setResponse] = useState("")
+  // Borrador de la respuesta: atado a (pedido, reclamo), nunca a los datos
+  // que llegan del servidor -- las recargas (polling, realtime, mensaje
+  // nuevo, cambio de estado) no lo vacían. Se limpia sólo tras un envío OK,
+  // al borrarlo a mano o al pasar a otro pedido/reclamo (ver el hook).
+  const [response, setResponse, clearResponse] = useClaimReplyDraft(pedido.id, claim?.id ?? null)
   const [rejectionReason, setRejectionReason] = useState("")
   const [decisionAction, setDecisionAction] = useState<ClaimAction | null>(null)
   const [decisionMessage, setDecisionMessage] = useState("")
@@ -1435,7 +1440,6 @@ export function AdminClaimManager({
     setDecisionCreditNoteAmount("")
     setRefundProofFile(null)
     setPreviewFile(null)
-    setResponse("")
     setNotice("")
     decisionVersionRef.current = null
     responseVersionRef.current = null
@@ -1584,7 +1588,7 @@ export function AdminClaimManager({
       },
       "Respuesta enviada al cliente.",
     )
-    if (sent) setResponse("")
+    if (sent) clearResponse()
   }
 
   const closeDecision = () => {
@@ -1615,7 +1619,7 @@ export function AdminClaimManager({
       },
       "Cancelación aprobada y pedido marcado como cancelado.",
     )
-    if (sent) setResponse("")
+    if (sent) clearResponse()
     return sent
   }
 
@@ -1635,7 +1639,7 @@ export function AdminClaimManager({
       "Cancelación rechazada. El cliente verá el motivo.",
     )
     if (sent) {
-      setResponse("")
+      clearResponse()
       setRejectionReason("")
     }
     return sent
@@ -1670,7 +1674,7 @@ export function AdminClaimManager({
       "Solución aprobada por BEYONIX.",
     )
     if (sent) {
-      setResponse("")
+      clearResponse()
       setDecisionCreditNoteAmount("")
       closeDecision()
     }
@@ -1695,7 +1699,7 @@ export function AdminClaimManager({
       cancellation ? "Cancelación rechazada." : "Reclamo rechazado y cliente notificado.",
     )
     if (sent) {
-      setResponse("")
+      clearResponse()
       setRejectionReason("")
       closeDecision()
     }
@@ -1714,7 +1718,7 @@ export function AdminClaimManager({
       "Reclamo finalizado.",
     )
     if (sent) {
-      setResponse("")
+      clearResponse()
       closeDecision()
     }
   }
@@ -1734,7 +1738,7 @@ export function AdminClaimManager({
     )
 
     if (sent) {
-      setResponse("")
+      clearResponse()
       setShowCloseConversationModal(false)
     }
   }
@@ -2106,18 +2110,18 @@ export function AdminClaimManager({
           ) : (
           <section className="admin-claim-card rounded-xl border p-2.5">
             <h4 className="text-sm font-black text-white">Gestionar reclamo</h4>
-            <div className="mt-2 rounded-lg bg-black/20 px-2.5 py-1.5">
-              <p className="text-10px font-black uppercase text-white/45">Estado actual</p>
-              <p className="mt-0.5 text-xs font-black text-white">{getStatusLabel(claim)}</p>
+            <div className="admin-claim-status-box mt-2 px-2.5 py-1.5">
+              <p className="admin-claim-status-label text-10px font-black uppercase">Estado actual</p>
+              <p className="admin-claim-status-value mt-0.5 text-xs font-black">{getStatusLabel(claim)}</p>
             </div>
 
             {claim.resolution && claim.resolution !== "rechazado" && (
-              <div className="mt-2 rounded-lg border border-blue-300/18 bg-[#112A43]/30 px-2.5 py-2">
-                <p className="text-10px font-black uppercase text-blue-200/75">Decisión tomada</p>
-                <p className="mt-0.5 text-xs font-black text-white">
+              <div className="admin-claim-resolution-box mt-2 px-2.5 py-2">
+                <p className="admin-claim-resolution-label text-10px font-black uppercase">Decisión tomada</p>
+                <p className="admin-claim-resolution-value mt-0.5 text-xs font-black">
                   {getOrderClaimResolutionLabel(claim.resolution)}
                 </p>
-                <p className="mt-1 text-[11px] font-semibold leading-4 text-white/66">
+                <p className="admin-claim-resolution-next mt-1 text-[11px] font-semibold leading-4">
                   {getResolutionNextStep(claim)}
                 </p>
               </div>
@@ -2271,9 +2275,9 @@ export function AdminClaimManager({
                   />
                 )}
                 {closed && (
-                  <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2">
-                    <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
-                    <p className="mt-1 text-[11px] font-semibold leading-4 text-white/65">
+                  <div className="admin-claim-closed-note px-3 py-2">
+                    <p className="admin-claim-closed-title text-xs font-black">Reclamo finalizado</p>
+                    <p className="admin-claim-closed-text mt-1 text-[11px] font-semibold leading-4">
                       No hay acciones pendientes. Si el cliente necesita contactarse de nuevo, debe escribir a beyonix.ar@gmail.com.
                     </p>
                   </div>
@@ -2404,15 +2408,18 @@ function DecisionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      // Tono, borde y radio viven en .admin-claim-decision-button (globals.css)
+      // con variantes Light/Dark: sin rounded+border ni text-white/N, que las
+      // reglas globales del admin reescribían (texto oscuro sobre fondo oscuro).
       className={`admin-claim-decision-button is-${tone} ${
         disabled && mutedWhenDisabled ? "is-disabled-muted" : ""
-      } rounded-lg border px-2.5 py-1.5 text-left transition disabled:cursor-not-allowed disabled:opacity-45`}
+      } px-2.5 py-1.5 text-left transition disabled:cursor-not-allowed`}
     >
       <span className="flex items-center gap-2">
-        <span className="grid size-6 shrink-0 place-items-center rounded-md bg-white/10 text-white">{icon}</span>
+        <span className="admin-claim-decision-icon grid size-6 shrink-0 place-items-center">{icon}</span>
         <span className="min-w-0">
-          <span className="block text-xs font-black text-white">{title}</span>
-          <span className="mt-0.5 block text-10px font-semibold leading-4 text-white/75">{description}</span>
+          <span className="admin-claim-decision-title block text-xs font-black">{title}</span>
+          <span className="admin-claim-decision-description mt-0.5 block text-10px font-semibold leading-4">{description}</span>
         </span>
       </span>
     </button>

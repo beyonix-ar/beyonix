@@ -6997,18 +6997,30 @@ function TrackingStatusModal({
   if (!request) return null
   const isEditing = request.mode === "edit"
 
+  // Misma isla oscura que ForcedStatusConfirmModal (admin-status-modal__*):
+  // sin text-white/N, bg-beyonix-blue ni rounded+border, que el tema Light
+  // reescribía (título invisible sobre el header oscuro, cuerpo blanco y
+  // botón celeste pálido con texto blanco).
   return (
-    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-beyonix-blue-light/25 bg-[#101010] shadow-2xl shadow-black/80">
-        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#102438_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
-          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tracking-status-modal-title"
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm"
+    >
+      <div className="admin-status-modal w-full max-w-lg overflow-hidden shadow-2xl shadow-black/80">
+        <div className="admin-status-modal__header border-b px-5 py-4">
+          <p className="admin-status-modal__eyebrow text-11px font-black uppercase tracking-widest">
             Datos de despacho
           </p>
-          <h2 className="mt-2 text-xl font-black text-white">
+          <h2
+            id="tracking-status-modal-title"
+            className="admin-status-modal__title mt-2 text-xl font-black"
+          >
             {isEditing ? "Editar" : "Cargar"} seguimiento del pedido #
             {formatPublicOrderId(request.pedido.id)}
           </h2>
-          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+          <p className="admin-status-modal__subtitle mt-2 text-sm font-semibold leading-6">
             El número de seguimiento se muestra en el pedido del cliente. El
             link es opcional y solo hace falta si tenés una URL pública para
             consultar el envío.
@@ -7017,43 +7029,43 @@ function TrackingStatusModal({
 
         <div className="space-y-4 px-5 py-4">
           <label className="block">
-            <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+            <span className="admin-status-modal__field-label text-10px font-bold uppercase">
               Número de seguimiento
             </span>
             <input
               value={trackingNumber}
               onChange={(event) => setTrackingNumber(event.target.value)}
               placeholder="Ej: 360001234567890"
-              className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+              className="admin-status-modal__input mt-2 h-11 w-full px-3 text-sm font-semibold outline-none"
             />
           </label>
 
           <label className="block">
-            <span className="text-10px font-bold uppercase tracking-widest text-white/38">
+            <span className="admin-status-modal__field-label text-10px font-bold uppercase">
               URL de seguimiento (opcional)
             </span>
             <input
               value={trackingUrl}
               onChange={(event) => setTrackingUrl(event.target.value)}
               placeholder="https://..."
-              className="mt-2 h-11 w-full rounded-xl border border-beyonix-blue-light/25 bg-[#111111] px-3 text-sm font-semibold text-white outline-none placeholder:text-white/34 focus:border-beyonix-blue-light"
+              className="admin-status-modal__input mt-2 h-11 w-full px-3 text-sm font-semibold outline-none"
             />
           </label>
 
-          <div className="rounded-2xl border border-white/8 bg-black/25 px-3 py-2 text-xs font-semibold leading-5 text-white/55">
+          <div className="admin-status-modal__note px-3 py-2 text-xs font-semibold leading-5">
             Podés dejar ambos campos vacíos si todavía no tenés datos de
             seguimiento. El estado se actualizará igual.
           </div>
         </div>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+        <div className="admin-status-modal__footer flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             aria-label="Cancelar carga de seguimiento"
             title="Cancelar"
             onClick={onCancel}
             disabled={loading}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+            className="admin-status-modal__cancel inline-flex h-10 cursor-pointer items-center justify-center px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait"
           >
             Cancelar
           </button>
@@ -7068,7 +7080,7 @@ function TrackingStatusModal({
               })
             }
             disabled={loading}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+            className="admin-status-modal__confirm inline-flex h-10 cursor-pointer items-center justify-center px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait"
           >
             {loading
               ? "Guardando..."
@@ -7098,43 +7110,55 @@ function ForcedStatusConfirmModal({
   const statusLabel =
     request.nextEstado === "entregado" ? "Entregado" : "En camino"
 
+  // Isla oscura con clases propias (admin-status-modal__*), igual que
+  // AdminOrderCancelRejectModal: sin utilidades text-white/N, bg-beyonix-blue
+  // ni rounded+border, que el tema Light reescribe (texto oscuro sobre el
+  // header oscuro y botón celeste pálido con texto blanco).
   return (
-    <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-beyonix-blue-light/25 bg-[#101010] shadow-2xl shadow-black/80">
-        <div className="border-b border-white/8 bg-[linear-gradient(135deg,#102438_0%,#141414_58%,#0b0b0b_100%)] px-5 py-4">
-          <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="forced-status-modal-title"
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm"
+    >
+      <div className="admin-status-modal w-full max-w-md overflow-hidden shadow-2xl shadow-black/80">
+        <div className="admin-status-modal__header border-b px-5 py-4">
+          <p className="admin-status-modal__eyebrow text-11px font-black uppercase tracking-widest">
             Acción de super admin
           </p>
-          <h2 className="mt-2 text-xl font-black text-white">
+          <h2
+            id="forced-status-modal-title"
+            className="admin-status-modal__title mt-2 text-xl font-black"
+          >
             ¿Estás seguro de marcar como {statusLabel}?
           </h2>
-          <p className="mt-2 text-sm font-semibold leading-6 text-white/62">
+          <p className="admin-status-modal__subtitle mt-2 text-sm font-semibold leading-6">
             Este pedido usa Andreani. Al confirmar, vas a forzar manualmente el
             estado del pedido #{formatPublicOrderId(request.pedido.id)}.
           </p>
         </div>
 
         <div className="space-y-3 px-5 py-4">
-          <div className="rounded-2xl border border-white/8 bg-[#181818] p-3">
-            <p className="text-10px font-bold uppercase tracking-widest text-white/38">
+          <div className="admin-status-modal__customer p-3">
+            <p className="admin-status-modal__label text-10px font-bold uppercase tracking-widest">
               Cliente
             </p>
-            <p className="mt-1 text-sm font-black text-white">
+            <p className="admin-status-modal__customer-name mt-1 text-sm font-black">
               {request.pedido.cliente_nombre || "Cliente sin nombre"}
             </p>
           </div>
-          <div className="rounded-2xl border border-amber-300/20 bg-amber-400/8 p-3 text-sm font-semibold leading-6 text-amber-100">
+          <div className="admin-status-modal__warning p-3 text-sm font-semibold leading-6">
             Usalo solo cuando tengas confirmación real de envío o entrega fuera
             de la sincronización automática.
           </div>
         </div>
 
-        <div className="flex flex-col-reverse gap-2 border-t border-white/8 px-5 py-4 sm:flex-row sm:justify-end">
+        <div className="admin-status-modal__footer flex flex-col-reverse gap-2 border-t px-5 py-4 sm:flex-row sm:justify-end">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-white/10 px-4 text-11px font-black uppercase tracking-wide text-white/68 transition-colors hover:border-beyonix-blue-light/35 hover:text-white disabled:cursor-wait disabled:opacity-50"
+            className="admin-status-modal__cancel inline-flex h-10 cursor-pointer items-center justify-center px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait"
           >
             Cancelar
           </button>
@@ -7142,7 +7166,7 @@ function ForcedStatusConfirmModal({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border border-beyonix-blue-light/45 bg-beyonix-blue px-4 text-11px font-black uppercase tracking-wide text-beyonix-sky transition-colors hover:border-beyonix-blue-light hover:bg-beyonix-blue-hover disabled:cursor-wait disabled:opacity-50"
+            className="admin-status-modal__confirm inline-flex h-10 cursor-pointer items-center justify-center px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-wait"
           >
             {loading ? "Confirmando..." : `Marcar ${statusLabel}`}
           </button>
@@ -8093,7 +8117,12 @@ export function AdminPedidos({
           }
         : currentPedido
     )
-    void reloadPedidos()
+    // Silenciosa: el reclamo ya se fusionó arriba. Una recarga con loading
+    // (spinner) desmontaba el detalle embebido -- y con él el borrador de la
+    // respuesta que el admin estaba escribiendo -- cada vez que el polling
+    // del reclamo (20 s, URLs firmadas nuevas) o el foco de la ventana
+    // traían datos.
+    void reloadPedidos({ silent: true })
   }
 
   const handleRefundUpdated = (updatedOrder: SupabasePedido) => {
@@ -8422,11 +8451,14 @@ export function AdminPedidos({
   }
 
   if (initialOrderId) {
-    if (loading) {
+    // Spinner y error de pantalla completa sólo antes de tener el pedido:
+    // una recarga posterior (cualquier acción que llame reloadPedidos) nunca
+    // desmonta el detalle ni lo que el admin esté escribiendo.
+    if (loading && !previewPedido) {
       return <div className="flex min-h-[50vh] items-center justify-center"><LoaderCircle className="size-8 animate-spin text-beyonix-sky" /></div>
     }
 
-    if (error) {
+    if (error && !previewPedido) {
       return <div role="alert" className="space-y-4 p-6"><p>{error}</p><button type="button" onClick={() => void reloadPedidos()} className="admin-ds-button admin-ds-button-secondary">Reintentar carga</button><button type="button" onClick={() => router.push("/admin/pedidos")} className="ml-3 underline">Volver a pedidos</button></div>
     }
     if (!previewPedido) {
@@ -8435,6 +8467,14 @@ export function AdminPedidos({
 
     return (
       <>
+        {error && (
+          <AdminInfoBlock tone="danger" role="alert">
+            No se pudieron actualizar los datos del pedido: {error} Se muestran los últimos datos cargados.{" "}
+            <button type="button" onClick={() => void reloadPedidos({ silent: true })} className="font-bold underline">
+              Reintentar
+            </button>
+          </AdminInfoBlock>
+        )}
         <PedidoDetailModal
           embedded
           pedido={previewPedido}
