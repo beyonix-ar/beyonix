@@ -63,6 +63,7 @@ import {
 } from "@/lib/orders/claim-replacement-flow"
 import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import { useScopedState } from "@/hooks/use-scoped-state"
+import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -1347,88 +1348,21 @@ export function ReturnInventoryPanel({
       </section>
 
       {confirmationItem && (
-        // Isla visual propia (admin-reception-modal__*, globals.css): se
-        // renderiza dentro del detalle de pedido, cuyas reglas globales pisan
-        // bg-*, [rounded][border], text-white/N, tracking-widest y
-        // .admin-ds-surface -- por eso el marcado no usa ninguna de ellas.
-        <div
-          className="admin-reception-modal__backdrop fixed inset-0 z-120 flex items-center justify-center p-4"
-          role="presentation"
-          onMouseDown={() => setConfirmationItemId(null)}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="return-inventory-confirmation-title"
-            aria-describedby="return-inventory-confirmation-description"
-            className="admin-reception-modal w-full max-w-md p-4 sm:p-5"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="flex items-start gap-3">
-              <span className="admin-reception-modal__icon" aria-hidden="true">
-                <PackageCheck className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <p className="admin-reception-modal__eyebrow">Confirmar movimiento</p>
-                <h4 id="return-inventory-confirmation-title" className="admin-reception-modal__title mt-1">
-                  Recepción de {confirmationItem.productos?.nombre ?? `Producto #${confirmationItem.producto_id}`}
-                </h4>
-                <p id="return-inventory-confirmation-description" className="admin-reception-modal__subtitle mt-1">
-                  Revisá el destino de las unidades antes de modificar el inventario.
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <div className="admin-reception-modal__metric is-restock">
-                <p className="admin-reception-modal__metric-label">Vuelven al stock</p>
-                <p className="admin-reception-modal__metric-value mt-1">{confirmationRestocked}</p>
-              </div>
-              <div className="admin-reception-modal__metric is-writeoff">
-                <p className="admin-reception-modal__metric-label">Baja o pérdida</p>
-                <p className="admin-reception-modal__metric-value mt-1">{confirmationWrittenOff}</p>
-              </div>
-            </div>
-
-            <div className="admin-reception-modal__stock mt-3">
-              <p className="admin-reception-modal__stock-label">Stock resultante</p>
-              <div className="admin-reception-modal__stock-lines mt-1 space-y-0.5">
-                <p>
-                  Stock general del producto: {confirmationProductStock} → {confirmationProductStock + confirmationStockDelta}
-                </p>
-                {confirmationItem.variante_id && (
-                  <p>
-                    Variante {confirmationVariantName}: {confirmationVariantStock} → {confirmationVariantStock + confirmationStockDelta}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <p className="admin-reception-modal__warning mt-3">
-              Al confirmar se registra la recepción y su impacto de stock. Si queda remanente reclamado, podrás registrar una nueva recepción. No se borra el historial anterior.
-            </p>
-
-            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                disabled={savingItemId !== null}
-                onClick={() => setConfirmationItemId(null)}
-                className="admin-claim-flow-button admin-claim-flow-control is-secondary is-large"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={savingItemId !== null}
-                onClick={() => void saveItem(confirmationItem, true)}
-                className="admin-claim-flow-button admin-claim-flow-control is-primary is-large"
-              >
-                <PackageCheck className="size-4" />
-                Confirmar recepción
-              </button>
-            </div>
-          </section>
-        </div>
+        <ReceptionConfirmationModal
+          productName={confirmationItem.productos?.nombre ?? `Producto #${confirmationItem.producto_id}`}
+          restocked={confirmationRestocked}
+          writtenOff={confirmationWrittenOff}
+          productStock={confirmationProductStock}
+          stockDelta={confirmationStockDelta}
+          variant={
+            confirmationItem.variante_id
+              ? { name: confirmationVariantName, stock: confirmationVariantStock }
+              : null
+          }
+          saving={savingItemId !== null}
+          onCancel={() => setConfirmationItemId(null)}
+          onConfirm={() => void saveItem(confirmationItem, true)}
+        />
       )}
     </>
   )
