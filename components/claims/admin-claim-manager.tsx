@@ -1,21 +1,30 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import {
   Check,
   CheckCircle2,
   ChevronDown,
+  CircleQuestionMark,
+  ClipboardList,
   CreditCard,
   Download,
   Eye,
   FileText,
+  Flag,
+  Info,
+  LoaderCircle,
+  Lock,
   MessageSquare,
   Package,
   PackageCheck,
+  PackageOpen,
   Pencil,
   Play,
+  Repeat2,
   Send,
   ShieldCheck,
+  Truck,
   Upload,
   XCircle,
   X,
@@ -438,6 +447,32 @@ function getReceptionTotals(entries: Array<{ item: SupabasePedidoItem; quantity:
   )
 }
 
+// Ayuda contextual: ícono con tooltip que aparece en hover y en foco de
+// teclado (Escape lo cierra). Sólo CSS, sin dependencias nuevas; el texto
+// queda enlazado por aria-describedby para lectores de pantalla.
+function ClaimHelpTip({ label, children }: { label: string; children: string }) {
+  const tooltipId = useId()
+
+  return (
+    <span className="admin-claim-help">
+      <button
+        type="button"
+        aria-label={`Ayuda: ${label}`}
+        aria-describedby={tooltipId}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.currentTarget.blur()
+        }}
+        className="admin-claim-help-trigger admin-claim-flow-control"
+      >
+        <CircleQuestionMark className="size-3.5" />
+      </button>
+      <span role="tooltip" id={tooltipId} className="admin-claim-help-bubble">
+        {children}
+      </span>
+    </span>
+  )
+}
+
 function ClaimStepper({ steps }: { steps: ClaimProgressStep[] }) {
   if (steps.length === 0) return null
 
@@ -450,7 +485,7 @@ function ClaimStepper({ steps }: { steps: ClaimProgressStep[] }) {
           className={`admin-claim-stepper-item is-${step.state}`}
         >
           <span className="admin-claim-stepper-dot" aria-hidden="true">
-            {step.state === "done" ? <Check className="size-3" strokeWidth={3} /> : index + 1}
+            {step.state === "done" ? <Check className="size-3.5" strokeWidth={3} /> : index + 1}
           </span>
           <span className="admin-claim-stepper-label">{step.label}</span>
           <span className="sr-only">
@@ -466,13 +501,64 @@ function ReceptionCounts({ claimed, received }: { claimed: number; received: num
   const pending = Math.max(0, claimed - received)
 
   return (
-    <p className="admin-claim-reception-counts">
-      <span className="admin-claim-reception-count">Reclamadas <strong>{claimed}</strong></span>
-      <span className="admin-claim-reception-count">Recibidas <strong>{received}</strong></span>
-      <span className={`admin-claim-reception-count ${pending > 0 ? "is-pending" : "is-complete"}`}>
-        Pendientes <strong>{pending}</strong>
-      </span>
-    </p>
+    <dl className="admin-claim-reception-counts" aria-label="Unidades del reclamo">
+      <div className="admin-claim-reception-count">
+        <dt>Reclamadas</dt>
+        <dd>{claimed}</dd>
+      </div>
+      <div className="admin-claim-reception-count">
+        <dt>Recibidas</dt>
+        <dd>{received}</dd>
+      </div>
+      <div className={`admin-claim-reception-count ${pending > 0 ? "is-pending" : "is-complete"}`}>
+        <dt>Pendientes</dt>
+        <dd>{pending}</dd>
+      </div>
+    </dl>
+  )
+}
+
+function ReceptionProductHeader({
+  item,
+  productName,
+  meta,
+  claimed,
+  received,
+  lastReceptionAt,
+}: {
+  item: SupabasePedidoItem
+  productName: string
+  meta: string[]
+  claimed: number
+  received: number
+  lastReceptionAt?: string | null
+}) {
+  const image = getCuentaItemImage(item)
+
+  return (
+    <div className="admin-claim-reception-product">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="admin-claim-reception-thumb">
+          {image ? <img src={image} alt="" className="size-full object-contain" /> : <Package className="size-5" />}
+        </span>
+        <div className="min-w-0">
+          <p className="admin-claim-reception-title">{productName}</p>
+          {(meta.length > 0 || lastReceptionAt) && (
+            <p className="admin-claim-reception-tags">
+              {meta.map((part) => (
+                <span key={part} className="admin-claim-reception-tag">{part}</span>
+              ))}
+              {lastReceptionAt && (
+                <span className="admin-claim-reception-tag is-muted">
+                  Última recepción {formatDate(lastReceptionAt)}
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      </div>
+      <ReceptionCounts claimed={claimed} received={received} />
+    </div>
   )
 }
 
@@ -849,22 +935,27 @@ export function ReturnInventoryPanel({
     <>
       <section
         id={`claim-reception-${claim.id}`}
-        className="admin-claim-card mx-3 mb-3 rounded-xl border p-3 sm:mx-4 sm:mb-4"
+        className="admin-claim-card admin-claim-reception-panel mx-3 mb-3 rounded-xl border p-4 sm:mx-4 sm:mb-4 sm:p-5"
       >
-      <ClaimStepper steps={progressSteps} />
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h4 className="admin-claim-reception-heading">Recepción del producto original</h4>
-          <p className="admin-claim-reception-subtitle">
-            Registrá cómo volvió el producto que entregó el cliente.
-          </p>
-          {claim.affected_items_updated_at && (
-            <p className="admin-claim-reception-note">Productos corregidos por administración.</p>
-          )}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="admin-claim-section-icon" aria-hidden="true">
+            <PackageOpen className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h4 className="admin-claim-reception-heading">Recepción del producto original</h4>
+            <p className="admin-claim-reception-subtitle">
+              Registrá cómo volvió el producto que entregó el cliente.
+            </p>
+            {claim.affected_items_updated_at && (
+              <p className="admin-claim-reception-note">Productos corregidos por administración.</p>
+            )}
+          </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {!canManage && hasPendingInventory && (
-            <span className="w-fit rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-10px font-black uppercase text-white/55">
+            <span className="admin-claim-pill is-neutral">
+              <Lock className="size-3" />
               Solo lectura
             </span>
           )}
@@ -876,7 +967,7 @@ export function ReturnInventoryPanel({
                 affectedVersionRef.current = claim.updated_at
                 setEditingAffectedItems((current) => !current)
               }}
-              className="admin-ds-button inline-flex h-9 min-w-max items-center justify-center gap-2 whitespace-nowrap px-3 text-10px font-black"
+              className="admin-claim-flow-button admin-claim-flow-control is-secondary is-compact"
             >
               <Pencil className="size-3.5 shrink-0" />
               <span>Corregir productos</span>
@@ -888,6 +979,9 @@ export function ReturnInventoryPanel({
             </button>
           )}
         </div>
+      </div>
+      <div className="admin-claim-stepper-track">
+        <ClaimStepper steps={progressSteps} />
       </div>
 
       {editingAffectedItems && canManage && (
@@ -1014,7 +1108,7 @@ export function ReturnInventoryPanel({
         </p>
       )}
 
-      <div className="mt-3 space-y-2">
+      <div className="mt-4 space-y-3">
         {items.length > 0 ? (
           items.map((item) => {
             const draft = drafts[item.id] ?? getReturnInventoryDraft(item)
@@ -1031,7 +1125,7 @@ export function ReturnInventoryPanel({
             const itemMeta = [
               item.conditioned_name?.trim() || item.producto_variantes?.nombre?.trim(),
               variantSku ? `SKU ${variantSku}` : null,
-            ].filter((part): part is string => Boolean(part)).join(" · ")
+            ].filter((part): part is string => Boolean(part))
             const saving = savingItemId === item.id
             // Devoluciones parciales sucesivas: "procesado" ya no es un
             // booleano único -- el ítem sigue disponible mientras quede
@@ -1061,7 +1155,7 @@ export function ReturnInventoryPanel({
             const missingReason =
               missingStep ??
               (noteRequired && draft.note.trim().length < 3
-                ? "Indicá el motivo de la baja en la observación."
+                ? "Indicá el motivo de la baja."
                 : null)
 
             if (inventoryLocked) {
@@ -1090,14 +1184,14 @@ export function ReturnInventoryPanel({
 
               return (
                 <article key={`return-inventory-${item.id}`} className="admin-claim-reception-item">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="admin-claim-reception-title">{productName}</p>
-                      {itemMeta && <p className="admin-claim-reception-meta">{itemMeta}</p>}
-                    </div>
-                    <ReceptionCounts claimed={claimedQuantity} received={receivedQuantity} />
-                  </div>
-                  <div className={`admin-claim-reception-feedback mt-2 ${resultTone}`}>
+                  <ReceptionProductHeader
+                    item={item}
+                    productName={productName}
+                    meta={itemMeta}
+                    claimed={claimedQuantity}
+                    received={receivedQuantity}
+                  />
+                  <div className={`admin-claim-reception-feedback mt-3 ${resultTone}`}>
                     {onlyRestocked ? (
                       <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
                     ) : onlyWrittenOff ? (
@@ -1116,23 +1210,25 @@ export function ReturnInventoryPanel({
 
             return (
               <article key={`return-inventory-${item.id}`} className="admin-claim-reception-item">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0">
-                    <p className="admin-claim-reception-title">{productName}</p>
-                    {itemMeta && <p className="admin-claim-reception-meta">{itemMeta}</p>}
-                    {item.return_inventory_processed_at && (
-                      <p className="admin-claim-reception-meta">
-                        Última recepción: {formatDate(item.return_inventory_processed_at)}
-                      </p>
-                    )}
-                  </div>
-                  <ReceptionCounts claimed={claimedQuantity} received={receivedQuantity} />
-                </div>
+                <ReceptionProductHeader
+                  item={item}
+                  productName={productName}
+                  meta={itemMeta}
+                  claimed={claimedQuantity}
+                  received={receivedQuantity}
+                  lastReceptionAt={item.return_inventory_processed_at}
+                />
 
                 {claimedQuantity === 1 ? (
-                  <div className="mt-3">
-                    <p className="admin-claim-reception-question">¿Qué hacemos con esta unidad?</p>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <div className="admin-claim-reception-block">
+                    <p className="admin-claim-reception-question" id={`reception-question-${item.id}`}>
+                      ¿Qué hacemos con esta unidad?
+                    </p>
+                    <div
+                      role="group"
+                      aria-labelledby={`reception-question-${item.id}`}
+                      className="mt-2.5 grid gap-2.5 sm:grid-cols-2"
+                    >
                       <button
                         type="button"
                         disabled={!canManage || saving}
@@ -1140,10 +1236,15 @@ export function ReturnInventoryPanel({
                         onClick={() => selectSingleUnitCondition(item, true)}
                         className="admin-claim-choice admin-claim-flow-control is-restock"
                       >
-                        <CheckCircle2 className="admin-claim-choice-icon size-4 shrink-0" />
-                        <span className="min-w-0">
+                        <span className="admin-claim-choice-icon" aria-hidden="true">
+                          <PackageCheck className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
                           <span className="admin-claim-choice-title">Volver al stock</span>
-                          <span className="admin-claim-choice-text">Producto en buen estado y apto para venta.</span>
+                          <span className="admin-claim-choice-text">Producto en buen estado y apto para la venta.</span>
+                        </span>
+                        <span className="admin-claim-choice-check" aria-hidden="true">
+                          <Check className="size-3" strokeWidth={3} />
                         </span>
                       </button>
                       <button
@@ -1153,15 +1254,20 @@ export function ReturnInventoryPanel({
                         onClick={() => selectSingleUnitCondition(item, false)}
                         className="admin-claim-choice admin-claim-flow-control is-writeoff"
                       >
-                        <XCircle className="admin-claim-choice-icon size-4 shrink-0" />
-                        <span className="min-w-0">
+                        <span className="admin-claim-choice-icon" aria-hidden="true">
+                          <XCircle className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
                           <span className="admin-claim-choice-title">Dar de baja</span>
                           <span className="admin-claim-choice-text">Producto dañado o no apto para volver a venderse.</span>
+                        </span>
+                        <span className="admin-claim-choice-check" aria-hidden="true">
+                          <Check className="size-3" strokeWidth={3} />
                         </span>
                       </button>
                     </div>
                     {singleUnitCondition && (
-                      <p className="admin-claim-reception-hint mt-2">
+                      <p className={`admin-claim-pill mt-2.5 ${singleUnitCondition === "yes" ? "is-success" : "is-danger"}`}>
                         {singleUnitCondition === "yes"
                           ? item.variante_id
                             ? `Stock: ${productStock} → ${nextProductStock} · ${variantName}: ${variantStock} → ${nextVariantStock}`
@@ -1171,84 +1277,85 @@ export function ReturnInventoryPanel({
                     )}
                   </div>
                 ) : (
-                  <div className="mt-3">
+                  <div className="admin-claim-reception-block">
                     <p className="admin-claim-reception-question">¿Qué hacemos con las unidades que llegaron?</p>
-                    <div className="mt-2 flex flex-wrap items-end gap-x-6 gap-y-2">
-                      <label className="block w-fit">
+                    <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                      <label className="admin-claim-quantity">
                         <span className="admin-claim-reception-label">Llegaron ahora</span>
-                        <div className="mt-1.5 w-20">
-                          <input
-                            type="number"
-                            min={0}
-                            max={Math.max(0, remainingQuantity)}
-                            step={1}
-                            inputMode="numeric"
-                            value={draft.received}
-                            disabled={!canManage || saving}
-                            onChange={(event) => updateDraft(item, "received", event.target.value)}
-                            className={`${adminControlClassName} h-9 min-h-9 px-2 text-center text-xs`}
-                          />
-                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={Math.max(0, remainingQuantity)}
+                          step={1}
+                          inputMode="numeric"
+                          value={draft.received}
+                          disabled={!canManage || saving}
+                          onChange={(event) => updateDraft(item, "received", event.target.value)}
+                          className={`${adminControlClassName} admin-claim-quantity-input`}
+                        />
                       </label>
-                      <label className="block w-fit">
+                      <label className="admin-claim-quantity is-restock">
                         <span className="admin-claim-reception-label is-restock">Vuelven al stock</span>
-                        <div className="mt-1.5 w-20">
-                          <input
-                            type="number"
-                            min={0}
-                            max={draftReceived}
-                            step={1}
-                            inputMode="numeric"
-                            value={draft.goodCondition}
-                            disabled={!canManage || saving}
-                            onChange={(event) => updateDraft(item, "goodCondition", event.target.value)}
-                            className={`${adminControlClassName} h-9 min-h-9 px-2 text-center text-xs`}
-                          />
-                        </div>
+                        <input
+                          type="number"
+                          min={0}
+                          max={draftReceived}
+                          step={1}
+                          inputMode="numeric"
+                          value={draft.goodCondition}
+                          disabled={!canManage || saving}
+                          onChange={(event) => updateDraft(item, "goodCondition", event.target.value)}
+                          className={`${adminControlClassName} admin-claim-quantity-input`}
+                        />
                       </label>
-                      <p className="admin-claim-reception-writeoff">
+                      <p className="admin-claim-quantity is-writeoff">
                         <span className="admin-claim-reception-label is-writeoff">Se dan de baja</span>
-                        <strong>{draftWrittenOff}</strong>
+                        <strong className="admin-claim-quantity-value">{draftWrittenOff}</strong>
                       </p>
                     </div>
-                    <p className="admin-claim-reception-hint mt-2">
+                    <p className="admin-claim-reception-hint mt-2.5">
+                      <Info className="size-3.5 shrink-0" aria-hidden="true" />
                       Si recibís el pedido en partes, registrá sólo las unidades que llegaron ahora.
                     </p>
                   </div>
                 )}
 
-                <label className="mt-3 block">
-                  <span className="admin-claim-reception-label">
-                    Observación interna {noteRequired ? "(obligatoria para dar de baja)" : "(opcional)"}
+                <label className="admin-claim-reception-block block">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="admin-claim-reception-label">Observación interna</span>
+                    <span className={`admin-claim-pill is-small ${noteRequired ? "is-danger" : "is-neutral"}`}>
+                      {noteRequired ? "Obligatoria al dar de baja" : "Opcional"}
+                    </span>
                   </span>
                   <textarea
                     value={draft.note}
                     disabled={!canManage || saving}
                     maxLength={1000}
                     rows={2}
+                    aria-required={noteRequired}
                     onChange={(event) => updateDraft(item, "note", event.target.value)}
                     placeholder="Ej.: producto golpeado, faltan accesorios…"
-                    className="mt-1.5 w-full resize-none rounded-lg border border-white/10 bg-[#101820] px-3 py-2 text-xs font-semibold text-white outline-none placeholder:text-white/35 focus:border-blue-300/45 disabled:cursor-not-allowed disabled:opacity-55"
+                    className="admin-claim-note mt-2 w-full resize-none outline-none disabled:cursor-not-allowed disabled:opacity-55"
                   />
                 </label>
 
                 {canManage && (
-                  <div className="mt-3 flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
-                    {missingReason && (
-                      <p className="admin-claim-reception-hint" id={`reception-missing-${item.id}`}>
-                        {missingReason}
-                      </p>
-                    )}
+                  <div className="admin-claim-reception-footer">
                     <button
                       type="button"
                       disabled={savingItemId !== null || Boolean(missingReason)}
                       aria-describedby={missingReason ? `reception-missing-${item.id}` : undefined}
                       onClick={() => void saveItem(item)}
-                      className="admin-ds-button admin-ds-button-primary inline-flex h-9 items-center gap-2 px-4 text-xs font-black disabled:cursor-not-allowed disabled:opacity-45"
+                      className="admin-claim-flow-button admin-claim-flow-control is-primary is-large"
                     >
-                      <PackageCheck className="size-4" />
+                      {saving ? <LoaderCircle className="size-4 animate-spin" /> : <PackageCheck className="size-4" />}
                       {saving ? "Guardando..." : "Confirmar recepción"}
                     </button>
+                    {missingReason && (
+                      <p className="admin-claim-reception-missing" id={`reception-missing-${item.id}`}>
+                        {missingReason}
+                      </p>
+                    )}
                   </div>
                 )}
               </article>
@@ -2165,27 +2272,37 @@ export function AdminClaimManager({
             )}
           </section>
           ) : (
-          <section className="admin-claim-card rounded-xl border p-2.5">
-            <h4 className="text-sm font-black text-white">Gestionar reclamo</h4>
-            <div className="admin-claim-status-box mt-2 px-2.5 py-1.5">
-              <p className="admin-claim-status-label text-10px font-black uppercase">Estado actual</p>
-              <p className="admin-claim-status-value mt-0.5 text-xs font-black">{getStatusLabel(claim)}</p>
+          <section className="admin-claim-card admin-claim-manage-panel rounded-xl border p-3 sm:p-4">
+            <div className="flex items-center gap-2.5">
+              <span className="admin-claim-section-icon is-small" aria-hidden="true">
+                <ClipboardList className="size-4" />
+              </span>
+              <h4 className="admin-claim-manage-heading">Gestionar reclamo</h4>
             </div>
-
-            {claim.resolution && claim.resolution !== "rechazado" && (
-              <div className="admin-claim-resolution-box mt-2 px-2.5 py-2">
-                <p className="admin-claim-resolution-label text-10px font-black uppercase">
-                  {claim.resolution === "otro" ? "Decisión tomada" : "Solución aprobada"}
+            <div className={`admin-claim-overview mt-3 ${claim.resolution && claim.resolution !== "rechazado" ? "has-resolution" : ""}`}>
+              <div className="admin-claim-status-box admin-claim-overview-tile">
+                <p className="admin-claim-status-label admin-claim-overview-label">Estado actual</p>
+                <p className="admin-claim-status-value admin-claim-overview-value">
+                  <span className="admin-claim-overview-dot" aria-hidden="true" />
+                  {getStatusLabel(claim)}
                 </p>
-                <p className="admin-claim-resolution-value mt-0.5 text-xs font-black">
-                  {getOrderClaimResolutionLabel(claim.resolution)}
-                </p>
-                {!canCompleteReplacementSolution && (
-                  <p className="admin-claim-resolution-next mt-1 text-[11px] font-semibold leading-4">
-                    {getResolutionNextStep(claim)}
-                  </p>
-                )}
               </div>
+
+              {claim.resolution && claim.resolution !== "rechazado" && (
+                <div className="admin-claim-resolution-box admin-claim-overview-tile">
+                  <p className="admin-claim-resolution-label admin-claim-overview-label">
+                    {claim.resolution === "otro" ? "Decisión tomada" : "Solución aprobada"}
+                  </p>
+                  <p className="admin-claim-resolution-value admin-claim-overview-value">
+                    {getOrderClaimResolutionLabel(claim.resolution)}
+                  </p>
+                </div>
+              )}
+            </div>
+            {claim.resolution && claim.resolution !== "rechazado" && !canCompleteReplacementSolution && (
+              <p className="admin-claim-resolution-next mt-2 text-[11px] font-semibold leading-4">
+                {getResolutionNextStep(claim)}
+              </p>
             )}
 
             {cancellation ? (
@@ -2459,12 +2576,27 @@ export function AdminClaimManager({
 
 type ReplacementFlowStepView = {
   key: string
+  icon: ReactNode
   title: string
   description: string
+  help: string
   state: ClaimStepState
-  status: string | null
-  partial: boolean
+  doneLabel: string
+  progress: string | null
+  blockedReason: string | null
   action?: { label: string; enabled: boolean; onClick: () => void }
+}
+
+function FlowStepBadge({ step, active }: { step: ReplacementFlowStepView; active: boolean }) {
+  if (step.state === "done") {
+    return <span className="admin-claim-pill is-success is-small"><Check className="size-3" strokeWidth={3} />{step.doneLabel}</span>
+  }
+  if (active) return <span className="admin-claim-pill is-brand is-small">Ahora</span>
+  if (step.action && !step.action.enabled) {
+    return <span className="admin-claim-pill is-neutral is-small"><Lock className="size-3" />Bloqueado</span>
+  }
+  if (step.progress) return <span className="admin-claim-pill is-warning is-small">{step.progress}</span>
+  return <span className="admin-claim-pill is-neutral is-small">Pendiente</span>
 }
 
 export function ReplacementFlowSteps({
@@ -2493,100 +2625,109 @@ export function ReplacementFlowSteps({
   onFinalize?: () => void
 }) {
   const steps: ReplacementFlowStepView[] = []
+  const verifyingReplacement =
+    !missingUnit && (replacedUnits === null || replacementLoadState === "loading" || replacementLoadState === "error")
 
   if (flow.requiresReception) {
     steps.push({
       key: "reception",
+      icon: <PackageOpen className="size-4" />,
       title: "Recibir producto original",
-      description: "Registrá en qué estado volvió, en la sección de recepción.",
+      description: "Registrá cómo volvió el producto del cliente.",
+      help: "Cuando el producto vuelva a BEYONIX, indicá en la sección de recepción si vuelve al stock o se da de baja. Podés registrar recepciones parciales.",
       state: flow.reception,
-      status:
-        flow.reception === "done"
-          ? "Recibido"
-          : claimedUnits === 0
-            ? "Sin productos"
-            : receivedUnits > 0
-              ? `${receivedUnits} de ${claimedUnits}`
-              : "Pendiente",
-      partial: flow.reception !== "done" && receivedUnits > 0,
+      doneLabel: "Recibido",
+      progress:
+        claimedUnits === 0
+          ? "Sin productos"
+          : receivedUnits > 0
+            ? `${receivedUnits} de ${claimedUnits}`
+            : null,
+      blockedReason: null,
       action: { label: "Ir a recepción", enabled: true, onClick: onGoToReception },
     })
   }
 
   steps.push({
     key: "replacement",
+    icon: <Repeat2 className="size-4" />,
     title: missingUnit ? "Preparar unidad faltante" : "Preparar reemplazo",
     description: missingUnit
       ? "Elegí la unidad que recibirá el cliente y descontala del stock."
       : "Elegí qué producto recibirá el cliente y descontalo del stock.",
+    help: "Te lleva a “Reemplazos del pedido”: ahí elegís la variante que recibe el cliente y se descuenta del stock. No crea un envío.",
     state: flow.replacement,
-    status:
-      flow.replacement === "done"
-        ? "Registrado"
-        : !flow.canRegisterReplacement
-          ? "Después de la recepción"
-          : replacedUnits === null
-            ? null
-            : replacedUnits > 0
-              ? `${replacedUnits} de ${claimedUnits}`
-              : "Pendiente",
-    partial: flow.replacement !== "done" && (replacedUnits ?? 0) > 0,
+    doneLabel: "Registrado",
+    progress: replacedUnits !== null && replacedUnits > 0 ? `${replacedUnits} de ${claimedUnits}` : null,
+    blockedReason: flow.canRegisterReplacement ? null : "Disponible cuando llegue el producto original.",
     action: { label: "Registrar reemplazo", enabled: flow.canRegisterReplacement, onClick: onRegisterReplacement },
   })
 
   steps.push({
     key: "delivery",
+    icon: <Truck className="size-4" />,
     title: missingUnit ? "Entregar unidad faltante" : "Entregar reemplazo",
-    description: "Confirmalo cuando ya esté enviado o entregado. Esto finaliza el reclamo.",
+    description: "Confirmá cuando el nuevo producto ya fue enviado o entregado.",
+    help: "Usá esta acción cuando el reemplazo ya fue enviado o entregado al cliente. Esto finaliza el reclamo y le avisa al cliente.",
     state: flow.delivery,
-    status: !missingUnit && (replacedUnits === null || replacementLoadState === "loading" || replacementLoadState === "error")
+    doneLabel: "Entregado",
+    progress: null,
+    blockedReason: verifyingReplacement
       ? replacementLoadState === "error"
         ? "No pudimos verificar el reemplazo. Reintentá antes de continuar."
         : "Verificando reemplazo…"
-      : flow.canConfirmDelivery ? "Pendiente" : "Después del reemplazo",
-    partial: false,
+      : flow.canConfirmDelivery
+        ? null
+        : "Disponible cuando registres el reemplazo.",
     action: { label: "Confirmar envío o entrega", enabled: flow.canConfirmDelivery, onClick: onConfirmDelivery },
   })
 
   const primaryKey = steps.find((step) => step.state === "current" && step.action?.enabled)?.key
+  const finalizeBlocked = !missingUnit && !flow.canConfirmDelivery
 
   return (
     <div className="admin-claim-flow">
       <p className="admin-claim-flow-heading">Próximos pasos</p>
       <ol className="admin-claim-flow-list">
-        {steps.map((step, index) => {
+        {steps.map((step) => {
           const active = step.key === primaryKey
+          const blocked = Boolean(step.action && !step.action.enabled) && step.state !== "done"
           return (
             <li
               key={step.key}
               aria-current={active ? "step" : undefined}
-              className={`admin-claim-flow-step is-${step.state} ${active ? "is-active" : ""}`}
+              className={`admin-claim-flow-step is-${step.state} ${active ? "is-active" : ""} ${blocked ? "is-blocked" : ""}`}
             >
               <span className="admin-claim-flow-marker" aria-hidden="true">
-                {step.state === "done" ? <Check className="size-3.5" strokeWidth={3} /> : index + 1}
+                {step.state === "done" ? <Check className="size-3.5" strokeWidth={3} /> : step.icon}
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <div className="admin-claim-flow-body">
+                <div className="flex items-start justify-between gap-2">
                   <p className="admin-claim-flow-title">{step.title}</p>
-                  {step.status && (
-                    <span
-                      className={`admin-claim-flow-status ${
-                        step.state === "done" ? "is-done" : step.partial ? "is-partial" : "is-pending"
-                      }`}
-                    >
-                      {step.status}
-                    </span>
-                  )}
+                  <span className="flex shrink-0 items-center gap-1">
+                    <FlowStepBadge step={step} active={active} />
+                    <ClaimHelpTip label={step.title}>{step.help}</ClaimHelpTip>
+                  </span>
                 </div>
                 {step.state !== "done" && (
                   <>
                     <p className="admin-claim-flow-text">{step.description}</p>
+                    {step.blockedReason && (
+                      <p className="admin-claim-flow-blocked">
+                        {replacementLoadState === "loading" && step.key === "delivery" ? (
+                          <LoaderCircle className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Lock className="size-3 shrink-0" aria-hidden="true" />
+                        )}
+                        {step.blockedReason}
+                      </p>
+                    )}
                     {step.action && (
                       <button
                         type="button"
                         disabled={saving || !step.action.enabled}
                         onClick={step.action.onClick}
-                        className={`admin-claim-flow-button admin-claim-flow-control ${active ? "is-primary" : "is-secondary"}`}
+                        className={`admin-claim-flow-button admin-claim-flow-control ${active ? "is-primary" : "is-secondary"} mt-2.5`}
                       >
                         {step.action.label}
                       </button>
@@ -2597,20 +2738,42 @@ export function ReplacementFlowSteps({
             </li>
           )
         })}
+        {onFinalize && (
+          <li className={`admin-claim-flow-step is-alternative ${finalizeBlocked ? "is-blocked" : ""}`}>
+            <span className="admin-claim-flow-marker" aria-hidden="true">
+              <Flag className="size-4" />
+            </span>
+            <div className="admin-claim-flow-body">
+              <div className="flex items-start justify-between gap-2">
+                <p className="admin-claim-flow-title">Finalizar reclamo</p>
+                <span className="flex shrink-0 items-center gap-1">
+                  <span className="admin-claim-pill is-neutral is-small">
+                    {finalizeBlocked ? <><Lock className="size-3" />Bloqueado</> : "Alternativa"}
+                  </span>
+                  <ClaimHelpTip label="Finalizar reclamo">
+                    Cierra el reclamo sin usar “Confirmar envío o entrega”. Podés dejar un mensaje opcional al cliente.
+                  </ClaimHelpTip>
+                </span>
+              </div>
+              <p className="admin-claim-flow-text">Cerrá el caso con un mensaje opcional al cliente.</p>
+              {finalizeBlocked && (
+                <p className="admin-claim-flow-blocked">
+                  <Lock className="size-3 shrink-0" aria-hidden="true" />
+                  Disponible cuando registres el reemplazo.
+                </p>
+              )}
+              <button
+                type="button"
+                disabled={saving || finalizeBlocked}
+                onClick={onFinalize}
+                className="admin-claim-flow-button admin-claim-flow-control is-secondary mt-2.5"
+              >
+                Finalizar reclamo
+              </button>
+            </div>
+          </li>
+        )}
       </ol>
-      {onFinalize && (
-        <div className="admin-claim-flow-footer">
-          <button
-            type="button"
-            disabled={saving || (!missingUnit && !flow.canConfirmDelivery)}
-            onClick={onFinalize}
-            className="admin-claim-flow-button admin-claim-flow-control is-secondary"
-          >
-            Finalizar reclamo
-          </button>
-          <p className="admin-claim-flow-text">Cierra el caso con un mensaje opcional al cliente.</p>
-        </div>
-      )}
     </div>
   )
 }

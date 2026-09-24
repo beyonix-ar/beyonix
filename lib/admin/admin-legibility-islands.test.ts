@@ -199,6 +199,28 @@ test("flujo del reclamo: primario, secundario, deshabilitado y opciones legibles
   assert.ok(contrast(hex(success, "color"), hex(success, "background")) >= 7)
 })
 
+test("flujo del reclamo: tooltips, pills y contadores legibles; ayuda accesible", () => {
+  const darkTip = ruleBody(".admin-claim-help-bubble")
+  assert.ok(contrast(hex(darkTip, "color"), hex(darkTip, "background")) >= 7)
+  const lightTip = ruleBody('html[data-admin-theme="light"] .admin-claim-help-bubble')
+  assert.ok(contrast(hex(lightTip, "color"), hex(lightTip, "background")) >= 7)
+  assert.match(css, /\.admin-claim-help:hover \.admin-claim-help-bubble,\n\.admin-claim-help:focus-within \.admin-claim-help-bubble \{/)
+
+  const pill = (tone: string) => {
+    const body = ruleBody(`html[data-admin-theme="light"] .admin-claim-pill${tone}`)
+    return contrast(hex(body, "--claim-pill-text"), hex(body, "--claim-pill-bg"))
+  }
+  for (const tone of ["", ".is-brand", ".is-success", ".is-warning", ".is-danger"]) {
+    assert.ok(pill(tone) >= 4.5, `pill${tone}`)
+  }
+
+  const tip = sliceFunction(claims, "function ClaimHelpTip(")
+  assert.match(tip, /aria-describedby=\{tooltipId\}/)
+  assert.match(tip, /role="tooltip"/)
+  assert.match(tip, /event\.key === "Escape"/)
+  assert.match(tip, /admin-claim-help-trigger admin-claim-flow-control/)
+})
+
 test("modal de seguimiento: comparte la isla admin-status-modal y no usa utilidades interceptadas", () => {
   const modal = sliceFunction(pedidos, "function TrackingStatusModal(")
   for (const part of ["__header", "__eyebrow", "__title", "__subtitle", "__field-label", "__input", "__note", "__footer", "__cancel", "__confirm"]) {

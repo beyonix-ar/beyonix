@@ -234,11 +234,19 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
       assert.equal(finalize.disabled, !enabled)
       await act(async () => delivery.click())
       assert.equal(confirmed, enabled ? 1 : 0)
+      const deliveryStep = delivery.closest("li")!
+      assert.equal(deliveryStep.classList.contains("is-blocked"), !enabled)
+      assert.equal(deliveryStep.getAttribute("aria-current"), enabled ? "step" : null)
+      assert.match(deliveryStep.textContent || "", enabled ? /Ahora/ : /Bloqueado/)
+      const help = deliveryStep.querySelector<HTMLButtonElement>('button[aria-label="Ayuda: Entregar reemplazo"]')!
+      assert.match(document.getElementById(help.getAttribute("aria-describedby")!)?.textContent || "", /Esto finaliza el reclamo/)
+      assert.ok(document.querySelectorAll(".admin-claim-flow-button.is-primary").length <= 1, "como máximo una acción principal")
+      if (enabled) assert.ok(delivery.classList.contains("is-primary"))
       if (replacementLoadState === "error") assert.match(document.body.textContent || "", /No pudimos verificar el reemplazo/)
       else if (replacedUnits === null || replacementLoadState === "loading") assert.match(document.body.textContent || "", /Verificando reemplazo/)
     }
     await render(<ReturnInventoryPanel canManage pedido={{ id: 123, usuario_id: null, estado: "entregado", total: 50000, created_at: "2026-09-19", orden_items: [{ id: 7, orden_id: 123, producto_id: 1, cantidad: 5, precio: 1000, return_restocked_quantity: 2, return_inventory_processed_at: "2026-09-18T12:00:00Z" }] }} claim={{ id: 1, order_id: 123, user_id: "test", claim_type: "garantia_beyonix", status: "aprobado", description: "", affected_items: [{ order_item_id: 7, quantity: 3 }], created_at: "2026-09-19", updated_at: "2026-09-19" }} />)
-    assert.match(document.body.textContent || "", /Reclamadas 3Recibidas 2Pendientes 1/)
+    assert.match(document.body.textContent || "", /Reclamadas3Recibidas2Pendientes1/)
     assert.doesNotMatch(document.body.textContent || "", /Vendió/)
     assert.match(document.body.textContent || "", /Si recibís el pedido en partes/)
     const confirmReception = () => [...document.querySelectorAll("button")].find((button) => button.textContent === "Confirmar recepción")!
@@ -257,14 +265,14 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     await act(async () => [...receiptDialog.querySelectorAll("button")].find((button) => button.textContent?.includes("Confirmar"))!.click())
     assert.equal(receptionCalls, 1)
     await render(<ReturnInventoryPanel canManage pedido={{ id: 123, usuario_id: null, estado: "entregado", total: 50000, created_at: "2026-09-19", orden_items: [{ id: 7, orden_id: 123, producto_id: 1, cantidad: 5, precio: 1000, return_restocked_quantity: 3, return_inventory_processed_at: "2026-09-20T12:00:00Z" }] }} claim={{ id: 1, order_id: 123, user_id: "test", claim_type: "garantia_beyonix", status: "aprobado", description: "", affected_items: [{ order_item_id: 7, quantity: 3 }], created_at: "2026-09-19", updated_at: "2026-09-19" }} />)
-    assert.match(document.body.textContent || "", /Reclamadas 3Recibidas 3Pendientes 0/)
+    assert.match(document.body.textContent || "", /Reclamadas3Recibidas3Pendientes0/)
     assert.match(document.body.textContent || "", /Recepción completa · 3 unidades volvieron al stock/)
     // Reclamo de una unidad: opciones semánticas, observación obligatoria sólo para la baja.
     await render(<ReturnInventoryPanel canManage pedido={{ id: 124, usuario_id: null, estado: "entregado", total: 50000, created_at: "2026-09-19", orden_items: [{ id: 8, orden_id: 124, producto_id: 1, cantidad: 1, precio: 1000 }] }} claim={{ id: 2, order_id: 124, user_id: "test", claim_type: "garantia_beyonix", status: "aprobado", resolution: "cambio_producto", description: "", affected_items: [{ order_item_id: 8, quantity: 1 }], created_at: "2026-09-19", updated_at: "2026-09-19" }} />)
     const text = () => document.body.textContent || ""
     assert.match(text(), /¿Qué hacemos con esta unidad\?/)
     assert.doesNotMatch(text(), /Si recibís el pedido en partes/)
-    assert.match(text(), /Observación interna \(opcional\)/)
+    assert.match(text(), /Observación internaOpcional/)
     const choice = (label: string) => [...document.querySelectorAll("button")].find((button) => button.textContent?.startsWith(label))!
     assert.equal(confirmReception().disabled, true)
     assert.match(text(), /Elegí qué hacer con la unidad/)
@@ -275,8 +283,10 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     await act(async () => choice("Dar de baja").click())
     assert.equal(choice("Dar de baja").getAttribute("aria-pressed"), "true")
     assert.equal(choice("Volver al stock").getAttribute("aria-pressed"), "false")
-    assert.match(text(), /Observación interna \(obligatoria para dar de baja\)/)
+    assert.match(text(), /Observación internaObligatoria al dar de baja/)
+    assert.equal(document.querySelector("textarea")!.getAttribute("aria-required"), "true")
     assert.equal(confirmReception().disabled, true, "la baja exige motivo")
+    assert.match(text(), /Indicá el motivo de la baja\./)
     const note = document.querySelector<HTMLTextAreaElement>("textarea")!
     await act(async () => { textareaSetter.call(note, "Caja golpeada"); note.dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
     assert.equal(confirmReception().disabled, false)
