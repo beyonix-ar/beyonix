@@ -86,6 +86,7 @@ function Harness() {
   const [openRequest, setOpenRequest] = useState(null)
   return (
     <>
+      <div style={{ height: 700 }} aria-hidden="true" />
       <OrderReplacementManager pedido={pedido} onUpdated={async () => {}} openRequest={openRequest} />
       <div style={{ height: 1800 }} aria-hidden="true" />
       <AdminClaimManager
@@ -180,11 +181,24 @@ const CONTRAST_AUDIT = `(() => {
 
 let browser: Browser
 let css: string
+// Hoja como la que servía producción: todo globals.css MENOS el bloque del
+// modal de reemplazo (deploy con CSS desfasado). Con ella el modal tiene que
+// seguir siendo un overlay fijo: sin crecer el documento ni mover el scroll.
+let staleCss: string
 let bundle: string
 
+// `from` distinto por variante: @tailwindcss/postcss cachea por archivo.
+async function compileCss(source: string, from: string) {
+  return (await postcss([tailwindcss({ base: process.cwd() })]).process(source, { from })).css
+}
+
 test.before(async () => {
-  const source = readFileSync("app/globals.css", "utf8")
-  css = (await postcss([tailwindcss({ base: process.cwd() })]).process(source, { from: "app/globals.css" })).css
+  const source = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n")
+  const blockStart = source.lastIndexOf("/* ====", source.indexOf('Modal "Reemplazo del pedido"'))
+  assert.ok(blockStart > 0 && source.indexOf("/* ====", blockStart + 1) === -1, "el bloque del modal está al final de globals.css")
+  css = await compileCss(source, "app/globals.css")
+  staleCss = await compileCss(source.slice(0, blockStart), "app/globals.stale.css")
+  assert.ok(css.includes("admin-replacement-modal__backdrop") && !staleCss.includes("admin-replacement-modal"))
   const result = await build({
     stdin: { contents: ENTRY, resolveDir: process.cwd(), loader: "tsx", sourcefile: "replacement-modal-entry.tsx" },
     bundle: true,
@@ -204,10 +218,10 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(theme: "dark" | "light", width = 1440, height = 1000): Promise<Page> {
+async function open(theme: "dark" | "light", width = 1440, height = 1000, stylesheet = css): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height } })
   // Origen localhost = contexto seguro (crypto.randomUUID, como en producción HTTPS).
-  const html = pageHtml(theme, css, bundle)
+  const html = pageHtml(theme, stylesheet, bundle)
   await page.route("**/*", (route) =>
     route.request().url() === "http://localhost/replacement" ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
   )
@@ -237,63 +251,175 @@ async function fillValidForm(page: Page) {
   await page.waitForTimeout(250)
 }
 
-test("el botón del PASO 2 abre directamente el formulario, sin scroll y en un Portal", async () => {
-  const page = await open("dark")
-  try {
-    // Esperar la carga inicial de la sección (cambia su alto y el navegador
-    // compensa el scroll por scroll anchoring, ajeno al click).
-    await page.getByText("Todavía no hay reemplazos registrados.").waitFor()
-    const button = stepButton(page)
-    assert.equal(await button.isEnabled(), true, "paso 2 habilitado con el original recibido")
-    await button.scrollIntoViewIfNeeded()
-    const before = (await page.evaluate("window.scrollY")) as number
-    assert.ok(before > 1000, `el paso 2 queda lejos del inicio (scrollY ${before})`)
-    await page.evaluate("window.__scrollIntoViewCalls = 0")
-    await button.click()
-    await dialog(page).waitFor()
-    assert.equal(await page.evaluate("window.__scrollIntoViewCalls"), 0, "no se llama scrollIntoView")
-    assert.equal(await page.evaluate("window.scrollY"), before, "la página no se desplaza")
-    assert.equal(await dialog(page).count(), 1, "un solo diálogo")
-    const placement = (await page.evaluate(`(() => {
-      const d = document.querySelector('[role="dialog"]')
-      const r = d.getBoundingClientRect()
-      return {
-        portal: d.parentElement.parentElement === document.body,
-        outsideScope: !d.closest(".admin-order-detail-scope"),
-        inViewport: r.top >= 0 && r.top < window.innerHeight,
-        modal: d.getAttribute("aria-modal"),
-        focusInside: d.contains(document.activeElement),
+// Estado observable del documento para detectar saltos de scroll, crecimiento
+// del documento y nodos que queden al cerrar.
+const SNAPSHOT = `(() => {
+  const d = document.querySelector('[role="dialog"]')
+  const r = d ? d.getBoundingClientRect() : null
+  const backdrop = d ? d.parentElement : null
+  return {
+    scrollY: window.scrollY,
+    scrollHeight: document.documentElement.scrollHeight,
+    bodyChildren: document.body.childElementCount,
+    dialogs: document.querySelectorAll('[role="dialog"]').length,
+    backdrops: document.querySelectorAll(".admin-replacement-modal__backdrop").length,
+    visibleTooltips: [...document.querySelectorAll('[role="tooltip"]')].filter((t) => getComputedStyle(t).visibility !== "hidden" && t.getBoundingClientRect().width > 0).length,
+    htmlOverflow: document.documentElement.style.overflow,
+    bodyOverflow: document.body.style.overflow,
+    dialog: d && {
+      inBody: backdrop.parentElement === document.body,
+      outsideScope: !d.closest(".admin-order-detail-scope, #order-replacements-500, .admin-claim-manage-panel"),
+      backdropFixed: getComputedStyle(backdrop).position === "fixed",
+      top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+      centered: Math.abs(r.left + r.width / 2 - window.innerWidth / 2) <= 1,
+      focusInside: d.contains(document.activeElement),
+      heading: d.querySelector("h2").textContent,
+    },
+  }
+})()`
+
+type Snapshot = {
+  scrollY: number
+  scrollHeight: number
+  bodyChildren: number
+  dialogs: number
+  backdrops: number
+  visibleTooltips: number
+  htmlOverflow: string
+  bodyOverflow: string
+  dialog: null | {
+    inBody: boolean
+    outsideScope: boolean
+    backdropFixed: boolean
+    top: number
+    bottom: number
+    left: number
+    right: number
+    centered: boolean
+    focusInside: boolean
+    heading: string
+  }
+}
+
+const snapshot = async (page: Page) => (await page.evaluate(SNAPSHOT)) as Snapshot
+const sectionButton = (page: Page) => page.locator("#order-replacements-500 button", { hasText: "Registrar reemplazo" })
+
+type Trigger = "sección" | "paso 2"
+const triggers: Record<Trigger, (page: Page) => ReturnType<Page["locator"]>> = { "sección": sectionButton, "paso 2": stepButton }
+const closers = {
+  X: (page: Page) => dialog(page).getByRole("button", { name: "Cerrar", exact: true }).click(),
+  Cancelar: (page: Page) => dialog(page).getByRole("button", { name: "Cancelar" }).click(),
+  Escape: (page: Page) => page.keyboard.press("Escape"),
+}
+
+// Deja el botón en el medio de la pantalla (scrollY > 0, lejos de ambos bordes)
+// después de la carga inicial de la sección, para que cualquier salto se note.
+async function prepare(page: Page, trigger: Trigger) {
+  await page.getByText("Todavía no hay reemplazos registrados.").waitFor()
+  await triggers[trigger](page).evaluate((node) => {
+    const rect = node.getBoundingClientRect()
+    window.scrollTo(0, window.scrollY + rect.top - window.innerHeight / 2)
+  })
+  await page.evaluate("window.__scrollIntoViewCalls = 0")
+  const before = await snapshot(page)
+  assert.ok(before.scrollY > 300, `scroll inicial lejos del inicio (${before.scrollY})`)
+  return before
+}
+
+const stylesheets = { "CSS completo": () => css, "CSS desfasado (producción)": () => staleCss }
+
+for (const [cssName, stylesheet] of Object.entries(stylesheets)) {
+  for (const [label, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844]] as const) {
+    for (const trigger of ["sección", "paso 2"] as const) {
+      test(`${cssName} · ${label}: "Registrar reemplazo" (${trigger}) abre el modal centrado, en body, sin scroll ni espacio extra`, async () => {
+        const page = await open("dark", width, height, stylesheet())
+        try {
+          const before = await prepare(page, trigger)
+          await triggers[trigger](page).click()
+          await dialog(page).waitFor()
+          await page.waitForTimeout(350)
+          const opened = await snapshot(page)
+          assert.equal(await page.evaluate("window.__scrollIntoViewCalls"), 0, "sin scrollIntoView")
+          assert.equal(opened.scrollY, before.scrollY, "la página no se desplaza")
+          assert.ok(opened.scrollHeight <= before.scrollHeight + 1, `el documento no crece (${before.scrollHeight} -> ${opened.scrollHeight})`)
+          assert.equal(opened.bodyChildren, before.bodyChildren + 1, "sólo se agrega el backdrop del Portal")
+          assert.equal(opened.dialogs, 1)
+          assert.equal(opened.visibleTooltips, 0, "ningún tooltip visible sin interacción")
+          assert.equal(opened.htmlOverflow, "hidden", "scroll del fondo bloqueado")
+          assert.ok(opened.dialog, "diálogo presente")
+          assert.equal(opened.dialog.heading, "Reemplazo del pedido #500")
+          assert.equal(opened.dialog.inBody, true, "body > backdrop > dialog")
+          assert.equal(opened.dialog.outsideScope, true, "fuera del detalle, la sección y Atención al cliente")
+          assert.equal(opened.dialog.backdropFixed, true)
+          assert.equal(opened.dialog.focusInside, true)
+          assert.ok(opened.dialog.top >= 0 && opened.dialog.top < height, `visible en pantalla (top ${opened.dialog.top})`)
+          assert.ok(opened.dialog.left >= 0 && opened.dialog.right <= width, "dentro del ancho")
+          assert.equal(opened.dialog.centered, true, "centrado horizontalmente")
+          // La rueda sobre el fondo no desplaza la página.
+          await page.mouse.move(5, 5)
+          await page.mouse.wheel(0, 600)
+          await page.waitForTimeout(150)
+          assert.equal((await snapshot(page)).scrollY, before.scrollY, "fondo quieto con la rueda")
+          const expectedItem = trigger === "paso 2" ? "71" : ""
+          assert.equal(await dialog(page).locator("select").first().inputValue(), expectedItem, "preselección del ítem reclamado")
+        } finally {
+          await page.close()
+        }
+      })
+    }
+  }
+
+  for (const [closerName, close] of Object.entries(closers)) {
+    test(`${cssName}: cerrar con ${closerName} restaura la posición y no deja nodos`, async () => {
+      const page = await open("light", 1440, 900, stylesheet())
+      try {
+        const before = await prepare(page, "paso 2")
+        await stepButton(page).click()
+        await dialog(page).waitFor()
+        await dialog(page).locator(".admin-claim-help-trigger").first().hover()
+        await close(page)
+        await dialog(page).waitFor({ state: "detached" })
+        const after = await snapshot(page)
+        assert.equal(after.scrollY, before.scrollY, "misma posición")
+        assert.equal(after.scrollHeight, before.scrollHeight, "mismo alto de documento")
+        assert.equal(after.bodyChildren, before.bodyChildren, "sin nodos residuales en body")
+        assert.equal(after.dialogs + after.backdrops, 0)
+        assert.equal(after.visibleTooltips, 0, "sin tooltips visibles")
+        assert.equal(after.htmlOverflow, before.htmlOverflow, "overflow de html restaurado")
+        assert.equal(after.bodyOverflow, before.bodyOverflow, "overflow de body restaurado")
+      } finally {
+        await page.close()
       }
-    })()`)) as Record<string, unknown>
-    assert.deepEqual(placement, { portal: true, outsideScope: true, inViewport: true, modal: "true", focusInside: true })
-    await assert.doesNotReject(dialog(page).getByRole("heading", { name: "Reemplazo del pedido #500" }).waitFor())
-    // Reusa el formulario existente: el ítem reclamado llega preseleccionado.
-    assert.equal(await dialog(page).locator("select").first().inputValue(), "71")
-
-    // Cerrar y reabrir desde el paso: cada click vuelve a abrir (nonce nuevo).
-    await dialog(page).getByRole("button", { name: "Cancelar" }).click()
-    assert.equal(await dialog(page).count(), 0)
-    await button.click()
-    await dialog(page).waitFor()
-    assert.equal(await page.evaluate("window.scrollY"), before)
-    await page.keyboard.press("Escape")
-    assert.equal(await dialog(page).count(), 0, "Escape cierra")
-  } finally {
-    await page.close()
+    })
   }
-})
 
-test("el botón propio de la sección abre el mismo formulario", async () => {
-  const page = await open("light")
-  try {
-    await page.locator("#order-replacements-500 button", { hasText: "Registrar reemplazo" }).click()
-    await dialog(page).waitFor()
-    assert.equal(await dialog(page).count(), 1)
-    assert.equal(await dialog(page).locator("select").first().inputValue(), "", "sin preselección desde la sección")
-  } finally {
-    await page.close()
-  }
-})
+  test(`${cssName}: abrir y cerrar 3 veces con ambos botones no duplica modales ni mueve el scroll`, async () => {
+    const page = await open("dark", 1440, 900, stylesheet())
+    try {
+      const before = await prepare(page, "sección")
+      for (let round = 0; round < 3; round++) {
+        for (const trigger of ["sección", "paso 2"] as const) {
+          // El botón del paso 2 queda fuera de pantalla: se hace click sin
+          // desplazar la página (dispatch), como lo haría el usuario tras llegar.
+          await triggers[trigger](page).dispatchEvent("click")
+          await dialog(page).waitFor()
+          const opened = await snapshot(page)
+          assert.equal(opened.dialogs, 1, `ronda ${round + 1} (${trigger}): un solo modal`)
+          assert.equal(opened.backdrops, 1)
+          assert.equal(opened.scrollY, before.scrollY)
+          await page.keyboard.press("Escape")
+          await dialog(page).waitFor({ state: "detached" })
+          const closed = await snapshot(page)
+          assert.equal(closed.scrollY, before.scrollY, `ronda ${round + 1} (${trigger}): scroll intacto`)
+          assert.equal(closed.bodyChildren, before.bodyChildren, "sin nodos acumulados")
+          assert.equal(closed.scrollHeight, before.scrollHeight)
+        }
+      }
+    } finally {
+      await page.close()
+    }
+  })
+}
 
 test("selects, cantidad, stock y confirmación conservan la lógica existente", async () => {
   const page = await open("dark")
@@ -482,14 +608,21 @@ test("responsive: sin overflow horizontal y con acciones accesibles en mobile, t
   }
 })
 
-test("contrato: admin-pedidos abre el formulario por openRequest y el paso 2 ya no hace scroll", () => {
+test("contrato: ambos botones usan openReplacementModal y ningún camino desplaza la página", () => {
   const pedidos = readFileSync("app/admin/sections/pedidos/admin-pedidos.tsx", "utf8")
   assert.match(pedidos, /openRequest=\{replacementOpenRequest\?\.orderId === pedido\.id \? replacementOpenRequest : null\}/)
-  assert.match(pedidos, /capabilities\.canManageReplacements\s*\?\s*\(orderItemId\) =>\s*setReplacementOpenRequest/)
+  assert.match(pedidos, /onRegisterReplacement=\{capabilities\.canManageReplacements \? openReplacementModal : undefined\}/)
   const claims = readFileSync("components/claims/admin-claim-manager.tsx", "utf8")
-  const handler = claims.slice(claims.indexOf("onRegisterReplacement={() => {"), claims.indexOf("onConfirmDelivery=", claims.indexOf("onRegisterReplacement={() => {")))
-  assert.ok(handler.indexOf("return") < handler.indexOf("scrollIntoView"), "scroll sólo como respaldo sin gestor")
+  const handlerStart = claims.indexOf("onRegisterReplacement={() => {")
+  const handler = claims.slice(handlerStart, claims.indexOf("onConfirmDelivery=", handlerStart))
+  assert.doesNotMatch(handler, /scrollIntoView|scrollTo|location|href/, "sin scroll ni navegación")
+  assert.match(handler, /setNotice\(/, "sin gestor: error de UI controlado")
   const replacements = readFileSync("app/admin/sections/pedidos/order-replacements.tsx", "utf8")
+  assert.match(replacements, /onClick=\{\(\) => openReplacementModal\(null\)\}>Registrar reemplazo/)
+  assert.match(replacements, /openReplacementModal\(openRequest\.orderItemId\)/)
+  assert.doesNotMatch(replacements, /scrollIntoView|scrollTo\(/)
   assert.match(replacements, /createPortal\(/)
   assert.doesNotMatch(replacements, /<AdminModal/)
+  const focus = readFileSync("lib/admin/modal-focus.ts", "utf8")
+  assert.equal(focus.match(/\.focus\(/g)?.length, focus.match(/\.focus\(\{ preventScroll: true \}\)/g)?.length, "todo focus del modal sin scroll")
 })

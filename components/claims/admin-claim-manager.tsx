@@ -2242,13 +2242,14 @@ export function AdminClaimManager({
                     saving={saving}
                     onGoToReception={() => document.getElementById(`claim-reception-${claim.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
                     onRegisterReplacement={() => {
-                      // Abre el formulario real; el scroll a la sección queda sólo
-                      // como respaldo si no hay gestor de reemplazos (permisos).
-                      if (onRegisterReplacement) {
-                        onRegisterReplacement(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)
+                      // Abre el mismo modal que "Registrar reemplazo" de la sección
+                      // (openReplacementModal en admin-pedidos). Sin gestor no hay
+                      // formulario: se informa en vez de desplazar la página.
+                      if (!onRegisterReplacement) {
+                        setNotice("El formulario de reemplazo no está disponible para tu usuario. Recargá la página o pedí acceso a un administrador.")
                         return
                       }
-                      document.getElementById(`order-replacements-${pedido.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+                      onRegisterReplacement(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)
                     }}
                     onConfirmDelivery={() => setPendingConfirmation({
                       title: "Confirmar entrega del reemplazo",

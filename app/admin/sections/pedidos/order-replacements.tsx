@@ -1,11 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { ChevronDown, Minus, PackageSearch, Plus, Repeat2, X } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { activateModalFocus } from "@/lib/admin/modal-focus"
+import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 import { AdminRequestError } from "@/lib/admin/request-error"
 import { supabase } from "@/lib/supabase/client"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
@@ -95,18 +96,19 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     const timer = setTimeout(() => void load(), 300)
     return () => { clearTimeout(timer); generation.value++; onReplacementsChangeRef.current?.(null, "loading") }
   }, [load])
-  // Apertura desde el paso 2 del reclamo: mismo efecto que el botón
-  // "Registrar reemplazo" de la sección (abrir, sin confirmación pendiente);
-  // si llega el ítem reclamado y todavía no se eligió uno, se preselecciona.
+  // Única apertura del formulario: la usan el botón "Registrar reemplazo" de la
+  // sección y el paso 2 del reclamo (vía openRequest). Si llega el ítem
+  // reclamado y todavía no se eligió uno, se preselecciona.
+  const openReplacementModal = useCallback((orderItemId: number | null) => {
+    setOpen(true); setConfirm(false)
+    if (orderItemId !== null && !attempt.current) setItemId((current) => current || String(orderItemId))
+  }, [])
   const handledOpenNonce = useRef(openRequest?.nonce ?? 0)
   useEffect(() => {
     if (!openRequest || openRequest.nonce === handledOpenNonce.current) return
     handledOpenNonce.current = openRequest.nonce
-    setOpen(true); setConfirm(false)
-    if (openRequest.orderItemId !== null && !attempt.current) {
-      setItemId((current) => current || String(openRequest.orderItemId))
-    }
-  }, [openRequest])
+    openReplacementModal(openRequest.orderItemId)
+  }, [openRequest, openReplacementModal])
   const item = pedido.orden_items?.find((candidate) => candidate.id === Number(itemId))
   const matchingClaims = (pedido.order_claims ?? []).filter((claim) =>
     claim.resolution === "cambio_producto" && !["cerrado", "rechazado"].includes(claim.status) &&
@@ -166,7 +168,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
   }
 
   return <section id={`order-replacements-${pedido.id}`} className="my-3 rounded-xl border border-white/15 p-4">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">Reemplazos del pedido</h3><AdminSecondaryButton onClick={() => { setOpen(true); setConfirm(false) }}>Registrar reemplazo</AdminSecondaryButton></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">Reemplazos del pedido</h3><AdminSecondaryButton onClick={() => openReplacementModal(null)}>Registrar reemplazo</AdminSecondaryButton></div>
     {loading && <p role="status">Cargando reemplazos…</p>}
     {error && <p role="alert" className="my-2 text-red-200">{error} <button type="button" onClick={() => void load()} className="underline">Recargar datos</button></p>}
     {!loading && !error && data?.replacements.length === 0 && <p className="mt-2 text-sm">Todavía no hay reemplazos registrados.</p>}
@@ -331,8 +333,30 @@ function SelectControl({ value, onChange, children }: { value: string; onChange:
  * Presentación del formulario de reemplazo: se monta con Portal en
  * document.body (fuera del detalle de pedido y sus reglas contextuales), con
  * estilos propios admin-replacement-modal__* para Light/Dark. Foco atrapado y
- * Escape con el mismo helper que AdminModal (activateModalFocus).
+ * Escape con el mismo helper que AdminModal (activateModalFocus); scroll del
+ * documento bloqueado mientras está abierto (lockDocumentScroll).
+ *
+ * El posicionamiento (overlay fixed, centrado) y la superficie base van
+ * inline: si la hoja de estilos servida no trae el bloque del modal (deploy
+ * con CSS desfasado), el Portal no puede caer al final de <body> como bloque
+ * en flujo, agrandar el documento ni arrastrar el scroll con el foco.
  */
+const backdropLayout: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1200,
+  display: "flex",
+  overflowX: "hidden",
+  overflowY: "auto",
+  overscrollBehavior: "contain",
+}
+const dialogLayout: CSSProperties = {
+  position: "relative",
+  width: "min(100%, 38rem)",
+  margin: "auto",
+  background: "var(--replacement-modal-bg, #0b1724)",
+  color: "var(--replacement-modal-text, #cbd5e1)",
+}
 function ReplacementDialog({
   open,
   title,
@@ -351,13 +375,17 @@ function ReplacementDialog({
   useEffect(() => { onCloseRef.current = onClose })
   useEffect(() => {
     if (!open || !dialogRef.current) return
-    return activateModalFocus(dialogRef.current, () => onCloseRef.current())
+    // Primero el bloqueo (guarda la posición) y al cerrar se libera último,
+    // después de devolver el foco al botón que abrió el modal.
+    const unlockScroll = lockDocumentScroll()
+    const releaseFocus = activateModalFocus(dialogRef.current, () => onCloseRef.current())
+    return () => { releaseFocus(); unlockScroll() }
   }, [open])
 
   if (!open || typeof document === "undefined") return null
 
   return createPortal(
-    <div className="admin-replacement-modal__backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="admin-replacement-modal__backdrop" style={backdropLayout} role="presentation" onMouseDown={onClose}>
       <section
         ref={dialogRef}
         role="dialog"
@@ -365,6 +393,7 @@ function ReplacementDialog({
         aria-labelledby="order-replacement-title"
         tabIndex={-1}
         className="admin-replacement-modal"
+        style={dialogLayout}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="admin-replacement-modal__header">

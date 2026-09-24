@@ -13,7 +13,7 @@ export function activateModalFocus(dialog: HTMLElement, close: () => void) {
   }
   const controls = () => [...dialog.querySelectorAll<HTMLElement>(selector)]
     .filter((element) => !element.closest('[hidden],[inert],[aria-hidden="true"]') && !element.matches(":disabled") && element.tabIndex >= 0 && isVisible(element))
-  const first = () => (dialog.querySelector<HTMLElement>('[data-autofocus]') ?? controls()[0] ?? dialog).focus()
+  const first = () => (dialog.querySelector<HTMLElement>('[data-autofocus]') ?? controls()[0] ?? dialog).focus({ preventScroll: true })
   first()
   const keydown = (event: KeyboardEvent) => {
     if (stack.at(-1) !== dialog) return
@@ -26,7 +26,7 @@ export function activateModalFocus(dialog: HTMLElement, close: () => void) {
       const index = items.indexOf(document.activeElement as HTMLElement)
       if (!items.length || index < 0 || (event.shiftKey && index === 0) || (!event.shiftKey && index === items.length - 1)) {
         event.preventDefault()
-        ;(event.shiftKey ? items.at(-1) ?? dialog : items[0] ?? dialog).focus()
+        ;(event.shiftKey ? items.at(-1) ?? dialog : items[0] ?? dialog).focus({ preventScroll: true })
       }
     }
   }
@@ -39,6 +39,6 @@ export function activateModalFocus(dialog: HTMLElement, close: () => void) {
     document.removeEventListener("keydown", keydown)
     document.removeEventListener("focusin", focusin)
     stack.splice(stack.indexOf(dialog), 1)
-    if (previous?.isConnected) previous.focus()
+    if (previous?.isConnected) previous.focus({ preventScroll: true })
   }
 }

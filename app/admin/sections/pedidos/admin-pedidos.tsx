@@ -5146,6 +5146,10 @@ function PedidoDetailModal({
     nonce: number
     orderItemId: number | null
   } | null>(null)
+  // Único punto de apertura desde "Gestionar reclamo": termina en el mismo
+  // openReplacementModal de OrderReplacementManager que usa el botón de la sección.
+  const openReplacementModal = (orderItemId: number | null) =>
+    setReplacementOpenRequest((current) => ({ orderId: pedido.id, nonce: (current?.nonce ?? 0) + 1, orderItemId }))
   const showPaymentProofIndicator =
     isTransferOrder(pedido) &&
     Boolean(pedido.payment_proof_url) &&
@@ -6002,16 +6006,7 @@ function PedidoDetailModal({
             onOpenBilling={() => showDetailView("facturacion")}
             onClaimChange={(claim) => onClaimChange(pedido.id, claim)}
             onInventoryUpdated={onWarrantyUpdated}
-            onRegisterReplacement={
-              capabilities.canManageReplacements
-                ? (orderItemId) =>
-                    setReplacementOpenRequest((current) => ({
-                      orderId: pedido.id,
-                      nonce: (current?.nonce ?? 0) + 1,
-                      orderItemId,
-                    }))
-                : undefined
-            }
+            onRegisterReplacement={capabilities.canManageReplacements ? openReplacementModal : undefined}
           />
           )}
 
