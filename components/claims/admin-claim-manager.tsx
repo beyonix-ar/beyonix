@@ -917,7 +917,7 @@ export function ReturnInventoryPanel({
     <>
       <section
         id={`claim-reception-${claim.id}`}
-        className="admin-claim-card admin-claim-reception-panel mx-3 mb-3 rounded-xl border p-4 sm:mx-4 sm:mb-4 sm:p-5"
+        className="admin-claim-card admin-claim-reception-panel mx-3 mb-3 p-4 sm:mx-4 sm:mb-4 sm:p-5"
       >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
@@ -2878,10 +2878,12 @@ function ClaimConversation({
           const isCustomer = message.author_role === "cliente"
           return (
             <div key={message.id} className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
-              <div className={`admin-claim-chat-bubble ${isCustomer ? "admin-claim-chat-bubble-customer" : "admin-claim-chat-bubble-beyonix"} rounded-lg border px-3 py-2`}>
-                <p className="text-10px font-black text-blue-100">{isCustomer ? "Cliente" : "BEYONIX"}</p>
-                <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-white">{getClaimMessageText(message.message)}</p>
-                <p className="mt-1 text-10px text-white/45">{formatDate(message.created_at)}</p>
+              {/* Colores por remitente en .admin-claim-chat-* (globals.css): sin
+                  rounded+border ni text-white/N, que el tema Light reescribe. */}
+              <div className={`admin-claim-chat-bubble ${isCustomer ? "admin-claim-chat-bubble-customer" : "admin-claim-chat-bubble-beyonix"}`}>
+                <p className="admin-claim-chat-author">{isCustomer ? "Cliente" : "BEYONIX"}</p>
+                <p className="admin-claim-chat-text mt-1 whitespace-pre-wrap">{getClaimMessageText(message.message)}</p>
+                <p className="admin-claim-chat-time mt-1">{formatDate(message.created_at)}</p>
               </div>
             </div>
           )

@@ -33,7 +33,7 @@ function workspaceMarkup({ messages, asideHeight }: { messages: number; asideHei
   const bubbles = Array.from(
     { length: messages },
     (_, index) =>
-      `<div class="admin-claim-chat-bubble rounded-lg border px-3 py-2"><p>Cliente</p><p>Mensaje ${index + 1}: el producto llegó con la caja golpeada.</p></div>`,
+      `<div class="admin-claim-chat-bubble admin-claim-chat-bubble-customer"><p class="admin-claim-chat-author">Cliente</p><p class="admin-claim-chat-text mt-1 whitespace-pre-wrap">Mensaje ${index + 1}: el producto llegó con la caja golpeada.</p></div>`,
   ).join("")
   return `
 <main class="beyonix-admin-main">
@@ -55,8 +55,9 @@ function workspaceMarkup({ messages, asideHeight }: { messages: number; asideHei
 
 const receptionMarkup = `
 <main class="beyonix-admin-main">
-  <section class="admin-claim-card admin-claim-reception-panel rounded-xl border p-4" data-outer>
-    <h4 class="admin-claim-reception-heading">Recepción del producto original</h4>
+  <section class="admin-claim-card admin-claim-reception-panel mx-3 mb-3 p-4" data-outer>
+    <h4 class="admin-claim-reception-heading" data-heading>Recepción del producto original</h4>
+    <p class="admin-claim-reception-subtitle" data-subtitle>Registrá cómo volvió el producto que entregó el cliente.</p>
     <article class="admin-claim-reception-item" data-inner>
       <dl class="admin-claim-reception-counts"><div class="admin-claim-reception-count" data-count><dt>Reclamadas</dt><dd>1</dd></div></dl>
       <div class="admin-claim-reception-block">
@@ -182,6 +183,63 @@ test("chat: usa la altura disponible, scroll interno y composer abajo (1280-1920
   }
 })
 
+const chatMarkup = `
+<main class="beyonix-admin-main">
+  <div class="admin-claim-chat-thread p-2.5">
+    <div class="admin-claim-chat-bubble admin-claim-chat-bubble-customer" data-customer>
+      <p class="admin-claim-chat-author">Cliente</p>
+      <p class="admin-claim-chat-text">El auricular llegó con la caja golpeada.</p>
+      <p class="admin-claim-chat-time">20/09/26 10:00</p>
+    </div>
+    <div class="admin-claim-chat-bubble admin-claim-chat-bubble-beyonix" data-beyonix>
+      <p class="admin-claim-chat-author">BEYONIX</p>
+      <p class="admin-claim-chat-text">Ya revisamos tu caso, te enviamos el reemplazo.</p>
+      <p class="admin-claim-chat-time">20/09/26 10:05</p>
+    </div>
+  </div>
+</main>`
+
+test("chat: cliente en verde y BEYONIX en azul de marca, legibles en Light y Dark", async () => {
+  for (const className of [
+    'className={`admin-claim-chat-bubble ${isCustomer ? "admin-claim-chat-bubble-customer" : "admin-claim-chat-bubble-beyonix"}`}',
+    'className="admin-claim-chat-author"',
+    'className="admin-claim-chat-text mt-1 whitespace-pre-wrap"',
+    'className="admin-claim-chat-time mt-1"',
+  ]) {
+    assert.ok(claimsSource.includes(className), className)
+  }
+  const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chrome", headless: true })
+  try {
+    const page = await browser.newPage()
+    await page.route("**/*", (route) => route.abort())
+    await page.setViewportSize({ width: 1366, height: 900 })
+    for (const theme of ["light", "dark"] as const) {
+      await load(page, chatMarkup, theme)
+      for (const [sender, expected] of [
+        ["customer", { author: [24, 74, 24], stops: [[104, 209, 104], [96, 204, 96]] }],
+        ["beyonix", { author: [17, 42, 67], stops: [[221, 233, 245], [211, 226, 241]] }],
+      ] as const) {
+        const bubble = page.locator(`[data-${sender}]`)
+        const image = await bubble.evaluate((element) => getComputedStyle(element).backgroundImage)
+        const stops = (image.match(/rgba?\([^)]+\)/g) ?? []).map((value) => parseColor(value)!)
+        assert.deepEqual(stops.map(([r, g, b]) => [r, g, b]), expected.stops, `${theme}/${sender}: fondo`)
+        const text = (selector: string) =>
+          bubble.locator(selector).evaluate((element) => getComputedStyle(element).color)
+        const author = parseColor(await text(".admin-claim-chat-author"))!
+        assert.deepEqual(author.slice(0, 3), [...expected.author], `${theme}/${sender}: color del nombre`)
+        for (const selector of [".admin-claim-chat-author", ".admin-claim-chat-text", ".admin-claim-chat-time"]) {
+          const color = parseColor(await text(selector))!
+          for (const stop of stops) {
+            assert.ok(contrast(color, stop) >= 4.5, `${theme}/${sender} ${selector}: ${contrast(color, stop).toFixed(2)}`)
+          }
+        }
+      }
+    }
+  } finally {
+    await browser.close()
+  }
+})
+
 test("recepción: la card interior se distingue del contenedor por tono en Light y Dark", async () => {
   const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chrome", headless: true })
   try {
@@ -213,9 +271,16 @@ test("recepción: la card interior se distingue del contenedor por tono en Light
       assert.ok(outerColors.length > 0, `${theme}: contenedor con fondo`)
       for (const outer of outerColors) {
         const ratio = contrast(inner, outer)
-        assert.ok(ratio >= 1.04 && ratio <= 1.4, `${theme}: diferencia sutil pero visible (${ratio.toFixed(3)})`)
+        const minimum = theme === "light" ? 1.3 : 1.05
+        assert.ok(ratio >= minimum && ratio <= 2, `${theme}: card interior visible sobre el contenedor (${ratio.toFixed(3)})`)
+      }
+      const outer = parseColor(colors.outer.color)!
+      for (const selector of ["[data-heading]", "[data-subtitle]"]) {
+        const color = parseColor(await page.locator(selector).evaluate((element) => getComputedStyle(element).color))!
+        assert.ok(contrast(color, outer) >= 4.5, `${theme}: ${selector} legible sobre el contenedor`)
       }
       if (theme === "light") {
+        assert.deepEqual(outer, [204, 204, 204, 1], "Light: contenedor gris #CCCCCC")
         assert.deepEqual(parseColor(colors.inner.color), [237, 242, 247, 1], "Light: #EDF2F7")
         for (const [name, value] of Object.entries({ tile: colors.tile.color, note: colors.note.color, count: colors.count.color })) {
           assert.deepEqual(parseColor(value), [255, 255, 255, 1], `Light: ${name} elevado en blanco`)
@@ -223,6 +288,7 @@ test("recepción: la card interior se distingue del contenedor por tono en Light
         const missing = parseColor(colors.missing)!
         assert.ok(contrast(missing, inner) >= 4.5, "Light: texto secundario legible sobre la card")
       } else {
+        assert.deepEqual(outer, [27, 38, 50, 1], "Dark: contenedor gris pizarra #1B2632")
         assert.deepEqual(parseColor(colors.inner.color), [15, 28, 43, 1], "Dark: #0F1C2B")
       }
     }

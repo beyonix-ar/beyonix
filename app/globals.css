@@ -2441,23 +2441,56 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
   color: #ffffff !important;
 }
 
+/* Burbujas del chat de reclamos: remitente reconocible por nombre Y fondo.
+   Cliente: verde claro (#60CC60) con nombre verde oscuro (#184A18).
+   BEYONIX: derivado claro del azul de marca con nombre #112A43.
+   Mismos colores en ambos temas (burbujas claras sobre el hilo); las
+   reglas Light equivalentes están en la sección de tema claro. */
+.admin-claim-chat-bubble-customer,
+.admin-claim-chat-bubble-beyonix {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid transparent;
+  border-radius: 1rem;
+}
+
 .admin-claim-chat-bubble-customer {
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  background:
-    linear-gradient(135deg, rgba(26, 26, 26, 0.98), rgba(17, 17, 17, 0.98)) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.045),
-    0 10px 22px rgba(0, 0, 0, 0.22) !important;
+  border-bottom-left-radius: 0.375rem;
+  border-color: #4fb74f !important;
+  background: linear-gradient(180deg, #68d168, #60cc60) !important;
+  box-shadow: 0 6px 16px -10px rgba(24, 74, 24, 0.6) !important;
 }
 
 .admin-claim-chat-bubble-beyonix {
-  border-color: rgba(73, 139, 199, 0.45) !important;
-  background:
-    linear-gradient(135deg, rgba(19, 58, 92, 0.98), rgba(17, 42, 67, 0.98)) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 10px 22px rgba(0, 0, 0, 0.24) !important;
+  border-bottom-right-radius: 0.375rem;
+  border-color: #b3cbe3 !important;
+  background: linear-gradient(180deg, #dde9f5, #d3e2f1) !important;
+  box-shadow: 0 6px 16px -10px rgba(17, 42, 67, 0.55) !important;
 }
+
+.admin-claim-chat-author {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.admin-claim-chat-text {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.admin-claim-chat-time {
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.admin-claim-chat-bubble-customer .admin-claim-chat-author { color: #184a18 !important; }
+.admin-claim-chat-bubble-customer .admin-claim-chat-text { color: #0d2a0d !important; }
+.admin-claim-chat-bubble-customer .admin-claim-chat-time { color: #184a18 !important; }
+
+.admin-claim-chat-bubble-beyonix .admin-claim-chat-author { color: #112a43 !important; }
+.admin-claim-chat-bubble-beyonix .admin-claim-chat-text { color: #0f2236 !important; }
+.admin-claim-chat-bubble-beyonix .admin-claim-chat-time { color: #33506e !important; }
 
 .admin-claim-evidence-action {
   width: 1.65rem !important;
@@ -10921,12 +10954,12 @@ html[data-admin-theme="light"] .admin-claim-help-resolved-badge span {
   color: #059669 !important;
 }
 html[data-admin-theme="light"] .admin-claim-chat-bubble-customer {
-  background: #f1f4f8 !important;
-  border-color: var(--admin-border) !important;
+  background: linear-gradient(180deg, #68d168, #60cc60) !important;
+  border-color: #4fb74f !important;
 }
 html[data-admin-theme="light"] .admin-claim-chat-bubble-beyonix {
-  background: #eaf1fa !important;
-  border-color: rgba(30, 58, 95, 0.3) !important;
+  background: linear-gradient(180deg, #dde9f5, #d3e2f1) !important;
+  border-color: #b3cbe3 !important;
 }
 
 /* ---- 12. Fondos oscuros "genéricos" repetidos como hex arbitrario en JSX
@@ -13689,6 +13722,28 @@ html[data-admin-theme="light"] .admin-claim-reception-panel .admin-claim-recepti
   --claim-flow-muted: #526175;
   --claim-flow-line: #d6dfe9;
   --claim-flow-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* Contenedor principal de "Recepción del producto original": fondo gris
+   propio para identificar de un vistazo el área de trabajo del reclamo
+   (Light #CCCCCC; Dark, un gris pizarra más claro que el entorno). Sin
+   rounded+border en el JSX: el catch-all de superficies Light lo pintaba
+   de blanco. */
+.admin-claim-card.admin-claim-reception-panel {
+  border: 1px solid rgba(148, 163, 184, 0.3) !important;
+  border-radius: 1rem;
+  background: #1b2632 !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 12px 28px -18px rgba(0, 0, 0, 0.7);
+}
+
+html[data-admin-theme="light"] .admin-claim-card.admin-claim-reception-panel {
+  border-color: #b3b9c1 !important;
+  background: #cccccc !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 10px 24px -18px rgba(15, 23, 42, 0.45);
 }
 
 .admin-claim-reception-product {
