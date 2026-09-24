@@ -125,6 +125,7 @@ const TEST_FILES = [
   "lib/admin/structural-sharing.test.ts",
   "lib/admin/order-detail-refresh-contract.test.ts",
   "lib/orders/customer-claim-unread.test.ts",
+  "lib/orders/claim-resolution.test.ts",
   "lib/orders/checkout-inventory.test.ts",
   "lib/orders/inventory-confirmation-guard.test.ts",
   "lib/orders/checkout-order-schema-contract.test.ts",

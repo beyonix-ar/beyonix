@@ -82,6 +82,7 @@ import {
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
 import { isClaimEligibleForCreditNote } from "@/lib/orders/credit-note-claim-policy"
+import { getClaimResolutionHistoryTitle, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import {
   getAdminNewOrderEventAt,
   isAdminOrderVisible,
@@ -1864,30 +1865,35 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       })
     }
 
+    // Resolución persistida al cerrar (históricos sin resumen: título base).
+    const claimResolution = claimIsHelpMessage ? null : getClaimResolutionView(claim)
+
     if (claim.status === "rechazado") {
+      const baseTitle = claimIsCancellation
+        ? "Cancelación rechazada"
+        : claimIsHelpMessage
+          ? "Consulta cerrada"
+          : "Reclamo rechazado"
       addEvent({
         key: `claim-rejected-${claim.id}`,
-        title: claimIsCancellation
-          ? "Cancelación rechazada"
-          : claimIsHelpMessage
-            ? "Consulta cerrada"
-            : "Reclamo rechazado",
-        at: claim.updated_at,
-        description: "El caso fue rechazado administrativamente.",
+        title: claimIsHelpMessage ? baseTitle : getClaimResolutionHistoryTitle(baseTitle, claim),
+        at: claim.closed_at || claim.updated_at,
+        description: claimResolution?.detail ?? "El caso fue rechazado administrativamente.",
         type: "danger",
       })
     }
 
     if (claim.status === "cerrado") {
+      const baseTitle = claimIsCancellation
+        ? "Cancelación cerrada"
+        : claimIsHelpMessage
+          ? "Consulta resuelta"
+          : "Reclamo finalizado"
       addEvent({
         key: `claim-closed-${claim.id}`,
-        title: claimIsCancellation
-          ? "Cancelación cerrada"
-          : claimIsHelpMessage
-            ? "Consulta resuelta"
-            : "Reclamo finalizado",
+        title: claimIsHelpMessage ? baseTitle : getClaimResolutionHistoryTitle(baseTitle, claim),
         at: claim.closed_at || claim.updated_at,
-        description: "El reclamo quedó finalizado.",
+        description: claimResolution?.detail ?? "El reclamo quedó finalizado.",
         type: "success",
       })
     }

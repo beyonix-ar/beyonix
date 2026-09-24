@@ -64,6 +64,7 @@ import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { HelpTip } from "@/components/claims/help-tip"
+import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -1910,6 +1911,8 @@ export function AdminClaimManager({
   const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
   const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
   const closed = ["cerrado", "rechazado"].includes(claim.status)
+  // Misma resolución persistida que ve el cliente (trazabilidad).
+  const closedResolution = getClaimResolutionView(claim)
   const conversationLocked = closed
   const helpMessage = claim.failure_type === "consulta_pedido"
   const summaryOrderItems = pedido.orden_items ?? []
@@ -2349,8 +2352,38 @@ export function AdminClaimManager({
                   />
                 )}
                 {closed && (
-                  <div className="admin-claim-closed-note px-3 py-2">
-                    <p className="admin-claim-closed-title text-xs font-black">Reclamo finalizado</p>
+                  <div className="admin-claim-closed-note px-3 py-2" data-testid="admin-claim-resolution">
+                    <p className="admin-claim-closed-title text-xs font-black">
+                      {claim.status === "rechazado" ? "Reclamo rechazado" : "Reclamo finalizado"}
+                    </p>
+                    {closedResolution?.structured && (
+                      <dl className="mt-1.5 grid gap-1 text-[11px] leading-4">
+                        <div>
+                          <dt className="admin-claim-closed-text font-bold">Resolución</dt>
+                          <dd className="admin-claim-closed-title font-black">{closedResolution.label}</dd>
+                        </div>
+                        {closedResolution.detail && (
+                          <div>
+                            <dt className="admin-claim-closed-text font-bold">Detalle</dt>
+                            <dd className="admin-claim-closed-text whitespace-pre-wrap font-semibold">{closedResolution.detail}</dd>
+                          </div>
+                        )}
+                        {closedResolution.amount != null && closedResolution.amountLabel && (
+                          <div>
+                            <dt className="admin-claim-closed-text font-bold">{closedResolution.amountLabel}</dt>
+                            <dd className="admin-claim-closed-title font-black">{formatClaimResolutionAmount(closedResolution.amount)}</dd>
+                          </div>
+                        )}
+                        {claim.resolution === "cambio_producto" && replacedUnits !== null && replacedUnits > 0 && (
+                          <div>
+                            <dt className="admin-claim-closed-text font-bold">Reemplazo</dt>
+                            <dd className="admin-claim-closed-text font-semibold">
+                              {replacedUnits} {replacedUnits === 1 ? "unidad registrada" : "unidades registradas"} con salida de stock.
+                            </dd>
+                          </div>
+                        )}
+                      </dl>
+                    )}
                     <p className="admin-claim-closed-text mt-1 text-[11px] font-semibold leading-4">
                       No hay acciones pendientes. Si el cliente necesita contactarse de nuevo, debe escribir a beyonix.ar@gmail.com.
                     </p>

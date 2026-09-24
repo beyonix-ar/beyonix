@@ -790,6 +790,8 @@ export interface SupabaseOrderClaim {
   replacement_sent_at?: string | null
   coupon_code?: string | null
   coupon_created_at?: string | null
+  /** jsonb congelado al cerrar/rechazar; leer con getClaimResolutionView (lib/orders/claim-resolution). */
+  resolution_summary?: unknown
   closed_at?: string | null
   created_at: string
   updated_at: string

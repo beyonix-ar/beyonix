@@ -45,6 +45,7 @@ interface CustomerNotificationsBellProps {
 function getNotificationIcon(type: string) {
   if (type === "payment_proof_pending") return Clock3
   if (type === "payment_proof_received") return Clock3
+  if (type === "claim_resolved") return BadgeCheck
   if (type === "admin_message" || type === "claim_response" || type === "help_message_started") return MessageCircle
   if (type === "offer" || type === "oferta") return Tag
   if (type === "promocion" || type === "producto_destacado") return Sparkles
@@ -102,6 +103,7 @@ function getNotificationActionUrl(notification: SupabaseCustomerNotification) {
   const opensClaim =
     notification.type === "admin_message" ||
     notification.type === "claim_response" ||
+    notification.type === "claim_resolved" ||
     notification.type === "help_message_started"
 
   return `/cuenta/compras/${notification.order_id}${opensClaim ? "/ayuda" : ""}`

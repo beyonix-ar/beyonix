@@ -33,6 +33,7 @@ import {
   ORDER_CLAIM_VIDEO_MAX_BYTES,
 } from "@/lib/order-claims"
 import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
+import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import {
   countUnreadBeyonixMessages,
   getLatestBeyonixMessage,
@@ -293,6 +294,7 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
   return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
 }
 
+// Solución en curso (reclamo abierto). Terminado: ver getClaimResolutionView.
 function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
   const resolution = claim.resolution ?? claim.customer_selected_resolution
 
@@ -302,13 +304,6 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
       return {
         title: "Solución: cambio de producto",
         body: `BEYONIX ya despachó el reemplazo.${tracking}`,
-      }
-    }
-
-    if (claim.status === "cerrado") {
-      return {
-        title: "Solución: cambio de producto",
-        body: "El cambio quedó registrado.",
       }
     }
 
@@ -324,13 +319,6 @@ function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
       return {
         title: "Solución: envío de unidad faltante",
         body: `BEYONIX ya despachó la unidad pendiente.${tracking}`,
-      }
-    }
-
-    if (claim.status === "cerrado") {
-      return {
-        title: "Solución: envío de unidad faltante",
-        body: "La reposición de la unidad faltante quedó registrada.",
       }
     }
 
@@ -995,6 +983,9 @@ export function CustomerClaimExperience({
       claim.status === "reintegro_pendiente" &&
       ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? claim.customer_selected_resolution ?? "")
     const resolutionSummary = getCustomerResolutionSummary(claim)
+    // Reclamo terminado: la resolución persistida reemplaza los avisos de
+    // "solución en proceso" y de rechazo (misma información, fuente única).
+    const resolutionView = helpMessage ? null : getClaimResolutionView(claim)
     const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
     const affectedProductLabel = cancellation
       ? "Pedido completo"
@@ -1051,7 +1042,47 @@ export function CustomerClaimExperience({
           )}
         </header>
 
-        {claim.rejection_reason && (
+        {resolutionView && (
+          <div
+            data-testid="customer-claim-resolution"
+            className={resolutionView.rejected
+              ? "border-b border-white/8 bg-red-500/8 px-3.5 py-3"
+              : "border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3"}
+          >
+            <div className="flex items-start gap-2.5">
+              <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ${resolutionView.rejected ? "border-red-200/25 bg-red-300/10" : "border-[#77E6E2]/25 bg-[#77E6E2]/10"}`}>
+                {resolutionView.rejected
+                  ? <X className="size-3.5 text-red-100" />
+                  : <Check className="size-3.5 text-[#D7FFFD]" />}
+              </span>
+              <div className="min-w-0">
+                <p className={`text-xs font-black ${resolutionView.rejected ? "text-red-100" : "text-[#D7FFFD]"}`}>
+                  {cancellation ? "Resolución de la cancelación" : "Resolución del reclamo"}
+                </p>
+                <dl className="mt-1.5 grid gap-1.5 text-xs leading-5">
+                  <div>
+                    <dt className="font-bold text-white/60">Resolución</dt>
+                    <dd className="font-black text-white">{resolutionView.label}</dd>
+                  </div>
+                  {resolutionView.detail && (
+                    <div>
+                      <dt className="font-bold text-white/60">Detalle</dt>
+                      <dd className="whitespace-pre-wrap font-semibold text-white/80">{resolutionView.detail}</dd>
+                    </div>
+                  )}
+                  {resolutionView.amount != null && resolutionView.amountLabel && (
+                    <div>
+                      <dt className="font-bold text-white/60">{resolutionView.amountLabel}</dt>
+                      <dd className="font-black text-white">{formatClaimResolutionAmount(resolutionView.amount)}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!resolutionView && claim.rejection_reason && (
           <div className="border-b border-white/8 bg-red-500/8 px-3.5 py-3">
             <p className="text-xs font-black text-red-100">Reclamo rechazado</p>
             <p className="mt-1 text-xs leading-5 text-white/75">{claim.rejection_reason}</p>
@@ -1074,7 +1105,7 @@ export function CustomerClaimExperience({
           </div>
         )}
 
-        {resolutionSummary && !helpMessage && !claim.rejection_reason && (
+        {resolutionSummary && !resolutionView && !helpMessage && !claim.rejection_reason && (
           <div className="border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3">
             <div className="flex items-start gap-2.5">
               <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/10">

@@ -5,6 +5,7 @@ import { claimErrorResponse, getClaimResult } from "@/lib/orders/claim-server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { escapeXml } from "@/lib/arca/xml"
 import { ORDER_CLAIM_STATUSES, ORDER_CLAIM_RESOLUTIONS } from "@/lib/order-claims"
+import { getClaimResolutionText } from "@/lib/orders/claim-resolution"
 
 export async function GET(request: Request, { params }: { params: Promise<{ claimId: string }> }) {
   const auth = await requireOperator(request)
@@ -46,10 +47,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
     if (error || !claim) return claimErrorResponse(error)
     if (patch.append_message || ["cerrado","rechazado"].includes(claim.status) || patch.action === "mark_credit_note_issued") {
       const { data: order } = await auth.admin.from("ordenes").select("cliente_email").eq("id", claim.order_id).single()
+      // Cierre de un reclamo formal: misma resolución persistida que el chat y la campana.
+      const resolutionText = getClaimResolutionText(claim)
       await sendOrderStatusEmail({
         to: order?.cliente_email,
-        subject: "Novedades sobre tu reclamo BEYONIX",
-        html: `<p>${escapeXml(String(claim.admin_response || "Actualizamos tu reclamo. Podés consultar el seguimiento desde tu cuenta.")).replace(/\n/g, "<br />")}</p>`,
+        subject: resolutionText ? "Tu reclamo BEYONIX fue resuelto" : "Novedades sobre tu reclamo BEYONIX",
+        html: `<p>${escapeXml(String(resolutionText || claim.admin_response || "Actualizamos tu reclamo. Podés consultar el seguimiento desde tu cuenta.")).replace(/\n/g, "<br />")}</p>`,
       })
     }
     return getClaimResult(auth.admin, id)
