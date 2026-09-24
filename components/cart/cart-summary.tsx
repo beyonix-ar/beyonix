@@ -85,7 +85,7 @@ export function CartSummary({
         settings={siteSettings.shipping}
       />
 
-      <div className="beyonix-cart-summary-box rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
+      <div className="beyonix-cart-summary-box bx-surface bx-surface-card rounded-xl border border-beyonix-blue-light/60 bg-beyonix-surface-3 px-3 py-2.5">
         <h3 className="beyonix-cart-item-title mb-2 text-sm font-bold tracking-wide text-white">
           Resumen del pedido
         </h3>

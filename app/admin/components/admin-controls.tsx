@@ -34,6 +34,14 @@ const adminSurfaceClassName = "admin-ds-surface"
 
 export const adminCardClassName = cn("admin-ds-card", adminSurfaceClassName)
 
+// Nivel de superficie (sistema semántico de globals.css, sólo actúa en
+// Light): módulo/sección > card interna > control elevado. Dark no cambia.
+export const adminSurfaceLevel = {
+  section: "bx-surface bx-surface-section",
+  card: "bx-surface bx-surface-card",
+  raised: "bx-surface bx-surface-raised",
+} as const
+
 export const adminControlClassName =
   "admin-control-input admin-ds-control h-11 w-full px-4 text-sm font-medium outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45"
 
@@ -841,7 +849,7 @@ export function AdminSection({
 }: AdminSectionProps) {
   return (
     <section
-      className={cn(adminCardClassName, compact ? "p-3.5" : "p-4 sm:p-5", className)}
+      className={cn(adminCardClassName, adminSurfaceLevel.section, compact ? "p-3.5" : "p-4 sm:p-5", className)}
       {...props}
     >
       {(title || eyebrow || description || actions) && (
@@ -908,6 +916,7 @@ export function AdminCard({
     <div
       className={cn(
         adminCardClassName,
+        adminSurfaceLevel.card,
         "p-4",
         interactive &&
           "admin-ds-card-interactive transition hover:-translate-y-0.5 hover:border-beyonix-sky/38",
@@ -973,6 +982,7 @@ export function AdminStatCard({
         onClick={onClick}
         className={cn(
           adminCardClassName,
+          adminSurfaceLevel.card,
           "admin-ds-stat-card group min-h-32 cursor-pointer p-5 text-left transition hover:-translate-y-0.5 hover:border-beyonix-sky/38",
           className,
         )}
@@ -1014,7 +1024,7 @@ export function AdminFiltersBar({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn(adminCardClassName, "p-4", className)}
+      className={cn(adminCardClassName, adminSurfaceLevel.section, "p-4", className)}
       {...props}
     >
       {children}
@@ -1069,6 +1079,7 @@ export function AdminEmptyState({
     <div
       className={cn(
         adminCardClassName,
+        adminSurfaceLevel.card,
         "px-5 py-10 text-center",
         className,
       )}
@@ -1145,6 +1156,7 @@ export function AdminModal({
         tabIndex={-1}
         className={cn(
           adminCardClassName,
+          adminSurfaceLevel.raised,
           "custom-scrollbar max-h-[calc(100dvh-2rem)] w-full overflow-y-auto shadow-2xl shadow-black",
           compact
             ? "max-w-md p-4"
@@ -1200,6 +1212,7 @@ export function AdminDrawer({
       <aside
         className={cn(
           adminCardClassName,
+          adminSurfaceLevel.raised,
           "absolute top-0 h-full w-full max-w-xl rounded-none p-5 shadow-2xl shadow-black",
           side === "right" ? "right-0" : "left-0",
         )}

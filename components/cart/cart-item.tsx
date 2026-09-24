@@ -68,7 +68,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const StockIcon = getStockIcon(stockStatus)
 
   return (
-    <div className="beyonix-cart-item relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
+    <div className="beyonix-cart-item bx-surface bx-surface-card relative flex gap-3 rounded-xl border border-white/10 bg-beyonix-surface-3 p-2 shadow-sm shadow-black/30">
       <div className="relative size-20 shrink-0 overflow-hidden rounded-md border border-white/10 bg-white p-1">
         <Image
           src={imageSrc}

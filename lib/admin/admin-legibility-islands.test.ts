@@ -193,7 +193,11 @@ test("flujo del reclamo: primario, secundario, deshabilitado y opciones legibles
   assert.ok(contrast(writeoff.title, writeoff.bg) >= 7)
   assert.notEqual(restock.bg, writeoff.bg)
   const lightChoice = ruleBody('html[data-admin-theme="light"] .admin-claim-choice')
-  assert.ok(contrast(hex(lightChoice, "--claim-choice-text"), hex(lightChoice, "--claim-choice-bg")) >= 4.5)
+  // El tile es un control elevado: su fondo sale del token de superficie
+  // "raised" del admin (sistema semántico de superficies).
+  assert.match(lightChoice, /--claim-choice-bg: var\(--bx-surface-raised\);/)
+  const adminTokens = ruleBody('html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope)')
+  assert.ok(contrast(hex(lightChoice, "--claim-choice-text"), hex(adminTokens, "--bx-surface-raised")) >= 4.5)
 
   const success = ruleBody('html[data-admin-theme="light"] .admin-claim-notice-success')
   assert.ok(contrast(hex(success, "color"), hex(success, "background")) >= 7)

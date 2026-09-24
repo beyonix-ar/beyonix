@@ -100,7 +100,7 @@ export function CategoryProductCard({
 
       <div className="pointer-events-none absolute -right-10 top-1/2 z-0 h-60 w-3 -translate-y-1/2 rounded-full bg-white/50 opacity-0 blur-3xl transition-all duration-500 group-hover:opacity-100" />
 
-      <article className="relative z-10 flex h-full min-h-screen-small flex-col rounded-lg border border-border bg-card transition-all duration-500 hover:border-muted-foreground/30">
+      <article className="bx-surface bx-surface-raised relative z-10 flex h-full min-h-screen-small flex-col rounded-lg border border-border bg-card transition-all duration-500 hover:border-muted-foreground/30">
         <div className="relative h-280px overflow-hidden rounded-t-lg sm:h-320px">
           {/* Invisible accessible button sits behind the carousel arrows (z-5) but above the image */}
           <button
@@ -115,7 +115,7 @@ export function CategoryProductCard({
           />
         </div>
 
-        <div className="flex flex-1 flex-col bg-beyonix-surface-3 px-4 pb-4 pt-3.5">
+        <div className="bx-surface bx-surface-raised flex flex-1 flex-col bg-beyonix-surface-3 px-4 pb-4 pt-3.5">
           <div className="mb-2 flex items-center justify-between">
             <p className="text-13px uppercase tracking-wider text-muted-foreground">
               {product.categorias?.nombre}

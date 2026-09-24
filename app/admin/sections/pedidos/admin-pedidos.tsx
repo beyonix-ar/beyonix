@@ -5542,7 +5542,9 @@ function PedidoDetailModal({
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className={embedded ? "admin-order-detail-scope mx-auto flex w-full max-w-[1420px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#05070A]" : "admin-order-detail-scope flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#05070A] shadow-2xl shadow-black/80"}>
+      {/* Módulo del pedido = nivel "sección" del sistema de superficies (sólo
+          Light); sus envoltorios internos heredan ese fondo. */}
+      <div className={embedded ? "admin-order-detail-scope bx-surface bx-surface-section mx-auto flex w-full max-w-[1420px] flex-col overflow-hidden rounded-xl border border-white/10 bg-[#05070A]" : "admin-order-detail-scope bx-surface bx-surface-section flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-white/12 bg-[#05070A] shadow-2xl shadow-black/80"}>
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-3 py-2.5 sm:px-4">
           <p className="min-w-0 truncate text-sm font-black text-white">
             Pedido #{formatPublicOrderId(pedido.id)}
@@ -5568,7 +5570,7 @@ function PedidoDetailModal({
           )}
         </header>
         {(canRejectOrder(pedido) || canCancelOrder(pedido)) && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-white/8 bg-[#05070A] px-3 py-2 sm:px-4">
+          <div className="bx-surface-inherit flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-white/8 bg-[#05070A] px-3 py-2 sm:px-4">
             <p className="mr-auto text-10px font-bold uppercase tracking-widest text-white/38">
               Acciones administrativas
             </p>
@@ -5594,7 +5596,7 @@ function PedidoDetailModal({
             )}
           </div>
         )}
-        <div className={`custom-scrollbar min-h-0 flex-1 bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
+        <div className={`bx-surface-inherit custom-scrollbar min-h-0 flex-1 bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
           <div
             className={`flex min-w-0 flex-col gap-3 p-2.5 sm:p-3 lg:flex-row ${
               activeView === "resumen" || activeView === "pago" || activeView === "facturacion" ? "admin-order-summary-layout-bg" : ""

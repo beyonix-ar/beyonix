@@ -36,12 +36,12 @@ function workspaceMarkup({ messages, asideHeight }: { messages: number; asideHei
       `<div class="admin-claim-chat-bubble admin-claim-chat-bubble-customer"><p class="admin-claim-chat-author">Cliente</p><p class="admin-claim-chat-text mt-1 whitespace-pre-wrap">Mensaje ${index + 1}: el producto llegó con la caja golpeada.</p></div>`,
   ).join("")
   return `
-<main class="beyonix-admin-main">
+<main class="beyonix-admin-shell beyonix-admin-main">
   <section class="admin-claim-manager admin-ds-surface">
     <div class="admin-claim-workspace grid gap-3 p-3">
       <main class="space-y-3">
         <section class="admin-claim-card rounded-xl border p-3" data-evidence><h4>Evidencia</h4><p>El cliente no adjuntó imágenes ni videos.</p></section>
-        <section class="admin-claim-chat-panel flex flex-col overflow-hidden rounded-xl border" data-chat>
+        <section class="admin-claim-chat-panel bx-surface bx-surface-section flex flex-col overflow-hidden rounded-xl border" data-chat>
           <div class="admin-claim-header border-b">Conversación con el cliente</div>
           <div class="admin-claim-chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5" data-thread>${bubbles}</div>
           <div class="admin-claim-composer border-t p-2" data-composer><textarea rows="1"></textarea><button>Enviar respuesta</button></div>
@@ -54,7 +54,7 @@ function workspaceMarkup({ messages, asideHeight }: { messages: number; asideHei
 }
 
 const receptionMarkup = `
-<main class="beyonix-admin-main">
+<main class="beyonix-admin-shell beyonix-admin-main">
   <section class="admin-claim-card admin-claim-reception-panel mx-3 mb-3 p-4" data-outer>
     <h4 class="admin-claim-reception-heading" data-heading>Recepción del producto original</h4>
     <p class="admin-claim-reception-subtitle" data-subtitle>Registrá cómo volvió el producto que entregó el cliente.</p>
@@ -112,7 +112,7 @@ test("el marcado del test replica las clases reales del componente", () => {
   for (const className of [
     'className="admin-claim-workspace grid gap-3 p-3 sm:p-4"',
     '<main className="space-y-3">',
-    'className="admin-claim-chat-panel flex flex-col overflow-hidden rounded-xl border"',
+    'className="admin-claim-chat-panel bx-surface bx-surface-section flex flex-col overflow-hidden rounded-xl border"',
     'className="admin-claim-chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5"',
     'className="admin-claim-composer border-t p-2"',
     'className="admin-claim-reception-item"',
@@ -184,7 +184,7 @@ test("chat: usa la altura disponible, scroll interno y composer abajo (1280-1920
 })
 
 const chatMarkup = `
-<main class="beyonix-admin-main">
+<main class="beyonix-admin-shell beyonix-admin-main">
   <div class="admin-claim-chat-thread p-2.5">
     <div class="admin-claim-chat-bubble admin-claim-chat-bubble-customer" data-customer>
       <p class="admin-claim-chat-author">Cliente</p>
@@ -280,8 +280,9 @@ test("recepción: la card interior se distingue del contenedor por tono en Light
         assert.ok(contrast(color, outer) >= 4.5, `${theme}: ${selector} legible sobre el contenedor`)
       }
       if (theme === "light") {
-        assert.deepEqual(outer, [204, 204, 204, 1], "Light: contenedor gris #CCCCCC")
-        assert.deepEqual(parseColor(colors.inner.color), [237, 242, 247, 1], "Light: #EDF2F7")
+        // Tokens del sistema de superficies del admin: sección #D1D9E2, card #F5F7FA.
+        assert.deepEqual(outer, [209, 217, 226, 1], "Light: contenedor = superficie de sección")
+        assert.deepEqual(parseColor(colors.inner.color), [245, 247, 250, 1], "Light: card del producto = superficie de card")
         for (const [name, value] of Object.entries({ tile: colors.tile.color, note: colors.note.color, count: colors.count.color })) {
           assert.deepEqual(parseColor(value), [255, 255, 255, 1], `Light: ${name} elevado en blanco`)
         }

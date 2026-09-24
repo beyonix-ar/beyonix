@@ -917,7 +917,7 @@ export function ReturnInventoryPanel({
     <>
       <section
         id={`claim-reception-${claim.id}`}
-        className="admin-claim-card admin-claim-reception-panel mx-3 mb-3 p-4 sm:mx-4 sm:mb-4 sm:p-5"
+        className="admin-claim-card admin-claim-reception-panel bx-surface bx-surface-section mx-3 mb-3 p-4 sm:mx-4 sm:mb-4 sm:p-5"
       >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 items-start gap-3">
@@ -2097,7 +2097,7 @@ export function AdminClaimManager({
 
       {!helpMessage && !cancellation && (
         <div className="admin-claim-summary grid gap-3 border-b p-3 sm:p-4 md:grid-cols-3">
-          <section className="admin-claim-card rounded-xl border p-3">
+          <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
             <p className="text-10px font-black uppercase text-white/45">Pedido</p>
             <p className="mt-1 text-xs font-bold text-white">{formatDate(pedido.created_at)}</p>
             <p className="mt-1 text-xs font-semibold text-white/70">{pedido.estado}</p>
@@ -2107,13 +2107,13 @@ export function AdminClaimManager({
             <p className="mt-1 text-xs font-semibold text-white/70">Total: {formatPrice(pedido.total)}</p>
           </section>
 
-          <section className="admin-claim-card rounded-xl border p-3">
+          <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
             <p className="text-10px font-black uppercase text-white/45">Motivo del reclamo</p>
             <p className="mt-1 text-xs font-bold text-white">{PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}</p>
             <p className="mt-1 text-[11px] leading-4 text-white/60 line-clamp-3">{claim.description}</p>
           </section>
 
-          <section className="admin-claim-card rounded-xl border p-3">
+          <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
             <p className="text-10px font-black uppercase text-white/45">Producto afectado</p>
             {summaryAffectedItems.length === 0 ? (
               <p className="mt-1.5 text-xs font-semibold text-white/70">Pedido completo</p>
@@ -2154,7 +2154,7 @@ export function AdminClaimManager({
       <div className="admin-claim-workspace grid gap-3 p-3 sm:p-4">
         <main className="space-y-3">
           {!helpMessage && (
-            <section className="admin-claim-card rounded-xl border p-3">
+            <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
               <h4 className="text-sm font-black text-white">Evidencia</h4>
               {evidenceFiles.length === 0 ? (
                 <div className="mt-2 rounded-lg border border-white/10 bg-black/20 px-3 py-3">
@@ -2227,7 +2227,7 @@ export function AdminClaimManager({
 
         <aside>
           {helpMessage ? (
-          <section className={`admin-claim-card rounded-xl border p-2.5 ${helpResolved ? "admin-claim-help-resolved-card" : ""}`}>
+          <section className={`admin-claim-card rounded-xl border p-2.5 ${helpResolved ? "admin-claim-help-resolved-card" : "bx-surface bx-surface-section"}`}>
             <h4 className="text-sm font-black text-white">Mensajería</h4>
             <div className={`mt-2 rounded-lg px-2.5 py-1.5 ${helpResolved ? "admin-claim-help-resolved-state" : "bg-black/20"}`}>
               <p className="text-10px font-black uppercase text-white/45">Estado actual</p>
@@ -2249,7 +2249,7 @@ export function AdminClaimManager({
             )}
           </section>
           ) : (
-          <section className="admin-claim-card admin-claim-manage-panel rounded-xl border p-3 sm:p-4">
+          <section className="admin-claim-card admin-claim-manage-panel bx-surface bx-surface-section rounded-xl border p-3 sm:p-4">
             <div className="flex items-center gap-2.5">
               <span className="admin-claim-section-icon is-small" aria-hidden="true">
                 <ClipboardList className="size-4" />
@@ -2855,7 +2855,7 @@ function ClaimConversation({
   }
 
   return (
-    <section className="admin-claim-chat-panel flex flex-col overflow-hidden rounded-xl border">
+    <section className="admin-claim-chat-panel bx-surface bx-surface-section flex flex-col overflow-hidden rounded-xl border">
       <div className="admin-claim-header border-b px-3 py-1.5">
         <div className="flex items-center justify-between gap-3">
           <div>

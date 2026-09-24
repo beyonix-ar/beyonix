@@ -640,8 +640,10 @@ html[data-account-theme="light"][data-account-scope] .beyonix-store-page-bg,
 html[data-account-theme="light"][data-account-scope] .beyonix-categories-page-bg {
   background: var(--account-background) !important;
 }
+/* Hero del catálogo = sección (blanco sobre la página); sus beneficios son
+   cards internas (ver .beyonix-benefit-item). */
 html[data-account-theme="light"][data-account-scope] .beyonix-hero-banner {
-  background: var(--account-background) !important;
+  background: var(--bx-surface-section) !important;
   border-color: var(--account-border) !important;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08) !important;
 }
@@ -684,7 +686,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-search-suggestion-
   color: var(--account-text-muted) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-bar {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-card) !important;
   border-color: var(--account-border) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-toolbar-select {
@@ -729,13 +731,16 @@ html[data-account-theme="light"][data-account-scope] .checkout-header {
   background: var(--account-surface) !important;
   border-color: var(--account-border) !important;
 }
+/* Jerarquía del checkout (tokens --bx-*): paneles (#0B1118/#070C12) =
+   sección; opciones, subpaneles, notas e ítems (#10151C) y bloques
+   internos (#111820) = card, distinguibles del panel que los contiene. */
 html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#0B1118]"],
-html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#10151C]"],
 html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#070C12]"] {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-section) !important;
 }
+html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#10151C]"],
 html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#111820]"] {
-  background: var(--account-surface-hover) !important;
+  background: var(--bx-surface-card) !important;
 }
 html[data-account-theme="light"][data-account-scope] .checkout-page [class*="border-beyonix-blue-light"] {
   border-color: var(--account-border) !important;
@@ -1039,23 +1044,25 @@ html[data-account-theme="light"][data-account-scope] .confirmar-email-scope .bey
   opacity: 0.5 !important;
 }
 
+/* Listado: módulo = sección blanca; filtros y barra de resultados = cards
+   (tinte); cards de producto = controles elevados blancos. */
 html[data-account-theme="light"][data-account-scope] .beyonix-products-shell {
-  background: var(--account-surface-raised) !important;
+  background: var(--bx-surface-section) !important;
   border-color: var(--account-border) !important;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-filters-panel {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-card) !important;
   border-color: var(--account-border) !important;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-product-card {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-raised) !important;
   border-color: var(--account-border) !important;
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-benefit-item {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-card) !important;
   border-color: var(--account-border) !important;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06) !important;
   backdrop-filter: none !important;
@@ -8884,14 +8891,14 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) sv
    detrás de cards blancas). No se toca la regla de la tienda -- se sube la
    especificidad acá en vez. ---- */
 html[data-admin-theme="light"] .beyonix-admin-shell .beyonix-admin-main {
-  --admin-bg: #eef1f5;
+  --admin-bg: var(--bx-surface-page);
   --admin-panel: #ffffff;
-  --admin-panel-2: #f7f9fb;
+  --admin-panel-2: var(--bx-surface-card);
   --admin-panel-3: #eef1f5;
   --admin-surface: var(--admin-panel);
   --admin-surface-raised: var(--admin-panel-2);
   --admin-surface-muted: var(--admin-panel-3);
-  --admin-control: #eef1f5;
+  --admin-control: var(--bx-surface-field);
   --admin-brand: #112a43;
   --admin-brand-hover: #183b5e;
   --admin-border: rgba(30, 58, 95, 0.24);
@@ -8915,7 +8922,7 @@ html[data-admin-theme="light"] .beyonix-admin-shell .beyonix-admin-main {
   --admin-info-bg: rgba(59, 130, 246, 0.1);
   --admin-info-border: rgba(37, 99, 235, 0.4);
   --admin-info-text: #1e40af;
-  background: #eef1f5 !important;
+  background: var(--bx-surface-page) !important;
 }
 
 /* ---- 2. Tokens --beyonix-* y --admin-* en .beyonix-admin-shell (Tailwind
@@ -8937,14 +8944,14 @@ html[data-admin-theme="light"] .beyonix-admin-shell {
      sigue heredando ese mismo blanco fijo -- texto invisible sobre card
      clara sin que ningún selector de arriba lo vea venir. */
   color: var(--admin-text) !important;
-  --admin-bg: #eef1f5;
+  --admin-bg: var(--bx-surface-page);
   --admin-panel: #ffffff;
-  --admin-panel-2: #f7f9fb;
+  --admin-panel-2: var(--bx-surface-card);
   --admin-panel-3: #eef1f5;
   --admin-surface: var(--admin-panel);
   --admin-surface-raised: var(--admin-panel-2);
   --admin-surface-muted: var(--admin-panel-3);
-  --admin-control: #eef1f5;
+  --admin-control: var(--bx-surface-field);
   --admin-brand: #112a43;
   --admin-brand-hover: #183b5e;
   --admin-border: rgba(30, 58, 95, 0.24);
@@ -8956,9 +8963,9 @@ html[data-admin-theme="light"] .beyonix-admin-shell {
   --admin-text-disabled: var(--beyonix-light-text-disabled);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
-  --beyonix-page-background: #eef1f5;
+  --beyonix-page-background: var(--bx-surface-page);
   --beyonix-surface-base: #ffffff;
-  --beyonix-surface-raised: #f7f9fb;
+  --beyonix-surface-raised: var(--bx-surface-card);
   --beyonix-surface-interactive: #f1f4f8;
   --beyonix-surface-muted: #eef1f5;
   --beyonix-border-subtle: rgba(30, 58, 95, 0.15);
@@ -8984,7 +8991,7 @@ html[data-admin-theme="light"] .beyonix-admin-shell {
   --admin-info-bg: rgba(59, 130, 246, 0.1);
   --admin-info-border: rgba(37, 99, 235, 0.4);
   --admin-info-text: #1e40af;
-  background: #eef1f5 !important;
+  background: var(--bx-surface-page) !important;
 }
 
 /* Utilidades beyonix-* cuyo valor en @theme inline es un literal hex fijo
@@ -9067,14 +9074,14 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .b
    igual que dentro del shell. */
 html[data-admin-theme="light"] .admin-portal-scope {
   color: var(--admin-text);
-  --admin-bg: #eef1f5;
+  --admin-bg: var(--bx-surface-page);
   --admin-panel: #ffffff;
-  --admin-panel-2: #f7f9fb;
+  --admin-panel-2: var(--bx-surface-card);
   --admin-panel-3: #eef1f5;
   --admin-surface: var(--admin-panel);
   --admin-surface-raised: var(--admin-panel-2);
   --admin-surface-muted: var(--admin-panel-3);
-  --admin-control: #eef1f5;
+  --admin-control: var(--bx-surface-field);
   --admin-brand: #112a43;
   --admin-brand-hover: #183b5e;
   --admin-border: rgba(30, 58, 95, 0.24);
@@ -9086,9 +9093,9 @@ html[data-admin-theme="light"] .admin-portal-scope {
   --admin-text-disabled: var(--beyonix-light-text-disabled);
   --admin-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
   --admin-glow: 0 0 0 1px rgba(30, 58, 95, 0.08), 0 12px 28px rgba(15, 23, 42, 0.06);
-  --beyonix-page-background: #eef1f5;
+  --beyonix-page-background: var(--bx-surface-page);
   --beyonix-surface-base: #ffffff;
-  --beyonix-surface-raised: #f7f9fb;
+  --beyonix-surface-raised: var(--bx-surface-card);
   --beyonix-surface-interactive: #f1f4f8;
   --beyonix-surface-muted: #eef1f5;
   --beyonix-border-subtle: rgba(30, 58, 95, 0.15);
@@ -9134,46 +9141,50 @@ html[data-admin-theme="light"] .admin-portal-scope.border-white\/12 {
 
 /* ---- 3. Cards / superficies genéricas (.admin-ds-surface, .admin-ds-card
    y el patrón [rounded][border] que usan la mayoría de los paneles) ---- */
-html[data-admin-theme="light"] .admin-ds-surface,
-html[data-admin-theme="light"] .admin-ds-card,
-html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"] {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
-  box-shadow: var(--admin-glow) !important;
+/* Legacy (anterior al sistema de superficies): contenedores de primer
+   nivel del admin sin clase semántica. Ahora usan los tokens --bx-* (nivel
+   "sección") y NUNCA pisan un elemento con .bx-surface (ver bloque
+   "Sistema semántico de superficies" al final del archivo). */
+html[data-admin-theme="light"] .admin-ds-surface:not(.bx-surface),
+html[data-admin-theme="light"] .admin-ds-card:not(.bx-surface),
+html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]:not(.bx-surface) {
+  background: var(--bx-surface-section) !important;
+  border-color: var(--bx-border-section) !important;
+  box-shadow: var(--bx-shadow-section) !important;
 }
 /* Los mismos "niveles de elevación" que dark (arriba, ~L6420): una card
    anidada dentro de otra .admin-ds-surface/.admin-ds-card tiene 3 clases
    de especificidad y le gana a la regla plana de arriba si no se iguala
    acá -- se ve como un cuadro oscuro suelto dentro de una card blanca. */
-html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
-  box-shadow: var(--admin-glow) !important;
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface:not(.bx-surface) {
+  background: var(--bx-surface-section) !important;
+  border-color: var(--bx-border-section) !important;
+  box-shadow: var(--bx-shadow-section) !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
-  box-shadow: var(--admin-glow) !important;
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card:not(.bx-surface) {
+  background: var(--bx-surface-card) !important;
+  border-color: var(--bx-border-card) !important;
+  box-shadow: var(--bx-shadow-card) !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface .admin-ds-card,
-html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card .admin-ds-card {
-  background: #f7f9fb !important;
-  border-color: var(--admin-border-soft) !important;
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface .admin-ds-card:not(.bx-surface),
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card .admin-ds-card:not(.bx-surface) {
+  background: var(--bx-surface-card) !important;
+  border-color: var(--bx-border-card) !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card {
-  background: #ffffff !important;
-  border-color: var(--admin-border) !important;
-  box-shadow: var(--admin-glow) !important;
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card:not(.bx-surface) {
+  background: var(--bx-surface-card) !important;
+  border-color: var(--bx-border-card) !important;
+  box-shadow: var(--bx-shadow-card) !important;
 }
 html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-stat-card p:first-child {
   color: var(--beyonix-light-text-secondary) !important;
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]
-  :where(section, article, aside, details, div, label)[class*="rounded"][class*="border"] {
-  background: #f7f9fb !important;
-  border-color: var(--admin-border-soft) !important;
+  :where(section, article, aside, details, div, label)[class*="rounded"][class*="border"]:not(.bx-surface) {
+  background: var(--bx-surface-card) !important;
+  border-color: var(--bx-border-card) !important;
   box-shadow: none !important;
 }
 
@@ -9181,8 +9192,8 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, asid
 html[data-admin-theme="light"] .admin-ds-control,
 html[data-admin-theme="light"] .admin-control-select,
 html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select) {
-  background-color: #ffffff !important;
-  border-color: var(--admin-border) !important;
+  background-color: var(--bx-surface-field) !important;
+  border-color: var(--bx-border-field) !important;
   color: var(--admin-text) !important;
   color-scheme: light;
   box-shadow: none !important;
@@ -9196,7 +9207,7 @@ html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="check
 html[data-admin-theme="light"] .admin-ds-control:hover,
 html[data-admin-theme="light"] .admin-control-select:hover,
 html[data-admin-theme="light"] .beyonix-admin-main :where(input:not([type="checkbox"]):not([type="radio"]), textarea, select):hover {
-  background-color: #f7f9fb !important;
+  background-color: var(--bx-surface-card) !important;
   border-color: var(--admin-border-strong) !important;
 }
 
@@ -10111,7 +10122,7 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-invoice-pa
   color: #92400e !important;
 }
 html[data-admin-theme="light"] .admin-claim-chat-thread {
-  background: #eef1f5 !important;
+  background: var(--bx-surface-card) !important;
 }
 
 /* Envío: selects de estado operativo / modalidad logística, y sus listbox
@@ -10930,7 +10941,7 @@ html[data-admin-theme="light"] .admin-ds-skeleton {
 
 /* ---- 11. Atención al cliente (mensajería) ---- */
 html[data-admin-theme="light"] .admin-claim-card {
-  background: linear-gradient(150deg, #ffffff, #f3f7fb) !important;
+  background: var(--bx-surface-section) !important;
 }
 html[data-admin-theme="light"] .admin-claim-help-resolved-card {
   border-color: rgba(5, 150, 105, 0.4) !important;
@@ -11016,7 +11027,7 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) :w
     .bg-\[\#444444\],
     .bg-\[\#132B40\]
   ) {
-  background-color: #f7f9fb !important;
+  background-color: var(--bx-surface-card) !important;
 }
 /* Chip de selección de Acciones masivas (admin-acciones-masivas.tsx) y botón
    "Ver comprobante" de Clientes: su estado hover trae un hex de marca
@@ -11725,7 +11736,7 @@ html[data-account-theme="light"][data-account-scope] {
      automáticamente sin tocar su JSX; sólo los literales fijos (text-white,
      text-white/NN, hex directos) necesitan conversión aparte, componente
      por componente. */
-  --beyonix-page-background: #eef1f5;
+  --beyonix-page-background: var(--bx-surface-page);
   --beyonix-surface-base: #ffffff;
   --beyonix-surface-raised: #f7f9fb;
   --beyonix-surface-interactive: #f1f4f8;
@@ -11796,12 +11807,12 @@ html[data-account-theme="light"][data-account-scope] {
      favoritos-client.tsx / cuenta-client.tsx) y este color acá cubre
      cualquier nodo sin clase de color propia. */
   color: var(--account-text-primary);
-  --account-background: #eef1f5;
-  --account-surface: #ffffff;
-  --account-surface-raised: #f7f9fb;
-  --account-surface-hover: #eef3f8;
+  --account-background: var(--bx-surface-page);
+  --account-surface: var(--bx-surface-section);
+  --account-surface-raised: var(--bx-surface-card);
+  --account-surface-hover: var(--bx-surface-hover);
   --account-surface-highlight: #e5f0fa;
-  --account-input: #ffffff;
+  --account-input: var(--bx-surface-field);
   --account-border: rgba(30, 58, 95, 0.22);
   --account-border-subtle: rgba(30, 58, 95, 0.14);
   --account-border-strong: rgba(30, 58, 95, 0.42);
@@ -11938,8 +11949,10 @@ html[data-account-theme="light"][data-account-scope] .beyonix-hero-trust-sub {
    igual en cualquier página fuera de /cuenta, o dentro de /cuenta en modo
    oscuro), esto sólo pisa el color/fondo cuando estamos realmente en claro
    Y en scope de cuenta. */
+/* Barra de navegación y su menú desplegable: cromo del sitio (no un módulo
+   de contenido) -> superficie elevada blanca, sobre la página. */
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-raised) !important;
   border-color: var(--account-border-subtle) !important;
   box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08) !important;
 }
@@ -11958,7 +11971,7 @@ html[data-account-theme="light"][data-account-scope] .beyonix-site-header-nav-li
   color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header-panel {
-  background: var(--account-surface) !important;
+  background: var(--bx-surface-raised) !important;
   border-color: var(--account-border) !important;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12) !important;
 }
@@ -13047,9 +13060,9 @@ html[data-admin-theme="light"] .admin-claim-reception-item {
   --claim-flow-title: #0f172a;
   --claim-flow-text: #475569;
   --claim-flow-muted: #64748b;
-  --claim-flow-line: #e2e8f0;
-  --claim-flow-surface: #ffffff;
-  --claim-flow-surface-strong: #f8fafc;
+  --claim-flow-line: var(--bx-border-card);
+  --claim-flow-surface: var(--bx-surface-card);
+  --claim-flow-surface-strong: var(--bx-surface-raised);
   --claim-flow-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -18px rgba(15, 23, 42, 0.25);
   --claim-flow-brand: #112a43;
   --claim-flow-brand-strong: #112a43;
@@ -13344,8 +13357,8 @@ html[data-admin-theme="light"] .admin-claim-help-bubble::after {
 }
 
 html[data-admin-theme="light"] .admin-claim-reception-panel .admin-claim-stepper-track {
-  --claim-flow-line: #e2e8f0;
-  --claim-flow-surface-strong: #f8fafc;
+  --claim-flow-line: var(--bx-border-card);
+  --claim-flow-surface-strong: var(--bx-surface-card);
 }
 
 .admin-claim-stepper {
@@ -13717,10 +13730,10 @@ html[data-admin-theme="light"] .admin-claim-reception-note { color: #1e40af !imp
 }
 
 html[data-admin-theme="light"] .admin-claim-reception-panel .admin-claim-reception-item {
-  --claim-flow-surface: #edf2f7;
-  --claim-flow-surface-strong: #ffffff;
+  --claim-flow-surface: var(--bx-surface-card);
+  --claim-flow-surface-strong: var(--bx-surface-raised);
   --claim-flow-muted: #526175;
-  --claim-flow-line: #d6dfe9;
+  --claim-flow-line: var(--bx-border-card);
   --claim-flow-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
@@ -13739,8 +13752,8 @@ html[data-admin-theme="light"] .admin-claim-reception-panel .admin-claim-recepti
 }
 
 html[data-admin-theme="light"] .admin-claim-card.admin-claim-reception-panel {
-  border-color: #b3b9c1 !important;
-  background: #cccccc !important;
+  border-color: var(--bx-border-section) !important;
+  background: var(--bx-surface-section) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.55),
     0 10px 24px -18px rgba(15, 23, 42, 0.45);
@@ -13959,7 +13972,11 @@ html[data-admin-theme="light"] .admin-claim-card > div > .admin-claim-reception-
 }
 
 html[data-admin-theme="light"] .admin-claim-note {
-  background: #ffffff !important;
+  background: var(--bx-surface-field) !important;
+}
+
+html[data-admin-theme="light"] .admin-claim-note:not([aria-required="true"]) {
+  border-color: var(--bx-border-field) !important;
 }
 
 /* Pie: botón principal + motivo cuando está deshabilitado. */
@@ -14163,8 +14180,8 @@ html[data-admin-theme="light"] .admin-claim-choice.admin-claim-choice .admin-cla
 }
 
 html[data-admin-theme="light"] .admin-claim-choice {
-  --claim-choice-bg: #ffffff;
-  --claim-choice-border: #d7dee8;
+  --claim-choice-bg: var(--bx-surface-raised);
+  --claim-choice-border: #c3cdd9;
   --claim-choice-border-hover: #10b981;
   --claim-choice-title: #0f172a;
   --claim-choice-text: #475569;
@@ -14206,4 +14223,114 @@ html[data-admin-theme="light"] .admin-claim-notice-success {
   border-color: #6ee7b7;
   background: #ecfdf5;
   color: #065f46 !important;
+}
+
+/* ==========================================================================
+   SISTEMA SEMÁNTICO DE SUPERFICIES
+   --------------------------------------------------------------------------
+   Cuatro niveles de fondo con nombre propio, para que la jerarquía se lea
+   por superficie y no sólo por bordes:
+
+     page    fondo general
+     section módulo / sección principal
+     card    componente interno de una sección
+     raised  control elevado (tiles, opciones, cards de producto)
+     field   campos de formulario (input, textarea, select)
+
+   DARK es la referencia visual y NO cambia: estas reglas y las clases
+   .bx-surface-* sólo actúan en Light. Dark conserva sus paneles actuales
+   (admin: #02060a -> #07111b -> #0b1622 -> controles #0b111a; cuenta:
+   #05070a -> #0d1117 -> #111820 -> #0b111a).
+
+   LIGHT traduce esa misma lógica con un único modelo: módulo en un tono
+   azul grisáceo más oscuro que la página, cards internas blancas o casi
+   blancas y controles blancos con borde de campo. Dos intensidades:
+   - Admin (operativo): módulos #d1d9e2 sobre página #e8ecf1.
+   - Tienda / cuenta / checkout (comercial): más suave, módulos #e2e8ef
+     sobre página #f1f4f8 -- las cards y productos blancos resaltan sin
+     convertir la tienda en un panel gris.
+
+   Uso: una superficie declara su nivel con `bx-surface bx-surface-<nivel>`
+   (componentes base: AdminSection, AdminCard, AdminModal, módulos del
+   detalle de pedido, reclamos, checkout, carrito, card de producto). Los
+   tokens existentes (--admin-*, --account-*, --beyonix-page-background)
+   apuntan a estos. Las reglas legacy por [rounded][border] del admin
+   excluyen .bx-surface: nunca pisan una superficie declarada.
+   `bx-surface-inherit` marca envoltorios que en Light no deben tapar el
+   fondo de su sección (ej. el cuerpo del detalle de pedido).
+   ========================================================================== */
+
+/* ---- Tokens Light: admin (shell y portales) ---- */
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) {
+  --bx-surface-page: #e8ecf1;
+  --bx-surface-section: #d1d9e2;
+  --bx-surface-card: #f5f7fa;
+  --bx-surface-raised: #ffffff;
+  --bx-surface-field: #ffffff;
+  --bx-surface-hover: #e3e9f0;
+  --bx-border-section: #b4c0cd;
+  --bx-border-card: #cfd8e2;
+  --bx-border-field: #7d8ea4;
+  --bx-shadow-section: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  --bx-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06), 0 6px 16px -12px rgba(15, 23, 42, 0.22);
+  --bx-shadow-raised: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+/* ---- Tokens Light: tienda, cuenta y checkout ---- */
+html[data-account-theme="light"][data-account-scope] {
+  --bx-surface-page: #f1f4f8;
+  --bx-surface-section: #e2e8ef;
+  --bx-surface-card: #ffffff;
+  --bx-surface-raised: #ffffff;
+  --bx-surface-field: #ffffff;
+  --bx-surface-hover: #d8e0ea;
+  --bx-border-section: #cfd8e3;
+  --bx-border-card: #d6dee8;
+  --bx-border-field: #7d8ea4;
+  --bx-shadow-section: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px -18px rgba(15, 23, 42, 0.28);
+  --bx-shadow-card: none;
+  --bx-shadow-raised: 0 1px 2px rgba(15, 23, 42, 0.07);
+}
+
+/* ---- Clases semánticas (sólo Light). Doble clase de nivel: ganan a las
+   reglas por hex/[class~] y a las superficies propias de componentes; las
+   legacy [rounded][border] ya las excluyen con :not(.bx-surface). ---- */
+html[data-admin-theme="light"] .bx-surface.bx-surface-section.bx-surface-section,
+html[data-account-theme="light"][data-account-scope] .bx-surface.bx-surface-section.bx-surface-section {
+  background: var(--bx-surface-section) !important;
+  border-color: var(--bx-border-section) !important;
+  box-shadow: var(--bx-shadow-section) !important;
+}
+
+html[data-admin-theme="light"] .bx-surface.bx-surface-card.bx-surface-card,
+html[data-account-theme="light"][data-account-scope] .bx-surface.bx-surface-card.bx-surface-card {
+  background: var(--bx-surface-card) !important;
+  border-color: var(--bx-border-card) !important;
+  box-shadow: var(--bx-shadow-card) !important;
+}
+
+html[data-admin-theme="light"] .bx-surface.bx-surface-raised.bx-surface-raised,
+html[data-account-theme="light"][data-account-scope] .bx-surface.bx-surface-raised.bx-surface-raised {
+  background: var(--bx-surface-raised) !important;
+  border-color: var(--bx-border-card) !important;
+  box-shadow: var(--bx-shadow-raised) !important;
+}
+
+html[data-admin-theme="light"] .bx-surface.bx-surface-field.bx-surface-field,
+html[data-account-theme="light"][data-account-scope] .bx-surface.bx-surface-field.bx-surface-field {
+  background: var(--bx-surface-field) !important;
+  border-color: var(--bx-border-field) !important;
+}
+
+html[data-admin-theme="light"] .bx-surface-inherit.bx-surface-inherit,
+html[data-account-theme="light"][data-account-scope] .bx-surface-inherit.bx-surface-inherit {
+  background: transparent !important;
+}
+
+/* Checkout: los campos se distinguen de la card que los contiene por borde
+   de campo (fondo blanco = nivel field). Las opciones de pago/envío son
+   cards (#10151C -> card, ver regla del checkout) y la seleccionada conserva
+   su acento (.checkout-option-selected, más específica). */
+html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input.beyonix-checkout-input {
+  border-color: var(--bx-border-field) !important;
 }
