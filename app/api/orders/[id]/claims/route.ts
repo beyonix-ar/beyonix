@@ -1,27 +1,14 @@
 import { NextResponse } from "next/server"
 
 import { ORDER_CLAIM_MAX_FILES, CLAIM_TEXT_MAX_LENGTH, POST_DELIVERY_CLAIM_REASONS, getClaimEligibilityError } from "@/lib/order-claims"
-import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 import { claimErrorResponse, prepareClaimUploads, signClaims, submitCustomerClaim } from "@/lib/orders/claim-server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { createClient } from "@/lib/supabase/server"
+import { attachCustomerClaimReads, authorizeCustomerClaimOrder } from "@/lib/orders/customer-claim-access"
 import type { PostDeliveryClaimReason } from "@/lib/order-claims"
 import type { SupabaseOrderClaim } from "@/lib/supabase/types"
 
 export const maxDuration = 300
 
-async function authorizeOrder(rawId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { response: NextResponse.json({ error: "Debés iniciar sesión." }, { status: 401 }) }
-  const orderId = Number(rawId)
-  if (!Number.isSafeInteger(orderId) || orderId <= 0) return { response: claimErrorResponse(new Error("CLAIM_INVALID")) }
-  const admin = createAdminClient()
-  const { data: order, error } = await admin.from("ordenes").select("id, usuario_id, cliente_email, estado, delivered_at").eq("id", orderId).maybeSingle()
-  if (error || !order) return { response: NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 }) }
-  if (!isCustomerOrderOwner(order, user) || !order.usuario_id && !user.email_confirmed_at) return { response: claimErrorResponse(new Error("CLAIM_FORBIDDEN")) }
-  return { admin, order, user }
-}
+const authorizeOrder = authorizeCustomerClaimOrder
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -29,7 +16,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     if ("response" in auth) return auth.response
     const { data, error } = await auth.admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*)").eq("order_id", auth.order.id).order("created_at", { ascending: false })
     if (error) return claimErrorResponse(error)
-    return NextResponse.json({ claims: await signClaims(auth.admin, data as SupabaseOrderClaim[]) })
+    const signed = await signClaims(auth.admin, data as SupabaseOrderClaim[])
+    return NextResponse.json({ claims: await attachCustomerClaimReads(auth.admin, auth.user.id, signed) })
   } catch (error) { return claimErrorResponse(error) }
 }
 

@@ -666,8 +666,14 @@ export interface CustomerOrderSummaryItem {
 }
 
 export interface CustomerOrderSummaryClaim {
+  id?: number
+  status?: string | null
   failure_type?: string | null
   created_at: string
+  /** Mínimo para contar respuestas de BEYONIX sin leer (badge de "Ver reclamo"). */
+  order_claim_messages?: Array<{ id?: number; author_role?: string | null; created_at: string }> | null
+  /** Última lectura del cliente (order_claim_customer_reads); null = nunca leyó. */
+  customer_last_read_at?: string | null
 }
 
 export interface CustomerOrderSummary {
@@ -790,6 +796,8 @@ export interface SupabaseOrderClaim {
   first_reviewed_at?: string | null
   first_reviewed_by?: string | null
   last_customer_message_at?: string | null
+  /** Sólo en la API del cliente: última lectura de las respuestas de BEYONIX. */
+  customer_last_read_at?: string | null
   last_admin_response_at?: string | null
   admin_needs_action?: boolean
   affected_items?: SupabaseOrderClaimAffectedItem[]

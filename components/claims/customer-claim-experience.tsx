@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
@@ -33,6 +33,11 @@ import {
   ORDER_CLAIM_VIDEO_MAX_BYTES,
 } from "@/lib/order-claims"
 import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
+import {
+  countUnreadBeyonixMessages,
+  getLatestBeyonixMessage,
+  selectCustomerDisplayedClaim,
+} from "@/lib/orders/customer-claim-unread"
 import type {
   SupabaseOrderClaim,
   SupabaseOrderClaimFile,
@@ -556,6 +561,8 @@ export function CustomerClaimExperience({
   const chatRef = useRef<HTMLDivElement>(null)
   const replyVersionRef = useRef<string | null>(null)
   const refundVersionRef = useRef<string | null>(null)
+  // Última respuesta de BEYONIX ya marcada como leída (evita POST repetidos).
+  const markedReadRef = useRef<string | null>(null)
 
   useEffect(() => {
     setOrderCancelled(cancelled)
@@ -605,24 +612,42 @@ export function CustomerClaimExperience({
     }
   }, [claims, loadClaims])
 
-  const visibleClaims = claims.filter((claim) => claim.failure_type !== "cancelar_compra")
-  const displayableClaims = canCreatePostDeliveryClaim
-    ? visibleClaims.filter((claim) => claim.failure_type !== HELP_MESSAGE_PROBLEM_TYPE || !["cerrado", "rechazado"].includes(claim.status))
-    : visibleClaims
-  const activeClaim = displayableClaims.find((claim) =>
-    [
-      "recibido",
-      "en_revision",
-      "falta_informacion",
-      "aprobado",
-      "reintegro_pendiente",
-      "cambio_pendiente",
-      "cupon_pendiente",
-      "reemplazo_enviado",
-    ].includes(claim.status),
+  // Misma selección que usa el badge de "Ver reclamo" en Mis compras
+  // (lib/orders/customer-claim-unread.ts): el reclamo activo o el primero
+  // visible.
+  const claim = useMemo(
+    () => selectCustomerDisplayedClaim(claims, { canCreatePostDeliveryClaim }),
+    [canCreatePostDeliveryClaim, claims],
   )
-  const claim = activeClaim ?? displayableClaims[0]
   const messageCount = claim?.order_claim_messages?.length ?? 0
+  const latestBeyonixMessage = getLatestBeyonixMessage(claim)
+  const hasUnreadBeyonixMessages = countUnreadBeyonixMessages(claim) > 0
+
+  // El cliente está viendo la conversación: marca como leídas las respuestas
+  // de BEYONIX que ya tiene en pantalla (hasta la última visible). Sólo pasa
+  // en esta página -- entrar a Mis compras sin abrir el reclamo no marca
+  // nada. Si llega otra respuesta mientras la ve, también queda leída.
+  useEffect(() => {
+    const messageId = latestBeyonixMessage?.id
+    if (!claim?.id || !messageId || !hasUnreadBeyonixMessages) return
+    const key = `${claim.id}:${messageId}`
+    if (markedReadRef.current === key) return
+    markedReadRef.current = key
+
+    void fetch(`/api/orders/${order.id}/claims/read`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimId: claim.id, messageId }),
+    })
+      // La campana se actualiza sola (realtime de customer_notifications);
+      // Mis compras recalcula el badge al volver a cargarse.
+      .then((response) => {
+        if (!response.ok) markedReadRef.current = null
+      })
+      .catch(() => {
+        markedReadRef.current = null
+      })
+  }, [claim?.id, hasUnreadBeyonixMessages, latestBeyonixMessage?.id, order.id])
   const goToOrders = () => router.push("/cuenta?tab=ordenes")
 
   const scrollToPageTop = useCallback(() => {

@@ -3874,6 +3874,34 @@ body.product-modal-open .category-hero {
   cursor: pointer;
 }
 
+/* Badge de respuestas de BEYONIX sin leer en "Ver reclamo" (Mis compras).
+   Rojo con número blanco (4.8:1) igual en Light y Dark, con un aro del color
+   de la superficie para despegarlo del botón. Clases propias: sin utilidades
+   de color que el tema de la cuenta reescriba. */
+.customer-claim-button-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.customer-claim-unread-badge {
+  position: absolute;
+  top: -0.45rem;
+  right: -0.45rem;
+  display: inline-flex;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.3rem;
+  border-radius: 9999px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--account-surface, #0d1117);
+  pointer-events: none;
+}
 .customer-claim-experience button:not(:disabled),
 .customer-claim-experience summary,
 .customer-claim-experience label:has(input:not(:disabled)) {

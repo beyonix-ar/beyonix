@@ -35,6 +35,12 @@ import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { supabase } from "@/lib/supabase/client"
+import { isClaimOrderDelivered } from "@/lib/order-claims"
+import {
+  countUnreadBeyonixMessages,
+  formatUnreadBadgeCount,
+  selectCustomerDisplayedClaim,
+} from "@/lib/orders/customer-claim-unread"
 import type {
   CustomerOrderSummary,
   CustomerOrderSummaryClaim,
@@ -125,6 +131,19 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
           schema: "public",
           table: "ordenes",
           filter: `usuario_id=eq.${user.id}`,
+        },
+        refreshOrders,
+      )
+      // Una respuesta de BEYONIX crea/actualiza su notificación (trigger
+      // notify_customer_claim_message): el badge de "Ver reclamo" aparece al
+      // instante con el mismo realtime que usa la campana.
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "customer_notifications",
+          filter: `user_id=eq.${user.id}`,
         },
         refreshOrders,
       )
@@ -249,6 +268,14 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   ? null
                   : "Te avisaremos cuando el pedido esté en camino"
             const existingClaim = getLatestCustomerClaim(order.order_claims)
+            // Respuestas de BEYONIX sin leer en el reclamo que abre "Ver
+            // reclamo" (misma selección que la página del reclamo).
+            const unreadClaimMessages = countUnreadBeyonixMessages(
+              selectCustomerDisplayedClaim(order.order_claims ?? [], {
+                canCreatePostDeliveryClaim: isClaimOrderDelivered(order),
+              }),
+            )
+            const unreadClaimBadge = formatUnreadBadgeCount(unreadClaimMessages)
 
             return (
               <article
@@ -324,16 +351,31 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                       Ver compra
                     </BeyonixButton>
                     {existingClaim && (
-                      <BeyonixButton
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        aria-label={`Ver reclamo del pedido ${formatPublicOrderId(order.id)}`}
-                        onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
-                      >
-                        <MessageCircle className="size-4" />
-                        Ver reclamo
-                      </BeyonixButton>
+                      <span className="customer-claim-button-wrap">
+                        <BeyonixButton
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          aria-label={`Ver reclamo del pedido ${formatPublicOrderId(order.id)}${
+                            unreadClaimMessages > 0
+                              ? ` (${unreadClaimMessages} ${unreadClaimMessages === 1 ? "mensaje nuevo" : "mensajes nuevos"} de BEYONIX)`
+                              : ""
+                          }`}
+                          onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
+                        >
+                          <MessageCircle className="size-4" />
+                          Ver reclamo
+                        </BeyonixButton>
+                        {unreadClaimBadge && (
+                          <span
+                            aria-hidden="true"
+                            data-unread-claim-messages={unreadClaimMessages}
+                            className="customer-claim-unread-badge"
+                          >
+                            {unreadClaimBadge}
+                          </span>
+                        )}
+                      </span>
                     )}
                   </div>
                 </div>

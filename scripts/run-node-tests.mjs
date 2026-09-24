@@ -122,6 +122,7 @@ const TEST_FILES = [
   "lib/admin/admin-theme.test.ts",
   "lib/admin/admin-legibility-islands.test.ts",
   "lib/admin/claim-reply-draft.test.ts",
+  "lib/orders/customer-claim-unread.test.ts",
   "lib/orders/checkout-inventory.test.ts",
   "lib/orders/inventory-confirmation-guard.test.ts",
   "lib/orders/checkout-order-schema-contract.test.ts",
