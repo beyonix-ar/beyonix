@@ -1347,8 +1347,12 @@ export function ReturnInventoryPanel({
       </section>
 
       {confirmationItem && (
+        // Isla visual propia (admin-reception-modal__*, globals.css): se
+        // renderiza dentro del detalle de pedido, cuyas reglas globales pisan
+        // bg-*, [rounded][border], text-white/N, tracking-widest y
+        // .admin-ds-surface -- por eso el marcado no usa ninguna de ellas.
         <div
-          className="fixed inset-0 z-120 flex items-center justify-center bg-black/82 p-4 backdrop-blur-sm"
+          className="admin-reception-modal__backdrop fixed inset-0 z-120 flex items-center justify-center p-4"
           role="presentation"
           onMouseDown={() => setConfirmationItemId(null)}
         >
@@ -1356,46 +1360,39 @@ export function ReturnInventoryPanel({
             role="dialog"
             aria-modal="true"
             aria-labelledby="return-inventory-confirmation-title"
-            className="admin-ds-surface w-full max-w-md rounded-2xl border border-blue-300/25 bg-[#0B1724] p-4 shadow-2xl shadow-black/70 sm:p-5"
+            aria-describedby="return-inventory-confirmation-description"
+            className="admin-reception-modal w-full max-w-md p-4 sm:p-5"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="flex items-start gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-blue-300/25 bg-[#112A43] text-blue-100">
+              <span className="admin-reception-modal__icon" aria-hidden="true">
                 <PackageCheck className="size-5" />
               </span>
               <div className="min-w-0">
-                <p className="text-10px font-black uppercase tracking-widest text-blue-200/70">
-                  Confirmar movimiento
-                </p>
-                <h4 id="return-inventory-confirmation-title" className="mt-1 text-lg font-black text-white">
+                <p className="admin-reception-modal__eyebrow">Confirmar movimiento</p>
+                <h4 id="return-inventory-confirmation-title" className="admin-reception-modal__title mt-1">
                   Recepción de {confirmationItem.productos?.nombre ?? `Producto #${confirmationItem.producto_id}`}
                 </h4>
-                <p className="mt-1 text-xs font-semibold leading-5 text-white/58">
+                <p id="return-inventory-confirmation-description" className="admin-reception-modal__subtitle mt-1">
                   Revisá el destino de las unidades antes de modificar el inventario.
                 </p>
               </div>
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <div className="rounded-xl border border-emerald-300/20 bg-emerald-400/8 px-3 py-3">
-                <p className="text-10px font-black uppercase tracking-wide text-emerald-200">
-                  Vuelven al stock
-                </p>
-                <p className="mt-1 text-xl font-black text-white">{confirmationRestocked}</p>
+              <div className="admin-reception-modal__metric is-restock">
+                <p className="admin-reception-modal__metric-label">Vuelven al stock</p>
+                <p className="admin-reception-modal__metric-value mt-1">{confirmationRestocked}</p>
               </div>
-              <div className="rounded-xl border border-red-300/20 bg-red-400/8 px-3 py-3">
-                <p className="text-10px font-black uppercase tracking-wide text-red-200">
-                  Baja o pérdida
-                </p>
-                <p className="mt-1 text-xl font-black text-white">{confirmationWrittenOff}</p>
+              <div className="admin-reception-modal__metric is-writeoff">
+                <p className="admin-reception-modal__metric-label">Baja o pérdida</p>
+                <p className="admin-reception-modal__metric-value mt-1">{confirmationWrittenOff}</p>
               </div>
             </div>
 
-            <div className="mt-3 rounded-xl border border-white/9 bg-black/20 px-3 py-2.5">
-              <p className="text-10px font-black uppercase tracking-wide text-white/45">
-                Stock resultante
-              </p>
-              <div className="mt-1 space-y-0.5 text-xs font-bold leading-5 text-white/75">
+            <div className="admin-reception-modal__stock mt-3">
+              <p className="admin-reception-modal__stock-label">Stock resultante</p>
+              <div className="admin-reception-modal__stock-lines mt-1 space-y-0.5">
                 <p>
                   Stock general del producto: {confirmationProductStock} → {confirmationProductStock + confirmationStockDelta}
                 </p>
@@ -1407,7 +1404,7 @@ export function ReturnInventoryPanel({
               </div>
             </div>
 
-            <p className="mt-3 rounded-lg border border-amber-300/20 bg-amber-400/8 px-3 py-2 text-11px font-bold leading-4 text-amber-100">
+            <p className="admin-reception-modal__warning mt-3">
               Al confirmar se registra la recepción y su impacto de stock. Si queda remanente reclamado, podrás registrar una nueva recepción. No se borra el historial anterior.
             </p>
 
@@ -1416,7 +1413,7 @@ export function ReturnInventoryPanel({
                 type="button"
                 disabled={savingItemId !== null}
                 onClick={() => setConfirmationItemId(null)}
-                className="admin-ds-button admin-ds-button-secondary h-10 px-4 text-xs font-black"
+                className="admin-claim-flow-button admin-claim-flow-control is-secondary is-large"
               >
                 Cancelar
               </button>
@@ -1424,7 +1421,7 @@ export function ReturnInventoryPanel({
                 type="button"
                 disabled={savingItemId !== null}
                 onClick={() => void saveItem(confirmationItem, true)}
-                className="admin-ds-button admin-ds-button-primary inline-flex h-10 items-center justify-center gap-2 px-4 text-xs font-black"
+                className="admin-claim-flow-button admin-claim-flow-control is-primary is-large"
               >
                 <PackageCheck className="size-4" />
                 Confirmar recepción

@@ -14334,3 +14334,186 @@ html[data-account-theme="light"][data-account-scope] .bx-surface-inherit.bx-surf
 html[data-account-theme="light"][data-account-scope] .beyonix-checkout-input.beyonix-checkout-input {
   border-color: var(--bx-border-field) !important;
 }
+
+/* ==========================================================================
+   Modal "Confirmar movimiento" de la recepción de inventario
+   (ReturnInventoryPanel, components/claims/admin-claim-manager.tsx).
+   Se renderiza DENTRO del detalle de pedido, donde reglas globales pisan
+   bg-* (#151515), [rounded][border] (#202020), .admin-ds-surface,
+   tracking-widest y text-white/N. El marcado sólo usa estas clases propias;
+   colores sólidos por tema (contrastes verificados en
+   lib/admin/reception-modal.browser.test.tsx). Botones: los del flujo del
+   reclamo (.admin-claim-flow-button), ya themeados y excluidos del navy
+   genérico del detalle.
+   ========================================================================== */
+.admin-reception-modal__backdrop {
+  background: rgba(2, 6, 10, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.admin-reception-modal {
+  --reception-modal-bg: #0b1724;
+  --reception-modal-border: #2c4661;
+  --reception-modal-eyebrow: #93c5fd;
+  --reception-modal-title: #ffffff;
+  --reception-modal-text: #cbd5e1;
+  --reception-modal-icon-bg: #112a43;
+  --reception-modal-icon-border: #3b6690;
+  --reception-modal-icon: #bfdbfe;
+  --reception-modal-restock-bg: #0c2b2d;
+  --reception-modal-restock-border: #1f7a5f;
+  --reception-modal-restock-label: #6ee7b7;
+  --reception-modal-writeoff-bg: #2b1519;
+  --reception-modal-writeoff-border: #8a3a44;
+  --reception-modal-writeoff-label: #fca5a5;
+  --reception-modal-value: #ffffff;
+  --reception-modal-stock-bg: #132232;
+  --reception-modal-stock-border: #2b4058;
+  --reception-modal-stock-label: #93c5fd;
+  --reception-modal-stock-text: #e2e8f0;
+  --reception-modal-warning-bg: #2a2110;
+  --reception-modal-warning-border: #8a6a1f;
+  --reception-modal-warning-text: #fde68a;
+  border: 1px solid var(--reception-modal-border);
+  border-radius: 1rem;
+  background: var(--reception-modal-bg) !important;
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.75);
+  color: var(--reception-modal-text);
+  font-family: var(--font-body);
+}
+
+html[data-admin-theme="light"] .admin-reception-modal__backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+html[data-admin-theme="light"] .admin-reception-modal {
+  --reception-modal-bg: #ffffff;
+  --reception-modal-border: #cbd5e1;
+  --reception-modal-eyebrow: #1e4d7b;
+  --reception-modal-title: #0f172a;
+  --reception-modal-text: #475569;
+  --reception-modal-icon-bg: #eaf2fb;
+  --reception-modal-icon-border: #b9d3ee;
+  --reception-modal-icon: #112a43;
+  --reception-modal-restock-bg: #ecfdf5;
+  --reception-modal-restock-border: #6ee7b7;
+  --reception-modal-restock-label: #047857;
+  --reception-modal-writeoff-bg: #fef2f2;
+  --reception-modal-writeoff-border: #fca5a5;
+  --reception-modal-writeoff-label: #b91c1c;
+  --reception-modal-value: #0f172a;
+  --reception-modal-stock-bg: #f1f5f9;
+  --reception-modal-stock-border: #cbd5e1;
+  --reception-modal-stock-label: #1e4d7b;
+  --reception-modal-stock-text: #1e293b;
+  --reception-modal-warning-bg: #fffbeb;
+  --reception-modal-warning-border: #f59e0b;
+  --reception-modal-warning-text: #78350f;
+  box-shadow: 0 24px 60px -20px rgba(15, 23, 42, 0.45);
+}
+
+.admin-reception-modal .admin-reception-modal__icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  border: 1px solid var(--reception-modal-icon-border);
+  border-radius: 0.75rem;
+  background: var(--reception-modal-icon-bg);
+  color: var(--reception-modal-icon) !important;
+}
+
+/* El remapeo genérico de svg.lucide (Light) pintaría el ícono con --admin-text. */
+.admin-reception-modal .admin-reception-modal__icon.admin-reception-modal__icon svg.lucide.lucide,
+html[data-admin-theme="light"] .admin-reception-modal .admin-reception-modal__icon.admin-reception-modal__icon svg.lucide.lucide {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+.admin-reception-modal .admin-reception-modal__eyebrow {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--reception-modal-eyebrow) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__title {
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--reception-modal-title) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__subtitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--reception-modal-text) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__metric {
+  padding: 0.75rem;
+  border: 1px solid var(--reception-modal-restock-border);
+  border-radius: 0.75rem;
+  background: var(--reception-modal-restock-bg) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__metric.is-writeoff {
+  border-color: var(--reception-modal-writeoff-border);
+  background: var(--reception-modal-writeoff-bg) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__metric-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--reception-modal-restock-label) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__metric.is-writeoff .admin-reception-modal__metric-label {
+  color: var(--reception-modal-writeoff-label) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__metric-value {
+  font-size: 1.375rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--reception-modal-value) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__stock {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--reception-modal-stock-border);
+  border-radius: 0.75rem;
+  background: var(--reception-modal-stock-bg) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__stock-label {
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--reception-modal-stock-label) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__stock-lines,
+.admin-reception-modal .admin-reception-modal__stock-lines p {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--reception-modal-stock-text) !important;
+}
+
+.admin-reception-modal .admin-reception-modal__warning {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--reception-modal-warning-border);
+  border-radius: 0.625rem;
+  background: var(--reception-modal-warning-bg) !important;
+  color: var(--reception-modal-warning-text) !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
