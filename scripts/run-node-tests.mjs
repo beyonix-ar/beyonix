@@ -122,6 +122,8 @@ const TEST_FILES = [
   "lib/admin/admin-theme.test.ts",
   "lib/admin/admin-legibility-islands.test.ts",
   "lib/admin/claim-reply-draft.test.ts",
+  "lib/admin/structural-sharing.test.ts",
+  "lib/admin/order-detail-refresh-contract.test.ts",
   "lib/orders/customer-claim-unread.test.ts",
   "lib/orders/checkout-inventory.test.ts",
   "lib/orders/inventory-confirmation-guard.test.ts",
@@ -203,6 +205,7 @@ const TEST_FILES = [
 // --conditions=react-server (los hooks de cliente no existen en ese build).
 const TSX_TEST_FILES = [
   "components/claims/claim-reply-draft.test.tsx",
+  "components/claims/return-inventory-refresh.test.tsx",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES].filter((file) => !existsSync(file))

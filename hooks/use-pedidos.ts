@@ -18,6 +18,7 @@ import {
 } from "@/lib/supabase/queries/pedidos"
 import { supabase } from "@/lib/supabase/client"
 import { describeAdminLoadError } from "@/lib/admin/request-error"
+import { shareUnchanged } from "@/lib/admin/structural-sharing"
 
 const REALTIME_PEDIDOS_TABLES = [
   "ordenes",
@@ -73,7 +74,9 @@ export function usePedidos({ orderId, search = "" }: { orderId?: number; search?
 
         if (requestId !== requestIdRef.current) return
 
-        setPedidos(dedupePedidos(data.pedidos))
+        // Conserva la identidad de lo que no cambió: un refresco con los
+        // mismos datos no invalida effects/memos de los componentes abiertos.
+        setPedidos((previous) => shareUnchanged(previous, dedupePedidos(data.pedidos)))
         setTotal(data.total)
 
         setError(null)

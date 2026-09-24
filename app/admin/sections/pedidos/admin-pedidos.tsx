@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
 import { OrderReplacements } from "./order-replacements"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
+import { shareUnchanged } from "@/lib/admin/structural-sharing"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { humanizeBillingError } from "@/lib/admin/billing-errors"
 import { getCancellationProgress } from "@/lib/admin/order-operational-progress"
@@ -3009,50 +3010,64 @@ function BillingManagementPanel({
   // interno, sin obligar al Admin a elegirlo de nuevo. Si el Admin corrige
   // manualmente desde "Opciones avanzadas" (manualGestionOverride), se deja
   // de pisar su elección.
+  //
+  // Depende sólo de los campos del reclamo que usa, no del objeto: cada
+  // refresco trae un `linkedClaim` nuevo (URLs firmadas, mensajes) y
+  // reescribía "Detalle del motivo" mientras el Admin lo estaba editando.
+  const linkedClaimId = linkedClaim?.id ?? null
+  const linkedClaimFailureType = linkedClaim?.failure_type ?? ""
+  const linkedClaimDescription = linkedClaim?.description ?? null
   useEffect(() => {
-    if (manualGestionOverride || !linkedClaim) return
-    const mapped = FAILURE_TYPE_TO_REASON_CODE[linkedClaim.failure_type ?? ""] ?? "otro"
+    if (manualGestionOverride || linkedClaimId === null) return
+    const mapped = FAILURE_TYPE_TO_REASON_CODE[linkedClaimFailureType] ?? "otro"
     setReasonCode(mapped)
     setReasonDetail(
       mapped === "otro"
-        ? PROBLEM_LABELS[linkedClaim.failure_type ?? ""] ??
-            linkedClaim.description?.trim().slice(0, 200) ??
+        ? PROBLEM_LABELS[linkedClaimFailureType] ??
+            linkedClaimDescription?.trim().slice(0, 200) ??
             "Motivo informado por el cliente"
         : "",
     )
-  }, [manualGestionOverride, linkedClaim])
+  }, [manualGestionOverride, linkedClaimId, linkedClaimFailureType, linkedClaimDescription])
 
   // Deriva devolución total/parcial de las cantidades ya elegidas en el
   // Paso 1, y hereda "cambio de producto" si esa ya fue la resolución
   // decidida en el reclamo. El Admin solo elige manualmente un tipo de
   // gestión distinto (ajuste manual, reembolso excepcional, cancelación)
   // desde "Opciones avanzadas" o el atajo del Paso 1 sin productos.
+  //
+  // Igual que arriba: las dependencias son valores (no objetos remotos), así
+  // un refresco sin cambios reales no vuelve a tildar "incluir envío" ni a
+  // reescribir las cantidades de una cancelación mientras el Admin opera.
+  const linkedClaimResolution = linkedClaim?.resolution ?? ""
+  const linkedClaimCustomerResolution = linkedClaim?.customer_selected_resolution ?? ""
+  const cancellationCreditQuantitiesKey = JSON.stringify(
+    creditableOrderItems.map((item) => [
+      item.id,
+      Math.max(
+        0,
+        Math.min(
+          Number(item.cantidad),
+          claimAffectedQuantityByItem.get(item.id) ?? 0,
+        ) - (committedQuantityByItem.get(item.id) ?? 0),
+      ),
+    ]),
+  )
   useEffect(() => {
     if (manualGestionOverride) return
-    if (linkedClaim?.failure_type === "cancelar_compra") {
+    if (linkedClaimFailureType === "cancelar_compra") {
       setOperationType("cancelacion_antes_despacho")
       setReasonCode("cancelacion_antes_despacho")
       setReturnShippingParty("no_corresponde")
       setIncludeOriginalShipping(originalShippingPaid > 0)
       setCreditQuantities(
-        Object.fromEntries(
-          creditableOrderItems.map((item) => [
-            item.id,
-            Math.max(
-              0,
-              Math.min(
-                Number(item.cantidad),
-                claimAffectedQuantityByItem.get(item.id) ?? 0,
-              ) - (committedQuantityByItem.get(item.id) ?? 0),
-            ),
-          ]),
-        ),
+        Object.fromEntries(JSON.parse(cancellationCreditQuantitiesKey) as Array<[number, number]>),
       )
       return
     }
     if (
-      linkedClaim?.resolution === "cambio_producto" ||
-      linkedClaim?.customer_selected_resolution === "cambio_producto"
+      linkedClaimResolution === "cambio_producto" ||
+      linkedClaimCustomerResolution === "cambio_producto"
     ) {
       setOperationType("cambio_producto")
       return
@@ -3062,10 +3077,10 @@ function BillingManagementPanel({
       selectedCreditUnits >= totalAvailableOrderUnits ? "devolucion_total" : "devolucion_parcial",
     )
   }, [
-    claimAffectedQuantityByItem,
-    committedQuantityByItem,
-    creditableOrderItems,
-    linkedClaim,
+    cancellationCreditQuantitiesKey,
+    linkedClaimCustomerResolution,
+    linkedClaimFailureType,
+    linkedClaimResolution,
     manualGestionOverride,
     originalShippingPaid,
     selectedCreditUnits,
@@ -5194,14 +5209,19 @@ function PedidoDetailModal({
     setCustomShippingNotice(null)
   }, [pedido.id])
 
+  // Depende de QUÉ pestañas existen (string), no del array: `detailTabs` se
+  // recalcula con cada refresco del pedido (badges) y, si el refresco llegaba
+  // antes de que la URL reflejara el clic en otra pestaña, volvía a la
+  // anterior y desmontaba la sección abierta con lo que el Admin editaba.
+  const availableDetailViews = detailTabs.map((tab) => tab.view).join("|")
   useEffect(() => {
     const requestedView = getAdminOrderDetailView(searchParams.get("tab"))
-    const nextView = detailTabs.some((tab) => tab.view === requestedView)
+    const nextView = availableDetailViews.split("|").includes(requestedView)
       ? requestedView
       : "resumen"
 
     setActiveView(nextView)
-  }, [detailTabs, pedido.id, searchParams])
+  }, [availableDetailViews, pedido.id, searchParams])
 
   useEffect(() => {
     let active = true
@@ -7654,9 +7674,8 @@ export function AdminPedidos({
     setPreviewPedido((currentPedido) => {
       if (!currentPedido) return currentPedido
 
-      return (
-        pedidos.find((pedido) => pedido.id === currentPedido.id) ?? currentPedido
-      )
+      const refreshed = pedidos.find((pedido) => pedido.id === currentPedido.id)
+      return refreshed ? shareUnchanged(currentPedido, refreshed) : currentPedido
     })
   }, [pedidos])
 
@@ -8120,17 +8139,22 @@ export function AdminPedidos({
   }
 
   const handleClaimChange = (pedidoId: number, claim: SupabaseOrderClaim) => {
-    setPreviewPedido((currentPedido) =>
-      currentPedido?.id === pedidoId
-        ? {
-            ...currentPedido,
-            order_claims: [
-              claim,
-              ...(currentPedido.order_claims ?? []).filter((item) => item.id !== claim.id),
-            ],
-          }
-        : currentPedido
-    )
+    setPreviewPedido((currentPedido) => {
+      if (currentPedido?.id !== pedidoId) return currentPedido
+      const previousClaim = currentPedido.order_claims?.find((item) => item.id === claim.id)
+      // El polling del reclamo trae URLs firmadas nuevas en cada vuelta: se
+      // reutiliza todo lo que no cambió (affected_items, mensajes...) para no
+      // invalidar el estado derivado de los paneles abiertos.
+      const nextClaim = shareUnchanged(previousClaim, claim)
+      if (nextClaim === previousClaim) return currentPedido
+      return {
+        ...currentPedido,
+        order_claims: [
+          nextClaim,
+          ...(currentPedido.order_claims ?? []).filter((item) => item.id !== claim.id),
+        ],
+      }
+    })
     // Silenciosa: el reclamo ya se fusionó arriba. Una recarga con loading
     // (spinner) desmontaba el detalle embebido -- y con él el borrador de la
     // respuesta que el admin estaba escribiendo -- cada vez que el polling

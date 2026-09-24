@@ -2345,12 +2345,36 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
   max-width: 82%;
 }
 
+/* Conversación del reclamo: la columna izquierda (Evidencia + chat) se
+   estira a la altura de la fila de la grilla (la marca el panel "Gestionar
+   reclamo" en >= 1280 px). Evidencia conserva su altura natural; el chat
+   ocupa el resto y el composer queda fijo abajo. `contain: size` hace que
+   el largo del hilo no empuje la altura de la fila: el hilo mide lo que le
+   deja el layout (mínimo 18rem) y scrollea adentro. */
+.admin-claim-workspace > main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.admin-claim-workspace > main > .admin-claim-chat-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (min-width: 1280px) {
+  .admin-claim-workspace > main {
+    align-self: stretch;
+  }
+}
+
 .admin-claim-chat-thread {
-  flex: none !important;
+  flex: 1 1 auto !important;
   height: auto !important;
-  min-height: unset !important;
-  max-height: 260px !important;
+  min-height: 18rem !important;
+  max-height: none !important;
   overflow-y: auto !important;
+  contain: size;
   background:
     linear-gradient(180deg, rgba(14, 14, 14, 0.98), rgba(10, 10, 10, 0.98)) !important;
 }
@@ -13646,6 +13670,25 @@ html[data-admin-theme="light"] .admin-claim-reception-note { color: #1e40af !imp
   border-radius: 1rem;
   background: var(--claim-flow-surface);
   box-shadow: var(--claim-flow-shadow);
+}
+
+/* Superficies anidadas: [sección] > [card del producto] > [controles].
+   La card interior toma un tono propio (un paso más oscuro que la sección
+   en Light, un paso más claro en Dark) y los controles que se operan
+   (tiles, observación, contadores, etiquetas, cantidades) vuelven a la
+   superficie "elevada". Así la jerarquía no depende sólo del borde. */
+.admin-claim-reception-panel .admin-claim-reception-item {
+  --claim-flow-surface: #0f1c2b;
+  --claim-flow-surface-strong: rgba(148, 163, 184, 0.07);
+  --claim-flow-line: rgba(148, 163, 184, 0.22);
+}
+
+html[data-admin-theme="light"] .admin-claim-reception-panel .admin-claim-reception-item {
+  --claim-flow-surface: #edf2f7;
+  --claim-flow-surface-strong: #ffffff;
+  --claim-flow-muted: #526175;
+  --claim-flow-line: #d6dfe9;
+  --claim-flow-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 .admin-claim-reception-product {

@@ -62,6 +62,7 @@ import {
   type ReplacementLoadState,
 } from "@/lib/orders/claim-replacement-flow"
 import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
+import { useScopedState } from "@/hooks/use-scoped-state"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -568,64 +569,44 @@ export function ReturnInventoryPanel({
   canManage,
   registeredReplacements = null,
   onUpdated,
+  onClaimChange,
 }: {
   pedido: SupabasePedido
   claim: SupabaseOrderClaim
   canManage: boolean
   registeredReplacements?: RegisteredReplacement[] | null
   onUpdated?: () => void | Promise<void>
+  /** Publica el reclamo devuelto por el servidor (p. ej. tras corregir productos). */
+  onClaimChange?: (claim: SupabaseOrderClaim) => void
 }) {
+  // Estado remoto: productos, stock y selección reclamada se leen siempre de
+  // las props. Los refrescos (polling, realtime, recargas) sólo actualizan
+  // esto; nunca reescriben lo que el operador está editando.
   const orderItems = pedido.orden_items ?? []
-  const [affectedItems, setAffectedItems] = useState<AffectedItemSelection[]>(() =>
-    getClaimAffectedItems(claim, orderItems),
-  )
-  const [editingAffectedItems, setEditingAffectedItems] = useState(false)
-  const affectedVersionRef = useRef(claim.updated_at)
-  const [savingAffectedItems, setSavingAffectedItems] = useState(false)
-  const [affectedDrafts, setAffectedDrafts] = useState<Record<number, string>>(() =>
-    Object.fromEntries(
-      getClaimAffectedItems(claim, orderItems).map((item) => [
-        item.order_item_id,
-        String(item.quantity),
-      ]),
-    ),
-  )
+  const affectedItems = getClaimAffectedItems(claim, orderItems)
   const affectedQuantityById = new Map(
     affectedItems.map((item) => [item.order_item_id, item.quantity]),
   )
   const items = orderItems.filter((item) => affectedQuantityById.has(Number(item.id)))
-  const [drafts, setDrafts] = useState<Record<number, ReturnInventoryDraft>>(() =>
-    Object.fromEntries(items.map((item) => [item.id, getReturnInventoryDraft(item)])),
-  )
-  const [savingItemId, setSavingItemId] = useState<number | null>(null)
-  const [confirmationItemId, setConfirmationItemId] = useState<number | null>(null)
-  const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null)
+
+  // Estado de edición local: atado a (pedido, reclamo). Sólo se limpia al
+  // cambiar de entidad, al confirmar con éxito o por acción del operador.
+  // Un ítem sin borrador muestra el valor del servidor (no editado todavía).
+  const draftScope = `${pedido.id}:${claim.id}`
+  const [drafts, setDrafts] = useScopedState<Record<number, ReturnInventoryDraft>>(draftScope, {})
+  const [editingAffectedItems, setEditingAffectedItems] = useScopedState(draftScope, false)
+  const [affectedDrafts, setAffectedDrafts] = useScopedState<Record<number, string>>(draftScope, {})
+  const [confirmationItemId, setConfirmationItemId] = useScopedState<number | null>(draftScope, null)
+  const [notice, setNotice] = useScopedState<{ ok: boolean; message: string } | null>(draftScope, null)
+  // También por entidad: un request que termina después de cambiar de
+  // reclamo no deja "guardando" ni bloquea el formulario del nuevo.
+  const [savingAffectedItems, setSavingAffectedItems] = useScopedState(draftScope, false)
+  const [savingItemId, setSavingItemId] = useScopedState<number | null>(draftScope, null)
+  const affectedVersionRef = useRef(claim.updated_at)
   const returnReceptionAttemptsRef = useRef<Record<number, IdempotencyAttempt | null>>({})
 
-  useEffect(() => {
-    const nextAffectedItems = getClaimAffectedItems(claim, orderItems)
-    setAffectedItems(nextAffectedItems)
-    setAffectedDrafts(
-      Object.fromEntries(
-        nextAffectedItems.map((item) => [item.order_item_id, String(item.quantity)]),
-      ),
-    )
-    setEditingAffectedItems(false)
-    setDrafts(
-      Object.fromEntries(
-        orderItems
-          .filter((item) =>
-            nextAffectedItems.some(
-              (affectedItem) => affectedItem.order_item_id === Number(item.id),
-            ),
-          )
-          .map((item) => [item.id, getReturnInventoryDraft(item)]),
-      ),
-    )
-    setSavingItemId(null)
-    setConfirmationItemId(null)
-    setNotice(null)
-  }, [claim.id, claim.affected_items, claim.affected_items_updated_at, pedido.id, pedido.orden_items])
+  const getAffectedDraftsFromClaim = () =>
+    Object.fromEntries(affectedItems.map((item) => [item.order_item_id, String(item.quantity)]))
 
   const toggleAffectedItem = (item: SupabasePedidoItem) => {
     if (item.return_inventory_processed_at) return
@@ -717,13 +698,7 @@ export function ReturnInventoryPanel({
         return
       }
 
-      const nextAffectedItems = getClaimAffectedItems(data.claim, orderItems)
-      setAffectedItems(nextAffectedItems)
-      setAffectedDrafts(
-        Object.fromEntries(
-          nextAffectedItems.map((item) => [item.order_item_id, String(item.quantity)]),
-        ),
-      )
+      onClaimChange?.(data.claim)
       setEditingAffectedItems(false)
       setNotice({
         ok: true,
@@ -881,6 +856,13 @@ export function ReturnInventoryPanel({
       // Éxito: la próxima carga sobre este ítem (si queda remanente) es un
       // evento nuevo, no un reintento -- necesita una key nueva.
       returnReceptionAttemptsRef.current[item.id] = null
+      // Recién ahora el borrador de este ítem deja de tener sentido: se
+      // descarta y el ítem vuelve a mostrar lo que informa el servidor.
+      setDrafts((current) => {
+        const next = { ...current }
+        delete next[item.id]
+        return next
+      })
       setNotice({
         ok: true,
         message: "Recepción guardada y stock actualizado correctamente.",
@@ -965,7 +947,9 @@ export function ReturnInventoryPanel({
               aria-expanded={editingAffectedItems}
               onClick={() => {
                 affectedVersionRef.current = claim.updated_at
-                setEditingAffectedItems((current) => !current)
+                // Al abrir, el editor parte de la selección vigente del servidor.
+                if (!editingAffectedItems) setAffectedDrafts(getAffectedDraftsFromClaim())
+                setEditingAffectedItems(!editingAffectedItems)
               }}
               className="admin-claim-flow-button admin-claim-flow-control is-secondary is-compact"
             >
@@ -1069,14 +1053,7 @@ export function ReturnInventoryPanel({
               type="button"
               disabled={savingAffectedItems}
               onClick={() => {
-                setAffectedDrafts(
-                  Object.fromEntries(
-                    affectedItems.map((item) => [
-                      item.order_item_id,
-                      String(item.quantity),
-                    ]),
-                  ),
-                )
+                setAffectedDrafts(getAffectedDraftsFromClaim())
                 setEditingAffectedItems(false)
               }}
               className="admin-ds-button h-9 px-3 text-10px font-black"
@@ -2490,6 +2467,7 @@ export function AdminClaimManager({
           canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
           registeredReplacements={registeredReplacements}
           onUpdated={onInventoryUpdated}
+          onClaimChange={onClaimChange}
         />
       )}
 
