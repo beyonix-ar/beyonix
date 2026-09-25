@@ -2,6 +2,8 @@
 
 import {
   type ReactNode,
+  startTransition,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -100,6 +102,19 @@ import {
   type MercadoPagoCheckoutMode,
 } from "@/lib/pricing/checkout-pricing"
 import { COMMERCIAL_UPDATE_NOTICE } from "@/lib/cart/cart-catalog-refresh"
+import {
+  getCartStockReservation,
+  reserveCartStock,
+  type StockReservationItem,
+  type StockReservationResult,
+} from "@/lib/cart/stock-reservations"
+import {
+  CHECKOUT_STEP_RESERVATION_KEY,
+  formatReservationCountdown,
+  reservationItemsFromCart,
+  reservationMatchesCart,
+  reservationSecondsLeft,
+} from "@/lib/cart/checkout-step-reservation"
 import { useCommercialRefresh } from "@/hooks/use-commercial-refresh"
 import {
   calculateStoreBenefitDiscount,
@@ -597,6 +612,7 @@ export default function CheckoutPage() {
     cartSessionId,
     isReady: isCartReady,
     clearCart,
+    startNewCheckoutSession,
     increaseQuantity,
     decreaseQuantity,
     removeFromCart,
@@ -665,6 +681,7 @@ export default function CheckoutPage() {
     useState("")
   const [insufficientStockItems, setInsufficientStockItems] =
     useState<InsufficientStockModalItem[]>([])
+  const [reservationStockError, setReservationStockError] = useState(false)
   const [shippingMessage, setShippingMessage] =
     useState("")
   const [shippingMessageTone, setShippingMessageTone] =
@@ -681,6 +698,19 @@ export default function CheckoutPage() {
     useState<number | null>(null)
   const [currentStep, setCurrentStep] =
     useState<CheckoutStep>(1)
+  const [stockReservation, setStockReservation] = useState<{
+    expiresAt: string
+    serverNow: string
+    receivedAt: number
+    items: ReturnType<typeof reservationItemsFromCart>
+  } | null>(null)
+  const [reservationSeconds, setReservationSeconds] = useState(0)
+  const [reservationPending, setReservationPending] = useState(false)
+  const [reservationExpired, setReservationExpired] = useState(false)
+  const reservationExpiryHandledRef = useRef(false)
+  const reservationActionInFlightRef = useRef(false)
+  const reservationRevisionRef = useRef(0)
+  const reservationRedirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [invalidField, setInvalidField] =
     useState<RequiredCheckoutField | null>(null)
   const [shippingSelectionMissing, setShippingSelectionMissing] =
@@ -744,8 +774,115 @@ export default function CheckoutPage() {
       if (validationTimerRef.current) {
         clearTimeout(validationTimerRef.current)
       }
+      if (reservationRedirectTimerRef.current) {
+        clearTimeout(reservationRedirectTimerRef.current)
+      }
     }
   }, [])
+
+  const expireStockReservation = useCallback(() => {
+    if (reservationExpiryHandledRef.current) return
+    reservationExpiryHandledRef.current = true
+    sessionStorage.removeItem(CHECKOUT_STEP_RESERVATION_KEY)
+    setReservationExpired(true)
+    setStockReservation(null)
+    setReservationSeconds(0)
+    setMercadoPagoConfirmOpen(false)
+    startNewCheckoutSession()
+    reservationRedirectTimerRef.current = setTimeout(() => router.replace("/"), 2800)
+  }, [router, startNewCheckoutSession])
+
+  useEffect(() => {
+    if (!mounted || !isCartReady || !cartSessionId) return
+    if (sessionStorage.getItem(CHECKOUT_STEP_RESERVATION_KEY) !== cartSessionId) return
+    let cancelled = false
+    startTransition(() => {
+      void getCartStockReservation(cartSessionId).then((snapshot) => {
+        if (cancelled) return
+        if (snapshot.status === "expired" || snapshot.status === "missing") {
+          expireStockReservation()
+        } else if (snapshot.status === "active") {
+          const receivedAt = performance.now()
+          setStockReservation({
+            expiresAt: snapshot.expiresAt,
+            serverNow: snapshot.serverNow,
+            receivedAt,
+            items: snapshot.items,
+          })
+          setReservationSeconds(reservationSecondsLeft(
+            snapshot.expiresAt, snapshot.serverNow, receivedAt, receivedAt,
+          ))
+        } else if (snapshot.status === "error") {
+          setCheckoutError("No pudimos comprobar tu reserva. Intentá nuevamente.")
+        } else {
+          sessionStorage.removeItem(CHECKOUT_STEP_RESERVATION_KEY)
+          setCheckoutError("Tu reserva ya no está disponible. Volvé a revisar tu compra.")
+        }
+      }).catch(() => {
+        if (!cancelled) setCheckoutError("No pudimos comprobar tu reserva. Intentá nuevamente.")
+      })
+    })
+    return () => { cancelled = true }
+  }, [mounted, isCartReady, cartSessionId, expireStockReservation])
+
+  useEffect(() => {
+    if (!stockReservation || reservationExpired || !cartSessionId) return
+    let cancelled = false
+    const synchronize = () => {
+      if (reservationActionInFlightRef.current) return
+      const revision = reservationRevisionRef.current
+      startTransition(() => {
+        void getCartStockReservation(cartSessionId).then((snapshot) => {
+          if (cancelled || revision !== reservationRevisionRef.current) return
+          if (snapshot.status === "expired" || snapshot.status === "missing") {
+            expireStockReservation()
+          } else if (snapshot.status === "active") {
+            const receivedAt = performance.now()
+            setStockReservation({
+              expiresAt: snapshot.expiresAt,
+              serverNow: snapshot.serverNow,
+              receivedAt,
+              items: snapshot.items,
+            })
+            if (!reservationMatchesCart(snapshot.items, reservationItemsFromCart(items))) {
+              setCurrentStep(2)
+              setMercadoPagoConfirmOpen(false)
+              setCheckoutError("La reserva cambió en otra pestaña. Revisá tu carrito y volvé a continuar.")
+            }
+          }
+        }).catch(() => {
+          if (!cancelled) setCheckoutError("No pudimos comprobar tu reserva. Intentá nuevamente.")
+        })
+      })
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") synchronize()
+    }
+    window.addEventListener("focus", synchronize)
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener("focus", synchronize)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [stockReservation, reservationExpired, cartSessionId, items, expireStockReservation])
+
+  useEffect(() => {
+    if (!stockReservation || reservationExpired) return
+    const tick = () => {
+      const seconds = reservationSecondsLeft(
+        stockReservation.expiresAt,
+        stockReservation.serverNow,
+        stockReservation.receivedAt,
+        performance.now(),
+      )
+      setReservationSeconds(seconds)
+      if (seconds === 0) expireStockReservation()
+    }
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [stockReservation, reservationExpired, expireStockReservation])
 
   // `useAuth().user` ya está poblado con el mismo perfil que antes se
   // volvía a pedir acá (login/restauración de sesión lo carga vía
@@ -1649,6 +1786,107 @@ export default function CheckoutPage() {
     (currentStep === 1
       ? isRecipientStepValid
       : isShippingStepValid)
+  const cartReservationItems = reservationItemsFromCart(items)
+  const hasMatchingStockReservation = Boolean(
+    stockReservation &&
+    reservationSeconds > 0 &&
+    reservationMatchesCart(stockReservation.items, cartReservationItems),
+  )
+
+  const showReservationFailure = (
+    result: Extract<StockReservationResult, { success: false }>,
+    requestedItems: StockReservationItem[],
+  ) => {
+    if (result.code === "RESERVATION_EXPIRED") {
+      expireStockReservation()
+      return
+    }
+    if (result.code === "OUT_OF_STOCK") {
+      const affected = (result.conflicts ?? []).flatMap((conflict) => {
+        const cartItem = items.find((item) =>
+          item.product.id === conflict.productId &&
+          item.variantId === (conflict.variantId ?? null) &&
+          item.conditionedStockId === (conflict.conditionedStockId ?? null),
+        )
+        const requested = requestedItems.find((item) =>
+          item.productId === conflict.productId &&
+          (item.variantId ?? null) === (conflict.variantId ?? null) &&
+          (item.conditionedStockId ?? null) === (conflict.conditionedStockId ?? null),
+        )
+        return cartItem && requested ? [{
+          productId: conflict.productId,
+          variantId: conflict.variantId ?? null,
+          conditionedStockId: conflict.conditionedStockId ?? null,
+          displayName: cartItem.product.nombre,
+          variantName: cartItem.variantName,
+          requestedQuantity: requested.quantity,
+        }] : []
+      })
+      if (affected.length) {
+        setReservationStockError(true)
+        setInsufficientStockItems(affected)
+      }
+      setCheckoutError("Uno de los productos de tu compra acaba de quedarse sin stock. Revisá las cantidades antes de continuar.")
+      return
+    }
+    setCheckoutError(result.code === "INVALID_QUANTITY"
+      ? "Podés comprar hasta 3 unidades por producto o variante. Revisá tu carrito."
+      : "No pudimos reservar los productos. Revisá tu carrito e intentá nuevamente.")
+  }
+
+  const reserveCheckoutItems = async (
+    requestedItems: StockReservationItem[],
+    onSuccess: () => void,
+  ) => {
+    if (reservationActionInFlightRef.current || reservationExpired || !cartSessionId) return
+    reservationActionInFlightRef.current = true
+    reservationRevisionRef.current += 1
+    setReservationPending(true)
+    setCheckoutError("")
+    try {
+      const result = await reserveCartStock({ sessionId: cartSessionId, items: requestedItems })
+      if (!result.success) {
+        showReservationFailure(result, requestedItems)
+        return
+      }
+      const receivedAt = performance.now()
+      if (reservationSecondsLeft(result.expiresAt, result.serverNow, receivedAt, receivedAt) === 0) {
+        expireStockReservation()
+        return
+      }
+      setStockReservation({
+        expiresAt: result.expiresAt,
+        serverNow: result.serverNow,
+        receivedAt,
+        items: requestedItems,
+      })
+      setReservationSeconds(reservationSecondsLeft(
+        result.expiresAt, result.serverNow, receivedAt, receivedAt,
+      ))
+      sessionStorage.setItem(CHECKOUT_STEP_RESERVATION_KEY, cartSessionId)
+      onSuccess()
+    } catch {
+      setCheckoutError("No pudimos comprobar el stock. Intentá nuevamente.")
+    } finally {
+      reservationActionInFlightRef.current = false
+      setReservationPending(false)
+    }
+  }
+
+  const changeCheckoutCartItem = (
+    index: number,
+    quantity: number | null,
+    applyChange: () => void,
+  ) => {
+    if (!stockReservation) {
+      applyChange()
+      return
+    }
+    const requestedItems = cartReservationItems.flatMap((item, itemIndex) =>
+      itemIndex !== index ? [item] : quantity === null ? [] : [{ ...item, quantity }],
+    )
+    void reserveCheckoutItems(requestedItems, applyChange)
+  }
   const getCheckoutInputClassName = (
     field: RequiredCheckoutField
   ) =>
@@ -1712,17 +1950,19 @@ export default function CheckoutPage() {
 
     setInvalidField(null)
     setShippingSelectionMissing(false)
-    setCurrentStep(
-      Math.min(
-        currentStep + 1,
-        3
-      ) as CheckoutStep
-    )
+    if (currentStep === 2) {
+      void reserveCheckoutItems(cartReservationItems, () => setCurrentStep(3))
+      return
+    }
+    setCurrentStep(2)
   }
 
   const canSubmitCheckout =
     isFormValid &&
     !isProcessing &&
+    !reservationPending &&
+    hasMatchingStockReservation &&
+    !reservationExpired &&
     !hasKnownStockConflict &&
     isSelectedPaymentValid &&
     termsAccepted
@@ -1733,7 +1973,9 @@ export default function CheckoutPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (currentStep !== 3) return
     if (submissionInFlightRef.current) return
+    if (!hasMatchingStockReservation || reservationPending || reservationExpired) return
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid) return
     if (!termsAccepted) return
 
@@ -1751,7 +1993,9 @@ export default function CheckoutPage() {
   }
 
   const submitCheckout = async () => {
+    if (currentStep !== 3) return
     if (submissionInFlightRef.current) return
+    if (!hasMatchingStockReservation || reservationPending || reservationExpired) return
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid || !termsAccepted) return
 
     submissionInFlightRef.current = true
@@ -1759,6 +2003,16 @@ export default function CheckoutPage() {
     setCheckoutError("")
 
     try {
+      const liveReservation = await getCartStockReservation(cartSessionId)
+      if (liveReservation.status === "expired") {
+        expireStockReservation()
+        return
+      }
+      if (liveReservation.status !== "active" ||
+          !reservationMatchesCart(liveReservation.items, cartReservationItems)) {
+        setCheckoutError("Tu reserva cambió o ya no está disponible. Revisá tu compra antes de continuar.")
+        return
+      }
       const customerData = {
         ...formData,
         direccion: [
@@ -1819,6 +2073,7 @@ export default function CheckoutPage() {
         data?.code === "INSUFFICIENT_STOCK" &&
         Array.isArray(data.items)
       ) {
+        setReservationStockError(false)
         setInsufficientStockItems(data.items)
         return
       }
@@ -1997,6 +2252,21 @@ export default function CheckoutPage() {
     return null
   }
 
+  if (reservationExpired) {
+    return (
+      <main className="checkout-page flex min-h-screen flex-col items-center justify-center bg-[#05070A] px-4 font-heading text-white">
+        <div role="alert" data-stock-reservation-expired className="max-w-md rounded-xl border border-beyonix-blue-light/25 bg-[#0B1118] p-6 text-center">
+          <Clock3 className="mx-auto mb-3 size-8 text-beyonix-sky" />
+          <h1 className="text-xl font-bold">Tu reserva venció.</h1>
+          <p className="mt-2 text-sm leading-6 text-white/70">
+            Pasaron los 20 minutos disponibles para completar la compra y liberamos los productos reservados.
+          </p>
+          <p className="mt-3 text-xs text-white/50">Te estamos llevando al inicio.</p>
+        </div>
+      </main>
+    )
+  }
+
   if (items.length === 0) {
     return (
       <>
@@ -2168,6 +2438,23 @@ export default function CheckoutPage() {
                 !isCompactShippingStep && "min-h-[clamp(440px,52vh,560px)]",
               )}
             >
+              {stockReservation && !reservationExpired && (
+                <div
+                  data-stock-reservation-countdown
+                  role="status"
+                  className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-beyonix-blue-light/30 bg-beyonix-blue/15 px-4 py-3 text-sm text-white/80"
+                >
+                  <span>Productos reservados para completar tu compra</span>
+                  <span className="font-bold tabular-nums text-beyonix-sky">
+                    {formatReservationCountdown(reservationSeconds)}
+                  </span>
+                </div>
+              )}
+              {stockReservation && !hasMatchingStockReservation && !reservationPending && (
+                <CheckoutNotice tone="warning" className="mb-4">
+                  Tu carrito cambió. Volvé a continuar desde el paso de envío para actualizar la reserva.
+                </CheckoutNotice>
+              )}
               {currentStep === 1 && (
                 <div className="checkout-receiver-step animate-in fade-in slide-in-from-right-2 space-y-3 duration-300 [&_label]:text-[13px]">
                   <h2 className={checkoutSectionHeadingClassName}>
@@ -2804,6 +3091,7 @@ export default function CheckoutPage() {
                 {currentStep > 1 && (
                   <button
                     type="button"
+                    disabled={reservationPending}
                     onClick={() =>
                       setCurrentStep(
                         Math.max(
@@ -2822,7 +3110,7 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     onClick={goToNextStep}
-                    disabled={!areCriticalCheckoutStatesReady}
+                    disabled={!areCriticalCheckoutStatesReady || reservationPending || reservationExpired}
                     className={cn(
                       "h-10 min-w-140px px-5 text-sm",
                       isCurrentStepValid
@@ -2830,7 +3118,7 @@ export default function CheckoutPage() {
                         : cn(checkoutSecondaryButtonClassName, checkoutDisabledButtonClassName)
                     )}
                   >
-                    Continuar
+                    {reservationPending ? "Reservando productos..." : "Continuar"}
                   </button>
                 ) : (
                   <Button
@@ -2970,10 +3258,13 @@ export default function CheckoutPage() {
                               type="button"
                               aria-label="Disminuir cantidad"
                               onClick={() =>
-                                item.quantity > 1 &&
-                                decreaseQuantity(item.product.id, item.color)
+                                item.quantity > 1 && changeCheckoutCartItem(
+                                  itemIndex,
+                                  item.quantity - 1,
+                                  () => decreaseQuantity(item.product.id, item.color),
+                                )
                               }
-                              disabled={item.quantity <= 1}
+                              disabled={item.quantity <= 1 || reservationPending || reservationExpired}
                               className="flex h-full w-7 items-center justify-center border-r border-white/10 text-white/65 transition-colors enabled:cursor-pointer enabled:hover:bg-beyonix-blue/45 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               <Minus className="size-3" />
@@ -2984,23 +3275,29 @@ export default function CheckoutPage() {
                             <button
                               type="button"
                               aria-label="Agregar una unidad"
-                              onClick={() =>
-                                increaseQuantity(item.product.id, item.color)
-                              }
-                              disabled={isMaxQuantity}
+                              onClick={() => changeCheckoutCartItem(
+                                itemIndex,
+                                item.quantity + 1,
+                                () => increaseQuantity(item.product.id, item.color),
+                              )}
+                              disabled={isMaxQuantity || reservationPending || reservationExpired}
                               className="flex h-full w-7 items-center justify-center border-l border-white/10 text-white/65 transition-colors enabled:cursor-pointer enabled:hover:bg-beyonix-blue/45 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                             >
                               <Plus className="size-3" />
                             </button>
                           </div>
+                          {isMaxQuantity && <span className="text-10px text-white/50">Máximo 3</span>}
                         </div>
 
                         <button
                           type="button"
                           aria-label="Eliminar producto"
-                          onClick={() =>
-                            removeFromCart(item.product.id, item.color)
-                          }
+                          onClick={() => changeCheckoutCartItem(
+                            itemIndex,
+                            null,
+                            () => removeFromCart(item.product.id, item.color),
+                          )}
+                          disabled={reservationPending || reservationExpired}
                           className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-red-500/25 bg-red-950/25 text-red-400 transition-colors hover:border-red-400/55 hover:bg-red-500/20 hover:text-red-300"
                         >
                           <Trash2 className="size-3.5" />
@@ -3291,6 +3588,7 @@ export default function CheckoutPage() {
       {insufficientStockItems.length > 0 && (
         <InsufficientStockModal
           items={insufficientStockItems}
+          reservationAttempt={reservationStockError}
           onClose={() => setInsufficientStockItems([])}
         />
       )}

@@ -90,6 +90,7 @@ const TEST_FILES = [
   "lib/cart/cart-totals.test.ts",
   "lib/cart/cart-session-id.test.ts",
   "lib/cart/stock-reservation-model.test.ts",
+  "lib/cart/checkout-step-reservation-ui.test.ts",
   "lib/site-url.test.ts",
   "lib/auth/cron-auth.test.ts",
   "lib/payments/transfer.test.ts",

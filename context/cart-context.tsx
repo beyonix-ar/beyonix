@@ -66,6 +66,8 @@ interface CartContextType {
   getQuantity: (productId: number, color: string) => number
   isInCart: (productId: number, color: string) => boolean
   clearCart: () => void
+  /** Nueva identidad de checkout tras vencer una reserva; conserva el carrito. */
+  startNewCheckoutSession: () => void
   /** Vuelve a leer el catálogo vigente de los productos del carrito (sólo UX: pagar siempre revalida server-side). */
   refreshCartCatalog: () => Promise<CartCatalogRefreshResult>
   openCart: () => void
@@ -473,6 +475,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
     })
   }, [currentUserId])
 
+  const startNewCheckoutSession = useCallback(() => {
+    const nextSessionId = createCartSessionId()
+    sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
+    setCartSessionId(nextSessionId)
+  }, [])
+
   const refreshCartCatalog = useCallback(async (): Promise<CartCatalogRefreshResult> => {
     const productIds = cartRef.current.map((item) => item.product.id)
     if (!productIds.length) return { changed: false, removedCount: 0 }
@@ -516,6 +524,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         getQuantity,
         isInCart,
         clearCart,
+        startNewCheckoutSession,
         refreshCartCatalog,
         openCart: () => setIsOpen(true),
         closeCart: () => setIsOpen(false),

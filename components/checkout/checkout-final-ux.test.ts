@@ -257,7 +257,7 @@ test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al el
 test("17-19. sin aceptar términos el botón queda deshabilitado en las 3 opciones; al aceptar se habilita", () => {
   assert.match(
     checkout,
-    /const canSubmitCheckout =\s*isFormValid &&\s*!isProcessing &&\s*!hasKnownStockConflict &&\s*isSelectedPaymentValid &&\s*termsAccepted/,
+    /const canSubmitCheckout =\s*isFormValid &&\s*!isProcessing &&\s*!reservationPending &&\s*hasMatchingStockReservation &&\s*!reservationExpired &&\s*!hasKnownStockConflict &&\s*isSelectedPaymentValid &&\s*termsAccepted/,
   )
   assert.match(checkout, /disabled=\{!canSubmitCheckout\}/)
   // No depende de la opción elegida: vale igual para transferencia, contado y cuotas.

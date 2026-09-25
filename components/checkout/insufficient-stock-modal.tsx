@@ -17,16 +17,19 @@ export interface InsufficientStockModalItem {
   conditionedStockId: string | null
   displayName: string
   variantName: string | null
+  requestedQuantity?: number
 }
 
 interface InsufficientStockModalProps {
   items: InsufficientStockModalItem[]
   onClose: () => void
+  reservationAttempt?: boolean
 }
 
 export function InsufficientStockModal({
   items,
   onClose,
+  reservationAttempt = false,
 }: InsufficientStockModalProps) {
   const [mounted, setMounted] = useState(false)
 
@@ -77,7 +80,11 @@ export function InsufficientStockModal({
         </div>
 
         <p className="beyonix-modal-body mt-2.5 text-[13px] leading-5 text-white/65">
-          {isPlural
+          {reservationAttempt
+            ? isPlural
+              ? "Algunos productos de tu compra acaban de quedarse sin stock. Revisá los afectados antes de continuar."
+              : "Uno de los productos de tu compra acaba de quedarse sin stock. Revisá el producto afectado antes de continuar."
+            : isPlural
             ? INSUFFICIENT_STOCK_MESSAGE_PLURAL
             : INSUFFICIENT_STOCK_MESSAGE_SINGULAR}
         </p>
@@ -99,6 +106,11 @@ export function InsufficientStockModal({
                 <p className="beyonix-modal-muted mt-0.5 flex items-center gap-1.5 text-[11.5px] text-white/50">
                   <span className="size-1.5 shrink-0 rounded-full bg-white/25" />
                   {item.variantName}
+                </p>
+              )}
+              {item.requestedQuantity != null && (
+                <p className="beyonix-modal-muted mt-1 text-[11.5px] text-white/50">
+                  Cantidad solicitada: {item.requestedQuantity}
                 </p>
               )}
             </li>

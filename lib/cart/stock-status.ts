@@ -17,11 +17,8 @@ export const INSUFFICIENT_STOCK_MESSAGE_SINGULAR =
   "La cantidad que seleccionaste supera el stock disponible. Reducí la cantidad para poder continuar con la compra."
 export const INSUFFICIENT_STOCK_MESSAGE_PLURAL =
   "Las cantidades que seleccionaste superan el stock disponible de algunos productos. Reducí las cantidades para poder continuar con la compra."
-// Techo puramente técnico del selector de cantidad del cliente: no está
-// atado al stock real (que nunca se expone en el frontend) y solo evita un
-// abuso extremo accidental del control +. La validación que sí importa —
-// contra el stock vendible real — ocurre server-side antes de pagar.
-export const MAX_CART_ITEM_QUANTITY = 999
+// Límite de compra por producto/variante, también exigido por la RPC de reserva.
+export const MAX_CART_ITEM_QUANTITY = 3
 
 export function assertCatalogStock(
   quantity: number,

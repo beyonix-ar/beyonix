@@ -171,6 +171,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 <Plus className="size-3" />
               </Button>
             </div>
+            {isMaxQuantity && <span className="text-10px text-white/50">Máximo 3</span>}
           </div>
         </div>
       </div>
