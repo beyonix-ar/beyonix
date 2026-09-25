@@ -15483,6 +15483,13 @@ html[data-admin-theme="light"] .admin-orders-list-row .admin-orders-action-butto
   stroke: currentColor !important;
 }
 
+/* Camioncito "listo para despachar" de la fila: sólo el ícono, blanco en
+   Light como ya lo es en Dark (el badge conserva fondo, borde y tamaño). */
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-shipping-reminder.admin-order-shipping-reminder svg.lucide.lucide {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
 html[data-admin-theme="light"] .admin-orders-list-row .admin-orders-action-button {
   background: #112A43 !important;
   background-color: #112A43 !important;

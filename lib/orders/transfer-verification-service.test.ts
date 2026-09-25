@@ -508,6 +508,56 @@ test("LEASE_EXPIRED (un intento más nuevo ya reclamó el pedido): rejected SIN 
   )
 })
 
+test("error no tipificado al confirmar (monto y DNI ya coincidieron) -> manual_review reintentable, nunca 'pending' sin motivo", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, updateCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+      confirm_transfer_auto_verification: { data: null, error: { message: "TypeError: fetch failed" } },
+    },
+  })
+
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+
+  assert.equal(result.status, "manual_review")
+  if (result.status === "manual_review") assert.equal(result.reason, "confirmation_error")
+  const release = updateCalls.find((c) => c.table === "ordenes" && "transfer_verification_status" in c.values)
+  assert.deepEqual(release?.values, { transfer_verification_status: "manual_review", transfer_verification_failure_reason: "confirmation_error" })
+  assert.equal((orderRow as Record<string, unknown>).transfer_verification_status, "manual_review", "el cron puede retomarlo")
+})
+
+test("el admin confirmó a mano mientras el intento automático seguía en curso (ALREADY_RESOLVED bajo lock) -> rejected SIN escribir; el pedido pagado nunca queda marcado en revisión manual", async () => {
+  for (const code of ["ALREADY_RESOLVED", "ORDER_CANCELLED"]) {
+    const orderRow = baseOrderRow()
+    const { admin, updateCalls, rpcCalls } = createFakeAdmin({
+      orderRow,
+      rpcResponses: {
+        claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+        confirm_transfer_auto_verification: { data: null, error: { message: `${code}: el pago de este pedido ya no admite verificación automática.` } },
+      },
+    })
+
+    const result = await attemptTransferAutoVerification(
+      admin as never,
+      { orderId: 42, declared: declaredValid },
+      { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+    )
+
+    assert.equal(result.status, "rejected", code)
+    assert.equal(
+      updateCalls.some((c) => c.table === "ordenes" && "transfer_verification_status" in c.values),
+      false,
+      `${code}: nunca escribe transfer_verification_status`,
+    )
+    assert.equal(rpcCalls.filter((c) => c.name === "confirm_transfer_auto_verification").length, 1, "una sola confirmación")
+  }
+})
+
 test("dos transferencias con el mismo monto (ambiguo) -> manual_review, nunca confirma al azar", async () => {
   const orderRow = baseOrderRow()
   const { admin, rpcCalls } = createFakeAdmin({

@@ -416,8 +416,8 @@ function TransferVerificationStep({
       <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
         <TransferDeclarationInput
           id="transfer-verify-nombre"
-          label="Nombre del titular"
-          hint="Nombre de la persona titular de la cuenta bancaria o billetera desde donde realizaste la transferencia."
+          label="Nombre/s del titular"
+          hint="Podés ingresar uno o todos sus nombres, como figuran en la cuenta desde donde transferiste (ej.: Romina Ayelen)."
           value={firstName}
           onChange={setFirstName}
           error={fieldErrors.firstName}
@@ -427,8 +427,8 @@ function TransferVerificationStep({
         />
         <TransferDeclarationInput
           id="transfer-verify-apellido"
-          label="Apellido del titular"
-          hint="Apellido de la persona titular de la cuenta bancaria o billetera desde donde realizaste la transferencia."
+          label="Apellido/s del titular"
+          hint="Apellido/s de la persona titular de esa cuenta (ej.: Pérez)."
           value={lastName}
           onChange={setLastName}
           error={fieldErrors.lastName}

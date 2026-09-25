@@ -19,14 +19,16 @@ export type TransferManualReviewReason =
   | "stock_conflict"
   | "search_not_exhaustive"
   | "expected_amount_changed"
+  | "confirmation_error"
 
 /** payment_status cuando Mercado Pago confirmó la transferencia pero el stock ya no alcanza -- igual criterio que MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS para Checkout Pro: el dinero es real, la orden NO se confirma ni se cancela sola, requiere resolución humana. */
 export const TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS = "auto_verified_stock_conflict"
 
 /**
- * Único motivo que sí puede cambiar solo con el paso del tiempo: la
- * transferencia todavía no era visible en Mercado Pago, o la API falló de
- * forma transitoria. Fuente única de verdad para el cron de reintentos
+ * Motivos que sí pueden cambiar solos con el paso del tiempo: la
+ * transferencia todavía no era visible en Mercado Pago, la API falló de
+ * forma transitoria, o la transferencia ya coincidió (monto + DNI) pero la
+ * confirmación falló por un error no tipificado. Fuente única de verdad para el cron de reintentos
  * (lib/orders/transfer-verification-retry.ts) -- la consulta SQL filtra por
  * esta misma lista para no traer nunca motivos permanentes (evita que
  * pedidos con un motivo no reintentable "envenenen" el batch del cron y
@@ -35,6 +37,7 @@ export const TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS = "auto_verified_stock_confl
 export const RETRYABLE_MANUAL_REVIEW_REASONS: readonly TransferManualReviewReason[] = [
   "no_candidates",
   "mercadopago_unavailable",
+  "confirmation_error",
 ]
 
 export function isRetryableManualReviewReason(
@@ -109,6 +112,8 @@ export function describeManualReviewReason(
       return "No se pudo recorrer todo el historial de Mercado Pago dentro de la ventana de tiempo: requiere revisión manual antes de confirmar."
     case "expected_amount_changed":
       return "El monto esperado del pedido cambió mientras se verificaba la transferencia. Requiere revisión manual."
+    case "confirmation_error":
+      return "La transferencia coincidió (monto y DNI), pero la confirmación falló por un error temporal. Se reintenta automáticamente."
     case null:
       return "Sin intentos de verificación registrados."
     default:

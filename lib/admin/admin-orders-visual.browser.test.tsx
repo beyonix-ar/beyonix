@@ -94,7 +94,8 @@ const order = (id: number, extra: Record<string, unknown>) => ({
 })
 // En proceso, completado/entregado, cancelado y transferencia pendiente.
 const PEDIDOS = [
-  order(1, {}),
+  // Facturado (CAE autorizado) y sin preparar: muestra el camioncito.
+  order(1, { invoice_status: "authorized" }),
   order(2, { estado: "entregado", delivered_at: "2026-09-22T10:00:00Z" }),
   order(3, { estado: "cancelado", financial_status: "cancelled", cancelled_at: "2026-09-21T10:00:00Z", payment_status: "cancelled" }),
   order(4, { payment_method_id: "transferencia", payment_status: "pending", financial_status: "pending_payment", payment_confirmed_at: null }),
@@ -418,6 +419,30 @@ for (const width of [1920, 1440, 1366, 1280, 768, 390]) {
     }
   })
 }
+
+test("camioncito de la fila: blanco en Light (igual que Dark, que no cambia); el badge no cambia", async () => {
+  const TRUCK = `(() => { ${COLOR_HELPERS}
+    const badges = [...document.querySelectorAll(".admin-orders-list-row .admin-order-shipping-reminder")].filter((b) => b.getBoundingClientRect().width > 0)
+    return badges.map((b) => { const svg = b.querySelector("svg"); const s = getComputedStyle(b)
+      return { icon: key(getComputedStyle(svg).color), stroke: key(getComputedStyle(svg).stroke), badge: [key(s.backgroundColor), key(s.borderTopColor), s.width, s.height].join(" | ") } })
+  })()`
+  for (const width of [1920, 1280]) {
+    const pages = { dark: await open("dark", { width }), light: await open("light", { width }) }
+    try {
+      const dark = (await pages.dark.evaluate(TRUCK)) as Array<{ icon: string; stroke: string; badge: string }>
+      const light = (await pages.light.evaluate(TRUCK)) as Array<{ icon: string; stroke: string; badge: string }>
+      assert.equal(light.length, 1, `${width}px: el pedido facturado muestra el camioncito`)
+      assert.equal(light[0].icon, "255,255,255,1", "Light: ícono blanco")
+      assert.equal(light[0].stroke, "255,255,255,1", "Light: trazo blanco")
+      assert.equal(dark[0].icon, "255,255,255,1", "Dark: sigue blanco como antes")
+      assert.equal(dark[0].stroke, "255,255,255,1")
+      assert.equal(light[0].badge, dark[0].badge, "el badge (fondo, borde, tamaño) no cambia")
+    } finally {
+      await pages.dark.close()
+      await pages.light.close()
+    }
+  }
+})
 
 test("CSS: sin guerra de especificidad -- exclusiones semánticas explícitas", () => {
   const source = readFileSync("app/globals.css", "utf8")

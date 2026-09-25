@@ -17,6 +17,20 @@ import {
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
+/**
+ * (manual_review + motivo reintentable) o (pending + ya hubo intentos): este
+ * último es el estado en que quedaban los pedidos cuya transferencia SÍ
+ * coincidía pero la confirmación falló por un error no tipificado.
+ */
+const STUCK_OR_RETRYABLE_FILTER =
+  `and(transfer_verification_status.eq.manual_review,transfer_verification_failure_reason.in.(${RETRYABLE_MANUAL_REVIEW_REASONS.join(",")})),` +
+  "and(transfer_verification_status.eq.pending,transfer_verification_attempts.gt.0)"
+
+function isRetryCandidate(status: string | null, reason: TransferManualReviewReason | null) {
+  if (status === "manual_review") return reason !== null && isRetryableManualReviewReason(reason)
+  return status === "pending" && reason === null
+}
+
 /** Tope defensivo por corrida del cron -- mismo criterio que expireOverdueTransferOrders. */
 const MAX_RETRY_CANDIDATES_PER_RUN = 25
 
@@ -40,6 +54,7 @@ interface RetryCandidateRow {
   id: number
   created_at: string
   payment_status: string | null
+  transfer_verification_status: string | null
   transfer_verification_failure_reason: string | null
   transfer_verification_attempts: number | null
   transfer_payer_first_name: string | null
@@ -79,7 +94,6 @@ export async function retryPendingTransferVerifications(
     .select(RETRY_LOAD_SELECT)
     .eq("payment_method_id", "transferencia")
     .in("payment_status", ["pendiente_comprobante", "en_revision"])
-    .eq("transfer_verification_status", "manual_review")
     // P1 (starvation del cron, segunda auditoría): filtrar ACÁ, en la propia
     // consulta SQL, TODO lo que ya no es un candidato real -- no sólo en JS
     // después del LIMIT. Antes, órdenes con motivo permanente, intentos
@@ -88,7 +102,10 @@ export async function retryPendingTransferVerifications(
     // que su transfer_last_verification_at nunca avanza) y dejar sin turno a
     // las que sí son candidatas reales. Con estos filtros, esas órdenes ni
     // siquiera entran al batch.
-    .in("transfer_verification_failure_reason", RETRYABLE_MANUAL_REVIEW_REASONS)
+    // Candidatos: revisión manual con motivo reintentable, o pedidos que un
+    // error de confirmación anterior dejó en "pending" sin motivo después de
+    // un intento (estado que ya no se genera, ver confirmation_error).
+    .or(STUCK_OR_RETRYABLE_FILTER)
     .lt("transfer_verification_attempts", TRANSFER_VERIFICATION_MAX_ATTEMPTS)
     .gte("created_at", windowCutoffIso)
     .not("transfer_amount_declared", "is", null)
@@ -124,7 +141,7 @@ export async function retryPendingTransferVerifications(
       | TransferManualReviewReason
       | null
 
-    if (!reason || !isRetryableManualReviewReason(reason)) continue
+    if (!isRetryCandidate(candidate.transfer_verification_status, reason)) continue
 
     if ((candidate.transfer_verification_attempts ?? 0) >= TRANSFER_VERIFICATION_MAX_ATTEMPTS) {
       continue

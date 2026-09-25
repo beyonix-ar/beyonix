@@ -231,3 +231,29 @@ test("isRetryableManualReviewReason sólo reintenta cuando el motivo es transito
   assert.equal(isRetryableManualReviewReason("no_candidates"), true)
   assert.equal(isRetryableManualReviewReason("mercadopago_unavailable"), true)
 })
+
+// Reglas pedidas por el negocio, contra el matcher real. Mercado Pago no
+// informa el nombre del titular en transferencias (payer.first_name/last_name
+// y bank_info.payer.long_name vienen vacíos, verificado en una transferencia
+// real): la identidad se verifica por el DNI que codifica su CUIL.
+test("negocio: DNI correcto + monto exacto -> verified; monto distinto o DNI distinto -> nunca", () => {
+  const declaredDni = "30111222"
+  assert.equal(
+    matchBankTransferPayment({ expectedAmount: 900, declaredAmount: 900, declaredDni, candidates: [candidate()] }).kind,
+    "verified",
+  )
+  // Monto transferido distinto al del pedido (DNI correcto).
+  const otherAmount = matchBankTransferPayment({ expectedAmount: 900, declaredAmount: 900, declaredDni, candidates: [candidate({ transactionAmount: 899.99 })] })
+  assert.deepEqual(otherAmount, { kind: "manual_review", reason: "amount_mismatch_mp" })
+  // Monto declarado distinto (aunque la transferencia exista).
+  const declaredOther = matchBankTransferPayment({ expectedAmount: 900, declaredAmount: 901, declaredDni, candidates: [candidate()] })
+  assert.deepEqual(declaredOther, { kind: "manual_review", reason: "declared_amount_mismatch" })
+  // DNI distinto del titular real de la transferencia.
+  const otherDni = matchBankTransferPayment({ expectedAmount: 900, declaredAmount: 900, declaredDni: "30111223", candidates: [candidate()] })
+  assert.deepEqual(otherDni, { kind: "manual_review", reason: "dni_mismatch" })
+  // El mismo DNI declarado como CUIL/CUIT también coincide.
+  assert.equal(
+    matchBankTransferPayment({ expectedAmount: 900, declaredAmount: 900, declaredDni: VALID_CUIL_20_30111222, candidates: [candidate()] }).kind,
+    "verified",
+  )
+})

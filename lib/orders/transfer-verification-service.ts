@@ -339,15 +339,36 @@ export async function attemptTransferAutoVerification(
       }
     }
 
+    // El pedido cambió de estado bajo el lock de la RPC mientras este
+    // intento seguía en curso (ej.: el admin confirmó o rechazó el pago a
+    // mano, o se canceló). La confirmación manual no toca
+    // transfer_verification_status, así que el pedido todavía figura en
+    // "checking" con este lease: escribir acá lo marcaría en revisión manual
+    // aunque ya esté resuelto. Mismo criterio que el lease: no se escribe nada.
+    if (
+      code === "ALREADY_RESOLVED" ||
+      code === "ORDER_CANCELLED" ||
+      code === "NOT_TRANSFER_ORDER" ||
+      code === "ORDER_NOT_FOUND"
+    ) {
+      return {
+        status: "rejected",
+        message: (code && CLAIM_ERROR_MESSAGES[code]) || "El pago de este pedido ya fue resuelto.",
+      }
+    }
+
+    // Monto y DNI ya coincidieron con Mercado Pago, pero la confirmación
+    // falló por un motivo no tipificado (red, timeout, error transitorio de
+    // la base). Antes se liberaba en "pending" sin motivo: ni el cron de
+    // reintentos ni el admin lo veían como pendiente de conciliación y el
+    // pedido quedaba trabado aunque el pago fuera válido. Ahora queda en
+    // revisión manual con un motivo reintentable (confirmation_error): el
+    // cron vuelve a intentarlo solo y el admin ve el motivo.
     console.error("TRANSFER_AUTO_VERIFICATION_CONFIRM_ERROR", {
       orderId,
       message: confirmError?.message,
     })
-    await releaseVerificationLock(admin, orderId, "pending", null, leaseId)
-    return {
-      status: "rejected",
-      message: "No se pudo confirmar la transferencia. Intentá nuevamente.",
-    }
+    return finalizeManualReview(admin, orderId, "confirmation_error", order, leaseId)
   }
 
   const confirmedOrder = firstRow<SupabasePedido>(confirmedData)!

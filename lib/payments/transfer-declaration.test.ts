@@ -272,14 +272,44 @@ test("copy: deja claro que son los datos del titular de la cuenta de origen", ()
   const flow = readSource("../../components/checkout/transfer-flow.tsx")
   for (const copy of [
     "Estos datos pueden ser distintos a los de la persona que realizó la compra.",
-    "Nombre de la persona titular de la cuenta bancaria o billetera desde donde realizaste la transferencia.",
-    "Apellido de la persona titular de la cuenta bancaria o billetera desde donde realizaste la transferencia.",
+    "Podés ingresar uno o todos sus nombres, como figuran en la cuenta desde donde transferiste (ej.: Romina Ayelen).",
+    "Apellido/s de la persona titular de esa cuenta (ej.: Pérez).",
     "Ingresá el documento del titular de la cuenta desde donde se realizó la transferencia.",
     "Ingresá exactamente el importe enviado.",
   ]) {
     assert.ok(flow.includes(copy), copy)
   }
-  for (const label of ["Nombre del titular", "Apellido del titular", "DNI/CUIT del titular", "Monto exacto transferido"]) {
+  for (const label of ["Nombre/s del titular", "Apellido/s del titular", "DNI/CUIT del titular", "Monto exacto transferido"]) {
     assert.ok(flow.includes(`label="${label}"`), label)
   }
+})
+
+test("nombres y apellidos compuestos: se aceptan completos o con un solo nombre, con tildes y espacios normalizados", () => {
+  for (const [nombre, apellido] of [
+    ["Romina Ayelen", "Pérez"],
+    ["Romina", "Pérez"],
+    ["Ayelen", "Pérez"],
+    ["María Teresita", "De la Fuente"],
+    ["Juan Manuel", "Gómez Núñez"],
+  ]) {
+    const result = validateTransferDeclaration({ ...valid, nombre, apellido })
+    assert.equal(result.ok, true, `${nombre} ${apellido}`)
+    if (result.ok) {
+      assert.equal(result.value.firstName, nombre)
+      assert.equal(result.value.lastName, apellido)
+    }
+  }
+  const spaced = validateTransferDeclaration({ ...valid, nombre: "  Romina   Ayelen ", apellido: " Pérez  " })
+  assert.equal(spaced.ok, true)
+  if (spaced.ok) {
+    assert.equal(spaced.value.firstName, "Romina Ayelen")
+    assert.equal(spaced.value.lastName, "Pérez")
+  }
+})
+
+test("formulario: nombre/s y apellido/s del titular, sin forzar un único nombre", () => {
+  const flow = readSource("../../components/checkout/transfer-flow.tsx")
+  assert.match(flow, /label="Nombre\/s del titular"/)
+  assert.match(flow, /Podés ingresar uno o todos sus nombres/)
+  assert.match(flow, /label="Apellido\/s del titular"/)
 })
