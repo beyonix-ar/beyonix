@@ -195,7 +195,11 @@ test("10. pedido histórico sin datos del titular: 'No informado', nunca rompe",
   assert.equal(view.document, TRANSFER_DECLARATION_MISSING)
   assert.equal(view.declaredAmount, null)
   assert.equal(view.declaredAt, null)
-  assert.equal(view.verificationLabel, "Sin intentos de verificación")
+  assert.equal(view.verificationLabel, "Sin intentos")
+  assert.equal(
+    getTransferDeclarationView({ transfer_verification_status: "pending", transfer_verification_attempts: 1 }).verificationLabel,
+    "Esperando transferencia",
+  )
   // DNI histórico guardado "crudo" (no normalizable) se muestra tal cual.
   assert.equal(getTransferDeclarationView({ transfer_payer_dni: "abc" }).document, "abc")
   assert.equal(getTransferDeclarationView({ transfer_amount_declared: null }).declaredAmount, null)

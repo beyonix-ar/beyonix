@@ -7,7 +7,10 @@ import { searchIncomingBankTransfers } from "../mercadopago/bank-transfer-search
 import type { BankTransferSearchResult } from "../mercadopago/bank-transfer-search.ts"
 import {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS,
+  TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
   getTransferMatchWindow,
+  isAwaitingTransferReason,
   matchBankTransferPayment,
   type TransferManualReviewReason,
 } from "./transfer-auto-verification.ts"
@@ -30,6 +33,8 @@ export interface TransferVerificationDeclaredInput {
 export type TransferVerificationAttemptResult =
   | { status: "verified"; order: SupabasePedido }
   | { status: "manual_review"; order: SupabasePedido; reason: TransferManualReviewReason }
+  /** Todavía no hay ninguna transferencia atribuible: situación normal, reintentable. */
+  | { status: "awaiting_transfer"; order: SupabasePedido; reason: TransferManualReviewReason }
   | { status: "rejected"; message: string }
   | { status: "rate_limited"; message: string }
   | { status: "checking_in_progress"; message: string }
@@ -42,7 +47,7 @@ const CLAIM_ERROR_MESSAGES: Record<string, string> = {
   ORDER_CANCELLED: "El pedido está cancelado.",
   ALREADY_RESOLVED: "El pago de este pedido ya fue resuelto.",
   MAX_ATTEMPTS_EXCEEDED:
-    "Se alcanzó el máximo de intentos automáticos. Un administrador va a revisar tu transferencia.",
+    "Se alcanzó el máximo de verificaciones para este pedido. Podés enviar el comprobante para revisión.",
 }
 
 function extractErrorCode(message: string | undefined | null): string | null {
@@ -131,14 +136,27 @@ export async function releaseVerificationLock(
     .eq("transfer_verification_lease_id", leaseId)
 }
 
-async function finalizeManualReview(
+/**
+ * Cierra un intento sin confirmación. "Esperando transferencia" (ver
+ * AWAITING_TRANSFER_REASONS) vuelve a 'pending' con el motivo registrado:
+ * no hay nada que revisar a mano y el pedido no debe aparecer como
+ * pendiente en Admin. Cualquier otro motivo queda en 'manual_review'.
+ */
+async function finalizeUnmatched(
   admin: AdminClient,
   orderId: number,
   reason: TransferManualReviewReason,
   fallbackOrder: SupabasePedido,
   leaseId: string | null,
 ): Promise<TransferVerificationAttemptResult> {
-  await releaseVerificationLock(admin, orderId, "manual_review", reason, leaseId)
+  const awaiting = isAwaitingTransferReason(reason)
+  await releaseVerificationLock(
+    admin,
+    orderId,
+    awaiting ? "pending" : "manual_review",
+    reason,
+    leaseId,
+  )
   const { data: refreshed } = await admin
     .from("ordenes")
     .select()
@@ -146,7 +164,7 @@ async function finalizeManualReview(
     .maybeSingle()
 
   return {
-    status: "manual_review",
+    status: awaiting ? "awaiting_transfer" : "manual_review",
     reason,
     order: (refreshed as SupabasePedido) ?? fallbackOrder,
   }
@@ -167,21 +185,84 @@ export interface TransferVerificationDependencies {
   }) => Promise<BankTransferSearchResult>
 }
 
+/**
+ * payment.id (entre los recibidos) que ya reclamó OTRO pedido: el historial
+ * insert-only transfer_verification_payment_claims es la fuente de verdad, y
+ * transfer_matched_payment_id se consulta como defensa en profundidad. Se
+ * excluyen ANTES de matchear -- si no, una transferencia ya usada por otro
+ * pedido (mismo monto) se contaba como candidata y dejaba este pedido en
+ * payment_id_already_used / multiple_candidates aunque su transferencia real
+ * apareciera después. La RPC de confirmación sigue revalidando la unicidad
+ * bajo lock: esto sólo evita elegir un candidato que ya no está disponible.
+ */
+async function loadPaymentIdsClaimedByOtherOrders(
+  admin: AdminClient,
+  orderId: number,
+  paymentIds: string[],
+): Promise<Set<string>> {
+  if (paymentIds.length === 0) return new Set()
+
+  const [claims, matchedOrders] = await Promise.all([
+    admin
+      .from("transfer_verification_payment_claims")
+      .select("payment_id")
+      .in("payment_id", paymentIds)
+      .neq("order_id", orderId),
+    admin
+      .from("ordenes")
+      .select("transfer_matched_payment_id")
+      .in("transfer_matched_payment_id", paymentIds)
+      .neq("id", orderId),
+  ])
+
+  if (claims.error || matchedOrders.error) {
+    throw new Error(
+      claims.error?.message ?? matchedOrders.error?.message ?? "claim lookup failed",
+    )
+  }
+
+  const claimed = new Set<string>()
+  for (const row of (claims.data ?? []) as Array<{ payment_id: string | null }>) {
+    if (row.payment_id) claimed.add(row.payment_id)
+  }
+  for (const row of (matchedOrders.data ?? []) as Array<{
+    transfer_matched_payment_id: string | null
+  }>) {
+    if (row.transfer_matched_payment_id) claimed.add(row.transfer_matched_payment_id)
+  }
+  return claimed
+}
+
 export async function attemptTransferAutoVerification(
   admin: AdminClient,
   {
     orderId,
     declared,
+    maxAttempts = TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS,
+    minIntervalSeconds = TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
   }: {
     orderId: number
     declared: TransferVerificationDeclaredInput
+    /**
+     * Tope de intentos del claim: TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS
+     * para el cliente (default) y TRANSFER_VERIFICATION_AUTOMATIC_CLAIM_MAX_ATTEMPTS
+     * para el cron -- ver transfer-auto-verification.ts: ninguno de los dos
+     * puede agotar los intentos del otro.
+     */
+    maxAttempts?: number
+    /** El cron exige la cadencia del tramo también dentro de la RPC, bajo lock. */
+    minIntervalSeconds?: number
   },
   deps: TransferVerificationDependencies = {},
 ): Promise<TransferVerificationAttemptResult> {
   const searchTransfers = deps.searchTransfers ?? searchIncomingBankTransfers
   const { data: claimedData, error: claimError } = await admin.rpc(
     "claim_transfer_verification_attempt",
-    { p_order_id: orderId },
+    {
+      p_order_id: orderId,
+      p_max_attempts: maxAttempts,
+      p_min_interval_seconds: minIntervalSeconds,
+    },
   )
 
   if (claimError || !claimedData) {
@@ -190,7 +271,7 @@ export async function attemptTransferAutoVerification(
     if (code === "RATE_LIMITED") {
       return {
         status: "rate_limited",
-        message: "Esperá unos segundos antes de volver a intentar.",
+        message: `Esperá ${TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS} segundos antes de volver a verificar.`,
       }
     }
     if (code === "ALREADY_CHECKING") {
@@ -248,10 +329,10 @@ export async function attemptTransferAutoVerification(
     declaredCents === null ||
     declaredCents !== expectedCents
   ) {
-    return finalizeManualReview(admin, orderId, "declared_amount_mismatch", order, leaseId)
+    return finalizeUnmatched(admin, orderId, "declared_amount_mismatch", order, leaseId)
   }
   if (!normalizedDeclaredDniForFastPath) {
-    return finalizeManualReview(admin, orderId, "declared_dni_invalid", order, leaseId)
+    return finalizeUnmatched(admin, orderId, "declared_dni_invalid", order, leaseId)
   }
 
   let searchResult: BankTransferSearchResult
@@ -263,7 +344,7 @@ export async function attemptTransferAutoVerification(
       orderId,
       message: error instanceof Error ? error.message : String(error),
     })
-    return finalizeManualReview(admin, orderId, "mercadopago_unavailable", order, leaseId)
+    return finalizeUnmatched(admin, orderId, "mercadopago_unavailable", order, leaseId)
   }
 
   // P0: una auto-confirmación sólo puede ocurrir si se puede demostrar que
@@ -277,7 +358,27 @@ export async function attemptTransferAutoVerification(
       orderId,
       candidatesFound: searchResult.candidates.length,
     })
-    return finalizeManualReview(admin, orderId, "search_not_exhaustive", order, leaseId)
+    return finalizeUnmatched(admin, orderId, "search_not_exhaustive", order, leaseId)
+  }
+
+  let claimedByOtherOrders: Set<string>
+  try {
+    claimedByOtherOrders = await loadPaymentIdsClaimedByOtherOrders(
+      admin,
+      orderId,
+      searchResult.candidates
+        .filter((candidate) => moneyToCents(candidate.transactionAmount) === expectedCents)
+        .map((candidate) => candidate.id),
+    )
+  } catch (error) {
+    // Sin poder demostrar qué transferencias siguen libres no se elige
+    // ninguna. Se libera a "pending" (no hay nada que revisar a mano) y el
+    // cliente puede volver a intentar.
+    console.error("TRANSFER_AUTO_VERIFICATION_CLAIM_LOOKUP_ERROR", {
+      orderId,
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return finalizeUnmatched(admin, orderId, "mercadopago_unavailable", order, leaseId)
   }
 
   const matchResult = matchBankTransferPayment({
@@ -285,10 +386,11 @@ export async function attemptTransferAutoVerification(
     declaredAmount: declared.amount,
     declaredDni: declared.dni,
     candidates: searchResult.candidates,
+    excludePaymentIds: claimedByOtherOrders,
   })
 
   if (matchResult.kind === "manual_review") {
-    return finalizeManualReview(admin, orderId, matchResult.reason, order, leaseId)
+    return finalizeUnmatched(admin, orderId, matchResult.reason, order, leaseId)
   }
 
   const { candidate, dniDerivation } = matchResult
@@ -314,11 +416,11 @@ export async function attemptTransferAutoVerification(
     const code = extractErrorCode(confirmError?.message)
 
     if (code === "TRANSFER_PAYMENT_ID_ALREADY_USED") {
-      return finalizeManualReview(admin, orderId, "payment_id_already_used", order, leaseId)
+      return finalizeUnmatched(admin, orderId, "payment_id_already_used", order, leaseId)
     }
 
     if (code === "AMOUNT_MISMATCH") {
-      return finalizeManualReview(admin, orderId, "expected_amount_changed", order, leaseId)
+      return finalizeUnmatched(admin, orderId, "expected_amount_changed", order, leaseId)
     }
 
     // P0 (tercera auditoría): este intento ya no es (o nunca fue) el
@@ -368,7 +470,7 @@ export async function attemptTransferAutoVerification(
       orderId,
       message: confirmError?.message,
     })
-    return finalizeManualReview(admin, orderId, "confirmation_error", order, leaseId)
+    return finalizeUnmatched(admin, orderId, "confirmation_error", order, leaseId)
   }
 
   const confirmedOrder = firstRow<SupabasePedido>(confirmedData)!

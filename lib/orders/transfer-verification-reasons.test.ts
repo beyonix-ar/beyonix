@@ -6,9 +6,18 @@ import {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
   canUploadTransferProof,
   describeManualReviewReason,
+  getTransferVerificationStatusLabel,
   getManualReviewCustomerMessage,
   isRetryableManualReviewReason,
 } from "./transfer-verification-reasons.ts"
+
+test("Admin distingue sin intentos, espera, checking, revisión manual y pago confirmado", () => {
+  assert.equal(getTransferVerificationStatusLabel("pending", 0), "Sin intentos")
+  assert.equal(getTransferVerificationStatusLabel("pending", 1), "Esperando transferencia")
+  assert.equal(getTransferVerificationStatusLabel("checking", 1), "Verificación en curso")
+  assert.equal(getTransferVerificationStatusLabel("manual_review", 1), "Requiere revisión manual")
+  assert.equal(getTransferVerificationStatusLabel("auto_verified", 1), "Pago confirmado")
+})
 
 // Este módulo se importa desde admin-pedidos.tsx, un componente "use client".
 // transfer-auto-verification.ts (donde vivían antes estas funciones) importa
@@ -21,7 +30,7 @@ test("transfer-verification-reasons.ts es seguro para importar desde un componen
   assert.doesNotMatch(source, /^import[\s\S]*?from\s+["'][^"']*transfer-expiration[^"']*["']/m)
 })
 
-test("describeManualReviewReason cubre los 12 motivos posibles sin exponer datos de terceros", () => {
+test("describeManualReviewReason cubre los 13 motivos posibles sin exponer datos de terceros", () => {
   const reasons: Array<Parameters<typeof describeManualReviewReason>[0]> = [
     "declared_amount_mismatch",
     "declared_dni_invalid",
@@ -35,6 +44,7 @@ test("describeManualReviewReason cubre los 12 motivos posibles sin exponer datos
     "stock_conflict",
     "search_not_exhaustive",
     "expected_amount_changed",
+    "confirmation_error",
   ]
 
   for (const reason of reasons) {
@@ -57,7 +67,9 @@ test("TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS es distinto de cualquier TRANSFER_P
 
 test("isRetryableManualReviewReason exportado también desde el módulo client-safe coincide con el server", () => {
   assert.equal(isRetryableManualReviewReason("no_candidates"), true)
-  assert.equal(isRetryableManualReviewReason("dni_mismatch"), false)
+  assert.equal(isRetryableManualReviewReason("dni_mismatch"), true)
+  assert.equal(isRetryableManualReviewReason("confirmation_error"), true)
+  assert.equal(isRetryableManualReviewReason("multiple_candidates"), false)
 })
 
 test("search_not_exhaustive y expected_amount_changed nunca son reintentables automáticamente -- requieren revisión humana, no cambian solos con el tiempo", () => {

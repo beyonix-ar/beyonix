@@ -25,18 +25,46 @@ export type TransferManualReviewReason =
 export const TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS = "auto_verified_stock_conflict"
 
 /**
- * Motivos que sí pueden cambiar solos con el paso del tiempo: la
- * transferencia todavía no era visible en Mercado Pago, la API falló de
- * forma transitoria, o la transferencia ya coincidió (monto + DNI) pero la
- * confirmación falló por un error no tipificado. Fuente única de verdad para el cron de reintentos
+ * "Esperando transferencia": NO existe ninguna transferencia sin usar con el
+ * monto exacto que se pudiera atribuir -- no hay ninguna en la ventana
+ * (no_candidates), las que hay son de otro importe (amount_mismatch_mp), o
+ * Mercado Pago no respondió (mercadopago_unavailable). Es la situación
+ * normal de verificar antes de transferir: no hay nada que un humano pueda
+ * revisar, así que se persiste transfer_verification_status = 'pending'
+ * (nunca 'manual_review') y el pedido no aparece como pendiente en Admin.
+ */
+export const AWAITING_TRANSFER_REASONS: readonly TransferManualReviewReason[] = [
+  "no_candidates",
+  "amount_mismatch_mp",
+  "mercadopago_unavailable",
+]
+
+export function isAwaitingTransferReason(reason: TransferManualReviewReason): boolean {
+  return (AWAITING_TRANSFER_REASONS as readonly string[]).includes(reason)
+}
+
+/**
+ * Motivos que pueden cambiar solos con el paso del tiempo, así que el cron
+ * los reintenta:
+ * los de espera, más dni_mismatch -- hay una transferencia sin usar con el
+ * monto exacto pero de otro DNI/CUIT. Puede ser de otro comprador (y la del
+ * cliente todavía no llegó) o del propio cliente transfiriendo desde otra
+ * cuenta: por eso queda en 'manual_review' (visible en Admin) pero se sigue
+ * reintentando. Reintentar nunca relaja el matching: sólo vuelve a buscar.
+ *
+ * confirmation_error también puede resolverse solo: monto y DNI ya coincidieron,
+ * pero la confirmación falló por un error transitorio. Queda en revisión
+ * manual y el cron vuelve a intentar sin relajar el matching.
+ *
+ * Fuente única de verdad para el cron de reintentos
  * (lib/orders/transfer-verification-retry.ts) -- la consulta SQL filtra por
  * esta misma lista para no traer nunca motivos permanentes (evita que
  * pedidos con un motivo no reintentable "envenenen" el batch del cron y
  * dejen sin turno a los que sí son reintentables).
  */
 export const RETRYABLE_MANUAL_REVIEW_REASONS: readonly TransferManualReviewReason[] = [
-  "no_candidates",
-  "mercadopago_unavailable",
+  ...AWAITING_TRANSFER_REASONS,
+  "dni_mismatch",
   "confirmation_error",
 ]
 
@@ -44,6 +72,24 @@ export function isRetryableManualReviewReason(
   reason: TransferManualReviewReason,
 ): boolean {
   return (RETRYABLE_MANUAL_REVIEW_REASONS as readonly string[]).includes(reason)
+}
+
+/** Estado legible compartido por las dos vistas de Admin. */
+export function getTransferVerificationStatusLabel(
+  status: string | null | undefined,
+  attempts: number | null | undefined,
+): string {
+  switch (status) {
+    case "auto_verified":
+      return "Pago confirmado"
+    case "manual_review":
+      return "Requiere revisión manual"
+    case "checking":
+      return "Verificación en curso"
+    case "pending":
+    default:
+      return (attempts ?? 0) > 0 ? "Esperando transferencia" : "Sin intentos"
+  }
 }
 
 /**
@@ -97,11 +143,11 @@ export function describeManualReviewReason(
     case "amount_mismatch_mp":
       return "Encontramos transferencias en la ventana de tiempo, pero ninguna con el monto exacto esperado."
     case "multiple_candidates":
-      return "Encontramos más de una transferencia posible con el mismo monto: requiere revisión manual."
+      return "Encontramos más de una transferencia sin usar con el mismo monto y el mismo DNI/CUIT: requiere revisión manual."
     case "identification_unavailable":
-      return "Mercado Pago no informó un documento válido del pagador para esa transferencia."
+      return "Hay transferencias con el monto exacto, pero Mercado Pago no informó un documento válido del pagador en al menos una de ellas."
     case "dni_mismatch":
-      return "El documento derivado de Mercado Pago no coincide con el DNI informado por el cliente."
+      return "Hay transferencias con el monto exacto, pero ninguna del DNI/CUIT informado por el cliente."
     case "payment_id_already_used":
       return "Esa transferencia ya fue utilizada para acreditar otro pedido."
     case "mercadopago_unavailable":

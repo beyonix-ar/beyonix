@@ -27,10 +27,21 @@ test("un fallo técnico (rate limit, verificación en curso, error inesperado de
     handleSubmit,
     /if \(!response\.ok\) \{[\s\S]*?if \(data\.proofUploadAvailable\) \{[\s\S]*?onManualReview\(\)/,
   )
-  // Camino catch (excepción de red / parseo): siempre pasa a revisión
-  // manual, no hay forma de que el backend haya podido decir lo contrario.
+  // Camino catch (excepción de red / parseo): conserva el formulario y
+  // permite volver a verificar sin enviar a revisión manual.
   const catchBlock = handleSubmit.slice(handleSubmit.indexOf("} catch"))
-  assert.match(catchBlock, /onManualReview\(\)/)
+  assert.match(catchBlock, /showRetryNotice\(/)
+  assert.doesNotMatch(catchBlock, /onManualReview\(\)/)
+})
+
+test("un resultado pendiente mantiene los datos del formulario y muestra cooldown antes de volver a verificar", () => {
+  assert.match(SOURCE, /if \(data\.retryable\) \{[\s\S]*?showRetryNotice\(/)
+  assert.match(SOURCE, /disabled=\{submitting \|\| coolingDown\}/)
+  assert.match(SOURCE, /Podés volver a verificar en \$\{cooldownSeconds\} s/)
+  assert.match(SOURCE, /value=\{firstName\}/)
+  assert.match(SOURCE, /value=\{lastName\}/)
+  assert.match(SOURCE, /value=\{dni\}/)
+  assert.match(SOURCE, /value=\{amount\}/)
 })
 
 test("el formulario envía los 4 datos obligatorios del titular ya validados (nombre, apellido, DNI/CUIT y monto)", () => {

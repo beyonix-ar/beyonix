@@ -173,9 +173,9 @@ test("escenario feliz: monto + DNI derivado coinciden -> verified y persiste tra
   assert.equal(confirmCall?.args.p_matched_dni_derived, "30111222")
 })
 
-test("sin candidatos en Mercado Pago -> manual_review, no llama a confirm_transfer_auto_verification", async () => {
+test("sin candidatos en Mercado Pago -> esperando transferencia (pending, NO manual_review), no llama a confirm_transfer_auto_verification", async () => {
   const orderRow = baseOrderRow()
-  const { admin, rpcCalls } = createFakeAdmin({
+  const { admin, rpcCalls, updateCalls } = createFakeAdmin({
     orderRow,
     rpcResponses: {
       claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
@@ -188,9 +188,14 @@ test("sin candidatos en Mercado Pago -> manual_review, no llama a confirm_transf
     { searchTransfers: async () => ({ candidates: [], exhaustive: true }) },
   )
 
-  assert.equal(result.status, "manual_review")
-  if (result.status === "manual_review") assert.equal(result.reason, "no_candidates")
+  assert.equal(result.status, "awaiting_transfer")
+  if (result.status === "awaiting_transfer") assert.equal(result.reason, "no_candidates")
   assert.equal(rpcCalls.some((c) => c.name === "confirm_transfer_auto_verification"), false)
+  const release = updateCalls.find((call) => "transfer_verification_status" in call.values)
+  assert.deepEqual(release?.values, {
+    transfer_verification_status: "pending",
+    transfer_verification_failure_reason: "no_candidates",
+  })
 })
 
 test("búsqueda no exhaustiva (se cortó por el tope de páginas sin cubrir toda la ventana) -> manual_review, nunca auto-confirma con un conjunto parcial", async () => {
@@ -216,7 +221,7 @@ test("búsqueda no exhaustiva (se cortó por el tope de páginas sin cubrir toda
   assert.equal(rpcCalls.some((c) => c.name === "confirm_transfer_auto_verification"), false)
 })
 
-test("Mercado Pago cae (timeout/API down) -> manual_review con motivo reintentable, nunca 500 sin controlar", async () => {
+test("Mercado Pago cae (timeout/API down) -> esperando transferencia con motivo reintentable, nunca 500 sin controlar", async () => {
   const orderRow = baseOrderRow()
   const { admin } = createFakeAdmin({
     orderRow,
@@ -235,8 +240,8 @@ test("Mercado Pago cae (timeout/API down) -> manual_review con motivo reintentab
     },
   )
 
-  assert.equal(result.status, "manual_review")
-  if (result.status === "manual_review") assert.equal(result.reason, "mercadopago_unavailable")
+  assert.equal(result.status, "awaiting_transfer")
+  if (result.status === "awaiting_transfer") assert.equal(result.reason, "mercadopago_unavailable")
 })
 
 test("monto informado por el cliente no coincide con el esperado -> manual_review SIN consultar Mercado Pago", async () => {

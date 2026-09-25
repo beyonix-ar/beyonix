@@ -1,4 +1,5 @@
 import { formatDeclaredPayerDocument } from "../payments/argentine-identification.ts"
+import { getTransferVerificationStatusLabel } from "./transfer-verification-reasons.ts"
 
 /**
  * Vista para Admin > Pedido > Pago > "Datos de la transferencia": lo que el
@@ -18,6 +19,7 @@ export interface TransferDeclarationViewOrder {
   transfer_amount_declared?: number | string | null
   transfer_last_verification_at?: string | null
   transfer_verification_status?: string | null
+  transfer_verification_attempts?: number | null
   payment_proof_url?: string | null
   payment_proof_file_name?: string | null
   payment_proof_uploaded_at?: string | null
@@ -37,13 +39,6 @@ export interface TransferDeclarationView {
     fileName: string
     uploadedAt: string | null
   }
-}
-
-const VERIFICATION_LABELS: Record<string, string> = {
-  auto_verified: "Verificada automáticamente",
-  manual_review: "Requiere revisión manual",
-  checking: "Verificación en curso",
-  pending: "Sin intentos de verificación",
 }
 
 function text(value: string | null | undefined) {
@@ -67,9 +62,10 @@ export function getTransferDeclarationView(order: TransferDeclarationViewOrder):
     document: document ?? TRANSFER_DECLARATION_MISSING,
     declaredAmount,
     declaredAt: hasDeclaration ? (order.transfer_last_verification_at ?? null) : null,
-    verificationLabel:
-      VERIFICATION_LABELS[order.transfer_verification_status ?? "pending"] ??
-      VERIFICATION_LABELS.pending,
+    verificationLabel: getTransferVerificationStatusLabel(
+      order.transfer_verification_status,
+      order.transfer_verification_attempts ?? (hasDeclaration ? 1 : 0),
+    ),
     proof: {
       attached,
       fileName: attached

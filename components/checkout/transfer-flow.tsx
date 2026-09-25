@@ -285,13 +285,32 @@ function TransferVerificationStep({
   )
   const [phase, setPhase] = useState<"idle" | "submitting" | "confirming">("idle")
   const [errorMessage, setErrorMessage] = useState("")
+  // "Todavía no encontramos tu transferencia" (ej.: verificó antes de
+  // transferir): no es un error, el cliente se queda en el formulario con
+  // sus datos y puede volver a verificar cuando termine la espera.
+  const [retryNotice, setRetryNotice] = useState("")
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
   const [fieldErrors, setFieldErrors] = useState<
     Partial<Record<TransferDeclarationField, string>>
   >({})
 
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return
+    const timeout = window.setTimeout(() => setCooldownSeconds((seconds) => seconds - 1), 1000)
+    return () => window.clearTimeout(timeout)
+  }, [cooldownSeconds])
+
+  const showRetryNotice = (message: string, retryAfterSeconds: number | undefined) => {
+    setRetryNotice(message)
+    setCooldownSeconds(
+      Number.isFinite(retryAfterSeconds) ? Math.max(0, Math.ceil(retryAfterSeconds ?? 0)) : 0,
+    )
+    setPhase("idle")
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (phase !== "idle") return
+    if (phase !== "idle" || cooldownSeconds > 0) return
 
     // Misma validación que el servidor (lib/payments/transfer-declaration.ts):
     // los 4 datos del titular son obligatorios.
@@ -310,6 +329,7 @@ function TransferVerificationStep({
     setFieldErrors({})
     setPhase("submitting")
     setErrorMessage("")
+    setRetryNotice("")
 
     try {
       const guestToken = getGuestOrderToken(order.id)
@@ -330,10 +350,13 @@ function TransferVerificationStep({
       })
 
       const data = (await response.json()) as {
-        status?: "verified" | "manual_review"
+        status?: "verified" | "manual_review" | "awaiting_transfer"
         error?: string
+        message?: string
         fieldErrors?: Partial<Record<TransferDeclarationField, string>>
         proofUploadAvailable?: boolean
+        retryable?: boolean
+        retryAfterSeconds?: number
       }
 
       if (!response.ok) {
@@ -344,11 +367,17 @@ function TransferVerificationStep({
           setPhase("idle")
           return
         }
+        // Espera entre intentos o verificación ya en curso: se reintenta
+        // desde acá mismo, no es motivo para pasar a revisión manual.
+        if (data.retryable) {
+          showRetryNotice(
+            data.error || "Esperá unos segundos y volvé a verificar.",
+            data.retryAfterSeconds,
+          )
+          return
+        }
         setErrorMessage(data.error || "No pudimos verificar tu transferencia.")
-        // Un fallo técnico (rate limit, verificación en curso, error
-        // inesperado del backend o de Mercado Pago) nunca debe dejar al
-        // cliente sin salida: mientras el pago no esté confirmado, el
-        // comprobante sigue disponible como alternativa segura.
+        // El comprobante sigue disponible como alternativa segura.
         if (data.proofUploadAvailable) {
           onUpdated(order)
           onManualReview()
@@ -366,12 +395,19 @@ function TransferVerificationStep({
         return
       }
 
+      if (data.retryable) {
+        showRetryNotice(
+          data.message || "Todavía no encontramos tu transferencia. Podés volver a verificar.",
+          data.retryAfterSeconds,
+        )
+        return
+      }
+
       onUpdated(order)
       onManualReview()
     } catch {
-      // Fallo de red / excepción inesperada: mismo criterio, nunca bloquea.
-      onUpdated(order)
-      onManualReview()
+      // La red puede fallar sin que exista ningún problema con el pago.
+      showRetryNotice("No pudimos conectarnos para verificar. Podés volver a intentar.", undefined)
     }
   }
 
@@ -389,6 +425,7 @@ function TransferVerificationStep({
   }
 
   const submitting = phase === "submitting"
+  const coolingDown = cooldownSeconds > 0
 
   return (
     <StepCard>
@@ -462,6 +499,31 @@ function TransferVerificationStep({
           <p className="text-xs font-medium text-[var(--account-danger)]">{errorMessage}</p>
         )}
 
+        {retryNotice && (
+          <div
+            role="status"
+            data-transfer-retry-notice
+            className="flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
+          >
+            <Clock className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
+            <div className="text-xs leading-5 text-[var(--account-info-text)]">
+              <p>{retryNotice}</p>
+              <p className="mt-1">
+                Revisá que el DNI/CUIT sea el del titular de la cuenta desde donde transferiste y
+                que el monto sea exacto.
+              </p>
+              <button
+                type="button"
+                onClick={onManualReview}
+                disabled={submitting}
+                className="mt-1.5 font-semibold underline underline-offset-2"
+              >
+                Prefiero enviar el comprobante
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row">
           <BeyonixButton
             type="button"
@@ -472,12 +534,20 @@ function TransferVerificationStep({
           >
             Volver
           </BeyonixButton>
-          <BeyonixButton type="submit" disabled={submitting} className="h-11 sm:flex-[2]">
+          <BeyonixButton
+            type="submit"
+            disabled={submitting || coolingDown}
+            className="h-11 sm:flex-[2]"
+          >
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 Verificando transferencia...
               </>
+            ) : coolingDown ? (
+              `Podés volver a verificar en ${cooldownSeconds} s`
+            ) : retryNotice ? (
+              "Volver a verificar"
             ) : (
               "Verificar transferencia"
             )}

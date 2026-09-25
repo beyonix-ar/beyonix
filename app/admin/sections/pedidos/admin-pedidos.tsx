@@ -115,7 +115,7 @@ import {
   type AdminOrderCancellationAction,
 } from "@/lib/orders/admin-order-cancellation-reasons"
 import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-payment-status"
-import { describeManualReviewReason } from "@/lib/orders/transfer-verification-reasons"
+import { describeManualReviewReason, getTransferVerificationStatusLabel } from "@/lib/orders/transfer-verification-reasons"
 import { getTransferDeclarationView } from "@/lib/orders/transfer-declaration-view"
 import { cn } from "@/lib/utils"
 import { isValidMoneyInput, parseMoneyInput } from "@/lib/customer-credit"
@@ -5911,13 +5911,10 @@ function PedidoDetailModal({
                         </p>
                       </div>
                       <span className="inline-flex items-center admin-order-pill px-3 py-1.5 text-11px font-black uppercase tracking-wide admin-order-tone-info">
-                        {pedido.transfer_verification_status === "auto_verified"
-                          ? "Verificada automáticamente"
-                          : pedido.transfer_verification_status === "manual_review"
-                            ? "Requiere revisión manual"
-                            : pedido.transfer_verification_status === "checking"
-                              ? "Verificación en curso"
-                              : "Sin intentos"}
+                        {getTransferVerificationStatusLabel(
+                          pedido.transfer_verification_status,
+                          pedido.transfer_verification_attempts,
+                        )}
                       </span>
                     </div>
 
@@ -5969,9 +5966,11 @@ function PedidoDetailModal({
                           value={String(pedido.transfer_verification_attempts ?? 0)}
                         />
                         <PaymentMetaItem
-                          label="Motivo de la última revisión manual"
+                          label="Resultado del último intento"
                           value={
-                            pedido.transfer_verification_status === "manual_review"
+                            pedido.transfer_verification_status === "manual_review" ||
+                            (pedido.transfer_verification_status === "pending" &&
+                              pedido.transfer_verification_failure_reason)
                               ? describeManualReviewReason(
                                   pedido.transfer_verification_failure_reason ?? null,
                                 )

@@ -12,7 +12,9 @@ import { TRANSFER_PAYMENT_EXPIRATION_HOURS } from "./transfer-expiration.ts"
 export {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
   RETRYABLE_MANUAL_REVIEW_REASONS,
+  AWAITING_TRANSFER_REASONS,
   isRetryableManualReviewReason,
+  isAwaitingTransferReason,
   getManualReviewCustomerMessage,
   describeManualReviewReason,
   type TransferManualReviewReason,
@@ -57,16 +59,113 @@ export function getTransferMatchWindowExpirationCutoff(now: Date = new Date()): 
   return new Date(now.getTime() - TRANSFER_PAYMENT_EXPIRATION_HOURS * 60 * 60 * 1000)
 }
 
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
+
 /**
- * Debe coincidir con el default de p_max_attempts en
- * claim_transfer_verification_attempt (supabase/migrations/20260913120000_transfer_auto_verification.sql).
- * Postgres no puede importar una constante de TypeScript, así que este valor
- * es un duplicado deliberado -- si cambia el default de la RPC, actualizar
- * acá también. Usado por el cron de reintentos para filtrar en la propia
- * consulta SQL, ANTES del LIMIT, las órdenes que ya agotaron sus intentos
- * automáticos (nunca van a poder reclamar un intento nuevo igual).
+ * Calendario del retry AUTOMÁTICO (cron cada ~15 min) durante TODA la
+ * ventana de conciliación: frecuente al principio -- cuando es más probable
+ * que la transferencia aparezca -- y cada vez más espaciado después, hasta
+ * el vencimiento de 48 h. Antes el cron se cortaba por cantidad de intentos
+ * (20 x 15 min ≈ 5 h) y el resto de la ventana dependía de que el cliente
+ * volviera a verificar. Cada tramo se define por la antigüedad del pedido
+ * (desde created_at) y el intervalo mínimo entre dos intentos de ese pedido.
  */
-export const TRANSFER_VERIFICATION_MAX_ATTEMPTS = 20
+export const TRANSFER_AUTO_RETRY_SCHEDULE: ReadonlyArray<{
+  untilHours: number
+  intervalMinutes: number
+}> = [
+  { untilHours: 6, intervalMinutes: 15 },
+  { untilHours: 24, intervalMinutes: 60 },
+  { untilHours: TRANSFER_PAYMENT_EXPIRATION_HOURS, intervalMinutes: 120 },
+]
+
+/**
+ * Tolerancia sobre el intervalo: el timer de systemd dispara cada 15 min
+ * exactos, pero el intento anterior pudo registrarse unos segundos después
+ * del inicio de su corrida. Sin esta tolerancia, un tramo de 15 min se
+ * convertiría en 30 min efectivos.
+ */
+export const TRANSFER_AUTO_RETRY_GRACE_MINUTES = 2
+
+/** Intervalo mínimo (ms) entre dos intentos automáticos, o null si la ventana ya venció. */
+export function getTransferAutoRetryIntervalMs(orderAgeMs: number): number | null {
+  if (!Number.isFinite(orderAgeMs) || orderAgeMs < 0) return null
+  const tier = TRANSFER_AUTO_RETRY_SCHEDULE.find(({ untilHours }) => orderAgeMs < untilHours * HOUR_MS)
+  if (!tier) return null
+  return (tier.intervalMinutes - TRANSFER_AUTO_RETRY_GRACE_MINUTES) * MINUTE_MS
+}
+
+/**
+ * ¿Le toca un intento automático a este pedido ahora? Sólo depende de la
+ * antigüedad del pedido y del ÚLTIMO intento (automático o manual: si el
+ * cliente acaba de verificar, el cron no repite la misma búsqueda).
+ */
+export function isTransferAutoRetryDue({
+  createdAt,
+  lastVerificationAt,
+  now = new Date(),
+}: {
+  createdAt: string | Date
+  lastVerificationAt: string | Date | null | undefined
+  now?: Date
+}): boolean {
+  const createdMs = new Date(createdAt).getTime()
+  const intervalMs = getTransferAutoRetryIntervalMs(now.getTime() - createdMs)
+  if (intervalMs === null) return false
+  if (!lastVerificationAt) return true
+  const lastMs = new Date(lastVerificationAt).getTime()
+  return !Number.isFinite(lastMs) || now.getTime() - lastMs >= intervalMs
+}
+
+/**
+ * Cota superior de intentos automáticos que un pedido puede recibir en toda
+ * su ventana: dentro de cada tramo, dos intentos automáticos siempre quedan
+ * separados por al menos (intervalo - tolerancia), tanto en el filtro del
+ * cron como en p_min_interval_seconds de la RPC. Así, en un tramo de
+ * duración L caben como máximo floor(L / separación) + 1. No depende de la
+ * frecuencia real del timer ni de que dos crons hayan cargado el mismo batch.
+ * Una verificación manual intercalada actualiza el mismo timestamp y sólo
+ * posterga el siguiente claim automático.
+ */
+export const TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS = TRANSFER_AUTO_RETRY_SCHEDULE.reduce(
+  (total, tier, index) => {
+    const fromHours = index === 0 ? 0 : TRANSFER_AUTO_RETRY_SCHEDULE[index - 1].untilHours
+    const spacingMinutes = tier.intervalMinutes - TRANSFER_AUTO_RETRY_GRACE_MINUTES
+    return total + Math.floor(((tier.untilHours - fromHours) * 60) / spacingMinutes) + 1
+  },
+  0,
+)
+
+/** Intentos manuales garantizados al cliente, sin importar cuántos haya hecho el cron. */
+export const TRANSFER_VERIFICATION_MANUAL_ATTEMPTS = 30
+
+/**
+ * El contador transfer_verification_attempts es uno solo (manual +
+ * automático) y claim_transfer_verification_attempt lo compara contra el
+ * p_max_attempts que recibe. Separar el contador requeriría una migración;
+ * en cambio, los topes se derivan de la cota automática:
+ *
+ * - cliente: MAX_AUTOMATIC + MANUAL -> como el cron nunca supera
+ *   MAX_AUTOMATIC, el cliente siempre conserva al menos MANUAL intentos;
+ * - cron: tope del cliente + MAX_AUTOMATIC -> los intentos manuales nunca
+ *   alcanzan para bloquear un intento automático que corresponde.
+ *
+ * La protección antiabuso real del cliente es el intervalo mínimo entre
+ * intentos (TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS) más este tope.
+ */
+export const TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS =
+  TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS + TRANSFER_VERIFICATION_MANUAL_ATTEMPTS
+
+export const TRANSFER_VERIFICATION_AUTOMATIC_CLAIM_MAX_ATTEMPTS =
+  TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS + TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS
+
+/**
+ * Espera mínima entre dos intentos del mismo pedido (p_min_interval_seconds
+ * de claim_transfer_verification_attempt). Se informa al cliente para
+ * mostrar la cuenta regresiva antes de volver a verificar.
+ */
+export const TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS = 10
 
 export type TransferAutoVerificationOutcome =
   | {
@@ -133,23 +232,37 @@ export function matchBankTransferPayment({
     }
   }
 
-  if (amountMatches.length > 1) {
+  // La unicidad se exige sobre las transferencias que cumplen AMBAS reglas
+  // obligatorias (monto exacto + documento derivado === declarado), no sólo
+  // el monto: antes, cualquier otra transferencia del mismo importe dentro
+  // de la ventana de 48 h (de otro pagador, o ya usada por otro pedido)
+  // dejaba el pedido en multiple_candidates para siempre, aunque la
+  // transferencia real del cliente apareciera después. Una transferencia
+  // de otro documento nunca puede ser la del titular declarado.
+  const evaluated = amountMatches.map((candidate) => ({
+    candidate,
+    dniDerivation: deriveArgentineDni({
+      type: candidate.identificationType,
+      number: candidate.identificationNumber,
+    }),
+  }))
+  const fullMatches = evaluated.filter(
+    ({ dniDerivation }) => dniDerivation.dni === normalizedDeclaredDni,
+  )
+
+  if (fullMatches.length > 1) {
     return { kind: "manual_review", reason: "multiple_candidates" }
   }
 
-  const candidate = amountMatches[0]
-  const dniDerivation = deriveArgentineDni({
-    type: candidate.identificationType,
-    number: candidate.identificationNumber,
-  })
+  if (fullMatches.length === 1) {
+    return { kind: "verified", ...fullMatches[0] }
+  }
 
-  if (!dniDerivation.dni) {
+  // Sin coincidencia: si alguna transferencia del monto exacto no trae un
+  // documento utilizable, podría ser la del cliente -- requiere un humano.
+  if (evaluated.some(({ dniDerivation }) => !dniDerivation.dni)) {
     return { kind: "manual_review", reason: "identification_unavailable" }
   }
 
-  if (dniDerivation.dni !== normalizedDeclaredDni) {
-    return { kind: "manual_review", reason: "dni_mismatch" }
-  }
-
-  return { kind: "verified", candidate, dniDerivation }
+  return { kind: "manual_review", reason: "dni_mismatch" }
 }

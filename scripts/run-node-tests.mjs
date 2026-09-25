@@ -147,6 +147,7 @@ const TEST_FILES = [
   "lib/orders/transfer-auto-verification.test.ts",
   "lib/orders/transfer-verification-service.test.ts",
   "lib/orders/transfer-verification-retry.test.ts",
+  "lib/orders/transfer-verification-retry-flow.test.ts",
   "lib/orders/transfer-verification-reasons.test.ts",
   "lib/orders/transfer-verification-route-contract.test.ts",
   "lib/orders/transfer-verification-cron-contract.test.ts",

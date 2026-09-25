@@ -5,7 +5,14 @@ import {
   attemptTransferAutoVerification,
   type TransferVerificationAttemptResult,
 } from "@/lib/orders/transfer-verification-service"
-import { canUploadTransferProof } from "@/lib/orders/transfer-verification-reasons"
+import {
+  TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS,
+  TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
+} from "@/lib/orders/transfer-auto-verification"
+import {
+  canUploadTransferProof,
+  isRetryableManualReviewReason,
+} from "@/lib/orders/transfer-verification-reasons"
 import { validateTransferDeclaration } from "@/lib/payments/transfer-declaration"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -21,14 +28,38 @@ import { createClient } from "@/lib/supabase/server"
  * reenviando la fila.
  */
 function safeVerificationResponse(
-  result: Extract<TransferVerificationAttemptResult, { status: "verified" | "manual_review" }>,
+  result: Extract<
+    TransferVerificationAttemptResult,
+    { status: "verified" | "manual_review" | "awaiting_transfer" }
+  >,
 ) {
   const verified = result.status === "verified"
+  // "Todavía no aparece la transferencia del titular declarado" (ej.: el
+  // cliente verificó antes de transferir): no es un rechazo, puede volver a
+  // verificar. Sólo se expone este booleano, nunca el motivo interno (que
+  // revelaría si existen transferencias de terceros con ese monto).
+  const retryable =
+    result.status === "awaiting_transfer" ||
+    (result.status === "manual_review" && isRetryableManualReviewReason(result.reason))
+
+  if (retryable) {
+    return {
+      status: result.status,
+      verified: false,
+      manualReviewRequired: result.status === "manual_review",
+      retryable: true,
+      retryAfterSeconds: TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
+      proofUploadAvailable: true,
+      message:
+        "Todavía no encontramos tu transferencia. Si acabás de realizarla, puede tardar unos instantes en aparecer. Podés volver a verificar.",
+    }
+  }
 
   return {
     status: result.status,
     verified,
     manualReviewRequired: !verified,
+    retryable: false,
     // El pago ya está confirmado -> nunca corresponde ofrecer comprobante.
     // Cualquier otro resultado (incluido manual_review por conflicto de
     // stock: la plata ya está identificada, pero el admin puede pedir
@@ -130,23 +161,35 @@ export async function POST(
     const result = await attemptTransferAutoVerification(admin, {
       orderId: pedidoId,
       declared: { firstName, lastName, dni: document, amount },
+      maxAttempts: TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS,
     })
 
     switch (result.status) {
       case "verified":
       case "manual_review":
+      case "awaiting_transfer":
         return NextResponse.json(safeVerificationResponse(result))
       case "rate_limited":
         // Fallo técnico transitorio: mientras el pago no esté confirmado, el
         // cliente nunca debe quedar sin salida -- ofrecemos igual el
         // comprobante como alternativa segura.
         return NextResponse.json(
-          { error: result.message, proofUploadAvailable: true },
+          {
+            error: result.message,
+            retryable: true,
+            retryAfterSeconds: TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
+            proofUploadAvailable: true,
+          },
           { status: 429 },
         )
       case "checking_in_progress":
         return NextResponse.json(
-          { error: result.message, proofUploadAvailable: true },
+          {
+            error: "Ya estamos verificando tu transferencia. Esperá unos segundos y volvé a verificar.",
+            retryable: true,
+            retryAfterSeconds: TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
+            proofUploadAvailable: true,
+          },
           { status: 409 },
         )
       case "rejected":
@@ -162,7 +205,7 @@ export async function POST(
     // Error inesperado (500) o Mercado Pago caído: un fallo técnico nunca
     // debe bloquear al cliente -- el comprobante sigue disponible.
     return NextResponse.json(
-      { error: "No pudimos verificar tu transferencia.", proofUploadAvailable: true },
+      { error: "No pudimos verificar tu transferencia.", retryable: true, proofUploadAvailable: true },
       { status: 500 },
     )
   }

@@ -3,12 +3,70 @@ import test from "node:test"
 
 import {
   TRANSFER_MATCH_LOOKBACK_MINUTES,
+  TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS,
+  TRANSFER_VERIFICATION_AUTOMATIC_CLAIM_MAX_ATTEMPTS,
+  TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS,
+  TRANSFER_VERIFICATION_MANUAL_ATTEMPTS,
+  getTransferAutoRetryIntervalMs,
   getTransferMatchWindow,
+  isTransferAutoRetryDue,
   isRetryableManualReviewReason,
   matchBankTransferPayment,
 } from "./transfer-auto-verification.ts"
 import { TRANSFER_PAYMENT_EXPIRATION_HOURS } from "./transfer-expiration.ts"
 import type { MercadoPagoBankTransferCandidate } from "../mercadopago/bank-transfer-search.ts"
+
+test("calendario automático cubre 6, 12, 24 y casi 48 horas y se detiene al vencer", () => {
+  const hour = 60 * 60 * 1000
+  const minute = 60 * 1000
+  const now = new Date("2026-09-25T12:00:00.000Z")
+  for (const [ageHours, expectedMinutes] of [[1, 13], [6, 58], [12, 58], [24, 118], [47.9, 118]]) {
+    const createdAt = new Date(now.getTime() - ageHours * hour)
+    assert.equal(getTransferAutoRetryIntervalMs(ageHours * hour), expectedMinutes * minute)
+    assert.equal(isTransferAutoRetryDue({ createdAt, lastVerificationAt: new Date(now.getTime() - expectedMinutes * minute), now }), true)
+    assert.equal(isTransferAutoRetryDue({ createdAt, lastVerificationAt: new Date(now.getTime() - expectedMinutes * minute + 1000), now }), false)
+  }
+  assert.equal(isTransferAutoRetryDue({ createdAt: new Date(now.getTime() - 48 * hour), lastVerificationAt: null, now }), false)
+  assert.ok(TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS >= 50)
+})
+
+test("peor caso: el cron no puede consumir los 30 intentos manuales reservados", () => {
+  // Intervalos mínimos exigidos también por la RPC: 13, 58 y 118 minutos.
+  // En los tramos semiabiertos de 360, 1080 y 1440 minutos caben, como
+  // máximo, 28 + 19 + 13 claims automáticos. Los manuales intercalados
+  // desplazan el último intento y sólo pueden reducir esa cantidad.
+  const maximumByTier = [
+    Math.ceil(360 / 13),
+    Math.ceil(1080 / 58),
+    Math.ceil(1440 / 118),
+  ]
+  assert.deepEqual(maximumByTier, [28, 19, 13])
+  assert.equal(TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS, 60)
+  assert.equal(TRANSFER_VERIFICATION_MANUAL_ATTEMPTS, 30)
+  assert.equal(TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS, 90)
+  assert.equal(TRANSFER_VERIFICATION_AUTOMATIC_CLAIM_MAX_ATTEMPTS, 150)
+  // Tras el peor caso de 60 automáticos y 29 manuales, el manual 30 aún
+  // reclama porque la RPC rechaza sólo cuando attempts >= 90.
+  assert.ok(60 + 29 < TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS)
+
+  const createdAt = new Date("2026-09-25T00:00:00.000Z")
+  let lastVerificationAt: Date = createdAt // primera declaración manual
+  let automaticAttempts = 0
+  let manualAttempts = 1
+  for (let minute = 15; minute < 48 * 60; minute += 15) {
+    const now = new Date(createdAt.getTime() + minute * 60_000)
+    if ([180, 720, 1500, 2400].includes(minute)) {
+      lastVerificationAt = now
+      manualAttempts += 1
+    }
+    if (isTransferAutoRetryDue({ createdAt, lastVerificationAt, now })) {
+      automaticAttempts += 1
+      lastVerificationAt = now
+    }
+  }
+  assert.ok(automaticAttempts <= TRANSFER_VERIFICATION_MAX_AUTOMATIC_ATTEMPTS)
+  assert.ok(automaticAttempts + manualAttempts < TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS)
+})
 
 /** Construye un CUIL/CUIT válido (checksum real de AFIP) para un DNI y prefijo dados, sólo para tests. */
 function buildValidCuil(prefix: string, dni: string): string {
@@ -152,7 +210,7 @@ test("sin candidatos en la ventana -> manual_review con motivo reintentable", ()
 })
 
 // Escenario: existen transferencias en la ventana pero ninguna con el monto exacto.
-test("candidatos existen pero ninguno con el monto exacto -> manual_review no reintentable", () => {
+test("candidatos existen pero ninguno con el monto exacto -> manual_review reintentable (resultado normal de verificar antes de transferir en una cuenta con movimiento)", () => {
   const result = matchBankTransferPayment({
     expectedAmount: 900,
     declaredAmount: 900,
@@ -161,7 +219,7 @@ test("candidatos existen pero ninguno con el monto exacto -> manual_review no re
   })
 
   assert.deepEqual(result, { kind: "manual_review", reason: "amount_mismatch_mp" })
-  assert.equal(isRetryableManualReviewReason("amount_mismatch_mp"), false)
+  assert.equal(isRetryableManualReviewReason("amount_mismatch_mp"), true)
 })
 
 // Escenario: Mercado Pago no devuelve identificación utilizable para ese pagador.
@@ -213,23 +271,76 @@ test("un único candidato válido de tipo account_fund/cvu también matchea (seg
   assert.equal(result.kind, "verified")
 })
 
-test("isRetryableManualReviewReason sólo reintenta cuando el motivo es transitorio", () => {
+test("isRetryableManualReviewReason sólo reintenta cuando la transferencia del titular todavía puede aparecer", () => {
   const nonRetryable = [
     "declared_amount_mismatch",
     "declared_dni_invalid",
-    "amount_mismatch_mp",
     "multiple_candidates",
     "identification_unavailable",
-    "dni_mismatch",
     "payment_id_already_used",
     "stock_conflict",
+    "search_not_exhaustive",
+    "expected_amount_changed",
   ] as const
 
   for (const reason of nonRetryable) {
     assert.equal(isRetryableManualReviewReason(reason), false)
   }
-  assert.equal(isRetryableManualReviewReason("no_candidates"), true)
-  assert.equal(isRetryableManualReviewReason("mercadopago_unavailable"), true)
+  for (const reason of ["no_candidates", "amount_mismatch_mp", "dni_mismatch", "mercadopago_unavailable"] as const) {
+    assert.equal(isRetryableManualReviewReason(reason), true)
+  }
+})
+
+test("mismo monto de OTRO pagador + transferencia del titular declarado -> verifica la del titular (la unicidad es sobre monto + DNI)", () => {
+  const result = matchBankTransferPayment({
+    expectedAmount: 900,
+    declaredAmount: 900,
+    declaredDni: "30111222",
+    candidates: [
+      candidate({ id: "other", identificationNumber: VALID_CUIT_23_25999888 }),
+      candidate({ id: "mine", identificationNumber: VALID_CUIL_20_30111222 }),
+    ],
+  })
+
+  assert.equal(result.kind, "verified")
+  assert.equal(result.kind === "verified" && result.candidate.id, "mine")
+})
+
+test("transferencia del mismo monto ya usada por otro pedido + transferencia nueva del titular -> verifica la nueva, nunca la usada", () => {
+  const result = matchBankTransferPayment({
+    expectedAmount: 900,
+    declaredAmount: 900,
+    declaredDni: "30111222",
+    candidates: [candidate({ id: "used" }), candidate({ id: "new" })],
+    excludePaymentIds: new Set(["used"]),
+  })
+
+  assert.equal(result.kind === "verified" && result.candidate.id, "new")
+})
+
+test("mismo monto, ninguna del DNI declarado y una sin documento -> identification_unavailable (podría ser la del cliente: revisión humana)", () => {
+  const result = matchBankTransferPayment({
+    expectedAmount: 900,
+    declaredAmount: 900,
+    declaredDni: "30111222",
+    candidates: [
+      candidate({ id: "other", identificationNumber: VALID_CUIT_23_25999888 }),
+      candidate({ id: "anon", identificationType: null, identificationNumber: null }),
+    ],
+  })
+
+  assert.deepEqual(result, { kind: "manual_review", reason: "identification_unavailable" })
+})
+
+test("DNI declarado coincide pero el monto no -> nunca verifica", () => {
+  const result = matchBankTransferPayment({
+    expectedAmount: 900,
+    declaredAmount: 900,
+    declaredDni: "30111222",
+    candidates: [candidate({ transactionAmount: 900.01 })],
+  })
+
+  assert.deepEqual(result, { kind: "manual_review", reason: "amount_mismatch_mp" })
 })
 
 // Reglas pedidas por el negocio, contra el matcher real. Mercado Pago no
