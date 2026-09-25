@@ -3320,7 +3320,7 @@ button.sales-ledger-product-trigger:hover {
   color: rgba(255, 255, 255, 0.76) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control) {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control):not(.admin-control-select) {
   background: #112A43 !important;
   background-color: #112A43 !important;
   background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
@@ -3331,7 +3331,7 @@ button.sales-ledger-product-trigger:hover {
     0 0 14px rgba(110, 168, 255, 0.12) !important;
 }
 
-.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control):hover {
+.admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control):not(.admin-control-select):hover {
   background: #1E4D7B !important;
   background-color: #1E4D7B !important;
   background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
@@ -3370,8 +3370,8 @@ button.sales-ledger-product-trigger:hover {
    blanco en ambos temas; en Light además chocaba con sus tonos claros.
    Idem .admin-claim-flow-control (pasos del reclamo y opciones "Volver al
    stock"/"Dar de baja"): primario/secundario/semántico propio por tema. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control),
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control) svg.lucide,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control):not(.admin-control-select),
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a):not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not([aria-label="Estado del pago"]):not(.admin-order-shipping-status-select):not(.admin-claim-decision-button):not(.admin-claim-flow-control):not(.admin-control-select) svg.lucide,
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled),
 html[data-admin-theme="light"] button[aria-label^="Ver pedido"]:not(:disabled) svg.lucide {
   color: #ffffff !important;
@@ -9162,7 +9162,7 @@ html[data-admin-theme="light"] .admin-portal-scope.border-white\/12 {
    "Sistema semántico de superficies" al final del archivo). */
 html[data-admin-theme="light"] .admin-ds-surface:not(.bx-surface),
 html[data-admin-theme="light"] .admin-ds-card:not(.bx-surface),
-html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]:not(.bx-surface) {
+html[data-admin-theme="light"] .beyonix-admin-main :where(section, article, aside, details, form, div)[class*="rounded"][class*="border"]:not(.bx-surface, .admin-orders-list-row) {
   background: var(--bx-surface-section) !important;
   border-color: var(--bx-border-section) !important;
   box-shadow: var(--bx-shadow-section) !important;
@@ -9932,8 +9932,11 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
   background: linear-gradient(150deg, #ffffff, #f3f7fb) !important;
   border-color: rgba(30, 58, 95, 0.18) !important;
 }
+/* Mismo nivel exterior que Envío/Atención/Historial: el envoltorio no pinta
+   fondo propio y deja ver la superficie de sección (gris); las cards quedan
+   como nivel interior más claro. */
 html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-summary-layout-bg {
-  background: #f7f9fb !important;
+  background: transparent !important;
 }
 html[data-admin-theme="light"] .admin-order-detail-scope aside {
   background: #ffffff !important;
@@ -10637,7 +10640,7 @@ html[data-admin-theme="light"] body > div[role="listbox"][aria-label="Modalidad 
    chip de estado, no un input. Sin excluirlo, el span interno quedaba
    forzado a var(--admin-text) (oscuro) sobre ese fondo casi negro que el
    propio !bg-[...] sí lograba conservar, dejando texto negro sobre negro. */
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not(.admin-order-shipping-status-select) {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not(.admin-order-shipping-status-select):not(.admin-order-shipping-modality-select) {
   background: #eef1f5 !important;
   background-color: #eef1f5 !important;
   background-image: none !important;
@@ -10645,14 +10648,14 @@ html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-con
   color: var(--admin-text) !important;
   box-shadow: none !important;
 }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not(.admin-order-shipping-status-select):hover {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content :is(button, a).admin-control-select:not(:disabled):not([aria-label*="Eliminar"]):not([class*="danger"]):not(.admin-order-shipping-status-select):not(.admin-order-shipping-modality-select):hover {
   background: #e6eaf0 !important;
   background-color: #e6eaf0 !important;
   background-image: none !important;
   border-color: var(--admin-border-strong) !important;
 }
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select) span,
-html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select) svg {
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select):not(.admin-order-shipping-modality-select) span,
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(.admin-order-shipping-status-select):not(.admin-order-shipping-modality-select) svg {
   color: var(--admin-text) !important;
 }
 /* "Estado operativo" (.admin-order-shipping-status-select) en Light: NO se
@@ -15360,4 +15363,130 @@ html[data-admin-theme="light"] .admin-replacement-modal {
   .admin-replacement-modal__button {
     width: 100%;
   }
+}
+
+/* ==========================================================================
+   Ronda visual Admin: ajuste administrativo, selects del detalle,
+   Transportista y fila del listado de pedidos en Light.
+   ========================================================================== */
+
+/* AdminSelect dentro del detalle del pedido: el aspecto navy de Dark vive en
+   su propia regla, fuera del catch-all de botones (que ahora lo excluye con
+   :not(.admin-control-select)). Con baja especificidad, la regla Light de
+   estos selects (#eef1f5 + texto oscuro) vuelve a ganar: antes perdía cada
+   vez que el catch-all sumaba un :not() y quedaba texto oscuro sobre navy. */
+.admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(:disabled):not(.admin-order-shipping-status-select) {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #fff !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    0 0 14px rgba(110, 168, 255, 0.12) !important;
+}
+
+.admin-order-detail-scope .admin-order-detail-content .admin-control-select:not(:disabled):not(.admin-order-shipping-status-select):hover {
+  background: #1E4D7B !important;
+  background-color: #1E4D7B !important;
+  background-image: linear-gradient(135deg, #1E4D7B, #112A43) !important;
+  border-color: rgba(110, 168, 255, 0.74) !important;
+}
+
+/* Envío > Transportista en Light: conserva su fondo navy; sólo el texto (y
+   el chevron, que ya era blanco) pasa a blanco para leerse. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-shipping-modality-select span {
+  color: #ffffff !important;
+}
+
+/* El chevron ya era blanco (por el catch-all de botones, que ahora excluye
+   los selects); svg.lucide.lucide gana a la regla Light global de iconos. */
+html[data-admin-theme="light"] .admin-order-detail-scope .admin-order-detail-content .admin-order-shipping-modality-select svg.lucide.lucide {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+/* Ajuste administrativo/contable: controles compactos (no ancho completo),
+   ayuda (?) y aviso de monto rechazado. */
+.admin-credit-adjustment-control {
+  width: 260px;
+  max-width: 100%;
+}
+
+.admin-credit-adjustment-heading {
+  justify-content: space-between;
+}
+
+.admin-credit-adjustment-panel {
+  --claim-flow-muted: rgba(226, 232, 240, 0.62);
+  --claim-flow-brand-strong: #8cc8f2;
+  --claim-flow-brand-soft: rgba(59, 130, 196, 0.14);
+  --claim-flow-brand-ring: rgba(140, 200, 242, 0.42);
+}
+
+html[data-admin-theme="light"] .admin-credit-adjustment-panel {
+  --claim-flow-muted: #475569;
+  --claim-flow-brand-strong: #112a43;
+  --claim-flow-brand-soft: #eaf2fb;
+  --claim-flow-brand-ring: rgba(17, 42, 67, 0.28);
+}
+
+.admin-credit-note-resolution-panel em.admin-credit-adjustment-error {
+  color: #fca5a5;
+  font-weight: 700;
+}
+
+html[data-admin-theme="light"] .admin-credit-note-resolution-panel em.admin-credit-adjustment-error {
+  color: #b91c1c !important;
+}
+
+/* Listado de pedidos en Light: cada fila replica la fila de Dark (fondo
+   navy ya definido arriba en .admin-orders-list-row x3). Faltaba el color
+   heredado, el "#BX-" (text-beyonix-sky) y el botón del ojo, que Light
+   repintaba en claro. Header y fondo general siguen en Light. */
+html[data-admin-theme="light"] .admin-orders-list-row.admin-orders-list-row.admin-orders-list-row {
+  color: oklch(0.98 0 0) !important;
+}
+
+html[data-admin-theme="light"] .admin-orders-list-row .text-beyonix-sky {
+  color: var(--beyonix-sky) !important;
+}
+
+html[data-admin-theme="light"] .admin-orders-list-row .text-white {
+  color: #ffffff !important;
+}
+
+/* Layout en card (< 2xl): mismos valores computados que en Dark. */
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/88 {
+  color: rgba(255, 255, 255, 0.88) !important;
+}
+
+html[data-admin-theme="light"] .admin-orders-list-row .text-white\/38 {
+  color: rgba(248, 251, 253, 0.46) !important;
+}
+
+html[data-admin-theme="light"] .admin-orders-list-row .border-white\/7 {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html[data-admin-theme="light"] .beyonix-admin-main .admin-orders-list-row .admin-order-dispatch-badge.admin-order-dispatch-badge--delivered {
+  background: #bbf7d0 !important;
+  background-color: #bbf7d0 !important;
+  border-color: #86efac !important;
+  color: #14532d !important;
+}
+
+/* Mismo patrón que .admin-claim-help-trigger: el ícono Lucide de Light
+   (svg.lucide global, 0,5,2) se pisa sólo dentro del botón de la fila. */
+html[data-admin-theme="light"] .admin-orders-list-row .admin-orders-action-button.admin-orders-action-button svg.lucide.lucide {
+  color: #ffffff !important;
+  stroke: currentColor !important;
+}
+
+html[data-admin-theme="light"] .admin-orders-list-row .admin-orders-action-button {
+  background: #112A43 !important;
+  background-color: #112A43 !important;
+  background-image: linear-gradient(135deg, #112A43, #0B1D31) !important;
+  border-color: rgba(110, 168, 255, 0.58) !important;
+  color: #ffffff !important;
 }

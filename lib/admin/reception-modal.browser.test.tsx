@@ -141,7 +141,9 @@ test("contrato: el panel usa el componente con Portal y el componente no depende
   // El bloque CSS del modal no usa !important ni selectores del admin.
   const css = readFileSync("app/globals.css", "utf8")
   const blockStart = css.lastIndexOf("/* ====", css.indexOf('   Modal "Confirmar movimiento" de la recepción de inventario'))
-  const block = css.slice(blockStart).replace(/\/\*[\s\S]*?\*\//g, "")
+  // Sólo este bloque: hasta el encabezado del siguiente bloque (si hay).
+  const nextBlock = css.indexOf("/* ====", blockStart + 1)
+  const block = css.slice(blockStart, nextBlock === -1 ? undefined : nextBlock).replace(/\/\*[\s\S]*?\*\//g, "")
   assert.doesNotMatch(block, /!important/)
   assert.doesNotMatch(block, /admin-order-detail-scope|beyonix-admin-main|beyonix-admin-shell/)
 })

@@ -97,6 +97,30 @@ export function parseMoneyAmount(value: unknown): number | null {
 }
 
 /**
+ * Texto permitido en un input de monto mientras se escribe: sólo dígitos y
+ * UN separador decimal (punto o coma) con hasta 2 decimales. Sin letras,
+ * signos, "$", espacios ni separadores de miles.
+ */
+const MONEY_INPUT_PATTERN = /^\d*(?:[.,]\d{0,2})?$/
+
+export function isValidMoneyInput(value: string) {
+  return MONEY_INPUT_PATTERN.test(value)
+}
+
+/**
+ * Monto de un input restringido por isValidMoneyInput: punto y coma son
+ * ambos separadores DECIMALES ("1000,10" = "1000.10" = 1000.1). Normaliza y
+ * delega en parseMoneyAmount (parser canónico). Texto inválido -> null,
+ * nunca un monto "adivinado". Un separador final ("1000,") vale 1000.
+ */
+export function parseMoneyInput(value: string): number | null {
+  if (!MONEY_INPUT_PATTERN.test(value)) return null
+  const normalized = value.replace(",", ".").replace(/\.$/, "")
+  if (!normalized || normalized === ".") return null
+  return parseMoneyAmount(normalized.startsWith(".") ? `0${normalized}` : normalized)
+}
+
+/**
  * Monto en PESOS estrictamente positivo, o 0 si no hay un monto válido
  * (contrato histórico de los checkouts: 0 = "no usar saldo").
  */

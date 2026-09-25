@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import { normalizeMoney, parseMoneyAmount } from "../customer-credit.ts"
+import { isValidMoneyInput, normalizeMoney, parseMoneyAmount, parseMoneyInput } from "../customer-credit.ts"
 
 // Unidad: PESOS con 2 decimales (nunca centavos) en ambos helpers.
 
@@ -72,4 +72,32 @@ test("no quedan parsers de montos duplicados en los checkouts ni en Admin", () =
     assert.doesNotMatch(source, /replace\(\/\\\.\/g, ""\)/, `${file} no debe reimplementar el parseo`)
     assert.doesNotMatch(source, /function normalize(Amount|RequestedCustomerCredit)\(/)
   }
+})
+
+test("input de monto (Admin): coma y punto son decimales, máx. 2, sin letras ni signos", () => {
+  // Mismo valor con coma o punto.
+  for (const [value, expected] of [
+    ["1000", 1000], ["1000,1", 1000.1], ["1000,10", 1000.1], ["1000.1", 1000.1], ["1000.10", 1000.1],
+    ["0,5", 0.5], [",5", 0.5], ["1000,", 1000], ["1000.", 1000],
+  ] as const) {
+    assert.equal(isValidMoneyInput(value), true, value)
+    assert.equal(parseMoneyInput(value), expected, value)
+  }
+  assert.equal(parseMoneyInput("1000,10"), parseMoneyInput("1000.10"))
+  // Rechazados al escribir o pegar: nunca se convierten a otro monto.
+  for (const value of ["abc", "$1000", "1000abc", "1000,123", "1000.123", "1.000,10", "1,000.10", "1 000", "-100", "1e3", "+5", "10,5,3"]) {
+    assert.equal(isValidMoneyInput(value), false, value)
+    assert.equal(parseMoneyInput(value), null, value)
+  }
+  assert.equal(isValidMoneyInput(""), true, "el campo puede vaciarse")
+  assert.equal(parseMoneyInput(""), null)
+  assert.equal(parseMoneyInput(","), null)
+})
+
+test("Admin > ajuste: el monto usa el parser canónico (antes '1000.10' se leía como 100010)", () => {
+  const source = readFileSync(new URL("../../app/admin/sections/pedidos/admin-pedidos.tsx", import.meta.url), "utf8")
+  assert.match(source, /const value = parseMoneyInput\(manualCreditAmount\)/)
+  assert.doesNotMatch(source, /manualCreditAmount\.replace\(/)
+  assert.equal(source.match(/onChange=\{\(event\) => handleManualAmountChange\(event\.target\.value\)\}/g)?.length, 2, "los dos campos del monto validan")
+  assert.doesNotMatch(source, /setManualCreditAmount\(event\.target\.value\)/)
 })

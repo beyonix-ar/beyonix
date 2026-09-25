@@ -81,6 +81,8 @@ interface AdminSelectProps {
   centered?: boolean
   disabled?: boolean
   triggerClassName?: string
+  /** Reemplaza el ancho completo por defecto del contenedor (el menú toma el ancho del trigger). */
+  wrapperClassName?: string
   menuClassName?: string
   optionClassName?: string
   leadingIcon?: ReactNode
@@ -226,6 +228,7 @@ export function AdminSelect({
   centered = false,
   disabled = false,
   triggerClassName = "",
+  wrapperClassName = "",
   menuClassName = "",
   optionClassName = "",
   leadingIcon,
@@ -356,7 +359,7 @@ export function AdminSelect({
   return (
     <div
       ref={wrapperRef}
-      className="relative block w-full"
+      className={wrapperClassName ? `relative block ${wrapperClassName}` : "relative block w-full"}
     >
       <button
         ref={triggerRef}

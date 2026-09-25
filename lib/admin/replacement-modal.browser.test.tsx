@@ -215,9 +215,12 @@ async function compileCss(source: string, from: string) {
 test.before(async () => {
   const source = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n")
   const blockStart = source.lastIndexOf("/* ====", source.indexOf('Modal "Reemplazo del pedido"'))
-  assert.ok(blockStart > 0 && source.indexOf("/* ====", blockStart + 1) === -1, "el bloque del modal está al final de globals.css")
+  // Se quita sólo el bloque del modal (hasta el encabezado del siguiente).
+  const nextBlock = source.indexOf("/* ====", blockStart + 1)
+  const blockEnd = nextBlock === -1 ? source.length : nextBlock
+  assert.ok(blockStart > 0 && source.slice(blockStart, blockEnd).includes(".admin-replacement-modal__backdrop {"), "bloque del modal ubicado")
   css = await compileCss(source, "app/globals.css")
-  staleCss = await compileCss(source.slice(0, blockStart), "app/globals.stale.css")
+  staleCss = await compileCss(source.slice(0, blockStart) + source.slice(blockEnd), "app/globals.stale.css")
   assert.ok(css.includes("admin-replacement-modal__backdrop") && !staleCss.includes("admin-replacement-modal"))
   const result = await build({
     stdin: { contents: ENTRY, resolveDir: process.cwd(), loader: "tsx", sourcefile: "replacement-modal-entry.tsx" },

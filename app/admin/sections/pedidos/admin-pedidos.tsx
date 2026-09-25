@@ -118,6 +118,8 @@ import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-pa
 import { describeManualReviewReason } from "@/lib/orders/transfer-verification-reasons"
 import { getTransferDeclarationView } from "@/lib/orders/transfer-declaration-view"
 import { cn } from "@/lib/utils"
+import { isValidMoneyInput, parseMoneyInput } from "@/lib/customer-credit"
+import { HelpTip } from "@/components/claims/help-tip"
 import type {
   SupabaseOrderClaim,
   SupabasePedido,
@@ -2771,6 +2773,17 @@ function BillingManagementPanel({
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [creditQuantities, setCreditQuantities] = useState<Record<number, number>>({})
   const [manualCreditAmount, setManualCreditAmount] = useState("")
+  // Texto rechazado en el último intento (letras, signos, 3+ decimales):
+  // no se escribe en el campo y se avisa, nunca se convierte a otro monto.
+  const [manualAmountRejected, setManualAmountRejected] = useState(false)
+  const handleManualAmountChange = (value: string) => {
+    if (!isValidMoneyInput(value)) {
+      setManualAmountRejected(true)
+      return
+    }
+    setManualAmountRejected(false)
+    setManualCreditAmount(value)
+  }
   const [creditReason, setCreditReason] = useState("")
   const [operationType, setOperationType] = useState("devolucion_parcial")
   const [reasonCode, setReasonCode] = useState("arrepentimiento")
@@ -2869,9 +2882,10 @@ function BillingManagementPanel({
       )
     }, 0),
   )
+  // Punto y coma son decimales ("1000.10" = "1000,10"); parser canónico.
   const parsedManualAmount = (() => {
-    const value = Number(manualCreditAmount.replace(/\./g, "").replace(",", "."))
-    return Number.isFinite(value) && value > 0 ? roundCreditMoney(value) : 0
+    const value = parseMoneyInput(manualCreditAmount)
+    return value != null && value > 0 ? roundCreditMoney(value) : 0
   })()
   const originalShippingPaid = roundCreditMoney(
     Math.max(0, Number(pedido.shipping_cost_charged ?? 0)),
@@ -3521,8 +3535,8 @@ function BillingManagementPanel({
                   Registrar ajuste administrativo
                 </button>
               ) : (
-                <section className="admin-credit-note-step-card admin-credit-note-resolution-panel mt-2">
-                  <div className="admin-credit-note-step-heading">
+                <section className="admin-credit-note-step-card admin-credit-note-resolution-panel admin-credit-adjustment-panel mt-2">
+                  <div className="admin-credit-note-step-heading admin-credit-adjustment-heading">
                     <div>
                       <h4>Ajuste administrativo/contable</h4>
                       <p>
@@ -3530,6 +3544,9 @@ function BillingManagementPanel({
                         reembolsos excepcionales u otros ajustes autorizados por un superadministrador.
                       </p>
                     </div>
+                    <HelpTip label="Ajuste administrativo/contable">
+                      Usá esta opción sólo para correcciones administrativas que no provienen de un reclamo del cliente, como ajustes contables, reembolsos excepcionales o gestiones autorizadas.
+                    </HelpTip>
                   </div>
 
                   <label className="admin-credit-note-field">
@@ -3539,6 +3556,7 @@ function BillingManagementPanel({
                       ariaLabel="Seleccionar tipo de gestión"
                       value={operationType}
                       onChange={(value) => selectOperationType(value)}
+                      wrapperClassName="admin-credit-adjustment-control"
                       compact
                     >
                       <option value="ajuste_manual">Ajuste manual</option>
@@ -3553,17 +3571,24 @@ function BillingManagementPanel({
 
                   <label className="admin-credit-note-field">
                     <span>Monto</span>
-                    <div className="admin-credit-note-money-input">
+                    <div className="admin-credit-note-money-input admin-credit-adjustment-control">
                       <b>$</b>
                       <input
                         type="text"
                         inputMode="decimal"
                         value={manualCreditAmount}
-                        onChange={(event) => setManualCreditAmount(event.target.value)}
+                        onChange={(event) => handleManualAmountChange(event.target.value)}
                         placeholder="0,00"
+                        aria-invalid={manualAmountRejected || undefined}
                       />
                     </div>
-                    <em>Monto total de la Nota de Crédito o del ajuste, en pesos.</em>
+                    {manualAmountRejected ? (
+                      <em role="alert" className="admin-credit-adjustment-error">
+                        Usá sólo números, con punto o coma para los decimales (máximo 2).
+                      </em>
+                    ) : (
+                      <em>Monto total de la Nota de Crédito o del ajuste, en pesos.</em>
+                    )}
                   </label>
 
                   <label className="admin-credit-note-field">
@@ -4181,10 +4206,16 @@ function BillingManagementPanel({
                               inputMode="decimal"
                               value={manualCreditAmount}
                               disabled={creditNoteProcessing}
-                              onChange={(event) => setManualCreditAmount(event.target.value)}
+                              onChange={(event) => handleManualAmountChange(event.target.value)}
                               placeholder="0,00"
+                              aria-invalid={manualAmountRejected || undefined}
                             />
                           </div>
+                          {manualAmountRejected && (
+                            <em role="alert" className="admin-credit-adjustment-error">
+                              Usá sólo números, con punto o coma para los decimales (máximo 2).
+                            </em>
+                          )}
                           <em>No reemplaza el importe de los productos: se suma. No incluye el envío original, que se calcula por separado.</em>
                         </label>
 
