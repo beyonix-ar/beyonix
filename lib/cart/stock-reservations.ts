@@ -1,7 +1,6 @@
 "use server"
 
 import { createClient } from "@/lib/supabase/server"
-import { STOCK_CHANGED_MESSAGE } from "@/lib/cart/stock-status"
 import { normalizeReservationSessionId } from "@/lib/orders/checkout-inventory"
 
 export interface StockReservationItem {
@@ -11,120 +10,72 @@ export interface StockReservationItem {
   conditionedStockId?: string | null
 }
 
-interface ReserveCartStockPayload {
-  sessionId: string
-  items: StockReservationItem[]
+export type StockReservationErrorCode =
+  | "OUT_OF_STOCK"
+  | "INVALID_QUANTITY"
+  | "INVALID_VARIANT"
+  | "RESERVATION_EXPIRED"
+  | "RESERVATION_LOCKED_TO_ORDER"
+  | "INVALID_SESSION"
+  | "INTERNAL_ERROR"
+
+export type StockReservationResult =
+  | { success: true; expiresAt: string; reservationStartedAt: string; reserved: boolean }
+  | { success: false; code: StockReservationErrorCode }
+
+const ERROR_CODES: readonly StockReservationErrorCode[] = [
+  "OUT_OF_STOCK",
+  "INVALID_QUANTITY",
+  "INVALID_VARIANT",
+  "RESERVATION_EXPIRED",
+  "RESERVATION_LOCKED_TO_ORDER",
+  "INVALID_SESSION",
+]
+
+function reservationErrorCode(message?: string): StockReservationErrorCode {
+  return ERROR_CODES.find((candidate) =>
+    new RegExp(`\\b${candidate}\\b`).test(message ?? ""),
+  ) ?? "INTERNAL_ERROR"
 }
 
-function normalizeReservationItems(items: StockReservationItem[]) {
-  return items
-    .map((item) => ({
-      productId: Number(item.productId),
-      quantity: Math.trunc(Number(item.quantity)),
-      variantId: item.variantId ? Number(item.variantId) : null,
-      conditionedStockId:
-        typeof item.conditionedStockId === "string"
-          ? item.conditionedStockId
-          : null,
-    }))
-    .filter(
-      (item) =>
-        Number.isFinite(item.productId) &&
-        Number.isFinite(item.quantity) &&
-        item.quantity > 0,
-    )
-}
-
-function isMissingRpcError(error: { code?: string; message?: string }) {
-  return (
-    error.code === "PGRST202" ||
-    error.code === "42883" ||
-    error.message?.toLowerCase().includes("reserve_cart_stock")
-  )
-}
-
-// La función SQL (sin tocar acá) distingue estos casos en el texto del
-// error que levanta. Solo lo leemos para poder mostrar una copy específica
-// cuando el problema es puntualmente "pediste más cantidad de la que hay" —
-// no para otros motivos (sesión inválida, falta elegir variante, etc.), que
-// siguen usando el mensaje genérico existente.
-function isStockInsufficientError(message?: string) {
-  return message?.toLowerCase().includes("checkout_stock_insufficient") ?? false
-}
-
-export type StockReservationFailureReason =
-  | "insufficient_stock"
-  | "unavailable"
-  | "other"
-
-/**
- * Reserva anticipada de stock para una sesión de carrito, ANTES de crear la
- * orden (ver `reserve_cart_stock`, migración 20260903150000). Es idempotente
- * por sesión: reemplaza íntegramente lo que esa sesión tenía reservado, así
- * que reintentos y cambios de carrito no acumulan reservas.
- *
- * La reserva autoritativa que impide la sobreventa la crea de todos modos el
- * cierre de la orden (`validateCheckoutInventory`), sobre la MISMA sesión y
- * con la misma ventana: llamar a esta función sólo adelanta el gravamen, no
- * lo duplica.
- */
+/** Backend preparado para Paso 3. [] libera ítems sin reiniciar el reloj. */
 export async function reserveCartStock({
   sessionId,
   items,
-}: ReserveCartStockPayload) {
-  const normalizedItems = normalizeReservationItems(items)
+}: {
+  sessionId: string
+  items: StockReservationItem[]
+}): Promise<StockReservationResult> {
   const normalizedSessionId = normalizeReservationSessionId(sessionId)
-
-  if (!normalizedSessionId || normalizedItems.length === 0) {
-    return {
-      success: false,
-      configured: true,
-      reason: "other" as StockReservationFailureReason,
-      message: STOCK_CHANGED_MESSAGE,
-      expiresAt: null,
-    }
-  }
+  if (!normalizedSessionId) return { success: false, code: "INVALID_SESSION" }
+  if (!Array.isArray(items) || items.length > 50 || items.some((item) =>
+    !item || typeof item !== "object" ||
+    !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 3,
+  )) return { success: false, code: "INVALID_QUANTITY" }
+  if (items.some((item) =>
+    !Number.isSafeInteger(item.productId) || item.productId <= 0 ||
+    (item.variantId != null && (!Number.isSafeInteger(item.variantId) || item.variantId <= 0)),
+  )) return { success: false, code: "INVALID_VARIANT" }
 
   const supabase = await createClient()
-
   const { data, error } = await supabase.rpc("reserve_cart_stock", {
     p_session_id: normalizedSessionId,
-    p_items: normalizedItems,
+    p_items: items,
   })
+  if (error) return { success: false, code: reservationErrorCode(error.message) }
 
-  if (error) {
-    if (isMissingRpcError(error)) {
-      return {
-        success: false,
-        configured: false,
-        reason: "unavailable" as StockReservationFailureReason,
-        message:
-          "El sistema de reservas de stock está pendiente de actualización.",
-        expiresAt: null,
-      }
-    }
-
-    return {
-      success: false,
-      configured: true,
-      reason: (isStockInsufficientError(error.message)
-        ? "insufficient_stock"
-        : "other") as StockReservationFailureReason,
-      message: STOCK_CHANGED_MESSAGE,
-      expiresAt: null,
-    }
+  const response = data as {
+    reserved?: boolean
+    expires_at?: string
+    reservation_started_at?: string
+  } | null
+  if (!response?.expires_at || !response.reservation_started_at) {
+    return { success: false, code: "INTERNAL_ERROR" }
   }
-
-  const response =
-    data && typeof data === "object"
-      ? (data as { expires_at?: string })
-      : null
-
   return {
     success: true,
-    configured: true,
-    reason: null,
-    message: null,
-    expiresAt: response?.expires_at ?? null,
+    reserved: response.reserved === true,
+    expiresAt: response.expires_at,
+    reservationStartedAt: response.reservation_started_at,
   }
 }

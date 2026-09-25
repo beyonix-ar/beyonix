@@ -210,7 +210,11 @@ const TSX_TEST_FILES = [
   "components/claims/return-inventory-refresh.test.tsx",
 ]
 
-const missing = [...TEST_FILES, ...TSX_TEST_FILES].filter((file) => !existsSync(file))
+// PostgreSQL embebido con conexiones concurrentes: correrlo fuera del batch
+// paralelo evita competir por procesos Windows con los demás tests de DB.
+const DB_TEST_FILES = ["lib/cart/checkout-step-reservations.test.mjs"]
+
+const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES].filter((file) => !existsSync(file))
 if (missing.length > 0) {
   console.error(`Tests listados que no existen:\n${missing.join("\n")}`)
   process.exit(1)
@@ -228,4 +232,9 @@ const tsxResult = spawnSync(process.execPath, ["--import", "tsx", "--test", ...T
 })
 if (tsxResult.error) throw tsxResult.error
 
-process.exit((result.status ?? 1) || (tsxResult.status ?? 1))
+const dbResult = spawnSync(process.execPath, ["--test", ...DB_TEST_FILES], {
+  stdio: "inherit",
+})
+if (dbResult.error) throw dbResult.error
+
+process.exit((result.status ?? 1) || (tsxResult.status ?? 1) || (dbResult.status ?? 1))
