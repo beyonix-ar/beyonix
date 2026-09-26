@@ -15497,3 +15497,32 @@ html[data-admin-theme="light"] .admin-orders-list-row .admin-orders-action-butto
   border-color: rgba(110, 168, 255, 0.58) !important;
   color: #ffffff !important;
 }
+/* Reclamos del pedido: el progreso y la conversación viven en una sola área. */
+.admin-claim-wizard-steps { display: flex; flex-wrap: wrap; gap: .5rem; padding: .8rem 1rem; border-bottom: 1px solid var(--admin-border-soft); }
+.admin-claim-wizard-resolution { color: #d7fffd; font-size: .75rem; font-weight: 700; }
+.admin-claim-wizard-step { display: inline-flex; align-items: center; gap: .45rem; padding: .45rem .7rem; border: 1px solid var(--admin-border-soft); border-radius: .7rem; color: #9baab9; font-size: .75rem; font-weight: 700; }
+.admin-claim-wizard-step.is-done { color: #8ee5c0; }
+.admin-claim-wizard-step.is-current { border-color: #77e6e2; color: #d7fffd; background: rgba(119,230,226,.1); }
+.admin-claim-wizard-step:disabled { cursor: default; opacity: .65; }
+.admin-claim-wizard-workspace { display: flex; flex-direction: column; }
+.admin-claim-wizard-workspace > main:empty { display: none; }
+.admin-claim-wizard-workspace > aside { width: 100%; min-width: 0; }
+.admin-claim-wizard-back { margin-bottom: .7rem; color: #77e6e2; font-size: .75rem; font-weight: 700; }
+.admin-claim-wizard-workspace .admin-claim-reception-panel { margin: .5rem 0 0; }
+.admin-claim-wizard-note { border: 1px solid var(--admin-border-soft); border-radius: .65rem; padding: .7rem; color: #b6c5d1; font-size: .75rem; line-height: 1.5; }
+.admin-claim-wizard-action { display: grid; gap: .8rem; padding: .7rem 0; justify-items: start; }
+.admin-claim-wizard-chat-trigger { display: inline-flex; align-items: center; gap: .5rem; position: relative; padding: .5rem .8rem; border: 1px solid #77e6e2; border-radius: .65rem; color: #d7fffd; font-size: .75rem; font-weight: 700; }
+.admin-claim-wizard-unread { width: .55rem; height: .55rem; border-radius: 50%; background: #fbbf24; }
+.admin-claim-wizard-chat-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; justify-content: flex-end; background: rgba(0, 7, 15, .55); }
+.admin-claim-wizard-chat-drawer { position: relative; width: min(32rem, 100vw); height: 100dvh; padding: 3rem .8rem .8rem; background: #08131e; box-shadow: -1rem 0 3rem rgba(0,0,0,.35); }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-panel { height: 100%; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-thread { min-height: 0 !important; }
+.admin-claim-wizard-chat-close { position: absolute; right: 1.2rem; top: .8rem; z-index: 1; color: #d7fffd; }
+html[data-admin-theme="light"] .admin-claim-wizard-step { color: #4b5563; }
+html[data-admin-theme="light"] .admin-claim-wizard-resolution { color: #07565d; }
+html[data-admin-theme="light"] .admin-claim-wizard-step.is-current { color: #07565d; background: #e6f8f7; }
+html[data-admin-theme="light"] .admin-claim-wizard-step.is-done { color: #166534; }
+html[data-admin-theme="light"] .admin-claim-wizard-chat-trigger { color: #07565d; }
+html[data-admin-theme="light"] .admin-claim-wizard-back { color: #07565d; }
+html[data-admin-theme="light"] .admin-claim-wizard-note { color: #334155; }
+html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer { background: #f8fafc; }

@@ -42,6 +42,7 @@ export interface ReplacementOpenRequest {
 interface OrderReplacementsProps {
   pedido: SupabasePedido
   onUpdated: () => Promise<void>
+  hidePanel?: boolean
   /** Informa los reemplazos ya cargados (null si no se pudieron cargar) para mostrar el progreso del reclamo sin otro fetch. */
   onReplacementsChange?: (replacements: RegisteredReplacement[] | null, state: ReplacementLoadState) => void
   /** Cada nonce nuevo abre este mismo formulario (con el ítem reclamado preseleccionado si llega). */
@@ -59,7 +60,7 @@ const variantProductName = (row: Variant) => (Array.isArray(row.productos) ? row
 const VARIANT_HELP =
   "Elegí la variante del mismo producto que se descontará del stock y se enviará al cliente. Si el cliente quiere otro producto diferente, gestioná la devolución mediante Nota de Crédito / saldo a favor."
 
-export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChange, openRequest = null }: OrderReplacementsProps) {
+export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChange, openRequest = null, hidePanel = false }: OrderReplacementsProps) {
   const [data, setData] = useState<ReplacementData | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -210,12 +211,15 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     setQuantity(String(Math.max(1, quantityLimit > 0 ? Math.min(next, quantityLimit) : next)))
   }
 
-  return <section id={`order-replacements-${pedido.id}`} className="my-3 rounded-xl border border-white/15 p-4">
+  return <section id={`order-replacements-${pedido.id}`} className={hidePanel ? "" : "my-3 rounded-xl border border-white/15 p-4"}>
+    {hidePanel && error && <p role="alert" className="m-3 text-sm text-red-200">{error} <button type="button" onClick={() => void load()} className="underline">Recargar reemplazos</button></p>}
+    {!hidePanel && <>
     <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-bold">Reemplazos del pedido</h3><AdminSecondaryButton onClick={() => openReplacementModal(null)}>Registrar reemplazo</AdminSecondaryButton></div>
     {loading && <p role="status">Cargando reemplazos…</p>}
     {error && <p role="alert" className="my-2 text-red-200">{error} <button type="button" onClick={() => void load()} className="underline">Recargar datos</button></p>}
     {!loading && !error && data?.replacements.length === 0 && <p className="mt-2 text-sm">Todavía no hay reemplazos registrados.</p>}
     <ul className="mt-3 space-y-2 text-sm">{data?.replacements.map((row) => <li key={row.id} className="rounded border border-white/10 p-2">{new Date(row.created_at).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })} · {row.quantity} unidades · {row.reason === "garantia" ? "Garantía" : "Cambio"} · Variante #{row.replacement_variant_id}<p>{row.notes}</p><p>Costo económico registrado: {row.unit_cost == null ? "No disponible" : new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(row.unit_cost * row.quantity)}</p><p>Salida de stock registrada. Coordiná la entrega del reemplazo; esto no crea un envío ni reutiliza la etiqueta del pedido original.</p></li>)}</ul>
+    </>}
     <ReplacementDialog
       open={open}
       title={`Reemplazo del pedido #${pedido.id}`}

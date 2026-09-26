@@ -6028,6 +6028,7 @@ function PedidoDetailModal({
           {["atencion", "envio", "historial"].includes(activeView) && (
             <OrderReplacements
               pedido={pedido}
+              hidePanel={activeView === "atencion"}
               onUpdated={onWarrantyUpdated}
               onReplacementsChange={(replacements, state) => setOrderReplacements({ orderId: pedido.id, replacements, state })}
               openRequest={replacementOpenRequest?.orderId === pedido.id ? replacementOpenRequest : null}

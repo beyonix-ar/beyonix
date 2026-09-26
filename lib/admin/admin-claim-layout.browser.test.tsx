@@ -108,10 +108,12 @@ function contrast(a: [number, number, number, number], b: [number, number, numbe
   return (light + 0.05) / (dark + 0.05)
 }
 
-test("el marcado del test replica las clases reales del componente", () => {
+test("el wizard y el chat lateral usan clases propias del componente", () => {
   for (const className of [
-    'className="admin-claim-workspace grid gap-3 p-3 sm:p-4"',
+    'className="admin-claim-workspace admin-claim-wizard-workspace p-3 sm:p-4"',
     '<main className="space-y-3">',
+    'className="admin-claim-wizard-steps"',
+    'className="admin-claim-wizard-chat-overlay"',
     'className="admin-claim-chat-panel bx-surface bx-surface-section flex flex-col overflow-hidden rounded-xl border"',
     'className="admin-claim-chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5"',
     'className="admin-claim-composer border-t p-2"',

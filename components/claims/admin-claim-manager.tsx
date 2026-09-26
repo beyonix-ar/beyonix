@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
+import { createPortal } from "react-dom"
 import {
   Check,
   CheckCircle2,
@@ -46,15 +47,12 @@ import { getOrderClaimResolutionLabel, getPendingRefundNotes } from "@/lib/order
 import { MercadoPagoRefundAction } from "@/components/claims/mercadopago-refund-action"
 import {
   isClaimVisibleForMode,
-  shouldShowReturnInventoryPanel,
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
 import {
-  getClaimProgressSteps,
   getReplacementFlow,
   sumReplacedUnits,
   sumClaimReplacedUnits,
-  type ClaimProgressStep,
   type ClaimStepState,
   type RegisteredReplacement,
   type ReplacementFlow,
@@ -65,6 +63,7 @@ import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
+import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -450,30 +449,6 @@ function getReceptionTotals(entries: Array<{ item: SupabasePedidoItem; quantity:
   )
 }
 
-function ClaimStepper({ steps }: { steps: ClaimProgressStep[] }) {
-  if (steps.length === 0) return null
-
-  return (
-    <ol aria-label="Progreso del reclamo" className="admin-claim-stepper">
-      {steps.map((step, index) => (
-        <li
-          key={step.key}
-          aria-current={step.state === "current" ? "step" : undefined}
-          className={`admin-claim-stepper-item is-${step.state}`}
-        >
-          <span className="admin-claim-stepper-dot" aria-hidden="true">
-            {step.state === "done" ? <Check className="size-3.5" strokeWidth={3} /> : index + 1}
-          </span>
-          <span className="admin-claim-stepper-label">{step.label}</span>
-          <span className="sr-only">
-            {step.state === "done" ? " (completado)" : step.state === "current" ? " (paso actual)" : " (pendiente)"}
-          </span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
 function ReceptionCounts({ claimed, received }: { claimed: number; received: number }) {
   const pending = Math.max(0, claimed - received)
 
@@ -543,7 +518,6 @@ export function ReturnInventoryPanel({
   pedido,
   claim,
   canManage,
-  registeredReplacements = null,
   onUpdated,
   onClaimChange,
 }: {
@@ -875,19 +849,6 @@ export function ReturnInventoryPanel({
     items.map((item) => ({ item, quantity: affectedQuantityById.get(Number(item.id)) ?? 0 })),
   )
   const hasPendingInventory = receptionTotals.received < receptionTotals.claimed
-  const progressSteps = getClaimProgressSteps({
-    status: claim.status,
-    resolution: claim.resolution,
-    claimedUnits: receptionTotals.claimed,
-    receivedUnits: receptionTotals.received,
-    replacedUnits: claim.resolution === "cambio_producto"
-      ? sumClaimReplacedUnits(registeredReplacements, claim, pedido.order_claims ?? [])
-      : sumReplacedUnits(registeredReplacements, items.map((item) => Number(item.id))),
-    creditNoteAuthorized: Boolean(
-      pedido.order_credit_notes?.some((note) => note.claim_id === claim.id && note.status === "authorized"),
-    ),
-    refundCompleted: Boolean(claim.refund_completed_at),
-  })
 
   return (
     <>
@@ -939,9 +900,6 @@ export function ReturnInventoryPanel({
             </button>
           )}
         </div>
-      </div>
-      <div className="admin-claim-stepper-track">
-        <ClaimStepper steps={progressSteps} />
       </div>
 
       {editingAffectedItems && canManage && (
@@ -1384,6 +1342,8 @@ export function AdminClaimManager({
   const [refundProofFile, setRefundProofFile] = useState<File | null>(null)
   const [previewFile, setPreviewFile] = useState<SupabaseOrderClaimFile | null>(null)
   const [showCloseConversationModal, setShowCloseConversationModal] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [viewedStep, setViewedStep] = useState<string | null>(null)
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     title: string
     description: string
@@ -1465,6 +1425,8 @@ export function AdminClaimManager({
     setDecisionCreditNoteAmount("")
     setRefundProofFile(null)
     setPreviewFile(null)
+    setViewedStep(null)
+    setChatOpen(false)
     setNotice("")
     decisionVersionRef.current = null
     responseVersionRef.current = null
@@ -1710,6 +1672,7 @@ export function AdminClaimManager({
     if (sent) {
       clearResponse()
       setDecisionCreditNoteAmount("")
+      setViewedStep(null)
       closeDecision()
     }
   }
@@ -1959,6 +1922,17 @@ export function AdminClaimManager({
   const helpResolved = helpMessage && claim.status === "cerrado"
   const finalizedStatus = !helpResolved && claim.status === "cerrado"
   const conversationStatus = getConversationStatusLabel(claim, messages)
+  const formalClaim = !helpMessage && !cancellation
+  const approved = Boolean(claim.resolution && claim.resolution !== "rechazado")
+  const needsReception = claim.resolution === "cambio_producto"
+  const hasReplacement = replacedUnits !== null && replacedUnits > 0
+  const { steps: workflowSteps, current: currentStep, currentIndex } = getAdminClaimWizard({
+    status: claim.status, resolution: claim.resolution,
+    receivedUnits: summaryReceptionTotals.received, replacedUnits,
+  })
+  const viewedIndex = workflowSteps.findIndex((step) => step.key === viewedStep)
+  const selectedStep = viewedStep && viewedIndex >= 0 && viewedIndex <= currentIndex
+    ? viewedStep : currentStep
   return (
     <section className={`admin-claim-manager admin-ds-surface mt-3 overflow-hidden ${mode === "messaging" ? "admin-claim-manager-messaging" : ""} ${ADMIN_SENSITIVE_DANGER.panel}`}>
       <header className="admin-claim-header border-b p-3 sm:p-4">
@@ -1970,6 +1944,9 @@ export function AdminClaimManager({
                 <span className="size-2 rounded-full bg-current" />
                 {getStatusLabel(claim)}
               </span>
+              {claim.resolution && claim.resolution !== "rechazado" && (
+                <span className="admin-claim-wizard-resolution">{getOrderClaimResolutionLabel(claim.resolution)}</span>
+              )}
             </div>
           </div>
 
@@ -1989,20 +1966,17 @@ export function AdminClaimManager({
               </AdminSelect>
             </div>
           )}
+          <button type="button" className="admin-claim-wizard-chat-trigger" onClick={() => setChatOpen(true)}
+            aria-label={`Abrir conversación con el cliente${claim.admin_needs_action ? ", requiere atención" : ""}`}>
+            <MessageSquare className="size-4" /> Conversación
+            {claim.admin_needs_action && <span className="admin-claim-wizard-unread" aria-label="Mensaje o acción pendiente" />}
+          </button>
         </div>
 
         {cancellation && !cancellationCanBeApproved && !closed && (
           <p className="mt-3 rounded-lg border border-red-300/30 bg-red-950/70 px-3 py-2 text-xs font-bold text-red-100">
             Esta orden ya está facturada, despachada o entregada. No se puede aprobar la cancelación desde esta acción.
           </p>
-        )}
-        {closed && !helpMessage && !cancellation && (
-          <div className="mt-3 rounded-lg border border-[#77E6E2]/24 bg-[#77E6E2]/6 px-3 py-2">
-            <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
-            <p className="mt-1 text-[11px] font-semibold leading-4 text-white/65">
-              El historial queda disponible para consulta. Podés enviar una aclaración al cliente, pero no registrar nuevas acciones.
-            </p>
-          </div>
         )}
       </header>
 
@@ -2062,9 +2036,22 @@ export function AdminClaimManager({
         </div>
       )}
 
-      <div className="admin-claim-workspace grid gap-3 p-3 sm:p-4">
+      {formalClaim && (
+        <nav className="admin-claim-wizard-steps" aria-label="Progreso del reclamo">
+          {workflowSteps.map((step, index) => (
+            <button key={step.key} type="button" aria-current={selectedStep === step.key ? "step" : undefined}
+              disabled={index > currentIndex}
+              onClick={() => setViewedStep(step.key)}
+              className={`admin-claim-wizard-step ${index < currentIndex && (step.key !== "reception" || summaryReceptionTotals.received >= summaryReceptionTotals.claimed) ? "is-done" : ""} ${selectedStep === step.key ? "is-current" : ""}`}>
+              <span aria-hidden="true">{index < currentIndex && (step.key !== "reception" || summaryReceptionTotals.received >= summaryReceptionTotals.claimed) ? "✓" : selectedStep === step.key ? "●" : "○"}</span>
+              <span>{index + 1}. {step.label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+      <div className="admin-claim-workspace admin-claim-wizard-workspace p-3 sm:p-4">
         <main className="space-y-3">
-          {!helpMessage && (
+          {formalClaim && selectedStep === "review" && (
             <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
               <h4 className="text-sm font-black text-white">Evidencia</h4>
               {evidenceFiles.length === 0 ? (
@@ -2118,22 +2105,6 @@ export function AdminClaimManager({
             </section>
           )}
 
-          <ClaimConversation
-            messages={messages}
-            chatRef={chatRef}
-            response={response}
-            saving={saving}
-            closed={conversationLocked}
-            statusLabel={conversationStatus}
-            customerMentionName={customerMentionName}
-            canUseCustomerMention={isAdmin}
-            onResponseChange={(value) => {
-              if (!responseVersionRef.current) responseVersionRef.current = claim.updated_at
-              if (!value) responseVersionRef.current = null
-              setResponse(value)
-            }}
-            onSendResponse={() => void sendResponse()}
-          />
         </main>
 
         <aside>
@@ -2160,14 +2131,20 @@ export function AdminClaimManager({
             )}
           </section>
           ) : (
-          <section className="admin-claim-card admin-claim-manage-panel bx-surface bx-surface-section rounded-xl border p-3 sm:p-4">
-            <div className="flex items-center gap-2.5">
+           <section className="admin-claim-card admin-claim-manage-panel bx-surface bx-surface-section rounded-xl border p-3 sm:p-4">
+             {formalClaim && workflowSteps.findIndex((step) => step.key === selectedStep) > 0 && (
+               <button type="button" className="admin-claim-wizard-back" onClick={() => {
+                 const index = workflowSteps.findIndex((step) => step.key === selectedStep)
+                 setViewedStep(workflowSteps[index - 1].key)
+               }}>← Volver al paso anterior</button>
+             )}
+             <div className="flex items-center gap-2.5">
               <span className="admin-claim-section-icon is-small" aria-hidden="true">
                 <ClipboardList className="size-4" />
               </span>
-              <h4 className="admin-claim-manage-heading">Gestionar reclamo</h4>
+               <h4 className="admin-claim-manage-heading">{workflowSteps.find((step) => step.key === selectedStep)?.label ?? "Gestionar reclamo"}</h4>
             </div>
-            <div className={`admin-claim-overview mt-3 ${claim.resolution && claim.resolution !== "rechazado" ? "has-resolution" : ""}`}>
+             {!formalClaim && <div className={`admin-claim-overview mt-3 ${claim.resolution && claim.resolution !== "rechazado" ? "has-resolution" : ""}`}>
               <div className="admin-claim-status-box admin-claim-overview-tile">
                 <p className="admin-claim-status-label admin-claim-overview-label">Estado actual</p>
                 <p className="admin-claim-status-value admin-claim-overview-value">
@@ -2186,8 +2163,8 @@ export function AdminClaimManager({
                   </p>
                 </div>
               )}
-            </div>
-            {claim.resolution && claim.resolution !== "rechazado" && !canCompleteReplacementSolution && (
+             </div>}
+             {selectedStep === "review" && claim.resolution && claim.resolution !== "rechazado" && !canCompleteReplacementSolution && (
               <p className="admin-claim-resolution-next mt-2 text-[11px] font-semibold leading-4">
                 {getResolutionNextStep(claim)}
               </p>
@@ -2214,7 +2191,7 @@ export function AdminClaimManager({
               </div>
             ) : (
               <div className="mt-2 grid gap-2">
-                {canReviewClaim && (
+                {selectedStep === "review" && canReviewClaim && (
                   <>
                     <DecisionButton
                       icon={<CheckCircle2 className="size-4" />}
@@ -2234,36 +2211,36 @@ export function AdminClaimManager({
                     />
                   </>
                 )}
-                {canCompleteReplacementSolution && (
-                  <ReplacementFlowSteps
-                    flow={replacementFlow}
-                    missingUnit={claim.resolution === "envio_unidad_faltante"}
-                    claimedUnits={summaryReceptionTotals.claimed}
-                    receivedUnits={summaryReceptionTotals.received}
-                    replacedUnits={replacedUnits}
-                    replacementLoadState={replacementLoadState}
-                    saving={saving}
-                    onGoToReception={() => document.getElementById(`claim-reception-${claim.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                    onRegisterReplacement={() => {
-                      // Abre el mismo modal que "Registrar reemplazo" de la sección
-                      // (openReplacementModal en admin-pedidos). Sin gestor no hay
-                      // formulario: se informa en vez de desplazar la página.
-                      if (!onRegisterReplacement) {
-                        setNotice("El formulario de reemplazo no está disponible para tu usuario. Recargá la página o pedí acceso a un administrador.")
-                        return
-                      }
-                      onRegisterReplacement(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)
-                    }}
-                    onConfirmDelivery={() => setPendingConfirmation({
-                      title: "Confirmar entrega del reemplazo",
-                      description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
-                      confirmLabel: "Ya fue enviado o entregado",
-                      run: markAcceptedSolutionDone,
-                    })}
-                    onFinalize={canCloseClaim ? () => openDecision("close") : undefined}
-                  />
+                {selectedStep === "review" && approved && (
+                  <p className="admin-claim-wizard-note">Solución aprobada: {getOrderClaimResolutionLabel(claim.resolution ?? "")}. La decisión quedó registrada. Una corrección posterior requiere revisar las acciones ya realizadas; este flujo no revierte stock ni operaciones financieras.</p>
                 )}
-                {canIssueCreditNote && (
+                {selectedStep === "reception" && needsReception && (
+                  <ReturnInventoryPanel pedido={pedido} claim={claim}
+                    canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
+                    registeredReplacements={registeredReplacements} onUpdated={onInventoryUpdated} onClaimChange={onClaimChange} />
+                )}
+                {selectedStep === "replacement" && canCompleteReplacementSolution && (
+                  <div className="admin-claim-wizard-action">
+                    <p className="text-xs text-white/70">{hasReplacement ? `${replacedUnits} unidad(es) registradas con salida de stock.` : "Registrá el reemplazo y su variante desde el formulario existente. El stock se descuenta al confirmar."}</p>
+                    <AdminButton variant="primary" disabled={saving || !replacementFlow.canRegisterReplacement || !onRegisterReplacement}
+                      onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>Registrar reemplazo</AdminButton>
+                    {!replacementFlow.canRegisterReplacement && <p className="admin-claim-wizard-note">Primero recibí el producto original.</p>}
+                  </div>
+                )}
+                {selectedStep === "execution" && canCompleteReplacementSolution && (
+                  <div className="admin-claim-wizard-action">
+                    <p className="text-xs text-white/70">Confirmá cuando el producto ya fue enviado o entregado. Esta acción finaliza el reclamo y notifica al cliente.</p>
+                    {replacementLoadState === "loading" && <p className="admin-claim-wizard-note">Verificando el reemplazo registrado…</p>}
+                    {replacementLoadState === "error" && <p className="admin-claim-wizard-note">No se pudo verificar el reemplazo. Recargá los datos antes de continuar.</p>}
+                    <AdminButton variant="primary" disabled={saving || !replacementFlow.canConfirmDelivery}
+                      onClick={() => setPendingConfirmation({
+                        title: "Confirmar entrega del reemplazo",
+                        description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
+                        confirmLabel: "Ya fue enviado o entregado", run: markAcceptedSolutionDone,
+                      })}>Confirmar envío o entrega y finalizar</AdminButton>
+                  </div>
+                )}
+                {selectedStep === "execution" && canIssueCreditNote && (
                   <DecisionButton
                     icon={<CreditCard className="size-4" />}
                     title="Gestionar nota de crédito"
@@ -2273,7 +2250,7 @@ export function AdminClaimManager({
                     onClick={onOpenBilling}
                   />
                 )}
-                {isAdmin && !closed && ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "") && (
+                {selectedStep === "execution" && isAdmin && !closed && ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "") && (
                   <DecisionButton
                     icon={<CreditCard className="size-4" />}
                     title="Nota de crédito emitida"
@@ -2295,10 +2272,10 @@ export function AdminClaimManager({
                     }
                   />
                 )}
-                {canManageRefund && pedido.payment_method_id === "mercadopago" && (
+                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id === "mercadopago" && (
                   <MercadoPagoRefundAction pedido={pedido} onUpdated={onInventoryUpdated} />
                 )}
-                {canManageRefund && pedido.payment_method_id !== "mercadopago" && (
+                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && (
                   <div className="rounded-lg border border-emerald-300/20 bg-emerald-950/20 p-2">
                     <p className="text-xs font-black text-white">Reembolso</p>
                     <div className="mt-2 grid gap-2">
@@ -2341,7 +2318,7 @@ export function AdminClaimManager({
                     </div>
                   </div>
                 )}
-                {canCloseClaim && !canCompleteReplacementSolution && (
+                {selectedStep === "execution" && canCloseClaim && !canCompleteReplacementSolution && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
                     title="Finalizar reclamo"
@@ -2351,11 +2328,12 @@ export function AdminClaimManager({
                     onClick={() => openDecision("close")}
                   />
                 )}
-                {closed && (
+                {selectedStep === "finish" && closed && (
                   <div className="admin-claim-closed-note px-3 py-2" data-testid="admin-claim-resolution">
-                    <p className="admin-claim-closed-title text-xs font-black">
-                      {claim.status === "rechazado" ? "Reclamo rechazado" : "Reclamo finalizado"}
-                    </p>
+                     <p className="admin-claim-closed-title text-xs font-black">
+                       {claim.status === "rechazado" ? "Reclamo rechazado" : "Reclamo finalizado"}
+                     </p>
+                     {claim.closed_at && <p className="admin-claim-closed-text mt-1 text-[11px]">{formatDate(claim.closed_at)}</p>}
                     {closedResolution?.structured && (
                       <dl className="mt-1.5 grid gap-1 text-[11px] leading-4">
                         <div>
@@ -2389,10 +2367,16 @@ export function AdminClaimManager({
                     </p>
                   </div>
                 )}
+                {selectedStep === "finish" && claim.status === "reemplazo_enviado" && canCloseClaim && (
+                  <DecisionButton icon={<CheckCircle2 className="size-4" />} title="Finalizar reclamo"
+                    description="Dejar la solución registrada en el historial." tone="primary"
+                    disabled={saving || (needsReception && (!hasReplacement || replacementLoadState !== "ready"))}
+                    onClick={() => openDecision("close")} />
+                )}
               </div>
             )}
 
-            {canCloseConversation && (
+             {canCloseConversation && !formalClaim && (
               <div className="mt-2 border-t border-white/10 pt-2">
                 <p className="mb-2 text-10px font-black uppercase text-white/62">Gestionar conversación</p>
                 <DecisionButton
@@ -2410,16 +2394,23 @@ export function AdminClaimManager({
         </aside>
       </div>
 
-      {shouldShowReturnInventoryPanel(claim.failure_type) && (
-        <ReturnInventoryPanel
-          pedido={pedido}
-          claim={claim}
-          canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
-          registeredReplacements={registeredReplacements}
-          onUpdated={onInventoryUpdated}
-          onClaimChange={onClaimChange}
-        />
+      {chatOpen && createPortal(
+        <div className="admin-claim-wizard-chat-overlay" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setChatOpen(false)
+        }}>
+          <div className="admin-claim-wizard-chat-drawer" role="dialog" aria-modal="true" aria-label="Conversación con el cliente">
+            <button type="button" className="admin-claim-wizard-chat-close" aria-label="Cerrar conversación" onClick={() => setChatOpen(false)}><X className="size-5" /></button>
+            <ClaimConversation messages={messages} chatRef={chatRef} response={response} saving={saving}
+              closed={conversationLocked} statusLabel={conversationStatus} customerMentionName={customerMentionName}
+              canUseCustomerMention={isAdmin} onResponseChange={(value) => {
+                if (!responseVersionRef.current) responseVersionRef.current = claim.updated_at
+                if (!value) responseVersionRef.current = null
+                setResponse(value)
+              }} onSendResponse={() => void sendResponse()} />
+          </div>
+        </div>, document.body,
       )}
+
 
       {notice && (
         notice === successNotice ? (
@@ -2450,7 +2441,7 @@ export function AdminClaimManager({
         <ClaimActionModal
           action={decisionAction}
           saving={saving}
-          closeBlocked={claim.resolution === "cambio_producto" && !replacementFlow.canConfirmDelivery}
+          closeBlocked={needsReception && (!hasReplacement || replacementLoadState !== "ready")}
           message={decisionMessage}
           reason={decisionReason}
           resolution={decisionResolution}
