@@ -1,6 +1,7 @@
 import "server-only"
 
 import { reverseCustomerCreditForOrder } from "../customer-credit/server.ts"
+import { restoreStoreBenefitFromSupersededOrder } from "../customer-store-benefits.ts"
 import { findMercadoPagoPaymentForOrder } from "../mercadopago/customer-credit-topups.ts"
 import { MERCADOPAGO_ABANDONED_ORDER_GRACE_HOURS } from "../mercadopago/checkout-attempt.ts"
 import { appendOrderAuditEvent } from "./order-audit.ts"
@@ -18,6 +19,7 @@ interface ExpirableMercadoPagoOrder {
   payment_status?: string | null
   financial_status?: string | null
   credit_balance_used?: number | null
+  store_benefit_id?: string | null
   mercadopago_preference_expires_at?: string | null
   andreani_creation_status?: string | null
   andreani_envio_id?: string | null
@@ -65,7 +67,7 @@ export async function expireAbandonedMercadoPagoOrders(
   const { data, error } = await admin
     .from("ordenes")
     .select(
-      "id, created_at, estado, payment_status, financial_status, credit_balance_used, mercadopago_preference_expires_at, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, andreani_creation_status, andreani_envio_id",
+      "id, created_at, estado, payment_status, financial_status, credit_balance_used, store_benefit_id, mercadopago_preference_expires_at, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, andreani_creation_status, andreani_envio_id",
     )
     .eq("payment_method_id", "mercadopago")
     .eq("estado", "pendiente")
@@ -136,6 +138,15 @@ export async function expireAbandonedMercadoPagoOrders(
       await reverseCustomerCreditForOrder(admin, {
         orderId: order.id,
         description: "Reintegro de saldo por checkout de Mercado Pago vencido",
+      })
+    }
+
+    // El beneficio tampoco puede quedar consumido por un checkout que nunca
+    // se pagó (sólo se reactiva si sigue ligado a ESTE pedido).
+    if (order.store_benefit_id) {
+      await restoreStoreBenefitFromSupersededOrder(admin, {
+        benefitId: order.store_benefit_id,
+        orderId: order.id,
       })
     }
 

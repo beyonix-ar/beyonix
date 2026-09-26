@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { isCronRequestAuthorized } from "@/lib/auth/cron-auth"
+import { detectTransferPaymentsAfterCancellation } from "@/lib/orders/transfer-payment-after-cancellation"
 import { retryPendingTransferVerifications } from "@/lib/orders/transfer-verification-retry"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -16,7 +17,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 })
   }
 
-  const result = await retryPendingTransferVerifications(createAdminClient())
+  const admin = createAdminClient()
+  const result = await retryPendingTransferVerifications(admin)
+  // Ventana técnica: transferencias reales que llegaron después de cancelar su
+  // pedido sin pago. Sólo se registran para Admin, nunca se confirman.
+  const afterCancellation = await detectTransferPaymentsAfterCancellation(admin)
 
-  return NextResponse.json({ ok: true, ...result })
+  return NextResponse.json({ ok: true, ...result, afterCancellation })
 }

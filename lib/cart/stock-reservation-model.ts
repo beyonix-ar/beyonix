@@ -2,9 +2,9 @@
  * Modelo de referencia (puro, en memoria) del algoritmo de reserva de stock
  * del checkout.
  *
- * La FUENTE DE VERDAD es la función SQL
- * `validate_checkout_inventory_reservation`
- * (supabase/migrations/20260903150000_checkout_stock_reservation_window.sql).
+ * La FUENTE DE VERDAD son las funciones SQL `reserve_cart_stock` (reserva del
+ * Paso 3, 20 minutos: 20260925120000) y `available_stock_for_session`
+ * (20260903150000); los commits por medio de pago nunca renuevan la reserva.
  * Este módulo existe para poder ejercitar las reglas de concurrencia --
  * quién gana la última unidad, qué pasa al vencer una reserva, qué pasa al
  * cambiar el carrito -- sin una base de datos, y `stock-reservation-model.test.ts`

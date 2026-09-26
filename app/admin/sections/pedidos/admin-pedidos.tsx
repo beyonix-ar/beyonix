@@ -600,6 +600,7 @@ function getPaymentStatusLabel(status?: string | null) {
     approved_amount_mismatch: "Monto no coincide (revisar)",
     approved_currency_mismatch: "Moneda no coincide (revisar)",
     auto_verified_stock_conflict: "Transferencia verificada · Conflicto de stock",
+    approved_after_cancellation: "Pago recibido con el pedido cancelado (revisar)",
   }
 
   return status ? labels[status] ?? status : "Sin estado"
@@ -1335,6 +1336,11 @@ function getOrderPaymentDisplay(pedido: SupabasePedido): OrderPaymentDisplay {
 
   if (pedido.financial_status === "refunded") {
     return { method, statusLabel: "Reembolsado", tone: "returned" }
+  }
+  // Transferencia recibida tras cancelar sin pago: se resuelve reintegrando
+  // (queda en refund_pending), nunca confirmando la venta.
+  if (pedido.payment_status === "approved_after_cancellation") {
+    return { method, statusLabel: "Pago tras cancelar: reintegrar", tone: "danger" }
   }
   if (pedido.financial_status === "refund_pending") {
     // FASE 2: needs_reconciliation es un incidente que requiere revisión
@@ -2305,6 +2311,17 @@ function RefundManagementPanel({
           </div>
         </div>
       </div>
+
+      {model.paymentAfterCancellation && !model.isFinished && (
+        <p className="admin-order-pg-rejected mt-3" data-testid="payment-after-cancellation">
+          <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+          Transferencia recibida con el pedido ya cancelado: {formatPrice(model.paymentAfterCancellation.receivedAmount)}
+          {model.paymentAfterCancellation.paymentId
+            ? ` · ID de pago Mercado Pago ${model.paymentAfterCancellation.paymentId}`
+            : ""}
+          . No confirmes la venta ni emitas factura.
+        </p>
+      )}
 
       {/* Ya está hecho */}
       <div className="mt-3 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">

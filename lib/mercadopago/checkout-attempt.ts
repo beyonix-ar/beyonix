@@ -8,7 +8,6 @@ import {
   type CheckoutEconomicState,
 } from "../pricing/checkout-pricing.ts"
 
-export const MERCADOPAGO_PREFERENCE_LIFETIME_MINUTES = 30
 export const MERCADOPAGO_PREFERENCE_CLAIM_TIMEOUT_MINUTES = 5
 export const MERCADOPAGO_ABANDONED_ORDER_GRACE_HOURS = 24
 
@@ -184,13 +183,6 @@ export function getMercadoPagoCheckoutIdempotencyKey(
     : ""
 
   return `mercadopago-checkout:v1:${fingerprint}${retrySuffix}`
-}
-
-export function getMercadoPagoPreferenceExpiration(now = new Date()) {
-  return new Date(
-    now.getTime() +
-      MERCADOPAGO_PREFERENCE_LIFETIME_MINUTES * 60 * 1000,
-  )
 }
 
 /** The preference inherits the Step 3 deadline; choosing MP never restarts it. */

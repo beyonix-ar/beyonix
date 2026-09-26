@@ -20,6 +20,8 @@ export type TransferManualReviewReason =
   | "search_not_exhaustive"
   | "expected_amount_changed"
   | "confirmation_error"
+  /** Transferencia real detectada después de cancelar el pedido sin pago (payment_status = approved_after_cancellation). */
+  | "paid_after_cancellation"
 
 /** payment_status cuando Mercado Pago confirmó la transferencia pero el stock ya no alcanza -- igual criterio que MERCADOPAGO_STOCK_CONFLICT_PAYMENT_STATUS para Checkout Pro: el dinero es real, la orden NO se confirma ni se cancela sola, requiere resolución humana. */
 export const TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS = "auto_verified_stock_conflict"
@@ -124,6 +126,27 @@ export function canUploadTransferProof(
   )
 }
 
+/**
+ * ¿El pedido sigue en el flujo NORMAL de pago (esperando la transferencia,
+ * sin comprobante ni conflicto)? Sólo ese flujo depende de la reserva de 20
+ * minutos: al vencer se bloquea y el cliente vuelve al inicio con su carrito.
+ */
+export function isAwaitingTransferPayment(order: {
+  payment_status?: string | null
+  payment_proof_url?: string | null
+  payment_proof_uploaded_at?: string | null
+}): boolean {
+  return (
+    (order.payment_status || "pendiente_comprobante") === "pendiente_comprobante" &&
+    !order.payment_proof_url &&
+    !order.payment_proof_uploaded_at
+  )
+}
+
+/** Pago real detectado cuando la reserva ya había vencido y el stock ya no alcanzaba. */
+export const TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE =
+  "Recibimos tu transferencia, pero la reserva de stock ya había vencido y el producto dejó de estar disponible. Nuestro equipo revisará el pago."
+
 /** Copy segura y genérica para el cliente -- nunca expone datos de Mercado Pago ni de otros pedidos. */
 export function getManualReviewCustomerMessage(): string {
   return "No pudimos validar tu transferencia automáticamente."
@@ -160,6 +183,8 @@ export function describeManualReviewReason(
       return "El monto esperado del pedido cambió mientras se verificaba la transferencia. Requiere revisión manual."
     case "confirmation_error":
       return "La transferencia coincidió (monto y DNI), pero la confirmación falló por un error temporal. Se reintenta automáticamente."
+    case "paid_after_cancellation":
+      return "Llegó una transferencia de este pedido después de cancelarlo sin pago (saldo y beneficio ya devueltos). No se confirmó: reintegrá el pago o gestioná la venta manualmente."
     case null:
       return "Sin intentos de verificación registrados."
     default:

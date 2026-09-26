@@ -60,6 +60,23 @@ export function sumReplacedUnits(
     .reduce((sum, row) => sum + Number(row.quantity || 0), 0)
 }
 
+/**
+ * Unidades reclamadas (cambio de producto) que todavía no volvieron al
+ * depósito. Mientras haya alguna pendiente, el reemplazo sólo puede
+ * registrarse con la excepción explícita "Continuar sin recepción previa"
+ * (reason = 'garantia'). Regla compartida por el modal y por
+ * POST /api/admin/pedidos/[id]/replacements, que la vuelve a aplicar.
+ */
+export function getPendingOriginalReception(claimedUnits: number, receivedUnits: number) {
+  const claimed = Number.isFinite(claimedUnits) ? Math.max(0, claimedUnits) : 0
+  const received = Number.isFinite(receivedUnits) ? Math.max(0, receivedUnits) : 0
+  return Math.max(0, claimed - received)
+}
+
+export function formatPendingReceptionMessage(pendingUnits: number) {
+  return `Faltan recibir ${pendingUnits} ${pendingUnits === 1 ? "unidad" : "unidades"} del producto original. Registrá la recepción o marcá «Continuar sin recepción previa».`
+}
+
 export function isReplacementResolution(resolution?: string | null) {
   return resolution === "cambio_producto" || resolution === "envio_unidad_faltante"
 }

@@ -98,7 +98,11 @@ test("Gestionar reclamo: DecisionButton sin rounded+border ni text-white/N", () 
     .join(" ")
   assert.doesNotMatch(decisionClasses, /rounded-lg|\bborder\b|text-white|disabled:opacity-45/)
 
-  const panel = claims.slice(claims.indexOf("Gestionar reclamo</h4>"), claims.indexOf("Gestionar conversación"))
+  // El título del panel ahora es el paso activo del wizard, con
+  // "Gestionar reclamo" como fallback.
+  const panelStart = claims.indexOf('?? "Gestionar reclamo"}</h4>')
+  assert.ok(panelStart > 0, "panel Gestionar reclamo")
+  const panel = claims.slice(panelStart, claims.indexOf("Gestionar conversación"))
   for (const name of ["admin-claim-status-box", "admin-claim-status-value", "admin-claim-resolution-box", "admin-claim-closed-note", "admin-claim-closed-title"]) {
     assert.ok(panel.includes(name), name)
   }

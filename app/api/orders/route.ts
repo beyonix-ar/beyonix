@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
 import { attachCustomerClaimReads } from "@/lib/orders/customer-claim-access"
+import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reservation-window"
 import type { CustomerOrderSummary } from "@/lib/supabase/types"
 
 const ORDER_LIST_SELECT =
@@ -67,7 +68,19 @@ export async function GET() {
   const claimsWithReads = await attachCustomerClaimReads(admin, user.id, allClaims)
   const readByClaimId = new Map(claimsWithReads.map((claim) => [claim.id, claim.customer_last_read_at]))
 
-  const orders = [...merged.values()]
+  // Vencimiento de la reserva de 20 minutos de los pedidos por transferencia
+  // que esperan el pago (sólo lectura: nunca la renueva).
+  let withReservations: CustomerOrderSummary[]
+  try {
+    withReservations = await attachTransferReservationDeadlines(admin, [...merged.values()])
+  } catch {
+    return NextResponse.json(
+      { error: "No se pudieron cargar tus compras." },
+      { status: 500 },
+    )
+  }
+
+  const orders = withReservations
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .map((order) => ({
       ...order,
@@ -82,5 +95,5 @@ export async function GET() {
       order_audit_events: toCustomerSafeOrderAuditEvents(order.order_audit_events),
     }))
 
-  return NextResponse.json({ orders })
+  return NextResponse.json({ orders, server_now: new Date().toISOString() })
 }

@@ -19,6 +19,7 @@ import {
 } from "@/components/account/account-ui"
 import { AccountViewFrame } from "@/components/account/account-view-frame"
 import { TrackingCopyButton } from "@/components/account/account-order-components"
+import { TransferReservationNotice } from "@/components/account/transfer-reservation-notice"
 import {
   formatCuentaPrice,
   formatOrderCardDate,
@@ -68,6 +69,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
       : "detalle"
   const hasRequestedOrder = Number.isInteger(requestedOrderId) && requestedOrderId > 0
   const [orders, setOrders] = useState<CustomerOrderSummary[]>([])
+  const [serverNow, setServerNow] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -86,6 +88,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
         const response = await fetch("/api/orders", { cache: "no-store" })
         const data = (await response.json()) as {
           orders?: CustomerOrderSummary[]
+          server_now?: string
           error?: string
         }
 
@@ -95,6 +98,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
         }
 
         setOrders(data.orders ?? [])
+        setServerNow(data.server_now ?? null)
       } catch {
         setError("No se pudieron cargar tus compras.")
       } finally {
@@ -344,6 +348,8 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                       <div><p className="text-[10px] font-black uppercase tracking-widest text-[var(--account-text-secondary)]">Productos</p><p className="mt-1 text-sm font-bold text-[var(--account-text-primary)]">{productCount} {productCount === 1 ? "producto" : "productos"}</p></div>
                     </div>
                   </div>
+
+                  <TransferReservationNotice order={order} serverNow={serverNow} className="mt-3" />
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     <BeyonixButton type="button" size="sm" onClick={() => router.push(`/cuenta/compras/${order.id}`)}>

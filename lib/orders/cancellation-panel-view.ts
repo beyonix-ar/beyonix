@@ -83,6 +83,12 @@ export interface CancellationPanelViewModel {
   helperText: string
   /** Nota informativa extra (p.ej. "Procesando con Mercado Pago...") -- nunca decide el estado, sólo lo complementa. */
   statusNote: string | null
+  /**
+   * Transferencia real recibida después de cancelar el pedido sin pago
+   * (payment_status approved_after_cancellation): la venta NO se confirma, el
+   * dinero se devuelve con el mismo flujo de reintegro. null en otro caso.
+   */
+  paymentAfterCancellation: { receivedAmount: number; paymentId: string | null } | null
 }
 
 function roundMoney(value: number) {
@@ -138,6 +144,7 @@ export function getCancellationPanelViewModel(
      * o ajustes manuales de la NC.
      */
     customer_credit_restored_amount?: number | string | null
+    transfer_matched_payment_id?: string | null
     order_credit_notes?: Array<{
       status?: string | null
       destination?: string | null
@@ -263,12 +270,18 @@ export function getCancellationPanelViewModel(
     }
   })()
 
+  const paymentAfterCancellation =
+    order.payment_status === "approved_after_cancellation"
+      ? { receivedAmount: externalPaid, paymentId: order.transfer_matched_payment_id ?? null }
+      : null
   const copy = getCancellationNextActionCopy(nextAction.state, nextAction.reason)
   const helperText =
-    copy?.description ??
-    (nextAction.state === "completed"
-      ? "El reintegro quedó registrado. No hay más acciones pendientes para esta cancelación."
-      : "No hay ninguna acción financiera pendiente para esta cancelación.")
+    paymentAfterCancellation && !isFinished
+      ? "Llegó una transferencia después de que el pedido se canceló. No confirmes la venta: devolvé el dinero al cliente y cargá acá el comprobante del reintegro."
+      : copy?.description ??
+        (nextAction.state === "completed"
+          ? "El reintegro quedó registrado. No hay más acciones pendientes para esta cancelación."
+          : "No hay ninguna acción financiera pendiente para esta cancelación.")
 
   const statusNote = (() => {
     if (
@@ -301,5 +314,6 @@ export function getCancellationPanelViewModel(
     primaryAction,
     helperText,
     statusNote,
+    paymentAfterCancellation,
   }
 }

@@ -56,6 +56,7 @@ const TEST_FILES = [
   "lib/validation/phone-ar-integration-contract.test.ts",
   "components/phone/argentina-phone-input-contract.test.ts",
   "components/public-minimal-header-contract.test.ts",
+  "components/customer-notifications-bell-contract.test.ts",
   "lib/orders/admin-order-cancellation-reasons.test.ts",
   "lib/orders/admin-order-cancellation.test.ts",
   "lib/orders/admin-cancel-order-previous-estado.test.ts",
@@ -105,6 +106,11 @@ const TEST_FILES = [
   "lib/mercadopago/order-reference.test.ts",
   "lib/customer-credit/money-parsing.test.ts",
   "lib/orders/transfer-checkout-attempt.test.ts",
+  "lib/orders/transfer-reservation-window.test.ts",
+  "lib/orders/transfer-payer-declaration.test.ts",
+  "lib/orders/transfer-payment-after-cancellation.test.ts",
+  "lib/orders/transfer-payment-after-cancellation-refund.test.ts",
+  "lib/orders/transfer-reservation-display.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",
@@ -209,11 +215,16 @@ const TEST_FILES = [
 const TSX_TEST_FILES = [
   "components/claims/claim-reply-draft.test.tsx",
   "components/claims/return-inventory-refresh.test.tsx",
+  "components/claims/use-claim-wizard-scroll.test.tsx",
+  "lib/orders/admin-claim-wizard.test.ts",
 ]
 
 // PostgreSQL embebido con conexiones concurrentes: correrlo fuera del batch
 // paralelo evita competir por procesos Windows con los demás tests de DB.
-const DB_TEST_FILES = ["lib/cart/checkout-step-reservations.test.mjs"]
+const DB_TEST_FILES = [
+  "lib/cart/checkout-step-reservations.test.mjs",
+  "lib/orders/transfer-checkout-reservation.test.mjs",
+]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES].filter((file) => !existsSync(file))
 if (missing.length > 0) {

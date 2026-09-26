@@ -2126,10 +2126,14 @@ export default function CheckoutPage() {
           return
         }
 
-        clearCart()
+        // El carrito se conserva hasta que el pago se confirme: si la reserva
+        // de 20 minutos vence, el cliente vuelve al inicio con su carrito. La
+        // sesión comprometida con el pedido no se reutiliza.
         customerCredit.clearAppliedAmount()
         await customerCredit.reload()
         storeGuestOrderToken(data.order_id, data.guest_token)
+        sessionStorage.removeItem(CHECKOUT_STEP_RESERVATION_KEY)
+        startNewCheckoutSession()
         window.location.href = data.redirect_url
         return
       }

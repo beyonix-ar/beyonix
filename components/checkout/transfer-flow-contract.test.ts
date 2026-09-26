@@ -15,9 +15,12 @@ test("reutiliza el uploader de comprobante existente -- no reimplementa una segu
 })
 
 test("un fallo técnico (rate limit, verificación en curso, error inesperado del backend, excepción de red) siempre habilita el comprobante como salida segura -- nunca deja al cliente sin ninguna opción", () => {
+  // El paso "Titular" (previo a alias/CVU) tiene su propio submit: este
+  // contrato es el del paso de verificación.
+  const verificationStep = SOURCE.indexOf("function TransferVerificationStep(")
   const handleSubmit = SOURCE.slice(
-    SOURCE.indexOf("const handleSubmit"),
-    SOURCE.indexOf("if (phase === \"confirming\")"),
+    SOURCE.indexOf("const handleSubmit", verificationStep),
+    SOURCE.indexOf("if (phase === \"confirming\")", verificationStep),
   )
 
   // Camino !response.ok (400/429/409/500): sólo pasa a revisión manual si el

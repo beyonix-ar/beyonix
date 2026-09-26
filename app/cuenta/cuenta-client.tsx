@@ -62,6 +62,8 @@ import {
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { getCustomerTransferReservationState } from "@/lib/orders/transfer-reservation-display"
+import { TransferReservationNotice } from "@/components/account/transfer-reservation-notice"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
@@ -510,6 +512,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const authenticatedUserEmail = user?.email ?? ""
   const hasAuthenticatedUser = Boolean(authenticatedUserId || authenticatedUserEmail)
   const [order, setOrder] = useState<SupabasePedido | null>(null)
+  // Hora del servidor de la última carga: el vencimiento de la reserva nunca
+  // depende del reloj del dispositivo.
+  const [serverNow, setServerNow] = useState<string | null>(null)
   const loadedOrderIdRef = useRef<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -554,9 +559,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         return
       }
 
-      const result = (await response.json()) as { order: SupabasePedido }
+      const result = (await response.json()) as { order: SupabasePedido; server_now?: string }
       const currentOrder = result.order
 
+      setServerNow(result.server_now ?? null)
       setOrder({
         ...currentOrder,
         order_claims: await getOrderClaims(currentOrder.id),
@@ -695,6 +701,14 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     !paymentConfirmed &&
     !isCancelled &&
     CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES.includes(paymentStatus)
+  // Con la reserva vencida no se ofrece "Verificar transferencia" (el flujo
+  // normal ya está cerrado y nunca se reabre desde acá); el comprobante sigue
+  // disponible como vía manual para una transferencia hecha tarde.
+  const transferReservationExpired =
+    getCustomerTransferReservationState(
+      order,
+      serverNow ? Date.parse(serverNow) : Number.POSITIVE_INFINITY,
+    ).kind === "expired"
 
   if (isCancelled) {
     const productCount = items.reduce(
@@ -800,13 +814,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                       <p className="mt-1.5 max-w-3xl text-sm font-normal leading-5 text-[var(--account-text-secondary)]">
                         {refunded
                           ? "El pedido fue cancelado y el dinero ya fue reintegrado."
-                          : refundPending
-                            ? "La cancelación quedó registrada. Estamos gestionando el reintegro correspondiente."
-                            : rejectedByAdmin
-                              ? (cancellationInfo.reasonText
-                                  ? `Tu pedido fue rechazado antes de confirmarse el pago. Motivo: ${cancellationInfo.reasonText}.`
-                                  : "Tu pedido fue rechazado antes de confirmarse el pago. No se realizó ningún cobro, así que no hay ningún reintegro pendiente.")
-                              : "El pedido quedó cancelado y no requiere acciones adicionales."}
+                          : order.payment_status === "approved_after_cancellation"
+                            ? "Recibimos tu transferencia, pero el pedido ya se había cancelado porque venció la reserva. No la aplicamos a ninguna compra: estamos gestionando la devolución del dinero."
+                            : refundPending
+                              ? "La cancelación quedó registrada. Estamos gestionando el reintegro correspondiente."
+                              : rejectedByAdmin
+                                ? (cancellationInfo.reasonText
+                                    ? `Tu pedido fue rechazado antes de confirmarse el pago. Motivo: ${cancellationInfo.reasonText}.`
+                                    : "Tu pedido fue rechazado antes de confirmarse el pago. No se realizó ningún cobro, así que no hay ningún reintegro pendiente.")
+                                : "El pedido quedó cancelado y no requiere acciones adicionales."}
                       </p>
                       <dl className="mt-4 grid gap-2 text-left sm:grid-cols-2">
                         <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2.5">
@@ -1051,6 +1067,8 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   Gestión del pedido
                 </h2>
 
+                <TransferReservationNotice order={order} serverNow={serverNow} className="mt-3" />
+
                 <div
                   className={cn(
                     "mt-3 grid flex-1 content-center gap-3",
@@ -1094,6 +1112,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                           </>
                         ) : (
                           <>
+                            {!transferReservationExpired && (
                             <Link
                               href={`/checkout/success?method=transferencia&order_id=${order.id}`}
                               aria-label="Verificar transferencia"
@@ -1105,6 +1124,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                             >
                               Verificar transferencia
                             </Link>
+                            )}
                             <PaymentProofActionButton
                               orderId={order.id}
                               onUploaded={handleProofUploaded}

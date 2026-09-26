@@ -41,7 +41,7 @@ import {
 } from "@/lib/payments/transfer"
 import { TRANSPORT_CLAIM_WINDOW_HOURS } from "@/lib/order-claims"
 import { DEFAULT_PRODUCT_WARRANTY_MONTHS } from "@/lib/orders/warranty"
-import { TRANSFER_PAYMENT_EXPIRATION_HOURS } from "@/lib/orders/transfer-expiration"
+import { CHECKOUT_RESERVATION_MINUTES } from "@/lib/cart/checkout-step-reservation"
 
 export const metadata: Metadata = {
   title: "Términos y condiciones | BEYONIX",
@@ -226,9 +226,9 @@ export default async function TerminosPage() {
             />
             <KeyFact
               icon={Clock3}
-              label="Comprobante"
-              value={`${TRANSFER_PAYMENT_EXPIRATION_HOURS} horas`}
-              detail="Plazo para subirlo antes de la cancelación automática."
+              label="Plazo de pago"
+              value={`${CHECKOUT_RESERVATION_MINUTES} minutos`}
+              detail="Desde que se reserva el stock en el último paso de la compra."
             />
             <KeyFact
               icon={Truck}
@@ -446,10 +446,20 @@ export default async function TerminosPage() {
                 </div>
               </div>
               <p>
-                En pagos por transferencia, <strong className="font-bold text-white">el comprobante debe cargarse dentro de las
-                {` ${TRANSFER_PAYMENT_EXPIRATION_HOURS} horas`} desde la creación del pedido</strong>. Si no
-                se recibe dentro de ese plazo, la orden puede cancelarse automáticamente y liberar
-                el stock. Se aceptan archivos {PAYMENT_PROOF_ALLOWED_EXTENSIONS.map((item) => item.toUpperCase()).join(", ")}
+                Al llegar al último paso de la compra, BEYONIX reserva el stock de los productos.{" "}
+                <strong className="font-bold text-white">
+                  El cliente dispone de {CHECKOUT_RESERVATION_MINUTES} minutos desde que se reserva el stock
+                  para realizar el pago
+                </strong>
+                , con cualquier medio de pago. Elegir o cambiar el medio de pago no renueva ese plazo.
+              </p>
+              <p>
+                Vencidos los {CHECKOUT_RESERVATION_MINUTES} minutos, la reserva se libera y el stock deja de
+                estar garantizado. Si igualmente se recibe una transferencia, BEYONIX puede detectarla, pero
+                la compra queda sujeta a la disponibilidad real de stock en ese momento: si ya no hay
+                unidades disponibles, nuestro equipo revisa el pago y se comunica con el cliente. Los pedidos
+                sin pago se cancelan automáticamente. Para enviar un comprobante se aceptan archivos{" "}
+                {PAYMENT_PROOF_ALLOWED_EXTENSIONS.map((item) => item.toUpperCase()).join(", ")}
                 {` de hasta ${PAYMENT_PROOF_MAX_MB} MB`}.
               </p>
               <p>

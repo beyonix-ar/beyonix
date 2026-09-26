@@ -12075,6 +12075,9 @@ html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-icon 
 html[data-account-theme="light"][data-account-scope] .beyonix-notifications-trigger {
   background: var(--account-surface-hover) !important;
 }
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-bell-icon {
+  color: #000;
+}
 html[data-account-theme="light"][data-account-scope] .beyonix-notifications-panel {
   background: var(--account-surface) !important;
   border-color: var(--account-border) !important;
@@ -13349,6 +13352,17 @@ html[data-admin-theme="light"] .admin-claim-help-trigger.admin-claim-help-trigge
   opacity: 1;
   transform: translateY(0);
   visibility: visible;
+}
+
+/* HelpTip align="start": abre hacia la derecha (trigger cerca del borde izquierdo). */
+.admin-claim-help.is-align-start .admin-claim-help-bubble {
+  right: auto;
+  left: -0.25rem;
+}
+
+.admin-claim-help.is-align-start .admin-claim-help-bubble::after {
+  right: auto;
+  left: 0.75rem;
 }
 
 html[data-admin-theme="light"] .admin-claim-help-bubble {
@@ -14786,7 +14800,9 @@ html[data-admin-theme="light"] .admin-replacement-modal {
   --replacement-modal-icon-bg: #eaf2fb;
   --replacement-modal-icon-border: #b9d3ee;
   --replacement-modal-icon: #112a43;
-  --replacement-modal-section-bg: #f8fafc;
+  /* Bloques (producto original, motivo, variante/cantidad, stock): ~5 % más
+     oscuro que #f8fafc para separarlos del fondo blanco del modal. */
+  --replacement-modal-section-bg: #eceeef;
   --replacement-modal-section-border: #e2e8f0;
   --replacement-modal-field-bg: #ffffff;
   --replacement-modal-field-border: #94a3b8;
@@ -15668,4 +15684,8 @@ html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer .admin-claim-chat
   .admin-replacement-modal__original > .admin-replacement-modal__check-row { grid-column: auto; }
   .admin-replacement-modal__quantity-field { min-width: 0; }
   .admin-replacement-modal__stock-tile { flex-wrap: wrap; }
+  /* Una sola columna: el (?) de Stock queda al borde derecho del
+     encabezado, así que ahí vuelve a abrir hacia la izquierda. */
+  .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble { right: -0.25rem; left: auto; }
+  .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble::after { right: 0.75rem; left: auto; }
 }

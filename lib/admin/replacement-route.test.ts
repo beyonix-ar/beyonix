@@ -49,17 +49,28 @@ const post = (body: Record<string, unknown>) => new Request("http://localhost/ap
 const params = { params: Promise.resolve({ id: "500" }) }
 
 const catalog: Record<number, number> = { 9: 1, 10: 1, 20: 2 }
-const postgrest: Handler = (url, init) => {
+const createPostgrest = ({
+  received = 0,
+  claims = [] as Array<Record<string, unknown>>,
+} = {}): Handler => (url, init) => {
   if (url.pathname === "/rest/v1/orden_items") {
-    return single(init, url.searchParams.get("id") === "eq.71" && url.searchParams.get("orden_id") === "eq.500" ? { producto_id: 1 } : null)
+    return single(init, url.searchParams.get("id") === "eq.71" && url.searchParams.get("orden_id") === "eq.500"
+      ? { producto_id: 1, return_restocked_quantity: received, return_written_off_quantity: 0 }
+      : null)
   }
   if (url.pathname === "/rest/v1/producto_variantes") {
     const id = Number(url.searchParams.get("id")?.replace("eq.", ""))
     return single(init, catalog[id] ? { producto_id: catalog[id] } : null)
   }
+  if (url.pathname === "/rest/v1/order_claims") {
+    assert.equal(url.searchParams.get("order_id"), "eq.500")
+    assert.equal(url.searchParams.get("resolution"), "eq.cambio_producto")
+    return Response.json(claims)
+  }
   if (url.pathname === "/rest/v1/rpc/create_order_replacement") return Response.json({ id: 1, quantity: 1 })
   return undefined
 }
+const postgrest = createPostgrest()
 
 test("POST: una variante de OTRO producto se rechaza sin llamar a la RPC", async () => {
   await withRoute(postgrest, async (route, requests) => {
@@ -106,6 +117,31 @@ test("POST: otra variante del MISMO producto llega a la RPC con el payload intac
     p_condition_note: null,
     p_notes: "Falla de fábrica",
     p_claim_id: 900,
+  })
+})
+
+test("B2: cambio de producto con unidades sin recibir -> 409 sin tocar stock; sólo la excepción explícita o la recepción completa llegan a la RPC", async () => {
+  const claims = [
+    { id: 900, status: "aprobado", affected_items: [{ order_item_id: 71, quantity: 2 }] },
+    // Un reclamo cerrado no exige nada.
+    { id: 901, status: "cerrado", affected_items: [{ order_item_id: 71, quantity: 5 }] },
+  ]
+  await withRoute(createPostgrest({ received: 1, claims }), async (route, requests) => {
+    // Aunque el cliente omita claimId, el servidor busca los reclamos del pedido.
+    for (const body of [{ replacementVariantId: 10, claimId: 900 }, { replacementVariantId: 10 }]) {
+      const response = await route.POST(post(body), params)
+      assert.equal(response.status, 409)
+      const data = await response.json()
+      assert.equal(data.code, "REPLACEMENT_REQUIRES_RECEIVED_ITEM")
+      assert.match(data.error, /Faltan recibir 1 unidad del producto original/)
+    }
+    assert.ok(!requests.some((url) => url.pathname.includes("/rpc/")), "nunca descuenta stock")
+
+    const exception = await route.POST(post({ replacementVariantId: 10, claimId: 900, reason: "garantia" }), params)
+    assert.equal(exception.status, 200, "«Continuar sin recepción previa» marcado explícitamente")
+  })
+  await withRoute(createPostgrest({ received: 2, claims }), async (route) => {
+    assert.equal((await route.POST(post({ replacementVariantId: 10, claimId: 900 }), params)).status, 200)
   })
 })
 

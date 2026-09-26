@@ -4,7 +4,10 @@ import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
 import { attemptTransferAutoVerification } from "./transfer-verification-service.ts"
-import { retryPendingTransferVerifications } from "./transfer-verification-retry.ts"
+import {
+  buildRetryCandidateFilter,
+  retryPendingTransferVerifications,
+} from "./transfer-verification-retry.ts"
 import {
   AWAITING_TRANSFER_REASONS,
   RETRYABLE_MANUAL_REVIEW_REASONS,
@@ -130,13 +133,12 @@ function createPgliteAdmin(db: PGlite) {
         return builder
       },
       or(expression: string) {
-        assert.equal(expression,
-          `and(transfer_verification_status.eq.pending,or(transfer_verification_failure_reason.in.(${AWAITING_TRANSFER_REASONS.join(",")}),and(transfer_verification_failure_reason.is.null,transfer_verification_attempts.gt.0))),` +
-          `and(transfer_verification_status.eq.manual_review,transfer_verification_failure_reason.in.(${RETRYABLE_MANUAL_REVIEW_REASONS.join(",")}))`,
-        )
+        const cutoff = /transfer_last_verification_at\.lte\.([^,)]+)\)/.exec(expression)?.[1]
+        assert.ok(cutoff)
+        assert.equal(expression, buildRetryCandidateFilter(cutoff))
         filters.push({
-          sql: "((transfer_verification_status = 'pending' and (transfer_verification_failure_reason = any($?) or (transfer_verification_failure_reason is null and transfer_verification_attempts > 0))) or (transfer_verification_status = 'manual_review' and transfer_verification_failure_reason = any($?)))",
-          values: [[...AWAITING_TRANSFER_REASONS], [...RETRYABLE_MANUAL_REVIEW_REASONS]],
+          sql: "((transfer_verification_status = 'pending' and (transfer_verification_failure_reason = any($?) or transfer_verification_failure_reason is null) and transfer_last_verification_at <= $?) or (transfer_verification_status = 'pending' and transfer_verification_failure_reason is null and transfer_last_verification_at is null) or (transfer_verification_status = 'manual_review' and transfer_verification_failure_reason = any($?) and transfer_last_verification_at <= $?))",
+          values: [[...AWAITING_TRANSFER_REASONS], cutoff, [...RETRYABLE_MANUAL_REVIEW_REASONS], cutoff],
         })
         return builder
       },

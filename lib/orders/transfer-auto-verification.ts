@@ -11,6 +11,7 @@ import { TRANSFER_PAYMENT_EXPIRATION_HOURS } from "./transfer-expiration.ts"
 
 export {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
   RETRYABLE_MANUAL_REVIEW_REASONS,
   AWAITING_TRANSFER_REASONS,
   isRetryableManualReviewReason,
@@ -22,11 +23,15 @@ export {
 import type { TransferManualReviewReason } from "./transfer-verification-reasons.ts"
 
 /**
- * Tolerancia hacia atrás sobre order.created_at: nunca reemplaza la política
- * real de vencimiento de BEYONIX (TRANSFER_PAYMENT_EXPIRATION_HOURS, 48 h,
- * reutilizada tal cual para el límite superior de la ventana) -- sólo
- * absorbe pequeñas diferencias de reloj/latencia entre la creación del
- * pedido y el momento real de la transferencia.
+ * Tolerancia hacia atrás sobre order.created_at: sólo absorbe pequeñas
+ * diferencias de reloj/latencia entre la creación del pedido y el momento
+ * real de la transferencia.
+ *
+ * El límite superior (TRANSFER_PAYMENT_EXPIRATION_HOURS, 48 h) es la ventana
+ * TÉCNICA de detección: permite encontrar una transferencia tardía. NO es el
+ * plazo comercial para pagar -- ese es la reserva de 20 minutos del Paso 3
+ * (lib/orders/transfer-reservation-window.ts). Después de esos 20 minutos no
+ * hay stock garantizado: la confirmación lo revalida bajo lock.
  */
 export const TRANSFER_MATCH_LOOKBACK_MINUTES = 15
 

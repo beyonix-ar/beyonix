@@ -3,9 +3,18 @@ import "server-only"
 import type { createAdminClient } from "@/lib/supabase/admin"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { appendOrderAuditEvent } from "./order-audit.ts"
+import { reverseCustomerCreditForOrder } from "../customer-credit/server.ts"
+import { restoreStoreBenefitFromSupersededOrder } from "../customer-store-benefits.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
+/**
+ * Ventana TÉCNICA de conciliación de una transferencia (detección tardía y
+ * cierre administrativo del pedido sin pago). El plazo comercial para pagar
+ * con stock garantizado es la reserva de 20 minutos del Paso 3
+ * (lib/orders/transfer-reservation-window.ts); el stock nunca queda reservado
+ * durante esta ventana.
+ */
 export const TRANSFER_PAYMENT_EXPIRATION_HOURS = 48
 export const TRANSFER_PAYMENT_EXPIRED_STATUS = "vencido_falta_comprobante"
 
@@ -28,7 +37,7 @@ const MAX_OVERDUE_TRANSFER_ORDERS_PER_RUN = 50
 
 /** Únicas columnas que consumen isTransferOrderExpiredWithoutProof/expireTransferOrderIfNeeded. */
 const TRANSFER_EXPIRATION_LOAD_SELECT =
-  "id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status"
+  "id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, store_benefit_id"
 
 type TransferExpirationCandidate = Pick<
   SupabasePedido,
@@ -40,7 +49,8 @@ type TransferExpirationCandidate = Pick<
   | "payment_proof_url"
   | "payment_proof_uploaded_at"
   | "financial_status"
->
+> &
+  Partial<Pick<SupabasePedido, "credit_balance_used" | "store_benefit_id">>
 
 function getExpirationCutoff(now = new Date()) {
   return new Date(
@@ -106,6 +116,32 @@ export async function expireTransferOrderIfNeeded<
     }
 
     return order
+  }
+
+  // Sólo quien ganó el UPDATE condicional llega acá: el pedido nunca recibió
+  // un pago, así que el saldo y el beneficio aplicados no pueden quedar
+  // retenidos en un pedido cancelado (mismo criterio que la expiración de
+  // Mercado Pago). reverse_customer_credit_for_order es idempotente y el
+  // beneficio sólo se reactiva si sigue ligado a ESTE pedido.
+  const cancelled = updatedOrder as SupabasePedido
+  try {
+    if (Number(cancelled.credit_balance_used ?? 0) > 0) {
+      await reverseCustomerCreditForOrder(admin, {
+        orderId: order.id,
+        description: "Reintegro de saldo: el pedido por transferencia venció sin pago",
+      })
+    }
+    if (cancelled.store_benefit_id) {
+      await restoreStoreBenefitFromSupersededOrder(admin, {
+        benefitId: cancelled.store_benefit_id,
+        orderId: order.id,
+      })
+    }
+  } catch (releaseError) {
+    console.error("TRANSFER_EXPIRATION_CREDIT_OR_BENEFIT_RELEASE_ERROR", {
+      orderId: order.id,
+      message: releaseError instanceof Error ? releaseError.message : String(releaseError),
+    })
   }
 
   await appendOrderAuditEvent(admin, {

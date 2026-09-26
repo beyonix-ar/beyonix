@@ -156,60 +156,64 @@ test("B. UPDATE directo a producto_variantes.stock = -1 -- rechazado por la DB",
 })
 
 // --- C/D: checkout y concurrencia (punto 3, audit-only) ---
+// Sobre la reserva VIGENTE del Paso 3 (reserve_cart_stock, 20 minutos). El
+// validador heredado de 30 minutos se retiró en 20260926110000; la
+// concurrencia real con dos conexiones y los commits por medio de pago se
+// cubren en lib/orders/transfer-checkout-reservation.test.mjs.
 
-test("C. checkout que intenta consumir más stock que el disponible -- rechazado", async () => {
+async function setupStepReservations() {
   const db = await setup()
+  await db.exec(`
+    create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+    create function public.complete_cart_stock_reservation(text, bigint) returns void language sql as $$ select $$;
+    create function public.validate_checkout_inventory_reservation(jsonb, text, bigint) returns jsonb language sql as $$ select '{}'::jsonb $$;
+  `)
+  // Cadena histórica real: Fase 1 renombra el validador heredado y el cierre
+  // de las Fases 1-4 lo retira junto con los 30 minutos.
+  await db.exec(read("supabase/migrations/20260925120000_checkout_step_stock_reservations.sql"))
+  await db.exec(read("supabase/migrations/20260926110000_retire_legacy_30_minute_checkout_reservation.sql"))
+  return db
+}
+
+const reserve = (db: PGlite, sessionId: string, productId: number, quantity: number) =>
+  db.query("select reserve_cart_stock($1, $2::jsonb) as result", [sessionId, JSON.stringify([{ productId, quantity }])])
+
+test("C. checkout que intenta reservar más stock que el disponible -- rechazado", async () => {
+  const db = await setupStepReservations()
   try {
     const productId = await createProduct(db)
     await seedStock(db, productId, null, 2)
 
-    await assert.rejects(
-      db.query(
-        "select validate_checkout_inventory_reservation($1::jsonb, $2, $3)",
-        [JSON.stringify([{ product_id: productId, quantity: 3 }]), "session-overselling-attempt", 999],
-      ),
-      /CHECKOUT_ITEMS_INVALID/, // falla antes: la orden 999 no existe en este fixture
-    )
-
-    // Con una orden real de por medio, el rechazo correcto es por stock.
-    const orderId = await createOrder(db, "pendiente")
-    await assert.rejects(
-      db.query(
-        "select validate_checkout_inventory_reservation($1::jsonb, $2, $3)",
-        [JSON.stringify([{ product_id: productId, quantity: 3 }]), "session-overselling-attempt", orderId],
-      ),
-      /CHECKOUT_STOCK_INSUFFICIENT/,
-    )
+    // La regla de negocio limita a 3 unidades; con stock 2, pedir 3 no alcanza.
+    await assert.rejects(reserve(db, "session-overselling-attempt", productId, 3), /OUT_OF_STOCK/)
     assert.equal(await getProductStock(db, productId), 2, "el intento fallido no descontó nada")
+    const reservations = await db.query<{ count: string }>(
+      "select count(*)::text as count from stock_reservations where product_id=$1",
+      [productId],
+    )
+    assert.equal(reservations.rows[0].count, "0", "all-or-nothing: no queda reserva parcial")
   } finally {
     await db.close()
   }
 })
 
 test("D. dos operaciones compitiendo por la última unidad -- nunca terminan en negativo", async () => {
-  const db = await setup()
+  const db = await setupStepReservations()
   try {
     const productId = await createProduct(db)
     await seedStock(db, productId, null, 1)
 
-    const orderA = await createOrder(db, "pendiente")
-    const orderB = await createOrder(db, "pendiente")
-
-    const resultA = await db.query<{ result: { validated: boolean } }>(
-      "select validate_checkout_inventory_reservation($1::jsonb, $2, $3) as result",
-      [JSON.stringify([{ product_id: productId, quantity: 1 }]), "session-a-last-unit-00", orderA],
+    const resultA = await reserve(db, "session-a-last-unit-00", productId, 1)
+    const expiresAt = (resultA.rows[0] as { result: { expires_at: string; reservation_started_at: string } }).result
+    assert.equal(
+      Date.parse(expiresAt.expires_at) - Date.parse(expiresAt.reservation_started_at),
+      20 * 60 * 1000,
+      "la reserva vigente dura 20 minutos",
     )
-    assert.equal(resultA.rows[0].result.validated, true)
 
     // B pide la misma unidad ya reservada por A -- debe fallar, nunca
     // "ganar" ni dejar el producto en negativo.
-    await assert.rejects(
-      db.query(
-        "select validate_checkout_inventory_reservation($1::jsonb, $2, $3)",
-        [JSON.stringify([{ product_id: productId, quantity: 1 }]), "session-b-last-unit-00", orderB],
-      ),
-      /CHECKOUT_STOCK_INSUFFICIENT/,
-    )
+    await assert.rejects(reserve(db, "session-b-last-unit-00", productId, 1), /OUT_OF_STOCK/)
 
     assert.equal(await getProductStock(db, productId), 1, "el stock físico nunca se toca en el checkout")
     const reservations = await db.query<{ count: string }>(
@@ -217,6 +221,12 @@ test("D. dos operaciones compitiendo por la última unidad -- nunca terminan en 
       [productId],
     )
     assert.equal(reservations.rows[0].count, "1", "sólo A quedó con una reserva activa")
+
+    // La lógica heredada de 30 minutos ya no existe.
+    const legacy = await db.query<{ name: string }>(
+      "select proname as name from pg_proc where proname in ('checkout_reservation_ttl','validate_checkout_inventory_reservation','validate_checkout_inventory_reservation_before_step_reservations','complete_cart_stock_reservation')",
+    )
+    assert.deepEqual(legacy.rows, [])
   } finally {
     await db.close()
   }

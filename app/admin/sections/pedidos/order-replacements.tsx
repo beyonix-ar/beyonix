@@ -9,7 +9,12 @@ import { activateModalFocus } from "@/lib/admin/modal-focus"
 import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 import { AdminRequestError } from "@/lib/admin/request-error"
 import { supabase } from "@/lib/supabase/client"
-import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
+import {
+  formatPendingReceptionMessage,
+  getPendingOriginalReception,
+  type RegisteredReplacement,
+  type ReplacementLoadState,
+} from "@/lib/orders/claim-replacement-flow"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { HelpTip } from "@/components/claims/help-tip"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
@@ -140,8 +145,15 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
   const used = data?.replacements.filter((row) => row.original_order_item_id === item?.id).reduce((sum, row) => sum + row.quantity, 0) || 0
   const received = Number(item?.return_restocked_quantity || 0) + Number(item?.return_written_off_quantity || 0)
   const availableOriginal = Math.max(0, Math.min(Number(item?.cantidad || 0), warranty ? Number(item?.cantidad || 0) : received) - used)
+  // Cambio de producto: si el reclamo abarca unidades que todavía no
+  // volvieron, sólo se avanza con la excepción explícita (el servidor lo
+  // vuelve a validar).
+  const claimedUnits = Math.max(0, ...matchingClaims.map((claim) =>
+    (claim.affected_items ?? []).filter((affected) => affected.order_item_id === item?.id)
+      .reduce((sum, affected) => sum + Math.max(0, Number(affected.quantity) || 0), 0)))
+  const pendingReception = warranty ? 0 : getPendingOriginalReception(claimedUnits, received)
   const count = Number(quantity)
-  const valid = Boolean(item && variant && matchingClaims.length <= 1 && Number.isInteger(count) && count > 0 && count <= availableOriginal && count <= variant.stock && reason.trim().length >= 10 && !loading)
+  const valid = Boolean(item && variant && matchingClaims.length <= 1 && pendingReception === 0 && Number.isInteger(count) && count > 0 && count <= availableOriginal && count <= variant.stock && reason.trim().length >= 10 && !loading)
   const submit = async () => {
     if (inFlight.current || (!attempt.current && !valid)) return
     if (!attempt.current && item && variant) attempt.current = { key: crypto.randomUUID(), payload: {
@@ -186,7 +198,9 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
       ? "Cargando datos…"
       : matchingClaims.length > 1
         ? "Este ítem tiene más de un reclamo de cambio abierto."
-        : noVariants
+        : pendingReception > 0
+          ? formatPendingReceptionMessage(pendingReception)
+          : noVariants
           ? noVariantsMessage
           : productOutOfStock
             ? productOutOfStockMessage
@@ -272,7 +286,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
             </label>
           )}
           <dl className="admin-replacement-modal__stats" aria-label="Unidades del ítem original">
-            <div className="admin-replacement-modal__stat"><dt>Recibimos</dt><dd>{received}</dd></div>
+            <div className="admin-replacement-modal__stat"><dt>Recibimos del cliente</dt><dd>{received}</dd></div>
             <div className="admin-replacement-modal__stat"><dt>Ya reemplazadas</dt><dd>{used}</dd></div>
             <div className={`admin-replacement-modal__stat ${availableOriginal > 0 ? "is-positive" : "is-empty"}`}><dt>Pendientes de reemplazo</dt><dd>{availableOriginal}</dd></div>
           </dl>
@@ -365,7 +379,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
         {!noVariants && <section className={`admin-replacement-modal__stock ${variant ? "" : "is-empty"}`} aria-live="polite">
           <div className="admin-replacement-modal__stock-head">
             <p className="admin-replacement-modal__section-title">Stock</p>
-            <HelpTip label="Stock">El stock se valida nuevamente al confirmar. El sistema registra también el costo histórico del reemplazo.</HelpTip>
+            <HelpTip label="Stock" align="start">El stock se valida nuevamente al confirmar. El sistema registra también el costo histórico del reemplazo.</HelpTip>
           </div>
           {variant ? (
             <div className="admin-replacement-modal__stock-grid">

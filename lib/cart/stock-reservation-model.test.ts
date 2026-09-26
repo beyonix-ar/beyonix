@@ -12,7 +12,7 @@ import {
   reserveStock,
 } from "./stock-reservation-model.ts"
 
-const TTL = 30 * 60 * 1000
+const TTL = 20 * 60 * 1000
 const T0 = 1_800_000_000_000
 const SESSION_A = "session-a-checkout-0001"
 const SESSION_B = "session-b-checkout-0002"
@@ -285,16 +285,33 @@ test("CASO 10b: mientras la reserva sigue viva, el pago se confirma sin depender
 
 // --- Contrato con la migración: el modelo no puede divergir del SQL real ---
 
+// Disponibilidad compartida y limpieza de vencidas (siguen vigentes).
 const RESERVATION_MIGRATION = readFileSync(
   "supabase/migrations/20260903150000_checkout_stock_reservation_window.sql",
   "utf8",
 )
+// Reserva vigente del Paso 3 (20 minutos) y commits sin renovación por medio
+// de pago. El validador heredado de 30 minutos se retiró en 20260926110000.
+const STEP_MIGRATION = readFileSync(
+  "supabase/migrations/20260925120000_checkout_step_stock_reservations.sql",
+  "utf8",
+)
+const COMMIT_MIGRATIONS = [
+  "supabase/migrations/20260925130000_mercadopago_checkout_reservation_commit.sql",
+  "supabase/migrations/20260926100000_transfer_checkout_reservation_window.sql",
+].map((path) => readFileSync(path, "utf8"))
+const RETIRE_MIGRATION = readFileSync(
+  "supabase/migrations/20260926110000_retire_legacy_30_minute_checkout_reservation.sql",
+  "utf8",
+)
 
-test("la migración toma advisory lock por producto antes de decidir disponibilidad", () => {
-  assert.match(RESERVATION_MIGRATION, /pg_advisory_xact_lock\(93000, v_product_id::integer\)/)
-  // Orden ascendente de product_id: sin esto dos checkouts con los mismos dos
-  // productos en distinto orden podrían deadlockear.
-  assert.match(RESERVATION_MIGRATION, /order by 1\s*\n\s*loop/)
+test("la reserva toma advisory lock por producto, en orden ascendente, antes de decidir disponibilidad", () => {
+  for (const source of [STEP_MIGRATION, ...COMMIT_MIGRATIONS]) {
+    assert.match(source, /pg_advisory_xact_lock\(93000, v_product_id::integer\)/)
+    // Orden ascendente de product_id: sin esto dos checkouts con los mismos
+    // dos productos en distinto orden podrían deadlockear.
+    assert.match(source, /targets order by 1\s*\n\s*loop/)
+  }
 })
 
 test("la disponibilidad descuenta reservas ACTIVAS de otras sesiones, no las propias", () => {
@@ -305,117 +322,90 @@ test("la disponibilidad descuenta reservas ACTIVAS de otras sesiones, no las pro
   assert.match(RESERVATION_MIGRATION, /reservations\.expires_at > now\(\)/)
 })
 
-test("validate_checkout_inventory_reservation exige sesión: ya no existe el camino sin reserva", () => {
-  assert.match(
-    RESERVATION_MIGRATION,
-    /length\(btrim\(coalesce\(p_session_id, ''\)\)\) < 8/,
-  )
-  assert.doesNotMatch(RESERVATION_MIGRATION, /p_session_id is not null\s+and v_reserved_self/)
+test("reserva y commits exigen sesión: no existe camino sin reserva", () => {
+  assert.match(STEP_MIGRATION, /length\(btrim\(p_session_id\)\) < 8/)
+  for (const source of COMMIT_MIGRATIONS) assert.match(source, /length\(btrim\(p_session_id\)\) < 8/)
 })
 
-test("cada reserva se reemplaza por completo antes de reinsertar (sin reservas fantasma)", () => {
-  assert.match(
-    RESERVATION_MIGRATION,
-    /delete from public\.stock_reservations reservations\s*\n\s*where reservations\.session_id = p_session_id;/,
-  )
+test("cada reserva de la sesión se reemplaza por completo antes de reinsertar (sin reservas fantasma)", () => {
+  assert.match(STEP_MIGRATION, /delete from public\.stock_reservations where session_id = p_session_id;/)
 })
 
-test("la ventana de reserva sale de una única función y no está hardcodeada por llamada", () => {
-  assert.match(RESERVATION_MIGRATION, /create or replace function public\.checkout_reservation_ttl\(\)/)
-  assert.match(RESERVATION_MIGRATION, /now\(\) \+ public\.checkout_reservation_ttl\(\)/)
-  assert.doesNotMatch(RESERVATION_MIGRATION, /now\(\) \+ interval '\d+ minutes'/)
+test("la ventana de reserva sale de una única función de 20 minutos; la de 30 minutos se retiró", () => {
+  assert.match(STEP_MIGRATION, /v_now \+ public\.checkout_step_reservation_ttl\(\)/)
+  assert.doesNotMatch(STEP_MIGRATION, /now\(\) \+ interval '\d+ minutes'/)
+  for (const source of COMMIT_MIGRATIONS) {
+    assert.doesNotMatch(source, /checkout_reservation_ttl\(\)|interval '30 minutes'/, "ningún commit abre otra ventana")
+  }
+  for (const retired of [
+    "validate_checkout_inventory_reservation(jsonb, text, bigint)",
+    "validate_checkout_inventory_reservation_before_step_reservations(jsonb, text, bigint)",
+    "complete_cart_stock_reservation(text, bigint)",
+    "checkout_reservation_ttl()",
+  ]) {
+    assert.ok(RETIRE_MIGRATION.includes(`drop function if exists public.${retired};`), retired)
+  }
 })
 
 test("la reserva NUNCA decrementa stock físico: expirar no puede inventar unidades", () => {
-  assert.doesNotMatch(
-    RESERVATION_MIGRATION,
-    /update public\.(productos|producto_variantes)\s+set stock/i,
-  )
+  for (const source of [RESERVATION_MIGRATION, STEP_MIGRATION, ...COMMIT_MIGRATIONS]) {
+    assert.doesNotMatch(source, /update public\.(productos|producto_variantes)\s+set stock/i)
+  }
 })
 
-test("la ventana de reserva coincide EXACTAMENTE con la ventana de pago de Mercado Pago", () => {
-  // INVARIANTE en las dos direcciones:
-  //   - si la reserva venciera ANTES que la preferencia, otro cliente podría
-  //     llevarse la unidad y el primer pago quedaría aprobado sin poder
-  //     confirmarse (ver approved_stock_conflict);
-  //   - si la reserva durara MÁS que la preferencia, el inventario queda
-  //     gravado innecesariamente después de que ese intento de pago ya no
-  //     puede completarse.
-  // No hay una única fuente en runtime (una vive en SQL, la otra en TS), así
-  // que este test es la fuente de verdad que impide que diverjan: cualquier
-  // cambio a uno de los dos valores sin tocar el otro rompe la suite.
+test("un único plazo comercial de 20 minutos: la reserva del Paso 3 y todos los medios de pago lo heredan", () => {
+  // Desde las Fases 2-4 la preferencia de Mercado Pago, la transferencia y
+  // el saldo a favor heredan el expires_at de la reserva del Paso 3 (no hay
+  // un plazo propio por medio de pago que pueda divergir).
   const ttlMinutes = Number(
-    /checkout_reservation_ttl\(\)[\s\S]*?select interval '(\d+) minutes'/.exec(
-      RESERVATION_MIGRATION,
+    /checkout_step_reservation_ttl\(\)[\s\S]*?select interval '(\d+) minutes'/.exec(STEP_MIGRATION)?.[1],
+  )
+  const uiMinutes = Number(
+    /CHECKOUT_RESERVATION_MINUTES = (\d+)/.exec(
+      readFileSync("lib/cart/checkout-step-reservation.ts", "utf8"),
     )?.[1],
   )
-  const preferenceMinutes = Number(
-    /MERCADOPAGO_PREFERENCE_LIFETIME_MINUTES = (\d+)/.exec(
-      readFileSync("lib/mercadopago/checkout-attempt.ts", "utf8"),
-    )?.[1],
-  )
+  assert.equal(ttlMinutes, 20)
+  assert.equal(uiMinutes, ttlMinutes, "el texto visible (Términos, pantallas) usa el mismo plazo que la base")
 
-  assert.ok(Number.isInteger(ttlMinutes) && ttlMinutes > 0)
-  assert.ok(Number.isInteger(preferenceMinutes) && preferenceMinutes > 0)
-  assert.equal(
-    ttlMinutes,
-    preferenceMinutes,
-    `la reserva dura ${ttlMinutes} min y la preferencia ${preferenceMinutes} min -- deben ser iguales`,
-  )
+  const mercadoPago = readFileSync("lib/mercadopago/checkout-attempt.ts", "utf8")
+  assert.doesNotMatch(mercadoPago, /PREFERENCE_LIFETIME_MINUTES/, "Mercado Pago no tiene un plazo propio")
+  assert.match(mercadoPago, /export function getMercadoPagoReservationPreferenceExpiration\(/)
+  const creation = readFileSync("lib/orders/checkout-order-creation.ts", "utf8")
+  assert.doesNotMatch(creation, /validateCheckoutInventory/, "ningún checkout usa el validador heredado de 30 minutos")
 })
 
-// --- Endurecimiento de seguridad agregado sobre la migración ---
+// --- Endurecimiento de seguridad de la reserva vigente ---
 
-test("reserve_cart_stock rechaza payloads con más de 50 líneas (tope anti-DoS)", () => {
-  assert.match(RESERVATION_MIGRATION, /jsonb_array_length\(p_items\) > 50/)
+test("reserve_cart_stock y los commits rechazan payloads con más de 50 líneas (tope anti-DoS)", () => {
+  for (const source of [STEP_MIGRATION, ...COMMIT_MIGRATIONS]) {
+    assert.match(source, /jsonb_array_length\(p_items\) > 50/)
+  }
 })
 
-test("una cantidad negativa u cero en CUALQUIER línea cruda se rechaza antes de agrupar", () => {
-  // La agregación por producto/variante SUMA cantidades: una línea negativa
-  // podría compensarse con otra positiva y esconderse detrás de un total
-  // agregado que parece válido. El chequeo tiene que correr sobre las líneas
-  // crudas, antes del group by.
-  const matches = [
-    ...RESERVATION_MIGRATION.matchAll(
-      /from jsonb_array_elements\(p_items\) item\s*\n\s*where coalesce\(nullif\(item ->> 'quantity', ''\)::integer, 0\) <= 0/g,
-    ),
-  ]
-  // Una vez en reserve_cart_stock y otra en validate_checkout_inventory_reservation.
-  assert.equal(matches.length, 2)
+test("cada línea cruda se valida (1 a 3 unidades) ANTES de agrupar", () => {
+  // La agregación suma cantidades: una línea negativa podría compensarse con
+  // otra y esconderse detrás de un total agregado válido.
+  assert.match(STEP_MIGRATION, /where coalesce\(item ->> 'quantity', ''\) !~ '\^\[123\]\$'/)
+  for (const source of COMMIT_MIGRATIONS) {
+    assert.match(source, /or coalesce\(item ->> 'quantity', ''\) !~ '\^\[123\]\$'/)
+  }
 })
 
-test("reserve_cart_stock rechaza pisar la reserva activa de OTRO usuario autenticado por el mismo session_id", () => {
-  assert.match(RESERVATION_MIGRATION, /RESERVATION_SESSION_MISMATCH/)
-  assert.match(
-    RESERVATION_MIGRATION,
-    /reservations\.user_id is not null\s*\n\s*and reservations\.user_id is distinct from auth\.uid\(\)/,
-  )
+test("reserve_cart_stock rechaza reabrir la reserva de OTRO usuario autenticado por el mismo session_id", () => {
+  assert.match(STEP_MIGRATION, /v_session\.user_id is not null and v_session\.user_id is distinct from auth\.uid\(\)/)
 })
 
-test("validate_checkout_inventory_reservation compara la sesión contra el dueño real de la orden, no auth.uid()", () => {
-  // Esta función corre con el service role (sin JWT de usuario): auth.uid()
-  // no identifica a nadie acá, así que la comparación tiene que salir de
-  // ordenes.usuario_id para el pedido que se está confirmando.
-  assert.match(RESERVATION_MIGRATION, /select orders\.usuario_id into v_order_user_id/)
-  assert.match(
-    RESERVATION_MIGRATION,
-    /reservations\.user_id is not null\s*\n\s*and reservations\.user_id is distinct from v_order_user_id/,
-  )
+test("los commits comparan la sesión contra el dueño real de la orden, no auth.uid()", () => {
+  // Corren con el service role (sin JWT de usuario): auth.uid() no identifica
+  // a nadie, la comparación sale de ordenes.usuario_id.
+  for (const source of COMMIT_MIGRATIONS) {
+    assert.match(source, /v_order\.usuario_id is distinct from v_session\.user_id/)
+  }
 })
 
-test("la reserva creada al confirmar la orden guarda el dueño real, nunca lo pisa con null", () => {
-  // Insertar siempre user_id=null debilitaría el chequeo de propiedad que ya
-  // usan release_cart_stock_reservation/complete_cart_stock_reservation
-  // (`user_id is null or user_id = auth.uid()`) para una orden que sí tiene
-  // usuario autenticado -- cualquiera con el session_id podría liberarla.
-  assert.match(
-    RESERVATION_MIGRATION,
-    /values \(\s*\n\s*p_session_id, v_order_user_id, v_item\.product_id, v_item\.variant_id,/,
-  )
-  assert.doesNotMatch(
-    RESERVATION_MIGRATION,
-    /values \(\s*\n\s*p_session_id, null, v_item\.product_id,/,
-  )
+test("la reserva guarda el dueño real, nunca lo pisa con null", () => {
+  assert.match(STEP_MIGRATION, /values \(p_session_id, coalesce\(v_session\.user_id, auth\.uid\(\)\),/)
 })
 
 test("la limpieza de vencidas es idempotente y está aislada en su propia función", () => {

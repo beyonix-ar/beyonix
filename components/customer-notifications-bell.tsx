@@ -350,7 +350,7 @@ export function CustomerNotificationsBell({
         onFocus={openPopover}
         className="beyonix-notifications-trigger relative flex size-11 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
       >
-        <Bell className="size-4.5" />
+        <Bell className="beyonix-notifications-bell-icon size-4.5" />
 
         {unreadCount > 0 && (
           <span className="absolute -right-1.5 -top-1.5 flex min-w-5 h-5 items-center justify-center rounded-full border border-black bg-red-600 px-1 text-9px font-bold leading-none text-white">

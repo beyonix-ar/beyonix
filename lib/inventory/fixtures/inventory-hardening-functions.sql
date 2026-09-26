@@ -125,13 +125,11 @@ begin
 end;
 $function$;
 
-create or replace function public.checkout_reservation_ttl()
-returns interval
-language sql
-immutable parallel safe
-as $function$
-  select interval '30 minutes';
-$function$;
+-- checkout_reservation_ttl() (30 minutos) y validate_checkout_inventory_reservation
+-- se retiraron en 20260926110000: la reserva vigente es la del Paso 3
+-- (checkout_step_reservation_ttl, 20 minutos) y se compromete sin renovarse.
+-- Su cobertura de concurrencia/sobreventa vive en
+-- lib/orders/transfer-checkout-reservation.test.mjs (PostgreSQL real).
 
 create or replace function public.purge_expired_stock_reservations()
 returns integer
@@ -188,129 +186,6 @@ begin
     and (p_session_id is null or reservations.session_id is distinct from p_session_id);
 
   return coalesce(v_stock, 0) - coalesce(v_reserved_other, 0);
-end;
-$function$;
-
-create or replace function public.validate_checkout_inventory_reservation(p_items jsonb, p_session_id text, p_order_id bigint)
-returns jsonb
-language plpgsql
-security definer
-set search_path to 'public'
-as $function$
-declare
-  v_item record;
-  v_product_id bigint;
-  v_available integer;
-  v_expiry timestamptz := now() + public.checkout_reservation_ttl();
-  v_reserved integer := 0;
-  v_order_user_id uuid;
-begin
-  if auth.role() <> 'service_role' then
-    raise exception 'No tenés permisos para validar el inventario.';
-  end if;
-
-  if p_items is null
-     or jsonb_typeof(p_items) <> 'array'
-     or jsonb_array_length(p_items) = 0
-     or jsonb_array_length(p_items) > 50
-     or p_order_id is null
-     or p_order_id <= 0
-     or length(btrim(coalesce(p_session_id, ''))) < 8
-     or length(p_session_id) > 160 then
-    raise exception 'CHECKOUT_ITEMS_INVALID';
-  end if;
-
-  if exists (
-    select 1
-    from jsonb_array_elements(p_items) item
-    where coalesce(nullif(item ->> 'quantity', '')::integer, 0) <= 0
-  ) then
-    raise exception 'CHECKOUT_ITEMS_INVALID';
-  end if;
-
-  select orders.usuario_id into v_order_user_id
-  from public.ordenes orders
-  where orders.id = p_order_id
-  for update;
-
-  if not found then
-    raise exception 'CHECKOUT_ITEMS_INVALID';
-  end if;
-
-  if exists (
-    select 1 from public.stock_reservations reservations
-    where reservations.session_id = p_session_id
-      and reservations.expires_at > now()
-      and reservations.user_id is not null
-      and reservations.user_id is distinct from v_order_user_id
-  ) then
-    raise exception 'RESERVATION_SESSION_MISMATCH';
-  end if;
-
-  perform public.purge_expired_stock_reservations();
-
-  for v_product_id in
-    select distinct product_id from (
-      select nullif(item ->> 'product_id', '')::bigint as product_id
-      from jsonb_array_elements(p_items) item
-      union
-      select reservations.product_id
-      from public.stock_reservations reservations
-      where reservations.session_id = p_session_id
-    ) targets
-    order by 1
-  loop
-    if v_product_id is null then raise exception 'CHECKOUT_ITEMS_INVALID'; end if;
-    perform pg_advisory_xact_lock(93000, v_product_id::integer);
-  end loop;
-
-  delete from public.stock_reservations reservations
-  where reservations.session_id = p_session_id;
-
-  for v_item in
-    select
-      nullif(item ->> 'product_id', '')::bigint as product_id,
-      nullif(item ->> 'variant_id', '')::bigint as variant_id,
-      nullif(item ->> 'conditioned_stock_id', '')::uuid as conditioned_stock_id,
-      sum(coalesce(nullif(item ->> 'quantity', '')::integer, 0))::integer
-        as quantity
-    from jsonb_array_elements(p_items) item
-    group by 1, 2, 3
-    order by 1, 2 nulls first, 3 nulls first
-  loop
-    if v_item.product_id is null or v_item.quantity is null or v_item.quantity <= 0
-       or (v_item.variant_id is not null and v_item.conditioned_stock_id is not null) then
-      raise exception 'CHECKOUT_ITEMS_INVALID';
-    end if;
-
-    v_available := public.available_stock_for_session(
-      v_item.product_id,
-      v_item.variant_id,
-      v_item.conditioned_stock_id,
-      p_session_id
-    );
-
-    if v_available is null or v_available < v_item.quantity then
-      raise exception 'CHECKOUT_STOCK_INSUFFICIENT';
-    end if;
-
-    insert into public.stock_reservations (
-      session_id, user_id, product_id, variant_id,
-      conditioned_stock_id, quantity, order_id, expires_at
-    ) values (
-      p_session_id, v_order_user_id, v_item.product_id, v_item.variant_id,
-      v_item.conditioned_stock_id, v_item.quantity, p_order_id, v_expiry
-    );
-    v_reserved := v_reserved + 1;
-  end loop;
-
-  perform public.decrement_checkout_inventory(p_items);
-
-  return jsonb_build_object(
-    'validated', true,
-    'reserved', v_reserved,
-    'expires_at', v_expiry
-  );
 end;
 $function$;
 

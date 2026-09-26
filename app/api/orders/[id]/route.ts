@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
+import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reservation-window"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const CUSTOMER_ORDER_DETAIL_SELECT =
@@ -74,16 +75,26 @@ export async function GET(
     return NextResponse.json({ error: "No encontramos la compra." }, { status: 404 })
   }
 
-  const safeOrder = {
-    ...(order as unknown as SupabasePedido),
-    // Auditoría Andreani Parte 4/4: mismo motivo que /api/orders -- ver
-    // lib/orders/customer-order-audit-view.ts.
-    order_audit_events: toCustomerSafeOrderAuditEvents(
-      (order as unknown as SupabasePedido).order_audit_events,
-    ),
+  // Vencimiento original de la reserva de 20 minutos (sólo lectura).
+  let withReservation: SupabasePedido
+  try {
+    const [attached] = await attachTransferReservationDeadlines(admin, [order as unknown as SupabasePedido])
+    withReservation = attached
+  } catch {
+    return NextResponse.json(
+      { error: "No se pudo cargar la compra." },
+      { status: 500 },
+    )
   }
 
-  return NextResponse.json({ order: safeOrder }, {
+  const safeOrder = {
+    ...withReservation,
+    // Auditoría Andreani Parte 4/4: mismo motivo que /api/orders -- ver
+    // lib/orders/customer-order-audit-view.ts.
+    order_audit_events: toCustomerSafeOrderAuditEvents(withReservation.order_audit_events),
+  }
+
+  return NextResponse.json({ order: safeOrder, server_now: new Date().toISOString() }, {
     headers: { "Cache-Control": "private, no-store" },
   })
 }

@@ -41,15 +41,21 @@ import {
   createTransferEconomicFingerprint,
   getPendingTransferCheckoutAction,
   getTransferCheckoutIdempotencyKey,
+  retireExpiredTransferAttempt,
   supersedeStaleTransferOrder,
   type PendingCheckoutOrderRow,
 } from "@/lib/orders/transfer-checkout-attempt"
+import {
+  isTransferReservationActive,
+  loadTransferReservationDeadline,
+} from "@/lib/orders/transfer-reservation-window"
 import {
   createMercadoPagoSupersedeDependencies,
   supersedeStaleMercadoPagoOrder,
   type SupersedableMercadoPagoOrder,
 } from "@/lib/mercadopago/checkout-supersede"
 import {
+  CheckoutReservationExpiredError,
   MissingReservationSessionError,
   normalizeReservationSessionId,
 } from "@/lib/orders/checkout-inventory"
@@ -74,7 +80,7 @@ const ORDER_BEING_CREATED_MESSAGE =
   "El pedido ya se está creando. Esperá unos segundos y volvé a intentarlo."
 
 const PENDING_ORDER_SELECT =
-  "id, created_at, estado, usuario_id, total, external_amount_due, credit_balance_used, payment_method_id, payment_status, financial_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, transfer_amount_declared, store_benefit_id, checkout_idempotency_key, pricing_snapshot, installments_count, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, andreani_creation_status, andreani_envio_id"
+  "id, created_at, estado, usuario_id, total, external_amount_due, credit_balance_used, payment_method_id, payment_status, financial_status, payment_proof_url, payment_proof_uploaded_at, transfer_verification_status, transfer_verification_attempts, transfer_amount_declared, transfer_payer_dni, transfer_matched_payment_id, store_benefit_id, checkout_idempotency_key, pricing_snapshot, installments_count, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, andreani_creation_status, andreani_envio_id"
 
 function normalizeExpectedTotal(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -286,10 +292,15 @@ export async function POST(request: Request) {
 
     // ── Pedido pendiente previo de esta misma compra ──
     let supersededOrder: PendingOrder | null = null
-    if (pendingOrder) {
-      const response = await resolvePendingOrder(admin, pendingOrder, economicFingerprint)
-      if (response) return response
-      supersededOrder = pendingOrder
+    if (pendingOrder && customerCheckoutFingerprint) {
+      const resolution = await resolvePendingOrder(
+        admin,
+        pendingOrder,
+        economicFingerprint,
+        customerCheckoutFingerprint,
+      )
+      if (resolution instanceof Response) return resolution
+      if (resolution === "superseded") supersededOrder = pendingOrder
     }
 
     // ── Reclamos atómicos: el estado real tiene que seguir siendo el calculado ──
@@ -417,7 +428,9 @@ export async function POST(request: Request) {
       throw new Error(orderError?.message || "No se pudo crear la orden.")
     }
 
-    await insertCheckoutOrderItemsAndValidateInventory({
+    // Compromete la reserva vigente del Paso 3 sin renovarla: el pedido
+    // hereda su expires_at original (elegir transferencia no suma minutos).
+    const reservationExpiresAt = await insertCheckoutOrderItemsAndValidateInventory({
       orderClient,
       admin,
       orderId: order.id,
@@ -425,8 +438,10 @@ export async function POST(request: Request) {
       products: catalog.products,
       conditionedRows: catalog.conditionedRows,
       reservationSessionId: checkoutSessionId,
+      reservationCommitment: "transferencia",
       insertErrorMessage: "No se pudieron crear los items de la orden.",
     })
+    if (!reservationExpiresAt) throw new CheckoutReservationExpiredError()
 
     if (user && pricing.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {
@@ -479,6 +494,13 @@ export async function POST(request: Request) {
 
     if (error instanceof MissingReservationSessionError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (error instanceof CheckoutReservationExpiredError) {
+      return NextResponse.json(
+        { code: "RESERVATION_EXPIRED", error: error.message },
+        { status: 409 },
+      )
     }
 
     if (error instanceof InvalidCheckoutItemsError) {
@@ -545,15 +567,35 @@ function existingTransferOrderResponse(order: Pick<PendingOrder, "id">) {
 
 /**
  * Devuelve la respuesta si el pedido pendiente resuelve la request (mismo
- * pedido, o no se puede dar de baja), o `null` si se dio de baja y hay que
- * crear el pedido nuevo con los valores actuales.
+ * pedido, o no se puede dar de baja), o cómo se liberó ("superseded" si se
+ * dio de baja, "detached" si se conservó desligado) para crear el pedido
+ * nuevo con los valores actuales.
  */
 async function resolvePendingOrder(
   admin: AdminClient,
   order: PendingOrder,
   economicFingerprint: string,
-): Promise<Response | null> {
+  customerCheckoutFingerprint: string,
+): Promise<Response | "superseded" | "detached"> {
   const action = getPendingTransferCheckoutAction(order, economicFingerprint)
+
+  // Un pedido por transferencia con la reserva de 20 minutos vencida nunca se
+  // reanuda: el cliente ya está compitiendo por stock con una reserva nueva.
+  if (
+    action !== "mercadopago_attempt" &&
+    order.payment_method_id === "transferencia" &&
+    !isTransferReservationActive(await loadTransferReservationDeadline(admin, order.id))
+  ) {
+    const retired = await retireExpiredTransferAttempt(admin, order, {
+      customerCheckoutFingerprint,
+      currentEconomicFingerprint: economicFingerprint,
+    })
+    if (retired !== "busy") return retired
+    return NextResponse.json(
+      { error: ORDER_BEING_CREATED_MESSAGE },
+      { status: 409, headers: { "Retry-After": "3" } },
+    )
+  }
 
   if (action === "resume_equivalent") {
     return existingTransferOrderResponse(order)
@@ -574,7 +616,7 @@ async function resolvePendingOrder(
 
     switch (result) {
       case "superseded":
-        return null
+        return "superseded"
       case "already_paid":
         return NextResponse.json(
           { error: "Esta compra ya fue pagada con Mercado Pago." },
@@ -605,7 +647,7 @@ async function resolvePendingOrder(
     currentEconomicFingerprint: economicFingerprint,
   })
 
-  if (result === "superseded") return null
+  if (result === "superseded") return "superseded"
 
   if (result === "payment_in_review") {
     return NextResponse.json(

@@ -12,10 +12,12 @@ import {
   getPendingTransferCheckoutAction,
   getTransferCheckoutIdempotencyKey,
   isTransferOrderSupersedable,
+  retireExpiredTransferAttempt,
   supersedeStaleTransferOrder,
   TRANSFER_SUPERSEDED_PAYMENT_STATUS,
   type PendingCheckoutOrderRow,
 } from "./transfer-checkout-attempt.ts"
+import { TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS } from "./transfer-verification-reasons.ts"
 
 interface Scenario {
   unitPrice?: number
@@ -248,7 +250,9 @@ test("un pedido con comprobante, verificación iniciada o pago informado NUNCA s
     { payment_proof_uploaded_at: "2026-09-23T15:00:00.000Z" },
     { transfer_verification_status: "checking" },
     { transfer_verification_status: "manual_review" },
-    { transfer_amount_declared: 55_000 },
+    { transfer_verification_status: "pending", transfer_verification_attempts: 1 },
+    { transfer_matched_payment_id: "177895301225" },
+    { payment_status: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS },
     { payment_status: "en_revision" },
     { financial_status: "payment_confirmed" },
     { estado: "pagado" },
@@ -276,8 +280,9 @@ test("la baja es un UPDATE condicional (re-verifica sin rastro de pago), devuelv
     '["eq","estado","pendiente"]',
     '["is","payment_proof_url",null]',
     '["is","payment_proof_uploaded_at",null]',
-    '["is","transfer_verification_status",null]',
-    '["is","transfer_amount_declared",null]',
+    '["is","transfer_matched_payment_id",null]',
+    '["or","transfer_verification_status.is.null,transfer_verification_status.eq.pending"]',
+    '["eq","transfer_verification_attempts",0]',
   ]) {
     assert.ok(filters.includes(expected), expected)
   }
@@ -291,6 +296,137 @@ test("la baja es un UPDATE condicional (re-verifica sin rastro de pago), devuelv
     { currentEconomicFingerprint: current },
   )
   assert.equal(raceLost, "busy")
+})
+
+test("un pedido real nace con transfer_verification_status='pending' (default de la columna): sin intentos sigue sin rastro de pago", () => {
+  const state = evaluate()
+  assert.equal(
+    isTransferOrderSupersedable(
+      pendingTransfer(state, { transfer_verification_status: "pending", transfer_verification_attempts: 0 }),
+    ),
+    true,
+  )
+  assert.equal(
+    isTransferOrderSupersedable(
+      pendingTransfer(state, { transfer_verification_status: "pending", transfer_verification_attempts: 1 }),
+    ),
+    false,
+    "un verify prematuro ya es rastro: puede haber una transferencia tardía",
+  )
+})
+
+test("20. nuevo intento con la reserva vencida: sin rastro se da de baja, nunca se reanuda el pedido viejo", async () => {
+  const state = evaluate()
+  const admin = createFakeAdmin()
+  const result = await retireExpiredTransferAttempt(
+    admin.client,
+    pendingTransfer(state, { transfer_verification_status: "pending", transfer_verification_attempts: 0 }),
+    { customerCheckoutFingerprint: "customer-fp", currentEconomicFingerprint: state.economicFingerprint },
+  )
+  assert.equal(result, "superseded")
+  const cancel = admin.operations.find((operation) => operation.table === "ordenes" && operation.kind === "update")
+  assert.equal((cancel?.payload as { estado: string }).estado, "cancelado")
+  const audit = admin.operations.find((operation) => operation.table === "order_audit_events")
+  assert.equal((audit?.payload as { metadata: { reason: string } }).metadata.reason, "reservation_expired")
+})
+
+test("20. nuevo intento con la reserva vencida y transferencia informada: el pedido viejo se conserva (detección tardía) pero se desliga", async () => {
+  const state = evaluate()
+  const admin = createFakeAdmin()
+  const result = await retireExpiredTransferAttempt(
+    admin.client,
+    pendingTransfer(state, {
+      transfer_verification_status: "pending",
+      transfer_verification_attempts: 2,
+      transfer_payer_dni: "30111222",
+      transfer_amount_declared: state.pricing.externalAmountDue,
+    }),
+    { customerCheckoutFingerprint: "customer-fp", currentEconomicFingerprint: state.economicFingerprint },
+  )
+  assert.equal(result, "detached")
+  const update = admin.operations.find((operation) => operation.table === "ordenes" && operation.kind === "update")
+  assert.deepEqual(update?.payload, { customer_checkout_fingerprint: null }, "no se cancela ni se toca su pago")
+  const filters = JSON.stringify(update?.filters)
+  assert.ok(filters.includes('["eq","estado","pendiente"]'))
+  assert.ok(filters.includes('["eq","customer_checkout_fingerprint","customer-fp"]'))
+  assert.deepEqual(admin.rpcCalls, [], "no reintegra saldo: el pedido sigue vivo")
+
+  const raceLost = await retireExpiredTransferAttempt(
+    createFakeAdmin({ updateMatches: false }).client,
+    pendingTransfer(state, { transfer_verification_attempts: 1 }),
+    { customerCheckoutFingerprint: "customer-fp", currentEconomicFingerprint: state.economicFingerprint },
+  )
+  assert.equal(raceLost, "busy")
+})
+
+test("A4. reserva vencida sin evidencia de pago pero reteniendo saldo/beneficio: se da de baja y se devuelven una sola vez", async () => {
+  const state = evaluate()
+  const admin = createFakeAdmin()
+  const result = await retireExpiredTransferAttempt(
+    admin.client,
+    pendingTransfer(state, {
+      transfer_verification_status: "pending",
+      transfer_verification_attempts: 3,
+      transfer_payer_dni: "30111222",
+      transfer_amount_declared: state.pricing.externalAmountDue,
+      credit_balance_used: 2_000,
+      store_benefit_id: "benefit-1",
+    }),
+    { customerCheckoutFingerprint: "customer-fp", currentEconomicFingerprint: state.economicFingerprint },
+  )
+  assert.equal(result, "superseded")
+  const cancel = admin.operations.find((operation) => operation.table === "ordenes" && operation.kind === "update")
+  const filters = JSON.stringify(cancel?.filters)
+  for (const expected of [
+    '["is","payment_proof_url",null]',
+    '["is","transfer_matched_payment_id",null]',
+    '["or","transfer_verification_status.is.null,transfer_verification_status.eq.pending"]',
+  ]) assert.ok(filters.includes(expected), expected)
+  assert.ok(!filters.includes("transfer_verification_attempts"), "reintentos sin transferencia encontrada no son evidencia")
+  assert.deepEqual(admin.rpcCalls, ["reverse_customer_credit_for_order"])
+  assert.ok(admin.operations.some((operation) => operation.table === "customer_store_benefits" && operation.kind === "update"))
+
+  const lost = createFakeAdmin({ updateMatches: false })
+  assert.equal(
+    await retireExpiredTransferAttempt(lost.client, pendingTransfer(state, { credit_balance_used: 2_000 }), {
+      customerCheckoutFingerprint: "customer-fp",
+      currentEconomicFingerprint: state.economicFingerprint,
+    }),
+    "busy",
+  )
+  assert.deepEqual(lost.rpcCalls, [], "quien pierde la carrera nunca devuelve saldo: jamás se duplica")
+})
+
+test("A4. reserva vencida con evidencia real de pago: conserva saldo y beneficio hasta la resolución", async () => {
+  const state = evaluate()
+  for (const overrides of [
+    { payment_proof_url: "proofs/700.pdf", payment_status: "en_revision" },
+    { payment_status: TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS, transfer_matched_payment_id: "p-1" },
+    { transfer_verification_status: "manual_review", transfer_verification_attempts: 1 },
+    { transfer_verification_status: "checking", transfer_verification_attempts: 1 },
+  ] satisfies Array<Partial<PendingCheckoutOrderRow>>) {
+    const admin = createFakeAdmin()
+    const result = await retireExpiredTransferAttempt(
+      admin.client,
+      pendingTransfer(state, { credit_balance_used: 2_000, store_benefit_id: "benefit-1", ...overrides }),
+      { customerCheckoutFingerprint: "customer-fp", currentEconomicFingerprint: state.economicFingerprint },
+    )
+    assert.equal(result, "detached", JSON.stringify(overrides))
+    assert.deepEqual(admin.rpcCalls, [])
+    assert.ok(!admin.operations.some((operation) => operation.table === "customer_store_benefits"))
+  }
+})
+
+test("la ruta nunca reanuda un pedido por transferencia con la reserva vencida", () => {
+  const route = readFileSync(
+    new URL("../../app/api/transferencia/create-order/route.ts", import.meta.url),
+    "utf8",
+  )
+  const resolver = route.slice(route.indexOf("async function resolvePendingOrder("))
+  const expiredCheck = resolver.indexOf("isTransferReservationActive(await loadTransferReservationDeadline(admin, order.id))")
+  assert.ok(expiredCheck > 0)
+  assert.ok(expiredCheck < resolver.indexOf('if (action === "resume_equivalent")'))
+  assert.match(resolver, /retireExpiredTransferAttempt\(admin, order,/)
 })
 
 test("reemplazar un pedido de la MISMA sesión no choca contra su clave idempotente", () => {

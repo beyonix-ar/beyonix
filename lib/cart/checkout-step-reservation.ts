@@ -2,6 +2,13 @@ import type { StockReservationItem } from "./stock-reservations"
 
 export const CHECKOUT_STEP_RESERVATION_KEY = "beyonix-checkout-step-3-reservation"
 
+/**
+ * Plazo COMERCIAL para pagar, igual para todos los medios: la reserva de stock
+ * del Paso 3 (checkout_step_reservation_ttl() en la base). No confundir con la
+ * ventana técnica interna de conciliación de transferencias (48 h).
+ */
+export const CHECKOUT_RESERVATION_MINUTES = 20
+
 export function reservationItemsFromCart(items: ReadonlyArray<{
   product: { id: number }
   quantity: number

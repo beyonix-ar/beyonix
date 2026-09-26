@@ -159,7 +159,8 @@ test("8-9. saldo a favor: cliente y admin muestran resolución, detalle y monto"
     const customer = await text(page, CUSTOMER)
     assert.match(customer, /^Resolución del reclamo Resolución Saldo a favor Detalle Se acreditaron \$27\.900 en tu cuenta BEYONIX\. Saldo acreditado \$\s?27\.900$/)
     const admin = await text(page, ADMIN)
-    assert.match(admin, /^Reclamo finalizado Resolución Saldo a favor Detalle Se acreditaron \$27\.900 en tu cuenta BEYONIX\. Saldo acreditado \$\s?27\.900/)
+    // Desde el wizard de reclamos (507b007) el cierre muestra su fecha debajo del título.
+    assert.match(admin, /^Reclamo finalizado \d{1,2}\/\d{1,2}\/\d{2,4}, [^R]+ Resolución Saldo a favor Detalle Se acreditaron \$27\.900 en tu cuenta BEYONIX\. Saldo acreditado \$\s?27\.900/)
     assert.equal(await page.locator(CUSTOMER).isVisible(), true)
     assert.equal(await page.locator(ADMIN).isVisible(), true)
     // El aviso de "solución en proceso" no convive con la resolución final.
@@ -175,7 +176,7 @@ test("7. rechazo: bloque único con motivo (sin duplicar el aviso anterior)", as
     // (el bloque de rechazo anterior lo repetía una tercera vez).
     const customerText = await page.locator("#customer-root").innerText()
     assert.equal(customerText.split("daño por mal uso").length - 1, 2, "sin el bloque de rechazo anterior")
-    assert.match(await text(page, ADMIN), /^Reclamo rechazado Resolución Reclamo no aprobado Detalle Motivo: El producto presenta daño por mal uso\./)
+    assert.match(await text(page, ADMIN), /^Reclamo rechazado \d{1,2}\/\d{1,2}\/\d{2,4}, [^R]+ Resolución Reclamo no aprobado Detalle Motivo: El producto presenta daño por mal uso\./)
   } finally { await page.close() }
 })
 

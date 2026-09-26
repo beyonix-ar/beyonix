@@ -219,7 +219,10 @@ export interface SupabasePedido {
   total: number
   original_total?: number | null
   credit_balance_used?: number | null
+  store_benefit_id?: string | null
   external_amount_due?: number | null
+  /** Derivado (no es columna): expires_at original de la reserva de un pedido por transferencia que espera el pago. */
+  transfer_reservation_expires_at?: string | null
   payment_composition?: {
     credit_balance_used?: number
     external_amount_due?: number
@@ -684,6 +687,8 @@ export interface CustomerOrderSummary {
   estado: string
   payment_status?: string | null
   payment_method_id?: string | null
+  /** Derivado (no es columna): expires_at original de la reserva de un pedido por transferencia que espera el pago. */
+  transfer_reservation_expires_at?: string | null
   financial_status?: OrderFinancialStatus | null
   delivered_at?: string | null
   payment_proof_url?: string | null

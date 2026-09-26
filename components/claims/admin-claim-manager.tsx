@@ -1872,7 +1872,7 @@ export function AdminClaimManager({
           ? "Este pedido todavía no tiene mensajes previos a la entrega."
           : "Este pedido todavía no tiene mensajes ni reclamos."
     return (
-      <div className="admin-claim-manager admin-ds-card mt-3 overflow-hidden">
+      <div className="admin-claim-manager admin-ds-card mt-3 overflow-hidden border">
         <section className="p-4">
           <h3 className="text-base font-black text-white">{title}</h3>
           <p className="mt-1 text-sm text-white/66">{emptyDescription}</p>

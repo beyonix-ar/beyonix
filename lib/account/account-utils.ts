@@ -261,6 +261,12 @@ export function getPaymentProgressLabel(order: PaymentProgressFields) {
     return "Cancelado por falta de pago"
   }
 
+  // Transferencia real recibida con el pedido ya cancelado: no se aplicó a
+  // ninguna compra y la revisa el equipo (nunca "cancelado" a secas).
+  if (paymentStatus === "approved_after_cancellation") {
+    return "Pago recibido tras cancelar (en revisión)"
+  }
+
   if ((order.estado ?? "").toLowerCase() === "cancelado") {
     return "Pedido cancelado"
   }
@@ -292,7 +298,8 @@ export function getPaymentProgressLabel(order: PaymentProgressFields) {
     return "Comprobante rechazado"
   }
 
-  return "Comprobante pendiente"
+  // El vencimiento de la reserva lo muestra TransferReservationNotice.
+  return "Pago pendiente"
 }
 
 export function isAndreaniOrderInTransit(order: SupabasePedido) {

@@ -7,6 +7,7 @@ import { searchIncomingBankTransfers } from "../mercadopago/bank-transfer-search
 import type { BankTransferSearchResult } from "../mercadopago/bank-transfer-search.ts"
 import {
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
   TRANSFER_VERIFICATION_CUSTOMER_MAX_ATTEMPTS,
   TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
   getTransferMatchWindow,
@@ -195,7 +196,7 @@ export interface TransferVerificationDependencies {
  * apareciera después. La RPC de confirmación sigue revalidando la unicidad
  * bajo lock: esto sólo evita elegir un candidato que ya no está disponible.
  */
-async function loadPaymentIdsClaimedByOtherOrders(
+export async function loadPaymentIdsClaimedByOtherOrders(
   admin: AdminClient,
   orderId: number,
   paymentIds: string[],
@@ -481,7 +482,20 @@ export async function attemptTransferAutoVerification(
   // lanza una excepción: devuelve la orden ya actualizada con este
   // payment_status. Ya no es un error a interpretar acá, sólo un resultado
   // distinto a "verified".
+  //
+  // Una transferencia detectada después de los 20 minutos de reserva llega
+  // acá sin garantía de stock: guard_transfer_reservation_confirmation la
+  // revalida bajo lock y, si ya no alcanza, termina en este conflicto
+  // controlado (nunca sobreventa, nunca "pago rechazado").
   if (confirmedOrder.payment_status === TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS) {
+    await sendOrderStatusEmail({
+      to: confirmedOrder.cliente_email,
+      subject: `Recibimos tu transferencia BX-${1000 + confirmedOrder.id}`,
+      html: `
+        <h1>Recibimos tu transferencia</h1>
+        <p>Hola ${confirmedOrder.cliente_nombre ?? ""}, ${TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE}</p>
+      `,
+    })
     return {
       status: "manual_review",
       reason: "stock_conflict",

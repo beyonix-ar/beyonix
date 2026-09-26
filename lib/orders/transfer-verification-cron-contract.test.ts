@@ -14,8 +14,10 @@ test("el cron de reintentos de transferencias exige CRON_SECRET antes de correr 
   const guard = routeSource.match(
     /if\s*\(\s*![\s\S]*?isCronRequestAuthorized\([\s\S]*?\)\s*\)\s*\{([\s\S]*?)\n\s*\}/,
   )
-  const batchCallIndex = routeSource.indexOf(
-    "retryPendingTransferVerifications(createAdminClient())",
+  const batchCallIndex = routeSource.indexOf("retryPendingTransferVerifications(admin)")
+  assert.ok(
+    routeSource.indexOf("detectTransferPaymentsAfterCancellation(admin)") > batchCallIndex,
+    "la detección de pagos sobre pedidos cancelados también corre detrás del guard",
   )
 
   assert.ok(guard?.index !== undefined, "Falta el guard de autorización")

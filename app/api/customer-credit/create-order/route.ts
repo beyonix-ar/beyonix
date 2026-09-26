@@ -47,6 +47,7 @@ import {
   CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE,
   hasAcceptedCheckoutTerms,
 } from "@/lib/orders/checkout-order-creation"
+import { CheckoutReservationExpiredError } from "@/lib/orders/checkout-inventory"
 import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -273,6 +274,9 @@ export async function POST(request: Request) {
     }
 
     orderId = order.id
+    // Misma regla que transferencia y Mercado Pago: compromete la reserva
+    // vigente del Paso 3 sin renovarla. Vencida o ajena -> RESERVATION_EXPIRED
+    // y el pedido incompleto se borra antes de debitar saldo.
     await insertCheckoutOrderItemsAndValidateInventory({
       orderClient: admin,
       admin,
@@ -281,6 +285,7 @@ export async function POST(request: Request) {
       products: catalog.products,
       conditionedRows: catalog.conditionedRows,
       reservationSessionId: payload.reservationSessionId,
+      reservationCommitment: "customer_credit",
     })
 
     await applyCustomerCreditToOrder(admin, {
@@ -378,6 +383,13 @@ export async function POST(request: Request) {
 
     if (error instanceof InvalidCheckoutItemsError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (error instanceof CheckoutReservationExpiredError) {
+      return NextResponse.json(
+        { code: "RESERVATION_EXPIRED", error: error.message },
+        { status: 409 },
+      )
     }
 
     const stockConflict =

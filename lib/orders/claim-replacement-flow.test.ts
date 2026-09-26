@@ -1,13 +1,34 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
+  formatPendingReceptionMessage,
   getClaimProgressSteps,
+  getPendingOriginalReception,
   getReplacementFlow,
   sumReplacedUnits,
   sumClaimReplacedUnits,
   type ReplacementFlowInput,
 } from "./claim-replacement-flow.ts"
+
+test("B2: faltan unidades por recibir -> el reemplazo exige la excepción explícita", () => {
+  assert.equal(getPendingOriginalReception(3, 1), 2)
+  assert.equal(getPendingOriginalReception(2, 2), 0)
+  assert.equal(getPendingOriginalReception(1, 4), 0, "recepción de más no genera pendientes negativas")
+  assert.equal(getPendingOriginalReception(0, 0), 0, "sin reclamo de cambio no hay pendientes")
+  assert.equal(getPendingOriginalReception(Number.NaN, 1), 0)
+  assert.equal(
+    formatPendingReceptionMessage(1),
+    "Faltan recibir 1 unidad del producto original. Registrá la recepción o marcá «Continuar sin recepción previa».",
+  )
+  assert.match(formatPendingReceptionMessage(2), /Faltan recibir 2 unidades/)
+
+  const modal = readFileSync(new URL("../../app/admin/sections/pedidos/order-replacements.tsx", import.meta.url), "utf8")
+  assert.match(modal, /const pendingReception = warranty \? 0 : getPendingOriginalReception\(claimedUnits, received\)/)
+  assert.match(modal, /const valid = Boolean\(item && variant && matchingClaims\.length <= 1 && pendingReception === 0 &&/)
+  assert.match(modal, /<dt>Recibimos del cliente<\/dt>/)
+})
 
 const base: ReplacementFlowInput = {
   status: "aprobado",

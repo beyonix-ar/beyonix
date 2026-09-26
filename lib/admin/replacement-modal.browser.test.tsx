@@ -487,7 +487,7 @@ test("caso normal: ítem fijo, sin buscador, variante original preseleccionada y
     assert.equal(await modal.getByText("Buscar producto de reemplazo").count(), 0)
     assert.equal(await modal.getByText("Producto de reemplazo", { exact: true }).count(), 0)
     // 14. Pendientes de reemplazo = cálculo actual (recibidas − ya reemplazadas).
-    assert.deepEqual(await statTexts(page), ["Recibimos 1", "Ya reemplazadas 0", "Pendientes de reemplazo 1"])
+    assert.deepEqual(await statTexts(page), ["Recibimos del cliente 1", "Ya reemplazadas 0", "Pendientes de reemplazo 1"])
     // 4. Sólo variantes del mismo producto (no el aro del mismo pedido).
     assert.deepEqual(await optionTexts(page), [
       "Elegir variante",
@@ -588,7 +588,7 @@ test("varios ítems reclamados: pide el ítem original y filtra variantes por su
 
     // 15. Historial del flujo anterior (otro_producto) se sigue listando y contando.
     await itemSelect.selectOption("72")
-    assert.deepEqual(await statTexts(page), ["Recibimos 1", "Ya reemplazadas 1", "Pendientes de reemplazo 0"])
+    assert.deepEqual(await statTexts(page), ["Recibimos del cliente 1", "Ya reemplazadas 1", "Pendientes de reemplazo 0"])
     // Aro: una sola variante -> automática, sin select de variante.
     assert.equal(await modal.locator("select").count(), 1)
     assert.match(await modal.getByTestId("replacement-variant").innerText(), /Blanco[\s\S]*SKU ARO1[\s\S]*Stock 4/)
@@ -686,6 +686,12 @@ test("tooltips (?) aparecen con hover y con foco de teclado, sin recortarse", as
         await page.waitForTimeout(180)
         const box = (await bubble.boundingBox())!
         assert.ok(box.x >= 0 && box.x + box.width <= width, `${labels[index]} (${width}px): dentro del ancho (${box.x}..${box.x + box.width})`)
+        // Completamente visible dentro del modal (el de Stock se cortaba a la izquierda).
+        const modalBox = (await dialog(page).boundingBox())!
+        assert.ok(
+          box.x >= modalBox.x && box.x + box.width <= modalBox.x + modalBox.width,
+          `${labels[index]} (${width}px): dentro del modal (${box.x}..${box.x + box.width} vs ${modalBox.x}..${modalBox.x + modalBox.width})`,
+        )
         const opacity = await bubble.evaluate((node) => getComputedStyle(node).opacity)
         assert.equal(opacity, "1")
         await page.mouse.move(0, 0)

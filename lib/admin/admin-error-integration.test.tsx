@@ -297,9 +297,13 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     assert.match(writeOffDialog.textContent || "", /Baja o pérdida1/)
     await act(async () => [...writeOffDialog.querySelectorAll("button")].find((button) => button.textContent === "Cancelar")!.click())
     assert.equal(receptionCalls, 1, "cancelar no registra la recepción")
-    // Stepper: Decisión completa, Recepción actual, Reemplazo y Entrega pendientes.
-    const stepper = [...document.querySelectorAll(".admin-claim-stepper-item")].map((item) => `${item.textContent}:${item.className}`)
-    assert.deepEqual(stepper.map((entry) => entry.replace(/^.*?(Decisión|Recepción|Reemplazo|Entrega).*?is-(\w+).*$/, "$1=$2")), ["Decisión=done", "Recepción=current", "Reemplazo=pending", "Entrega=pending"])
+    // Progreso: el stepper del panel se reemplazó por el wizard de
+    // AdminClaimManager (507b007). Aprobado + cambio de producto sin unidades
+    // recibidas: Revisión hecha, Recepción actual, Reemplazo y Entrega después.
+    const { getAdminClaimWizard } = await import("../orders/admin-claim-wizard")
+    const wizard = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: null })
+    assert.deepEqual(wizard.steps.map((step) => step.label), ["Revisión", "Recepción", "Reemplazo", "Entrega", "Finalización"])
+    assert.equal(wizard.current, "reception")
     const { formatAuditDescription } = await import("../../app/admin/sections/auditoria/audit-helpers")
     const cases: [string, Record<string, unknown>, RegExp][] = [
       ["external_sales", { product_name: "Ñandú", quantity: 2, net_amount: 2000 }, /Venta externa registrada/],

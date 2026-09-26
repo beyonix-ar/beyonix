@@ -12,7 +12,13 @@ import {
 import {
   canUploadTransferProof,
   isRetryableManualReviewReason,
+  TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
 } from "@/lib/orders/transfer-verification-reasons"
+import {
+  isTransferReservationActive,
+  loadTransferReservationDeadline,
+} from "@/lib/orders/transfer-reservation-window"
+import { CheckoutReservationExpiredError } from "@/lib/orders/checkout-inventory"
 import { validateTransferDeclaration } from "@/lib/payments/transfer-declaration"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -67,7 +73,9 @@ function safeVerificationResponse(
     proofUploadAvailable: !verified,
     message: verified
       ? "Verificamos tu transferencia automáticamente."
-      : "No pudimos validar tu transferencia automáticamente.",
+      : result.status === "manual_review" && result.reason === "stock_conflict"
+        ? TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE
+        : "No pudimos validar tu transferencia automáticamente.",
   }
 }
 
@@ -131,6 +139,24 @@ export async function POST(
       return NextResponse.json(
         { error: "Este pedido no corresponde a transferencia bancaria.", proofUploadAvailable: false },
         { status: 400 },
+      )
+    }
+
+    // Ventana comercial: la verificación iniciada por el cliente sólo existe
+    // mientras siga vigente la reserva original del Paso 3. Una pestaña vieja
+    // o una llamada directa no puede reabrirla. Una transferencia tardía ya
+    // informada la sigue buscando el cron, con revalidación de stock al
+    // confirmar (guard_transfer_reservation_confirmation).
+    const reservationExpiresAt = await loadTransferReservationDeadline(admin, pedidoId)
+    if (!isTransferReservationActive(reservationExpiresAt)) {
+      return NextResponse.json(
+        {
+          code: "RESERVATION_EXPIRED",
+          error: new CheckoutReservationExpiredError().message,
+          retryable: false,
+          proofUploadAvailable: false,
+        },
+        { status: 409 },
       )
     }
 

@@ -45,9 +45,16 @@ const PAYMENT_STATUS_CONTENT = {
   },
   vencido_falta_comprobante: {
     title: "Pedido cancelado por falta de pago",
-    description: "No se recibió el comprobante dentro del plazo de 48 hs.",
+    description: "No recibimos el pago del pedido y la reserva de los productos venció.",
     icon: AlertCircle,
     accentClassName: "text-[var(--account-danger)]",
+  },
+  approved_after_cancellation: {
+    title: "Transferencia recibida con el pedido cancelado",
+    description:
+      "Recibimos tu transferencia, pero el pedido ya se había cancelado porque venció la reserva. No la aplicamos a ninguna compra: nuestro equipo se va a comunicar para resolverlo.",
+    icon: AlertCircle,
+    accentClassName: "text-[var(--account-warning)]",
   },
   auto_verified_stock_conflict: {
     title: "Pago identificado, revisando stock",

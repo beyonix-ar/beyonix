@@ -5,13 +5,17 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { CheckCircle2 } from "lucide-react"
 
-import { TransferFlow } from "@/components/checkout/transfer-flow"
+import {
+  TransferFlow,
+  type TransferReservationClock,
+} from "@/components/checkout/transfer-flow"
 import {
   CheckoutStatusCard,
   CheckoutStatusShell,
 } from "@/components/checkout/checkout-status-layout"
 import { useCart } from "@/context/cart-context"
 import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
+import type { TransferBankDetails } from "@/lib/payments/transfer-bank-details"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 function isCheckoutPaymentConfirmed(order: SupabasePedido | null) {
@@ -36,10 +40,19 @@ function CheckoutSuccessContent() {
   const isTransfer = searchParams.get("method") === "transferencia"
   const orderId = Number(searchParams.get("order_id"))
   const [order, setOrder] = useState<SupabasePedido | null>(null)
+  const [reservation, setReservation] = useState<TransferReservationClock | null>(null)
+  const [bankTransfer, setBankTransfer] = useState<TransferBankDetails | null>(null)
   const [orderLoading, setOrderLoading] = useState(isTransfer)
   const [orderError, setOrderError] = useState("")
   const [sessionExpired, setSessionExpired] = useState(false)
   const paymentConfirmed = isCheckoutPaymentConfirmed(order)
+  // Transferencia: el carrito se conserva mientras el pago no esté confirmado
+  // ni informado con comprobante -- si la reserva vence, el cliente vuelve al
+  // inicio con su carrito intacto.
+  const shouldClearCart =
+    !isTransfer ||
+    paymentConfirmed ||
+    Boolean(order?.payment_proof_url || order?.payment_proof_uploaded_at)
   const successReturnUrl = `/checkout/success${
     searchParams.toString() ? `?${searchParams.toString()}` : ""
   }`
@@ -56,11 +69,11 @@ function CheckoutSuccessContent() {
   )
 
   useEffect(() => {
-    if (hasClearedCartRef.current) return
+    if (!shouldClearCart || hasClearedCartRef.current) return
 
     hasClearedCartRef.current = true
     clearCart()
-  }, [clearCart])
+  }, [clearCart, shouldClearCart])
 
   useEffect(() => {
     let active = true
@@ -83,6 +96,8 @@ function CheckoutSuccessContent() {
         })
         const data = (await response.json()) as {
           order?: SupabasePedido
+          reservation?: { expiresAt: string | null; serverNow: string }
+          bankTransfer?: TransferBankDetails | null
           error?: string
         }
 
@@ -95,7 +110,15 @@ function CheckoutSuccessContent() {
           throw new Error(data.error || "No se pudo recuperar el pedido.")
         }
 
-        if (active) setOrder(data.order)
+        if (active) {
+          setReservation(
+            data.reservation
+              ? { ...data.reservation, receivedAt: performance.now() }
+              : null,
+          )
+          setBankTransfer(data.bankTransfer ?? null)
+          setOrder(data.order)
+        }
       } catch (error) {
         if (active) {
           setOrderError(
@@ -168,6 +191,8 @@ function CheckoutSuccessContent() {
           sessionExpired={sessionExpired}
           orderError={orderError}
           order={order}
+          reservation={reservation}
+          bankTransfer={bankTransfer}
           paymentConfirmed={paymentConfirmed}
           onUpdated={(updatedOrder) => void handleProofUploaded(updatedOrder)}
           loginHref={loginHref}

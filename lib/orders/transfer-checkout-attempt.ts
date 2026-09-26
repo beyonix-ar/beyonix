@@ -33,7 +33,10 @@ export interface PendingCheckoutOrderRow {
   payment_proof_url?: string | null
   payment_proof_uploaded_at?: string | null
   transfer_verification_status?: string | null
+  transfer_verification_attempts?: number | null
   transfer_amount_declared?: number | null
+  transfer_payer_dni?: string | null
+  transfer_matched_payment_id?: string | null
   total?: number | null
   external_amount_due?: number | null
   credit_balance_used?: number | null
@@ -74,46 +77,71 @@ export function getPendingTransferCheckoutAction(
 }
 
 /**
- * ¿Se puede dar de baja automáticamente? Sólo si el pedido no tiene NINGÚN
- * rastro de pago: sin comprobante, sin verificación de transferencia
- * iniciada (el cliente puede declarar una transferencia sin comprobante) y
- * sin pago confirmado. Cualquier rastro -> revisión humana, nunca se cancela.
+ * Evidencia REAL de pago: el dinero pudo haber llegado o un humano tiene que
+ * mirarlo (comprobante, payment.id conciliado, pago confirmado / en revisión /
+ * en conflicto, conciliación en curso o en revisión manual). Los datos del
+ * titular (se piden antes de mostrar alias/CVU) y los reintentos que todavía
+ * no encontraron ninguna transferencia NO son evidencia.
+ */
+export function hasTransferPaymentEvidence(order: PendingCheckoutOrderRow) {
+  return (
+    order.estado !== "pendiente" ||
+    !SUPERSEDABLE_TRANSFER_PAYMENT_STATUSES.includes(
+      (order.payment_status ?? "") as (typeof SUPERSEDABLE_TRANSFER_PAYMENT_STATUSES)[number],
+    ) ||
+    ![null, undefined, "pending_payment"].includes(order.financial_status) ||
+    Boolean(order.payment_proof_url || order.payment_proof_uploaded_at) ||
+    Boolean(order.transfer_matched_payment_id) ||
+    ![null, undefined, "pending"].includes(order.transfer_verification_status)
+  )
+}
+
+/**
+ * ¿Se puede dar de baja automáticamente dentro del plazo? Sólo si no hay
+ * evidencia de pago y el cliente tampoco inició una verificación (pudo haber
+ * transferido y estar esperando que aparezca). transfer_verification_status
+ * nace en 'pending' (default de la columna): "sin verificación iniciada" es
+ * null o 'pending' con cero intentos.
  */
 export function isTransferOrderSupersedable(order: PendingCheckoutOrderRow) {
   return (
     order.payment_method_id === "transferencia" &&
-    order.estado === "pendiente" &&
-    SUPERSEDABLE_TRANSFER_PAYMENT_STATUSES.includes(
-      (order.payment_status ?? "") as (typeof SUPERSEDABLE_TRANSFER_PAYMENT_STATUSES)[number],
-    ) &&
-    [null, undefined, "pending_payment"].includes(order.financial_status) &&
-    !order.payment_proof_url &&
-    !order.payment_proof_uploaded_at &&
-    !order.transfer_verification_status &&
-    order.transfer_amount_declared == null
+    !hasTransferPaymentEvidence(order) &&
+    (order.transfer_verification_attempts ?? 0) === 0
   )
+}
+
+function holdsCustomerCreditOrBenefit(order: PendingCheckoutOrderRow) {
+  return Number(order.credit_balance_used ?? 0) > 0 || Boolean(order.store_benefit_id)
 }
 
 export type SupersedeTransferOrderResult = "superseded" | "payment_in_review" | "busy"
 
+export type SupersedeTransferOrderReason = "economic_conditions_changed" | "reservation_expired"
+
 /**
- * Da de baja un pedido por transferencia económicamente obsoleto de la misma
- * compra, para que el cliente continúe con el total actual. Cancela (nunca
- * borra) con UPDATE condicional atómico que re-verifica que siga sin ningún
- * rastro de pago; el trigger `release_order_stock_reservation` libera su
- * reserva; se reintegra el saldo y se libera el beneficio de tienda.
+ * Cancela (nunca borra) un intento sin evidencia de pago con un UPDATE
+ * condicional que la re-verifica bajo el lock de fila; el trigger
+ * `release_order_stock_reservation` libera su reserva. Sólo quien gana ese
+ * UPDATE devuelve saldo (reverse_customer_credit_for_order, idempotente) y
+ * beneficio (sólo si sigue ligado a ESTE pedido): nunca se duplica.
  */
-export async function supersedeStaleTransferOrder(
+async function cancelTransferAttemptWithoutPayment(
   admin: AdminClient,
   order: PendingCheckoutOrderRow,
   {
+    reason,
     currentEconomicFingerprint,
-    now = new Date(),
-  }: { currentEconomicFingerprint: string; now?: Date },
-): Promise<SupersedeTransferOrderResult> {
-  if (!isTransferOrderSupersedable(order)) return "payment_in_review"
-
-  const { data: updated, error } = await admin
+    requireNoVerificationAttempts,
+    now,
+  }: {
+    reason: SupersedeTransferOrderReason
+    currentEconomicFingerprint: string
+    requireNoVerificationAttempts: boolean
+    now: Date
+  },
+): Promise<"superseded" | "busy"> {
+  let update = admin
     .from("ordenes")
     .update({
       estado: "cancelado",
@@ -127,23 +155,27 @@ export async function supersedeStaleTransferOrder(
     .in("payment_status", [...SUPERSEDABLE_TRANSFER_PAYMENT_STATUSES])
     .is("payment_proof_url", null)
     .is("payment_proof_uploaded_at", null)
-    .is("transfer_verification_status", null)
-    .is("transfer_amount_declared", null)
-    .select("id")
-    .maybeSingle()
+    .is("transfer_matched_payment_id", null)
+    .or("transfer_verification_status.is.null,transfer_verification_status.eq.pending")
+  if (requireNoVerificationAttempts) update = update.eq("transfer_verification_attempts", 0)
+
+  const { data: updated, error } = await update.select("id").maybeSingle()
 
   if (error) {
     throw new Error(error.message || "No se pudo actualizar el pedido anterior.")
   }
 
   // Otro request lo tocó entre la lectura y este UPDATE (comprobante,
-  // verificación, otra pestaña): nunca se asume nada.
+  // verificación, cron, otra pestaña): nunca se asume nada.
   if (!updated) return "busy"
 
   if (Number(order.credit_balance_used ?? 0) > 0) {
     await reverseCustomerCreditForOrder(admin, {
       orderId: order.id,
-      description: "Reintegro de saldo: la compra se actualizó con nuevos precios o condiciones",
+      description:
+        reason === "reservation_expired"
+          ? "Reintegro de saldo: la reserva de la compra venció sin pago"
+          : "Reintegro de saldo: la compra se actualizó con nuevos precios o condiciones",
     })
   }
 
@@ -161,7 +193,7 @@ export async function supersedeStaleTransferOrder(
     previousStatus: order.financial_status ?? "pending_payment",
     newStatus: "cancelled",
     metadata: {
-      reason: "economic_conditions_changed",
+      reason,
       previousTotal: order.total ?? null,
       previousExternalAmountDue: order.external_amount_due ?? null,
       previousEconomicFingerprint: order.pricing_snapshot?.economicFingerprint ?? null,
@@ -170,6 +202,104 @@ export async function supersedeStaleTransferOrder(
   })
 
   return "superseded"
+}
+
+/**
+ * Da de baja un pedido por transferencia económicamente obsoleto de la misma
+ * compra (dentro del plazo), para que el cliente continúe con el total actual.
+ */
+export async function supersedeStaleTransferOrder(
+  admin: AdminClient,
+  order: PendingCheckoutOrderRow,
+  {
+    currentEconomicFingerprint,
+    reason = "economic_conditions_changed",
+    now = new Date(),
+  }: {
+    currentEconomicFingerprint: string
+    reason?: SupersedeTransferOrderReason
+    now?: Date
+  },
+): Promise<SupersedeTransferOrderResult> {
+  if (!isTransferOrderSupersedable(order)) return "payment_in_review"
+  return cancelTransferAttemptWithoutPayment(admin, order, {
+    reason,
+    currentEconomicFingerprint,
+    requireNoVerificationAttempts: true,
+    now,
+  })
+}
+
+export type RetireExpiredTransferAttemptResult = "superseded" | "detached" | "busy"
+
+/**
+ * El cliente inicia una compra NUEVA (nueva reserva del Paso 3) mientras el
+ * pedido anterior de la misma compra sigue pendiente con su reserva de 20
+ * minutos vencida. Nunca se reanuda ese pedido (reviviría la reserva vieja):
+ *
+ * 1. Evidencia real de pago -> se conserva con su saldo/beneficio hasta que se
+ *    resuelva (confirmación, conflicto o rechazo); sólo se desliga del índice
+ *    de "compra en curso" para que el intento nuevo no choque contra él.
+ * 2. Sin evidencia y reteniendo saldo a favor o beneficio -> se da de baja y
+ *    se devuelven: no puede quedar saldo/beneficio bloqueado en un pedido que
+ *    nunca recibió un pago.
+ * 3. Sin evidencia, sin nada retenido y con los datos del titular ya
+ *    informados (vio alias/CVU) -> se conserva desligado para que la
+ *    conciliación tardía siga buscando una transferencia (no bloquea nada).
+ * 4. Nunca llegó a ver los datos bancarios -> se da de baja.
+ *
+ * Pedido, payment claim y reserva de ambos intentos quedan separados.
+ */
+export async function retireExpiredTransferAttempt(
+  admin: AdminClient,
+  order: PendingCheckoutOrderRow,
+  {
+    customerCheckoutFingerprint,
+    currentEconomicFingerprint,
+    now = new Date(),
+  }: { customerCheckoutFingerprint: string; currentEconomicFingerprint: string; now?: Date },
+): Promise<RetireExpiredTransferAttemptResult> {
+  const evidence = hasTransferPaymentEvidence(order)
+  const payerDeclared = Boolean(order.transfer_payer_dni) || order.transfer_amount_declared != null
+
+  if (!evidence && (holdsCustomerCreditOrBenefit(order) || !payerDeclared)) {
+    return cancelTransferAttemptWithoutPayment(admin, order, {
+      reason: "reservation_expired",
+      currentEconomicFingerprint,
+      requireNoVerificationAttempts: false,
+      now,
+    })
+  }
+
+  const { data: detached, error } = await admin
+    .from("ordenes")
+    .update({ customer_checkout_fingerprint: null } as never)
+    .eq("id", order.id)
+    .eq("payment_method_id", "transferencia")
+    .eq("estado", "pendiente")
+    .eq("customer_checkout_fingerprint", customerCheckoutFingerprint)
+    .select("id")
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(error.message || "No se pudo actualizar el pedido anterior.")
+  }
+  if (!detached) return "busy"
+
+  await appendOrderAuditEvent(admin, {
+    orderId: order.id,
+    actorType: "system",
+    action: "transfer_checkout_detached_after_reservation_expiry",
+    previousStatus: order.financial_status ?? "pending_payment",
+    newStatus: order.financial_status ?? "pending_payment",
+    metadata: {
+      reason: "reservation_expired",
+      paymentEvidence: evidence,
+      detachedAt: now.toISOString(),
+    },
+  })
+
+  return "detached"
 }
 
 /**

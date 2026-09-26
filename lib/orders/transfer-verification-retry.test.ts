@@ -24,15 +24,19 @@ function createFakeAdmin(rows: Array<Record<string, unknown>>) {
         predicates.push((row) => values.includes(row[key]))
         return builder
       },
-      or: () => {
+      or: (expression: string) => {
+        const cutoff = /transfer_last_verification_at\.lte\.([^,)]+)\)/.exec(expression)?.[1] ?? ""
         predicates.push((row) => {
           const reason = row.transfer_verification_failure_reason
+          const last = row.transfer_last_verification_at
+          const due = last != null && String(last) <= cutoff
           if (row.transfer_verification_status === "pending") {
-            return reason == null
-              ? Number(row.transfer_verification_attempts) > 0
-              : typeof reason === "string" && (AWAITING_TRANSFER_REASONS as readonly string[]).includes(reason)
+            // Datos del titular guardados y ningún intento todavía.
+            if (reason == null && last == null) return true
+            return due && (reason == null ||
+              (typeof reason === "string" && (AWAITING_TRANSFER_REASONS as readonly string[]).includes(reason)))
           }
-          return row.transfer_verification_status === "manual_review" &&
+          return due && row.transfer_verification_status === "manual_review" &&
             typeof reason === "string" && (RETRYABLE_MANUAL_REVIEW_REASONS as readonly string[]).includes(reason)
         })
         return builder
@@ -131,6 +135,26 @@ test("recupera pedidos trabados en 'pending' sin motivo tras un intento (error d
   assert.equal(result.verified, 1)
 })
 
+test("A2: datos del titular guardados antes de ver alias/CVU y ningún 'Verificar' -> el cron igual busca la transferencia", async () => {
+  const attempts: number[] = []
+  const admin = createFakeAdmin([
+    row({ id: 20, transfer_verification_failure_reason: null, transfer_verification_attempts: 0, transfer_last_verification_at: null }),
+    // Sin datos del titular (nunca vio alias/CVU): no hay a quién atribuir.
+    row({ id: 21, transfer_verification_failure_reason: null, transfer_verification_attempts: 0, transfer_last_verification_at: null, transfer_payer_dni: null }),
+    // Intento reciente: respeta el intervalo del tramo.
+    row({ id: 22, transfer_last_verification_at: new Date().toISOString() }),
+  ])
+
+  await retryPendingTransferVerifications(admin, {
+    attempt: async (_admin, { orderId }) => {
+      attempts.push(orderId)
+      return { status: "awaiting_transfer", reason: "no_candidates", order: {} as never }
+    },
+  })
+
+  assert.deepEqual(attempts, [20])
+})
+
 test("nunca reintenta un pedido cuya ventana de conciliación ya venció (no reabre 48hs después)", async () => {
   const attempts: number[] = []
   const oldCreatedAt = new Date(
@@ -190,11 +214,17 @@ test("P1 starvation: la propia consulta SQL ya filtra por motivo reintentable --
 
   const candidateFilter = calls.find((c) => c.method === "or")
   assert.ok(candidateFilter, "debe filtrar estado y motivo en la propia consulta SQL")
+  const expression = String(candidateFilter!.args[0])
+  const cutoff = /transfer_last_verification_at\.lte\.([^,)]+)\)/.exec(expression)?.[1]
+  assert.ok(cutoff && Number.isFinite(Date.parse(cutoff)))
   assert.equal(
-    candidateFilter!.args[0],
-    `and(transfer_verification_status.eq.pending,or(transfer_verification_failure_reason.in.(${AWAITING_TRANSFER_REASONS.join(",")}),and(transfer_verification_failure_reason.is.null,transfer_verification_attempts.gt.0))),` +
-      `and(transfer_verification_status.eq.manual_review,transfer_verification_failure_reason.in.(${RETRYABLE_MANUAL_REVIEW_REASONS.join(",")}))`,
+    expression,
+    `and(transfer_verification_status.eq.pending,or(transfer_verification_failure_reason.in.(${AWAITING_TRANSFER_REASONS.join(",")}),transfer_verification_failure_reason.is.null),transfer_last_verification_at.lte.${cutoff}),` +
+      `and(transfer_verification_status.eq.pending,transfer_verification_failure_reason.is.null,transfer_last_verification_at.is.null),` +
+      `and(transfer_verification_status.eq.manual_review,transfer_verification_failure_reason.in.(${RETRYABLE_MANUAL_REVIEW_REASONS.join(",")}),transfer_last_verification_at.lte.${cutoff})`,
   )
+  // Motivos permanentes (multiple_candidates, stock_conflict, etc.) nunca entran.
+  assert.doesNotMatch(expression, /multiple_candidates|stock_conflict|identification_unavailable/)
   assert.equal(calls.some((c) => c.method === "eq" && c.args[0] === "transfer_verification_status"), false)
 })
 

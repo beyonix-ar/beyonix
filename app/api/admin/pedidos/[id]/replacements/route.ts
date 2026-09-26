@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import {
+  formatPendingReceptionMessage,
+  getPendingOriginalReception,
+} from "@/lib/orders/claim-replacement-flow"
 
 const DIFFERENT_PRODUCT_ERROR =
   "El reemplazo tiene que ser del mismo producto reclamado. Para otro producto, gestioná la devolución con Nota de Crédito / saldo a favor."
@@ -83,11 +87,12 @@ export async function POST(
   // Regla "mismo producto" server-side: la variante enviada tiene que ser del
   // producto del ítem original. La RPC sólo la ejecuta service_role y esta ruta
   // es su único llamador, así que el control vale para todo alta de reemplazo.
-  const [originalItem, replacementVariant] = await Promise.all([
-    auth.admin.from("orden_items").select("producto_id").eq("id", orderItemId).eq("orden_id", orderId).maybeSingle(),
+  const [originalItem, replacementVariant, changeClaims] = await Promise.all([
+    auth.admin.from("orden_items").select("producto_id,return_restocked_quantity,return_written_off_quantity").eq("id", orderItemId).eq("orden_id", orderId).maybeSingle(),
     auth.admin.from("producto_variantes").select("producto_id").eq("id", replacementVariantId).maybeSingle(),
+    auth.admin.from("order_claims").select("id,status,affected_items").eq("order_id", orderId).eq("resolution", "cambio_producto"),
   ])
-  if (originalItem.error || replacementVariant.error) {
+  if (originalItem.error || replacementVariant.error || changeClaims.error) {
     return NextResponse.json({ error: "No se pudo verificar el reemplazo. Reintentá." }, { status: 500 })
   }
   if (!originalItem.data) {
@@ -95,6 +100,28 @@ export async function POST(
   }
   if (!replacementVariant.data || Number(replacementVariant.data.producto_id) !== Number(originalItem.data.producto_id)) {
     return NextResponse.json({ error: DIFFERENT_PRODUCT_ERROR }, { status: 400 })
+  }
+
+  // Recepción previa obligatoria para un cambio de producto: si el reclamo
+  // abarca unidades que todavía no volvieron, sólo se registra con la
+  // excepción explícita "Continuar sin recepción previa" (reason = garantia).
+  // La RPC ya exige recepción por unidad; esto agrega la regla del reclamo
+  // completo y no depende del claimId que envíe el cliente.
+  if (reason !== "garantia") {
+    const claimedUnits = Math.max(0, ...(changeClaims.data ?? [])
+      .filter((claim) => !["cerrado", "rechazado"].includes(String(claim.status)))
+      .map((claim) => (Array.isArray(claim.affected_items) ? claim.affected_items : [])
+        .filter((affected: { order_item_id?: unknown }) => Number(affected?.order_item_id) === orderItemId)
+        .reduce((sum: number, affected: { quantity?: unknown }) => sum + Math.max(0, Number(affected?.quantity) || 0), 0)))
+    const receivedUnits =
+      Number(originalItem.data.return_restocked_quantity || 0) + Number(originalItem.data.return_written_off_quantity || 0)
+    const pendingReception = getPendingOriginalReception(claimedUnits, receivedUnits)
+    if (pendingReception > 0) {
+      return NextResponse.json(
+        { code: "REPLACEMENT_REQUIRES_RECEIVED_ITEM", error: formatPendingReceptionMessage(pendingReception) },
+        { status: 409 },
+      )
+    }
   }
 
   const { data, error } = await auth.admin.rpc("create_order_replacement", {

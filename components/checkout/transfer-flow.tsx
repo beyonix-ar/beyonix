@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   AlertTriangle,
   Check,
@@ -17,14 +18,19 @@ import { CheckoutStatusCard } from "@/components/checkout/checkout-status-layout
 import { CustomerPaymentProof } from "@/components/customer-payment-proof"
 import { PaymentProofUploader } from "@/components/payment-proof-uploader"
 import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
-import { canUploadTransferProof } from "@/lib/orders/transfer-verification-reasons"
+import {
+  canUploadTransferProof,
+  isAwaitingTransferPayment,
+  TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
+  TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+} from "@/lib/orders/transfer-verification-reasons"
+import {
+  formatReservationCountdown,
+  reservationSecondsLeft,
+} from "@/lib/cart/checkout-step-reservation"
 import { formatPublicOrderId } from "@/lib/account/account-formatters"
 import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
-import {
-  TRANSFER_ACCOUNT_HOLDER,
-  TRANSFER_ALIAS,
-  TRANSFER_CVU,
-} from "@/lib/payments/transfer"
+import type { TransferBankDetails } from "@/lib/payments/transfer-bank-details"
 import {
   TRANSFER_HOLDER_NAME_MAX_LENGTH,
   validateTransferDeclaration,
@@ -33,6 +39,25 @@ import {
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const TRANSFER_ELIGIBLE_PAYMENT_STATUSES = ["pendiente_comprobante", "en_revision"]
+const RESERVATION_EXPIRED_REDIRECT_MS = 2800
+
+/** Reloj de la reserva del Paso 3 tal como lo informó el servidor (nunca un timer local propio). */
+export interface TransferReservationClock {
+  expiresAt: string | null
+  serverNow: string
+  /** performance.now() al recibir la respuesta: descuenta el tiempo transcurrido sin depender del reloj del dispositivo. */
+  receivedAt: number
+}
+
+function transferReservationSecondsLeft(reservation: TransferReservationClock | null, now: number) {
+  if (!reservation?.expiresAt) return 0
+  return reservationSecondsLeft(reservation.expiresAt, reservation.serverNow, reservation.receivedAt, now)
+}
+
+/** Importe a transferir calculado por el servidor (descuenta el saldo a favor aplicado). */
+function transferAmountDue(order: SupabasePedido) {
+  return Number(order.external_amount_due ?? order.total)
+}
 
 const formatPriceNumber = (price: number) =>
   new Intl.NumberFormat("es-AR", {
@@ -61,17 +86,20 @@ function StepCard({
   )
 }
 
-function TransferStepIndicator({ step }: { step: 1 | 2 | 3 }) {
-  const stepLabel = step === 1 ? "Transferencia" : step === 2 ? "Validación" : "Resultado"
+const TRANSFER_STEP_LABELS = ["Titular", "Transferencia", "Validación", "Resultado"] as const
+
+function TransferStepIndicator({ step }: { step: 1 | 2 | 3 | 4 }) {
+  const stepLabel = TRANSFER_STEP_LABELS[step - 1]
+  const totalSteps = TRANSFER_STEP_LABELS.length
 
   return (
     <div
       role="status"
-      aria-label={`Paso ${step} de 3: ${stepLabel}`}
+      aria-label={`Paso ${step} de ${totalSteps}: ${stepLabel}`}
       className="mb-4 flex flex-col items-center gap-1.5"
     >
       <div className="flex items-center gap-1.5" aria-hidden="true">
-        {[1, 2, 3].map((dot) => (
+        {TRANSFER_STEP_LABELS.map((_, index) => index + 1).map((dot) => (
           <span
             key={dot}
             className={`h-1.5 rounded-full transition-all ${
@@ -85,7 +113,7 @@ function TransferStepIndicator({ step }: { step: 1 | 2 | 3 }) {
         ))}
       </div>
       <p className="text-10px font-semibold uppercase tracking-widest text-[var(--account-text-secondary)]">
-        Paso {step} de 3 · {stepLabel}
+        Paso {step} de {totalSteps} · {stepLabel}
       </p>
     </div>
   )
@@ -185,12 +213,192 @@ function TransferDeclarationInput({
   )
 }
 
-function TransferInstructionsStep({
+function TransferAmountBox({ amount }: { amount: number }) {
+  return (
+    <div className="mt-5 flex flex-col items-center gap-1 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 py-4 text-center">
+      <p className="text-11px font-bold uppercase tracking-wider text-[var(--account-success)]">
+        Monto a transferir
+      </p>
+      <p className="flex items-baseline gap-1 text-[var(--account-success)]">
+        <span className="text-xl font-bold">$</span>
+        <span className="text-3xl font-extrabold tracking-tight tabular-nums sm:text-4xl">
+          {formatPriceNumber(amount)}
+        </span>
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Paso previo a los datos bancarios: el titular de la cuenta que va a
+ * transferir. El servidor los valida y guarda y RECIÉN ENTONCES devuelve
+ * alias/CVU -- así cualquier transferencia (incluso tardía) puede atribuirse
+ * al pedido. El monto no se pide: lo calculó el servidor.
+ */
+function TransferHolderStep({
   order,
-  onContinue,
+  onSaved,
+  onReservationExpired,
 }: {
   order: SupabasePedido
+  onSaved: (bankDetails: TransferBankDetails) => void
+  onReservationExpired: () => void
+}) {
+  const [firstName, setFirstName] = useState(order.transfer_payer_first_name ?? "")
+  const [lastName, setLastName] = useState(order.transfer_payer_last_name ?? "")
+  const [dni, setDni] = useState(order.transfer_payer_dni ?? "")
+  const [submitting, setSubmitting] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const [fieldErrors, setFieldErrors] = useState<
+    Partial<Record<TransferDeclarationField, string>>
+  >({})
+  const amount = transferAmountDue(order)
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (submitting) return
+
+    const declaration = validateTransferDeclaration({ nombre: firstName, apellido: lastName, dni, monto: amount })
+    if (!declaration.ok) {
+      setFieldErrors(declaration.errors)
+      setErrorMessage(declaration.errors.amount ? "No pudimos calcular el importe a transferir." : "")
+      return
+    }
+
+    setFieldErrors({})
+    setErrorMessage("")
+    setSubmitting(true)
+    try {
+      const guestToken = getGuestOrderToken(order.id)
+      const response = await fetch(`/api/transferencia/${order.id}/titular`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(guestToken ? { "x-guest-order-token": guestToken } : {}),
+        },
+        body: JSON.stringify({
+          nombre: declaration.value.firstName,
+          apellido: declaration.value.lastName,
+          dni: declaration.value.document,
+        }),
+      })
+      const data = (await response.json()) as {
+        code?: string
+        error?: string
+        fieldErrors?: Partial<Record<TransferDeclarationField, string>>
+        bankTransfer?: TransferBankDetails
+      }
+
+      if (!response.ok || !data.bankTransfer) {
+        if (data.code === "RESERVATION_EXPIRED") {
+          onReservationExpired()
+          return
+        }
+        if (data.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
+          setFieldErrors(data.fieldErrors)
+        } else {
+          setErrorMessage(data.error || "No pudimos guardar los datos del titular. Intentá nuevamente.")
+        }
+        return
+      }
+
+      onSaved(data.bankTransfer)
+    } catch {
+      setErrorMessage("No pudimos conectarnos. Intentá nuevamente.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <StepCard>
+      <TransferStepIndicator step={1} />
+
+      <h1 className="text-center text-xl font-bold text-[var(--account-text-primary)] sm:text-2xl">
+        ¿Desde qué cuenta vas a transferir?
+      </h1>
+      <p className="mx-auto mt-1.5 max-w-sm text-center text-sm leading-5 text-[var(--account-text-secondary)]">
+        Completá los datos del <strong className="font-semibold text-[var(--account-text-primary)]">titular de la cuenta desde donde vas a transferir</strong>{" "}
+        para que podamos identificar tu pago.
+      </p>
+
+      <TransferAmountBox amount={amount} />
+
+      <div
+        data-transfer-holder-notice
+        className="mt-4 flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
+      >
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
+        <p className="text-xs leading-5 text-[var(--account-info-text)]">
+          <strong className="font-bold">Estos datos pueden ser distintos a los de la persona que realizó la compra.</strong>{" "}
+          Si otra persona va a transferir desde su cuenta, ingresá los datos de esa persona.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
+        <TransferDeclarationInput
+          id="transfer-holder-nombre"
+          label="Nombre/s del titular"
+          hint="Podés ingresar uno o todos sus nombres, como figuran en la cuenta (ej.: Romina Ayelen)."
+          value={firstName}
+          onChange={setFirstName}
+          error={fieldErrors.firstName}
+          autoComplete="off"
+          maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
+          disabled={submitting}
+        />
+        <TransferDeclarationInput
+          id="transfer-holder-apellido"
+          label="Apellido/s del titular"
+          hint="Apellido/s de la persona titular de esa cuenta (ej.: Pérez)."
+          value={lastName}
+          onChange={setLastName}
+          error={fieldErrors.lastName}
+          autoComplete="off"
+          maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
+          disabled={submitting}
+        />
+        <TransferDeclarationInput
+          id="transfer-holder-dni"
+          label="DNI/CUIT del titular"
+          hint="Documento del titular de la cuenta desde donde vas a transferir."
+          value={dni}
+          onChange={setDni}
+          error={fieldErrors.document}
+          inputMode="numeric"
+          maxLength={13}
+          disabled={submitting}
+        />
+
+        {errorMessage && (
+          <p role="alert" className="text-xs font-medium text-[var(--account-danger)]">{errorMessage}</p>
+        )}
+
+        <BeyonixButton type="submit" disabled={submitting} className="mt-1 h-11 w-full">
+          {submitting ? (
+            <>
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Guardando datos...
+            </>
+          ) : (
+            "Continuar a los datos de transferencia"
+          )}
+        </BeyonixButton>
+      </form>
+    </StepCard>
+  )
+}
+
+function TransferInstructionsStep({
+  order,
+  bankDetails,
+  onContinue,
+  onEditHolder,
+}: {
+  order: SupabasePedido
+  bankDetails: TransferBankDetails
   onContinue: () => void
+  onEditHolder: () => void
 }) {
   const [copiedField, setCopiedField] = useState<"alias" | "cvu" | null>(null)
   const copyTimerRef = useRef<number | null>(null)
@@ -214,7 +422,7 @@ function TransferInstructionsStep({
 
   return (
     <StepCard>
-      <TransferStepIndicator step={1} />
+      <TransferStepIndicator step={2} />
 
       <h1 className="text-center text-xl font-bold text-[var(--account-text-primary)] sm:text-2xl">
         Realizá la transferencia
@@ -223,36 +431,26 @@ function TransferInstructionsStep({
         Para continuar, transferí el monto indicado a la cuenta de BEYONIX.
       </p>
 
-      <div className="mt-5 flex flex-col items-center gap-1 rounded-xl border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 py-4 text-center">
-        <p className="text-11px font-bold uppercase tracking-wider text-[var(--account-success)]">
-          Monto a transferir
-        </p>
-        <p className="flex items-baseline gap-1 text-[var(--account-success)]">
-          <span className="text-xl font-bold">$</span>
-          <span className="text-3xl font-extrabold tracking-tight tabular-nums sm:text-4xl">
-            {formatPriceNumber(Number(order.total))}
-          </span>
-        </p>
-      </div>
+      <TransferAmountBox amount={transferAmountDue(order)} />
 
       <div className="mt-4 divide-y divide-[var(--account-border-subtle)] rounded-xl border border-[var(--account-border-subtle)] px-4">
         <CopyableField
           label="Alias"
-          value={TRANSFER_ALIAS.toUpperCase()}
+          value={bankDetails.alias}
           copied={copiedField === "alias"}
-          onCopy={() => void handleCopy("alias", TRANSFER_ALIAS.toUpperCase())}
+          onCopy={() => void handleCopy("alias", bankDetails.alias)}
         />
         <div className="py-3">
           <p className={labelClassName}>A nombre de</p>
           <p className="mt-1 text-base font-bold text-[var(--account-text-primary)]">
-            {TRANSFER_ACCOUNT_HOLDER}
+            {bankDetails.accountHolder}
           </p>
         </div>
         <CopyableField
           label="CVU"
-          value={TRANSFER_CVU}
+          value={bankDetails.cvu}
           copied={copiedField === "cvu"}
-          onCopy={() => void handleCopy("cvu", TRANSFER_CVU)}
+          onCopy={() => void handleCopy("cvu", bankDetails.cvu)}
         />
       </div>
 
@@ -260,7 +458,14 @@ function TransferInstructionsStep({
         Ya realicé la transferencia
       </BeyonixButton>
       <p className="mt-2 text-center text-xs leading-5 text-[var(--account-text-secondary)]">
-        Cuando hayas realizado la transferencia, continuá para validar el pago.
+        Cuando hayas realizado la transferencia, continuá para validar el pago.{" "}
+        <button
+          type="button"
+          onClick={onEditHolder}
+          className="font-semibold underline underline-offset-2"
+        >
+          Cambiar datos del titular
+        </button>
       </p>
     </StepCard>
   )
@@ -271,17 +476,19 @@ function TransferVerificationStep({
   onBack,
   onUpdated,
   onManualReview,
+  onReservationExpired,
 }: {
   order: SupabasePedido
   onBack: () => void
   onUpdated: (order: SupabasePedido) => void
   onManualReview: () => void
+  onReservationExpired: () => void
 }) {
   const [firstName, setFirstName] = useState(order.transfer_payer_first_name ?? "")
   const [lastName, setLastName] = useState(order.transfer_payer_last_name ?? "")
   const [dni, setDni] = useState(order.transfer_payer_dni ?? "")
   const [amount, setAmount] = useState(
-    String(order.transfer_amount_declared ?? order.total ?? ""),
+    String(order.transfer_amount_declared ?? transferAmountDue(order) ?? ""),
   )
   const [phase, setPhase] = useState<"idle" | "submitting" | "confirming">("idle")
   const [errorMessage, setErrorMessage] = useState("")
@@ -351,6 +558,7 @@ function TransferVerificationStep({
 
       const data = (await response.json()) as {
         status?: "verified" | "manual_review" | "awaiting_transfer"
+        code?: string
         error?: string
         message?: string
         fieldErrors?: Partial<Record<TransferDeclarationField, string>>
@@ -360,6 +568,12 @@ function TransferVerificationStep({
       }
 
       if (!response.ok) {
+        // La reserva venció (pestaña vieja o reloj desfasado): el servidor
+        // rechaza el flujo normal y la pantalla pasa al aviso de vencimiento.
+        if (data.code === "RESERVATION_EXPIRED") {
+          onReservationExpired()
+          return
+        }
         // Error de validación del servidor: el cliente corrige en el mismo
         // formulario (no es un fallo técnico).
         if (response.status === 400 && data.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
@@ -429,7 +643,7 @@ function TransferVerificationStep({
 
   return (
     <StepCard>
-      <TransferStepIndicator step={2} />
+      <TransferStepIndicator step={3} />
 
       <h1 className="text-center text-xl font-bold text-[var(--account-text-primary)] sm:text-2xl">
         Validá tu transferencia
@@ -573,10 +787,12 @@ function TransferManualReviewStep({
 }) {
   const hasProof = Boolean(order.payment_proof_url || order.payment_proof_uploaded_at)
   const canUpload = canUploadTransferProof(order.payment_status)
+  // Pago real, pero el stock ya no estaba disponible: nunca "pago rechazado".
+  const stockConflict = order.payment_status === TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS
 
   return (
     <StepCard>
-      <TransferStepIndicator step={3} />
+      <TransferStepIndicator step={4} />
 
       {!hasProof ? (
         <>
@@ -585,10 +801,14 @@ function TransferManualReviewStep({
               <AlertTriangle className="size-6" aria-hidden="true" />
             </span>
             <h1 className="mt-3 text-xl font-bold text-[var(--account-text-primary)]">
-              No pudimos validar el pago automáticamente
+              {stockConflict
+                ? "Recibimos tu transferencia"
+                : "No pudimos validar el pago automáticamente"}
             </h1>
             <p className="mt-1.5 max-w-sm text-sm leading-5 text-[var(--account-text-secondary)]">
-              Podés enviarnos el comprobante de la transferencia para que nuestro equipo lo revise.
+              {stockConflict
+                ? TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE
+                : "Podés enviarnos el comprobante de la transferencia para que nuestro equipo lo revise."}
             </p>
           </div>
 
@@ -740,13 +960,69 @@ function TransferFlowMessage({
   )
 }
 
+function TransferReservationCountdown({ seconds }: { seconds: number }) {
+  return (
+    <div
+      data-transfer-reservation-countdown
+      className="mb-3 flex items-center gap-3 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
+    >
+      <Clock className="size-5 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
+      <div className="min-w-0 flex-1 text-xs leading-5 text-[var(--account-info-text)]">
+        <p className="font-bold">Tus productos están reservados durante este tiempo.</p>
+        <p>Realizá la transferencia antes de que finalice el contador.</p>
+      </div>
+      <span
+        role="timer"
+        aria-label={`Tiempo restante de la reserva: ${formatReservationCountdown(seconds)}`}
+        className="shrink-0 text-xl font-extrabold tabular-nums text-[var(--account-info-text)]"
+      >
+        {formatReservationCountdown(seconds)}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * La reserva de 20 minutos venció sin un pago confirmado: se bloquea el flujo
+ * normal y se vuelve al inicio. El carrito no se toca (el cliente puede
+ * iniciar una compra nueva y competir otra vez por el stock).
+ */
+function TransferReservationExpired({ homeHref }: { homeHref: string }) {
+  const router = useRouter()
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => router.replace(homeHref), RESERVATION_EXPIRED_REDIRECT_MS)
+    return () => window.clearTimeout(timer)
+  }, [router, homeHref])
+
+  return (
+    <div role="alert" data-transfer-reservation-expired>
+      <TransferFlowMessage
+        tone="info"
+        icon={Clock}
+        title="Tu reserva venció."
+        description="Pasaron los 20 minutos disponibles para completar la compra y liberamos los productos reservados."
+        action={
+          <p className="mt-1 text-xs text-[var(--account-text-secondary)]">
+            Te estamos llevando al inicio.
+          </p>
+        }
+      />
+    </div>
+  )
+}
+
 function TransferStepFlow({
   order,
+  reservation,
+  bankTransfer,
   onUpdated,
   ordersHref,
   homeHref,
 }: {
   order: SupabasePedido
+  reservation: TransferReservationClock | null
+  bankTransfer: TransferBankDetails | null
   onUpdated: (order: SupabasePedido) => void
   ordersHref: string
   homeHref: string
@@ -756,43 +1032,104 @@ function TransferStepFlow({
     order.payment_status ?? "pendiente_comprobante",
   )
   const previousAttemptFailed = order.transfer_verification_status === "manual_review"
+  // Sólo el flujo normal (esperando la transferencia) depende de la reserva:
+  // un comprobante ya enviado o un pago detectado siguen su propio circuito.
+  const awaitingPayment = isAwaitingTransferPayment(order)
 
-  const [step, setStep] = useState<"instructions" | "verify" | "review">(() =>
-    hasProof || alreadyResolved || previousAttemptFailed ? "review" : "instructions",
+  // Alias/CVU sólo llegan del servidor después de guardar los datos del
+  // titular (o si ya estaban guardados al recargar la pantalla).
+  const [bankDetails, setBankDetails] = useState<TransferBankDetails | null>(bankTransfer)
+  const [step, setStep] = useState<"holder" | "instructions" | "verify" | "review">(() =>
+    hasProof || alreadyResolved || previousAttemptFailed
+      ? "review"
+      : bankTransfer
+        ? "instructions"
+        : "holder",
   )
+  // Mismo expires_at del servidor en cada render, refresh o pestaña: el
+  // contador se deriva de él y nunca se reinicia localmente.
+  const [reservationSeconds, setReservationSeconds] = useState(() =>
+    transferReservationSecondsLeft(reservation, reservation?.receivedAt ?? 0),
+  )
+  const [rejectedAsExpired, setRejectedAsExpired] = useState(false)
 
+  useEffect(() => {
+    if (!awaitingPayment) return
+    const tick = () => setReservationSeconds(transferReservationSecondsLeft(reservation, performance.now()))
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [awaitingPayment, reservation])
+
+  if (awaitingPayment && (rejectedAsExpired || reservationSeconds === 0)) {
+    return <TransferReservationExpired homeHref={homeHref} />
+  }
+
+  const countdown = awaitingPayment ? (
+    <TransferReservationCountdown seconds={reservationSeconds} />
+  ) : null
   const effectiveStep = hasProof || alreadyResolved ? "review" : step
 
   if (effectiveStep === "review") {
     const canRetry = !hasProof && !alreadyResolved
 
     return (
-      <TransferManualReviewStep
-        order={order}
-        onUpdated={onUpdated}
-        onRetry={canRetry ? () => setStep("verify") : undefined}
-        ordersHref={ordersHref}
-        homeHref={homeHref}
-      />
+      <>
+        {countdown}
+        <TransferManualReviewStep
+          order={order}
+          onUpdated={onUpdated}
+          onRetry={canRetry ? () => setStep("verify") : undefined}
+          ordersHref={ordersHref}
+          homeHref={homeHref}
+        />
+      </>
     )
   }
 
   if (effectiveStep === "verify") {
     return (
-      <TransferVerificationStep
-        order={order}
-        onBack={() => setStep("instructions")}
-        onUpdated={onUpdated}
-        onManualReview={() => setStep("review")}
-      />
+      <>
+        {countdown}
+        <TransferVerificationStep
+          order={order}
+          onBack={() => setStep("instructions")}
+          onUpdated={onUpdated}
+          onManualReview={() => setStep("review")}
+          onReservationExpired={() => setRejectedAsExpired(true)}
+        />
+      </>
+    )
+  }
+
+  if (effectiveStep === "instructions" && bankDetails) {
+    return (
+      <>
+        {countdown}
+        <TransferInstructionsStep
+          order={order}
+          bankDetails={bankDetails}
+          onContinue={() => setStep("verify")}
+          onEditHolder={() => setStep("holder")}
+        />
+      </>
     )
   }
 
   return (
-    <TransferInstructionsStep
-      order={order}
-      onContinue={() => setStep("verify")}
-    />
+    <>
+      {countdown}
+      <TransferHolderStep
+        order={order}
+        onSaved={(details) => {
+          setBankDetails(details)
+          setStep("instructions")
+          // Refresca el pedido (datos del titular guardados) para precargar la validación.
+          onUpdated(order)
+        }}
+        onReservationExpired={() => setRejectedAsExpired(true)}
+      />
+    </>
   )
 }
 
@@ -801,6 +1138,8 @@ export function TransferFlow({
   sessionExpired,
   orderError,
   order,
+  reservation,
+  bankTransfer,
   paymentConfirmed,
   onUpdated,
   loginHref,
@@ -811,6 +1150,8 @@ export function TransferFlow({
   sessionExpired: boolean
   orderError: string
   order: SupabasePedido | null
+  reservation: TransferReservationClock | null
+  bankTransfer: TransferBankDetails | null
   paymentConfirmed: boolean
   onUpdated: (order: SupabasePedido) => void
   loginHref: string
@@ -850,6 +1191,8 @@ export function TransferFlow({
       ) : (
         <TransferStepFlow
           order={order}
+          reservation={reservation}
+          bankTransfer={bankTransfer}
           onUpdated={onUpdated}
           ordersHref={ordersHref}
           homeHref={homeHref}

@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server"
 
 import { PAYMENT_PROOF_BUCKET } from "@/lib/payments/transfer"
+import { getTransferBankDetails } from "@/lib/payments/transfer-bank-details"
 import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
+import {
+  isTransferReservationActive,
+  loadTransferReservationDeadline,
+} from "@/lib/orders/transfer-reservation-window"
+import { isAwaitingTransferPayment } from "@/lib/orders/transfer-verification-reasons"
 import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 const ORDER_PROOF_FIELDS =
-  "id, usuario_id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_proof_file_name, financial_status, paid_at, payment_confirmed_amount, total"
+  "id, usuario_id, created_at, estado, payment_method_id, payment_status, payment_proof_url, payment_proof_uploaded_at, payment_proof_file_name, financial_status, paid_at, payment_confirmed_amount, total, external_amount_due, transfer_verification_status, transfer_payer_first_name, transfer_payer_last_name, transfer_payer_dni, transfer_amount_declared"
 
 function stripBucket(path: string) {
   return path.startsWith(`${PAYMENT_PROOF_BUCKET}/`)
@@ -66,8 +72,36 @@ export async function GET(
     )
   }
 
+  // Contador de la pantalla de transferencia: el expires_at ORIGINAL de la
+  // reserva del Paso 3 más la hora del servidor. Leerlo nunca lo renueva.
+  let reservation: { expiresAt: string | null; serverNow: string }
+  try {
+    reservation = {
+      expiresAt: await loadTransferReservationDeadline(admin, pedidoId),
+      serverNow: new Date().toISOString(),
+    }
+  } catch (reservationError) {
+    console.error("TRANSFER_RESERVATION_DEADLINE_LOAD_ERROR", {
+      orderId: pedidoId,
+      message: reservationError instanceof Error ? reservationError.message : String(reservationError),
+    })
+    return NextResponse.json(
+      { error: "No pudimos comprobar la reserva de tu pedido. Intentá nuevamente." },
+      { status: 500 },
+    )
+  }
+
+  // Alias/CVU sólo después de guardar los datos del titular y mientras la
+  // reserva siga vigente (ver /api/transferencia/[orderId]/titular).
+  const bankTransfer =
+    currentOrder.transfer_payer_dni &&
+    isAwaitingTransferPayment(currentOrder) &&
+    isTransferReservationActive(reservation.expiresAt)
+      ? getTransferBankDetails()
+      : null
+
   if (!currentOrder.payment_proof_url) {
-    return NextResponse.json({ order: currentOrder, signedUrl: null })
+    return NextResponse.json({ order: currentOrder, signedUrl: null, reservation, bankTransfer })
   }
 
   const { data, error } = await admin.storage
@@ -90,5 +124,7 @@ export async function GET(
     order: currentOrder,
     signedUrl: data.signedUrl,
     fileName: currentOrder.payment_proof_file_name,
+    reservation,
+    bankTransfer,
   })
 }

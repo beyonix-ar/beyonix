@@ -23,15 +23,22 @@ type AdminClient = ReturnType<typeof createAdminClient>
 
 /**
  * Espera normal, revisión manual que puede resolverse con el tiempo, o
- * pending sin motivo tras un intento (fallo de confirmación anterior).
+ * pending sin motivo: tras un intento (fallo de confirmación anterior) o sin
+ * intentos todavía -- los datos del titular se guardan antes de mostrar
+ * alias/CVU, así que un cliente que transfirió y nunca tocó "Verificar"
+ * también se concilia (el filtro de datos declarados lo exige igual).
  */
-const RETRY_CANDIDATE_FILTER =
-  `and(transfer_verification_status.eq.pending,or(transfer_verification_failure_reason.in.(${AWAITING_TRANSFER_REASONS.join(",")}),and(transfer_verification_failure_reason.is.null,transfer_verification_attempts.gt.0))),` +
-  `and(transfer_verification_status.eq.manual_review,transfer_verification_failure_reason.in.(${RETRYABLE_MANUAL_REVIEW_REASONS.join(",")}))`
+export function buildRetryCandidateFilter(lastAttemptCutoff: string) {
+  return (
+    `and(transfer_verification_status.eq.pending,or(transfer_verification_failure_reason.in.(${AWAITING_TRANSFER_REASONS.join(",")}),transfer_verification_failure_reason.is.null),transfer_last_verification_at.lte.${lastAttemptCutoff}),` +
+    `and(transfer_verification_status.eq.pending,transfer_verification_failure_reason.is.null,transfer_last_verification_at.is.null),` +
+    `and(transfer_verification_status.eq.manual_review,transfer_verification_failure_reason.in.(${RETRYABLE_MANUAL_REVIEW_REASONS.join(",")}),transfer_last_verification_at.lte.${lastAttemptCutoff})`
+  )
+}
 
-function isRetryCandidate(status: string | null, reason: TransferManualReviewReason | null, attempts: number | null) {
+function isRetryCandidate(status: string | null, reason: TransferManualReviewReason | null) {
   if (status === "manual_review") return reason !== null && isRetryableManualReviewReason(reason)
-  return status === "pending" && (reason === null ? (attempts ?? 0) > 0 : isAwaitingTransferReason(reason))
+  return status === "pending" && (reason === null || isAwaitingTransferReason(reason))
 }
 
 /** Tope defensivo por corrida del cron -- mismo criterio que expireOverdueTransferOrders. */
@@ -81,6 +88,12 @@ interface RetryCandidateRow {
  * datos declarados inválidos, conflicto de stock, etc.): eso requiere
  * corrección humana o del cliente, no tiempo.
  *
+ * Dentro de los 20 minutos de la reserva del Paso 3 una coincidencia confirma
+ * normalmente (la reserva propia garantiza el stock). Después, el cron sigue
+ * detectando transferencias tardías pero NO mantiene stock reservado: la
+ * confirmación lo readquiere atómicamente (guard_transfer_reservation_confirmation)
+ * o termina en auto_verified_stock_conflict si ya no alcanza.
+ *
  * Deja de reintentar sola cuando el pedido se confirma, se cancela, sale de
  * pendiente_comprobante/en_revision, pasa a un motivo no reintentable o
  * vence su ventana.
@@ -126,11 +139,10 @@ export async function retryPendingTransferVerifications(
       .select(RETRY_LOAD_SELECT)
       .eq("payment_method_id", "transferencia")
       .in("payment_status", ["pendiente_comprobante", "en_revision"])
-      .or(RETRY_CANDIDATE_FILTER)
+      .or(buildRetryCandidateFilter(lastAttemptCutoff))
       .lt("transfer_verification_attempts", TRANSFER_VERIFICATION_AUTOMATIC_CLAIM_MAX_ATTEMPTS)
       .gt("created_at", oldestCreatedAt)
       .lte("created_at", newestCreatedAt)
-      .lte("transfer_last_verification_at", lastAttemptCutoff)
       .not("transfer_amount_declared", "is", null)
       .not("transfer_payer_dni", "is", null)
       .neq("estado", "cancelado")
@@ -176,7 +188,7 @@ export async function retryPendingTransferVerifications(
       | TransferManualReviewReason
       | null
 
-    if (!isRetryCandidate(candidate.transfer_verification_status, reason, candidate.transfer_verification_attempts)) continue
+    if (!isRetryCandidate(candidate.transfer_verification_status, reason)) continue
 
     if (
       (candidate.transfer_verification_attempts ?? 0) >=

@@ -44,9 +44,9 @@ import type { MercadoPagoPaymentModality } from "../pricing/checkout-pricing.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import type { ShippingBonusSettings } from "../store-config.ts"
 import {
-  commitMercadoPagoCheckoutReservation,
+  commitCheckoutStepReservation,
   deleteIncompleteCheckoutOrder,
-  validateCheckoutInventory,
+  type CheckoutReservationCommitment,
 } from "./checkout-inventory.ts"
 
 export interface InsufficientStockConflictItem {
@@ -284,7 +284,7 @@ interface PersistCheckoutOrderItemsParams {
   products: CheckoutOrderProductRow[]
   conditionedRows: Map<string, ConditionedCheckoutRow>
   reservationSessionId?: string | null
-  reservationCommitment?: "mercadopago"
+  reservationCommitment: CheckoutReservationCommitment
   insertErrorMessage?: string
 }
 
@@ -851,9 +851,11 @@ export async function insertCheckoutOrderItemsAndValidateInventory({
   }
 
   try {
-    return reservationCommitment === "mercadopago"
-      ? await commitMercadoPagoCheckoutReservation(admin, items, reservationSessionId, orderId)
-      : await validateCheckoutInventory(admin, items, reservationSessionId, orderId)
+    // Todo medio de pago compromete la reserva vigente del Paso 3 sin
+    // renovarla (20 minutos desde que se reservó el stock).
+    return await commitCheckoutStepReservation(
+      admin, items, reservationSessionId, orderId, reservationCommitment,
+    )
   } catch (inventoryError) {
     await deleteIncompleteCheckoutOrder(admin, orderId)
     throw inventoryError
