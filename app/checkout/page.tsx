@@ -2068,6 +2068,11 @@ export default function CheckoutPage() {
 
       const data = await response.json()
 
+      if (!response.ok && data?.code === "RESERVATION_EXPIRED") {
+        expireStockReservation()
+        return
+      }
+
       if (
         !response.ok &&
         data?.code === "INSUFFICIENT_STOCK" &&

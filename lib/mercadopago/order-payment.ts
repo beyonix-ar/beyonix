@@ -78,7 +78,7 @@ export function isInventoryConfirmationConflict(error: unknown) {
         ? String((error as { message: unknown }).message ?? "")
         : ""
 
-  return /checkout_stock_insufficient|checkout_variant_required/i.test(message)
+  return /checkout_stock_insufficient|checkout_variant_required|reservation_approval_expired/i.test(message)
 }
 
 /** Compartida con el refund de MP (lib/mercadopago/order-refund.ts): la comparación de montos siempre debe hacerse en centavos, nunca en floats. */

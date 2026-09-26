@@ -36,6 +36,7 @@ import {
 } from "@/lib/orders/checkout-order-creation"
 import {
   deleteIncompleteCheckoutOrder,
+  CheckoutReservationExpiredError,
   MissingReservationSessionError,
 } from "@/lib/orders/checkout-inventory"
 import {
@@ -58,7 +59,7 @@ import {
   createMercadoPagoCheckoutFingerprint,
   getMercadoPagoCheckoutAttemptDecision,
   getMercadoPagoCheckoutIdempotencyKey,
-  getMercadoPagoPreferenceExpiration,
+  getMercadoPagoReservationPreferenceExpiration,
   getMercadoPagoRequestFingerprint,
   getPendingCustomerCheckoutOrderAction,
   isEconomicallyEquivalentAttempt,
@@ -68,6 +69,7 @@ import {
 } from "@/lib/mercadopago/checkout-attempt"
 import {
   createMercadoPagoSupersedeDependencies,
+  expireMercadoPagoPreference,
   supersedeStaleMercadoPagoOrder,
   type SupersedableMercadoPagoOrder,
 } from "@/lib/mercadopago/checkout-supersede"
@@ -490,6 +492,7 @@ export async function POST(request: Request) {
         existingAttempts[0]?.id ?? null,
       ),
       mercadopago_checkout_fingerprint: checkoutFingerprint,
+      mercadopago_reservation_session_id: checkoutSessionId,
       customer_checkout_fingerprint: customerCheckoutFingerprint,
       mercadopago_request_fingerprint:
         getMercadoPagoRequestFingerprint(request),
@@ -562,7 +565,7 @@ export async function POST(request: Request) {
 
     createdOrderId = order.id
 
-    await insertCheckoutOrderItemsAndValidateInventory({
+    const reservationExpiresAt = await insertCheckoutOrderItemsAndValidateInventory({
       orderClient,
       admin,
       orderId: order.id,
@@ -570,7 +573,9 @@ export async function POST(request: Request) {
       products: catalog.products,
       conditionedRows: catalog.conditionedRows,
       reservationSessionId: checkoutSessionId,
+      reservationCommitment: "mercadopago",
     })
+    if (!reservationExpiresAt) throw new CheckoutReservationExpiredError()
 
     if (user && quote.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {
@@ -583,28 +588,39 @@ export async function POST(request: Request) {
       creditAppliedOrderId = order.id
     }
 
-    const preferenceResult = await createAndPersistMercadoPagoPreference({
-      client: mercadoPagoClient,
-      admin,
-      order: {
-        ...(order as MercadoPagoCheckoutOrderRow),
-        external_amount_due: quote.externalAmountDue,
-        credit_balance_used: quote.customerCreditApplied,
-        pricing_snapshot: pricingSnapshot,
-      },
-      payload,
-      request,
-      checkoutFingerprint,
-      claimToken: newPreferenceClaimToken,
-      preferenceGeneration: 1,
-    })
-    createdOrderId = null
-
     if (claimedBenefit) {
       await linkStoreBenefitToOrder(admin, {
         benefitId: claimedBenefit.id,
         orderId: order.id,
       })
+    }
+
+    // From here the order owns the Step 3 reservation. Keep it on a provider
+    // error so a retry can claim a preference for this same order and deadline.
+    createdOrderId = null
+    creditAppliedOrderId = null
+
+    let preferenceResult
+    try {
+      preferenceResult = await createAndPersistMercadoPagoPreference({
+        client: mercadoPagoClient,
+        admin,
+        order: {
+          ...(order as MercadoPagoCheckoutOrderRow),
+          external_amount_due: quote.externalAmountDue,
+          credit_balance_used: quote.customerCreditApplied,
+          pricing_snapshot: pricingSnapshot,
+        },
+        payload,
+        request,
+        checkoutFingerprint,
+        claimToken: newPreferenceClaimToken,
+        preferenceGeneration: 1,
+        reservationExpiresAt,
+      })
+    } catch (preferenceError) {
+      await releaseMercadoPagoPreferenceClaim(admin, order.id, newPreferenceClaimToken)
+      throw preferenceError
     }
 
     return NextResponse.json({
@@ -646,6 +662,13 @@ export async function POST(request: Request) {
 
     if (error instanceof MissingReservationSessionError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    if (error instanceof CheckoutReservationExpiredError) {
+      return NextResponse.json(
+        { code: "RESERVATION_EXPIRED", error: error.message },
+        { status: 409 },
+      )
     }
 
     if (error instanceof InvalidCheckoutItemsError) {
@@ -834,6 +857,8 @@ async function resolveMercadoPagoOrderAttempt({
     return null
   }
 
+  const reservationExpiresAt = await loadMercadoPagoReservationDeadline(admin, order.id)
+
   if (decision.kind === "reuse") {
     return NextResponse.json({
       init_point: decision.initPoint,
@@ -888,6 +913,7 @@ async function resolveMercadoPagoOrderAttempt({
       checkoutFingerprint: orderFingerprint,
       claimToken,
       preferenceGeneration,
+      reservationExpiresAt,
     })
 
     return NextResponse.json({
@@ -926,6 +952,7 @@ async function createAndPersistMercadoPagoPreference({
   checkoutFingerprint,
   claimToken,
   preferenceGeneration,
+  reservationExpiresAt,
 }: {
   client: MercadoPagoConfig
   admin: AdminClient
@@ -935,6 +962,7 @@ async function createAndPersistMercadoPagoPreference({
   checkoutFingerprint: string
   claimToken: string
   preferenceGeneration: number
+  reservationExpiresAt: string
 }) {
   const externalAmountDue = Number(order.external_amount_due)
   if (!Number.isFinite(externalAmountDue) || externalAmountDue <= 0) {
@@ -955,7 +983,8 @@ async function createAndPersistMercadoPagoPreference({
   const orderReference = await ensureMercadoPagoOrderReference(admin, order)
   const externalReference = getMercadoPagoOrderExternalReference(orderReference)
   const createdAt = new Date()
-  const expiresAt = getMercadoPagoPreferenceExpiration(createdAt)
+  const expiresAt = getMercadoPagoReservationPreferenceExpiration(reservationExpiresAt, createdAt)
+  if (!expiresAt) throw new CheckoutReservationExpiredError()
   const preference = new Preference(client)
   // payment_methods.installments SIEMPRE explícito y derivado de lo
   // persistido en la orden (nunca del request): al contado = 1 (Checkout
@@ -993,6 +1022,7 @@ async function createAndPersistMercadoPagoPreference({
       expires: true,
       expiration_date_from: createdAt.toISOString(),
       expiration_date_to: expiresAt.toISOString(),
+      date_of_expiration: expiresAt.toISOString(),
       notification_url: `${siteUrl}/api/mercadopago/webhook?source_news=webhooks`,
       metadata: {
         flow: "checkout_order",
@@ -1008,6 +1038,14 @@ async function createAndPersistMercadoPagoPreference({
 
   if (!result.init_point || !result.id) {
     throw new Error("Mercado Pago no devolvió una preferencia válida.")
+  }
+  if (Date.now() >= expiresAt.getTime()) {
+    try {
+      await expireMercadoPagoPreference(result.id, new Date())
+    } catch (expirationError) {
+      console.error("MERCADOPAGO_PREFERENCE_EXPIRED_BEFORE_PERSIST", expirationError)
+    }
+    throw new CheckoutReservationExpiredError()
   }
 
   const { data: persistedPreference, error } = await admin
@@ -1026,6 +1064,11 @@ async function createAndPersistMercadoPagoPreference({
     .maybeSingle()
 
   if (error || !persistedPreference) {
+    try {
+      await expireMercadoPagoPreference(result.id, new Date())
+    } catch (expirationError) {
+      console.error("MERCADOPAGO_UNPERSISTED_PREFERENCE_EXPIRE_ERROR", expirationError)
+    }
     throw new Error(
       error?.message || "No se pudo guardar la preferencia de Mercado Pago.",
     )
@@ -1036,6 +1079,17 @@ async function createAndPersistMercadoPagoPreference({
     preferenceId: result.id,
     expiresAt: expiresAt.toISOString(),
   }
+}
+
+async function loadMercadoPagoReservationDeadline(admin: AdminClient, orderId: number) {
+  const { data, error } = await admin.from("checkout_reservation_sessions")
+    .select("expires_at")
+    .eq("order_id", orderId)
+    .maybeSingle()
+  if (error || !data?.expires_at || Date.parse(data.expires_at) - Date.now() < 60_000) {
+    throw new CheckoutReservationExpiredError()
+  }
+  return data.expires_at
 }
 
 async function enforceMercadoPagoCheckoutRateLimits({

@@ -193,6 +193,18 @@ export function getMercadoPagoPreferenceExpiration(now = new Date()) {
   )
 }
 
+/** The preference inherits the Step 3 deadline; choosing MP never restarts it. */
+export function getMercadoPagoReservationPreferenceExpiration(
+  reservationExpiresAt: string,
+  now = new Date(),
+): Date | null {
+  const expiry = new Date(reservationExpiresAt)
+  if (!Number.isFinite(expiry.getTime()) || expiry.getTime() - now.getTime() < 60_000) {
+    return null
+  }
+  return expiry
+}
+
 export function getMercadoPagoRequestFingerprint(request: Request) {
   const forwardedIp =
     request.headers.get("x-nf-client-connection-ip") ||

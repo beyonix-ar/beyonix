@@ -46,6 +46,45 @@ export class MissingReservationSessionError extends Error {
   }
 }
 
+export class CheckoutReservationExpiredError extends Error {
+  constructor() {
+    super("Tu reserva venció. Volvé al inicio para comenzar una nueva compra.")
+    this.name = "CheckoutReservationExpiredError"
+  }
+}
+
+/** Mercado Pago commits the existing Step 3 lease without creating a new one. */
+export async function commitMercadoPagoCheckoutReservation(
+  admin: AdminClient,
+  items: CheckoutInventoryItem[],
+  reservationSessionId: string | null | undefined,
+  orderId: number,
+): Promise<string> {
+  const sessionId = normalizeReservationSessionId(reservationSessionId)
+  if (!sessionId) throw new CheckoutReservationExpiredError()
+  const { data, error } = await admin.rpc("commit_mercadopago_checkout_reservation", {
+    p_items: items.map((item) => ({
+      product_id: item.productId,
+      variant_id: item.variantId ?? null,
+      conditioned_stock_id: item.conditionedStockId ?? null,
+      quantity: item.quantity,
+    })),
+    p_session_id: sessionId,
+    p_order_id: orderId,
+  })
+  if (error) {
+    if (/RESERVATION_EXPIRED|RESERVATION_INVALID|INVALID_SESSION|RESERVATION_LOCKED_TO_ORDER/i.test(error.message)) {
+      throw new CheckoutReservationExpiredError()
+    }
+    if (isStockConflict(error.message)) throw new Error(STOCK_CHANGED_MESSAGE)
+    throw new Error(error.message || "No se pudo validar la reserva de la compra.")
+  }
+  if (typeof data !== "string" || !Number.isFinite(Date.parse(data))) {
+    throw new Error("La reserva de la compra no devolvió un vencimiento válido.")
+  }
+  return data
+}
+
 /**
  * Cierra la orden contra el inventario: revalida catálogo y disponibilidad
  * REAL (stock derivado menos reservas activas de otras sesiones) y deja la

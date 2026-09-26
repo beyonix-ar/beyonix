@@ -7,6 +7,7 @@ import {
   createMercadoPagoCheckoutFingerprint,
   getMercadoPagoCheckoutAttemptDecision,
   getMercadoPagoCheckoutIdempotencyKey,
+  getMercadoPagoReservationPreferenceExpiration,
   normalizeMercadoPagoCheckoutSessionId,
   type MercadoPagoCheckoutFingerprintInput,
 } from "./checkout-attempt.ts"
@@ -16,6 +17,19 @@ import {
   calculateMercadoPagoCheckoutPricing,
   type MercadoPagoCheckoutMode,
 } from "../pricing/checkout-pricing.ts"
+
+test("la preference conserva el vencimiento original al minuto 5 y 19", () => {
+  const started = Date.parse("2026-09-25T10:00:00.000Z")
+  const expiresAt = new Date(started + 20 * 60_000).toISOString()
+  for (const minute of [5, 19]) {
+    assert.equal(
+      getMercadoPagoReservationPreferenceExpiration(expiresAt, new Date(started + minute * 60_000))?.toISOString(),
+      expiresAt,
+    )
+  }
+  assert.equal(getMercadoPagoReservationPreferenceExpiration(expiresAt, new Date(started + 19 * 60_000 + 1)), null)
+  assert.equal(getMercadoPagoReservationPreferenceExpiration(expiresAt, new Date(started + 20 * 60_000)), null)
+})
 
 const DEFAULT_FINANCING = {
   baseProcessingPercent: 6.42,

@@ -32,6 +32,10 @@ test("isInventoryConfirmationConflict reconoce el rechazo del guardián de inven
     true,
   )
   assert.equal(
+    isInventoryConfirmationConflict(new Error("RESERVATION_APPROVAL_EXPIRED")),
+    true,
+  )
+  assert.equal(
     isInventoryConfirmationConflict(new Error("connection reset by peer")),
     false,
   )

@@ -44,6 +44,7 @@ import type { MercadoPagoPaymentModality } from "../pricing/checkout-pricing.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import type { ShippingBonusSettings } from "../store-config.ts"
 import {
+  commitMercadoPagoCheckoutReservation,
   deleteIncompleteCheckoutOrder,
   validateCheckoutInventory,
 } from "./checkout-inventory.ts"
@@ -283,6 +284,7 @@ interface PersistCheckoutOrderItemsParams {
   products: CheckoutOrderProductRow[]
   conditionedRows: Map<string, ConditionedCheckoutRow>
   reservationSessionId?: string | null
+  reservationCommitment?: "mercadopago"
   insertErrorMessage?: string
 }
 
@@ -830,6 +832,7 @@ export async function insertCheckoutOrderItemsAndValidateInventory({
   products,
   conditionedRows,
   reservationSessionId,
+  reservationCommitment,
   insertErrorMessage = "No se pudieron crear los ítems de la orden.",
 }: PersistCheckoutOrderItemsParams) {
   const orderItemsPayload = buildCheckoutOrderItemsPayload(
@@ -848,12 +851,9 @@ export async function insertCheckoutOrderItemsAndValidateInventory({
   }
 
   try {
-    await validateCheckoutInventory(
-      admin,
-      items,
-      reservationSessionId,
-      orderId,
-    )
+    return reservationCommitment === "mercadopago"
+      ? await commitMercadoPagoCheckoutReservation(admin, items, reservationSessionId, orderId)
+      : await validateCheckoutInventory(admin, items, reservationSessionId, orderId)
   } catch (inventoryError) {
     await deleteIncompleteCheckoutOrder(admin, orderId)
     throw inventoryError
