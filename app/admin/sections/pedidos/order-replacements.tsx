@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase/client"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { HelpTip } from "@/components/claims/help-tip"
+import { getCuentaItemImage } from "@/lib/account/account-utils"
 import { AdminSecondaryButton } from "../../components/admin-controls"
 
 // Variantes activas de los productos del pedido (el servidor no ofrece otras).
@@ -123,6 +124,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
   const fixedItem = orderItems.length === 1
     ? orderItems[0]
     : claimedItemIds.length === 1 ? orderItems.find((candidate) => candidate.id === claimedItemIds[0]) : undefined
+  const fixedItemImage = fixedItem ? getCuentaItemImage(fixedItem) : null
   const item = fixedItem ?? orderItems.find((candidate) => candidate.id === Number(itemId))
   const matchingClaims = openChangeClaims.filter((claim) =>
     claim.affected_items?.some((affected) => affected.order_item_id === item?.id && affected.quantity > 0))
@@ -226,7 +228,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
       onClose={closeModal}
       footer={
         <>
-          {missing && !attempt.current && !confirm && !saving && (
+          {missing && missing !== noVariantsMessage && missing !== productOutOfStockMessage && missing !== variantOutOfStockMessage && !attempt.current && !confirm && !saving && (
             <p className="admin-replacement-modal__missing" id={`replacement-missing-${pedido.id}`}>{missing}</p>
           )}
           <div className="admin-replacement-modal__actions">
@@ -246,16 +248,19 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     >
       {error && <p role="alert" className="admin-replacement-modal__alert">{error}</p>}
       <fieldset disabled={formLocked} className="admin-replacement-modal__form">
-        <section className="admin-replacement-modal__section" aria-labelledby={`replacement-original-${pedido.id}`}>
+        <section className="admin-replacement-modal__section admin-replacement-modal__original" aria-labelledby={`replacement-original-${pedido.id}`}>
           <p className="admin-replacement-modal__section-title" id={`replacement-original-${pedido.id}`}>Producto original</p>
           {fixedItem ? (
             <div className="admin-replacement-modal__selection" data-testid="replacement-original-item">
-              <p className="admin-replacement-modal__selection-name">{fixedItem.productos?.nombre ?? (originalVariant && variantProductName(originalVariant)) ?? "Producto"}</p>
-              <p className="admin-replacement-modal__selection-meta">
-                {(fixedItem.producto_variantes?.nombre ?? originalVariant?.nombre) && <span>{fixedItem.producto_variantes?.nombre ?? originalVariant?.nombre}</span>}
-                {originalVariant?.sku && <span>SKU {originalVariant.sku}</span>}
-                <span>Vendió {fixedItem.cantidad}</span>
-              </p>
+              {fixedItemImage && <span className="admin-replacement-modal__thumb" style={{ backgroundImage: `url(${JSON.stringify(fixedItemImage)})` }} aria-hidden="true" />}
+              <div>
+                <p className="admin-replacement-modal__selection-name">{fixedItem.productos?.nombre ?? (originalVariant && variantProductName(originalVariant)) ?? "Producto"}</p>
+                <p className="admin-replacement-modal__selection-meta">
+                  {(fixedItem.producto_variantes?.nombre ?? originalVariant?.nombre) && <span>{fixedItem.producto_variantes?.nombre ?? originalVariant?.nombre}</span>}
+                  {originalVariant?.sku && <span>SKU {originalVariant.sku}</span>}
+                  <span>Vendió {fixedItem.cantidad}</span>
+                </p>
+              </div>
             </div>
           ) : (
             <label className="admin-replacement-modal__field">
@@ -282,7 +287,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
           </div>
         </section>
 
-        <section className="admin-replacement-modal__section">
+        <section className="admin-replacement-modal__section admin-replacement-modal__reason">
           <label className="admin-replacement-modal__field">
             <FieldLabel text="Motivo del reemplazo" help="Explicá brevemente por qué se entrega una nueva unidad. Este dato queda registrado internamente." />
             <textarea
@@ -296,7 +301,8 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
           </label>
         </section>
 
-        <section className="admin-replacement-modal__section">
+        <section className="admin-replacement-modal__section admin-replacement-modal__options">
+          <div className="admin-replacement-modal__variant-column">
           {productVariants.length > 1 ? (
             <label className="admin-replacement-modal__field">
               <FieldLabel text="Variante a enviar" help={VARIANT_HELP} />
@@ -337,7 +343,8 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
           ) : originalNotice ? (
             <p className="admin-replacement-modal__notice" role="note">{originalNotice}</p>
           ) : null}
-          <div className="admin-replacement-modal__field">
+          </div>
+          <div className="admin-replacement-modal__field admin-replacement-modal__quantity-field">
             <FieldLabel text="Cantidad" help="Indicá cuántas unidades vas a entregar como reemplazo." htmlFor={`replacement-quantity-${pedido.id}`} />
             <span className="admin-replacement-modal__quantity">
               <button type="button" aria-label="Restar una unidad" onClick={() => stepQuantity(-1)} disabled={formLocked || count <= 1} className="admin-replacement-modal__quantity-button"><Minus aria-hidden="true" /></button>
@@ -355,7 +362,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
           </div>
         </section>
 
-        <section className={`admin-replacement-modal__stock ${variant ? "" : "is-empty"}`} aria-live="polite">
+        {!noVariants && <section className={`admin-replacement-modal__stock ${variant ? "" : "is-empty"}`} aria-live="polite">
           <div className="admin-replacement-modal__stock-head">
             <p className="admin-replacement-modal__section-title">Stock</p>
             <HelpTip label="Stock">El stock se valida nuevamente al confirmar. El sistema registra también el costo histórico del reemplazo.</HelpTip>
@@ -368,7 +375,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
           ) : (
             <p className="admin-replacement-modal__stock-empty">Seleccioná la variante a enviar para calcular el stock.</p>
           )}
-        </section>
+        </section>}
       </fieldset>
       {confirm && <div role="status" className="admin-replacement-modal__confirm">Vas a retirar {count} unidades de SKU {variant?.sku || variant?.nombre} para reemplazar {count} unidades del pedido #{pedido.id}. No se genera un cobro ni un envío automático.{!attempt.current && <button className="admin-replacement-modal__link" type="button" onClick={() => setConfirm(false)}>Corregir</button>}</div>}
       {attempt.current && <p className="admin-replacement-modal__pending">Hay un intento pendiente de confirmar. El reintento conserva la misma operación para no descontar stock dos veces.</p>}
@@ -420,7 +427,7 @@ const backdropLayout: CSSProperties = {
 }
 const dialogLayout: CSSProperties = {
   position: "relative",
-  width: "min(100%, 38rem)",
+  width: "min(100%, 46rem)",
   margin: "auto",
   background: "var(--replacement-modal-bg, #0b1724)",
   color: "var(--replacement-modal-text, #cbd5e1)",

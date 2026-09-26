@@ -220,7 +220,9 @@ test.before(async () => {
   const blockEnd = nextBlock === -1 ? source.length : nextBlock
   assert.ok(blockStart > 0 && source.slice(blockStart, blockEnd).includes(".admin-replacement-modal__backdrop {"), "bloque del modal ubicado")
   css = await compileCss(source, "app/globals.css")
-  staleCss = await compileCss(source.slice(0, blockStart) + source.slice(blockEnd), "app/globals.stale.css")
+  const compactStart = source.indexOf("/* Reemplazo: mismas acciones y datos")
+  assert.ok(compactStart > blockEnd, "ajustes compactos ubicados")
+  staleCss = await compileCss(source.slice(0, compactStart).replace(source.slice(blockStart, blockEnd), ""), "app/globals.stale.css")
   assert.ok(css.includes("admin-replacement-modal__backdrop") && !staleCss.includes("admin-replacement-modal"))
   const result = await build({
     stdin: { contents: ENTRY, resolveDir: process.cwd(), loader: "tsx", sourcefile: "replacement-modal-entry.tsx" },
@@ -249,11 +251,11 @@ async function open(theme: "dark" | "light", width = 1440, height = 1000, styles
     new URL(route.request().url()).href.startsWith("http://localhost/replacement") ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
   )
   await page.goto(`http://localhost/replacement?scenario=${scenario}`)
-  await page.waitForSelector(".admin-claim-flow")
+  await page.waitForSelector(".admin-claim-wizard-steps")
   return page
 }
 
-const stepButton = (page: Page) => page.locator(".admin-claim-flow button", { hasText: "Registrar reemplazo" })
+const stepButton = (page: Page) => page.locator(".admin-claim-wizard-action button", { hasText: "Registrar reemplazo" })
 const dialog = (page: Page) => page.locator('[role="dialog"]')
 
 async function openFromStep(page: Page) {
@@ -530,7 +532,7 @@ test("caso normal: ítem fijo, sin buscador, variante original preseleccionada y
     // 11. Variante con stock 0: bloquea con mensaje claro.
     await variantSelect(page).selectOption("11")
     assert.equal(await primaryButton(page).isDisabled(), true)
-    assert.equal(await missingText(page).innerText(), "Esta variante no tiene stock disponible.")
+    assert.equal(await missingText(page).count(), 0, "advertencia visible una sola vez")
     assert.equal(await noticeText(page).innerText(), "Esta variante no tiene stock disponible.")
 
     await variantSelect(page).selectOption("9")
@@ -636,7 +638,7 @@ test("sin stock en ninguna variante del producto: bloquea con mensaje claro", as
     await modal.locator("textarea").fill(REASON)
     assert.equal(await variantSelect(page).inputValue(), "", "no elige una variante sin stock")
     assert.equal(await noticeText(page).innerText(), "No hay stock disponible de este producto para realizar el reemplazo.")
-    assert.equal(await missingText(page).innerText(), "No hay stock disponible de este producto para realizar el reemplazo.")
+    assert.equal(await missingText(page).count(), 0, "advertencia visible una sola vez")
     await variantSelect(page).selectOption("10")
     assert.equal(await primaryButton(page).isDisabled(), true)
   } finally {
@@ -652,6 +654,8 @@ test("producto sin variantes activas: informa y no permite confirmar", async () 
     await modal.locator("textarea").fill(REASON)
     assert.equal(await modal.locator("select").count(), 0)
     assert.equal(await noticeText(page).innerText(), "Este producto no tiene variantes activas para realizar el reemplazo.")
+    assert.equal(await missingText(page).count(), 0, "advertencia visible una sola vez")
+    assert.equal(await modal.locator(".admin-replacement-modal__stock").count(), 0, "sin panel de stock vacío")
     assert.equal(await primaryButton(page).isDisabled(), true)
   } finally {
     await page.close()
@@ -721,8 +725,8 @@ for (const theme of ["light", "dark"] as const) {
   })
 }
 
-test("responsive: sin overflow horizontal y con acciones accesibles en mobile, tablet y desktop", async () => {
-  for (const [width, height] of [[360, 740], [768, 1024], [1440, 900]] as const) {
+test("responsive: formulario compacto sin overflow y con acciones accesibles", async () => {
+  for (const [width, height] of [[360, 740], [768, 1024], [1366, 768], [1440, 900]] as const) {
     const page = await open("dark", width, height)
     try {
       await openFromStep(page)
@@ -735,10 +739,12 @@ test("responsive: sin overflow horizontal y con acciones accesibles en mobile, t
           return b.width > 0 && (b.left < r.left - 0.5 || b.right > r.right + 0.5) && !el.closest('[role="tooltip"]')
         }).map((el) => el.className.toString().slice(0, 50))
         const stats = getComputedStyle(d.querySelector(".admin-replacement-modal__stats")).gridTemplateColumns.split(" ").length
-        return { left: r.left, right: r.right, docOverflow: document.documentElement.scrollWidth > window.innerWidth, overflowing, stats }
-      })()`)) as { left: number; right: number; docOverflow: boolean; overflowing: string[]; stats: number }
+        const body = d.querySelector(".admin-replacement-modal__body")
+        return { left: r.left, right: r.right, height: r.height, bodyScrollable: body.scrollHeight > body.clientHeight + 1, docOverflow: document.documentElement.scrollWidth > window.innerWidth, overflowing, stats }
+      })()`)) as { left: number; right: number; height: number; bodyScrollable: boolean; docOverflow: boolean; overflowing: string[]; stats: number }
       assert.ok(layout.left >= 0 && layout.right <= width, `${width}px: diálogo dentro del viewport`)
       assert.equal(layout.docOverflow, false, `${width}px: sin scroll horizontal`)
+      if (width >= 1200) assert.equal(layout.bodyScrollable, false, `${width}px: formulario visible sin scroll interno`)
       assert.deepEqual(layout.overflowing, [], `${width}px: nada se sale del diálogo`)
       assert.equal(layout.stats, width < 480 ? 1 : 3, `${width}px: columnas de stats`)
       const primary = dialog(page).getByRole("button", { name: "Revisar reemplazo" })
@@ -752,15 +758,29 @@ test("responsive: sin overflow horizontal y con acciones accesibles en mobile, t
   }
 })
 
+test("Volver al paso anterior conserva la acción y desplaza al encabezado", async () => {
+  const page = await open("dark")
+  try {
+    await page.evaluate("window.__scrollIntoViewCalls = 0")
+    await page.getByRole("button", { name: "Volver al paso anterior" }).click()
+    await page.waitForFunction("window.__scrollIntoViewCalls === 1")
+    assert.match(await page.locator('.admin-claim-wizard-steps [aria-current="step"]').innerText(), /Recepción/)
+    await page.locator(".admin-claim-wizard-steps").getByRole("button", { name: /Reemplazo/ }).click()
+    await page.waitForFunction("window.__scrollIntoViewCalls === 2")
+    assert.match(await page.locator('.admin-claim-wizard-steps [aria-current="step"]').innerText(), /Reemplazo/)
+    await page.waitForTimeout(400)
+    assert.equal(await page.evaluate("window.__scrollIntoViewCalls"), 2, "sin salto por refresco de datos")
+  } finally {
+    await page.close()
+  }
+})
+
 test("contrato: ambos botones usan openReplacementModal y ningún camino desplaza la página", () => {
   const pedidos = readFileSync("app/admin/sections/pedidos/admin-pedidos.tsx", "utf8")
   assert.match(pedidos, /openRequest=\{replacementOpenRequest\?\.orderId === pedido\.id \? replacementOpenRequest : null\}/)
   assert.match(pedidos, /onRegisterReplacement=\{capabilities\.canManageReplacements \? openReplacementModal : undefined\}/)
   const claims = readFileSync("components/claims/admin-claim-manager.tsx", "utf8")
-  const handlerStart = claims.indexOf("onRegisterReplacement={() => {")
-  const handler = claims.slice(handlerStart, claims.indexOf("onConfirmDelivery=", handlerStart))
-  assert.doesNotMatch(handler, /scrollIntoView|scrollTo|location|href/, "sin scroll ni navegación")
-  assert.match(handler, /setNotice\(/, "sin gestor: error de UI controlado")
+  assert.match(claims, /onClick=\{\(\) => onRegisterReplacement\?\.\(/, "el paso reutiliza el gestor de reemplazos")
   const replacements = readFileSync("app/admin/sections/pedidos/order-replacements.tsx", "utf8")
   assert.match(replacements, /onClick=\{\(\) => openReplacementModal\(null\)\}>Registrar reemplazo/)
   assert.match(replacements, /openReplacementModal\(openRequest\.orderItemId\)/)

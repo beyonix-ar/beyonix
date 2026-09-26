@@ -116,7 +116,7 @@ test("el wizard y el chat lateral usan clases propias del componente", () => {
     'className="admin-claim-wizard-chat-overlay"',
     'className="admin-claim-chat-panel bx-surface bx-surface-section flex flex-col overflow-hidden rounded-xl border"',
     'className="admin-claim-chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5"',
-    'className="admin-claim-composer border-t p-2"',
+    'className="admin-claim-composer admin-claim-chat-composer border-t p-2"',
     'className="admin-claim-reception-item"',
   ]) {
     assert.ok(claimsSource.includes(className), className)

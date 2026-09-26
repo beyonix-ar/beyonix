@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import {
+  ArrowLeft,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -59,6 +60,7 @@ import {
   type ReplacementLoadState,
 } from "@/lib/orders/claim-replacement-flow"
 import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
+import { useClaimWizardScroll } from "@/components/claims/use-claim-wizard-scroll"
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { HelpTip } from "@/components/claims/help-tip"
@@ -1301,6 +1303,16 @@ export function ReturnInventoryPanel({
   )
 }
 
+function ClaimWizardScrollAnchor({ claimId, step, enabled, headerRef }: {
+  claimId: number
+  step: string
+  enabled: boolean
+  headerRef: RefObject<HTMLElement | null>
+}) {
+  useClaimWizardScroll(claimId, step, enabled, headerRef)
+  return null
+}
+
 export function AdminClaimManager({
   pedido,
   mode = "all",
@@ -1358,6 +1370,7 @@ export function AdminClaimManager({
   const decisionVersionRef = useRef<string | null>(null)
   const responseVersionRef = useRef<string | null>(null)
   const chatRef = useRef<HTMLDivElement>(null)
+  const wizardHeaderRef = useRef<HTMLElement>(null)
   const firstReviewAttemptedRef = useRef<Set<number>>(new Set())
   const loadedOrderClaimsRef = useRef<Set<number>>(new Set())
   const messageCount = claim?.order_claim_messages?.length ?? 0
@@ -1935,7 +1948,8 @@ export function AdminClaimManager({
     ? viewedStep : currentStep
   return (
     <section className={`admin-claim-manager admin-ds-surface mt-3 overflow-hidden ${mode === "messaging" ? "admin-claim-manager-messaging" : ""} ${ADMIN_SENSITIVE_DANGER.panel}`}>
-      <header className="admin-claim-header border-b p-3 sm:p-4">
+      <ClaimWizardScrollAnchor claimId={claim.id} step={selectedStep} enabled={formalClaim} headerRef={wizardHeaderRef} />
+      <header ref={wizardHeaderRef} className="admin-claim-header admin-claim-wizard-header border-b p-3 sm:p-4">
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -2136,7 +2150,7 @@ export function AdminClaimManager({
                <button type="button" className="admin-claim-wizard-back" onClick={() => {
                  const index = workflowSteps.findIndex((step) => step.key === selectedStep)
                  setViewedStep(workflowSteps[index - 1].key)
-               }}>← Volver al paso anterior</button>
+               }}><ArrowLeft className="size-4" aria-hidden="true" />Volver al paso anterior</button>
              )}
              <div className="flex items-center gap-2.5">
               <span className="admin-claim-section-icon is-small" aria-hidden="true">
@@ -2797,23 +2811,23 @@ function ClaimConversation({
 
   return (
     <section className="admin-claim-chat-panel bx-surface bx-surface-section flex flex-col overflow-hidden rounded-xl border">
-      <div className="admin-claim-header border-b px-3 py-1.5">
+      <div className="admin-claim-header admin-claim-chat-header border-b px-3 py-1.5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h4 className="text-sm font-black text-white">Conversación con el cliente</h4>
-            <p className="mt-0.5 text-10px text-white/50">{messages.length} mensaje{messages.length === 1 ? "" : "s"} · {statusLabel}</p>
+            <h4 className="admin-claim-chat-title text-sm font-black">Conversación con el cliente</h4>
+            <p className="admin-claim-chat-subtitle mt-0.5 text-10px">{messages.length} mensaje{messages.length === 1 ? "" : "s"} · {statusLabel}</p>
           </div>
-          <MessageSquare className="size-4 text-blue-200" />
+          <MessageSquare className="admin-claim-chat-icon size-4" />
         </div>
       </div>
       <div ref={chatRef} className="admin-claim-chat-thread min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
         {closed && (
-          <p className="rounded-lg border border-teal-300/20 bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-100">
+          <p className="admin-claim-chat-closed rounded-lg border px-3 py-2 text-xs font-bold">
             Conversación finalizada. No se pueden enviar nuevos mensajes.
           </p>
         )}
         {messages.length === 0 && (
-          <p className="rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-xs text-white/66">Todavía no hay mensajes en esta conversación.</p>
+          <p className="admin-claim-chat-empty rounded-lg border px-3 py-2 text-xs">Todavía no hay mensajes en esta conversación.</p>
         )}
         {messages.map((message) => {
           const isCustomer = message.author_role === "cliente"
@@ -2830,7 +2844,7 @@ function ClaimConversation({
           )
         })}
       </div>
-      <div className="admin-claim-composer border-t p-2">
+      <div className="admin-claim-composer admin-claim-chat-composer border-t p-2">
         <div className="flex gap-2">
           <textarea
             ref={textareaRef}
@@ -2839,9 +2853,9 @@ function ClaimConversation({
             onChange={handleResponseChange}
             rows={1}
             placeholder={closed ? "Reclamo finalizado" : "Responder al cliente"}
-            className={`${adminControlClassName} min-h-8 min-w-0 basis-4/5 resize-none px-3 py-1.5 text-xs leading-5 disabled:cursor-not-allowed disabled:opacity-45`}
+            className="admin-claim-chat-input min-h-8 min-w-0 basis-4/5 resize-none px-3 py-1.5 text-xs leading-5 disabled:cursor-not-allowed"
           />
-          <button type="button" disabled={saving || closed || response.trim().length < 2} onClick={onSendResponse} className="admin-ds-button admin-ds-button-primary inline-flex h-8 basis-1/5 shrink-0 items-center justify-center gap-2 px-3 text-10px font-black disabled:opacity-45">
+          <button type="button" disabled={saving || closed || response.trim().length < 2} onClick={onSendResponse} className="admin-claim-chat-send inline-flex h-8 basis-1/5 shrink-0 items-center justify-center gap-2 px-3 text-10px font-black">
             <Send className="size-3.5" />
             {saving ? "Enviando..." : "Enviar respuesta"}
           </button>

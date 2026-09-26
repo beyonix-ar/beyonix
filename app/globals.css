@@ -15526,3 +15526,146 @@ html[data-admin-theme="light"] .admin-claim-wizard-chat-trigger { color: #07565d
 html[data-admin-theme="light"] .admin-claim-wizard-back { color: #07565d; }
 html[data-admin-theme="light"] .admin-claim-wizard-note { color: #334155; }
 html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer { background: #f8fafc; }
+
+/* Wizard: el encabezado queda visible debajo de la navegación del admin. */
+.admin-claim-wizard-header { scroll-margin-top: 5rem; }
+.admin-claim-wizard-back {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 2.25rem;
+  padding: 0 .75rem;
+  border: 1px solid rgba(119, 230, 226, .3);
+  border-radius: .625rem;
+  background: rgba(119, 230, 226, .07);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.admin-claim-wizard-back:hover { border-color: rgba(119, 230, 226, .65); background: rgba(119, 230, 226, .15); }
+.admin-claim-wizard-back:focus-visible { outline: 2px solid #77e6e2; outline-offset: 2px; }
+html[data-admin-theme="light"] .admin-claim-wizard-back { border-color: #b9d3dd; background: #f0f8f8; }
+html[data-admin-theme="light"] .admin-claim-wizard-back:hover { border-color: #408b95; background: #e2f2f2; }
+
+/* El chat vive en Portal: su paleta no depende del scope visual del pedido. */
+.admin-claim-wizard-chat-drawer {
+  --claim-chat-surface: #0b1a29;
+  --claim-chat-thread: #08131e;
+  --claim-chat-input: #102235;
+  --claim-chat-border: #2c4661;
+  --claim-chat-title: #f1f7ff;
+  --claim-chat-text: #dce8f5;
+  --claim-chat-muted: #adc1d4;
+  --claim-chat-accent: #93c5fd;
+}
+.admin-claim-wizard-chat-trigger:hover { background: rgba(119, 230, 226, .12); }
+.admin-claim-wizard-chat-trigger:focus-visible { outline: 2px solid #77e6e2; outline-offset: 2px; }
+html[data-admin-theme="light"] .admin-claim-wizard-chat-trigger:hover { background: #e5f4f3; }
+html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer {
+  --claim-chat-surface: #fff;
+  --claim-chat-thread: #f3f7fb;
+  --claim-chat-input: #fff;
+  --claim-chat-border: #cbd8e4;
+  --claim-chat-title: #112a43;
+  --claim-chat-text: #23384d;
+  --claim-chat-muted: #52677c;
+  --claim-chat-accent: #1e5d91;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-chat-panel,
+.admin-claim-wizard-chat-drawer .admin-claim-chat-header,
+.admin-claim-wizard-chat-drawer .admin-claim-chat-composer {
+  background: var(--claim-chat-surface) !important;
+  border-color: var(--claim-chat-border) !important;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-chat-title { color: var(--claim-chat-title) !important; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-subtitle,
+.admin-claim-wizard-chat-drawer .admin-claim-chat-empty { color: var(--claim-chat-muted) !important; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-icon,
+.admin-claim-wizard-chat-drawer .admin-claim-wizard-chat-close { color: var(--claim-chat-accent) !important; }
+.admin-claim-wizard-chat-drawer .admin-claim-wizard-chat-close {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: .5rem;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-wizard-chat-close:hover { background: var(--claim-chat-thread); }
+.admin-claim-wizard-chat-drawer .admin-claim-wizard-chat-close:focus-visible,
+.admin-claim-wizard-chat-drawer .admin-claim-chat-send:focus-visible,
+.admin-claim-wizard-chat-drawer .admin-claim-chat-input:focus-visible { outline: 2px solid var(--claim-chat-accent); outline-offset: 2px; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-thread { background: var(--claim-chat-thread) !important; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-empty {
+  border-color: var(--claim-chat-border) !important;
+  background: var(--claim-chat-surface) !important;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-chat-closed {
+  border-color: #47a88a !important;
+  background: rgba(32, 152, 112, .12) !important;
+  color: var(--claim-chat-text) !important;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-chat-input {
+  min-height: 2.25rem;
+  border-radius: .625rem;
+  border: 1px solid var(--claim-chat-border) !important;
+  background: var(--claim-chat-input) !important;
+  color: var(--claim-chat-title) !important;
+  font: inherit;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-chat-input::placeholder { color: var(--claim-chat-muted) !important; opacity: 1; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-input:disabled { opacity: .7; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-send {
+  min-height: 2.25rem;
+  border: 1px solid;
+  border-radius: .625rem;
+  border-color: #3675aa !important;
+  background: #1f5686 !important;
+  color: #fff !important;
+  cursor: pointer;
+}
+.admin-claim-wizard-chat-drawer .admin-claim-chat-send:hover:not(:disabled) { background: #2a6aa0 !important; }
+.admin-claim-wizard-chat-drawer .admin-claim-chat-send:disabled { border-color: var(--claim-chat-border) !important; background: var(--claim-chat-thread) !important; color: var(--claim-chat-muted) !important; opacity: 1; cursor: not-allowed; }
+html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer .admin-claim-chat-send:disabled { background: #e3eaf1 !important; color: #52677c !important; }
+
+/* Reemplazo: mismas acciones y datos, con una jerarquía de formulario compacta. */
+.admin-replacement-modal { max-height: calc(100dvh - 1.5rem); display: flex; flex-direction: column; width: min(100%, 46rem); overflow: hidden; }
+.admin-replacement-modal__header { gap: .65rem; padding: .75rem 1.1rem .65rem; }
+.admin-replacement-modal__icon { width: 2.2rem; height: 2.2rem; border-radius: .65rem; }
+.admin-replacement-modal__icon svg { width: 1.15rem; height: 1.15rem; }
+.admin-replacement-modal__title { margin-top: .1rem; font-size: 1.1rem; }
+.admin-replacement-modal__subtitle { margin-top: .1rem; font-size: .75rem; }
+.admin-replacement-modal__body { min-height: 0; overflow-y: auto; gap: .55rem; padding: .7rem 1.1rem; }
+.admin-replacement-modal__form { gap: .55rem; }
+.admin-replacement-modal__section, .admin-replacement-modal__stock { gap: .45rem; padding: .65rem .8rem; border-radius: .75rem; }
+.admin-replacement-modal__original { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: center; }
+.admin-replacement-modal__original > .admin-replacement-modal__section-title,
+.admin-replacement-modal__original > .admin-replacement-modal__check-row { grid-column: 1 / -1; }
+.admin-replacement-modal__selection { display: flex; align-items: center; gap: .55rem; padding: .4rem .55rem; }
+.admin-replacement-modal__selection > div { min-width: 0; }
+.admin-replacement-modal__thumb { width: 2.5rem; height: 2.5rem; flex: none; border-radius: .4rem; background-color: var(--replacement-modal-field-bg); background-position: center; background-repeat: no-repeat; background-size: contain; }
+.admin-replacement-modal__stats { gap: .25rem; }
+.admin-replacement-modal__stat { padding: .3rem .35rem; border-radius: .5rem; }
+.admin-replacement-modal__stat dt { font-size: .6rem; }
+.admin-replacement-modal__stat dd { font-size: .95rem; }
+.admin-replacement-modal__check-row { min-height: 1.5rem; }
+.admin-replacement-modal__control { min-height: 2.25rem; padding: .35rem .6rem; border-radius: .55rem; }
+.admin-replacement-modal__textarea { min-height: 3.6rem; max-height: 7rem; }
+.admin-replacement-modal__options { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; }
+.admin-replacement-modal__variant-column { display: grid; gap: .4rem; min-width: 0; }
+.admin-replacement-modal__quantity-field { min-width: 9.5rem; }
+.admin-replacement-modal__quantity-button { width: 2.25rem; border-radius: .55rem; }
+.admin-replacement-modal__quantity-input { width: 3rem; }
+.admin-replacement-modal__stock { grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+.admin-replacement-modal__stock-grid { gap: .35rem; }
+.admin-replacement-modal__stock-tile { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; padding: .35rem .55rem; border-radius: .55rem; }
+.admin-replacement-modal__stock-tile p { font-size: .7rem; }
+.admin-replacement-modal__stock-tile strong { margin: 0; font-size: .85rem; white-space: nowrap; }
+.admin-replacement-modal__stock-empty { font-size: .75rem; }
+.admin-replacement-modal__notice, .admin-replacement-modal__confirm { padding: .45rem .6rem; font-size: .75rem; }
+.admin-replacement-modal__footer { padding: .6rem 1.1rem .75rem; }
+.admin-replacement-modal__missing { text-align: left; }
+.admin-replacement-modal__button { min-height: 2.75rem; padding: 0 .9rem; border-radius: .6rem; }
+@media (max-width: 640px) {
+  .admin-replacement-modal__original, .admin-replacement-modal__options, .admin-replacement-modal__stock { grid-template-columns: minmax(0, 1fr); }
+  .admin-replacement-modal__original > .admin-replacement-modal__section-title,
+  .admin-replacement-modal__original > .admin-replacement-modal__check-row { grid-column: auto; }
+  .admin-replacement-modal__quantity-field { min-width: 0; }
+  .admin-replacement-modal__stock-tile { flex-wrap: wrap; }
+}

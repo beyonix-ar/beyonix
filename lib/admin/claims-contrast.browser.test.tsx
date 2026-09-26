@@ -162,8 +162,7 @@ const BLOCK_LUMINANCE = `(() => {
   ${BROWSER_HELPERS}
   const blocks = {
     resumen: ".admin-claim-summary .admin-claim-card",
-    evidencia: ".admin-claim-workspace main > .admin-claim-card",
-    chat: ".admin-claim-chat-panel .admin-claim-header",
+    chat: ".admin-claim-wizard-chat-drawer .admin-claim-chat-header",
     gestionar: ".admin-claim-manage-panel",
     composer: ".admin-claim-composer",
     recepcion: ".admin-claim-reception-panel",
@@ -210,11 +209,43 @@ async function open(theme: "dark" | "light"): Promise<Page> {
 }
 
 for (const theme of ["light", "dark"] as const) {
+  test(`${theme}: chat lateral abre, conserva borrador, cierra afuera y mantiene contraste`, async () => {
+    const page = await open(theme)
+    try {
+      await page.getByRole("button", { name: /Abrir conversación con el cliente/ }).click()
+      const drawer = page.getByRole("dialog", { name: "Conversación con el cliente" })
+      await drawer.waitFor()
+      const input = drawer.getByPlaceholder("Responder al cliente")
+      await input.fill("Respuesta de prueba")
+      const result = (await page.evaluate(AUDIT.replace('document.getElementById("claims-root")', 'document.querySelector(".admin-claim-wizard-chat-drawer")'))) as { audited: number; failures: string[] }
+      assert.ok(result.audited >= 8, `se auditaron ${result.audited} textos del drawer`)
+      const controlColors = await drawer.evaluate((element) => [".admin-claim-chat-input", ".admin-claim-chat-send"].map((selector) => {
+        const style = getComputedStyle(element.querySelector(selector)!)
+        return { selector, color: style.color, background: style.backgroundColor, image: style.backgroundImage, opacity: style.opacity, variable: style.getPropertyValue("--claim-chat-input"), drawer: getComputedStyle(element).getPropertyValue("--claim-chat-input") }
+      }))
+      assert.deepEqual(result.failures, [], JSON.stringify(controlColors))
+      const colors = await drawer.evaluate((element) => {
+        const title = getComputedStyle(element.querySelector(".admin-claim-chat-title")!).color
+        const surface = getComputedStyle(element.querySelector(".admin-claim-chat-panel")!).backgroundColor
+        return { title, surface }
+      })
+      assert.notEqual(colors.title, colors.surface)
+      await page.locator(".admin-claim-wizard-chat-overlay").click({ position: { x: 8, y: 8 } })
+      assert.equal(await drawer.count(), 0, "clic fuera cierra")
+      await page.getByRole("button", { name: /Abrir conversación con el cliente/ }).click()
+      assert.equal(await page.getByPlaceholder("Responder al cliente").inputValue(), "Respuesta de prueba")
+      await page.getByRole("button", { name: "Cerrar conversación" }).click()
+      assert.equal(await drawer.count(), 0, "X cierra")
+    } finally {
+      await page.close()
+    }
+  })
+
   test(`${theme}: todo texto de Atención al cliente cumple contraste AA contra su fondo real`, async () => {
     const page = await open(theme)
     try {
       const { audited, failures } = (await page.evaluate(AUDIT)) as { audited: number; failures: string[] }
-      assert.ok(audited > 60, `se auditaron ${audited} textos`)
+      assert.ok(audited > 45, `se auditaron ${audited} textos del paso actual`)
       assert.deepEqual(failures, [])
     } finally {
       await page.close()
@@ -222,9 +253,10 @@ for (const theme of ["light", "dark"] as const) {
   })
 }
 
-test("Light: resumen, Evidencia, chat, Gestionar, composer y Recepción son superficies claras (sin navy)", async () => {
+test("Light: resumen, wizard, chat, composer y recepción son superficies claras", async () => {
   const page = await open("light")
   try {
+    await page.getByRole("button", { name: /Abrir conversación con el cliente/ }).click()
     const blocks = (await page.evaluate(BLOCK_LUMINANCE)) as Record<string, number | null>
     for (const [name, value] of Object.entries(blocks)) {
       assert.ok(value !== null, `${name}: bloque presente`)
@@ -238,6 +270,7 @@ test("Light: resumen, Evidencia, chat, Gestionar, composer y Recepción son supe
 test("Dark: los mismos bloques siguen oscuros", async () => {
   const page = await open("dark")
   try {
+    await page.getByRole("button", { name: /Abrir conversación con el cliente/ }).click()
     const blocks = (await page.evaluate(BLOCK_LUMINANCE)) as Record<string, number | null>
     for (const [name, value] of Object.entries(blocks)) {
       assert.ok(value !== null && value < 0.05, `${name}: fondo oscuro en Dark (luminancia ${value?.toFixed(3)})`)
