@@ -8306,6 +8306,14 @@ span.admin-claim-status-finalized,
   background-image: none !important;
   box-shadow: none !important;
 }
+/* Bloque Stock del editor: sólo el color del NÚMERO según su significado
+   (vendible = verde, no vendible = rojo). Legibles sobre #0c1219. */
+.product-editor-screen .product-editor-metric-value-success {
+  color: #22c55e;
+}
+.product-editor-screen .product-editor-metric-value-danger {
+  color: #f87171;
+}
 
 .product-editor-screen .product-editor-spec-row-active {
   border-color: rgba(255, 255, 255, 0.36) !important;
@@ -9933,6 +9941,14 @@ html[data-admin-theme="light"] .product-editor-screen :where(
 html[data-admin-theme="light"] .product-editor-screen .product-editor-spec-row-active {
   background: #eaf1fa !important;
   border-color: rgba(30, 58, 95, 0.4) !important;
+}
+/* Números del bloque Stock en Light: verde oscuro (#15803d, 4.8:1) y rojo
+   (#b91c1c, 6.2:1) sobre #f7f9fb. */
+html[data-admin-theme="light"] .product-editor-screen .product-editor-metric-value-success {
+  color: #15803d !important;
+}
+html[data-admin-theme="light"] .product-editor-screen .product-editor-metric-value-danger {
+  color: #b91c1c !important;
 }
 html[data-admin-theme="light"] .product-editor-screen .product-editor-header {
   background: #eef1f5 !important;

@@ -11,6 +11,7 @@ interface ProductCardPricingProps {
 
   quantity: number
   maxReached?: boolean
+  limitMessage?: string | null
 
   onAddToCart?: () => void
   onIncrease?: () => void
@@ -33,6 +34,7 @@ export function ProductCardPricing({
 
   quantity,
   maxReached = false,
+  limitMessage = null,
 
   onAddToCart,
   onIncrease,
@@ -101,6 +103,7 @@ export function ProductCardPricing({
         <ProductCartToggleButton
           quantity={quantity}
           maxReached={maxReached}
+          limitMessage={limitMessage}
           onAdd={
             onAddToCart ||
             (() => {})

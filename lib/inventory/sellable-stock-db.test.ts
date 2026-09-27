@@ -49,6 +49,7 @@ async function setup() {
     for each row execute function public.release_order_stock_reservation();
   `)
   await db.exec(read("supabase/migrations/20260926130000_active_stock_reservation_totals.sql"))
+  await db.exec(read("supabase/migrations/20260926140000_active_stock_reservation_foreign_totals.sql"))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   return db
 }
@@ -278,6 +279,46 @@ test("G. variantes: reservar Negra no afecta a Verde", async () => {
     )
     await reserve(db, "fase5-b-session-0006", [{ productId: p.id, variantId: verde, quantity: 3 }])
   } finally {
+    await db.close()
+  }
+})
+
+test("reserva ajena sólo con certeza: otra cuenta sí; propia en otra sesión, invitado o consulta anónima no", async () => {
+  const db = await setup()
+  const owner = "20000000-0000-4000-8000-000000000001"
+  const other = "20000000-0000-4000-8000-000000000002"
+  const asUser = (userId: string | null) =>
+    db.query("select set_config('request.jwt.claim.sub', $1, false)", [userId ?? ""])
+  try {
+    await db.query("insert into auth.users(id) values ($1), ($2)", [owner, other])
+    const p = await createProduct(db, 10)
+
+    await asUser(other)
+    await reserve(db, "fase5-foreign-other-01", [{ productId: p.id, quantity: 2 }])
+    await asUser(owner)
+    await reserve(db, "fase5-foreign-owner-tab-b", [{ productId: p.id, quantity: 1 }])
+    await asUser(null)
+    await reserve(db, "fase5-foreign-guest-01", [{ productId: p.id, quantity: 3 }])
+
+    const foreignFor = async (viewer: string | null, excludeSession: string | null = null) => {
+      await asUser(viewer)
+      const { rows } = await db.query<{ reserved_quantity: number; foreign_reserved_quantity: number }>(
+        "select reserved_quantity, foreign_reserved_quantity from active_stock_reservation_totals($1::bigint[], $2)",
+        [[p.id], excludeSession],
+      )
+      return rows.map((row) => [Number(row.reserved_quantity), Number(row.foreign_reserved_quantity)])
+    }
+
+    // El dueño (otra pestaña con su propia sesión) sólo ve como ajenas las 2 de la otra cuenta.
+    assert.deepEqual(await foreignFor(owner), [[6, 2]])
+    // Excluyendo su sesión actual el conteo baja, lo ajeno no cambia.
+    assert.deepEqual(await foreignFor(owner, "fase5-foreign-owner-tab-b"), [[5, 2]])
+    // La otra cuenta ve como ajena la del dueño; la del invitado nunca es "ajena con certeza".
+    assert.deepEqual(await foreignFor(other), [[6, 1]])
+    // Sin sesión no hay certeza de nada.
+    assert.deepEqual(await foreignFor(null), [[6, 0]])
+  } finally {
+    await asUser(null)
     await db.close()
   }
 })

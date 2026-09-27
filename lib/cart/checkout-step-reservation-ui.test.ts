@@ -8,7 +8,7 @@ import {
   reservationMatchesCart,
   reservationSecondsLeft,
 } from "./checkout-step-reservation.ts"
-import { MAX_CART_ITEM_QUANTITY } from "./stock-status.ts"
+import { MAX_CART_ITEM_QUANTITY, PURCHASE_LIMIT_MESSAGE } from "./stock-status.ts"
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
 const checkout = read("../../app/checkout/page.tsx")
@@ -111,8 +111,10 @@ test("13. una reserva vencida recuperada no crea otra automáticamente", () => {
 test("14. carrito y checkout muestran el tope de 3; backend lo sigue validando", () => {
   assert.equal(MAX_CART_ITEM_QUANTITY, 3)
   assert.match(cart, /Math\.min\(nextQuantity, MAX_CART_ITEM_QUANTITY\)/)
-  assert.match(checkout, /Máximo 3/)
-  assert.match(read("../../components/cart/cart-item.tsx"), /Máximo 3/)
+  // El tope se explica con el motivo real (límite de 3, reservas ajenas o sin stock).
+  assert.equal(PURCHASE_LIMIT_MESSAGE, "Podés comprar hasta 3 unidades por producto o variante.")
+  assert.match(checkout, /getQuantityLimitMessage\(item\.product, item\.color, item\.quantity\)/)
+  assert.match(read("../../components/cart/cart-item.tsx"), /getQuantityLimitMessage\(product, color, quantity\)/)
   assert.match(reservation, /item\.quantity > 3/)
 })
 

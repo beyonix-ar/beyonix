@@ -81,11 +81,11 @@ import {
 
 import {
   CART_STOCK_ISSUES_MESSAGE,
-  MAX_CART_ITEM_QUANTITY,
   STOCK_CHANGED_MESSAGE,
   getCartStockIssueMessage,
   getCartStockIssues,
   getMaxPurchasableQuantity,
+  getQuantityLimitMessage,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
@@ -3204,6 +3204,9 @@ export default function CheckoutPage() {
                   const stockIssue = cartStockIssues.find((issue) =>
                     issue.productId === item.product.id && issue.color === item.color,
                   )
+                  const limitMessage = isMaxQuantity && !stockIssue
+                    ? getQuantityLimitMessage(item.product, item.color, item.quantity)
+                    : null
                   const stockStatus = getStockStatus(item.product, item.color)
                   const showStockIndicator = stockStatus !== "out"
                   const stockSymbol = getStockIndicatorSymbol(stockStatus)
@@ -3316,25 +3319,28 @@ export default function CheckoutPage() {
                             <span className="flex h-full min-w-8 items-center justify-center px-1.5 text-xs font-bold tabular-nums text-white">
                               {item.quantity}
                             </span>
-                            <button
-                              type="button"
-                              aria-label="Agregar una unidad"
-                              onClick={() => changeCheckoutCartItem(
-                                itemIndex,
-                                item.quantity + 1,
-                                () => increaseQuantity(item.product.id, item.color),
-                              )}
-                              disabled={isMaxQuantity || reservationPending || reservationExpired}
-                              className="flex h-full w-7 items-center justify-center border-l border-white/10 text-white/65 transition-colors enabled:cursor-pointer enabled:hover:bg-beyonix-blue/45 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                            <span
+                              title={limitMessage ?? undefined}
+                              className={cn("flex h-full", limitMessage && "cursor-not-allowed")}
                             >
-                              <Plus className="size-3" />
-                            </button>
-                          </div>
-                          {isMaxQuantity && !stockIssue && (
-                            <span className="text-10px text-white/50">
-                              {maxQuantity >= MAX_CART_ITEM_QUANTITY ? "Máximo 3" : "Máximo disponible"}
+                              <button
+                                type="button"
+                                aria-label="Agregar una unidad"
+                                onClick={() => changeCheckoutCartItem(
+                                  itemIndex,
+                                  item.quantity + 1,
+                                  () => increaseQuantity(item.product.id, item.color),
+                                )}
+                                disabled={isMaxQuantity || reservationPending || reservationExpired}
+                                className={cn(
+                                  "flex h-full w-7 items-center justify-center border-l border-white/10 text-white/65 transition-colors enabled:cursor-pointer enabled:hover:bg-beyonix-blue/45 enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-35",
+                                  limitMessage && "disabled:pointer-events-none",
+                                )}
+                              >
+                                <Plus className="size-3" />
+                              </button>
                             </span>
-                          )}
+                          </div>
                         </div>
 
                         <button
@@ -3351,6 +3357,15 @@ export default function CheckoutPage() {
                           <Trash2 className="size-3.5" />
                         </button>
                       </div>
+                      {limitMessage && (
+                        <p
+                          role="status"
+                          data-quantity-limit-message
+                          className="mt-1 text-[11px] leading-4 text-white/55"
+                        >
+                          {limitMessage}
+                        </p>
+                      )}
                     </div>
                     </div>
                   )

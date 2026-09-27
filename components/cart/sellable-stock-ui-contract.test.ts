@@ -122,6 +122,61 @@ test("migración: agregado seguro (security definer, sólo lectura), mismo predi
   assert.doesNotMatch(migration, /grant\s+select[^;]*stock_reservations/i)
 })
 
+test("bloqueo del +: el motivo real aparece como tooltip y como texto visible", () => {
+  const toggle = read("components/products/product-cart-toggle-button.tsx")
+  const purchaseBox = read("components/products/product-purchase-box.tsx")
+  const cardPricing = read("components/products/shared/product-card-pricing.tsx")
+  // Un botón deshabilitado no muestra title: el tooltip vive en el contenedor.
+  assert.equal((toggle.match(/<span title=\{blockedTitle\}/g) ?? []).length, 2)
+  assert.equal((toggle.match(/disabled:pointer-events-none/g) ?? []).length, 2)
+  assert.match(cardPricing, /limitMessage=\{limitMessage\}/)
+  assert.match(purchaseBox, /\{maxReached && limitMessage && \(/)
+  assert.match(productCard, /limitMessage=\{getQuantityLimitMessage\(product, defaultVariant\.value, quantity\)\}/)
+  assert.match(detailsPanel, /limitMessage=\{getQuantityLimitMessage\(\s*product,\s*selectedOption\?\.value \?\? selectedColor,\s*cartQuantity,\s*\)\}/)
+  assert.match(cartItem, /getQuantityLimitMessage\(product, color, quantity\)/)
+  assert.match(cartItem, /<span\s*title=\{limitMessage \?\? undefined\}/)
+  assert.match(checkout, /getQuantityLimitMessage\(item\.product, item\.color, item\.quantity\)/)
+  assert.match(checkout, /<span\s*title=\{limitMessage \?\? undefined\}/)
+  assert.doesNotMatch(cartItem + checkout, /"Máximo disponible"/)
+})
+
+test("Admin: sólo el número del bloque Stock toma color según su significado", () => {
+  const editor = read("app/admin/sections/productos/product-variants-editor.tsx")
+  const css = read("app/globals.css")
+  assert.match(editor, /tone === "neutral" \? "text-white" : `product-editor-metric-value-\$\{tone\}`/)
+  const tones = new Map(
+    [...adminForm.matchAll(/<StockSummaryItem label="([^"]+)" value=\{[^}]+\}(?: tone="(\w+)")? \/>/g)]
+      .map((match) => [match[1], match[2] ?? "neutral"]),
+  )
+  assert.deepEqual(Object.fromEntries(tones), {
+    "Stock físico": "neutral",
+    "Stock normal": "success",
+    "Stock con descuento": "neutral",
+    "Fallado / no vendible": "danger",
+    "Pendiente de revisión": "neutral",
+    "Reservado (checkout)": "success",
+    "Disponible para vender": "success",
+  })
+  assert.match(css, /html\[data-admin-theme="light"\] \.product-editor-screen \.product-editor-metric-value-success \{\n  color: #15803d !important;\n\}/)
+  assert.match(css, /html\[data-admin-theme="light"\] \.product-editor-screen \.product-editor-metric-value-danger \{\n  color: #b91c1c !important;\n\}/)
+  assert.match(css, /\n\.product-editor-screen \.product-editor-metric-value-success \{\n  color: #22c55e;\n\}/)
+  assert.match(css, /\n\.product-editor-screen \.product-editor-metric-value-danger \{\n  color: #f87171;\n\}/)
+})
+
+test("migración de certeza: 'ajena' sólo es otra cuenta autenticada; mismos permisos y sin identidades", () => {
+  const foreign = read("supabase/migrations/20260926140000_active_stock_reservation_foreign_totals.sql")
+  const code = foreign.replace(/--.*$/gm, "")
+  assert.match(code, /drop function if exists public\.active_stock_reservation_totals\(bigint\[\], text\);/)
+  assert.match(code, /where v_viewer is not null\s*and reservations\.user_id is not null\s*and reservations\.user_id <> v_viewer/)
+  assert.match(code, /v_viewer uuid := auth\.uid\(\);/)
+  assert.match(code, /reservations\.expires_at > now\(\)/)
+  assert.match(code, /grant execute on function public\.active_stock_reservation_totals\(bigint\[\], text\)\s*to anon, authenticated, service_role;/)
+  // La salida sigue siendo sólo agregados: ninguna columna con identidad.
+  const returns = code.slice(code.indexOf("returns table"), code.indexOf("language plpgsql"))
+  assert.doesNotMatch(returns, /session|user_id|order_id|expires_at/)
+  assert.doesNotMatch(code, /\b(insert|update|delete)\s+(into|public\.|from)/i)
+})
+
 test("el navegador nunca consulta reserva por reserva", () => {
   const clientDirs = ["components", "context", "hooks", "app"]
   const offenders: string[] = []

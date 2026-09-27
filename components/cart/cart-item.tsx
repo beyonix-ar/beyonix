@@ -4,10 +4,10 @@ import { CheckCircle2, CircleSlash2, Flame, Minus, Plus, Trash2 } from "lucide-r
 import { Button } from "@/components/ui/button"
 import type { CartItem } from "@/context/cart-context"
 import {
-  MAX_CART_ITEM_QUANTITY,
   getCartStockIssueMessage,
   getCartStockIssues,
   getMaxPurchasableQuantity,
+  getQuantityLimitMessage,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
@@ -69,6 +69,9 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const maxQuantity = getMaxPurchasableQuantity(product, color)
   const isMaxQuantity = quantity >= maxQuantity
   const stockIssue = getCartStockIssues([item])[0]
+  const limitMessage = isMaxQuantity && !stockIssue
+    ? getQuantityLimitMessage(product, color, quantity)
+    : null
   const stockStatus = getStockStatus(product, color)
   const StockIcon = getStockIcon(stockStatus)
 
@@ -173,26 +176,36 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 {quantity}
               </span>
 
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="beyonix-cart-item-stepper-btn h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent"
-                aria-label="Aumentar cantidad"
-                title="Aumentar cantidad"
-                onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
-                disabled={isMaxQuantity}
+              <span
+                title={limitMessage ?? undefined}
+                className={limitMessage ? "flex h-full cursor-not-allowed" : "flex h-full"}
               >
-                <Plus className="size-3" />
-              </Button>
-            </div>
-            {isMaxQuantity && !stockIssue && (
-              <span className="text-10px text-white/50">
-                {maxQuantity >= MAX_CART_ITEM_QUANTITY ? "Máximo 3" : "Máximo disponible"}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="beyonix-cart-item-stepper-btn h-full w-7 rounded-none border-0 border-l border-white/10 bg-transparent text-white enabled:cursor-pointer enabled:hover:bg-beyonix-blue/60 disabled:pointer-events-none disabled:opacity-35 disabled:hover:bg-transparent"
+                  aria-label="Aumentar cantidad"
+                  title="Aumentar cantidad"
+                  onClick={() => onUpdateQuantity(product.id, color, quantity + 1)}
+                  disabled={isMaxQuantity}
+                >
+                  <Plus className="size-3" />
+                </Button>
               </span>
-            )}
+            </div>
           </div>
         </div>
+
+        {limitMessage && (
+          <p
+            role="status"
+            data-quantity-limit-message
+            className="beyonix-cart-item-meta mt-1 text-10px leading-4 text-white/55"
+          >
+            {limitMessage}
+          </p>
+        )}
       </div>
 
       <Button

@@ -31,7 +31,10 @@ import {
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
 } from "@/lib/pricing/financed-pricing"
-import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
+import {
+  MAX_CART_ITEM_QUANTITY,
+  getQuantityLimitMessage,
+} from "@/lib/cart/stock-status"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 
 interface SharedProductCardProps {
@@ -336,6 +339,7 @@ export default function SharedProductCard({
                 // stock ya es el disponible (físico - reservas activas).
                 quantity >= Math.min(MAX_CART_ITEM_QUANTITY, defaultVariant.stock)
               }
+              limitMessage={getQuantityLimitMessage(product, defaultVariant.value, quantity)}
               onAddToCart={
                 handleAddToCart
               }

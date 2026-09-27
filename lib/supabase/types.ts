@@ -40,6 +40,7 @@ export interface SupabaseProductoVariante {
   /** Ver SupabaseProducto.physical_stock. */
   physical_stock?: number
   reserved_stock?: number
+  foreign_reserved_stock?: number
   imagenes: string[]
   activo: boolean
   orden: number
@@ -56,6 +57,7 @@ export interface SupabaseConditionedStock {
   /** Ver SupabaseProducto.physical_stock. */
   physical_quantity?: number
   reserved_quantity?: number
+  foreign_reserved_quantity?: number
   discount_percent: number
   reason: string | null
   non_sellable_quantity: number
@@ -119,10 +121,13 @@ export interface SupabaseProducto {
    * leyó con reservas activas: `physical_stock` es el stock físico derivado y
    * `reserved_stock` lo reservado por checkouts vigentes. En el catálogo
    * público `stock` ya es el DISPONIBLE (físico - reservado, nunca negativo);
-   * en Admin `stock` sigue siendo el físico.
+   * en Admin `stock` sigue siendo el físico. `foreign_reserved_stock` es la
+   * parte de lo reservado que es, con certeza, de otra cuenta (0 si no se
+   * puede saber).
    */
   physical_stock?: number
   reserved_stock?: number
+  foreign_reserved_stock?: number
 
   categoria_id: number | null
 

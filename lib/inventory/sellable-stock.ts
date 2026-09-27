@@ -24,6 +24,12 @@ export interface ActiveReservationTotal {
   variant_id: number | null
   conditioned_stock_id: string | null
   reserved_quantity: number
+  /**
+   * Parte de lo reservado que la base puede afirmar que es de OTRA cuenta
+   * (usuario autenticado distinto del que consulta). 0 si no hay certeza:
+   * invitado, consulta sin sesión o la RPC anterior sin esta columna.
+   */
+  foreign_reserved_quantity?: number
 }
 
 /** Mismo límite que valida la RPC; los listados grandes se piden en lotes. */
@@ -44,6 +50,10 @@ export interface ProductReservationSummary {
   normal: number
   byVariant: Map<number, number>
   byConditioned: Map<string, number>
+  /** Lo mismo, pero sólo lo reservado con certeza por otra cuenta. */
+  foreignNormal: number
+  foreignByVariant: Map<number, number>
+  foreignByConditioned: Map<string, number>
 }
 
 /**
@@ -60,19 +70,29 @@ export function summarizeProductReservations(
     normal: 0,
     byVariant: new Map(),
     byConditioned: new Map(),
+    foreignNormal: 0,
+    foreignByVariant: new Map(),
+    foreignByConditioned: new Map(),
   }
+  const add = <K>(map: Map<K, number>, key: K, quantity: number) =>
+    map.set(key, (map.get(key) ?? 0) + quantity)
   for (const row of totals) {
     if (Number(row.product_id) !== productId) continue
     const quantity = nonNegativeInteger(row.reserved_quantity)
+    // Nunca más "ajeno" que lo reservado en esa misma fila.
+    const foreign = Math.min(quantity, nonNegativeInteger(row.foreign_reserved_quantity))
     if (row.conditioned_stock_id) {
       const id = String(row.conditioned_stock_id)
-      summary.byConditioned.set(id, (summary.byConditioned.get(id) ?? 0) + quantity)
+      add(summary.byConditioned, id, quantity)
+      add(summary.foreignByConditioned, id, foreign)
       continue
     }
     summary.normal += quantity
+    summary.foreignNormal += foreign
     if (row.variant_id != null) {
       const id = Number(row.variant_id)
-      summary.byVariant.set(id, (summary.byVariant.get(id) ?? 0) + quantity)
+      add(summary.byVariant, id, quantity)
+      add(summary.foreignByVariant, id, foreign)
     }
   }
   return summary
@@ -102,6 +122,7 @@ function withReservations<T extends SupabaseProducto>(
     stock: resolve(physical, summary.normal),
     physical_stock: physical,
     reserved_stock: summary.normal,
+    foreign_reserved_stock: summary.foreignNormal,
     producto_variantes: product.producto_variantes?.map((variant) => {
       const variantPhysical = nonNegativeInteger(variant.physical_stock ?? variant.stock)
       const reserved = summary.byVariant.get(variant.id) ?? 0
@@ -110,6 +131,7 @@ function withReservations<T extends SupabaseProducto>(
         stock: resolve(variantPhysical, reserved),
         physical_stock: variantPhysical,
         reserved_stock: reserved,
+        foreign_reserved_stock: summary.foreignByVariant.get(variant.id) ?? 0,
       }
     }),
     conditioned_stock: product.conditioned_stock?.map((item) => {
@@ -120,6 +142,7 @@ function withReservations<T extends SupabaseProducto>(
         quantity: resolve(itemPhysical, reserved),
         physical_quantity: itemPhysical,
         reserved_quantity: reserved,
+        foreign_reserved_quantity: summary.foreignByConditioned.get(item.id) ?? 0,
       }
     }),
   }
@@ -193,6 +216,7 @@ export async function fetchActiveReservationTotals(
         variant_id: row.variant_id == null ? null : Number(row.variant_id),
         conditioned_stock_id: row.conditioned_stock_id == null ? null : String(row.conditioned_stock_id),
         reserved_quantity: nonNegativeInteger(row.reserved_quantity),
+        foreign_reserved_quantity: nonNegativeInteger(row.foreign_reserved_quantity),
       })
     }
   }

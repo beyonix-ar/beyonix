@@ -77,7 +77,10 @@ import {
   getPriceWithoutNationalTaxes,
   getTransferPrice,
 } from "@/lib/pricing/financed-pricing"
-import { MAX_CART_ITEM_QUANTITY } from "@/lib/cart/stock-status"
+import {
+  MAX_CART_ITEM_QUANTITY,
+  getQuantityLimitMessage,
+} from "@/lib/cart/stock-status"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 
 interface ProductDetailsPanelProps {
@@ -301,6 +304,11 @@ export function ProductDetailsPanel({
             // selectedStock ya es el disponible (físico - reservas activas).
             cartQuantity >= Math.min(MAX_CART_ITEM_QUANTITY, selectedStock)
           }
+          limitMessage={getQuantityLimitMessage(
+            product,
+            selectedOption?.value ?? selectedColor,
+            cartQuantity,
+          )}
           onAddToCart={onAddToCart}
           onDecreaseCart={onDecreaseCart}
           onRemoveFromCart={onRemoveFromCart}

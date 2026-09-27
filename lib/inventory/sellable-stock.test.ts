@@ -13,6 +13,11 @@ import { describeStockReservation } from "./stock-reservation-details.ts"
 import {
   CART_STOCK_ISSUES_MESSAGE,
   MAX_CART_ITEM_QUANTITY,
+  PURCHASE_LIMIT_MESSAGE,
+  STOCK_LIMIT_EXHAUSTED_MESSAGE,
+  STOCK_LIMIT_RESERVED_MESSAGE,
+  STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE,
+  getQuantityLimitMessage,
   getCartStockIssueMessage,
   getCartStockIssues,
   getMaxPurchasableQuantity,
@@ -81,11 +86,13 @@ const total = (
   reserved: number,
   variantId: number | null = null,
   conditionedStockId: string | null = null,
+  foreign = 0,
 ): ActiveReservationTotal => ({
   product_id: productId,
   variant_id: variantId,
   conditioned_stock_id: conditionedStockId,
   reserved_quantity: reserved,
+  foreign_reserved_quantity: foreign,
 })
 
 test("físico/reservado/disponible: 5 - 2 = 3 y nunca negativo", () => {
@@ -212,7 +219,12 @@ test("listados: una consulta por lote (sin N+1), excluye la sesión propia y deg
   assert.equal(calls.length, 3, "1.200 productos = 3 lotes de 500, no 1.200 consultas")
   assert.ok(calls.every((call) => call.name === "active_stock_reservation_totals"))
   assert.ok(calls.every((call) => call.args.p_exclude_session_id === "checkout-session-own"))
-  assert.deepEqual(totals, [{ product_id: 1, variant_id: null, conditioned_stock_id: null, reserved_quantity: 2 }])
+  assert.deepEqual(totals, [{
+    product_id: 1, variant_id: null, conditioned_stock_id: null,
+    reserved_quantity: 2,
+    // La RPC anterior no trae la columna: sin certeza de reserva ajena.
+    foreign_reserved_quantity: 0,
+  }])
 
   const missing = { rpc: async () => ({ data: null, error: { message: "Could not find the function public.active_stock_reservation_totals" } }) }
   assert.deepEqual(await fetchActiveReservationTotals(missing as never, [1]), [])
@@ -235,6 +247,75 @@ test("carrito: tenía 3 y quedan 2 -> se informa, no se borra y no deja avanzar"
   assert.equal(getCartStockIssueMessage({ available: 0 }), "Sin stock disponible por ahora. Quitalo del carrito para continuar.")
   assert.match(CART_STOCK_ISSUES_MESSAGE, /Corregí las cantidades/)
   assert.deepEqual(getCartStockIssues([{ product: fresh, color: "default", quantity: 2 }]), [])
+})
+
+test("bloqueo del +: distingue reservas ajenas (A), stock agotado (B) y límite de 3", () => {
+  // A) físico 3, otra cuenta reservó 1 (certeza de la base): con 2 no se suma.
+  const [reservedByOthers] = applyAvailableStock([product({ stock: 3 })], [total(1, 1, null, null, 1)])
+  assert.equal(getQuantityLimitMessage(reservedByOthers, "default", 2), STOCK_LIMIT_RESERVED_MESSAGE)
+  assert.equal(getQuantityLimitMessage(reservedByOthers, "default", 1), null, "todavía se puede sumar")
+  // Todo reservado por otra cuenta: tampoco se puede agregar la primera.
+  const [allReserved] = applyAvailableStock([product({ stock: 1 })], [total(1, 1, null, null, 1)])
+  assert.equal(getQuantityLimitMessage(allReserved, "default", 0), STOCK_LIMIT_RESERVED_MESSAGE)
+
+  // B) físico 2 sin reservas: con 2 en el carrito ya no queda nada.
+  const [exhausted] = applyAvailableStock([product({ stock: 2 })], [])
+  assert.equal(getQuantityLimitMessage(exhausted, "default", 2), STOCK_LIMIT_EXHAUSTED_MESSAGE)
+  // Sin datos de reservas (producto leído sin la RPC) nunca culpa a una reserva.
+  assert.equal(getQuantityLimitMessage(product({ stock: 2 }), "default", 2), STOCK_LIMIT_EXHAUSTED_MESSAGE)
+
+  // Límite de compra: hay stock de sobra.
+  const [plenty] = applyAvailableStock([product({ stock: 10 })], [total(1, 2)])
+  assert.equal(getQuantityLimitMessage(plenty, "default", 3), PURCHASE_LIMIT_MESSAGE)
+
+  // Variantes: la reserva de Negra no explica el bloqueo de Verde.
+  const [variants] = applyAvailableStock([
+    product({ stock: 4, producto_variantes: [variant(11, 2, "Negra"), variant(12, 2, "Verde")] }),
+  ], [total(1, 1, 11, null, 1)])
+  assert.equal(getQuantityLimitMessage(variants, "variant:11", 1), STOCK_LIMIT_RESERVED_MESSAGE)
+  assert.equal(getQuantityLimitMessage(variants, "variant:12", 2), STOCK_LIMIT_EXHAUSTED_MESSAGE)
+
+  // Stock con descuento reservado por otra cuenta.
+  const [discounted] = applyAvailableStock(
+    [product({ stock: 0, conditioned_stock: [conditioned("c-1", 1)] })],
+    [total(1, 1, null, "c-1", 1)],
+  )
+  assert.equal(getQuantityLimitMessage(discounted, "conditioned:c-1", 0), STOCK_LIMIT_RESERVED_MESSAGE)
+
+  assert.equal(
+    STOCK_LIMIT_RESERVED_MESSAGE,
+    "No hay más unidades disponibles ahora. Otro cliente tiene reservadas las unidades restantes. Si su compra vence o se cancela, volverán a estar disponibles.",
+  )
+  assert.equal(STOCK_LIMIT_EXHAUSTED_MESSAGE, "No hay más unidades disponibles.")
+})
+
+test("bloqueo del +: reserva propia (otra pestaña/dispositivo) o de origen incierto -> texto neutro", () => {
+  // Reserva de la misma cuenta en otra sesión: la base no la cuenta como ajena.
+  const [own] = applyAvailableStock([product({ stock: 3 })], [total(1, 1, null, null, 0)])
+  assert.equal(getQuantityLimitMessage(own, "default", 2), STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE)
+  // Invitado o consulta sin sesión: tampoco hay certeza.
+  const [unknown] = applyAvailableStock([product({ stock: 1 })], [total(1, 1)])
+  assert.equal(getQuantityLimitMessage(unknown, "default", 0), STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE)
+  // Mezcla: 1 ajena + 1 propia sobre físico 3, con 1 en el carrito. Si sólo
+  // existiera la ajena todavía se podría sumar: no se culpa a "otro cliente".
+  const [mixed] = applyAvailableStock([product({ stock: 3 })], [total(1, 2, null, null, 1)])
+  assert.equal(getQuantityLimitMessage(mixed, "default", 1), STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE)
+  // Si las ajenas alcanzan solas para bloquear, se mantiene "Otro cliente…".
+  const [foreignEnough] = applyAvailableStock([product({ stock: 3 })], [total(1, 3, null, null, 2)])
+  assert.equal(getQuantityLimitMessage(foreignEnough, "default", 1), STOCK_LIMIT_RESERVED_MESSAGE)
+  // Nunca más "ajeno" que lo reservado, aunque la fila venga inconsistente.
+  const [capped] = applyAvailableStock([product({ stock: 3 })], [total(1, 1, null, null, 9)])
+  assert.equal(capped.foreign_reserved_stock, 1)
+  // Variante con descuento reservada por la propia cuenta.
+  const [ownDiscounted] = applyAvailableStock(
+    [product({ stock: 0, conditioned_stock: [conditioned("c-1", 1)] })],
+    [total(1, 1, null, "c-1", 0)],
+  )
+  assert.equal(getQuantityLimitMessage(ownDiscounted, "conditioned:c-1", 0), STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE)
+  assert.equal(
+    STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE,
+    "Hay unidades temporalmente reservadas. Si la reserva vence o se cancela, volverán a estar disponibles.",
+  )
 })
 
 test("Admin: detalle de reservas sin datos del cliente y con estado básico", () => {

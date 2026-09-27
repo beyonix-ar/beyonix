@@ -24,6 +24,8 @@ interface ProductPurchaseBoxProps {
   isInCart?: boolean
   cartQuantity?: number
   maxReached?: boolean
+  /** Motivo real por el que no se puede sumar otra unidad. */
+  limitMessage?: string | null
   onAddToCart: (quantity?: number) => void
   onDecreaseCart: () => void
   onRemoveFromCart: () => void
@@ -68,6 +70,7 @@ export function ProductPurchaseBox({
   isInCart = false,
   cartQuantity = 0,
   maxReached = false,
+  limitMessage = null,
   onAddToCart,
   onDecreaseCart,
   onRemoveFromCart,
@@ -216,6 +219,7 @@ export function ProductPurchaseBox({
           <ProductCartToggleButton
             quantity={quantity}
             maxReached={maxReached}
+            limitMessage={limitMessage}
             onAdd={handleAdd}
             onIncrease={handleIncrease}
             onDecrease={handleDecrease}
@@ -232,6 +236,16 @@ export function ProductPurchaseBox({
           Ver carrito
         </BeyonixButton>
       </div>
+
+      {maxReached && limitMessage && (
+        <p
+          role="status"
+          data-quantity-limit-message
+          className="beyonix-modal-muted mt-2 text-12px leading-5 text-white/65"
+        >
+          {limitMessage}
+        </p>
+      )}
     </div>
   )
 }

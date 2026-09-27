@@ -49,6 +49,68 @@ export function getMaxPurchasableQuantity(product: SupabaseProducto, variantValu
   return Math.min(MAX_CART_ITEM_QUANTITY, getProductStock(product, variantValue))
 }
 
+export const STOCK_LIMIT_RESERVED_MESSAGE =
+  "No hay más unidades disponibles ahora. Otro cliente tiene reservadas las unidades restantes. Si su compra vence o se cancela, volverán a estar disponibles."
+/** Reservas cuya pertenencia no se puede afirmar (propias u origen incierto). */
+export const STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE =
+  "Hay unidades temporalmente reservadas. Si la reserva vence o se cancela, volverán a estar disponibles."
+export const STOCK_LIMIT_EXHAUSTED_MESSAGE = "No hay más unidades disponibles."
+export const PURCHASE_LIMIT_MESSAGE = "Podés comprar hasta 3 unidades por producto o variante."
+
+/**
+ * Físico y disponible de la variante elegida. `physical_*` sólo existe si el
+ * producto se leyó con reservas (lib/inventory/sellable-stock.ts); si no, el
+ * físico es el mismo stock mostrado.
+ */
+export function getVariantStockBreakdown(product: SupabaseProducto, variantValue?: string | null) {
+  const option = getVariantOptionByValue(product, variantValue)
+  const available = getProductStock(product, variantValue)
+  let physical: number | null | undefined
+  let foreignReserved: number | null | undefined
+  if (option?.conditionedStockId) {
+    const item = product.conditioned_stock?.find((entry) => entry.id === option.conditionedStockId)
+    physical = item?.physical_quantity
+    foreignReserved = item?.foreign_reserved_quantity
+  } else if (option?.id != null) {
+    const variant = product.producto_variantes?.find((entry) => entry.id === option.id)
+    physical = variant?.physical_stock
+    foreignReserved = variant?.foreign_reserved_stock
+  } else {
+    physical = product.physical_stock
+    foreignReserved = product.foreign_reserved_stock
+  }
+  return {
+    available,
+    physical: Math.max(physical ?? available, available),
+    /** Reservado con certeza por OTRA cuenta (0 si no se puede saber). */
+    foreignReserved: Math.max(0, foreignReserved ?? 0),
+  }
+}
+
+/**
+ * Por qué no se puede sumar otra unidad (null si se puede). Distingue el
+ * límite de compra (3), unidades retenidas por reservas activas y stock
+ * físico agotado. Sólo UI: no cambia ninguna regla.
+ *
+ * "Otro cliente…" sólo cuando las reservas de OTRA cuenta (certeza de la
+ * base: usuario autenticado distinto) alcanzan por sí solas para bloquear.
+ * Si el bloqueo depende de reservas propias (otra pestaña/dispositivo) o de
+ * origen incierto (invitados, sin sesión), el texto es neutro.
+ */
+export function getQuantityLimitMessage(
+  product: SupabaseProducto,
+  variantValue: string | null | undefined,
+  quantity: number,
+) {
+  const { available, physical, foreignReserved } = getVariantStockBreakdown(product, variantValue)
+  if (quantity < Math.min(MAX_CART_ITEM_QUANTITY, available)) return null
+  if (available >= MAX_CART_ITEM_QUANTITY) return PURCHASE_LIMIT_MESSAGE
+  if (physical <= quantity) return STOCK_LIMIT_EXHAUSTED_MESSAGE
+  return physical - foreignReserved <= quantity
+    ? STOCK_LIMIT_RESERVED_MESSAGE
+    : STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE
+}
+
 export interface CartStockIssue {
   productId: number
   color: string

@@ -1219,17 +1219,27 @@ export function ProductVariantsEditor({
   )
 }
 
+export type StockSummaryTone = "neutral" | "success" | "danger"
+
 export function StockSummaryItem({
   label,
   value,
+  tone = "neutral",
 }: {
   label: string
   value?: number
+  /** Sólo colorea el número; el bloque conserva su estilo. */
+  tone?: StockSummaryTone
 }) {
   return (
     <div className="product-editor-metric min-w-0 rounded-lg border border-white/9 px-2 py-1.5">
       <p className="truncate text-xs font-bold leading-4 text-white">{label}</p>
-      <p className="mt-0.5 text-xl font-black leading-none tabular-nums text-white">
+      <p
+        data-stock-tone={tone}
+        className={`mt-0.5 text-xl font-black leading-none tabular-nums ${
+          tone === "neutral" ? "text-white" : `product-editor-metric-value-${tone}`
+        }`}
+      >
         {value ?? "—"}
       </p>
     </div>
