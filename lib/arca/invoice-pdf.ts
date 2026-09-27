@@ -1,8 +1,9 @@
 import "server-only"
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
+import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib"
 import QRCode from "qrcode"
 
+import { isFiscalArcaVoucher } from "@/lib/arca/environment"
 import { buildArcaQrUrl } from "@/lib/arca/qr"
 
 interface InvoicePdfItem {
@@ -36,6 +37,8 @@ export interface InvoicePdfOrder {
   invoice_cae: string
   invoice_cae_due: string
   invoice_created_at: string
+  /** Ambiente ARCA del comprobante. Sólo 'production' es fiscal. */
+  arca_environment: string | null
   voucher_type?: number
   document_title?: string
   detail_title?: string
@@ -69,6 +72,8 @@ const BLUE = rgb(17 / 255, 42 / 255, 67 / 255)
 const PANEL = rgb(0.965, 0.965, 0.965)
 const BORDER = rgb(0.72, 0.72, 0.72)
 const WHITE = rgb(1, 1, 1)
+const TEST_MARK = rgb(0.75, 0.1, 0.1)
+const TEST_WATERMARK = "SIN VALIDEZ FISCAL - PRUEBA ARCA HOMOLOGACIÓN"
 
 function requiredCuit() {
   const cuit = process.env.ARCA_CUIT?.replace(/\D/g, "")
@@ -357,6 +362,7 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   const documentTitle = order.document_title ?? "FACTURA"
   const detailTitle = order.detail_title ?? "DETALLE DE FACTURA"
   const totalLabel = voucherType === 13 ? "TOTAL ACREDITADO" : "TOTAL"
+  const isTestVoucher = !isFiscalArcaVoucher(order.arca_environment)
   const pdf = await PDFDocument.create()
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -446,6 +452,17 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   }
 
   const drawFooter = () => {
+    if (isTestVoucher) {
+      page.drawText(pdfSafeText(TEST_WATERMARK), {
+        x: 70,
+        y: 190,
+        size: 22,
+        font: bold,
+        color: TEST_MARK,
+        opacity: 0.22,
+        rotate: degrees(35),
+      })
+    }
     page.drawLine({
       start: { x: MARGIN, y: 34 },
       end: { x: PAGE_WIDTH - MARGIN, y: 34 },
@@ -880,7 +897,14 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     width: 60,
     height: 60,
   })
-  drawText("COMPROBANTE AUTORIZADO", MARGIN + 96, y - 23, 10, true, BLUE)
+  drawText(
+    isTestVoucher ? "COMPROBANTE DE PRUEBA - ARCA HOMOLOGACIÓN" : "COMPROBANTE AUTORIZADO",
+    MARGIN + 96,
+    y - 23,
+    10,
+    true,
+    isTestVoucher ? TEST_MARK : BLUE,
+  )
   drawText(`CAE: ${order.invoice_cae}`, MARGIN + 96, y - 47, 11, true, DARK)
   drawText(
     `Vencimiento CAE: ${formatDate(order.invoice_cae_due)}`,
@@ -891,12 +915,14 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     DARK,
   )
   drawText(
-    "El QR permite constatar este comprobante en ARCA.",
+    isTestVoucher
+      ? "Sin validez fiscal: emitido en el ambiente de pruebas de ARCA."
+      : "El QR permite constatar este comprobante en ARCA.",
     MARGIN + 96,
     y - 82,
     8,
     false,
-    MUTED,
+    isTestVoucher ? TEST_MARK : MUTED,
   )
 
   drawFooter()
@@ -905,9 +931,10 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
 }
 
 export function invoicePdfFilename(
-  order: Pick<InvoicePdfOrder, "invoice_point" | "invoice_number" | "filename_prefix">,
+  order: Pick<InvoicePdfOrder, "invoice_point" | "invoice_number" | "filename_prefix" | "arca_environment">,
 ) {
-  return `${order.filename_prefix ?? "Factura"}-BEYONIX-${formatInvoiceNumber(
+  const testPrefix = isFiscalArcaVoucher(order.arca_environment) ? "" : "PRUEBA-"
+  return `${testPrefix}${order.filename_prefix ?? "Factura"}-BEYONIX-${formatInvoiceNumber(
     order.invoice_point,
     order.invoice_number,
   )}.pdf`

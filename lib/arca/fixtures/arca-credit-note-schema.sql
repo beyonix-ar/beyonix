@@ -17,10 +17,20 @@ create or replace function auth.role() returns text language sql stable as $$
 $$;
 grant usage on schema public, auth to anon, authenticated, service_role;
 
+-- Columnas de la Factura C asociada: la NC se emite en su mismo ambiente
+-- (20260927120000).
 create table public.ordenes (
   id bigint primary key,
   credit_note_status text,
-  credit_note_error text
+  credit_note_error text,
+  invoice_status text,
+  invoice_point integer,
+  invoice_number bigint,
+  invoice_voucher_type integer,
+  invoice_cae text,
+  invoice_requested_point integer,
+  invoice_requested_type integer,
+  invoice_requested_number bigint
 );
 
 create table public.order_credit_notes (

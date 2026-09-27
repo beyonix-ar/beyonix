@@ -58,6 +58,7 @@ export async function POST(
           invoice_cae: invoice.cae,
           invoice_cae_due: invoice.caeDue,
           invoice_status: "authorized",
+          invoice_arca_environment: invoice.environment,
           voucher_type: invoice.voucherType,
           issue_date: invoice.issueDate,
           total: invoice.total,

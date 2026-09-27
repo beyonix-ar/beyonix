@@ -15,6 +15,7 @@ type CreditNotePdfRecord = {
   manual_amount: number | string
   voucher_number: number
   voucher_point: number
+  arca_environment: string | null
   cae: string
   cae_due: string
   authorized_at: string
@@ -239,6 +240,9 @@ export async function GET(
       orderRecord.free_shipping_applied === true,
     transfer_discount_amount:
       isCreditNote ? 0 : orderRecord.transfer_discount_amount ?? 0,
+    arca_environment: isCreditNote
+      ? creditNoteRecord?.arca_environment ?? null
+      : order.invoice_arca_environment ?? null,
     invoice_number: isCreditNote
       ? Number(creditNoteRecord?.voucher_number)
       : Number(order.invoice_number),

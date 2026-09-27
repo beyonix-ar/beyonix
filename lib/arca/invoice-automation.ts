@@ -8,7 +8,9 @@
  *
  * Garantía central: una venta NUNCA se factura dos veces.
  *   1. claim_arca_invoice serializa (un solo 'processing' a la vez, con lease).
- *   2. Antes de pedir CAE se persiste el número (record_arca_invoice_request).
+ *   2. Antes de pedir CAE se persiste el número y el ambiente ARCA
+ *      (record_arca_invoice_request). Homologación y producción numeran por
+ *      separado: nunca se concilia un número en otro ambiente (20260927120000).
  *   3. Si ese número ya estaba pedido (respuesta perdida, reinicio, fallo al
  *      guardar), primero se RECONCILIA contra ARCA y se adopta el comprobante
  *      existente; sólo se pide otro número si ARCA confirma que no lo autorizó.
@@ -17,6 +19,7 @@
  * reintento y el motivo visible para Admin.
  */
 
+import type { ArcaEnvironment } from "./environment.ts"
 import type { AuthorizedVoucher, FecaeRequest, FecaeResult } from "./wsfe.ts"
 
 export const FACTURA_C_VOUCHER_TYPE = 11
@@ -24,6 +27,11 @@ const LEASE = "10 minutes"
 const MAX_BACKOFF_MINUTES = 60
 
 export interface ArcaInvoiceGateway {
+  /**
+   * Ambiente ARCA con el que habla este gateway. Es el que se persiste con
+   * cada número pedido y el único en el que se concilia.
+   */
+  readonly environment: ArcaEnvironment
   lastAuthorized(pointOfSale: number, voucherType: number): Promise<number>
   consult(pointOfSale: number, voucherNumber: number, voucherType: number): Promise<AuthorizedVoucher | null>
   requestCae(request: FecaeRequest): Promise<FecaeResult>
@@ -48,10 +56,12 @@ export interface ClaimedInvoiceOrder {
   invoice_requested_number: number | string | null
   invoice_requested_total: number | string | null
   invoice_requested_date: string | null
+  invoice_arca_environment: string | null
 }
 
 export interface AuthorizedInvoice {
   orderId: number
+  environment: ArcaEnvironment
   pointOfSale: number
   voucherType: number
   voucherNumber: number
@@ -179,6 +189,7 @@ async function complete(
     p_cae_due: invoice.caeDue,
     p_issued_at: `${invoice.issueDate}T12:00:00-03:00`,
     p_reconciled: invoice.reconciled,
+    p_environment: invoice.environment,
   })
   return { status: "authorized", invoice: { orderId: order.id, ...invoice } }
 }
@@ -195,6 +206,16 @@ async function reconcile(
   const point = Number(order.invoice_requested_point)
   const type = Number(order.invoice_requested_type ?? FACTURA_C_VOUCHER_TYPE)
   const number = Number(order.invoice_requested_number)
+  // Un número pedido en otro ambiente no existe en éste: consultarlo acá
+  // podría adoptar un comprobante ajeno o liberar uno autorizado.
+  if (order.invoice_arca_environment !== gateway.environment) {
+    return fail(
+      admin,
+      order,
+      `El comprobante ${point}-${number} se pidió en ARCA ${order.invoice_arca_environment ?? "sin ambiente"} y la aplicación está en ${gateway.environment}. Revisión manual: no se concilia entre ambientes.`,
+      { retry: false, releaseRequest: false },
+    )
+  }
   const last = await gateway.lastAuthorized(point, type)
   if (last < number) return "not_authorized"
 
@@ -202,9 +223,11 @@ async function reconcile(
   if (
     voucher?.cae &&
     voucher.caeDueDate &&
-    cents(voucher.total) === cents(order.invoice_requested_total)
+    cents(voucher.total) === cents(order.invoice_requested_total) &&
+    (!order.invoice_requested_date || voucher.voucherDate === order.invoice_requested_date)
   ) {
     return complete(admin, order, {
+      environment: gateway.environment,
       pointOfSale: point,
       voucherType: type,
       voucherNumber: number,
@@ -277,6 +300,7 @@ export async function processArcaInvoice(
       p_number: voucherNumber,
       p_total: total,
       p_date: issueDate.arca,
+      p_environment: gateway.environment,
     })
 
     let authorization: FecaeResult
@@ -307,6 +331,7 @@ export async function processArcaInvoice(
     }
 
     return await complete(admin, order, {
+      environment: gateway.environment,
       pointOfSale,
       voucherType: FACTURA_C_VOUCHER_TYPE,
       voucherNumber,

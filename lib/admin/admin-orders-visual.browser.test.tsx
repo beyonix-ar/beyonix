@@ -89,6 +89,7 @@ const order = (id: number, extra: Record<string, unknown>) => ({
   payment_method_id: "mercadopago", payment_status: "approved", financial_status: "payment_confirmed", payment_confirmed_at: "2026-09-20T12:05:00Z",
   shipping_type: "domicilio", shipping_provider: "andreani", envio_proveedor: "andreani",
   invoice_status: "issued", invoice_cae: "123", invoice_number: 10, invoice_point: 1, invoice_created_at: "2026-09-20T13:00:00Z",
+  invoice_arca_environment: "production",
   orden_items: [{ id: id * 10, orden_id: id, producto_id: 1, cantidad: 1, precio: 45000, productos: producto }],
   order_claims: [], order_credit_notes: [], order_audit_events: [], ...extra,
 })
@@ -101,10 +102,17 @@ const PEDIDOS = [
   order(4, { payment_method_id: "transferencia", payment_status: "pending", financial_status: "pending_payment", payment_confirmed_at: null }),
 ]
 
+// Sólo para el detalle (no alteran el listado): factura de homologación y de
+// producción (20260927120000).
+const DETAIL_ONLY = [
+  order(5, { invoice_status: "authorized", invoice_arca_environment: "homologation" }),
+  order(6, { invoice_status: "authorized", invoice_arca_environment: "production" }),
+]
+
 const pageHtml = (theme: "dark" | "light", css: string, bundle: string, orderId?: number) => `<!doctype html>
 <html data-admin-theme="${theme}"><head><meta charset="utf-8"><style>${css}</style></head><body>
 <div class="beyonix-admin-shell"><main class="beyonix-admin-main"><div id="root"></div></main></div>
-<script>window.__pedidos = ${JSON.stringify(orderId ? PEDIDOS.filter((p) => p.id === orderId) : PEDIDOS)}; window.__initialOrderId = ${orderId ?? 0}</script>
+<script>window.__pedidos = ${JSON.stringify(orderId ? [...PEDIDOS, ...DETAIL_ONLY].filter((p) => p.id === orderId) : PEDIDOS)}; window.__initialOrderId = ${orderId ?? 0}</script>
 <script>${bundle}</script></body></html>`
 
 // Helpers de color (canvas: acepta oklch/oklab/color-mix), ejecutados como string.
@@ -321,6 +329,32 @@ test("9-14 (Light): Resumen, Pago y Facturación usan la misma jerarquía que En
     assert.equal(result.outer, reference, `${tab}: mismo nivel exterior que Envío`)
     assert.ok(result.cardLum !== null, `${tab}: tiene cards internas`)
     assert.ok(result.cardLum! - result.outerLum > 0.08, `${tab}: card (${result.cardLum!.toFixed(3)}) más clara que el exterior (${result.outerLum.toFixed(3)})`)
+  }
+})
+
+test("Facturación: una factura de homologación se identifica como prueba; una de producción no", async () => {
+  for (const theme of ["light", "dark"] as const) {
+    const testPage = await open(theme, { orderId: 5, tab: "facturacion" })
+    try {
+      const notice = testPage.getByTestId("arca-test-voucher-notice")
+      await notice.waitFor({ state: "visible" })
+      assert.match(String(await notice.textContent()), /Comprobante de prueba \(ARCA homologación\)/)
+      assert.match(String(await notice.textContent()), /Sin validez fiscal/)
+      assert.equal(await testPage.locator(".admin-order-bl-badge").textContent(), "Factura de prueba")
+      const overflow = await testPage.evaluate("document.documentElement.scrollWidth > innerWidth")
+      assert.equal(overflow, false, `${theme}: sin scroll horizontal`)
+    } finally {
+      await testPage.close()
+    }
+
+    const fiscalPage = await open(theme, { orderId: 6, tab: "facturacion" })
+    try {
+      await fiscalPage.locator(".admin-order-bl-badge").waitFor({ state: "visible" })
+      assert.equal(await fiscalPage.getByTestId("arca-test-voucher-notice").count(), 0)
+      assert.equal(await fiscalPage.locator(".admin-order-bl-badge").textContent(), "Factura emitida")
+    } finally {
+      await fiscalPage.close()
+    }
   }
 })
 

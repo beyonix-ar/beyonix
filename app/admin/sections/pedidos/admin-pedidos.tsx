@@ -88,6 +88,11 @@ import {
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import {
+  ARCA_TEST_VOUCHER_LABEL,
+  ARCA_TEST_VOUCHER_NOTICE,
+  isFiscalArcaVoucher,
+} from "@/lib/arca/environment"
 import { getInvoiceFiscalStatusView } from "@/lib/arca/invoice-status-view"
 import { CreditNoteReconcileAlert } from "./credit-note-reconcile-alert"
 import { getNotesPendingReconciliation } from "@/lib/arca/credit-note-reconciliation-view"
@@ -2813,6 +2818,7 @@ function BillingManagementPanel({
   onBillingUpdated: (order: SupabasePedido) => void
 }) {
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
+  const testInvoice = invoiceIssued && !isFiscalArcaVoucher(pedido.invoice_arca_environment)
   const creditNoteNeeded = needsCreditNoteReminder(pedido)
   const [creditSaving, setCreditSaving] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -3398,7 +3404,9 @@ function BillingManagementPanel({
                 : "Emitir comprobante fiscal"}
             </h3>
             {invoiceIssued && (
-              <span className="admin-order-bl-badge">Factura emitida</span>
+              <span className="admin-order-bl-badge">
+                {testInvoice ? "Factura de prueba" : "Factura emitida"}
+              </span>
             )}
           </div>
           {invoiceIssued && (
@@ -3442,6 +3450,16 @@ function BillingManagementPanel({
           </button>
         )}
       </div>
+
+      {testInvoice && (
+        <div className="admin-order-bl-alert" data-testid="arca-test-voucher-notice">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="admin-order-bl-alert-title">{ARCA_TEST_VOUCHER_LABEL}</p>
+            <p className="admin-order-bl-alert-desc">{ARCA_TEST_VOUCHER_NOTICE}</p>
+          </div>
+        </div>
+      )}
 
       <CreditNoteReconcileAlert
         notes={getNotesPendingReconciliation(creditNotes, creditSaving)}
@@ -4591,6 +4609,7 @@ function BillingManagementPanel({
                     >
                       <span>
                         NC {formatInvoiceNumberOrDash(note.voucher_point, note.voucher_number)}
+                        {!isFiscalArcaVoucher(note.arca_environment) && " · prueba"}
                       </span>
                       <strong>{formatPrice(Number(note.total_amount))}</strong>
                       <Download className="size-3.5" />

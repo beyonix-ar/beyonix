@@ -17,6 +17,7 @@ type CreditNotePdfRecord = {
   other_adjustment_amount?: number | string
   voucher_number: number
   voucher_point: number
+  arca_environment: string | null
   cae: string
   cae_due: string
   authorized_at: string
@@ -318,6 +319,9 @@ export async function GET(
     invoice_created_at: isCreditNote
       ? String(creditNoteRecord?.authorized_at)
       : String(order.invoice_created_at),
+    arca_environment: isCreditNote
+      ? creditNoteRecord?.arca_environment ?? null
+      : order.invoice_arca_environment ?? null,
     voucher_type: isCreditNote ? 13 : 11,
     document_title: isCreditNote ? "NOTA DE CRÉDITO" : "FACTURA",
     detail_title: isCreditNote

@@ -202,6 +202,17 @@ test("reconciliación: el número pedido no llegó a autorizarse -> se pide de n
     assert.equal(order.invoice_next_attempt_at, null, "sin reintento automático")
     assert.match(String(order.invoice_error), /Revisión manual/)
     assert.equal(order.invoice_cae, null, "nunca adopta un comprobante ajeno")
+
+    // Mismo número e importe pero otra fecha: tampoco es esta venta.
+    const sameTotal = await insertOrder(db, { total: 700 })
+    await confirmOrder(db, sameTotal)
+    arca.next.push("down")
+    await processArcaInvoice(client, options(arca, { orderId: sameTotal, manual: true }))
+    const requested = Number((await loadOrder(db, sameTotal)).invoice_requested_number)
+    arca.vouchers.set(requested, { total: 700, cae: "Y", caeDue: "20261010", date: "20260926" })
+    const dateMismatch = await processArcaInvoice(client, options(arca, { orderId: sameTotal, manual: true }))
+    assert.equal(dateMismatch.status === "failed" && dateMismatch.willRetry, false)
+    assert.equal((await loadOrder(db, sameTotal)).invoice_cae, null)
   } finally {
     await db.close()
   }

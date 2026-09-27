@@ -37,6 +37,16 @@ create table public.ordenes (
   invoice_created_at timestamptz
 );
 
+-- Sólo lo que toca la migración de ambientes (20260927120000); las NC se
+-- prueban con su propio fixture.
+create table public.order_credit_notes (
+  id uuid primary key default gen_random_uuid(),
+  order_id bigint not null references public.ordenes(id),
+  voucher_point integer,
+  voucher_number bigint,
+  cae text
+);
+
 create table public.order_audit_events (
   id bigint generated always as identity primary key,
   order_id bigint,
@@ -49,7 +59,7 @@ create table public.order_audit_events (
   created_at timestamptz not null default now()
 );
 
-grant all privileges on public.ordenes, public.order_audit_events to service_role;
+grant all privileges on public.ordenes, public.order_credit_notes, public.order_audit_events to service_role;
 grant usage, select on all sequences in schema public to service_role;
 
 -- RPC heredada tal como está en producción (baseline 2026-09-21): la

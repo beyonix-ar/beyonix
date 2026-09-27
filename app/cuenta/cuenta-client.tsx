@@ -44,6 +44,11 @@ import {
 } from "@/components/account/account-order-components"
 import { PaymentProofActionButton } from "@/components/payment-proof-uploader"
 import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
+import {
+  ARCA_TEST_VOUCHER_LABEL,
+  ARCA_TEST_VOUCHER_NOTICE,
+  isFiscalArcaVoucher,
+} from "@/lib/arca/environment"
 import { CustomerClaimExperience } from "@/components/claims/customer-claim-experience"
 import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
 import { formatARS } from "@/lib/customer-credit"
@@ -977,6 +982,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   >
                     Ver factura
                   </button>
+                )}
+                {invoiceAvailable && !isFiscalArcaVoucher(order.invoice_arca_environment) && (
+                  <span
+                    className="text-xs font-bold text-amber-500"
+                    data-testid="arca-test-voucher-label"
+                    title={ARCA_TEST_VOUCHER_NOTICE}
+                  >
+                    {ARCA_TEST_VOUCHER_LABEL}
+                  </span>
                 )}
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs font-medium text-[var(--account-text-secondary)]"><span>{formatOrderCardDate(order.created_at)}</span><span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${status.className}`}>{status.label}</span></div>

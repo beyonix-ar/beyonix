@@ -7,10 +7,12 @@
  *      uno solo avanza). La numeración ya está serializada por
  *      order_credit_notes_single_processing (una NC 'processing' en toda la
  *      tienda).
- *   2. record_credit_note_request persiste número, importe y fecha ANTES de
- *      FECAESolicitar.
+ *   2. record_credit_note_request persiste número, importe, fecha y ambiente
+ *      ARCA ANTES de FECAESolicitar; la base exige que sea el mismo ambiente
+ *      de la Factura C asociada. Nunca se concilia en otro ambiente.
  *   3. Si ya había un número pedido (respuesta perdida, reinicio), primero se
- *      consulta ARCA: mismo importe -> se ADOPTA; otros datos -> revisión
+ *      consulta ARCA: mismo importe, misma Factura C asociada (CbtesAsoc) y
+ *      misma fecha pedida -> se ADOPTA; otros datos o faltantes -> revisión
  *      manual (fail-closed); ARCA no lo tiene -> se libera.
  *   4. complete_credit_note_authorization es idempotente.
  *
@@ -18,8 +20,10 @@
  * invoice_point/invoice_number de la NC.
  */
 
+import { parseArcaEnvironment, type ArcaEnvironment } from "./environment.ts"
 import type { ArcaInvoiceGateway } from "./invoice-automation.ts"
-import { argentinaDate } from "./invoice-automation.ts"
+import { FACTURA_C_VOUCHER_TYPE, argentinaDate } from "./invoice-automation.ts"
+import type { AuthorizedVoucher } from "./wsfe.ts"
 
 export const NOTA_CREDITO_C_VOUCHER_TYPE = 13
 const LEASE = "10 minutes"
@@ -42,10 +46,15 @@ export interface ClaimedCreditNote {
   cae_due: string | null
   authorized_at: string | null
   requested_total: number | string | null
+  requested_date: string | null
+  invoice_point: number | null
+  invoice_number: number | string | null
+  arca_environment: string | null
   finalized_at: string | null
 }
 
 export interface CreditNoteAuthorization {
+  environment: ArcaEnvironment
   pointOfSale: number
   voucherNumber: number
   cae: string
@@ -62,6 +71,8 @@ export type CreditNoteArcaResult =
   | { status: "failed"; outcome: "rejected" | "unknown" | "manual_review"; error: string }
 
 export interface AssociatedInvoice {
+  /** Ambiente ARCA en el que se autorizó la Factura C (ordenes.invoice_arca_environment). */
+  environment: ArcaEnvironment | null
   pointOfSale: number
   voucherNumber: number
   voucherDate: string | null
@@ -124,6 +135,7 @@ async function complete(
     p_cae_due: authorization.caeDue,
     p_authorized_at: new Date(`${authorization.issueDate}T12:00:00-03:00`).toISOString(),
     p_reconciled: authorization.reconciled,
+    p_environment: authorization.environment,
   })
   return { status: "authorized", authorization, resumed: false }
 }
@@ -133,6 +145,9 @@ function authorizedFromRow(note: ClaimedCreditNote): CreditNoteArcaResult {
     status: "authorized",
     resumed: true,
     authorization: {
+      // La base exige ambiente en toda NC autorizada; si faltara se trata
+      // como prueba, nunca como fiscal.
+      environment: parseArcaEnvironment(note.arca_environment) ?? "homologation",
       pointOfSale: Number(note.voucher_point),
       voucherNumber: Number(note.voucher_number),
       cae: String(note.cae),
@@ -141,6 +156,28 @@ function authorizedFromRow(note: ClaimedCreditNote): CreditNoteArcaResult {
       reconciled: true,
     },
   }
+}
+
+/**
+ * El comprobante que ARCA tiene con ese número es ESTA nota: mismo importe,
+ * asociado únicamente a la Factura C de esta nota (FECompConsultar informa
+ * CbtesAsoc) y, si se registró, la misma fecha pedida. Cualquier diferencia
+ * o dato faltante es fail-closed.
+ */
+function matchesRequestedNote(
+  voucher: AuthorizedVoucher | null,
+  note: ClaimedCreditNote,
+): voucher is AuthorizedVoucher & { cae: string; caeDueDate: string } {
+  if (!voucher?.cae || !voucher.caeDueDate) return false
+  if (cents(voucher.total) !== cents(note.requested_total ?? note.total_amount)) return false
+  if (note.requested_date && voucher.voucherDate !== note.requested_date) return false
+  const associated = voucher.associatedVouchers ?? []
+  return (
+    associated.length === 1 &&
+    associated[0].voucherType === FACTURA_C_VOUCHER_TYPE &&
+    associated[0].pointOfSale === Number(note.invoice_point) &&
+    associated[0].voucherNumber === Number(note.invoice_number)
+  )
 }
 
 /**
@@ -154,13 +191,23 @@ async function reconcileRequested(
 ): Promise<CreditNoteArcaResult | "not_authorized"> {
   const point = Number(note.voucher_point)
   const number = Number(note.voucher_number)
+  // Un número pedido en otro ambiente no existe en éste: ni se adopta ni se
+  // libera consultando acá.
+  if (note.arca_environment !== gateway.environment) {
+    return fail(
+      admin,
+      note.id,
+      `La NC ${point}-${number} se pidió en ARCA ${note.arca_environment ?? "sin ambiente"} y la aplicación está en ${gateway.environment}. No se concilia entre ambientes.`,
+      "manual_review",
+    )
+  }
   const last = await gateway.lastAuthorized(point, NOTA_CREDITO_C_VOUCHER_TYPE)
   if (last < number) return "not_authorized"
 
   const voucher = await gateway.consult(point, number, NOTA_CREDITO_C_VOUCHER_TYPE)
-  const expected = cents(note.requested_total ?? note.total_amount)
-  if (voucher?.cae && voucher.caeDueDate && cents(voucher.total) === expected) {
+  if (matchesRequestedNote(voucher, note)) {
     return complete(admin, note.id, {
+      environment: gateway.environment,
       pointOfSale: point,
       voucherNumber: number,
       cae: voucher.cae,
@@ -219,6 +266,16 @@ export async function emitCreditNote(
       return { status: "released", error: "ARCA no había autorizado la nota. Podés volver a emitirla." }
     }
 
+    // La NC vive en el ambiente de su factura (la base también lo exige).
+    if (associatedInvoice.environment !== gateway.environment) {
+      return fail(
+        admin,
+        noteId,
+        `La Factura C asociada es de ARCA ${associatedInvoice.environment ?? "sin ambiente"} y la aplicación está en ${gateway.environment}: no se puede emitir la nota de crédito en otro ambiente.`,
+        "rejected",
+      )
+    }
+
     const total = cents(note.total_amount) / 100
     const last = await gateway.lastAuthorized(pointOfSale, NOTA_CREDITO_C_VOUCHER_TYPE)
     const lastVoucher = await gateway.consult(pointOfSale, last, NOTA_CREDITO_C_VOUCHER_TYPE)
@@ -234,6 +291,7 @@ export async function emitCreditNote(
       p_number: voucherNumber,
       p_total: total,
       p_date: issueDate.arca,
+      p_environment: gateway.environment,
     })
     requested = true
 
@@ -246,7 +304,7 @@ export async function emitCreditNote(
         voucherDate: issueDate.arca,
         total,
         associatedVoucher: {
-          voucherType: 11,
+          voucherType: FACTURA_C_VOUCHER_TYPE,
           pointOfSale: associatedInvoice.pointOfSale,
           voucherNumber: associatedInvoice.voucherNumber,
           voucherDate: associatedInvoice.voucherDate,
@@ -271,6 +329,7 @@ export async function emitCreditNote(
     }
 
     return await complete(admin, noteId, {
+      environment: gateway.environment,
       pointOfSale,
       voucherNumber,
       cae: result.cae,

@@ -6,6 +6,7 @@ import {
   feCompConsultar,
   fecaeSolicitar,
   feCompUltimoAutorizado,
+  getArcaEnvironment,
 } from "@/lib/arca/wsfe"
 
 /** Mismo texto que mostraba la emisión manual: código y mensaje de ARCA. */
@@ -19,6 +20,8 @@ export function describeArcaError(error: unknown) {
 
 export function createWsfeInvoiceGateway(): ArcaInvoiceGateway {
   return {
+    // Mismo criterio que usan wsaa.ts/wsfe.ts para elegir los endpoints.
+    environment: getArcaEnvironment(),
     lastAuthorized: (pointOfSale, voucherType) => feCompUltimoAutorizado(pointOfSale, voucherType),
     consult: (pointOfSale, voucherNumber, voucherType) =>
       feCompConsultar(pointOfSale, voucherNumber, voucherType),

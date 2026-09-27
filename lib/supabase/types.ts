@@ -385,6 +385,7 @@ export interface SupabasePedido {
   order_change_extra_amount?: number | null
   invoice_number?: number | null
   invoice_point?: number | null
+  invoice_arca_environment?: "homologation" | "production" | null
   invoice_cae?: string | null
   invoice_cae_due?: string | null
   invoice_status?: "pending" | "processing" | "authorized" | "error" | null
@@ -489,6 +490,7 @@ export interface SupabaseOrderCreditNote {
   invoice_number: number
   voucher_point?: number | null
   voucher_number?: number | null
+  arca_environment?: "homologation" | "production" | null
   cae?: string | null
   cae_due?: string | null
   error?: string | null

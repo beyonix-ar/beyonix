@@ -2,7 +2,8 @@ import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import { buildArcaQrUrl } from "@/lib/arca/qr"
-import { FACTURA_C_TYPE, NOTA_CREDITO_C_TYPE } from "@/lib/arca/wsfe"
+import { parseArcaEnvironment } from "@/lib/arca/environment"
+import { FACTURA_C_TYPE, NOTA_CREDITO_C_TYPE, getArcaEnvironment } from "@/lib/arca/wsfe"
 import { emitCreditNote, type CreditNoteArcaResult } from "@/lib/arca/credit-note-emission"
 import { getArcaPointOfSale } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
@@ -311,7 +312,7 @@ export async function POST(
       auth.admin
         .from("ordenes")
         .select(
-          "id, usuario_id, total, estado, financial_status, credit_balance_used, andreani_costo, shipping_cost_charged, shipping_cost_real, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, credit_note_status",
+          "id, usuario_id, total, estado, financial_status, credit_balance_used, andreani_costo, shipping_cost_charged, shipping_cost_real, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, invoice_arca_environment, credit_note_status",
         )
         .eq("id", orderId)
         .single(),
@@ -349,6 +350,22 @@ export async function POST(
   ) {
     return NextResponse.json(
       { error: "La orden no tiene una Factura C autorizada para asociar." },
+      { status: 409 },
+    )
+  }
+  // La NC se emite en el mismo ambiente ARCA que su Factura C: nunca una NC
+  // fiscal sobre una factura de prueba ni al revés. Se corta ANTES de
+  // reservar importes (la base lo vuelve a exigir al pedir el número).
+  const invoiceEnvironment = parseArcaEnvironment(order.invoice_arca_environment)
+  const currentEnvironment = getArcaEnvironment()
+  if (invoiceEnvironment !== currentEnvironment) {
+    return NextResponse.json(
+      {
+        error:
+          invoiceEnvironment === "homologation"
+            ? "La factura de este pedido es un comprobante de prueba (ARCA homologación). No se puede emitir una nota de crédito fiscal sobre ella."
+            : "La factura de este pedido pertenece a otro ambiente de ARCA. No se puede emitir la nota de crédito desde este ambiente.",
+      },
       { status: 409 },
     )
   }
@@ -760,6 +777,7 @@ export async function POST(
     gateway: createWsfeInvoiceGateway(),
     pointOfSale,
     associatedInvoice: {
+      environment: invoiceEnvironment,
       pointOfSale: Number(order.invoice_point),
       voucherNumber: Number(order.invoice_number),
       voucherDate: isoDateToArca(order.invoice_created_at),
@@ -778,6 +796,7 @@ export async function POST(
       note: finalized.note,
       credit_note: {
         voucher_type: NOTA_CREDITO_C_TYPE,
+        arca_environment: authorization.environment,
         credit_note_number: String(authorization.voucherNumber),
         credit_note_point: authorization.pointOfSale,
         credit_note_cae: authorization.cae,

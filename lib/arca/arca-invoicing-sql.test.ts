@@ -119,11 +119,11 @@ test("número pedido: único entre pedidos; CAE idempotente y nunca pisa otra fa
     await confirmOrder(db, a)
     await confirmOrder(db, b)
     await db.query("select * from claim_arca_invoice($1, interval '10 minutes', true)", [a])
-    await db.query("select * from record_arca_invoice_request($1, 3, 11, 41, 1000, '20260927')", [a])
+    await db.query("select * from record_arca_invoice_request($1, 3, 11, 41, 1000, '20260927', 'homologation')", [a])
     // Mismo número otra vez para el mismo pedido: idempotente.
-    await db.query("select * from record_arca_invoice_request($1, 3, 11, 41, 1000, '20260927')", [a])
+    await db.query("select * from record_arca_invoice_request($1, 3, 11, 41, 1000, '20260927', 'homologation')", [a])
     await assert.rejects(
-      db.query("select * from record_arca_invoice_request($1, 3, 11, 42, 1000, '20260927')", [a]),
+      db.query("select * from record_arca_invoice_request($1, 3, 11, 42, 1000, '20260927', 'homologation')", [a]),
       /INVOICE_REQUEST_PENDING_RECONCILIATION/,
     )
 
@@ -131,24 +131,24 @@ test("número pedido: único entre pedidos; CAE idempotente y nunca pisa otra fa
     await db.query("select * from fail_arca_invoice_attempt($1, 'simulado', null, false)", [a])
     await db.query("select * from claim_arca_invoice($1, interval '10 minutes', true)", [b])
     await assert.rejects(
-      db.query("select * from record_arca_invoice_request($1, 3, 11, 41, 1000, '20260927')", [b]),
+      db.query("select * from record_arca_invoice_request($1, 3, 11, 41, 1000, '20260927', 'homologation')", [b]),
       /INVOICE_NUMBER_ALREADY_REQUESTED/,
       "dos pedidos nunca comparten número",
     )
 
-    await db.query("select * from record_arca_invoice_request($1, 3, 11, 42, 1000, '20260927')", [b])
+    await db.query("select * from record_arca_invoice_request($1, 3, 11, 42, 1000, '20260927', 'homologation')", [b])
     await assert.rejects(
-      db.query("select * from complete_arca_invoice($1, 3, 11, 43, 'CAE', '2026-10-10', now())", [b]),
+      db.query("select * from complete_arca_invoice($1, 3, 11, 43, 'CAE', '2026-10-10', now(), false, 'homologation')", [b]),
       /INVOICE_AUTHORIZATION_DOES_NOT_MATCH_REQUEST/,
     )
     const done = (await db.query<Record<string, unknown>>(
-      "select * from complete_arca_invoice($1, 3, 11, 42, 'CAE-42', '2026-10-10', now())", [b])).rows[0]
+      "select * from complete_arca_invoice($1, 3, 11, 42, 'CAE-42', '2026-10-10', now(), false, 'homologation')", [b])).rows[0]
     assert.equal(done.invoice_status, "authorized")
     assert.equal(Number(done.invoice_number), 42)
     // Repetir el mismo CAE: devuelve la factura; otro CAE: rechazado.
-    await db.query("select * from complete_arca_invoice($1, 3, 11, 42, 'CAE-42', '2026-10-10', now())", [b])
+    await db.query("select * from complete_arca_invoice($1, 3, 11, 42, 'CAE-42', '2026-10-10', now(), false, 'homologation')", [b])
     await assert.rejects(
-      db.query("select * from complete_arca_invoice($1, 3, 11, 42, 'OTRO', '2026-10-10', now())", [b]),
+      db.query("select * from complete_arca_invoice($1, 3, 11, 42, 'OTRO', '2026-10-10', now(), false, 'homologation')", [b]),
       /INVOICE_ALREADY_AUTHORIZED_WITH_OTHER_VOUCHER/,
     )
     const audits = (await db.query<{ n: number }>(
@@ -165,7 +165,7 @@ test("fallo: libera el número sólo ante rechazo definitivo; cancelado con CAE 
     const id = await insertOrder(db)
     await confirmOrder(db, id)
     await db.query("select * from claim_arca_invoice($1, interval '10 minutes', true)", [id])
-    await db.query("select * from record_arca_invoice_request($1, 3, 11, 7, 1000, '20260927')", [id])
+    await db.query("select * from record_arca_invoice_request($1, 3, 11, 7, 1000, '20260927', 'homologation')", [id])
     const kept = (await db.query<Record<string, unknown>>(
       "select * from fail_arca_invoice_attempt($1, 'timeout', interval '2 minutes', false)", [id])).rows[0]
     assert.equal(kept.invoice_status, "error")
@@ -179,14 +179,14 @@ test("fallo: libera el número sólo ante rechazo definitivo; cancelado con CAE 
     const reclaimed = (await db.query<{ id: number }>("select * from claim_arca_invoice(null)")).rows
     assert.equal(Number(reclaimed[0].id), id, "se reconcilia aunque ya no sea facturable")
     const authorized = (await db.query<Record<string, unknown>>(
-      "select * from complete_arca_invoice($1, 3, 11, 7, 'CAE-7', '2026-10-10', now(), true)", [id])).rows[0]
+      "select * from complete_arca_invoice($1, 3, 11, 7, 'CAE-7', '2026-10-10', now(), true, 'homologation')", [id])).rows[0]
     assert.equal(authorized.invoice_status, "authorized")
     assert.equal(authorized.credit_note_required, true, "factura de una venta cancelada -> nota de crédito")
 
     const other = await insertOrder(db)
     await confirmOrder(db, other)
     await db.query("select * from claim_arca_invoice($1, interval '10 minutes', true)", [other])
-    await db.query("select * from record_arca_invoice_request($1, 3, 11, 8, 1000, '20260927')", [other])
+    await db.query("select * from record_arca_invoice_request($1, 3, 11, 8, 1000, '20260927', 'homologation')", [other])
     const released = (await db.query<Record<string, unknown>>(
       "select * from fail_arca_invoice_attempt($1, 'rechazo 10016', interval '2 minutes', true)", [other])).rows[0]
     assert.equal(released.invoice_requested_number, null, "rechazo definitivo: el número queda libre")
@@ -202,8 +202,8 @@ test("seguridad: todo es service_role; la RPC heredada deja de estar expuesta", 
       select
         has_function_privilege('anon', 'public.claim_arca_invoice(bigint, interval, boolean)', 'EXECUTE') as anon_claim,
         has_function_privilege('authenticated', 'public.claim_arca_invoice(bigint, interval, boolean)', 'EXECUTE') as auth_claim,
-        has_function_privilege('authenticated', 'public.record_arca_invoice_request(bigint, integer, integer, bigint, numeric, text)', 'EXECUTE') as auth_record,
-        has_function_privilege('authenticated', 'public.complete_arca_invoice(bigint, integer, integer, bigint, text, date, timestamptz, boolean)', 'EXECUTE') as auth_complete,
+        has_function_privilege('authenticated', 'public.record_arca_invoice_request(bigint, integer, integer, bigint, numeric, text, text)', 'EXECUTE') as auth_record,
+        has_function_privilege('authenticated', 'public.complete_arca_invoice(bigint, integer, integer, bigint, text, date, timestamptz, boolean, text)', 'EXECUTE') as auth_complete,
         has_function_privilege('authenticated', 'public.fail_arca_invoice_attempt(bigint, text, interval, boolean)', 'EXECUTE') as auth_fail,
         has_function_privilege('anon', 'public.begin_arca_invoice_processing(bigint)', 'EXECUTE') as anon_legacy,
         has_function_privilege('authenticated', 'public.begin_arca_invoice_processing(bigint)', 'EXECUTE') as auth_legacy,

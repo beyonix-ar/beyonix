@@ -1,13 +1,14 @@
+import type { ArcaEnvironment } from "@/lib/arca/environment"
 import { asArray, escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 import { getWsaaCredentials } from "@/lib/arca/wsaa"
 
-const WSFE_URLS = {
+const WSFE_URLS: Record<ArcaEnvironment, string> = {
   homologation: "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
   production: "https://servicios1.afip.gov.ar/wsfev1/service.asmx",
-} as const
+}
 const WSFE_NAMESPACE = "http://ar.gov.afip.dif.FEV1/"
 
-export type ArcaEnvironment = keyof typeof WSFE_URLS
+export type { ArcaEnvironment }
 
 /**
  * Ambiente ARCA. Por defecto homologación (comportamiento previo): producción
@@ -70,6 +71,14 @@ export interface AuthorizedVoucher {
   cae?: string | null
   caeDueDate?: string | null
   result?: string | null
+  /** CbtesAsoc tal como los informa ARCA (vacío si el comprobante no tiene). */
+  associatedVouchers?: AssociatedVoucherRef[]
+}
+
+export interface AssociatedVoucherRef {
+  voucherType: number
+  pointOfSale: number
+  voucherNumber: number
 }
 
 export class ArcaWsError extends Error {
@@ -281,6 +290,11 @@ export async function feCompConsultar(
     cae: voucher?.CodAutorizacion ? String(voucher.CodAutorizacion) : null,
     caeDueDate: voucher?.FchVto ? String(voucher.FchVto) : null,
     result: voucher?.Resultado ? String(voucher.Resultado) : null,
+    associatedVouchers: asArray<any>(voucher?.CbtesAsoc?.CbteAsoc).map((item) => ({
+      voucherType: Number(item?.Tipo),
+      pointOfSale: Number(item?.PtoVta),
+      voucherNumber: Number(item?.Nro),
+    })),
   }
 }
 

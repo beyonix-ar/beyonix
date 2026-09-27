@@ -122,6 +122,8 @@ const TEST_FILES = [
   "lib/arca/arca-invoicing-contract.test.ts",
   "lib/arca/credit-note-emission.test.ts",
   "lib/arca/credit-note-hardening-contract.test.ts",
+  "lib/arca/arca-environment-isolation.test.ts",
+  "lib/arca/arca-environment-ui-contract.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",
@@ -246,7 +248,12 @@ const DB_ROUTE_TEST_FILES = [
   "lib/business/critical-hardening.test.mjs",
 ]
 
-const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES].filter((file) => !existsSync(file))
+// Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
+const SERVER_TSX_TEST_FILES = [
+  "lib/arca/invoice-pdf-environment.test.ts",
+]
+
+const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))
 if (missing.length > 0) {
   console.error(`Tests listados que no existen:\n${missing.join("\n")}`)
   process.exit(1)
@@ -276,9 +283,17 @@ const dbRouteResult = spawnSync(
 )
 if (dbRouteResult.error) throw dbRouteResult.error
 
+const serverTsxResult = spawnSync(
+  process.execPath,
+  ["--conditions=react-server", "--import", "tsx", "--test", ...SERVER_TSX_TEST_FILES],
+  { stdio: "inherit" },
+)
+if (serverTsxResult.error) throw serverTsxResult.error
+
 process.exit(
   (result.status ?? 1) ||
   (tsxResult.status ?? 1) ||
   (dbResult.status ?? 1) ||
-  (dbRouteResult.status ?? 1),
+  (dbRouteResult.status ?? 1) ||
+  (serverTsxResult.status ?? 1),
 )
