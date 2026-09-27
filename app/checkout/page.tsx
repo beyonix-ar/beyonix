@@ -3023,35 +3023,6 @@ export default function CheckoutPage() {
                     </p>
                   )}
 
-                  {/* Obligatorio para las 3 opciones: sin aceptar, "Pagar"
-                      queda deshabilitado (y el servidor exige el flag). */}
-                  <label
-                    data-terms-acceptance
-                    className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] px-3.5 py-3 text-sm text-white/75"
-                  >
-                    <input
-                      type="checkbox"
-                      name="checkout-terms-accepted"
-                      checked={termsAccepted}
-                      onChange={(event) =>
-                        setTermsAcceptedSessionId(event.target.checked ? cartSessionId : null)
-                      }
-                      className="mt-0.5 size-4 shrink-0 cursor-pointer accent-[var(--checkout-choice-indicator)]"
-                    />
-                    <span>
-                      Al comprar, aceptás los{" "}
-                      <Link
-                        href="/terminos"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-beyonix-sky underline underline-offset-2"
-                      >
-                        términos y condiciones
-                      </Link>
-                      .
-                    </span>
-                  </label>
-
                   <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
                     <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
                       ¿Necesitás ayuda con tu pago?
@@ -3088,6 +3059,43 @@ export default function CheckoutPage() {
                       </a>
                     </div>
                   </div>
+
+                  {/* Obligatorio para las 3 opciones: sin aceptar, "Pagar"
+                      queda deshabilitado (y el servidor exige el flag). Va
+                      justo encima del botón para que se lea como el último
+                      paso antes de pagar. */}
+                  <label
+                    data-terms-acceptance
+                    data-accepted={termsAccepted ? "true" : "false"}
+                    className="checkout-terms flex cursor-pointer items-start gap-3 rounded-xl px-4 py-3.5"
+                  >
+                    <input
+                      type="checkbox"
+                      name="checkout-terms-accepted"
+                      checked={termsAccepted}
+                      onChange={(event) =>
+                        setTermsAcceptedSessionId(event.target.checked ? cartSessionId : null)
+                      }
+                      className="mt-px size-5 shrink-0 cursor-pointer rounded accent-[var(--checkout-choice-indicator)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--checkout-choice-indicator)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium leading-5 text-white">
+                        Al comprar, aceptás los{" "}
+                        <Link
+                          href="/terminos"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-beyonix-sky underline decoration-2 underline-offset-[3px]"
+                        >
+                          términos y condiciones
+                        </Link>
+                        .
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-5 text-white/55">
+                        Obligatorio para continuar con el pago.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               )}
 

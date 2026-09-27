@@ -12090,7 +12090,11 @@ html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-icon 
 
 /* Notificaciones (components/customer-notifications-bell.tsx) */
 html[data-account-theme="light"][data-account-scope] .beyonix-notifications-trigger {
-  background: var(--account-surface-hover) !important;
+  background: #fff !important;
+}
+/* Badge: el aro que lo separa de la campana toma el fondo del botón. */
+html[data-account-theme="light"][data-account-scope] .beyonix-notifications-badge {
+  box-shadow: 0 0 0 2px #fff;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-notifications-bell-icon {
   color: #000;
@@ -12872,6 +12876,8 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-drawer-notice
   --checkout-choice-indicator-idle: rgba(79, 131, 173, 0.55);
   --checkout-choice-indicator-dot: #ffffff;
   --checkout-offer-text: #34d399;
+  --checkout-terms-bg: rgba(79, 131, 173, 0.1);
+  --checkout-terms-border: rgba(79, 131, 173, 0.5);
 }
 html[data-account-theme="light"][data-account-scope] {
   /* Seleccionada en Light: celeste casi blanco + borde azul BEYONIX marcado
@@ -12886,6 +12892,24 @@ html[data-account-theme="light"][data-account-scope] {
   /* Beneficio de transferencia, envío GRATIS y bonificación: verde que
      cumple AA (>= 4.5:1) sobre blanco, celeste y el gris suave del Paso 3. */
   --checkout-offer-text: #157a3a;
+  --checkout-terms-bg: #f5f9fe;
+  --checkout-terms-border: #9cc3e4;
+}
+/* Aceptación de términos (Paso 3): bloque propio, encima de "Pagar". Tinte
+   azul BEYONIX suave (nunca colores de error); al aceptarlo el borde toma el
+   azul de la opción elegida. No usa las utilidades bg-/border- remapeadas
+   del checkout para que ambos temas se definan sólo por estos tokens. */
+.checkout-page .checkout-terms {
+  border: 1px solid var(--checkout-terms-border);
+  background: var(--checkout-terms-bg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.checkout-page .checkout-terms:hover,
+.checkout-page .checkout-terms[data-accepted="true"] {
+  border-color: var(--checkout-choice-selected-border);
+}
+.checkout-page .checkout-terms[data-accepted="true"] {
+  box-shadow: inset 3px 0 0 var(--checkout-choice-selected-border);
 }
 html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice:not(.checkout-option-selected):hover {
   background-color: var(--checkout-choice-hover-bg) !important;

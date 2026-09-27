@@ -353,7 +353,7 @@ export function CustomerNotificationsBell({
         <Bell className="beyonix-notifications-bell-icon size-4.5" />
 
         {unreadCount > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 flex min-w-5 h-5 items-center justify-center rounded-full border border-black bg-red-600 px-1 text-9px font-bold leading-none text-white">
+          <span className="beyonix-notifications-badge pointer-events-none absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-600 px-1 text-10px font-bold leading-none tabular-nums text-white shadow-[0_0_0_2px_#0D1117]">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}

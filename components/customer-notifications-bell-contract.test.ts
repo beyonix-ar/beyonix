@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const bell = read("./customer-notifications-bell.tsx")
 const css = read("../app/globals.css")
 
-test("campana del navbar: negra sólo en tema Light; tamaño, fondo y badge sin cambios", () => {
+test("campana del navbar: negra sobre fondo blanco sólo en tema Light; tamaño sin cambios", () => {
   assert.match(bell, /<Bell className="beyonix-notifications-bell-icon size-4\.5" \/>/)
   assert.match(
     css,
@@ -17,6 +17,20 @@ test("campana del navbar: negra sólo en tema Light; tamaño, fondo y badge sin 
   const iconRules = css.split("\n").filter((line) => line.includes(".beyonix-notifications-bell-icon"))
   assert.equal(iconRules.length, 1)
   assert.ok(iconRules[0].startsWith('html[data-account-theme="light"]'))
-  // Badge rojo intacto.
-  assert.match(bell, /bg-red-600 px-1 text-9px font-bold leading-none text-white/)
+  assert.match(
+    css,
+    /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-notifications-trigger \{\n  background: #fff !important;\n\}/,
+  )
+  // Dark conserva su fondo propio del trigger.
+  assert.match(bell, /beyonix-notifications-trigger relative flex size-11 [^"]*bg-\[#0D1117\]/)
+})
+
+test("badge de notificaciones: rojo con número, compacto y con aro del color del botón", () => {
+  assert.match(bell, /\{unreadCount > 0 && \(\s*<span className="beyonix-notifications-badge /)
+  assert.match(bell, /beyonix-notifications-badge[^"]*-right-0\.5 -top-0\.5[^"]*h-4\.5 min-w-4\.5[^"]*bg-red-600[^"]*tabular-nums text-white shadow-\[0_0_0_2px_#0D1117\]/)
+  assert.match(bell, /\{unreadCount > 99 \? "99\+" : unreadCount\}/)
+  assert.match(
+    css,
+    /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-notifications-badge \{\n  box-shadow: 0 0 0 2px #fff;\n\}/,
+  )
 })

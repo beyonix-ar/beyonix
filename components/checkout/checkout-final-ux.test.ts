@@ -276,6 +276,21 @@ test("20. el texto del checkbox enlaza a /terminos (en otra pestaña, sin perder
   assert.match(terms, />\s*términos y condiciones\s*</)
 })
 
+test("20b. términos: bloque destacado, marcado como obligatorio y justo encima de Pagar", () => {
+  const start = checkout.indexOf("data-terms-acceptance")
+  const terms = checkout.slice(start, checkout.indexOf("</label>", start))
+  assert.match(terms, /data-accepted=\{termsAccepted \? "true" : "false"\}/)
+  assert.match(terms, /className="checkout-terms /)
+  assert.match(terms, /Obligatorio para continuar con el pago\./)
+  // Después de "¿Necesitás ayuda con tu pago?" y antes de las acciones.
+  assert.ok(checkout.indexOf("¿Necesitás ayuda con tu pago?") < start)
+  assert.ok(start < checkout.indexOf('"checkout-actions flex'))
+  // Sin rojo/ámbar: sólo tokens azules propios, definidos en ambos temas.
+  assert.doesNotMatch(terms, /red-|amber-|danger/)
+  assert.match(css, /\.checkout-page \.checkout-terms \{\n  border: 1px solid var\(--checkout-terms-border\);\n  background: var\(--checkout-terms-bg\);/)
+  assert.equal((css.match(/--checkout-terms-bg:/g) ?? []).length, 2)
+})
+
 test("21-22. la aceptación sobrevive al cambio de modalidad y se resetea con una compra/sesión nueva", () => {
   assert.match(
     checkout,
