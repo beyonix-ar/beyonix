@@ -10,6 +10,11 @@ import {
   calculateInventoryStock,
   classifyReturnStock,
 } from "@/lib/inventory/stock-metrics"
+import {
+  attachReservedStock,
+  fetchActiveReservationTotals,
+} from "@/lib/inventory/sellable-stock"
+import type { StockReservationDetail } from "@/lib/inventory/stock-reservation-details"
 import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
 import { getAdminProductoVariantes } from "@/lib/supabase/queries/producto-variantes"
 
@@ -154,6 +159,13 @@ function normalizeSlug(
 async function attachConditionedStock(productos: SupabaseProducto[]) {
   const productIds = productos.map((producto) => producto.id)
   if (!productIds.length) return productos
+
+  // Admin: físico / reservado / disponible (Fase 5). Una sola RPC por página,
+  // en paralelo con el resto de las lecturas de inventario.
+  // Se captura acá para no dejar una promesa rechazada sin manejar si otra
+  // lectura falla antes.
+  const reservationsPromise = fetchActiveReservationTotals(supabase, productIds)
+    .then((totals) => ({ totals }), (error: unknown) => ({ error }))
 
   let { data, error } = await supabase
     .from("inventory_return_movements")
@@ -303,7 +315,9 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
     ])
   }
 
-  return productos.map((producto) => {
+  const reservations = await reservationsPromise
+  if ("error" in reservations) throw reservations.error
+  return attachReservedStock(productos.map((producto) => {
     const returnSummary = returnSummaryByProduct.get(producto.id)
     const stock = calculateInventoryStock({
       normal: producto.stock,
@@ -325,7 +339,7 @@ async function attachConditionedStock(productos: SupabaseProducto[]) {
         physical: stock.physical,
       },
     }
-  })
+  }), reservations.totals)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -877,6 +891,33 @@ export async function getProductPricing(id: number): Promise<ProductPricingInfo>
         ? result.recalculationBlockedReason
         : null,
   }
+}
+
+/** Qué compone el "Reservado" de un producto (reservas activas, sin datos del cliente). */
+export async function getProductStockReservations(
+  productId: number,
+): Promise<StockReservationDetail[]> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new Error("La sesión administrativa venció.")
+  }
+
+  const response = await fetch(
+    `/api/admin/products/${productId}/stock-reservations`,
+    {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: "no-store",
+    },
+  )
+  const payload = (await response.json().catch(() => null)) as
+    | { reservations?: StockReservationDetail[]; error?: string }
+    | null
+  if (!response.ok || !Array.isArray(payload?.reservations)) {
+    throw new Error(payload?.error || "No se pudieron cargar las reservas activas.")
+  }
+  return payload.reservations
 }
 
 async function conditionedStockRequest(

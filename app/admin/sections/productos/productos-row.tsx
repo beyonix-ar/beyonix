@@ -33,6 +33,8 @@ import type {
 } from "@/lib/supabase/types"
 import type { StockSettings } from "@/lib/site-settings"
 import { calculateInventoryStock } from "@/lib/inventory/stock-metrics"
+import { calculateAvailableStock } from "@/lib/inventory/sellable-stock"
+import type { StockReservationDetail } from "@/lib/inventory/stock-reservation-details"
 import {
   firstUsableImage,
 } from "@/lib/products/admin-product-visuals"
@@ -63,6 +65,10 @@ import {
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { DraftImageUploader } from "./draft-image-uploader"
 import { AdminVariantItem } from "./admin-variant-item"
+import {
+  ProductStockReservations,
+  StockReservationBreakdown,
+} from "./product-stock-reservations"
 import { useStockAdjustment } from "./use-stock-adjustment"
 import {
   AdminModal,
@@ -284,6 +290,23 @@ export function ProductosRow({
       localPendingReviewDelta,
   })
   const physicalStockTotal = stockMetrics.physical
+  // Fase 5: reservas temporales de checkout. No son ventas: el físico no
+  // cambia hasta que el pedido se paga; disponible = físico - reservado.
+  const normalReserved = producto.reserved_stock ?? 0
+  const conditionedReserved = conditionedStock.reduce(
+    (total, item) => total + (item.reserved_quantity ?? 0),
+    0,
+  )
+  const reservedStockTotal = normalReserved + conditionedReserved
+  // Un producto sin variantes también se despliega para ver sus reservas.
+  const canExpand = hasDetails || reservedStockTotal > 0
+  const availableStockTotal =
+    calculateAvailableStock(normalStockTotal, normalReserved) +
+    conditionedStock.reduce(
+      (total, item) =>
+        total + calculateAvailableStock(item.quantity, item.reserved_quantity ?? 0),
+      0,
+    )
   const stockBreakdownTitle = [
     `${physicalStockTotal} ${
       physicalStockTotal === 1 ? "unidad física" : "unidades físicas"
@@ -291,7 +314,20 @@ export function ProductosRow({
     `${normalStockTotal} normales`,
     `${conditionedStockTotal} con descuento`,
     `${stockMetrics.quarantine} en cuarentena`,
+    `${reservedStockTotal} reservadas`,
+    `${availableStockTotal} disponibles para vender`,
   ].join(" · ")
+  const reservationTargetLabel = (reservation: StockReservationDetail) => {
+    if (reservation.conditionedStockId) {
+      const item = conditionedStock.find((entry) => entry.id === reservation.conditionedStockId)
+      return item?.conditioned_name?.trim() || "Unidad con descuento"
+    }
+    if (reservation.variantId !== null) {
+      const variant = variantes.find((entry) => entry.id === reservation.variantId)
+      return variant ? getColorName(variant.color_hex, variant.nombre) : "Variante"
+    }
+    return "Producto"
+  }
   const categoryLabel = producto.categorias?.nombre?.trim() || "Sin categoría"
   const enabledInstallmentCounts = [
     producto.cuotas_2_habilitadas && "2",
@@ -810,14 +846,20 @@ export function ProductosRow({
           <button
             type="button"
             aria-label={
-              hasDetails
+              canExpand
                 ? `Ver detalle de ${producto.nombre}`
                 : `${producto.nombre} no tiene detalles`
             }
-            title={hasDetails ? (open ? "Ocultar variantes" : "Mostrar variantes") : "Este producto todavía no tiene variantes"}
-            disabled={!hasDetails}
+            title={
+              hasDetails
+                ? (open ? "Ocultar variantes" : "Mostrar variantes")
+                : canExpand
+                  ? (open ? "Ocultar reservas" : "Ver reservas activas")
+                  : "Este producto todavía no tiene variantes"
+            }
+            disabled={!canExpand}
             onClick={() => {
-              if (hasDetails) setOpen((value) => !value)
+              if (canExpand) setOpen((value) => !value)
             }}
             className={`flex size-10 shrink-0 items-center justify-center rounded-xl border transition-colors cursor-pointer ${
               open
@@ -857,7 +899,7 @@ export function ProductosRow({
           data-label="Cantidad"
           title={stockBreakdownTitle}
           aria-label={stockBreakdownTitle}
-          className="inline-flex min-w-14 items-center justify-center justify-self-center text-center"
+          className="inline-flex min-w-14 flex-col items-center justify-center justify-self-center text-center"
         >
           <span
             className={`text-base font-black leading-none tabular-nums ${stockColor(
@@ -867,6 +909,10 @@ export function ProductosRow({
           >
             {physicalStockTotal}
           </span>
+          <StockReservationBreakdown
+            reserved={reservedStockTotal}
+            available={availableStockTotal}
+          />
         </span>
 
         <span data-label="Color" aria-hidden="true" />
@@ -983,6 +1029,7 @@ export function ProductosRow({
                       colorLabel={getColorName(variante.color_hex, variante.nombre)}
                       accentColor={variante.color_hex}
                       stock={stock}
+                      reservedStock={variante.reserved_stock ?? 0}
                       stateLabel={
                         savingVariantId === variante.id
                           ? "Guardando…"
@@ -1220,6 +1267,7 @@ export function ProductosRow({
                   colorHex={conditionedColor}
                   colorLabel={conditionedColorName}
                   stock={item.quantity}
+                  reservedStock={item.reserved_quantity ?? 0}
                   tone="discounted"
                   stateLabel={savingConditionedId === item.id ? "Guardando…" : item.active ? "Activa" : "Inactiva"}
                   stateTone={item.active ? "active" : "inactive"}
@@ -1268,6 +1316,13 @@ export function ProductosRow({
               )
             })}
           </div>
+          {reservedStockTotal > 0 && (
+            <ProductStockReservations
+              productId={producto.id}
+              reservedTotal={reservedStockTotal}
+              targetLabel={reservationTargetLabel}
+            />
+          )}
         </div>
       )}
 

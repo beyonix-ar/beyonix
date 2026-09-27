@@ -37,6 +37,9 @@ export interface SupabaseProductoVariante {
   largo_paquete_cm?: number | null
   color_hex: string
   stock: number | null
+  /** Ver SupabaseProducto.physical_stock. */
+  physical_stock?: number
+  reserved_stock?: number
   imagenes: string[]
   activo: boolean
   orden: number
@@ -50,6 +53,9 @@ export interface SupabaseConditionedStock {
   original_quantity: number
   sold_quantity: number
   quantity: number
+  /** Ver SupabaseProducto.physical_stock. */
+  physical_quantity?: number
+  reserved_quantity?: number
   discount_percent: number
   reason: string | null
   non_sellable_quantity: number
@@ -108,6 +114,15 @@ export interface SupabaseProducto {
   promo_original_cuotas_6_habilitadas?: boolean | null
 
   stock: number
+  /**
+   * Fase 5 (lib/inventory/sellable-stock.ts). Presentes cuando el producto se
+   * leyó con reservas activas: `physical_stock` es el stock físico derivado y
+   * `reserved_stock` lo reservado por checkouts vigentes. En el catálogo
+   * público `stock` ya es el DISPONIBLE (físico - reservado, nunca negativo);
+   * en Admin `stock` sigue siendo el físico.
+   */
+  physical_stock?: number
+  reserved_stock?: number
 
   categoria_id: number | null
 

@@ -22,6 +22,8 @@ interface Props {
   items: { product: { id: number; precio: number }; quantity: number }[]
   onCheckout: () => void
   onContinueShopping: () => void
+  /** Motivo por el que no se puede avanzar (p. ej. cantidades sobre el disponible). */
+  checkoutBlockedReason?: string | null
 }
 
 const formatPrice = (price: number) =>
@@ -35,6 +37,7 @@ export function CartSummary({
   items,
   onCheckout,
   onContinueShopping,
+  checkoutBlockedReason = null,
 }: Props) {
   const customerCredit = useCustomerCredit()
   const siteSettings = useSiteSettings()
@@ -70,6 +73,7 @@ export function CartSummary({
   ])
 
   const handleCheckout = () => {
+    if (checkoutBlockedReason) return
     if (!customerCredit.loading || customerCredit.balance > 0) {
       customerCredit.setAppliedAmount(maxApplicableCredit)
     }
@@ -162,11 +166,18 @@ export function CartSummary({
         </p>
       </div>
 
+      {checkoutBlockedReason && (
+        <p role="alert" className="beyonix-cart-stock-issue text-center text-xs font-semibold leading-5 text-red-200">
+          {checkoutBlockedReason}
+        </p>
+      )}
+
       <Button
         type="button"
         aria-label="Finalizar compra"
         title="Finalizar compra"
-        className="h-10 w-full text-sm font-semibold text-white transition-colors"
+        disabled={Boolean(checkoutBlockedReason)}
+        className="h-10 w-full text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         style={{ backgroundColor: "#112A43" }}
         onMouseEnter={(event) => {
           event.currentTarget.style.backgroundColor = "#1E4A73"

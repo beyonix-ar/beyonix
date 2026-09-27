@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button"
 import type { CartItem } from "@/context/cart-context"
 import {
   MAX_CART_ITEM_QUANTITY,
+  getCartStockIssueMessage,
+  getCartStockIssues,
+  getMaxPurchasableQuantity,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
@@ -63,7 +66,9 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const colorName = hasVariantInfo ? getColorName(colorHex, variantName) : null
   const hasColor = Boolean(colorHex)
   const [imageSrc, setImageSrc] = useState(image || "/placeholder.svg")
-  const isMaxQuantity = quantity >= MAX_CART_ITEM_QUANTITY
+  const maxQuantity = getMaxPurchasableQuantity(product, color)
+  const isMaxQuantity = quantity >= maxQuantity
+  const stockIssue = getCartStockIssues([item])[0]
   const stockStatus = getStockStatus(product, color)
   const StockIcon = getStockIcon(stockStatus)
 
@@ -116,6 +121,16 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
             <StockIcon className="size-3" />
             {getStockStatusLabel(stockStatus)}
           </span>
+
+          {stockIssue && (
+            <p
+              role="alert"
+              data-cart-stock-issue
+              className="beyonix-cart-stock-issue mt-1 text-11px font-semibold leading-4 text-red-200"
+            >
+              {getCartStockIssueMessage(stockIssue)}
+            </p>
+          )}
         </div>
 
         <div className="mt-1.5 flex items-center justify-between gap-2">
@@ -171,7 +186,11 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
                 <Plus className="size-3" />
               </Button>
             </div>
-            {isMaxQuantity && <span className="text-10px text-white/50">Máximo 3</span>}
+            {isMaxQuantity && !stockIssue && (
+              <span className="text-10px text-white/50">
+                {maxQuantity >= MAX_CART_ITEM_QUANTITY ? "Máximo 3" : "Máximo disponible"}
+              </span>
+            )}
           </div>
         </div>
       </div>

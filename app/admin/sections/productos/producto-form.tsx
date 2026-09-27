@@ -880,6 +880,10 @@ export function ProductoForm({
                       <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
                       <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} />
                       <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
+                      {/* Reservas temporales de checkout (no son ventas):
+                          disponible = vendible - reservado. */}
+                      <StockSummaryItem label="Reservado (checkout)" value={variantDistribution?.reservedStock} />
+                      <StockSummaryItem label="Disponible para vender" value={variantDistribution?.availableStock} />
                     </div>
                   </AdminCard>
                 </div>

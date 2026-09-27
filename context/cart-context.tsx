@@ -25,7 +25,7 @@ import {
 } from "@/lib/products/product-variants"
 import {
   MAX_CART_ITEM_QUANTITY,
-  getProductStock,
+  getMaxPurchasableQuantity,
 } from "@/lib/cart/stock-status"
 import { createCartSessionId } from "@/lib/cart/cart-session-id"
 import { reconcileCartWithCatalog } from "@/lib/cart/cart-catalog-refresh"
@@ -189,12 +189,10 @@ function normalizeCart(items: unknown) {
         cartItem.product.id === normalized.product.id &&
         cartItem.color === normalized.color,
     )
-    // Un producto/variante sin stock ya no es vendible: se descarta del
-    // carrito guardado. Esto es un estado booleano ("agotado"), no una
-    // cantidad — no revela cuánto stock real queda.
-    const hasStock = getProductStock(normalized.product, normalized.color) > 0
-
-    if (!hasStock) return acc
+    // Una línea sin stock disponible NO se descarta en silencio: el snapshot
+    // guardado puede estar desactualizado (p. ej. una reserva ajena que ya
+    // venció). El refresco de catálogo trae el disponible vigente y el
+    // carrito marca la línea hasta que el cliente la corrija.
 
     if (existing) {
       existing.quantity = Math.min(
@@ -220,10 +218,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [hasHydrated, setHasHydrated] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const cartRef = useRef<CartItem[]>([])
+  const cartSessionIdRef = useRef("")
 
   useEffect(() => {
     cartRef.current = cart
   }, [cart])
+
+  useEffect(() => {
+    cartSessionIdRef.current = cartSessionId
+  }, [cartSessionId])
 
   useEffect(() => {
     try {
@@ -345,16 +348,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
   ) => {
     const variant = resolveCartVariant(product, color)
     const variantColor = variant?.value ?? DEFAULT_VARIANT_VALUE
-    // Booleano ("¿hay algo para vender?"), no una cantidad: el frontend
-    // nunca usa el stock real como techo del selector de cantidad. Eso se
-    // valida server-side, recién al intentar pagar.
-    const hasStock = getProductStock(product, variantColor) > 0
+    // Tope = min(3, disponible). Disponible = físico - reservas activas
+    // (lib/inventory/sellable-stock.ts); reserve_cart_stock es la autoridad.
+    const maxQuantity = getMaxPurchasableQuantity(product, variantColor)
     const normalizedProduct = {
       ...product,
       precio: toFiniteNumber(product.precio),
     }
 
-    if (!hasStock) return
+    if (maxQuantity < 1) return
 
     setCart((prev) => {
       const existing = prev.find(
@@ -364,7 +366,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       )
 
       if (existing) {
-        if (existing.quantity >= MAX_CART_ITEM_QUANTITY) return prev
+        if (existing.quantity >= maxQuantity) return prev
 
         return prev.map((item) =>
           item.product.id === normalizedProduct.id &&
@@ -421,6 +423,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setCart((prev) =>
       prev.map((item) => {
         if (item.product.id !== productId || item.color !== color) {
+          return item
+        }
+
+        // Bajar siempre se permite (así se corrige una línea marcada); subir
+        // no puede superar el disponible actual.
+        if (
+          clampedQuantity > item.quantity &&
+          clampedQuantity > getMaxPurchasableQuantity(item.product, item.color)
+        ) {
           return item
         }
 
@@ -485,7 +496,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const productIds = cartRef.current.map((item) => item.product.id)
     if (!productIds.length) return { changed: false, removedCount: 0 }
 
-    const freshProducts = await getStoreCartProducts(productIds)
+    // La reserva vigente de ESTE checkout no se descuenta a sí misma.
+    const freshProducts = await getStoreCartProducts(productIds, {
+      excludeSessionId: cartSessionIdRef.current || null,
+    })
     const snapshot = reconcileCartWithCatalog(cartRef.current, freshProducts)
     if (!snapshot.changed) return { changed: false, removedCount: 0 }
 

@@ -333,8 +333,8 @@ export default function SharedProductCard({
               priceWithoutNationalTaxes={priceWithoutNationalTaxes}
               quantity={quantity}
               maxReached={
-                defaultVariant.stock < 1 ||
-                quantity >= MAX_CART_ITEM_QUANTITY
+                // stock ya es el disponible (físico - reservas activas).
+                quantity >= Math.min(MAX_CART_ITEM_QUANTITY, defaultVariant.stock)
               }
               onAddToCart={
                 handleAddToCart

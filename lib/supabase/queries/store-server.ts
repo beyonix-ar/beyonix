@@ -5,6 +5,10 @@ import { createClient } from "@supabase/supabase-js"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import { hasPurchasableStock } from "@/lib/cart/stock-status"
 import { attachStoreConditionedStock } from "@/lib/supabase/queries/store-conditioned"
+import {
+  applyAvailableStock,
+  fetchActiveReservationTotals,
+} from "@/lib/inventory/sellable-stock"
 
 const FEATURED_PRODUCT_SELECT = `
   *,
@@ -55,10 +59,18 @@ export async function getFeaturedProduct() {
     supabase,
     data as unknown as FeaturedProductRow[],
   )
-  const selected = candidates.find(hasPurchasableStock)
-  if (!selected) return null
+  // Visibilidad por stock físico (igual que el resto del catálogo); lo que
+  // se muestra y se puede comprar es el DISPONIBLE (físico - reservas activas).
+  const candidate = candidates.find(hasPurchasableStock)
+  if (!candidate) return null
+  const reservations = await fetchActiveReservationTotals(supabase, [candidate.id])
+    .catch((error: unknown) => {
+      console.error("STORE_STOCK_RESERVATIONS_LOAD_ERROR", error)
+      return []
+    })
+  const [selected] = applyAvailableStock([candidate as FeaturedProductRow], reservations)
 
-  const { reviews = [], ...product } = selected as FeaturedProductRow
+  const { reviews = [], ...product } = selected
   const ratings = reviews
     .map((review) => Number(review.rating))
     .filter((rating) => Number.isFinite(rating) && rating >= 1 && rating <= 5)

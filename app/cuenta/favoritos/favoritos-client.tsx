@@ -16,6 +16,7 @@ import SharedProductCard from "@/components/products/shared/shared-product-card"
 import { useAuth } from "@/context/auth-context"
 import { useCart } from "@/context/cart-context"
 import { supabase } from "@/lib/supabase/client"
+import { prepareStoreProducts } from "@/lib/supabase/queries/store"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 const FAVORITES_PRODUCT_SELECT = `
@@ -67,11 +68,25 @@ export function FavoritosClient() {
         return
       }
 
-      setProducts(
-        (data ?? [])
-          .map((item) => item.productos as unknown as SupabaseProducto | null)
-          .filter((product): product is SupabaseProducto => Boolean(product))
-      )
+      const favoriteProducts = (data ?? [])
+        .map((item) => item.productos as unknown as SupabaseProducto | null)
+        .filter((product): product is SupabaseProducto => Boolean(product))
+      // Mismo stock DISPONIBLE (físico - reservas activas) que el catálogo.
+      const withAvailableStock = await prepareStoreProducts(favoriteProducts)
+        .catch((prepareError: unknown) => {
+          console.error("FAVORITES_STOCK_LOAD_ERROR", prepareError)
+          return null
+        })
+
+      if (!active) return
+
+      if (!withAvailableStock) {
+        setError("No pudimos cargar tus favoritos.")
+        setLoading(false)
+        return
+      }
+
+      setProducts(withAvailableStock)
       setLoading(false)
     }
 

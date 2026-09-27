@@ -80,8 +80,12 @@ import {
 } from "@/components/ui/separator"
 
 import {
+  CART_STOCK_ISSUES_MESSAGE,
   MAX_CART_ITEM_QUANTITY,
   STOCK_CHANGED_MESSAGE,
+  getCartStockIssueMessage,
+  getCartStockIssues,
+  getMaxPurchasableQuantity,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
@@ -1786,6 +1790,8 @@ export default function CheckoutPage() {
     (currentStep === 1
       ? isRecipientStepValid
       : isShippingStepValid)
+  const cartStockIssues = getCartStockIssues(items)
+  const hasCartStockIssues = cartStockIssues.length > 0
   const cartReservationItems = reservationItemsFromCart(items)
   const hasMatchingStockReservation = Boolean(
     stockReservation &&
@@ -1826,6 +1832,8 @@ export default function CheckoutPage() {
         setReservationStockError(true)
         setInsufficientStockItems(affected)
       }
+      // Trae el disponible vigente para marcar las líneas a corregir.
+      void refreshCommercialData(true)
       setCheckoutError("Uno de los productos de tu compra acaba de quedarse sin stock. Revisá las cantidades antes de continuar.")
       return
     }
@@ -1898,6 +1906,12 @@ export default function CheckoutPage() {
 
   const goToNextStep = () => {
     if (!areCriticalCheckoutStatesReady) return
+    // Orientación previa a la reserva: con cantidades sobre el disponible no
+    // se avanza. reserve_cart_stock (Paso 2 -> 3) sigue siendo la autoridad.
+    if (hasCartStockIssues) {
+      setCheckoutError(CART_STOCK_ISSUES_MESSAGE)
+      return
+    }
 
     if (
       currentStep === 1 &&
@@ -3131,7 +3145,7 @@ export default function CheckoutPage() {
                     disabled={!areCriticalCheckoutStatesReady || reservationPending || reservationExpired}
                     className={cn(
                       "h-10 min-w-140px px-5 text-sm",
-                      isCurrentStepValid
+                      isCurrentStepValid && !hasCartStockIssues
                         ? checkoutPrimaryButtonClassName
                         : cn(checkoutSecondaryButtonClassName, checkoutDisabledButtonClassName)
                     )}
@@ -3185,8 +3199,11 @@ export default function CheckoutPage() {
 
               <div className="custom-scrollbar max-h-[clamp(300px,38vh,390px)] space-y-1.5 overflow-y-auto pr-1">
                 {items.map((item, itemIndex) => {
-                  const isMaxQuantity =
-                    item.quantity >= MAX_CART_ITEM_QUANTITY
+                  const maxQuantity = getMaxPurchasableQuantity(item.product, item.color)
+                  const isMaxQuantity = item.quantity >= maxQuantity
+                  const stockIssue = cartStockIssues.find((issue) =>
+                    issue.productId === item.product.id && issue.color === item.color,
+                  )
                   const stockStatus = getStockStatus(item.product, item.color)
                   const showStockIndicator = stockStatus !== "out"
                   const stockSymbol = getStockIndicatorSymbol(stockStatus)
@@ -3259,6 +3276,15 @@ export default function CheckoutPage() {
                                 </span>
                               </span>
                             )}
+                            {stockIssue && (
+                              <span
+                                role="alert"
+                                data-cart-stock-issue
+                                className="beyonix-cart-stock-issue whitespace-normal text-[12px] font-semibold leading-4 text-red-300"
+                              >
+                                {getCartStockIssueMessage(stockIssue)}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <span className="shrink-0 text-sm font-semibold text-white">
@@ -3304,7 +3330,11 @@ export default function CheckoutPage() {
                               <Plus className="size-3" />
                             </button>
                           </div>
-                          {isMaxQuantity && <span className="text-10px text-white/50">Máximo 3</span>}
+                          {isMaxQuantity && !stockIssue && (
+                            <span className="text-10px text-white/50">
+                              {maxQuantity >= MAX_CART_ITEM_QUANTITY ? "Máximo 3" : "Máximo disponible"}
+                            </span>
+                          )}
                         </div>
 
                         <button
@@ -3498,7 +3528,9 @@ export default function CheckoutPage() {
                 </CheckoutNotice>
               )}
 
-              {checkoutError && (
+              {checkoutError &&
+                // El aviso de cantidades se retira solo cuando el cliente las corrige.
+                !(checkoutError === CART_STOCK_ISSUES_MESSAGE && !hasCartStockIssues) && (
                 <CheckoutNotice tone="error" className="mt-4">
                   {checkoutError}
                 </CheckoutNotice>

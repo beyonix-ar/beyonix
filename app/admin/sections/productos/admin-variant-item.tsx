@@ -4,6 +4,10 @@ import Image from "next/image"
 import { ImageIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
+import { calculateAvailableStock } from "@/lib/inventory/sellable-stock"
+
+import { StockReservationBreakdown } from "./product-stock-reservations"
+
 type VariantTone = "normal" | "discounted"
 type VariantStateTone = "active" | "inactive" | "warning" | "danger"
 type VariantDensity = "compact" | "comfortable"
@@ -18,7 +22,10 @@ interface AdminVariantItemProps {
   colorHex?: string | null
   colorLabel?: string
   accentColor?: string | null
+  /** Stock físico. */
   stock: number
+  /** Reservas activas de checkout sobre esta variante (no son ventas). */
+  reservedStock?: number
   stateLabel: string
   stateTone?: VariantStateTone
   tone?: VariantTone
@@ -91,6 +98,7 @@ export function AdminVariantItem({
   colorLabel,
   accentColor,
   stock,
+  reservedStock = 0,
   stateLabel,
   stateTone = "active",
   tone = "normal",
@@ -102,6 +110,7 @@ export function AdminVariantItem({
   onToggleState,
   actions,
 }: AdminVariantItemProps) {
+  const availableStock = calculateAvailableStock(stock, reservedStock)
   const stateControl = onToggleState ? (
     <button
       type="button"
@@ -177,6 +186,7 @@ export function AdminVariantItem({
           <div>
             <dt className="text-xs font-bold text-white/46">Stock</dt>
             <dd className="mt-1 text-lg font-black tabular-nums text-white">{stock}</dd>
+            <StockReservationBreakdown reserved={reservedStock} available={availableStock} />
           </div>
         </dl>
 
@@ -232,8 +242,17 @@ export function AdminVariantItem({
         </p>
       </div>
 
-      <div data-label="Cantidad" className="justify-self-center text-center">
+      <div
+        data-label="Cantidad"
+        className="justify-self-center text-center"
+        title={
+          reservedStock > 0
+            ? `${stock} físicas · ${reservedStock} reservadas · ${availableStock} disponibles para vender`
+            : undefined
+        }
+      >
         <p className="text-sm font-black tabular-nums text-white">{stock}</p>
+        <StockReservationBreakdown reserved={reservedStock} available={availableStock} />
       </div>
 
       <div data-label="Color" className="flex min-w-0 items-center justify-center gap-1.5">

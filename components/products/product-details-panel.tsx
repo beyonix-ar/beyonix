@@ -298,7 +298,8 @@ export function ProductDetailsPanel({
           isInCart={isInCart}
           cartQuantity={cartQuantity}
           maxReached={
-            selectedStock < 1 || cartQuantity >= MAX_CART_ITEM_QUANTITY
+            // selectedStock ya es el disponible (físico - reservas activas).
+            cartQuantity >= Math.min(MAX_CART_ITEM_QUANTITY, selectedStock)
           }
           onAddToCart={onAddToCart}
           onDecreaseCart={onDecreaseCart}

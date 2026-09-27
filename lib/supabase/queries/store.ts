@@ -7,6 +7,40 @@ import type {
 import { hasPurchasableStock } from "@/lib/cart/stock-status"
 import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
 import { attachStoreConditionedStock } from "@/lib/supabase/queries/store-conditioned"
+import {
+  applyAvailableStock,
+  fetchActiveReservationTotals,
+} from "@/lib/inventory/sellable-stock"
+
+/**
+ * Stock condicionado + stock DISPONIBLE (físico - reservas activas) en una
+ * sola pasada, con ambas lecturas en paralelo y una consulta por lote (sin
+ * N+1). La visibilidad del producto (`hasPurchasableStock`) sigue dependiendo
+ * del stock FÍSICO: un producto totalmente reservado se muestra como agotado
+ * en vez de desaparecer, y vuelve a estar disponible cuando la reserva vence.
+ */
+export async function prepareStoreProducts(
+  products: SupabaseProducto[],
+  options: { onlyWithStock?: boolean; excludeSessionId?: string | null } = {},
+) {
+  const [withConditioned, reservations] = await Promise.all([
+    attachStoreConditionedStock(supabase, products),
+    fetchActiveReservationTotals(
+      supabase,
+      products.map((product) => product.id),
+      { excludeSessionId: options.excludeSessionId },
+    ).catch((error: unknown) => {
+      // Sólo orientación para la UI: sin reservas se muestra el físico y
+      // reserve_cart_stock sigue rechazando lo que no esté disponible.
+      console.error("STORE_STOCK_RESERVATIONS_LOAD_ERROR", error)
+      return []
+    }),
+  ])
+  const visible = options.onlyWithStock
+    ? withConditioned.filter(hasPurchasableStock)
+    : withConditioned
+  return applyAvailableStock(visible, reservations)
+}
 
 const PRODUCT_SELECT = `
   *,
@@ -37,12 +71,10 @@ export async function getStoreProductos(
     throw error
   }
 
-  const products = (
-    await attachStoreConditionedStock(
-      supabase,
-      (data || []) as SupabaseProducto[],
-    )
-  ).filter(hasPurchasableStock)
+  const products = await prepareStoreProducts(
+    (data || []) as SupabaseProducto[],
+    { onlyWithStock: true },
+  )
 
   return attachProductReviewSummaries(products)
 }
@@ -58,7 +90,10 @@ const CART_PRODUCT_SELECT = `
  * cuotas y stock condicionado) para refrescar carrito/checkout abiertos.
  * Sólo productos activos: uno desactivado no vuelve y se quita del carrito.
  */
-export async function getStoreCartProducts(productIds: number[]) {
+export async function getStoreCartProducts(
+  productIds: number[],
+  options: { excludeSessionId?: string | null } = {},
+) {
   const ids = [...new Set(productIds.filter((id) => Number.isFinite(id)))]
   if (!ids.length) return []
 
@@ -72,10 +107,10 @@ export async function getStoreCartProducts(productIds: number[]) {
     throw error
   }
 
-  return attachStoreConditionedStock(
-    supabase,
-    (data || []) as SupabaseProducto[],
-  )
+  // Sin descontar la reserva de la propia sesión (Paso 3 vigente).
+  return prepareStoreProducts((data || []) as SupabaseProducto[], {
+    excludeSessionId: options.excludeSessionId,
+  })
 }
 
 export async function getFeaturedProductos() {
@@ -94,12 +129,10 @@ export async function getFeaturedProductos() {
     throw error
   }
 
-  const products = (
-    await attachStoreConditionedStock(
-      supabase,
-      (data || []) as SupabaseProducto[],
-    )
-  ).filter(hasPurchasableStock)
+  const products = await prepareStoreProducts(
+    (data || []) as SupabaseProducto[],
+    { onlyWithStock: true },
+  )
 
   return attachProductReviewSummaries(products)
 }
@@ -125,16 +158,20 @@ export async function getProductoBySlug(
   // producto base recién leído, así que se piden en paralelo en vez de
   // encadenar dos round-trips secuenciales en la página de producto.
   const [[conditionedProduct], [reviewProduct]] = await Promise.all([
-    attachStoreConditionedStock(supabase, [data as SupabaseProducto]),
+    prepareStoreProducts([data as SupabaseProducto], { onlyWithStock: true }),
     attachProductReviewSummaries([data as SupabaseProducto]),
   ])
 
-  if (!conditionedProduct || !hasPurchasableStock(conditionedProduct)) {
+  if (!conditionedProduct) {
     return null
   }
 
   return reviewProduct
-    ? { ...conditionedProduct, ...reviewProduct }
+    ? {
+        ...conditionedProduct,
+        average_rating: reviewProduct.average_rating,
+        reviews_count: reviewProduct.reviews_count,
+      }
     : conditionedProduct
 }
 
@@ -181,12 +218,10 @@ export async function getProductosByCategoriaId(
     throw error
   }
 
-  const products = (
-    await attachStoreConditionedStock(
-      supabase,
-      (data || []) as SupabaseProducto[],
-    )
-  ).filter(hasPurchasableStock)
+  const products = await prepareStoreProducts(
+    (data || []) as SupabaseProducto[],
+    { onlyWithStock: true },
+  )
 
   return attachProductReviewSummaries(products)
 }
@@ -211,12 +246,10 @@ export async function searchProductos(
     throw error
   }
 
-  const products = (
-    await attachStoreConditionedStock(
-      supabase,
-      (data || []) as SupabaseProducto[],
-    )
-  ).filter(hasPurchasableStock)
+  const products = await prepareStoreProducts(
+    (data || []) as SupabaseProducto[],
+    { onlyWithStock: true },
+  )
 
   return attachProductReviewSummaries(products)
 }
@@ -269,12 +302,10 @@ export async function getRelatedProductos(
     throw error
   }
 
-  const products = (
-    await attachStoreConditionedStock(
-      supabase,
-      (data || []) as SupabaseProducto[],
-    )
-  ).filter(hasPurchasableStock)
+  const products = await prepareStoreProducts(
+    (data || []) as SupabaseProducto[],
+    { onlyWithStock: true },
+  )
 
   return attachProductReviewSummaries(products)
 }

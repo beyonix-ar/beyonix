@@ -19,6 +19,11 @@ import { CartItemRow } from "./cart-item"
 
 import { CartSummary } from "./cart-summary"
 
+import {
+  CART_STOCK_ISSUES_MESSAGE,
+  getCartStockIssues,
+} from "@/lib/cart/stock-status"
+
 import type {
   CartItem,
 } from "@/context/cart-context"
@@ -220,6 +225,11 @@ export function CartDrawer({
                   router.push("/checkout")
                 }}
                 onContinueShopping={onClose}
+                checkoutBlockedReason={
+                  getCartStockIssues(items).length > 0
+                    ? CART_STOCK_ISSUES_MESSAGE
+                    : null
+                }
               />
             </div>
           </>

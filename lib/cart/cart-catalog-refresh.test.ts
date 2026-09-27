@@ -9,6 +9,7 @@ import {
   shouldRunCommercialRefresh,
   type RefreshableCartItem,
 } from "./cart-catalog-refresh.ts"
+import { getCartStockIssues } from "./stock-status.ts"
 import type { SupabaseProducto, SupabaseProductoVariante } from "../supabase/types.ts"
 
 function makeProduct(overrides: Partial<SupabaseProducto> = {}): SupabaseProducto {
@@ -76,7 +77,7 @@ test("detecta el cambio de cuotas habilitadas (máximo de cuotas)", () => {
   assert.equal(result.items[0].product.cuotas_6_habilitadas, false)
 })
 
-test("producto desactivado/borrado o sin stock se quita del carrito y se informa", () => {
+test("producto desactivado/borrado se quita del carrito y se informa", () => {
   const product = makeProduct()
   const items = [makeItem(product)]
 
@@ -84,10 +85,32 @@ test("producto desactivado/borrado o sin stock se quita del carrito y se informa
   assert.equal(deactivated.changed, true)
   assert.equal(deactivated.items.length, 0)
   assert.equal(deactivated.removed.length, 1)
+})
 
+test("Fase 5: sin stock disponible la línea NO se borra en silencio; queda marcada con el stock vigente", () => {
+  const items = [makeItem(makeProduct(), { quantity: 2 })]
   const outOfStock = reconcileCartWithCatalog(items, [makeProduct({ stock: 0 })])
   assert.equal(outOfStock.changed, true)
-  assert.equal(outOfStock.items.length, 0)
+  assert.equal(outOfStock.items.length, 1)
+  assert.equal(outOfStock.removed.length, 0)
+  assert.equal(outOfStock.items[0].quantity, 2, "la cantidad la corrige el cliente, no el refresco")
+  assert.deepEqual(getCartStockIssues(outOfStock.items), [
+    { productId: 101, color: "default", requested: 2, available: 0 },
+  ])
+})
+
+test("Fase 5: un cambio del disponible dentro del rango comprable (0 a 3) refresca la línea", () => {
+  const items = [makeItem(makeProduct({ stock: 3 }), { quantity: 3 })]
+  // 3 -> 2 sigue siendo "Últimas unidades": igual debe refrescar el snapshot.
+  const reduced = reconcileCartWithCatalog(items, [makeProduct({ stock: 2 })])
+  assert.equal(reduced.changed, true)
+  assert.equal(reduced.items[0].product.stock, 2)
+  assert.deepEqual(getCartStockIssues(reduced.items), [
+    { productId: 101, color: "default", requested: 3, available: 2 },
+  ])
+  // Fuera del rango comprable (50 -> 40) no hay re-render.
+  const plenty = [makeItem(makeProduct({ stock: 50 }))]
+  assert.equal(reconcileCartWithCatalog(plenty, [makeProduct({ stock: 40 })]).items, plenty)
 })
 
 test("una variante que dejó de existir se quita (nunca se cambia por otra en silencio)", () => {

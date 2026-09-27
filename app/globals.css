@@ -12233,6 +12233,11 @@ html[data-account-theme="light"][data-account-scope] .beyonix-stock-badge-danger
   border-color: var(--account-danger-border) !important;
   color: var(--account-danger-text) !important;
 }
+/* Aviso de cantidad sobre el disponible (carrito/checkout): mismo rojo
+   semántico que el badge "Agotado", sólo texto. */
+html[data-account-theme="light"][data-account-scope] .beyonix-cart-stock-issue {
+  color: var(--account-danger-text) !important;
+}
 html[data-account-theme="light"][data-account-scope] .beyonix-stock-badge-success {
   background: var(--account-success-bg) !important;
   border-color: var(--account-success-border) !important;

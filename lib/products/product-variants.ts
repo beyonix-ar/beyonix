@@ -113,7 +113,9 @@ export function getProductVariantOptions(
     .filter(
       (item) =>
         item.active &&
-        item.quantity > 0 &&
+        // Visible mientras exista físicamente: si está toda reservada se
+        // muestra agotada (stock = disponible 0) en vez de desaparecer.
+        (item.physical_quantity ?? item.quantity) > 0 &&
         item.discount_percent > 0 &&
         item.discount_percent < 100 &&
         Boolean(item.conditioned_name?.trim()) &&

@@ -11,7 +11,7 @@
  */
 
 import { getVariantOptionByValue } from "../products/product-variants.ts"
-import { getProductStock, getStockStatus } from "./stock-status.ts"
+import { getMaxPurchasableQuantity, getStockStatus } from "./stock-status.ts"
 import type { SupabaseProducto } from "../supabase/types.ts"
 
 export interface RefreshableCartItem {
@@ -28,9 +28,10 @@ export interface RefreshableCartItem {
 }
 
 /**
- * Lo que, si cambia, cambia lo que el cliente paga o puede comprar. La
- * cantidad exacta de stock queda afuera a propósito (el frontend nunca la
- * expone): sólo cuenta el estado agotado/bajo/disponible.
+ * Lo que, si cambia, cambia lo que el cliente paga o puede comprar. Del stock
+ * sólo cuenta el estado agotado/bajo/disponible y cuánto se puede comprar
+ * (0 a 3, disponible = físico - reservas activas): un cambio fuera de ese
+ * rango no re-renderiza el carrito.
  */
 function getCartItemCommercialKey(item: RefreshableCartItem) {
   return JSON.stringify([
@@ -47,6 +48,7 @@ function getCartItemCommercialKey(item: RefreshableCartItem) {
     Boolean(item.product.cuotas_3_habilitadas),
     Boolean(item.product.cuotas_6_habilitadas),
     getStockStatus(item.product, item.color),
+    getMaxPurchasableQuantity(item.product, item.color),
   ])
 }
 
@@ -65,9 +67,10 @@ export interface CartCatalogReconciliation<T extends RefreshableCartItem> {
 /**
  * Aplica el catálogo fresco a los ítems del carrito. Si nada comercialmente
  * relevante cambió, devuelve EXACTAMENTE el mismo array (misma referencia):
- * el carrito no se toca ni se re-renderiza. Un producto desactivado, borrado,
- * o una variante que ya no existe o quedó sin stock se quitan (mismo criterio
- * que la hidratación del carrito, `normalizeCart`).
+ * el carrito no se toca ni se re-renderiza. Sólo se quita un producto
+ * desactivado/borrado o una variante que ya no existe. Una línea sin stock
+ * disponible (o con menos del pedido) se CONSERVA con el stock vigente: el
+ * carrito la marca (getCartStockIssues) y no deja avanzar hasta corregirla.
  */
 export function reconcileCartWithCatalog<T extends RefreshableCartItem>(
   items: T[],
@@ -96,7 +99,7 @@ export function reconcileCartWithCatalog<T extends RefreshableCartItem>(
       (variant.id ?? null) === (item.variantId ?? null) &&
       (variant.conditionedStockId ?? null) === (item.conditionedStockId ?? null)
 
-    if (!sameVariant || getProductStock(product, item.color) <= 0) {
+    if (!sameVariant) {
       removed.push(item)
       changed = true
       return []
