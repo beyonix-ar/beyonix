@@ -5,6 +5,15 @@
  */
 export type ArcaEnvironment = "homologation" | "production"
 
+/**
+ * ÚNICA fuente del ambiente activo: endpoints WSAA/WSFE, clave del TA
+ * persistido y ambiente guardado en cada comprobante salen de acá.
+ * Producción sólo con ARCA_ENV=production explícito.
+ */
+export function getConfiguredArcaEnvironment(value = process.env.ARCA_ENV): ArcaEnvironment {
+  return value?.trim().toLowerCase() === "production" ? "production" : "homologation"
+}
+
 export function parseArcaEnvironment(value: unknown): ArcaEnvironment | null {
   return value === "homologation" || value === "production" ? value : null
 }

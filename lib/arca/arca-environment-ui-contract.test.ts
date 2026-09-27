@@ -15,7 +15,8 @@ test("gateway: el ambiente persistido es el mismo con el que se eligen los endpo
   const wsfe = read("lib/arca/wsfe.ts")
   assert.match(wsfe, /WSFE_URLS\[getArcaEnvironment\(\)\]/)
   const wsaa = read("lib/arca/wsaa.ts")
-  assert.match(wsaa, /ARCA_ENV\?\.trim\(\)\.toLowerCase\(\) === "production"/)
+  assert.match(wsaa, /return WSAA_URLS\[getConfiguredArcaEnvironment\(\)\]/)
+  assert.match(wsaa, /environment: getConfiguredArcaEnvironment\(\),/, "el TA persistido usa el mismo ambiente")
 })
 
 test("Admin NC: otro ambiente se rechaza ANTES de reservar importes y el ambiente viaja a la emisión", () => {

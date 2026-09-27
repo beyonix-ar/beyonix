@@ -1,4 +1,4 @@
-import type { ArcaEnvironment } from "@/lib/arca/environment"
+import { getConfiguredArcaEnvironment, type ArcaEnvironment } from "@/lib/arca/environment"
 import { asArray, escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 import { getWsaaCredentials } from "@/lib/arca/wsaa"
 
@@ -16,9 +16,7 @@ export type { ArcaEnvironment }
  * fiscales reales por accidente.
  */
 export function getArcaEnvironment(): ArcaEnvironment {
-  return process.env.ARCA_ENV?.trim().toLowerCase() === "production"
-    ? "production"
-    : "homologation"
+  return getConfiguredArcaEnvironment()
 }
 
 function wsfeUrl() {

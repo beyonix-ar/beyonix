@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
 
+import { getConfiguredArcaEnvironment } from "./environment.ts"
 import { getInvoiceFiscalStatusView } from "./invoice-status-view.ts"
 
 const root = process.cwd()
@@ -48,7 +49,13 @@ test("un solo camino de emisión: Admin y worker usan el mismo servicio; nadie l
 test("ambiente ARCA: homologación por defecto; producción sólo explícita", () => {
   const wsfe = read("lib/arca/wsfe.ts")
   const wsaa = read("lib/arca/wsaa.ts")
-  assert.match(wsfe, /ARCA_ENV\?\.trim\(\)\.toLowerCase\(\) === "production"\s*\?\s*"production"\s*:\s*"homologation"/)
+  // Fuente única (lib/arca/environment.ts): producción sólo explícita.
+  assert.match(wsfe, /return getConfiguredArcaEnvironment\(\)/)
+  assert.match(wsaa, /return WSAA_URLS\[getConfiguredArcaEnvironment\(\)\]/)
+  for (const value of [undefined, "", "homologation", "prod", "produccion", "PRODUCCIÓN"]) {
+    assert.equal(getConfiguredArcaEnvironment(value), "homologation", String(value))
+  }
+  assert.equal(getConfiguredArcaEnvironment(" Production "), "production")
   assert.match(wsfe, /production: "https:\/\/servicios1\.afip\.gov\.ar\/wsfev1\/service\.asmx"/)
   assert.match(wsaa, /production: "https:\/\/wsaa\.afip\.gov\.ar\/ws\/services\/LoginCms"/)
   assert.doesNotMatch(wsfe, /fetch\(WSFE_HOMOLOGATION_URL/)

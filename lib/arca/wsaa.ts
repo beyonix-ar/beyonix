@@ -1,18 +1,22 @@
 import forge from "node-forge"
 
+import { getConfiguredArcaEnvironment, type ArcaEnvironment } from "@/lib/arca/environment"
+import {
+  isUsableTicket,
+  isWsaaAlreadyAuthenticatedFault,
+  obtainWsaaTicket,
+  wsaaTicketCacheKey,
+  type WsaaTicketScope,
+} from "@/lib/arca/wsaa-ticket-cache"
 import { escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 
-const WSAA_URLS = {
+const WSAA_URLS: Record<ArcaEnvironment, string> = {
   homologation: "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
   production: "https://wsaa.afip.gov.ar/ws/services/LoginCms",
-} as const
+}
 
-// Mismo criterio que getArcaEnvironment (lib/arca/wsfe.ts): producción sólo
-// con ARCA_ENV=production explícito.
 function wsaaUrl() {
-  return process.env.ARCA_ENV?.trim().toLowerCase() === "production"
-    ? WSAA_URLS.production
-    : WSAA_URLS.homologation
+  return WSAA_URLS[getConfiguredArcaEnvironment()]
 }
 const WSAA_SERVICE = "wsfe"
 const CACHE_MARGIN_MS = 5 * 60 * 1000
@@ -26,7 +30,9 @@ export interface WsaaCredentials {
 
 declare global {
   var arcaWsaaCredentials: WsaaCredentials | undefined
+  var arcaWsaaCredentialsKey: string | undefined
   var arcaWsaaRequest: Promise<WsaaCredentials> | undefined
+  var arcaWsaaRequestKey: string | undefined
 }
 
 function requiredEnv(name: "ARCA_CERT" | "ARCA_PRIVATE_KEY") {
@@ -123,6 +129,11 @@ async function requestCredentials() {
   const fault = getSoapFaultMessage(soap)
 
   if (!response.ok || fault) {
+    if (isWsaaAlreadyAuthenticatedFault(fault)) {
+      throw new Error(
+        `WSAA rechazó la autenticación: ${fault}. ARCA entregó hace poco un ticket para este certificado a un proceso que no lo persistió en este servidor; hay que esperar el lapso preventivo de WSAA antes de pedir otro. No se pidió ningún CAE.`,
+      )
+    }
     throw new Error(`WSAA rechazó la autenticación: ${fault ?? response.status}.`)
   }
 
@@ -146,22 +157,46 @@ async function requestCredentials() {
     throw new Error("WSAA devolvió credenciales incompletas.")
   }
 
-  globalThis.arcaWsaaCredentials = credentials
   return credentials
 }
 
-export async function getWsaaCredentials() {
-  const cached = globalThis.arcaWsaaCredentials
-  const expiration = cached ? Date.parse(cached.expirationTime) : 0
+/** Ambiente de los endpoints + servicio + certificado configurado. */
+function ticketScope(): WsaaTicketScope {
+  return {
+    environment: getConfiguredArcaEnvironment(),
+    service: WSAA_SERVICE,
+    certificatePem: requiredEnv("ARCA_CERT"),
+  }
+}
 
-  if (cached && expiration - CACHE_MARGIN_MS > Date.now()) {
+/**
+ * Memoria -> TA persistido (compartido entre procesos, sobrevive reinicios)
+ * -> WSAA con candado entre procesos. Nunca se pide un TA si hay uno vigente.
+ */
+export async function getWsaaCredentials() {
+  const scope = ticketScope()
+  const key = wsaaTicketCacheKey(scope)
+  const cached = globalThis.arcaWsaaCredentials
+  if (cached && globalThis.arcaWsaaCredentialsKey === key && isUsableTicket(cached, Date.now(), CACHE_MARGIN_MS)) {
     return cached
   }
 
-  if (!globalThis.arcaWsaaRequest) {
-    globalThis.arcaWsaaRequest = requestCredentials().finally(() => {
-      globalThis.arcaWsaaRequest = undefined
+  if (!globalThis.arcaWsaaRequest || globalThis.arcaWsaaRequestKey !== key) {
+    globalThis.arcaWsaaRequestKey = key
+    globalThis.arcaWsaaRequest = obtainWsaaTicket({
+      scope,
+      request: requestCredentials,
+      marginMs: CACHE_MARGIN_MS,
     })
+      .then((credentials) => {
+        globalThis.arcaWsaaCredentials = credentials
+        globalThis.arcaWsaaCredentialsKey = key
+        return credentials
+      })
+      .finally(() => {
+        globalThis.arcaWsaaRequest = undefined
+        globalThis.arcaWsaaRequestKey = undefined
+      })
   }
 
   return globalThis.arcaWsaaRequest

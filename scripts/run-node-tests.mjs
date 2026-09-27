@@ -124,6 +124,7 @@ const TEST_FILES = [
   "lib/arca/credit-note-hardening-contract.test.ts",
   "lib/arca/arca-environment-isolation.test.ts",
   "lib/arca/arca-environment-ui-contract.test.ts",
+  "lib/arca/wsaa-ticket-cache.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",
@@ -251,6 +252,7 @@ const DB_ROUTE_TEST_FILES = [
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
   "lib/arca/invoice-pdf-environment.test.ts",
+  "scripts/arca-homologation/harness.test.ts",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))
