@@ -113,6 +113,7 @@ import {
   type StockReservationResult,
 } from "@/lib/cart/stock-reservations"
 import {
+  CHECKOUT_RESERVATION_LOCKED_MESSAGE,
   CHECKOUT_STEP_RESERVATION_KEY,
   formatReservationCountdown,
   reservationItemsFromCart,
@@ -796,6 +797,20 @@ export default function CheckoutPage() {
     reservationRedirectTimerRef.current = setTimeout(() => router.replace("/"), 2800)
   }, [router, startNewCheckoutSession])
 
+  // La reserva de ESTA sesión ya quedó ligada a un pedido (p. ej. se inició
+  // Mercado Pago y se volvió atrás). No venció: no se redirige ni se promete
+  // un plazo. Se libera la identidad de checkout (el carrito se conserva) y el
+  // cliente vuelve al Paso 2; "Continuar" reserva de nuevo desde cero.
+  const releaseLockedCheckoutSession = useCallback(() => {
+    sessionStorage.removeItem(CHECKOUT_STEP_RESERVATION_KEY)
+    setStockReservation(null)
+    setReservationSeconds(0)
+    setMercadoPagoConfirmOpen(false)
+    startNewCheckoutSession()
+    setCurrentStep((step) => (step === 3 ? 2 : step))
+    setCheckoutError(CHECKOUT_RESERVATION_LOCKED_MESSAGE)
+  }, [startNewCheckoutSession])
+
   useEffect(() => {
     if (!mounted || !isCartReady || !cartSessionId) return
     if (sessionStorage.getItem(CHECKOUT_STEP_RESERVATION_KEY) !== cartSessionId) return
@@ -818,6 +833,8 @@ export default function CheckoutPage() {
           ))
         } else if (snapshot.status === "error") {
           setCheckoutError("No pudimos comprobar tu reserva. Intentá nuevamente.")
+        } else if (snapshot.status === "locked") {
+          releaseLockedCheckoutSession()
         } else {
           sessionStorage.removeItem(CHECKOUT_STEP_RESERVATION_KEY)
           setCheckoutError("Tu reserva ya no está disponible. Volvé a revisar tu compra.")
@@ -827,7 +844,7 @@ export default function CheckoutPage() {
       })
     })
     return () => { cancelled = true }
-  }, [mounted, isCartReady, cartSessionId, expireStockReservation])
+  }, [mounted, isCartReady, cartSessionId, expireStockReservation, releaseLockedCheckoutSession])
 
   useEffect(() => {
     if (!stockReservation || reservationExpired || !cartSessionId) return
@@ -853,6 +870,9 @@ export default function CheckoutPage() {
               setMercadoPagoConfirmOpen(false)
               setCheckoutError("La reserva cambió en otra pestaña. Revisá tu carrito y volvé a continuar.")
             }
+          } else if (snapshot.status === "locked" && !submissionInFlightRef.current) {
+            // Otra pestaña inició el pago de esta reserva.
+            releaseLockedCheckoutSession()
           }
         }).catch(() => {
           if (!cancelled) setCheckoutError("No pudimos comprobar tu reserva. Intentá nuevamente.")
@@ -869,7 +889,7 @@ export default function CheckoutPage() {
       window.removeEventListener("focus", synchronize)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [stockReservation, reservationExpired, cartSessionId, items, expireStockReservation])
+  }, [stockReservation, reservationExpired, cartSessionId, items, expireStockReservation, releaseLockedCheckoutSession])
 
   useEffect(() => {
     if (!stockReservation || reservationExpired) return
@@ -1807,6 +1827,10 @@ export default function CheckoutPage() {
       expireStockReservation()
       return
     }
+    if (result.code === "RESERVATION_LOCKED_TO_ORDER") {
+      releaseLockedCheckoutSession()
+      return
+    }
     if (result.code === "OUT_OF_STOCK") {
       const affected = (result.conflicts ?? []).flatMap((conflict) => {
         const cartItem = items.find((item) =>
@@ -2022,6 +2046,10 @@ export default function CheckoutPage() {
         expireStockReservation()
         return
       }
+      if (liveReservation.status === "locked") {
+        releaseLockedCheckoutSession()
+        return
+      }
       if (liveReservation.status !== "active" ||
           !reservationMatchesCart(liveReservation.items, cartReservationItems)) {
         setCheckoutError("Tu reserva cambió o ya no está disponible. Revisá tu compra antes de continuar.")
@@ -2084,6 +2112,10 @@ export default function CheckoutPage() {
 
       if (!response.ok && data?.code === "RESERVATION_EXPIRED") {
         expireStockReservation()
+        return
+      }
+      if (!response.ok && data?.code === "RESERVATION_LOCKED") {
+        releaseLockedCheckoutSession()
         return
       }
 

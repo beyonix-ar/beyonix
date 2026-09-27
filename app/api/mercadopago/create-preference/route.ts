@@ -37,6 +37,7 @@ import {
 import {
   deleteIncompleteCheckoutOrder,
   CheckoutReservationExpiredError,
+  CheckoutReservationLockedError,
   MissingReservationSessionError,
 } from "@/lib/orders/checkout-inventory"
 import {
@@ -664,6 +665,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
+    if (error instanceof CheckoutReservationLockedError) {
+      return NextResponse.json(
+        { code: "RESERVATION_LOCKED", error: error.message },
+        { status: 409 },
+      )
+    }
+
     if (error instanceof CheckoutReservationExpiredError) {
       return NextResponse.json(
         { code: "RESERVATION_EXPIRED", error: error.message },
@@ -673,6 +681,14 @@ export async function POST(request: Request) {
 
     if (error instanceof InvalidCheckoutItemsError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    // Otra pestaña/compra usó el saldo entre la cotización y el débito atómico.
+    if (error instanceof Error && /INSUFFICIENT_CUSTOMER_CREDIT/.test(error.message)) {
+      return NextResponse.json(
+        { error: "El saldo a favor disponible cambió. Revisá el total antes de pagar." },
+        { status: 409 },
+      )
     }
 
     const stockConflict =

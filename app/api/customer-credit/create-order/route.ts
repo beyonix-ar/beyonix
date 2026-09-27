@@ -21,6 +21,7 @@ import {
   claimActiveStoreBenefit,
   linkStoreBenefitToOrder,
   releaseStoreBenefitClaim,
+  restoreStoreBenefitFromSupersededOrder,
 } from "@/lib/customer-store-benefits"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
@@ -47,11 +48,18 @@ import {
   CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE,
   hasAcceptedCheckoutTerms,
 } from "@/lib/orders/checkout-order-creation"
-import { CheckoutReservationExpiredError } from "@/lib/orders/checkout-inventory"
+import {
+  CheckoutReservationExpiredError,
+  CheckoutReservationLockedError,
+  deleteIncompleteCheckoutOrder,
+} from "@/lib/orders/checkout-inventory"
 import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
+
+const CUSTOMER_CREDIT_CHANGED_MESSAGE =
+  "El saldo a favor disponible cambió. Revisá el total antes de pagar."
 
 interface CheckoutPayload extends CheckoutOrderRequestPayload {
   paymentMethodId?: string | null
@@ -73,6 +81,7 @@ export async function POST(request: Request) {
   let orderId: number | null = null
   let creditApplied = false
   let claimedBenefitId: string | null = null
+  let benefitLinkedOrderId: number | null = null
   const admin = createAdminClient()
 
   try {
@@ -297,7 +306,17 @@ export async function POST(request: Request) {
     })
     creditApplied = true
 
-    const { error: updateError } = await admin
+    // El beneficio se vincula ANTES de confirmar: si fallara después, el
+    // catch revertiría el saldo de un pedido ya pagado.
+    if (storeBenefit) {
+      await linkStoreBenefitToOrder(admin, {
+        benefitId: storeBenefit.id,
+        orderId: order.id,
+      })
+      benefitLinkedOrderId = order.id
+    }
+
+    const { data: confirmed, error: updateError } = await admin
       .from("ordenes")
       .update({
         estado: "pagado",
@@ -309,17 +328,19 @@ export async function POST(request: Request) {
         external_amount_due: 0,
       } as never)
       .eq("id", order.id)
+      .eq("estado", "pendiente")
+      .select("id")
+      .maybeSingle()
 
-    if (updateError) {
-      throw updateError
+    if (updateError || !confirmed) {
+      throw updateError ?? new Error("No se pudo confirmar el pedido con saldo a favor.")
     }
 
-    if (storeBenefit) {
-      await linkStoreBenefitToOrder(admin, {
-        benefitId: storeBenefit.id,
-        orderId: order.id,
-      })
-    }
+    // Pagado: desde acá nada se revierte (auditoría y email no lanzan).
+    orderId = null
+    creditApplied = false
+    benefitLinkedOrderId = null
+    claimedBenefitId = null
 
     await appendOrderAuditEvent(admin, {
       orderId: order.id,
@@ -349,17 +370,9 @@ export async function POST(request: Request) {
       redirect_url: `/checkout/success?method=customer_credit&order_id=${order.id}`,
     })
   } catch (error) {
-    if (claimedBenefitId) {
-      // Best-effort, igual que la reversión de saldo de abajo: si ya se
-      // vinculó a una orden real, releaseStoreBenefitClaim es un no-op por
-      // su propio guard.
-      try {
-        await releaseStoreBenefitClaim(admin, claimedBenefitId)
-      } catch (releaseError) {
-        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
-      }
-    }
-
+    // Sólo llega acá un pedido que NO quedó pagado (tras confirmar, los
+    // flags se limpian). Se devuelve lo retenido y se retira el pedido para
+    // que no quede pendiente para siempre bloqueando la misma compra.
     if (orderId && creditApplied) {
       try {
         await reverseCustomerCreditForOrder(admin, {
@@ -370,6 +383,26 @@ export async function POST(request: Request) {
       } catch (reversalError) {
         console.error("CUSTOMER_CREDIT_AUTO_REVERSAL_ERROR", reversalError)
       }
+    }
+
+    if (claimedBenefitId) {
+      try {
+        if (benefitLinkedOrderId) {
+          await restoreStoreBenefitFromSupersededOrder(admin, {
+            benefitId: claimedBenefitId,
+            orderId: benefitLinkedOrderId,
+          })
+        } else {
+          // Guard used_order_id is null: nunca despierta un cupón ya usado.
+          await releaseStoreBenefitClaim(admin, claimedBenefitId)
+        }
+      } catch (releaseError) {
+        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+      }
+    }
+
+    if (orderId) {
+      await deleteIncompleteCheckoutOrder(admin, orderId)
     }
 
     console.error("Error creando orden con saldo a favor", error)
@@ -385,9 +418,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
+    if (error instanceof CheckoutReservationLockedError) {
+      return NextResponse.json(
+        { code: "RESERVATION_LOCKED", error: error.message },
+        { status: 409 },
+      )
+    }
+
     if (error instanceof CheckoutReservationExpiredError) {
       return NextResponse.json(
         { code: "RESERVATION_EXPIRED", error: error.message },
+        { status: 409 },
+      )
+    }
+
+    // Otra pestaña/compra usó el saldo entre el cálculo y el débito atómico.
+    if (error instanceof Error && /INSUFFICIENT_CUSTOMER_CREDIT/.test(error.message)) {
+      return NextResponse.json(
+        { error: CUSTOMER_CREDIT_CHANGED_MESSAGE },
         { status: 409 },
       )
     }

@@ -18,7 +18,14 @@ alter table public.ordenes
   add andreani_creation_status text,
   add credit_note_status text,
   add credit_note_cae text,
-  add credit_note_error text;
+  add credit_note_error text,
+  -- Columnas de producción que lee review_manual_transfer_payment (20260926150000).
+  add transfer_matched_payment_id text,
+  add store_benefit_id text;
+create table public.customer_store_benefits (
+  id text primary key, status text, used_at timestamptz, used_order_id bigint
+);
+grant all privileges on public.customer_store_benefits to service_role;
 create table public.customer_credit_movements (
   id uuid primary key default gen_random_uuid(), user_id uuid, movement_type text,
   amount numeric, description text, source_type text, source_id text, order_id bigint,

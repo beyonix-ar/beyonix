@@ -9,6 +9,14 @@ export const CHECKOUT_STEP_RESERVATION_KEY = "beyonix-checkout-step-3-reservatio
  */
 export const CHECKOUT_RESERVATION_MINUTES = 20
 
+/**
+ * La reserva de la sesión ya quedó ligada a un pedido (pago iniciado y se
+ * volvió atrás, u otra pestaña pagó). No es un vencimiento: se conserva el
+ * carrito y el cliente reserva de nuevo.
+ */
+export const CHECKOUT_RESERVATION_LOCKED_MESSAGE =
+  "Esta compra ya tiene un pago iniciado. Si ya pagaste, revisalo en Mis compras. Para comprar de nuevo, volvé a continuar y reservamos los productos otra vez."
+
 export function reservationItemsFromCart(items: ReadonlyArray<{
   product: { id: number }
   quantity: number

@@ -114,6 +114,9 @@ const TEST_FILES = [
   "lib/orders/transfer-payment-after-cancellation.test.ts",
   "lib/orders/transfer-payment-after-cancellation-refund.test.ts",
   "lib/orders/transfer-reservation-display.test.ts",
+  "lib/orders/transfer-stock-conflict-rejection.test.ts",
+  "lib/orders/checkout-failure-cleanup.test.ts",
+  "lib/cart/checkout-reservation-locked.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",
@@ -227,9 +230,16 @@ const TSX_TEST_FILES = [
 const DB_TEST_FILES = [
   "lib/cart/checkout-step-reservations.test.mjs",
   "lib/orders/transfer-checkout-reservation.test.mjs",
+  "lib/mercadopago/checkout-reservation-phase3.test.mjs",
 ]
 
-const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES].filter((file) => !existsSync(file))
+// PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
+// react-server): mismo aislamiento que DB_TEST_FILES.
+const DB_ROUTE_TEST_FILES = [
+  "lib/business/critical-hardening.test.mjs",
+]
+
+const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES].filter((file) => !existsSync(file))
 if (missing.length > 0) {
   console.error(`Tests listados que no existen:\n${missing.join("\n")}`)
   process.exit(1)
@@ -252,4 +262,16 @@ const dbResult = spawnSync(process.execPath, ["--test", ...DB_TEST_FILES], {
 })
 if (dbResult.error) throw dbResult.error
 
-process.exit((result.status ?? 1) || (tsxResult.status ?? 1) || (dbResult.status ?? 1))
+const dbRouteResult = spawnSync(
+  process.execPath,
+  ["--conditions=react-server", "--import", "tsx", "--test", ...DB_ROUTE_TEST_FILES],
+  { stdio: "inherit" },
+)
+if (dbRouteResult.error) throw dbRouteResult.error
+
+process.exit(
+  (result.status ?? 1) ||
+  (tsxResult.status ?? 1) ||
+  (dbResult.status ?? 1) ||
+  (dbRouteResult.status ?? 1),
+)

@@ -584,7 +584,9 @@ function getPaymentStatusLabel(status?: string | null) {
     rechazado: "Comprobante rechazado",
     vencido_falta_comprobante: "Cancelado por falta de pago",
     checkout_expired: "Pago vencido sin completar",
-    checkout_superseded: "Reemplazado por precios actualizados",
+    // Intento de checkout sin pago dado de baja: precios nuevos, reserva
+    // vencida o un fallo al registrar la compra (nunca cobrado).
+    checkout_superseded: "Intento de compra dado de baja (sin pago)",
     pending_checkout: "Iniciando pago",
     preference_created: "Pago iniciado, sin completar",
     preference_error: "Error al iniciar el pago",
@@ -5840,8 +5842,9 @@ function PedidoDetailModal({
                       <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
                       Mercado Pago verificó esta transferencia automáticamente, pero el
                       stock ya no alcanza para confirmar el pedido. La plata ya está
-                      identificada: repuso stock y confirmá, o rechazá el pedido si no
-                      corresponde cumplirlo.
+                      identificada: repuso stock y confirmá, o rechazalo: el pedido se
+                      cancela, se devuelven saldo y beneficio y queda pendiente el
+                      reintegro del importe recibido.
                     </p>
                   )}
                 </section>
