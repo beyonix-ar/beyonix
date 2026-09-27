@@ -124,8 +124,8 @@ test("7-8. transferencia: '¡Mejor precio!' y 'Incluye N% de descuento' dinámic
     /className="font-semibold text-\[var\(--checkout-offer-text\)\]"\s*>\s*\{siteSettings\.pricing\.transferDiscountPercent\}% de descuento/,
   )
   assert.doesNotMatch(list, /10%/)
-  // Verde claro y vivo en light (no el verde oscuro de estados).
-  assert.match(css, /--checkout-offer-text: #16a34a;/)
+  // Verde de beneficio en light con contraste AA (ver checkout-final-ux).
+  assert.match(css, /--checkout-offer-text: #157a3a;/)
 })
 
 // ─────────────────────────────────────────────────────────────

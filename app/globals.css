@@ -742,6 +742,23 @@ html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-
 html[data-account-theme="light"][data-account-scope] .checkout-page [class~="bg-[#111820]"] {
   background: var(--bx-surface-card) !important;
 }
+/* Paso 3 (pago), sólo Light: jerarquía invertida. El bloque de pago y el
+   Resumen del pedido van en blanco; las opciones de pago no elegidas y los
+   bloques internos del resumen, en gris suave. La opción elegida conserva
+   su celeste + borde azul (.checkout-choice.checkout-option-selected) y el
+   hover no se pisa. */
+html[data-account-theme="light"][data-account-scope] .checkout-page [data-checkout-step="3"] {
+  --checkout-step3-soft-surface: #eef1f5;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [data-checkout-step="3"] > .checkout-main-panel,
+html[data-account-theme="light"][data-account-scope] .checkout-page [data-checkout-step="3"] > .checkout-summary {
+  background: var(--bx-surface-card) !important;
+}
+html[data-account-theme="light"][data-account-scope] .checkout-page [data-checkout-step="3"] .checkout-choice:not(.checkout-option-selected):not(:hover),
+html[data-account-theme="light"][data-account-scope] .checkout-page [data-checkout-step="3"] > .checkout-summary [class~="bg-[#10151C]"],
+html[data-account-theme="light"][data-account-scope] .checkout-page [data-checkout-step="3"] > .checkout-summary div[class~="bg-[#0B1118]"] {
+  background: var(--checkout-step3-soft-surface) !important;
+}
 html[data-account-theme="light"][data-account-scope] .checkout-page [class*="border-beyonix-blue-light"] {
   border-color: var(--account-border) !important;
 }
@@ -12866,9 +12883,9 @@ html[data-account-theme="light"][data-account-scope] {
   --checkout-choice-indicator: #2f6fa3;
   --checkout-choice-indicator-idle: #8fb3d3;
   --checkout-choice-indicator-dot: #ffffff;
-  /* Beneficio de transferencia: verde claro y vivo (no el verde oscuro de
-     los textos de estado), legible en negrita sobre blanco/celeste. */
-  --checkout-offer-text: #16a34a;
+  /* Beneficio de transferencia, envío GRATIS y bonificación: verde que
+     cumple AA (>= 4.5:1) sobre blanco, celeste y el gris suave del Paso 3. */
+  --checkout-offer-text: #157a3a;
 }
 html[data-account-theme="light"][data-account-scope] .checkout-page .checkout-choice:not(.checkout-option-selected):hover {
   background-color: var(--checkout-choice-hover-bg) !important;

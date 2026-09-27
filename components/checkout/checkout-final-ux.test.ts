@@ -430,9 +430,35 @@ test("visual 3. el radio elegido muestra un check (radio nativo sigue siendo el 
 })
 
 test("visual 4. el descuento de transferencia usa el token verde claro (light) y conserva el de dark", () => {
-  assert.match(lightTokens(), /--checkout-offer-text: #16a34a;/)
+  assert.match(lightTokens(), /--checkout-offer-text: #157a3a;/)
+  // AA (>= 4.5:1) sobre blanco, el celeste de la opción elegida y el gris
+  // suave de las opciones/bloques del Paso 3.
+  for (const background of ["#ffffff", "#eaf4fd", "#eef1f5"]) {
+    assert.ok(contrastRatio("#157a3a", background) >= 4.5, background)
+  }
   assert.match(css, /:root \{\n  --checkout-choice-selected-bg: #112a43;[\s\S]{0,300}--checkout-offer-text: #34d399;/)
-  assert.equal((checkout.match(/text-\[var\(--checkout-offer-text\)\]/g) ?? []).length, 2)
+  // Mismo verde que "10% OFF" para el descuento (2), el envío "GRATIS" del
+  // resumen (2 ramas) y la bonificación "Ahorrás ... en tu envío" (1).
+  assert.equal((checkout.match(/text-\[var\(--checkout-offer-text\)\]/g) ?? []).length, 5)
+  assert.match(checkout, /customerCreditCoversShipping\s*\? "font-semibold text-\[var\(--checkout-offer-text\)\]"/)
+  assert.match(checkout, /<p className="text-right text-11px font-semibold text-\[var\(--checkout-offer-text\)\]">\s*Ahorrás/)
+})
+
+test("visual 4b. Paso 3: texto de reserva en el azul del contador y fondos invertidos sólo en light", () => {
+  assert.match(checkout, /<span className="text-beyonix-sky">Productos reservados para completar tu compra<\/span>/)
+  assert.match(checkout, /data-checkout-step=\{currentStep\}/)
+  assert.match(css, /--checkout-step3-soft-surface: #eef1f5;/)
+  for (const selector of [
+    '[data-checkout-step="3"] > .checkout-main-panel,',
+    '[data-checkout-step="3"] > .checkout-summary {',
+    '[data-checkout-step="3"] .checkout-choice:not(.checkout-option-selected):not(:hover),',
+    '[data-checkout-step="3"] > .checkout-summary [class~="bg-[#10151C]"],',
+  ]) {
+    const index = css.indexOf(selector)
+    assert.ok(index > 0, selector)
+    // Todas las reglas del Paso 3 están scopeadas a light: dark no cambia.
+    assert.equal(css.slice(css.lastIndexOf("\n", index) + 1, index).startsWith(LIGHT_SCOPE), true, selector)
+  }
 })
 
 test("visual 5. dark mode intacto: tokens y estilo base de la seleccionada sin cambios", () => {

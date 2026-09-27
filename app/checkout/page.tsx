@@ -2435,6 +2435,7 @@ export default function CheckoutPage() {
           <form
             id="checkout-form"
             onSubmit={handleSubmit}
+            data-checkout-step={currentStep}
             className={cn(
               "checkout-layout grid gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(22rem,0.85fr)] lg:gap-4 2xl:gap-5",
               isCompactShippingStep ? "items-start" : "items-stretch",
@@ -2453,7 +2454,7 @@ export default function CheckoutPage() {
                   role="status"
                   className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-beyonix-blue-light/30 bg-beyonix-blue/15 px-4 py-3 text-sm text-white/80"
                 >
-                  <span>Productos reservados para completar tu compra</span>
+                  <span className="text-beyonix-sky">Productos reservados para completar tu compra</span>
                   <span className="font-bold tabular-nums text-beyonix-sky">
                     {formatReservationCountdown(reservationSeconds)}
                   </span>
@@ -3395,12 +3396,12 @@ export default function CheckoutPage() {
                         shippingMessage === ANDREANI_DESTINATION_UNAVAILABLE_MESSAGE
                         ? "font-semibold text-red-400"
                         : customerCreditCoversShipping
-                          ? "font-semibold text-emerald-400"
+                          ? "font-semibold text-[var(--checkout-offer-text)]"
                         : !selectedShippingOption
                         ? "text-white/45"
                         : totals.shipping === 0 &&
                             (shippingBonus > 0 || customerCreditCoversShipping)
-                          ? "font-semibold text-emerald-400"
+                          ? "font-semibold text-[var(--checkout-offer-text)]"
                           : "text-white"
                     }>
                       {selectedShippingOption?.quoteStatus === "pending"
@@ -3435,7 +3436,7 @@ export default function CheckoutPage() {
                     shippingBonus > 0 &&
                     totals.shipping > 0 &&
                     selectedShippingOption && (
-                    <p className="text-right text-11px font-semibold text-emerald-400">
+                    <p className="text-right text-11px font-semibold text-[var(--checkout-offer-text)]">
                       Ahorrás {formatPrice(shippingBonus)} en tu envío
                     </p>
                   )}
