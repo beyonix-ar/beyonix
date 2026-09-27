@@ -119,16 +119,31 @@ test("Factura C usa evidencia financiera y nunca el estado operativo como prueba
     "utf8",
   )
 
-  assert.match(route, /isOrderPaymentConfirmed\(order\)/)
+  // Facturación automática: la ruta sólo delega en el servicio único; qué es
+  // facturable lo decide la base (order_is_invoiceable).
+  assert.match(route, /processArcaInvoice\(auth\.admin/)
   assert.doesNotMatch(route, /function isPaymentConfirmed/)
 
-  const pendingChangeCheck = route.indexOf(
-    'order.order_change_status === "change_requested"',
+  const migration = readFileSync(
+    new URL("../../supabase/migrations/20260927100000_arca_automatic_invoicing.sql", import.meta.url),
+    "utf8",
+  ).replace(/\r\n/g, "\n")
+  const predicate = migration.slice(
+    migration.indexOf("create or replace function public.order_is_invoiceable"),
+    migration.indexOf("revoke all on function public.order_is_invoiceable"),
   )
-  const invoiceClaim = route.indexOf('rpc("begin_arca_invoice_processing"')
-  assert.ok(pendingChangeCheck >= 0 && invoiceClaim >= 0)
-  assert.ok(
-    pendingChangeCheck < invoiceClaim,
-    "los cambios pendientes deben rechazarse antes de dejar invoice_status en processing",
+  // Evidencia financiera real (pago confirmado por BEYONIX + stock consumido),
+  // nunca el estado operativo solo.
+  assert.match(predicate, /p_order\.financial_status = 'payment_confirmed'/)
+  assert.match(predicate, /inventory_order_consumes_stock\(p_order\.estado, p_order\.payment_status\)/)
+  assert.match(predicate, /order_change_status, ''\) not in \('change_requested', 'extra_payment_pending'\)/)
+
+  // Los cambios pendientes se rechazan ANTES de dejar invoice_status en processing.
+  const claim = migration.slice(
+    migration.indexOf("create or replace function public.claim_arca_invoice"),
+    migration.indexOf("revoke all on function public.claim_arca_invoice"),
   )
+  const invoiceableCheck = claim.indexOf("not public.order_is_invoiceable(v_order)")
+  const processing = claim.indexOf("set invoice_status = 'processing'")
+  assert.ok(invoiceableCheck >= 0 && processing > invoiceableCheck)
 })

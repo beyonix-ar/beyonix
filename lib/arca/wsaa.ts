@@ -2,8 +2,18 @@ import forge from "node-forge"
 
 import { escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 
-const WSAA_HOMOLOGATION_URL =
-  "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
+const WSAA_URLS = {
+  homologation: "https://wsaahomo.afip.gov.ar/ws/services/LoginCms",
+  production: "https://wsaa.afip.gov.ar/ws/services/LoginCms",
+} as const
+
+// Mismo criterio que getArcaEnvironment (lib/arca/wsfe.ts): producción sólo
+// con ARCA_ENV=production explícito.
+function wsaaUrl() {
+  return process.env.ARCA_ENV?.trim().toLowerCase() === "production"
+    ? WSAA_URLS.production
+    : WSAA_URLS.homologation
+}
 const WSAA_SERVICE = "wsfe"
 const CACHE_MARGIN_MS = 5 * 60 * 1000
 
@@ -98,7 +108,7 @@ async function requestCredentials() {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(WSAA_HOMOLOGATION_URL, {
+  const response = await fetch(wsaaUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",

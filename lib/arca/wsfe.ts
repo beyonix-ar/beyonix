@@ -1,9 +1,28 @@
 import { asArray, escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 import { getWsaaCredentials } from "@/lib/arca/wsaa"
 
-const WSFE_HOMOLOGATION_URL =
-  "https://wswhomo.afip.gov.ar/wsfev1/service.asmx"
+const WSFE_URLS = {
+  homologation: "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
+  production: "https://servicios1.afip.gov.ar/wsfev1/service.asmx",
+} as const
 const WSFE_NAMESPACE = "http://ar.gov.afip.dif.FEV1/"
+
+export type ArcaEnvironment = keyof typeof WSFE_URLS
+
+/**
+ * Ambiente ARCA. Por defecto homologación (comportamiento previo): producción
+ * sólo con ARCA_ENV=production explícito, para no emitir comprobantes
+ * fiscales reales por accidente.
+ */
+export function getArcaEnvironment(): ArcaEnvironment {
+  return process.env.ARCA_ENV?.trim().toLowerCase() === "production"
+    ? "production"
+    : "homologation"
+}
+
+function wsfeUrl() {
+  return WSFE_URLS[getArcaEnvironment()]
+}
 
 export const FACTURA_C_TYPE = 11
 export const NOTA_CREDITO_C_TYPE = 13
@@ -46,12 +65,24 @@ export interface AuthorizedVoucher {
   voucherType: number
   voucherNumber: number
   voucherDate: string
+  /** Presentes cuando ARCA los informa (FECompConsultar.ResultGet). */
+  total?: number | null
+  cae?: string | null
+  caeDueDate?: string | null
+  result?: string | null
 }
 
 export class ArcaWsError extends Error {
   constructor(
     message: string,
     public readonly details: ArcaMessage[] = [],
+    /**
+     * true sólo cuando ARCA respondió y RECHAZÓ el comprobante (Resultado R o
+     * errores en una respuesta válida): ese número no quedó autorizado. Un
+     * timeout, un error HTTP o un SOAP fault NO lo son: el resultado es
+     * desconocido y hay que reconciliar antes de pedir otro número.
+     */
+    public readonly definitiveRejection = false,
   ) {
     super(message)
     this.name = "ArcaWsError"
@@ -119,7 +150,7 @@ async function callWsfe(operation: string, body: string) {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(WSFE_HOMOLOGATION_URL, {
+  const response = await fetch(wsfeUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -155,7 +186,7 @@ async function callWsfePublic(operation: string, body = "") {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(WSFE_HOMOLOGATION_URL, {
+  const response = await fetch(wsfeUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -234,16 +265,22 @@ export async function feCompConsultar(
     throw new ArcaWsError("ARCA no pudo consultar el comprobante autorizado.", errors)
   }
 
-  const voucherDate = String(result?.ResultGet?.CbteFch ?? "")
+  const voucher = result?.ResultGet
+  const voucherDate = String(voucher?.CbteFch ?? "")
   if (!/^\d{8}$/.test(voucherDate)) {
     throw new ArcaWsError("ARCA devolvió una fecha de comprobante inválida.")
   }
+  const total = Number(voucher?.ImpTotal)
 
   return {
     pointOfSale,
     voucherType,
     voucherNumber,
     voucherDate,
+    total: Number.isFinite(total) ? total : null,
+    cae: voucher?.CodAutorizacion ? String(voucher.CodAutorizacion) : null,
+    caeDueDate: voucher?.FchVto ? String(voucher.FchVto) : null,
+    result: voucher?.Resultado ? String(voucher.Resultado) : null,
   }
 }
 
@@ -291,11 +328,13 @@ export async function fecaeSolicitar(request: FecaeRequest): Promise<FecaeResult
   const observations = parseMessages(detail?.Observaciones, "Obs")
   const events = parseMessages(result?.Events, "Evt")
 
+  // Respuesta válida con errores: ARCA no autorizó ese número (definitivo).
+  // Sin detalle ni errores la respuesta es ilegible: resultado desconocido.
   if (errors.length || !detail) {
     throw new ArcaWsError("ARCA rechazó la solicitud de CAE.", [
       ...errors,
       ...events,
-    ])
+    ], errors.length > 0)
   }
 
   const cae = String(detail.CAE ?? "")
@@ -305,7 +344,7 @@ export async function fecaeSolicitar(request: FecaeRequest): Promise<FecaeResult
     throw new ArcaWsError("ARCA no autorizó el comprobante.", [
       ...observations,
       ...events,
-    ])
+    ], resultCode === "R")
   }
 
   return {

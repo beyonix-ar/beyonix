@@ -88,6 +88,9 @@ import {
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { getInvoiceFiscalStatusView } from "@/lib/arca/invoice-status-view"
+import { CreditNoteReconcileAlert } from "./credit-note-reconcile-alert"
+import { getNotesPendingReconciliation } from "@/lib/arca/credit-note-reconciliation-view"
 import {
   formatAdminPendingActionCount,
   getAdminPendingOrderActions,
@@ -2765,6 +2768,29 @@ function CreditDestinationOption({
   )
 }
 
+/**
+ * Estado fiscal de una venta pagada que todavía no tiene CAE. Separado del
+ * estado de pago: el pedido sigue confirmado aunque ARCA falle.
+ */
+function InvoiceFiscalStatus({ pedido }: { pedido: SupabasePedido }) {
+  const view = getInvoiceFiscalStatusView(pedido)
+  if (!view) return null
+
+  return (
+    <div
+      data-invoice-fiscal-status={view.state}
+      role={view.state === "error" ? "alert" : "status"}
+      className={`admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium ${
+        view.state === "error" ? "text-red-200" : "text-amber-200"
+      }`}
+    >
+      <p className="font-bold">{view.title}</p>
+      <p className="mt-0.5">{view.description}</p>
+      {view.detail && <p className="mt-1 break-words opacity-90">{view.detail}</p>}
+    </div>
+  )
+}
+
 function BillingManagementPanel({
   pedido,
   isSuperAdmin,
@@ -3408,10 +3434,19 @@ function BillingManagementPanel({
             ) : (
               <FileText className="size-4" />
             )}
-            {invoiceLoading ? "Emitiendo factura..." : "Emitir Factura C"}
+            {invoiceLoading
+              ? "Emitiendo factura..."
+              : pedido.invoice_status === "error"
+                ? "Reintentar facturación"
+                : "Emitir Factura C"}
           </button>
         )}
       </div>
+
+      <CreditNoteReconcileAlert
+        notes={getNotesPendingReconciliation(creditNotes, creditSaving)}
+        onBillingUpdated={onBillingUpdated}
+      />
 
       {creditNoteNeeded && (
         <div className="admin-order-bl-alert">
@@ -3500,7 +3535,9 @@ function BillingManagementPanel({
         <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
           Confirmá el pago antes de emitir la factura.
         </p>
-      ) : null}
+      ) : (
+        <InvoiceFiscalStatus pedido={pedido} />
+      )}
 
       {invoiceIssued && (
         <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3">

@@ -2,15 +2,11 @@ import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import { buildArcaQrUrl } from "@/lib/arca/qr"
-import {
-  ArcaWsError,
-  FACTURA_C_TYPE,
-  NOTA_CREDITO_C_TYPE,
-  feCompConsultar,
-  fecaeSolicitar,
-  feCompUltimoAutorizado,
-} from "@/lib/arca/wsfe"
-import { creditCustomerForOrderCreditNote } from "@/lib/customer-credit/server"
+import { FACTURA_C_TYPE, NOTA_CREDITO_C_TYPE } from "@/lib/arca/wsfe"
+import { emitCreditNote, type CreditNoteArcaResult } from "@/lib/arca/credit-note-emission"
+import { getArcaPointOfSale } from "@/lib/arca/invoice-automation"
+import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
+import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
 import {
   canProceedPastProductsStep,
 } from "@/lib/orders/credit-note-wizard"
@@ -24,10 +20,7 @@ import {
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
-import {
-  isPhysicallyReceivedStatus,
-  normalizeStockDestination,
-} from "@/lib/orders/return-reception"
+import { normalizeStockDestination } from "@/lib/orders/return-reception"
 import {
   getAvailableToCreditQuantity,
   getReceptionApprovalGateError,
@@ -37,28 +30,6 @@ import {
 export const runtime = "nodejs"
 
 type CreditNoteDestination = "external_refund" | "customer_balance"
-// Auditoría 4/7: parámetros para record_order_item_return_reception (la
-// autoridad única de recepción física), no una fila cruda de
-// inventory_return_movements -- esa tabla ahora la escribe sólo la RPC.
-type PendingReturnMovement = {
-  creditItemId: number
-  orderId: number
-  orderItemId: number
-  variantIdOverride: number | null
-  sellableQuantity: number
-  discountedQuantity: number
-  nonSellableQuantity: number
-  discountPercent: number | null
-  discountReason: string | null
-  nonSellableReason: string | null
-  reviewNotes: string | null
-  occurredAt: string
-  conditionedName: string | null
-  conditionedSku: string | null
-  conditionedColorHex: string | null
-  conditionedImages: string[]
-}
-
 type CreditNoteRequest = {
   items?: Array<{ order_item_id?: unknown; quantity?: unknown }>
   operation_type?: unknown
@@ -147,14 +118,6 @@ function safeMoney(value: unknown) {
   return Number.isFinite(amount) && amount >= 0 ? amount : null
 }
 
-function getPointOfSale() {
-  const pointOfSale = Number(process.env.ARCA_PTO_VTA)
-  if (!Number.isInteger(pointOfSale) || pointOfSale <= 0) {
-    throw new Error("ARCA_PTO_VTA debe ser un entero mayor que cero.")
-  }
-  return pointOfSale
-}
-
 function argentinaDate(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Argentina/Buenos_Aires",
@@ -173,35 +136,6 @@ function isoDateToArca(value?: string | null) {
   if (!value) return null
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? null : argentinaDate(date).arca
-}
-
-function arcaDateToIso(value: string) {
-  if (!/^\d{8}$/.test(value)) {
-    throw new Error("ARCA devolvió una fecha de vencimiento de CAE inválida.")
-  }
-  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
-}
-
-function validateIssueDateAfterLastAuthorized(
-  issueDate: string,
-  lastAuthorizedDate?: string | null,
-) {
-  if (lastAuthorizedDate && issueDate < lastAuthorizedDate) {
-    throw new Error(
-      "La fecha del comprobante no puede ser anterior a la última autorizada por ARCA.",
-    )
-  }
-}
-
-function creditNoteErrorMessage(error: unknown) {
-  if (error instanceof ArcaWsError && error.details.length) {
-    return `${error.message} ${error.details
-      .map((detail) => `${detail.Code}: ${detail.Msg}`)
-      .join(" | ")}`
-  }
-  return error instanceof Error
-    ? error.message
-    : "No se pudo emitir la Nota de Crédito C."
 }
 
 function reservationError(message?: string) {
@@ -513,13 +447,13 @@ export async function POST(
     productIds.length
       ? auth.admin
           .from("productos")
-          .select("id, nombre, sku, imagen_principal")
+          .select("id, nombre")
           .in("id", productIds)
       : Promise.resolve({ data: [], error: null }),
     variantIds.length
       ? auth.admin
           .from("producto_variantes")
-          .select("id, nombre, sku, color_hex, imagenes")
+          .select("id, nombre")
           .in("id", variantIds)
       : Promise.resolve({ data: [], error: null }),
   ])
@@ -534,12 +468,6 @@ export async function POST(
   )
   const variantNames = new Map(
     (variantsResult.data ?? []).map((variant) => [Number(variant.id), variant.nombre]),
-  )
-  const productsById = new Map(
-    (productsResult.data ?? []).map((product) => [Number(product.id), product]),
-  )
-  const variantsById = new Map(
-    (variantsResult.data ?? []).map((variant) => [Number(variant.id), variant]),
   )
   const selectedItems = selectedBase.map(
     ({ item, quantity, allocation, totalAmount }) => ({
@@ -669,6 +597,16 @@ export async function POST(
     }
   }
 
+  let pointOfSale: number
+  try {
+    pointOfSale = getArcaPointOfSale()
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "ARCA_PTO_VTA inválido." },
+      { status: 500 },
+    )
+  }
+
   const { data: reservedNote, error: reservationFailure } = await auth.admin
     .rpc("begin_partial_credit_note", {
       p_order_id: orderId,
@@ -737,6 +675,8 @@ export async function POST(
       new_shipping_cost: newShippingCost,
       other_adjustment_amount: otherAdjustmentAmount,
       stock_destination: stockDestination,
+      conditioned_discount_percent:
+        stockDestination === "stock_observaciones" ? conditionedDiscountPercent : null,
       settlement_status: "pendiente",
     })
     .eq("id", noteId)
@@ -813,488 +753,112 @@ export async function POST(
       { status: 500 },
     )
   }
-  let arcaAuthorizationPersisted = false
-  let arcaRequestStarted = false
+  // Desde acá ARCA: servicio idempotente con reconciliación (una NC
+  // autorizada nunca se emite dos veces) y finalización reanudable.
+  const emission = await emitCreditNote(auth.admin, {
+    noteId,
+    gateway: createWsfeInvoiceGateway(),
+    pointOfSale,
+    associatedInvoice: {
+      pointOfSale: Number(order.invoice_point),
+      voucherNumber: Number(order.invoice_number),
+      voucherDate: isoDateToArca(order.invoice_created_at),
+    },
+  })
+
+  if (emission.status !== "authorized") {
+    return creditNoteEmissionFailureResponse(emission, orderId, noteId)
+  }
+
+  const { authorization } = emission
   try {
-    const pointOfSale = getPointOfSale()
-    const lastNumber = await feCompUltimoAutorizado(
-      pointOfSale,
-      NOTA_CREDITO_C_TYPE,
-    )
-    const lastVoucher = await feCompConsultar(
-      pointOfSale,
-      lastNumber,
-      NOTA_CREDITO_C_TYPE,
-    )
-    const issueDate = argentinaDate()
-    validateIssueDateAfterLastAuthorized(issueDate.arca, lastVoucher?.voucherDate)
-
-    // Persistir el número intentado permite conciliar si la respuesta se pierde.
-    const { error: attemptError } = await auth.admin.from("order_credit_notes")
-      .update({ voucher_point: pointOfSale, voucher_number: lastNumber + 1 })
-      .eq("id", noteId).eq("status", "processing")
-    if (attemptError) throw new Error("No se pudo registrar el intento fiscal.")
-    arcaRequestStarted = true
-    const authorization = await fecaeSolicitar({
-      pointOfSale,
-      voucherType: NOTA_CREDITO_C_TYPE,
-      voucherNumber: lastNumber + 1,
-      voucherDate: issueDate.arca,
-      total: totalAmount,
-      associatedVoucher: {
-        voucherType: FACTURA_C_TYPE,
-        pointOfSale: Number(order.invoice_point),
-        voucherNumber: Number(order.invoice_number),
-        voucherDate: isoDateToArca(order.invoice_created_at),
-      },
-    })
-    const authorizedAt = new Date().toISOString()
-    const caeDue = arcaDateToIso(authorization.caeDueDate)
-
-    const { data: note, error: noteUpdateError } = await auth.admin
-      .from("order_credit_notes")
-      .update({
-        status: "authorized",
-        voucher_point: pointOfSale,
-        voucher_number: authorization.voucherNumber,
-        cae: authorization.cae,
-        cae_due: caeDue,
-        authorized_at: authorizedAt,
-        updated_at: authorizedAt,
-        error: null,
-        management_status:
-          destination === "customer_balance"
-            ? "nota_credito_emitida"
-            : "reembolso_pendiente",
-        settlement_status:
-          destination === "customer_balance" ? "procesando" : "pendiente",
-      })
-      .eq("id", noteId)
-      .eq("status", "processing")
-      .select("*, order_credit_note_items(*)")
-      .single()
-
-    if (noteUpdateError || !note) {
-      throw new Error(
-        "ARCA autorizó la nota de crédito, pero no se pudo guardar el comprobante.",
-      )
-    }
-    arcaAuthorizationPersisted = true
-
-    const physicallyReceived = isPhysicallyReceivedStatus(receptionStatus)
-    if (physicallyReceived && stockDestination !== "no_reingresar") {
-      // Auditoría 4/7 (P0): antes esta ruta hacía un upsert directo a
-      // inventory_return_movements, un segundo escritor de stock paralelo a
-      // process_claim_return_inventory (vía /return-inventory/[itemId]) sin
-      // ninguna coordinación entre ambos -- podía duplicar el reingreso de
-      // stock del mismo ítem. Ahora las dos rutas pasan por la misma
-      // autoridad (record_order_item_return_reception), que toma lock,
-      // valida la cantidad acumulada contra lo vendido y es idempotente por
-      // clave -- no hace falta prefiltrar por "ya recibido alguna vez".
-      const orderItemsById = new Map(
-        items.map((item) => [Number(item.id), item]),
-      )
-      const conditionedIds = items
-        .map((item) => item.conditioned_stock_id)
-        .filter((value): value is string => typeof value === "string")
-      const conditionedSources = conditionedIds.length
-        ? await auth.admin
-            .from("inventory_return_movements")
-            .select("id, variant_id")
-            .in("id", conditionedIds)
-        : { data: [], error: null }
-      if (conditionedSources.error) {
-        throw new Error(
-          "No se pudo recuperar la variante original del stock con descuento.",
-        )
-      }
-      const sourceVariantByMovement = new Map(
-        (conditionedSources.data ?? []).map((movement) => [
-          String(movement.id),
-          typeof movement.variant_id === "number" ? movement.variant_id : null,
-        ]),
-      )
-      const occurredAt = /^\d{4}-\d{2}-\d{2}$/.test(
-        String(body.reception_date ?? ""),
-      )
-        ? `${String(body.reception_date)}T12:00:00-03:00`
-        : authorizedAt
-      const returnMovements = (note.order_credit_note_items ?? [])
-        .map((creditItem: {
-          id: number
-          order_item_id: number
-          approved_quantity?: number | null
-          quantity: number
-        }) => {
-          const orderItem = orderItemsById.get(Number(creditItem.order_item_id))
-          const quantity = Number(
-            creditItem.approved_quantity ?? creditItem.quantity ?? 0,
-          )
-          if (!orderItem || quantity <= 0) return null
-
-          const product = productsById.get(Number(orderItem.producto_id))
-          const variant =
-            typeof orderItem.variante_id === "number"
-              ? variantsById.get(orderItem.variante_id)
-              : null
-          const returnVariantId =
-            typeof orderItem.variante_id === "number"
-              ? orderItem.variante_id
-              : orderItem.conditioned_stock_id
-                ? sourceVariantByMovement.get(orderItem.conditioned_stock_id) ?? null
-                : null
-          const sellableQuantity =
-            stockDestination === "stock_vendible" ? quantity : 0
-          const discountedQuantity =
-            stockDestination === "stock_observaciones" ? quantity : 0
-          const nonSellableQuantity = [
-            "fallado",
-            "garantia_proveedor",
-          ].includes(stockDestination)
-            ? quantity
-            : 0
-          const discountReason =
-            discountedQuantity > 0
-              ? optionalText(body.physical_condition, 300) ||
-                optionalText(body.reception_notes, 300) ||
-                "Detalle físico verificado en devolución"
-              : null
-          const nonSellableReason =
-            nonSellableQuantity > 0
-              ? optionalText(body.reception_notes, 300) ||
-                optionalText(body.physical_condition, 300) ||
-                (stockDestination === "garantia_proveedor"
-                  ? "Derivado a garantía del proveedor"
-                  : "Producto fallado")
-              : null
-          const baseName = [product?.nombre, variant?.nombre]
-            .filter(Boolean)
-            .join(" · ")
-          const baseSku = variant?.sku || product?.sku || `DEV-${orderItem.id}`
-
-          return {
-            creditItemId: creditItem.id,
-            orderId,
-            orderItemId: Number(orderItem.id),
-            // Sólo se manda cuando difiere de orden_items.variante_id (ítem
-            // vendido desde stock condicionado) -- la RPC usa
-            // v_item.variante_id por defecto en el resto de los casos.
-            variantIdOverride:
-              typeof orderItem.variante_id === "number" ? null : returnVariantId,
-            sellableQuantity,
-            discountedQuantity,
-            nonSellableQuantity,
-            discountPercent:
-              discountedQuantity > 0 ? conditionedDiscountPercent : null,
-            discountReason,
-            nonSellableReason,
-            reviewNotes: optionalText(body.reception_notes, 1000),
-            occurredAt,
-            conditionedName:
-              discountedQuantity > 0
-                ? `${baseName || "Producto devuelto"} · Con descuento`
-                : null,
-            conditionedSku:
-              discountedQuantity > 0
-                ? `${baseSku}-DEV-${creditItem.id}`.slice(0, 120)
-                : null,
-            conditionedColorHex:
-              discountedQuantity > 0
-                ? variant?.color_hex || "#808080"
-                : null,
-            conditionedImages:
-              discountedQuantity > 0 && Array.isArray(variant?.imagenes)
-                ? variant.imagenes
-                : [],
-          }
-        })
-        .filter(
-          (movement: PendingReturnMovement | null): movement is PendingReturnMovement =>
-            Boolean(movement),
-        )
-
-      if (returnMovements.length) {
-        // Una llamada por ítem a la autoridad única (record_order_item_
-        // return_reception) en vez del upsert directo de antes. Si el ítem
-        // ya fue recibido en su totalidad por otra vía (p. ej. ya se
-        // procesó desde /return-inventory/[itemId] mientras se autorizaba
-        // esta NC), la propia RPC lo rechaza con RETURN_EXCEEDS_REMAINING --
-        // se trata como informativo (el reingreso ya ocurrió, no hay nada
-        // que duplicar), no como un error que deba abortar la NC ya
-        // autorizada en ARCA.
-        for (const movement of returnMovements) {
-          const { error: stockMovementError } = await auth.admin.rpc(
-            "record_order_item_return_reception",
-            {
-              p_order_id: movement.orderId,
-              p_order_item_id: movement.orderItemId,
-              p_sellable_quantity: movement.sellableQuantity,
-              p_discounted_quantity: movement.discountedQuantity,
-              p_non_sellable_quantity: movement.nonSellableQuantity,
-              p_idempotency_key: `credit-note-item:${movement.creditItemId}`,
-              p_processed_by: auth.user.id,
-              p_note: movement.reviewNotes,
-              p_discount_percent: movement.discountPercent,
-              p_discount_reason: movement.discountReason,
-              p_non_sellable_reason: movement.nonSellableReason,
-              p_conditioned_name: movement.conditionedName,
-              p_conditioned_sku: movement.conditionedSku,
-              p_conditioned_color_hex: movement.conditionedColorHex,
-              p_conditioned_images: movement.conditionedImages,
-              p_occurred_at: movement.occurredAt,
-              p_variant_id_override: movement.variantIdOverride,
-            },
-          )
-
-          if (stockMovementError) {
-            const alreadyHandled = /RETURN_EXCEEDS_REMAINING/.test(
-              stockMovementError.message ?? "",
-            )
-            if (!alreadyHandled) {
-              throw new Error(
-                "La nota fue autorizada, pero no se pudo registrar el reingreso de stock.",
-              )
-            }
-          }
-        }
-
-        await auth.admin
-          .from("order_credit_note_items")
-          .update({ stock_processed_at: authorizedAt })
-          .eq("credit_note_id", noteId)
-          .gt("approved_quantity", 0)
-
-        await auth.admin
-          .from("order_credit_notes")
-          .update({
-            stock_reviewed_by: auth.user.id,
-            stock_reviewed_at: authorizedAt,
-          })
-          .eq("id", noteId)
-      }
-    }
-
-    const { data: authorizedNotes } = await auth.admin
-      .from("order_credit_notes")
-      .select("*, order_credit_note_items(*)")
-      .eq("order_id", orderId)
-      .eq("status", "authorized")
-    const cumulativeAmount = roundCreditMoney(
-      (authorizedNotes ?? []).reduce(
-        (sum, current) => sum + Number(current.total_amount ?? 0),
-        0,
-      ),
-    )
-    const cumulativeBalanceAmount = roundCreditMoney(
-      (authorizedNotes ?? [])
-        .filter((current) => current.destination === "customer_balance")
-        .reduce(
-          (sum, current) => sum + Number(current.total_amount ?? 0),
-          0,
-        ),
-    )
-    const settlesCancellationToBalance =
-      destination === "customer_balance" &&
-      (
-        order.estado === "cancelado" ||
-        ["cancellation_requested", "refund_pending"].includes(
-          order.financial_status ?? "",
-        )
-      )
-
-    // La acreditación se ejecuta solamente después de persistir el CAE.
-    // Es idempotente por punto y número de comprobante.
-    const customerCreditMovement =
-      destination === "customer_balance"
-        ? await creditCustomerForOrderCreditNote(auth.admin, {
-            userId: order.usuario_id,
-            orderId,
-            amount: totalAmount,
-            creditNoteNumber: authorization.voucherNumber,
-            creditNotePoint: pointOfSale,
-            creditNoteCae: authorization.cae,
-            claimId,
-            createdBy: auth.user.id,
-            metadata: {
-              order_credit_note_id: noteId,
-              associated_invoice_point: order.invoice_point,
-              associated_invoice_number: order.invoice_number,
-            },
-          })
-        : null
-
-    if (destination === "customer_balance") {
-      await auth.admin
-        .from("order_credit_notes")
-        .update({
-          management_status: "finalizada",
-          settlement_status: "completado",
-          settlement_date: issueDate.iso,
-          updated_at: authorizedAt,
-        })
-        .eq("id", noteId)
-    }
-
-    const legacyCreditNote = {
-      credit_note_status: "authorized",
-      credit_note_number: String(authorization.voucherNumber),
-      credit_note_point: pointOfSale,
-      credit_note_cae: authorization.cae,
-      credit_note_cae_due: caeDue,
-      credit_note_created_at: authorizedAt,
-      credit_note_amount: cumulativeAmount,
-      credit_note_error: null,
-      credit_note_required: false,
-      credit_note_issued: true,
-      credit_note_issued_at: authorizedAt,
-      ...(settlesCancellationToBalance
-        ? {
-            financial_status: "refunded",
-            refund_amount: cumulativeBalanceAmount,
-            refund_method: "Saldo en cuenta BEYONIX",
-            refunded_at: authorizedAt,
-            refunded_by: auth.user.id,
-          }
-        : {}),
-    }
-    const { data: updatedOrder, error: orderUpdateError } = await auth.admin
-      .from("ordenes")
-      .update(legacyCreditNote)
-      .eq("id", orderId)
-      .select()
-      .single()
-    if (orderUpdateError || !updatedOrder) {
-      throw new Error(
-        "La nota fue autorizada, pero no se pudo actualizar el resumen del pedido.",
-      )
-    }
-
-    await appendOrderAuditEvent(auth.admin, {
-      orderId,
-      actorType: "admin",
-      actorId: auth.user.id,
-      action: "credit_note_authorized",
-      previousStatus: order.credit_note_status ?? null,
-      newStatus: "authorized",
-      metadata: {
-        orderCreditNoteId: noteId,
-        amount: totalAmount,
-        itemsAmount,
-        manualAmount,
-        destination,
-        reason: storedReason,
-        items: selectedItems,
-        creditNoteNumber: authorization.voucherNumber,
-        creditNotePoint: pointOfSale,
-        associatedInvoicePoint: order.invoice_point,
-        associatedInvoiceNumber: order.invoice_number,
-        customerCreditMovementId:
-          customerCreditMovement && "movement_id" in customerCreditMovement
-            ? customerCreditMovement.movement_id
-            : null,
-      },
-    })
-
-    if (settlesCancellationToBalance) {
-      await appendOrderAuditEvent(auth.admin, {
-        orderId,
-        actorType: "system",
-        actorId: null,
-        action: "order_refunded_to_customer_balance",
-        previousStatus: order.financial_status ?? "refund_pending",
-        newStatus: "refunded",
-        metadata: {
-          orderCreditNoteId: noteId,
-          amount: totalAmount,
-          cumulativeAmount: cumulativeBalanceAmount,
-          customerCreditMovementId:
-            customerCreditMovement && "movement_id" in customerCreditMovement
-              ? customerCreditMovement.movement_id
-              : null,
-        },
-      })
-    }
-
+    const finalized = await finalizeCreditNote(auth.admin, { noteId, actorId: auth.user.id })
     return NextResponse.json({
-      order: { ...updatedOrder, order_credit_notes: authorizedNotes ?? [note] },
-      note,
+      order: { ...finalized.order, order_credit_notes: finalized.authorizedNotes },
+      note: finalized.note,
       credit_note: {
         voucher_type: NOTA_CREDITO_C_TYPE,
         credit_note_number: String(authorization.voucherNumber),
-        credit_note_point: pointOfSale,
+        credit_note_point: authorization.pointOfSale,
         credit_note_cae: authorization.cae,
-        credit_note_cae_due: caeDue,
-        issue_date: issueDate.iso,
+        credit_note_cae_due: authorization.caeDue,
+        issue_date: authorization.issueDate,
         amount: totalAmount,
+        reconciled: authorization.reconciled,
         associated_invoice: {
           voucher_type: FACTURA_C_TYPE,
           point: order.invoice_point,
           number: order.invoice_number,
         },
         qr_url: buildArcaQrUrl({
-          issueDate: issueDate.iso,
+          issueDate: authorization.issueDate,
           cuit: process.env.ARCA_CUIT ?? "",
-          pointOfSale,
+          pointOfSale: authorization.pointOfSale,
           voucherType: NOTA_CREDITO_C_TYPE,
           voucherNumber: authorization.voucherNumber,
           total: totalAmount,
           cae: authorization.cae,
         }),
-        observations: authorization.observations,
       },
-      customer_credit_movement: customerCreditMovement,
+      customer_credit_movement: finalized.customerCreditMovement,
     })
   } catch (error) {
-    const message = creditNoteErrorMessage(error)
+    const message = error instanceof Error ? error.message : "Error posterior a la autorización."
+    await appendOrderAuditEvent(auth.admin, {
+      orderId,
+      actorType: "system",
+      actorId: null,
+      action: "credit_note_post_authorization_error",
+      previousStatus: "authorized",
+      newStatus: "authorized",
+      metadata: { orderCreditNoteId: noteId, error: message },
+    })
+    console.error("Error posterior a la autorización de Nota de Crédito C", { orderId, noteId, error: message })
+    return NextResponse.json(
+      {
+        error:
+          "ARCA autorizó la nota de crédito, pero falló una acción posterior. El comprobante fiscal es válido: usá “Conciliar con ARCA” para completar la gestión sin emitir otra nota.",
+        note_authorized: true,
+        note_id: noteId,
+      },
+      { status: 500 },
+    )
+  }
+}
 
-    if (arcaAuthorizationPersisted) {
-      await appendOrderAuditEvent(auth.admin, {
-        orderId,
-        actorType: "system",
-        actorId: null,
-        action: "credit_note_post_authorization_error",
-        previousStatus: "authorized",
-        newStatus: "authorized",
-        metadata: { orderCreditNoteId: noteId, error: message },
-      })
-      console.error("Error posterior a la autorización de Nota de Crédito C", {
-        orderId,
-        noteId,
-        error: message,
-      })
+function creditNoteEmissionFailureResponse(
+  emission: Exclude<CreditNoteArcaResult, { status: "authorized" }>,
+  orderId: number,
+  noteId: string,
+) {
+  switch (emission.status) {
+    case "busy":
+      return NextResponse.json(
+        { error: "Esta nota de crédito ya se está emitiendo. Esperá a que termine." },
+        { status: 409 },
+      )
+    case "already_finalized":
+      return NextResponse.json({ error: "La nota de crédito ya fue emitida." }, { status: 409 })
+    case "released":
+      return NextResponse.json({ error: emission.error }, { status: 409 })
+    case "failed":
+      console.error("Error al emitir Nota de Crédito C", { orderId, noteId, outcome: emission.outcome, error: emission.error })
+      if (emission.outcome === "rejected") {
+        return NextResponse.json(
+          { error: "No se pudo emitir la nota de crédito. Revisá la gestión antes de reintentar.", detail: emission.error },
+          { status: 502 },
+        )
+      }
       return NextResponse.json(
         {
           error:
-            "ARCA autorizó la nota de crédito, pero falló una acción posterior. El comprobante fiscal sigue siendo válido; revisá el historial antes de reintentar.",
-          note_authorized: true,
+            emission.outcome === "manual_review"
+              ? "ARCA tiene ese comprobante con otros datos. Requiere revisión manual: no se emitió otra nota."
+              : "El resultado de ARCA requiere conciliación. Usá “Conciliar con ARCA” antes de volver a emitir.",
+          reconciliation_required: true,
+          note_id: noteId,
         },
-        { status: 500 },
+        { status: 409 },
       )
-    }
-
-    if (arcaRequestStarted) {
-      await auth.admin.from("order_credit_notes")
-        .update({ error: "Resultado fiscal pendiente de conciliación. No repetir la emisión.", updated_at: new Date().toISOString() })
-        .eq("id", noteId).eq("status", "processing")
-      console.error("CREDIT_NOTE_RECONCILIATION_REQUIRED", { orderId, noteId })
-      return NextResponse.json({ error: "El resultado de ARCA requiere conciliación. Revisá el comprobante intentado antes de volver a emitir." }, { status: 409 })
-    }
-
-    await auth.admin
-      .from("order_credit_notes")
-      .update({ status: "error", error: message, updated_at: new Date().toISOString() })
-      .eq("id", noteId)
-      .eq("status", "processing")
-
-    await auth.admin
-      .from("ordenes")
-      .update({ credit_note_status: "error", credit_note_error: message })
-      .eq("id", orderId)
-
-    console.error("Error al emitir Nota de Crédito C", { orderId, noteId, error: message })
-    return NextResponse.json(
-      { error: "No se pudo emitir la nota de crédito. Revisá la gestión antes de reintentar." },
-      { status: error instanceof ArcaWsError ? 502 : 500 },
-    )
   }
 }

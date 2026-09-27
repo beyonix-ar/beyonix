@@ -390,6 +390,10 @@ export interface SupabasePedido {
   invoice_status?: "pending" | "processing" | "authorized" | "error" | null
   invoice_error?: string | null
   invoice_created_at?: string | null
+  /** Facturación automática (20260927100000): cola, reintentos y reconciliación. */
+  invoice_attempts?: number | null
+  invoice_next_attempt_at?: string | null
+  invoice_requested_number?: number | null
   return_status?:
     | "solicitada"
     | "en_revision"

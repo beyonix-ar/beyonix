@@ -1,0 +1,45 @@
+import { NextResponse } from "next/server"
+
+import { isCronRequestAuthorized } from "@/lib/auth/cron-auth"
+import {
+  getArcaPointOfSale,
+  processArcaInvoiceQueue,
+} from "@/lib/arca/invoice-automation"
+import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
+import { createAdminClient } from "@/lib/supabase/admin"
+
+export const runtime = "nodejs"
+
+/**
+ * Worker de facturación automática: emite Factura C para las ventas que la
+ * base encoló como facturables (pago confirmado + stock consumido). Idempotente
+ * y serializado: correrlo dos veces a la vez nunca duplica un comprobante.
+ *
+ * Kill switch: sólo emite con ARCA_AUTO_INVOICING_ENABLED=true. Mientras esté
+ * apagado, las ventas quedan en "Facturación pendiente" (nada se pierde) y
+ * Admin puede emitirlas a mano con el mismo servicio.
+ */
+export async function GET(request: Request) {
+  if (!isCronRequestAuthorized(request.headers.get("authorization"), process.env.CRON_SECRET)) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 401 })
+  }
+
+  if (process.env.ARCA_AUTO_INVOICING_ENABLED?.trim().toLowerCase() !== "true") {
+    return NextResponse.json({ ok: true, skipped: "ARCA_AUTO_INVOICING_ENABLED no está habilitado." })
+  }
+
+  let pointOfSale: number
+  try {
+    pointOfSale = getArcaPointOfSale()
+  } catch (error) {
+    console.error("ARCA_INVOICE_CRON_CONFIG_ERROR", error)
+    return NextResponse.json({ ok: false, error: "Configuración ARCA incompleta." }, { status: 500 })
+  }
+
+  const summary = await processArcaInvoiceQueue(createAdminClient(), {
+    gateway: createWsfeInvoiceGateway(),
+    pointOfSale,
+  })
+
+  return NextResponse.json({ ok: true, authorized: summary.authorized, failed: summary.failed })
+}
