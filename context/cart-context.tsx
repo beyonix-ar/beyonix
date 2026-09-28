@@ -1,5 +1,6 @@
 "use client"
 
+import { usePathname, useRouter } from "next/navigation"
 import {
   createContext,
   useCallback,
@@ -30,6 +31,13 @@ import {
 import { createCartSessionId } from "@/lib/cart/cart-session-id"
 import { reconcileCartWithCatalog } from "@/lib/cart/cart-catalog-refresh"
 import { getStoreCartProducts } from "@/lib/supabase/queries/store"
+import {
+  abandonCheckoutReservation,
+  isCheckoutPath,
+  pendingCheckoutReleases,
+  releaseAbandonedCheckoutReservations,
+} from "@/lib/cart/checkout-abandonment"
+import { reserveCartStock } from "@/lib/cart/stock-reservations"
 
 export interface CartItem {
   product: SupabaseProducto
@@ -491,6 +499,38 @@ export function CartProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
     setCartSessionId(nextSessionId)
   }, [])
+
+  // Salir de /checkout (link, "Volver" del navegador o recarga en otra
+  // página) libera la reserva del Paso 3 en el momento, sin esperar los 20
+  // minutos. Moverse entre pasos dentro de /checkout no la toca.
+  const pathname = usePathname()
+  const router = useRouter()
+  const checkoutReleaseInFlightRef = useRef(false)
+  useEffect(() => {
+    if (!hasHydrated || isCheckoutPath(pathname)) return
+    try {
+      // Sincrónico: si vuelve a entrar ya es un checkout nuevo, con su
+      // propia identidad y sus 20 minutos completos.
+      const abandoned = abandonCheckoutReservation(sessionStorage)
+      if (abandoned && abandoned === cartSessionIdRef.current) startNewCheckoutSession()
+      if (checkoutReleaseInFlightRef.current || !pendingCheckoutReleases(sessionStorage).length) return
+    } catch {
+      return
+    }
+    checkoutReleaseInFlightRef.current = true
+    void releaseAbandonedCheckoutReservations(sessionStorage, (sessionId) =>
+      reserveCartStock({ sessionId, items: [] }),
+    )
+      // La página actual pudo renderizarse con esas unidades todavía
+      // reservadas: se vuelve a pedir con el stock ya liberado.
+      .then(({ released }) => {
+        if (released.length) router.refresh()
+      })
+      .catch(() => {})
+      .finally(() => {
+        checkoutReleaseInFlightRef.current = false
+      })
+  }, [hasHydrated, pathname, router, startNewCheckoutSession])
 
   const refreshCartCatalog = useCallback(async (): Promise<CartCatalogRefreshResult> => {
     const productIds = cartRef.current.map((item) => item.product.id)

@@ -12305,6 +12305,22 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-summary {
   background: var(--account-surface) !important;
   border-color: var(--account-border) !important;
 }
+/* "Finalizar compra" deshabilitado (stock o cantidades inválidas): se ve
+   inactivo (superficie neutra, no navy) pero el texto se lee; antes la
+   opacidad 50% apagaba fondo y texto a la vez. */
+.beyonix-cart-checkout-btn:disabled {
+  background-color: #1a232e;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #c9d2dd;
+}
+/* Gana a la regla global de controles deshabilitados en Light
+   (--account-text-disabled al 55%, ilegible sobre este fondo), que usa
+   :not(#\#) para sumar especificidad de id: mismo recurso + "button". */
+html[data-account-theme="light"][data-account-scope] button.beyonix-cart-checkout-btn:disabled:not(#\#) {
+  background-color: #e3e8ef;
+  border-color: #b8c3d1;
+  color: #3f4b5c !important;
+}
 html[data-account-theme="light"][data-account-scope] .beyonix-cart-summary-box {
   background: var(--account-surface-raised) !important;
   border-color: var(--account-border) !important;

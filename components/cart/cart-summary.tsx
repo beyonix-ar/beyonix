@@ -10,6 +10,7 @@ import {
   ACTIVE_SALE_EVENT,
   hasShippingBonus,
 } from "@/lib/store-config"
+import { cartCheckoutButtonState } from "@/lib/cart/cart-checkout-button"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
 import {
   calculateCustomerCreditApplication,
@@ -176,9 +177,7 @@ export function CartSummary({
         type="button"
         aria-label="Finalizar compra"
         title="Finalizar compra"
-        disabled={Boolean(checkoutBlockedReason)}
-        className="h-10 w-full text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ backgroundColor: "#112A43" }}
+        {...cartCheckoutButtonState(Boolean(checkoutBlockedReason))}
         onMouseEnter={(event) => {
           event.currentTarget.style.backgroundColor = "#1E4A73"
         }}
