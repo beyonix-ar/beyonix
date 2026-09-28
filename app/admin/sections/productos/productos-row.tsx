@@ -1855,10 +1855,8 @@ function ConditionedStockEditModal({
           role="switch"
           aria-checked={active}
           onClick={() => setActive((current) => !current)}
-          className={`flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left transition ${
-            active
-              ? "border-emerald-400/25 bg-emerald-400/9"
-              : "border-white/10 bg-white/[0.025]"
+          className={`admin-toggle flex w-full cursor-pointer items-center justify-between gap-4 rounded-xl border px-4 py-3 text-left ${
+            active ? "admin-toggle-on" : ""
           }`}
         >
           <span>
@@ -1869,18 +1867,10 @@ function ConditionedStockEditModal({
               Al activarla se publica como una variante separada; no utiliza ni modifica el stock normal.
             </span>
           </span>
-          <span
-            className={`relative h-6 w-11 shrink-0 rounded-full border transition ${
-              active
-                ? "border-emerald-300/35 bg-emerald-400/30"
-                : "border-white/15 bg-black/35"
-            }`}
-          >
+          <span className="admin-toggle-track relative h-6 w-11 shrink-0 rounded-full border transition">
             <span
-              className={`absolute top-0.5 size-4.5 rounded-full transition ${
-                active
-                  ? "left-5.5 bg-emerald-200"
-                  : "left-0.5 bg-white/45"
+              className={`admin-toggle-knob absolute top-0.5 size-4.5 rounded-full transition ${
+                active ? "left-5.5" : "left-0.5"
               }`}
             />
           </span>

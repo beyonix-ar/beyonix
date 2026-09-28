@@ -501,18 +501,14 @@ export function ProductSpecificationsEditor({
               }
               onClick={() => setActivo((current) => !current)}
               aria-pressed={activo}
-              className={`product-editor-spec-toggle min-w-0 shrink-0 justify-start px-2.5 ${activo ? "product-editor-spec-toggle-active" : ""}`}
+              className={`admin-toggle min-w-0 shrink-0 justify-start px-2.5 ${activo ? "admin-toggle-on" : ""}`}
             >
               {activo ? (
-                <ToggleRight className="product-editor-active-icon size-4 text-emerald-300" />
+                <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4" />
               ) : (
-                <ToggleLeft className="product-editor-inactive-icon size-4 text-white/45" />
+                <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4" />
               )}
-              <span
-                className={
-                  activo ? "text-xs text-emerald-300" : "text-xs text-white"
-                }
-              >
+              <span className="text-xs text-white">
                 {activo ? "Activa" : "Inactiva"}
               </span>
             </AdminSecondaryButton>
@@ -785,12 +781,13 @@ function SpecificationRow({
             }
             title={activo ? "Desactivar especificación" : "Activar especificación"}
             onClick={onToggle}
-            className={`product-editor-spec-action product-editor-spec-action-visibility !size-8 !min-h-0 px-0 py-0 ${activo ? "product-editor-spec-action-active" : ""}`}
+            aria-pressed={activo}
+            className={`admin-toggle product-editor-spec-action !size-8 !min-h-0 px-0 py-0 ${activo ? "admin-toggle-on" : ""}`}
           >
             {activo ? (
-              <ToggleRight className="product-editor-active-icon size-4 text-emerald-300" />
+              <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4" />
             ) : (
-              <ToggleLeft className="product-editor-inactive-icon size-4 text-white/45" />
+              <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4" />
             )}
           </AdminSecondaryButton>
 

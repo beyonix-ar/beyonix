@@ -694,7 +694,7 @@ export function ProductoForm({
                 <div className="product-editor-panel-heading">
                   <h2 className="text-base font-black text-white">Financiación</h2>
                 </div>
-                <div className="product-editor-financing-grid grid gap-1.5">
+                <div className="product-editor-financing-grid gap-1.5">
                   {(
                     [
                       { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
@@ -712,29 +712,29 @@ export function ProductoForm({
                           ?.amount ?? null)
                       : null
 
+                    const installmentDetail = installmentAmount
+                      ? `${productPriceFormatter.format(installmentAmount)} c/u`
+                      : "Deshabilitado"
+
                     return (
                       <AdminSecondaryButton
                         key={toggle.key}
-                        title={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}`}
+                        title={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}${installmentAmount ? ` · ${productPriceFormatter.format(installmentAmount)} por cuota` : ""}`}
                         aria-label={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}`}
                         aria-pressed={active}
                         onClick={() => setField(toggle.key, !active)}
-                        className={`product-editor-toggle grid w-full min-h-10 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${active ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                        className={`admin-toggle product-editor-financing-toggle grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1.5 gap-y-0.5 px-2 py-1 text-left ${active ? "admin-toggle-on" : ""}`}
                       >
                         {active ? (
-                          <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                          <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
                         ) : (
-                          <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                          <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
                         )}
-                        <span className="min-w-0 self-center">
-                          <span className="block text-sm font-black text-white">
-                            {toggle.label}
-                          </span>
-                          <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
-                            {installmentAmount
-                              ? `${productPriceFormatter.format(installmentAmount)} por cuota`
-                              : "Deshabilitado"}
-                          </span>
+                        <span className="text-xs font-black leading-4 text-white">
+                          {toggle.label}
+                        </span>
+                        <span className="admin-toggle-detail col-span-2 whitespace-nowrap text-10px font-semibold leading-4 text-white/70">
+                          {installmentDetail}
                         </span>
                       </AdminSecondaryButton>
                     )
@@ -745,24 +745,22 @@ export function ProductoForm({
                   aria-label={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
                   aria-pressed={form.cuotasSinRecargo}
                   onClick={() => setField("cuotasSinRecargo", !form.cuotasSinRecargo)}
-                  className={`product-editor-toggle grid w-full min-h-10 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${form.cuotasSinRecargo ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                  className={`admin-toggle product-editor-financing-toggle product-editor-financing-toggle-wide grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1.5 gap-y-0.5 self-start px-2 py-1 text-left ${form.cuotasSinRecargo ? "admin-toggle-on" : ""}`}
                 >
                   {form.cuotasSinRecargo ? (
-                    <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                    <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
                   ) : (
-                    <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                    <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
                   )}
-                  <span className="min-w-0 self-center">
-                    <span className="block text-sm font-black text-white">
-                      Mismo precio en contado y cuotas
-                    </span>
-                    <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
+                  <span className="text-xs font-black leading-4 text-white">
+                    Mismo precio en contado y cuotas
+                  </span>
+                  <span className="admin-toggle-detail col-span-2 text-10px font-semibold leading-4 text-white/70">
                       {!form.cuotasSinRecargo
                         ? "Desactivado: las cuotas llevan recargo"
                         : installmentsWithoutSurcharge
                           ? "Cuotas sin recargo: el costo de Mercado Pago lo absorbe BEYONIX"
                           : "Sin efecto hasta habilitar al menos una cuota"}
-                    </span>
                   </span>
                 </AdminSecondaryButton>
                 {cashPricePreview != null && (
@@ -875,12 +873,12 @@ export function ProductoForm({
 
                               setField(toggle.key, !toggle.active)
                             }}
-                            className="shrink-0"
+                            className={`admin-toggle inline-flex min-w-12 shrink-0 cursor-pointer items-center justify-center rounded-lg px-2 ${toggle.active ? "admin-toggle-on" : ""}`}
                           >
                             {toggle.active ? (
-                              <ToggleRight className="product-editor-status-toggle-icon-active size-7 shrink-0" />
+                              <ToggleRight aria-hidden="true" className="admin-toggle-icon product-editor-status-toggle-icon-active size-6 shrink-0" />
                             ) : (
-                              <ToggleLeft className="product-editor-status-toggle-icon-inactive size-7 shrink-0" />
+                              <ToggleLeft aria-hidden="true" className="admin-toggle-icon product-editor-status-toggle-icon-inactive size-6 shrink-0" />
                             )}
                           </button>
                         </div>

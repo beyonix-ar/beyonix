@@ -8180,13 +8180,27 @@ span.admin-claim-status-finalized,
   grid-template-columns: 7rem 8rem 8rem;
 }
 
-/* Toggles de cuotas (2/3/6) de Financiación: auto-fit en vez de un
-   grid-cols fijo, para que las 3 entren en una sola fila apenas el ancho
-   real de la tarjeta alcanza (columna grande en desktop, o tarjeta apilada
-   a ancho completo en notebook/mobile) y recién ahí -- sin dejar la 3ra
-   suelta en una fila aparte -- bajen a 2 o 1 columna si el ancho es chico. */
+/* Toggles de Financiación (2/3/6 cuotas): compactos y de ancho propio (no
+   estirados a 1fr), alineados a la izquierda. 4 toggles de 6.25rem + gaps
+   (~26.2rem) entran en una fila aun en el ancho mínimo de la tarjeta en
+   desktop (~26.8rem útiles con el umbral de 76rem de .product-editor-row-top),
+   así queda lugar para un 4to botón a la derecha de "6 cuotas". Si el ancho
+   no alcanza (tarjeta apilada en mobile), bajan de fila sin desbordar. */
 .product-editor-screen .product-editor-financing-grid {
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.product-editor-screen .product-editor-financing-toggle {
+  flex: 0 0 auto;
+  min-width: 6.25rem;
+  min-height: 2.75rem;
+}
+
+/* "Mismo precio en contado y cuotas": mismo patrón, ancho según contenido. */
+.product-editor-screen .product-editor-financing-toggle-wide {
+  max-width: 100%;
 }
 
 /* Fila 2+3 -- bloque [Estado comercial+Stock]+Especificaciones (izquierda)
@@ -8357,20 +8371,141 @@ span.admin-claim-status-finalized,
   padding-block: 0.3rem !important;
 }
 
-.product-editor-screen .product-editor-toggle {
+/* ─────────────────────────────────────────────────────────────
+   Toggles de habilitar/deshabilitar del Admin: patrón visual ÚNICO.
+   .admin-toggle = control on/off; .admin-toggle-on = habilitado (verde
+   oscuro, se distingue de un vistazo); sin -on = neutro/apagado.
+   .admin-toggle-icon = ícono ToggleLeft/ToggleRight del control.
+   `:not(#\#)` sube la especificidad por encima de .admin-ds-button-* y de
+   las reglas globales que pintan texto/íconos lucide del Admin (incluido el
+   remapeo de text-white en Light), sin tocar esas reglas.
+   ───────────────────────────────────────────────────────────── */
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle:not(#\#) {
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background-color: rgba(255, 255, 255, 0.02) !important;
+  color: rgba(248, 250, 252, 0.82) !important;
   box-shadow: none !important;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
-.product-editor-screen .product-editor-toggle-active,
-.product-editor-screen .product-editor-spec-toggle-active {
-  border-color: rgba(52, 211, 153, 0.28) !important;
-  background-color: rgba(52, 211, 153, 0.07) !important;
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle:not(#\#):hover {
+  border-color: rgba(255, 255, 255, 0.24) !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
 }
 
-.product-editor-screen .product-editor-toggle-active:hover,
-.product-editor-screen .product-editor-spec-toggle-active:hover {
-  border-color: rgba(52, 211, 153, 0.42) !important;
-  background-color: rgba(52, 211, 153, 0.11) !important;
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on:not(#\#) {
+  border-color: rgba(16, 185, 129, 0.62) !important;
+  background-color: #064e3b !important;
+  color: #ecfdf5 !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on:not(#\#):hover {
+  border-color: rgba(52, 211, 153, 0.85) !important;
+  background-color: #065f46 !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle:not(#\#):focus-visible {
+  outline: 2px solid #6ee7b7 !important;
+  outline-offset: 2px;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on :is(span, p):not(#\#) {
+  color: #ecfdf5 !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on .admin-toggle-detail:not(#\#) {
+  color: #a7f3d0 !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle svg.admin-toggle-icon:not(#\#) {
+  color: rgba(255, 255, 255, 0.45) !important;
+  stroke: rgba(255, 255, 255, 0.45) !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on svg.admin-toggle-icon:not(#\#) {
+  color: #6ee7b7 !important;
+  stroke: #6ee7b7 !important;
+}
+
+/* Switch con riel propio (stock condicionado "Disponible para la venta"). */
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle .admin-toggle-track:not(#\#) {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  background-color: rgba(0, 0, 0, 0.35) !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on .admin-toggle-track:not(#\#) {
+  border-color: rgba(110, 231, 183, 0.5) !important;
+  background-color: #047857 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle:not(#\#) {
+  border-color: var(--admin-border) !important;
+  background-color: #ffffff !important;
+  color: var(--admin-text) !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle:not(#\#):hover {
+  border-color: var(--admin-border-strong) !important;
+  background-color: #f1f4f8 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on:not(#\#) {
+  border-color: #065f46 !important;
+  background-color: #065f46 !important;
+  color: #ffffff !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on:not(#\#):hover {
+  border-color: #047857 !important;
+  background-color: #047857 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle:not(#\#):focus-visible {
+  outline-color: #047857 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on :is(span, p):not(#\#) {
+  color: #ffffff !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on .admin-toggle-detail:not(#\#) {
+  color: #d1fae5 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle svg.admin-toggle-icon:not(#\#) {
+  color: #64748b !important;
+  stroke: #64748b !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on svg.admin-toggle-icon:not(#\#) {
+  color: #a7f3d0 !important;
+  stroke: #a7f3d0 !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle .admin-toggle-knob:not(#\#) {
+  background-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+:is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on .admin-toggle-knob:not(#\#) {
+  background-color: #ecfdf5 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle .admin-toggle-knob:not(#\#) {
+  background-color: #64748b !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on .admin-toggle-knob:not(#\#) {
+  background-color: #ffffff !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle .admin-toggle-track:not(#\#) {
+  border-color: rgba(30, 58, 95, 0.28) !important;
+  background-color: #e2e8f0 !important;
+}
+
+html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .admin-toggle.admin-toggle-on .admin-toggle-track:not(#\#) {
+  border-color: #a7f3d0 !important;
+  background-color: #047857 !important;
 }
 
 /* Selector de modo de precio (Precio manual / Margen objetivo): control
@@ -8404,31 +8539,6 @@ span.admin-claim-status-finalized,
 .product-editor-screen .product-editor-pricing-mode-active .product-editor-pricing-mode-icon {
   color: rgb(110, 231, 183) !important;
   stroke: rgb(110, 231, 183) !important;
-}
-
-.product-editor-screen :where(
-    .product-editor-toggle-active,
-    .product-editor-spec-toggle-active,
-    .product-editor-spec-action-active
-  ) .product-editor-active-icon,
-.product-editor-screen .product-editor-toggle-active .product-editor-toggle-icon {
-  color: rgb(110, 231, 183) !important;
-  stroke: rgb(110, 231, 183) !important;
-}
-
-.product-editor-screen .product-editor-inactive-icon {
-  color: rgba(255, 255, 255, 0.42) !important;
-  stroke: rgba(255, 255, 255, 0.42) !important;
-}
-
-.product-editor-screen .product-editor-panel .product-editor-status-toggle-icon-active {
-  color: rgb(110, 231, 183) !important;
-  stroke: rgb(110, 231, 183) !important;
-}
-
-.product-editor-screen .product-editor-panel .product-editor-status-toggle-icon-inactive {
-  color: rgb(100, 116, 139) !important;
-  stroke: rgb(100, 116, 139) !important;
 }
 
 .product-editor-screen .product-editor-specifications {
@@ -8509,26 +8619,6 @@ span.admin-claim-status-finalized,
     border-color 140ms ease,
     background-color 140ms ease,
     color 140ms ease !important;
-}
-
-.product-editor-screen .product-editor-spec-action-visibility {
-  border-color: rgba(148, 163, 184, 0.22) !important;
-  background: rgba(30, 41, 59, 0.42) !important;
-}
-
-.product-editor-screen .product-editor-spec-action-visibility:hover {
-  border-color: rgba(148, 163, 184, 0.4) !important;
-  background: rgba(51, 65, 85, 0.58) !important;
-}
-
-.product-editor-screen .product-editor-spec-action-active {
-  border-color: rgba(52, 211, 153, 0.34) !important;
-  background: rgba(6, 78, 59, 0.3) !important;
-}
-
-.product-editor-screen .product-editor-spec-action-active:hover {
-  border-color: rgba(52, 211, 153, 0.52) !important;
-  background: rgba(6, 95, 70, 0.42) !important;
 }
 
 .product-editor-screen .product-editor-spec-action-edit {
