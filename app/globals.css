@@ -8180,12 +8180,14 @@ span.admin-claim-status-finalized,
   grid-template-columns: 7rem 8rem 8rem;
 }
 
-/* Toggles de Financiación (2/3/6 cuotas): compactos y de ancho propio (no
-   estirados a 1fr), alineados a la izquierda. 4 toggles de 6.25rem + gaps
-   (~26.2rem) entran en una fila aun en el ancho mínimo de la tarjeta en
-   desktop (~26.8rem útiles con el umbral de 76rem de .product-editor-row-top),
-   así queda lugar para un 4to botón a la derecha de "6 cuotas". Si el ancho
-   no alcanza (tarjeta apilada en mobile), bajan de fila sin desbordar. */
+/* Toggles de Financiación: [2 cuotas] [3 cuotas] [6 cuotas] [Mismo precio en
+   contado y cuotas] en UNA sola fila desde 22rem de tarjeta (todo desktop:
+   el mínimo real es ~28rem con el umbral de 76rem de .product-editor-row-top).
+   Grid de columnas `auto` sin wrap: las cuotas miden su contenido (texto en
+   nowrap) y "Mismo precio" toma el resto, partiendo su nombre en 2 líneas si
+   hace falta -- mismo alto que cuota + detalle. Todas las celdas se estiran
+   al alto de la fila. Por debajo de 22rem (mobile) bajan de fila sin
+   desbordar. */
 .product-editor-screen .product-editor-financing-grid {
   display: flex;
   flex-wrap: wrap;
@@ -8194,13 +8196,27 @@ span.admin-claim-status-finalized,
 
 .product-editor-screen .product-editor-financing-toggle {
   flex: 0 0 auto;
-  min-width: 6.25rem;
   min-height: 2.75rem;
 }
 
-/* "Mismo precio en contado y cuotas": mismo patrón, ancho según contenido. */
 .product-editor-screen .product-editor-financing-toggle-wide {
   max-width: 100%;
+}
+
+@container (min-width: 22rem) {
+  .product-editor-screen .product-editor-financing-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: auto;
+    justify-content: start;
+    align-items: stretch;
+  }
+
+  /* Corta siempre igual ("Mismo precio en / contado y cuotas") a cualquier
+     ancho de desktop: 2 líneas = mismo alto que las cuotas. */
+  .product-editor-screen .product-editor-financing-toggle-wide {
+    max-width: 9.5rem;
+  }
 }
 
 /* Fila 2+3 -- bloque [Estado comercial+Stock]+Especificaciones (izquierda)

@@ -723,14 +723,14 @@ export function ProductoForm({
                         aria-label={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}`}
                         aria-pressed={active}
                         onClick={() => setField(toggle.key, !active)}
-                        className={`admin-toggle product-editor-financing-toggle grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1.5 gap-y-0.5 px-2 py-1 text-left ${active ? "admin-toggle-on" : ""}`}
+                        className={`admin-toggle product-editor-financing-toggle grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 gap-y-0.5 px-1.5 py-1 text-left ${active ? "admin-toggle-on" : ""}`}
                       >
                         {active ? (
                           <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
                         ) : (
                           <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
                         )}
-                        <span className="text-xs font-black leading-4 text-white">
+                        <span className="whitespace-nowrap text-xs font-black leading-4 text-white">
                           {toggle.label}
                         </span>
                         <span className="admin-toggle-detail col-span-2 whitespace-nowrap text-10px font-semibold leading-4 text-white/70">
@@ -739,30 +739,37 @@ export function ProductoForm({
                       </AdminSecondaryButton>
                     )
                   })}
+                  {/* Misma fila que las cuotas: el nombre puede partirse en 2
+                      líneas (mismo alto que cuota + detalle); la explicación
+                      del estado va en la nota de abajo, no dentro del botón. */}
+                  <AdminSecondaryButton
+                    title={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
+                    aria-label={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
+                    aria-describedby={form.cuotasSinRecargo ? "product-installments-without-surcharge-note" : undefined}
+                    aria-pressed={form.cuotasSinRecargo}
+                    onClick={() => setField("cuotasSinRecargo", !form.cuotasSinRecargo)}
+                    className={`admin-toggle product-editor-financing-toggle product-editor-financing-toggle-wide grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 px-1.5 py-1 text-left ${form.cuotasSinRecargo ? "admin-toggle-on" : ""}`}
+                  >
+                    {form.cuotasSinRecargo ? (
+                      <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
+                    ) : (
+                      <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
+                    )}
+                    <span className="text-xs font-black leading-4 text-white">
+                      Mismo precio en contado y cuotas
+                    </span>
+                  </AdminSecondaryButton>
                 </div>
-                <AdminSecondaryButton
-                  title={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
-                  aria-label={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
-                  aria-pressed={form.cuotasSinRecargo}
-                  onClick={() => setField("cuotasSinRecargo", !form.cuotasSinRecargo)}
-                  className={`admin-toggle product-editor-financing-toggle product-editor-financing-toggle-wide grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1.5 gap-y-0.5 self-start px-2 py-1 text-left ${form.cuotasSinRecargo ? "admin-toggle-on" : ""}`}
-                >
-                  {form.cuotasSinRecargo ? (
-                    <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
-                  ) : (
-                    <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
-                  )}
-                  <span className="text-xs font-black leading-4 text-white">
-                    Mismo precio en contado y cuotas
-                  </span>
-                  <span className="admin-toggle-detail col-span-2 text-10px font-semibold leading-4 text-white/70">
-                      {!form.cuotasSinRecargo
-                        ? "Desactivado: las cuotas llevan recargo"
-                        : installmentsWithoutSurcharge
-                          ? "Cuotas sin recargo: el costo de Mercado Pago lo absorbe BEYONIX"
-                          : "Sin efecto hasta habilitar al menos una cuota"}
-                  </span>
-                </AdminSecondaryButton>
+                {form.cuotasSinRecargo && (
+                  <p
+                    id="product-installments-without-surcharge-note"
+                    className="text-10px font-semibold leading-4 text-white/70"
+                  >
+                    {installmentsWithoutSurcharge
+                      ? "Cuotas sin recargo: el costo de Mercado Pago lo absorbe BEYONIX."
+                      : "Sin efecto hasta habilitar al menos una cuota."}
+                  </p>
+                )}
                 {cashPricePreview != null && (
                   <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-white/8 bg-white/[0.02] p-2">
                     <div>
