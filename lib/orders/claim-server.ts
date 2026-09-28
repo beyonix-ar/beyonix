@@ -76,6 +76,8 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_SHIPMENT_ALREADY_MOVING: [409, "Andreani ya tiene el producto: la operación no puede cancelarse."],
   CLAIM_LOGISTICS_BRANCH_REQUIRED: [400, "Elegí una sucursal Andreani válida para la operación."],
   CLAIM_LOGISTICS_PLAN_LOCKED: [409, "Ya hubo una operación Andreani: cambiar de método requiere un motivo (mínimo 10 caracteres)."],
+  CLAIM_LOGISTICS_RESERVATION_ACTIVE: [409, "Hay stock reservado para el reemplazo: liberá la reserva (con motivo) antes de cambiar el método."],
+  CLAIM_LOGISTICS_CREDIT_NOTE_ACTIVE: [409, "El reclamo tiene una nota de crédito vigente: el método no se puede cambiar."],
   CLAIM_LOGISTICS_REQUIRES_INSPECTION: [409, "El reemplazo se autoriza cuando el producto original fue recibido e inspeccionado sin incidencias."],
   CLAIM_LOGISTICS_LEGACY: [409, "Este reclamo es anterior al circuito por sucursal y ya tuvo movimientos: continuá con su flujo original."],
   CLAIM_INSPECTION_NOT_RESTOCKABLE: [409, "Un paquete vacío o un producto distinto nunca vuelve a stock: registralo como baja."],

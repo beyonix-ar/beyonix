@@ -14,6 +14,7 @@ import {
 import { normalizeAndreaniError } from "@/lib/andreani/client"
 import { claimErrorResponse, getClaimResult } from "@/lib/orders/claim-server"
 import { CLAIM_INCIDENT_LABELS } from "@/lib/orders/claim-shipment-view"
+import type { createAdminClient } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
 
@@ -43,6 +44,39 @@ function note(value: unknown) {
 
 function andreaniErrorStatus(code: string) {
   return ["VALIDATION_ERROR", "CONFIGURATION_ERROR", "PROVIDER_DISABLED", "PRODUCTION_BLOCKED"].includes(code) ? 409 : 502
+}
+
+type AdminClient = ReturnType<typeof createAdminClient>
+
+/**
+ * Cambiar de método (cambio directo <-> retiro) con stock reservado para el
+ * reemplazo o nota de crédito vigente: primero se corrigen con su flujo
+ * auditado. Chequeo previo sólo para responder rápido; la autoridad es
+ * request_order_claim_logistics, que lo repite con el reclamo bloqueado
+ * (CLAIM_LOGISTICS_RESERVATION_ACTIVE / CLAIM_LOGISTICS_CREDIT_NOTE_ACTIVE).
+ */
+async function getMethodChangeBlock(admin: AdminClient, claimId: number, direction: "cambio" | "devolucion") {
+  const [legs, reserved, creditNotes] = await Promise.all([
+    admin.from("order_claim_shipments").select("direction").eq("claim_id", claimId).neq("status", "cancelada")
+      .order("id", { ascending: false }).limit(1),
+    admin.from("order_claim_units").select("id", { count: "exact", head: true })
+      .eq("claim_id", claimId).eq("role", "reemplazo").eq("location", "reservada"),
+    admin.from("order_credit_notes").select("id", { count: "exact", head: true })
+      .eq("claim_id", claimId).in("status", ["processing", "authorized"]),
+  ])
+  if (legs.error || reserved.error || creditNotes.error) {
+    return { status: 500, error: "No se pudo verificar el estado del reclamo." }
+  }
+  const current = legs.data?.[0]?.direction
+  const changesPlan = current !== undefined && (current === "cambio") !== (direction === "cambio")
+  if (!changesPlan) return null
+  if ((reserved.count ?? 0) > 0) {
+    return { status: 409, error: "Hay stock reservado para el reemplazo: liberá la reserva (con motivo) antes de cambiar el método." }
+  }
+  if ((creditNotes.count ?? 0) > 0) {
+    return { status: 409, error: "El reclamo tiene una nota de crédito vigente: el método no se puede cambiar." }
+  }
+  return null
 }
 
 /**
@@ -90,6 +124,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cla
     }
     if (!branch) {
       return NextResponse.json({ error: "Elegí una sucursal Andreani para la operación." }, { status: 400 })
+    }
+    if (direction !== "reemplazo") {
+      const blocked = await getMethodChangeBlock(auth.admin, claimId, direction as "cambio" | "devolucion")
+      if (blocked) return NextResponse.json({ error: blocked.error }, { status: blocked.status })
     }
     const { error } = await auth.admin.rpc("request_order_claim_logistics", {
       p_claim_id: claimId, p_actor_id: actorId, p_direction: direction, p_note: note(body.notes) || null,

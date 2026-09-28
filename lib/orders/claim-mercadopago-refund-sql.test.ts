@@ -6,7 +6,7 @@ import { PGlite } from "@electric-sql/pglite"
 
 // Refund REAL de Mercado Pago frente a la logística de reclamos, con las
 // funciones SQL reales: begin_mercadopago_order_refund vigente
-// (20260917130000) + la guarda de 20260930100000. Sin red ni Mercado Pago.
+// (20260917130000) + la guarda de 20261001100000. Sin red ni Mercado Pago.
 
 const customer = "30000000-0000-4000-8000-000000000001"
 const admin = "30000000-0000-4000-8000-000000000003"
@@ -37,6 +37,7 @@ const CHAIN = [
   "20260924160000_claim_resolution_summary_notifications",
   "20260928100000_claim_andreani_shipments",
   "20260930100000_claim_logistics_branch_only",
+  "20261001100000_claim_logistics_hardening",
 ]
 
 type Db = PGlite

@@ -1,7 +1,10 @@
--- Contenido EXACTO aplicado en remoto (supabase_migrations.schema_migrations,
--- 144 sentencias). No editar: los cambios posteriores viven en
--- 20261001100000_claim_logistics_hardening.sql.
-
+-- Endurecimiento de la logística de reclamos por sucursal, SOBRE lo ya
+-- aplicado en 20260930100000 (versión inicial). Idempotente: todo es
+-- create or replace / if not exists / bloques DO, así que también converge
+-- si se aplica sobre una base creada desde cero con la cadena completa.
+-- Incluye: método explícito con sucursal obligatoria, legacy, revisión de
+-- eventos Andreani desconocidos, guardas de NC / reintegro / refund MP,
+-- excepciones financieras auditadas y guardas de cambio de método bajo lock.
 -- Corrección de la logística de postventa sobre 20260928100000 (ya aplicada).
 --
 -- 20260928100000 dejó en producción el modelo inicial: tramos 'devolucion'
@@ -38,6 +41,7 @@
 -- Idempotente: puede ejecutarse más de una vez sin efectos dobles.
 
 begin;
+
 -- 0. Mensajes automáticos idempotentes (ya existe desde 20260928100000) ----
 
 alter table public.order_claim_messages
@@ -45,6 +49,7 @@ alter table public.order_claim_messages
 create unique index if not exists order_claim_messages_system_key_unique
   on public.order_claim_messages (claim_id, system_key)
   where system_key is not null;
+
 -- 1. Reemplazos devueltos -------------------------------------------------
 
 alter table public.order_replacements
@@ -54,8 +59,10 @@ alter table public.order_replacements
 alter table public.order_replacements
   add constraint order_replacements_reverted_quantity_check
   check (reverted_quantity >= 0 and reverted_quantity <= quantity);
+
 comment on column public.order_replacements.reverted_quantity is
   'Unidades del reemplazo que volvieron a BEYONIX sin llegar al cliente (reincorporadas o dadas de baja tras inspección, o reserva liberada). No cuentan como reemplazo entregado.';
+
 -- 2. order_claim_shipments: del modelo inicial al final -------------------
 
 alter table public.order_claim_shipments
@@ -69,7 +76,36 @@ alter table public.order_claim_shipments
   add column if not exists incident_at timestamptz,
   add column if not exists branch_custody_since timestamptz,
   add column if not exists closed_at timestamptz,
-  add column if not exists legacy boolean not null default false;
+  add column if not exists legacy boolean not null default false,
+  -- Evento de Andreani que no se puede clasificar con seguridad (fuera del
+  -- maestro, anulación, siniestro, rescate, cambio de destino...): congela
+  -- el avance automático hasta que un Admin lo revise (auditado).
+  add column if not exists review_required boolean not null default false,
+  add column if not exists review_event text,
+  add column if not exists review_at timestamptz,
+  add column if not exists review_acknowledged text[] not null default '{}';
+
+-- Reclamos anteriores a esta migración: se marcan una sola vez (al crear la
+-- columna) como "legacy". No se les inventan unidades ni se transforman: siguen
+-- con su flujo; sólo pueden pasar al circuito nuevo si nunca tuvieron
+-- movimientos logísticos ni de stock (ver request_order_claim_logistics).
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'order_claims' and column_name = 'logistics_legacy'
+  ) then
+    -- Existentes = true sin UPDATE masivo (no toca updated_at ni dispara
+    -- triggers de reclamos); nuevos = false.
+    alter table public.order_claims add column logistics_legacy boolean not null default true;
+    alter table public.order_claims alter column logistics_legacy set default false;
+  end if;
+end;
+$$;
+
+comment on column public.order_claims.logistics_legacy is
+  'Reclamo anterior al circuito logístico por sucursal (20260930100000). No tiene unidades; sigue su flujo original.';
+
 -- Reglas viejas (y nuevas, para poder re-ejecutar) fuera antes de corregir datos.
 alter table public.order_claim_shipments
   drop constraint if exists order_claim_shipments_one_per_direction,
@@ -84,8 +120,10 @@ alter table public.order_claim_shipments
   drop constraint if exists order_claim_shipments_branch_check,
   drop constraint if exists order_claim_shipments_cancel_closes,
   drop constraint if exists order_claim_shipments_cancel_not_in_flight;
+
 -- Filas heredadas del modelo inicial (sin sucursal).
 update public.order_claim_shipments set legacy = true where branch_id is null and not legacy;
+
 update public.order_claim_shipments
 set status = 'generada',
     incident_open = true,
@@ -93,9 +131,11 @@ set status = 'generada',
     incident_at = coalesce(incident_at, andreani_last_event_at, updated_at),
     updated_at = now()
 where status = 'incidencia';
+
 update public.order_claim_shipments
 set closed_at = coalesce(delivered_at, now())
 where status = 'entregada' and closed_at is null;
+
 with cancelled as (
   update public.order_claim_shipments
   set status = 'cancelada', closed_at = now(), updated_at = now()
@@ -106,6 +146,7 @@ insert into public.order_audit_events (order_id, actor_type, action, metadata)
 select order_id, 'system', 'claim_logistics_cancelled',
   jsonb_build_object('claimId', claim_id, 'shipmentId', id, 'direction', direction, 'reason', 'legacy_auto_opened')
 from cancelled;
+
 alter table public.order_claim_shipments
   add constraint order_claim_shipments_direction_check check (direction in ('devolucion', 'cambio', 'reemplazo')),
   add constraint order_claim_shipments_attempt_check check (attempt between 1 and 5),
@@ -132,6 +173,7 @@ alter table public.order_claim_shipments
   add constraint order_claim_shipments_cancel_not_in_flight check (
     status <> 'cancelada' or creation_status in ('not_started', 'failed', 'created')
   );
+
 comment on table public.order_claim_shipments is
   'Tramos Andreani de un reclamo, siempre por sucursal (cambio directo, retiro, reenvío). Nunca modifican stock: sólo mueven la ubicación lógica de order_claim_units.';
 comment on column public.order_claim_shipments.branch_id is
@@ -140,6 +182,7 @@ comment on column public.order_claim_shipments.legacy is
   'Fila creada por el modelo inicial (20260928100000): sin sucursal ni unidades. Se sigue y concilia; nunca se usa para operaciones nuevas.';
 comment on column public.order_claim_shipments.branch_custody_since is
   'Inicio de custodia en sucursal informado por Andreani. El plazo de permanencia no se calcula: Andreani no lo informa.';
+
 -- A lo sumo un tramo abierto por reclamo (las filas heredadas pueden tener
 -- dos abiertos: se siguen hasta cerrarse, pero bloquean abrir otro).
 create unique index if not exists order_claim_shipments_one_open_per_claim
@@ -149,9 +192,11 @@ drop index if exists public.order_claim_shipments_tracking_queue_idx;
 create index order_claim_shipments_tracking_queue_idx
   on public.order_claim_shipments (last_checked_at nulls first, id)
   where creation_status = 'created' and closed_at is null;
+
 -- Escrituras sólo por funciones security definer.
 revoke insert, update, delete on table public.order_claim_shipments from service_role;
 grant select on table public.order_claim_shipments to service_role;
+
 -- 3. Unidades del reclamo ------------------------------------------------
 
 create table if not exists public.order_claim_units (
@@ -179,14 +224,18 @@ create table if not exists public.order_claim_units (
   ),
   constraint order_claim_units_incident_note check (not incident_open or incident_note is not null)
 );
+
 comment on table public.order_claim_units is
   'Paradero lógico de cada unidad de un reclamo con logística (original y reemplazo). Única fuente de verdad: ninguna unidad sin ubicación.';
+
 create index if not exists order_claim_units_claim_idx on public.order_claim_units (claim_id, role, order_item_id, location);
 create index if not exists order_claim_units_shipment_idx on public.order_claim_units (shipment_id) where shipment_id is not null;
 create index if not exists order_claim_units_replacement_idx on public.order_claim_units (replacement_id) where replacement_id is not null;
+
 alter table public.order_claim_units enable row level security;
 revoke all on table public.order_claim_units from public, anon, authenticated;
 grant select on table public.order_claim_units to service_role;
+
 -- Ledger de acciones del Admin sobre unidades: idempotencia (doble click,
 -- reintento, dos pestañas) y auditoría.
 create table if not exists public.order_claim_unit_events (
@@ -198,9 +247,12 @@ create table if not exists public.order_claim_unit_events (
   payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
 alter table public.order_claim_unit_events enable row level security;
 revoke all on table public.order_claim_unit_events from public, anon, authenticated;
 grant select on table public.order_claim_unit_events to service_role;
+
+
 -- 4. Utilidades ----------------------------------------------------------
 
 create or replace function public.order_claim_leg_rank(p_status text)
@@ -213,6 +265,7 @@ as $$
     when 'pendiente' then 0 when 'generada' then 1 when 'en_transito' then 2
     when 'en_sucursal' then 3 when 'entregada' then 4 else -1 end
 $$;
+
 create or replace function public.post_order_claim_system_message(
   p_claim_id bigint,
   p_key text,
@@ -240,6 +293,7 @@ begin
   return v_id is not null;
 end;
 $$;
+
 create or replace function public.log_order_claim_logistics(
   p_claim_id bigint,
   p_actor_id uuid,
@@ -258,6 +312,7 @@ begin
   from public.order_claims c where c.id = p_claim_id;
 end;
 $$;
+
 -- Admin (no operador) con service_role. Devuelve el rol.
 create or replace function public.assert_order_claim_logistics_admin(p_actor_id uuid)
 returns text
@@ -275,6 +330,7 @@ begin
   return v_role;
 end;
 $$;
+
 -- Registra la clave de una acción del Admin. true = primera vez; false = ya
 -- aplicada con la MISMA acción (reintento). Otra acción con la misma clave falla.
 create or replace function public.begin_order_claim_unit_event(
@@ -309,6 +365,7 @@ begin
   return true;
 end;
 $$;
+
 -- Unidades originales desde affected_items (una fila por unidad). Sólo la
 -- primera vez: después la base es la de las unidades.
 create or replace function public.ensure_order_claim_original_units(p_claim public.order_claims)
@@ -357,6 +414,7 @@ begin
   return v_count;
 end;
 $$;
+
 -- Estados en los que BEYONIX ya aceptó una solución y el reclamo sigue abierto.
 create or replace function public.order_claim_is_accepted(p_claim public.order_claims)
 returns boolean
@@ -368,6 +426,7 @@ as $$
     and p_claim.resolution is not null and p_claim.resolution <> 'rechazado'
     and coalesce(p_claim.failure_type, '') not in ('consulta_pedido', 'cancelar_compra')
 $$;
+
 -- Abre un tramo nuevo (siguiente intento). Nunca dos abiertos a la vez.
 create or replace function public.open_order_claim_leg(
   p_claim public.order_claims,
@@ -403,6 +462,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- Plan logístico vigente del reclamo según sus operaciones (la última no
 -- cancelada): 'cambio' (cambio directo) o 'retiro' (retiro + revisión, que
 -- incluye su reenvío). NULL = el Admin todavía no eligió.
@@ -419,6 +479,7 @@ as $$
   order by id desc
   limit 1
 $$;
+
 -- Originales recibidos E inspeccionados (stock o baja, o excepción), sin
 -- incidencias: condición para reenviar un reemplazo o reintegrar.
 create or replace function public.order_claim_originals_inspected(p_claim_id bigint)
@@ -434,6 +495,7 @@ as $$
                       and location in ('con_cliente', 'en_andreani', 'recibida_beyonix'))
     and not exists (select 1 from public.order_claim_units where claim_id = p_claim_id and incident_open)
 $$;
+
 -- ¿Se puede generar la operación Andreani de este tramo? NULL = sí; si no,
 -- el código del motivo.
 create or replace function public.order_claim_leg_readiness(p_leg public.order_claim_shipments)
@@ -488,6 +550,7 @@ begin
   return null;
 end;
 $$;
+
 -- Asigna al tramo exactamente las unidades que viajan en él.
 create or replace function public.assign_order_claim_leg_units(p_leg public.order_claim_shipments)
 returns void
@@ -519,6 +582,7 @@ begin
   end if;
 end;
 $$;
+
 -- Libera las unidades de un tramo que NO llegó a existir en Andreani (o se
 -- anuló antes de salir): vuelven a estar disponibles para otro tramo.
 create or replace function public.release_order_claim_leg_units(p_leg_id bigint)
@@ -532,6 +596,7 @@ begin
   where shipment_id = p_leg_id and location in ('con_cliente', 'reservada');
 end;
 $$;
+
 -- Cierra el tramo cuando ya no queda nada físico pendiente de Andreani.
 create or replace function public.refresh_order_claim_leg_closure(p_leg_id bigint)
 returns public.order_claim_shipments
@@ -570,6 +635,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- 5. Aceptación del cambio: sólo mensajes ---------------------------------
 
 create or replace function public.order_claim_change_accepted()
@@ -608,22 +674,27 @@ begin
   return new;
 end;
 $$;
+
 drop trigger if exists zz_order_claim_change_accepted on public.order_claims;
 create trigger zz_order_claim_change_accepted
   after insert or update of status, resolution on public.order_claims
   for each row execute function public.order_claim_change_accepted();
+
 -- 6. Método logístico: decisión EXPLÍCITA del Admin -----------------------
 
--- Abre el tramo pedido, siempre con una sucursal Andreani:
---   * p_branch_id viene verificado por la aplicación contra el catálogo de
---     Andreani para el destino del pedido; si no viene, la sucursal que el
---     cliente eligió en su compra o la del tramo anterior del mismo plan.
+-- Abre el tramo pedido, siempre con una sucursal Andreani EXPLÍCITA:
+--   * p_branch_id llega verificado por la aplicación contra el catálogo real
+--     de Andreani (nunca nombre/dirección del navegador); la base no infiere
+--     sucursales por su cuenta.
 --   * 'cambio' = Cambio directo; 'devolucion' = Retiro + revisión.
 --   * 'reemplazo' = reenvío del plan Retiro + revisión: sólo con el original
 --     recibido, inspeccionado y sin incidencias (autorización del Admin).
 --   * Cambiar de método con una operación Andreani real ya existente exige
 --     un motivo (mínimo 10 caracteres) y queda auditado; sin ella, un tramo
---     pendiente que nunca llegó a Andreani se cancela y queda auditado.
+--     pendiente que nunca llegó a Andreani se cancela y queda auditado. Una
+--     operación en curso, incierta o heredada abierta bloquea el cambio.
+--   * Reclamos legacy (anteriores a este circuito): sólo si nunca tuvieron
+--     movimientos logísticos, de stock ni NC; si no, siguen su flujo original.
 create or replace function public.request_order_claim_logistics(
   p_claim_id bigint,
   p_actor_id uuid,
@@ -640,19 +711,17 @@ set search_path = public
 as $$
 declare
   v_claim public.order_claims%rowtype;
-  v_order public.ordenes%rowtype;
   v_open public.order_claim_shipments%rowtype;
-  v_previous public.order_claim_shipments%rowtype;
   v_leg public.order_claim_shipments%rowtype;
   v_current_plan text;
   v_new_plan text := case p_direction when 'cambio' then 'cambio' else 'retiro' end;
   v_branch_id text := nullif(btrim(coalesce(p_branch_id, '')), '');
-  v_branch_name text := p_branch_name;
-  v_branch_address text := p_branch_address;
   v_note text := btrim(coalesce(p_note, ''));
+  v_plan_change boolean := false;
 begin
   perform public.assert_order_claim_logistics_admin(p_actor_id);
   if p_direction not in ('devolucion', 'cambio', 'reemplazo') then raise exception 'CLAIM_SHIPMENT_INVALID'; end if;
+  if v_branch_id is null then raise exception 'CLAIM_LOGISTICS_BRANCH_REQUIRED'; end if;
   select * into v_claim from public.order_claims where id = p_claim_id for update;
   if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
   if not public.order_claim_is_accepted(v_claim) then raise exception 'CLAIM_LOGISTICS_NOT_ALLOWED'; end if;
@@ -663,8 +732,24 @@ begin
   if p_direction in ('cambio', 'reemplazo') and v_claim.resolution <> 'cambio_producto' then
     raise exception 'CLAIM_LOGISTICS_NOT_ALLOWED';
   end if;
-  if exists (select 1 from public.order_claim_units where claim_id = p_claim_id and incident_open) then
+  if exists (select 1 from public.order_claim_units where claim_id = p_claim_id and incident_open)
+     or exists (select 1 from public.order_claim_shipments where claim_id = p_claim_id and review_required) then
     raise exception 'CLAIM_LOGISTICS_INCIDENT';
+  end if;
+  -- Legacy: nunca se transforma un reclamo que ya tuvo movimientos.
+  if v_claim.logistics_legacy and not exists (select 1 from public.order_claim_units where claim_id = p_claim_id) then
+    if exists (select 1 from public.order_replacements where claim_id = p_claim_id)
+       or exists (select 1 from public.order_claim_shipments where claim_id = p_claim_id and status <> 'cancelada')
+       or exists (select 1 from public.order_credit_notes where claim_id = p_claim_id and status in ('processing', 'authorized'))
+       or exists (
+         select 1 from public.inventory_return_movements m
+         where m.order_id = v_claim.order_id and m.created_at >= v_claim.created_at
+           and m.order_item_id in (select (x->>'order_item_id')::bigint from jsonb_array_elements(v_claim.affected_items) x)
+       ) then
+      raise exception 'CLAIM_LOGISTICS_LEGACY';
+    end if;
+    perform public.log_order_claim_logistics(p_claim_id, p_actor_id, 'claim_logistics_legacy_opt_in',
+      jsonb_build_object('direction', p_direction));
   end if;
 
   v_current_plan := public.order_claim_logistics_plan(p_claim_id);
@@ -676,15 +761,18 @@ begin
       raise exception 'CLAIM_LOGISTICS_NOT_ALLOWED';
     end if;
     if not public.order_claim_originals_inspected(p_claim_id) then raise exception 'CLAIM_LOGISTICS_REQUIRES_INSPECTION'; end if;
-  elsif v_current_plan is not null and v_current_plan <> v_new_plan and exists (
-    select 1 from public.order_claim_shipments
-    where claim_id = p_claim_id and status <> 'cancelada' and creation_status in ('processing', 'created', 'manual_review')
-  ) then
-    -- Ya hubo una operación Andreani real: cambiar de método es un flujo
-    -- administrativo explícito, con motivo y auditoría.
-    if length(v_note) < 10 then raise exception 'CLAIM_LOGISTICS_PLAN_LOCKED'; end if;
-    perform public.log_order_claim_logistics(p_claim_id, p_actor_id, 'claim_logistics_plan_changed',
-      jsonb_build_object('from', v_current_plan, 'to', v_new_plan, 'notes', left(v_note, 1000)));
+  elsif v_current_plan is not null and v_current_plan <> v_new_plan then
+    v_plan_change := true;
+    if exists (
+      select 1 from public.order_claim_shipments
+      where claim_id = p_claim_id and status <> 'cancelada' and creation_status in ('processing', 'created', 'manual_review')
+    ) then
+      -- Ya hubo una operación Andreani real: cambiar de método es un flujo
+      -- administrativo explícito, con motivo y auditoría.
+      if length(v_note) < 10 then raise exception 'CLAIM_LOGISTICS_PLAN_LOCKED'; end if;
+      perform public.log_order_claim_logistics(p_claim_id, p_actor_id, 'claim_logistics_plan_changed',
+        jsonb_build_object('from', v_current_plan, 'to', v_new_plan, 'notes', left(v_note, 1000)));
+    end if;
   end if;
 
   select * into v_open from public.order_claim_shipments where claim_id = p_claim_id and closed_at is null
@@ -705,28 +793,25 @@ begin
         'notes', left(v_note, 1000)));
   end if;
 
-  -- Sucursal: la verificada por la aplicación; si no, la del plan o la compra.
-  if v_branch_id is null then
-    -- La del tramo anterior del mismo tipo (reenvío -> la del retiro); si no,
-    -- la última sucursal usada en el reclamo.
-    select * into v_previous from public.order_claim_shipments
-    where claim_id = p_claim_id and status <> 'cancelada'
-    order by (direction = case p_direction when 'reemplazo' then 'devolucion' else p_direction end) desc, id desc
-    limit 1;
-    if found then
-      v_branch_id := v_previous.branch_id; v_branch_name := v_previous.branch_name; v_branch_address := v_previous.branch_address;
-    else
-      select * into v_order from public.ordenes where id = v_claim.order_id;
-      if v_order.shipping_type = 'sucursal' and nullif(btrim(coalesce(v_order.andreani_sucursal_id, '')), '') is not null then
-        v_branch_id := btrim(v_order.andreani_sucursal_id);
-        v_branch_name := v_order.andreani_sucursal_nombre;
-        v_branch_address := null;
-      end if;
+  -- Efectos reales que cambiar de método no revierte. Se evalúan con el
+  -- reclamo bloqueado (FOR UPDATE arriba): la reserva (create_order_replacement
+  -- y order_replacement_claim_units) y la NC (begin_partial_credit_note,
+  -- guard_claim_credit_note y lock_claim_on_credit_note_activation) toman el
+  -- mismo lock, así que una que llegue en paralelo espera o ya está commiteada
+  -- y visible acá. Un rechazo revierte también la cancelación del tramo previo.
+  -- La API repite el chequeo sólo para responder rápido; la autoridad es esta función.
+  if v_plan_change then
+    if exists (select 1 from public.order_claim_units
+               where claim_id = p_claim_id and role = 'reemplazo' and location = 'reservada') then
+      raise exception 'CLAIM_LOGISTICS_RESERVATION_ACTIVE';
+    end if;
+    if exists (select 1 from public.order_credit_notes
+               where claim_id = p_claim_id and status in ('processing', 'authorized')) then
+      raise exception 'CLAIM_LOGISTICS_CREDIT_NOTE_ACTIVE';
     end if;
   end if;
-  if v_branch_id is null then raise exception 'CLAIM_LOGISTICS_BRANCH_REQUIRED'; end if;
 
-  v_leg := public.open_order_claim_leg(v_claim, p_direction, p_actor_id, v_branch_id, v_branch_name, v_branch_address);
+  v_leg := public.open_order_claim_leg(v_claim, p_direction, p_actor_id, v_branch_id, p_branch_name, p_branch_address);
   if p_direction in ('devolucion', 'cambio') and not exists (
     select 1 from public.order_claim_units where claim_id = p_claim_id and role = 'original' and location = 'con_cliente'
   ) then
@@ -738,6 +823,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- Cancela un tramo que nunca existió en Andreani, o uno creado que Andreani
 -- anuló / nunca retiró (ninguna unidad salió). Motivo obligatorio.
 create or replace function public.cancel_order_claim_leg(
@@ -780,6 +866,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- 7. Efectos de un tramo generado (creación o conciliación) ----------------
 
 create or replace function public.order_claim_shipment_created_effects(p_shipment public.order_claim_shipments)
@@ -830,6 +917,7 @@ begin
   where id = p_shipment.claim_id;
 end;
 $$;
+
 -- 8. Creación idempotente de la operación Andreani ------------------------
 
 -- Toma el tramo y le asigna sus unidades. Devuelve la fila 'processing' con
@@ -893,6 +981,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- Guarda la operación creada. Idempotente con el mismo envío; nunca pisa otro.
 create or replace function public.complete_order_claim_shipment_creation(
   p_shipment_id bigint,
@@ -945,6 +1034,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- Registra un intento fallido o una creación bloqueada.
 --   blocked       -> configuración/validación ANTES de tomar el tramo (sin
 --                    token; sólo deja el motivo visible).
@@ -1003,6 +1093,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- Conciliación (sólo admin/super_admin, con nota): después de un resultado
 -- incierto. 'created' se verifica antes contra Andreani (lado aplicación) y
 -- nunca vincula una orden usada por otro tramo o por un pedido de venta.
@@ -1070,6 +1161,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- 9. Tracking: avance monotónico y efectos únicos --------------------------
 
 create or replace function public.order_claim_leg_progress_effects(
@@ -1142,9 +1234,15 @@ begin
       'envioId', p_leg.andreani_envio_id, 'tracking', p_leg.andreani_tracking, 'event', p_leg.andreani_last_event));
 end;
 $$;
+
 -- p_phase: máximo avance observado en TODOS los eventos (no el último), así
 -- eventos repetidos o desordenados nunca hacen retroceder. p_incident: el
--- evento más reciente es una novedad (no entregado, rotura, anulación...).
+-- evento más reciente es una novedad (no entregado, nueva fecha...), que se
+-- limpia sola con un evento posterior. p_review_event: un evento que no se
+-- puede clasificar con seguridad para el reclamo (anulación, siniestro,
+-- rescate, cambio de destino, fuera del maestro...): se guarda, pide revisión
+-- del Admin y CONGELA el avance (ni estado, ni unidades, ni cierre) hasta que
+-- se resuelva de forma explícita y auditada. Nunca toca stock.
 create or replace function public.apply_order_claim_shipment_tracking(
   p_shipment_id bigint,
   p_phase text,
@@ -1153,7 +1251,8 @@ create or replace function public.apply_order_claim_shipment_tracking(
   p_tracking text,
   p_last_event text,
   p_last_event_at timestamptz,
-  p_custody_since timestamptz
+  p_custody_since timestamptz,
+  p_review_event text
 )
 returns public.order_claim_shipments
 language plpgsql
@@ -1165,6 +1264,7 @@ declare
   v_previous public.order_claim_shipments%rowtype;
   v_next text;
   v_stale boolean;
+  v_review text := nullif(btrim(coalesce(p_review_event, '')), '');
 begin
   if auth.role() is distinct from 'service_role' then raise exception 'FORBIDDEN' using errcode = '42501'; end if;
   if p_phase not in ('sin_cambio', 'en_transito', 'en_sucursal', 'entregada') then raise exception 'CLAIM_SHIPMENT_INVALID'; end if;
@@ -1175,11 +1275,13 @@ begin
   if not found then raise exception 'CLAIM_SHIPMENT_NOT_FOUND'; end if;
   if v_previous.creation_status is distinct from 'created' then raise exception 'CLAIM_SHIPMENT_NOT_CREATED'; end if;
   if v_previous.status = 'cancelada' then return v_previous; end if;
+  if v_review is not null and v_review = any (v_previous.review_acknowledged) then v_review := null; end if;
 
   v_stale := p_last_event_at is not null and v_previous.andreani_last_event_at is not null
     and p_last_event_at < v_previous.andreani_last_event_at;
   v_next := case when p_phase = 'sin_cambio' then v_previous.status else p_phase end;
-  if public.order_claim_leg_rank(v_next) <= public.order_claim_leg_rank(v_previous.status) then
+  if public.order_claim_leg_rank(v_next) <= public.order_claim_leg_rank(v_previous.status)
+     or v_previous.review_required or v_review is not null then
     v_next := v_previous.status;
   end if;
 
@@ -1193,6 +1295,9 @@ begin
         else incident_open end,
       incident_event = case when not v_stale and coalesce(p_incident, false) then nullif(btrim(coalesce(p_last_event, '')), '') else incident_event end,
       incident_at = case when not v_stale and coalesce(p_incident, false) then coalesce(p_last_event_at, clock_timestamp()) else incident_at end,
+      review_required = review_required or v_review is not null,
+      review_event = case when v_review is not null and not review_required then v_review else review_event end,
+      review_at = case when v_review is not null and not review_required then clock_timestamp() else review_at end,
       andreani_estado = case when v_stale then andreani_estado else coalesce(nullif(btrim(coalesce(p_estado, '')), ''), andreani_estado) end,
       andreani_tracking = coalesce(andreani_tracking, nullif(btrim(coalesce(p_tracking, '')), '')),
       andreani_last_event = case when v_stale then andreani_last_event else coalesce(nullif(btrim(coalesce(p_last_event, '')), ''), andreani_last_event) end,
@@ -1211,7 +1316,12 @@ begin
     v_leg := public.refresh_order_claim_leg_closure(v_leg.id);
   end if;
 
-  if v_leg.incident_open and not v_previous.incident_open then
+  if v_leg.review_required and not v_previous.review_required then
+    update public.order_claims set admin_needs_action = true
+    where id = v_leg.claim_id and status not in ('cerrado', 'rechazado');
+    perform public.log_order_claim_logistics(v_leg.claim_id, null, 'claim_shipment_review_required',
+      jsonb_build_object('shipmentId', v_leg.id, 'event', v_leg.review_event, 'phase', p_phase));
+  elsif v_leg.incident_open and not v_previous.incident_open then
     update public.order_claims set admin_needs_action = true
     where id = v_leg.claim_id and status not in ('cerrado', 'rechazado');
     perform public.log_order_claim_logistics(v_leg.claim_id, null, 'claim_shipment_incident',
@@ -1222,6 +1332,78 @@ begin
   return v_leg;
 end;
 $$;
+
+-- Respuesta de seguimiento que no se pudo interpretar (evento fuera del
+-- maestro documentado, formato inválido): se registra y pide revisión, sin
+-- cambiar nada más. Idempotente.
+create or replace function public.flag_order_claim_shipment_review(
+  p_shipment_id bigint,
+  p_event text
+)
+returns public.order_claim_shipments
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_leg public.order_claim_shipments%rowtype;
+  v_event text := left(coalesce(nullif(btrim(p_event), ''), 'Respuesta de seguimiento no interpretable'), 200);
+begin
+  if auth.role() is distinct from 'service_role' then raise exception 'FORBIDDEN' using errcode = '42501'; end if;
+  select * into v_leg from public.order_claim_shipments where id = p_shipment_id for update;
+  if not found then raise exception 'CLAIM_SHIPMENT_NOT_FOUND'; end if;
+  if v_leg.review_required or v_event = any (v_leg.review_acknowledged) or v_leg.status = 'cancelada' then
+    update public.order_claim_shipments set last_checked_at = clock_timestamp() where id = v_leg.id returning * into v_leg;
+    return v_leg;
+  end if;
+  update public.order_claim_shipments
+  set review_required = true, review_event = v_event, review_at = clock_timestamp(),
+      last_checked_at = clock_timestamp(), updated_at = clock_timestamp()
+  where id = v_leg.id returning * into v_leg;
+  update public.order_claims set admin_needs_action = true
+  where id = v_leg.claim_id and status not in ('cerrado', 'rechazado');
+  perform public.log_order_claim_logistics(v_leg.claim_id, null, 'claim_shipment_review_required',
+    jsonb_build_object('shipmentId', v_leg.id, 'event', v_event));
+  return v_leg;
+end;
+$$;
+
+-- Resolución manual auditada de un evento no clasificable: el Admin confirma
+-- con Andreani qué pasó y lo registra. El evento queda reconocido (no vuelve a
+-- frenar) y el avance se reanuda en la próxima consulta; los hechos físicos se
+-- siguen registrando con sus acciones propias (llegada, cancelación...).
+create or replace function public.resolve_order_claim_shipment_review(
+  p_shipment_id bigint,
+  p_actor_id uuid,
+  p_note text
+)
+returns public.order_claim_shipments
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_leg public.order_claim_shipments%rowtype;
+begin
+  perform public.assert_order_claim_logistics_admin(p_actor_id);
+  if length(btrim(coalesce(p_note, ''))) < 10 then raise exception 'CLAIM_LOGISTICS_NOTE_REQUIRED'; end if;
+  perform 1 from public.order_claims
+  where id = (select claim_id from public.order_claim_shipments where id = p_shipment_id) for update;
+  select * into v_leg from public.order_claim_shipments where id = p_shipment_id for update;
+  if not found then raise exception 'CLAIM_SHIPMENT_NOT_FOUND'; end if;
+  if not v_leg.review_required then return v_leg; end if;
+  update public.order_claim_shipments
+  set review_required = false,
+      review_acknowledged = case when review_event = any (review_acknowledged) then review_acknowledged
+                                 else array_append(review_acknowledged, review_event) end,
+      updated_at = clock_timestamp()
+  where id = v_leg.id returning * into v_leg;
+  perform public.log_order_claim_logistics(v_leg.claim_id, p_actor_id, 'claim_shipment_review_resolved',
+    jsonb_build_object('shipmentId', v_leg.id, 'event', v_leg.review_event, 'notes', left(btrim(p_note), 1000)));
+  return v_leg;
+end;
+$$;
+
 -- 10. Cambio no completado (cliente no entregó el original) --------------
 
 create or replace function public.mark_order_claim_exchange_not_completed(
@@ -1262,6 +1444,7 @@ begin
   return v_leg;
 end;
 $$;
+
 -- 11. Recepción física en BEYONIX (sin tocar stock) ----------------------
 
 -- Las unidades llegan a BEYONIX y quedan PENDIENTES DE INSPECCIÓN: la llegada
@@ -1380,6 +1563,7 @@ begin
   return p_quantity;
 end;
 $$;
+
 -- 12. Inspección del ORIGINAL: la recepción canónica de stock ----------
 -- (process_claim_return_inventory / record_order_item_return_reception, y
 -- también la NC) escribe inventory_return_movements. Este trigger lleva las
@@ -1407,17 +1591,22 @@ begin
   limit 1;
   if v_claim_id is null then return new; end if;
 
+  -- Las unidades que vuelven a stock son las que no tienen una incidencia
+  -- que las excluya (guard_return_movement_claim_units ya lo validó).
   with picked as (
-    select id, row_number() over (order by case location when 'recibida_beyonix' then 0 when 'en_andreani' then 1 else 2 end, id) rn
+    select id, coalesce(incident_type in ('paquete_vacio', 'producto_distinto'), false) bad,
+      row_number() over (order by case location when 'recibida_beyonix' then 0 when 'en_andreani' then 1 else 2 end, id) rn
     from public.order_claim_units
     where claim_id = v_claim_id and role = 'original' and order_item_id = new.order_item_id
       and location in ('recibida_beyonix', 'en_andreani', 'con_cliente')
+  ), chosen as (
+    select id, row_number() over (order by bad, rn) k from picked where rn <= v_total
   )
   update public.order_claim_units u
-  set location = case when picked.rn <= v_ok then 'reincorporada_stock' else 'baja' end,
+  set location = case when chosen.k <= v_ok then 'reincorporada_stock' else 'baja' end,
       updated_at = clock_timestamp()
-  from picked
-  where u.id = picked.id and picked.rn <= v_total;
+  from chosen
+  where u.id = chosen.id;
 
   for v_leg in
     select distinct shipment_id id from public.order_claim_units
@@ -1431,10 +1620,53 @@ begin
   return new;
 end;
 $$;
+
 drop trigger if exists zz_apply_return_movement_to_claim_units on public.inventory_return_movements;
 create trigger zz_apply_return_movement_to_claim_units
   after insert on public.inventory_return_movements
   for each row execute function public.apply_return_movement_to_claim_units();
+
+-- Antes de mover stock: un paquete vacío o un producto distinto NUNCA vuelve
+-- a stock vendible (ni con descuento). Se permite registrarlo como baja.
+create or replace function public.guard_return_movement_claim_units()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_claim_id bigint;
+  v_ok integer := coalesce(new.sellable_quantity, 0) + coalesce(new.discounted_quantity, 0);
+  v_total integer := coalesce(new.sellable_quantity, 0) + coalesce(new.discounted_quantity, 0) + coalesce(new.non_sellable_quantity, 0);
+  v_bad integer;
+begin
+  if new.order_item_id is null or v_ok <= 0 then return new; end if;
+  select c.id into v_claim_id from public.order_claims c
+  where c.order_id = new.order_id and c.status not in ('cerrado', 'rechazado')
+    and exists (select 1 from public.order_claim_units u
+                where u.claim_id = c.id and u.role = 'original' and u.order_item_id = new.order_item_id
+                  and u.location in ('recibida_beyonix', 'en_andreani', 'con_cliente'))
+  order by c.id desc
+  limit 1;
+  if v_claim_id is null then return new; end if;
+  select count(*) filter (where incident_type in ('paquete_vacio', 'producto_distinto')) into v_bad
+  from (
+    select incident_type from public.order_claim_units
+    where claim_id = v_claim_id and role = 'original' and order_item_id = new.order_item_id
+      and location in ('recibida_beyonix', 'en_andreani', 'con_cliente')
+    order by case location when 'recibida_beyonix' then 0 when 'en_andreani' then 1 else 2 end, id
+    limit v_total
+  ) picked;
+  if v_ok > v_total - v_bad then raise exception 'CLAIM_INSPECTION_NOT_RESTOCKABLE'; end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists aa_guard_return_movement_claim_units on public.inventory_return_movements;
+create trigger aa_guard_return_movement_claim_units
+  before insert on public.inventory_return_movements
+  for each row execute function public.guard_return_movement_claim_units();
+
 -- 13. Reemplazo: devuelto, liberado, entregado a mano -------------------
 
 -- Reingresa (stock vendible) o da de baja unidades de reemplazo; siempre con
@@ -1459,7 +1691,7 @@ begin
   -- Reingreso por variante (lock de producto: el mismo que todo el stock).
   for v_row in
     select r.replacement_variant_id variant_id, v.producto_id, count(*)::integer n
-    from (select id, replacement_id, row_number() over (order by id) rn from public.order_claim_units where id = any (p_unit_ids)) u
+    from (select x.id, c.replacement_id, x.rn from unnest(p_unit_ids) with ordinality as x(id, rn) join public.order_claim_units c on c.id = x.id) u
     join public.order_replacements r on r.id = u.replacement_id
     join public.producto_variantes v on v.id = r.replacement_variant_id
     where u.rn <= p_restock
@@ -1481,10 +1713,11 @@ begin
   update public.order_claim_units u
   set location = case when picked.rn <= p_restock then 'reincorporada_stock' else 'baja' end,
       updated_at = clock_timestamp()
-  from (select id, row_number() over (order by id) rn from public.order_claim_units where id = any (p_unit_ids)) picked
+  from (select x.id, x.rn from unnest(p_unit_ids) with ordinality as x(id, rn)) picked
   where u.id = picked.id;
 end;
 $$;
+
 create or replace function public.inspect_order_claim_replacement_units(
   p_claim_id bigint,
   p_actor_id uuid,
@@ -1502,6 +1735,7 @@ as $$
 declare
   v_claim public.order_claims%rowtype;
   v_ids bigint[];
+  v_bad integer;
   v_total integer := coalesce(p_restock, 0) + coalesce(p_write_off, 0);
 begin
   perform public.assert_order_claim_logistics_admin(p_actor_id);
@@ -1518,12 +1752,14 @@ begin
     return 0;
   end if;
 
-  select array_agg(id order by id) into v_ids from (
-    select id from public.order_claim_units
+  -- Primero las sanas: el paquete vacío / producto distinto nunca vuelve a stock.
+  select array_agg(id order by bad, id), count(*) filter (where bad) into v_ids, v_bad from (
+    select id, coalesce(incident_type in ('paquete_vacio', 'producto_distinto'), false) bad from public.order_claim_units
     where claim_id = p_claim_id and role = 'reemplazo' and order_item_id = p_order_item_id and location = 'recibida_beyonix'
-    order by id limit v_total for update
+    order by coalesce(incident_type in ('paquete_vacio', 'producto_distinto'), false), id limit v_total for update
   ) picked;
   if coalesce(array_length(v_ids, 1), 0) < v_total then raise exception 'CLAIM_UNITS_NOT_AVAILABLE'; end if;
+  if p_restock > v_total - coalesce(v_bad, 0) then raise exception 'CLAIM_INSPECTION_NOT_RESTOCKABLE'; end if;
 
   perform public.settle_order_claim_replacement_units(p_claim_id, p_actor_id, v_ids, p_restock, p_idempotency_key,
     'Reingreso de reemplazo devuelto (reclamo #' || p_claim_id || ')');
@@ -1533,6 +1769,7 @@ begin
   return v_total;
 end;
 $$;
+
 -- Reserva que nunca salió (sin tramo o con tramo cancelado): vuelve al stock
 -- vendible. Motivo obligatorio.
 create or replace function public.release_order_claim_replacement_reservation(
@@ -1577,6 +1814,7 @@ begin
   return p_quantity;
 end;
 $$;
+
 -- Entrega fuera de Andreani (en mano / otro transporte). Salida de recuperación
 -- auditada; nunca para unidades que viajan en un tramo Andreani.
 create or replace function public.confirm_order_claim_replacement_delivered_manually(
@@ -1618,6 +1856,7 @@ begin
   return p_quantity;
 end;
 $$;
+
 -- Excepción explícita: el cliente conserva el original (p. ej. política
 -- comercial decidida por BEYONIX). Nunca automática; motivo obligatorio.
 create or replace function public.waive_order_claim_original_return(
@@ -1660,6 +1899,7 @@ begin
   return p_quantity;
 end;
 $$;
+
 -- Incidencias de inspección (producto distinto, cantidad incorrecta,
 -- faltantes/accesorios, paquete vacío, daño/estado, otro): p_incident_type
 -- NULL resuelve la incidencia. Mientras esté abierta frena el reenvío, la
@@ -1710,6 +1950,7 @@ begin
   return v_count;
 end;
 $$;
+
 -- 14. Reemplazo: una reserva de stock única por unidad reclamada ----------
 
 -- Igual a 20260920140000 salvo la exigencia de recepción previa, que pasa a
@@ -1820,8 +2061,10 @@ begin
   return v_result;
 end;
 $function$;
+
 revoke all on function public.create_order_replacement_internal(bigint,bigint,bigint,integer,text,uuid,text,text,text,bigint)
   from public, anon, authenticated, service_role;
+
 -- Igual a 20260922120000 más:
 --   * con reclamo: reclamo aceptado de cambio/unidad faltante del mismo pedido
 --     y tope por lo RECLAMADO de ese ítem (no por lo vendido), descontando
@@ -1879,6 +2122,13 @@ begin
     end if;
     v_exchange := exists (select 1 from public.order_claim_shipments
                           where claim_id = p_claim_id and closed_at is null and direction = 'cambio' and status = 'pendiente');
+    -- Un cambio nuevo (no legacy, con producto físico) siempre pasa por el
+    -- método logístico elegido por el Admin: sin él, no hay reserva.
+    if not v_claim.logistics_legacy and v_claim.resolution = 'cambio_producto'
+       and coalesce(v_claim.failure_type, '') not in ('faltante', 'cantidad_menor')
+       and not exists (select 1 from public.order_claim_units where claim_id = p_claim_id and role = 'original') then
+      raise exception 'REPLACEMENT_REQUIRES_PLAN';
+    end if;
     -- Con logística de unidades, la reserva exige el método elegido por el
     -- Admin: cambio directo pendiente, o reenvío autorizado DESPUÉS de la
     -- inspección (Retiro + revisión). Nunca antes, nunca con incidencias.
@@ -1924,6 +2174,7 @@ end;
 $$;
 revoke all on function public.create_order_replacement(bigint,bigint,bigint,integer,text,uuid,text,text,text,bigint) from public, anon, authenticated;
 grant execute on function public.create_order_replacement(bigint,bigint,bigint,integer,text,uuid,text,text,text,bigint) to service_role;
+
 -- Cada unidad reservada para un reclamo con logística queda registrada con
 -- su ubicación: fuera del stock vendible desde el primer instante.
 create or replace function public.order_replacement_claim_units()
@@ -1933,7 +2184,14 @@ security definer
 set search_path = public
 as $$
 begin
-  if new.claim_id is null or not exists (
+  if new.claim_id is null then
+    return new;
+  end if;
+  -- Serializa la reserva con request_order_claim_logistics aunque llegue por
+  -- un camino que no bloqueó el reclamo antes (en create_order_replacement ya
+  -- lo tiene: no-op).
+  perform 1 from public.order_claims where id = new.claim_id for update;
+  if not exists (
     select 1 from public.order_claim_units where claim_id = new.claim_id and role = 'original'
   ) then
     return new;
@@ -1944,10 +2202,12 @@ begin
   return new;
 end;
 $$;
+
 drop trigger if exists zz_order_replacement_claim_units on public.order_replacements;
 create trigger zz_order_replacement_claim_units
   after insert on public.order_replacements
   for each row execute function public.order_replacement_claim_units();
+
 -- 15. Cierre y resolución: nunca con logística abierta -------------------
 
 create or replace function public.guard_order_claim_logistics()
@@ -1980,7 +2240,8 @@ begin
                  or (closed_at is null and creation_status = 'created'))) then
       raise exception 'CLAIM_LOGISTICS_OPEN';
     end if;
-    if exists (select 1 from public.order_claim_units where claim_id = new.id and incident_open) then
+    if exists (select 1 from public.order_claim_units where claim_id = new.id and incident_open)
+       or exists (select 1 from public.order_claim_shipments where claim_id = new.id and review_required) then
       raise exception 'CLAIM_LOGISTICS_INCIDENT';
     end if;
     if exists (select 1 from public.order_claim_units where claim_id = new.id
@@ -2003,10 +2264,12 @@ begin
   return new;
 end;
 $$;
+
 drop trigger if exists order_claim_logistics_guard on public.order_claims;
 create trigger order_claim_logistics_guard
   before update of status, resolution on public.order_claims
   for each row execute function public.guard_order_claim_logistics();
+
 -- Al cerrar/rechazar, lo que nunca salió del cliente queda con el cliente.
 -- Un tramo que nunca llegó a Andreani se cancela si ya no corresponde.
 create or replace function public.settle_order_claim_units_on_close()
@@ -2029,10 +2292,12 @@ begin
   return new;
 end;
 $$;
+
 drop trigger if exists zz_order_claim_settle_units_on_close on public.order_claims;
 create trigger zz_order_claim_settle_units_on_close
   after update of status, resolution on public.order_claims
   for each row execute function public.settle_order_claim_units_on_close();
+
 -- 16. Permisos ------------------------------------------------------------
 
 revoke all on function public.order_claim_leg_rank(text) from public, anon, authenticated;
@@ -2057,13 +2322,14 @@ revoke all on function public.settle_order_claim_replacement_units(bigint, uuid,
 revoke all on function public.order_replacement_claim_units() from public, anon, authenticated;
 revoke all on function public.guard_order_claim_logistics() from public, anon, authenticated;
 revoke all on function public.settle_order_claim_units_on_close() from public, anon, authenticated;
+
 revoke all on function public.request_order_claim_logistics(bigint, uuid, text, text, text, text, text) from public, anon, authenticated;
 revoke all on function public.cancel_order_claim_leg(bigint, uuid, text) from public, anon, authenticated;
 revoke all on function public.claim_order_claim_shipment_creation(bigint, uuid, text, text, text) from public, anon, authenticated;
 revoke all on function public.complete_order_claim_shipment_creation(bigint, uuid, text, text, text, numeric) from public, anon, authenticated;
 revoke all on function public.fail_order_claim_shipment_creation(bigint, uuid, text, text) from public, anon, authenticated;
 revoke all on function public.resolve_order_claim_shipment_reconciliation(bigint, uuid, text, text, text, text) from public, anon, authenticated;
-revoke all on function public.apply_order_claim_shipment_tracking(bigint, text, boolean, text, text, text, timestamptz, timestamptz) from public, anon, authenticated;
+revoke all on function public.apply_order_claim_shipment_tracking(bigint, text, boolean, text, text, text, timestamptz, timestamptz, text) from public, anon, authenticated;
 revoke all on function public.mark_order_claim_exchange_not_completed(bigint, uuid, text) from public, anon, authenticated;
 revoke all on function public.register_order_claim_units_arrival(bigint, uuid, text, bigint, integer, text, text, text) from public, anon, authenticated;
 revoke all on function public.inspect_order_claim_replacement_units(bigint, uuid, bigint, integer, integer, text, text) from public, anon, authenticated;
@@ -2071,13 +2337,18 @@ revoke all on function public.release_order_claim_replacement_reservation(bigint
 revoke all on function public.confirm_order_claim_replacement_delivered_manually(bigint, uuid, bigint, integer, text, text) from public, anon, authenticated;
 revoke all on function public.waive_order_claim_original_return(bigint, uuid, bigint, integer, text, text) from public, anon, authenticated;
 revoke all on function public.set_order_claim_units_incident(bigint, uuid, text, bigint, text, text) from public, anon, authenticated;
+
 grant execute on function public.request_order_claim_logistics(bigint, uuid, text, text, text, text, text) to service_role;
 grant execute on function public.cancel_order_claim_leg(bigint, uuid, text) to service_role;
 grant execute on function public.claim_order_claim_shipment_creation(bigint, uuid, text, text, text) to service_role;
 grant execute on function public.complete_order_claim_shipment_creation(bigint, uuid, text, text, text, numeric) to service_role;
 grant execute on function public.fail_order_claim_shipment_creation(bigint, uuid, text, text) to service_role;
 grant execute on function public.resolve_order_claim_shipment_reconciliation(bigint, uuid, text, text, text, text) to service_role;
-grant execute on function public.apply_order_claim_shipment_tracking(bigint, text, boolean, text, text, text, timestamptz, timestamptz) to service_role;
+grant execute on function public.apply_order_claim_shipment_tracking(bigint, text, boolean, text, text, text, timestamptz, timestamptz, text) to service_role;
+revoke all on function public.flag_order_claim_shipment_review(bigint, text) from public, anon, authenticated;
+revoke all on function public.resolve_order_claim_shipment_review(bigint, uuid, text) from public, anon, authenticated;
+grant execute on function public.flag_order_claim_shipment_review(bigint, text) to service_role;
+grant execute on function public.resolve_order_claim_shipment_review(bigint, uuid, text) to service_role;
 grant execute on function public.mark_order_claim_exchange_not_completed(bigint, uuid, text) to service_role;
 grant execute on function public.register_order_claim_units_arrival(bigint, uuid, text, bigint, integer, text, text, text) to service_role;
 grant execute on function public.inspect_order_claim_replacement_units(bigint, uuid, bigint, integer, integer, text, text) to service_role;
@@ -2085,7 +2356,224 @@ grant execute on function public.release_order_claim_replacement_reservation(big
 grant execute on function public.confirm_order_claim_replacement_delivered_manually(bigint, uuid, bigint, integer, text, text) to service_role;
 grant execute on function public.waive_order_claim_original_return(bigint, uuid, bigint, integer, text, text) to service_role;
 grant execute on function public.set_order_claim_units_incident(bigint, uuid, text, bigint, text, text) to service_role;
--- 17. Funciones del modelo inicial que ya no corresponden ---------------------
+
+
+-- 17. NC y reintegro: nunca con el producto sin volver/inspeccionar ---------
+-- Se agrega a la maquinaria existente (begin_partial_credit_note y
+-- commit_order_refund_proof no se tocan; ya impiden doble NC por ítem, doble
+-- NC en proceso, exceso sobre lo facturado/reintegrable y doble reintegro):
+--   * una incidencia de inspección o una revisión Andreani abierta bloquea
+--     SIEMPRE la NC y el reintegro;
+--   * con unidades originales del reclamo todavía con el cliente, en Andreani
+--     o sin inspeccionar, sólo pasa con una excepción administrativa
+--     registrada ANTES (Admin, motivo >= 10 caracteres, auditada), que la NC
+--     consume una única vez.
+
+create table if not exists public.order_claim_financial_exceptions (
+  id bigint generated by default as identity primary key,
+  claim_id bigint not null references public.order_claims(id) on delete restrict,
+  actor_id uuid not null,
+  reason text not null check (length(btrim(reason)) >= 10),
+  credit_note_id uuid,
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.order_claim_financial_exceptions enable row level security;
+revoke all on table public.order_claim_financial_exceptions from public, anon, authenticated;
+grant select on table public.order_claim_financial_exceptions to service_role;
+
+create or replace function public.order_claim_money_block(p_claim_id bigint)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select case
+    when exists (select 1 from public.order_claim_units where claim_id = p_claim_id and incident_open)
+      or exists (select 1 from public.order_claim_shipments where claim_id = p_claim_id and review_required)
+      then 'CLAIM_MONEY_INCIDENT_OPEN'
+    when exists (select 1 from public.order_claim_units
+                 where claim_id = p_claim_id and role = 'original'
+                   and location in ('con_cliente', 'en_andreani', 'recibida_beyonix'))
+      then 'CLAIM_MONEY_RETURN_PENDING'
+  end
+$$;
+
+create or replace function public.register_claim_financial_exception(
+  p_claim_id bigint,
+  p_actor_id uuid,
+  p_reason text
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id bigint;
+  v_block text;
+begin
+  perform public.assert_order_claim_logistics_admin(p_actor_id);
+  if length(btrim(coalesce(p_reason, ''))) < 10 then raise exception 'CLAIM_LOGISTICS_NOTE_REQUIRED'; end if;
+  perform 1 from public.order_claims where id = p_claim_id for update;
+  if not found then raise exception 'CLAIM_NOT_FOUND'; end if;
+  v_block := public.order_claim_money_block(p_claim_id);
+  if v_block = 'CLAIM_MONEY_INCIDENT_OPEN' then raise exception 'CLAIM_MONEY_INCIDENT_OPEN'; end if;
+  if v_block is null then return null; end if;
+  select id into v_id from public.order_claim_financial_exceptions
+  where claim_id = p_claim_id and consumed_at is null order by id limit 1;
+  if v_id is not null then return v_id; end if;
+  insert into public.order_claim_financial_exceptions (claim_id, actor_id, reason)
+  values (p_claim_id, p_actor_id, left(btrim(p_reason), 1000))
+  returning id into v_id;
+  perform public.log_order_claim_logistics(p_claim_id, p_actor_id, 'claim_financial_exception_registered',
+    jsonb_build_object('exceptionId', v_id, 'block', v_block, 'reason', left(btrim(p_reason), 1000)));
+  return v_id;
+end;
+$$;
+
+create or replace function public.guard_claim_credit_note()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_block text;
+  v_exception bigint;
+begin
+  if new.claim_id is null then return new; end if;
+  -- Mismo lock que la logística (begin_partial_credit_note ya lo tiene: no-op):
+  -- una NC nunca se cruza con un cambio de método en curso.
+  perform 1 from public.order_claims where id = new.claim_id for update;
+  v_block := public.order_claim_money_block(new.claim_id);
+  if v_block is null then return new; end if;
+  if v_block = 'CLAIM_MONEY_INCIDENT_OPEN' then raise exception 'CLAIM_MONEY_INCIDENT_OPEN'; end if;
+  update public.order_claim_financial_exceptions
+  set consumed_at = clock_timestamp(), credit_note_id = new.id
+  where id = (select id from public.order_claim_financial_exceptions
+              where claim_id = new.claim_id and consumed_at is null order by id limit 1 for update)
+  returning id into v_exception;
+  if v_exception is null then raise exception 'CLAIM_MONEY_RETURN_PENDING'; end if;
+  perform public.log_order_claim_logistics(new.claim_id, new.created_by, 'claim_financial_exception_used',
+    jsonb_build_object('exceptionId', v_exception, 'creditNoteId', new.id));
+  return new;
+end;
+$$;
+
+drop trigger if exists aa_guard_claim_credit_note on public.order_credit_notes;
+create trigger aa_guard_claim_credit_note
+  before insert on public.order_credit_notes
+  for each row execute function public.guard_claim_credit_note();
+
+-- Una NC que pasa a vigente por UPDATE (p. ej. conciliación de un intento en
+-- error) toma el mismo lock del reclamo: nunca se cruza con un cambio de método.
+create or replace function public.lock_claim_on_credit_note_activation()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.claim_id is not null and new.status in ('processing', 'authorized')
+     and old.status not in ('processing', 'authorized') then
+    perform 1 from public.order_claims where id = new.claim_id for update;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists aa_lock_claim_credit_note_activation on public.order_credit_notes;
+create trigger aa_lock_claim_credit_note_activation
+  before update of status on public.order_credit_notes
+  for each row execute function public.lock_claim_on_credit_note_activation();
+
+-- Dinero que vuelve al cliente fuera de una NC (comprobante de transferencia o
+-- refund real de Mercado Pago): mismo criterio para todos los canales.
+create or replace function public.assert_order_claim_money_released(p_order_id bigint)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_claim_id bigint;
+  v_block text;
+begin
+  select c.id into v_claim_id from public.order_claims c
+  where c.order_id = p_order_id and c.status not in ('cerrado', 'rechazado')
+    and exists (select 1 from public.order_claim_units u where u.claim_id = c.id)
+  order by c.id desc limit 1;
+  if v_claim_id is null then return; end if;
+  v_block := public.order_claim_money_block(v_claim_id);
+  if v_block is null then return; end if;
+  if v_block = 'CLAIM_MONEY_INCIDENT_OPEN' then raise exception 'CLAIM_MONEY_INCIDENT_OPEN'; end if;
+  -- Sólo el dinero ya autorizado por una excepción explícita de este reclamo.
+  if not exists (select 1 from public.order_claim_financial_exceptions where claim_id = v_claim_id) then
+    raise exception 'CLAIM_MONEY_RETURN_PENDING';
+  end if;
+end;
+$$;
+
+create or replace function public.guard_claim_refund_proof()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.assert_order_claim_money_released(new.order_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists aa_guard_claim_refund_proof on public.order_refund_proofs;
+create trigger aa_guard_claim_refund_proof
+  before insert on public.order_refund_proofs
+  for each row execute function public.guard_claim_refund_proof();
+
+-- Refund real de Mercado Pago: se valida cada vez que un intento pasa a
+-- 'processing' (intento nuevo o reintento de uno 'requested'), justo antes
+-- de que la aplicación llame a Mercado Pago. begin_mercadopago_order_refund
+-- no se toca (ya serializa por pedido y evita dos POST).
+create or replace function public.guard_claim_mercadopago_refund()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status = 'processing' and (tg_op = 'INSERT' or old.status is distinct from 'processing') then
+    perform public.assert_order_claim_money_released(new.order_id);
+  end if;
+  return new;
+end;
+$$;
+
+do $$
+begin
+  if to_regclass('public.mercadopago_order_refunds') is not null then
+    drop trigger if exists aa_guard_claim_mercadopago_refund on public.mercadopago_order_refunds;
+    create trigger aa_guard_claim_mercadopago_refund
+      before insert or update of status on public.mercadopago_order_refunds
+      for each row execute function public.guard_claim_mercadopago_refund();
+  end if;
+end;
+$$;
+
+revoke all on function public.order_claim_money_block(bigint) from public, anon, authenticated;
+revoke all on function public.register_claim_financial_exception(bigint, uuid, text) from public, anon, authenticated;
+revoke all on function public.guard_claim_credit_note() from public, anon, authenticated;
+revoke all on function public.lock_claim_on_credit_note_activation() from public, anon, authenticated;
+revoke all on function public.guard_claim_refund_proof() from public, anon, authenticated;
+revoke all on function public.guard_claim_mercadopago_refund() from public, anon, authenticated;
+revoke all on function public.assert_order_claim_money_released(bigint) from public, anon, authenticated, service_role;
+revoke all on function public.guard_return_movement_claim_units() from public, anon, authenticated;
+grant execute on function public.register_claim_financial_exception(bigint, uuid, text) to service_role;
+
+-- 18. Funciones del modelo inicial que ya no corresponden ---------------------
 -- Creaban/operaban tramos por (reclamo, dirección) con modalidades de
 -- domicilio y un "listo" sin sucursal ni unidades. Se eliminan para que no
 -- quede ningún camino paralelo.
@@ -2096,5 +2584,10 @@ drop function if exists public.complete_order_claim_shipment_creation(bigint, te
 drop function if exists public.fail_order_claim_shipment_creation(bigint, text, uuid, text, text);
 drop function if exists public.resolve_order_claim_shipment_reconciliation(bigint, text, uuid, text, text, text, text);
 drop function if exists public.apply_order_claim_shipment_tracking(bigint, text, text, text, text, text, timestamptz);
+-- Versión de 20260930100000 (8 argumentos, sin revisión de eventos desconocidos):
+-- reemplazada por la de 9 argumentos; no debe quedar una sobrecarga vieja.
+drop function if exists public.apply_order_claim_shipment_tracking(bigint, text, boolean, text, text, text, timestamptz, timestamptz);
+
 notify pgrst, 'reload schema';
+
 commit;

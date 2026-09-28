@@ -13,7 +13,6 @@ import {
   Eye,
   FileText,
   Flag,
-  Info,
   LoaderCircle,
   Lock,
   MessageSquare,
@@ -144,6 +143,9 @@ const REJECTION_REASONS = [
   "Producto alterado o intervenido",
   "Otro",
 ]
+
+const RESTOCK_HELP = "Usar solo si el producto está en buen estado y puede venderse nuevamente."
+const WRITE_OFF_HELP = "Usar si el producto está dañado o no es apto para venta."
 
 type ClaimAction = "approve" | "reject" | "close" | "approve_cancellation" | "reject_cancellation"
 
@@ -858,18 +860,18 @@ export function ReturnInventoryPanel({
     <>
       <section
         id={`claim-reception-${claim.id}`}
-        className="admin-claim-card admin-claim-reception-panel bx-surface bx-surface-section mx-3 mb-3 p-4 sm:mx-4 sm:mb-4 sm:p-5"
+        className="admin-claim-card admin-claim-reception-panel bx-surface bx-surface-section is-compact mx-3 mb-3 p-3 sm:mx-4 sm:mb-4"
       >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="admin-claim-section-icon" aria-hidden="true">
-            <PackageOpen className="size-5" />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="admin-claim-section-icon is-small" aria-hidden="true">
+            <PackageOpen className="size-4" />
           </span>
           <div className="min-w-0">
-            <h4 className="admin-claim-reception-heading">Recepción del producto original</h4>
-            <p className="admin-claim-reception-subtitle">
-              Registrá cómo volvió el producto que entregó el cliente.
-            </p>
+            <h4 className="admin-claim-reception-heading flex items-center gap-1.5">
+              Recepción del producto original
+              <HelpTip label="Recepción del producto original" align="start">Registrá cómo volvió el producto que entregó el cliente. Si llega en partes, registrá sólo las unidades que llegaron ahora.</HelpTip>
+            </h4>
             {claim.affected_items_updated_at && (
               <p className="admin-claim-reception-note">Productos corregidos por administración.</p>
             )}
@@ -1023,7 +1025,7 @@ export function ReturnInventoryPanel({
         </p>
       )}
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-2.5 space-y-2.5">
         {items.length > 0 ? (
           items.map((item) => {
             const draft = drafts[item.id] ?? getReturnInventoryDraft(item)
@@ -1142,44 +1144,44 @@ export function ReturnInventoryPanel({
                     <div
                       role="group"
                       aria-labelledby={`reception-question-${item.id}`}
-                      className="mt-2.5 grid gap-2.5 sm:grid-cols-2"
+                      className="mt-2 grid gap-2 sm:grid-cols-2"
                     >
-                      <button
-                        type="button"
-                        disabled={!canManage || saving}
-                        aria-pressed={singleUnitCondition === "yes"}
-                        onClick={() => selectSingleUnitCondition(item, true)}
-                        className="admin-claim-choice admin-claim-flow-control is-restock"
-                      >
-                        <span className="admin-claim-choice-icon" aria-hidden="true">
-                          <PackageCheck className="size-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="admin-claim-choice-title">Volver al stock</span>
-                          <span className="admin-claim-choice-text">Producto en buen estado y apto para la venta.</span>
-                        </span>
-                        <span className="admin-claim-choice-check" aria-hidden="true">
-                          <Check className="size-3" strokeWidth={3} />
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!canManage || saving}
-                        aria-pressed={singleUnitCondition === "no"}
-                        onClick={() => selectSingleUnitCondition(item, false)}
-                        className="admin-claim-choice admin-claim-flow-control is-writeoff"
-                      >
-                        <span className="admin-claim-choice-icon" aria-hidden="true">
-                          <XCircle className="size-4" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="admin-claim-choice-title">Dar de baja</span>
-                          <span className="admin-claim-choice-text">Producto dañado o no apto para volver a venderse.</span>
-                        </span>
-                        <span className="admin-claim-choice-check" aria-hidden="true">
-                          <Check className="size-3" strokeWidth={3} />
-                        </span>
-                      </button>
+                      <div className="admin-claim-choice-row">
+                        <button
+                          type="button"
+                          disabled={!canManage || saving}
+                          aria-pressed={singleUnitCondition === "yes"}
+                          onClick={() => selectSingleUnitCondition(item, true)}
+                          className="admin-claim-choice admin-claim-flow-control is-restock"
+                        >
+                          <span className="admin-claim-choice-icon" aria-hidden="true">
+                            <PackageCheck className="size-4" />
+                          </span>
+                          <span className="admin-claim-choice-title min-w-0 flex-1">Volver al stock</span>
+                          <span className="admin-claim-choice-check" aria-hidden="true">
+                            <Check className="size-3" strokeWidth={3} />
+                          </span>
+                        </button>
+                        <HelpTip label="Volver al stock">{RESTOCK_HELP}</HelpTip>
+                      </div>
+                      <div className="admin-claim-choice-row">
+                        <button
+                          type="button"
+                          disabled={!canManage || saving}
+                          aria-pressed={singleUnitCondition === "no"}
+                          onClick={() => selectSingleUnitCondition(item, false)}
+                          className="admin-claim-choice admin-claim-flow-control is-writeoff"
+                        >
+                          <span className="admin-claim-choice-icon" aria-hidden="true">
+                            <XCircle className="size-4" />
+                          </span>
+                          <span className="admin-claim-choice-title min-w-0 flex-1">Dar de baja</span>
+                          <span className="admin-claim-choice-check" aria-hidden="true">
+                            <Check className="size-3" strokeWidth={3} />
+                          </span>
+                        </button>
+                        <HelpTip label="Dar de baja">{WRITE_OFF_HELP}</HelpTip>
+                      </div>
                     </div>
                     {singleUnitCondition && (
                       <p className={`admin-claim-pill mt-2.5 ${singleUnitCondition === "yes" ? "is-success" : "is-danger"}`}>
@@ -1194,7 +1196,7 @@ export function ReturnInventoryPanel({
                 ) : (
                   <div className="admin-claim-reception-block">
                     <p className="admin-claim-reception-question">¿Qué hacemos con las unidades que llegaron?</p>
-                    <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <label className="admin-claim-quantity">
                         <span className="admin-claim-reception-label">Llegaron ahora</span>
                         <input
@@ -1209,29 +1211,32 @@ export function ReturnInventoryPanel({
                           className={`${adminControlClassName} admin-claim-quantity-input`}
                         />
                       </label>
-                      <label className="admin-claim-quantity is-restock">
-                        <span className="admin-claim-reception-label is-restock">Vuelven al stock</span>
+                      <div className="admin-claim-quantity is-restock">
+                        <span className="admin-claim-reception-label is-restock flex items-center gap-1">
+                          Vuelven al stock
+                          <HelpTip label="Volver al stock" align="start">{RESTOCK_HELP}</HelpTip>
+                        </span>
                         <input
                           type="number"
                           min={0}
                           max={draftReceived}
                           step={1}
                           inputMode="numeric"
+                          aria-label="Vuelven al stock"
                           value={draft.goodCondition}
                           disabled={!canManage || saving}
                           onChange={(event) => updateDraft(item, "goodCondition", event.target.value)}
                           className={`${adminControlClassName} admin-claim-quantity-input`}
                         />
-                      </label>
+                      </div>
                       <p className="admin-claim-quantity is-writeoff">
-                        <span className="admin-claim-reception-label is-writeoff">Se dan de baja</span>
+                        <span className="admin-claim-reception-label is-writeoff flex items-center gap-1">
+                          Se dan de baja
+                          <HelpTip label="Dar de baja" align="start">{WRITE_OFF_HELP}</HelpTip>
+                        </span>
                         <strong className="admin-claim-quantity-value">{draftWrittenOff}</strong>
                       </p>
                     </div>
-                    <p className="admin-claim-reception-hint mt-2.5">
-                      <Info className="size-3.5 shrink-0" aria-hidden="true" />
-                      Si recibís el pedido en partes, registrá sólo las unidades que llegaron ahora.
-                    </p>
                   </div>
                 )}
 
@@ -1913,6 +1918,8 @@ export function AdminClaimManager({
     registeredReplacements,
     summaryAffectedItems.map(({ item }) => Number(item.id)),
   )
+  const claimCreditNoteActive = (pedido.order_credit_notes ?? [])
+    .some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))
   // Logística de postventa (unidades + operaciones Andreani): fuente de verdad
   // del paradero de cada unidad; la base vuelve a validar cada acción.
   const logistics = getAdminClaimLogisticsView({
@@ -1921,6 +1928,7 @@ export function AdminClaimManager({
     shipments: claim.order_claim_shipments ?? null,
     units: claim.order_claim_units ?? null,
     legacy: claim.logistics_legacy,
+    creditNoteActive: claimCreditNoteActive,
   })
   const exchangePlan = logistics?.plan === "cambio_directo"
   // Un cambio nuevo sin método elegido no reserva stock: primero el Admin
@@ -1954,8 +1962,18 @@ export function AdminClaimManager({
     const variant = item?.conditioned_name || item?.producto_variantes?.nombre
     return item ? `${item.productos?.nombre ?? `Producto #${item.producto_id}`}${variant ? ` · ${variant}` : ""}` : `Ítem #${orderItemId}`
   }
-  const logisticsPanel = logistics && (
-    <ClaimAndreaniShipmentPanel claim={claim} itemLabel={itemLabel} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
+  // Con paso "Método" propio, la elección/corrección del método vive ahí y los
+  // pasos operativos muestran sólo la operación; sin él (reintegros sin método,
+  // legacy), el panel conserva todo junto.
+  const logisticsMethodStep = Boolean(logistics && (logistics.plan || methodPending))
+  const renderLogisticsPanel = (section: "method" | "operation" | "all") => logistics && (
+    <ClaimAndreaniShipmentPanel key={`${claim.id}-${section}`} claim={claim} itemLabel={itemLabel} canManage={isAdmin && !closed}
+      creditNoteActive={claimCreditNoteActive} section={section}
+      onClaimChange={(next) => {
+        // Elegido o corregido el método, el wizard sigue en el paso que corresponde.
+        if (section === "method") setViewedStep(null)
+        onClaimChange(next)
+      }} />
   )
   const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
   const canIssueCreditNote =
@@ -1980,7 +1998,7 @@ export function AdminClaimManager({
   const { steps: workflowSteps, current: currentStep, currentIndex } = getAdminClaimWizard({
     status: claim.status, resolution: claim.resolution,
     receivedUnits: summaryReceptionTotals.received, replacedUnits,
-    logistics: logistics?.plan ? { plan: logistics.plan, step: logistics.wizardStep } : null,
+    logistics: logistics && logisticsMethodStep ? { plan: logistics.plan, step: logistics.wizardStep } : null,
   })
   const viewedIndex = workflowSteps.findIndex((step) => step.key === viewedStep)
   const selectedStep = viewedStep && viewedIndex >= 0 && viewedIndex <= currentIndex
@@ -2267,10 +2285,11 @@ export function AdminClaimManager({
                 {selectedStep === "review" && approved && (
                   <p className="admin-claim-wizard-note">Solución aprobada: {getOrderClaimResolutionLabel(claim.resolution ?? "")}. La decisión quedó registrada. Una corrección posterior requiere revisar las acciones ya realizadas; este flujo no revierte stock ni operaciones financieras.</p>
                 )}
-                {["reception", "replacement", "execution"].includes(selectedStep) && logisticsPanel}
+                {selectedStep === "method" && renderLogisticsPanel("method")}
+                {["reception", "replacement", "execution"].includes(selectedStep) && renderLogisticsPanel(logisticsMethodStep ? "operation" : "all")}
                 {selectedStep === "reception" && (needsReception || Boolean(logistics?.plan)) && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
-                    canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
+                    canManage={isAdmin && !closed && !claimCreditNoteActive}
                     registeredReplacements={registeredReplacements} onUpdated={onInventoryUpdated} onClaimChange={onClaimChange} />
                 )}
                 {selectedStep === "replacement" && canCompleteReplacementSolution && (

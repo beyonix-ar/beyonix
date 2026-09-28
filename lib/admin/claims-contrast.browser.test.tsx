@@ -62,6 +62,11 @@ const claim = {
     { id: 2, claim_id: 900, author_role: "admin", message: "Ya revisamos tu caso.", created_at: "2026-09-20T10:05:00Z" },
   ],
   order_claim_files: [{ id: 5, claim_id: 900, file_role: "evidencia", file_name: "foto-auricular.jpg", mime_type: "image/jpeg", file_size: 204800, storage_path: "x", signedUrl: "" }],
+  // Retiro por sucursal ya recibido: el paso vigente muestra la logística y la recepción.
+  order_claim_shipments: [{ id: 1, claim_id: 900, direction: "devolucion", attempt: 1, status: "entregada", creation_status: "created",
+    modality: "despacho_sucursal", andreani_tracking: "360000000801", closed_at: "2026-09-20T09:00:00Z", branch_id: "4567", branch_name: "Sucursal Once", legacy: false }],
+  order_claim_units: [{ id: 1, claim_id: 900, order_item_id: 71, role: "original", location: "recibida_beyonix", shipment_id: 1, incident_open: false }],
+  logistics_legacy: false,
   created_at: "2026-09-20T10:00:00Z", updated_at: "2026-09-20T10:05:00Z",
 }
 const pedido = {
@@ -246,6 +251,20 @@ for (const theme of ["light", "dark"] as const) {
     try {
       const { audited, failures } = (await page.evaluate(AUDIT)) as { audited: number; failures: string[] }
       assert.ok(audited > 45, `se auditaron ${audited} textos del paso actual`)
+      assert.deepEqual(failures, [])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test(`${theme}: paso "Método" (radios, bloqueo por efectos reales y ayuda abierta) cumple contraste AA`, async () => {
+    const page = await open(theme)
+    try {
+      await page.getByRole("button", { name: /2\. Método/ }).click()
+      await page.waitForSelector("[data-claim-method-lock=blocked]")
+      await page.getByRole("button", { name: "Ayuda: Cambio directo por sucursal" }).focus()
+      const { audited, failures } = (await page.evaluate(AUDIT)) as { audited: number; failures: string[] }
+      assert.ok(audited > 25, `se auditaron ${audited} textos del paso Método`)
       assert.deepEqual(failures, [])
     } finally {
       await page.close()

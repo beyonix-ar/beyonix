@@ -36,6 +36,7 @@ const TEST_FILES = [
   "lib/shipping/product-logistics-sql-contract.test.ts",
   "lib/shipping/logistics-validation.test.ts",
   "lib/store-config.test.ts",
+  "lib/security/revoke-public-internal-rpcs-sql.test.ts",
   "lib/order-claims.test.ts",
   "lib/orders/claim-atomic.test.ts",
   "lib/orders/claim-storage.test.ts",
@@ -248,6 +249,7 @@ const DB_TEST_FILES = [
   "lib/mercadopago/checkout-reservation-phase3.test.mjs",
   "lib/arca/arca-invoicing-concurrency.test.mjs",
   "lib/arca/arca-credit-note-concurrency.test.mjs",
+  "lib/orders/claim-logistics-method-race.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y

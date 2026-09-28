@@ -155,11 +155,90 @@ test("Admin: cierre sólo con todo resuelto; nunca original con el cliente + ree
 
 test("wizard: el orden de pasos sigue el método elegido", () => {
   const exchange = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "cambio_directo", step: "replacement" } })
-  assert.deepEqual(exchange.steps.map((step) => step.key), ["review", "replacement", "execution", "reception", "finish"])
+  assert.deepEqual(exchange.steps.map((step) => step.key), ["review", "method", "replacement", "execution", "reception", "finish"])
   const resend = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "retiro_y_reenvio", step: "reception" } })
-  assert.deepEqual(resend.steps.map((step) => step.label), ["Revisión", "Retiro e inspección", "Reemplazo autorizado", "Envío a sucursal", "Finalización"])
+  assert.deepEqual(resend.steps.map((step) => step.label), ["Revisión", "Método", "Retiro e inspección", "Reemplazo autorizado", "Envío a sucursal", "Finalización"])
   const legacy = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0 })
   assert.equal(legacy.current, "reception", "reclamos históricos sin logística: sin cambios")
+})
+
+test("wizard: sin método el paso vigente es 'Método'; con método, el paso anterior al primero operativo es 'Método'", () => {
+  const pending = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: null, logistics: { plan: null, step: "replacement" } })
+  assert.deepEqual(pending.steps.map((step) => step.key), ["review", "method", "finish"])
+  assert.equal(pending.current, "method")
+  const chosen = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "cambio_directo", step: "replacement" } })
+  assert.equal(chosen.steps[chosen.currentIndex - 1].key, "method", "volver al paso anterior lleva a revisar el método")
+  const refund = getAdminClaimWizard({ status: "reintegro_pendiente", resolution: "reintegro_total", receivedUnits: 0, replacedUnits: null, logistics: { plan: "retiro", step: "reception" } })
+  assert.deepEqual(refund.steps.map((step) => step.key), ["review", "method", "reception", "execution", "finish"])
+  const closed = getAdminClaimWizard({ status: "cerrado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: null, logistics: { plan: null, step: "replacement" } })
+  assert.equal(closed.current, "finish")
+})
+
+test("Admin: corregir el método sólo sin efectos reales; con efectos se muestran y se bloquea (o exige motivo)", () => {
+  const originals = [unit("original", "con_cliente")]
+  const free = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg()], units: originals })
+  assert.deepEqual(free?.methodLock, { status: "free", effects: [], correction: null })
+  assert.deepEqual(free?.methodChoices.map((choice) => [choice.direction, choice.current, choice.available]),
+    [["cambio", true, false], ["devolucion", false, true]])
+  assert.match(free?.methodChoices[0].description ?? "", /solo si el cliente entrega el producto original/)
+
+  const reserved = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg()], units: [...originals, unit("reemplazo", "reservada")] })
+  assert.deepEqual(reserved?.methodOptions, [], "stock reservado: no se cambia de método sin liberar la reserva")
+  assert.equal(reserved?.methodLock.status, "blocked")
+  assert.deepEqual(reserved?.methodLock.effects, ["Stock reservado para el reemplazo: 1 unidad"])
+  assert.match(reserved?.methodLock.correction ?? "", /liberá la reserva del reemplazo con un motivo/)
+  assert.ok(reserved?.unitActions.some((option) => option.action === "release_reservation" && option.noteMin === 10), "corrección auditada disponible")
+
+  const generated = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ status: "generada", creation_status: "created", andreani_tracking: "360000000801" })],
+    units: [unit("original", "con_cliente", { shipment_id: 1 }), unit("reemplazo", "reservada", { shipment_id: 1 })],
+  })
+  assert.equal(generated?.methodLock.status, "blocked")
+  assert.match(generated?.methodLock.effects.join(" | ") ?? "", /Operación generada: Cambio en sucursal Andreani \(360000000801\)/)
+  assert.match(generated?.methodLock.correction ?? "", /primero cancelá la operación Andreani con un motivo/)
+
+  const moving = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ direction: "devolucion", status: "en_transito", creation_status: "created" })],
+    units: [unit("original", "en_andreani", { shipment_id: 1 })],
+  })
+  assert.equal(moving?.methodLock.status, "blocked")
+  assert.match(moving?.methodLock.effects.join(" | ") ?? "", /Producto original en viaje con Andreani: 1 unidad/)
+  assert.match(moving?.methodLock.correction ?? "", /ya está en curso/)
+
+  const failed = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ status: "en_sucursal", creation_status: "created", exchange_outcome: "no_completado", closed_at: "x" })],
+    units: [...originals, unit("reemplazo", "reincorporada_stock", { shipment_id: 1 })],
+  })
+  assert.equal(failed?.methodLock.status, "reason", "operación real previa: corrección con motivo y auditoría")
+
+  const withCreditNote = getAdminClaimLogisticsView({
+    status: "reintegro_pendiente", resolution: "reintegro_total", creditNoteActive: true,
+    shipments: [leg({ direction: "devolucion" })], units: originals,
+  })
+  assert.equal(withCreditNote?.methodLock.status, "blocked")
+  assert.match(withCreditNote?.methodLock.effects.join(" | ") ?? "", /Nota de crédito emitida o en proceso/)
+
+  const noPlan = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [], units: originals })
+  assert.deepEqual(noPlan?.methodChoices.map((choice) => [choice.direction, choice.current, choice.available]),
+    [["cambio", false, true], ["devolucion", false, true]])
+})
+
+test("servidor: cambiar de método con stock reservado o nota de crédito vigente se rechaza antes del RPC", () => {
+  const route = read("app/api/admin/order-claims/[claimId]/andreani-shipment/route.ts")
+  const request = route.slice(route.indexOf('if (action === "request")'), route.indexOf("if ((LEG_ACTIONS"))
+  assert.ok(request.indexOf("getMethodChangeBlock(") < request.indexOf('rpc("request_order_claim_logistics"'))
+  const guard = route.slice(route.indexOf("async function getMethodChangeBlock"), route.indexOf("export async function POST"))
+  assert.match(guard, /\.eq\("role", "reemplazo"\)\.eq\("location", "reservada"\)/)
+  assert.match(guard, /\.from\("order_credit_notes"\)/)
+  assert.match(guard, /status: 500/, "si no se puede verificar, falla cerrado")
+  // La autoridad final es la base (claim-logistics-method-race.test.mjs lo prueba con dos backends).
+  const sql = read("supabase/migrations/20261001100000_claim_logistics_hardening.sql")
+  const rpc = sql.slice(sql.indexOf("create or replace function public.request_order_claim_logistics("), sql.indexOf("create or replace function public.cancel_order_claim_leg("))
+  assert.ok(rpc.indexOf("for update") < rpc.indexOf("raise exception 'CLAIM_LOGISTICS_RESERVATION_ACTIVE'"))
+  assert.match(rpc, /raise exception 'CLAIM_LOGISTICS_CREDIT_NOTE_ACTIVE'/)
 })
 
 test("seguridad: cliente sólo campos seguros; la sucursal se verifica en el servidor; contrato/ambiente/modalidad nunca del navegador", () => {
@@ -179,8 +258,8 @@ test("seguridad: cliente sólo campos seguros; la sucursal se verifica en el ser
 test("sin automatismos: aceptar, reservar stock o el cron nunca generan operaciones; reintegro cruzado con inspección e incidencias", () => {
   assert.doesNotMatch(read("app/api/admin/pedidos/[id]/replacements/route.ts"), /createClaimShipment|claim-shipments/)
   assert.doesNotMatch(read("app/api/admin/order-claims/[claimId]/route.ts"), /createClaimShipment|request_order_claim_logistics/)
-  // 20260928100000 es histórica (ya aplicada); la corrección vive en 20260930100000.
-  const migration = read("supabase/migrations/20260930100000_claim_logistics_branch_only.sql")
+  // 20260928100000 y 20260930100000 son históricas (ya aplicadas); el endurecimiento vive en 20261001100000.
+  const migration = read("supabase/migrations/20261001100000_claim_logistics_hardening.sql")
   const trigger = migration.slice(migration.indexOf("function public.order_claim_change_accepted()"), migration.indexOf("drop trigger if exists zz_order_claim_change_accepted"))
   assert.doesNotMatch(trigger, /open_order_claim_leg|order_claim_shipments/, "aceptar un reclamo sólo deja mensajes")
   const modality = migration.slice(migration.indexOf("add constraint order_claim_shipments_modality"), migration.indexOf("add constraint order_claim_shipments_outcome_only_exchange"))
@@ -242,11 +321,14 @@ test("UI: método explícito con confirmación, sucursal del catálogo, doble cl
   const panel = read("components/claims/claim-andreani-shipment-panel.tsx")
   assert.match(panel, /if \(inFlightRef\.current\) return null/)
   assert.match(panel, /getOrCreateIdempotencyAttempt\(unitAttemptRef\.current/)
-  assert.match(panel, /if \(!requestConfirming\) \{/, "el método se confirma explícitamente")
+  assert.match(panel, /if \(reasonRequired && !requestConfirming\) \{/, "corregir con operación previa pide segunda confirmación")
+  assert.match(panel, /type="radio"/, "método como radios accesibles")
   assert.match(panel, /andreani-branches\?/, "sucursal elegida del buscador, no tipeada")
   assert.doesNotMatch(panel, /idgla\)/, "el Admin no escribe el idgla")
   assert.match(panel, /disabled=\{pending !== null \|\| !selectedBranch/, "sin sucursal válida no hay logística")
-  assert.match(read("components/claims/admin-claim-manager.tsx"), /\["reception", "replacement", "execution"\]\.includes\(selectedStep\) && logisticsPanel/)
+  const manager = read("components/claims/admin-claim-manager.tsx")
+  assert.match(manager, /selectedStep === "method" && renderLogisticsPanel\("method"\)/)
+  assert.match(manager, /\["reception", "replacement", "execution"\]\.includes\(selectedStep\) && renderLogisticsPanel\(logisticsMethodStep \? "operation" : "all"\)/)
   const customer = read("components/claims/customer-claim-shipments-notice.tsx")
   assert.doesNotMatch(customer, /domicilio/i)
   assert.match(customer, /\/api\/orders\/\$\{claim\.order_id\}\/claims\/\$\{claim\.id\}\/return-label/)

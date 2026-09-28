@@ -280,6 +280,24 @@ export interface ClaimLogisticsMethodOption {
   description: string
 }
 
+export interface ClaimLogisticsMethodChoice extends ClaimLogisticsMethodOption {
+  /** Método vigente (último tramo no cancelado). */
+  current: boolean
+  /** Se puede elegir ahora (la base vuelve a validarlo). */
+  available: boolean
+}
+
+/**
+ * Si el método ya elegido se puede corregir: "free" sin efectos reales,
+ * "reason" con una operación Andreani previa (motivo + auditoría) y
+ * "blocked" cuando hay efectos que primero se corrigen con su flujo auditado.
+ */
+export interface ClaimLogisticsMethodLock {
+  status: "free" | "reason" | "blocked"
+  effects: string[]
+  correction: string | null
+}
+
 type UnitCounts = Partial<Record<ClaimUnitLocation, number>>
 
 export interface ClaimLogisticsItemView {
@@ -338,6 +356,9 @@ export interface AdminClaimLogisticsView {
   humanActionRequired: boolean
   /** Métodos que el Admin puede elegir ahora (vacío si ya hay uno vigente). */
   methodOptions: ClaimLogisticsMethodOption[]
+  /** Todos los métodos de la resolución, con el vigente marcado. */
+  methodChoices: ClaimLogisticsMethodChoice[]
+  methodLock: ClaimLogisticsMethodLock
   /** Cambiar de método con una operación Andreani real previa: motivo obligatorio. */
   methodChangeRequiresReason: boolean
   /** Reintentar el cambio directo (misma sucursal, nuevo intento). */
@@ -358,20 +379,20 @@ const PLAN_LABELS: Record<ClaimLogisticsPlan, string> = {
 export const CLAIM_METHOD_OPTIONS: Record<"cambio" | "devolucion", ClaimLogisticsMethodOption> = {
   cambio: {
     direction: "cambio",
-    label: "🔄 Cambio directo por sucursal",
-    description: "Se reserva el reemplazo y Andreani lo entrega en la sucursal sólo si el cliente entrega el original. El original vuelve a BEYONIX para inspección.",
+    label: "Cambio directo por sucursal",
+    description: "Se reserva el reemplazo y Andreani lo entrega en la sucursal solo si el cliente entrega el producto original. El producto devuelto vuelve a BEYONIX para inspección.",
   },
   devolucion: {
     direction: "devolucion",
-    label: "↩️ Retiro + revisión + reenvío",
-    description: "El cliente despacha el producto en una sucursal. Vuelve a BEYONIX, se inspecciona y recién después se decide y envía el reemplazo a una sucursal.",
+    label: "Retiro + revisión + reenvío",
+    description: "El cliente entrega el producto en una sucursal Andreani. BEYONIX lo recibe e inspecciona y recién después se decide y envía el reemplazo.",
   },
 }
 
 const REFUND_METHOD: ClaimLogisticsMethodOption = {
   direction: "devolucion",
-  label: "↩️ Retiro por sucursal + revisión",
-  description: "El cliente despacha el producto en una sucursal. Vuelve a BEYONIX y se inspecciona antes de habilitar la nota de crédito o el reintegro.",
+  label: "Retiro por sucursal + revisión",
+  description: "El cliente entrega el producto en una sucursal Andreani. BEYONIX lo recibe e inspecciona antes de habilitar la nota de crédito o el reintegro.",
 }
 
 const ACCEPTED_STATUSES = ["aprobado", "reintegro_pendiente", "cambio_pendiente", "cupon_pendiente"]
@@ -449,6 +470,8 @@ export function getAdminClaimLogisticsView(input: {
   units?: ClaimUnitSource[] | null
   /** order_claims.logistics_legacy */
   legacy?: boolean | null
+  /** Nota de crédito del reclamo en proceso o autorizada (efecto financiero real). */
+  creditNoteActive?: boolean
 }): AdminClaimLogisticsView | null {
   const shipments = rowsOf(input.shipments)
   const units = input.units ?? []
@@ -494,20 +517,76 @@ export function getAdminClaimLogisticsView(input: {
   const realOperation = active.some((row) => ["processing", "created", "manual_review"].includes(row.creation_status ?? "not_started"))
   const openIsFree = !openLeg || (openLeg.status === "pendiente" && ["not_started", "failed"].includes(openLeg.creation_status ?? "not_started"))
   const deliveredOrMoving = has("reemplazo", ["entregada_cliente", "en_andreani"])
+  const reservedReplacements = countBy(units, "reemplazo", (unit) => unit.location === "reservada")
+  const creditNoteActive = Boolean(input.creditNoteActive)
 
   // Métodos que el Admin puede elegir: nunca automático, nunca el cliente.
+  // Un cambio de método con stock reservado o nota de crédito vigente exige
+  // corregir primero ese efecto con su propio flujo auditado (el servidor
+  // vuelve a exigirlo).
+  const candidates: Array<"cambio" | "devolucion"> = isChange ? ["cambio", "devolucion"] : ["devolucion"]
+  const samePlanAs = (direction: "cambio" | "devolucion") =>
+    plan !== null && (direction === "cambio" ? plan === "cambio_directo" : plan !== "cambio_directo")
   const methodOptions: ClaimLogisticsMethodOption[] = []
   let methodChangeRequiresReason = false
-  if (accepted && !closed && openIsFree && !incidentOpen && (units.length === 0 || originalsWithCustomer > 0) && !deliveredOrMoving) {
-    const candidates: Array<"cambio" | "devolucion"> = isChange ? ["cambio", "devolucion"] : ["devolucion"]
+  if (accepted && !closed && openIsFree && !incidentOpen && (units.length === 0 || originalsWithCustomer > 0) && !deliveredOrMoving &&
+    !(plan !== null && (reservedReplacements > 0 || creditNoteActive))) {
     for (const direction of candidates) {
-      const samePlan = plan !== null && (direction === "cambio" ? plan === "cambio_directo" : plan !== "cambio_directo")
-      if (plan === null || !samePlan) {
-        methodOptions.push(isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD)
-      }
+      if (!samePlanAs(direction)) methodOptions.push(isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD)
     }
     methodChangeRequiresReason = plan !== null && realOperation
   }
+  const methodChoices: ClaimLogisticsMethodChoice[] = accepted || plan !== null
+    ? candidates.map((direction) => ({
+        ...(isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD),
+        current: samePlanAs(direction),
+        available: methodOptions.some((option) => option.direction === direction),
+      }))
+    : []
+
+  // Efectos reales que impiden corregir el método "como si nada".
+  const effects: string[] = []
+  for (const row of active) {
+    const creation = row.creation_status ?? "not_started"
+    const title = LEG_TITLES[row.direction]
+    if (creation === "created") effects.push(`Operación generada: ${title}${text(row.andreani_tracking) ? ` (${text(row.andreani_tracking)})` : ""}`)
+    else if (creation === "processing") effects.push(`Operación en curso: ${title}`)
+    else if (creation === "manual_review") effects.push(`Operación pendiente de conciliación: ${title}`)
+  }
+  const unitsLabel = (count: number) => `${count} ${count === 1 ? "unidad" : "unidades"}`
+  const effectCount = (role: ClaimUnitRole, locations: ClaimUnitLocation[], label: string) => {
+    const count = countBy(units, role, (unit) => locations.includes(unit.location))
+    if (count > 0) effects.push(`${label}: ${unitsLabel(count)}`)
+  }
+  effectCount("reemplazo", ["reservada"], "Stock reservado para el reemplazo")
+  effectCount("reemplazo", ["en_andreani", "entregada_cliente"], "Reemplazo despachado o entregado")
+  effectCount("original", ["en_andreani"], "Producto original en viaje con Andreani")
+  effectCount("original", ["recibida_beyonix"], "Recepción registrada")
+  effectCount("original", ["reincorporada_stock", "baja"], "Inspección registrada")
+  if (incidentOpen) effects.push(reviewLeg ? "Evento de Andreani pendiente de revisión" : "Incidencia de inspección abierta")
+  if (creditNoteActive) effects.push("Nota de crédito emitida o en proceso")
+
+  // Sin alternativa (reintegro: sólo retiro) no hay nada que corregir salvo efectos reales.
+  const hasAlternative = candidates.some((direction) => !samePlanAs(direction))
+  const methodLock: ClaimLogisticsMethodLock = plan === null || methodOptions.length > 0 || (!hasAlternative && effects.length === 0)
+    ? { status: methodChangeRequiresReason ? "reason" : "free", effects: plan === null ? [] : effects, correction: null }
+    : {
+        status: "blocked",
+        effects,
+        correction: closed
+          ? "El reclamo está finalizado."
+          : incidentOpen
+            ? "Resolvé primero la incidencia o el evento de Andreani (con motivo)."
+            : openLeg && !openIsFree
+              ? current && adminLegView(current, units).canCancel
+                ? "Para cambiar de método, primero cancelá la operación Andreani con un motivo."
+                : "La operación Andreani ya está en curso: seguí el circuito actual."
+              : reservedReplacements > 0
+                ? "Para cambiar de método, primero liberá la reserva del reemplazo con un motivo."
+                : creditNoteActive
+                  ? "Con una nota de crédito vigente el método no se cambia desde acá."
+                  : "El producto ya está en el circuito: continuá con las acciones del paso actual.",
+      }
   const canRetryExchange = accepted && !closed && plan === "cambio_directo" && !openLeg && originalsWithCustomer > 0 && !incidentOpen && !deliveredOrMoving
   const canAuthorizeResend = accepted && !closed && isChange && plan === "retiro_y_reenvio" && !openLeg && originalsInspected &&
     !deliveredOrMoving && active.some((row) => row.direction === "devolucion" && row.creation_status === "created")
@@ -649,6 +728,8 @@ export function getAdminClaimLogisticsView(input: {
     nextStep,
     humanActionRequired,
     methodOptions,
+    methodChoices,
+    methodLock,
     methodChangeRequiresReason,
     canRetryExchange,
     canAuthorizeResend,

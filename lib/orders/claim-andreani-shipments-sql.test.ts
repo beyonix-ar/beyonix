@@ -38,6 +38,7 @@ const CHAIN = [
   // Histórica, ya aplicada en remoto (modelo inicial) + corrección posterior.
   "20260928100000_claim_andreani_shipments",
   "20260930100000_claim_logistics_branch_only",
+  "20261001100000_claim_logistics_hardening",
 ]
 
 type Db = PGlite
@@ -542,7 +543,9 @@ test("migración correctiva sobre datos del modelo inicial: cancela lo automáti
   const db = new PGlite()
   try {
     await db.exec(source("./fixtures/claim-logistics-schema.sql"))
-    const historical = CHAIN.slice(0, -1)
+    // Secuencia real de producción: modelo inicial (20260928100000) con datos,
+    // luego 20260930100000 (aplicada) y 20261001100000 (dos veces: idempotente).
+    const historical = CHAIN.slice(0, -2)
     for (const name of historical) await db.exec(migration(name))
     await db.query("select set_config('request.jwt.claim.role','service_role',false)")
     for (const [id, role] of [[customer, "cliente"], [admin, "admin"]]) {
@@ -565,9 +568,14 @@ test("migración correctiva sobre datos del modelo inicial: cancela lo automáti
     await db.query(`insert into order_claim_shipments(claim_id,order_id,direction,status,modality,environment,contract,andreani_envio_id,creation_status,delivered_at)
       values($1,2,'reemplazo','entregada','entrega_domicilio','PROD','400042104','360000000778','created',now())`, [real])
 
+    await db.exec(migration(CHAIN.at(-2) as string))
     const corrective = migration(CHAIN.at(-1) as string)
     await db.exec(corrective)
     await db.exec(corrective)
+    // Sin sobrecargas viejas con lógica obsoleta (p. ej. tracking sin revisión de eventos).
+    assert.deepEqual((await db.query<{ sig: string }>(
+      "select p.oid::regprocedure::text sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='apply_order_claim_shipment_tracking'")).rows.map((row) => row.sig),
+    ["apply_order_claim_shipment_tracking(bigint,text,boolean,text,text,text,timestamp with time zone,timestamp with time zone,text)"])
 
     const autoLeg = await one(db, "select * from order_claim_shipments where claim_id=$1", [auto])
     assert.deepEqual([autoLeg.status, autoLeg.legacy, Boolean(autoLeg.closed_at)], ["cancelada", true, true], "lo abierto automáticamente se cancela")

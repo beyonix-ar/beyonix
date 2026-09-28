@@ -1,8 +1,9 @@
 // Deriva sólo la presentación. Las validaciones siguen en los flujos existentes.
-export type AdminClaimWizardStep = { key: "review" | "next" | "reception" | "replacement" | "execution" | "finish"; label: string }
+export type AdminClaimWizardStep = { key: "review" | "next" | "method" | "reception" | "replacement" | "execution" | "finish"; label: string }
 
 export interface AdminClaimWizardLogistics {
-  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio"
+  /** null: el Admin todavía tiene que elegir el método logístico. */
+  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | null
   /** Paso actual según el paradero de las unidades (getAdminClaimLogisticsView). */
   step: "replacement" | "execution" | "reception"
 }
@@ -23,9 +24,17 @@ export function getAdminClaimWizard(input: {
 
   // Con logística de unidades el orden sigue al método elegido por el Admin:
   // en el cambio directo se reserva el reemplazo ANTES de que vuelva el
-  // original; en retiro + revisión, recién después de inspeccionarlo.
+  // original; en retiro + revisión, recién después de inspeccionarlo. El paso
+  // "Método" queda siempre accesible para revisar (o corregir, si no hubo
+  // efectos reales) la decisión logística.
   if (approved && input.logistics) {
     const { plan } = input.logistics
+    steps.push({ key: "method", label: "Método" })
+    if (plan === null) {
+      steps.push({ key: "finish", label: "Finalización" })
+      const current = closed ? "finish" : "method"
+      return { steps, current, currentIndex: steps.findIndex((step) => step.key === current) }
+    }
     if (plan === "cambio_directo") {
       steps.push({ key: "replacement", label: "Reserva" }, { key: "execution", label: "Cambio en sucursal" }, { key: "reception", label: "Recepción e inspección" })
     } else if (plan === "retiro_y_reenvio") {

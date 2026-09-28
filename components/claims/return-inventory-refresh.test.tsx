@@ -221,7 +221,7 @@ test("4. cambiar cantidades + refetch -> permanecen", async () => {
   await typeNumber(good, "1")
   await render(pedidoRemote, claimRemote)
   assert.deepEqual(quantities("Parlante").map((input) => input.value), ["2", "1"])
-  assert.match(article("Parlante").textContent ?? "", /Se dan de baja1/)
+  assert.equal(article("Parlante").querySelector(".admin-claim-quantity.is-writeoff .admin-claim-quantity-value")?.textContent, "1")
 })
 
 test("5. llega un update del reclamo (realtime/polling) -> el borrador permanece", async () => {

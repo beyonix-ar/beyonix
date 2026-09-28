@@ -250,7 +250,8 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     await render(<ReturnInventoryPanel canManage pedido={{ id: 123, usuario_id: null, estado: "entregado", total: 50000, created_at: "2026-09-19", orden_items: [{ id: 7, orden_id: 123, producto_id: 1, cantidad: 5, precio: 1000, return_restocked_quantity: 2, return_inventory_processed_at: "2026-09-18T12:00:00Z" }] }} claim={{ id: 1, order_id: 123, user_id: "test", claim_type: "garantia_beyonix", status: "aprobado", description: "", affected_items: [{ order_item_id: 7, quantity: 3 }], created_at: "2026-09-19", updated_at: "2026-09-19" }} />)
     assert.match(document.body.textContent || "", /Reclamadas3Recibidas2Pendientes1/)
     assert.doesNotMatch(document.body.textContent || "", /Vendió/)
-    assert.match(document.body.textContent || "", /Si recibís el pedido en partes/)
+    const receptionHelp = document.querySelector('[aria-label="Ayuda: Recepción del producto original"]')!
+    assert.match(document.getElementById(receptionHelp.getAttribute("aria-describedby")!)?.textContent || "", /Si llega en partes, registrá sólo las unidades que llegaron ahora/)
     const confirmReception = () => [...document.querySelectorAll("button")].find((button) => button.textContent === "Confirmar recepción")!
     assert.equal(confirmReception().disabled, true, "sin unidades recibidas no se puede confirmar")
     assert.match(document.body.textContent || "", /Indicá cuántas unidades llegaron/)
