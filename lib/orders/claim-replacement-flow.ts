@@ -17,6 +17,13 @@ export interface RegisteredReplacement {
   claim_id?: number | null
   original_order_item_id: number
   quantity: number
+  /** Unidades que volvieron a BEYONIX sin llegar al cliente: no cuentan como reemplazo. */
+  reverted_quantity?: number | null
+}
+
+function activeQuantity(row: RegisteredReplacement) {
+  const quantity = Number.isFinite(row.quantity) && row.quantity > 0 ? row.quantity : 0
+  return Math.max(0, quantity - Math.max(0, Number(row.reverted_quantity ?? 0) || 0))
 }
 
 export type ReplacementLoadState = "loading" | "error" | "ready"
@@ -46,7 +53,7 @@ export function sumClaimReplacedUnits(
   return replacements.filter((row) =>
     row.original_order_id === claim.order_id && items.has(row.original_order_item_id) &&
     (row.claim_id === claim.id || (row.claim_id === null && allowHistorical)))
-    .reduce((sum, row) => sum + (Number.isFinite(row.quantity) && row.quantity > 0 ? row.quantity : 0), 0)
+    .reduce((sum, row) => sum + activeQuantity(row), 0)
 }
 
 export function sumReplacedUnits(
@@ -57,7 +64,7 @@ export function sumReplacedUnits(
   const ids = new Set(orderItemIds)
   return replacements
     .filter((row) => ids.has(Number(row.original_order_item_id)))
-    .reduce((sum, row) => sum + Number(row.quantity || 0), 0)
+    .reduce((sum, row) => sum + activeQuantity({ ...row, quantity: Number(row.quantity || 0) }), 0)
 }
 
 /**

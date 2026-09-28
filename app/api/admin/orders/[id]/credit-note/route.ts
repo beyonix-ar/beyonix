@@ -24,6 +24,8 @@ import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { normalizeStockDestination } from "@/lib/orders/return-reception"
 import {
   getAvailableToCreditQuantity,
+  getClaimIncidentOpenError,
+  getClaimReturnPendingError,
   getReceptionApprovalGateError,
   getReceptionExceptionError,
 } from "@/lib/orders/credit-note-reception"
@@ -165,6 +167,9 @@ function reservationError(message?: string) {
       "El importe supera lo que todavía falta devolver en dinero externo para este pedido. Si usó saldo a favor, esa parte ya se reintegró automáticamente.",
     ORDER_ALREADY_REFUNDED:
       "Este pedido ya fue reintegrado. No se puede emitir otra nota de crédito que mueva dinero.",
+    // Guardas de logística del reclamo (20260930100000).
+    CLAIM_MONEY_INCIDENT_OPEN: getClaimIncidentOpenError(),
+    CLAIM_MONEY_RETURN_PENDING: getClaimReturnPendingError(),
   }
   const entry = Object.entries(knownErrors).find(([code]) =>
     message?.includes(code),
@@ -548,6 +553,19 @@ export async function POST(
   })
   if (claimPolicyError) {
     return NextResponse.json({ error: claimPolicyError }, { status: 409 })
+  }
+  // Logística del reclamo: la base (guard_claim_credit_note) bloquea la NC
+  // con una incidencia/revisión abierta, y con el producto todavía con el
+  // cliente, en Andreani o sin inspeccionar salvo una excepción administrativa
+  // registrada antes, con motivo y auditada. Acá sólo se registra esa
+  // excepción cuando el Admin la marcó explícitamente.
+  if (claimId && receptionException) {
+    const { error: exceptionError } = await auth.admin.rpc("register_claim_financial_exception", {
+      p_claim_id: claimId, p_actor_id: auth.user.id, p_reason: receptionExceptionReason,
+    })
+    if (exceptionError) {
+      return NextResponse.json({ error: reservationError(exceptionError.message) }, { status: 409 })
+    }
   }
   if (isAdministrativeCreditNoteOperation(operationType) && reasonCode !== "error_administrativo") {
     return NextResponse.json(

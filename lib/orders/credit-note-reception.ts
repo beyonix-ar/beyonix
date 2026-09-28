@@ -39,6 +39,20 @@ export function getReceptionExceptionError(
 }
 
 /**
+ * El reclamo tiene unidades originales todavía en poder del cliente, en
+ * Andreani o sin inspección en BEYONIX (order_claim_units): el reintegro normal
+ * espera la recepción e inspección. Nunca producto con el cliente + dinero.
+ */
+export function getClaimReturnPendingError(): string {
+  return "El producto todavía no volvió a BEYONIX o no terminó su inspección. Registrá la recepción e inspección desde el reclamo, o usá la excepción administrativa con su motivo si corresponde."
+}
+
+/** Incidencia de inspección abierta: bloquea NC/reintegro hasta resolverla (auditado). */
+export function getClaimIncidentOpenError(): string {
+  return "La inspección del producto tiene una incidencia abierta. Resolvela desde el reclamo antes de emitir la nota de crédito o el reintegro."
+}
+
+/**
  * `null` si se puede continuar; el mensaje de error (409) si la NC está
  * bloqueada porque el producto todavía no fue recibido/aprobado y no se
  * invocó la excepción administrativa.

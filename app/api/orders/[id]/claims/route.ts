@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { ORDER_CLAIM_MAX_FILES, CLAIM_TEXT_MAX_LENGTH, POST_DELIVERY_CLAIM_REASONS, getClaimEligibilityError } from "@/lib/order-claims"
-import { claimErrorResponse, prepareClaimUploads, signClaims, submitCustomerClaim } from "@/lib/orders/claim-server"
+import { CUSTOMER_CLAIM_SELECT, claimErrorResponse, prepareClaimUploads, signClaims, submitCustomerClaim } from "@/lib/orders/claim-server"
 import { attachCustomerClaimReads, authorizeCustomerClaimOrder } from "@/lib/orders/customer-claim-access"
 import type { PostDeliveryClaimReason } from "@/lib/order-claims"
 import type { SupabaseOrderClaim } from "@/lib/supabase/types"
@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   try {
     const auth = await authorizeOrder((await params).id)
     if ("response" in auth) return auth.response
-    const { data, error } = await auth.admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(direction,status,modality,andreani_tracking,delivered_at)").eq("order_id", auth.order.id).order("created_at", { ascending: false })
+    const { data, error } = await auth.admin.from("order_claims").select(CUSTOMER_CLAIM_SELECT).eq("order_id", auth.order.id).order("created_at", { ascending: false })
     if (error) return claimErrorResponse(error)
     const signed = await signClaims(auth.admin, data as SupabaseOrderClaim[])
     return NextResponse.json({ claims: await attachCustomerClaimReads(auth.admin, auth.user.id, signed) })

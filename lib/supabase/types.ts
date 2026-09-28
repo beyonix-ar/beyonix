@@ -1,3 +1,9 @@
+import type {
+  ClaimShipmentCreationStatus,
+  ClaimShipmentCustomerSource,
+  ClaimUnitSource,
+} from "../orders/claim-shipment-view.ts"
+
 // ─────────────────────────────────────────────────────────────
 // Categorías
 // ─────────────────────────────────────────────────────────────
@@ -841,28 +847,36 @@ export interface SupabaseOrderClaim {
   affected_items_updated_by?: string | null
   order_claim_files?: SupabaseOrderClaimFile[]
   order_claim_messages?: SupabaseOrderClaimMessage[]
-  /** Envíos Andreani del cambio (devolución y reemplazo). El cliente recibe sólo campos seguros. */
+  /** Operaciones Andreani del reclamo (cambio, devolución, reemplazo). El cliente recibe sólo campos seguros. */
   order_claim_shipments?: SupabaseOrderClaimShipment[] | null
+  /** Sólo Admin: paradero lógico de cada unidad (original y reemplazo). */
+  order_claim_units?: SupabaseOrderClaimUnit[] | null
+  /** Reclamo anterior al circuito logístico por sucursal (sin unidades). */
+  logistics_legacy?: boolean
 }
 
-export interface SupabaseOrderClaimShipment {
-  direction: "devolucion" | "reemplazo"
-  status: "pendiente" | "generada" | "en_transito" | "entregada" | "incidencia"
-  modality?: "retiro_domicilio" | "despacho_sucursal" | "entrega_domicilio" | "entrega_sucursal" | null
-  andreani_tracking?: string | null
-  delivered_at?: string | null
+export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource {
   /** Sólo Admin. */
+  id: number
+  claim_id?: number
   andreani_envio_id?: string | null
   andreani_estado?: string | null
   andreani_last_event?: string | null
   andreani_last_event_at?: string | null
+  incident_event?: string | null
+  branch_custody_since?: string | null
   environment?: "QA" | "PROD" | null
   contract?: string | null
   cost_amount?: number | string | null
-  creation_status?: "not_started" | "processing" | "created" | "failed" | "manual_review"
+  creation_status?: ClaimShipmentCreationStatus | null
   creation_error?: string | null
+  creation_started_at?: string | null
   last_checked_at?: string | null
+  /** Fila del modelo inicial (20260928100000), sin sucursal ni unidades. */
+  legacy?: boolean
 }
+
+export type SupabaseOrderClaimUnit = ClaimUnitSource
 
 export interface SupabaseReview {
   id: number

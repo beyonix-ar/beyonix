@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
-import { createAndreaniReplacementShipmentForClaim } from "@/lib/andreani/claim-shipments"
-import { normalizeAndreaniError } from "@/lib/andreani/client"
 import {
   formatPendingReceptionMessage,
   getPendingOriginalReception,
@@ -17,7 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const orderId = Number((await params).id)
   if (!Number.isSafeInteger(orderId) || orderId <= 0) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
   const [history, items] = await Promise.all([
-    auth.admin.from("order_replacements").select("id,original_order_id,original_order_item_id,claim_id,replacement_variant_id,quantity,reason,unit_cost,created_at,notes").eq("original_order_id", orderId).order("created_at", { ascending: false }),
+    auth.admin.from("order_replacements").select("id,original_order_id,original_order_item_id,claim_id,replacement_variant_id,quantity,reverted_quantity,reason,unit_cost,created_at,notes").eq("original_order_id", orderId).order("created_at", { ascending: false }),
     auth.admin.from("orden_items").select("producto_id").eq("orden_id", orderId),
   ])
   if (history.error || items.error) return NextResponse.json({ error: "No se pudieron cargar los reemplazos. Reintentá." }, { status: 500 })
@@ -92,7 +90,8 @@ export async function POST(
   const [originalItem, replacementVariant, changeClaims] = await Promise.all([
     auth.admin.from("orden_items").select("producto_id,return_restocked_quantity,return_written_off_quantity").eq("id", orderItemId).eq("orden_id", orderId).maybeSingle(),
     auth.admin.from("producto_variantes").select("producto_id").eq("id", replacementVariantId).maybeSingle(),
-    auth.admin.from("order_claims").select("id,status,affected_items").eq("order_id", orderId).eq("resolution", "cambio_producto"),
+    auth.admin.from("order_claims").select("id,status,affected_items,order_claim_shipments(direction,status,closed_at)")
+      .eq("order_id", orderId).eq("resolution", "cambio_producto"),
   ])
   if (originalItem.error || replacementVariant.error || changeClaims.error) {
     return NextResponse.json({ error: "No se pudo verificar el reemplazo. Reintentá." }, { status: 500 })
@@ -107,11 +106,15 @@ export async function POST(
   // Recepción previa obligatoria para un cambio de producto: si el reclamo
   // abarca unidades que todavía no volvieron, sólo se registra con la
   // excepción explícita "Continuar sin recepción previa" (reason = garantia).
-  // La RPC ya exige recepción por unidad; esto agrega la regla del reclamo
-  // completo y no depende del claimId que envíe el cliente.
+  // Excepción: el intercambio simultáneo Andreani (tramo "cambio" todavía no
+  // generado) reserva el reemplazo ANTES de retirar el original. La RPC vuelve
+  // a aplicar ambas reglas (y el tope por lo reclamado) de forma atómica.
   if (reason !== "garantia") {
     const claimedUnits = Math.max(0, ...(changeClaims.data ?? [])
       .filter((claim) => !["cerrado", "rechazado"].includes(String(claim.status)))
+      .filter((claim) => !(Array.isArray(claim.order_claim_shipments) ? claim.order_claim_shipments : [])
+        .some((leg: { direction?: unknown; status?: unknown; closed_at?: unknown }) =>
+          leg.direction === "cambio" && leg.status === "pendiente" && !leg.closed_at))
       .map((claim) => (Array.isArray(claim.affected_items) ? claim.affected_items : [])
         .filter((affected: { order_item_id?: unknown }) => Number(affected?.order_item_id) === orderItemId)
         .reduce((sum: number, affected: { quantity?: unknown }) => sum + Math.max(0, Number(affected?.quantity) || 0), 0)))
@@ -144,10 +147,22 @@ export async function POST(
     const requiresReceivedItem = /REPLACEMENT_REQUIRES_RECEIVED_ITEM/.test(message)
     const insufficientStock = /STOCK_INSUFICIENTE/.test(message)
     const forbidden = /REPLACEMENT_FORBIDDEN/.test(message)
-    const conflict = /REPLACEMENT_CONFLICT|REPLACEMENT_QUANTITY_EXCEEDED|REPLACEMENT_UNAVAILABLE/.test(message)
+    const planRequired = /REPLACEMENT_REQUIRES_PLAN/.test(message)
+    const inspectionRequired = /REPLACEMENT_REQUIRES_INSPECTION/.test(message)
+    if (planRequired || inspectionRequired) {
+      return NextResponse.json({
+        error: planRequired
+          ? "Primero elegí el método logístico del cambio (cambio directo o retiro + revisión) y, si corresponde, autorizá el reemplazo."
+          : "El reemplazo se reserva recién con el original recibido, inspeccionado y sin incidencias abiertas.",
+      }, { status: 409 })
+    }
+    const logisticsLocked = /REPLACEMENT_LOGISTICS_LOCKED/.test(message)
+    const conflict = /REPLACEMENT_CONFLICT|REPLACEMENT_QUANTITY_EXCEEDED|REPLACEMENT_UNAVAILABLE|REPLACEMENT_INVALID_CLAIM|REPLACEMENT_INVALID_ITEM/.test(message)
     return NextResponse.json(
       {
-        error: conflict ? "El pedido o el stock cambió. Recargá los datos y revisá las unidades ya reemplazadas antes de continuar." : requiresReceivedItem
+        error: logisticsLocked
+          ? "La operación Andreani del cambio ya está en curso: no se puede reservar otro reemplazo."
+          : conflict ? "El pedido, el reclamo o el stock cambió. Recargá los datos y revisá las unidades ya reservadas (nunca más que las reclamadas) antes de continuar." : requiresReceivedItem
           ? "Primero registrá la recepción física del producto original antes de generar el reemplazo."
           : insufficientStock
             ? "No hay stock suficiente del producto/variante de reemplazo."
@@ -155,19 +170,12 @@ export async function POST(
               ? "No tenés permisos para registrar este reemplazo."
               : "No se pudo registrar el reemplazo.",
       },
-      { status: conflict || requiresReceivedItem || insufficientStock ? 409 : forbidden ? 403 : 500 },
+      { status: conflict || logisticsLocked || requiresReceivedItem || insufficientStock ? 409 : forbidden ? 403 : 500 },
     )
   }
 
-  // Reemplazo de un cambio: con todas las unidades reclamadas registradas, se
-  // genera el envío Andreani BEYONIX -> cliente (idempotente: un reintento o
-  // un replay de esta misma solicitud reutiliza la orden). No vuelve a tocar
-  // stock: la salida ya quedó registrada arriba, exactamente una vez.
-  if (claimId !== null) {
-    await createAndreaniReplacementShipmentForClaim(auth.admin, claimId).catch((shipmentError: unknown) => {
-      console.error("ANDREANI_CLAIM_REPLACEMENT_AUTO_CREATE_ERROR", { claimId, ...normalizeAndreaniError(shipmentError) })
-    })
-  }
-
+  // La reserva sólo compromete stock. La operación Andreani (cambio o envío
+  // del reemplazo) la genera el Admin explícitamente desde la logística del
+  // reclamo: nunca como efecto secundario de registrar stock.
   return NextResponse.json({ replacement: data })
 }

@@ -64,6 +64,7 @@ import { useClaimWizardScroll } from "@/components/claims/use-claim-wizard-scrol
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { ClaimAndreaniShipmentPanel } from "@/components/claims/claim-andreani-shipment-panel"
+import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
@@ -1912,7 +1913,21 @@ export function AdminClaimManager({
     registeredReplacements,
     summaryAffectedItems.map(({ item }) => Number(item.id)),
   )
-  const replacementFlow = getReplacementFlow({
+  // Logística de postventa (unidades + operaciones Andreani): fuente de verdad
+  // del paradero de cada unidad; la base vuelve a validar cada acción.
+  const logistics = getAdminClaimLogisticsView({
+    status: claim.status,
+    resolution: claim.resolution,
+    shipments: claim.order_claim_shipments ?? null,
+    units: claim.order_claim_units ?? null,
+    legacy: claim.logistics_legacy,
+  })
+  const exchangePlan = logistics?.plan === "cambio_directo"
+  // Un cambio nuevo sin método elegido no reserva stock: primero el Admin
+  // decide cambio directo o retiro + revisión (los históricos ya recibidos
+  // conservan su flujo).
+  const methodPending = Boolean(logistics && !logistics.legacy && logistics.plan === null && claim.resolution === "cambio_producto" && summaryReceptionTotals.received === 0)
+  const baseReplacementFlow = getReplacementFlow({
     status: claim.status,
     resolution: claim.resolution,
     claimedUnits: summaryReceptionTotals.claimed,
@@ -1920,6 +1935,28 @@ export function AdminClaimManager({
     replacedUnits,
     replacementLoadState,
   })
+  const replacementFlow = logistics?.plan
+    ? {
+        ...baseReplacementFlow,
+        // Cambio directo: se reserva ANTES de retirar el original. Retiro +
+        // revisión: sólo con el reenvío autorizado (la base lo vuelve a exigir).
+        canRegisterReplacement: logistics.plan === "retiro_y_reenvio"
+          ? logistics.leg?.direction === "reemplazo" && logistics.leg.canCreate
+          : baseReplacementFlow.canRegisterReplacement || (exchangePlan && !closed),
+        // Nunca finalizar con unidades en tránsito, sin inspección o con incidencias.
+        canConfirmDelivery: baseReplacementFlow.canConfirmDelivery && logistics.canClose,
+      }
+    : methodPending
+      ? { ...baseReplacementFlow, canRegisterReplacement: false, canConfirmDelivery: false }
+      : baseReplacementFlow
+  const itemLabel = (orderItemId: number) => {
+    const item = summaryOrderItems.find((orderItem) => Number(orderItem.id) === orderItemId)
+    const variant = item?.conditioned_name || item?.producto_variantes?.nombre
+    return item ? `${item.productos?.nombre ?? `Producto #${item.producto_id}`}${variant ? ` · ${variant}` : ""}` : `Ítem #${orderItemId}`
+  }
+  const logisticsPanel = logistics && (
+    <ClaimAndreaniShipmentPanel claim={claim} itemLabel={itemLabel} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
+  )
   const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
   const canIssueCreditNote =
     isAdmin && !closed &&
@@ -1943,6 +1980,7 @@ export function AdminClaimManager({
   const { steps: workflowSteps, current: currentStep, currentIndex } = getAdminClaimWizard({
     status: claim.status, resolution: claim.resolution,
     receivedUnits: summaryReceptionTotals.received, replacedUnits,
+    logistics: logistics?.plan ? { plan: logistics.plan, step: logistics.wizardStep } : null,
   })
   const viewedIndex = workflowSteps.findIndex((step) => step.key === viewedStep)
   const selectedStep = viewedStep && viewedIndex >= 0 && viewedIndex <= currentIndex
@@ -2229,10 +2267,8 @@ export function AdminClaimManager({
                 {selectedStep === "review" && approved && (
                   <p className="admin-claim-wizard-note">Solución aprobada: {getOrderClaimResolutionLabel(claim.resolution ?? "")}. La decisión quedó registrada. Una corrección posterior requiere revisar las acciones ya realizadas; este flujo no revierte stock ni operaciones financieras.</p>
                 )}
-                {selectedStep === "reception" && needsReception && (
-                  <ClaimAndreaniShipmentPanel claim={claim} direction="devolucion" canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
-                )}
-                {selectedStep === "reception" && needsReception && (
+                {["reception", "replacement", "execution"].includes(selectedStep) && logisticsPanel}
+                {selectedStep === "reception" && (needsReception || Boolean(logistics?.plan)) && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
                     canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
                     registeredReplacements={registeredReplacements} onUpdated={onInventoryUpdated} onClaimChange={onClaimChange} />
@@ -2242,15 +2278,18 @@ export function AdminClaimManager({
                     <p className="text-xs text-white/70">{hasReplacement ? `${replacedUnits} unidad(es) registradas con salida de stock.` : "Registrá el reemplazo y su variante desde el formulario existente. El stock se descuenta al confirmar."}</p>
                     <AdminButton variant="primary" disabled={saving || !replacementFlow.canRegisterReplacement || !onRegisterReplacement}
                       onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>Registrar reemplazo</AdminButton>
-                    {!replacementFlow.canRegisterReplacement && <p className="admin-claim-wizard-note">Primero recibí el producto original.</p>}
+                    {!replacementFlow.canRegisterReplacement && <p className="admin-claim-wizard-note">{methodPending
+                      ? "Primero elegí el método logístico del cambio."
+                      : logistics?.plan === "retiro_y_reenvio"
+                        ? "Se habilita cuando el original fue recibido, inspeccionado sin incidencias y autorizaste el reemplazo."
+                        : "Primero recibí el producto original."}</p>}
                   </div>
-                )}
-                {selectedStep === "execution" && canCompleteReplacementSolution && claim.resolution === "cambio_producto" && (
-                  <ClaimAndreaniShipmentPanel claim={claim} direction="reemplazo" canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
                 )}
                 {selectedStep === "execution" && canCompleteReplacementSolution && (
                   <div className="admin-claim-wizard-action">
-                    <p className="text-xs text-white/70">Confirmá cuando el producto ya fue enviado o entregado. Esta acción finaliza el reclamo y notifica al cliente.</p>
+                    <p className="text-xs text-white/70">{logistics?.plan
+                      ? "Se habilita cuando el reemplazo fue entregado y el producto original volvió e inspeccionado (o con la excepción registrada). Finaliza el reclamo y notifica al cliente."
+                      : "Confirmá cuando el producto ya fue enviado o entregado. Esta acción finaliza el reclamo y notifica al cliente."}</p>
                     {replacementLoadState === "loading" && <p className="admin-claim-wizard-note">Verificando el reemplazo registrado…</p>}
                     {replacementLoadState === "error" && <p className="admin-claim-wizard-note">No se pudo verificar el reemplazo. Recargá los datos antes de continuar.</p>}
                     <AdminButton variant="primary" disabled={saving || !replacementFlow.canConfirmDelivery}

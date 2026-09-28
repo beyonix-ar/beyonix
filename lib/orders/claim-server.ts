@@ -9,6 +9,7 @@ import {
 } from "../order-claims.ts"
 import type { createAdminClient } from "../supabase/admin"
 import type { SupabaseOrderClaim } from "../supabase/types"
+import { CUSTOMER_CLAIM_SHIPMENT_COLUMNS } from "./claim-shipment-view.ts"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib"
 
@@ -54,6 +55,32 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   "Las cantidades de la devolución no pueden ser negativas.": [400, "Las cantidades de la devolución no pueden ser negativas."],
   "Indicá el motivo de la baja o pérdida.": [400, "Indicá el motivo de la baja o pérdida."],
   "Indicá al menos una unidad recibida para registrar la devolución.": [400, "Indicá al menos una unidad recibida para registrar la devolución."],
+  // Logística de postventa (20260928100000).
+  CLAIM_LOGISTICS_FORBIDDEN: [403, "Sólo un administrador puede gestionar la logística del reclamo."],
+  CLAIM_LOGISTICS_OPEN: [409, "La logística del reclamo sigue en curso: hay unidades en Andreani, sin inspeccionar, reservas sin resolver u operaciones abiertas."],
+  CLAIM_LOGISTICS_INCIDENT: [409, "Hay una incidencia abierta en las unidades del reclamo. Resolvela antes de continuar."],
+  CLAIM_LOGISTICS_LOCKED: [409, "La logística física ya empezó: la resolución no puede cambiarse desde acá."],
+  CLAIM_ORIGINAL_NOT_RETURNED: [409, "El reemplazo fue entregado pero el producto original no volvió a BEYONIX. Registrá su recepción o la excepción explícita."],
+  CLAIM_LOGISTICS_NOT_ALLOWED: [409, "Esta operación no corresponde a la solución aceptada del reclamo."],
+  CLAIM_LOGISTICS_NOT_NEEDED: [409, "No quedan unidades en poder del cliente para esta operación."],
+  CLAIM_LOGISTICS_ATTEMPTS: [409, "Se alcanzó el máximo de intentos logísticos para este reclamo."],
+  CLAIM_LOGISTICS_NOTE_REQUIRED: [400, "Indicá el motivo (mínimo 10 caracteres; 5 para incidencias y llegadas con novedad)."],
+  CLAIM_LOGISTICS_INVALID: [400, "Revisá la acción, el producto y la cantidad."],
+  CLAIM_LOGISTICS_IDEMPOTENCY_KEY_REQUIRED: [400, "La operación no tiene una clave de idempotencia válida."],
+  CLAIM_LOGISTICS_IDEMPOTENCY_CONFLICT: [409, "Esta operación ya se registró con otros datos. Actualizá el reclamo."],
+  CLAIM_UNITS_NOT_AVAILABLE: [409, "No hay unidades en ese estado para registrar esa cantidad. Actualizá el reclamo."],
+  CLAIM_EXCHANGE_STATE: [409, "El cambio sólo puede marcarse como no completado mientras el producto nuevo está en manos de Andreani."],
+  CLAIM_SHIPMENT_NOT_FOUND: [404, "El reclamo no tiene esa operación Andreani."],
+  CLAIM_SHIPMENT_CLOSED: [409, "Esta operación ya está cerrada."],
+  CLAIM_SHIPMENT_IN_FLIGHT: [409, "La operación se está generando o requiere conciliación: no puede cancelarse."],
+  CLAIM_SHIPMENT_ALREADY_MOVING: [409, "Andreani ya tiene el producto: la operación no puede cancelarse."],
+  CLAIM_LOGISTICS_BRANCH_REQUIRED: [400, "Elegí una sucursal Andreani válida para la operación."],
+  CLAIM_LOGISTICS_PLAN_LOCKED: [409, "Ya hubo una operación Andreani: cambiar de método requiere un motivo (mínimo 10 caracteres)."],
+  CLAIM_LOGISTICS_REQUIRES_INSPECTION: [409, "El reemplazo se autoriza cuando el producto original fue recibido e inspeccionado sin incidencias."],
+  CLAIM_LOGISTICS_LEGACY: [409, "Este reclamo es anterior al circuito por sucursal y ya tuvo movimientos: continuá con su flujo original."],
+  CLAIM_INSPECTION_NOT_RESTOCKABLE: [409, "Un paquete vacío o un producto distinto nunca vuelve a stock: registralo como baja."],
+  CLAIM_MONEY_INCIDENT_OPEN: [409, "Hay una incidencia o revisión abierta en el reclamo: resolvela antes de la nota de crédito o el reintegro."],
+  CLAIM_MONEY_RETURN_PENDING: [409, "El producto todavía no volvió a BEYONIX o no terminó su inspección. Registrá la recepción e inspección, o la excepción administrativa con su motivo."],
 }
 
 export function claimErrorResponse(error: unknown) {
@@ -115,8 +142,15 @@ export async function signClaims(admin: Admin, claims: SupabaseOrderClaim[]) {
   })) }))
 }
 
-export async function getClaimResult(admin: Admin, claimId: number) {
-  const { data, error } = await admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*)").eq("id", claimId).single()
+/** Admin: reclamo con su logística completa (tramos y unidades). */
+export const ADMIN_CLAIM_SELECT = "*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*)"
+/** Cliente: sólo campos seguros de los tramos; nunca contrato, ambiente, costo, errores ni unidades. */
+export const CUSTOMER_CLAIM_SELECT = `*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS})`
+
+export async function getClaimResult(admin: Admin, claimId: number, audience: "admin" | "customer" = "admin") {
+  const { data, error } = audience === "admin"
+    ? await admin.from("order_claims").select(ADMIN_CLAIM_SELECT).eq("id", claimId).single()
+    : await admin.from("order_claims").select(CUSTOMER_CLAIM_SELECT).eq("id", claimId).single()
   if (error || !data) return claimErrorResponse(error?.code === "PGRST116" ? new Error("CLAIM_NOT_FOUND") : error)
   return NextResponse.json({ claim: await signClaim(admin, data as SupabaseOrderClaim) })
 }
@@ -149,7 +183,8 @@ async function refundResult(admin: Admin, orderId: number) {
 
 export async function submitClaimUploadOperation(admin: Admin, actorId: string, orderId: number, payload: Record<string, unknown>, uploads: ClaimUpload[], kind: "claim" | "refund") {
   const bucket = kind === "claim" ? ORDER_CLAIM_BUCKET : "payment-proofs"
-  const result = (claimId: number) => kind === "claim" ? getClaimResult(admin, claimId) : refundResult(admin, orderId)
+  // Reclamo del cliente: nunca la logística interna (contratos, costos, errores).
+  const result = (claimId: number) => kind === "claim" ? getClaimResult(admin, claimId, "customer") : refundResult(admin, orderId)
   const requestHash = createHash("sha256").update(JSON.stringify({ orderId, payload, kind }))
   for (const upload of uploads) requestHash.update(JSON.stringify([upload.name, upload.type, upload.size])).update(upload.bytes)
   const attemptId = randomUUID()

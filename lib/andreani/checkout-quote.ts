@@ -326,6 +326,21 @@ function resolveAndreaniDestinationBranches(
   })
 }
 
+/**
+ * Catálogo nacional B2C (mismo cache de 24 h que checkout) en un ambiente
+ * dado. Lo usa la logística de reclamos para buscar y volver a validar
+ * sucursales server-side; si Andreani falla, el error se propaga.
+ */
+export function loadAndreaniBranchCatalog(
+  environment: CheckoutQuoteConfig["environment"],
+  dependencies: { env?: NodeJS.ProcessEnv; getBranches?: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]> } = {},
+): Promise<AndreaniBranch[]> {
+  const env = dependencies.env ?? process.env
+  const getBranches = dependencies.getBranches ??
+    ((filters: AndreaniBranchFilters) => buildAndreaniReferenceClient(environment, env, undefined).getSucursales(filters))
+  return getAndreaniBranchCatalog(getBranches, environment)
+}
+
 async function fetchAndreaniDestinationBranches(
   destination: { localidad: string; provincia: string; cpDestino?: string },
   getBranches: (filters: AndreaniBranchFilters) => Promise<AndreaniBranch[]>,

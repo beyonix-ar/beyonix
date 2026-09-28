@@ -6,9 +6,6 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { escapeXml } from "@/lib/arca/xml"
 import { ORDER_CLAIM_STATUSES, ORDER_CLAIM_RESOLUTIONS } from "@/lib/order-claims"
 import { getClaimResolutionText } from "@/lib/orders/claim-resolution"
-import { createAndreaniReturnForClaim } from "@/lib/andreani/claim-shipments"
-import { normalizeAndreaniError } from "@/lib/andreani/client"
-import { isClaimChangeAcceptance } from "@/lib/orders/claim-shipment-view"
 
 export async function GET(request: Request, { params }: { params: Promise<{ claimId: string }> }) {
   const auth = await requireOperator(request)
@@ -48,15 +45,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
       p_claim_id: id, p_actor_id: auth.user.id, p_expected_updated_at: expected, p_patch: patch,
     })
     if (error || !claim) return claimErrorResponse(error)
-    // Cambio aceptado en ESTE guardado: la base ya dejó los mensajes y la
-    // devolución "pendiente"; se intenta generarla en Andreani. Si no se
-    // puede (contrato, datos, Andreani), el reclamo queda guardado igual y el
-    // motivo se ve en el panel para reintentar.
-    if (isClaimChangeAcceptance(patch, claim)) {
-      await createAndreaniReturnForClaim(auth.admin, id).catch((returnError: unknown) => {
-        console.error("ANDREANI_CLAIM_RETURN_AUTO_CREATE_ERROR", { claimId: id, ...normalizeAndreaniError(returnError) })
-      })
-    }
+    // Aceptar un cambio deja en la base los mensajes y el tramo de cambio
+    // "pendiente"; la operación Andreani se genera recién con el reemplazo
+    // reservado, por acción explícita del Admin (logística del reclamo).
     if (patch.append_message || ["cerrado","rechazado"].includes(claim.status) || patch.action === "mark_credit_note_issued") {
       const { data: order } = await auth.admin.from("ordenes").select("cliente_email").eq("id", claim.order_id).single()
       // Cierre de un reclamo formal: misma resolución persistida que el chat y la campana.
