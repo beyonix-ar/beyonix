@@ -3,6 +3,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
 
+import { cartCheckoutButtonState } from "../../lib/cart/cart-checkout-button.ts"
+
 // Fase 5: contratos de integración de la fuente única de stock vendible
 // (lib/inventory/sellable-stock.ts) en catálogo, carrito, checkout y Admin.
 
@@ -73,7 +75,11 @@ test("carrito: informa la línea, deshabilita Finalizar compra y no avanza con c
   assert.match(cartItem, /disabled=\{isMaxQuantity\}/)
   assert.match(cartItem, /disabled=\{quantity <= 1\}/)
   assert.match(cartDrawer, /getCartStockIssues\(items\)\.length > 0\s*\?\s*CART_STOCK_ISSUES_MESSAGE/)
-  assert.match(cartSummary, /disabled=\{Boolean\(checkoutBlockedReason\)\}/)
+  assert.match(cartSummary, /\{\.\.\.cartCheckoutButtonState\(Boolean\(checkoutBlockedReason\)\)\}/)
+  assert.deepEqual(
+    [cartCheckoutButtonState(true).disabled, cartCheckoutButtonState(false).disabled],
+    [true, false],
+  )
   assert.match(cartSummary, /if \(checkoutBlockedReason\) return/)
 })
 

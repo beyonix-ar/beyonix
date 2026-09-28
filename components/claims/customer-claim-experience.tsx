@@ -34,6 +34,7 @@ import {
 } from "@/lib/order-claims"
 import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
+import { CustomerClaimShipmentsNotice } from "@/components/claims/customer-claim-shipments-notice"
 import {
   countUnreadBeyonixMessages,
   getLatestBeyonixMessage,
@@ -1118,6 +1119,8 @@ export function CustomerClaimExperience({
             </div>
           </div>
         )}
+
+        {!helpMessage && !cancellation && <CustomerClaimShipmentsNotice claim={claim} />}
 
         <div ref={chatRef} className="customer-claim-chat-thread min-h-[22rem] max-h-[34rem] space-y-4 overflow-y-auto bg-[#070C12] px-5 py-5">
           {visibleMessages.map((message) => {

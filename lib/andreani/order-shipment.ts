@@ -52,10 +52,10 @@ import { ANDREANI_PROVIDER_DISABLED_MESSAGE } from "./types.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
-const ORDER_SELECT =
+export const ANDREANI_ORDER_SELECT =
   "id, cliente_nombre, cliente_email, cliente_telefono, cliente_dni, cliente_direccion, cp_destino, localidad, provincia, shipping_provider, envio_proveedor, shipping_type, andreani_sucursal_id, andreani_sucursal_codigo, andreani_sucursal_nombre, estado, payment_status, paid_at, payment_confirmed_amount, financial_status, invoice_status, invoice_cae, invoice_number, invoice_point, andreani_envio_id, andreani_tracking, andreani_etiqueta_url, andreani_estado"
 const ORDER_ITEM_SELECT =
-  "producto_id, variante_id, conditioned_stock_id, cantidad, precio"
+  "id, producto_id, variante_id, conditioned_stock_id, cantidad, precio"
 const PRODUCT_SELECT =
   "id, nombre, sku, peso_empaquetado_kg, alto_paquete_cm, ancho_paquete_cm, largo_paquete_cm"
 const VARIANT_SELECT =
@@ -108,6 +108,7 @@ export interface AndreaniOrderRow {
 }
 
 interface OrderItemRow {
+  id: number
   producto_id: number
   variante_id: number | null
   conditioned_stock_id: string | null
@@ -589,7 +590,7 @@ export function buildAndreaniShipmentEnvio(
   return buildAndreaniHomeDeliveryEnvio(order, config)
 }
 
-function buildConsolidatedProduct(
+export function buildConsolidatedProduct(
   orderId: number,
   packageData: AggregatedAndreaniPackage,
 ): ProductLogisticsSource {
@@ -611,9 +612,19 @@ function buildConsolidatedProduct(
   }
 }
 
-async function loadOrderShipmentItems(
+/**
+ * Productos del pedido con sus datos logísticos. `quantities` (order_item_id
+ * -> unidades) limita el bulto a esas líneas y cantidades, p. ej. lo que el
+ * cliente devuelve en un reclamo; una línea pedida que no está en el pedido o
+ * que supera lo vendido se rechaza. `variantOverrides` (order_item_id ->
+ * variante) usa la variante realmente despachada (reemplazo); debe ser del
+ * mismo producto.
+ */
+export async function loadOrderShipmentItems(
   admin: AdminClient,
   orderId: number,
+  quantities?: ReadonlyMap<number, number>,
+  variantOverrides?: ReadonlyMap<number, number>,
 ): Promise<LoadedCheckoutQuoteItem[]> {
   const { data: orderItems, error: itemsError } = await admin
     .from("orden_items")
@@ -627,7 +638,27 @@ async function loadOrderShipmentItems(
     )
   }
 
-  const items = (orderItems ?? []) as unknown as OrderItemRow[]
+  const allItems = (orderItems ?? []) as unknown as OrderItemRow[]
+  if (quantities) {
+    for (const [itemId, quantity] of quantities) {
+      const item = allItems.find((row) => Number(row.id) === itemId)
+      if (!item || !Number.isSafeInteger(quantity) || quantity <= 0 || quantity > item.cantidad) {
+        throw new AndreaniError(
+          "VALIDATION_ERROR",
+          "Los productos del envío no corresponden a los del pedido.",
+        )
+      }
+    }
+  }
+  const items = (quantities
+    ? allItems
+        .filter((row) => quantities.has(Number(row.id)))
+        .map((row) => ({ ...row, cantidad: quantities.get(Number(row.id)) as number }))
+    : allItems
+  ).map((row) => {
+    const override = variantOverrides?.get(Number(row.id))
+    return override === undefined ? row : { ...row, variante_id: override, conditioned_stock_id: null }
+  })
   if (!items.length) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
@@ -736,7 +767,7 @@ interface CrearOrdenEnvioOptions {
   productionAccess?: AndreaniProductionAccess
 }
 
-async function crearOrdenEnvioConReintentoDeAutenticacion(
+export async function crearOrdenEnvioConReintentoDeAutenticacion(
   crear: typeof crearOrdenEnvio,
   input: AndreaniCreateShipmentInput,
   options: CrearOrdenEnvioOptions,
@@ -754,7 +785,7 @@ async function crearOrdenEnvioConReintentoDeAutenticacion(
   }
 }
 
-function formatAndreaniErrorForPersistence(error: ReturnType<typeof normalizeAndreaniError>) {
+export function formatAndreaniErrorForPersistence(error: ReturnType<typeof normalizeAndreaniError>) {
   const { code, message, status, requestId } = error
   const trimmed = message.trim()
   return [
@@ -773,7 +804,7 @@ export async function createAndreaniShipmentForOrder(
   const env = dependencies.env ?? process.env
   const { data: orderData, error: orderError } = await admin
     .from("ordenes")
-    .select(ORDER_SELECT)
+    .select(ANDREANI_ORDER_SELECT)
     .eq("id", orderId)
     .maybeSingle()
 

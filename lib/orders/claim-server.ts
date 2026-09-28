@@ -116,7 +116,7 @@ export async function signClaims(admin: Admin, claims: SupabaseOrderClaim[]) {
 }
 
 export async function getClaimResult(admin: Admin, claimId: number) {
-  const { data, error } = await admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*)").eq("id", claimId).single()
+  const { data, error } = await admin.from("order_claims").select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*)").eq("id", claimId).single()
   if (error || !data) return claimErrorResponse(error?.code === "PGRST116" ? new Error("CLAIM_NOT_FOUND") : error)
   return NextResponse.json({ claim: await signClaim(admin, data as SupabaseOrderClaim) })
 }

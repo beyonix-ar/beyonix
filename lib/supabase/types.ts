@@ -839,6 +839,27 @@ export interface SupabaseOrderClaim {
   affected_items_updated_by?: string | null
   order_claim_files?: SupabaseOrderClaimFile[]
   order_claim_messages?: SupabaseOrderClaimMessage[]
+  /** Envíos Andreani del cambio (devolución y reemplazo). El cliente recibe sólo campos seguros. */
+  order_claim_shipments?: SupabaseOrderClaimShipment[] | null
+}
+
+export interface SupabaseOrderClaimShipment {
+  direction: "devolucion" | "reemplazo"
+  status: "pendiente" | "generada" | "en_transito" | "entregada" | "incidencia"
+  modality?: "retiro_domicilio" | "despacho_sucursal" | "entrega_domicilio" | "entrega_sucursal" | null
+  andreani_tracking?: string | null
+  delivered_at?: string | null
+  /** Sólo Admin. */
+  andreani_envio_id?: string | null
+  andreani_estado?: string | null
+  andreani_last_event?: string | null
+  andreani_last_event_at?: string | null
+  environment?: "QA" | "PROD" | null
+  contract?: string | null
+  cost_amount?: number | string | null
+  creation_status?: "not_started" | "processing" | "created" | "failed" | "manual_review"
+  creation_error?: string | null
+  last_checked_at?: string | null
 }
 
 export interface SupabaseReview {

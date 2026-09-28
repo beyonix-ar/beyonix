@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 
+import { runClaimShipmentTrackingBatch } from "@/lib/andreani/claim-shipments"
 import { normalizeAndreaniError } from "@/lib/andreani/client"
 import { isAndreaniTrackingCronAuthorized } from "@/lib/andreani/tracking-sync-cron-auth"
 import { runAndreaniTrackingSyncBatch } from "@/lib/andreani/tracking-sync-batch"
@@ -17,14 +18,22 @@ export async function GET(request: Request) {
   console.info("ANDREANI_TRACKING_SYNC_BATCH_STARTED", { startedAt: new Date(startedAt).toISOString() })
 
   try {
-    const result = await runAndreaniTrackingSyncBatch(createAdminClient())
+    const admin = createAdminClient()
+    const result = await runAndreaniTrackingSyncBatch(admin)
+    // Envíos de reclamos (devolución y reemplazo): mismo cron, sin tocar el
+    // resultado del batch de pedidos si fallara.
+    const claimShipments = await runClaimShipmentTrackingBatch(admin).catch((error: unknown) => {
+      console.error("ANDREANI_CLAIM_SHIPMENT_BATCH_ERROR", normalizeAndreaniError(error))
+      return null
+    })
     const durationMs = Date.now() - startedAt
     console.info("ANDREANI_TRACKING_SYNC_BATCH_FINISHED", {
       ...result,
       unchanged: result.updated - result.statusChanged,
+      claimShipments,
       durationMs,
     })
-    return NextResponse.json({ ok: true, ...result, durationMs })
+    return NextResponse.json({ ok: true, ...result, claimShipments, durationMs })
   } catch (error) {
     const safeError = normalizeAndreaniError(error)
     const durationMs = Date.now() - startedAt

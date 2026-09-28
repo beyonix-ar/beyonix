@@ -52,13 +52,15 @@ test("la ruta rechaza antes de ejecutar el batch de tracking", () => {
   const guard = source.match(
     /if\s*\(\s*!isAndreaniTrackingCronAuthorized\([\s\S]*?\)\s*\)\s*\{([\s\S]*?)\n\s*\}/,
   )
-  const batchCallIndex = source.indexOf(
-    "runAndreaniTrackingSyncBatch(createAdminClient())",
-  )
+  const adminIndex = source.indexOf("const admin = createAdminClient()")
+  const batchCallIndex = source.indexOf("runAndreaniTrackingSyncBatch(admin)")
+  const returnsBatchIndex = source.indexOf("runClaimShipmentTrackingBatch(admin)")
 
   assert.ok(guard?.index !== undefined, "Falta el guard de autorización")
   assert.match(guard[1], /return NextResponse\.json\([\s\S]*status: 401/)
+  assert.ok(adminIndex > guard.index, "El cliente admin se crea después del guard")
   assert.ok(batchCallIndex > guard.index, "El batch debe ejecutarse después del guard")
+  assert.ok(returnsBatchIndex > guard.index, "El batch de devoluciones también")
 })
 
 test("la Scheduled Function de Netlify conserva el Bearer y la frecuencia de 15 minutos", async () => {

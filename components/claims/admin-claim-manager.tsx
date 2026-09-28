@@ -63,6 +63,7 @@ import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import { useClaimWizardScroll } from "@/components/claims/use-claim-wizard-scroll"
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
+import { ClaimAndreaniShipmentPanel } from "@/components/claims/claim-andreani-shipment-panel"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
@@ -2229,6 +2230,9 @@ export function AdminClaimManager({
                   <p className="admin-claim-wizard-note">Solución aprobada: {getOrderClaimResolutionLabel(claim.resolution ?? "")}. La decisión quedó registrada. Una corrección posterior requiere revisar las acciones ya realizadas; este flujo no revierte stock ni operaciones financieras.</p>
                 )}
                 {selectedStep === "reception" && needsReception && (
+                  <ClaimAndreaniShipmentPanel claim={claim} direction="devolucion" canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
+                )}
+                {selectedStep === "reception" && needsReception && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
                     canManage={isAdmin && !closed && !(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && ["processing", "authorized"].includes(note.status))}
                     registeredReplacements={registeredReplacements} onUpdated={onInventoryUpdated} onClaimChange={onClaimChange} />
@@ -2240,6 +2244,9 @@ export function AdminClaimManager({
                       onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>Registrar reemplazo</AdminButton>
                     {!replacementFlow.canRegisterReplacement && <p className="admin-claim-wizard-note">Primero recibí el producto original.</p>}
                   </div>
+                )}
+                {selectedStep === "execution" && canCompleteReplacementSolution && claim.resolution === "cambio_producto" && (
+                  <ClaimAndreaniShipmentPanel claim={claim} direction="reemplazo" canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
                 )}
                 {selectedStep === "execution" && canCompleteReplacementSolution && (
                   <div className="admin-claim-wizard-action">

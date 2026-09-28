@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import { createAndreaniReplacementShipmentForClaim } from "@/lib/andreani/claim-shipments"
+import { normalizeAndreaniError } from "@/lib/andreani/client"
 import {
   formatPendingReceptionMessage,
   getPendingOriginalReception,
@@ -155,6 +157,16 @@ export async function POST(
       },
       { status: conflict || requiresReceivedItem || insufficientStock ? 409 : forbidden ? 403 : 500 },
     )
+  }
+
+  // Reemplazo de un cambio: con todas las unidades reclamadas registradas, se
+  // genera el envío Andreani BEYONIX -> cliente (idempotente: un reintento o
+  // un replay de esta misma solicitud reutiliza la orden). No vuelve a tocar
+  // stock: la salida ya quedó registrada arriba, exactamente una vez.
+  if (claimId !== null) {
+    await createAndreaniReplacementShipmentForClaim(auth.admin, claimId).catch((shipmentError: unknown) => {
+      console.error("ANDREANI_CLAIM_REPLACEMENT_AUTO_CREATE_ERROR", { claimId, ...normalizeAndreaniError(shipmentError) })
+    })
   }
 
   return NextResponse.json({ replacement: data })
