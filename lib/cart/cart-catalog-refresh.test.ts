@@ -49,6 +49,15 @@ function makeItem(product: SupabaseProducto, overrides: Partial<RefreshableCartI
   }
 }
 
+test("activar 'Mismo precio en contado y cuotas' en Admin refresca el carrito abierto", () => {
+  const items = [makeItem(makeProduct())]
+  const result = reconcileCartWithCatalog(items, [makeProduct({ cuotas_sin_recargo: true })])
+  assert.equal(result.changed, true)
+  assert.equal(result.items[0].product.cuotas_sin_recargo, true)
+  // Snapshot viejo sin la clave (sessionStorage previo a la columna) = OFF: no cambia nada.
+  assert.equal(reconcileCartWithCatalog(items, [makeProduct({ cuotas_sin_recargo: false })]).changed, false)
+})
+
 test("sin cambios comerciales el carrito NO se altera (misma referencia, sin re-render)", () => {
   const items = [makeItem(makeProduct())]
   const result = reconcileCartWithCatalog(items, [makeProduct()])

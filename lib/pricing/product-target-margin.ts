@@ -65,6 +65,7 @@ export interface ResolveTargetMarginPriceInput {
   productId: number
   targetMarginPercent: number
   eligibleInstallmentCounts: InstallmentCount[]
+  installmentsWithoutSurcharge?: boolean
   variantStates?: TargetMarginVariantState[] | null
 }
 
@@ -85,6 +86,7 @@ export async function resolveTargetMarginPrice({
   productId,
   targetMarginPercent,
   eligibleInstallmentCounts,
+  installmentsWithoutSurcharge = false,
   variantStates = null,
 }: ResolveTargetMarginPriceInput): Promise<TargetMarginPriceResolution> {
   const knownCost = await resolveProductKnownCost(admin, productId)
@@ -111,6 +113,7 @@ export async function resolveTargetMarginPrice({
     eligibleInstallmentCounts,
     config: installmentsFinancing,
     transferDiscountPercent: pricing.transferDiscountPercent,
+    installmentsWithoutSurcharge,
   })
 
   if (!result) {

@@ -60,9 +60,9 @@ test("el detalle de cuotas es informativo: modal con filas <li>, sin controles n
   assert.doesNotMatch(modal, /setSelectedPayment|setMercadoPagoMode|type="radio"/)
 })
 
-test("resumen: contado dice 'Pago con Mercado Pago al contado'; cuotas 'Hasta N cuotas sin interés de $X'", () => {
+test("resumen: contado dice 'Pago con Mercado Pago al contado'; cuotas 'Hasta N cuotas sin interés/sin recargo de $X'", () => {
   assert.match(checkout, /"Pago con Mercado Pago al contado"/)
-  assert.match(checkout, /`Hasta \$\{maxInstallmentPlan\.count\} cuotas sin interés de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/)
+  assert.match(checkout, /`Hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/)
   // El total del resumen es el de la modalidad elegida (el mismo que se cobra).
   assert.match(checkout, /mercadoPagoQuote\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
 })

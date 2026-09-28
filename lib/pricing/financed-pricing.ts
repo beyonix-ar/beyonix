@@ -21,6 +21,9 @@
  *    `mercadopago_payment_snapshot`, fuente de verdad del fee real).
  *    El resultado se redondea HACIA ARRIBA al múltiplo común de las cuotas
  *    (`getFinancedPriceDivisor`), así N cuotas x monto cierran exacto.
+ * 4. CUOTAS SIN RECARGO (`cuotas_sin_recargo`, por producto, heredado por sus
+ *    variantes): FINANCIADO = CONTADO, sin gross-up ni redondeo. BEYONIX
+ *    absorbe el costo de Mercado Pago. Ver `getProductFinancedPrice`.
  *
  * El precio financiado NUNCA se persiste como columna -- se deriva siempre de
  * precio + config vigente, igual que el precio por margen objetivo
@@ -105,6 +108,48 @@ export function getFinancedPrice(
   const divisor = getFinancedPriceDivisor(maxCount)
 
   return Math.ceil(grossUpPesos / divisor) * divisor
+}
+
+/**
+ * `true` sólo si el producto tiene "Mismo precio en contado y cuotas" Y al
+ * menos una cuota habilitada: el flag solo nunca habilita cuotas.
+ */
+export function hasInstallmentsWithoutSurcharge(
+  product: EligibleInstallmentsProduct,
+): boolean {
+  return (
+    product.cuotas_sin_recargo === true &&
+    getMaxEligibleInstallmentCount(product) != null
+  )
+}
+
+/** Copy de cara al cliente para las cuotas del producto ("Hasta N {copy} de $X"). */
+export function getInstallmentsCopy(product: EligibleInstallmentsProduct): string {
+  return hasInstallmentsWithoutSurcharge(product)
+    ? "cuotas sin recargo"
+    : "cuotas sin interés"
+}
+
+/**
+ * Precio financiado de UN producto según su regla: con cuotas sin recargo es
+ * exactamente el contado (sin gross-up ni redondeo al múltiplo de cuotas);
+ * si no, `getFinancedPrice` con su cuota máxima. `null` sin cuotas
+ * habilitadas o con contado inválido.
+ */
+export function getProductFinancedPrice(
+  product: EligibleInstallmentsProduct,
+  cashPrice: number,
+  config: InstallmentsFinancingConfig,
+): number | null {
+  const maxCount = getMaxEligibleInstallmentCount(product)
+  if (maxCount == null) return null
+
+  if (product.cuotas_sin_recargo === true) {
+    const safeCash = Number.isFinite(cashPrice) ? Math.max(cashPrice, 0) : 0
+    return safeCash > 0 ? safeCash : null
+  }
+
+  return getFinancedPrice(cashPrice, maxCount, config)
 }
 
 function greatestCommonDivisor(a: number, b: number): number {
@@ -204,7 +249,10 @@ function toCents(amount: number): number {
  * Monto de cada cuota: división EXACTA, sin redondear, del total canónico
  * (`getFinancedPrice` o `roundUpCheckoutTotalForInstallments`, que ya
  * garantizan divisibilidad al centavo). Nunca se ajusta una cuota para que
- * cierre: si el total no divide, el error está en el total, no acá.
+ * cierre: si el total no divide, el error está en el total, no acá. Única
+ * excepción: con cuotas sin recargo el total es el contado tal cual (sin
+ * redondeo, para no cobrar ni un centavo más) y la cuota puede tener
+ * fracción de centavo; Mercado Pago define el importe final de cada cuota.
  */
 export function getInstallmentAmount(
   financedPrice: number,
@@ -232,9 +280,8 @@ export function getInstallmentPlans(
   cashPrice: number,
   config: InstallmentsFinancingConfig,
 ): InstallmentPlan[] {
-  const maxCount = getMaxEligibleInstallmentCount(product)
-  const financedPrice = getFinancedPrice(cashPrice, maxCount, config)
-  if (maxCount == null || financedPrice == null) return []
+  const financedPrice = getProductFinancedPrice(product, cashPrice, config)
+  if (financedPrice == null) return []
 
   return getEligibleInstallmentCounts(product).flatMap((count) => {
     const amount = getInstallmentAmount(financedPrice, count)
@@ -246,6 +293,8 @@ export interface CartFinanceableLine {
   cashPrice: number
   maxEligibleCount: InstallmentCount | null
   quantity: number
+  /** Regla del producto "Mismo precio en contado y cuotas": la línea aporta su contado. */
+  withoutSurcharge?: boolean
 }
 
 /**
@@ -255,18 +304,17 @@ export interface CartFinanceableLine {
  * mínimo común (`getCartInstallmentEligibility`) sólo limita qué cantidades
  * de cuotas se OFRECEN al cliente para pagar este mismo total -- nunca
  * cambia el total en sí. Una línea sin ninguna cuota habilitada aporta su
- * precio de contado (no hay financiado que calcular).
+ * precio de contado (no hay financiado que calcular), igual que una línea
+ * con cuotas sin recargo.
  */
 export function getCartFinancedTotal(
   lines: CartFinanceableLine[],
   config: InstallmentsFinancingConfig,
 ): number {
   return lines.reduce((total, line) => {
-    const financedPrice = getFinancedPrice(
-      line.cashPrice,
-      line.maxEligibleCount,
-      config,
-    )
+    const financedPrice = line.withoutSurcharge
+      ? null
+      : getFinancedPrice(line.cashPrice, line.maxEligibleCount, config)
     const perUnit = financedPrice ?? getCashPrice({ precio: line.cashPrice })
     return total + perUnit * Math.max(0, line.quantity)
   }, 0)

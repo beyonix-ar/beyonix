@@ -230,6 +230,7 @@ export function useProductoForm({
     cuotas2: producto?.cuotas_2_habilitadas ?? false,
     cuotas3: producto?.cuotas_3_habilitadas ?? false,
     cuotas6: producto?.cuotas_6_habilitadas ?? false,
+    cuotasSinRecargo: producto?.cuotas_sin_recargo ?? false,
     // Método de precio: se completa de verdad al resolver getProductPricing()
     // (abajo) -- hasta entonces, "manual" es el default seguro (igual que un
     // producto sin fila en product_pricing).
@@ -417,6 +418,9 @@ export function useProductoForm({
 
       cuotas_6_habilitadas:
         form.cuotas6,
+
+      cuotas_sin_recargo:
+        form.cuotasSinRecargo,
 
       pricing_mode:
         form.pricingMode,

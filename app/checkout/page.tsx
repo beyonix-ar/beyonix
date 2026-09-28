@@ -409,7 +409,13 @@ function CheckoutPaymentOptionCard({
 }
 
 /** Cuotas SÓLO informativas: filas de texto, sin controles ni estado. */
-function InstallmentPlanList({ plans }: { plans: CheckoutInstallmentPlan[] }) {
+function InstallmentPlanList({
+  plans,
+  installmentsCopy,
+}: {
+  plans: CheckoutInstallmentPlan[]
+  installmentsCopy: string
+}) {
   return (
     <ul
       data-installment-plans
@@ -422,7 +428,7 @@ function InstallmentPlanList({ plans }: { plans: CheckoutInstallmentPlan[] }) {
           className="flex items-center justify-between gap-3 py-2 text-[13px]"
         >
           <span className="beyonix-modal-title text-white/90">
-            {plan.count} cuotas sin interés de
+            {plan.count} {installmentsCopy} de
           </span>
           <span className="beyonix-modal-title font-semibold text-white">
             {formatPrice(plan.amount)}
@@ -1240,6 +1246,14 @@ export default function CheckoutPage() {
         (plan) => plan.count === mercadoPagoPricing.maxInstallmentCount,
       ) ?? null
     : null
+  // "Mismo precio en contado y cuotas" en TODO el carrito: el total en cuotas
+  // es el de contado. Con un solo producto con recargo se mantiene el copy
+  // habitual.
+  const installmentsWithoutSurcharge =
+    mercadoPagoPricing.installmentsPricingRule === "without_surcharge"
+  const installmentsCopy = installmentsWithoutSurcharge
+    ? "cuotas sin recargo"
+    : "cuotas sin interés"
   // Total que se envía como `expectedTotal` (Mercado Pago y transferencia):
   // sólo para que el servidor rechace (409) si recalcula otro monto; nunca
   // se usa para cobrar.
@@ -3004,7 +3018,7 @@ export default function CheckoutPage() {
                           description="Pagá con tarjeta vía Mercado Pago"
                           badge={
                             <span className="checkout-badge checkout-badge-info">
-                              Hasta {mercadoPagoPricing.maxInstallmentCount} cuotas sin interés
+                              Hasta {mercadoPagoPricing.maxInstallmentCount} {installmentsCopy}
                             </span>
                           }
                           action={
@@ -3032,11 +3046,22 @@ export default function CheckoutPage() {
                             {formatPrice(financedPreviewQuote.externalAmountDue)}
                           </span>
                         </p>
+                        {installmentsWithoutSurcharge && (
+                          <p
+                            data-installments-without-surcharge
+                            className="beyonix-modal-body mt-1 text-[12px] font-semibold leading-5 text-emerald-400"
+                          >
+                            Mismo precio que al contado.
+                          </p>
+                        )}
                         <p className="beyonix-modal-body mt-1 text-[12px] leading-5 text-white/65">
                           La cantidad de cuotas la elegís dentro de Mercado Pago.
                         </p>
                       </div>
-                      <InstallmentPlanList plans={financedPreviewPricing.installmentPlans} />
+                      <InstallmentPlanList
+                        plans={financedPreviewPricing.installmentPlans}
+                        installmentsCopy={installmentsCopy}
+                      />
                       {/* Disclosure legal (CFTEA): discreto y junto al detalle
                           de cuotas. Fórmula sin cambios; 1 decimal es-AR. */}
                       {cfteaSummary && (
@@ -3553,7 +3578,7 @@ export default function CheckoutPage() {
                     data-mercadopago-summary={mercadoPagoQuote.mode}
                   >
                     {isMercadoPagoFinanced && maxInstallmentPlan
-                      ? `Hasta ${maxInstallmentPlan.count} cuotas sin interés de ${formatPrice(maxInstallmentPlan.amount)}`
+                      ? `Hasta ${maxInstallmentPlan.count} ${installmentsCopy} de ${formatPrice(maxInstallmentPlan.amount)}`
                       : "Pago con Mercado Pago al contado"}
                   </p>
                 )}
@@ -3638,10 +3663,13 @@ export default function CheckoutPage() {
               </p>
               {maxInstallmentPlan && (
                 <p className="beyonix-modal-body mt-0.5 text-[13px] text-white/65">
-                  Hasta {maxInstallmentPlan.count} cuotas sin interés.
+                  Hasta {maxInstallmentPlan.count} {installmentsCopy}.
                 </p>
               )}
-              <InstallmentPlanList plans={mercadoPagoPricing.installmentPlans} />
+              <InstallmentPlanList
+                plans={mercadoPagoPricing.installmentPlans}
+                installmentsCopy={installmentsCopy}
+              />
               <div
                 role="note"
                 aria-labelledby="financed-total-warning-title"

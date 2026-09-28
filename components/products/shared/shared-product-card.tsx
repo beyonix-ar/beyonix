@@ -26,10 +26,11 @@ import {
   getDiscountPercent,
 } from "@/lib/products/product-variants"
 import {
-  getFinancedPrice,
   getInstallmentAmount,
+  getInstallmentsCopy,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
+  getProductFinancedPrice,
 } from "@/lib/pricing/financed-pricing"
 import {
   MAX_CART_ITEM_QUANTITY,
@@ -102,9 +103,9 @@ export default function SharedProductCard({
     defaultVariant.originalPrice
   )
   const maxEligibleInstallmentCount = getMaxEligibleInstallmentCount(product)
-  const financedPrice = getFinancedPrice(
+  const financedPrice = getProductFinancedPrice(
+    product,
     defaultVariant.price,
-    maxEligibleInstallmentCount,
     installmentsFinancing,
   )
   const maxInstallmentAmount =
@@ -113,7 +114,7 @@ export default function SharedProductCard({
       : null
   const installmentLabel =
     maxEligibleInstallmentCount != null && maxInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} cuotas sin interés de $${maxInstallmentAmount.toLocaleString("es-AR")}`
+      ? `Hasta ${maxEligibleInstallmentCount} ${getInstallmentsCopy(product)} de $${maxInstallmentAmount.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`
       : null
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     defaultVariant.price,

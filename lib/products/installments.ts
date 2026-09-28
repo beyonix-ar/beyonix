@@ -14,6 +14,8 @@ export interface EligibleInstallmentsProduct {
   cuotas_2_habilitadas?: boolean
   cuotas_3_habilitadas?: boolean
   cuotas_6_habilitadas?: boolean
+  /** "Mismo precio en contado y cuotas": el financiado es igual al contado. No habilita cuotas por sí solo. */
+  cuotas_sin_recargo?: boolean | null
 }
 
 const ROUNDING_EPSILON = 1e-6

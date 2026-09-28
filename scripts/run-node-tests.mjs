@@ -25,6 +25,8 @@ const TEST_FILES = [
   "lib/pricing/product-pricing.test.ts",
   "lib/pricing/financed-pricing.test.ts",
   "lib/pricing/installments-checkout-total.test.ts",
+  "lib/pricing/installments-without-surcharge.test.ts",
+  "lib/pricing/installments-without-surcharge-sql.test.ts",
   "components/products/financed-price-display-contract.test.ts",
   "components/products/installments-copy-contract.test.ts",
   "lib/products/product-variants.test.ts",

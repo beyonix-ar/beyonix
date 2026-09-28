@@ -94,6 +94,16 @@ export async function PATCH(
   delete catalogInput.pricing_mode
   delete catalogInput.target_margin_percent
 
+  if (
+    catalogInput.cuotas_sin_recargo !== undefined &&
+    typeof catalogInput.cuotas_sin_recargo !== "boolean"
+  ) {
+    return Response.json(
+      { error: "La opción de cuotas sin recargo no es válida." },
+      { status: 400 },
+    )
+  }
+
   if (pricingMode === "target_margin") {
     if (targetMarginPercent == null) {
       return Response.json(
@@ -115,6 +125,7 @@ export async function PATCH(
         productId,
         targetMarginPercent,
         eligibleInstallmentCounts,
+        installmentsWithoutSurcharge: catalogInput.cuotas_sin_recargo === true,
         variantStates: variantStates as TargetMarginVariantState[],
       })
     } catch {

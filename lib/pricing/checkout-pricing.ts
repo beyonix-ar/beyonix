@@ -35,11 +35,12 @@ import {
 import {
   calculateCftea,
   getCartFinancedTotal,
-  getFinancedPrice,
   getInstallmentAmount,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
+  getProductFinancedPrice,
   getTransferPrice,
+  hasInstallmentsWithoutSurcharge,
   roundUpCheckoutTotalForInstallments,
 } from "./financed-pricing.ts"
 
@@ -82,8 +83,38 @@ export interface CheckoutPricingLine {
   quantity: number
   /** Precio de contado unitario vigente (producto/variante/condicionado). */
   unitPrice: number
-  /** Flags de cuotas del producto (`cuotas_N_habilitadas`). */
+  /** Flags de cuotas del producto (`cuotas_N_habilitadas`, `cuotas_sin_recargo`). */
   installments: EligibleInstallmentsProduct
+}
+
+/**
+ * Regla de precio en cuotas usada por el carrito (queda en el snapshot de la
+ * orden): `surcharge` = todas las líneas financiadas con recargo,
+ * `without_surcharge` = todas al precio de contado, `mixed` = combinación.
+ */
+export type InstallmentsPricingRule = "surcharge" | "without_surcharge" | "mixed"
+
+export function getInstallmentsPricingRule(
+  lines: CheckoutPricingLine[],
+): InstallmentsPricingRule {
+  const withoutSurcharge = lines.filter((line) =>
+    hasInstallmentsWithoutSurcharge(line.installments),
+  ).length
+  if (withoutSurcharge === 0) return "surcharge"
+  return withoutSurcharge === lines.length ? "without_surcharge" : "mixed"
+}
+
+/** Productos del carrito con "Mismo precio en contado y cuotas", ordenados y sin repetir. */
+export function getInstallmentsWithoutSurchargeProductIds(
+  lines: CheckoutPricingLine[],
+): number[] {
+  return [
+    ...new Set(
+      lines
+        .filter((line) => hasInstallmentsWithoutSurcharge(line.installments))
+        .map((line) => line.productId),
+    ),
+  ].sort((left, right) => left - right)
 }
 
 export interface CheckoutPricingSettings {
@@ -138,6 +169,8 @@ export interface MercadoPagoCheckoutPricing {
   financedTotal: number | null
   cartInstallmentEligibility: InstallmentCount[]
   maxInstallmentCount: InstallmentCount | null
+  installmentsPricingRule: InstallmentsPricingRule
+  installmentsWithoutSurchargeProductIds: number[]
   cash: MercadoPagoModeQuote
   financed: MercadoPagoModeQuote | null
   installmentPlans: CheckoutInstallmentPlan[]
@@ -189,12 +222,14 @@ export function calculateMercadoPagoCheckoutPricing({
   // Financiado: suma de los financiados INDIVIDUALES de cada línea (cada una
   // con SU máximo de cuotas). El beneficio de tienda es un % uniforme: como
   // el gross-up es lineal, aplicarlo sobre el financiado crudo equivale a
-  // aplicarlo línea por línea antes de financiar.
+  // aplicarlo línea por línea antes de financiar. Las líneas con cuotas sin
+  // recargo aportan su contado.
   const rawFinancedProducts = getCartFinancedTotal(
     lines.map((line) => ({
       cashPrice: getEffectiveUnitPrice(line),
       maxEligibleCount: getMaxEligibleInstallmentCount(line.installments),
       quantity: line.quantity,
+      withoutSurcharge: hasInstallmentsWithoutSurcharge(line.installments),
     })),
     settings.installmentsFinancing,
   )
@@ -205,16 +240,21 @@ export function calculateMercadoPagoCheckoutPricing({
     cartInstallmentEligibility.length
       ? cartInstallmentEligibility[cartInstallmentEligibility.length - 1]
       : null
-  const financedStoreBenefitDiscountAmount = calculateStoreBenefitDiscount(
-    rawFinancedProducts,
-    storeBenefitPercent,
-  )
+  const installmentsPricingRule = getInstallmentsPricingRule(lines)
+  // Todo el carrito sin recargo: en cuotas se cobra EXACTAMENTE el contado
+  // (mismos productos, beneficio y envío), sin ajuste de redondeo.
+  const sameAsCash = installmentsPricingRule === "without_surcharge"
+  const financedStoreBenefitDiscountAmount = sameAsCash
+    ? storeBenefitDiscountAmount
+    : calculateStoreBenefitDiscount(rawFinancedProducts, storeBenefitPercent)
   const financedTotal =
     rawFinancedProducts > 0 && maxInstallmentCount != null
-      ? roundMoney(
-          Math.max(rawFinancedProducts - financedStoreBenefitDiscountAmount, 0) +
-            shipping,
-        )
+      ? sameAsCash
+        ? cashTotal
+        : roundMoney(
+            Math.max(rawFinancedProducts - financedStoreBenefitDiscountAmount, 0) +
+              shipping,
+          )
       : null
 
   const cashCredit = calculateCustomerCreditApplication({
@@ -246,12 +286,20 @@ export function calculateMercadoPagoCheckoutPricing({
       requestedAmount: requestedCustomerCredit,
     })
     // Ajuste de redondeo final de cuotas, una única vez, con divisor = cuotas
-    // OFRECIDAS al carrito (no la elegida): 2/3/6 cobran el mismo total.
-    const rounded = roundUpCheckoutTotalForInstallments({
-      total: financedTotal,
-      customerCreditApplied: financedCredit.appliedAmount,
-      offeredCounts: cartInstallmentEligibility,
-    })
+    // OFRECIDAS al carrito (no la elegida): 2/3/6 cobran el mismo total. Sin
+    // recargo no se redondea: cobrar un centavo más ya no sería "mismo precio".
+    const rounded = sameAsCash
+      ? {
+          total: financedTotal,
+          externalAmountDue: financedCredit.externalAmountDue,
+          customerCreditApplied: financedCredit.appliedAmount,
+          roundingAdjustment: 0,
+        }
+      : roundUpCheckoutTotalForInstallments({
+          total: financedTotal,
+          customerCreditApplied: financedCredit.appliedAmount,
+          offeredCounts: cartInstallmentEligibility,
+        })
     financed = {
       mode: "financed",
       modality: getMercadoPagoPaymentModality("financed"),
@@ -294,6 +342,9 @@ export function calculateMercadoPagoCheckoutPricing({
     financedTotal,
     cartInstallmentEligibility,
     maxInstallmentCount,
+    installmentsPricingRule,
+    installmentsWithoutSurchargeProductIds:
+      getInstallmentsWithoutSurchargeProductIds(lines),
     cash,
     financed,
     installmentPlans,
@@ -384,8 +435,9 @@ export type CheckoutSummaryMode = "cash" | "financed" | "transfer"
  * Importe de cada línea del resumen según la modalidad elegida (sólo
  * presentación; nunca toca el precio real del producto):
  * - contado: precio de contado de la línea;
- * - cuotas: precio financiado canónico de la línea (`getFinancedPrice` con
- *   SU cuota máxima, igual que `getCartFinancedTotal`); el ajuste de
+ * - cuotas: precio financiado canónico de la línea (`getProductFinancedPrice`:
+ *   SU cuota máxima o su contado si es sin recargo, igual que
+ *   `getCartFinancedTotal`); el ajuste de
  *   redondeo de cuotas (centavos) se reparte entre las líneas;
  * - transferencia: el descuento canónico (calculado sobre el total de
  *   productos) se reparte en proporción al precio de contado de cada línea.
@@ -407,15 +459,36 @@ export function getCheckoutSummaryLineAmounts({
     const quantity = Math.max(0, line.quantity)
     if (mode !== "financed") return cashUnit * quantity
 
-    const financedUnit = getFinancedPrice(
+    const financedUnit = getProductFinancedPrice(
+      line.installments,
       cashUnit,
-      getMaxEligibleInstallmentCount(line.installments),
       installmentsFinancing,
     )
     return (financedUnit ?? cashUnit) * quantity
   })
 
-  return allocateAmountAcrossLines(weights, productsSubtotal)
+  // Carrito mixto: el ajuste de redondeo de cuotas es de las líneas CON
+  // recargo; una línea sin recargo muestra siempre su contado exacto.
+  const withoutSurcharge = lines.map((line) =>
+    mode === "financed" && hasInstallmentsWithoutSurcharge(line.installments),
+  )
+  if (!withoutSurcharge.some(Boolean) || withoutSurcharge.every(Boolean)) {
+    return allocateAmountAcrossLines(weights, productsSubtotal)
+  }
+
+  const fixedAmounts = weights.map((weight, index) =>
+    withoutSurcharge[index] ? roundMoney(weight) : 0,
+  )
+  const fixedTotal = fixedAmounts.reduce((sum, amount) => sum + amount, 0)
+  const surchargeIndexes = weights.flatMap((_, index) => (withoutSurcharge[index] ? [] : [index]))
+  const surchargeAmounts = allocateAmountAcrossLines(
+    surchargeIndexes.map((index) => weights[index]),
+    roundMoney(productsSubtotal - fixedTotal),
+  )
+
+  return fixedAmounts.map((amount, index) =>
+    withoutSurcharge[index] ? amount : surchargeAmounts[surchargeIndexes.indexOf(index)],
+  )
 }
 
 export function getMercadoPagoModeQuote(
@@ -446,6 +519,9 @@ export interface MercadoPagoPricingSnapshotFields {
   preferenceMaxInstallments: number
   cfteaByCount: Partial<Record<InstallmentCount, number>> | null
   installmentsFinancing: InstallmentsFinancingConfig
+  /** Regla de cuotas vigente al comprar ("Mismo precio en contado y cuotas" por producto). */
+  installmentsPricingRule: InstallmentsPricingRule
+  installmentsWithoutSurchargeProductIds: number[]
   economicFingerprint: string
 }
 
@@ -516,6 +592,9 @@ export function buildMercadoPagoPricingSnapshot({
     preferenceMaxInstallments: quote.preferenceMaxInstallments,
     cfteaByCount,
     installmentsFinancing: settings.installmentsFinancing,
+    installmentsPricingRule: pricing.installmentsPricingRule,
+    installmentsWithoutSurchargeProductIds:
+      pricing.installmentsWithoutSurchargeProductIds,
     economicFingerprint,
   }
 }
@@ -654,6 +733,11 @@ export function buildCheckoutEconomicState({
         quantity: line.quantity,
         unitPriceCents: toCents(line.unitPrice),
         maxInstallmentCount: getMaxEligibleInstallmentCount(line.installments),
+        // Sólo presente cuando aplica (stableStringify omite undefined): los
+        // carritos con recargo conservan el mismo fingerprint que antes.
+        withoutSurcharge: hasInstallmentsWithoutSurcharge(line.installments)
+          ? true
+          : undefined,
       }))
       .sort(
         (left, right) =>

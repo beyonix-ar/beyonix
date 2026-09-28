@@ -29,6 +29,7 @@ export interface ProductoPayload {
   cuotas_2_habilitadas?: boolean
   cuotas_3_habilitadas?: boolean
   cuotas_6_habilitadas?: boolean
+  cuotas_sin_recargo?: boolean
   promo_event_id?: string | null
   promo_original_precio?: number | null
   promo_original_precio_anterior?: number | null

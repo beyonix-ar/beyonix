@@ -50,9 +50,8 @@ import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
 import { getEffectiveInstallmentPercent } from "@/lib/products/installments"
 import {
-  getFinancedPrice,
   getInstallmentPlans,
-  getMaxEligibleInstallmentCount,
+  getProductFinancedPrice,
   getTransferPrice,
 } from "@/lib/pricing/financed-pricing"
 import { useSiteSettings } from "@/hooks/use-site-settings"
@@ -178,11 +177,16 @@ export function ProductoForm({
     ],
     [form.cuotas2, form.cuotas3, form.cuotas6],
   )
-  const maxEligibleInstallmentCount = getMaxEligibleInstallmentCount({
+  const installmentsPreviewProduct = {
     cuotas_2_habilitadas: form.cuotas2,
     cuotas_3_habilitadas: form.cuotas3,
     cuotas_6_habilitadas: form.cuotas6,
-  })
+    cuotas_sin_recargo: form.cuotasSinRecargo,
+  }
+  // Misma regla que hasInstallmentsWithoutSurcharge (flag + al menos una
+  // cuota), derivada de valores primitivos/memoizados para el React Compiler.
+  const installmentsWithoutSurcharge =
+    form.cuotasSinRecargo && eligibleInstallmentCounts.length > 0
   const cashPricePreview =
     Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : null
   const transferPricePreview =
@@ -191,19 +195,11 @@ export function ProductoForm({
       : null
   const financedPricePreview =
     cashPricePreview != null
-      ? getFinancedPrice(cashPricePreview, maxEligibleInstallmentCount, installmentsFinancing)
+      ? getProductFinancedPrice(installmentsPreviewProduct, cashPricePreview, installmentsFinancing)
       : null
   const installmentPlansPreview =
     cashPricePreview != null
-      ? getInstallmentPlans(
-          {
-            cuotas_2_habilitadas: form.cuotas2,
-            cuotas_3_habilitadas: form.cuotas3,
-            cuotas_6_habilitadas: form.cuotas6,
-          },
-          cashPricePreview,
-          installmentsFinancing,
-        )
+      ? getInstallmentPlans(installmentsPreviewProduct, cashPricePreview, installmentsFinancing)
       : []
   const targetMarginPercentValue = form.targetMarginPercent
     ? Number(form.targetMarginPercent)
@@ -224,6 +220,7 @@ export function ProductoForm({
             eligibleInstallmentCounts,
             config: installmentsFinancing,
             transferDiscountPercent: pricing.transferDiscountPercent,
+            installmentsWithoutSurcharge,
           })
         : null,
     [
@@ -233,6 +230,7 @@ export function ProductoForm({
       eligibleInstallmentCounts,
       installmentsFinancing,
       pricing.transferDiscountPercent,
+      installmentsWithoutSurcharge,
     ],
   )
   // En modo margen objetivo, el precio público es SIEMPRE el que calcula el
@@ -257,6 +255,7 @@ export function ProductoForm({
           eligibleInstallmentCounts,
           config: installmentsFinancing,
           transferDiscountPercent: pricing.transferDiscountPercent,
+          installmentsWithoutSurcharge,
         })
       : null
   // Regla de negocio puramente de UI: el precio anterior (el que se muestra
@@ -503,6 +502,7 @@ export function ProductoForm({
       cuotas_2_habilitadas: form.cuotas2,
       cuotas_3_habilitadas: form.cuotas3,
       cuotas_6_habilitadas: form.cuotas6,
+      cuotas_sin_recargo: form.cuotasSinRecargo,
       stock,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : null,
       destacado: form.destacado,
@@ -740,6 +740,31 @@ export function ProductoForm({
                     )
                   })}
                 </div>
+                <AdminSecondaryButton
+                  title={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
+                  aria-label={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
+                  aria-pressed={form.cuotasSinRecargo}
+                  onClick={() => setField("cuotasSinRecargo", !form.cuotasSinRecargo)}
+                  className={`product-editor-toggle grid w-full min-h-10 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 border px-2.5 py-1.5 text-left ${form.cuotasSinRecargo ? "product-editor-toggle-active border-emerald-400/25 bg-emerald-400/[0.07]" : "border-white/8 bg-transparent"}`}
+                >
+                  {form.cuotasSinRecargo ? (
+                    <ToggleRight className="product-editor-toggle-icon size-5 shrink-0 text-emerald-300" />
+                  ) : (
+                    <ToggleLeft className="product-editor-inactive-icon size-5 shrink-0 text-white/42" />
+                  )}
+                  <span className="min-w-0 self-center">
+                    <span className="block text-sm font-black text-white">
+                      Mismo precio en contado y cuotas
+                    </span>
+                    <span className="mt-0.5 block text-xs font-medium leading-5 text-white">
+                      {!form.cuotasSinRecargo
+                        ? "Desactivado: las cuotas llevan recargo"
+                        : installmentsWithoutSurcharge
+                          ? "Cuotas sin recargo: el costo de Mercado Pago lo absorbe BEYONIX"
+                          : "Sin efecto hasta habilitar al menos una cuota"}
+                    </span>
+                  </span>
+                </AdminSecondaryButton>
                 {cashPricePreview != null && (
                   <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-white/8 bg-white/[0.02] p-2">
                     <div>

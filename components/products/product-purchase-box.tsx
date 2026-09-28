@@ -20,6 +20,8 @@ interface ProductPurchaseBoxProps {
   installmentPlans?: InstallmentPlan[]
   /** CFTEA anual (%), sólo cuando hay financiación real (nunca en 1 pago). */
   cfteaPercent?: number | null
+  /** "Mismo precio en contado y cuotas": el financiado es igual al contado. */
+  installmentsWithoutSurcharge?: boolean
   priceWithoutNationalTaxesCash?: number | null
   isInCart?: boolean
   cartQuantity?: number
@@ -66,6 +68,7 @@ export function ProductPurchaseBox({
   financedPrice = null,
   installmentPlans = [],
   cfteaPercent = null,
+  installmentsWithoutSurcharge = false,
   priceWithoutNationalTaxesCash = null,
   isInCart = false,
   cartQuantity = 0,
@@ -108,6 +111,7 @@ export function ProductPurchaseBox({
 
   const discount = getDiscountPercent(price, originalPrice)
   const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
+  const installmentsCopy = installmentsWithoutSurcharge ? "cuotas sin recargo" : "cuotas sin interés"
 
   return (
     <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
@@ -147,8 +151,14 @@ export function ProductPurchaseBox({
               sobre ese total: el disclosure legal (CFTEA) sigue vivo más
               abajo para cubrir la diferencia contado/financiado. */}
           <p className="beyonix-modal-title text-14px font-semibold text-white">
-            Hasta {maxInstallmentPlan.count} cuotas sin interés de {formatPrice(maxInstallmentPlan.amount)}
+            Hasta {maxInstallmentPlan.count} {installmentsCopy} de {formatPrice(maxInstallmentPlan.amount)}
           </p>
+
+          {installmentsWithoutSurcharge && (
+            <p className="beyonix-success-text mt-0.5 text-12px font-semibold text-emerald-400">
+              Mismo precio en contado y en cuotas
+            </p>
+          )}
 
           {installmentPlans.length > 1 && (
             <button
@@ -167,7 +177,7 @@ export function ProductPurchaseBox({
             <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
               {installmentPlans.map((plan) => (
                 <li key={plan.count} className="beyonix-modal-body text-12px font-medium text-white/70">
-                  {plan.count} cuotas sin interés de {formatPrice(plan.amount)}
+                  {plan.count} {installmentsCopy} de {formatPrice(plan.amount)}
                 </li>
               ))}
             </ul>

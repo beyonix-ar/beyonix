@@ -51,7 +51,8 @@ test("PDP: el panel pasa el financiado y los planes canónicos sin ningún ajust
   const panel = readSource("./product-details-panel.tsx")
   const purchaseBox = readSource("./product-purchase-box.tsx")
 
-  assert.match(panel, /const financedPrice = getFinancedPrice\(/)
+  // Regla del producto (con o sin recargo) resuelta por la función canónica.
+  assert.match(panel, /const financedPrice = getProductFinancedPrice\(product, cashPrice, installmentsFinancing\)/)
   assert.match(panel, /const installmentPlans = getInstallmentPlans\(product, cashPrice, installmentsFinancing\)/)
   assert.match(panel, /financedPrice=\{financedPrice\}/)
   assert.match(panel, /installmentPlans=\{installmentPlans\}/)

@@ -85,7 +85,7 @@ test("4-5. MP contado lleva badge '1 pago'; MP cuotas muestra el máximo elegibl
   const financed = list.slice(list.indexOf('option="mercadopago_financed"'))
   assert.match(cash, /checkout-badge-neutral">1 pago</)
   assert.match(cash, />\s*Ver medios\s*</)
-  assert.match(financed, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} cuotas sin interés/)
+  assert.match(financed, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} \{installmentsCopy\}/)
   assert.match(financed, />\s*Ver cuotas\s*</)
   assert.doesNotMatch(list, /Hasta [0-9] cuotas/)
 })
@@ -246,7 +246,10 @@ test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al el
       assert.equal(cents(plan.amount) * plan.count, cents(preview.financed!.externalAmountDue))
     }
   }
-  assert.match(checkout, /<InstallmentPlanList plans=\{financedPreviewPricing\.installmentPlans\} \/>/)
+  assert.match(
+    checkout,
+    /<InstallmentPlanList\s+plans=\{financedPreviewPricing\.installmentPlans\}\s+installmentsCopy=\{installmentsCopy\}\s*\/>/,
+  )
   assert.match(checkout, /getMaxApplicableCustomerCredit\(\s*customerCredit\.balance,\s*mercadoPagoPricingBeforeCredit\.financedTotal,\s*\)/)
 })
 
@@ -351,8 +354,11 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
   assert.match(financed, /Elegiste pagar en cuotas\./)
   assert.match(financed, /Total financiado: \{formatPrice\(finalTotal\)\}/)
-  assert.match(financed, /Hasta \{maxInstallmentPlan\.count\} cuotas sin interés\./)
-  assert.match(financed, /<InstallmentPlanList plans=\{mercadoPagoPricing\.installmentPlans\} \/>/)
+  assert.match(financed, /Hasta \{maxInstallmentPlan\.count\} \{installmentsCopy\}\./)
+  assert.match(
+    financed,
+    /<InstallmentPlanList\s+plans=\{mercadoPagoPricing\.installmentPlans\}\s+installmentsCopy=\{installmentsCopy\}\s*\/>/,
+  )
   assert.match(financed, /\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)
   assert.match(
     checkout,

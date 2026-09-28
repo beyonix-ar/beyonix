@@ -47,6 +47,7 @@ function getCartItemCommercialKey(item: RefreshableCartItem) {
     Boolean(item.product.cuotas_2_habilitadas),
     Boolean(item.product.cuotas_3_habilitadas),
     Boolean(item.product.cuotas_6_habilitadas),
+    Boolean(item.product.cuotas_sin_recargo),
     getStockStatus(item.product, item.color),
     getMaxPurchasableQuantity(item.product, item.color),
   ])

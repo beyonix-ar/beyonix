@@ -142,12 +142,15 @@ export function calculatePriceFromTargetMargin(
  * mismo orden en que se muestran al admin: Transferencia y Mercado Pago 1
  * pago siempre están disponibles (no dependen de las cuotas habilitadas del
  * producto); las cuotas sólo aparecen si están habilitadas. Reutiliza la
- * config financiera global -- nada hardcodeado acá.
+ * config financiera global -- nada hardcodeado acá. Con cuotas sin recargo
+ * (`installmentsWithoutSurcharge`) las cuotas se cobran al precio de contado:
+ * su base pasa a ser "cash" y cuentan para el peor caso y el margen objetivo.
  */
 export function getPaymentScenarioRates(
   eligibleInstallmentCounts: InstallmentCount[],
   config: InstallmentsFinancingConfig,
   transferDiscountPercent: number,
+  installmentsWithoutSurcharge = false,
 ): PaymentScenarioRate[] {
   const scenarios: PaymentScenarioRate[] = [
     {
@@ -173,7 +176,7 @@ export function getPaymentScenarioRates(
       label: `Mercado Pago — ${count} cuotas`,
       ratePercent: getEffectiveInstallmentPercent(count, config),
       kind: "fee",
-      priceBasis: "financed",
+      priceBasis: installmentsWithoutSurcharge ? "cash" : "financed",
     })
   }
 
@@ -188,6 +191,8 @@ export interface SimulateProductProfitabilityInput {
   eligibleInstallmentCounts: InstallmentCount[]
   config: InstallmentsFinancingConfig
   transferDiscountPercent: number
+  /** "Mismo precio en contado y cuotas": las cuotas se cobran al contado. */
+  installmentsWithoutSurcharge?: boolean
 }
 
 /**
@@ -210,6 +215,7 @@ export function simulateProductProfitability({
   eligibleInstallmentCounts,
   config,
   transferDiscountPercent,
+  installmentsWithoutSurcharge = false,
 }: SimulateProductProfitabilityInput): ProductProfitabilitySimulation | null {
   if (cost == null || !Number.isFinite(cost) || cost < 0) return null
 
@@ -222,6 +228,7 @@ export function simulateProductProfitability({
     eligibleInstallmentCounts,
     config,
     transferDiscountPercent,
+    installmentsWithoutSurcharge,
   ).map((scenario) => {
     const scenarioPrice =
       scenario.priceBasis === "financed" && financedPrice != null
@@ -250,6 +257,8 @@ export interface CalculateTargetMarginPriceInput {
   eligibleInstallmentCounts: InstallmentCount[]
   config: InstallmentsFinancingConfig
   transferDiscountPercent: number
+  /** Con cuotas sin recargo, el margen objetivo también se garantiza en cada cuota habilitada. */
+  installmentsWithoutSurcharge?: boolean
 }
 
 /**
@@ -284,6 +293,7 @@ export function calculateTargetMarginPrice({
   eligibleInstallmentCounts,
   config,
   transferDiscountPercent,
+  installmentsWithoutSurcharge = false,
 }: CalculateTargetMarginPriceInput): TargetMarginPriceResult | null {
   if (!Number.isFinite(cost) || cost <= 0) return null
 
@@ -291,6 +301,7 @@ export function calculateTargetMarginPrice({
     eligibleInstallmentCounts,
     config,
     transferDiscountPercent,
+    installmentsWithoutSurcharge,
   ).filter((scenario) => scenario.priceBasis === "cash")
 
   let bindingScenario: PaymentScenarioRate | null = null

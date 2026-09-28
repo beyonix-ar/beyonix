@@ -17,9 +17,10 @@ import {
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
 import {
-  getFinancedPrice,
   getInstallmentAmount,
+  getInstallmentsCopy,
   getMaxEligibleInstallmentCount,
+  getProductFinancedPrice,
 } from "@/lib/pricing/financed-pricing"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
@@ -90,17 +91,16 @@ export function HeroSection({
   const maxEligibleInstallmentCount = featuredProduct
     ? getMaxEligibleInstallmentCount(featuredProduct)
     : null
-  const featuredFinancedPrice =
-    featuredProduct && maxEligibleInstallmentCount != null
-      ? getFinancedPrice(finalPrice, maxEligibleInstallmentCount, installmentsFinancing)
-      : null
+  const featuredFinancedPrice = featuredProduct
+    ? getProductFinancedPrice(featuredProduct, finalPrice, installmentsFinancing)
+    : null
   const featuredInstallmentAmount =
     featuredFinancedPrice != null && maxEligibleInstallmentCount != null
       ? getInstallmentAmount(featuredFinancedPrice, maxEligibleInstallmentCount)
       : null
   const installmentLabel =
-    maxEligibleInstallmentCount != null && featuredInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} cuotas sin interés de ${formatPrice(featuredInstallmentAmount)}`
+    featuredProduct && maxEligibleInstallmentCount != null && featuredInstallmentAmount != null
+      ? `Hasta ${maxEligibleInstallmentCount} ${getInstallmentsCopy(featuredProduct)} de ${formatPrice(featuredInstallmentAmount)}`
       : null
 
   const openFeaturedProduct = () => {

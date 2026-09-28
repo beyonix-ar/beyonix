@@ -107,6 +107,8 @@ export interface SupabaseProducto {
   cuotas_2_habilitadas: boolean
   cuotas_3_habilitadas: boolean
   cuotas_6_habilitadas: boolean
+  /** "Mismo precio en contado y cuotas" (heredado por las variantes). Opcional: carritos guardados antes de la columna no lo traen. */
+  cuotas_sin_recargo?: boolean
   promo_event_id?: string | null
   promo_original_precio?: number | null
   promo_original_precio_anterior?: number | null
