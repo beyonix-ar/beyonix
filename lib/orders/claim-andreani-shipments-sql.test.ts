@@ -40,6 +40,7 @@ const CHAIN = [
   "20260930100000_claim_logistics_branch_only",
   "20261001100000_claim_logistics_hardening",
   "20261001120000_reopen_rejected_order_claim",
+  "20261001130000_cancel_order_claim",
 ]
 
 type Db = PGlite
@@ -574,6 +575,8 @@ test("migración correctiva sobre datos del modelo inicial: cancela lo automáti
     await db.exec(corrective)
     await db.exec(corrective)
     await db.exec(migration("20261001120000_reopen_rejected_order_claim"))
+    await db.exec(migration("20261001130000_cancel_order_claim"))
+    await db.exec(migration("20261001130000_cancel_order_claim"))
     // Sin sobrecargas viejas con lógica obsoleta (p. ej. tracking sin revisión de eventos).
     assert.deepEqual((await db.query<{ sig: string }>(
       "select p.oid::regprocedure::text sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='apply_order_claim_shipment_tracking'")).rows.map((row) => row.sig),
@@ -896,6 +899,109 @@ test("reapertura bloqueada con efectos reales (operación Andreani generada, sal
     await db2.query("delete from customer_credit_movements where claim_id=$1", [credit])
     await db2.query("update order_claims set failure_type='consulta_pedido' where id=$1", [credit])
     await assert.rejects(reopen(db2, credit), /CLAIM_REOPEN_NOT_ALLOWED/, "consultas y cancelaciones tienen su circuito")
+  } finally {
+    await db2.close()
+  }
+})
+
+const cancelClaim = async (db: Db, id: number, reason = "El cliente desistió del reclamo", actor = admin) =>
+  (await db.query<{ claim_id: number; applied: boolean }>("select * from cancel_order_claim($1,$2,$3::timestamptz,$4)",
+    [id, actor, await version(db, id), reason])).rows[0]
+const cancelBlocked = (codes: string[]) => (error: unknown) => {
+  const failure = error as { message?: string; detail?: string }
+  assert.equal(failure.message, "CLAIM_CANCEL_BLOCKED")
+  assert.deepEqual((failure.detail ?? "").split(",").filter(Boolean), codes)
+  return true
+}
+
+test("cancelar reclamo limpio: estado final Cancelado, auditoría completa, aviso al cliente, sin duplicar con doble click", async () => {
+  const db = await setup()
+  try {
+    const id = await acceptChange(db)
+    const pending = await plan(db, id, "cambio")
+    await assert.rejects(cancelClaim(db, id, "corto"), /CLAIM_CANCEL_REASON_REQUIRED/, "motivo obligatorio")
+    await assert.rejects(cancelClaim(db, id, undefined, operator), /CLAIM_FORBIDDEN/, "sólo Admin")
+    await assert.rejects(db.query("select * from cancel_order_claim($1,$2,now(),'El cliente desistió del reclamo')", [id, admin]), /CLAIM_CONFLICT/)
+
+    assert.deepEqual(await cancelClaim(db, id), { claim_id: id, applied: true })
+    const claim = await one(db, "select status, closed_at, cancelled_at, cancelled_by, cancellation_reason, admin_needs_action, resolution_summary from order_claims where id=$1", [id])
+    assert.deepEqual([claim.status, claim.cancelled_by, claim.cancellation_reason, claim.admin_needs_action], ["cerrado", admin, "El cliente desistió del reclamo", false])
+    assert.ok(claim.closed_at && claim.cancelled_at)
+    assert.deepEqual(claim.resolution_summary, { kind: "cancelado", label: "Reclamo cancelado", detail: "Motivo: El cliente desistió del reclamo", amount: null, notice: "El reclamo fue cancelado." })
+    assert.equal((await leg(db, pending)).status, "cancelada", "el método sin operación real no queda abierto")
+    assert.deepEqual(await units(db, id), { "original:conservada_cliente": 2 })
+
+    const audit = await one(db, "select actor_id, previous_status, new_status, metadata, created_at from order_audit_events where action='claim_cancelled'")
+    assert.deepEqual([audit.actor_id, audit.previous_status, audit.new_status], [admin, "aprobado", "cancelado"])
+    assert.equal((audit.metadata as Row).reason, "El cliente desistió del reclamo")
+    assert.ok(audit.created_at, "fecha")
+    const notice = await one(db, "select title, body, type from customer_notifications where source_key=$1", [`claim-resolved:${id}`])
+    assert.deepEqual([notice.type, notice.title], ["claim_resolved", "Tu reclamo fue cancelado"])
+    assert.match(String(notice.body), /Motivo: El cliente desistió del reclamo/)
+    assert.ok((await messages(db, id)).some((row) => /BEYONIX canceló el reclamo\.\nMotivo: El cliente desistió/.test(row.message)), "aviso en el chat")
+
+    // Doble click / reintento / segundo Admin: devuelve el mismo reclamo sin repetir efectos.
+    assert.deepEqual(await cancelClaim(db, id), { claim_id: id, applied: false })
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where action='claim_cancelled'"), 1)
+    assert.equal(await count(db, "select count(*)::int n from customer_notifications where order_id=1 and type='claim_resolved'"), 1)
+    assert.equal(await count(db, "select count(*)::int n from order_claim_messages where claim_id=$1 and message like 'BEYONIX canceló%'", [id]), 1)
+    // Terminal: ya no se puede reabrir como si hubiera sido rechazado.
+    await assert.rejects(reopen(db, id), /CLAIM_REOPEN_NOT_ALLOWED/)
+  } finally {
+    await db.close()
+  }
+})
+
+test("cancelar reclamo bloqueado mientras haya efectos reales pendientes (reserva, Andreani, incidencia, NC); nunca en silencio", async () => {
+  const db = await setup()
+  try {
+    const id = await acceptChange(db)
+    const exchange = await plan(db, id, "cambio")
+    await reserve(db, id, 1, 1, 2)
+    await assert.rejects(cancelClaim(db, id), cancelBlocked(["reservation"]))
+    await generate(db, exchange, ...EXCHANGE, "360000000911")
+    await assert.rejects(cancelClaim(db, id), cancelBlocked(["andreani_open", "reservation"]))
+    assert.equal((await one(db, "select status, cancelled_at from order_claims where id=$1", [id])).status, "aprobado", "no se canceló nada")
+  } finally {
+    await db.close()
+  }
+  const db2 = await setup()
+  try {
+    const id = await acceptChange(db2)
+    await plan(db2, id, "devolucion")
+    await db2.query("update order_claim_units set incident_open=true, incident_type='otro', incident_note='Falta revisar' where claim_id=$1 and id=(select min(id) from order_claim_units where claim_id=$1)", [id])
+    await assert.rejects(cancelClaim(db2, id), cancelBlocked(["incident"]))
+    await db2.query("update order_claim_units set incident_open=false where claim_id=$1", [id])
+    await db2.query("select register_claim_financial_exception($1,$2,'NC anticipada autorizada por gerencia')", [id, admin])
+    await db2.query("insert into order_credit_notes(order_id,claim_id,status,total_amount) values(1,$1,'processing',1000)", [id])
+    await assert.rejects(cancelClaim(db2, id), cancelBlocked(["credit_note_pending"]))
+    await db2.query("update order_credit_notes set status='authorized' where claim_id=$1", [id])
+    await assert.rejects(cancelClaim(db2, id), cancelBlocked(["credit_note_issued"]))
+  } finally {
+    await db2.close()
+  }
+})
+
+test("cancelar reclamo: no aplica a rechazados/finalizados ni a consultas; el navegador no puede ejecutarlo", async () => {
+  const db = await setup()
+  try {
+    const id = await acceptChange(db)
+    await reject(db, id)
+    await assert.rejects(cancelClaim(db, id), /CLAIM_TERMINAL/)
+    const grants = (await db.query<Record<string, boolean>>(`select
+      has_function_privilege('anon','public.cancel_order_claim(bigint,uuid,timestamptz,text)','EXECUTE') a,
+      has_function_privilege('authenticated','public.cancel_order_claim(bigint,uuid,timestamptz,text)','EXECUTE') b,
+      has_function_privilege('authenticated','public.order_claim_cancellation_blockers(bigint)','EXECUTE') c,
+      has_function_privilege('service_role','public.cancel_order_claim(bigint,uuid,timestamptz,text)','EXECUTE') d`)).rows[0]
+    assert.deepEqual(grants, { a: false, b: false, c: false, d: true })
+  } finally {
+    await db.close()
+  }
+  const db2 = await setup()
+  try {
+    const id = await createClaim(db2)
+    await db2.query("update order_claims set failure_type='consulta_pedido' where id=$1", [id])
+    await assert.rejects(cancelClaim(db2, id), /CLAIM_CANCEL_NOT_ALLOWED/)
   } finally {
     await db2.close()
   }

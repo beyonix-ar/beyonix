@@ -64,6 +64,7 @@ const leg = (overrides) => ({
 const scenarios = {
   sin_metodo: { shipments: [], units: [unit("original", "con_cliente")] },
   sugerida: { shipments: [], units: [unit("original", "con_cliente")] },
+  cancel_bloqueado_servidor: { shipments: [], units: [unit("original", "con_cliente")] },
   cambio_libre: { shipments: [leg({})], units: [unit("original", "con_cliente")] },
   cambio_reservado: { shipments: [leg({})], units: [unit("original", "con_cliente"), unit("reemplazo", "reservada")] },
   retiro_pendiente: { shipments: [leg({ direction: "devolucion" })], units: [unit("original", "con_cliente")] },
@@ -122,6 +123,9 @@ window.fetch = async (input, init) => {
   }
   if (url.endsWith("/api/admin/order-claims/900") && init && init.method === "PATCH") {
     window.__patches.push(JSON.parse(init.body))
+    if (scenario === "cancel_bloqueado_servidor") {
+      return Response.json({ error: "No se puede cancelar todavía.", blockers: ["Resolvé la incidencia."] }, { status: 409 })
+    }
     return Response.json({ claim })
   }
   return Response.json({ error: "sin datos en el test" }, { status: 404 })
@@ -235,7 +239,7 @@ test("Paso Método: sólo el método (sin recepción, unidades ni resumen); eleg
     await pickBranch(page)
     assert.match(await page.locator("[data-claim-logistics-branch]").innerText(), /Sucursal Once · Av\. Pueyrredón 100/)
     assert.equal(await confirm.isDisabled(), false)
-    await page.getByRole("button", { name: "Cancelar" }).click()
+    await page.getByRole("button", { name: "Cancelar", exact: true }).click()
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 0)
     assert.equal(await radio(page, /Cambio directo por sucursal/).isChecked(), false)
     assert.equal((await posts(page)).length, 0, "cancelar no envía nada")
@@ -423,7 +427,7 @@ test("Recepción: pantalla propia, acciones visibles por producto (sin desplegab
     await actions.filter({ hasText: "Registrar incidencia" }).click()
     await page.waitForSelector("[data-claim-logistics-unit-form=incident_open]")
     assert.equal(await page.getByRole("button", { name: "Registrar", exact: true }).isDisabled(), true, "incidencia: tipo obligatorio")
-    await page.getByRole("button", { name: "Cancelar" }).click()
+    await page.getByRole("button", { name: "Cancelar", exact: true }).click()
 
     const reception = page.locator(".admin-claim-reception-panel")
     for (const [label, text] of [
@@ -529,5 +533,63 @@ test("Retiro: 'Generar retiro' como única acción, checklist en el orden del m�
     assert.equal(await primaries(page).count(), 1)
     assert.equal(await primaries(page).first().innerText(), "Generar retiro")
     assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0)
+  } finally { await page.close() }
+})
+
+const cancelTrigger = (page: Page) => page.locator("[data-claim-cancel]").getByRole("button", { name: "Cancelar reclamo", exact: true })
+
+test("Cancelar reclamo limpio: acción secundaria, modal con motivo obligatorio y confirmación explícita", async () => {
+  const page = await open("sin_metodo")
+  try {
+    const trigger = cancelTrigger(page)
+    assert.equal(await trigger.count(), 1)
+    assert.doesNotMatch(await trigger.getAttribute("class") ?? "", /admin-ds-button-primary|admin-ds-button-destructive/, "no compite con la acción principal")
+    await trigger.click()
+    const modal = page.getByRole("dialog", { name: "Cancelar reclamo" })
+    await modal.waitFor()
+    assert.match(await modal.innerText(), /Queda como Cancelado y se avisa al cliente|El reclamo queda como Cancelado y se avisa al cliente/)
+    const confirm = modal.getByRole("button", { name: "Confirmar cancelación" })
+    assert.equal(await confirm.isDisabled(), true, "motivo obligatorio")
+    await modal.locator("textarea").fill("corto")
+    assert.equal(await confirm.isDisabled(), true)
+    await modal.locator("textarea").fill("El cliente desistió del reclamo")
+    await confirm.click()
+    await page.waitForFunction(() => (window as unknown as { __patches: unknown[] }).__patches.length === 1)
+    assert.deepEqual(await patches(page), [{ action: "cancel_claim", reason: "El cliente desistió del reclamo", expectedUpdatedAt: "2026-09-21T10:05:00Z" }])
+    await page.waitForFunction(() => !document.querySelector("[role=dialog]"))
+  } finally { await page.close() }
+})
+
+test("Cancelar reclamo con efectos pendientes: 'No se puede cancelar todavía' y qué resolver, sin opción de confirmar", async () => {
+  const page = await open("cambio_generado")
+  try {
+    await cancelTrigger(page).click()
+    const modal = page.getByRole("dialog", { name: "Cancelar reclamo" })
+    await modal.waitFor()
+    assert.match(await modal.innerText(), /No se puede cancelar todavía\./)
+    assert.deepEqual(await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts(),
+      ["Cancelá o completá la operación Andreani.", "Liberá la reserva del reemplazo."])
+    assert.equal(await modal.getByRole("button", { name: "Confirmar cancelación" }).count(), 0)
+    assert.equal((await patches(page)).length, 0)
+  } finally { await page.close() }
+})
+
+test("Cancelar reclamo: si la base encuentra algo pendiente, se muestra y no se cancela", async () => {
+  const page = await open("cancel_bloqueado_servidor")
+  try {
+    await cancelTrigger(page).click()
+    const modal = page.getByRole("dialog", { name: "Cancelar reclamo" })
+    await modal.locator("textarea").fill("El cliente desistió del reclamo")
+    await modal.getByRole("button", { name: "Confirmar cancelación" }).click()
+    await modal.locator("[data-claim-cancel-blockers]").waitFor()
+    assert.deepEqual(await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts(), ["Resolvé la incidencia."])
+    assert.match(await modal.innerText(), /No se puede cancelar todavía\./)
+  } finally { await page.close() }
+})
+
+test("Cancelar reclamo no se ofrece en reclamos rechazados", async () => {
+  const page = await open("rechazado")
+  try {
+    assert.equal(await cancelTrigger(page).count(), 0)
   } finally { await page.close() }
 })

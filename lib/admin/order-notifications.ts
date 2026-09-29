@@ -7,6 +7,7 @@ import {
 } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
+import { claimNeedsAdminAttention } from "@/lib/admin/admin-notification-rules"
 import {
   getAdminNewOrderEventAt,
   isAdminOrderVisible,
@@ -149,8 +150,9 @@ export function getOrderAttentionAt(order: SupabasePedido) {
   return latestTime > 0 ? new Date(latestTime).toISOString() : null
 }
 
+/** Algún reclamo del pedido necesita una acción del Admin (finalizado, rechazado o cancelado nunca). */
 export function orderHasPendingClaimAction(order: SupabasePedido) {
-  return (order.order_claims ?? []).some((claim) => claim.admin_needs_action === true)
+  return (order.order_claims ?? []).some(claimNeedsAdminAttention)
 }
 
 function isPaymentReceived(order: {

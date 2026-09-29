@@ -290,6 +290,7 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
     return { label: "Solución en proceso", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
   }
   if (claim.status === "rechazado") return { label: "Reclamo rechazado", dot: "bg-red-300", style: "border-red-300/25 bg-red-400/8" }
+  if (claim.status === "cerrado" && claim.cancelled_at) return { label: "Reclamo cancelado", dot: "bg-slate-300", style: base }
   if (claim.status === "cerrado") return { label: "Reclamo finalizado", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
 
   return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }

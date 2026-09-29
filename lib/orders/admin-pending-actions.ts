@@ -43,7 +43,7 @@ export interface AdminPendingActionsOrder extends CancellationNextActionOrder {
   return_status?: string | null
   return_resolved_at?: string | null
   total?: number | string | null
-  order_claims?: Array<{ id?: number | string | null; admin_needs_action?: boolean | null }> | null
+  order_claims?: Array<{ id?: number | string | null; admin_needs_action?: boolean | null; status?: string | null }> | null
 }
 
 const PAYMENT_CONFLICT_STATUSES = new Set([
@@ -184,8 +184,10 @@ export function getAdminPendingOrderActions(
   }
 
   // ── Reclamos (incluye reemplazos/devoluciones gestionados por reclamo) ──
+  // Finalizado, rechazado o cancelado (cerrado + cancelled_at) nunca cuenta,
+  // aunque haya quedado una marca vieja de atención.
   const claimsNeedingAction = (order.order_claims ?? []).filter(
-    (claim) => claim.admin_needs_action === true,
+    (claim) => claim.admin_needs_action === true && !["cerrado", "rechazado"].includes(claim.status ?? ""),
   ).length
   for (let index = 0; index < claimsNeedingAction; index++) {
     actions.push({

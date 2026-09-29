@@ -9,6 +9,7 @@ import { shareUnchanged } from "@/lib/admin/structural-sharing"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { humanizeBillingError } from "@/lib/admin/billing-errors"
 import { getCancellationProgress } from "@/lib/admin/order-operational-progress"
+import { claimNeedsAdminAttention } from "@/lib/admin/admin-notification-rules"
 import { OperationalProgress } from "../../components/operational-progress"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
@@ -849,7 +850,7 @@ function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresen
   if (pedido.financial_status === "cancellation_requested") {
     return ADMIN_EXECUTIVE_STATUS.cancellation_requested
   }
-  const pendingClaim = (pedido.order_claims ?? []).find((claim) => claim.admin_needs_action)
+  const pendingClaim = (pedido.order_claims ?? []).find(claimNeedsAdminAttention)
   if (pendingClaim) {
     return pendingClaim.failure_type === "consulta_pedido"
       ? ADMIN_EXECUTIVE_STATUS.help_message
@@ -907,10 +908,12 @@ function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
   const cancellationAction = getCancellationRecommendedAction(pedido)
   if (cancellationAction) return cancellationAction
 
+  // Sólo un reclamo que necesita acción (misma regla que el punto rojo); una
+  // solicitud de cancelación abierta se sigue marcando por defensa (abajo).
   const openClaim = (pedido.order_claims ?? []).find(
     (claim) =>
-      claim.admin_needs_action ||
-      !["cerrado", "rechazado"].includes(claim.status ?? ""),
+      claimNeedsAdminAttention(claim) ||
+      (claim.failure_type === "cancelar_compra" && !["cerrado", "rechazado"].includes(claim.status ?? "")),
   )
 
   if (openClaim) {
@@ -5267,11 +5270,11 @@ function PedidoDetailModal({
     Boolean(pedido.payment_proof_url) &&
     !isOrderPaymentConfirmed(pedido) &&
     !isRejectedPayment(pedido.payment_status)
-  const pendingClaim = (pedido.order_claims ?? []).find(
-    (claim) =>
-      claim.admin_needs_action ||
-      !["cerrado", "rechazado"].includes(claim.status ?? ""),
-  )
+  // Punto rojo de "Atención al cliente": sólo si al menos un reclamo necesita
+  // una acción del Admin (misma regla que la campana y el contador). Un
+  // reclamo en curso esperando a Andreani, o finalizado/rechazado/cancelado,
+  // no avisa; al cambiar de estado se recalcula con el pedido actualizado.
+  const pendingClaim = (pedido.order_claims ?? []).find(claimNeedsAdminAttention)
   const showOrderSummaryIndicator = !orderSummarySeen
   const tabState = useMemo(
     () =>

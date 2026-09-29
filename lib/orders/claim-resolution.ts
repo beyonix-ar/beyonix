@@ -18,6 +18,7 @@ export type ClaimResolutionKind =
   | "cancelacion"
   | "cancelacion_rechazada"
   | "consulta"
+  | "cancelado"
 
 export interface ClaimResolutionSummary {
   kind: ClaimResolutionKind
@@ -55,6 +56,7 @@ const KINDS: readonly ClaimResolutionKind[] = [
   "cancelacion",
   "cancelacion_rechazada",
   "consulta",
+  "cancelado",
 ]
 
 const AMOUNT_LABELS: Partial<Record<ClaimResolutionKind, string>> = {

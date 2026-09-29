@@ -853,6 +853,10 @@ export interface SupabaseOrderClaim {
   order_claim_units?: SupabaseOrderClaimUnit[] | null
   /** Reclamo anterior al circuito logístico por sucursal (sin unidades). */
   logistics_legacy?: boolean
+  /** Reclamo cancelado por BEYONIX (status 'cerrado' + estos datos): se muestra como "Cancelado". */
+  cancelled_at?: string | null
+  cancelled_by?: string | null
+  cancellation_reason?: string | null
 }
 
 export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource {

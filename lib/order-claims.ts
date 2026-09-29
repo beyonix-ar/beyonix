@@ -189,7 +189,8 @@ export function getOrderClaimTransitionError(
   return null
 }
 
-export function getOrderClaimStatusLabel(status?: string | null) {
+export function getOrderClaimStatusLabel(status?: string | null, cancelledAt?: string | null) {
+  if (status === "cerrado" && cancelledAt) return "Cancelado"
   const labels: Record<string, string> = {
     recibido: "En revisión",
     en_revision: "En revisión",

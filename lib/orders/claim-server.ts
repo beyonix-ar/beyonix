@@ -10,6 +10,7 @@ import {
 import type { createAdminClient } from "../supabase/admin"
 import type { SupabaseOrderClaim } from "../supabase/types"
 import { CUSTOMER_CLAIM_SHIPMENT_COLUMNS } from "./claim-shipment-view.ts"
+import { describeClaimCancellationBlockers } from "./claim-cancellation.ts"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib"
 
@@ -63,6 +64,8 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_REOPEN_REASON_REQUIRED: [400, "Escribí el motivo de la corrección (mínimo 10 caracteres)."],
   CLAIM_REOPEN_NOT_ALLOWED: [409, "Este reclamo no se puede volver a revisar."],
   CLAIM_REOPEN_HAS_EFFECTS: [409, "El reclamo ya tuvo movimientos reales (nota de crédito, reemplazo, saldo, Andreani o stock): no se puede volver a revisar."],
+  CLAIM_CANCEL_REASON_REQUIRED: [400, "Escribí el motivo de la cancelación (mínimo 10 caracteres)."],
+  CLAIM_CANCEL_NOT_ALLOWED: [409, "Este caso se cierra desde su propio circuito, no se cancela desde acá."],
   CLAIM_ORIGINAL_NOT_RETURNED: [409, "El reemplazo fue entregado pero el producto original no volvió a BEYONIX. Registrá su recepción o la excepción explícita."],
   CLAIM_LOGISTICS_NOT_ALLOWED: [409, "Esta operación no corresponde a la solución aceptada del reclamo."],
   CLAIM_LOGISTICS_NOT_NEEDED: [409, "No quedan unidades en poder del cliente para esta operación."],
@@ -93,6 +96,12 @@ export function claimErrorResponse(error: unknown) {
   const message = typeof candidate?.message === "string" ? candidate.message : ""
   const known = CLAIM_ERRORS[message]
   if (known) return NextResponse.json({ error: known[1] }, { status: known[0] })
+  // Cancelar reclamo con efectos pendientes: la base devuelve los códigos en
+  // el detalle; al Admin le llega qué resolver, en lenguaje simple.
+  if (message === "CLAIM_CANCEL_BLOCKED") {
+    const details = typeof (candidate as { details?: unknown } | null)?.details === "string" ? (candidate as { details: string }).details : ""
+    return NextResponse.json({ error: "No se puede cancelar todavía.", blockers: describeClaimCancellationBlockers(details) }, { status: 409 })
+  }
   if (candidate?.code === "23505") return NextResponse.json({ error: CLAIM_ERRORS.CLAIM_EXISTS[1] }, { status: 409 })
   // record_order_item_return_reception: "RETURN_EXCEEDS_REMAINING: quedan N
   // unidad(es) disponibles..." -- prefijo fijo que controlamos nosotros, el

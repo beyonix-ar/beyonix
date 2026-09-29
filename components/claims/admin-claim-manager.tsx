@@ -68,6 +68,7 @@ import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
 import { getClaimReviewEditability } from "@/lib/orders/claim-review-edit"
+import { getClaimCancellationPreview } from "@/lib/orders/claim-cancellation"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -215,7 +216,7 @@ function getCustomerMentionName(pedido: SupabasePedido) {
 }
 
 function getConversationStatusLabel(claim: SupabaseOrderClaim, messages: SupabaseOrderClaimMessage[]) {
-  if (claim.status === "cerrado") return "Finalizado"
+  if (claim.status === "cerrado") return claim.cancelled_at ? "Cancelado" : "Finalizado"
   if (claim.status === "rechazado") return "Rechazado"
   if (claim.status === "falta_informacion") return "Esperando cliente"
   if (messages[messages.length - 1]?.author_role !== "cliente") return "Respondido por BEYONIX"
@@ -295,6 +296,8 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
     if (claim.status === "falta_informacion") return "Esperando cliente"
     return "Mensaje de ayuda"
   }
+
+  if (claim.status === "cerrado" && claim.cancelled_at) return "Cancelado"
 
   if (["cambio_pendiente", "cupon_pendiente"].includes(claim.status)) {
     return "Solución en proceso"
@@ -1393,6 +1396,11 @@ export function AdminClaimManager({
   // Corrección de un "No corresponde" (reapertura auditada con motivo).
   const [reopenOpen, setReopenOpen] = useState(false)
   const [reopenReason, setReopenReason] = useState("")
+  // Cancelar reclamo: motivo + confirmación; lo que falta resolver lo decide la base.
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
+  const [cancelServerBlockers, setCancelServerBlockers] = useState<string[] | null>(null)
+  const cancelVersionRef = useRef<string | null>(null)
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     title: string
     description: string
@@ -2061,6 +2069,58 @@ export function AdminClaimManager({
       pedido.financial_status === "refunded" && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") && "Reintegro registrado",
     ],
   })
+  const cancelPreview = getClaimCancellationPreview({
+    claimId: claim.id,
+    status: claim.status,
+    failureType: claim.failure_type,
+    isAdmin,
+    units: claim.order_claim_units ?? null,
+    shipments: Array.isArray(claim.order_claim_shipments) ? claim.order_claim_shipments : null,
+    creditNotes: pedido.order_credit_notes ?? null,
+    legacyReplacementUnits: replacedUnits ?? 0,
+  })
+  const cancelBlockers = cancelServerBlockers ?? cancelPreview.blockers
+  const openCancelClaim = () => {
+    cancelVersionRef.current = claim.updated_at
+    setCancelReason("")
+    setCancelServerBlockers(null)
+    setCancelOpen(true)
+  }
+  const cancelClaim = async () => {
+    if (saving || cancelReason.trim().length < 10) return
+    setSaving(true)
+    setNotice("")
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setNotice("La sesión administrativa venció.")
+        return
+      }
+      const request = await fetch(`/api/admin/order-claims/${claim.id}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel_claim", reason: cancelReason.trim(), expectedUpdatedAt: cancelVersionRef.current ?? claim.updated_at }),
+      })
+      const data = (await request.json().catch(() => ({}))) as { claim?: SupabaseOrderClaim; error?: string; blockers?: string[] }
+      if (!request.ok || !data.claim) {
+        // La base encontró algo pendiente: se muestra qué resolver, sin cancelar.
+        if (data.blockers?.length) setCancelServerBlockers(data.blockers)
+        else setNotice(data.error || "No se pudo cancelar el reclamo.")
+        if (!data.blockers?.length) setCancelOpen(false)
+        return
+      }
+      onClaimChange(data.claim)
+      setCancelOpen(false)
+      setViewedStep(null)
+      setSuccessNotice("Reclamo cancelado. Se avisó al cliente.")
+      setNotice("Reclamo cancelado. Se avisó al cliente.")
+      notifyOrderNotificationsChanged()
+    } catch {
+      setNotice("No se pudo cancelar el reclamo.")
+    } finally {
+      setSaving(false)
+    }
+  }
   const openApproveDecision = () => {
     // Al corregir, el formulario parte de la solución vigente.
     if (reviewEdit.mode === "edit") setDecisionResolution(getDefaultDecisionResolution(claim))
@@ -2536,7 +2596,7 @@ export function AdminClaimManager({
                 {selectedStep === "finish" && closed && (
                   <div className="admin-claim-closed-note px-3 py-2" data-testid="admin-claim-resolution">
                      <p className="admin-claim-closed-title text-xs font-black">
-                       {claim.status === "rechazado" ? "Reclamo rechazado" : "Reclamo finalizado"}
+                       {claim.status === "rechazado" ? "Reclamo rechazado" : claim.cancelled_at ? "Reclamo cancelado" : "Reclamo finalizado"}
                      </p>
                      {claim.closed_at && <p className="admin-claim-closed-text mt-1 text-[11px]">{formatDate(claim.closed_at)}</p>}
                     {closedResolution?.structured && (
@@ -2594,10 +2654,54 @@ export function AdminClaimManager({
                 />
               </div>
             )}
+            {formalClaim && cancelPreview.available && (
+              <div className="admin-claim-cancel-row" data-claim-cancel>
+                <button type="button" className="admin-claim-cancel-trigger" disabled={saving} onClick={openCancelClaim}>
+                  <XCircle className="size-3.5" aria-hidden="true" />Cancelar reclamo
+                </button>
+                <HelpTip label="Cancelar reclamo" align="start">Interrumpe el reclamo en curso (no es rechazarlo ni finalizarlo). Queda como Cancelado y se avisa al cliente.</HelpTip>
+              </div>
+            )}
           </section>
           )}
         </aside>
       </div>
+
+      {cancelOpen && (
+        <AdminModal
+          open
+          compact
+          eyebrow={`Reclamo #${claim.id}`}
+          title="Cancelar reclamo"
+          description={cancelBlockers.length ? "No se puede cancelar todavía." : "El reclamo queda como Cancelado y se avisa al cliente."}
+          onClose={() => { if (!saving) setCancelOpen(false) }}
+          footer={
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <AdminSecondaryButton disabled={saving} onClick={() => setCancelOpen(false)}>Volver</AdminSecondaryButton>
+              {!cancelBlockers.length && (
+                <AdminButton variant="destructive" disabled={saving || cancelReason.trim().length < 10} onClick={() => void cancelClaim()}>
+                  {saving ? "Cancelando..." : "Confirmar cancelación"}
+                </AdminButton>
+              )}
+            </div>
+          }
+        >
+          {cancelBlockers.length ? (
+            <ul className="admin-claim-cancel-blockers" data-claim-cancel-blockers>
+              {cancelBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          ) : (
+            <div className="grid gap-2" data-claim-cancel-form>
+              <p className="text-xs font-semibold">Estado actual: {getStatusLabel(claim)}</p>
+              <label className="grid gap-1">
+                <span className="text-xs font-bold">Motivo (mínimo 10 caracteres)</span>
+                <textarea className={`${adminControlClassName} admin-claim-compact-textarea`} value={cancelReason} maxLength={1000} rows={3}
+                  onChange={(event) => setCancelReason(event.target.value)} />
+              </label>
+            </div>
+          )}
+        </AdminModal>
+      )}
 
       {chatOpen && createPortal(
         <div className="admin-claim-wizard-chat-overlay" onMouseDown={(event) => {

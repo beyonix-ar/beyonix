@@ -15824,6 +15824,15 @@ html[data-admin-theme="light"] .admin-claim-decision-button[aria-pressed="true"]
 .admin-claim-current-action { display: grid; gap: .25rem; justify-items: start; padding: .5rem .6rem; border: 1px solid rgba(119, 230, 226, .35); border-radius: .6rem; }
 .admin-claim-waiting { display: flex; align-items: center; gap: .4rem; color: #e2e8f0; font-weight: 700; }
 .admin-claim-secondary-actions { display: flex; flex-wrap: wrap; gap: .25rem .4rem; }
+/* Cancelar reclamo: acción destructiva secundaria, al pie y discreta. */
+.admin-claim-cancel-row { display: flex; align-items: center; gap: .35rem; margin-top: .75rem; padding-top: .6rem; border-top: 1px solid var(--admin-border-soft); }
+.admin-claim-cancel-trigger { display: inline-flex; align-items: center; gap: .35rem; padding: .2rem .35rem; border-radius: .4rem; color: #fca5a5; font-size: .75rem; font-weight: 700; }
+.admin-claim-cancel-trigger:hover:not(:disabled) { text-decoration: underline; }
+.admin-claim-cancel-trigger:focus-visible { outline: 2px solid #fca5a5; outline-offset: 2px; }
+.admin-claim-cancel-trigger:disabled { cursor: not-allowed; opacity: .55; }
+.admin-claim-cancel-blockers { display: grid; gap: .2rem; padding-left: 1.1rem; list-style: disc; font-size: .8125rem; font-weight: 600; }
+html[data-admin-theme="light"] .admin-claim-cancel-trigger { color: #b91c1c; }
+html[data-admin-theme="light"] .admin-claim-cancel-trigger:focus-visible { outline-color: #b91c1c; }
 html[data-admin-theme="light"] .admin-claim-checklist li { color: #475569; }
 html[data-admin-theme="light"] .admin-claim-checklist li.is-done { color: #166534; }
 html[data-admin-theme="light"] .admin-claim-checklist li.is-next { color: #0f172a; }
