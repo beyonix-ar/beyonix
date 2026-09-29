@@ -20,6 +20,8 @@ export type TransferManualReviewReason =
   | "search_not_exhaustive"
   | "expected_amount_changed"
   | "confirmation_error"
+  /** La transferencia coincidió, pero el producto/variante no cumple los requisitos comerciales vigentes (CATALOG_STATE_INVALID). */
+  | "catalog_state_invalid"
   /** Transferencia real detectada después de cancelar el pedido sin pago (payment_status = approved_after_cancellation). */
   | "paid_after_cancellation"
 
@@ -152,6 +154,53 @@ export function getManualReviewCustomerMessage(): string {
   return "No pudimos validar tu transferencia automáticamente."
 }
 
+/**
+ * Resultado de una verificación tal como lo ve el cliente. Distingue
+ * "todavía no apareció" de "apareció pero no coincide" y de "la encontramos,
+ * falta confirmarla": antes los tres llegaban como el mismo "Todavía no
+ * encontramos tu transferencia", incluso cuando el sistema sí la había
+ * encontrado (confirmation_error).
+ *
+ * not_matching revela, a quien ya conoce el importe de SU pedido, que existe
+ * una transferencia de ese importe dentro de la ventana que no se pudo
+ * atribuir. Nunca expone el motivo interno, el documento ni el pagador.
+ */
+export type TransferVerificationCustomerOutcome =
+  | "verified"
+  | "not_found"
+  | "not_matching"
+  | "confirming"
+  | "stock_conflict"
+  | "manual_review"
+
+const NOT_MATCHING_REASONS: readonly TransferManualReviewReason[] = [
+  "dni_mismatch",
+  "identification_unavailable",
+  "declared_dni_invalid",
+  "declared_amount_mismatch",
+]
+
+export function getTransferVerificationCustomerOutcome(
+  status: "verified" | "manual_review" | "awaiting_transfer",
+  reason: TransferManualReviewReason | null | undefined,
+): TransferVerificationCustomerOutcome {
+  if (status === "verified") return "verified"
+  if (status === "awaiting_transfer" || (reason && isAwaitingTransferReason(reason))) return "not_found"
+  if (reason === "stock_conflict") return "stock_conflict"
+  if (reason === "confirmation_error") return "confirming"
+  if (reason && (NOT_MATCHING_REASONS as readonly string[]).includes(reason)) return "not_matching"
+  return "manual_review"
+}
+
+export const TRANSFER_VERIFICATION_OUTCOME_MESSAGES: Record<TransferVerificationCustomerOutcome, string> = {
+  verified: "Verificamos tu transferencia automáticamente.",
+  not_found: "Tu transferencia todavía no aparece. Puede tardar unos minutos en reflejarse.",
+  not_matching: "No pudimos hacer coincidir la transferencia con los datos ingresados.",
+  confirming: "Encontramos tu transferencia y estamos terminando de confirmarla. Volvé a verificar en unos segundos.",
+  stock_conflict: TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
+  manual_review: "No pudimos validar tu transferencia automáticamente.",
+}
+
 /** Motivo técnico legible para el panel admin -- no expone PII de terceros. */
 export function describeManualReviewReason(
   reason: TransferManualReviewReason | string | null,
@@ -183,6 +232,8 @@ export function describeManualReviewReason(
       return "El monto esperado del pedido cambió mientras se verificaba la transferencia. Requiere revisión manual."
     case "confirmation_error":
       return "La transferencia coincidió (monto y DNI), pero la confirmación falló por un error temporal. Se reintenta automáticamente."
+    case "catalog_state_invalid":
+      return "La transferencia coincidió (monto y DNI), pero el producto o la variante del pedido no cumple los requisitos comerciales vigentes. Revisá el catálogo y confirmá el pago manualmente."
     case "paid_after_cancellation":
       return "Llegó una transferencia de este pedido después de cancelarlo sin pago (saldo y beneficio ya devueltos). No se confirmó: reintegrá el pago o gestioná la venta manualmente."
     case null:

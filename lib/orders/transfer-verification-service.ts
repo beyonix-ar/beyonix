@@ -21,6 +21,11 @@ import {
 } from "../payments/argentine-identification.ts"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
 import { moneyToCents } from "../mercadopago/order-payment.ts"
+import { appendOrderAuditEvent } from "./order-audit.ts"
+import {
+  describeTransferConfirmationFailure,
+  maskIdentifier,
+} from "./transfer-verification-diagnostics.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -389,6 +394,18 @@ export async function attemptTransferAutoVerification(
     candidates: searchResult.candidates,
     excludePaymentIds: claimedByOtherOrders,
   })
+  // Cada intento deja rastro de qué encontró y por qué decidió: sin datos del
+  // titular ni ids completos (sólo cantidades y el motivo).
+  console.info("TRANSFER_AUTO_VERIFICATION_ATTEMPT", {
+    orderId,
+    candidates: searchResult.candidates.length,
+    sameAmountCandidates: searchResult.candidates.filter(
+      (row) => moneyToCents(row.transactionAmount) === expectedCents,
+    ).length,
+    claimedByOtherOrders: claimedByOtherOrders.size,
+    result: matchResult.kind,
+    reason: matchResult.kind === "manual_review" ? matchResult.reason : null,
+  })
 
   if (matchResult.kind === "manual_review") {
     return finalizeUnmatched(admin, orderId, matchResult.reason, order, leaseId)
@@ -422,6 +439,23 @@ export async function attemptTransferAutoVerification(
 
     if (code === "AMOUNT_MISMATCH") {
       return finalizeUnmatched(admin, orderId, "expected_amount_changed", order, leaseId)
+    }
+
+    // El pago coincidió pero el catálogo del pedido no cumple los requisitos
+    // comerciales (constraint triggers evaluados dentro de la RPC): no se
+    // resuelve reintentando, requiere revisar el producto. El detalle queda
+    // sólo en la auditoría, nunca en la respuesta al cliente.
+    if (code === "CATALOG_STATE_INVALID") {
+      await appendOrderAuditEvent(admin, {
+        orderId,
+        actorType: "system",
+        action: "transfer_auto_verification_catalog_state_invalid",
+        metadata: {
+          matchedPaymentId: maskIdentifier(candidate.id),
+          ...describeTransferConfirmationFailure(confirmError),
+        },
+      })
+      return finalizeUnmatched(admin, orderId, "catalog_state_invalid", order, leaseId)
     }
 
     // P0 (tercera auditoría): este intento ya no es (o nunca fue) el
@@ -467,9 +501,20 @@ export async function attemptTransferAutoVerification(
     // pedido quedaba trabado aunque el pago fuera válido. Ahora queda en
     // revisión manual con un motivo reintentable (confirmation_error): el
     // cron vuelve a intentarlo solo y el admin ve el motivo.
+    // Antes sólo quedaba "confirmation_error" y el motivo real en un log sin
+    // estructura: el fallo no se podía reconstruir. Ahora queda también en la
+    // auditoría del pedido (enmascarado: nunca DNI/CUIT ni ids completos).
+    const diagnostic = describeTransferConfirmationFailure(confirmError)
     console.error("TRANSFER_AUTO_VERIFICATION_CONFIRM_ERROR", {
       orderId,
-      message: confirmError?.message,
+      matchedPaymentId: maskIdentifier(candidate.id),
+      ...diagnostic,
+    })
+    await appendOrderAuditEvent(admin, {
+      orderId,
+      actorType: "system",
+      action: "transfer_auto_verification_confirm_failed",
+      metadata: { matchedPaymentId: maskIdentifier(candidate.id), ...diagnostic },
     })
     return finalizeUnmatched(admin, orderId, "confirmation_error", order, leaseId)
   }

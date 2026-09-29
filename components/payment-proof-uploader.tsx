@@ -169,7 +169,7 @@ export function PaymentProofUploader({
                 : isDragging
                   ? "border-[var(--account-accent-soft)] bg-[var(--account-surface-hover)] ring-2 ring-[var(--account-accent-soft)]/30"
                   : file || hasUploadedFeedback
-                    ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                    ? "cursor-pointer border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
                     : "cursor-pointer border-[var(--account-border)] bg-[var(--account-surface-raised)] hover:border-[var(--account-accent-soft)] hover:bg-[var(--account-surface-hover)]"
             }`}
           >

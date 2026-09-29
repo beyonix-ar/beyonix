@@ -15,46 +15,34 @@ test("reutiliza el uploader de comprobante existente -- no reimplementa una segu
 })
 
 test("un fallo técnico (rate limit, verificación en curso, error inesperado del backend, excepción de red) siempre habilita el comprobante como salida segura -- nunca deja al cliente sin ninguna opción", () => {
-  // El paso "Titular" (previo a alias/CVU) tiene su propio submit: este
-  // contrato es el del paso de verificación.
-  const verificationStep = SOURCE.indexOf("function TransferVerificationStep(")
-  const handleSubmit = SOURCE.slice(
-    SOURCE.indexOf("const handleSubmit", verificationStep),
-    SOURCE.indexOf("if (phase === \"confirming\")", verificationStep),
+  const verification = SOURCE.slice(
+    SOURCE.indexOf("function useTransferVerification("),
+    SOURCE.indexOf("function TransferVerificationFailedModal("),
   )
-
-  // Camino !response.ok (400/429/409/500): sólo pasa a revisión manual si el
-  // backend lo marcó disponible -- nunca incondicionalmente (eso rompería el
-  // contrato de "pago ya confirmado -> no corresponde comprobante").
-  assert.match(
-    handleSubmit,
-    /if \(!response\.ok\) \{[\s\S]*?if \(data\.proofUploadAvailable\) \{[\s\S]*?onManualReview\(\)/,
-  )
-  // Camino catch (excepción de red / parseo): conserva el formulario y
-  // permite volver a verificar sin enviar a revisión manual.
-  const catchBlock = handleSubmit.slice(handleSubmit.indexOf("} catch"))
-  assert.match(catchBlock, /showRetryNotice\(/)
-  assert.doesNotMatch(catchBlock, /onManualReview\(\)/)
+  // El comprobante se ofrece salvo que el servidor lo niegue explícitamente
+  // (pago ya confirmado o pedido que no es por transferencia).
+  assert.match(verification, /proofUploadAvailable: data\?\.proofUploadAvailable !== false/)
+  // Excepción de red / parseo: modal con el comprobante disponible, sin
+  // pasar a revisión manual por su cuenta.
+  const catchBlock = verification.slice(verification.indexOf("} catch"))
+  assert.match(catchBlock, /fail\("error", "No pudimos conectarnos para verificar tu transferencia\."\)/)
 })
 
-test("un resultado pendiente mantiene los datos del formulario y muestra cooldown antes de volver a verificar", () => {
-  assert.match(SOURCE, /if \(data\.retryable\) \{[\s\S]*?showRetryNotice\(/)
-  assert.match(SOURCE, /disabled=\{submitting \|\| coolingDown\}/)
+test("un resultado pendiente respeta la espera del servidor antes de volver a verificar", () => {
+  assert.match(SOURCE, /setCooldownSeconds\(Number\.isFinite\(wait\) \? Math\.max\(0, Math\.ceil\(wait\)\) : 0\)/)
+  assert.match(SOURCE, /disabled=\{verifying \|\| cooldownSeconds > 0\}/)
   assert.match(SOURCE, /Podés volver a verificar en \$\{cooldownSeconds\} s/)
-  assert.match(SOURCE, /value=\{firstName\}/)
-  assert.match(SOURCE, /value=\{lastName\}/)
-  assert.match(SOURCE, /value=\{dni\}/)
-  assert.match(SOURCE, /value=\{amount\}/)
 })
 
-test("el formulario envía los 4 datos obligatorios del titular ya validados (nombre, apellido, DNI/CUIT y monto)", () => {
-  assert.match(SOURCE, /const declaration = validateTransferDeclaration\(\{/)
+test("valida con los 4 datos obligatorios ya declarados (titular del paso 1 + importe del servidor), sin un segundo formulario", () => {
+  assert.match(SOURCE, /const declaration = validateTransferDeclaration\(\{\s*nombre: holder\?\.firstName,\s*apellido: holder\?\.lastName,\s*dni: holder\?\.document,\s*monto: transferAmountDue\(order\),/)
   assert.match(SOURCE, /nombre: declaration\.value\.firstName/)
   assert.match(SOURCE, /apellido: declaration\.value\.lastName/)
   assert.match(SOURCE, /dni: declaration\.value\.document/)
-  // Texto crudo: el servidor lo lee con el parser es-AR ("1.500,50").
-  assert.match(SOURCE, /monto: amount,/)
+  assert.match(SOURCE, /monto: declaration\.value\.amount/)
   assert.doesNotMatch(SOURCE, /\(opcional\)/)
+  // El paso que volvía a pedir nombre, apellido, DNI/CUIT y monto ya no existe.
+  assert.doesNotMatch(SOURCE, /function TransferVerificationStep\(|transfer-verify-|Validá tu transferencia|Monto exacto transferido/)
 })
 
 test("si el pedido ya tiene comprobante subido o el pago ya fue resuelto, el flujo muestra el paso de revisión (no el formulario de verificación)", () => {

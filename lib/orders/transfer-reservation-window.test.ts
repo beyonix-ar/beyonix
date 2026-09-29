@@ -9,9 +9,11 @@ import {
 import { isTransferReservationActive } from "./transfer-reservation-window.ts"
 import {
   canUploadTransferProof,
+  getTransferVerificationCustomerOutcome,
   isAwaitingTransferPayment,
   TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  TRANSFER_VERIFICATION_OUTCOME_MESSAGES,
 } from "./transfer-verification-reasons.ts"
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
@@ -82,7 +84,12 @@ test("10. el endpoint de verificación rechaza server-side el flujo normal venci
   assert.match(rejection, /code: "RESERVATION_EXPIRED"/)
   assert.match(rejection, /retryable: false/)
   assert.match(rejection, /status: 409/)
-  assert.match(route, /result\.reason === "stock_conflict"[\s\S]*?TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE/)
+  // El conflicto de stock llega al cliente con su propio mensaje (nunca "rechazado").
+  assert.match(route, /const outcome = getTransferVerificationCustomerOutcome\(/)
+  assert.match(route, /message: TRANSFER_VERIFICATION_OUTCOME_MESSAGES\[outcome\]/)
+  const stockConflict = getTransferVerificationCustomerOutcome("manual_review", "stock_conflict")
+  assert.equal(stockConflict, "stock_conflict")
+  assert.equal(TRANSFER_VERIFICATION_OUTCOME_MESSAGES[stockConflict], TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE)
 })
 
 test("create-order compromete la reserva del Paso 3 sin renovarla ni usar el validador heredado de 30 minutos", () => {

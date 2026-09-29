@@ -735,3 +735,139 @@ test("FENCING (cuarta auditoría): un intento SIN lease (A) que entra por el cam
   // 7) B sigue intacto: su lease tampoco cambia.
   assert.equal(getRow().transfer_verification_lease_id, "lease-B")
 })
+
+// ── Regresión (pedido real): intentos antes de transferir, la transferencia
+// aparece después y "Volver a verificar" tiene que encontrarla y confirmar.
+
+function sequentialAttemptsAdmin(orderRow: Record<string, unknown>) {
+  return createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      // Mismo contrato que la RPC real: un pedido ya confirmado no admite otro intento.
+      claim_transfer_verification_attempt: () =>
+        orderRow.payment_status === "confirmado"
+          ? { data: null, error: { message: "ALREADY_RESOLVED: el pago de este pedido ya no admite verificación automática." } }
+          : { data: { ...orderRow }, error: null },
+      confirm_transfer_auto_verification: () => ({ data: { ...orderRow, payment_status: "confirmado" }, error: null }),
+    },
+  })
+}
+
+test("regresión: antes de transferir -> no encontrado; después aparece y el reintento hace una búsqueda NUEVA, encuentra y confirma una sola vez", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, rpcCalls } = sequentialAttemptsAdmin(orderRow)
+  // La fuente bancaria cambia entre intentos: primero vacía, después con la transferencia.
+  const bank: MercadoPagoBankTransferCandidate[][] = [[], [candidate()]]
+  let searches = 0
+  const searchTransfers = async () => ({ candidates: bank[Math.min(searches++, bank.length - 1)], exhaustive: true })
+
+  const first = await attemptTransferAutoVerification(admin as never, { orderId: 42, declared: declaredValid }, { searchTransfers })
+  assert.equal(first.status, "awaiting_transfer")
+  if (first.status === "awaiting_transfer") assert.equal(first.reason, "no_candidates")
+
+  const second = await attemptTransferAutoVerification(admin as never, { orderId: 42, declared: declaredValid }, { searchTransfers })
+  assert.equal(second.status, "verified", "el intento previo fallido no bloquea ni se reutiliza")
+  assert.equal(searches, 2, "cada verificación consulta la fuente bancaria de nuevo (sin cache de resultados negativos)")
+
+  // Clicks repetidos después de confirmar: nunca un segundo confirm.
+  const third = await attemptTransferAutoVerification(admin as never, { orderId: 42, declared: declaredValid }, { searchTransfers })
+  assert.equal(third.status, "rejected")
+  assert.equal(rpcCalls.filter((call) => call.name === "confirm_transfer_auto_verification").length, 1)
+  assert.equal(rpcCalls.filter((call) => call.name === "claim_transfer_verification_attempt").length, 3, "cada click es un intento nuevo (nuevo lease)")
+  assert.equal(searches, 2, "el pedido ya confirmado no vuelve a consultar Mercado Pago")
+})
+
+test("regresión: nombre con el apellido incluido no rompe un match válido -- manda DNI/CUIT + monto", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, rpcCalls } = sequentialAttemptsAdmin(orderRow)
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: { firstName: "Jose Perez", lastName: "Perez", dni: "30111222", amount: 900 } },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+  assert.equal(result.status, "verified")
+  assert.equal(rpcCalls.find((call) => call.name === "confirm_transfer_auto_verification")?.args.p_matched_dni_derived, "30111222")
+  // También con CUIT/CUIL declarado en vez de DNI.
+  const cuitRow = baseOrderRow()
+  const cuit = sequentialAttemptsAdmin(cuitRow)
+  const byCuil = await attemptTransferAutoVerification(
+    cuit.admin as never,
+    { orderId: 42, declared: { firstName: "Jose", lastName: "Perez", dni: VALID_CUIL, amount: 900 } },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+  assert.equal(byCuil.status, "verified")
+})
+
+test("regresión: los datos del titular corregidos se usan (y persisten) en la verificación siguiente", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, updateCalls } = sequentialAttemptsAdmin(orderRow)
+  const searchTransfers = async () => ({ candidates: [candidate()], exhaustive: true })
+
+  const wrong = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: { ...declaredValid, dni: "29999888" } },
+    { searchTransfers },
+  )
+  assert.equal(wrong.status, "manual_review")
+  if (wrong.status === "manual_review") assert.equal(wrong.reason, "dni_mismatch")
+
+  const fixed = await attemptTransferAutoVerification(admin as never, { orderId: 42, declared: declaredValid }, { searchTransfers })
+  assert.equal(fixed.status, "verified")
+  const declaredWrites = updateCalls.filter((call) => "transfer_payer_dni" in call.values).map((call) => call.values.transfer_payer_dni)
+  assert.deepEqual(declaredWrites, ["29999888", "30111222"], "cada intento guarda lo que se declaró en ESE intento")
+})
+
+test("observabilidad: un fallo no tipificado al confirmar queda auditado con su causa real, enmascarada", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, insertCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+      confirm_transfer_auto_verification: {
+        data: null,
+        error: { message: 'new row violates check constraint "x" for DNI 30111222 payment 177895301225', code: "23514" } as never,
+      },
+    },
+  })
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+  assert.equal(result.status, "manual_review")
+  if (result.status === "manual_review") assert.equal(result.reason, "confirmation_error")
+  const audit = insertCalls.find((call) => call.table === "order_audit_events")
+  assert.equal(audit?.values.action, "transfer_auto_verification_confirm_failed")
+  const metadata = audit?.values.metadata as Record<string, unknown>
+  assert.equal(metadata.sqlstate, "23514")
+  assert.equal(metadata.matchedPaymentId, "*********225")
+  assert.match(String(metadata.message), /check constraint/)
+  assert.doesNotMatch(JSON.stringify(metadata), /30111222|177895301225/, "nunca DNI ni payment.id completos")
+})
+
+test("tipificado: CATALOG_STATE_INVALID al confirmar -> catalog_state_invalid (no confirmation_error), auditado sin exponer el detalle", async () => {
+  const orderRow = baseOrderRow()
+  const { admin, insertCalls, updateCalls } = createFakeAdmin({
+    orderRow,
+    rpcResponses: {
+      claim_transfer_verification_attempt: { data: { ...orderRow }, error: null },
+      confirm_transfer_auto_verification: {
+        data: null,
+        error: { message: "CATALOG_STATE_INVALID: La variante necesita un SKU.", code: "P0001" } as never,
+      },
+    },
+  })
+  const result = await attemptTransferAutoVerification(
+    admin as never,
+    { orderId: 42, declared: declaredValid },
+    { searchTransfers: async () => ({ candidates: [candidate()], exhaustive: true }) },
+  )
+  assert.equal(result.status, "manual_review")
+  if (result.status === "manual_review") assert.equal(result.reason, "catalog_state_invalid")
+  assert.ok(updateCalls.some((call) => call.values.transfer_verification_failure_reason === "catalog_state_invalid"))
+  assert.equal(updateCalls.some((call) => call.values.transfer_verification_failure_reason === "confirmation_error"), false)
+  const audit = insertCalls.find((call) => call.table === "order_audit_events")
+  assert.equal(audit?.values.action, "transfer_auto_verification_catalog_state_invalid")
+  assert.equal((audit?.values.metadata as Record<string, unknown>).code, "CATALOG_STATE_INVALID")
+  assert.doesNotMatch(JSON.stringify(audit?.values.metadata), /177895301225|30111222/)
+})

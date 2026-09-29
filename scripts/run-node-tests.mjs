@@ -41,6 +41,7 @@ const TEST_FILES = [
   "lib/admin/claim-attention.test.ts",
   "lib/orders/claim-cancellation.test.ts",
   "lib/orders/claim-product-outcome.test.ts",
+  "lib/orders/transfer-verification-diagnostics.test.ts",
   "lib/order-claims.test.ts",
   "lib/orders/claim-atomic.test.ts",
   "lib/orders/claim-storage.test.ts",
@@ -242,6 +243,7 @@ const TSX_TEST_FILES = [
   "components/claims/claim-reply-draft.test.tsx",
   "components/claims/return-inventory-refresh.test.tsx",
   "components/claims/use-claim-wizard-scroll.test.tsx",
+  "components/checkout/transfer-flow-validation.test.tsx",
   "lib/orders/admin-claim-wizard.test.ts",
 ]
 
@@ -251,6 +253,7 @@ const DB_TEST_FILES = [
   "lib/fixtures/isolated-postgres.test.mjs",
   "lib/cart/checkout-step-reservations.test.mjs",
   "lib/orders/transfer-checkout-reservation.test.mjs",
+  "lib/orders/transfer-last-unit-confirmation.test.mjs",
   "lib/mercadopago/checkout-reservation-phase3.test.mjs",
   "lib/arca/arca-invoicing-concurrency.test.mjs",
   "lib/arca/arca-credit-note-concurrency.test.mjs",

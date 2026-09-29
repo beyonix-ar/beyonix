@@ -78,6 +78,11 @@ test("el endpoint nunca reenvía la orden completa ni campos sensibles de concil
   assert.match(routeSource, /status:\s*result\.status/)
   assert.match(routeSource, /manualReviewRequired:/)
   assert.match(routeSource, /proofUploadAvailable/)
+  // Sólo una categoría para el cliente (no encontrado / no coincide /
+  // confirmando / conflicto de stock), nunca el motivo interno de revisión.
+  assert.match(routeSource, /const outcome = getTransferVerificationCustomerOutcome\(/)
+  assert.match(routeSource, /message: TRANSFER_VERIFICATION_OUTCOME_MESSAGES\[outcome\]/)
+  assert.doesNotMatch(routeSource, /reason:\s*result\.reason/)
 })
 
 test("un fallo técnico (rate limit, verificación en curso, error inesperado) siempre ofrece el comprobante como salida segura -- nunca deja al cliente bloqueado", () => {
