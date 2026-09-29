@@ -3,6 +3,7 @@ import test, { mock } from "node:test"
 import { JSDOM } from "jsdom"
 import { act } from "react"
 
+import { TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE } from "../../lib/orders/transfer-verification-reasons"
 import type { SupabasePedido } from "../../lib/supabase/types"
 
 // Flujo de transferencia con React real (JSDOM): "Ya realicé la
@@ -34,6 +35,8 @@ let root: Root
 type VerifyReply = { status: number; body: Record<string, unknown> } | "network-error"
 const verifyReplies: VerifyReply[] = []
 const verifyBodies: Array<Record<string, unknown>> = []
+const holderBodies: Array<Record<string, unknown>> = []
+const BANK_TRANSFER = { alias: "beyonix.pagos", cvu: "0000003100012345678901", accountHolder: "BEYONIX SRL" }
 let updatedCalls = 0
 // Cada escenario monta el flujo desde cero (sin arrastrar el paso anterior).
 let mountKey = 0
@@ -73,6 +76,12 @@ test.before(async () => {
       if (reply === "network-error") throw new TypeError("Network unavailable")
       return Response.json(reply.body, { status: reply.status })
     }
+    // Mismo contrato que app/api/transferencia/[orderId]/titular/route.ts.
+    if (path.endsWith("/api/transferencia/42/titular") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>
+      holderBodies.push(body)
+      return Response.json({ saved: true, amount: 25000, bankTransfer: BANK_TRANSFER })
+    }
     return Response.json({ error: "sin datos en el test" }, { status: 404 })
   })
   ;({ TransferFlow } = await import("./transfer-flow"))
@@ -87,6 +96,7 @@ test.after(async () => {
 async function render(pedido: SupabasePedido, bankTransfer = true) {
   const { createElement } = await import("react")
   verifyBodies.length = 0
+  holderBodies.length = 0
   updatedCalls = 0
   await act(async () => {
     root.render(
@@ -101,7 +111,7 @@ async function render(pedido: SupabasePedido, bankTransfer = true) {
           serverNow: new Date().toISOString(),
           receivedAt: performance.now(),
         },
-        bankTransfer: bankTransfer ? { alias: "beyonix.pagos", cvu: "0000003100012345678901", accountHolder: "BEYONIX SRL" } : null,
+        bankTransfer: bankTransfer ? BANK_TRANSFER : null,
         paymentConfirmed: false,
         onUpdated: () => {
           updatedCalls += 1
@@ -125,6 +135,22 @@ async function click(target: HTMLElement) {
   await act(async () => {
     target.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))
   })
+}
+async function typeInto(id: string, value: string) {
+  const input = document.getElementById(id) as HTMLInputElement
+  assert.ok(input, `input #${id}`)
+  await act(async () => {
+    // Setter nativo: React sólo registra el cambio si el valor cambió "por debajo".
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")?.set?.call(input, value)
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }))
+  })
+}
+async function pressKey(key: string, shiftKey = false) {
+  const event = new dom.window.KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true })
+  await act(async () => {
+    ;(document.activeElement ?? document.body).dispatchEvent(event)
+  })
+  return event
 }
 
 test("paso 1: sin los textos de ayuda eliminados; sólo nombre, apellido y DNI/CUIT", async () => {
@@ -175,6 +201,9 @@ test("sin coincidencia: modal ámbar (alertdialog) con 3 acciones, sin repetir e
   button("Cambiar datos del titular", dialog)
   const retry = button("Podés volver a verificar en 10 s", dialog)
   assert.equal(retry.disabled, true, "respeta la espera del servidor antes de reintentar")
+  // Con el reintento en cooldown, el foco va a la primera acción habilitada
+  // (nunca queda detrás del modal).
+  assert.equal(document.activeElement, button("Subir el comprobante de pago", dialog))
   assert.equal(document.querySelectorAll("input").length, 0, "no hay un segundo formulario")
 })
 
@@ -215,8 +244,21 @@ test("fallo de red: modal con el comprobante disponible; conflicto de stock: sin
   assert.match(modal()?.textContent ?? "", /No pudimos conectarnos para verificar tu transferencia\./)
   button("Subir el comprobante de pago", modal() as HTMLElement)
 
+  // Contrato real de safeVerificationResponse (verificar/route.ts): el
+  // conflicto de stock llega sólo como outcome "stock_conflict".
   await render(order())
-  verifyReplies.push({ status: 200, body: { status: "manual_review", retryable: false, stockConflict: true, proofUploadAvailable: true } })
+  verifyReplies.push({
+    status: 200,
+    body: {
+      status: "manual_review",
+      outcome: "stock_conflict",
+      verified: false,
+      manualReviewRequired: true,
+      retryable: false,
+      proofUploadAvailable: true,
+      message: TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
+    },
+  })
   await click(button("Ya realicé la transferencia"))
   assert.equal(modal(), null)
   assert.equal(updatedCalls, 1)
@@ -289,8 +331,85 @@ test("encontrada pero falta confirmar: nunca dice 'no encontramos'; el reintento
 
 test("titular corregido desde el modal: la siguiente verificación usa los datos nuevos", async () => {
   await render(order())
-  verifyReplies.push({ status: 200, body: { status: "manual_review", outcome: "not_matching", retryable: true, proofUploadAvailable: true } })
+  verifyReplies.push({ status: 200, body: { status: "manual_review", outcome: "not_matching", retryable: true, retryAfterSeconds: 0, proofUploadAvailable: true } })
   await click(button("Ya realicé la transferencia"))
+  assert.deepEqual(verifyBodies[0], { nombre: "Romina Ayelen", apellido: "Pérez", dni: "30123456", monto: 25000 })
+
   await click(button("Cambiar datos del titular", modal() as HTMLElement))
+  assert.equal(modal(), null)
   assert.match(text(), /¿Desde qué cuenta vas a transferir\?/)
+
+  await typeInto("transfer-holder-nombre", "María José")
+  await typeInto("transfer-holder-apellido", "Núñez Güemes")
+  await typeInto("transfer-holder-dni", "27123456")
+  await click(button("Continuar a los datos de transferencia"))
+
+  assert.deepEqual(holderBodies, [{ nombre: "María José", apellido: "Núñez Güemes", dni: "27123456" }])
+  assert.match(text(), /Paso 2 de 3 · Transferencia/)
+
+  verifyReplies.push({ status: 200, body: { status: "verified", outcome: "verified", verified: true } })
+  await click(button("Ya realicé la transferencia"))
+
+  assert.equal(verifyBodies.length, 2)
+  assert.deepEqual(verifyBodies[1], { nombre: "María José", apellido: "Núñez Güemes", dni: "27123456", monto: 25000 })
+})
+
+test("modal: Tab / Shift+Tab quedan atrapados dentro del diálogo", async () => {
+  await render(order())
+  verifyReplies.push({ status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, retryAfterSeconds: 10, proofUploadAvailable: true } })
+  await click(button("Ya realicé la transferencia"))
+  const dialog = modal() as HTMLElement
+  const closeButton = dialog.querySelector<HTMLButtonElement>('button[aria-label="Cerrar"]')
+  assert.ok(closeButton)
+  const lastAction = button("Cambiar datos del titular", dialog)
+
+  // Último habilitado + Tab -> primero (la X); primero + Shift+Tab -> último.
+  await act(async () => lastAction.focus())
+  assert.equal((await pressKey("Tab")).defaultPrevented, true)
+  assert.equal(document.activeElement, closeButton)
+  assert.equal((await pressKey("Tab", true)).defaultPrevented, true)
+  assert.equal(document.activeElement, lastAction)
+
+  // Entre medio, Tab sigue el orden nativo (no se intercepta).
+  await act(async () => button("Subir el comprobante de pago", dialog).focus())
+  assert.equal((await pressKey("Tab")).defaultPrevented, false)
+
+  // Foco escapado detrás del modal: Tab lo devuelve adentro.
+  const behindModal = button("Cambiar datos del titular")
+  assert.equal(dialog.contains(behindModal), false)
+  await act(async () => behindModal.focus())
+  assert.equal(document.activeElement, behindModal)
+  assert.equal((await pressKey("Tab")).defaultPrevented, true)
+  assert.ok(dialog.contains(document.activeElement))
+})
+
+test("modal: al cerrar, el foco vuelve a 'Ya realicé la transferencia' (Escape y X)", async () => {
+  await render(order())
+  verifyReplies.push({ status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, retryAfterSeconds: 0, proofUploadAvailable: true } })
+  const trigger = button("Ya realicé la transferencia")
+  await click(trigger)
+  assert.ok(modal())
+  await pressKey("Escape")
+  assert.equal(modal(), null)
+  assert.equal(document.activeElement, trigger)
+
+  verifyReplies.push({ status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, retryAfterSeconds: 0, proofUploadAvailable: true } })
+  await click(trigger)
+  const closeButton = (modal() as HTMLElement).querySelector<HTMLButtonElement>('button[aria-label="Cerrar"]')
+  assert.ok(closeButton)
+  await click(closeButton)
+  assert.equal(modal(), null)
+  assert.equal(document.activeElement, trigger)
+})
+
+test("modal: si el disparador quedó en espera, el foco vuelve a la otra acción del paso", async () => {
+  await render(order())
+  verifyReplies.push({ status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, retryAfterSeconds: 10, proofUploadAvailable: true } })
+  const trigger = button("Ya realicé la transferencia")
+  await click(trigger)
+  await pressKey("Escape")
+  assert.equal(modal(), null)
+  assert.equal(trigger.disabled, true)
+  assert.equal(document.activeElement?.textContent?.trim(), "Cambiar datos del titular")
+  assert.notEqual(document.activeElement, document.body)
 })

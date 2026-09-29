@@ -569,7 +569,7 @@ function TransferVerificationFailedModal({
   onClose: () => void
 }) {
   const [mounted, setMounted] = useState(false)
-  const firstActionRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   // Sin comprobante disponible (lo decide el servidor), esa acción no se ofrece.
   const actions = getTransferFailureActions(failure.kind).filter(
     (action) => action !== "upload" || failure.proofUploadAvailable,
@@ -579,13 +579,44 @@ function TransferVerificationFailedModal({
     setMounted(true)
   }, [])
 
+  // Foco en la primera acción HABILITADA: "Volver a verificar" suele abrir en
+  // cooldown (disabled) y focus() sobre un botón deshabilitado no hace nada,
+  // dejando el foco detrás del modal. Sin ninguna habilitada, el cerrar.
   useEffect(() => {
-    if (mounted) firstActionRef.current?.focus()
+    if (!mounted) return
+    const dialog = dialogRef.current
+    const target =
+      dialog?.querySelector<HTMLButtonElement>("[data-transfer-failure-kind] button:not(:disabled)") ??
+      dialog?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+    target?.focus()
   }, [mounted])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !verifying) onClose()
+      if (event.key === "Escape" && !verifying) {
+        onClose()
+        return
+      }
+      if (event.key !== "Tab") return
+
+      // Focus trap: Tab / Shift+Tab ciclan entre los botones habilitados del
+      // diálogo; el foco nunca sale hacia la página que quedó detrás.
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = [...dialog.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      const outside = !active || !dialog.contains(active)
+      if (!first || !last) {
+        event.preventDefault()
+      } else if (event.shiftKey && (outside || active === first)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (outside || active === last)) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
@@ -604,6 +635,7 @@ function TransferVerificationFailedModal({
       />
 
       <div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="transfer-verification-failed-title"
@@ -652,10 +684,9 @@ function TransferVerificationFailedModal({
           {actions.map((action, index) => {
             // La primera acción es la principal; el resto, secundarias.
             const variant = index === 0 ? "primary" : index === 1 ? "outline" : "ghost"
-            const ref = index === 0 ? firstActionRef : undefined
             if (action === "upload") {
               return (
-                <BeyonixButton key={action} ref={ref} type="button" variant={variant} onClick={onUploadProof}
+                <BeyonixButton key={action} type="button" variant={variant} onClick={onUploadProof}
                   disabled={verifying} className="h-11 w-full">
                   <Upload className="size-4" aria-hidden="true" />
                   Subir el comprobante de pago
@@ -664,7 +695,7 @@ function TransferVerificationFailedModal({
             }
             if (action === "edit") {
               return (
-                <BeyonixButton key={action} ref={ref} type="button" variant={variant} onClick={onEditHolder}
+                <BeyonixButton key={action} type="button" variant={variant} onClick={onEditHolder}
                   disabled={verifying} className="h-11 w-full">
                   <UserPen className="size-4" aria-hidden="true" />
                   Cambiar datos del titular
@@ -672,7 +703,7 @@ function TransferVerificationFailedModal({
               )
             }
             return (
-              <BeyonixButton key={action} ref={ref} type="button" variant={variant} onClick={onRetry}
+              <BeyonixButton key={action} type="button" variant={variant} onClick={onRetry}
                 disabled={verifying || cooldownSeconds > 0} className="h-11 w-full">
                 {verifying ? (
                   <>
@@ -718,6 +749,9 @@ function TransferInstructionsStep({
 }) {
   const [copiedField, setCopiedField] = useState<"alias" | "cvu" | null>(null)
   const copyTimerRef = useRef<number | null>(null)
+  const verifyButtonRef = useRef<HTMLButtonElement>(null)
+  const editHolderButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusRef = useRef(false)
   const verification = useTransferVerification({
     order,
     holder,
@@ -725,12 +759,28 @@ function TransferInstructionsStep({
     onStockConflict,
     onReservationExpired,
   })
+  const failureOpen = verification.failure !== null
 
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
     }
   }, [])
+
+  // Al cerrar el modal (Escape, afuera o X) el foco vuelve a "Ya realicé la
+  // transferencia", que lo abrió. Si quedó en espera (disabled), focus() no
+  // haría nada: se usa la otra acción del paso para no dejarlo en <body>.
+  useEffect(() => {
+    if (failureOpen || !restoreFocusRef.current) return
+    restoreFocusRef.current = false
+    const trigger = verifyButtonRef.current
+    ;(trigger && !trigger.disabled ? trigger : editHolderButtonRef.current)?.focus()
+  }, [failureOpen])
+
+  const closeFailure = () => {
+    restoreFocusRef.current = true
+    verification.dismissFailure()
+  }
 
   const handleCopy = async (field: "alias" | "cvu", value: string) => {
     try {
@@ -780,6 +830,7 @@ function TransferInstructionsStep({
       </div>
 
       <BeyonixButton
+        ref={verifyButtonRef}
         type="button"
         onClick={() => void verification.verify()}
         disabled={busy || verification.cooldownSeconds > 0}
@@ -802,6 +853,7 @@ function TransferInstructionsStep({
       <p className="mt-2 text-center text-xs leading-5 text-[var(--account-text-secondary)]">
         Cuando hayas realizado la transferencia, continuá para validar el pago.{" "}
         <button
+          ref={editHolderButtonRef}
           type="button"
           onClick={onEditHolder}
           disabled={busy}
@@ -820,7 +872,7 @@ function TransferInstructionsStep({
           onUploadProof={onUploadProof}
           onRetry={() => void verification.verify()}
           onEditHolder={onEditHolder}
-          onClose={verification.dismissFailure}
+          onClose={closeFailure}
         />
       )}
     </StepCard>
