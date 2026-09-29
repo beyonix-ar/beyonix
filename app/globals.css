@@ -15811,6 +15811,11 @@ html[data-admin-theme="light"] .admin-claim-logistics .text-red-200 { color: #b9
 .admin-claim-reception-panel.is-compact .admin-claim-choice-icon { width: 1.75rem; height: 1.75rem; }
 .admin-claim-reception-panel.is-compact .admin-claim-reception-footer { margin-top: .6rem; }
 .admin-claim-choice-row { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+/* Revisión editable: la decisión vigente queda marcada. */
+.admin-claim-decision-button[aria-pressed="true"] { outline: 2px solid #77e6e2; outline-offset: 1px; }
+html[data-admin-theme="light"] .admin-claim-decision-button[aria-pressed="true"] { outline-color: #07565d; }
+/* Sucursal sugerida + "Cambiar sucursal" en una sola fila. */
+.admin-claim-branch-current { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .6rem; }
 
 /* Wizard: el encabezado queda visible debajo de la navegación del admin. */
 .admin-claim-wizard-header { scroll-margin-top: 5rem; }

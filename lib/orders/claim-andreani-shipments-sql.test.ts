@@ -39,6 +39,7 @@ const CHAIN = [
   "20260928100000_claim_andreani_shipments",
   "20260930100000_claim_logistics_branch_only",
   "20261001100000_claim_logistics_hardening",
+  "20261001120000_reopen_rejected_order_claim",
 ]
 
 type Db = PGlite
@@ -545,7 +546,7 @@ test("migración correctiva sobre datos del modelo inicial: cancela lo automáti
     await db.exec(source("./fixtures/claim-logistics-schema.sql"))
     // Secuencia real de producción: modelo inicial (20260928100000) con datos,
     // luego 20260930100000 (aplicada) y 20261001100000 (dos veces: idempotente).
-    const historical = CHAIN.slice(0, -2)
+    const historical = CHAIN.slice(0, CHAIN.indexOf("20260930100000_claim_logistics_branch_only"))
     for (const name of historical) await db.exec(migration(name))
     await db.query("select set_config('request.jwt.claim.role','service_role',false)")
     for (const [id, role] of [[customer, "cliente"], [admin, "admin"]]) {
@@ -568,10 +569,11 @@ test("migración correctiva sobre datos del modelo inicial: cancela lo automáti
     await db.query(`insert into order_claim_shipments(claim_id,order_id,direction,status,modality,environment,contract,andreani_envio_id,creation_status,delivered_at)
       values($1,2,'reemplazo','entregada','entrega_domicilio','PROD','400042104','360000000778','created',now())`, [real])
 
-    await db.exec(migration(CHAIN.at(-2) as string))
-    const corrective = migration(CHAIN.at(-1) as string)
+    await db.exec(migration("20260930100000_claim_logistics_branch_only"))
+    const corrective = migration("20261001100000_claim_logistics_hardening")
     await db.exec(corrective)
     await db.exec(corrective)
+    await db.exec(migration("20261001120000_reopen_rejected_order_claim"))
     // Sin sobrecargas viejas con lógica obsoleta (p. ej. tracking sin revisión de eventos).
     assert.deepEqual((await db.query<{ sig: string }>(
       "select p.oid::regprocedure::text sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='apply_order_claim_shipment_tracking'")).rows.map((row) => row.sig),
@@ -788,5 +790,113 @@ test("permisos: todo por service_role; el navegador (anon/authenticated) no lee 
     await assert.rejects(plan(db, id, "devolucion"), /FORBIDDEN/)
   } finally {
     await db.close()
+  }
+})
+
+const reject = (db: Db, id: number, actor = admin) =>
+  mutate(db, id, { status: "rechazado", resolution: "rechazado", rejection_reason: "No corresponde: daño por mal uso." }, actor)
+const reopen = async (db: Db, id: number, reason = "Me equivoqué: el reclamo sí corresponde", actor = admin) =>
+  db.query<Row>("select * from reopen_rejected_order_claim($1,$2,$3::timestamptz,$4)", [id, actor, await version(db, id), reason])
+
+test("Revisión editable: Corresponde -> No corresponde sin efectos reales (tramo pendiente se cancela); con efectos, la base lo impide", async () => {
+  const db = await setup()
+  try {
+    const free = await acceptChange(db)
+    const pending = await plan(db, free, "cambio")
+    await reject(db, free)
+    assert.equal((await one(db, "select status from order_claims where id=$1", [free])).status, "rechazado")
+    assert.equal((await leg(db, pending)).status, "cancelada", "el método elegido sin operación real no deja nada abierto")
+    assert.deepEqual(await units(db, free), { "original:conservada_cliente": 2 })
+
+  } finally {
+    await db.close()
+  }
+  const db3 = await setup()
+  try {
+    // Cambiar la solución aprobada (cambio -> saldo a favor) sin efectos: permitido y la base lo registra.
+    const other = await acceptChange(db3)
+    await plan(db3, other, "cambio")
+    await mutate(db3, other, { status: "aprobado", resolution: "saldo_a_favor" })
+    assert.equal((await one(db3, "select resolution from order_claims where id=$1", [other])).resolution, "saldo_a_favor")
+    assert.equal(await count(db3, "select count(*)::int n from order_claim_shipments where claim_id=$1 and status<>'cancelada'", [other]), 0,
+      "el cambio directo elegido (sin operación real) no queda abierto")
+  } finally {
+    await db3.close()
+  }
+  const db2 = await setup()
+  try {
+    // Con stock reservado u operación Andreani real: ni rechazo ni cambio de solución en silencio.
+    const reserved = await acceptChange(db2)
+    const legId = await plan(db2, reserved, "cambio")
+    await reserve(db2, reserved, 1, 1, 2)
+    await assert.rejects(reject(db2, reserved), /CLAIM_LOGISTICS_OPEN/)
+    await assert.rejects(mutate(db2, reserved, { status: "aprobado", resolution: "saldo_a_favor" }), /CLAIM_LOGISTICS_LOCKED/)
+    await generate(db2, legId, ...EXCHANGE, "360000000901")
+    await assert.rejects(reject(db2, reserved), /CLAIM_LOGISTICS_OPEN/)
+    assert.equal((await one(db2, "select status from order_claims where id=$1", [reserved])).status, "aprobado")
+  } finally {
+    await db2.close()
+  }
+})
+
+test("Revisión editable: No corresponde -> Corresponde con reapertura auditada, sólo sin efectos reales", async () => {
+  const db = await setup()
+  try {
+    const id = await acceptChange(db)
+    await plan(db, id, "cambio")
+    await reject(db, id)
+    await assert.rejects(reopen(db, id, "corto"), /CLAIM_REOPEN_REASON_REQUIRED/)
+    await assert.rejects(reopen(db, id, undefined, operator), /CLAIM_FORBIDDEN/, "sólo Admin")
+    await assert.rejects(db.query("select * from reopen_rejected_order_claim($1,$2,now(),'Motivo suficiente de prueba')", [id, admin]), /CLAIM_CONFLICT/)
+
+    const reopened = (await reopen(db, id)).rows[0]
+    assert.deepEqual([reopened.status, reopened.resolution, reopened.rejection_reason, reopened.closed_at, reopened.resolution_summary],
+      ["en_revision", null, null, null, null])
+    assert.deepEqual(await units(db, id), { "original:con_cliente": 2 }, "las unidades vuelven a esperar la nueva decisión")
+    const audit = await one(db, "select actor_id, metadata from order_audit_events where action='claim_review_reopened'")
+    assert.equal(audit.actor_id, admin)
+    assert.match(JSON.stringify(audit.metadata), /Me equivoqué: el reclamo sí corresponde.*No corresponde: daño por mal uso/)
+    assert.ok((await messages(db, id)).some((row) => /revisando nuevamente tu reclamo/.test(row.message)), "el cliente recibe el aviso")
+    await assert.rejects(reopen(db, id), /CLAIM_REOPEN_NOT_ALLOWED/, "sólo desde rechazado")
+
+    // Vuelve al flujo normal: se aprueba de nuevo y la logística funciona.
+    await mutate(db, id, { status: "aprobado", resolution: "cambio_producto" })
+    const legId = await plan(db, id, "devolucion")
+    assert.equal((await leg(db, legId)).status, "pendiente")
+  } finally {
+    await db.close()
+  }
+})
+
+test("reapertura bloqueada con efectos reales (operación Andreani generada, saldo) y para consultas; navegador sin permiso", async () => {
+  const db = await setup()
+  try {
+    const andreani = await acceptChange(db)
+    const legId = await plan(db, andreani, "devolucion")
+    await generate(db, legId, ...RETURN, "360000000902")
+    await db.query("select cancel_order_claim_leg($1,$2,'Andreani nunca retiró el paquete')", [legId, admin])
+    await reject(db, andreani)
+    await assert.rejects(reopen(db, andreani), /CLAIM_REOPEN_HAS_EFFECTS/, "hubo una operación Andreani real")
+    assert.equal((await one(db, "select status from order_claims where id=$1", [andreani])).status, "rechazado")
+
+    const grants = (await db.query<Record<string, boolean>>(`select
+      has_function_privilege('anon','public.reopen_rejected_order_claim(bigint,uuid,timestamptz,text)','EXECUTE') a,
+      has_function_privilege('authenticated','public.reopen_rejected_order_claim(bigint,uuid,timestamptz,text)','EXECUTE') b,
+      has_function_privilege('service_role','public.reopen_rejected_order_claim(bigint,uuid,timestamptz,text)','EXECUTE') c`)).rows[0]
+    assert.deepEqual(grants, { a: false, b: false, c: true })
+  } finally {
+    await db.close()
+  }
+  const db2 = await setup()
+  try {
+    const credit = await createClaim(db2)
+    await reject(db2, credit)
+    await db2.query("insert into customer_credit_movements(order_id,claim_id,source_type,movement_type) values(1,$1,'credit_note','credit')", [credit])
+    await assert.rejects(reopen(db2, credit), /CLAIM_REOPEN_HAS_EFFECTS/, "hubo saldo a favor")
+    await db2.query("delete from customer_credit_movements where claim_id=$1", [credit])
+    await db2.query("update order_claims set failure_type='consulta_pedido' where id=$1", [credit])
+    await assert.rejects(reopen(db2, credit), /CLAIM_REOPEN_NOT_ALLOWED/, "consultas y cancelaciones tienen su circuito")
+  } finally {
+    await db2.close()
   }
 })

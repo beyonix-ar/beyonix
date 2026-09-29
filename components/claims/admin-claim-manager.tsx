@@ -62,11 +62,12 @@ import { useClaimReplyDraft } from "@/components/claims/use-claim-reply-draft"
 import { useClaimWizardScroll } from "@/components/claims/use-claim-wizard-scroll"
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
-import { ClaimAndreaniShipmentPanel } from "@/components/claims/claim-andreani-shipment-panel"
+import { ClaimAndreaniShipmentPanel, type ClaimLogisticsPanelSection } from "@/components/claims/claim-andreani-shipment-panel"
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
+import { getClaimReviewEditability } from "@/lib/orders/claim-review-edit"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -144,8 +145,8 @@ const REJECTION_REASONS = [
   "Otro",
 ]
 
-const RESTOCK_HELP = "Usar solo si el producto está en buen estado y puede venderse nuevamente."
-const WRITE_OFF_HELP = "Usar si el producto está dañado o no es apto para venta."
+const RESTOCK_HELP = "Producto en buen estado y apto para volver a venderse."
+const WRITE_OFF_HELP = "Producto dañado o no apto para volver a venderse."
 
 type ClaimAction = "approve" | "reject" | "close" | "approve_cancellation" | "reject_cancellation"
 
@@ -524,12 +525,19 @@ export function ReturnInventoryPanel({
   pedido,
   claim,
   canManage,
+  arrivedUnitsByItem,
   onUpdated,
   onClaimChange,
 }: {
   pedido: SupabasePedido
   claim: SupabaseOrderClaim
   canManage: boolean
+  /**
+   * Con logística por unidades: originales que ya llegaron a BEYONIX por ítem.
+   * Sólo esas se pueden inspeccionar (volver al stock / dar de baja); la base
+   * lo vuelve a exigir.
+   */
+  arrivedUnitsByItem?: Record<number, number>
   registeredReplacements?: RegisteredReplacement[] | null
   onUpdated?: () => void | Promise<void>
   /** Publica el reclamo devuelto por el servidor (p. ej. tras corregir productos). */
@@ -1125,6 +1133,25 @@ export function ReturnInventoryPanel({
               )
             }
 
+            // Logística por unidades: sólo lo que ya llegó a BEYONIX se inspecciona.
+            if (arrivedUnitsByItem && (arrivedUnitsByItem[Number(item.id)] ?? 0) <= 0) {
+              return (
+                <article key={`return-inventory-${item.id}`} className="admin-claim-reception-item" data-claim-reception-waiting>
+                  <ReceptionProductHeader
+                    item={item}
+                    productName={productName}
+                    meta={itemMeta}
+                    claimed={claimedQuantity}
+                    received={receivedQuantity}
+                    lastReceptionAt={item.return_inventory_processed_at}
+                  />
+                  <p className="admin-claim-reception-hint mt-2">
+                    Todavía no llegó a BEYONIX. Cuando esté en el depósito, registrá la llegada arriba y después elegí si vuelve al stock o se da de baja.
+                  </p>
+                </article>
+              )
+            }
+
             return (
               <article key={`return-inventory-${item.id}`} className="admin-claim-reception-item">
                 <ReceptionProductHeader
@@ -1363,6 +1390,9 @@ export function AdminClaimManager({
   const [showCloseConversationModal, setShowCloseConversationModal] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [viewedStep, setViewedStep] = useState<string | null>(null)
+  // Corrección de un "No corresponde" (reapertura auditada con motivo).
+  const [reopenOpen, setReopenOpen] = useState(false)
+  const [reopenReason, setReopenReason] = useState("")
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     title: string
     description: string
@@ -1675,8 +1705,10 @@ export function AdminClaimManager({
 
     const sent = await updateClaim(
       {
+        // Corregir una solución ya aprobada mantiene el estado "aprobado"
+        // (la base no permite saltar de aprobado a reintegro pendiente).
         status:
-          decisionResolution === "reintegro_total"
+          decisionResolution === "reintegro_total" && claim.status !== "aprobado"
             ? "reintegro_pendiente"
             : "aprobado",
         resolution: decisionResolution,
@@ -1719,6 +1751,20 @@ export function AdminClaimManager({
       clearResponse()
       setRejectionReason("")
       closeDecision()
+    }
+  }
+
+  const reopenReview = async () => {
+    if (!claim || reopenReason.trim().length < 10) return
+    decisionVersionRef.current = claim.updated_at
+    const sent = await updateClaim(
+      { action: "reopen_review", reason: reopenReason.trim() },
+      "Revisión reabierta: elegí nuevamente si el reclamo corresponde.",
+    )
+    if (sent) {
+      setReopenOpen(false)
+      setReopenReason("")
+      setViewedStep(null)
     }
   }
 
@@ -1966,7 +2012,7 @@ export function AdminClaimManager({
   // pasos operativos muestran sólo la operación; sin él (reintegros sin método,
   // legacy), el panel conserva todo junto.
   const logisticsMethodStep = Boolean(logistics && (logistics.plan || methodPending))
-  const renderLogisticsPanel = (section: "method" | "operation" | "all") => logistics && (
+  const renderLogisticsPanel = (section: ClaimLogisticsPanelSection) => logistics && (
     <ClaimAndreaniShipmentPanel key={`${claim.id}-${section}`} claim={claim} itemLabel={itemLabel} canManage={isAdmin && !closed}
       creditNoteActive={claimCreditNoteActive} section={section}
       onClaimChange={(next) => {
@@ -1992,9 +2038,36 @@ export function AdminClaimManager({
   const finalizedStatus = !helpResolved && claim.status === "cerrado"
   const conversationStatus = getConversationStatusLabel(claim, messages)
   const formalClaim = !helpMessage && !cancellation
-  const approved = Boolean(claim.resolution && claim.resolution !== "rechazado")
   const needsReception = claim.resolution === "cambio_producto"
   const hasReplacement = replacedUnits !== null && replacedUnits > 0
+  // Revisión editable: la decisión se corrige sólo sin efectos reales (la base
+  // vuelve a validar cada cambio con sus guardas).
+  const reviewEdit = getClaimReviewEditability({
+    status: claim.status,
+    resolution: claim.resolution,
+    failureType: claim.failure_type,
+    isAdmin,
+    effects: [
+      ...(logistics?.realEffects ?? []),
+      claimCreditNoteActive && "Nota de crédito emitida o en proceso",
+      hasReplacement && "Reemplazo registrado con salida de stock",
+      summaryReceptionTotals.received > 0 && "Recepción registrada",
+      pedido.financial_status === "refunded" && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") && "Reintegro registrado",
+    ],
+  })
+  const openApproveDecision = () => {
+    // Al corregir, el formulario parte de la solución vigente.
+    if (reviewEdit.mode === "edit") setDecisionResolution(getDefaultDecisionResolution(claim))
+    openDecision("approve")
+  }
+  // Pasos operativos con paso "Método": la reserva vive en la operación del
+  // cambio directo o en el reenvío; la confirmación final, en Finalización.
+  const reservationStep = logisticsMethodStep ? (logistics?.plan === "retiro_y_reenvio" ? "replacement" : "logistics") : "replacement"
+  const finishStep = logisticsMethodStep ? "finish" : "execution"
+  const arrivedUnitsByItem = (claim.order_claim_units ?? []).reduce<Record<number, number>>((counts, unit) => {
+    if (unit.role === "original" && unit.location === "recibida_beyonix") counts[unit.order_item_id] = (counts[unit.order_item_id] ?? 0) + 1
+    return counts
+  }, {})
   const { steps: workflowSteps, current: currentStep, currentIndex } = getAdminClaimWizard({
     status: claim.status, resolution: claim.resolution,
     receivedUnits: summaryReceptionTotals.received, replacedUnits,
@@ -2262,49 +2335,93 @@ export function AdminClaimManager({
               </div>
             ) : (
               <div className="mt-2 grid gap-2">
-                {selectedStep === "review" && canReviewClaim && (
-                  <>
-                    <DecisionButton
-                      icon={<CheckCircle2 className="size-4" />}
-                      title="El reclamo es válido"
-                      description="Registrar que BEYONIX acepta el reclamo."
-                      tone="success"
-                      disabled={saving || !isAdmin}
-                      onClick={() => openDecision("approve")}
-                    />
-                    <DecisionButton
-                      icon={<XCircle className="size-4" />}
-                      title="El reclamo no corresponde"
-                      description="Informar al cliente el motivo del rechazo."
-                      tone="danger"
-                      disabled={saving}
-                      onClick={() => openDecision("reject")}
-                    />
-                  </>
-                )}
-                {selectedStep === "review" && approved && (
-                  <p className="admin-claim-wizard-note">Solución aprobada: {getOrderClaimResolutionLabel(claim.resolution ?? "")}. La decisión quedó registrada. Una corrección posterior requiere revisar las acciones ya realizadas; este flujo no revierte stock ni operaciones financieras.</p>
+                {selectedStep === "review" && formalClaim && (
+                  <div className="grid gap-2" data-claim-review={reviewEdit.mode}>
+                    {reviewEdit.mode !== "decide" && (
+                      <p className="admin-claim-wizard-note" data-claim-review-current>
+                        Decisión actual: <strong>{reviewEdit.current === "reject" ? "No corresponde" : reviewEdit.current === "approve" ? "Corresponde" : getStatusLabel(claim)}</strong>
+                        {reviewEdit.current === "approve" && claim.resolution ? ` · Solución: ${getOrderClaimResolutionLabel(claim.resolution)}` : ""}
+                        {reviewEdit.mode === "edit" && ". Todavía no hubo movimientos reales: podés corregirla."}
+                        {reviewEdit.mode === "reopen" && ". Sin movimientos reales: si fue un error, podés reabrir la revisión."}
+                      </p>
+                    )}
+                    {reviewEdit.mode === "locked" && (
+                      <div role="status" className="admin-claim-method-lock" data-claim-review-lock>
+                        <p className="admin-claim-method-lock-title"><Lock className="size-3.5" aria-hidden="true" />La decisión no se puede cambiar directamente.</p>
+                        <ul>{reviewEdit.effects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
+                        <p>Primero corregí esos movimientos desde su paso (con motivo), o continuá con el reclamo.</p>
+                      </div>
+                    )}
+                    {(reviewEdit.mode === "decide" ? canReviewClaim : reviewEdit.mode !== "readonly") && (
+                      <>
+                        <DecisionButton
+                          icon={<CheckCircle2 className="size-4" />}
+                          title="El reclamo es válido"
+                          description={reviewEdit.mode === "edit"
+                            ? reviewEdit.canChangeSolution ? "Corresponde · cambiar la solución aprobada." : "Corresponde · la solución económica en curso no se cambia desde acá."
+                            : reviewEdit.mode === "reopen" ? "Corregir: reabrir la revisión (con motivo)." : "Registrar que BEYONIX acepta el reclamo."}
+                          tone="success"
+                          pressed={reviewEdit.current === "approve"}
+                          disabled={saving || !isAdmin || reviewEdit.mode === "locked" || (reviewEdit.mode === "edit" && !reviewEdit.canChangeSolution)}
+                          onClick={() => reviewEdit.mode === "reopen" ? setReopenOpen(true) : openApproveDecision()}
+                        />
+                        <DecisionButton
+                          icon={<XCircle className="size-4" />}
+                          title="El reclamo no corresponde"
+                          description={reviewEdit.mode === "edit" ? "Corregir: informar al cliente el motivo del rechazo." : "Informar al cliente el motivo del rechazo."}
+                          tone="danger"
+                          pressed={reviewEdit.current === "reject"}
+                          disabled={saving || reviewEdit.mode === "locked" || reviewEdit.mode === "reopen"}
+                          onClick={() => openDecision("reject")}
+                        />
+                      </>
+                    )}
+                    {reviewEdit.mode === "reopen" && reopenOpen && (
+                      <div className="admin-claim-method-form" data-claim-review-reopen>
+                        <p className="admin-claim-method-form-title">
+                          Reabrir la revisión
+                          <HelpTip label="Reabrir la revisión" align="start">El reclamo vuelve a En revisión para decidir de nuevo. El cliente recibe un aviso y el cambio queda auditado con tu usuario y el motivo.</HelpTip>
+                        </p>
+                        <label className="grid gap-1">
+                          <span className="admin-claim-logistics-label">Motivo de la corrección (mínimo 10 caracteres)</span>
+                          <textarea className={`${adminControlClassName} admin-claim-compact-textarea`} value={reopenReason}
+                            maxLength={1000} rows={2} onChange={(event) => setReopenReason(event.target.value)} />
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          <AdminButton size="sm" variant="primary" disabled={saving || reopenReason.trim().length < 10} onClick={() => void reopenReview()}>
+                            {saving ? "Guardando..." : "Reabrir revisión"}
+                          </AdminButton>
+                          <AdminSecondaryButton size="sm" disabled={saving} onClick={() => { setReopenOpen(false); setReopenReason("") }}>Cancelar</AdminSecondaryButton>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
                 {selectedStep === "method" && renderLogisticsPanel("method")}
-                {["reception", "replacement", "execution"].includes(selectedStep) && renderLogisticsPanel(logisticsMethodStep ? "operation" : "all")}
+                {logisticsMethodStep
+                  ? (selectedStep === "logistics" || selectedStep === "reception" || selectedStep === "replacement") && renderLogisticsPanel(selectedStep)
+                  : ["reception", "replacement", "execution"].includes(selectedStep) && renderLogisticsPanel("all")}
                 {selectedStep === "reception" && (needsReception || Boolean(logistics?.plan)) && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
                     canManage={isAdmin && !closed && !claimCreditNoteActive}
+                    arrivedUnitsByItem={logistics?.plan ? arrivedUnitsByItem : undefined}
                     registeredReplacements={registeredReplacements} onUpdated={onInventoryUpdated} onClaimChange={onClaimChange} />
                 )}
-                {selectedStep === "replacement" && canCompleteReplacementSolution && (
-                  <div className="admin-claim-wizard-action">
-                    <p className="text-xs text-white/70">{hasReplacement ? `${replacedUnits} unidad(es) registradas con salida de stock.` : "Registrá el reemplazo y su variante desde el formulario existente. El stock se descuenta al confirmar."}</p>
+                {selectedStep === reservationStep && canCompleteReplacementSolution && (
+                  <div className="admin-claim-wizard-action" data-claim-replacement-reservation>
+                    <p className="text-xs text-white/70">{hasReplacement
+                      ? `${replacedUnits} ${replacedUnits === 1 ? "unidad reservada" : "unidades reservadas"} para el reemplazo.`
+                      : "Elegí el producto y la variante del reemplazo: el stock queda reservado para este reclamo."}</p>
                     <AdminButton variant="primary" disabled={saving || !replacementFlow.canRegisterReplacement || !onRegisterReplacement}
-                      onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>Registrar reemplazo</AdminButton>
-                    {!replacementFlow.canRegisterReplacement && <p className="admin-claim-wizard-note">{methodPending
+                      onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>{logistics?.plan ? "Reservar reemplazo" : "Registrar reemplazo"}</AdminButton>
+                    {!replacementFlow.canRegisterReplacement && !hasReplacement && <p className="admin-claim-wizard-note">{methodPending
                       ? "Primero elegí el método logístico del cambio."
                       : logistics?.plan === "retiro_y_reenvio"
                         ? "Se habilita cuando el original fue recibido, inspeccionado sin incidencias y autorizaste el reemplazo."
                         : "Primero recibí el producto original."}</p>}
                   </div>
                 )}
-                {selectedStep === "execution" && canCompleteReplacementSolution && (
+                {selectedStep === finishStep && !closed && canCompleteReplacementSolution && (
                   <div className="admin-claim-wizard-action">
                     <p className="text-xs text-white/70">{logistics?.plan
                       ? "Se habilita cuando el reemplazo fue entregado y el producto original volvió e inspeccionado (o con la excepción registrada). Finaliza el reclamo y notifica al cliente."
@@ -2397,7 +2514,7 @@ export function AdminClaimManager({
                     </div>
                   </div>
                 )}
-                {selectedStep === "execution" && canCloseClaim && !canCompleteReplacementSolution && (
+                {selectedStep === finishStep && !closed && canCloseClaim && !canCompleteReplacementSolution && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
                     title="Finalizar reclamo"
@@ -2532,6 +2649,8 @@ export function AdminClaimManager({
           onCreditNoteAmountChange={setDecisionCreditNoteAmount}
           onClose={closeDecision}
           onConfirm={() => void runDecisionAction()}
+          editingResolution={decisionAction === "approve" && reviewEdit.mode === "edit" ? claim.resolution ?? null : null}
+          unavailableResolutions={decisionAction === "approve" && reviewEdit.mode === "edit" ? reviewEdit.unavailableResolutions : []}
         />
       )}
       {pendingConfirmation && (
@@ -2783,6 +2902,7 @@ function DecisionButton({
   tone = "secondary",
   disabled = false,
   mutedWhenDisabled = false,
+  pressed,
   onClick,
 }: {
   icon: ReactNode
@@ -2791,12 +2911,15 @@ function DecisionButton({
   tone?: "warning" | "success" | "danger" | "primary" | "secondary"
   disabled?: boolean
   mutedWhenDisabled?: boolean
+  /** Decisión vigente (Revisión editable): se marca como seleccionada. */
+  pressed?: boolean
   onClick?: () => void
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      aria-pressed={pressed}
       onClick={onClick}
       // Tono, borde y radio viven en .admin-claim-decision-button (globals.css)
       // con variantes Light/Dark: sin rounded+border ni text-white/N, que las
@@ -3041,9 +3164,15 @@ function ClaimActionModal({
   onCreditNoteAmountChange,
   onClose,
   onConfirm,
+  editingResolution = null,
+  unavailableResolutions = [],
 }: {
   action: ClaimAction
   saving: boolean
+  /** Corrección de una solución ya aprobada (Revisión editable). */
+  editingResolution?: string | null
+  /** Soluciones que no se pueden elegir al corregir desde el estado actual. */
+  unavailableResolutions?: string[]
   closeBlocked?: boolean
   message: string
   reason: string
@@ -3058,8 +3187,11 @@ function ClaimActionModal({
   onConfirm: () => void
 }) {
   const destructive = action === "reject" || action === "reject_cancellation"
+  const editing = action === "approve" && Boolean(editingResolution)
   const title =
-    action === "approve"
+    editing
+      ? "Corregir la solución"
+      : action === "approve"
         ? "El reclamo es válido"
         : action === "reject"
           ? "El reclamo no corresponde"
@@ -3069,7 +3201,9 @@ function ClaimActionModal({
               ? "Aprobar cancelación"
               : "Rechazar cancelación"
   const subtitle =
-    action === "approve"
+    editing
+      ? "Todavía no hubo movimientos reales: elegí la solución correcta. El cambio queda registrado."
+      : action === "approve"
         ? "Registrar que BEYONIX acepta el reclamo."
         : action === "reject"
           ? "Informar al cliente el motivo del rechazo."
@@ -3079,7 +3213,9 @@ function ClaimActionModal({
               ? "Esta acción cancela el pedido si el backend confirma que no fue facturado ni despachado."
               : "Esta acción rechazará la cancelación y notificará el motivo al cliente."
   const ctaLabel =
-    action === "approve"
+    editing
+      ? "Guardar corrección"
+      : action === "approve"
         ? "Aceptar reclamo"
         : action === "reject"
           ? "Rechazar reclamo"
@@ -3096,6 +3232,7 @@ function ClaimActionModal({
     (action === "reject" && message.trim().length < 5) ||
     (action === "reject_cancellation" && message.trim().length < 5) ||
     (action === "approve_cancellation" && !cancellationCanBeApproved) ||
+    (editing && (resolution === editingResolution || (editingResolution === "saldo_a_favor" && resolution === "cupon_descuento"))) ||
     (
       action === "approve" &&
       resolution === "cupon_descuento" &&
@@ -3129,7 +3266,7 @@ function ClaimActionModal({
             <div>
               <p className="text-sm font-black text-white">¿Cómo se resolverá el caso?</p>
               <div className="mt-2 grid gap-1">
-                {RESOLUTION_OPTIONS.map((option) => (
+                {RESOLUTION_OPTIONS.filter((option) => !unavailableResolutions.includes(option.value)).map((option) => (
                   <label key={option.value} className={`flex cursor-pointer items-center gap-2 rounded-lg border bg-white/[0.03] px-2.5 py-1.5 text-xs font-bold text-white ${resolutionToneClassNames[option.value]}`}>
                     <input
                       type="radio"

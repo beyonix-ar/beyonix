@@ -8,8 +8,9 @@ import { chromium, type Browser, type Page } from "playwright-core"
 
 // Wizard Admin de reclamos con logística por sucursal, con los componentes
 // REALES (AdminClaimManager + panel de logística) y el CSS del proyecto:
-// paso "Método" con radios accesibles, volver atrás sin / con efectos reales,
-// buscador de sucursales y recepción compacta con ayudas (?).
+// un paso por concepto (Revisión, Método, operación Andreani, Recepción,
+// Reenvío, Finalización), Revisión editable al volver atrás, sucursal sugerida
+// por el servidor, acciones de recepción visibles (sin desplegable) y legacy.
 // Stubs sólo de infraestructura: auth, Supabase, router y fetch (sin red ni Andreani).
 
 const stubs: Plugin = {
@@ -62,6 +63,7 @@ const leg = (overrides) => ({
 })
 const scenarios = {
   sin_metodo: { shipments: [], units: [unit("original", "con_cliente")] },
+  sugerida: { shipments: [], units: [unit("original", "con_cliente")] },
   cambio_libre: { shipments: [leg({})], units: [unit("original", "con_cliente")] },
   cambio_generado: {
     shipments: [leg({ status: "generada", creation_status: "created", modality: "cambio_sucursal", andreani_tracking: "360000000801" })],
@@ -75,6 +77,15 @@ const scenarios = {
     shipments: [leg({ direction: "devolucion", status: "entregada", creation_status: "created", modality: "despacho_sucursal", closed_at: "2026-09-25T00:00:00Z" })],
     units: [unit("original", "recibida_beyonix", 1)],
   },
+  en_camino: {
+    shipments: [leg({ direction: "devolucion", status: "en_transito", creation_status: "created", modality: "despacho_sucursal", andreani_tracking: "360000000802" })],
+    units: [unit("original", "en_andreani", 1)],
+  },
+  rechazado: {
+    shipments: [], units: [unit("original", "conservada_cliente")],
+    claim: { status: "rechazado", resolution: "rechazado", rejection_reason: "No corresponde: daño por mal uso.", closed_at: "2026-09-22T10:00:00Z" },
+  },
+  legacy: { shipments: [], units: [], claim: { logistics_legacy: true } },
 }
 const data = scenarios[scenario]
 const producto = { id: 1, nombre: "Auricular Ñandú", slug: "a", descripcion: null, precio: 20000, precio_anterior: null, descuento: null, cuotas_2_habilitadas: false, cuotas_3_habilitadas: false, cuotas_6_habilitadas: false, stock: 4, categoria_id: null, destacado: false, activo: true, imagen_principal: null, video_url: null, created_at: "2026-09-01" }
@@ -86,6 +97,7 @@ const claim = {
   order_claim_messages: [], order_claim_files: [],
   order_claim_shipments: data.shipments, order_claim_units: data.units, logistics_legacy: false,
   closed_at: null, created_at: "2026-09-20T10:00:00Z", updated_at: "2026-09-21T10:05:00Z",
+  ...(data.claim ?? {}),
 }
 const pedido = {
   id: 500, usuario_id: "c", estado: "entregado", delivered_at: "2026-09-18T12:00:00Z", total: 20000, created_at: "2026-09-15T12:00:00Z",
@@ -94,21 +106,26 @@ const pedido = {
   order_claims: [claim],
 }
 const branch = { id: "4567", name: "Sucursal Once", address: "Av. Pueyrredón 100", locality: "CABA", province: "Buenos Aires", postalCode: "1032" }
+const rosario = { id: "10179", name: "ROSARIO (AV EVA PERON)", address: "Av. Eva Perón 6243", locality: "Rosario", province: "Santa Fe", postalCode: "2000" }
 window.__posts = []
-window.__claimChanges = 0
+window.__patches = []
 window.fetch = async (input, init) => {
   const url = String(input)
   if (url.includes("/andreani-branches?")) {
-    return url.includes("q=") ? Response.json({ branches: [branch] }) : Response.json({ branches: [], suggested: null })
+    return url.includes("q=") ? Response.json({ branches: [branch] }) : Response.json({ branches: [], suggested: scenario === "sugerida" ? rosario : null })
   }
   if (url.endsWith("/andreani-shipment") && init && init.method === "POST") {
     window.__posts.push(JSON.parse(init.body))
     return Response.json({ claim })
   }
+  if (url.endsWith("/api/admin/order-claims/900") && init && init.method === "PATCH") {
+    window.__patches.push(JSON.parse(init.body))
+    return Response.json({ claim })
+  }
   return Response.json({ error: "sin datos en el test" }, { status: 404 })
 }
 createRoot(document.getElementById("admin-root")).render(createElement(AdminClaimManager, {
-  pedido, mode: "all", onClaimChange: () => { window.__claimChanges += 1 }, onOpenBilling: () => {}, onInventoryUpdated: () => {},
+  pedido, mode: "all", onClaimChange: () => {}, onOpenBilling: () => {}, onInventoryUpdated: () => {},
   registeredReplacements: [], replacementLoadState: "ready",
 }))
 `
@@ -161,9 +178,14 @@ async function open(scenario: string): Promise<Page> {
 }
 
 const heading = (page: Page) => page.locator(".admin-claim-manage-heading").innerText()
+const stepLabels = async (page: Page) =>
+  (await page.locator(".admin-claim-wizard-step").allInnerTexts()).map((label) => label.replace(/\s+/g, " ").replace(/^[✓●○] ?/, ""))
 const methodPanel = "[data-claim-logistics-section=method]"
 const radio = (page: Page, name: RegExp) => page.locator(methodPanel).getByRole("radio", { name })
 const posts = (page: Page) => page.evaluate(() => (window as unknown as { __posts: Array<Record<string, unknown>> }).__posts)
+const patches = (page: Page) => page.evaluate(() => (window as unknown as { __patches: Array<Record<string, unknown>> }).__patches)
+const back = (page: Page) => page.getByRole("button", { name: "Volver al paso anterior" }).click()
+const reviewButton = (page: Page, name: RegExp) => page.locator("[data-claim-review]").getByRole("button", { name })
 
 async function pickBranch(page: Page) {
   await page.getByRole("textbox", { name: "Buscar sucursal Andreani" }).fill("Once")
@@ -171,16 +193,27 @@ async function pickBranch(page: Page) {
   await page.locator("[data-claim-logistics-branches] button").first().click()
 }
 
-test("sin método: paso 'Método' con radios; elegir muestra SOLO ese formulario; sucursal obligatoria; cancelar limpia", async () => {
+test("pasos: nombres de negocio en el orden real de cada método", async () => {
+  const cases: Array<[string, string[], string]> = [
+    ["sin_metodo", ["1. Revisión", "2. Método", "3. Finalización"], "Método"],
+    ["cambio_libre", ["1. Revisión", "2. Método", "3. Cambio en sucursal", "4. Recepción", "5. Finalización"], "Cambio en sucursal"],
+    ["recepcion", ["1. Revisión", "2. Método", "3. Retiro", "4. Recepción", "5. Reenvío", "6. Finalización"], "Recepción"],
+  ]
+  for (const [scenario, labels, current] of cases) {
+    const page = await open(scenario)
+    try {
+      assert.deepEqual(await stepLabels(page), labels, scenario)
+      assert.equal(await heading(page), current, scenario)
+    } finally { await page.close() }
+  }
+})
+
+test("Paso Método: sólo el método (sin recepción, unidades ni resumen); elegir muestra SOLO su formulario; cancelar limpia", async () => {
   const page = await open("sin_metodo")
   try {
-    assert.equal(await heading(page), "Método")
-    const steps = (await page.locator(".admin-claim-wizard-step").allInnerTexts()).map((label) => label.replace(/\s+/g, " ").replace(/^[✓●○] ?/, ""))
-    assert.deepEqual(steps, ["1. Revisión", "2. Método", "3. Finalización"])
+    assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0, "Recepción no aparece en Método")
+    assert.equal(await page.locator("[data-claim-logistics-units], [data-claim-logistics-summary], [data-claim-replacement-reservation]").count(), 0)
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 0, "sin selección no hay formulario")
-    assert.equal(await radio(page, /Cambio directo por sucursal/).isChecked(), false)
-
-    // Ayudas (?) con los textos pedidos, accesibles por teclado.
     const help = page.getByRole("button", { name: "Ayuda: Cambio directo por sucursal" })
     await help.focus()
     const bubble = page.locator(`[id="${await help.getAttribute("aria-describedby")}"]`)
@@ -191,15 +224,14 @@ test("sin método: paso 'Método' con radios; elegir muestra SOLO ese formulario
       /BEYONIX lo recibe e inspecciona y recién después se decide y envía el reemplazo/)
 
     await radio(page, /Cambio directo por sucursal/).check()
-    await page.waitForSelector("[data-claim-logistics-request=cambio]")
+    await page.waitForSelector("[data-claim-logistics-branch-picker]")
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 1, "sólo el formulario elegido")
     const confirm = page.getByRole("button", { name: "Confirmar cambio" })
-    assert.equal(await confirm.isDisabled(), true, "sin sucursal no se continúa")
+    assert.equal(await confirm.isDisabled(), true, "sin sucursal válida no se continúa")
     assert.match(await page.locator("[data-claim-logistics-branch]").innerText(), /Elegí una sucursal Andreani/)
     await pickBranch(page)
     assert.match(await page.locator("[data-claim-logistics-branch]").innerText(), /Sucursal Once · Av\. Pueyrredón 100/)
     assert.equal(await confirm.isDisabled(), false)
-
     await page.getByRole("button", { name: "Cancelar" }).click()
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 0)
     assert.equal(await radio(page, /Cambio directo por sucursal/).isChecked(), false)
@@ -207,7 +239,27 @@ test("sin método: paso 'Método' con radios; elegir muestra SOLO ese formulario
   } finally { await page.close() }
 })
 
-test("teclado: flechas entre métodos cambian el formulario ('Confirmar retiro'); confirmar envía sólo el id de sucursal", async () => {
+test("sucursal por defecto: la sugerida por el servidor (10179) queda elegida; 'Cambiar sucursal' permite otra", async () => {
+  const page = await open("sugerida")
+  try {
+    await radio(page, /Cambio directo por sucursal/).check()
+    await page.waitForFunction(() => /ROSARIO/.test(document.querySelector("[data-claim-logistics-branch]")?.textContent ?? ""))
+    assert.equal(await page.locator("[data-claim-logistics-branch]").innerText(),
+      "Sucursal: ROSARIO (AV EVA PERON) · Av. Eva Perón 6243 · Rosario, Santa Fe")
+    assert.equal(await page.locator("[data-claim-logistics-branch-picker]").count(), 0, "no hace falta escribir 'Rosario'")
+    const confirm = page.getByRole("button", { name: "Confirmar cambio" })
+    assert.equal(await confirm.isDisabled(), false)
+    await page.getByRole("button", { name: "Cambiar sucursal" }).click()
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Buscar sucursal Andreani")
+    await pickBranch(page)
+    assert.match(await page.locator("[data-claim-logistics-branch]").innerText(), /Sucursal Once/)
+    await confirm.click()
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
+    assert.deepEqual(await posts(page), [{ action: "request", direction: "cambio", branchId: "4567" }], "sólo el id: nombre/dirección los valida el servidor")
+  } finally { await page.close() }
+})
+
+test("teclado: flechas entre métodos cambian el formulario sin perder el foco ('Confirmar retiro')", async () => {
   const page = await open("sin_metodo")
   try {
     await radio(page, /Cambio directo por sucursal/).focus()
@@ -220,45 +272,114 @@ test("teclado: flechas entre métodos cambian el formulario ('Confirmar retiro')
     await pickBranch(page)
     await page.getByRole("button", { name: "Confirmar retiro" }).click()
     await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
-    assert.deepEqual(await posts(page), [{ action: "request", direction: "devolucion", branchId: "4567" }],
-      "nombre/dirección nunca salen del navegador")
+    assert.deepEqual(await posts(page), [{ action: "request", direction: "devolucion", branchId: "4567" }])
   } finally { await page.close() }
 })
 
-test("volver al paso anterior sin efectos reales: desde 'Reserva' vuelve a 'Método' y el método se corrige sin motivo", async () => {
-  const page = await open("cambio_libre")
+test("Revisión editable sin efectos: 'Corresponde' marcado; se corrige a 'No corresponde' o se cambia la solución", async () => {
+  const page = await open("sin_metodo")
   try {
-    assert.equal(await heading(page), "Reserva")
-    await page.getByRole("button", { name: "Volver al paso anterior" }).click()
-    assert.equal(await heading(page), "Método")
-    assert.match(await page.locator("[data-claim-method-lock]").innerText(), /Todavía no hay operaciones reales/)
-    assert.equal(await radio(page, /Cambio directo por sucursal/).isDisabled(), true, "el vigente no se vuelve a elegir")
-    assert.match(await page.locator("[data-claim-logistics-method=cambio]").innerText(), /Actual/i)
-    await radio(page, /Retiro \+ revisión \+ reenvío/).check()
-    await page.waitForSelector("[data-claim-logistics-request=devolucion]")
-    assert.match(await page.locator("[data-claim-logistics-request=devolucion]").innerText(), /Motivo \(opcional\)/)
-    await pickBranch(page)
-    await page.getByRole("button", { name: "Confirmar retiro" }).click()
-    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
-    // Corregido el método, el wizard vuelve al paso vigente.
-    await page.waitForFunction(() => document.querySelector(".admin-claim-manage-heading")?.textContent === "Reserva")
+    await back(page)
+    assert.equal(await heading(page), "Revisión")
+    assert.equal(await page.locator("[data-claim-review]").getAttribute("data-claim-review"), "edit")
+    assert.match(await page.locator("[data-claim-review-current]").innerText(), /Decisión actual: Corresponde · Solución: Cambio de producto\. Todavía no hubo movimientos reales/)
+    assert.equal(await reviewButton(page, /El reclamo es válido/).getAttribute("aria-pressed"), "true")
+    assert.equal(await reviewButton(page, /El reclamo no corresponde/).getAttribute("aria-pressed"), "false")
+
+    // Cambiar la solución: el formulario original, precargado con la actual.
+    await reviewButton(page, /El reclamo es válido/).click()
+    const modal = page.getByRole("dialog", { name: "Corregir la solución" })
+    await modal.waitFor()
+    assert.equal(await modal.getByRole("radio", { name: "Cambio del producto" }).isChecked(), true, "precarga la solución vigente")
+    assert.equal(await modal.getByRole("radio", { name: "Reembolso" }).count(), 0, "desde aprobado no se salta a reintegro pendiente")
+    const save = modal.getByRole("button", { name: "Guardar corrección" })
+    assert.equal(await save.isDisabled(), true, "sin cambios no hay nada que guardar")
+    await modal.getByRole("radio", { name: "Enviar unidad faltante" }).check()
+    await save.click()
+    await page.waitForFunction(() => (window as unknown as { __patches: unknown[] }).__patches.length === 1)
+    const [solution] = await patches(page)
+    assert.deepEqual([solution.status, solution.resolution], ["aprobado", "envio_unidad_faltante"])
+    assert.equal(await heading(page), "Método", "guardada la corrección, el wizard sigue en el paso vigente")
+
+    // Corresponde -> No corresponde (con motivo).
+    await page.getByRole("button", { name: /1\. Revisión/ }).click()
+    await reviewButton(page, /El reclamo no corresponde/).click()
+    const reject = page.getByRole("dialog", { name: "El reclamo no corresponde" })
+    await reject.waitFor()
+    await reject.locator("textarea").fill("El daño fue por mal uso del producto.")
+    await reject.getByRole("button", { name: "Rechazar reclamo" }).click()
+    await page.waitForFunction(() => (window as unknown as { __patches: unknown[] }).__patches.length === 2)
+    const rejection = (await patches(page))[1]
+    assert.deepEqual([rejection.status, rejection.resolution], ["rechazado", "rechazado"])
+    assert.match(String(rejection.rejection_reason), /mal uso/)
   } finally { await page.close() }
 })
 
-test("volver con operación Andreani generada: se ven los efectos reales y el método queda bloqueado (corrección auditada)", async () => {
+test("Revisión con No corresponde sin efectos: 'Corresponde' reabre la revisión con motivo (auditado)", async () => {
+  const page = await open("rechazado")
+  try {
+    await back(page)
+    assert.equal(await heading(page), "Revisión")
+    assert.equal(await page.locator("[data-claim-review]").getAttribute("data-claim-review"), "reopen")
+    assert.equal(await reviewButton(page, /El reclamo no corresponde/).getAttribute("aria-pressed"), "true")
+    await reviewButton(page, /El reclamo es válido/).click()
+    const form = page.locator("[data-claim-review-reopen]")
+    await form.waitFor()
+    const reopen = form.getByRole("button", { name: "Reabrir revisión" })
+    await form.locator("textarea").fill("corto")
+    assert.equal(await reopen.isDisabled(), true, "motivo mínimo 10 caracteres")
+    await form.locator("textarea").fill("Me equivoqué: el reclamo sí corresponde")
+    await reopen.click()
+    await page.waitForFunction(() => (window as unknown as { __patches: unknown[] }).__patches.length === 1)
+    const [payload] = await patches(page)
+    assert.deepEqual([payload.action, payload.reason], ["reopen_review", "Me equivoqué: el reclamo sí corresponde"])
+    assert.equal(payload.expectedUpdatedAt, "2026-09-21T10:05:00Z", "CAS: la base rechaza si el reclamo cambió")
+  } finally { await page.close() }
+})
+
+test("con efectos reales: Revisión y Método bloqueados mostrando qué pasó; recepción fuera del paso del cambio", async () => {
   const page = await open("cambio_generado")
   try {
     assert.equal(await heading(page), "Cambio en sucursal")
-    await page.getByRole("button", { name: /2\. Método/ }).click()
-    assert.equal(await heading(page), "Método")
-    const lock = await page.locator("[data-claim-method-lock=blocked]").innerText()
-    assert.match(lock, /El método no se puede cambiar directamente/)
+    assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0, "la recepción tiene su propio paso")
+    assert.equal(await page.getByRole("button", { name: /Registrar llegada/ }).count(), 0)
+    assert.equal(await page.getByText("No informado por Andreani").count(), 0, "sin datos técnicos que no ayudan")
+    assert.equal(await page.getByText(/Contrato:/).count(), 0)
+    assert.equal(await page.getByRole("button", { name: "Cancelar operación" }).count(), 1, "corrección auditada disponible en su paso")
+
+    await page.getByRole("button", { name: /1\. Revisión/ }).click()
+    assert.equal(await page.locator("[data-claim-review]").getAttribute("data-claim-review"), "locked")
+    const lock = await page.locator("[data-claim-review-lock]").innerText()
+    assert.match(lock, /La decisión no se puede cambiar directamente/)
     assert.match(lock, /Operación generada: Cambio en sucursal Andreani \(360000000801\)/)
     assert.match(lock, /Stock reservado para el reemplazo: 1 unidad/)
-    assert.match(lock, /primero cancelá la operación Andreani con un motivo/)
+    assert.equal(await reviewButton(page, /El reclamo no corresponde/).isDisabled(), true)
+    assert.equal(await reviewButton(page, /El reclamo es válido/).isDisabled(), true)
+
+    await page.getByRole("button", { name: /2\. Método/ }).click()
+    const methodLock = await page.locator("[data-claim-method-lock=blocked]").innerText()
+    assert.match(methodLock, /primero cancelá la operación Andreani con un motivo/)
     assert.equal(await radio(page, /Retiro \+ revisión \+ reenvío/).isDisabled(), true)
-    assert.equal(await radio(page, /Cambio directo por sucursal/).isDisabled(), true)
-    assert.equal(await page.locator("[data-claim-logistics-request]").count(), 0)
+  } finally { await page.close() }
+})
+
+test("volver atrás y adelante sin efectos: de 'Cambio en sucursal' a 'Método', corregir y volver al paso vigente", async () => {
+  const page = await open("cambio_libre")
+  try {
+    assert.equal(await heading(page), "Cambio en sucursal")
+    await back(page)
+    assert.equal(await heading(page), "Método")
+    assert.match(await page.locator("[data-claim-method-lock]").innerText(), /Todavía no hay operaciones reales/)
+    assert.match(await page.locator("[data-claim-logistics-method=cambio]").innerText(), /Actual/i)
+    await back(page)
+    assert.equal(await heading(page), "Revisión")
+    await page.getByRole("button", { name: /2\. Método/ }).click()
+    await radio(page, /Retiro \+ revisión \+ reenvío/).check()
+    await page.waitForSelector("[data-claim-logistics-request=devolucion]")
+    await pickBranch(page)
+    await page.getByRole("button", { name: "Confirmar retiro" }).click()
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
+    await page.waitForFunction(() => document.querySelector(".admin-claim-manage-heading")?.textContent === "Cambio en sucursal")
   } finally { await page.close() }
 })
 
@@ -282,19 +403,27 @@ test("con operación real previa (cambio no completado): corregir el método exi
   } finally { await page.close() }
 })
 
-test("recepción compacta: resumen de logística + recepción del original con ayudas (?) de stock y baja", async () => {
+test("Recepción: pantalla propia, acciones visibles por producto (sin desplegable) y ayudas (?) de stock y baja", async () => {
   const page = await open("recepcion")
   try {
-    assert.equal(await heading(page), "Retiro e inspección")
+    assert.equal(await heading(page), "Recepción")
     const summary = (await page.locator("[data-claim-logistics-summary] dt").allInnerTexts()).map((label) => label.trim().toLowerCase())
     assert.deepEqual(summary, ["método", "sucursal", "andreani", "inspección", "incidencias", "intervención manual"])
-    assert.equal(await page.locator(`${methodPanel}`).count(), 0, "el método se revisa en su propio paso")
-    assert.match(await page.locator("[data-claim-logistics-next]").innerText(), /Acción recomendada:/)
+    assert.equal(await page.locator(methodPanel).count(), 0, "el método se revisa en su propio paso")
+    assert.equal(await page.locator("select").filter({ hasText: "Elegí una acción" }).count(), 0, "sin el desplegable genérico")
+    assert.equal(await page.getByRole("button", { name: /Generar|Cancelar operación|Reservar reemplazo|Registrar reemplazo/ }).count(), 0,
+      "nada de la operación Andreani ni del reemplazo en Recepción")
+    const actions = page.locator("[data-claim-logistics-item-actions]").getByRole("button")
+    assert.ok((await actions.allInnerTexts()).includes("Registrar incidencia"))
+    await actions.filter({ hasText: "Registrar incidencia" }).click()
+    await page.waitForSelector("[data-claim-logistics-unit-form=incident_open]")
+    assert.equal(await page.getByRole("button", { name: "Registrar", exact: true }).isDisabled(), true, "incidencia: tipo obligatorio")
+    await page.getByRole("button", { name: "Cancelar" }).click()
+
     const reception = page.locator(".admin-claim-reception-panel")
-    assert.equal(await reception.getByText("Registrá cómo volvió el producto", { exact: false }).isVisible(), false, "la explicación vive en el (?)")
     for (const [label, text] of [
-      ["Volver al stock", "Usar solo si el producto está en buen estado y puede venderse nuevamente."],
-      ["Dar de baja", "Usar si el producto está dañado o no es apto para venta."],
+      ["Volver al stock", "Producto en buen estado y apto para volver a venderse."],
+      ["Dar de baja", "Producto dañado o no apto para volver a venderse."],
     ]) {
       const trigger = reception.getByRole("button", { name: `Ayuda: ${label}` })
       assert.equal(await page.locator(`[id="${await trigger.getAttribute("aria-describedby")}"]`).textContent(), text)
@@ -302,7 +431,27 @@ test("recepción compacta: resumen de logística + recepción del original con a
     assert.equal(await reception.getByRole("button", { name: "Confirmar recepción" }).isDisabled(), true, "sin elegir destino no se confirma")
     await reception.getByRole("button", { name: "Volver al stock", exact: true }).click()
     assert.equal(await reception.getByRole("button", { name: "Confirmar recepción" }).isDisabled(), false)
-    const box = await reception.boundingBox()
-    assert.ok(box && box.height < 520, `recepción compacta (alto ${box?.height})`)
+  } finally { await page.close() }
+})
+
+test("Recepción antes de que llegue: se registra la llegada; stock/baja recién cuando está en BEYONIX", async () => {
+  const page = await open("en_camino")
+  try {
+    assert.equal(await heading(page), "Recepción")
+    assert.equal(await page.locator("[data-claim-reception-waiting]").count(), 1)
+    assert.equal(await page.locator(".admin-claim-reception-panel").getByRole("button", { name: "Volver al stock", exact: true }).count(), 0)
+    await page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar llegada a BEYONIX/ }).click()
+    await page.waitForSelector("[data-claim-logistics-unit-form=arrival_original]")
+  } finally { await page.close() }
+})
+
+test("legacy: se mantiene su flujo, con una ayuda corta y la opción de pasar al flujo nuevo si no tuvo movimientos", async () => {
+  const page = await open("legacy")
+  try {
+    assert.ok(!(await stepLabels(page)).includes("2. Método"), "sin paso Método: flujo original")
+    const badge = page.getByText("Reclamo anterior", { exact: true })
+    assert.equal(await badge.count(), 1)
+    assert.equal(await page.getByRole("button", { name: "Ayuda: Reclamo anterior" }).count(), 1)
+    assert.equal(await page.locator("[data-claim-logistics-methods]").count(), 1, "sin movimientos: puede elegir un método")
   } finally { await page.close() }
 })

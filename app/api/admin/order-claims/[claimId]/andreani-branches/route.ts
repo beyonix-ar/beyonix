@@ -12,8 +12,9 @@ const DIRECTIONS: readonly ClaimShipmentDirection[] = ["devolucion", "cambio", "
  * Buscador de sucursales Andreani para la logística de un reclamo (sólo Admin).
  *   ?q=texto              -> sucursales del catálogo real por nombre, localidad,
  *                            provincia, dirección o código postal.
- *   ?direction=cambio|... -> sucursal sugerida (la del tramo anterior o la de la
- *                            compra), revalidada contra el catálogo actual.
+ *   ?direction=cambio|... -> sucursal sugerida (la del tramo anterior o la de
+ *                            BEYONIX configurada), revalidada contra el catálogo
+ *                            actual; null si ninguna sigue disponible.
  * Si Andreani no responde, error claro: no hay logística sin sucursal válida.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ claimId: string }> }) {

@@ -27,11 +27,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
     const body: unknown = await request.json()
     if (!body || typeof body !== "object" || Array.isArray(body)) return claimErrorResponse(new Error("CLAIM_INVALID"))
     const input = body as Record<string, unknown>
-    if (input.action && !["update","approve_cancellation","reject_cancellation","mark_refund_done","mark_credit_note_issued"].includes(String(input.action))) {
+    if (input.action && !["update","approve_cancellation","reject_cancellation","mark_refund_done","mark_credit_note_issued","reopen_review"].includes(String(input.action))) {
       return NextResponse.json({ error: "Esta acción ya no está disponible." }, { status: 410 })
     }
     const expected = typeof input.expectedUpdatedAt === "string" ? input.expectedUpdatedAt : ""
     if (!Number.isFinite(Date.parse(expected))) return claimErrorResponse(new Error("CLAIM_CONFLICT"))
+    if (input.action === "reopen_review") {
+      // Corregir un "No corresponde": sólo sin efectos reales, con motivo y
+      // auditoría; la base (reopen_rejected_order_claim) valida todo y exige Admin.
+      const reason = typeof input.reason === "string" ? input.reason.trim() : ""
+      if (reason.length < 10 || reason.length > 1000) return claimErrorResponse(new Error("CLAIM_REOPEN_REASON_REQUIRED"))
+      const { data: reopened, error } = await auth.admin.rpc("reopen_rejected_order_claim", {
+        p_claim_id: id, p_actor_id: auth.user.id, p_expected_updated_at: expected, p_reason: reason,
+      })
+      if (error || !reopened) return claimErrorResponse(error)
+      const { data: order } = await auth.admin.from("ordenes").select("cliente_email").eq("id", reopened.order_id).single()
+      await sendOrderStatusEmail({
+        to: order?.cliente_email,
+        subject: "Novedades sobre tu reclamo BEYONIX",
+        html: "<p>Estamos revisando nuevamente tu reclamo. Te avisamos cuando tengamos una respuesta; podés consultar el seguimiento desde tu cuenta.</p>",
+      })
+      return getClaimResult(auth.admin, id)
+    }
     const patch: Record<string, unknown> = {}
     const allowed = ["action","status","resolution","admin_response","rejection_reason","append_message","credit_note_amount"]
     for (const key of allowed) if (input[key] !== undefined) patch[key] = input[key]

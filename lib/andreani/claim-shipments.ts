@@ -600,11 +600,22 @@ export async function resolveClaimBranch(branchId: string, dependencies: ClaimBr
   return toClaimBranch(branch)
 }
 
+/** Sucursal de BEYONIX configurada para el ambiente (PROD: 10179, ROSARIO AV EVA PERON). */
+function beyonixClaimBranchId(env: NodeJS.ProcessEnv) {
+  try {
+    return text(resolveAndreaniShipmentCreationConfig(env).sucursalOrigenId)
+  } catch {
+    return ""
+  }
+}
+
 /**
- * Sucursal por defecto de una operación nueva (la base nunca la infiere):
+ * Sucursal sugerida para una operación nueva (la base nunca la infiere):
  * la del tramo anterior del reclamo (reenvío -> la del retiro; reintento ->
- * la del cambio) o, en la primera, la que el cliente eligió en su compra. En
- * todos los casos se vuelve a validar contra el catálogo actual.
+ * la del cambio) o, si no hay, la sucursal de BEYONIX configurada. Cada
+ * candidata se revalida contra el catálogo actual de Andreani (nombre y
+ * dirección salen del catálogo); si ya no existe se descarta y, sin
+ * candidata válida, el Admin elige otra. Andreani caído = error claro.
  */
 export async function resolveDefaultClaimBranch(
   admin: AdminClient,
@@ -612,25 +623,24 @@ export async function resolveDefaultClaimBranch(
   direction: ClaimShipmentDirection,
   dependencies: ClaimBranchDependencies = {},
 ): Promise<ClaimBranch | null> {
-  const [{ data: claim }, { data: legs }] = await Promise.all([
-    admin.from("order_claims").select("order_id").eq("id", claimId).maybeSingle(),
-    admin.from("order_claim_shipments").select("id, direction, status, branch_id").eq("claim_id", claimId).neq("status", "cancelada"),
-  ])
+  const env = dependencies.env ?? process.env
+  const { data: legs } = await admin.from("order_claim_shipments").select("id, direction, status, branch_id")
+    .eq("claim_id", claimId).neq("status", "cancelada")
   const previous = ((legs ?? []) as Array<{ id: number; direction: ClaimShipmentDirection; branch_id: string | null }>)
     .filter((leg) => text(leg.branch_id))
     .sort((left, right) => {
       const target = direction === "reemplazo" ? "devolucion" : direction
       return Number(right.direction === target) - Number(left.direction === target) || right.id - left.id
     })[0]
-  let candidate = previous ? text(previous.branch_id) : ""
-  if (!candidate && claim) {
-    const { data: order } = await admin.from("ordenes").select("shipping_type, andreani_sucursal_id")
-      .eq("id", Number((claim as { order_id: number }).order_id)).maybeSingle()
-    const purchase = order as { shipping_type: string | null; andreani_sucursal_id: string | null } | null
-    if (purchase?.shipping_type === "sucursal") candidate = text(purchase.andreani_sucursal_id)
+  const candidates = [...new Set([previous ? text(previous.branch_id) : "", beyonixClaimBranchId(env)].filter(Boolean))]
+  for (const candidate of candidates) {
+    try {
+      return await resolveClaimBranch(candidate, dependencies)
+    } catch (error) {
+      if (normalizeAndreaniError(error, env).code !== "VALIDATION_ERROR") throw error
+    }
   }
-  if (!candidate) return null
-  return resolveClaimBranch(candidate, dependencies)
+  return null
 }
 
 // ── Conciliación manual ──────────────────────────────────────────────────────

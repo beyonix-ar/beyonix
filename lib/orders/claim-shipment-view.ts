@@ -252,7 +252,15 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
 // ── Admin ───────────────────────────────────────────────────────────────────
 
 export type ClaimLogisticsPlan = "cambio_directo" | "retiro" | "retiro_y_reenvio"
-export type ClaimLogisticsWizardStep = "replacement" | "execution" | "reception"
+/**
+ * Paso operativo vigente del wizard:
+ *   logistics   -> la operación Andreani del método (cambio en sucursal / retiro);
+ *   reception   -> lo que vuelve a BEYONIX (llegada, inspección, incidencias);
+ *   replacement -> reenvío del reemplazo (retiro + revisión + reenvío);
+ *   execution   -> reintegro / aplicación (retiro por sucursal de un reintegro);
+ *   finish      -> logística resuelta: sólo falta finalizar.
+ */
+export type ClaimLogisticsWizardStep = "logistics" | "reception" | "replacement" | "execution" | "finish"
 
 export type ClaimUnitAction =
   | "arrival_original"
@@ -319,6 +327,8 @@ export interface AdminClaimLegView {
   tracking: string | null
   andreaniEstado: string | null
   costLabel: string
+  /** Andreani informó el costo (si no, la UI no muestra la fila). */
+  costKnown: boolean
   error: string | null
   incident: string | null
   /** Evento de Andreani que no se pudo clasificar: avance congelado hasta revisar. */
@@ -359,6 +369,8 @@ export interface AdminClaimLogisticsView {
   /** Todos los métodos de la resolución, con el vigente marcado. */
   methodChoices: ClaimLogisticsMethodChoice[]
   methodLock: ClaimLogisticsMethodLock
+  /** Efectos reales de la logística (con o sin método elegido): Revisión los usa para bloquear correcciones. */
+  realEffects: string[]
   /** Cambiar de método con una operación Andreani real previa: motivo obligatorio. */
   methodChangeRequiresReason: boolean
   /** Reintentar el cambio directo (misma sucursal, nuevo intento). */
@@ -423,6 +435,7 @@ function adminLegView(source: ClaimShipmentAdminSource, units: ClaimUnitSource[]
     tracking: text(source.andreani_tracking) || null,
     andreaniEstado: text(source.andreani_estado) || null,
     costLabel: cost != null && Number.isFinite(cost) ? `$ ${cost.toLocaleString("es-AR")}` : "No informado por Andreani",
+    costKnown: cost != null && Number.isFinite(cost),
     error: created ? null : text(source.creation_error) || null,
     incident: source.incident_open ? `Novedad de Andreani${source.incident_event ? `: ${source.incident_event}` : ""}` : null,
     review: source.review_required ? text(source.review_event) || "Evento de Andreani no clasificable" : null,
@@ -690,20 +703,27 @@ export function getAdminClaimLogisticsView(input: {
     nextStep = "La logística está resuelta: podés finalizar el reclamo."
   }
 
-  let wizardStep: ClaimLogisticsWizardStep = "execution"
+  // Paso vigente: la operación Andreani mientras no exista (o esté incierta /
+  // en revisión), después lo que vuelve a BEYONIX y recién después el reenvío,
+  // el reintegro o la finalización.
+  const uncertainLeg = shipments.some((row) => ["processing", "manual_review"].includes(row.creation_status ?? "not_started"))
+  const receptionPending = (incidentOpen && !reviewLeg) ||
+    has("original", ["en_andreani", "recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ||
+    (has("reemplazo", ["en_andreani"]) && openLeg?.exchange_outcome === "no_completado")
+  let wizardStep: ClaimLogisticsWizardStep = "finish"
   if (plan === "cambio_directo") {
-    const exchangeGenerated = shipments.some((row) => row.direction === "cambio" && row.creation_status === "created")
-    wizardStep = !exchangeGenerated && pendingReservation > 0
-      ? "replacement"
-      : has("original", ["recibida_beyonix", "en_andreani"]) && !openLeg ? "reception" : "execution"
-  } else if (plan === "retiro_y_reenvio") {
-    wizardStep = !originalsInspected && !deliveredOrMoving
-      ? "reception"
-      : openLeg?.direction === "reemplazo" && openLeg.status === "pendiente" && unassignedReservations.length === 0 ? "replacement" : "execution"
-  } else if (plan === "retiro") {
-    wizardStep = originalsInspected ? "execution" : "reception"
+    const exchangeOpen = openLeg?.direction === "cambio" && openLeg.exchange_outcome !== "no_completado"
+    wizardStep = reviewLeg || uncertainLeg || exchangeOpen ? "logistics"
+      : receptionPending ? "reception"
+        : canRetryExchange || unassignedReservations.length > 0 ? "logistics" : "finish"
+  } else if (plan === "retiro" || plan === "retiro_y_reenvio") {
+    const returnGenerated = shipments.some((row) => row.direction === "devolucion" && row.status !== "cancelada" && row.creation_status === "created")
+    const afterInspection: ClaimLogisticsWizardStep = plan === "retiro" ? "execution"
+      : has("reemplazo", ["entregada_cliente"]) && !openLeg && unassignedReservations.length === 0 ? "finish" : "replacement"
+    wizardStep = reviewLeg || uncertainLeg || !returnGenerated ? "logistics"
+      : receptionPending || !originalsInspected ? "reception" : afterInspection
   } else {
-    wizardStep = isChange ? "replacement" : "reception"
+    wizardStep = isChange ? "logistics" : "reception"
   }
 
   const incidents = units.filter((unit) => unit.incident_open).length + (reviewLeg ? 1 : 0)
@@ -730,6 +750,7 @@ export function getAdminClaimLogisticsView(input: {
     methodOptions,
     methodChoices,
     methodLock,
+    realEffects: effects,
     methodChangeRequiresReason,
     canRetryExchange,
     canAuthorizeResend,

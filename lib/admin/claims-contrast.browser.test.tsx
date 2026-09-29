@@ -257,6 +257,19 @@ for (const theme of ["light", "dark"] as const) {
     }
   })
 
+  test(`${theme}: Revisión al volver atrás (decisión vigente marcada y bloqueo por efectos reales) cumple contraste AA`, async () => {
+    const page = await open(theme)
+    try {
+      await page.getByRole("button", { name: /1\. Revisión/ }).click()
+      await page.waitForSelector("[data-claim-review-lock]")
+      const { audited, failures } = (await page.evaluate(AUDIT)) as { audited: number; failures: string[] }
+      assert.ok(audited > 25, `se auditaron ${audited} textos de Revisión`)
+      assert.deepEqual(failures, [])
+    } finally {
+      await page.close()
+    }
+  })
+
   test(`${theme}: paso "Método" (radios, bloqueo por efectos reales y ayuda abierta) cumple contraste AA`, async () => {
     const page = await open(theme)
     try {

@@ -321,16 +321,33 @@ test("sucursales del catálogo real: búsqueda por localidad/dirección, validac
   }
 })
 
-test("sucursal sugerida: la del tramo anterior o la de la compra a sucursal, siempre revalidada; compra a domicilio = elegir", async () => {
+test("sucursal sugerida: la del tramo anterior o la de BEYONIX (10179 en PROD), siempre revalidada contra Andreani", async () => {
   const loadCatalog = (async () => CATALOG) as never
-  const home = fakeAdmin({ direction: "devolucion", leg: { status: "cancelada", branch_id: null } })
-  assert.equal(await resolveDefaultClaimBranch(home.admin, 50, "cambio", { env: qaEnv(), loadCatalog }), null, "domicilio: el Admin elige")
-  const branch = fakeAdmin({ order: { ...branchOrder, andreani_sucursal_id: "10179" } as Row, leg: { status: "cancelada", branch_id: null } })
-  assert.equal((await resolveDefaultClaimBranch(branch.admin, 50, "cambio", { env: qaEnv(), loadCatalog }))?.id, "10179", "precarga la de la compra")
-  const gone = fakeAdmin({ order: { ...branchOrder, andreani_sucursal_id: "8888" } as Row, leg: { status: "cancelada", branch_id: null } })
-  await assert.rejects(resolveDefaultClaimBranch(gone.admin, 50, "cambio", { env: qaEnv(), loadCatalog }), /ya no figura/, "si dejó de ser válida, no se usa")
+  // Sin tramo previo: la sucursal de BEYONIX configurada, con los datos ACTUALES del catálogo.
+  const first = fakeAdmin({ order: branchOrder as Row, leg: { status: "cancelada", branch_id: null } })
+  const suggested = await resolveDefaultClaimBranch(first.admin, 50, "cambio", { env: prodEnv(), loadCatalog })
+  assert.deepEqual([suggested?.id, suggested?.name, suggested?.address], ["10179", "Sucursal Centro", "Av. Corrientes 1234"],
+    "10179 validada: nombre/dirección del catálogo, no de la compra ni del navegador")
+  // 10179 dada de baja en Andreani: no se usa y el Admin elige otra.
+  const withoutBeyonix = (async () => CATALOG.filter((branch) => branch.id !== 10179)) as never
+  assert.equal(await resolveDefaultClaimBranch(first.admin, 50, "cambio", { env: prodEnv(), loadCatalog: withoutBeyonix }), null)
+  // Sin sucursal de BEYONIX configurada (p. ej. QA incompleto): nada precargado.
+  assert.equal(await resolveDefaultClaimBranch(first.admin, 50, "cambio", { env: qaEnv({ ANDREANI_QA_ORIGIN_BRANCH_ID: "" }), loadCatalog }), null)
+  // Reenvío / reintento: la sucursal del tramo anterior del reclamo.
   const resend = fakeAdmin({ direction: "devolucion", leg: { status: "entregada", branch_id: "5555" } })
-  assert.equal((await resolveDefaultClaimBranch(resend.admin, 50, "reemplazo", { env: qaEnv(), loadCatalog }))?.id, "5555", "reenvío: la sucursal del retiro")
+  assert.equal((await resolveDefaultClaimBranch(resend.admin, 50, "reemplazo", { env: prodEnv(), loadCatalog }))?.id, "5555", "reenvío: la sucursal del retiro")
+  // Tramo anterior en una sucursal que ya no existe: se descarta y se sugiere la de BEYONIX.
+  const gone = fakeAdmin({ direction: "devolucion", leg: { status: "entregada", branch_id: "8888" } })
+  assert.equal((await resolveDefaultClaimBranch(gone.admin, 50, "reemplazo", { env: prodEnv(), loadCatalog }))?.id, "10179")
+  // Andreani caído: error claro (no una sugerida inventada).
+  const down = (async () => { throw new AndreaniError("SERVICE_UNAVAILABLE", "detalle interno") }) as never
+  const errors = console.error
+  console.error = () => {}
+  try {
+    await assert.rejects(resolveDefaultClaimBranch(first.admin, 50, "cambio", { env: prodEnv(), loadCatalog: down }), /sin una sucursal válida/)
+  } finally {
+    console.error = errors
+  }
 })
 
 test("tracking: eventos no clasificables piden revisión (sin inventar estado); respuesta fuera del maestro se registra", async () => {

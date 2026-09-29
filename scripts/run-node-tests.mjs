@@ -37,6 +37,7 @@ const TEST_FILES = [
   "lib/shipping/logistics-validation.test.ts",
   "lib/store-config.test.ts",
   "lib/security/revoke-public-internal-rpcs-sql.test.ts",
+  "lib/orders/claim-review-edit.test.ts",
   "lib/order-claims.test.ts",
   "lib/orders/claim-atomic.test.ts",
   "lib/orders/claim-storage.test.ts",
