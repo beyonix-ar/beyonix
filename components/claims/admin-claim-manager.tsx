@@ -2015,6 +2015,12 @@ export function AdminClaimManager({
   const renderLogisticsPanel = (section: ClaimLogisticsPanelSection) => logistics && (
     <ClaimAndreaniShipmentPanel key={`${claim.id}-${section}`} claim={claim} itemLabel={itemLabel} canManage={isAdmin && !closed}
       creditNoteActive={claimCreditNoteActive} section={section}
+      // La reserva es parte del circuito del método: aparece en su paso y en su
+      // orden (antes de generar la operación). La valida la base.
+      onReserveReplacement={canCompleteReplacementSolution && onRegisterReplacement
+        ? () => onRegisterReplacement(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)
+        : undefined}
+      reserveDisabled={saving || !replacementFlow.canRegisterReplacement || replacementLoadState === "loading"}
       onClaimChange={(next) => {
         // Elegido o corregido el método, el wizard sigue en el paso que corresponde.
         if (section === "method") setViewedStep(null)
@@ -2399,7 +2405,8 @@ export function AdminClaimManager({
                 )}
                 {selectedStep === "method" && renderLogisticsPanel("method")}
                 {logisticsMethodStep
-                  ? (selectedStep === "logistics" || selectedStep === "reception" || selectedStep === "replacement") && renderLogisticsPanel(selectedStep)
+                  ? (selectedStep === "logistics" || selectedStep === "reception" || selectedStep === "replacement" ||
+                    (selectedStep === "finish" && Boolean(logistics?.plan))) && renderLogisticsPanel(selectedStep)
                   : ["reception", "replacement", "execution"].includes(selectedStep) && renderLogisticsPanel("all")}
                 {selectedStep === "reception" && (needsReception || Boolean(logistics?.plan)) && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
@@ -2407,33 +2414,35 @@ export function AdminClaimManager({
                     arrivedUnitsByItem={logistics?.plan ? arrivedUnitsByItem : undefined}
                     registeredReplacements={registeredReplacements} onUpdated={onInventoryUpdated} onClaimChange={onClaimChange} />
                 )}
-                {selectedStep === reservationStep && canCompleteReplacementSolution && (
+                {/* Sin paso Método (legacy / unidad faltante): la reserva conserva su bloque propio. */}
+                {!logisticsMethodStep && selectedStep === reservationStep && canCompleteReplacementSolution && (
                   <div className="admin-claim-wizard-action" data-claim-replacement-reservation>
-                    <p className="text-xs text-white/70">{hasReplacement
-                      ? `${replacedUnits} ${replacedUnits === 1 ? "unidad reservada" : "unidades reservadas"} para el reemplazo.`
-                      : "Elegí el producto y la variante del reemplazo: el stock queda reservado para este reclamo."}</p>
-                    <AdminButton variant="primary" disabled={saving || !replacementFlow.canRegisterReplacement || !onRegisterReplacement}
-                      onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>{logistics?.plan ? "Reservar reemplazo" : "Registrar reemplazo"}</AdminButton>
+                    {hasReplacement && <p className="text-xs text-white/70">{`${replacedUnits} ${replacedUnits === 1 ? "unidad registrada" : "unidades registradas"} con salida de stock.`}</p>}
+                    <span className="inline-flex items-center gap-1.5">
+                      <AdminButton variant="primary" disabled={saving || !replacementFlow.canRegisterReplacement || !onRegisterReplacement}
+                        onClick={() => onRegisterReplacement?.(summaryAffectedItems.length === 1 ? Number(summaryAffectedItems[0].item.id) : null)}>Registrar reemplazo</AdminButton>
+                      <HelpTip label="Registrar reemplazo" align="start">Elegí el producto y la variante; el stock se descuenta al confirmar.</HelpTip>
+                    </span>
                     {!replacementFlow.canRegisterReplacement && !hasReplacement && <p className="admin-claim-wizard-note">{methodPending
-                      ? "Primero elegí el método logístico del cambio."
-                      : logistics?.plan === "retiro_y_reenvio"
-                        ? "Se habilita cuando el original fue recibido, inspeccionado sin incidencias y autorizaste el reemplazo."
-                        : "Primero recibí el producto original."}</p>}
+                      ? "Primero elegí el método logístico."
+                      : "Primero recibí el producto original."}</p>}
                   </div>
                 )}
                 {selectedStep === finishStep && !closed && canCompleteReplacementSolution && (
-                  <div className="admin-claim-wizard-action">
-                    <p className="text-xs text-white/70">{logistics?.plan
-                      ? "Se habilita cuando el reemplazo fue entregado y el producto original volvió e inspeccionado (o con la excepción registrada). Finaliza el reclamo y notifica al cliente."
-                      : "Confirmá cuando el producto ya fue enviado o entregado. Esta acción finaliza el reclamo y notifica al cliente."}</p>
+                  <div className="admin-claim-wizard-action" data-claim-finish-action>
                     {replacementLoadState === "loading" && <p className="admin-claim-wizard-note">Verificando el reemplazo registrado…</p>}
                     {replacementLoadState === "error" && <p className="admin-claim-wizard-note">No se pudo verificar el reemplazo. Recargá los datos antes de continuar.</p>}
-                    <AdminButton variant="primary" disabled={saving || !replacementFlow.canConfirmDelivery}
-                      onClick={() => setPendingConfirmation({
-                        title: "Confirmar entrega del reemplazo",
-                        description: "Confirmá sólo si ya registraste el retiro de stock y efectivamente enviaste o entregaste el reemplazo. Se finalizará el reclamo y se notificará al cliente. Esta confirmación no crea un envío ni descuenta stock adicional.",
-                        confirmLabel: "Ya fue enviado o entregado", run: markAcceptedSolutionDone,
-                      })}>Confirmar envío o entrega y finalizar</AdminButton>
+                    <span className="inline-flex items-center gap-1.5">
+                      <AdminButton variant="primary" disabled={saving || !replacementFlow.canConfirmDelivery}
+                        onClick={() => setPendingConfirmation({
+                          title: "Confirmar entrega del reemplazo",
+                          description: "Confirmá sólo si el reemplazo ya fue enviado o entregado. Se finalizará el reclamo y se notificará al cliente. No crea envíos ni descuenta stock.",
+                          confirmLabel: "Ya fue enviado o entregado", run: markAcceptedSolutionDone,
+                        })}>Confirmar entrega y finalizar</AdminButton>
+                      <HelpTip label="Confirmar entrega y finalizar" align="start">{logistics?.plan
+                        ? "Se habilita con el reemplazo entregado y el producto original recibido e inspeccionado. Notifica al cliente."
+                        : "Confirmá cuando el producto ya fue enviado o entregado. Notifica al cliente."}</HelpTip>
+                    </span>
                   </div>
                 )}
                 {selectedStep === "execution" && canIssueCreditNote && (

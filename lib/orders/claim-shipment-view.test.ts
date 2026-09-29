@@ -307,8 +307,8 @@ test("Admin: resumen simple (método, sucursal, Andreani, inspección, incidenci
     units: [unit("original", "con_cliente", { shipment_id: 1 }), unit("reemplazo", "en_andreani", { shipment_id: 1 })],
   })
   assert.deepEqual(review?.summary, {
-    method: "Cambio directo por sucursal", branch: "Sucursal 4567 · Sucursal Once", andreani: "En tránsito · En viaje",
-    inspection: "Pendiente", incidents: 1, manualIntervention: true,
+    method: "Cambio directo por sucursal", branch: "Sucursal Once", andreani: "En tránsito · En viaje",
+    inspection: "Pendiente", incidents: 1, manualIntervention: true, status: "Requiere revisión",
   })
   assert.match(review?.nextStep ?? "", /no podemos clasificar \(EnvioAnulado\).*congelado/)
   assert.equal(review?.leg?.canResolveReview, true)
@@ -351,11 +351,89 @@ test("UI: método explícito con confirmación, sucursal del catálogo, doble cl
   assert.match(panel, /disabled=\{pending !== null \|\| !selectedBranch/, "sin sucursal válida no hay logística")
   const manager = read("components/claims/admin-claim-manager.tsx")
   assert.match(manager, /selectedStep === "method" && renderLogisticsPanel\("method"\)/)
-  assert.match(manager, /\(selectedStep === "logistics" \|\| selectedStep === "reception" \|\| selectedStep === "replacement"\) && renderLogisticsPanel\(selectedStep\)/,
+  assert.match(manager, /\(selectedStep === "logistics" \|\| selectedStep === "reception" \|\| selectedStep === "replacement" \|\|\s+\(selectedStep === "finish" && Boolean\(logistics\?\.plan\)\)\) && renderLogisticsPanel\(selectedStep\)/,
     "cada paso operativo muestra sólo su parte de la logística")
   assert.doesNotMatch(panel, /Elegí una acción…|Recepción e inspección de unidades/, "sin el desplegable genérico de acciones")
   assert.doesNotMatch(panel, /modalityLabel/, "sin datos internos de contrato en pantalla")
   const customer = read("components/claims/customer-claim-shipments-notice.tsx")
   assert.doesNotMatch(customer, /domicilio/i)
   assert.match(customer, /\/api\/orders\/\$\{claim\.order_id\}\/claims\/\$\{claim\.id\}\/return-label/)
+})
+
+test("checklist automático y estado humano: CAMBIO DIRECTO avanza solo con los hechos reales", () => {
+  const checks = (view: ReturnType<typeof getAdminClaimLogisticsView>) =>
+    Object.fromEntries((view?.flow.checklist ?? []).map((item) => [item.label, item.done]))
+  const originals = [unit("original", "con_cliente")]
+  const pending = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg()], units: originals })
+  assert.deepEqual(pending?.flow.checklist.map((item) => item.label),
+    ["Reemplazo reservado", "Cambio generado", "Intercambio realizado", "Producto recibido", "Producto inspeccionado", "Reclamo finalizado"])
+  assert.equal(pending?.flow.needsReservation, true, "sin reserva: primero reservar (generar queda oculto)")
+  assert.equal(pending?.summary.status, "Pendiente")
+  assert.equal(Object.values(checks(pending)).some(Boolean), false)
+
+  const reserved = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg()], units: [...originals, unit("reemplazo", "reservada")] })
+  assert.equal(reserved?.flow.needsReservation, false, "con reserva: la próxima acción es generar el cambio")
+  assert.equal(checks(reserved)["Reemplazo reservado"], true)
+
+  const generated = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ status: "generada", creation_status: "created" })],
+    units: [unit("original", "con_cliente", { shipment_id: 1 }), unit("reemplazo", "reservada", { shipment_id: 1 })],
+  })
+  assert.deepEqual([checks(generated)["Cambio generado"], generated?.flow.waiting, generated?.summary.status],
+    [true, "Esperando que Andreani retire el reemplazo", "En Andreani"])
+  const inBranch = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ status: "en_sucursal", creation_status: "created" })],
+    units: [unit("original", "con_cliente", { shipment_id: 1 }), unit("reemplazo", "en_andreani", { shipment_id: 1 })],
+  })
+  assert.deepEqual([inBranch?.flow.waiting, inBranch?.summary.status], ["Esperando intercambio en la sucursal", "Esperando al cliente"])
+
+  const exchanged = [leg({ status: "entregada", creation_status: "created", exchange_outcome: "completado", closed_at: "x" })]
+  const received = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto", shipments: exchanged,
+    units: [unit("original", "recibida_beyonix", { shipment_id: 1 }), unit("reemplazo", "entregada_cliente", { shipment_id: 1 })],
+  })
+  assert.deepEqual([checks(received)["Intercambio realizado"], checks(received)["Producto recibido"], checks(received)["Producto inspeccionado"], received?.summary.status],
+    [true, true, false, "Recibido"])
+  const settled = [unit("original", "reincorporada_stock", { shipment_id: 1 }), unit("reemplazo", "entregada_cliente", { shipment_id: 1 })]
+  const inspected = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: exchanged, units: settled })
+  assert.deepEqual([checks(inspected)["Producto inspeccionado"], inspected?.summary.status], [true, "Listo"])
+  const closed = getAdminClaimLogisticsView({ status: "cerrado", resolution: "cambio_producto", shipments: exchanged, units: settled })
+  assert.deepEqual([Object.values(checks(closed)).every(Boolean), closed?.summary.status], [true, "Finalizado"])
+})
+
+test("checklist RETIRO + REVISIÓN + REENVÍO en su orden; el reenvío pide reserva antes de generar", () => {
+  const returning = leg({ direction: "devolucion", status: "pendiente" })
+  const start = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [returning], units: [unit("original", "con_cliente")] })
+  assert.deepEqual(start?.flow.checklist.map((item) => item.label),
+    ["Retiro generado", "Producto recibido", "Producto inspeccionado", "Reemplazo reservado", "Reenvío generado", "Reclamo finalizado"])
+  assert.equal(start?.flow.needsReservation, false, "el retiro no reserva nada")
+  const dispatched = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ direction: "devolucion", status: "generada", creation_status: "created" })], units: [unit("original", "con_cliente", { shipment_id: 1 })],
+  })
+  assert.deepEqual([dispatched?.flow.waiting, dispatched?.summary.status, dispatched?.flow.checklist[0].done],
+    ["Esperando que el cliente despache el producto", "Esperando al cliente", true])
+  const resend = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ direction: "devolucion", status: "entregada", creation_status: "created", closed_at: "x" }), leg({ id: 2, direction: "reemplazo" })],
+    units: [unit("original", "baja", { shipment_id: 1 })],
+  })
+  assert.equal(resend?.flow.needsReservation, true)
+  assert.deepEqual(resend?.flow.checklist.map((item) => item.done), [true, true, true, false, false, false])
+  const refund = getAdminClaimLogisticsView({ status: "reintegro_pendiente", resolution: "reintegro_total", shipments: [returning], units: [unit("original", "con_cliente")] })
+  assert.deepEqual(refund?.flow.checklist.map((item) => item.label), ["Retiro generado", "Producto recibido", "Producto inspeccionado", "Reclamo finalizado"])
+})
+
+test("UI: una acción principal por vez y en orden (revisión > conciliación > reservar > generar > esperar); secundarias discretas", () => {
+  const panel = read("components/claims/claim-andreani-shipment-panel.tsx")
+  const order = ["leg?.canResolveReview", "leg?.canReconcile", "flow.needsReservation && onReserveReplacement", "leg?.canCreate && !flow.needsReservation"]
+    .map((token) => panel.indexOf(token))
+  assert.ok(order.every((index) => index > 0), "todas las ramas existen")
+  assert.deepEqual([...order].sort((a, b) => a - b), order, "prioridad en el orden real del circuito")
+  assert.ok(panel.includes("let primary: ReactNode = null"))
+  assert.ok(panel.includes("<AdminGhostButton key={entry.key}"), "cancelar / seguimiento / etiqueta no compiten con la principal")
+  assert.ok(!panel.includes("AdminDangerButton"))
+  assert.ok(panel.includes('<span className="sr-only">{item.done ? " (listo)"'), "los checks no dependen sólo del color")
 })

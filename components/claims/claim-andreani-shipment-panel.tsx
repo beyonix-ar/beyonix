@@ -1,19 +1,17 @@
 "use client"
 
-import { useRef, useState } from "react"
-import { Download, LoaderCircle, Lock, PackageCheck, RefreshCw, Search, Truck } from "lucide-react"
+import { useRef, useState, type ReactNode } from "react"
+import { CheckCircle2, Circle, Clock, Download, LoaderCircle, Lock, PackageCheck, RefreshCw, Search, Truck } from "lucide-react"
 
-import { AdminButton, AdminDangerButton, AdminSecondaryButton, adminControlClassName } from "@/app/admin/components/admin-controls"
+import { AdminButton, AdminGhostButton, AdminSecondaryButton, adminControlClassName } from "@/app/admin/components/admin-controls"
 import { HelpTip } from "@/components/claims/help-tip"
 import { getOrCreateIdempotencyAttempt, type IdempotencyAttempt } from "@/lib/business/idempotency-attempt"
 import {
   CLAIM_INCIDENT_LABELS,
-  CLAIM_UNIT_LOCATION_LABELS,
   getAdminClaimLogisticsView,
   type ClaimIncidentType,
   type ClaimUnitAction,
   type ClaimUnitActionOption,
-  type ClaimUnitLocation,
 } from "@/lib/orders/claim-shipment-view"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim } from "@/lib/supabase/types"
@@ -27,9 +25,10 @@ type LegForm = "reconcile" | "cancel" | "exchange_not_completed" | "review_resol
  *   logistics   -> la operación Andreani del método (cambio en sucursal o retiro);
  *   reception   -> lo que vuelve a BEYONIX: llegada, incidencias, producto nuevo devuelto;
  *   replacement -> reenvío del reemplazo (retiro + revisión + reenvío);
+ *   finish      -> sólo el resumen y el checklist (Finalización);
  *   all         -> todo junto (reclamos sin paso "Método": reintegros sin método, legacy).
  */
-export type ClaimLogisticsPanelSection = "method" | "logistics" | "reception" | "replacement" | "all"
+export type ClaimLogisticsPanelSection = "method" | "logistics" | "reception" | "replacement" | "finish" | "all"
 
 /** Sucursal tal como la devuelve el catálogo de Andreani (vía servidor). */
 interface BranchOption {
@@ -43,6 +42,14 @@ interface BranchOption {
 
 const INCIDENT_TYPES = Object.keys(CLAIM_INCIDENT_LABELS) as ClaimIncidentType[]
 
+/** Acción secundaria de la operación (seguimiento, etiqueta, cancelar...). */
+interface SecondaryAction {
+  key: string
+  label: string
+  icon?: ReactNode
+  run: () => void
+}
+
 const RESEND_REQUEST = {
   label: "Reenvío del reemplazo a sucursal",
   description: "Se reserva el reemplazo y Andreani lo lleva a la sucursal elegida, donde el cliente lo retira.",
@@ -54,14 +61,18 @@ const CONFIRM_LABELS: Record<RequestKind, string> = {
   reemplazo: "Confirmar reenvío",
 }
 
+const CREATE_LABELS = { cambio: "Generar cambio en sucursal", devolucion: "Generar retiro", reemplazo: "Generar reenvío" } as const
+
 const RECEPTION_ACTIONS: ClaimUnitAction[] = ["arrival_original", "arrival_replacement", "inspect_replacement", "incident_open", "incident_resolve", "waive_original"]
 const RESERVATION_ACTIONS: ClaimUnitAction[] = ["release_reservation", "deliver_manual"]
+/** En Recepción, por producto, la acción que corresponde ahora (el resto es secundario). */
+const RECEPTION_PRIORITY: ClaimUnitAction[] = ["incident_resolve", "arrival_original", "arrival_replacement", "inspect_replacement"]
 
 /** Texto corto del botón; el formulario muestra la descripción completa. */
 function actionButtonLabel(option: ClaimUnitActionOption, multipleRoles: boolean) {
   const role = multipleRoles ? (option.role === "original" ? " (original)" : " (nuevo)") : ""
   switch (option.action) {
-    case "arrival_original": return "Registrar llegada a BEYONIX"
+    case "arrival_original": return "Registrar llegada"
     case "arrival_replacement": return option.noteMin ? "Corregir: el producto nuevo volvió" : "Registrar regreso del producto nuevo"
     case "inspect_replacement": return "Revisar producto nuevo devuelto"
     case "incident_open": return `Registrar incidencia${role}`
@@ -72,11 +83,6 @@ function actionButtonLabel(option: ClaimUnitActionOption, multipleRoles: boolean
   }
 }
 
-function locationSummary(counts: Partial<Record<ClaimUnitLocation, number>>) {
-  const entries = Object.entries(counts).filter(([, count]) => (count ?? 0) > 0) as Array<[ClaimUnitLocation, number]>
-  return entries.length ? entries.map(([location, count]) => `${count} · ${CLAIM_UNIT_LOCATION_LABELS[location]}`).join(" | ") : "—"
-}
-
 function branchLine(branch: BranchOption) {
   return [branch.name, branch.address, [branch.locality, branch.province].filter(Boolean).join(", ")].filter(Boolean).join(" · ")
 }
@@ -84,9 +90,9 @@ function branchLine(branch: BranchOption) {
 /**
  * Logística del reclamo (Admin): método elegido explícitamente (cambio directo
  * o retiro + revisión + reenvío, siempre por sucursal Andreani validada contra
- * el catálogo real), paradero de cada unidad, operación vigente y sólo las
- * acciones válidas del paso. Toda acción se vuelve a validar en servidor y
- * base; las que ceden una regla exigen motivo y confirmación.
+ * el catálogo real), checklist automático y, en cada paso, una sola acción
+ * principal en el orden real del circuito. Toda acción se vuelve a validar en
+ * servidor y base; las que ceden una regla exigen motivo y confirmación.
  */
 export function ClaimAndreaniShipmentPanel({
   claim,
@@ -94,6 +100,8 @@ export function ClaimAndreaniShipmentPanel({
   canManage,
   creditNoteActive = false,
   section = "all",
+  onReserveReplacement,
+  reserveDisabled = false,
   onClaimChange,
 }: {
   claim: SupabaseOrderClaim
@@ -101,6 +109,9 @@ export function ClaimAndreaniShipmentPanel({
   canManage: boolean
   creditNoteActive?: boolean
   section?: ClaimLogisticsPanelSection
+  /** Abre el formulario existente de reemplazo (la reserva la valida la base). */
+  onReserveReplacement?: () => void
+  reserveDisabled?: boolean
   onClaimChange: (claim: SupabaseOrderClaim) => void
 }) {
   const [pending, setPending] = useState<Pending | null>(null)
@@ -142,14 +153,17 @@ export function ClaimAndreaniShipmentPanel({
   const leg = view.leg
   const all = section === "all"
   const showMethod = all || section === "method"
+  const inLogistics = all || section === "logistics"
+  const inReplacement = all || section === "replacement"
+  const inReception = all || section === "reception"
   const reservationSection: ClaimLogisticsPanelSection = view.plan === "retiro_y_reenvio" ? "replacement" : "logistics"
+  const inReservation = all || section === reservationSection
   const legInSection = Boolean(leg) && (all ||
     (section === "logistics" && leg?.direction !== "reemplazo") ||
     (section === "replacement" && leg?.direction === "reemplazo"))
-  const actionInSection = (option: ClaimUnitActionOption) => all ||
-    (section === "reception" && RECEPTION_ACTIONS.includes(option.action)) ||
-    (section === reservationSection && RESERVATION_ACTIONS.includes(option.action))
-  const sectionActions = view.unitActions.filter(actionInSection)
+  const actionInSection = (option: ClaimUnitActionOption) =>
+    (inReception && RECEPTION_ACTIONS.includes(option.action)) || (inReservation && RESERVATION_ACTIONS.includes(option.action))
+  const flow = view.flow
 
   const withToken = async <T,>(action: Pending, work: (token: string) => Promise<T>): Promise<T | null> => {
     // Doble click: una sola solicitud en vuelo (la base además lo garantiza).
@@ -328,7 +342,45 @@ export function ClaimAndreaniShipmentPanel({
       : requestKind === "cambio" && view.canRetryExchange ? section === "logistics"
         : section === "method"
   ))
-  const showItems = section === "reception" || section === reservationSection || all
+  const busy = pending !== null || Boolean(legForm) || Boolean(unitAction) || Boolean(requestKind)
+
+  // ── Acción principal de la operación: una sola, en el orden real ─────────
+  // revisión de un evento > conciliación > reservar > generar > esperar.
+  let primary: ReactNode = null
+  if (canManage && legInSection && leg?.canResolveReview) {
+    primary = <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => { setLegForm("review_resolve"); setLegNotes("") }}>Registrar revisión del evento</AdminButton>
+  } else if (canManage && legInSection && leg?.canReconcile) {
+    primary = <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => { setLegForm("reconcile"); setLegNotes("") }}>Conciliar con Andreani</AdminButton>
+  } else if (canManage && inReservation && flow.needsReservation && onReserveReplacement) {
+    primary = (
+      <span className="inline-flex items-center gap-1.5">
+        <AdminButton size="sm" variant="primary" disabled={busy || reserveDisabled} onClick={onReserveReplacement} data-claim-primary="reserve">Reservar reemplazo</AdminButton>
+        <HelpTip label="Reservar reemplazo" align="start">Reserva una unidad para este reclamo.</HelpTip>
+      </span>
+    )
+  } else if (canManage && legInSection && leg?.canCreate && !flow.needsReservation) {
+    primary = (
+      <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => void post("create", { action: "create", shipmentId: leg.id })} data-claim-primary="create">
+        {pending === "create" ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <Truck className="size-4" aria-hidden="true" />}
+        {pending === "create" ? "Generando..." : CREATE_LABELS[leg.direction]}
+      </AdminButton>
+    )
+  } else if (canManage && inLogistics && view.canRetryExchange && !requestKind) {
+    primary = <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => void openRequest("cambio")}>Reintentar el cambio en sucursal</AdminButton>
+  } else if (canManage && inReplacement && view.canAuthorizeResend && !requestKind) {
+    primary = <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => void openRequest("reemplazo")}>Autorizar reenvío</AdminButton>
+  }
+  const waiting = legInSection && flow.waiting && !primary ? flow.waiting : null
+  const reservationActions = canManage && !unitAction ? view.unitActions.filter((option) => inReservation && RESERVATION_ACTIONS.includes(option.action)) : []
+  const multipleItems = view.items.length > 1
+  const secondaries: SecondaryAction[] = []
+  if (canManage && legInSection && leg) {
+    if (leg.canSync) secondaries.push({ key: "sync", label: pending === "sync" ? "Consultando..." : "Consultar seguimiento", icon: <RefreshCw className="size-3.5" aria-hidden="true" />, run: () => { void post("sync", { action: "sync", shipmentId: leg.id }) } })
+    if (leg.labelAvailable) secondaries.push({ key: "label", label: "Etiqueta", icon: <Download className="size-3.5" aria-hidden="true" />, run: () => { void openLabel(leg.id) } })
+    if (leg.canMarkNotCompleted) secondaries.push({ key: "not_completed", label: "Cambio no completado", run: () => { setLegForm("exchange_not_completed"); setLegNotes("") } })
+    if (leg.canCancel) secondaries.push({ key: "cancel", label: "Cancelar operación", run: () => { setLegForm("cancel"); setLegNotes("") } })
+  }
+  const showOperation = section === "logistics" || section === "replacement" || all
 
   return (
     <section className="admin-claim-wizard-action admin-claim-logistics" data-claim-logistics data-claim-logistics-section={section}>
@@ -340,22 +392,32 @@ export function ClaimAndreaniShipmentPanel({
             {view.legacy && (
               <>
                 <span className="admin-claim-method-badge">Reclamo anterior</span>
-                <HelpTip label="Reclamo anterior" align="start">Se creó antes del circuito por sucursal. Si nunca tuvo movimientos podés elegir un método en el paso Método; si ya los tuvo, sigue su flujo original.</HelpTip>
+                <HelpTip label="Reclamo anterior" align="start">Se creó antes del circuito por sucursal. Si nunca tuvo movimientos podés elegir un método; si ya los tuvo, sigue su flujo original.</HelpTip>
               </>
             )}
           </h4>
           <dl className="admin-claim-logistics-summary" data-claim-logistics-summary>
             <div><dt>Método</dt><dd>{summary.method}</dd></div>
             <div><dt>Sucursal</dt><dd>{summary.branch}</dd></div>
-            <div><dt>Andreani</dt><dd>{summary.andreani}</dd></div>
-            <div><dt>Inspección</dt><dd>{summary.inspection}</dd></div>
+            <div><dt>Estado</dt><dd data-claim-logistics-status>{summary.status}</dd></div>
             <div><dt>Incidencias</dt><dd>{summary.incidents}</dd></div>
-            <div><dt>Intervención manual</dt><dd>{summary.manualIntervention ? "Sí" : "No"}</dd></div>
           </dl>
-          {view.nextStep && (
-            <p className={`admin-claim-logistics-next ${view.humanActionRequired ? "is-action" : ""}`} data-claim-logistics-next>
-              <strong>{view.humanActionRequired ? "Acción recomendada:" : "Próximo paso:"}</strong> {view.nextStep}
-            </p>
+          {flow.checklist.length > 0 && (
+            <ol className="admin-claim-checklist" aria-label="Avance del reclamo" data-claim-checklist>
+              {flow.checklist.map((item, index) => {
+                const next = !item.done && flow.checklist.slice(0, index).every((previous) => previous.done)
+                return (
+                  <li key={item.key} data-claim-check={item.key} data-done={item.done} className={`${item.done ? "is-done" : ""} ${next ? "is-next" : ""}`}>
+                    {item.done ? <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" /> : <Circle className="size-3.5 shrink-0" aria-hidden="true" />}
+                    <span>{item.label}</span>
+                    <span className="sr-only">{item.done ? " (listo)" : next ? " (próximo)" : " (pendiente)"}</span>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+          {all && view.nextStep && !view.plan && (
+            <p className="admin-claim-logistics-next is-action" data-claim-logistics-next>{view.nextStep}</p>
           )}
         </>
       )}
@@ -404,16 +466,36 @@ export function ClaimAndreaniShipmentPanel({
         ) : null
       )}
 
-      {canManage && !requestKind && (
-        ((all || section === "logistics") && view.canRetryExchange) || ((all || section === "replacement") && view.canAuthorizeResend)
-      ) && (
-        <div className="flex flex-wrap gap-2">
-          {(all || section === "logistics") && view.canRetryExchange && (
-            <AdminSecondaryButton size="sm" disabled={pending !== null} onClick={() => void openRequest("cambio")}>Reintentar el cambio en sucursal</AdminSecondaryButton>
+      {showOperation && legInSection && leg && (leg.review || leg.incident || leg.error) && (
+        <div className="grid gap-0.5">
+          {leg.review && <p role="alert" className="admin-claim-logistics-warning">Requiere revisión: {leg.review}.</p>}
+          {leg.incident && <p role="status" className="admin-claim-logistics-warning">{leg.incident}</p>}
+          {leg.error && <p role="alert" className="font-semibold text-red-200">{leg.error}</p>}
+        </div>
+      )}
+
+      {showOperation && (primary || waiting) && (
+        <div className="admin-claim-current-action" data-claim-current-action>
+          {primary ?? (
+            <p className="admin-claim-waiting" data-claim-waiting>
+              <Clock className="size-3.5 shrink-0" aria-hidden="true" />
+              <span>{waiting}{leg?.custodySince ? ` · desde el ${new Date(leg.custodySince).toLocaleDateString("es-AR")}` : ""}</span>
+            </p>
           )}
-          {(all || section === "replacement") && view.canAuthorizeResend && (
-            <AdminButton size="sm" variant="primary" disabled={pending !== null} onClick={() => void openRequest("reemplazo")}>Autorizar reemplazo y enviarlo a sucursal</AdminButton>
-          )}
+          {leg?.tracking && legInSection && <p className="admin-claim-logistics-hint">Seguimiento Andreani {leg.tracking}</p>}
+        </div>
+      )}
+
+      {showOperation && (secondaries.length > 0 || reservationActions.length > 0) && (
+        <div className="admin-claim-secondary-actions" data-claim-secondary-actions>
+          {secondaries.map((entry) => (
+            <AdminGhostButton key={entry.key} size="sm" disabled={busy} onClick={entry.run}>{entry.icon}{entry.label}</AdminGhostButton>
+          ))}
+          {reservationActions.map((option) => (
+            <AdminGhostButton key={`${option.action}-${option.orderItemId}`} size="sm" disabled={busy} onClick={() => openUnitAction(option)}>
+              {actionButtonLabel(option, false)}{multipleItems ? ` · ${itemLabel(option.orderItemId)}` : ""}
+            </AdminGhostButton>
+          ))}
         </div>
       )}
 
@@ -493,49 +575,6 @@ export function ClaimAndreaniShipmentPanel({
         </div>
       )}
 
-      {legInSection && leg && (
-        <div className="admin-claim-logistics-leg" data-claim-logistics-leg={leg.direction}>
-          <p className="font-semibold text-white">{leg.title} · {leg.statusLabel}{leg.legacy ? " · operación heredada" : ""}</p>
-          {leg.outcomeLabel && <p className="font-semibold text-white">{leg.outcomeLabel}</p>}
-          <dl className="grid gap-x-3 gap-y-0.5 sm:grid-cols-2">
-            {leg.tracking && <div><dt className="inline font-semibold">Seguimiento: </dt><dd className="inline">{leg.tracking}</dd></div>}
-            {leg.andreaniEstado && <div><dt className="inline font-semibold">Estado Andreani: </dt><dd className="inline">{leg.andreaniEstado}</dd></div>}
-            {leg.custodySince && <div><dt className="inline font-semibold">En sucursal desde (según Andreani): </dt><dd className="inline">{new Date(leg.custodySince).toLocaleDateString("es-AR")}</dd></div>}
-            {leg.costKnown && <div><dt className="inline font-semibold">Costo: </dt><dd className="inline">{leg.costLabel}</dd></div>}
-          </dl>
-          {leg.review && <p role="alert" className="admin-claim-logistics-warning">Requiere revisión: {leg.review}. El avance automático está congelado.</p>}
-          {leg.incident && <p role="status" className="admin-claim-logistics-warning">{leg.incident}</p>}
-          {leg.error && <p role="alert" className="font-semibold text-red-200">{leg.error}</p>}
-        </div>
-      )}
-
-      {canManage && legInSection && leg && (
-        <div className="flex flex-wrap gap-2">
-          {leg.canCreate && (
-            <AdminButton size="sm" variant="primary" disabled={pending !== null} onClick={() => void post("create", { action: "create", shipmentId: leg.id })}>
-              {pending === "create" ? <LoaderCircle className="size-4 animate-spin" /> : <Truck className="size-4" />}
-              {pending === "create" ? "Generando..." : leg.direction === "cambio" ? "Generar cambio en sucursal" : leg.direction === "devolucion" ? "Generar retiro por sucursal" : "Generar envío a sucursal"}
-            </AdminButton>
-          )}
-          {leg.canSync && (
-            <AdminSecondaryButton size="sm" disabled={pending !== null} onClick={() => void post("sync", { action: "sync", shipmentId: leg.id })}>
-              {pending === "sync" ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-              {pending === "sync" ? "Consultando..." : "Consultar seguimiento"}
-            </AdminSecondaryButton>
-          )}
-          {leg.labelAvailable && (
-            <AdminSecondaryButton size="sm" disabled={pending !== null} onClick={() => void openLabel(leg.id)}>
-              {pending === "label" ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-              Etiqueta
-            </AdminSecondaryButton>
-          )}
-          {leg.canResolveReview && <AdminButton size="sm" variant="primary" disabled={pending !== null} onClick={() => { setLegForm("review_resolve"); setLegNotes("") }}>Registrar revisión del evento</AdminButton>}
-          {leg.canReconcile && <AdminSecondaryButton size="sm" disabled={pending !== null} onClick={() => { setLegForm("reconcile"); setLegNotes("") }}>Conciliar con Andreani</AdminSecondaryButton>}
-          {leg.canMarkNotCompleted && <AdminDangerButton size="sm" disabled={pending !== null} onClick={() => { setLegForm("exchange_not_completed"); setLegNotes("") }}>Cambio no completado</AdminDangerButton>}
-          {leg.canCancel && <AdminDangerButton size="sm" disabled={pending !== null} onClick={() => { setLegForm("cancel"); setLegNotes("") }}>Cancelar operación</AdminDangerButton>}
-        </div>
-      )}
-
       {canManage && legInSection && leg && legForm && (
         <div className="admin-claim-method-form" data-claim-logistics-leg-form={legForm}>
           {legForm === "reconcile" && (
@@ -555,15 +594,9 @@ export function ClaimAndreaniShipmentPanel({
               )}
             </>
           )}
-          {legForm === "exchange_not_completed" && (
-            <p>Registrá que el cliente no entregó el producto original. El producto nuevo queda en custodia de Andreani hasta volver a BEYONIX; se avisa al cliente.</p>
-          )}
-          {legForm === "cancel" && (
-            <p>Cancelá sólo si Andreani nunca retiró el producto (o anuló la orden). Las unidades quedan disponibles para otra operación.</p>
-          )}
-          {legForm === "review_resolve" && (
-            <p>Confirmá con Andreani qué pasó con el envío y dejá constancia. El avance se reanuda en la próxima consulta; los hechos físicos (llegada, cancelación) se registran con sus acciones.</p>
-          )}
+          {legForm === "exchange_not_completed" && <p>El cliente no entregó el producto original: el nuevo vuelve a BEYONIX y se avisa al cliente.</p>}
+          {legForm === "cancel" && <p>Sólo si Andreani nunca retiró el producto (o anuló la orden).</p>}
+          {legForm === "review_resolve" && <p>Confirmá con Andreani qué pasó y dejá constancia.</p>}
           <label className="grid gap-1">
             <span className="admin-claim-logistics-label">{legForm === "reconcile" ? "Cómo lo confirmaste" : "Motivo"} (mínimo {legNotesMin} caracteres)</span>
             <textarea className={`${adminControlClassName} admin-claim-compact-textarea`} value={legNotes} onChange={(event) => setLegNotes(event.target.value)} maxLength={1000} rows={2} />
@@ -582,25 +615,46 @@ export function ClaimAndreaniShipmentPanel({
         </div>
       )}
 
-      {showItems && view.items.length > 0 && (
+      {inReception && view.items.length > 0 && (
         <ul className="admin-claim-logistics-units" data-claim-logistics-units>
           {view.items.map((item) => {
-            const itemActions = canManage && !unitAction ? sectionActions.filter((option) => option.orderItemId === item.orderItemId) : []
+            const itemActions = canManage && !unitAction
+              ? view.unitActions.filter((option) => option.orderItemId === item.orderItemId && RECEPTION_ACTIONS.includes(option.action))
+              : []
+            // Una incidencia abierta bloquea todo: resolverla es lo primero; las
+            // correcciones ("Corregir: ...") nunca son la acción principal.
+            const primaryAction = RECEPTION_PRIORITY
+              .map((action) => itemActions.find((option) => option.action === action && !option.label.startsWith("Corregir")))
+              .find(Boolean) ?? null
+            const others = itemActions.filter((option) => option !== primaryAction)
             const multipleRoles = new Set(itemActions.map((option) => option.role)).size > 1
+            const pendingArrival = (item.original.con_cliente ?? 0) + (item.original.en_andreani ?? 0)
+            const arrived = item.original.recibida_beyonix ?? 0
+            const returnedNew = (item.replacement.en_andreani ?? 0) + (item.replacement.recibida_beyonix ?? 0)
             return (
               <li key={item.orderItemId} data-claim-logistics-item={item.orderItemId}>
-                <p className="font-semibold text-white">{itemLabel(item.orderItemId)}{item.incident ? ` · Incidencia: ${item.incident}` : ""}</p>
-                <p>Original: {locationSummary(item.original)}</p>
-                {Object.keys(item.replacement).length > 0 && <p>Nuevo: {locationSummary(item.replacement)}</p>}
-                {itemActions.length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5" data-claim-logistics-item-actions>
-                    {itemActions.map((option) => (
-                      <AdminSecondaryButton key={`${option.action}-${option.role}-${option.label}`} size="sm" disabled={pending !== null}
+                <p className="font-semibold text-white">{itemLabel(item.orderItemId)}</p>
+                <p className="admin-claim-logistics-hint" data-claim-item-status>
+                  {[pendingArrival > 0 && `Pendiente de llegada: ${pendingArrival}`, arrived > 0 && `En BEYONIX para inspeccionar: ${arrived}`,
+                    returnedNew > 0 && `Producto nuevo devuelto: ${returnedNew}`, item.incident && `Incidencia: ${item.incident}`]
+                    .filter(Boolean).join(" · ") || "Sin pendientes"}
+                </p>
+                {(primaryAction || others.length > 0) && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-claim-logistics-item-actions>
+                    {primaryAction && (
+                      <AdminButton size="sm" variant="primary" disabled={pending !== null} data-claim-unit-action={primaryAction.action}
+                        aria-label={`${actionButtonLabel(primaryAction, multipleRoles)} · ${itemLabel(item.orderItemId)}`}
+                        onClick={() => openUnitAction(primaryAction)}>
+                        {actionButtonLabel(primaryAction, multipleRoles)}
+                      </AdminButton>
+                    )}
+                    {others.map((option) => (
+                      <AdminGhostButton key={`${option.action}-${option.role}-${option.label}`} size="sm" disabled={pending !== null}
                         data-claim-unit-action={option.action}
                         aria-label={`${actionButtonLabel(option, multipleRoles)} · ${itemLabel(item.orderItemId)}`}
                         onClick={() => openUnitAction(option)}>
                         {actionButtonLabel(option, multipleRoles)}
-                      </AdminSecondaryButton>
+                      </AdminGhostButton>
                     ))}
                   </div>
                 )}
@@ -615,7 +669,7 @@ export function ClaimAndreaniShipmentPanel({
       {canManage && unitAction && actionInSection(unitAction) && (
         <div className="admin-claim-method-form" data-claim-logistics-unit-form={unitAction.action}>
           <p className="font-semibold text-white"><PackageCheck className="mr-1 inline size-4" aria-hidden="true" />{unitAction.label} · {itemLabel(unitAction.orderItemId)}</p>
-          {!unitAction.action.startsWith("incident") && (
+          {!unitAction.action.startsWith("incident") && unitAction.max > 1 && (
             <label className="grid gap-1">
               <span className="admin-claim-logistics-label">Unidades (máximo {unitAction.max})</span>
               <input type="number" min={1} max={unitAction.max} className={`${adminControlClassName} admin-claim-compact-input`} value={quantity}
@@ -636,7 +690,7 @@ export function ClaimAndreaniShipmentPanel({
             <label className="grid gap-1">
               <span className="admin-claim-logistics-label">{incidentRequired ? "Resultado de la inspección" : "Al abrir el paquete"}</span>
               <select className={`${adminControlClassName} admin-claim-compact-input`} value={incidentType} onChange={(event) => setIncidentType(event.target.value as ClaimIncidentType | "")}>
-                {!incidentRequired && <option value="">Sin novedad (queda pendiente de inspección)</option>}
+                {!incidentRequired && <option value="">Sin novedad</option>}
                 {incidentRequired && <option value="">Elegí la incidencia…</option>}
                 {INCIDENT_TYPES.map((type) => <option key={type} value={type}>{CLAIM_INCIDENT_LABELS[type]}</option>)}
               </select>
@@ -646,7 +700,7 @@ export function ClaimAndreaniShipmentPanel({
             <span className="admin-claim-logistics-label">Observación{notesMin ? ` (mínimo ${notesMin} caracteres)` : " (opcional)"}</span>
             <textarea className={`${adminControlClassName} admin-claim-compact-textarea`} value={unitNotes} onChange={(event) => setUnitNotes(event.target.value)} maxLength={1000} rows={2} />
           </label>
-          {confirming && <p role="alert" className="admin-claim-logistics-warning">Esta acción cede o cierra una regla del circuito y queda auditada con tu usuario y el motivo. ¿Confirmás?</p>}
+          {confirming && <p role="alert" className="admin-claim-logistics-warning">Queda auditado con tu usuario y el motivo. ¿Confirmás?</p>}
           <div className="flex gap-2">
             <AdminButton size="sm" variant="primary" disabled={pending !== null || unitNotes.trim().length < notesMin || (incidentRequired && !incidentType)} onClick={submitUnitAction}>
               {pending === "unit" ? "Guardando..." : confirming ? "Sí, confirmar" : "Registrar"}

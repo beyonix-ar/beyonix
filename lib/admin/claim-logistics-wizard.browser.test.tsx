@@ -65,6 +65,8 @@ const scenarios = {
   sin_metodo: { shipments: [], units: [unit("original", "con_cliente")] },
   sugerida: { shipments: [], units: [unit("original", "con_cliente")] },
   cambio_libre: { shipments: [leg({})], units: [unit("original", "con_cliente")] },
+  cambio_reservado: { shipments: [leg({})], units: [unit("original", "con_cliente"), unit("reemplazo", "reservada")] },
+  retiro_pendiente: { shipments: [leg({ direction: "devolucion" })], units: [unit("original", "con_cliente")] },
   cambio_generado: {
     shipments: [leg({ status: "generada", creation_status: "created", modality: "cambio_sucursal", andreani_tracking: "360000000801" })],
     units: [unit("original", "con_cliente", 1), unit("reemplazo", "reservada", 1)],
@@ -127,6 +129,7 @@ window.fetch = async (input, init) => {
 createRoot(document.getElementById("admin-root")).render(createElement(AdminClaimManager, {
   pedido, mode: "all", onClaimChange: () => {}, onOpenBilling: () => {}, onInventoryUpdated: () => {},
   registeredReplacements: [], replacementLoadState: "ready",
+  onRegisterReplacement: (itemId) => { window.__reserved = itemId },
 }))
 `
 
@@ -408,7 +411,9 @@ test("Recepción: pantalla propia, acciones visibles por producto (sin desplegab
   try {
     assert.equal(await heading(page), "Recepción")
     const summary = (await page.locator("[data-claim-logistics-summary] dt").allInnerTexts()).map((label) => label.trim().toLowerCase())
-    assert.deepEqual(summary, ["método", "sucursal", "andreani", "inspección", "incidencias", "intervención manual"])
+    assert.deepEqual(summary, ["método", "sucursal", "estado", "incidencias"])
+    assert.equal(await page.locator("[data-claim-logistics-status]").innerText(), "Recibido")
+    assert.equal(await page.locator("[data-claim-current-action]").count(), 0, "sin acciones de logística en Recepción")
     assert.equal(await page.locator(methodPanel).count(), 0, "el método se revisa en su propio paso")
     assert.equal(await page.locator("select").filter({ hasText: "Elegí una acción" }).count(), 0, "sin el desplegable genérico")
     assert.equal(await page.getByRole("button", { name: /Generar|Cancelar operación|Reservar reemplazo|Registrar reemplazo/ }).count(), 0,
@@ -440,7 +445,12 @@ test("Recepción antes de que llegue: se registra la llegada; stock/baja recién
     assert.equal(await heading(page), "Recepción")
     assert.equal(await page.locator("[data-claim-reception-waiting]").count(), 1)
     assert.equal(await page.locator(".admin-claim-reception-panel").getByRole("button", { name: "Volver al stock", exact: true }).count(), 0)
-    await page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar llegada a BEYONIX/ }).click()
+    const arrival = page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar llegada/ })
+    assert.match(await arrival.getAttribute("class") ?? "", /admin-ds-button-primary/, "la llegada es la acción principal del producto")
+    const incident = page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar incidencia/ })
+    assert.doesNotMatch(await incident.getAttribute("class") ?? "", /admin-ds-button-primary/, "la incidencia es secundaria")
+    assert.match(await page.locator("[data-claim-item-status]").innerText(), /Pendiente de llegada: 1/)
+    await arrival.click()
     await page.waitForSelector("[data-claim-logistics-unit-form=arrival_original]")
   } finally { await page.close() }
 })
@@ -453,5 +463,71 @@ test("legacy: se mantiene su flujo, con una ayuda corta y la opción de pasar al
     assert.equal(await badge.count(), 1)
     assert.equal(await page.getByRole("button", { name: "Ayuda: Reclamo anterior" }).count(), 1)
     assert.equal(await page.locator("[data-claim-logistics-methods]").count(), 1, "sin movimientos: puede elegir un método")
+  } finally { await page.close() }
+})
+
+const checklist = async (page: Page) =>
+  (await page.locator("[data-claim-checklist] li").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
+const primaries = (page: Page) => page.locator("[data-claim-logistics] .admin-ds-button-primary")
+
+test("Cambio en sucursal: orden de arriba hacia abajo; sin reserva sólo 'Reservar reemplazo' (generar oculto)", async () => {
+  const page = await open("cambio_libre")
+  try {
+    assert.deepEqual(await checklist(page), [
+      "Reemplazo reservado (próximo)", "Cambio generado (pendiente)", "Intercambio realizado (pendiente)",
+      "Producto recibido (pendiente)", "Producto inspeccionado (pendiente)", "Reclamo finalizado (pendiente)",
+    ], "los checks tienen texto, no sólo color")
+    assert.equal(await primaries(page).count(), 1, "una sola acción principal")
+    assert.equal(await primaries(page).first().innerText(), "Reservar reemplazo")
+    assert.equal(await page.getByRole("button", { name: /Generar cambio/ }).count(), 0, "generar no aparece antes de reservar")
+    const tip = page.getByRole("button", { name: "Ayuda: Reservar reemplazo" })
+    assert.equal(await page.locator(`[id="${await tip.getAttribute("aria-describedby")}"]`).textContent(), "Reserva una unidad para este reclamo.")
+    // La acción principal aparece antes que las secundarias (orden visual real).
+    const [actionBox, secondaryBox] = await Promise.all([
+      page.locator("[data-claim-current-action]").boundingBox(), page.locator("[data-claim-secondary-actions]").boundingBox(),
+    ])
+    assert.ok(actionBox && secondaryBox && actionBox.y < secondaryBox.y, "las secundarias nunca desplazan a la principal")
+    await primaries(page).first().click()
+    assert.equal(await page.evaluate(() => (window as unknown as { __reserved: number | null }).__reserved), 71, "abre el formulario de reserva del ítem")
+  } finally { await page.close() }
+})
+
+test("Cambio en sucursal: con la reserva hecha se marca el check y la acción pasa a 'Generar cambio en sucursal'", async () => {
+  const page = await open("cambio_reservado")
+  try {
+    assert.equal((await checklist(page))[0], "Reemplazo reservado (listo)")
+    assert.equal((await checklist(page))[1], "Cambio generado (próximo)")
+    assert.equal(await primaries(page).count(), 1)
+    assert.equal(await primaries(page).first().innerText(), "Generar cambio en sucursal")
+    assert.equal(await page.getByRole("button", { name: "Reservar reemplazo" }).count(), 0)
+    // Teclado: la acción principal es alcanzable y se activa con Enter.
+    await primaries(page).first().focus()
+    await page.keyboard.press("Enter")
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
+    assert.deepEqual(await posts(page), [{ action: "create", shipmentId: 1 }])
+  } finally { await page.close() }
+})
+
+test("Cambio generado: estado de espera humano, sin acción principal; secundarias discretas", async () => {
+  const page = await open("cambio_generado")
+  try {
+    assert.deepEqual((await checklist(page)).slice(0, 3), ["Reemplazo reservado (listo)", "Cambio generado (listo)", "Intercambio realizado (próximo)"])
+    assert.equal(await page.locator("[data-claim-waiting]").innerText(), "Esperando que Andreani retire el reemplazo")
+    assert.equal(await page.locator("[data-claim-logistics-status]").innerText(), "En Andreani")
+    assert.equal(await primaries(page).count(), 0, "nada que hacer: sólo esperar")
+    const cancel = page.getByRole("button", { name: "Cancelar operación" })
+    assert.match(await cancel.getAttribute("class") ?? "", /admin-ds-button-ghost/, "secundaria")
+  } finally { await page.close() }
+})
+
+test("Retiro: 'Generar retiro' como única acción, checklist en el orden del método", async () => {
+  const page = await open("retiro_pendiente")
+  try {
+    assert.equal(await heading(page), "Retiro")
+    assert.deepEqual((await checklist(page)).map((text) => text.replace(/ \(.*\)$/, "")),
+      ["Retiro generado", "Producto recibido", "Producto inspeccionado", "Reemplazo reservado", "Reenvío generado", "Reclamo finalizado"])
+    assert.equal(await primaries(page).count(), 1)
+    assert.equal(await primaries(page).first().innerText(), "Generar retiro")
+    assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0)
   } finally { await page.close() }
 })

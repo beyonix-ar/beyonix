@@ -352,6 +352,23 @@ export interface ClaimLogisticsSummary {
   inspection: "No aplica" | "Pendiente" | "Completa"
   incidents: number
   manualIntervention: boolean
+  /** Estado en lenguaje de negocio (Pendiente, En Andreani, Esperando al cliente, Recibido, ...). */
+  status: string
+}
+
+export interface ClaimChecklistItem {
+  key: string
+  label: string
+  done: boolean
+}
+
+/** Lo que el wizard muestra para guiar al Admin: checklist automático y qué falta ahora. */
+export interface ClaimLogisticsFlow {
+  checklist: ClaimChecklistItem[]
+  /** Falta reservar el reemplazo antes de generar la operación (la base también lo exige). */
+  needsReservation: boolean
+  /** La operación vigente no requiere acción: sólo esperar (texto corto). */
+  waiting: string | null
 }
 
 export interface AdminClaimLogisticsView {
@@ -380,6 +397,7 @@ export interface AdminClaimLogisticsView {
   unitActions: ClaimUnitActionOption[]
   canClose: boolean
   wizardStep: ClaimLogisticsWizardStep
+  flow: ClaimLogisticsFlow
 }
 
 const PLAN_LABELS: Record<ClaimLogisticsPlan, string> = {
@@ -726,10 +744,76 @@ export function getAdminClaimLogisticsView(input: {
     wizardStep = isChange ? "logistics" : "reception"
   }
 
+  // Checklist automático y estado humano: se derivan del paradero real de las
+  // unidades y de las operaciones; el Admin no interpreta estados técnicos.
+  const legDone = (direction: ClaimShipmentDirection) =>
+    active.some((row) => row.direction === direction && row.creation_status === "created")
+  const originals = units.filter((unit) => unit.role === "original")
+  const originalsReceived = originals.length > 0 &&
+    originals.every((unit) => ["recibida_beyonix", "reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
+  const claimClosed = input.status === "cerrado"
+  const check = (key: string, label: string, done: boolean): ClaimChecklistItem => ({ key, label, done })
+  const checklist: ClaimChecklistItem[] = plan === "cambio_directo"
+    ? [
+        check("reserved", "Reemplazo reservado", units.some((unit) => unit.role === "reemplazo")),
+        check("exchange", "Cambio generado", legDone("cambio")),
+        check("swapped", "Intercambio realizado", shipments.some((row) => row.direction === "cambio" && row.exchange_outcome === "completado") ||
+          has("reemplazo", ["entregada_cliente"])),
+        check("received", "Producto recibido", originalsReceived),
+        check("inspected", "Producto inspeccionado", originalsInspected),
+        check("closed", "Reclamo finalizado", claimClosed),
+      ]
+    : plan === "retiro_y_reenvio"
+      ? [
+          check("return", "Retiro generado", legDone("devolucion")),
+          check("received", "Producto recibido", originalsReceived),
+          check("inspected", "Producto inspeccionado", originalsInspected),
+          check("reserved", "Reemplazo reservado", units.some((unit) => unit.role === "reemplazo")),
+          check("resend", "Reenvío generado", legDone("reemplazo")),
+          check("closed", "Reclamo finalizado", claimClosed),
+        ]
+      : plan === "retiro"
+        ? [
+            check("return", "Retiro generado", legDone("devolucion")),
+            check("received", "Producto recibido", originalsReceived),
+            check("inspected", "Producto inspeccionado", originalsInspected),
+            check("closed", "Reclamo finalizado", claimClosed),
+          ]
+        : []
+  const needsReservation = Boolean(openLeg) && openLeg?.status === "pendiente" && openLeg.direction !== "devolucion" &&
+    (openLeg.direction === "cambio"
+      ? pendingReservation > 0
+      : unassignedReservations.length === 0 && !units.some((unit) => unit.role === "reemplazo" && unit.location === "reservada" && unit.shipment_id === openLeg.id))
+  const processingLeg = shipments.some((row) => row.creation_status === "processing")
+  const openCreated = openLeg && openLeg.creation_status === "created" ? openLeg : null
+  const waiting = processingLeg
+    ? "Generando en Andreani…"
+    : !openCreated || reviewLeg
+      ? null
+      : openCreated.direction === "cambio"
+        ? openCreated.exchange_outcome === "no_completado" ? "El producto nuevo vuelve a BEYONIX"
+          : openCreated.status === "en_sucursal" ? "Esperando intercambio en la sucursal"
+            : openCreated.status === "en_transito" ? "Reemplazo en camino a la sucursal" : "Esperando que Andreani retire el reemplazo"
+        : openCreated.direction === "devolucion"
+          ? openCreated.status === "generada" ? "Esperando que el cliente despache el producto" : "Producto en camino a BEYONIX"
+          : openCreated.status === "en_sucursal" ? "Esperando que el cliente retire el reemplazo" : "Reemplazo en camino a la sucursal"
+  const humanStatus = input.status === "cerrado" || input.status === "rechazado" ? "Finalizado"
+    : reviewLeg || incidentOpen || shipments.some((row) => row.creation_status === "manual_review") ? "Requiere revisión"
+      : plan === null ? "Pendiente"
+        : processingLeg ? "En Andreani"
+          : openCreated
+            ? (openCreated.status === "en_sucursal" && openCreated.exchange_outcome !== "no_completado") ||
+              (openCreated.direction === "devolucion" && openCreated.status === "generada") ? "Esperando al cliente" : "En Andreani"
+            : openLeg ? "Pendiente"
+              : has("original", ["en_andreani"]) || has("reemplazo", ["en_andreani"]) ? "En Andreani"
+                : has("original", ["recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ? "Recibido"
+                  : originalsInspected ? (canClose ? "Listo" : "Inspeccionado") : "Pendiente"
+
   const incidents = units.filter((unit) => unit.incident_open).length + (reviewLeg ? 1 : 0)
   const summary: ClaimLogisticsSummary = {
     method: plan ? PLAN_LABELS[plan] : legacy ? "Flujo anterior (legacy)" : "Sin elegir",
-    branch: legView?.branchLabel ?? "Sin sucursal",
+    branch: current ? branchLabel(current) || legView?.branchLabel || "Sin sucursal" : "Sin sucursal",
+    status: humanStatus,
     andreani: legView ? `${legView.statusLabel}${legView.andreaniEstado ? ` · ${legView.andreaniEstado}` : ""}` : "Sin operación",
     inspection: !units.some((unit) => unit.role === "original") && !units.some((unit) => unit.location === "recibida_beyonix")
       ? "No aplica"
@@ -757,5 +841,6 @@ export function getAdminClaimLogisticsView(input: {
     unitActions,
     canClose,
     wizardStep,
+    flow: { checklist, needsReservation, waiting },
   }
 }
