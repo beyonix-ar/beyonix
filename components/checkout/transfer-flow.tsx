@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -11,6 +12,10 @@ import {
   Copy,
   Loader2,
   LogIn,
+  RefreshCw,
+  Upload,
+  UserPen,
+  X,
 } from "lucide-react"
 
 import { BeyonixButton } from "@/components/beyonix-ui"
@@ -23,6 +28,8 @@ import {
   isAwaitingTransferPayment,
   TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
   TRANSFER_STOCK_CONFLICT_PAYMENT_STATUS,
+  TRANSFER_VERIFICATION_OUTCOME_MESSAGES,
+  type TransferVerificationCustomerOutcome,
 } from "@/lib/orders/transfer-verification-reasons"
 import {
   formatReservationCountdown,
@@ -86,9 +93,18 @@ function StepCard({
   )
 }
 
-const TRANSFER_STEP_LABELS = ["Titular", "Transferencia", "Validación", "Resultado"] as const
+// La validación ocurre al confirmar la transferencia (paso 2): no hay un paso
+// propio que vuelva a pedir los datos del titular.
+const TRANSFER_STEP_LABELS = ["Titular", "Transferencia", "Resultado"] as const
 
-function TransferStepIndicator({ step }: { step: 1 | 2 | 3 | 4 }) {
+/** Titular declarado en el paso 1: se reutiliza al validar, sin volver a pedirlo. */
+interface TransferHolder {
+  firstName: string
+  lastName: string
+  document: string
+}
+
+function TransferStepIndicator({ step }: { step: 1 | 2 | 3 }) {
   const stepLabel = TRANSFER_STEP_LABELS[step - 1]
   const totalSteps = TRANSFER_STEP_LABELS.length
 
@@ -159,7 +175,6 @@ function CopyableField({
 function TransferDeclarationInput({
   id,
   label,
-  hint,
   value,
   onChange,
   error,
@@ -170,16 +185,14 @@ function TransferDeclarationInput({
 }: {
   id: string
   label: string
-  hint: string
   value: string
   onChange: (value: string) => void
   error?: string
-  inputMode?: "numeric" | "decimal"
+  inputMode?: "numeric"
   maxLength?: number
   autoComplete?: string
   disabled: boolean
 }) {
-  const hintId = `${id}-hint`
   const errorId = `${id}-error`
 
   return (
@@ -195,15 +208,12 @@ function TransferDeclarationInput({
         required
         aria-required="true"
         aria-invalid={error ? "true" : "false"}
-        aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+        aria-describedby={error ? errorId : undefined}
         inputMode={inputMode}
         maxLength={maxLength}
         autoComplete={autoComplete}
         disabled={disabled}
       />
-      <p id={hintId} className="mt-1 text-xs leading-4 text-[var(--account-text-secondary)]">
-        {hint}
-      </p>
       {error && (
         <p id={errorId} role="alert" className="mt-1 text-xs font-medium text-[var(--account-danger)]">
           {error}
@@ -241,7 +251,7 @@ function TransferHolderStep({
   onReservationExpired,
 }: {
   order: SupabasePedido
-  onSaved: (bankDetails: TransferBankDetails) => void
+  onSaved: (bankDetails: TransferBankDetails, holder: TransferHolder) => void
   onReservationExpired: () => void
 }) {
   const [firstName, setFirstName] = useState(order.transfer_payer_first_name ?? "")
@@ -302,7 +312,11 @@ function TransferHolderStep({
         return
       }
 
-      onSaved(data.bankTransfer)
+      onSaved(data.bankTransfer, {
+        firstName: declaration.value.firstName,
+        lastName: declaration.value.lastName,
+        document: declaration.value.document,
+      })
     } catch {
       setErrorMessage("No pudimos conectarnos. Intentá nuevamente.")
     } finally {
@@ -324,22 +338,10 @@ function TransferHolderStep({
 
       <TransferAmountBox amount={amount} />
 
-      <div
-        data-transfer-holder-notice
-        className="mt-4 flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
-      >
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
-        <p className="text-xs leading-5 text-[var(--account-info-text)]">
-          <strong className="font-bold">Estos datos pueden ser distintos a los de la persona que realizó la compra.</strong>{" "}
-          Si otra persona va a transferir desde su cuenta, ingresá los datos de esa persona.
-        </p>
-      </div>
-
       <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
         <TransferDeclarationInput
           id="transfer-holder-nombre"
           label="Nombre/s del titular"
-          hint="Podés ingresar uno o todos sus nombres, como figuran en la cuenta (ej.: Romina Ayelen)."
           value={firstName}
           onChange={setFirstName}
           error={fieldErrors.firstName}
@@ -350,7 +352,6 @@ function TransferHolderStep({
         <TransferDeclarationInput
           id="transfer-holder-apellido"
           label="Apellido/s del titular"
-          hint="Apellido/s de la persona titular de esa cuenta (ej.: Pérez)."
           value={lastName}
           onChange={setLastName}
           error={fieldErrors.lastName}
@@ -361,7 +362,6 @@ function TransferHolderStep({
         <TransferDeclarationInput
           id="transfer-holder-dni"
           label="DNI/CUIT del titular"
-          hint="Documento del titular de la cuenta desde donde vas a transferir."
           value={dni}
           onChange={setDni}
           error={fieldErrors.document}
@@ -389,25 +389,398 @@ function TransferHolderStep({
   )
 }
 
+/** Resultado de /api/transferencia/[orderId]/verificar (respuesta mínima allowlisteada). */
+interface TransferVerifyResponse {
+  status?: "verified" | "manual_review" | "awaiting_transfer"
+  code?: string
+  error?: string
+  message?: string
+  fieldErrors?: Partial<Record<TransferDeclarationField, string>>
+  proofUploadAvailable?: boolean
+  retryable?: boolean
+  retryAfterSeconds?: number
+  outcome?: TransferVerificationCustomerOutcome
+}
+
+/**
+ * Por qué no se validó, para elegir mensaje y la acción principal:
+ * not_found (todavía no apareció), not_matching (apareció pero no coincide
+ * con el titular), confirming (encontrada, falta confirmar), manual_review,
+ * invalid_holder (datos del paso 1 inválidos) o error técnico.
+ */
+type TransferVerificationFailureKind =
+  | Exclude<TransferVerificationCustomerOutcome, "verified" | "stock_conflict">
+  | "invalid_holder"
+  | "error"
+
+interface TransferVerificationFailure {
+  kind: TransferVerificationFailureKind
+  message: string
+  /** El comprobante sigue disponible como salida (sólo el servidor puede negarlo). */
+  proofUploadAvailable: boolean
+}
+
+type TransferFailureAction = "retry" | "upload" | "edit"
+
+/** Acción principal primero: reintentar si todavía no apareció, corregir el titular si no coincide. */
+function getTransferFailureActions(kind: TransferVerificationFailureKind): TransferFailureAction[] {
+  switch (kind) {
+    case "not_matching":
+    case "invalid_holder":
+      return ["edit", "retry", "upload"]
+    case "manual_review":
+      return ["upload", "retry", "edit"]
+    default:
+      return ["retry", "upload", "edit"]
+  }
+}
+
+/**
+ * "Ya realicé la transferencia" valida directamente con el titular del paso 1
+ * y el importe que calculó el servidor: nunca se vuelven a pedir esos datos.
+ * El servidor repite la misma validación (validateTransferDeclaration).
+ */
+function useTransferVerification({
+  order,
+  holder,
+  onVerified,
+  onStockConflict,
+  onReservationExpired,
+}: {
+  order: SupabasePedido
+  holder: TransferHolder | null
+  onVerified: () => void
+  onStockConflict: () => void
+  onReservationExpired: () => void
+}) {
+  const [phase, setPhase] = useState<"idle" | "verifying" | "confirming">("idle")
+  const [failure, setFailure] = useState<TransferVerificationFailure | null>(null)
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return
+    const timeout = window.setTimeout(() => setCooldownSeconds((seconds) => seconds - 1), 1000)
+    return () => window.clearTimeout(timeout)
+  }, [cooldownSeconds])
+
+  const fail = (
+    kind: TransferVerificationFailureKind,
+    message: string,
+    data?: Pick<TransferVerifyResponse, "proofUploadAvailable" | "retryAfterSeconds">,
+  ) => {
+    setFailure({ kind, message, proofUploadAvailable: data?.proofUploadAvailable !== false })
+    const wait = Number(data?.retryAfterSeconds)
+    setCooldownSeconds(Number.isFinite(wait) ? Math.max(0, Math.ceil(wait)) : 0)
+    setPhase("idle")
+  }
+
+  const verify = async () => {
+    if (phase !== "idle" || cooldownSeconds > 0) return
+
+    const declaration = validateTransferDeclaration({
+      nombre: holder?.firstName,
+      apellido: holder?.lastName,
+      dni: holder?.document,
+      monto: transferAmountDue(order),
+    })
+    if (!declaration.ok) {
+      fail("invalid_holder", "Revisá los datos del titular de la cuenta desde donde transferiste.")
+      return
+    }
+
+    setPhase("verifying")
+    try {
+      const guestToken = getGuestOrderToken(order.id)
+      const response = await fetch(`/api/transferencia/${order.id}/verificar`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(guestToken ? { "x-guest-order-token": guestToken } : {}),
+        },
+        body: JSON.stringify({
+          nombre: declaration.value.firstName,
+          apellido: declaration.value.lastName,
+          dni: declaration.value.document,
+          monto: declaration.value.amount,
+        }),
+      })
+      const data = (await response.json()) as TransferVerifyResponse
+
+      // Pestaña vieja o reloj desfasado: la reserva ya venció en el servidor.
+      if (data.code === "RESERVATION_EXPIRED") {
+        onReservationExpired()
+        return
+      }
+      if (response.ok && data.status === "verified") {
+        setFailure(null)
+        setPhase("confirming")
+        // La respuesta es mínima a propósito: el padre refresca el pedido.
+        onVerified()
+        return
+      }
+      // El pago apareció pero el stock ya no alcanza: no es "no encontramos
+      // tu transferencia", lo explica el paso de resultado.
+      if (response.ok && data.outcome === "stock_conflict") {
+        onStockConflict()
+        return
+      }
+      if (response.status === 400 && data.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
+        fail("invalid_holder", Object.values(data.fieldErrors)[0] ?? "Revisá los datos del titular.", data)
+        return
+      }
+      if (response.ok && data.outcome && data.outcome !== "verified" && data.outcome !== "stock_conflict") {
+        fail(data.outcome, data.message || TRANSFER_VERIFICATION_OUTCOME_MESSAGES[data.outcome], data)
+        return
+      }
+      fail("error", data.error || data.message || "No pudimos validar tu transferencia.", data)
+    } catch {
+      // La red puede fallar sin que exista ningún problema con el pago.
+      fail("error", "No pudimos conectarnos para verificar tu transferencia.")
+    }
+  }
+
+  return {
+    verify,
+    verifying: phase === "verifying",
+    confirming: phase === "confirming",
+    failure,
+    cooldownSeconds,
+    dismissFailure: () => setFailure(null),
+  }
+}
+
+function TransferVerificationFailedModal({
+  holder,
+  failure,
+  verifying,
+  cooldownSeconds,
+  onUploadProof,
+  onRetry,
+  onEditHolder,
+  onClose,
+}: {
+  holder: TransferHolder | null
+  failure: TransferVerificationFailure
+  verifying: boolean
+  cooldownSeconds: number
+  onUploadProof: () => void
+  onRetry: () => void
+  onEditHolder: () => void
+  onClose: () => void
+}) {
+  const [mounted, setMounted] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Sin comprobante disponible (lo decide el servidor), esa acción no se ofrece.
+  const actions = getTransferFailureActions(failure.kind).filter(
+    (action) => action !== "upload" || failure.proofUploadAvailable,
+  )
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Foco en la primera acción HABILITADA: "Volver a verificar" suele abrir en
+  // cooldown (disabled) y focus() sobre un botón deshabilitado no hace nada,
+  // dejando el foco detrás del modal. Sin ninguna habilitada, el cerrar.
+  useEffect(() => {
+    if (!mounted) return
+    const dialog = dialogRef.current
+    const target =
+      dialog?.querySelector<HTMLButtonElement>("[data-transfer-failure-kind] button:not(:disabled)") ??
+      dialog?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+    target?.focus()
+  }, [mounted])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !verifying) {
+        onClose()
+        return
+      }
+      if (event.key !== "Tab") return
+
+      // Focus trap: Tab / Shift+Tab ciclan entre los botones habilitados del
+      // diálogo; el foco nunca sale hacia la página que quedó detrás.
+      const dialog = dialogRef.current
+      if (!dialog) return
+      const focusable = [...dialog.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")]
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      const outside = !active || !dialog.contains(active)
+      if (!first || !last) {
+        event.preventDefault()
+      } else if (event.shiftKey && (outside || active === first)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (outside || active === last)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [onClose, verifying])
+
+  if (!mounted) return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-5 backdrop-blur-sm">
+      <button
+        type="button"
+        aria-label="Cerrar"
+        onClick={onClose}
+        disabled={verifying}
+        className="absolute inset-0 cursor-pointer disabled:cursor-default"
+      />
+
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="transfer-verification-failed-title"
+        aria-describedby="transfer-verification-failed-message"
+        data-transfer-verification-failed
+        className="relative z-10 w-[min(420px,calc(100vw-32px))] rounded-2xl border border-[var(--account-warning-border)] bg-[var(--account-surface)] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.6)]"
+      >
+        <button
+          type="button"
+          aria-label="Cerrar"
+          onClick={onClose}
+          disabled={verifying}
+          className="absolute right-3 top-3 flex size-8 cursor-pointer items-center justify-center rounded-full text-[var(--account-text-secondary)] transition-colors hover:bg-[var(--account-warning-bg)] hover:text-[var(--account-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </button>
+
+        <div className="flex flex-col items-center text-center">
+          <span className="flex size-12 items-center justify-center rounded-full border border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] text-[var(--account-warning)]">
+            <AlertTriangle className="size-6" aria-hidden="true" />
+          </span>
+          <h2
+            id="transfer-verification-failed-title"
+            className="mt-3 text-lg font-bold text-[var(--account-text-primary)]"
+          >
+            {failure.kind === "confirming" ? "Estamos confirmando tu pago" : "No pudimos validar tu transferencia"}
+          </h2>
+          <p
+            id="transfer-verification-failed-message"
+            className="mt-1.5 text-sm leading-5 text-[var(--account-text-secondary)]"
+          >
+            {failure.message}
+          </p>
+        </div>
+
+        {holder && (
+          <div className="mt-4 rounded-xl border border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] px-3.5 py-2.5 text-xs leading-5 text-[var(--account-text-primary)]">
+            <p className="font-bold text-[var(--account-warning)]">Titular informado</p>
+            <p>
+              {holder.firstName} {holder.lastName} · DNI/CUIT {holder.document}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-col gap-2.5" data-transfer-failure-kind={failure.kind}>
+          {actions.map((action, index) => {
+            // La primera acción es la principal; el resto, secundarias.
+            const variant = index === 0 ? "primary" : index === 1 ? "outline" : "ghost"
+            if (action === "upload") {
+              return (
+                <BeyonixButton key={action} type="button" variant={variant} onClick={onUploadProof}
+                  disabled={verifying} className="h-11 w-full">
+                  <Upload className="size-4" aria-hidden="true" />
+                  Subir el comprobante de pago
+                </BeyonixButton>
+              )
+            }
+            if (action === "edit") {
+              return (
+                <BeyonixButton key={action} type="button" variant={variant} onClick={onEditHolder}
+                  disabled={verifying} className="h-11 w-full">
+                  <UserPen className="size-4" aria-hidden="true" />
+                  Cambiar datos del titular
+                </BeyonixButton>
+              )
+            }
+            return (
+              <BeyonixButton key={action} type="button" variant={variant} onClick={onRetry}
+                disabled={verifying || cooldownSeconds > 0} className="h-11 w-full">
+                {verifying ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    Verificando transferencia...
+                  </>
+                ) : cooldownSeconds > 0 ? (
+                  `Podés volver a verificar en ${cooldownSeconds} s`
+                ) : (
+                  <>
+                    <RefreshCw className="size-4" aria-hidden="true" />
+                    Volver a verificar
+                  </>
+                )}
+              </BeyonixButton>
+            )
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function TransferInstructionsStep({
   order,
   bankDetails,
-  onContinue,
+  holder,
+  onVerified,
+  onStockConflict,
+  onUploadProof,
   onEditHolder,
+  onReservationExpired,
 }: {
   order: SupabasePedido
   bankDetails: TransferBankDetails
-  onContinue: () => void
+  holder: TransferHolder | null
+  onVerified: () => void
+  onStockConflict: () => void
+  onUploadProof: () => void
   onEditHolder: () => void
+  onReservationExpired: () => void
 }) {
   const [copiedField, setCopiedField] = useState<"alias" | "cvu" | null>(null)
   const copyTimerRef = useRef<number | null>(null)
+  const verifyButtonRef = useRef<HTMLButtonElement>(null)
+  const editHolderButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusRef = useRef(false)
+  const verification = useTransferVerification({
+    order,
+    holder,
+    onVerified,
+    onStockConflict,
+    onReservationExpired,
+  })
+  const failureOpen = verification.failure !== null
 
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current)
     }
   }, [])
+
+  // Al cerrar el modal (Escape, afuera o X) el foco vuelve a "Ya realicé la
+  // transferencia", que lo abrió. Si quedó en espera (disabled), focus() no
+  // haría nada: se usa la otra acción del paso para no dejarlo en <body>.
+  useEffect(() => {
+    if (failureOpen || !restoreFocusRef.current) return
+    restoreFocusRef.current = false
+    const trigger = verifyButtonRef.current
+    ;(trigger && !trigger.disabled ? trigger : editHolderButtonRef.current)?.focus()
+  }, [failureOpen])
+
+  const closeFailure = () => {
+    restoreFocusRef.current = true
+    verification.dismissFailure()
+  }
 
   const handleCopy = async (field: "alias" | "cvu", value: string) => {
     try {
@@ -419,6 +792,8 @@ function TransferInstructionsStep({
       setCopiedField(null)
     }
   }
+
+  const busy = verification.verifying || verification.confirming
 
   return (
     <StepCard>
@@ -454,320 +829,52 @@ function TransferInstructionsStep({
         />
       </div>
 
-      <BeyonixButton type="button" onClick={onContinue} className="mt-5 h-11 w-full">
-        Ya realicé la transferencia
+      <BeyonixButton
+        ref={verifyButtonRef}
+        type="button"
+        onClick={() => void verification.verify()}
+        disabled={busy || verification.cooldownSeconds > 0}
+        className="mt-5 h-11 w-full"
+      >
+        {verification.confirming ? (
+          <>
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Confirmando tu pago...
+          </>
+        ) : verification.verifying ? (
+          <>
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Verificando transferencia...
+          </>
+        ) : (
+          "Ya realicé la transferencia"
+        )}
       </BeyonixButton>
       <p className="mt-2 text-center text-xs leading-5 text-[var(--account-text-secondary)]">
         Cuando hayas realizado la transferencia, continuá para validar el pago.{" "}
         <button
+          ref={editHolderButtonRef}
           type="button"
           onClick={onEditHolder}
-          className="font-semibold underline underline-offset-2"
+          disabled={busy}
+          className="cursor-pointer font-semibold underline underline-offset-2 hover:text-[var(--account-text-primary)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           Cambiar datos del titular
         </button>
       </p>
-    </StepCard>
-  )
-}
 
-function TransferVerificationStep({
-  order,
-  onBack,
-  onUpdated,
-  onManualReview,
-  onReservationExpired,
-}: {
-  order: SupabasePedido
-  onBack: () => void
-  onUpdated: (order: SupabasePedido) => void
-  onManualReview: () => void
-  onReservationExpired: () => void
-}) {
-  const [firstName, setFirstName] = useState(order.transfer_payer_first_name ?? "")
-  const [lastName, setLastName] = useState(order.transfer_payer_last_name ?? "")
-  const [dni, setDni] = useState(order.transfer_payer_dni ?? "")
-  const [amount, setAmount] = useState(
-    String(order.transfer_amount_declared ?? transferAmountDue(order) ?? ""),
-  )
-  const [phase, setPhase] = useState<"idle" | "submitting" | "confirming">("idle")
-  const [errorMessage, setErrorMessage] = useState("")
-  // "Todavía no encontramos tu transferencia" (ej.: verificó antes de
-  // transferir): no es un error, el cliente se queda en el formulario con
-  // sus datos y puede volver a verificar cuando termine la espera.
-  const [retryNotice, setRetryNotice] = useState("")
-  const [cooldownSeconds, setCooldownSeconds] = useState(0)
-  const [fieldErrors, setFieldErrors] = useState<
-    Partial<Record<TransferDeclarationField, string>>
-  >({})
-
-  useEffect(() => {
-    if (cooldownSeconds <= 0) return
-    const timeout = window.setTimeout(() => setCooldownSeconds((seconds) => seconds - 1), 1000)
-    return () => window.clearTimeout(timeout)
-  }, [cooldownSeconds])
-
-  const showRetryNotice = (message: string, retryAfterSeconds: number | undefined) => {
-    setRetryNotice(message)
-    setCooldownSeconds(
-      Number.isFinite(retryAfterSeconds) ? Math.max(0, Math.ceil(retryAfterSeconds ?? 0)) : 0,
-    )
-    setPhase("idle")
-  }
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (phase !== "idle" || cooldownSeconds > 0) return
-
-    // Misma validación que el servidor (lib/payments/transfer-declaration.ts):
-    // los 4 datos del titular son obligatorios.
-    const declaration = validateTransferDeclaration({
-      nombre: firstName,
-      apellido: lastName,
-      dni,
-      monto: amount,
-    })
-    if (!declaration.ok) {
-      setFieldErrors(declaration.errors)
-      setErrorMessage("")
-      return
-    }
-
-    setFieldErrors({})
-    setPhase("submitting")
-    setErrorMessage("")
-    setRetryNotice("")
-
-    try {
-      const guestToken = getGuestOrderToken(order.id)
-      const response = await fetch(`/api/transferencia/${order.id}/verificar`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(guestToken ? { "x-guest-order-token": guestToken } : {}),
-        },
-        // Valores ya normalizados; el monto viaja como texto para que el
-        // servidor lo lea con el mismo parser es-AR ("1.500,50").
-        body: JSON.stringify({
-          nombre: declaration.value.firstName,
-          apellido: declaration.value.lastName,
-          dni: declaration.value.document,
-          monto: amount,
-        }),
-      })
-
-      const data = (await response.json()) as {
-        status?: "verified" | "manual_review" | "awaiting_transfer"
-        code?: string
-        error?: string
-        message?: string
-        fieldErrors?: Partial<Record<TransferDeclarationField, string>>
-        proofUploadAvailable?: boolean
-        retryable?: boolean
-        retryAfterSeconds?: number
-      }
-
-      if (!response.ok) {
-        // La reserva venció (pestaña vieja o reloj desfasado): el servidor
-        // rechaza el flujo normal y la pantalla pasa al aviso de vencimiento.
-        if (data.code === "RESERVATION_EXPIRED") {
-          onReservationExpired()
-          return
-        }
-        // Error de validación del servidor: el cliente corrige en el mismo
-        // formulario (no es un fallo técnico).
-        if (response.status === 400 && data.fieldErrors && Object.keys(data.fieldErrors).length > 0) {
-          setFieldErrors(data.fieldErrors)
-          setPhase("idle")
-          return
-        }
-        // Espera entre intentos o verificación ya en curso: se reintenta
-        // desde acá mismo, no es motivo para pasar a revisión manual.
-        if (data.retryable) {
-          showRetryNotice(
-            data.error || "Esperá unos segundos y volvé a verificar.",
-            data.retryAfterSeconds,
-          )
-          return
-        }
-        setErrorMessage(data.error || "No pudimos verificar tu transferencia.")
-        // El comprobante sigue disponible como alternativa segura.
-        if (data.proofUploadAvailable) {
-          onUpdated(order)
-          onManualReview()
-          return
-        }
-        setPhase("idle")
-        return
-      }
-
-      if (data.status === "verified") {
-        setPhase("confirming")
-        // La respuesta del backend es mínima a propósito -- el padre
-        // refresca el pedido desde su propio endpoint seguro.
-        onUpdated(order)
-        return
-      }
-
-      if (data.retryable) {
-        showRetryNotice(
-          data.message || "Todavía no encontramos tu transferencia. Podés volver a verificar.",
-          data.retryAfterSeconds,
-        )
-        return
-      }
-
-      onUpdated(order)
-      onManualReview()
-    } catch {
-      // La red puede fallar sin que exista ningún problema con el pago.
-      showRetryNotice("No pudimos conectarnos para verificar. Podés volver a intentar.", undefined)
-    }
-  }
-
-  if (phase === "confirming") {
-    return (
-      <StepCard>
-        <div className="flex flex-col items-center gap-3 py-8 text-center">
-          <Loader2 className="size-7 animate-spin text-[var(--account-accent)]" aria-hidden="true" />
-          <p className="text-sm font-semibold text-[var(--account-text-primary)]">
-            Confirmando tu pago...
-          </p>
-        </div>
-      </StepCard>
-    )
-  }
-
-  const submitting = phase === "submitting"
-  const coolingDown = cooldownSeconds > 0
-
-  return (
-    <StepCard>
-      <TransferStepIndicator step={3} />
-
-      <h1 className="text-center text-xl font-bold text-[var(--account-text-primary)] sm:text-2xl">
-        Validá tu transferencia
-      </h1>
-      <p className="mx-auto mt-1.5 max-w-sm text-center text-sm leading-5 text-[var(--account-text-secondary)]">
-        Completá los datos del <strong className="font-semibold text-[var(--account-text-primary)]">titular de la cuenta desde donde salió el dinero</strong>{" "}
-        para que podamos verificar el pago.
-      </p>
-
-      <div
-        data-transfer-holder-notice
-        className="mt-4 flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
-      >
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
-        <p className="text-xs leading-5 text-[var(--account-info-text)]">
-          <strong className="font-bold">Estos datos pueden ser distintos a los de la persona que realizó la compra.</strong>{" "}
-          Si otra persona transfirió desde su cuenta, ingresá los datos de esa persona.
-        </p>
-      </div>
-
-      <form onSubmit={handleSubmit} noValidate className="mt-4 flex flex-col gap-3.5">
-        <TransferDeclarationInput
-          id="transfer-verify-nombre"
-          label="Nombre/s del titular"
-          hint="Podés ingresar uno o todos sus nombres, como figuran en la cuenta desde donde transferiste (ej.: Romina Ayelen)."
-          value={firstName}
-          onChange={setFirstName}
-          error={fieldErrors.firstName}
-          autoComplete="off"
-          maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
-          disabled={submitting}
+      {verification.failure && (
+        <TransferVerificationFailedModal
+          holder={holder}
+          failure={verification.failure}
+          verifying={verification.verifying}
+          cooldownSeconds={verification.cooldownSeconds}
+          onUploadProof={onUploadProof}
+          onRetry={() => void verification.verify()}
+          onEditHolder={onEditHolder}
+          onClose={closeFailure}
         />
-        <TransferDeclarationInput
-          id="transfer-verify-apellido"
-          label="Apellido/s del titular"
-          hint="Apellido/s de la persona titular de esa cuenta (ej.: Pérez)."
-          value={lastName}
-          onChange={setLastName}
-          error={fieldErrors.lastName}
-          autoComplete="off"
-          maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
-          disabled={submitting}
-        />
-        <TransferDeclarationInput
-          id="transfer-verify-dni"
-          label="DNI/CUIT del titular"
-          hint="Ingresá el documento del titular de la cuenta desde donde se realizó la transferencia."
-          value={dni}
-          onChange={setDni}
-          error={fieldErrors.document}
-          inputMode="numeric"
-          maxLength={13}
-          disabled={submitting}
-        />
-        <TransferDeclarationInput
-          id="transfer-verify-monto"
-          label="Monto exacto transferido"
-          hint="Ingresá exactamente el importe enviado."
-          value={amount}
-          onChange={setAmount}
-          error={fieldErrors.amount}
-          inputMode="decimal"
-          disabled={submitting}
-        />
-
-        {errorMessage && (
-          <p className="text-xs font-medium text-[var(--account-danger)]">{errorMessage}</p>
-        )}
-
-        {retryNotice && (
-          <div
-            role="status"
-            data-transfer-retry-notice
-            className="flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3.5 py-3 text-left"
-          >
-            <Clock className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
-            <div className="text-xs leading-5 text-[var(--account-info-text)]">
-              <p>{retryNotice}</p>
-              <p className="mt-1">
-                Revisá que el DNI/CUIT sea el del titular de la cuenta desde donde transferiste y
-                que el monto sea exacto.
-              </p>
-              <button
-                type="button"
-                onClick={onManualReview}
-                disabled={submitting}
-                className="mt-1.5 font-semibold underline underline-offset-2"
-              >
-                Prefiero enviar el comprobante
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row">
-          <BeyonixButton
-            type="button"
-            variant="outline"
-            onClick={onBack}
-            disabled={submitting}
-            className="h-11 sm:flex-1"
-          >
-            Volver
-          </BeyonixButton>
-          <BeyonixButton
-            type="submit"
-            disabled={submitting || coolingDown}
-            className="h-11 sm:flex-[2]"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Verificando transferencia...
-              </>
-            ) : coolingDown ? (
-              `Podés volver a verificar en ${cooldownSeconds} s`
-            ) : retryNotice ? (
-              "Volver a verificar"
-            ) : (
-              "Verificar transferencia"
-            )}
-          </BeyonixButton>
-        </div>
-      </form>
+      )}
     </StepCard>
   )
 }
@@ -792,7 +899,7 @@ function TransferManualReviewStep({
 
   return (
     <StepCard>
-      <TransferStepIndicator step={4} />
+      <TransferStepIndicator step={3} />
 
       {!hasProof ? (
         <>
@@ -1039,7 +1146,18 @@ function TransferStepFlow({
   // Alias/CVU sólo llegan del servidor después de guardar los datos del
   // titular (o si ya estaban guardados al recargar la pantalla).
   const [bankDetails, setBankDetails] = useState<TransferBankDetails | null>(bankTransfer)
-  const [step, setStep] = useState<"holder" | "instructions" | "verify" | "review">(() =>
+  // Titular del paso 1 (o el ya guardado al recargar): es lo que se valida al
+  // tocar "Ya realicé la transferencia", sin volver a pedirlo.
+  const [holder, setHolder] = useState<TransferHolder | null>(() =>
+    order.transfer_payer_first_name && order.transfer_payer_last_name && order.transfer_payer_dni
+      ? {
+          firstName: order.transfer_payer_first_name,
+          lastName: order.transfer_payer_last_name,
+          document: order.transfer_payer_dni,
+        }
+      : null,
+  )
+  const [step, setStep] = useState<"holder" | "instructions" | "review">(() =>
     hasProof || alreadyResolved || previousAttemptFailed
       ? "review"
       : bankTransfer
@@ -1079,24 +1197,9 @@ function TransferStepFlow({
         <TransferManualReviewStep
           order={order}
           onUpdated={onUpdated}
-          onRetry={canRetry ? () => setStep("verify") : undefined}
+          onRetry={canRetry ? () => setStep("holder") : undefined}
           ordersHref={ordersHref}
           homeHref={homeHref}
-        />
-      </>
-    )
-  }
-
-  if (effectiveStep === "verify") {
-    return (
-      <>
-        {countdown}
-        <TransferVerificationStep
-          order={order}
-          onBack={() => setStep("instructions")}
-          onUpdated={onUpdated}
-          onManualReview={() => setStep("review")}
-          onReservationExpired={() => setRejectedAsExpired(true)}
         />
       </>
     )
@@ -1109,8 +1212,16 @@ function TransferStepFlow({
         <TransferInstructionsStep
           order={order}
           bankDetails={bankDetails}
-          onContinue={() => setStep("verify")}
+          holder={holder}
+          // El padre refresca el pedido: confirmado -> pantalla de pago verificado.
+          onVerified={() => onUpdated(order)}
+          onStockConflict={() => {
+            onUpdated(order)
+            setStep("review")
+          }}
+          onUploadProof={() => setStep("review")}
           onEditHolder={() => setStep("holder")}
+          onReservationExpired={() => setRejectedAsExpired(true)}
         />
       </>
     )
@@ -1121,10 +1232,11 @@ function TransferStepFlow({
       {countdown}
       <TransferHolderStep
         order={order}
-        onSaved={(details) => {
+        onSaved={(details, savedHolder) => {
           setBankDetails(details)
+          setHolder(savedHolder)
           setStep("instructions")
-          // Refresca el pedido (datos del titular guardados) para precargar la validación.
+          // Refresca el pedido (datos del titular guardados en el servidor).
           onUpdated(order)
         }}
         onReservationExpired={() => setRejectedAsExpired(true)}

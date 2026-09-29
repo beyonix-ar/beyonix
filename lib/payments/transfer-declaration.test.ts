@@ -272,19 +272,22 @@ test("14. 'Corregir datos de la transferencia' es un secundario con contraste en
   assert.ok(contrast("#112a43", "#ffffff") >= 7)
 })
 
-test("copy: deja claro que son los datos del titular de la cuenta de origen", () => {
+test("copy: el paso del titular es directo -- título y labels claros, sin textos de ayuda extra", () => {
   const flow = readSource("../../components/checkout/transfer-flow.tsx")
-  for (const copy of [
-    "Estos datos pueden ser distintos a los de la persona que realizó la compra.",
-    "Podés ingresar uno o todos sus nombres, como figuran en la cuenta desde donde transferiste (ej.: Romina Ayelen).",
-    "Apellido/s de la persona titular de esa cuenta (ej.: Pérez).",
-    "Ingresá el documento del titular de la cuenta desde donde se realizó la transferencia.",
-    "Ingresá exactamente el importe enviado.",
-  ]) {
-    assert.ok(flow.includes(copy), copy)
-  }
-  for (const label of ["Nombre/s del titular", "Apellido/s del titular", "DNI/CUIT del titular", "Monto exacto transferido"]) {
+  assert.ok(flow.includes("¿Desde qué cuenta vas a transferir?"))
+  assert.ok(flow.includes("titular de la cuenta desde donde vas a transferir"))
+  for (const label of ["Nombre/s del titular", "Apellido/s del titular", "DNI/CUIT del titular"]) {
     assert.ok(flow.includes(`label="${label}"`), label)
+  }
+  // Textos eliminados a pedido: no deben volver (ni en variantes parecidas).
+  for (const removed of [
+    "Estos datos pueden ser distintos a los de la persona que realizó la compra.",
+    "Podés ingresar uno o todos sus nombres",
+    "Apellido/s de la persona titular de esa cuenta",
+    "Documento del titular de la cuenta desde donde vas a transferir.",
+    "Monto exacto transferido",
+  ]) {
+    assert.equal(flow.includes(removed), false, removed)
   }
 })
 
@@ -314,6 +317,10 @@ test("nombres y apellidos compuestos: se aceptan completos o con un solo nombre,
 test("formulario: nombre/s y apellido/s del titular, sin forzar un único nombre", () => {
   const flow = readSource("../../components/checkout/transfer-flow.tsx")
   assert.match(flow, /label="Nombre\/s del titular"/)
-  assert.match(flow, /Podés ingresar uno o todos sus nombres/)
   assert.match(flow, /label="Apellido\/s del titular"/)
+  // Nombre y apellido juntos en "Nombre" también es válido: la verificación
+  // automática compara DNI/CUIT + monto; los nombres sólo se guardan para la
+  // conciliación manual.
+  const both = validateTransferDeclaration({ ...valid, nombre: "Romina Ayelen Pérez", apellido: "Pérez" })
+  assert.equal(both.ok, true)
 })

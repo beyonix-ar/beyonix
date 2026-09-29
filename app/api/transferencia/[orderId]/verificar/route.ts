@@ -11,8 +11,9 @@ import {
 } from "@/lib/orders/transfer-auto-verification"
 import {
   canUploadTransferProof,
+  getTransferVerificationCustomerOutcome,
   isRetryableManualReviewReason,
-  TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE,
+  TRANSFER_VERIFICATION_OUTCOME_MESSAGES,
 } from "@/lib/orders/transfer-verification-reasons"
 import {
   isTransferReservationActive,
@@ -40,42 +41,32 @@ function safeVerificationResponse(
   >,
 ) {
   const verified = result.status === "verified"
-  // "Todavía no aparece la transferencia del titular declarado" (ej.: el
-  // cliente verificó antes de transferir): no es un rechazo, puede volver a
-  // verificar. Sólo se expone este booleano, nunca el motivo interno (que
-  // revelaría si existen transferencias de terceros con ese monto).
+  // Resultado para el cliente (todavía no apareció / apareció pero no
+  // coincide / encontrada, falta confirmar / conflicto de stock): una
+  // categoría, nunca el motivo interno, el documento ni el pagador.
+  const outcome = getTransferVerificationCustomerOutcome(
+    result.status,
+    result.status === "verified" ? null : result.reason,
+  )
+  // Puede volver a verificar (ej.: verificó antes de transferir). Reintentar
+  // nunca relaja el matching: sólo vuelve a buscar.
   const retryable =
     result.status === "awaiting_transfer" ||
     (result.status === "manual_review" && isRetryableManualReviewReason(result.reason))
 
-  if (retryable) {
-    return {
-      status: result.status,
-      verified: false,
-      manualReviewRequired: result.status === "manual_review",
-      retryable: true,
-      retryAfterSeconds: TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS,
-      proofUploadAvailable: true,
-      message:
-        "Todavía no encontramos tu transferencia. Si acabás de realizarla, puede tardar unos instantes en aparecer. Podés volver a verificar.",
-    }
-  }
-
   return {
     status: result.status,
+    outcome,
     verified,
-    manualReviewRequired: !verified,
-    retryable: false,
+    manualReviewRequired: result.status === "manual_review",
+    retryable,
+    ...(retryable ? { retryAfterSeconds: TRANSFER_VERIFICATION_MIN_INTERVAL_SECONDS } : {}),
     // El pago ya está confirmado -> nunca corresponde ofrecer comprobante.
     // Cualquier otro resultado (incluido manual_review por conflicto de
     // stock: la plata ya está identificada, pero el admin puede pedir
     // evidencia adicional) deja la puerta abierta.
     proofUploadAvailable: !verified,
-    message: verified
-      ? "Verificamos tu transferencia automáticamente."
-      : result.status === "manual_review" && result.reason === "stock_conflict"
-        ? TRANSFER_STOCK_CONFLICT_CUSTOMER_MESSAGE
-        : "No pudimos validar tu transferencia automáticamente.",
+    message: TRANSFER_VERIFICATION_OUTCOME_MESSAGES[outcome],
   }
 }
 
