@@ -50,13 +50,13 @@ test("PDP se sirve a través de product-details-panel.tsx en la página de produ
   assert.match(modal, /ProductDetailsPanel/)
 })
 
-test("tarjetas de catálogo (shared-product-card, category-product-card) y hero usan getInstallmentsCopy(producto)", () => {
+// La tarjeta de catálogo real es shared-product-card (categorías, productos,
+// home y favoritos); category-product-card.tsx no se renderizaba desde 6e2d4f8.
+test("tarjeta de catálogo (shared-product-card) y hero usan getInstallmentsCopy(producto)", () => {
   const sharedCard = readSource("./shared/shared-product-card.tsx")
-  const categoryCard = readSource("../category/category-product-card.tsx")
   const hero = readSource("../hero-section.tsx")
 
   assert.match(sharedCard, /\$\{getInstallmentsCopy\(product\)\} de \$\$\{maxInstallmentAmount/)
-  assert.match(categoryCard, /\$\{getInstallmentsCopy\(product\)\} de \$\{formatPrice\(plan\.amount\)\}/)
   assert.match(hero, /\$\{getInstallmentsCopy\(featuredProduct\)\} de \$\{formatPrice\(featuredInstallmentAmount\)\}/)
   // Precio financiado de cada card según la regla del producto (nunca el
   // gross-up directo, que ignoraría "sin recargo").

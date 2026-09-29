@@ -76,7 +76,6 @@ import {
   markAdminClaimNotificationsRead,
   markAdminOrderNewNotificationRead,
 } from "@/lib/admin/admin-notifications"
-import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
 import {
   allocateEffectiveOrderItemAmounts,
   calculatePartialLineAmount,
@@ -84,6 +83,8 @@ import {
 } from "@/lib/orders/credit-note-calculations"
 import { isClaimEligibleForCreditNote } from "@/lib/orders/credit-note-claim-policy"
 import { getClaimResolutionHistoryTitle, getClaimResolutionView } from "@/lib/orders/claim-resolution"
+import { isClaimCancelled } from "@/lib/orders/claim-cancellation"
+import { getReturnReceptionOutcomeLines } from "@/lib/orders/claim-product-outcome"
 import {
   getAdminNewOrderEventAt,
   isAdminOrderVisible,
@@ -1635,8 +1636,10 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     findAuditEvent((event) =>
       ["credit_note_registered", "credit_note_authorized"].includes(event.action),
     )?.created_at
+  // Las recepciones canónicas (return_inventory_processed) tienen su propio
+  // evento con el destino físico; éste queda para eventos heredados.
   const productReturnedAt = findAuditEvent((event) =>
-    ["product_return_received", "return_product_received", "returned_product_received", "return_inventory_processed"].includes(
+    ["product_return_received", "return_product_received", "returned_product_received"].includes(
       event.action,
     ),
   )?.created_at
@@ -1738,6 +1741,16 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
     description: "BEYONIX recibió el producto devuelto.",
     type: "success",
   })
+  for (const event of auditEvents.filter((entry) => entry.action === "return_inventory_processed")) {
+    const destination = getReturnReceptionOutcomeLines(event.metadata)
+    addEvent({
+      key: `return-inventory-${String(event.metadata?.sourceKey ?? event.created_at)}`,
+      title: "Producto recibido e inspeccionado",
+      at: event.created_at,
+      description: `${destination.length ? `${destination.join(" · ")}.` : "Recepción registrada."} Registrado por un Admin.`,
+      type: "success",
+    })
+  }
 
   if (hasPhysicalReturn && (productReviewAt || (pedido.return_requested_at && returnStatus === "en_revision"))) {
     addEvent({
@@ -1904,7 +1917,16 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       })
     }
 
-    if (claim.status === "cerrado") {
+    if (claim.status === "cerrado" && isClaimCancelled(claim)) {
+      // Cancelado no es una finalización: no reescribe la recepción ni el destino del producto.
+      addEvent({
+        key: `claim-cancelled-${claim.id}`,
+        title: "Reclamo cancelado",
+        at: claim.cancelled_at || claim.closed_at || claim.updated_at,
+        description: `Motivo: ${claim.cancellation_reason?.trim() || "sin motivo registrado"}. Cancelado por un Admin. Lo registrado antes (recepción, inspección y stock) no cambió.`,
+        type: "danger",
+      })
+    } else if (claim.status === "cerrado") {
       const baseTitle = claimIsCancellation
         ? "Cancelación cerrada"
         : claimIsHelpMessage

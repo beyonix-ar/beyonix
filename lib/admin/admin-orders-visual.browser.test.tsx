@@ -479,7 +479,8 @@ test("camioncito de la fila: blanco en Light (igual que Dark, que no cambia); el
 })
 
 test("CSS: sin guerra de especificidad -- exclusiones semánticas explícitas", () => {
-  const source = readFileSync("app/globals.css", "utf8")
+  // Literales con "\n": independiente del fin de línea del checkout.
+  const source = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n")
   assert.match(source, /:not\(\.admin-claim-flow-control\):not\(\.admin-control-select\) \{/, "catch-all de botones excluye AdminSelect")
   assert.match(source, /\[class\*="rounded"\]\[class\*="border"\]:not\(\.bx-surface, \.admin-orders-list-row\) \{/, "catch-all Light de superficies excluye la fila")
   assert.match(source, /html\[data-admin-theme="light"\] \.admin-order-detail-scope \.admin-order-summary-layout-bg \{\n  background: transparent !important;/)

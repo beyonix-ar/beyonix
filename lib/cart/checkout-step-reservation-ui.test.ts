@@ -10,7 +10,9 @@ import {
 } from "./checkout-step-reservation.ts"
 import { MAX_CART_ITEM_QUANTITY, PURCHASE_LIMIT_MESSAGE } from "./stock-status.ts"
 
-const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
+// Las secciones se buscan con literales "\n": normalizar para no depender
+// del fin de línea del checkout (CRLF en Windows con autocrlf).
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n")
 const checkout = read("../../app/checkout/page.tsx")
 const cart = read("../../context/cart-context.tsx")
 const reservation = read("./stock-reservations.ts")

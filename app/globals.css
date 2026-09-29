@@ -432,10 +432,6 @@
   grid-template-columns: repeat(4, minmax(0, min(100%, var(--beyonix-product-card-max))));
 }
 
-@utility grid-cols-category-product-cards-4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 @utility grid-cols-product-modal {
   grid-template-columns: 58fr 42fr;
 }
@@ -15728,6 +15724,25 @@ html[data-admin-theme="light"] .admin-claim-wizard-step { color: #4b5563; }
 html[data-admin-theme="light"] .admin-claim-wizard-resolution { color: #07565d; }
 html[data-admin-theme="light"] .admin-claim-wizard-step.is-current { color: #07565d; background: #e6f8f7; }
 html[data-admin-theme="light"] .admin-claim-wizard-step.is-done { color: #166534; }
+/* Reclamo cancelado: pasos que nunca ocurrieron y cierre propio (no "finalizado"). */
+.admin-claim-wizard-step.is-skipped { color: #7d8b98; border-style: dashed; }
+.admin-claim-wizard-step.is-skipped > span:nth-child(2) { text-decoration: line-through; }
+.admin-claim-wizard-step.is-cancelled { border-color: rgba(253, 186, 116, .75); color: #fed7aa; background: rgba(154, 52, 18, .35); }
+html[data-admin-theme="light"] .admin-claim-wizard-step.is-skipped { color: #6b7280; }
+html[data-admin-theme="light"] .admin-claim-wizard-step.is-cancelled { border-color: #ea580c; color: #9a3412; background: #fff7ed; }
+span.admin-claim-status-cancelled,
+.beyonix-admin-main span.admin-claim-status-cancelled {
+  border: 1px solid rgba(253, 186, 116, .8) !important;
+  border-radius: .5rem !important;
+  background: #9a3412 !important;
+  background-color: #9a3412 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+.admin-claim-cancelled-note { border: 1px solid rgba(253, 186, 116, .45); border-radius: .5rem; background: rgba(154, 52, 18, .16); }
+.admin-claim-cancelled-title { color: #fed7aa !important; }
+html[data-admin-theme="light"] .admin-claim-cancelled-note { border-color: #fdba74; background: #fff7ed; }
+html[data-admin-theme="light"] .admin-claim-cancelled-title { color: #9a3412 !important; }
 html[data-admin-theme="light"] .admin-claim-wizard-chat-trigger { color: #07565d; }
 html[data-admin-theme="light"] .admin-claim-wizard-back { color: #07565d; }
 html[data-admin-theme="light"] .admin-claim-wizard-note { color: #334155; }

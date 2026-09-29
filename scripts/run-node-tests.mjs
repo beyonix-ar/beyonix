@@ -40,6 +40,7 @@ const TEST_FILES = [
   "lib/orders/claim-review-edit.test.ts",
   "lib/admin/claim-attention.test.ts",
   "lib/orders/claim-cancellation.test.ts",
+  "lib/orders/claim-product-outcome.test.ts",
   "lib/order-claims.test.ts",
   "lib/orders/claim-atomic.test.ts",
   "lib/orders/claim-storage.test.ts",
@@ -247,6 +248,7 @@ const TSX_TEST_FILES = [
 // PostgreSQL embebido con conexiones concurrentes: correrlo fuera del batch
 // paralelo evita competir por procesos Windows con los demás tests de DB.
 const DB_TEST_FILES = [
+  "lib/fixtures/isolated-postgres.test.mjs",
   "lib/cart/checkout-step-reservations.test.mjs",
   "lib/orders/transfer-checkout-reservation.test.mjs",
   "lib/mercadopago/checkout-reservation-phase3.test.mjs",

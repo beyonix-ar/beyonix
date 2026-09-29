@@ -66,12 +66,18 @@ import { ClaimAndreaniShipmentPanel, type ClaimLogisticsPanelSection } from "@/c
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
-import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
+import { getAdminClaimWizard, getCancelledClaimOccurredSteps } from "@/lib/orders/admin-claim-wizard"
+import {
+  getClaimItemOutcomeCounts,
+  getClaimProductOutcomeLines,
+  getClaimProductOutcomeTitle,
+} from "@/lib/orders/claim-product-outcome"
 import { getClaimReviewEditability } from "@/lib/orders/claim-review-edit"
 import {
   getClaimCancellationBlockerViews,
   getClaimCancellationPreview,
   isClaimCancellationBlocker,
+  isClaimCancelled,
   type ClaimCancellationBlocker,
   type ClaimCancellationBlockerView,
 } from "@/lib/orders/claim-cancellation"
@@ -771,7 +777,7 @@ export function ReturnInventoryPanel({
     if (writtenOff > 0 && draft.note.trim().length < 3) {
       setNotice({
         ok: false,
-        message: "Indicá en la observación el motivo de la baja o pérdida.",
+        message: "Indicá en la observación el motivo de la baja.",
       })
       return
     }
@@ -1099,23 +1105,10 @@ export function ReturnInventoryPanel({
               const writtenOffQuantity = Number(item.return_written_off_quantity ?? 0)
               const onlyRestocked = restockedQuantity > 0 && writtenOffQuantity === 0
               const onlyWrittenOff = writtenOffQuantity > 0 && restockedQuantity === 0
-              const resultLabel = onlyRestocked
-                ? claimedQuantity === 1
-                  ? "Volvió al stock"
-                  : `${restockedQuantity} unidades volvieron al stock`
-                : onlyWrittenOff
-                  ? claimedQuantity === 1
-                    ? "Dada de baja"
-                    : `${writtenOffQuantity} unidades dadas de baja`
-                  : `${restockedQuantity} al stock · ${writtenOffQuantity} de baja`
-              const impactParts = [
-                restockedQuantity > 0
-                  ? `+${restockedQuantity} ${restockedQuantity === 1 ? "unidad" : "unidades"} al stock disponible`
-                  : null,
-                writtenOffQuantity > 0
-                  ? `${writtenOffQuantity} ${writtenOffQuantity === 1 ? "unidad registrada" : "unidades registradas"} como baja o pérdida`
-                  : null,
-              ].filter((part): part is string => Boolean(part))
+              // Destino físico registrado en la inspección; el estado del reclamo no lo cambia.
+              const outcome = { restocked: restockedQuantity, writtenOff: writtenOffQuantity }
+              const resultLabel = getClaimProductOutcomeTitle(outcome) ?? "Sin unidades registradas"
+              const impactParts = getClaimProductOutcomeLines(outcome)
               const resultTone = onlyRestocked ? "is-restock" : onlyWrittenOff ? "is-writeoff" : "is-mixed"
 
               return (
@@ -1975,6 +1968,8 @@ export function AdminClaimManager({
   const refundProof = files.find((file) => file.file_role === "comprobante_devolucion")
   const evidenceFiles = files.filter((file) => !["comprobante_devolucion", "comprobante_diferencia"].includes(file.file_role))
   const closed = ["cerrado", "rechazado"].includes(claim.status)
+  // Cancelado es un cierre propio: nunca se presenta como finalización normal.
+  const claimCancelled = claim.status === "cerrado" && isClaimCancelled(claim)
   // Misma resolución persistida que ve el cliente (trazabilidad).
   const closedResolution = getClaimResolutionView(claim)
   const conversationLocked = closed
@@ -2076,7 +2071,7 @@ export function AdminClaimManager({
     (isAdmin || !["cambio_producto", "envio_unidad_faltante"].includes(claim.resolution ?? ""))
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
-  const finalizedStatus = !helpResolved && claim.status === "cerrado"
+  const finalizedStatus = !helpResolved && claim.status === "cerrado" && !claimCancelled
   const conversationStatus = getConversationStatusLabel(claim, messages)
   const formalClaim = !helpMessage && !cancellation
   const needsReception = claim.resolution === "cambio_producto"
@@ -2169,10 +2164,34 @@ export function AdminClaimManager({
     status: claim.status, resolution: claim.resolution,
     receivedUnits: summaryReceptionTotals.received, replacedUnits,
     logistics: logistics && logisticsMethodStep ? { plan: logistics.plan, step: logistics.wizardStep } : null,
+    receptionComplete: summaryReceptionTotals.received >= summaryReceptionTotals.claimed,
+    cancelled: claimCancelled,
+    occurred: claimCancelled ? getCancelledClaimOccurredSteps({
+      resolution: claim.resolution,
+      logisticsPlan: logistics?.plan ?? null,
+      shipments: Array.isArray(claim.order_claim_shipments) ? claim.order_claim_shipments : null,
+      units: claim.order_claim_units ?? null,
+      receivedUnits: summaryReceptionTotals.received,
+    }) : undefined,
   })
   const viewedIndex = workflowSteps.findIndex((step) => step.key === viewedStep)
   const selectedStep = viewedStep && viewedIndex >= 0 && viewedIndex <= currentIndex
     ? viewedStep : currentStep
+  const selectedStepSkipped = workflowSteps.find((step) => step.key === selectedStep)?.status === "skipped"
+  const cancelledAfterReception = claimCancelled && workflowSteps.some((step) => step.key === "reception" && step.status === "done")
+  const cancelledProductOutcomes = claimCancelled
+    ? summaryAffectedItems.map(({ item, quantity }) => ({
+        id: item.id,
+        name: itemLabel(Number(item.id)),
+        lines: getClaimProductOutcomeLines(getClaimItemOutcomeCounts({
+          claimedQuantity: quantity,
+          restockedQuantity: item.return_restocked_quantity,
+          writtenOffQuantity: item.return_written_off_quantity,
+          units: (claim.order_claim_units ?? []).filter((unit) => unit.order_item_id === Number(item.id)),
+          includeNotReturned: true,
+        })),
+      }))
+    : []
   const cancelBlockerViews = getClaimCancellationBlockerViews(cancelCodes, {
     plan: logistics?.plan ?? null,
     legDirection: logistics?.leg?.direction ?? null,
@@ -2195,12 +2214,14 @@ export function AdminClaimManager({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-black text-white">Pedido BX-{1000 + pedido.id}</h3>
-              <span className={`inline-flex items-center gap-2 px-2.5 py-1 text-10px font-black uppercase ${finalizedStatus ? "admin-claim-status-finalized" : `rounded-full border ${helpResolved ? "admin-claim-help-resolved-badge" : getStatusTone(claim.status, cancellation)}`}`}>
-                <span className="size-2 rounded-full bg-current" />
+              <span data-testid="admin-claim-status-badge" className={`inline-flex items-center gap-2 px-2.5 py-1 text-10px font-black uppercase ${claimCancelled ? "admin-claim-status-cancelled" : finalizedStatus ? "admin-claim-status-finalized" : `rounded-full border ${helpResolved ? "admin-claim-help-resolved-badge" : getStatusTone(claim.status, cancellation)}`}`}>
+                {claimCancelled ? <XCircle className="size-3.5" aria-hidden="true" /> : <span className="size-2 rounded-full bg-current" />}
                 {getStatusLabel(claim)}
               </span>
               {claim.resolution && claim.resolution !== "rechazado" && (
-                <span className="admin-claim-wizard-resolution">{getOrderClaimResolutionLabel(claim.resolution)}</span>
+                <span className="admin-claim-wizard-resolution">
+                  {getOrderClaimResolutionLabel(claim.resolution)}{claimCancelled ? " · no se completó" : ""}
+                </span>
               )}
             </div>
           </div>
@@ -2313,9 +2334,11 @@ export function AdminClaimManager({
             <button key={step.key} type="button" aria-current={selectedStep === step.key ? "step" : undefined}
               disabled={index > currentIndex}
               onClick={() => setViewedStep(step.key)}
-              className={`admin-claim-wizard-step ${index < currentIndex && (step.key !== "reception" || summaryReceptionTotals.received >= summaryReceptionTotals.claimed) ? "is-done" : ""} ${selectedStep === step.key ? "is-current" : ""}`}>
-              <span aria-hidden="true">{index < currentIndex && (step.key !== "reception" || summaryReceptionTotals.received >= summaryReceptionTotals.claimed) ? "✓" : selectedStep === step.key ? "●" : "○"}</span>
+              data-step-status={step.status}
+              className={`admin-claim-wizard-step ${step.status === "done" ? "is-done" : step.status === "skipped" ? "is-skipped" : step.status === "cancelled" ? "is-cancelled" : ""} ${selectedStep === step.key ? "is-current" : ""}`}>
+              <span aria-hidden="true">{step.status === "done" ? "✓" : step.status === "skipped" ? "–" : step.status === "cancelled" ? "✕" : selectedStep === step.key ? "●" : "○"}</span>
               <span>{index + 1}. {step.label}</span>
+              {step.status === "skipped" && <span className="sr-only"> (no se realizó)</span>}
             </button>
           ))}
         </nav>
@@ -2415,6 +2438,11 @@ export function AdminClaimManager({
               </span>
                <h4 className="admin-claim-manage-heading" data-claim-focus="step" tabIndex={-1}>{workflowSteps.find((step) => step.key === selectedStep)?.label ?? "Gestionar reclamo"}</h4>
             </div>
+             {selectedStepSkipped && (
+              <p className="admin-claim-wizard-note mt-3" data-testid="admin-claim-step-skipped">
+                Este paso no se realizó: el reclamo se canceló antes.
+              </p>
+             )}
              {!formalClaim && <div className={`admin-claim-overview mt-3 ${claim.resolution && claim.resolution !== "rechazado" ? "has-resolution" : ""}`}>
               <div className="admin-claim-status-box admin-claim-overview-tile">
                 <p className="admin-claim-status-label admin-claim-overview-label">Estado actual</p>
@@ -2654,10 +2682,57 @@ export function AdminClaimManager({
                     onClick={() => openDecision("close")}
                   />
                 )}
-                {selectedStep === "finish" && closed && (
+                {selectedStep === "finish" && claimCancelled && (
+                  <div className="admin-claim-cancelled-note px-3 py-2.5" data-testid="admin-claim-resolution" data-claim-outcome="cancelled">
+                    <p className="admin-claim-cancelled-title flex items-center gap-1.5 text-xs font-black">
+                      <XCircle className="size-4 shrink-0" aria-hidden="true" />
+                      {cancelledAfterReception ? "Reclamo cancelado posteriormente" : "Reclamo cancelado"}
+                    </p>
+                    {cancelledAfterReception && (
+                      <p className="admin-claim-closed-text mt-1 text-[11px] font-semibold leading-4">
+                        Se canceló después de recibir el producto. La recepción y el destino del producto quedan como se registraron: cancelar no movió stock ni cambió la inspección.
+                      </p>
+                    )}
+                    <dl className="mt-2 grid gap-1.5 text-[11px] leading-4">
+                      <div>
+                        <dt className="admin-claim-closed-text font-bold">Estado final del reclamo</dt>
+                        <dd className="admin-claim-cancelled-title font-black">Cancelado</dd>
+                      </div>
+                      {claim.resolution && claim.resolution !== "rechazado" && (
+                        <div>
+                          <dt className="admin-claim-closed-text font-bold">Solución aprobada antes de cancelar</dt>
+                          <dd className="admin-claim-closed-text font-semibold">{getOrderClaimResolutionLabel(claim.resolution)} (no se completó)</dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt className="admin-claim-closed-text font-bold">Motivo de la cancelación</dt>
+                        <dd className="admin-claim-closed-text whitespace-pre-wrap font-semibold">{claim.cancellation_reason?.trim() || "Sin motivo registrado."}</dd>
+                      </div>
+                      {claim.cancelled_at && (
+                        <div>
+                          <dt className="admin-claim-closed-text font-bold">Cancelado</dt>
+                          <dd className="admin-claim-closed-text font-semibold">{formatDate(claim.cancelled_at)} · por un Admin</dd>
+                        </div>
+                      )}
+                      <div data-testid="admin-claim-product-outcome">
+                        <dt className="admin-claim-closed-text font-bold">Qué pasó con el producto</dt>
+                        {cancelledProductOutcomes.map((outcome) => (
+                          <dd key={outcome.id} className="admin-claim-closed-text font-semibold">
+                            {cancelledProductOutcomes.length > 1 ? `${outcome.name}: ` : ""}
+                            {outcome.lines.length ? `${outcome.lines.join(" · ")}.` : "Sin movimientos registrados."}
+                          </dd>
+                        ))}
+                      </div>
+                    </dl>
+                    <p className="admin-claim-closed-text mt-1.5 text-[11px] font-semibold leading-4">
+                      No hay acciones pendientes. Si el cliente necesita contactarse de nuevo, debe escribir a beyonix.ar@gmail.com.
+                    </p>
+                  </div>
+                )}
+                {selectedStep === "finish" && closed && !claimCancelled && (
                   <div className="admin-claim-closed-note px-3 py-2" data-testid="admin-claim-resolution">
                      <p className="admin-claim-closed-title text-xs font-black">
-                       {claim.status === "rechazado" ? "Reclamo rechazado" : claim.cancelled_at ? "Reclamo cancelado" : "Reclamo finalizado"}
+                       {claim.status === "rechazado" ? "Reclamo rechazado" : "Reclamo finalizado"}
                      </p>
                      {claim.closed_at && <p className="admin-claim-closed-text mt-1 text-[11px]">{formatDate(claim.closed_at)}</p>}
                     {closedResolution?.structured && (

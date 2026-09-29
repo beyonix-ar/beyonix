@@ -17,7 +17,6 @@ import {
   BeyonixButton,
   BeyonixCard,
   BeyonixEmptyState,
-  BeyonixIconBox,
   BeyonixSectionHeader,
 } from "@/components/beyonix-ui"
 import { Textarea } from "@/components/ui/textarea"

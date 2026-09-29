@@ -60,10 +60,12 @@ const summaries = {
   rechazado: { kind: "rechazado", label: "Reclamo no aprobado", detail: "Motivo: El producto presenta daño por mal uso.", amount: null, notice: "El reclamo no fue aprobado." },
   cambio: { kind: "cambio_producto", label: "Cambio de producto", detail: "Se registró el reemplazo correspondiente.", amount: null, notice: "Se aprobó un cambio de producto." },
   historico: null,
+  cancelado: { kind: "cancelado", label: "Reclamo cancelado", detail: "Motivo: Era un test de prueba", amount: null, notice: "El reclamo fue cancelado." },
 }
 const summary = summaries[scenario]
 const status = scenario === "rechazado" ? "rechazado" : "cerrado"
-const resolution = { saldo: "saldo_a_favor", rechazado: "rechazado", cambio: "cambio_producto", historico: "cambio_producto" }[scenario]
+const resolution = { saldo: "saldo_a_favor", rechazado: "rechazado", cambio: "cambio_producto", historico: "cambio_producto", cancelado: "cambio_producto" }[scenario]
+const cancelled = scenario === "cancelado"
 const closingMessage = summary
   ? "BEYONIX resolvió el reclamo.\\nResolución: " + summary.label + "." + (summary.detail ? "\\n" + summary.detail : "")
   : "BEYONIX finalizó el reclamo."
@@ -80,11 +82,16 @@ const claim = {
   ],
   order_claim_files: [],
   closed_at: "2026-09-21T10:05:00Z", created_at: "2026-09-20T10:00:00Z", updated_at: "2026-09-21T10:05:00Z",
+  cancelled_at: cancelled ? "2026-09-21T10:05:00Z" : null,
+  cancelled_by: cancelled ? "a" : null,
+  cancellation_reason: cancelled ? "Era un test de prueba" : null,
+  logistics_legacy: cancelled || undefined,
 }
 const pedido = {
   id: 500, usuario_id: "c", estado: "entregado", delivered_at: "2026-09-18T12:00:00Z", total: 20000, created_at: "2026-09-15T12:00:00Z",
   payment_method_id: "mercadopago", shipping_type: "domicilio",
-  orden_items: [{ id: 71, orden_id: 500, producto_id: 1, cantidad: 1, precio: 20000, productos: producto }],
+  orden_items: [{ id: 71, orden_id: 500, producto_id: 1, cantidad: 1, precio: 20000, productos: producto,
+    ...(cancelled ? { return_restocked_quantity: 0, return_written_off_quantity: 1, return_inventory_processed_at: "2026-09-20T14:31:00Z" } : {}) }],
   order_claims: [claim],
 }
 window.fetch = async (input) => {
@@ -194,6 +201,37 @@ test("13. histórico sin resumen: 'Reclamo finalizado' sin inventar resolución"
     assert.equal(await text(page, CUSTOMER), "Resolución del reclamo Resolución Reclamo finalizado")
     assert.equal(await page.locator(`${ADMIN} dl`).count(), 0)
     assert.equal(await page.locator(CUSTOMER).getByText("Cambio de producto").count(), 0)
+  } finally { await page.close() }
+})
+
+test("cancelado después de dar de baja: estado terminal claro, pasos reales conservados y destino del producto separado", async () => {
+  const page = await open("cancelado")
+  try {
+    const badge = page.locator("[data-testid=admin-claim-status-badge]")
+    assert.equal((await badge.innerText()).trim().toLowerCase(), "cancelado")
+    assert.equal(await badge.evaluate((node) => node.classList.contains("admin-claim-status-finalized")), false, "no usa el estilo de finalizado")
+    const steps = await page.locator(".admin-claim-wizard-step").evaluateAll((nodes) =>
+      nodes.map((node) => [node.getAttribute("data-step-status"), (node.textContent ?? "").replace(/\s+/g, " ").trim()]))
+    assert.deepEqual(steps, [
+      ["done", "✓1. Revisión"], ["done", "✓2. Recepción"],
+      ["skipped", "–3. Reemplazo (no se realizó)"], ["skipped", "–4. Entrega (no se realizó)"],
+      ["cancelled", "✕5. Cancelado"],
+    ])
+    assert.equal(await page.locator(".admin-claim-wizard-step", { hasText: "Finalización" }).count(), 0)
+    const admin = await text(page, ADMIN)
+    assert.match(admin, /^Reclamo cancelado posteriormente Se canceló después de recibir el producto\./)
+    assert.match(admin, /Estado final del reclamo Cancelado/)
+    assert.match(admin, /Solución aprobada antes de cancelar Cambio de producto \(no se completó\)/)
+    assert.match(admin, /Motivo de la cancelación Era un test de prueba/)
+    assert.match(admin, /Cancelado \d{1,2}\/\d{1,2}\/\d{2,4}, .+ · por un Admin/)
+    assert.match(await text(page, "[data-testid=admin-claim-product-outcome]"), /^Qué pasó con el producto 1 unidad dada de baja\.$/)
+    assert.doesNotMatch(await page.locator("#admin-root").innerText(), /baja o pérdida/)
+
+    // La recepción registrada sigue visible como historial, con su destino exacto.
+    await page.locator(".admin-claim-wizard-step", { hasText: "Recepción" }).click()
+    assert.equal(await text(page, ".admin-claim-reception-feedback"), "Recepción completa · Dada de baja 1 unidad dada de baja.")
+    await page.locator(".admin-claim-wizard-step", { hasText: "Reemplazo" }).click()
+    assert.equal(await text(page, "[data-testid=admin-claim-step-skipped]"), "Este paso no se realizó: el reclamo se canceló antes.")
   } finally { await page.close() }
 })
 

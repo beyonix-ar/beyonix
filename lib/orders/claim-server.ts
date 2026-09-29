@@ -54,7 +54,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   RETURN_IDEMPOTENCY_KEY_REQUIRED: [400, "Falta la clave de idempotencia de la recepción."],
   "No se encontró el producto dentro del pedido.": [404, "No se encontró el producto dentro del pedido."],
   "Las cantidades de la devolución no pueden ser negativas.": [400, "Las cantidades de la devolución no pueden ser negativas."],
-  "Indicá el motivo de la baja o pérdida.": [400, "Indicá el motivo de la baja o pérdida."],
+  "Indicá el motivo de la baja o pérdida.": [400, "Indicá el motivo de la baja."],
   "Indicá al menos una unidad recibida para registrar la devolución.": [400, "Indicá al menos una unidad recibida para registrar la devolución."],
   // Logística de postventa (20260928100000).
   CLAIM_LOGISTICS_FORBIDDEN: [403, "Sólo un administrador puede gestionar la logística del reclamo."],

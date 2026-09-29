@@ -63,7 +63,7 @@ export async function PATCH(
 
   if (writtenOffQuantity > 0 && note.length < 3) {
     return NextResponse.json(
-      { error: "Indicá en la observación el motivo de la baja o pérdida." },
+      { error: "Indicá en la observación el motivo de la baja." },
       { status: 400 },
     )
   }

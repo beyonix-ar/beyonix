@@ -13,7 +13,9 @@ import { SURFACE_FIXTURES } from "./surface-fixtures"
 // - Las reglas legacy [rounded][border] no pisan las superficies declaradas.
 // - Textos legibles sobre cada nivel; misma jerarquía en todos los anchos.
 
-const css = readFileSync("app/globals.css", "utf8")
+// Los asserts sobre el fuente buscan literales con "\n": normalizar para no
+// depender del fin de línea del checkout (CRLF en Windows con autocrlf).
+const css = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n")
 const source = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n")
 
 type Rgba = [number, number, number, number]
@@ -123,7 +125,10 @@ test("el marcado de los fixtures usa las clases reales de cada zona", () => {
   const checkout = source("app/checkout/page.tsx")
   assert.match(checkout, /"checkout-panel checkout-form-panel relative overflow-hidden rounded-xl border border-\[#112A43\] bg-\[#070C12\]/)
   assert.match(checkout, /"checkout-option flex w-full cursor-pointer rounded-lg border border-beyonix-blue-light\/16 bg-\[#10151C\]/)
-  assert.match(source("components/category/category-product-card.tsx"), /<article className="bx-surface bx-surface-raised relative z-10/)
+  // La card real del catálogo es una isla propia (no usa bx-surface): conserva
+  // su clase y su variante Light explícita.
+  assert.match(source("components/products/shared/shared-product-card.tsx"), /className="beyonix-product-card group /)
+  assert.match(css, /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-product-card \{/)
   assert.match(source("components/cart/cart-item.tsx"), /beyonix-cart-item bx-surface bx-surface-card/)
   assert.match(source("components/cart/cart-summary.tsx"), /beyonix-cart-summary-box bx-surface bx-surface-card/)
 })

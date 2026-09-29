@@ -269,7 +269,7 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     assert.equal(receptionCalls, 1)
     await render(<ReturnInventoryPanel canManage pedido={{ id: 123, usuario_id: null, estado: "entregado", total: 50000, created_at: "2026-09-19", orden_items: [{ id: 7, orden_id: 123, producto_id: 1, cantidad: 5, precio: 1000, return_restocked_quantity: 3, return_inventory_processed_at: "2026-09-20T12:00:00Z" }] }} claim={{ id: 1, order_id: 123, user_id: "test", claim_type: "garantia_beyonix", status: "aprobado", description: "", affected_items: [{ order_item_id: 7, quantity: 3 }], created_at: "2026-09-19", updated_at: "2026-09-19" }} />)
     assert.match(document.body.textContent || "", /Reclamadas3Recibidas3Pendientes0/)
-    assert.match(document.body.textContent || "", /Recepción completa · 3 unidades volvieron al stock/)
+    assert.match(document.body.textContent || "", /Recepción completa · 3 unidades reincorporadas al stock/)
     // Reclamo de una unidad: opciones semánticas, observación obligatoria sólo para la baja.
     await render(<ReturnInventoryPanel canManage pedido={{ id: 124, usuario_id: null, estado: "entregado", total: 50000, created_at: "2026-09-19", orden_items: [{ id: 8, orden_id: 124, producto_id: 1, cantidad: 1, precio: 1000 }] }} claim={{ id: 2, order_id: 124, user_id: "test", claim_type: "garantia_beyonix", status: "aprobado", resolution: "cambio_producto", description: "", affected_items: [{ order_item_id: 8, quantity: 1 }], created_at: "2026-09-19", updated_at: "2026-09-19" }} />)
     const text = () => document.body.textContent || ""

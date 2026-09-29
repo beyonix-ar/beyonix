@@ -41,12 +41,6 @@ function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
 
-function normalizeNumber(value: unknown) {
-  const number = Number(value)
-
-  return Number.isFinite(number) ? number : 0
-}
-
 function normalizeNullableNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null
 

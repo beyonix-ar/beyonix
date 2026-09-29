@@ -1006,3 +1006,63 @@ test("cancelar reclamo: no aplica a rechazados/finalizados ni a consultas; el na
     await db2.close()
   }
 })
+
+// Estado del producto ≠ estado del reclamo: cancelar sólo cierra el reclamo.
+const physicalSnapshot = async (db: Db, orderItemId: number) => ({
+  stock: [await stock(db, 1), await stock(db, 2), await stock(db, 3)],
+  item: await one(db, "select return_restocked_quantity, return_written_off_quantity from orden_items where id=$1", [orderItemId]),
+  movements: await count(db, "select count(*)::int n from inventory_return_movements where order_item_id=$1", [orderItemId]),
+  stockOperations: await count(db, "select count(*)::int n from inventory_operation_log"),
+  stockAdjustments: await count(db, "select count(*)::int n from inventory_stock_adjustments"),
+})
+
+test("cancelar después de recibir y dar de baja (reclamo histórico): no toca stock, recepción ni inspección", async () => {
+  const db = await setup()
+  try {
+    await db.query("insert into ordenes(id,usuario_id,estado,delivered_at,financial_status) values(3,$1,'entregado',now(),'payment_confirmed')", [customer])
+    await db.exec("insert into orden_items(id,orden_id,producto_id,variante_id,cantidad) values(3,3,1,1,1)")
+    const id = Number((await one(db,
+      "insert into order_claims(order_id,user_id,claim_type,failure_type,description,status,resolution,affected_items,logistics_legacy) values(3,$1,'garantia_beyonix','danado','x','aprobado','cambio_producto',$2,true) returning id",
+      [customer, JSON.stringify([{ order_item_id: 3, quantity: 1 }])])).id)
+    // La baja exige una decisión explícita con motivo; no hay default.
+    await assert.rejects(db.query("select process_claim_return_inventory($1,3,3,0,1,'',$2,$3)", [id, admin, randomUUID()]), /motivo de la baja/)
+    const before = await physicalSnapshot(db, 3)
+    await db.query("select process_claim_return_inventory($1,3,3,0,1,'Está muy roto',$2,$3)", [id, admin, randomUUID()])
+    const inspected = await physicalSnapshot(db, 3)
+    assert.deepEqual(inspected.stock, before.stock, "dar de baja no suma stock vendible")
+    assert.deepEqual([inspected.item.return_restocked_quantity, inspected.item.return_written_off_quantity], [0, 1])
+    const reception = await one(db, "select actor_id, metadata from order_audit_events where action='return_inventory_processed' and order_id=3")
+    assert.equal(reception.actor_id, admin, "la baja queda auditada con su Admin")
+    assert.equal((reception.metadata as Row).nonSellableQuantity, 1)
+
+    assert.deepEqual(await cancelClaim(db, id, "Era un test de prueba"), { claim_id: id, applied: true })
+    assert.deepEqual(await physicalSnapshot(db, 3), inspected, "cancelar no mueve stock ni reescribe la recepción")
+    assert.equal(await count(db, "select count(*)::int n from order_claim_units where claim_id=$1", [id]), 0, "no se inventan unidades")
+    const events = (await db.query<{ action: string }>("select action from order_audit_events where order_id=3 order by created_at, id")).rows.map((row) => row.action)
+    assert.ok(events.indexOf("return_inventory_processed") < events.indexOf("claim_cancelled"), "el historial conserva ambos hechos en orden")
+  } finally {
+    await db.close()
+  }
+})
+
+test("cancelar con unidades ya inspeccionadas: reincorporadas y dadas de baja quedan igual; lo no recibido queda con el cliente, nunca como baja", async () => {
+  const db = await setup()
+  try {
+    const id = await acceptChange(db, [{ order_item_id: 1, quantity: 3 }])
+    await plan(db, id, "devolucion")
+    await db.query("update order_claim_shipments set status='cancelada', closed_at=now() where claim_id=$1", [id])
+    await arrival(db, id, "original", 1, 2)
+    const beforeInspection = await stock(db, 1)
+    await inspectOriginal(db, id, 1, 1, 1)
+    assert.equal(await stock(db, 1), beforeInspection + 1, "sólo la unidad reincorporada vuelve al stock")
+    assert.deepEqual(await units(db, id), { "original:baja": 1, "original:con_cliente": 1, "original:reincorporada_stock": 1 })
+    const inspected = await physicalSnapshot(db, 1)
+
+    await cancelClaim(db, id)
+    assert.deepEqual(await physicalSnapshot(db, 1), inspected, "cancelar no reincorpora ni da de baja")
+    assert.deepEqual(await units(db, id), { "original:baja": 1, "original:conservada_cliente": 1, "original:reincorporada_stock": 1 },
+      "la unidad nunca recibida queda con el cliente, no se marca baja")
+  } finally {
+    await db.close()
+  }
+})

@@ -68,7 +68,6 @@ test("ningún consumidor de precios financiados hace redondeos o ajustes ±1 pro
     "./product-details-panel.tsx",
     "./product-purchase-box.tsx",
     "./shared/shared-product-card.tsx",
-    "../category/category-product-card.tsx",
     "../../app/checkout/page.tsx",
     "../../app/api/mercadopago/create-preference/route.ts",
   ]

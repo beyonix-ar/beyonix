@@ -96,9 +96,10 @@ const checkout = `
   </section>
 </main>`
 
-// Catálogo y carrito reales: card de producto (category-product-card.tsx),
-// ítem y resumen del carrito (cart-item.tsx / cart-summary.tsx) dentro del
-// panel del carrito (bg-beyonix-surface).
+// Catálogo y carrito: una superficie elevada genérica (bx-surface-raised, el
+// rol que usan los controles del admin) con su cuerpo, e ítem del carrito
+// (cart-item.tsx) dentro del panel del carrito (bg-beyonix-surface). La card
+// real del catálogo (shared-product-card) es una isla propia sin bx-surface.
 const catalog = `
 <div class="bg-beyonix-page p-4" data-catalog-page>
   <article class="bx-surface bx-surface-raised relative z-10 flex h-full min-h-screen-small flex-col rounded-lg border border-border bg-card transition-all duration-500 hover:border-muted-foreground/30" data-product-card>

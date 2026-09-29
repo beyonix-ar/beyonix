@@ -212,7 +212,11 @@ test("flujo del reclamo: tooltips, pills y contadores legibles; ayuda accesible"
   assert.ok(contrast(hex(darkTip, "color"), hex(darkTip, "background")) >= 7)
   const lightTip = ruleBody('html[data-admin-theme="light"] .admin-claim-help-bubble')
   assert.ok(contrast(hex(lightTip, "color"), hex(lightTip, "background")) >= 7)
-  assert.match(css, /\.admin-claim-help:hover \.admin-claim-help-bubble,\n\.admin-claim-help:focus-within \.admin-claim-help-bubble \{/)
+  // Visible sólo con .is-open: HelpTip la abre con hover o con foco (teclado)
+  // y la posiciona fija respecto de la pantalla (cffdbaf reemplazó el
+  // :hover/:focus-within de CSS, que dejaba la burbuja recortada por overflow).
+  assert.match(css, /\.admin-claim-help\.is-open \.admin-claim-help-bubble \{\s*opacity: 1;/)
+  assert.doesNotMatch(css, /\.admin-claim-help:(hover|focus-within) \.admin-claim-help-bubble/)
 
   const pill = (tone: string) => {
     const body = ruleBody(`html[data-admin-theme="light"] .admin-claim-pill${tone}`)
@@ -227,6 +231,9 @@ test("flujo del reclamo: tooltips, pills y contadores legibles; ayuda accesible"
   assert.match(tip, /aria-describedby=\{tooltipId\}/)
   assert.match(tip, /role="tooltip"/)
   assert.match(tip, /event\.key !== "Escape"/)
+  assert.match(tip, /onPointerEnter=\{\(\) => setOpen\(true\)\}/)
+  assert.match(tip, /onFocus=\{\(\) => setOpen\(true\)\}/)
+  assert.match(tip, /open && position \? "is-open" : ""/)
   assert.match(tip, /admin-claim-help-trigger admin-claim-flow-control/)
 })
 
