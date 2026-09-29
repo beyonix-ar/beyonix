@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import {
   ArrowLeft,
@@ -1401,6 +1401,7 @@ export function AdminClaimManager({
   const [cancelReason, setCancelReason] = useState("")
   const [cancelServerBlockers, setCancelServerBlockers] = useState<string[] | null>(null)
   const cancelVersionRef = useRef<string | null>(null)
+  const cancelHintId = useId()
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     title: string
     description: string
@@ -2176,11 +2177,27 @@ export function AdminClaimManager({
               </AdminSelect>
             </div>
           )}
-          <button type="button" className="admin-claim-wizard-chat-trigger" onClick={() => setChatOpen(true)}
-            aria-label={`Abrir conversación con el cliente${claim.admin_needs_action ? ", requiere atención" : ""}`}>
-            <MessageSquare className="size-4" /> Conversación
-            {claim.admin_needs_action && <span className="admin-claim-wizard-unread" aria-label="Mensaje o acción pendiente" />}
-          </button>
+          <div className="admin-claim-header-actions">
+            {/* Acción global del reclamo: visible siempre que el reclamo esté en curso
+                (si hay algo pendiente, el modal muestra qué resolver); oculta cuando no aplica. */}
+            {formalClaim && cancelPreview.available && (
+              <span className="admin-claim-header-cancel" data-claim-cancel data-blocked={cancelPreview.blockers.length > 0}>
+                <button type="button" className="admin-claim-cancel-trigger" disabled={saving} onClick={openCancelClaim}
+                  aria-describedby={cancelPreview.blockers.length ? cancelHintId : undefined}>
+                  <XCircle className="size-4" aria-hidden="true" />Cancelar reclamo
+                </button>
+                <HelpTip label="Cancelar reclamo">{cancelPreview.blockers.length
+                  ? "Todavía hay algo pendiente: tocá el botón para ver qué resolver antes."
+                  : "Interrumpe el reclamo en curso (no es rechazarlo ni finalizarlo). Queda como Cancelado y se avisa al cliente."}</HelpTip>
+                {cancelPreview.blockers.length > 0 && <span id={cancelHintId} className="sr-only">Hay pendientes antes de poder cancelar.</span>}
+              </span>
+            )}
+            <button type="button" className="admin-claim-wizard-chat-trigger" onClick={() => setChatOpen(true)}
+              aria-label={`Abrir conversación con el cliente${claim.admin_needs_action ? ", requiere atención" : ""}`}>
+              <MessageSquare className="size-4" /> Conversación
+              {claim.admin_needs_action && <span className="admin-claim-wizard-unread" aria-label="Mensaje o acción pendiente" />}
+            </button>
+          </div>
         </div>
 
         {cancellation && !cancellationCanBeApproved && !closed && (
@@ -2652,14 +2669,6 @@ export function AdminClaimManager({
                   disabled={saving}
                   onClick={openCloseConversation}
                 />
-              </div>
-            )}
-            {formalClaim && cancelPreview.available && (
-              <div className="admin-claim-cancel-row" data-claim-cancel>
-                <button type="button" className="admin-claim-cancel-trigger" disabled={saving} onClick={openCancelClaim}>
-                  <XCircle className="size-3.5" aria-hidden="true" />Cancelar reclamo
-                </button>
-                <HelpTip label="Cancelar reclamo" align="start">Interrumpe el reclamo en curso (no es rechazarlo ni finalizarlo). Queda como Cancelado y se avisa al cliente.</HelpTip>
               </div>
             )}
           </section>

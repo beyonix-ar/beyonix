@@ -587,6 +587,27 @@ test("Cancelar reclamo: si la base encuentra algo pendiente, se muestra y no se 
   } finally { await page.close() }
 })
 
+test("Cancelar reclamo: arriba, a la izquierda de 'Conversación', mismo alto; fuera del bloque de Revisión", async () => {
+  for (const scenario of ["sin_metodo", "cambio_generado"]) {
+    const page = await open(scenario)
+    try {
+      const cancel = cancelTrigger(page)
+      const chat = page.getByRole("button", { name: /Abrir conversación con el cliente/ })
+      assert.equal(await page.locator(".admin-claim-wizard-header [data-claim-cancel]").count(), 1, "vive en el encabezado")
+      assert.equal(await page.locator(".admin-claim-manage-panel [data-claim-cancel]").count(), 0, "ya no está en el panel de Revisión")
+      const [cancelBox, chatBox] = await Promise.all([cancel.boundingBox(), chat.boundingBox()])
+      assert.ok(cancelBox && chatBox)
+      assert.ok(cancelBox.x + cancelBox.width <= chatBox.x, "a la izquierda de Conversación")
+      assert.ok(Math.abs(cancelBox.height - chatBox.height) <= 1, `mismo alto (${cancelBox.height} vs ${chatBox.height})`)
+      assert.ok(Math.abs((cancelBox.y + cancelBox.height / 2) - (chatBox.y + chatBox.height / 2)) <= 1, "alineados")
+      assert.equal(await cancel.isDisabled(), false, `${scenario}: visible y usable (si hay pendientes, el modal explica qué falta)`)
+      assert.equal(await page.locator("[data-claim-cancel]").getAttribute("data-blocked"), scenario === "cambio_generado" ? "true" : "false")
+      await cancel.focus()
+      assert.equal(await cancel.evaluate((element) => getComputedStyle(element).outlineStyle), "solid", "foco visible")
+    } finally { await page.close() }
+  }
+})
+
 test("Cancelar reclamo no se ofrece en reclamos rechazados", async () => {
   const page = await open("rechazado")
   try {
