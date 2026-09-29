@@ -10,7 +10,7 @@ import {
 import type { createAdminClient } from "../supabase/admin"
 import type { SupabaseOrderClaim } from "../supabase/types"
 import { CUSTOMER_CLAIM_SHIPMENT_COLUMNS } from "./claim-shipment-view.ts"
-import { describeClaimCancellationBlockers } from "./claim-cancellation.ts"
+import { describeClaimCancellationBlockers, parseClaimCancellationBlockerCodes } from "./claim-cancellation.ts"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib"
 
@@ -100,7 +100,12 @@ export function claimErrorResponse(error: unknown) {
   // el detalle; al Admin le llega qué resolver, en lenguaje simple.
   if (message === "CLAIM_CANCEL_BLOCKED") {
     const details = typeof (candidate as { details?: unknown } | null)?.details === "string" ? (candidate as { details: string }).details : ""
-    return NextResponse.json({ error: "No se puede cancelar todavía.", blockers: describeClaimCancellationBlockers(details) }, { status: 409 })
+    return NextResponse.json({
+      error: "No se puede cancelar todavía.",
+      blockers: describeClaimCancellationBlockers(details),
+      // Códigos para que la interfaz ofrezca el acceso directo a cada uno.
+      blockerCodes: parseClaimCancellationBlockerCodes(details),
+    }, { status: 409 })
   }
   if (candidate?.code === "23505") return NextResponse.json({ error: CLAIM_ERRORS.CLAIM_EXISTS[1] }, { status: 409 })
   // record_order_item_return_reception: "RETURN_EXCEEDS_REMAINING: quedan N

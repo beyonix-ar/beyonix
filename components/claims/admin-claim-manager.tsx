@@ -68,7 +68,13 @@ import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard } from "@/lib/orders/admin-claim-wizard"
 import { getClaimReviewEditability } from "@/lib/orders/claim-review-edit"
-import { getClaimCancellationPreview } from "@/lib/orders/claim-cancellation"
+import {
+  getClaimCancellationBlockerViews,
+  getClaimCancellationPreview,
+  isClaimCancellationBlocker,
+  type ClaimCancellationBlocker,
+  type ClaimCancellationBlockerView,
+} from "@/lib/orders/claim-cancellation"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -871,6 +877,8 @@ export function ReturnInventoryPanel({
     <>
       <section
         id={`claim-reception-${claim.id}`}
+        data-claim-focus="inspection"
+        tabIndex={-1}
         className="admin-claim-card admin-claim-reception-panel bx-surface bx-surface-section is-compact mx-3 mb-3 p-3 sm:mx-4 sm:mb-4"
       >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1399,9 +1407,27 @@ export function AdminClaimManager({
   // Cancelar reclamo: motivo + confirmación; lo que falta resolver lo decide la base.
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelReason, setCancelReason] = useState("")
-  const [cancelServerBlockers, setCancelServerBlockers] = useState<string[] | null>(null)
+  const [cancelServerCodes, setCancelServerCodes] = useState<ClaimCancellationBlocker[] | null>(null)
   const cancelVersionRef = useRef<string | null>(null)
   const cancelHintId = useId()
+  // Acceso directo desde un bloqueo: paso destino + control a resaltar.
+  const [focusTarget, setFocusTarget] = useState<string | null>(null)
+  const managerRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!focusTarget) return
+    const frame = window.requestAnimationFrame(() => {
+      const root = managerRef.current
+      const target = root?.querySelector<HTMLElement>(`[data-claim-focus="${focusTarget}"]`) ??
+        root?.querySelector<HTMLElement>('[data-claim-focus="step"]')
+      setFocusTarget(null)
+      if (!target) return
+      target.scrollIntoView({ block: "center", behavior: "smooth" })
+      target.focus({ preventScroll: true })
+      target.classList.add("is-claim-highlight")
+      window.setTimeout(() => target.classList.remove("is-claim-highlight"), 2600)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusTarget, viewedStep])
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     title: string
     description: string
@@ -2080,11 +2106,11 @@ export function AdminClaimManager({
     creditNotes: pedido.order_credit_notes ?? null,
     legacyReplacementUnits: replacedUnits ?? 0,
   })
-  const cancelBlockers = cancelServerBlockers ?? cancelPreview.blockers
+  const cancelCodes = cancelServerCodes ?? cancelPreview.codes
   const openCancelClaim = () => {
     cancelVersionRef.current = claim.updated_at
     setCancelReason("")
-    setCancelServerBlockers(null)
+    setCancelServerCodes(null)
     setCancelOpen(true)
   }
   const cancelClaim = async () => {
@@ -2102,12 +2128,16 @@ export function AdminClaimManager({
         headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ action: "cancel_claim", reason: cancelReason.trim(), expectedUpdatedAt: cancelVersionRef.current ?? claim.updated_at }),
       })
-      const data = (await request.json().catch(() => ({}))) as { claim?: SupabaseOrderClaim; error?: string; blockers?: string[] }
+      const data = (await request.json().catch(() => ({}))) as { claim?: SupabaseOrderClaim; error?: string; blockerCodes?: string[] }
       if (!request.ok || !data.claim) {
-        // La base encontró algo pendiente: se muestra qué resolver, sin cancelar.
-        if (data.blockers?.length) setCancelServerBlockers(data.blockers)
-        else setNotice(data.error || "No se pudo cancelar el reclamo.")
-        if (!data.blockers?.length) setCancelOpen(false)
+        // La base encontró algo pendiente: se muestra qué resolver (con su acceso), sin cancelar.
+        const codes = (data.blockerCodes ?? []).filter(isClaimCancellationBlocker)
+        if (codes.length) {
+          setCancelServerCodes(codes)
+        } else {
+          setNotice(data.error || "No se pudo cancelar el reclamo.")
+          setCancelOpen(false)
+        }
         return
       }
       onClaimChange(data.claim)
@@ -2143,8 +2173,22 @@ export function AdminClaimManager({
   const viewedIndex = workflowSteps.findIndex((step) => step.key === viewedStep)
   const selectedStep = viewedStep && viewedIndex >= 0 && viewedIndex <= currentIndex
     ? viewedStep : currentStep
+  const cancelBlockerViews = getClaimCancellationBlockerViews(cancelCodes, {
+    plan: logistics?.plan ?? null,
+    legDirection: logistics?.leg?.direction ?? null,
+    incidentOnUnits: (claim.order_claim_units ?? []).some((unit) => unit.incident_open),
+    hasExecutionStep: workflowSteps.some((step) => step.key === "execution"),
+  })
+  // "Ir a …": cierra el modal, abre el paso donde se resuelve (si ya se llegó a
+  // él; si no, el paso vigente) y resalta el control exacto.
+  const goToCancellationBlocker = (blocker: ClaimCancellationBlockerView) => {
+    const index = workflowSteps.findIndex((step) => step.key === blocker.step)
+    setCancelOpen(false)
+    setViewedStep(index >= 0 && index <= currentIndex ? blocker.step : null)
+    setFocusTarget(blocker.focus)
+  }
   return (
-    <section className={`admin-claim-manager admin-ds-surface mt-3 overflow-hidden ${mode === "messaging" ? "admin-claim-manager-messaging" : ""} ${ADMIN_SENSITIVE_DANGER.panel}`}>
+    <section ref={managerRef} className={`admin-claim-manager admin-ds-surface mt-3 overflow-hidden ${mode === "messaging" ? "admin-claim-manager-messaging" : ""} ${ADMIN_SENSITIVE_DANGER.panel}`}>
       <ClaimWizardScrollAnchor claimId={claim.id} step={selectedStep} enabled={formalClaim} headerRef={wizardHeaderRef} />
       <header ref={wizardHeaderRef} className="admin-claim-header admin-claim-wizard-header border-b p-3 sm:p-4">
         <div className="flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
@@ -2369,7 +2413,7 @@ export function AdminClaimManager({
               <span className="admin-claim-section-icon is-small" aria-hidden="true">
                 <ClipboardList className="size-4" />
               </span>
-               <h4 className="admin-claim-manage-heading">{workflowSteps.find((step) => step.key === selectedStep)?.label ?? "Gestionar reclamo"}</h4>
+               <h4 className="admin-claim-manage-heading" data-claim-focus="step" tabIndex={-1}>{workflowSteps.find((step) => step.key === selectedStep)?.label ?? "Gestionar reclamo"}</h4>
             </div>
              {!formalClaim && <div className={`admin-claim-overview mt-3 ${claim.resolution && claim.resolution !== "rechazado" ? "has-resolution" : ""}`}>
               <div className="admin-claim-status-box admin-claim-overview-tile">
@@ -2682,12 +2726,12 @@ export function AdminClaimManager({
           compact
           eyebrow={`Reclamo #${claim.id}`}
           title="Cancelar reclamo"
-          description={cancelBlockers.length ? "No se puede cancelar todavía." : "El reclamo queda como Cancelado y se avisa al cliente."}
+          description={cancelBlockerViews.length ? "No se puede cancelar todavía." : "El reclamo queda como Cancelado y se avisa al cliente."}
           onClose={() => { if (!saving) setCancelOpen(false) }}
           footer={
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <AdminSecondaryButton disabled={saving} onClick={() => setCancelOpen(false)}>Volver</AdminSecondaryButton>
-              {!cancelBlockers.length && (
+              {!cancelBlockerViews.length && (
                 <AdminButton variant="destructive" disabled={saving || cancelReason.trim().length < 10} onClick={() => void cancelClaim()}>
                   {saving ? "Cancelando..." : "Confirmar cancelación"}
                 </AdminButton>
@@ -2695,9 +2739,14 @@ export function AdminClaimManager({
             </div>
           }
         >
-          {cancelBlockers.length ? (
+          {cancelBlockerViews.length ? (
             <ul className="admin-claim-cancel-blockers" data-claim-cancel-blockers>
-              {cancelBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              {cancelBlockerViews.map((blocker) => (
+                <li key={blocker.code} data-claim-blocker={blocker.code}>
+                  <span>{blocker.text}</span>
+                  <AdminSecondaryButton size="sm" onClick={() => goToCancellationBlocker(blocker)}>{blocker.actionLabel}</AdminSecondaryButton>
+                </li>
+              ))}
             </ul>
           ) : (
             <div className="grid gap-2" data-claim-cancel-form>

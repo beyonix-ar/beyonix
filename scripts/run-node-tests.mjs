@@ -39,6 +39,7 @@ const TEST_FILES = [
   "lib/security/revoke-public-internal-rpcs-sql.test.ts",
   "lib/orders/claim-review-edit.test.ts",
   "lib/admin/claim-attention.test.ts",
+  "lib/orders/claim-cancellation.test.ts",
   "lib/order-claims.test.ts",
   "lib/orders/claim-atomic.test.ts",
   "lib/orders/claim-storage.test.ts",

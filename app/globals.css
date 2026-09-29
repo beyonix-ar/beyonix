@@ -13531,8 +13531,7 @@ html[data-admin-theme="light"] .admin-claim-help-trigger.admin-claim-help-trigge
   border-top-color: #0b1a2a;
 }
 
-.admin-claim-help:hover .admin-claim-help-bubble,
-.admin-claim-help:focus-within .admin-claim-help-bubble {
+.admin-claim-help.is-open .admin-claim-help-bubble {
   opacity: 1;
   transform: translateY(0);
   visibility: visible;
@@ -13563,6 +13562,13 @@ html[data-admin-theme="light"] .admin-claim-help-bubble::after {
 @media (prefers-reduced-motion: reduce) {
   .admin-claim-help-bubble { transition: none; }
 }
+
+/* HelpTip la posiciona respecto de la pantalla (position: fixed, ver
+   components/claims/help-tip.tsx): ningún overflow la recorta. La flecha
+   apunta al (?) y se invierte cuando abre hacia abajo. */
+.admin-claim-help.is-open .admin-claim-help-bubble::after { right: auto !important; left: var(--help-arrow-x, 0.75rem) !important; transform: translateX(-50%); }
+.admin-claim-help.is-below .admin-claim-help-bubble::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: #0b1a2a; }
+html[data-admin-theme="light"] .admin-claim-help.is-below .admin-claim-help-bubble::after { border-top-color: transparent; border-bottom-color: #112a43; }
 
 /* ---- Stepper ---- */
 .admin-claim-stepper-track {
@@ -15831,7 +15837,12 @@ html[data-admin-theme="light"] .admin-claim-decision-button[aria-pressed="true"]
 .admin-claim-cancel-trigger:hover:not(:disabled) { border-color: rgba(248, 113, 113, .85); background: rgba(239, 68, 68, .16); color: #fecaca; }
 .admin-claim-cancel-trigger:focus-visible { outline: 2px solid #fca5a5; outline-offset: 2px; }
 .admin-claim-cancel-trigger:disabled { cursor: not-allowed; opacity: .55; }
-.admin-claim-cancel-blockers { display: grid; gap: .2rem; padding-left: 1.1rem; list-style: disc; font-size: .8125rem; font-weight: 600; }
+/* Cada bloqueo: qué pasa + acceso directo al paso y al control que lo resuelve. */
+.admin-claim-cancel-blockers { display: grid; gap: .45rem; margin: 0; padding: 0; list-style: none; font-size: .8125rem; font-weight: 600; }
+.admin-claim-cancel-blockers > li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .35rem .75rem; padding: .45rem .6rem; border: 1px solid var(--admin-border-soft); border-radius: .6rem; }
+/* Control al que se llegó desde un bloqueo: se resalta unos segundos. */
+.is-claim-highlight { outline: 3px solid #fcd34d !important; outline-offset: 3px; box-shadow: 0 0 0 6px rgba(252, 211, 77, .22) !important; transition: outline-color 200ms ease, box-shadow 200ms ease; }
+html[data-admin-theme="light"] .is-claim-highlight { outline-color: #b45309 !important; box-shadow: 0 0 0 6px rgba(180, 83, 9, .18) !important; }
 html[data-admin-theme="light"] .admin-claim-cancel-trigger { border-color: rgba(185, 28, 28, .35); background: #fef2f2; color: #b91c1c; }
 html[data-admin-theme="light"] .admin-claim-cancel-trigger:hover:not(:disabled) { border-color: #b91c1c; background: #fee2e2; color: #991b1b; }
 html[data-admin-theme="light"] .admin-claim-cancel-trigger:focus-visible { outline-color: #b91c1c; }

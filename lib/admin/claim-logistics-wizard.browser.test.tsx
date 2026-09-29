@@ -124,7 +124,7 @@ window.fetch = async (input, init) => {
   if (url.endsWith("/api/admin/order-claims/900") && init && init.method === "PATCH") {
     window.__patches.push(JSON.parse(init.body))
     if (scenario === "cancel_bloqueado_servidor") {
-      return Response.json({ error: "No se puede cancelar todavía.", blockers: ["Resolvé la incidencia."] }, { status: 409 })
+      return Response.json({ error: "No se puede cancelar todavía.", blockers: ["Hay una incidencia abierta."], blockerCodes: ["incident"] }, { status: 409 })
     }
     return Response.json({ claim })
   }
@@ -567,10 +567,37 @@ test("Cancelar reclamo con efectos pendientes: 'No se puede cancelar todavía' y
     const modal = page.getByRole("dialog", { name: "Cancelar reclamo" })
     await modal.waitFor()
     assert.match(await modal.innerText(), /No se puede cancelar todavía\./)
-    assert.deepEqual(await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts(),
-      ["Cancelá o completá la operación Andreani.", "Liberá la reserva del reemplazo."])
+    const items = (await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
+    assert.deepEqual(items, ["Hay una operación Andreani en curso. Ir a operación", "Hay un reemplazo reservado. Ir a liberar reserva"],
+      "cada bloqueo dice qué pasa y cómo llegar")
     assert.equal(await modal.getByRole("button", { name: "Confirmar cancelación" }).count(), 0)
     assert.equal((await patches(page)).length, 0)
+
+    // "Ir a operación": cierra el modal, abre el paso y resalta "Cancelar operación".
+    await modal.getByRole("button", { name: "Ir a operación" }).click()
+    await page.waitForFunction(() => !document.querySelector("[role=dialog]"))
+    assert.equal(await heading(page), "Cambio en sucursal")
+    await page.waitForFunction(() => document.activeElement?.textContent === "Cancelar operación")
+    assert.match(await page.getByRole("button", { name: "Cancelar operación" }).getAttribute("class") ?? "", /is-claim-highlight/)
+  } finally { await page.close() }
+})
+
+test("'Ir a liberar reserva' lleva al paso exacto y resalta 'Liberar reserva' (desde otro paso)", async () => {
+  const page = await open("cambio_reservado")
+  try {
+    await page.getByRole("button", { name: /1\. Revisión/ }).click()
+    assert.equal(await heading(page), "Revisión")
+    await cancelTrigger(page).click()
+    const modal = page.getByRole("dialog", { name: "Cancelar reclamo" })
+    await modal.getByRole("button", { name: "Ir a liberar reserva" }).click()
+    await page.waitForFunction(() => document.querySelector(".admin-claim-manage-heading")?.textContent === "Cambio en sucursal")
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-claim-focus") === "release_reservation")
+    const release = page.locator('[data-claim-focus="release_reservation"]')
+    assert.equal(await release.innerText(), "Liberar reserva")
+    assert.match(await release.getAttribute("class") ?? "", /is-claim-highlight/)
+    // Teclado: el foco quedó en la acción; Enter la abre (con motivo y confirmación, como siempre).
+    await page.keyboard.press("Enter")
+    await page.waitForSelector("[data-claim-logistics-unit-form=release_reservation]")
   } finally { await page.close() }
 })
 
@@ -582,7 +609,8 @@ test("Cancelar reclamo: si la base encuentra algo pendiente, se muestra y no se 
     await modal.locator("textarea").fill("El cliente desistió del reclamo")
     await modal.getByRole("button", { name: "Confirmar cancelación" }).click()
     await modal.locator("[data-claim-cancel-blockers]").waitFor()
-    assert.deepEqual(await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts(), ["Resolvé la incidencia."])
+    const items = (await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
+    assert.deepEqual(items, ["Hay una incidencia abierta. Ir a incidencia"], "lo que devuelve la base también trae su acceso")
     assert.match(await modal.innerText(), /No se puede cancelar todavía\./)
   } finally { await page.close() }
 })
@@ -613,4 +641,35 @@ test("Cancelar reclamo no se ofrece en reclamos rechazados", async () => {
   try {
     assert.equal(await cancelTrigger(page).count(), 0)
   } finally { await page.close() }
+})
+
+test("ayuda (?) de 'Cancelar reclamo': nunca se corta (abre abajo si arriba no hay lugar), entra en móvil y funciona con teclado", async () => {
+  for (const viewport of [{ width: 1280, height: 900 }, { width: 360, height: 740 }]) {
+    const page = await open("sin_metodo")
+    try {
+      await page.setViewportSize(viewport)
+      await page.evaluate(() => window.scrollTo(0, 0))
+      const help = page.locator("[data-claim-cancel]").getByRole("button", { name: "Ayuda: Cancelar reclamo" })
+      await help.focus()
+      const bubble = page.locator(`[id="${await help.getAttribute("aria-describedby")}"]`)
+      await bubble.waitFor({ state: "visible" })
+      assert.equal(await help.getAttribute("aria-expanded"), "true")
+      const [box, trigger] = await Promise.all([bubble.boundingBox(), help.boundingBox()])
+      assert.ok(box && trigger)
+      assert.ok(box.x >= 0 && box.x + box.width <= viewport.width, `${viewport.width}px: dentro del ancho (${box.x}..${box.x + box.width})`)
+      assert.ok(box.y >= 0 && box.y + box.height <= viewport.height, `${viewport.width}px: dentro del alto`)
+      assert.ok(box.width <= 256, "ancho máximo razonable")
+      // No la recorta el overflow del panel (fixed respecto de la pantalla) y queda por encima de todo.
+      const layout = await bubble.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { position: style.position, zIndex: Number(style.zIndex), scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }
+      })
+      assert.equal(layout.position, "fixed")
+      assert.ok(layout.zIndex >= 1000, "z-index por encima del panel")
+      assert.ok(layout.scrollWidth <= layout.clientWidth, "el texto no desborda la burbuja")
+      if (trigger.y < box.height + 16) assert.ok(box.y >= trigger.y + trigger.height, "sin lugar arriba: abre hacia abajo")
+      await page.keyboard.press("Escape")
+      await bubble.waitFor({ state: "hidden" })
+    } finally { await page.close() }
+  }
 })

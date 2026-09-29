@@ -48,6 +48,8 @@ interface SecondaryAction {
   label: string
   icon?: ReactNode
   run: () => void
+  /** data-claim-focus: destino de los accesos directos (p. ej. desde "Cancelar reclamo"). */
+  focus?: string
 }
 
 const RESEND_REQUEST = {
@@ -348,9 +350,9 @@ export function ClaimAndreaniShipmentPanel({
   // revisión de un evento > conciliación > reservar > generar > esperar.
   let primary: ReactNode = null
   if (canManage && legInSection && leg?.canResolveReview) {
-    primary = <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => { setLegForm("review_resolve"); setLegNotes("") }}>Registrar revisión del evento</AdminButton>
+    primary = <AdminButton size="sm" variant="primary" disabled={busy} data-claim-focus="review_resolve" onClick={() => { setLegForm("review_resolve"); setLegNotes("") }}>Registrar revisión del evento</AdminButton>
   } else if (canManage && legInSection && leg?.canReconcile) {
-    primary = <AdminButton size="sm" variant="primary" disabled={busy} onClick={() => { setLegForm("reconcile"); setLegNotes("") }}>Conciliar con Andreani</AdminButton>
+    primary = <AdminButton size="sm" variant="primary" disabled={busy} data-claim-focus="reconcile" onClick={() => { setLegForm("reconcile"); setLegNotes("") }}>Conciliar con Andreani</AdminButton>
   } else if (canManage && inReservation && flow.needsReservation && onReserveReplacement) {
     primary = (
       <span className="inline-flex items-center gap-1.5">
@@ -378,7 +380,7 @@ export function ClaimAndreaniShipmentPanel({
     if (leg.canSync) secondaries.push({ key: "sync", label: pending === "sync" ? "Consultando..." : "Consultar seguimiento", icon: <RefreshCw className="size-3.5" aria-hidden="true" />, run: () => { void post("sync", { action: "sync", shipmentId: leg.id }) } })
     if (leg.labelAvailable) secondaries.push({ key: "label", label: "Etiqueta", icon: <Download className="size-3.5" aria-hidden="true" />, run: () => { void openLabel(leg.id) } })
     if (leg.canMarkNotCompleted) secondaries.push({ key: "not_completed", label: "Cambio no completado", run: () => { setLegForm("exchange_not_completed"); setLegNotes("") } })
-    if (leg.canCancel) secondaries.push({ key: "cancel", label: "Cancelar operación", run: () => { setLegForm("cancel"); setLegNotes("") } })
+    if (leg.canCancel) secondaries.push({ key: "cancel", label: "Cancelar operación", focus: "cancel_leg", run: () => { setLegForm("cancel"); setLegNotes("") } })
   }
   const showOperation = section === "logistics" || section === "replacement" || all
 
@@ -489,10 +491,11 @@ export function ClaimAndreaniShipmentPanel({
       {showOperation && (secondaries.length > 0 || reservationActions.length > 0) && (
         <div className="admin-claim-secondary-actions" data-claim-secondary-actions>
           {secondaries.map((entry) => (
-            <AdminGhostButton key={entry.key} size="sm" disabled={busy} onClick={entry.run}>{entry.icon}{entry.label}</AdminGhostButton>
+            <AdminGhostButton key={entry.key} size="sm" disabled={busy} onClick={entry.run} data-claim-focus={entry.focus}>{entry.icon}{entry.label}</AdminGhostButton>
           ))}
           {reservationActions.map((option) => (
-            <AdminGhostButton key={`${option.action}-${option.orderItemId}`} size="sm" disabled={busy} onClick={() => openUnitAction(option)}>
+            <AdminGhostButton key={`${option.action}-${option.orderItemId}`} size="sm" disabled={busy} onClick={() => openUnitAction(option)}
+              data-claim-focus={option.action}>
               {actionButtonLabel(option, false)}{multipleItems ? ` · ${itemLabel(option.orderItemId)}` : ""}
             </AdminGhostButton>
           ))}
@@ -642,7 +645,7 @@ export function ClaimAndreaniShipmentPanel({
                 {(primaryAction || others.length > 0) && (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-claim-logistics-item-actions>
                     {primaryAction && (
-                      <AdminButton size="sm" variant="primary" disabled={pending !== null} data-claim-unit-action={primaryAction.action}
+                      <AdminButton size="sm" variant="primary" disabled={pending !== null} data-claim-unit-action={primaryAction.action} data-claim-focus={primaryAction.action}
                         aria-label={`${actionButtonLabel(primaryAction, multipleRoles)} · ${itemLabel(item.orderItemId)}`}
                         onClick={() => openUnitAction(primaryAction)}>
                         {actionButtonLabel(primaryAction, multipleRoles)}
@@ -650,7 +653,7 @@ export function ClaimAndreaniShipmentPanel({
                     )}
                     {others.map((option) => (
                       <AdminGhostButton key={`${option.action}-${option.role}-${option.label}`} size="sm" disabled={pending !== null}
-                        data-claim-unit-action={option.action}
+                        data-claim-unit-action={option.action} data-claim-focus={option.action}
                         aria-label={`${actionButtonLabel(option, multipleRoles)} · ${itemLabel(item.orderItemId)}`}
                         onClick={() => openUnitAction(option)}>
                         {actionButtonLabel(option, multipleRoles)}
