@@ -4223,8 +4223,9 @@ div.claim-form-shell::after {
     padding: 0.875rem !important;
   }
 
+  /* +1rem: el contador 0/600 va dentro del campo (padding inferior). */
   .customer-help-textarea {
-    height: 6.5rem;
+    height: 7.5rem;
   }
 
   .customer-help-footer {

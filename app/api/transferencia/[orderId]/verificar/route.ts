@@ -20,6 +20,7 @@ import {
   loadTransferReservationDeadline,
 } from "@/lib/orders/transfer-reservation-window"
 import { CheckoutReservationExpiredError } from "@/lib/orders/checkout-inventory"
+import { getTransferAmountDue } from "@/lib/orders/transfer-payer-declaration"
 import { validateTransferDeclaration } from "@/lib/payments/transfer-declaration"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -67,6 +68,10 @@ function safeVerificationResponse(
     // evidencia adicional) deja la puerta abierta.
     proofUploadAvailable: !verified,
     message: TRANSFER_VERIFICATION_OUTCOME_MESSAGES[outcome],
+    // Importe EXACTO contra el que se acaba de validar: misma fila y misma
+    // regla que el servicio (external_amount_due ?? total). Sólo el número,
+    // nunca la fila: es el importe del propio pedido del cliente.
+    expectedAmount: getTransferAmountDue(result.order),
   }
 }
 

@@ -145,6 +145,14 @@ async function typeInto(id: string, value: string) {
     input.dispatchEvent(new dom.window.Event("input", { bubbles: true }))
   })
 }
+/** Tecla por tecla, como un teclado real: cada carácter dispara su propio cambio. */
+async function typeChars(id: string, text: string) {
+  for (const char of text) {
+    const input = document.getElementById(id) as HTMLInputElement
+    await typeInto(id, input.value + char)
+  }
+}
+const inputValue = (id: string) => (document.getElementById(id) as HTMLInputElement).value
 async function pressKey(key: string, shiftKey = false) {
   const event = new dom.window.KeyboardEvent("keydown", { key, shiftKey, bubbles: true, cancelable: true })
   await act(async () => {
@@ -163,6 +171,52 @@ test("paso 1: sin los textos de ayuda eliminados; sólo nombre, apellido y DNI/C
     ["transfer-holder-nombre", "transfer-holder-apellido", "transfer-holder-dni"],
   )
   assert.match(text(), /Paso 1 de 3 · Titular/)
+})
+
+const emptyHolder = { transfer_payer_first_name: null, transfer_payer_last_name: null, transfer_payer_dni: null }
+
+test("paso 1: DNI/CUIT sólo dígitos al escribir y al pegar (teclado numérico, sin type=number)", async () => {
+  await render(order(emptyHolder), false)
+  const dni = document.getElementById("transfer-holder-dni") as HTMLInputElement
+  assert.equal(dni.type, "text", "type=number cambia valores con la rueda/flechas y pierde ceros")
+  assert.equal(dni.getAttribute("inputmode"), "numeric")
+  assert.equal(dni.getAttribute("pattern"), "[0-9]*")
+  assert.equal(dni.maxLength, 11, "CUIT/CUIL de 11 dígitos sigue entrando")
+
+  await typeChars("transfer-holder-dni", "3728a1 2-9.2!")
+  assert.equal(inputValue("transfer-holder-dni"), "37281292", "letras, espacios y símbolos se ignoran al tipear")
+  await typeInto("transfer-holder-dni", "37281292ASDGA")
+  assert.equal(inputValue("transfer-holder-dni"), "37281292", "pegado: sólo quedan los dígitos")
+  await typeInto("transfer-holder-dni", "20-30111222-0")
+  assert.equal(inputValue("transfer-holder-dni"), "20301112220", "CUIT pegado con guiones")
+  assert.equal(document.querySelector('[role="alert"]'), null, "sin error por tecla inválida")
+})
+
+test("paso 1: nombre y apellido conservan tildes, ñ, ü, apóstrofe y guion; descartan números y símbolos", async () => {
+  await render(order(emptyHolder), false)
+  await typeChars("transfer-holder-nombre", "Lucas123!")
+  assert.equal(inputValue("transfer-holder-nombre"), "Lucas")
+  await typeInto("transfer-holder-nombre", "=Esp@#$%&/\\<>{}[]*?inosa")
+  assert.equal(inputValue("transfer-holder-nombre"), "Espinosa")
+  for (const name of ["María José", "Núñez Güemes", "O'Connor", "Ana-María", "Müller"]) {
+    await typeInto("transfer-holder-apellido", name)
+    assert.equal(inputValue("transfer-holder-apellido"), name, name)
+  }
+  assert.equal(document.querySelector('[role="alert"]'), null)
+})
+
+test("paso 1: separadores mal ubicados no se envían; datos válidos llegan tal cual al servidor", async () => {
+  await render(order(emptyHolder), false)
+  await typeInto("transfer-holder-nombre", "Ana-")
+  await typeInto("transfer-holder-apellido", "O'Connor")
+  await typeInto("transfer-holder-dni", "37281292ASDGA")
+  await click(button("Continuar a los datos de transferencia"))
+  assert.match(text(), /El nombre sólo puede tener letras, espacios, apóstrofe o guion\./)
+  assert.equal(holderBodies.length, 0, "no llama al servidor")
+
+  await typeInto("transfer-holder-nombre", "Ana-María")
+  await click(button("Continuar a los datos de transferencia"))
+  assert.deepEqual(holderBodies, [{ nombre: "Ana-María", apellido: "O'Connor", dni: "37281292" }])
 })
 
 test("'Ya realicé la transferencia' valida directo con el titular del paso 1 y el importe del servidor; si coincide, avanza", async () => {
@@ -205,6 +259,55 @@ test("sin coincidencia: modal ámbar (alertdialog) con 3 acciones, sin repetir e
   // (nunca queda detrás del modal).
   assert.equal(document.activeElement, button("Subir el comprobante de pago", dialog))
   assert.equal(document.querySelectorAll("input").length, 0, "no hay un segundo formulario")
+})
+
+test("modal: 'Volver a verificar' en cooldown sigue disabled pero legible (sin la opacidad 50 heredada)", async () => {
+  await render(order())
+  verifyReplies.push({ status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, retryAfterSeconds: 2, proofUploadAvailable: true } })
+  await click(button("Ya realicé la transferencia"))
+  const retry = document.querySelector<HTMLButtonElement>("[data-transfer-retry-action]")
+  assert.ok(retry)
+  assert.equal(retry.disabled, true, "disabled real durante el cooldown")
+  assert.equal(retry.textContent?.trim(), "Podés volver a verificar en 2 s")
+  assert.match(retry.className, /\bdisabled:opacity-100\b/)
+  assert.doesNotMatch(retry.className, /\bdisabled:opacity-(?:[0-8]?\d)\b/, "ninguna opacidad baja al deshabilitarse")
+  assert.match(retry.className, /\bdisabled:text-\[var\(--account-text-secondary\)\]/, "texto con color explícito")
+  assert.match(retry.className, /\bdisabled:bg-\[var\(--account-surface-hover\)\]/, "fondo apagado explícito")
+  assert.match(retry.className, /\bdisabled:cursor-not-allowed\b/)
+  assert.match(retry.className, /\bdisabled:pointer-events-none\b/, "sin hover ni click")
+  await click(retry)
+  assert.equal(verifyBodies.length, 1, "no reintenta durante el cooldown")
+})
+
+test("modal: muestra el monto exacto que validó el servidor (no el del cliente ni uno fijo)", async () => {
+  // El pedido dice 25.000, pero el servidor validó contra otro importe: se
+  // muestra SIEMPRE el que informó el servidor en este intento.
+  for (const [expectedAmount, shown] of [
+    [72914, "$72.914"],
+    [90, "$90"],
+    [25000, "$25.000"],
+    [1500.5, "$1.500,50"],
+  ] as const) {
+    await render(order())
+    verifyReplies.push({ status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, retryAfterSeconds: 0, proofUploadAvailable: true, expectedAmount } })
+    await click(button("Ya realicé la transferencia"))
+    const line = modal()?.querySelector("[data-transfer-expected-amount]")
+    assert.equal(line?.textContent, `Asegurate de que el monto transferido sea exactamente ${shown}.`, String(expectedAmount))
+    assert.match(modal()?.textContent ?? "", /Titular informadoRomina Ayelen Pérez · DNI\/CUIT 30123456Asegurate/)
+  }
+
+  // Sin importe del servidor (fallo de red, sin dato o inválido): no se inventa ninguno.
+  for (const reply of [
+    "network-error",
+    { status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, proofUploadAvailable: true } },
+    { status: 200, body: { status: "awaiting_transfer", outcome: "not_found", retryable: true, proofUploadAvailable: true, expectedAmount: 0 } },
+  ] as const) {
+    await render(order())
+    verifyReplies.push(reply)
+    await click(button("Ya realicé la transferencia"))
+    assert.ok(modal(), "abre el modal")
+    assert.equal(modal()?.querySelector("[data-transfer-expected-amount]"), null)
+  }
 })
 
 test("modal: 'Volver a verificar' repite la validación con los mismos datos", async () => {

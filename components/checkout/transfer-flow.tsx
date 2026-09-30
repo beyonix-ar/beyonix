@@ -39,7 +39,10 @@ import { formatPublicOrderId } from "@/lib/account/account-formatters"
 import { BEYONIX_SUPPORT_HOURS_DETAIL } from "@/lib/legal-contact"
 import type { TransferBankDetails } from "@/lib/payments/transfer-bank-details"
 import {
+  TRANSFER_DOCUMENT_MAX_DIGITS,
   TRANSFER_HOLDER_NAME_MAX_LENGTH,
+  sanitizeTransferDocumentInput,
+  sanitizeTransferHolderNameInput,
   validateTransferDeclaration,
   type TransferDeclarationField,
 } from "@/lib/payments/transfer-declaration"
@@ -71,6 +74,16 @@ const formatPriceNumber = (price: number) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Number.isFinite(price) ? price : 0)
+
+/** "$25.000" / "$1.500,50": nunca redondea centavos de un importe exacto. */
+const formatExactTransferAmount = (amount: number) => {
+  const cents = Math.round(amount * 100)
+  const fractionDigits = cents % 100 === 0 ? 0 : 2
+  return `$${new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(cents / 100)}`
+}
 
 const inputClassName =
   "h-10 w-full rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] px-3 text-sm text-[var(--account-text-primary)] outline-none transition-colors placeholder:text-[var(--account-text-muted)] focus:border-[var(--account-accent)]"
@@ -179,8 +192,10 @@ function TransferDeclarationInput({
   onChange,
   error,
   inputMode,
+  pattern,
   maxLength,
   autoComplete,
+  sanitize,
   disabled,
 }: {
   id: string
@@ -189,8 +204,11 @@ function TransferDeclarationInput({
   onChange: (value: string) => void
   error?: string
   inputMode?: "numeric"
+  pattern?: string
   maxLength?: number
   autoComplete?: string
+  /** Se aplica a cada cambio (tipeo o pegado): lo inválido se descarta sin error por tecla. */
+  sanitize: (value: string) => string
   disabled: boolean
 }) {
   const errorId = `${id}-error`
@@ -204,12 +222,13 @@ function TransferDeclarationInput({
         id={id}
         className={`${inputClassName} mt-1 ${error ? "border-[var(--account-danger)]" : ""}`}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChange(sanitize(event.target.value))}
         required
         aria-required="true"
         aria-invalid={error ? "true" : "false"}
         aria-describedby={error ? errorId : undefined}
         inputMode={inputMode}
+        pattern={pattern}
         maxLength={maxLength}
         autoComplete={autoComplete}
         disabled={disabled}
@@ -347,6 +366,7 @@ function TransferHolderStep({
           error={fieldErrors.firstName}
           autoComplete="off"
           maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
+          sanitize={sanitizeTransferHolderNameInput}
           disabled={submitting}
         />
         <TransferDeclarationInput
@@ -357,6 +377,7 @@ function TransferHolderStep({
           error={fieldErrors.lastName}
           autoComplete="off"
           maxLength={TRANSFER_HOLDER_NAME_MAX_LENGTH}
+          sanitize={sanitizeTransferHolderNameInput}
           disabled={submitting}
         />
         <TransferDeclarationInput
@@ -366,7 +387,9 @@ function TransferHolderStep({
           onChange={setDni}
           error={fieldErrors.document}
           inputMode="numeric"
-          maxLength={13}
+          pattern="[0-9]*"
+          maxLength={TRANSFER_DOCUMENT_MAX_DIGITS}
+          sanitize={sanitizeTransferDocumentInput}
           disabled={submitting}
         />
 
@@ -400,6 +423,8 @@ interface TransferVerifyResponse {
   retryable?: boolean
   retryAfterSeconds?: number
   outcome?: TransferVerificationCustomerOutcome
+  /** Importe exacto contra el que el servidor validó en ESTE intento. */
+  expectedAmount?: number | null
 }
 
 /**
@@ -418,9 +443,22 @@ interface TransferVerificationFailure {
   message: string
   /** El comprobante sigue disponible como salida (sólo el servidor puede negarlo). */
   proofUploadAvailable: boolean
+  /** Sólo el que informó el servidor en este intento; sin él no se muestra ningún monto. */
+  expectedAmount: number | null
 }
 
 type TransferFailureAction = "retry" | "upload" | "edit"
+
+/**
+ * Deshabilitado legible (cooldown "Podés volver a verificar en N s" o
+ * verificando): BeyonixButton aplica disabled:opacity-50 a TODO el botón y,
+ * sobre la variante ghost/outline, el texto quedaba casi invisible. Acá el
+ * botón deshabilitado usa colores explícitos con opacidad completa: fondo
+ * apagado, borde y texto secundario con buen contraste en ambos temas. Sigue
+ * siendo disabled real (sin hover ni clicks, cursor not-allowed).
+ */
+const MODAL_ACTION_DISABLED_CLASS =
+  "disabled:opacity-100 disabled:border-[var(--account-border)] disabled:bg-[var(--account-surface-hover)] disabled:text-[var(--account-text-secondary)] disabled:shadow-none"
 
 /** Acción principal primero: reintentar si todavía no apareció, corregir el titular si no coincide. */
 function getTransferFailureActions(kind: TransferVerificationFailureKind): TransferFailureAction[] {
@@ -466,9 +504,15 @@ function useTransferVerification({
   const fail = (
     kind: TransferVerificationFailureKind,
     message: string,
-    data?: Pick<TransferVerifyResponse, "proofUploadAvailable" | "retryAfterSeconds">,
+    data?: Pick<TransferVerifyResponse, "proofUploadAvailable" | "retryAfterSeconds" | "expectedAmount">,
   ) => {
-    setFailure({ kind, message, proofUploadAvailable: data?.proofUploadAvailable !== false })
+    const expectedAmount = Number(data?.expectedAmount)
+    setFailure({
+      kind,
+      message,
+      proofUploadAvailable: data?.proofUploadAvailable !== false,
+      expectedAmount: Number.isFinite(expectedAmount) && expectedAmount > 0 ? expectedAmount : null,
+    })
     const wait = Number(data?.retryAfterSeconds)
     setCooldownSeconds(Number.isFinite(wait) ? Math.max(0, Math.ceil(wait)) : 0)
     setPhase("idle")
@@ -671,12 +715,28 @@ function TransferVerificationFailedModal({
           </p>
         </div>
 
-        {holder && (
+        {(holder || failure.expectedAmount !== null) && (
           <div className="mt-4 rounded-xl border border-[var(--account-warning-border)] bg-[var(--account-warning-bg)] px-3.5 py-2.5 text-xs leading-5 text-[var(--account-text-primary)]">
-            <p className="font-bold text-[var(--account-warning)]">Titular informado</p>
-            <p>
-              {holder.firstName} {holder.lastName} · DNI/CUIT {holder.document}
-            </p>
+            {holder && (
+              <>
+                <p className="font-bold text-[var(--account-warning)]">Titular informado</p>
+                <p>
+                  {holder.firstName} {holder.lastName} · DNI/CUIT {holder.document}
+                </p>
+              </>
+            )}
+            {failure.expectedAmount !== null && (
+              <p
+                data-transfer-expected-amount
+                className={`${holder ? "mt-1.5" : ""} text-11px leading-4 text-[var(--account-text-secondary)]`}
+              >
+                Asegurate de que el monto transferido sea exactamente{" "}
+                <strong className="font-semibold text-[var(--account-text-primary)]">
+                  {formatExactTransferAmount(failure.expectedAmount)}
+                </strong>
+                .
+              </p>
+            )}
           </div>
         )}
 
@@ -687,7 +747,7 @@ function TransferVerificationFailedModal({
             if (action === "upload") {
               return (
                 <BeyonixButton key={action} type="button" variant={variant} onClick={onUploadProof}
-                  disabled={verifying} className="h-11 w-full">
+                  disabled={verifying} className={`h-11 w-full ${MODAL_ACTION_DISABLED_CLASS}`}>
                   <Upload className="size-4" aria-hidden="true" />
                   Subir el comprobante de pago
                 </BeyonixButton>
@@ -696,7 +756,7 @@ function TransferVerificationFailedModal({
             if (action === "edit") {
               return (
                 <BeyonixButton key={action} type="button" variant={variant} onClick={onEditHolder}
-                  disabled={verifying} className="h-11 w-full">
+                  disabled={verifying} className={`h-11 w-full ${MODAL_ACTION_DISABLED_CLASS}`}>
                   <UserPen className="size-4" aria-hidden="true" />
                   Cambiar datos del titular
                 </BeyonixButton>
@@ -704,7 +764,8 @@ function TransferVerificationFailedModal({
             }
             return (
               <BeyonixButton key={action} type="button" variant={variant} onClick={onRetry}
-                disabled={verifying || cooldownSeconds > 0} className="h-11 w-full">
+                disabled={verifying || cooldownSeconds > 0} className={`h-11 w-full ${MODAL_ACTION_DISABLED_CLASS}`}
+                data-transfer-retry-action>
                 {verifying ? (
                   <>
                     <Loader2 className="size-4 animate-spin" aria-hidden="true" />

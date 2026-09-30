@@ -18,7 +18,7 @@ const awaitingOrder = {
   external_amount_due: 41_400,
   total: 45_000,
 }
-const holder = { nombre: "  Ñandú  José ", apellido: "Pérez Müller", dni: "30.111.222" }
+const holder = { nombre: "  Ñandú  José ", apellido: "Pérez Müller", dni: "30111222" }
 
 test("A2: valida titular con nombres en español y fija el monto calculado por el servidor (no el del cliente)", () => {
   const decision = decideTransferPayerDeclaration(awaitingOrder, { ...holder, monto: 1 } as never)
@@ -39,6 +39,42 @@ test("A2: sin nombre, apellido o documento válido no hay datos bancarios", () =
   assert.ok(decision.errors.firstName)
   assert.ok(decision.errors.document)
   assert.equal(decision.errors.amount, undefined, "el monto nunca lo corrige el cliente")
+})
+
+test("POST titular: un payload directo con símbolos, números en el nombre o DNI con letras no se guarda", () => {
+  for (const [payload, field] of [
+    [{ ...holder, nombre: "Lucas123" }, "firstName"],
+    [{ ...holder, nombre: "=Lucas" }, "firstName"],
+    [{ ...holder, apellido: "Espinosa!!!" }, "lastName"],
+    [{ ...holder, apellido: "<script>" }, "lastName"],
+    [{ ...holder, dni: "37281ABC" }, "document"],
+    [{ ...holder, dni: "37281292ASDGA" }, "document"],
+    [{ ...holder, dni: "30.111.222" }, "document"],
+    [{ ...holder, dni: { $gt: "" } }, "document"],
+    [{ ...holder, nombre: ["Lucas"] }, "firstName"],
+  ] as const) {
+    const decision = decideTransferPayerDeclaration(awaitingOrder, payload)
+    assert.equal(decision.ok, false, JSON.stringify(payload))
+    if (decision.ok || decision.reason !== "invalid_fields") throw new Error("se esperaba invalid_fields")
+    assert.ok(decision.errors[field], `${field}: ${JSON.stringify(payload)}`)
+  }
+})
+
+test("POST titular: nombres latinos reales se guardan tal cual (sin quitar tildes)", () => {
+  for (const [nombre, apellido] of [
+    ["María José", "Núñez Güemes"],
+    ["Seán", "O'Connor"],
+    ["Ana-María", "Müller"],
+    ["João", "Łukasiewicz"],
+  ]) {
+    const decision = decideTransferPayerDeclaration(awaitingOrder, { nombre, apellido, dni: "37281292" })
+    assert.equal(decision.ok, true, `${nombre} ${apellido}`)
+    if (decision.ok) {
+      assert.equal(decision.value.firstName, nombre)
+      assert.equal(decision.value.lastName, apellido)
+      assert.equal(decision.value.document, "37281292")
+    }
+  }
 })
 
 test("A2: no se pisan los datos de un pedido con pago en curso, informado o resuelto", () => {

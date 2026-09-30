@@ -14,6 +14,10 @@ import {
 } from "./argentine-identification.ts"
 import {
   TRANSFER_DECLARATION_ERRORS,
+  TRANSFER_HOLDER_NAME_FORMAT_ERRORS,
+  isValidTransferHolderName,
+  sanitizeTransferDocumentInput,
+  sanitizeTransferHolderNameInput,
   validateTransferDeclaration,
 } from "./transfer-declaration.ts"
 
@@ -23,7 +27,7 @@ function readSource(path: string) {
 
 // CUIT/CUIL de persona física con dígito verificador válido (DNI 30.111.222).
 const VALID_PERSON_CUIT = "20301112220"
-const valid = { nombre: "María José", apellido: "Núñez", dni: "30.111.222", monto: "1.500,50" }
+const valid = { nombre: "María José", apellido: "Núñez", dni: "30111222", monto: "1.500,50" }
 
 test("1-4. nombre, apellido, DNI/CUIT y monto son obligatorios", () => {
   const result = validateTransferDeclaration({})
@@ -311,6 +315,111 @@ test("nombres y apellidos compuestos: se aceptan completos o con un solo nombre,
   if (spaced.ok) {
     assert.equal(spaced.value.firstName, "Romina Ayelen")
     assert.equal(spaced.value.lastName, "Pérez")
+  }
+})
+
+const VALID_NAMES = [
+  "María José",
+  "Núñez",
+  "Núñez Güemes",
+  "O'Connor",
+  "O’Connor",
+  "Ana-María",
+  "Müller",
+  "De la Fuente",
+  "Ñandú",
+  "João",
+  "François",
+  "Øystein",
+  "Łukasz",
+  "Straße",
+  // Tilde como marca combinante (NFD, ej. teclado de macOS): se conserva tal cual.
+  "José",
+]
+const INVALID_NAMES = [
+  "Lucas123",
+  "Espinosa!!!",
+  "=Lucas",
+  "Lucas?",
+  "Lu*cas",
+  "lucas@mail",
+  "Lucas#1",
+  "$Lucas",
+  "Lu%cas",
+  "Lucas&Ana",
+  "Lucas/Ana",
+  "Lucas\\Ana",
+  "<Lucas>",
+  "{Lucas}",
+  "[Lucas]",
+  "Lucas.",
+  "-Ana",
+  "Ana-",
+  "'Ana",
+  "Ana--María",
+  "O''Connor",
+  "Иван",
+  "李",
+]
+
+test("nombre/apellido: letras latinas con tildes, ñ, ü, apóstrofe y guion; sin números ni símbolos", () => {
+  for (const name of VALID_NAMES) {
+    assert.equal(isValidTransferHolderName(name), true, name)
+    const result = validateTransferDeclaration({ ...valid, nombre: name, apellido: name })
+    assert.equal(result.ok, true, name)
+    if (result.ok) {
+      assert.equal(result.value.firstName, name, "no se quitan tildes ni se transforma")
+      assert.equal(result.value.lastName, name)
+    }
+  }
+  for (const name of INVALID_NAMES) {
+    assert.equal(isValidTransferHolderName(name), false, name)
+    const result = validateTransferDeclaration({ ...valid, nombre: name, apellido: name })
+    assert.equal(result.ok, false, name)
+    if (!result.ok) {
+      assert.equal(result.errors.firstName, TRANSFER_HOLDER_NAME_FORMAT_ERRORS.firstName, name)
+      assert.equal(result.errors.lastName, TRANSFER_HOLDER_NAME_FORMAT_ERRORS.lastName, name)
+    }
+  }
+})
+
+test("DNI/CUIT del titular: sólo dígitos en la entrada (llamada directa con letras o símbolos se rechaza)", () => {
+  for (const dni of ["37281292", "5123456", VALID_PERSON_CUIT, " 37281292 "]) {
+    assert.equal(validateTransferDeclaration({ ...valid, dni }).ok, true, dni)
+  }
+  assert.equal(validateTransferDeclaration({ ...valid, dni: 37281292 }).ok, true, "número JSON entero")
+  for (const dni of [
+    "37281292ASDGA",
+    "37281ABC",
+    "30.111.222",
+    "20-30111222-0",
+    "3728 1292",
+    "37281292!",
+    "+37281292",
+    "-37281292",
+    "1e7",
+    "",
+    37281292.5,
+    -37281292,
+  ]) {
+    const result = validateTransferDeclaration({ ...valid, dni })
+    assert.equal(result.ok, false, String(dni))
+    if (!result.ok) assert.equal(result.errors.document, TRANSFER_DECLARATION_ERRORS.document)
+  }
+})
+
+test("sanitización del formulario: DNI queda en dígitos (máx. 11); nombres descartan números y símbolos", () => {
+  assert.equal(sanitizeTransferDocumentInput("37281292ASDGA"), "37281292")
+  assert.equal(sanitizeTransferDocumentInput("20-30111222-0"), VALID_PERSON_CUIT)
+  assert.equal(sanitizeTransferDocumentInput(" 30.111.222 "), "30111222")
+  assert.equal(sanitizeTransferDocumentInput("203011122201234"), VALID_PERSON_CUIT, "tope CUIT/CUIL")
+  assert.equal(sanitizeTransferDocumentInput("abc"), "")
+
+  assert.equal(sanitizeTransferHolderNameInput("Lucas123"), "Lucas")
+  assert.equal(sanitizeTransferHolderNameInput("=Lucas!!!"), "Lucas")
+  assert.equal(sanitizeTransferHolderNameInput("Esp@#$%&/\\<>{}[]*?=inosa"), "Espinosa")
+  for (const name of VALID_NAMES) {
+    assert.equal(sanitizeTransferHolderNameInput(name), name, `no altera ${name}`)
   }
 })
 

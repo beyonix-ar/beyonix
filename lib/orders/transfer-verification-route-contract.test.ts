@@ -66,7 +66,11 @@ test("la conciliación automática nunca reutiliza el webhook de Checkout Pro de
 // datos sólo se ven desde endpoints admin protegidos.
 test("el endpoint nunca reenvía la orden completa ni campos sensibles de conciliación -- respuesta explícitamente allowlisteada", () => {
   assert.doesNotMatch(routeSource, /NextResponse\.json\(\s*\{\s*[^}]*\border:/)
-  assert.doesNotMatch(routeSource, /result\.order/)
+  // De la fila sólo sale el importe esperado (el mismo que validó el
+  // servicio), nunca la fila ni otro campo.
+  assert.deepEqual(routeSource.match(/[^\n]*result\.order[^\n]*/g)?.map((line) => line.trim()), [
+    "expectedAmount: getTransferAmountDue(result.order),",
+  ])
   assert.doesNotMatch(routeSource, /transfer_match_snapshot/)
   assert.doesNotMatch(routeSource, /transfer_matched_payment_id/)
   assert.doesNotMatch(routeSource, /identificationNumber/)

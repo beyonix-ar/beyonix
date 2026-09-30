@@ -1045,37 +1045,41 @@ export function CustomerClaimExperience({
         </header>
 
         {resolutionView && (
+          // Rechazo: tokens --account-danger-* / --account-text-*, calibrados
+          // en ambos temas. Antes eran colores para fondo oscuro (text-white/60-80,
+          // text-red-100) sobre bg-red-500/8, que en tema claro resolvía a rosa
+          // claro: texto casi blanco sobre rosa, ilegible.
           <div
             data-testid="customer-claim-resolution"
             className={resolutionView.rejected
-              ? "border-b border-white/8 bg-red-500/8 px-3.5 py-3"
+              ? "border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-3.5"
               : "border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3"}
           >
             <div className="flex items-start gap-2.5">
-              <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ${resolutionView.rejected ? "border-red-200/25 bg-red-300/10" : "border-[#77E6E2]/25 bg-[#77E6E2]/10"}`}>
+              <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ${resolutionView.rejected ? "border-[var(--account-danger-border)] bg-[var(--account-surface)]" : "border-[#77E6E2]/25 bg-[#77E6E2]/10"}`}>
                 {resolutionView.rejected
-                  ? <X className="size-3.5 text-red-100" />
+                  ? <X className="size-3.5 text-[var(--account-danger)]" aria-hidden="true" />
                   : <Check className="size-3.5 text-[#D7FFFD]" />}
               </span>
               <div className="min-w-0">
-                <p className={`text-xs font-black ${resolutionView.rejected ? "text-red-100" : "text-[#D7FFFD]"}`}>
+                <p className={resolutionView.rejected ? "text-sm font-black leading-6 text-[var(--account-danger-text)]" : "text-xs font-black text-[#D7FFFD]"}>
                   {cancellation ? "Resolución de la cancelación" : "Resolución del reclamo"}
                 </p>
-                <dl className="mt-1.5 grid gap-1.5 text-xs leading-5">
+                <dl className={`grid text-xs leading-5 ${resolutionView.rejected ? "mt-2 gap-2" : "mt-1.5 gap-1.5"}`}>
                   <div>
-                    <dt className="font-bold text-white/60">Resolución</dt>
-                    <dd className="font-black text-white">{resolutionView.label}</dd>
+                    <dt className={resolutionView.rejected ? "text-11px font-bold text-[var(--account-text-secondary)]" : "font-bold text-white/60"}>Resolución</dt>
+                    <dd className={resolutionView.rejected ? "mt-0.5 text-sm font-black text-[var(--account-text-primary)]" : "font-black text-white"}>{resolutionView.label}</dd>
                   </div>
                   {resolutionView.detail && (
                     <div>
-                      <dt className="font-bold text-white/60">Detalle</dt>
-                      <dd className="whitespace-pre-wrap font-semibold text-white/80">{resolutionView.detail}</dd>
+                      <dt className={resolutionView.rejected ? "text-11px font-bold text-[var(--account-text-secondary)]" : "font-bold text-white/60"}>Detalle</dt>
+                      <dd className={resolutionView.rejected ? "mt-0.5 whitespace-pre-wrap text-[13px] font-medium leading-5 text-[var(--account-text-primary)]" : "whitespace-pre-wrap font-semibold text-white/80"}>{resolutionView.detail}</dd>
                     </div>
                   )}
                   {resolutionView.amount != null && resolutionView.amountLabel && (
                     <div>
-                      <dt className="font-bold text-white/60">{resolutionView.amountLabel}</dt>
-                      <dd className="font-black text-white">{formatClaimResolutionAmount(resolutionView.amount)}</dd>
+                      <dt className={resolutionView.rejected ? "text-11px font-bold text-[var(--account-text-secondary)]" : "font-bold text-white/60"}>{resolutionView.amountLabel}</dt>
+                      <dd className={resolutionView.rejected ? "mt-0.5 font-black text-[var(--account-text-primary)]" : "font-black text-white"}>{formatClaimResolutionAmount(resolutionView.amount)}</dd>
                     </div>
                   )}
                 </dl>
@@ -1085,9 +1089,16 @@ export function CustomerClaimExperience({
         )}
 
         {!resolutionView && claim.rejection_reason && (
-          <div className="border-b border-white/8 bg-red-500/8 px-3.5 py-3">
-            <p className="text-xs font-black text-red-100">Reclamo rechazado</p>
-            <p className="mt-1 text-xs leading-5 text-white/75">{claim.rejection_reason}</p>
+          <div className="border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-3.5">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[var(--account-danger-border)] bg-[var(--account-surface)]">
+                <X className="size-3.5 text-[var(--account-danger)]" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black leading-6 text-[var(--account-danger-text)]">Reclamo rechazado</p>
+                <p className="mt-1 whitespace-pre-wrap text-[13px] font-medium leading-5 text-[var(--account-text-primary)]">{claim.rejection_reason}</p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1333,13 +1344,13 @@ export function CustomerClaimExperience({
 
       {canCreateHelpMessage && (
         <div className="customer-help-create-panel mt-3 rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-4 sm:p-5">
-          <div className="flex items-start gap-3">
+          <div className="flex items-center gap-3">
             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#112A43]">
               <MessageCircle className="size-5 text-white" />
             </span>
-            <div>
-              <h4 className="text-sm font-black text-[var(--account-text-primary)]">Enviar mensaje de ayuda</h4>
-              <p className="mt-1 text-xs leading-5 text-[var(--account-text-secondary)]">
+            <div className="min-w-0">
+              <h4 className="text-base font-black leading-6 text-[var(--account-text-primary)]">Enviar mensaje de ayuda</h4>
+              <p className="mt-0.5 max-w-2xl text-xs leading-5 text-[var(--account-text-secondary)]">
                 Usá este chat si necesitás consultar el estado del pedido, si el envío se demora o si querés avisarnos algo antes de la entrega.
               </p>
             </div>
@@ -1347,11 +1358,11 @@ export function CustomerClaimExperience({
 
           <div className="customer-help-form-panel mt-4 rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-4 sm:p-5">
             <div>
-              <h4 className="border-l-4 border-[var(--account-border-highlight)] py-0.5 pl-3 text-base font-bold leading-5 text-[var(--account-text-primary)]">Contanos qué necesitás</h4>
-              <p className="mt-1.5 pl-4 text-xs font-medium leading-5 text-[var(--account-text-secondary)]">
+              <h4 className="border-l-4 border-[var(--account-border-highlight)] py-0.5 pl-3 text-sm font-bold leading-5 text-[var(--account-text-primary)]">Contanos qué necesitás</h4>
+              <p className="mt-1 max-w-2xl pl-4 text-xs leading-5 text-[var(--account-text-secondary)]">
                 Tu mensaje llegará al equipo de BEYONIX y vas a poder seguir la respuesta desde esta misma sección.
               </p>
-              <div className="mt-3">
+              <div className="relative mt-3">
                 <textarea
                   value={description}
                   onChange={(event) => {
@@ -1361,34 +1372,34 @@ export function CustomerClaimExperience({
                   rows={4}
                   minLength={CLAIM_DESCRIPTION_MIN_LENGTH}
                   maxLength={CLAIM_DESCRIPTION_MAX_LENGTH}
-                  placeholder="Ejemplo: mi pedido figura enviado, pero todavía no llegó y necesito ayuda con el seguimiento..."
-                  className="customer-help-textarea w-full resize-none rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-3 py-2.5 text-sm font-medium leading-6 text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)] transition-all duration-200 hover:border-[var(--account-border-strong)] focus:border-[var(--account-border-strong)] focus:ring-2 focus:ring-[var(--account-focus-ring)]"
+                  placeholder="Contanos lo que sucede..."
+                  className="customer-help-textarea block w-full resize-none rounded-xl border border-[var(--account-border)] bg-[var(--account-input)] px-3 pb-7 pt-2.5 text-sm font-medium leading-6 text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)] transition-all duration-200 hover:border-[var(--account-border-strong)] focus:border-[var(--account-border-strong)] focus:ring-2 focus:ring-[var(--account-focus-ring)]"
                 />
-                <p className="mt-1.5 pr-1 text-right text-10px text-[var(--account-text-muted)]">{description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}</p>
+                <p className="pointer-events-none absolute bottom-2 right-3 text-10px font-semibold tabular-nums text-[var(--account-text-muted)]">{description.length}/{CLAIM_DESCRIPTION_MAX_LENGTH}</p>
               </div>
             </div>
 
-            <div className="customer-help-footer mt-5 border-t border-[var(--account-border-subtle)] pt-5">
-              <div className="customer-help-notices grid gap-2.5 lg:grid-cols-2">
-                <div className="flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3 py-2.5 text-xs font-semibold leading-5 text-[var(--account-info-text)]">
-                  <CircleCheck className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" />
+            <div className="customer-help-footer mt-4 border-t border-[var(--account-border-subtle)] pt-4">
+              <div className="customer-help-notices grid gap-2.5 md:grid-cols-2">
+                <div className="flex h-full items-start gap-2.5 rounded-lg border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3 py-2.5 text-xs font-medium leading-5 text-[var(--account-info-text)]">
+                  <CircleCheck className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
                   <span>Este mensaje no inicia un reclamo formal. Es un canal de ayuda para resolver consultas antes de la entrega.</span>
                 </div>
-                <div className="flex items-start gap-2.5 rounded-xl border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3 py-2.5 text-xs font-semibold leading-5 text-[var(--account-info-text)]">
-                  <Clock3 className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" />
+                <div className="flex h-full items-start gap-2.5 rounded-lg border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3 py-2.5 text-xs font-medium leading-5 text-[var(--account-info-text)]">
+                  <Clock3 className="mt-0.5 size-4 shrink-0 text-[var(--account-info-text)]" aria-hidden="true" />
                   <span>
                     Recordá que la validación de pagos por transferencia se realiza de {BEYONIX_SUPPORT_HOURS_DETAIL.toLocaleLowerCase("es-AR")}
                   </span>
                 </div>
               </div>
-              {error && <p className="mb-3 rounded-lg border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 py-2 text-xs font-bold text-[var(--account-danger-text)]">{error}</p>}
+              {error && <p className="mt-3 rounded-lg border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 py-2 text-xs font-bold text-[var(--account-danger-text)]">{error}</p>}
               <div className="customer-help-submit mt-4 flex justify-end">
                 <button
                   type="button"
                   aria-label="Enviar mensaje de ayuda"
                   disabled={loading || description.trim().length < CLAIM_DESCRIPTION_MIN_LENGTH}
                   onClick={() => void createHelpMessage()}
-                  className="h-10 w-full rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-5 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-[var(--account-border)] disabled:bg-[var(--account-surface-raised)] disabled:text-[var(--account-text-muted)] disabled:shadow-none disabled:hover:border-[var(--account-border)] disabled:hover:bg-[var(--account-surface-raised)] sm:w-auto"
+                  className="h-10 w-full cursor-pointer rounded-lg border border-beyonix-blue-light/42 bg-[#112A43] px-6 text-xs font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)] disabled:cursor-not-allowed disabled:border-[var(--account-border)] disabled:bg-[var(--account-surface-hover)] disabled:text-[var(--account-text-secondary)] disabled:shadow-none disabled:hover:border-[var(--account-border)] disabled:hover:bg-[var(--account-surface-hover)] sm:w-auto sm:min-w-56"
                 >
                   {loading ? "Enviando..." : "Enviar mensaje de ayuda"}
                 </button>
@@ -1397,48 +1408,51 @@ export function CustomerClaimExperience({
           </div>
 
           {canCancel && (
-            <div className="mt-3 max-w-xl rounded-lg border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 py-2.5">
-              <h4 className="text-xs font-medium text-[var(--account-danger-text)]">
-                ¿Necesitás cancelar tu compra?
-              </h4>
-              <label
-                htmlFor={`cancellation-reason-${order.id}`}
-                className="mt-0.5 block text-11px font-normal text-[var(--account-text-secondary)]"
-              >
-                Contanos el motivo para habilitar la cancelación.
-              </label>
-              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <input
-                  id={`cancellation-reason-${order.id}`}
-                  type="text"
-                  value={cancellationReason}
-                  onChange={(event) => {
-                    setCancellationReason(event.target.value)
-                    setCancellationError("")
-                  }}
-                  minLength={CANCELLATION_REASON_MIN_LENGTH}
-                  maxLength={CANCELLATION_REASON_MAX_LENGTH}
-                  placeholder="Motivo de la cancelación..."
-                  className="h-8 min-w-0 flex-1 rounded-md border border-[var(--account-border)] bg-[var(--account-input)] px-2.5 text-xs font-normal text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)] transition-colors hover:border-[var(--account-danger-border)] focus:border-[var(--account-danger)] focus:ring-2 focus:ring-[var(--account-danger-bg)]"
-                />
-                <button
-                  type="button"
-                  aria-label="Cancelar compra"
-                  disabled={
-                    cancellingOrder ||
-                    cancellationReason.trim().length < CANCELLATION_REASON_MIN_LENGTH
-                  }
-                  onClick={() => void cancelOrder()}
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 text-11px font-normal text-[var(--account-danger-text)] transition-colors hover:border-[var(--account-danger)] hover:bg-[var(--account-danger-bg)] disabled:cursor-not-allowed disabled:border-[var(--account-border)] disabled:bg-[var(--account-surface-raised)] disabled:text-[var(--account-text-muted)]"
+            // Acción distinta de la ayuda: separada por un divisor propio.
+            <div className="mt-4 border-t border-[var(--account-border-subtle)] pt-4">
+              <div className="max-w-xl rounded-lg border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 py-2.5">
+                <h4 className="text-xs font-semibold text-[var(--account-danger-text)]">
+                  ¿Necesitás cancelar tu compra?
+                </h4>
+                <label
+                  htmlFor={`cancellation-reason-${order.id}`}
+                  className="mt-0.5 block text-11px font-normal text-[var(--account-text-secondary)]"
                 >
-                  {cancellingOrder ? "Cancelando..." : "Cancelar compra"}
-                </button>
+                  Contanos el motivo para habilitar la cancelación.
+                </label>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    id={`cancellation-reason-${order.id}`}
+                    type="text"
+                    value={cancellationReason}
+                    onChange={(event) => {
+                      setCancellationReason(event.target.value)
+                      setCancellationError("")
+                    }}
+                    minLength={CANCELLATION_REASON_MIN_LENGTH}
+                    maxLength={CANCELLATION_REASON_MAX_LENGTH}
+                    placeholder="Motivo de la cancelación..."
+                    className="h-8 min-w-0 flex-1 rounded-md border border-[var(--account-border)] bg-[var(--account-input)] px-2.5 text-xs font-normal text-[var(--account-text-primary)] outline-none placeholder:text-[var(--account-text-muted)] transition-colors hover:border-[var(--account-danger-border)] focus:border-[var(--account-danger)] focus:ring-2 focus:ring-[var(--account-danger-bg)]"
+                  />
+                  <button
+                    type="button"
+                    aria-label="Cancelar compra"
+                    disabled={
+                      cancellingOrder ||
+                      cancellationReason.trim().length < CANCELLATION_REASON_MIN_LENGTH
+                    }
+                    onClick={() => void cancelOrder()}
+                    className="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-3 text-11px font-normal text-[var(--account-danger-text)] transition-colors hover:border-[var(--account-danger)] hover:bg-[var(--account-danger-bg)] disabled:cursor-not-allowed disabled:border-[var(--account-border)] disabled:bg-[var(--account-surface-raised)] disabled:text-[var(--account-text-muted)]"
+                  >
+                    {cancellingOrder ? "Cancelando..." : "Cancelar compra"}
+                  </button>
+                </div>
+                {cancellationError && (
+                  <p className="mt-2 text-11px font-normal text-[var(--account-danger-text)]">
+                    {cancellationError}
+                  </p>
+                )}
               </div>
-              {cancellationError && (
-                <p className="mt-2 text-11px font-normal text-[var(--account-danger-text)]">
-                  {cancellationError}
-                </p>
-              )}
             </div>
           )}
         </div>
