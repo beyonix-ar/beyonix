@@ -16,6 +16,7 @@ import {
   assertTestUserIsolated,
   type OrderFacts,
 } from "./guards.ts"
+import { arcaTestEnv } from "../../lib/arca/fixtures/arca-test-certificates.ts"
 import { harnessState } from "./harness-state.ts"
 import { SHIMMED_SPECIFIERS, assertRouteUsesShims, registerRouteShims } from "./route-shims.ts"
 
@@ -23,7 +24,11 @@ import { SHIMMED_SPECIFIERS, assertRouteUsesShims, registerRouteShims } from "./
 // datos que no sean inequívocamente de prueba. Sin red: ningún test contacta
 // a ARCA ni a la base.
 
-const runtime = { arcaEnv: undefined, autoInvoicingEnabled: undefined, certificateIssuerCn: "Computadores Test" }
+const runtime: { arcaEnv: string | undefined; autoInvoicingEnabled: string | undefined; certificateIssuerCn: string } = {
+  arcaEnv: "homologation",
+  autoInvoicingEnabled: undefined,
+  certificateIssuerCn: "Computadores Test",
+}
 const USER = "11111111-1111-4111-8111-111111111111"
 const order = (extra: Partial<OrderFacts> = {}): OrderFacts => ({
   id: 20, usuario_id: USER, total: 900, invoice_status: "pending", invoice_arca_environment: null,
@@ -34,6 +39,8 @@ test("configuración: sólo homologación, certificado de testing y automática 
   assertHomologationRuntime(runtime)
   assertHomologationRuntime({ ...runtime, arcaEnv: " homologation " })
   const blocked: Array<[string, typeof runtime | Record<string, unknown>]> = [
+    ["sin ARCA_ENV (ya no hay homologación por defecto)", { ...runtime, arcaEnv: undefined }],
+    ["ARCA_ENV vacío", { ...runtime, arcaEnv: "" }],
     ["production", { ...runtime, arcaEnv: "production" }],
     ["PRODUCTION", { ...runtime, arcaEnv: "PRODUCTION" }],
     ["valor raro", { ...runtime, arcaEnv: "prod" }],
@@ -121,12 +128,18 @@ test("shims: redirección real; gateway fuera de homologación o con CAE prohibi
     assert.equal(granted.profile.rol, "super_admin")
     assert.equal(granted.user.id, USER)
 
-    // Gateway: ambiente real del proceso.
-    const previous = process.env.ARCA_ENV
+    // Gateway: configuración real del proceso, validada por el guard central.
+    const keys = ["ARCA_ENV", "ARCA_CERT", "ARCA_PRIVATE_KEY", "ARCA_CUIT", "ARCA_PTO_VTA"] as const
+    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
     try {
-      process.env.ARCA_ENV = "production"
-      assert.throws(() => mod.createWsfeInvoiceGateway(), /no está en homologación/)
+      Object.assign(process.env, arcaTestEnv("homologation"))
       delete process.env.ARCA_ENV
+      assert.throws(() => mod.createWsfeInvoiceGateway(), /ARCA_ENV no está configurada/)
+      process.env.ARCA_ENV = "production"
+      assert.throws(() => mod.createWsfeInvoiceGateway(), /no admite un certificado de homologación/)
+      Object.assign(process.env, arcaTestEnv("production"))
+      assert.throws(() => mod.createWsfeInvoiceGateway(), /no está en homologación/)
+      Object.assign(process.env, arcaTestEnv("homologation"))
       const gateway = mod.createWsfeInvoiceGateway()
       assert.equal(gateway.environment, "homologation")
       state.forbidCae = true
@@ -136,8 +149,10 @@ test("shims: redirección real; gateway fuera de homologación o con CAE prohibi
       )
       assert.equal(state.caeRequests, 0)
     } finally {
-      if (previous === undefined) delete process.env.ARCA_ENV
-      else process.env.ARCA_ENV = previous
+      for (const key of keys) {
+        if (previous[key] === undefined) delete process.env[key]
+        else process.env[key] = previous[key]
+      }
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })

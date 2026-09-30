@@ -4,7 +4,7 @@ import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib"
 import QRCode from "qrcode"
 
 import { isFiscalArcaVoucher } from "@/lib/arca/environment"
-import { buildArcaQrUrl } from "@/lib/arca/qr"
+import { buildFiscalArcaQrUrl } from "@/lib/arca/qr"
 
 interface InvoicePdfItem {
   cantidad: number
@@ -366,22 +366,34 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
   const pdf = await PDFDocument.create()
   const regular = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
-  const qrUrl = buildArcaQrUrl({
-    issueDate: issueDate(order.invoice_created_at),
-    cuit,
-    pointOfSale: order.invoice_point,
-    voucherType,
-    voucherNumber: order.invoice_number,
-    total: Number(order.total),
-    cae: order.invoice_cae,
-  })
-  const qrPng = await QRCode.toBuffer(qrUrl, {
-    type: "png",
-    errorCorrectionLevel: "M",
-    margin: 1,
-    width: 320,
-  })
-  const qrImage = await pdf.embedPng(qrPng)
+  // Homologación: sin QR fiscal (no constata nada en ARCA). Producción: QR
+  // sólo con CAE real y datos completos; si faltan, no se genera un PDF
+  // fiscal incompleto.
+  const qrUrl = isTestVoucher
+    ? null
+    : buildFiscalArcaQrUrl({
+        environment: order.arca_environment,
+        issueDate: issueDate(order.invoice_created_at),
+        cuit,
+        pointOfSale: order.invoice_point,
+        voucherType,
+        voucherNumber: order.invoice_number,
+        total: Number(order.total),
+        cae: order.invoice_cae,
+      })
+  if (!isTestVoucher && !qrUrl) {
+    throw new Error("No se puede generar el comprobante fiscal: faltan datos válidos de autorización de ARCA para el código QR.")
+  }
+  const qrImage = qrUrl
+    ? await pdf.embedPng(
+        await QRCode.toBuffer(qrUrl, {
+          type: "png",
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 320,
+        }),
+      )
+    : null
 
   let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT])
   let y = PAGE_HEIGHT - MARGIN
@@ -891,12 +903,25 @@ export async function generateInvoicePdf(order: InvoicePdfOrder) {
     borderColor: BORDER,
     borderWidth: 0.7,
   })
-  page.drawImage(qrImage, {
-    x: MARGIN + 16,
-    y: y - 76,
-    width: 60,
-    height: 60,
-  })
+  if (qrImage) {
+    page.drawImage(qrImage, {
+      x: MARGIN + 16,
+      y: y - 76,
+      width: 60,
+      height: 60,
+    })
+  } else {
+    page.drawRectangle({
+      x: MARGIN + 16,
+      y: y - 76,
+      width: 60,
+      height: 60,
+      borderColor: TEST_MARK,
+      borderWidth: 0.8,
+    })
+    drawText("SIN QR", MARGIN + 29, y - 43, 8, true, TEST_MARK)
+    drawText("FISCAL", MARGIN + 28, y - 53, 8, true, TEST_MARK)
+  }
   drawText(
     isTestVoucher ? "COMPROBANTE DE PRUEBA - ARCA HOMOLOGACIÓN" : "COMPROBANTE AUTORIZADO",
     MARGIN + 96,

@@ -1,3 +1,4 @@
+import { requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/configuration"
 import { getConfiguredArcaEnvironment, type ArcaEnvironment } from "@/lib/arca/environment"
 import { asArray, escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 import { getWsaaCredentials } from "@/lib/arca/wsaa"
@@ -11,16 +12,11 @@ const WSFE_NAMESPACE = "http://ar.gov.afip.dif.FEV1/"
 export type { ArcaEnvironment }
 
 /**
- * Ambiente ARCA. Por defecto homologación (comportamiento previo): producción
- * sólo con ARCA_ENV=production explícito, para no emitir comprobantes
- * fiscales reales por accidente.
+ * Ambiente ARCA explícito (ARCA_ENV). Sin valor válido lanza
+ * ArcaConfigurationError: nunca hay un ambiente por defecto.
  */
 export function getArcaEnvironment(): ArcaEnvironment {
   return getConfiguredArcaEnvironment()
-}
-
-function wsfeUrl() {
-  return WSFE_URLS[getArcaEnvironment()]
 }
 
 export const FACTURA_C_TYPE = 11
@@ -96,15 +92,6 @@ export class ArcaWsError extends Error {
   }
 }
 
-function requiredCuit() {
-  const cuit = process.env.ARCA_CUIT?.replace(/\D/g, "")
-  if (!cuit || cuit.length !== 11) {
-    throw new Error("ARCA_CUIT debe contener 11 dígitos.")
-  }
-
-  return cuit
-}
-
 function parseMessages(container: any, key: "Err" | "Evt" | "Obs") {
   return asArray<any>(container?.[key]).map((item) => ({
     Code: String(item?.Code ?? ""),
@@ -140,11 +127,13 @@ function buildAssociatedVoucherXml(request: FecaeRequest) {
 }
 
 async function callWsfe(operation: string, body: string) {
-  const credentials = await getWsaaCredentials()
+  // Guard central ANTES de WSAA/WSFE: ambiente, certificado, CUIT y clave.
+  const configuration: ArcaConfiguration = requireArcaConfiguration()
+  const credentials = await getWsaaCredentials(configuration)
   const auth = `<ar:Auth>
     <ar:Token>${escapeXml(credentials.token)}</ar:Token>
     <ar:Sign>${escapeXml(credentials.sign)}</ar:Sign>
-    <ar:Cuit>${requiredCuit()}</ar:Cuit>
+    <ar:Cuit>${configuration.cuit}</ar:Cuit>
   </ar:Auth>`
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="${WSFE_NAMESPACE}">
@@ -157,7 +146,7 @@ async function callWsfe(operation: string, body: string) {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(wsfeUrl(), {
+  const response = await fetch(WSFE_URLS[configuration.environment], {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -182,7 +171,9 @@ async function callWsfe(operation: string, body: string) {
   ]
 }
 
+/** FEDummy no autentica, pero igual exige ARCA_ENV explícito. */
 async function callWsfePublic(operation: string, body = "") {
+  const environment = getArcaEnvironment()
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="${WSFE_NAMESPACE}">
   <soapenv:Header/>
@@ -193,7 +184,7 @@ async function callWsfePublic(operation: string, body = "") {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(wsfeUrl(), {
+  const response = await fetch(WSFE_URLS[environment], {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -226,6 +217,36 @@ export async function getWsfeHealth() {
     dbServer: String(result?.DbServer ?? ""),
     authServer: String(result?.AuthServer ?? ""),
   }
+}
+
+export interface WsfePointOfSale {
+  number: number
+  emissionType: string
+  blocked: boolean
+  droppedAt: string | null
+}
+
+/**
+ * Puntos de venta habilitados para Web Services del CUIT (solo lectura; no
+ * emite). ARCA responde el error 602 "Sin Resultados" cuando no hay ninguno.
+ */
+export async function feParamGetPtosVenta(): Promise<WsfePointOfSale[]> {
+  const result = await callWsfe("FEParamGetPtosVenta", "")
+  const errors = parseMessages(result?.Errors, "Err")
+  if (errors.some((error) => error.Code === "602")) return []
+  if (errors.length) {
+    throw new ArcaWsError("ARCA no pudo informar los puntos de venta.", errors)
+  }
+
+  return asArray<any>(result?.ResultGet?.PtoVenta).map((point) => {
+    const droppedAt = String(point?.FchBaja ?? "").trim()
+    return {
+      number: Number(point?.Nro),
+      emissionType: String(point?.EmisionTipo ?? ""),
+      blocked: String(point?.Bloqueado ?? "").trim().toUpperCase() === "S",
+      droppedAt: droppedAt && droppedAt.toUpperCase() !== "NULL" ? droppedAt : null,
+    }
+  })
 }
 
 export async function feCompUltimoAutorizado(

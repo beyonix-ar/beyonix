@@ -11,12 +11,14 @@ const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n")
 
 test("gateway: el ambiente persistido es el mismo con el que se eligen los endpoints", () => {
   const gateway = read("lib/arca/wsfe-invoice-gateway.ts")
-  assert.match(gateway, /environment: getArcaEnvironment\(\)/)
+  assert.match(gateway, /configuration: ArcaConfiguration = requireArcaConfiguration\(\),/)
+  assert.match(gateway, /environment: configuration\.environment,/)
   const wsfe = read("lib/arca/wsfe.ts")
-  assert.match(wsfe, /WSFE_URLS\[getArcaEnvironment\(\)\]/)
+  assert.match(wsfe, /fetch\(WSFE_URLS\[configuration\.environment\]/)
+  assert.match(wsfe, /fetch\(WSFE_URLS\[environment\]/)
   const wsaa = read("lib/arca/wsaa.ts")
-  assert.match(wsaa, /return WSAA_URLS\[getConfiguredArcaEnvironment\(\)\]/)
-  assert.match(wsaa, /environment: getConfiguredArcaEnvironment\(\),/, "el TA persistido usa el mismo ambiente")
+  assert.match(wsaa, /fetch\(WSAA_URLS\[configuration\.environment\]/)
+  assert.match(wsaa, /environment: configuration\.environment,/, "el TA persistido usa el mismo ambiente")
 })
 
 test("Admin NC: otro ambiente se rechaza ANTES de reservar importes y el ambiente viaja a la emisión", () => {

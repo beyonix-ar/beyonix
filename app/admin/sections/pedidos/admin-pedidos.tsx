@@ -96,6 +96,8 @@ import {
   isFiscalArcaVoucher,
 } from "@/lib/arca/environment"
 import { getInvoiceFiscalStatusView } from "@/lib/arca/invoice-status-view"
+import { getArcaIssueBlockReason } from "@/lib/arca/configuration-view"
+import { useArcaConfigurationStatus } from "../facturacion/arca-configuration-panel"
 import { CreditNoteReconcileAlert } from "./credit-note-reconcile-alert"
 import { getNotesPendingReconciliation } from "@/lib/arca/credit-note-reconciliation-view"
 import {
@@ -2844,6 +2846,8 @@ function BillingManagementPanel({
 }) {
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
   const testInvoice = invoiceIssued && !isFiscalArcaVoucher(pedido.invoice_arca_environment)
+  const arcaConfiguration = useArcaConfigurationStatus()
+  const invoiceIssueBlockReason = getArcaIssueBlockReason(arcaConfiguration.status, arcaConfiguration.loadError)
   const creditNoteNeeded = needsCreditNoteReminder(pedido)
   const [creditSaving, setCreditSaving] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
@@ -3459,7 +3463,8 @@ function BillingManagementPanel({
           <button
             type="button"
             onClick={() => void onIssueInvoice()}
-            disabled={invoiceLoading || !isApprovedPayment(pedido)}
+            disabled={invoiceLoading || !isApprovedPayment(pedido) || Boolean(invoiceIssueBlockReason)}
+            title={invoiceIssueBlockReason ?? undefined}
             className="admin-order-billing-header-action inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-[rgba(140,200,242,0.45)] bg-[#112A43] px-3 text-11px font-black uppercase tracking-wide text-white transition-colors hover:border-[rgba(140,200,242,0.8)] hover:bg-[#1E4D7B] disabled:cursor-not-allowed disabled:opacity-45"
           >
             {invoiceLoading ? (
@@ -3475,6 +3480,16 @@ function BillingManagementPanel({
           </button>
         )}
       </div>
+
+      {pedido.invoice_status !== "authorized" && invoiceIssueBlockReason && (arcaConfiguration.status || arcaConfiguration.loadError) && (
+        <div className="admin-order-bl-alert" role="alert" data-arca-issue-blocked>
+          <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="admin-order-bl-alert-title">No se puede emitir la Factura C</p>
+            <p className="admin-order-bl-alert-desc">{invoiceIssueBlockReason}</p>
+          </div>
+        </div>
+      )}
 
       {testInvoice && (
         <div className="admin-order-bl-alert" data-testid="arca-test-voucher-notice">

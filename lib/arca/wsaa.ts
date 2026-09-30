@@ -1,6 +1,7 @@
 import forge from "node-forge"
 
-import { getConfiguredArcaEnvironment, type ArcaEnvironment } from "@/lib/arca/environment"
+import { requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/configuration"
+import type { ArcaEnvironment } from "@/lib/arca/environment"
 import {
   isUsableTicket,
   isWsaaAlreadyAuthenticatedFault,
@@ -15,9 +16,6 @@ const WSAA_URLS: Record<ArcaEnvironment, string> = {
   production: "https://wsaa.afip.gov.ar/ws/services/LoginCms",
 }
 
-function wsaaUrl() {
-  return WSAA_URLS[getConfiguredArcaEnvironment()]
-}
 const WSAA_SERVICE = "wsfe"
 const CACHE_MARGIN_MS = 5 * 60 * 1000
 
@@ -33,13 +31,6 @@ declare global {
   var arcaWsaaCredentialsKey: string | undefined
   var arcaWsaaRequest: Promise<WsaaCredentials> | undefined
   var arcaWsaaRequestKey: string | undefined
-}
-
-function requiredEnv(name: "ARCA_CERT" | "ARCA_PRIVATE_KEY") {
-  const value = process.env[name]?.trim()
-  if (!value) throw new Error(`Falta configurar ${name}.`)
-
-  return value.replaceAll("\\n", "\n")
 }
 
 function toArcaDate(date: Date) {
@@ -62,10 +53,11 @@ export function generateTra(now = new Date()) {
 </loginTicketRequest>`
 }
 
-export function signTra(tra: string) {
-  const certificate = forge.pki.certificateFromPem(requiredEnv("ARCA_CERT"))
-  const passphrase = process.env.ARCA_PRIVATE_KEY_PASSPHRASE
-  const privateKeyPem = requiredEnv("ARCA_PRIVATE_KEY")
+/** Firma con el par certificado/clave YA validado por requireArcaConfiguration. */
+export function signTra(tra: string, configuration: ArcaConfiguration) {
+  const certificate = forge.pki.certificateFromPem(configuration.certificatePem)
+  const passphrase = configuration.privateKeyPassphrase
+  const privateKeyPem = configuration.privateKeyPem
   const privateKey = passphrase
     ? forge.pki.decryptRsaPrivateKey(privateKeyPem, passphrase)
     : forge.pki.privateKeyFromPem(privateKeyPem)
@@ -102,8 +94,8 @@ export function signTra(tra: string) {
   )
 }
 
-async function requestCredentials() {
-  const cms = signTra(generateTra())
+async function requestCredentials(configuration: ArcaConfiguration) {
+  const cms = signTra(generateTra(), configuration)
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
   <soapenv:Header/>
@@ -114,7 +106,7 @@ async function requestCredentials() {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(wsaaUrl(), {
+  const response = await fetch(WSAA_URLS[configuration.environment], {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -161,20 +153,21 @@ async function requestCredentials() {
 }
 
 /** Ambiente de los endpoints + servicio + certificado configurado. */
-function ticketScope(): WsaaTicketScope {
+function ticketScope(configuration: ArcaConfiguration): WsaaTicketScope {
   return {
-    environment: getConfiguredArcaEnvironment(),
+    environment: configuration.environment,
     service: WSAA_SERVICE,
-    certificatePem: requiredEnv("ARCA_CERT"),
+    certificatePem: configuration.certificatePem,
   }
 }
 
 /**
- * Memoria -> TA persistido (compartido entre procesos, sobrevive reinicios)
- * -> WSAA con candado entre procesos. Nunca se pide un TA si hay uno vigente.
+ * Guard de configuración -> memoria -> TA persistido (compartido entre
+ * procesos, sobrevive reinicios) -> WSAA con candado entre procesos. Nunca se
+ * pide un TA si hay uno vigente, ni con una configuración inválida.
  */
-export async function getWsaaCredentials() {
-  const scope = ticketScope()
+export async function getWsaaCredentials(configuration: ArcaConfiguration = requireArcaConfiguration()) {
+  const scope = ticketScope(configuration)
   const key = wsaaTicketCacheKey(scope)
   const cached = globalThis.arcaWsaaCredentials
   if (cached && globalThis.arcaWsaaCredentialsKey === key && isUsableTicket(cached, Date.now(), CACHE_MARGIN_MS)) {
@@ -185,7 +178,7 @@ export async function getWsaaCredentials() {
     globalThis.arcaWsaaRequestKey = key
     globalThis.arcaWsaaRequest = obtainWsaaTicket({
       scope,
-      request: requestCredentials,
+      request: () => requestCredentials(configuration),
       marginMs: CACHE_MARGIN_MS,
     })
       .then((credentials) => {

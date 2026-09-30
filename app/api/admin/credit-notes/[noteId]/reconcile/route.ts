@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
+import {
+  arcaConfigurationErrorResponse,
+  requireArcaConfiguration,
+  type ArcaConfiguration,
+} from "@/lib/arca/configuration"
 import { reconcileCreditNote } from "@/lib/arca/credit-note-emission"
+import { ArcaConfigurationError } from "@/lib/arca/environment"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
 import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
 
@@ -27,9 +33,18 @@ export async function POST(
     return NextResponse.json({ error: "Nota de crédito inválida." }, { status: 400 })
   }
 
+  // Guard central: conciliar también consulta ARCA con el certificado.
+  let configuration: ArcaConfiguration
+  try {
+    configuration = requireArcaConfiguration()
+  } catch (error) {
+    if (error instanceof ArcaConfigurationError) return arcaConfigurationErrorResponse(error)
+    throw error
+  }
+
   let result
   try {
-    result = await reconcileCreditNote(auth.admin, { noteId, gateway: createWsfeInvoiceGateway() })
+    result = await reconcileCreditNote(auth.admin, { noteId, gateway: createWsfeInvoiceGateway(configuration) })
   } catch (error) {
     const message = error instanceof Error ? error.message : ""
     if (/CREDIT_NOTE_NOT_FOUND/.test(message)) {

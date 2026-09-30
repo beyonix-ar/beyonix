@@ -39,6 +39,29 @@ async function pdfContent(order: InvoicePdfOrder) {
 /** pdf-lib escribe el texto de fuentes estándar como hex WinAnsi. */
 const hex = (text: string) => Buffer.from(text, "latin1").toString("hex").toLowerCase()
 
+/** El único bitmap del comprobante es el QR fiscal. */
+async function embeddedImages(order: InvoicePdfOrder) {
+  const raw = Buffer.from(await generateInvoicePdf(order)).toString("latin1")
+  return raw.match(/\/Subtype\s*\/Image/g)?.length ?? 0
+}
+
+test("homologación: sin QR fiscal (ningún bitmap) y con recuadro 'SIN QR FISCAL'", async () => {
+  assert.equal(await embeddedImages(baseOrder), 0)
+  assert.equal(await embeddedImages({ ...baseOrder, arca_environment: null }), 0)
+  const content = await pdfContent(baseOrder)
+  assert.ok(content.includes(hex("SIN QR")) && content.includes(hex("FISCAL")))
+})
+
+test("producción: QR fiscal sólo con CAE real; un CAE inválido no genera un PDF fiscal incompleto", async () => {
+  assert.equal(await embeddedImages({ ...baseOrder, arca_environment: "production" }), 1)
+  await assert.rejects(
+    generateInvoicePdf({ ...baseOrder, arca_environment: "production", invoice_cae: "123" }),
+    /faltan datos válidos de autorización de ARCA/,
+  )
+  // Homologación con CAE raro igual se genera (no hay QR que construir).
+  assert.equal(await embeddedImages({ ...baseOrder, invoice_cae: "123" }), 0)
+})
+
 test("Factura C de homologación: marca de agua, leyenda de prueba y archivo PRUEBA-", async () => {
   const content = await pdfContent(baseOrder)
   assert.ok(content.includes(hex("SIN VALIDEZ FISCAL - PRUEBA ARCA HOMOLOGACIÓN")), "marca de agua")

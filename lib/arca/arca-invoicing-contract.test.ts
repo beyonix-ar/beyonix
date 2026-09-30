@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
 import test from "node:test"
 
-import { getConfiguredArcaEnvironment } from "./environment.ts"
+import { ArcaConfigurationError, getConfiguredArcaEnvironment } from "./environment.ts"
 import { getInvoiceFiscalStatusView } from "./invoice-status-view.ts"
 
 const root = process.cwd()
@@ -46,16 +46,17 @@ test("un solo camino de emisión: Admin y worker usan el mismo servicio; nadie l
   assert.ok(offenders.every((path) => !/^(components|context|hooks)\//.test(path) && !/\.tsx$/.test(path)))
 })
 
-test("ambiente ARCA: homologación por defecto; producción sólo explícita", () => {
+test("ambiente ARCA: sólo explícito; sin valor o con otro valor es error (sin fallback a homologación)", () => {
   const wsfe = read("lib/arca/wsfe.ts")
   const wsaa = read("lib/arca/wsaa.ts")
-  // Fuente única (lib/arca/environment.ts): producción sólo explícita.
+  // Fuente única (lib/arca/environment.ts) y guard central (configuration.ts).
   assert.match(wsfe, /return getConfiguredArcaEnvironment\(\)/)
-  assert.match(wsaa, /return WSAA_URLS\[getConfiguredArcaEnvironment\(\)\]/)
-  for (const value of [undefined, "", "homologation", "prod", "produccion", "PRODUCCIÓN"]) {
-    assert.equal(getConfiguredArcaEnvironment(value), "homologation", String(value))
+  assert.match(wsaa, /fetch\(WSAA_URLS\[configuration\.environment\]/)
+  for (const value of [undefined, "", "   ", "prod", "produccion", "PRODUCCIÓN", "Production", "homologacion", "test"]) {
+    assert.throws(() => getConfiguredArcaEnvironment(value), ArcaConfigurationError, String(value))
   }
-  assert.equal(getConfiguredArcaEnvironment(" Production "), "production")
+  assert.equal(getConfiguredArcaEnvironment("homologation"), "homologation")
+  assert.equal(getConfiguredArcaEnvironment(" production "), "production")
   assert.match(wsfe, /production: "https:\/\/servicios1\.afip\.gov\.ar\/wsfev1\/service\.asmx"/)
   assert.match(wsaa, /production: "https:\/\/wsaa\.afip\.gov\.ar\/ws\/services\/LoginCms"/)
   assert.doesNotMatch(wsfe, /fetch\(WSFE_HOMOLOGATION_URL/)

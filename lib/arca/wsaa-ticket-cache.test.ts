@@ -216,11 +216,17 @@ test("reconoce el rechazo real de WSAA por TA duplicado", () => {
 
 test("wsaa.ts y wsfe.ts toman el ambiente de una sola fuente; el TA va por obtainWsaaTicket", () => {
   const wsaa = readFileSync("lib/arca/wsaa.ts", "utf8")
-  assert.match(wsaa, /return WSAA_URLS\[getConfiguredArcaEnvironment\(\)\]/)
-  assert.match(wsaa, /environment: getConfiguredArcaEnvironment\(\),/)
+  // Ambiente, certificado y endpoint salen de la configuración validada.
+  assert.match(wsaa, /getWsaaCredentials\(configuration: ArcaConfiguration = requireArcaConfiguration\(\)\)/)
+  assert.match(wsaa, /environment: configuration\.environment,/)
+  assert.match(wsaa, /fetch\(WSAA_URLS\[configuration\.environment\]/)
   assert.match(wsaa, /obtainWsaaTicket\(\{/)
-  assert.match(wsaa, /request: requestCredentials,/)
-  assert.equal(wsaa.match(/requestCredentials\(/g)?.length, 1, "sólo la declaración: nunca se llama a WSAA por fuera del candado")
+  assert.match(wsaa, /request: \(\) => requestCredentials\(configuration\),/)
+  assert.equal(
+    wsaa.match(/requestCredentials\(/g)?.length,
+    2,
+    "declaración + el único llamado dentro de obtainWsaaTicket: nunca se llama a WSAA por fuera del candado",
+  )
   assert.match(readFileSync("lib/arca/wsfe.ts", "utf8"), /return getConfiguredArcaEnvironment\(\)/)
   for (const file of ["lib/arca/wsaa.ts", "lib/arca/wsfe.ts", "lib/arca/wsfe-invoice-gateway.ts", "lib/arca/invoice-automation.ts"]) {
     assert.doesNotMatch(readFileSync(file, "utf8"), /process\.env\.ARCA_ENV/, `${file}: ambiente sólo desde environment.ts`)

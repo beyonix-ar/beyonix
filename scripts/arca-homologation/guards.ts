@@ -5,7 +5,7 @@
  * prueba se rechaza (fail-closed): la base es la misma de producción.
  */
 
-import { getConfiguredArcaEnvironment } from "../../lib/arca/environment.ts"
+import { readArcaEnvironment } from "../../lib/arca/environment.ts"
 
 /** Convención obligatoria: el nombre del producto y el email del usuario lo dicen. */
 const TEST_MARKER = /\b(prueba|test)\b|\+(prueba|test|arca)/i
@@ -49,11 +49,9 @@ function fail(message: string): never {
 
 /** Sólo homologación, con certificado de la CA de testing y automática apagada. */
 export function assertHomologationRuntime(facts: ArcaRuntimeFacts) {
-  if (getConfiguredArcaEnvironment(facts.arcaEnv) !== "homologation") {
-    fail(`ARCA_ENV efectivo no es homologation (ARCA_ENV=${JSON.stringify(facts.arcaEnv ?? null)}).`)
-  }
-  if (facts.arcaEnv !== undefined && facts.arcaEnv.trim() !== "" && facts.arcaEnv.trim().toLowerCase() !== "homologation") {
-    fail(`ARCA_ENV tiene un valor inesperado: ${JSON.stringify(facts.arcaEnv)}.`)
+  // ARCA_ENV=homologation explícito: sin ambiente por defecto.
+  if (readArcaEnvironment(facts.arcaEnv).environment !== "homologation") {
+    fail(`ARCA_ENV debe ser exactamente homologation (ARCA_ENV=${JSON.stringify(facts.arcaEnv ?? null)}).`)
   }
   if (facts.autoInvoicingEnabled?.trim().toLowerCase() === "true") {
     fail("ARCA_AUTO_INVOICING_ENABLED está activo: las pruebas manuales se hacen con la automática apagada.")

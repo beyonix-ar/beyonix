@@ -138,6 +138,7 @@ const TEST_FILES = [
   "lib/arca/arca-environment-isolation.test.ts",
   "lib/arca/arca-environment-ui-contract.test.ts",
   "lib/arca/wsaa-ticket-cache.test.ts",
+  "lib/arca/arca-configuration.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",
@@ -244,6 +245,7 @@ const TSX_TEST_FILES = [
   "components/claims/return-inventory-refresh.test.tsx",
   "components/claims/use-claim-wizard-scroll.test.tsx",
   "components/checkout/transfer-flow-validation.test.tsx",
+  "app/admin/sections/facturacion/admin-facturacion-arca.test.tsx",
   "lib/orders/admin-claim-wizard.test.ts",
 ]
 

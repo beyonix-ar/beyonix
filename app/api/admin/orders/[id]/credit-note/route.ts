@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
-import { buildArcaQrUrl } from "@/lib/arca/qr"
-import { parseArcaEnvironment } from "@/lib/arca/environment"
-import { FACTURA_C_TYPE, NOTA_CREDITO_C_TYPE, getArcaEnvironment } from "@/lib/arca/wsfe"
+import { buildFiscalArcaQrUrl } from "@/lib/arca/qr"
+import {
+  arcaConfigurationErrorResponse,
+  requireArcaConfiguration,
+  type ArcaConfiguration,
+} from "@/lib/arca/configuration"
+import { ArcaConfigurationError, parseArcaEnvironment } from "@/lib/arca/environment"
+import { FACTURA_C_TYPE, NOTA_CREDITO_C_TYPE } from "@/lib/arca/wsfe"
 import { emitCreditNote, type CreditNoteArcaResult } from "@/lib/arca/credit-note-emission"
-import { getArcaPointOfSale } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
 import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
 import {
@@ -358,11 +362,20 @@ export async function POST(
       { status: 409 },
     )
   }
+  // Guard central ARCA antes de registrar excepciones o reservar importes:
+  // una configuración inválida nunca deja una NC reservada colgada.
+  let configuration: ArcaConfiguration
+  try {
+    configuration = requireArcaConfiguration()
+  } catch (error) {
+    if (error instanceof ArcaConfigurationError) return arcaConfigurationErrorResponse(error)
+    throw error
+  }
   // La NC se emite en el mismo ambiente ARCA que su Factura C: nunca una NC
   // fiscal sobre una factura de prueba ni al revés. Se corta ANTES de
   // reservar importes (la base lo vuelve a exigir al pedir el número).
   const invoiceEnvironment = parseArcaEnvironment(order.invoice_arca_environment)
-  const currentEnvironment = getArcaEnvironment()
+  const currentEnvironment = configuration.environment
   if (invoiceEnvironment !== currentEnvironment) {
     return NextResponse.json(
       {
@@ -632,15 +645,7 @@ export async function POST(
     }
   }
 
-  let pointOfSale: number
-  try {
-    pointOfSale = getArcaPointOfSale()
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "ARCA_PTO_VTA inválido." },
-      { status: 500 },
-    )
-  }
+  const pointOfSale = configuration.pointOfSale
 
   const { data: reservedNote, error: reservationFailure } = await auth.admin
     .rpc("begin_partial_credit_note", {
@@ -792,7 +797,7 @@ export async function POST(
   // autorizada nunca se emite dos veces) y finalización reanudable.
   const emission = await emitCreditNote(auth.admin, {
     noteId,
-    gateway: createWsfeInvoiceGateway(),
+    gateway: createWsfeInvoiceGateway(configuration),
     pointOfSale,
     associatedInvoice: {
       environment: invoiceEnvironment,
@@ -827,9 +832,11 @@ export async function POST(
           point: order.invoice_point,
           number: order.invoice_number,
         },
-        qr_url: buildArcaQrUrl({
+        // null en homologación: una NC de prueba no tiene QR fiscal.
+        qr_url: buildFiscalArcaQrUrl({
+          environment: authorization.environment,
           issueDate: authorization.issueDate,
-          cuit: process.env.ARCA_CUIT ?? "",
+          cuit: configuration.cuit,
           pointOfSale: authorization.pointOfSale,
           voucherType: NOTA_CREDITO_C_TYPE,
           voucherNumber: authorization.voucherNumber,

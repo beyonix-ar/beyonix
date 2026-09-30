@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server"
 
 import { isCronRequestAuthorized } from "@/lib/auth/cron-auth"
-import {
-  getArcaPointOfSale,
-  processArcaInvoiceQueue,
-} from "@/lib/arca/invoice-automation"
+import { requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/configuration"
+import { ArcaConfigurationError } from "@/lib/arca/environment"
+import { processArcaInvoiceQueue } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -28,17 +27,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: "ARCA_AUTO_INVOICING_ENABLED no está habilitado." })
   }
 
-  let pointOfSale: number
+  // Mismo guard central que la emisión manual: sin configuración válida no
+  // se toma ningún pedido de la cola ni se contacta a ARCA.
+  let configuration: ArcaConfiguration
   try {
-    pointOfSale = getArcaPointOfSale()
+    configuration = requireArcaConfiguration()
   } catch (error) {
-    console.error("ARCA_INVOICE_CRON_CONFIG_ERROR", error)
-    return NextResponse.json({ ok: false, error: "Configuración ARCA incompleta." }, { status: 500 })
+    if (!(error instanceof ArcaConfigurationError)) throw error
+    console.error("ARCA_INVOICE_CRON_CONFIG_ERROR", { errors: error.errors })
+    return NextResponse.json(
+      { ok: false, error: "Configuración ARCA inválida.", errors: error.errors },
+      { status: 503 },
+    )
   }
 
   const summary = await processArcaInvoiceQueue(createAdminClient(), {
-    gateway: createWsfeInvoiceGateway(),
-    pointOfSale,
+    gateway: createWsfeInvoiceGateway(configuration),
+    pointOfSale: configuration.pointOfSale,
   })
 
   return NextResponse.json({ ok: true, authorized: summary.authorized, failed: summary.failed })

@@ -15,7 +15,7 @@ const reconcile = read("app/api/admin/credit-notes/[noteId]/reconcile/route.ts")
 
 test("emisión: reserva -> servicio idempotente -> finalización reanudable; nunca FECAESolicitar directo", () => {
   assert.doesNotMatch(route, /fecaeSolicitar|feCompUltimoAutorizado|feCompConsultar/)
-  const pointCheck = route.indexOf("pointOfSale = getArcaPointOfSale()")
+  const pointCheck = route.indexOf("configuration = requireArcaConfiguration()")
   const reservation = route.indexOf('.rpc("begin_partial_credit_note"')
   const emission = route.indexOf("await emitCreditNote(auth.admin, {")
   const finalize = route.indexOf("await finalizeCreditNote(auth.admin, { noteId, actorId: auth.user.id })")
@@ -42,7 +42,7 @@ test("finalización: stock, saldo y resumen idempotentes; auditoría sólo la pr
 
 test("conciliación: sólo Admin, nunca emite una NC nueva y completa pasos pendientes", () => {
   assert.match(reconcile, /requireAdmin\(request\)/)
-  assert.match(reconcile, /reconcileCreditNote\(auth\.admin, \{ noteId, gateway: createWsfeInvoiceGateway\(\) \}\)/)
+  assert.match(reconcile, /reconcileCreditNote\(auth\.admin, \{ noteId, gateway: createWsfeInvoiceGateway\(configuration\) \}\)/)
   assert.doesNotMatch(reconcile, /emitCreditNote|requestCae|fecaeSolicitar|begin_partial_credit_note/)
   assert.match(reconcile, /finalizeCreditNote\(auth\.admin, \{ noteId, actorId: auth\.user\.id \}\)/)
   const service = read("lib/arca/credit-note-emission.ts")

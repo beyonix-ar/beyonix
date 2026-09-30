@@ -1,5 +1,6 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { getAndreaniConfigurationStatus } from "@/lib/andreani/client"
+import { getArcaConfigurationStatus } from "@/lib/arca/configuration"
 import { getWsfeHealth } from "@/lib/arca/wsfe"
 
 type HealthStatus = "ok" | "warning" | "error" | "disabled" | "unknown"
@@ -197,6 +198,19 @@ function checkAndreani(): HealthResult {
 async function checkArca(): Promise<HealthResult> {
   const startedAt = performance.now()
 
+  // Configuración inválida: se informa sin contactar a ARCA.
+  const configuration = getArcaConfigurationStatus()
+  if (!configuration.configured) {
+    return result({
+      id: "arca",
+      label: "ARCA / Facturación electrónica",
+      status: "error",
+      detail: `Configuración inválida: ${configuration.errors.join(" ")}`,
+      latencyMs: null,
+      verified: true,
+    })
+  }
+
   try {
     const health = await withHealthTimeout(
       getWsfeHealth(),
@@ -208,9 +222,11 @@ async function checkArca(): Promise<HealthResult> {
     return result({
       id: "arca",
       label: "ARCA / Facturación electrónica",
-      status: allOk ? "ok" : "warning",
+      status: allOk && configuration.environment === "production" ? "ok" : "warning",
       detail: allOk
-        ? "FEDummy verificó aplicación, base de datos y autenticación."
+        ? configuration.environment === "production"
+          ? "Producción: FEDummy verificó aplicación, base de datos y autenticación."
+          : "Homologación (sin validez fiscal): FEDummy verificó aplicación, base de datos y autenticación."
         : `FEDummy: aplicación ${health.appServer || "-"}, base ${
             health.dbServer || "-"
           }, autenticación ${health.authServer || "-"}.`,

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
-import { buildArcaQrUrl } from "@/lib/arca/qr"
 import {
-  getArcaPointOfSale,
-  processArcaInvoice,
-} from "@/lib/arca/invoice-automation"
+  arcaConfigurationErrorResponse,
+  requireArcaConfiguration,
+  type ArcaConfiguration,
+} from "@/lib/arca/configuration"
+import { ArcaConfigurationError } from "@/lib/arca/environment"
+import { buildFiscalArcaQrUrl } from "@/lib/arca/qr"
+import { processArcaInvoice } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
 
 export const runtime = "nodejs"
@@ -31,19 +34,19 @@ export async function POST(
     return NextResponse.json({ error: "Orden inválida." }, { status: 400 })
   }
 
-  let pointOfSale: number
+  // Guard central: sin configuración ARCA válida no se toma el pedido ni se
+  // contacta a ARCA.
+  let configuration: ArcaConfiguration
   try {
-    pointOfSale = getArcaPointOfSale()
+    configuration = requireArcaConfiguration()
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "ARCA_PTO_VTA inválido." },
-      { status: 500 },
-    )
+    if (error instanceof ArcaConfigurationError) return arcaConfigurationErrorResponse(error)
+    throw error
   }
 
   const result = await processArcaInvoice(auth.admin, {
-    gateway: createWsfeInvoiceGateway(),
-    pointOfSale,
+    gateway: createWsfeInvoiceGateway(configuration),
+    pointOfSale: configuration.pointOfSale,
     orderId,
     manual: true,
   })
@@ -63,9 +66,11 @@ export async function POST(
           issue_date: invoice.issueDate,
           total: invoice.total,
           reconciled: invoice.reconciled,
-          qr_url: buildArcaQrUrl({
+          // null en homologación: un comprobante de prueba no tiene QR fiscal.
+          qr_url: buildFiscalArcaQrUrl({
+            environment: invoice.environment,
             issueDate: invoice.issueDate,
-            cuit: process.env.ARCA_CUIT ?? "",
+            cuit: configuration.cuit,
             pointOfSale: invoice.pointOfSale,
             voucherType: invoice.voucherType,
             voucherNumber: invoice.voucherNumber,

@@ -6,6 +6,8 @@ import { AlertTriangle, ExternalLink, FileText, LoaderCircle, RefreshCw } from "
 
 import { supabase } from "@/lib/supabase/client"
 import { humanizeBillingError } from "@/lib/admin/billing-errors"
+import { getArcaIssueBlockReason } from "@/lib/arca/configuration-view"
+import { ArcaConfigurationPanel, useArcaConfigurationStatus } from "./arca-configuration-panel"
 import {
   adminPageClassName,
   AdminBadge,
@@ -75,6 +77,8 @@ export function AdminFacturacion() {
   const [notice, setNotice] = useState<Notice>(null)
   const [search, setSearch] = useState("")
   const [issuingId, setIssuingId] = useState<number | null>(null)
+  const arca = useArcaConfigurationStatus()
+  const issueBlockReason = getArcaIssueBlockReason(arca.status, arca.loadError)
 
   const loadOrders = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     try {
@@ -151,6 +155,7 @@ export function AdminFacturacion() {
   })
 
   const handleIssueInvoice = async (order: PendingInvoiceOrder) => {
+    if (issueBlockReason) return
     try {
       setIssuingId(order.id)
       setNotice(null)
@@ -172,6 +177,8 @@ export function AdminFacturacion() {
       const data = (await response.json()) as { error?: string }
 
       if (!response.ok) {
+        // El servidor rechazó por configuración: refresca el panel ARCA.
+        if (response.status === 503) void arca.reload()
         throw new Error(data.error || "No se pudo emitir la factura.")
       }
 
@@ -213,6 +220,12 @@ export function AdminFacturacion() {
         }
       />
 
+      <ArcaConfigurationPanel
+        status={arca.status}
+        loadError={arca.loadError}
+        issueBlockReason={issueBlockReason}
+      />
+
       {notice && (
         <AdminInfoBlock
           role="status"
@@ -249,7 +262,7 @@ export function AdminFacturacion() {
               const isIssuing = issuingId === order.id
               const canRetry = order.invoice_status === "error"
               const isProcessing = order.invoice_status === "processing"
-              const actionDisabled = isIssuing || isProcessing
+              const actionDisabled = isIssuing || isProcessing || Boolean(issueBlockReason)
               const errorText = getInvoiceErrorText(order)
 
               return (
@@ -300,6 +313,8 @@ export function AdminFacturacion() {
                     <AdminPrimaryButton
                       disabled={actionDisabled}
                       size="sm"
+                      title={issueBlockReason ?? undefined}
+                      data-arca-issue-button
                       onClick={() => void handleIssueInvoice(order)}
                     >
                       {isIssuing || isProcessing ? (
