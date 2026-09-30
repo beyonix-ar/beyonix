@@ -236,6 +236,9 @@ const TEST_FILES = [
   "components/claims/admin-claim-manager-mercadopago-refund.test.ts",
   "app/admin/sections/pedidos/admin-pedidos-mercadopago-refund.test.ts",
   "app/admin/sections/pedidos/admin-pedidos-refund-details-contract.test.ts",
+  "lib/reviews/review-text.test.ts",
+  "lib/reviews/review-window.test.ts",
+  "lib/reviews/reviews-featured-window-sql.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
@@ -272,6 +275,7 @@ const DB_ROUTE_TEST_FILES = [
 const SERVER_TSX_TEST_FILES = [
   "lib/arca/invoice-pdf-environment.test.ts",
   "scripts/arca-homologation/harness.test.ts",
+  "lib/reviews/reviews-routes.test.ts",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))

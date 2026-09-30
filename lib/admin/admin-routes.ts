@@ -11,6 +11,7 @@ export const ADMIN_ROUTES = {
   eventos: "/admin/eventos",
   facturacion: "/admin/facturacion",
   clientes: "/admin/clientes",
+  resenas: "/admin/resenas",
   "usuarios-roles": "/admin/usuarios-roles",
   auditoria: "/admin/auditoria",
 } as const
@@ -32,6 +33,7 @@ const LEGACY_ADMIN_SECTION_KEYS: Record<string, AdminRouteKey> = {
   eventos: "eventos",
   facturacion: "facturacion",
   clientes: "clientes",
+  resenas: "resenas",
   "usuarios-roles": "usuarios-roles",
   usuarios: "usuarios-roles",
   auditoria: "auditoria",

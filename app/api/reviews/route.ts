@@ -1,9 +1,12 @@
 import {
   getEligibleReview,
   getEligibleProductReview,
+  getOwnOrderReviewWindow,
   toPublicReview,
-  validateReviewComment,
+  type EligibleReview,
 } from "@/lib/reviews/server"
+import type { ReviewWindow } from "@/lib/reviews/review-window"
+import { validateReviewComment } from "@/lib/reviews/review-text"
 
 import {
   getOptionalReviewUser,
@@ -13,32 +16,69 @@ import {
 
 export const dynamic = "force-dynamic"
 
+const HOME_FEATURED_REVIEWS_LIMIT = 12
+const PUBLIC_REVIEW_COLUMNS = "id, product_id, rating, comment, nickname, city, province, created_at"
+
 export async function GET(request: Request) {
   try {
     const { admin, user } = await getOptionalReviewUser(request)
     const productId = Number(new URL(request.url).searchParams.get("productId"))
     const orderId = Number(new URL(request.url).searchParams.get("orderId"))
-    let reviewsQuery = admin
-      .schema("public")
-      .from("reviews")
-      .select("id, product_id, rating, comment, nickname, city, province, created_at")
-      .eq("approved", true)
-      .order("created_at", { ascending: false })
+    const hasProduct = Number.isInteger(productId) && productId > 0
+    const hasOrder = Number.isInteger(orderId) && orderId > 0
 
-    if (Number.isInteger(productId) && productId > 0) {
-      reviewsQuery = reviewsQuery.eq("product_id", productId)
-    } else {
-      reviewsQuery = reviewsQuery.is("product_id", null)
-    }
+    // Producto: todas sus reseñas aprobadas. Home: solo las que el Admin
+    // destacó; el promedio sigue calculándose sobre todas las experiencias
+    // aprobadas para no mostrar un puntaje curado.
+    const reviewsQuery = hasProduct
+      ? admin
+          .schema("public")
+          .from("reviews")
+          .select(PUBLIC_REVIEW_COLUMNS)
+          .eq("approved", true)
+          .eq("product_id", productId)
+          .order("created_at", { ascending: false })
+      : admin
+          .schema("public")
+          .from("reviews")
+          .select(PUBLIC_REVIEW_COLUMNS)
+          .eq("approved", true)
+          .eq("featured", true)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(HOME_FEATURED_REVIEWS_LIMIT)
 
-    const { data, error } = await reviewsQuery
+    const [reviewsResult, summaryResult] = await Promise.all([
+      reviewsQuery,
+      hasProduct
+        ? null
+        : admin
+            .schema("public")
+            .from("reviews")
+            .select("rating")
+            .eq("approved", true)
+            .is("product_id", null),
+    ])
 
-    if (error) throw error
+    if (reviewsResult.error) throw reviewsResult.error
+    if (summaryResult?.error) throw summaryResult.error
+
+    const data = reviewsResult.data ?? []
+    const summaryRatings = (summaryResult?.data ?? []).map((row) => Number(row.rating))
+    const summary = hasProduct
+      ? undefined
+      : {
+          count: summaryRatings.length,
+          average: summaryRatings.length
+            ? summaryRatings.reduce((total, rating) => total + rating, 0) / summaryRatings.length
+            : 0,
+        }
 
     let ownReviewIds = new Set<number>()
-    let eligibleReview = null
+    let eligibleReview: EligibleReview | null = null
     let ownProductReviews: Array<Record<string, unknown>> = []
     let ownExperienceReview: Record<string, unknown> | null = null
+    let reviewWindow: ReviewWindow | null = null
 
     if (user) {
       const [ownReviewsResult, role] = await Promise.all([
@@ -56,8 +96,8 @@ export async function GET(request: Request) {
         )
       }
 
-      if (Number.isInteger(orderId) && orderId > 0) {
-        const [ownProductResult, ownExperienceResult] = await Promise.all([
+      if (hasOrder) {
+        const [ownProductResult, ownExperienceResult, orderWindow] = await Promise.all([
           admin
             .schema("public")
             .from("reviews")
@@ -73,6 +113,10 @@ export async function GET(request: Request) {
             .eq("order_id", orderId)
             .is("product_id", null)
             .maybeSingle(),
+          getOwnOrderReviewWindow(admin, user.id, orderId).catch((windowError: unknown) => {
+            console.error("REVIEW WINDOW ERROR:", windowError)
+            return null
+          }),
         ])
 
         if (!ownProductResult.error) {
@@ -82,18 +126,21 @@ export async function GET(request: Request) {
         if (!ownExperienceResult.error) {
           ownExperienceReview = ownExperienceResult.data ?? null
         }
+
+        reviewWindow = orderWindow
       }
 
       if (role === "admin" || role === "super_admin") {
-        ownReviewIds = new Set((data ?? []).map((review) => Number(review.id)))
+        ownReviewIds = new Set(data.map((review) => Number(review.id)))
       }
 
       try {
-        eligibleReview = await getEligibleReview(
+        const eligibility = await getEligibleReview(
           admin,
           user,
-          Number.isInteger(orderId) && orderId > 0 ? orderId : undefined,
+          hasOrder ? orderId : undefined,
         )
+        eligibleReview = eligibility.ok ? eligibility.review : null
       } catch (eligibilityError) {
         console.error("REVIEW ELIGIBILITY ERROR:", eligibilityError)
       }
@@ -101,12 +148,14 @@ export async function GET(request: Request) {
 
     return Response.json(
       {
-        reviews: (data ?? []).map((review) =>
+        reviews: data.map((review) =>
           toPublicReview(review, ownReviewIds.has(Number(review.id)))
         ),
+        summary,
         eligibleReview,
         ownProductReviews,
         ownExperienceReview,
+        reviewWindow,
       },
       {
         headers: {
@@ -156,7 +205,14 @@ export async function POST(request: Request) {
       )
     }
 
-    const eligibleReview = hasProduct
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return Response.json(
+        { error: "No encontramos una compra verificada disponible para reseñar." },
+        { status: 403 }
+      )
+    }
+
+    const eligibility = hasProduct
       ? await getEligibleProductReview(
           auth.admin,
           auth.user,
@@ -165,13 +221,18 @@ export async function POST(request: Request) {
         )
       : await getEligibleReview(auth.admin, auth.user, orderId)
 
-    if (!eligibleReview || eligibleReview.orderId !== orderId) {
+    if (!eligibility.ok || eligibility.review.orderId !== orderId) {
       return Response.json(
-        { error: "No encontramos una compra verificada disponible para reseñar." },
+        {
+          error: eligibility.ok
+            ? "No encontramos una compra verificada disponible para reseñar."
+            : eligibility.error,
+        },
         { status: 403 }
       )
     }
 
+    const eligibleReview = eligibility.review
     const { data, error } = await auth.admin
       .schema("public")
       .from("reviews")
@@ -195,6 +256,15 @@ export async function POST(request: Request) {
       return Response.json(
         { error: hasProduct ? "Este producto ya tiene una reseña." : "Esta compra ya tiene una reseña." },
         { status: 409 }
+      )
+    }
+
+    // El trigger de la base vuelve a validar plazo y comentario: si el plazo
+    // venció entre la validación y el insert, se informa igual que arriba.
+    if (error?.message?.includes("REVIEW_WINDOW_EXPIRED")) {
+      return Response.json(
+        { error: "El período para dejar una reseña finalizó." },
+        { status: 403 }
       )
     }
 

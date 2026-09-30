@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useState } from "react"
 import { Check, Copy, ExternalLink, Package, Sparkles, Star } from "lucide-react"
@@ -13,6 +13,18 @@ import {
   type OrderProgressTone,
 } from "@/lib/account/account-utils"
 import type { SupabasePedido } from "@/lib/supabase/types"
+import {
+  REVIEW_COMMENT_MAX_LENGTH,
+  REVIEW_COMMENT_MIN_LENGTH,
+  validateReviewComment,
+} from "@/lib/reviews/review-text"
+import { REVIEW_WINDOW_MESSAGES, type ReviewWindow } from "@/lib/reviews/review-window"
+
+function getReviewWindowClosedMessage(reviewWindow: ReviewWindow | null) {
+  return reviewWindow && reviewWindow.status !== "open"
+    ? REVIEW_WINDOW_MESSAGES[reviewWindow.status]
+    : ""
+}
 
 const REVIEW_ACTION_PLACEHOLDER_CLASS =
   "h-8 w-40 shrink-0 animate-pulse rounded-lg bg-[var(--account-surface-hover)]"
@@ -23,7 +35,6 @@ function ReviewRatingSelector({
   visualRating,
   onPreview,
   onSelect,
-  size = "sm",
   readOnly = false,
 }: {
   label: string
@@ -31,20 +42,15 @@ function ReviewRatingSelector({
   visualRating: number
   onPreview: (rating: number | null) => void
   onSelect: (rating: number) => void
-  size?: "sm" | "lg"
   readOnly?: boolean
 }) {
-  const isLarge = size === "lg"
-
   return (
     <div
       role="group"
       aria-label={label}
+      data-review-rating-selector=""
       onMouseLeave={readOnly ? undefined : () => onPreview(null)}
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)]",
-        isLarge ? "h-12 gap-1.5 px-2.5" : "h-9 gap-1 px-2",
-      )}
+      className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[var(--account-border-highlight)] bg-[var(--account-surface-raised)] px-2"
     >
       {[1, 2, 3, 4, 5].map((rating) => {
         const active = rating <= visualRating
@@ -62,8 +68,7 @@ function ReviewRatingSelector({
             onBlur={readOnly ? undefined : () => onPreview(null)}
             onClick={readOnly ? undefined : () => onSelect(rating)}
             className={cn(
-              "grid place-items-center rounded-md focus:outline-none",
-              isLarge ? "size-10" : "size-6",
+              "grid size-6 place-items-center rounded-md focus:outline-none",
               readOnly
                 ? "cursor-default"
                 : "cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--account-accent-soft)]",
@@ -75,7 +80,7 @@ function ReviewRatingSelector({
           >
             <Star
               className={cn(
-                isLarge ? "size-6" : "size-3.5",
+                "size-3.5",
                 active ? "fill-current" : "fill-transparent",
               )}
             />
@@ -323,6 +328,8 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
   const [reviewsLoaded, setReviewsLoaded] = useState(false)
   const [submitting, setSubmitting] = useState<number | null>(null)
   const [feedbackMessage, setFeedbackMessage] = useState("")
+  const [reviewWindow, setReviewWindow] = useState<ReviewWindow | null>(null)
+  const windowClosedMessage = getReviewWindowClosedMessage(reviewWindow)
 
   useEffect(() => {
     let active = true
@@ -333,6 +340,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
     setSubmitted(new Set())
     setReviewsLoaded(false)
     setFeedbackMessage("")
+    setReviewWindow(null)
 
     const loadOwnReviews = async () => {
       try {
@@ -343,9 +351,11 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
         })
         const data = (await response.json()) as {
           ownProductReviews?: Array<{ product_id: number; rating: number; comment: string }>
+          reviewWindow?: ReviewWindow | null
         }
         if (!active || !response.ok) return
         const reviews = data.ownProductReviews ?? []
+        setReviewWindow(data.reviewWindow ?? null)
         setSubmitted(new Set(reviews.map((review) => Number(review.product_id))))
         setRatings(Object.fromEntries(reviews.map((review) => [Number(review.product_id), Number(review.rating)])))
         setComments(Object.fromEntries(reviews.map((review) => [Number(review.product_id), String(review.comment)])))
@@ -359,11 +369,16 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
 
   const submitReview = async (productId: number) => {
     const rating = ratings[productId]
-    const comment = comments[productId]?.trim() ?? ""
     if (!rating) {
       setFeedbackMessage("Elegí una puntuación para enviar la reseña.")
       return
     }
+    const commentValidation = validateReviewComment(comments[productId])
+    if (commentValidation.error) {
+      setFeedbackMessage(commentValidation.error)
+      return
+    }
+    const comment = commentValidation.comment
 
     setSubmitting(productId)
     setFeedbackMessage("")
@@ -452,7 +467,7 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                     <Check className="size-3" />
                     Enviada · {selectedRating}/5
                   </span>
-                ) : (
+                ) : windowClosedMessage ? null : (
                   <ReviewRatingSelector
                     label={`Calificar ${productName}`}
                     selectedRating={selectedRating}
@@ -476,30 +491,32 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
                   />
                 )}
               </div>
-              {reviewsLoaded && activeProductId === productId && !submitted.has(productId) && (
+              {reviewsLoaded && !windowClosedMessage && activeProductId === productId && !submitted.has(productId) && (
                 <div className="mt-3 border-t border-[var(--account-border-subtle)] pt-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <label
                       htmlFor={`product-review-${order.id}-${productId}`}
                       className="text-9px font-medium text-[var(--account-text-secondary)]"
                     >
-                      Comentario opcional
+                      Comentario (mín. {REVIEW_COMMENT_MIN_LENGTH} caracteres)
                     </label>
                     <span className="text-8px font-medium text-[var(--account-text-muted)]">
-                      {(comments[productId] ?? "").length}/150
+                      {(comments[productId] ?? "").length}/{REVIEW_COMMENT_MAX_LENGTH}
                     </span>
                   </div>
                   <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
                     <input
                       id={`product-review-${order.id}-${productId}`}
                       value={comments[productId] ?? ""}
-                      maxLength={150}
-                      onChange={(event) =>
+                      maxLength={REVIEW_COMMENT_MAX_LENGTH}
+                      required
+                      onChange={(event) => {
                         setComments((current) => ({
                           ...current,
                           [productId]: event.target.value,
                         }))
-                      }
+                        setFeedbackMessage("")
+                      }}
                       onKeyDown={(event) => {
                         if (event.key !== "Enter" || event.nativeEvent.isComposing) return
                         event.preventDefault()
@@ -526,6 +543,13 @@ export function OrderProductFeedback({ order }: { order: SupabasePedido }) {
           )
         })}
       </div>
+      {reviewsLoaded &&
+        windowClosedMessage &&
+        items.some((item) => !submitted.has(Number(item.producto_id))) && (
+          <p role="status" className="mt-2 text-10px font-medium text-[var(--account-text-secondary)]">
+            {windowClosedMessage}
+          </p>
+        )}
       {feedbackMessage && (
         <p role="status" className="mt-2 text-10px font-medium text-[var(--account-text-secondary)]">
           {feedbackMessage}
@@ -551,6 +575,8 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
   const [experienceLoaded, setExperienceLoaded] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [feedbackMessage, setFeedbackMessage] = useState("")
+  const [reviewWindow, setReviewWindow] = useState<ReviewWindow | null>(null)
+  const windowClosedMessage = getReviewWindowClosedMessage(reviewWindow)
 
   useEffect(() => {
     let active = true
@@ -561,6 +587,7 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
     setActiveExperience(false)
     setExperienceLoaded(false)
     setFeedbackMessage("")
+    setReviewWindow(null)
 
     const loadOwnExperience = async () => {
       try {
@@ -573,9 +600,12 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
         })
         const data = (await response.json()) as {
           ownExperienceReview?: OwnExperienceReview | null
+          reviewWindow?: ReviewWindow | null
         }
 
         if (!active) return
+
+        if (response.ok) setReviewWindow(data.reviewWindow ?? null)
 
         if (response.ok && data.ownExperienceReview) {
           const ownReview = data.ownExperienceReview
@@ -600,12 +630,17 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
   }, [order.id])
 
   const submitExperience = async () => {
-    const trimmedComment = comment.trim()
-
     if (!rating) {
       setFeedbackMessage("Elegí una puntuación para enviar tu experiencia.")
       return
     }
+
+    const commentValidation = validateReviewComment(comment)
+    if (commentValidation.error) {
+      setFeedbackMessage(commentValidation.error)
+      return
+    }
+    const trimmedComment = commentValidation.comment
 
     setSubmitting(true)
     setFeedbackMessage("")
@@ -698,7 +733,6 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                   visualRating={submittedReview.rating}
                   onPreview={() => {}}
                   onSelect={() => {}}
-                  size="lg"
                   readOnly
                 />
                 <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-beyonix-status-success/35 bg-beyonix-status-success/10 px-2.5 text-10px font-semibold text-beyonix-status-success">
@@ -706,6 +740,10 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                   {EXPERIENCE_RATING_LABELS[submittedReview.rating]} · Enviada
                 </span>
               </div>
+            ) : windowClosedMessage ? (
+              <p role="status" className="text-10px font-medium text-[var(--account-text-secondary)]">
+                {windowClosedMessage}
+              </p>
             ) : (
               <div className="flex flex-wrap items-center gap-3">
                 <ReviewRatingSelector
@@ -718,7 +756,6 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                     setActiveExperience(true)
                     setFeedbackMessage("")
                   }}
-                  size="lg"
                 />
                 {visualRating > 0 && (
                   <span className="text-11px font-bold text-[var(--account-accent-soft)]">
@@ -729,24 +766,25 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
             )}
           </div>
 
-          {experienceLoaded && activeExperience && !submittedReview && (
+          {experienceLoaded && !windowClosedMessage && activeExperience && !submittedReview && (
             <div className="mt-3 border-t border-[var(--account-border-subtle)] pt-2.5">
               <div className="flex items-center justify-between gap-3">
                 <label
                   htmlFor={`experience-review-${order.id}`}
                   className="text-9px font-medium text-[var(--account-text-secondary)]"
                 >
-                  Comentario opcional
+                  Comentario (mín. {REVIEW_COMMENT_MIN_LENGTH} caracteres)
                 </label>
                 <span className="text-8px font-medium text-[var(--account-text-muted)]">
-                  {comment.length}/150
+                  {comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
                 </span>
               </div>
               <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
                 <input
                   id={`experience-review-${order.id}`}
                   value={comment}
-                  maxLength={150}
+                  maxLength={REVIEW_COMMENT_MAX_LENGTH}
+                  required
                   onChange={(event) => {
                     setComment(event.target.value)
                     setFeedbackMessage("")

@@ -20,6 +20,12 @@ import {
   BeyonixSectionHeader,
 } from "@/components/beyonix-ui"
 import { Textarea } from "@/components/ui/textarea"
+import { formatReviewDate } from "@/lib/reviews/review-format"
+import {
+  REVIEW_COMMENT_MAX_LENGTH,
+  REVIEW_COMMENT_MIN_LENGTH,
+  validateReviewComment,
+} from "@/lib/reviews/review-text"
 import { getSafeSupabaseSession, supabase } from "@/lib/supabase/client"
 
 type Review = {
@@ -40,8 +46,14 @@ type EligibleReview = {
   province: string
 }
 
+type ReviewsSummary = {
+  count: number
+  average: number
+}
+
 type ReviewsResponse = {
   reviews?: Review[]
+  summary?: ReviewsSummary
   eligibleReview?: EligibleReview | null
   error?: string
 }
@@ -59,6 +71,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 export function ReviewsSection() {
   const [reviews, setReviews] = useState<Review[]>([])
+  const [summary, setSummary] = useState<ReviewsSummary>({ count: 0, average: 0 })
   const [eligibleReview, setEligibleReview] =
     useState<EligibleReview | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -66,6 +79,7 @@ export function ReviewsSection() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [errorMessage, setErrorMessage] = useState("")
+  const [successMessage, setSuccessMessage] = useState("")
   const [rating, setRating] = useState(5)
   const [hover, setHover] = useState(0)
   const [comment, setComment] = useState("")
@@ -84,6 +98,7 @@ export function ReviewsSection() {
       }
 
       setReviews(payload.reviews ?? [])
+      setSummary(payload.summary ?? { count: 0, average: 0 })
       setEligibleReview(payload.eligibleReview ?? null)
       setErrorMessage("")
     } catch (error) {
@@ -113,8 +128,15 @@ export function ReviewsSection() {
   const handleAddReview = async () => {
     if (!eligibleReview || isSubmitting) return
 
+    const commentValidation = validateReviewComment(comment)
+    if (commentValidation.error) {
+      setErrorMessage(commentValidation.error)
+      return
+    }
+
     setIsSubmitting(true)
     setErrorMessage("")
+    setSuccessMessage("")
 
     try {
       const headers = await getAuthHeaders()
@@ -127,7 +149,7 @@ export function ReviewsSection() {
         body: JSON.stringify({
           orderId: eligibleReview.orderId,
           rating,
-          comment,
+          comment: commentValidation.comment,
         }),
       })
       const payload = (await response.json()) as ReviewsResponse & {
@@ -138,10 +160,15 @@ export function ReviewsSection() {
         throw new Error(payload.error || "No pudimos guardar la reseña.")
       }
 
-      setReviews((current) => [payload.review!, ...current])
+      // Una reseña nueva no se publica en Home hasta que el Admin la destaque.
+      setSummary((current) => ({
+        count: current.count + 1,
+        average: (current.average * current.count + rating) / (current.count + 1),
+      }))
       setEligibleReview(null)
       setComment("")
       setRating(5)
+      setSuccessMessage("¡Gracias por compartir tu experiencia!")
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -186,20 +213,18 @@ export function ReviewsSection() {
   }
 
   const visibleReviews = reviews.slice(0, 3)
-  const averageRating =
-    reviews.length > 0
-      ? (
-          reviews.reduce((sum, review) => sum + review.rating, 0) /
-          reviews.length
-        ).toFixed(1)
-      : "0.0"
+  const averageRating = summary.average.toFixed(1)
 
-  const ReviewCard = ({ review }: { review: Review }) => (
+  const ReviewCard = ({ review }: { review: Review }) => {
+    const dateLabel = formatReviewDate(review.createdAt)
+
+    return (
     <BeyonixCard asChild variant="default" className="relative overflow-hidden p-6">
-      <article>
+      <article data-testid="home-review-card">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div
             className="flex gap-1"
+            role="img"
             aria-label={`${review.rating} de 5 estrellas`}
           >
             {Array.from({ length: 5 }).map((_, index) => (
@@ -207,8 +232,8 @@ export function ReviewsSection() {
                 key={index}
                 className={
                   index < review.rating
-                    ? "size-4 fill-beyonix-sky text-beyonix-sky"
-                    : "size-4 text-beyonix-blue-light/50"
+                    ? "size-4 fill-amber-400 text-amber-600"
+                    : "size-4 text-[var(--beyonix-text-muted)]"
                 }
               />
             ))}
@@ -234,24 +259,27 @@ export function ReviewsSection() {
         </div>
 
         {review.comment.trim() && (
-          <p className="mb-5 leading-relaxed text-white/88">
+          <p className="mb-5 text-base font-medium leading-relaxed text-[var(--beyonix-text-primary)]">
             “{review.comment}”
           </p>
         )}
 
-        <div className="border-t border-beyonix-blue-light/14 pt-4">
-          <p className="flex items-center gap-2 text-sm font-semibold text-white">
-            <UserRound className="size-4 text-beyonix-sky" />
+        <div className="border-t border-[var(--beyonix-border-default)] pt-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-[var(--beyonix-text-primary)]">
+            <UserRound className="size-4 shrink-0 text-[var(--beyonix-text-secondary)]" />
             {review.nickname}
           </p>
-          <p className="mt-2 flex items-center gap-2 text-sm text-white/58">
-            <MapPin className="size-4 text-beyonix-cyan" />
-            {review.city} · {review.province}
+          <p className="mt-2 flex items-center gap-2 text-sm text-[var(--beyonix-text-secondary)]">
+            <MapPin className="size-4 shrink-0 text-[var(--beyonix-text-secondary)]" />
+            {review.city}, {review.province}
+            {dateLabel && <span aria-hidden="true">·</span>}
+            {dateLabel}
           </p>
         </div>
       </article>
     </BeyonixCard>
-  )
+    )
+  }
 
   return (
     <section className="beyonix-section-spacing">
@@ -261,9 +289,9 @@ export function ReviewsSection() {
           eyebrow="Experiencias"
           title="Experiencias de compra verificadas"
           description={
-            reviews.length > 0
-              ? `${averageRating}/5 basado en ${reviews.length} ${
-                  reviews.length === 1
+            reviews.length > 0 && summary.count > 0
+              ? `${averageRating}/5 basado en ${summary.count} ${
+                  summary.count === 1
                     ? "experiencia verificada"
                     : "experiencias verificadas"
                 }`
@@ -296,13 +324,14 @@ export function ReviewsSection() {
                     key={value}
                     type="button"
                     aria-label={`Calificar con ${value} estrellas`}
+                    aria-pressed={rating === value}
                     onClick={() => setRating(value)}
                     onMouseEnter={() => setHover(value)}
                     onMouseLeave={() => setHover(0)}
-                    className="cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/35"
+                    className="grid size-6 cursor-pointer place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/35"
                   >
                     <Star
-                      className={`size-6 transition-all ${
+                      className={`size-3.5 transition-all ${
                         value <= (hover || rating)
                           ? "fill-beyonix-sky text-beyonix-sky"
                           : "text-beyonix-blue-light"
@@ -314,16 +343,21 @@ export function ReviewsSection() {
             </div>
 
             <Textarea
-              placeholder="Comentá tu experiencia en Beyonix (máx. 150 caracteres)"
-              maxLength={150}
+              aria-label="Comentario sobre tu experiencia"
+              placeholder={`Comentá tu experiencia en Beyonix (mín. ${REVIEW_COMMENT_MIN_LENGTH}, máx. ${REVIEW_COMMENT_MAX_LENGTH} caracteres)`}
+              maxLength={REVIEW_COMMENT_MAX_LENGTH}
+              required
               rows={4}
               className="beyonix-review-textarea h-28 resize-none border-beyonix-blue-light/30 bg-black/55 text-white focus-visible:border-beyonix-blue-light focus-visible:ring-beyonix-blue-light/25"
               value={comment}
-              onChange={(event) => setComment(event.target.value)}
+              onChange={(event) => {
+                setComment(event.target.value)
+                setErrorMessage("")
+              }}
             />
 
             <p className="text-right text-xs text-beyonix-sky/60">
-              {comment.length}/150
+              {comment.length}/{REVIEW_COMMENT_MAX_LENGTH}
             </p>
 
             <BeyonixButton
@@ -351,6 +385,15 @@ export function ReviewsSection() {
             className="mx-auto mb-8 max-w-xl rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-center text-sm text-red-200"
           >
             {errorMessage}
+          </p>
+        )}
+
+        {successMessage && (
+          <p
+            role="status"
+            className="beyonix-modal-body mx-auto mb-8 max-w-xl text-center text-sm font-semibold text-[var(--beyonix-text-secondary)]"
+          >
+            {successMessage}
           </p>
         )}
 
@@ -410,7 +453,7 @@ export function ReviewsSection() {
                 <X className="size-5" />
               </BeyonixButton>
 
-              <h3 className="mb-6 text-2xl font-bold text-white">
+              <h3 className="mb-6 text-2xl font-bold text-[var(--beyonix-text-primary)]">
                 Todas las reseñas
               </h3>
 

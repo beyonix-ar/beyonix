@@ -12,6 +12,7 @@ import {
   History,
   LogOut,
   Menu,
+  MessageSquareText,
   Package,
   Percent,
   Settings2,
@@ -372,6 +373,12 @@ export function AdminClient({ children }: { children: ReactNode }) {
         icon: <Users className="size-4" />,
         notificationCount: clientNotificationCount,
         notificationTone: "payment",
+      },
+      {
+        key: "resenas",
+        label: "Reseñas",
+        description: "Destacadas en Home",
+        icon: <MessageSquareText className="size-4" />,
       },
       {
         key: "usuarios-roles",

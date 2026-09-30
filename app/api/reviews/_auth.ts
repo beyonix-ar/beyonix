@@ -36,7 +36,12 @@ export async function getOptionalReviewUser(request: Request) {
   }
 }
 
-export async function requireReviewUser(request: Request) {
+export async function requireReviewUser(
+  request: Request,
+): Promise<
+  | { error: Response }
+  | { admin: ReturnType<typeof createAdminClient>; user: User }
+> {
   const auth = await getOptionalReviewUser(request)
 
   if (!auth.user) {

@@ -87,8 +87,61 @@ export function validateUsername(username: string) {
   return ""
 }
 
+// Texto libre con varias palabras: buscar las raíces sobre el texto compactado
+// bloquea palabras comunes ("transporte" contiene "ort", "hermano"/"año"
+// contienen "ano", "computadora" contiene "put"). Por eso se evalúa por
+// palabra: las raíces cortas solo al inicio de la palabra y las ambiguas como
+// palabra completa. Las raíces largas se siguen buscando también en el texto
+// compactado para detectar insultos separados con espacios o símbolos.
+const PUBLIC_TEXT_WORD_SEPARATOR = /[\s,.;:?¿¡"'()[\]{}\-_/\\]+/
+const exactWordRoots = new Set(["ano", "anal", "ass"])
+const SHORT_ROOT_MAX_LENGTH = 4
+const COMPACT_ROOT_MIN_LENGTH = 6
+
+function getPublicTextWords(value: string) {
+  const tokens = value
+    .toLowerCase()
+    .replace(/ñ/g, "ny")
+    .split(PUBLIC_TEXT_WORD_SEPARATOR)
+    .map(normalizeForModeration)
+    .filter(Boolean)
+  const words: string[] = []
+  let spelledOut = ""
+
+  for (const token of tokens) {
+    if (token.length === 1) {
+      spelledOut += token
+      continue
+    }
+    if (spelledOut) words.push(spelledOut)
+    spelledOut = ""
+    words.push(token)
+  }
+  if (spelledOut) words.push(spelledOut)
+
+  return words
+}
+
+function isBlockedPublicWord(word: string) {
+  return blockedRoots.some((root) => {
+    if (exactWordRoots.has(root)) return word === root || word === `${root}s`
+    if (root.length <= SHORT_ROOT_MAX_LENGTH) return word.startsWith(root)
+    return word.includes(root)
+  })
+}
+
+function hasBlockedPublicText(value: string) {
+  const compact = normalizeForModeration(value.toLowerCase().replace(/ñ/g, "ny"))
+
+  return (
+    blockedRoots.some(
+      (root) => root.length >= COMPACT_ROOT_MIN_LENGTH && compact.includes(root),
+    ) || getPublicTextWords(value).some(isBlockedPublicWord)
+  )
+}
+
 export function validatePublicText(value: string) {
-  if (hasBlockedWords(value)) {
+  if (hasBlockedPublicText(value)) {
     return "El texto contiene palabras no permitidas."
   }
 

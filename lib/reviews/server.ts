@@ -1,11 +1,17 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js"
 
 import { parseDeliveryAddress } from "@/lib/delivery-address"
-import { validatePublicText } from "@/lib/validation/content-filter"
+import {
+  getReviewWindow,
+  REVIEW_WINDOW_MESSAGES,
+  type ReviewWindow,
+} from "@/lib/reviews/review-window"
 
 const PAID_STATES = new Set(["pagado", "enviado", "entregado"])
 const PRIVATE_DATA_PATTERN =
   /@|\b\d{6,}\b|\b(calle|avenida|av\.?|piso|depto|departamento|casa|altura|cp)\b/i
+const ORDER_REVIEW_COLUMNS =
+  "id, localidad, provincia, estado, payment_status, delivered_at, created_at"
 
 type AdminClient = SupabaseClient
 
@@ -15,7 +21,15 @@ type OrderRow = {
   provincia: string | null
   estado: string
   payment_status: string | null
+  delivered_at: string | null
   created_at: string
+}
+
+type ProfileRow = {
+  username: string | null
+  direccion: string | null
+  codigo_postal: string | null
+  provincia: string | null
 }
 
 export type EligibleReview = {
@@ -24,6 +38,10 @@ export type EligibleReview = {
   city: string
   province: string
 }
+
+export type ReviewEligibility =
+  | { ok: true; review: EligibleReview }
+  | { ok: false; error: string }
 
 export type PublicReview = {
   id: number
@@ -35,6 +53,8 @@ export type PublicReview = {
   createdAt: string
   canDelete: boolean
 }
+
+const NOT_ELIGIBLE_ERROR = "No encontramos una compra verificada disponible para reseñar."
 
 function safeNickname(value: unknown) {
   const nickname = String(value ?? "").trim()
@@ -74,46 +94,47 @@ function isPaidOrder(order: OrderRow) {
   )
 }
 
-export function validateReviewComment(value: unknown) {
-  const comment = String(value ?? "").trim()
+function getOrderWindowError(order: OrderRow) {
+  if (!isPaidOrder(order)) return NOT_ELIGIBLE_ERROR
 
-  if (comment.length > 150) {
-    return {
-      error: "La reseña puede tener hasta 150 caracteres.",
-      comment: "",
-    }
-  }
+  const window = getReviewWindow(order)
+  return window.status === "open" ? "" : REVIEW_WINDOW_MESSAGES[window.status]
+}
 
-  if (!comment) {
-    return { error: "", comment: "" }
-  }
+function buildEligibleReview(
+  order: OrderRow,
+  profile: ProfileRow | null,
+  user: User,
+): ReviewEligibility {
+  const parsedAddress = parseDeliveryAddress(
+    profile?.direccion ?? "",
+    order.provincia ?? profile?.provincia ?? undefined,
+    profile?.codigo_postal ?? undefined,
+  )
+  const nickname = safeNickname(profile?.username ?? user.user_metadata?.username)
+  const city = safePlace(order.localidad ?? parsedAddress.locality)
+  const province = safePlace(order.provincia ?? profile?.provincia)
 
-  const moderationError = validatePublicText(comment)
+  if (!nickname || !city || !province) return { ok: false, error: NOT_ELIGIBLE_ERROR }
 
-  if (moderationError) {
-    return { error: moderationError, comment: "" }
-  }
-
-  if (PRIVATE_DATA_PATTERN.test(comment)) {
-    return {
-      error: "No incluyas emails, teléfonos ni direcciones en la reseña.",
-      comment: "",
-    }
-  }
-
-  return { error: "", comment }
+  return { ok: true, review: { orderId: order.id, nickname, city, province } }
 }
 
 export async function getEligibleReview(
   admin: AdminClient,
   user: User,
   orderId?: number,
-): Promise<EligibleReview | null> {
+): Promise<ReviewEligibility> {
   const requestedOrderId = Number(orderId)
   const hasRequestedOrder =
     Number.isInteger(requestedOrderId) && requestedOrderId > 0
 
-  const [reviewsResult, profileResult] = await Promise.all([
+  const ordersQuery = admin
+    .from("ordenes")
+    .select(ORDER_REVIEW_COLUMNS)
+    .eq("usuario_id", user.id)
+
+  const [reviewsResult, profileResult, ordersResult] = await Promise.all([
     admin
       .from("reviews")
       .select("order_id")
@@ -124,63 +145,36 @@ export async function getEligibleReview(
       .select("username, direccion, codigo_postal, provincia")
       .eq("id", user.id)
       .maybeSingle(),
+    hasRequestedOrder
+      ? ordersQuery.eq("id", requestedOrderId)
+      : ordersQuery.order("created_at", { ascending: false }),
   ])
 
   if (reviewsResult.error) throw reviewsResult.error
   if (profileResult.error) throw profileResult.error
-
-  let orders: OrderRow[] = []
-
-  if (hasRequestedOrder) {
-    const orderResult = await admin
-      .from("ordenes")
-      .select("id, localidad, provincia, estado, payment_status, created_at")
-      .eq("usuario_id", user.id)
-      .eq("id", requestedOrderId)
-      .maybeSingle()
-
-    if (orderResult.error) throw orderResult.error
-    orders = orderResult.data ? [orderResult.data as OrderRow] : []
-  } else {
-    const orderListResult = await admin
-      .from("ordenes")
-      .select("id, localidad, provincia, estado, payment_status, created_at")
-      .eq("usuario_id", user.id)
-      .order("created_at", { ascending: false })
-
-    if (orderListResult.error) throw orderListResult.error
-    orders = (orderListResult.data ?? []) as OrderRow[]
-  }
+  if (ordersResult.error) throw ordersResult.error
 
   const reviewedOrderIds = new Set(
     (reviewsResult.data ?? []).map((review) => Number(review.order_id))
   )
-  const order = orders.find(
-    (candidate) => isPaidOrder(candidate) && !reviewedOrderIds.has(candidate.id)
-  )
+  const orders = (ordersResult.data ?? []) as OrderRow[]
+  const pendingOrders = orders.filter((candidate) => !reviewedOrderIds.has(candidate.id))
 
-  if (!order) return null
-
-  const profile = profileResult.data
-  const parsedAddress = parseDeliveryAddress(
-    profile?.direccion ?? "",
-    order.provincia ?? profile?.provincia ?? undefined,
-    profile?.codigo_postal ?? undefined
-  )
-  const nickname = safeNickname(
-    profile?.username ?? user.user_metadata?.username
-  )
-  const city = safePlace(order.localidad ?? parsedAddress.locality)
-  const province = safePlace(order.provincia ?? profile?.provincia)
-
-  if (!nickname || !city || !province) return null
-
-  return {
-    orderId: order.id,
-    nickname,
-    city,
-    province,
+  if (hasRequestedOrder && orders.length > 0 && pendingOrders.length === 0) {
+    return { ok: false, error: "Esta compra ya tiene una reseña." }
   }
+
+  const order = pendingOrders.find((candidate) => !getOrderWindowError(candidate))
+
+  if (!order) {
+    const requestedOrder = hasRequestedOrder ? pendingOrders[0] : undefined
+    return {
+      ok: false,
+      error: requestedOrder ? getOrderWindowError(requestedOrder) : NOT_ELIGIBLE_ERROR,
+    }
+  }
+
+  return buildEligibleReview(order, profileResult.data as ProfileRow | null, user)
 }
 
 export async function getEligibleProductReview(
@@ -188,11 +182,11 @@ export async function getEligibleProductReview(
   user: User,
   orderId: number,
   productId: number,
-): Promise<EligibleReview | null> {
+): Promise<ReviewEligibility> {
   const [orderResult, profileResult, reviewResult] = await Promise.all([
     admin
       .from("ordenes")
-      .select("id, usuario_id, localidad, provincia, estado, payment_status, orden_items(producto_id)")
+      .select(`${ORDER_REVIEW_COLUMNS}, orden_items(producto_id)`)
       .eq("id", orderId)
       .eq("usuario_id", user.id)
       .maybeSingle(),
@@ -213,27 +207,37 @@ export async function getEligibleProductReview(
   if (orderResult.error) throw orderResult.error
   if (profileResult.error) throw profileResult.error
   if (reviewResult.error) throw reviewResult.error
-  if (!orderResult.data || reviewResult.data) return null
+  if (!orderResult.data) return { ok: false, error: NOT_ELIGIBLE_ERROR }
+  if (reviewResult.data) return { ok: false, error: "Este producto ya tiene una reseña." }
 
-  const order = orderResult.data as unknown as OrderRow & {
-    usuario_id: string
+  const order = orderResult.data as OrderRow & {
     orden_items?: Array<{ producto_id: number }>
   }
-  if (!isPaidOrder(order)) return null
-  if (!(order.orden_items ?? []).some((item) => Number(item.producto_id) === productId)) return null
+  if (!(order.orden_items ?? []).some((item) => Number(item.producto_id) === productId)) {
+    return { ok: false, error: NOT_ELIGIBLE_ERROR }
+  }
 
-  const profile = profileResult.data
-  const parsedAddress = parseDeliveryAddress(
-    profile?.direccion ?? "",
-    order.provincia ?? profile?.provincia ?? undefined,
-    profile?.codigo_postal ?? undefined,
-  )
-  const nickname = safeNickname(profile?.username ?? user.user_metadata?.username)
-  const city = safePlace(order.localidad ?? parsedAddress.locality)
-  const province = safePlace(order.provincia ?? profile?.provincia)
+  const windowError = getOrderWindowError(order)
+  if (windowError) return { ok: false, error: windowError }
 
-  if (!nickname || !city || !province) return null
-  return { orderId, nickname, city, province }
+  return buildEligibleReview(order, profileResult.data as ProfileRow | null, user)
+}
+
+/** Estado del plazo de reseña de un pedido propio (null si no es del usuario). */
+export async function getOwnOrderReviewWindow(
+  admin: AdminClient,
+  userId: string,
+  orderId: number,
+): Promise<ReviewWindow | null> {
+  const { data, error } = await admin
+    .from("ordenes")
+    .select("estado, delivered_at")
+    .eq("id", orderId)
+    .eq("usuario_id", userId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data ? getReviewWindow(data) : null
 }
 
 export function toPublicReview(
