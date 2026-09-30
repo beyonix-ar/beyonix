@@ -12206,17 +12206,22 @@ html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-icon 
   background: var(--account-accent) !important;
   border-color: var(--account-accent) !important;
 }
-
-/* Notificaciones (components/customer-notifications-bell.tsx) */
-html[data-account-theme="light"][data-account-scope] .beyonix-notifications-trigger {
-  background: #fff !important;
+/* Ícono siempre blanco sobre su contenedor navy, en ambos temas y en
+   cualquier página: el color vive acá (clase propia del componente) y no en
+   la utilidad text-white, que los remapeos de Light por página
+   (.checkout-page, #contenido) convierten en texto oscuro. */
+.beyonix-account-menu-icon {
+  color: #ffffff;
 }
-/* Badge: el aro que lo separa de la campana toma el fondo del botón. */
+.group:is(:hover, :focus-visible) .beyonix-account-menu-icon-danger {
+  color: #ef4444;
+}
+
+/* Notificaciones (components/customer-notifications-bell.tsx). El botón usa
+   .beyonix-header-icon-button (ver "Botones redondos de acción del header").
+   Badge: el aro que lo separa de la campana toma el fondo del botón. */
 html[data-account-theme="light"][data-account-scope] .beyonix-notifications-badge {
   box-shadow: 0 0 0 2px #fff;
-}
-html[data-account-theme="light"][data-account-scope] .beyonix-notifications-bell-icon {
-  color: #000;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-notifications-panel {
   background: var(--account-surface) !important;
@@ -12449,14 +12454,12 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-notice {
    cualquier página); el override de abajo sólo activa en
    data-account-theme="light" + data-account-scope, igual que el resto del
    chrome (header/carrito/dropdown). */
-.beyonix-header-notif-trigger,
-.beyonix-header-notif-bell {
+.beyonix-header-notif-trigger {
   background-color: #0d1117;
   border-color: #303846;
   color: #ffffff;
 }
-.beyonix-header-notif-trigger:hover,
-.beyonix-header-notif-bell:hover {
+.beyonix-header-notif-trigger:hover {
   background-color: #141820;
   border-color: rgba(140, 200, 242, 0.55);
 }
@@ -12504,14 +12507,12 @@ html[data-account-theme="light"][data-account-scope] .beyonix-cart-notice {
   box-shadow: 0 0 10px rgba(140, 200, 242, 0.38);
 }
 
-html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-trigger,
-html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-bell {
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-trigger {
   background-color: var(--account-surface-raised);
   border-color: var(--account-border);
   color: var(--account-text-primary);
 }
-html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-trigger:hover,
-html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-bell:hover {
+html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-trigger:hover {
   background-color: var(--account-surface-hover);
   border-color: var(--account-border-strong);
 }
@@ -12519,6 +12520,40 @@ html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-badge
   background-color: #dc2626;
   border-color: #ffffff;
   color: #ffffff;
+}
+
+/* Botones redondos de acción del header del storefront: campana de cliente
+   (customer-notifications-bell.tsx), toggle Claro/Oscuro
+   (account-theme-toggle.tsx) y campana de staff en estado neutro
+   (admin-notification-bell.tsx, variante storefront). Un único estilo con el
+   look de la campana en ambos temas. Colores en clase propia y no en
+   utilidades text-white/border-[#…]: los remapeos de Light por página
+   (.checkout-page, #contenido, …) matchean esas utilidades y hacían que el
+   mismo botón se viera distinto según la pantalla. Va después de
+   .beyonix-header-notif-trigger para ganarle en el estado neutro (misma
+   especificidad); los tonos con alertas de la campana de staff siguen
+   usando sus propias clases. */
+.beyonix-header-icon-button {
+  background-color: #0d1117;
+  border-color: #303846;
+  color: rgba(255, 255, 255, 0.8);
+}
+.beyonix-header-icon-button:hover {
+  background-color: #141820;
+  border-color: var(--color-beyonix-blue-light);
+  color: #ffffff;
+  box-shadow: 0 0 18px rgba(17, 42, 67, 0.55);
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-icon-button {
+  background-color: #ffffff;
+  border-color: #303846;
+  color: #000000;
+}
+html[data-account-theme="light"][data-account-scope] .beyonix-header-icon-button:hover {
+  background-color: var(--account-surface-hover);
+  border-color: #303846;
+  color: #000000;
+  box-shadow: none;
 }
 html[data-account-theme="light"][data-account-scope] .beyonix-header-notif-panel {
   background: var(--account-surface);

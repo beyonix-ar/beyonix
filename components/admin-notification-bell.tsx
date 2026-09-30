@@ -38,7 +38,8 @@ const ADMIN_INCOMING_PAYMENT_BADGE_STYLE = "admin-ds-notification-count-payment"
 // mismo mecanismo que header/carrito/dropdown de usuario), dejando
 // admin-ds-* -- y por lo tanto el panel admin real -- completamente
 // intactos.
-const STOREFRONT_NEUTRAL_BELL_STYLE = "beyonix-header-notif-bell"
+// Estado neutro: mismo botón que la campana de cliente y el toggle de tema.
+const STOREFRONT_NEUTRAL_BELL_STYLE = "beyonix-header-icon-button"
 const STOREFRONT_NEUTRAL_BADGE_STYLE = "beyonix-header-notif-badge"
 
 interface AdminNotificationBellProps {
@@ -181,7 +182,7 @@ export function AdminNotificationBell({
               : "admin-ds-bell-button-idle",
         )}
       >
-        <Bell className="size-4" />
+        <Bell className="size-4.5" />
         {error && <span role="status" className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 text-xs text-white">!</span>}
         {!error && !loading && count > 0 && (
           <span

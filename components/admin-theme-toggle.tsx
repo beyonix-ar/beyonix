@@ -21,7 +21,10 @@ export function AdminThemeToggle() {
       onClick={toggleTheme}
       title={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
       aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-      className="admin-ds-icon-action flex size-10 shrink-0 cursor-pointer items-center justify-center transition-colors"
+      // Mismo botón que la campana del panel en reposo
+      // (admin-notification-bell.tsx): tamaño, radio, borde y colores en
+      // ambos temas.
+      className="admin-ds-bell-button-idle relative flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full border text-white transition-all"
     >
       {isDark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
     </button>

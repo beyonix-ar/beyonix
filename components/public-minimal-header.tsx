@@ -12,12 +12,10 @@ import { cn } from "@/lib/utils"
 /**
  * Header mínimo para flujos públicos "encerrados" (sin el SiteHeader
  * principal ni ningún otro control de tema): "Ir al inicio" a la izquierda,
- * y a la derecha el mismo toggle Claro/Oscuro del resto del sitio
- * (components/account/account-theme-toggle.tsx) seguido -- para
- * staff/admin navegando la tienda -- de la misma campana de notificaciones
- * y en el mismo orden que ya usa app/checkout/page.tsx (toggle size-9,
- * gap-2), así ambos quedan alineados en una sola fila con el mismo lenguaje
- * visual. Reemplaza al badge flotante fixed (antes en
+ * y a la derecha -- para staff/admin navegando la tienda -- la misma campana
+ * de notificaciones seguida del mismo toggle Claro/Oscuro del resto del
+ * sitio (components/account/account-theme-toggle.tsx), en el orden de todos
+ * los headers (campana, luna) y con el mismo tamaño que la campana. Reemplaza al badge flotante fixed (antes en
  * components/layout-shell.tsx StandaloneAdminNotifications) que quedaba
  * separado del toggle.
  * No agrega carrito, categorías ni links -- eso es responsabilidad de
@@ -48,7 +46,6 @@ export function PublicMinimalHeader({
         <span>Ir al inicio</span>
       </Link>
       <div className="flex items-center gap-2">
-        <AccountThemeToggle className="size-9" />
         {isInternal && (
           <AdminNotificationsBell
             variant="storefront"
@@ -61,6 +58,7 @@ export function PublicMinimalHeader({
             onRetry={adminNotifications.reloadNotificationCount}
           />
         )}
+        <AccountThemeToggle />
       </div>
     </header>
   )

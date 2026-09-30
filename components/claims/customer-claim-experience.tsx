@@ -233,11 +233,6 @@ function CustomerClaimMessageBody({ message }: { message: string }) {
   )
 }
 
-function getAffectedProductsFromDescription(description: string) {
-  const match = description.match(/^Producto afectado:\s*(.+?)(?:\r?\n){2}/)
-  return match?.[1]?.trim() || ""
-}
-
 function getItemImage(item: NonNullable<SupabasePedido["orden_items"]>[number]) {
   return item.conditioned_images?.[0]
     || item.producto_variantes?.imagenes?.[0]
@@ -989,11 +984,6 @@ export function CustomerClaimExperience({
     // "solución en proceso" y de rechazo (misma información, fuente única).
     const resolutionView = helpMessage ? null : getClaimResolutionView(claim)
     const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
-    const affectedProductLabel = cancellation
-      ? "Pedido completo"
-      : helpMessage
-        ? "Pedido completo"
-      : getAffectedProductsFromDescription(claim.description) || "Producto del pedido"
 
     return (
       <section
@@ -1008,21 +998,19 @@ export function CustomerClaimExperience({
           WebkitBackdropFilter: "none",
         }}
       >
-        <header className="customer-claim-chat-header flex flex-col gap-4 border-b border-[#18334D] bg-[#0B1724] px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+        <header className="customer-claim-chat-header flex flex-col gap-3 border-b border-[#18334D] bg-[#0B1724] px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">
               {getOrderCode(order.id)} · {hideClosedHelpMetadata ? "Ayuda" : (PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo")}
             </p>
-            <h3 className="mt-1.5 text-2xl font-black leading-7 text-white">
+            <h3 className="mt-1 text-xl font-black leading-6 text-white">
               {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Chat de ayuda" : "Chat del reclamo"}
             </h3>
-            {!hideClosedHelpMetadata && (
-              <p className="mt-2 max-w-3xl text-sm font-semibold leading-5 text-[#9EB4C8]">
+            {!hideClosedHelpMetadata && (cancellation || helpMessage) && (
+              <p className="mt-1 max-w-3xl text-sm font-semibold leading-5 text-[#9EB4C8]">
                 {cancellation
                   ? "Este chat reúne el seguimiento de la cancelación."
-                  : helpMessage
-                    ? "BEYONIX te responderá por este mismo chat."
-                    : `Producto afectado: ${affectedProductLabel}. BEYONIX revisará el caso y te responderá acá.`}
+                  : "BEYONIX te responderá por este mismo chat."}
               </p>
             )}
           </div>
@@ -1052,51 +1040,77 @@ export function CustomerClaimExperience({
           <div
             data-testid="customer-claim-resolution"
             className={resolutionView.rejected
-              ? "border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-3.5"
+              ? "border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-2"
               : "border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3"}
           >
+            {resolutionView.rejected ? (
+              // Rechazo compacto: título, resolución y motivo (el detalle ya
+              // llega como "Motivo: …" desde resolution_summary).
+              <div className="flex items-start gap-2.5">
+                <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--account-danger-border)] bg-[var(--account-surface)]">
+                  <X className="size-3 text-[var(--account-danger)]" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 text-[13px] leading-5">
+                  <p className="font-black text-[var(--account-danger-text)]">
+                    {cancellation ? "Resolución de la cancelación" : "Resolución del reclamo"}
+                  </p>
+                  <p className="text-[var(--account-text-primary)]">
+                    <span className="font-bold text-[var(--account-text-secondary)]">Resolución:</span>{" "}
+                    <span className="font-black">{resolutionView.label}</span>
+                  </p>
+                  {resolutionView.detail && (
+                    <p className="whitespace-pre-wrap font-medium text-[var(--account-text-primary)]">{resolutionView.detail}</p>
+                  )}
+                  {resolutionView.amount != null && resolutionView.amountLabel && (
+                    <p className="text-[var(--account-text-primary)]">
+                      <span className="font-bold text-[var(--account-text-secondary)]">{resolutionView.amountLabel}:</span>{" "}
+                      <span className="font-black">{formatClaimResolutionAmount(resolutionView.amount)}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
             <div className="flex items-start gap-2.5">
-              <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ${resolutionView.rejected ? "border-[var(--account-danger-border)] bg-[var(--account-surface)]" : "border-[#77E6E2]/25 bg-[#77E6E2]/10"}`}>
-                {resolutionView.rejected
-                  ? <X className="size-3.5 text-[var(--account-danger)]" aria-hidden="true" />
-                  : <Check className="size-3.5 text-[#D7FFFD]" />}
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/10">
+                <Check className="size-3.5 text-[#D7FFFD]" />
               </span>
               <div className="min-w-0">
-                <p className={resolutionView.rejected ? "text-sm font-black leading-6 text-[var(--account-danger-text)]" : "text-xs font-black text-[#D7FFFD]"}>
+                <p className="text-xs font-black text-[#D7FFFD]">
                   {cancellation ? "Resolución de la cancelación" : "Resolución del reclamo"}
                 </p>
-                <dl className={`grid text-xs leading-5 ${resolutionView.rejected ? "mt-2 gap-2" : "mt-1.5 gap-1.5"}`}>
+                <dl className="mt-1.5 grid gap-1.5 text-xs leading-5">
                   <div>
-                    <dt className={resolutionView.rejected ? "text-11px font-bold text-[var(--account-text-secondary)]" : "font-bold text-white/60"}>Resolución</dt>
-                    <dd className={resolutionView.rejected ? "mt-0.5 text-sm font-black text-[var(--account-text-primary)]" : "font-black text-white"}>{resolutionView.label}</dd>
+                    <dt className="font-bold text-white/60">Resolución</dt>
+                    <dd className="font-black text-white">{resolutionView.label}</dd>
                   </div>
                   {resolutionView.detail && (
                     <div>
-                      <dt className={resolutionView.rejected ? "text-11px font-bold text-[var(--account-text-secondary)]" : "font-bold text-white/60"}>Detalle</dt>
-                      <dd className={resolutionView.rejected ? "mt-0.5 whitespace-pre-wrap text-[13px] font-medium leading-5 text-[var(--account-text-primary)]" : "whitespace-pre-wrap font-semibold text-white/80"}>{resolutionView.detail}</dd>
+                      <dt className="font-bold text-white/60">Detalle</dt>
+                      <dd className="whitespace-pre-wrap font-semibold text-white/80">{resolutionView.detail}</dd>
                     </div>
                   )}
                   {resolutionView.amount != null && resolutionView.amountLabel && (
                     <div>
-                      <dt className={resolutionView.rejected ? "text-11px font-bold text-[var(--account-text-secondary)]" : "font-bold text-white/60"}>{resolutionView.amountLabel}</dt>
-                      <dd className={resolutionView.rejected ? "mt-0.5 font-black text-[var(--account-text-primary)]" : "font-black text-white"}>{formatClaimResolutionAmount(resolutionView.amount)}</dd>
+                      <dt className="font-bold text-white/60">{resolutionView.amountLabel}</dt>
+                      <dd className="font-black text-white">{formatClaimResolutionAmount(resolutionView.amount)}</dd>
                     </div>
                   )}
                 </dl>
               </div>
             </div>
+            )}
           </div>
         )}
 
         {!resolutionView && claim.rejection_reason && (
-          <div className="border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-3.5">
+          <div className="border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-2">
             <div className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[var(--account-danger-border)] bg-[var(--account-surface)]">
-                <X className="size-3.5 text-[var(--account-danger)]" aria-hidden="true" />
+              <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--account-danger-border)] bg-[var(--account-surface)]">
+                <X className="size-3 text-[var(--account-danger)]" aria-hidden="true" />
               </span>
-              <div className="min-w-0">
-                <p className="text-sm font-black leading-6 text-[var(--account-danger-text)]">Reclamo rechazado</p>
-                <p className="mt-1 whitespace-pre-wrap text-[13px] font-medium leading-5 text-[var(--account-text-primary)]">{claim.rejection_reason}</p>
+              <div className="min-w-0 text-[13px] leading-5">
+                <p className="font-black text-[var(--account-danger-text)]">Reclamo rechazado</p>
+                <p className="whitespace-pre-wrap font-medium text-[var(--account-text-primary)]">{claim.rejection_reason}</p>
               </div>
             </div>
           </div>
@@ -1263,20 +1277,14 @@ export function CustomerClaimExperience({
                   La compra figura como cancelada.
                 </p>
               ) : (
-                <div className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-3">
-                  <p className="text-xs font-black text-[#D7FFFD]">Reclamo finalizado</p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-white/70">
-                    Este pedido ya tuvo un reclamo finalizado. Podés consultar la conversación cuando quieras. Si necesitás contactarnos por otro motivo, escribinos por mail.
-                  </p>
-                  <a
-                    href={SUPPORT_EMAIL_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex h-8 items-center rounded-lg border border-blue-300/25 bg-[#112A43] px-3 text-xs font-black text-white hover:border-blue-300/55 hover:bg-[#183B5E]"
-                  >
-                    {SUPPORT_EMAIL}
-                  </a>
-                </div>
+                <p
+                  data-testid="customer-claim-finished-notice"
+                  className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-1.5 text-xs font-semibold leading-5 text-white/70"
+                >
+                  <span className="font-black text-[#D7FFFD]">Reclamo finalizado.</span>{" "}
+                  Por otras consultas, escribinos a{" "}
+                  <span className="font-bold text-[#D7FFFD]">{SUPPORT_EMAIL}</span>
+                </p>
               )}
               {refundProof?.signedUrl && (
                 <a href={refundProof.signedUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#77E6E2]/25 bg-[#77E6E2]/5 px-3 text-xs font-black text-white hover:border-[#77E6E2]/45">

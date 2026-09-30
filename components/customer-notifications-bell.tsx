@@ -348,9 +348,9 @@ export function CustomerNotificationsBell({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         onFocus={openPopover}
-        className="beyonix-notifications-trigger relative flex size-11 cursor-pointer items-center justify-center rounded-full border border-[#303846] bg-[#0D1117] text-white/80 transition-all hover:border-beyonix-blue-light hover:bg-[#141820] hover:text-white hover:shadow-[0_0_18px_rgba(17,42,67,0.55)]"
+        className="beyonix-header-icon-button relative flex size-11 cursor-pointer items-center justify-center rounded-full border transition-all focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]"
       >
-        <Bell className="beyonix-notifications-bell-icon size-4.5" />
+        <Bell className="size-4.5" />
 
         {unreadCount > 0 && (
           <span className="beyonix-notifications-badge pointer-events-none absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-600 px-1 text-10px font-bold leading-none tabular-nums text-white shadow-[0_0_0_2px_#0D1117]">

@@ -6,23 +6,19 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const bell = read("./customer-notifications-bell.tsx")
 const css = read("../app/globals.css")
 
-test("campana del navbar: negra sobre fondo blanco sólo en tema Light; tamaño sin cambios", () => {
-  assert.match(bell, /<Bell className="beyonix-notifications-bell-icon size-4\.5" \/>/)
+test("campana del navbar: botón compartido del header, negra sobre blanco en Light y #0D1117 en Dark; tamaño sin cambios", () => {
+  assert.match(bell, /<Bell className="size-4\.5" \/>/)
+  assert.match(bell, /className="beyonix-header-icon-button relative flex size-11 [^"]*rounded-full border/)
+  // Sin colores en utilidades: los remapeos de Light por página no la alcanzan.
+  assert.doesNotMatch(bell, /beyonix-header-icon-button[^"]*(bg-\[#|text-white|border-\[#)/)
   assert.match(
     css,
-    /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-notifications-bell-icon \{\n  color: #000;\n\}/,
+    /\.beyonix-header-icon-button \{\n  background-color: #0d1117;\n  border-color: #303846;\n  color: rgba\(255, 255, 255, 0\.8\);\n\}/,
   )
-  // El ícono sólo tiene regla de color bajo el tema Light: en Dark hereda el
-  // text-white/80 del trigger como antes.
-  const iconRules = css.split("\n").filter((line) => line.includes(".beyonix-notifications-bell-icon"))
-  assert.equal(iconRules.length, 1)
-  assert.ok(iconRules[0].startsWith('html[data-account-theme="light"]'))
   assert.match(
     css,
-    /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-notifications-trigger \{\n  background: #fff !important;\n\}/,
+    /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-header-icon-button \{\n  background-color: #ffffff;\n  border-color: #303846;\n  color: #000000;\n\}/,
   )
-  // Dark conserva su fondo propio del trigger.
-  assert.match(bell, /beyonix-notifications-trigger relative flex size-11 [^"]*bg-\[#0D1117\]/)
 })
 
 test("badge de notificaciones: rojo con número, compacto y con aro del color del botón", () => {

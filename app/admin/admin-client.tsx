@@ -524,7 +524,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
           </h1>
         </Link>
         <div className="flex shrink-0 items-center gap-1.5">
-          <AdminThemeToggle />
           <AdminNotificationsBell
             count={notificationCount}
             tone={notificationTone}
@@ -535,6 +534,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
             onRetry={reloadNotifications}
             align="start"
           />
+          <AdminThemeToggle />
         </div>
       </div>
 
@@ -638,7 +638,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
           </button>
           <p className="text-sm font-black tracking-widest">BEYONIX ADMIN</p>
           <div className="flex shrink-0 items-center gap-1.5">
-            <AdminThemeToggle />
             <AdminNotificationsBell
               count={notificationCount}
               tone={notificationTone}
@@ -648,6 +647,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
               error={notificationsError}
               onRetry={reloadNotifications}
             />
+            <AdminThemeToggle />
           </div>
         </header>
 

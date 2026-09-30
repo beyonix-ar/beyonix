@@ -2398,7 +2398,6 @@ export default function CheckoutPage() {
             </Link>
 
             <div className="relative flex min-w-20 items-center justify-end gap-2">
-              <AccountThemeToggle className="size-9" />
               {isInternal && (
                 <AdminNotificationsBell
                   variant="storefront"
@@ -2411,6 +2410,7 @@ export default function CheckoutPage() {
                   onRetry={adminNotifications.reloadNotificationCount}
                 />
               )}
+              <AccountThemeToggle />
               {isLoading ? (
                 <div
                   aria-hidden="true"

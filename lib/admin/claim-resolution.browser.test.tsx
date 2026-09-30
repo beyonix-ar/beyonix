@@ -178,7 +178,8 @@ test("8-9. saldo a favor: cliente y admin muestran resolución, detalle y monto"
 test("7. rechazo: bloque único con motivo (sin duplicar el aviso anterior)", async () => {
   const page = await open("rechazado", "light")
   try {
-    assert.equal(await text(page, CUSTOMER), "Resolución del reclamo Resolución Reclamo no aprobado Detalle Motivo: El producto presenta daño por mal uso.")
+    // Bloque compacto: título, resolución y motivo (sin el rótulo "Detalle").
+    assert.equal(await text(page, CUSTOMER), "Resolución del reclamo Resolución: Reclamo no aprobado Motivo: El producto presenta daño por mal uso.")
     // Motivo: una vez en el bloque y otra en el mensaje de cierre del chat
     // (el bloque de rechazo anterior lo repetía una tercera vez).
     const customerText = await page.locator("#customer-root").innerText()
