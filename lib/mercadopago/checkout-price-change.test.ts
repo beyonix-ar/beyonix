@@ -20,7 +20,7 @@ import {
   buildMercadoPagoPricingSnapshot,
   calculateMercadoPagoCheckoutPricing,
   getMercadoPagoModeQuote,
-  getMercadoPagoPreferenceInstallments,
+  getMercadoPagoPreferencePaymentMethods,
   type CheckoutPricingLine,
   type CheckoutPricingSettings,
   type MercadoPagoCheckoutMode,
@@ -380,22 +380,28 @@ test("cantidad, variante, beneficio y saldo pedido también invalidan el intento
 // 11-14. Contado vs cuotas en la preferencia
 // ─────────────────────────────────────────────────────────────
 
-test("11. preferencia al contado -> installments = 1", () => {
+const CREDIT_EXCLUSIONS = [{ id: "debit_card" }, { id: "prepaid_card" }, { id: "ticket" }, { id: "atm" }]
+
+test("A. preferencia al contado -> 1 pago, sin crédito ni medios diferidos (ticket/atm)", () => {
   const cash = evaluate({ mode: "cash" })
   assert.equal(cash.snapshot.mercadoPagoModality, "mercadopago_cash")
   assert.deepEqual(
-    getMercadoPagoPreferenceInstallments({ pricing_snapshot: cash.snapshot }),
-    { installments: 1, default_installments: 1 },
+    getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: cash.snapshot }),
+    {
+      installments: 1,
+      default_installments: 1,
+      excluded_payment_types: [{ id: "credit_card" }, { id: "ticket" }, { id: "atm" }],
+    },
   )
   assert.equal(cash.snapshot.cftea, null, "al contado nunca hay CFTEA")
 })
 
-test("12. preferencia en cuotas -> installments = máximo elegible real del carrito", () => {
+test("B. preferencia crédito -> máximo elegible real del carrito, sólo tarjeta de crédito", () => {
   const financed = evaluate({ mode: "financed" })
   assert.equal(financed.snapshot.mercadoPagoModality, "mercadopago_financed")
   assert.deepEqual(
-    getMercadoPagoPreferenceInstallments({ pricing_snapshot: financed.snapshot }),
-    { installments: 6 },
+    getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: financed.snapshot }),
+    { installments: 6, excluded_payment_types: CREDIT_EXCLUSIONS },
   )
 
   const upToThree = evaluate({
@@ -403,9 +409,28 @@ test("12. preferencia en cuotas -> installments = máximo elegible real del carr
     installments: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: false },
   })
   assert.deepEqual(
-    getMercadoPagoPreferenceInstallments({ pricing_snapshot: upToThree.snapshot }),
-    { installments: 3 },
+    getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: upToThree.snapshot }),
+    { installments: 3, excluded_payment_types: CREDIT_EXCLUSIONS },
   )
+
+  // Sin tope válido: crédito en 1 pago, nunca más cuotas de las calculadas.
+  assert.deepEqual(
+    getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: { mercadoPagoModality: "mercadopago_financed", preferenceMaxInstallments: 12 } }),
+    { installments: 1, default_installments: 1, excluded_payment_types: CREDIT_EXCLUSIONS },
+  )
+})
+
+test("B. ninguna preferencia intenta excluir dinero en cuenta (Mercado Pago no lo permite)", () => {
+  for (const snapshot of [
+    { mercadoPagoModality: "mercadopago_cash" },
+    { mercadoPagoModality: "mercadopago_financed", preferenceMaxInstallments: 6 },
+    { mercadoPagoModality: "mercadopago_financed", preferenceMaxInstallments: null },
+  ]) {
+    const methods = getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: snapshot })
+    const excluded = (methods.excluded_payment_types ?? []).map((type) => type.id as string)
+    assert.equal(excluded.includes("account_money"), false, JSON.stringify(snapshot))
+    assert.equal("excluded_payment_methods" in methods, false, "no se excluyen marcas puntuales")
+  }
 })
 
 test("13. la preferencia al contado nunca usa el total financiado", () => {
@@ -627,12 +652,12 @@ test("la baja devuelve saldo y beneficio de la orden reemplazada para que la mis
   )
 })
 
-test("órdenes previas al modelo contado/cuotas conservan su tope de cuotas al renovar la preferencia", () => {
-  assert.deepEqual(getMercadoPagoPreferenceInstallments({ installments_count: 3 }), {
+test("órdenes previas al modelo contado/cuotas conservan su tope de cuotas al renovar la preferencia (sin exclusiones)", () => {
+  assert.deepEqual(getMercadoPagoPreferencePaymentMethods({ installments_count: 3 }), {
     installments: 3,
     default_installments: 3,
   })
-  assert.deepEqual(getMercadoPagoPreferenceInstallments({ installments_count: null }), {
+  assert.deepEqual(getMercadoPagoPreferencePaymentMethods({ installments_count: null }), {
     installments: 1,
     default_installments: 1,
   })

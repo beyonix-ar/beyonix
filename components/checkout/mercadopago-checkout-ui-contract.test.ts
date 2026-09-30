@@ -20,12 +20,16 @@ function extractBlock(source: string, startMarker: string) {
 // UI de Mercado Pago
 // ─────────────────────────────────────────────────────────────
 
-test("se muestran exactamente tres opciones: transferencia, Mercado Pago al contado y en cuotas (sin MODO)", () => {
+test("se muestran exactamente tres opciones: transferencia, Mercado Pago al contado y con crédito (sin MODO)", () => {
   const options = [...checkout.matchAll(/option="([^"]+)"\n/g)].map((match) => match[1])
   assert.deepEqual(options, ["transferencia", "mercadopago_cash", "mercadopago_financed"])
   assert.match(checkout, /title="Depósito \/ Transferencia"/)
   assert.match(checkout, /title="Mercado Pago al contado"/)
-  assert.match(checkout, /title="Mercado Pago en cuotas"/)
+  assert.match(checkout, /description="Débito o dinero en cuenta de Mercado Pago"/, "al contado ya no ofrece crédito")
+  // C. "Cuotas" pasa a "Crédito": tarjeta de crédito en 1 pago o en cuotas.
+  assert.match(checkout, /title="Mercado Pago con crédito"/)
+  assert.match(checkout, /description="Pagá con tarjeta de crédito en 1 pago o en cuotas"/)
+  assert.doesNotMatch(checkout, /title="Mercado Pago en cuotas"|crédito en 1 pago o dinero en cuenta/)
   assert.doesNotMatch(checkout, /\bMODO\b/)
   // Sólo dos medios reales por debajo; el payload sigue siendo el mismo.
   assert.match(checkout, /const CHECKOUT_PAYMENT_METHOD_IDS = \["mercadopago", "transferencia"\] as const/)
@@ -60,9 +64,9 @@ test("el detalle de cuotas es informativo: modal con filas <li>, sin controles n
   assert.doesNotMatch(modal, /setSelectedPayment|setMercadoPagoMode|type="radio"/)
 })
 
-test("resumen: contado dice 'Pago con Mercado Pago al contado'; cuotas 'Hasta N cuotas sin interés/sin recargo de $X'", () => {
+test("resumen: contado dice 'Pago con Mercado Pago al contado'; crédito 'Tarjeta de crédito: hasta N cuotas sin interés de $X'", () => {
   assert.match(checkout, /"Pago con Mercado Pago al contado"/)
-  assert.match(checkout, /`Hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/)
+  assert.match(checkout, /`Tarjeta de crédito: hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/)
   // El total del resumen es el de la modalidad elegida (el mismo que se cobra).
   assert.match(checkout, /mercadoPagoQuote\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
 })

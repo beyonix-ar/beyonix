@@ -170,7 +170,9 @@ test("3. webhook: order:<uuid> resuelve la orden por mercadopago_reference", () 
   assert.match(webhook, /const externalReference = parseMercadoPagoExternalReference\(payment\.external_reference\)/)
   assert.match(webhook, /orderQuery\.eq\("mercadopago_reference", externalReference\.reference\)/)
   assert.match(webhook, /orderQuery\.eq\("id", externalReference\.orderId\)/)
-  assert.match(webhook, /mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at"/)
+  // Columnas de referencia presentes en la lectura de la orden (pueden seguir
+  // otras, p. ej. pricing_snapshot para registrar el medio real del pago).
+  assert.match(webhook, /mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at(, [a-z_]+)*"/)
   assert.match(webhook, /const orderId = orderRow\.id/)
   assert.doesNotMatch(webhook, /Number\(payment\.external_reference\)/)
   // La pertenencia se valida antes de cualquier efecto financiero.

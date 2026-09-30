@@ -656,7 +656,7 @@ test("create-preference recalcula la modalidad server-side y nunca confía en el
   // La preferencia fuerza payment_methods (1 al contado, tope = cuota
   // máxima en cuotas), derivado de lo persistido en la orden.
   assert.match(source, /payment_methods: paymentMethods/)
-  assert.match(source, /getMercadoPagoPreferenceInstallments\(order\)/)
+  assert.match(source, /getMercadoPagoPreferencePaymentMethods\(order\)/)
   // "En cuotas" no disponible para el carrito -> 400 antes de crear nada.
   assert.match(source, /if \(!quote\) \{[\s\S]{0,200}status: 400/)
 })

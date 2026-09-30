@@ -46,7 +46,7 @@ import {
   calculateMercadoPagoCheckoutPricing,
   getMercadoPagoModeQuote,
   getMercadoPagoOrderInstallmentsFields,
-  getMercadoPagoPreferenceInstallments,
+  getMercadoPagoPreferencePaymentMethods,
   normalizeMercadoPagoCheckoutMode,
   type CheckoutPricingLine,
   type CheckoutPricingSettings,
@@ -1002,11 +1002,12 @@ async function createAndPersistMercadoPagoPreference({
   const expiresAt = getMercadoPagoReservationPreferenceExpiration(reservationExpiresAt, createdAt)
   if (!expiresAt) throw new CheckoutReservationExpiredError()
   const preference = new Preference(client)
-  // payment_methods.installments SIEMPRE explícito y derivado de lo
-  // persistido en la orden (nunca del request): al contado = 1 (Checkout
-  // Pro no puede financiar el precio de contado); en cuotas = cuota máxima
-  // elegible del carrito, y el cliente elige dentro de Mercado Pago.
-  const paymentMethods = getMercadoPagoPreferenceInstallments(order)
+  // payment_methods SIEMPRE explícito y derivado de lo persistido en la
+  // orden (nunca del request): al contado = 1 pago, sin crédito ni medios
+  // diferidos (ticket/atm); crédito = hasta la cuota máxima elegible del
+  // carrito, sin débito, prepaga ni medios diferidos. Dinero en cuenta no se
+  // puede excluir en Checkout Pro.
+  const paymentMethods = getMercadoPagoPreferencePaymentMethods(order)
   const result = await preference.create({
     body: {
       external_reference: externalReference,

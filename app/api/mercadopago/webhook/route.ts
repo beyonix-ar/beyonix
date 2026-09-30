@@ -23,6 +23,7 @@ import {
   releaseMercadoPagoWebhookDelivery,
 } from "@/lib/mercadopago/webhook-replay"
 import { validateMercadoPagoWebhookSignature } from "@/lib/mercadopago/webhook-signature"
+import { getMercadoPagoPaymentMedium } from "@/lib/mercadopago/payment-medium"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
 
@@ -42,6 +43,7 @@ interface OrderRow {
   payment_method_id?: string | null
   payment_id?: string | null
   payment_status?: string | null
+  pricing_snapshot?: { mercadoPagoModality?: string | null } | null
 }
 
 /**
@@ -152,7 +154,7 @@ async function handleWebhook(request: Request) {
 
     const orderQuery = supabase
       .from("ordenes")
-      .select("id, created_at, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at")
+      .select("id, created_at, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, pricing_snapshot")
     const { data: order, error: orderError } = await (
       externalReference.kind === "order"
         ? orderQuery.eq("mercadopago_reference", externalReference.reference)
@@ -297,14 +299,20 @@ async function handleWebhook(request: Request) {
       return NextResponse.json({ ok: true, duplicated: true })
     }
 
+    // Medio REAL del pago (tipo, marca y cuotas) frente a la modalidad que
+    // eligió el cliente. Sólo trazabilidad: nunca rechaza un pago aprobado.
+    const paymentMedium = getMercadoPagoPaymentMedium(
+      payment,
+      orderRow.pricing_snapshot?.mercadoPagoModality,
+    )
     const paymentPayload = {
       payment_id: String(payment.id),
       payment_status: payment.status,
+      // Medio a nivel BEYONIX (transferencia / mercadopago): no cambia.
       payment_method_id: "mercadopago",
-      payment_type_id:
-        payment.payment_method_id ??
-        payment.payment_type_id ??
-        null,
+      // Tipo real de Mercado Pago (credit_card, debit_card, account_money…).
+      // La marca (visa, master…) queda en mercadopago_payment_snapshot.
+      payment_type_id: paymentMedium.payment_type_id,
     }
 
     // P1: una orden cancelada (checkout expirado, cancelación de cliente o de
@@ -413,10 +421,14 @@ async function handleWebhook(request: Request) {
             // usado para armar el precio financiado): se persiste tal cual para
             // poder mostrar a futuro en Admin cliente pagó / costos MP / neto.
             mercadopago_payment_snapshot: {
-              installments: payment.installments ?? null,
+              installments: paymentMedium.installments,
               transaction_amount: payment.transaction_amount ?? null,
               fee_details: payment.fee_details ?? null,
               transaction_details: payment.transaction_details ?? null,
+              payment_type_id: paymentMedium.payment_type_id,
+              payment_method_id: paymentMedium.payment_method_id,
+              checkout_modality: paymentMedium.checkout_modality,
+              matches_checkout_modality: paymentMedium.matches_checkout_modality,
             },
           } as never)
           .eq("id", orderId)
@@ -547,8 +559,35 @@ async function handleWebhook(request: Request) {
         paymentId: payment.id,
         paymentStatus: payment.status,
         confirmedAmount: paymentResult.confirmedAmount,
+        paymentTypeId: paymentMedium.payment_type_id,
+        paymentMethodId: paymentMedium.payment_method_id,
+        installments: paymentMedium.installments,
+        checkoutModality: paymentMedium.checkout_modality,
       },
     })
+
+    // Pagó con un tipo que no corresponde a la modalidad elegida (el caso
+    // esperable: "Crédito" con Dinero en cuenta, que Checkout Pro no permite
+    // excluir). El pago ya está aprobado y confirmado por el monto exacto: no
+    // se rechaza, sólo queda marcado para revisión en la auditoría del pedido.
+    if (paymentMedium.matches_checkout_modality === false) {
+      await appendOrderAuditEvent(supabase, {
+        orderId,
+        actorType: "system",
+        action: "payment_medium_outside_modality",
+        previousStatus: "payment_confirmed",
+        newStatus: "payment_confirmed",
+        metadata: {
+          provider: "mercadopago",
+          paymentId: payment.id,
+          checkoutModality: paymentMedium.checkout_modality,
+          paymentTypeId: paymentMedium.payment_type_id,
+          paymentMethodId: paymentMedium.payment_method_id,
+          installments: paymentMedium.installments,
+          reason: "review_payment_medium",
+        },
+      })
+    }
 
     await sendOrderStatusEmail({
       to: orderRow.cliente_email,

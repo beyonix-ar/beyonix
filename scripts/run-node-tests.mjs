@@ -240,6 +240,7 @@ const TEST_FILES = [
   "lib/reviews/review-window.test.ts",
   "lib/reviews/reviews-featured-window-sql.test.ts",
   "lib/reviews/public-name.test.ts",
+  "lib/mercadopago/payment-medium.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN

@@ -409,7 +409,11 @@ function CheckoutPaymentOptionCard({
   )
 }
 
-/** Cuotas SÓLO informativas: filas de texto, sin controles ni estado. */
+/**
+ * Cuotas SÓLO informativas: filas de texto, sin controles ni estado. Son
+ * ejemplos de la financiación de BEYONIX: Checkout Pro sólo fija un máximo y
+ * Mercado Pago puede ofrecer cantidades intermedias.
+ */
 function InstallmentPlanList({
   plans,
   installmentsCopy,
@@ -418,9 +422,16 @@ function InstallmentPlanList({
   installmentsCopy: string
 }) {
   return (
+    <>
+    <p
+      data-installment-plans-title
+      className="beyonix-modal-muted mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-white/55"
+    >
+      Ejemplos de financiación
+    </p>
     <ul
       data-installment-plans
-      className="beyonix-modal-list mt-3 divide-y divide-white/[0.06] rounded-lg border border-white/8 bg-white/[0.03] px-3"
+      className="beyonix-modal-list mt-1.5 divide-y divide-white/[0.06] rounded-lg border border-white/8 bg-white/[0.03] px-3"
     >
       {plans.map((plan) => (
         <li
@@ -437,12 +448,17 @@ function InstallmentPlanList({
         </li>
       ))}
     </ul>
+    </>
   )
 }
 
-/** Advertencia obligatoria del modal "en cuotas" (Checkout Pro permite 1 pago sobre el total financiado). */
+/**
+ * Aclaración del modal "Crédito": pagar con tarjeta de crédito en 1 pago es
+ * válido (no se advierte). Sólo queda el caso de Dinero en cuenta, que
+ * Checkout Pro no permite excluir de la preferencia.
+ */
 const MERCADOPAGO_FINANCED_TOTAL_WARNING =
-  "Si dentro de Mercado Pago elegís pagar en 1 solo pago o con dinero en cuenta, se mantendrá este total financiado."
+  "Mercado Pago puede mostrar Dinero en cuenta aunque hayas elegido crédito. Si lo usás, se mantiene este total financiado."
 
 function CheckoutPaymentInfoLink({
   onClick,
@@ -2975,7 +2991,7 @@ export default function CheckoutPage() {
                       onSelect={selectPaymentOption}
                       icon={Wallet}
                       title="Mercado Pago al contado"
-                      description="Débito, crédito en 1 pago o dinero en cuenta"
+                      description="Débito o dinero en cuenta de Mercado Pago"
                       badge={<span className="checkout-badge checkout-badge-neutral">1 pago</span>}
                       action={
                         <CheckoutPaymentInfoLink onClick={() => setPaymentInfoModal("mercadopago_cash")}>
@@ -2991,8 +3007,8 @@ export default function CheckoutPage() {
                           checked={selectedPaymentOption === "mercadopago_financed"}
                           onSelect={selectPaymentOption}
                           icon={CreditCard}
-                          title="Mercado Pago en cuotas"
-                          description="Pagá con tarjeta vía Mercado Pago"
+                          title="Mercado Pago con crédito"
+                          description="Pagá con tarjeta de crédito en 1 pago o en cuotas"
                           badge={
                             <span className="checkout-badge checkout-badge-info">
                               Hasta {mercadoPagoPricing.maxInstallmentCount} {installmentsCopy}
@@ -3009,7 +3025,7 @@ export default function CheckoutPage() {
 
                   {paymentInfoModal === "installments" && financedPreviewQuote && (
                     <PaymentInfoModal
-                      title="Cuotas con Mercado Pago"
+                      title="Crédito con Mercado Pago"
                       onClose={() => setPaymentInfoModal(null)}
                     >
                       {/* Precio y aclaración en dos líneas propias: el precio
@@ -3017,14 +3033,18 @@ export default function CheckoutPage() {
                       <div data-installments-intro>
                         <p className="flex items-baseline justify-between gap-3">
                           <span className="beyonix-modal-body text-[13px] text-white/65">
-                            Precio en cuotas
+                            Total financiado
                           </span>
                           <span className="beyonix-modal-title shrink-0 text-[15px] font-bold text-white">
                             {formatPrice(financedPreviewQuote.externalAmountDue)}
                           </span>
                         </p>
+                        {/* Checkout Pro sólo fija un máximo de cuotas: Mercado
+                            Pago puede ofrecer cantidades intermedias, así que
+                            la lista de abajo son ejemplos, no las únicas
+                            opciones. */}
                         <p className="beyonix-modal-body mt-1 text-[12px] leading-5 text-white/65">
-                          La cantidad de cuotas la elegís dentro de Mercado Pago.
+                          Con tarjeta de crédito, en 1 pago o hasta {mercadoPagoPricing.maxInstallmentCount} cuotas. La cantidad la elegís dentro de Mercado Pago.
                         </p>
                       </div>
                       <InstallmentPlanList
@@ -3432,7 +3452,7 @@ export default function CheckoutPage() {
               <div className="space-y-1 rounded-lg border border-beyonix-blue-light/14 bg-[#0B1118] px-3 py-2.5 text-sm shadow-inner shadow-black/20">
                 {/* Productos − Beneficio + Envío (− Saldo) = Total, con el
                     precio de productos de la modalidad elegida: contado,
-                    financiado (Mercado Pago en cuotas) o con descuento por
+                    financiado (Mercado Pago con crédito) o con descuento por
                     transferencia. El envío nunca se financia ni se descuenta. */}
                 <div className="space-y-0.5">
                   <div className="flex justify-between" data-summary-row="products">
@@ -3544,7 +3564,7 @@ export default function CheckoutPage() {
                     data-mercadopago-summary={mercadoPagoQuote.mode}
                   >
                     {isMercadoPagoFinanced && maxInstallmentPlan
-                      ? `Hasta ${maxInstallmentPlan.count} ${installmentsCopy} de ${formatPrice(maxInstallmentPlan.amount)}`
+                      ? `Tarjeta de crédito: hasta ${maxInstallmentPlan.count} ${installmentsCopy} de ${formatPrice(maxInstallmentPlan.amount)}`
                       : "Pago con Mercado Pago al contado"}
                   </p>
                 )}
@@ -3622,14 +3642,14 @@ export default function CheckoutPage() {
           {isMercadoPagoFinanced ? (
             <div data-mercadopago-confirm="financed">
               <p className="beyonix-modal-body text-[13px] leading-5 text-white/65">
-                Elegiste pagar en cuotas.
+                Elegiste pagar con tarjeta de crédito.
               </p>
               <p className="beyonix-modal-title mt-2 text-[15px] font-bold text-white">
                 Total financiado: {formatPrice(finalTotal)}
               </p>
               {maxInstallmentPlan && (
                 <p className="beyonix-modal-body mt-0.5 text-[13px] text-white/65">
-                  Hasta {maxInstallmentPlan.count} {installmentsCopy}.
+                  En 1 pago o hasta {maxInstallmentPlan.count} {installmentsCopy} con tarjeta de crédito.
                 </p>
               )}
               <InstallmentPlanList
@@ -3652,7 +3672,7 @@ export default function CheckoutPage() {
                     data-financed-total-warning-title
                     className="checkout-financed-warning-title text-[12px] font-black tracking-wide"
                   >
-                    ¡ATENCIÓN!
+                    Importante
                   </p>
                   <p className="checkout-financed-warning-text mt-0.5 text-[13px] font-semibold leading-5">
                     {MERCADOPAGO_FINANCED_TOTAL_WARNING}

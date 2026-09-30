@@ -77,18 +77,18 @@ test("tarjeta de catálogo (shared-product-card) y hero usan INSTALLMENTS_COPY",
   }
 })
 
-test("checkout: Mercado Pago en cuotas, método de pago y resumen usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
+test("checkout: Mercado Pago con crédito, método de pago y resumen usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
   const checkout = readSource("../../app/checkout/page.tsx")
 
   assert.match(checkout, /const installmentsCopy = INSTALLMENTS_COPY/)
-  // Opción "Mercado Pago en cuotas": badge "Hasta N cuotas ..." y detalle
-  // "N cuotas ... de $X" (modal informativo).
+  // Opción "Mercado Pago con crédito": badge "Hasta N cuotas ..." y detalle
+  // "N cuotas ... de $X" (modal informativo, como ejemplos).
   assert.match(checkout, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} \{installmentsCopy\}/)
   assert.match(checkout, /\{plan\.count\} \{installmentsCopy\} de/)
-  // Resumen del pedido en cuotas: "Hasta N cuotas ... de $X".
+  // Resumen del pedido con crédito: "Tarjeta de crédito: hasta N cuotas ... de $X".
   assert.match(
     checkout,
-    /`Hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/,
+    /`Tarjeta de crédito: hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/,
   )
   assert.doesNotMatch(checkout, /cuotas fijas/)
 

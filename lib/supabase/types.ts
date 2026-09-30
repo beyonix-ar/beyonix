@@ -306,6 +306,14 @@ export interface SupabasePedido {
       net_received_amount?: number | null
       total_paid_amount?: number | null
     } | null
+    /** Tipo real de Mercado Pago (credit_card, debit_card, account_money…). */
+    payment_type_id?: string | null
+    /** Medio/marca real de Mercado Pago (visa, master, account_money…). */
+    payment_method_id?: string | null
+    /** Modalidad elegida en BEYONIX al crear la preferencia. */
+    checkout_modality?: "mercadopago_cash" | "mercadopago_financed" | null
+    /** Si el tipo real corresponde a la modalidad (null si no se puede saber). */
+    matches_checkout_modality?: boolean | null
   } | null
   payment_proof_url?: string | null
   payment_proof_file_name?: string | null

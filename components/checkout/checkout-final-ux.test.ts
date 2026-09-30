@@ -352,18 +352,21 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
   assert.match(modal, /title="Vas a continuar a Mercado Pago"/)
 
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
-  assert.match(financed, /Elegiste pagar en cuotas\./)
+  assert.match(financed, /Elegiste pagar con tarjeta de crédito\./)
   assert.match(financed, /Total financiado: \{formatPrice\(finalTotal\)\}/)
-  assert.match(financed, /Hasta \{maxInstallmentPlan\.count\} \{installmentsCopy\}\./)
+  // C. 1 pago con crédito es válido: se ofrece junto con las cuotas.
+  assert.match(financed, /En 1 pago o hasta \{maxInstallmentPlan\.count\} \{installmentsCopy\} con tarjeta de crédito\./)
   assert.match(
     financed,
     /<InstallmentPlanList\s+plans=\{mercadoPagoPricing\.installmentPlans\}\s+installmentsCopy=\{installmentsCopy\}\s*\/>/,
   )
   assert.match(financed, /\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)
+  // C. Advertencia sólo por Dinero en cuenta (no se puede excluir); 1 pago con crédito ya no es un problema.
   assert.match(
     checkout,
-    /const MERCADOPAGO_FINANCED_TOTAL_WARNING =\s*"Si dentro de Mercado Pago elegís pagar en 1 solo pago o con dinero en cuenta, se mantendrá este total financiado\."/,
+    /const MERCADOPAGO_FINANCED_TOTAL_WARNING =\s*"Mercado Pago puede mostrar Dinero en cuenta aunque hayas elegido crédito\. Si lo usás, se mantiene este total financiado\."/,
   )
+  assert.doesNotMatch(checkout, /1 solo pago/)
 
   const cash = modal.slice(modal.indexOf('data-mercadopago-confirm="cash"'))
   assert.match(cash, /Elegiste pagar al contado\./)
@@ -382,7 +385,7 @@ test("31-35. huellas, retry, refresco de precios, revalidación de transferencia
   const mp = routes.mercadopago
   assert.match(mp, /createCheckoutEconomicFingerprint\(/)
   assert.match(mp, /"claim_mercadopago_order_preference"/)
-  assert.match(mp, /getMercadoPagoPreferenceInstallments\(order\)/)
+  assert.match(mp, /getMercadoPagoPreferencePaymentMethods\(order\)/)
   assert.match(mp, /code: "PRICING_CHANGED"/)
   assert.match(routes.transferencia, /createTransferEconomicFingerprint\(/)
   assert.match(routes.transferencia, /code: "PRICING_CHANGED"/)
@@ -516,14 +519,14 @@ function contrastRatio(foreground: string, background: string) {
   return (light + 0.05) / (dark + 0.05)
 }
 
-test("visual 7. confirmación en cuotas: advertencia destacada con ¡ATENCIÓN! y texto sin cambios", () => {
+test("visual 7. confirmación con crédito: aclaración destacada ('Importante') y legible en ambos temas", () => {
   const modalStart = checkout.indexOf("{mercadoPagoConfirmOpen && mercadoPagoQuote && (")
   const modal = checkout.slice(modalStart, checkout.indexOf("</PaymentInfoModal>", modalStart))
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
   const warning = financed.slice(financed.indexOf("data-financed-total-warning"))
   assert.match(warning, /className="checkout-financed-warning mt-3 flex/)
   assert.match(warning, /<AlertTriangle[\s\S]*?className="checkout-financed-warning-icon/)
-  assert.match(warning, /data-financed-total-warning-title[\s\S]*?>\s*¡ATENCIÓN!\s*</)
+  assert.match(warning, /data-financed-total-warning-title[\s\S]*?>\s*Importante\s*</)
   assert.match(warning, /className="checkout-financed-warning-text[^"]*">\s*\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)
   assert.match(financed, /role="note"\s+aria-labelledby="financed-total-warning-title"/)
   // Sin utilidades que el tema Light reescribe dentro del bloque.
@@ -539,13 +542,21 @@ test("visual 7. confirmación en cuotas: advertencia destacada con ¡ATENCIÓN! 
   assert.ok(contrastRatio("#92400e", "#fff4d6") >= 4.5)
 })
 
-test("visual 8. 'Ver cuotas': precio y aclaración en líneas propias, sin oración partida", () => {
-  const start = checkout.indexOf('title="Cuotas con Mercado Pago"')
+test("visual 8. 'Ver cuotas' (Crédito): total y aclaración en líneas propias; cuotas como ejemplos, sin prometer una lista exacta", () => {
+  const start = checkout.indexOf('title="Crédito con Mercado Pago"')
+  assert.ok(start > 0)
   const intro = checkout.slice(start, checkout.indexOf("<InstallmentPlanList", start))
   assert.match(intro, /data-installments-intro/)
-  assert.match(intro, />\s*Precio en cuotas\s*</)
+  assert.match(intro, />\s*Total financiado\s*</)
   assert.match(intro, /\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
-  assert.match(intro, /<p className="beyonix-modal-body mt-1[^"]*">\s*La cantidad de cuotas la elegís dentro de Mercado Pago\.\s*<\/p>/)
-  // Nada de "Precio en cuotas: $X. La cantidad…" pegado al precio.
-  assert.doesNotMatch(intro, /Precio en cuotas:|\n\s*\. La cantidad/)
+  assert.match(
+    intro,
+    /<p className="beyonix-modal-body mt-1[^"]*">\s*Con tarjeta de crédito, en 1 pago o hasta \{mercadoPagoPricing\.maxInstallmentCount\} cuotas\. La cantidad la elegís dentro de Mercado Pago\.\s*<\/p>/,
+  )
+  assert.doesNotMatch(intro, /Total financiado:|\n\s*\. La cantidad/)
+
+  // C. Las filas 2/3/6 se presentan como ejemplos: Checkout Pro sólo fija un máximo.
+  const list = checkout.slice(checkout.indexOf("function InstallmentPlanList("), checkout.indexOf("const MERCADOPAGO_FINANCED_TOTAL_WARNING"))
+  assert.match(list, /data-installment-plans-title[\s\S]*?>\s*Ejemplos de financiación\s*</)
+  assert.doesNotMatch(checkout, /[Ss]olo 2, 3 o 6|únicamente 2, 3 o 6|2, 3 o 6 cuotas/)
 })

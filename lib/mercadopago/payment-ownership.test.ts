@@ -169,7 +169,7 @@ test("10. webhook: ignora pagos de otra orden y sigue bloqueando duplicados real
   assert.ok(guard > 0)
   assert.ok(guard < webhook.indexOf("if (isMercadoPagoOrderAlreadyConfirmed(orderRow)) {"))
   assert.ok(guard < webhook.indexOf("processApprovedMercadoPagoOrderPayment("))
-  assert.match(webhook, /"id, created_at, estado,[^"]*mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at"/)
+  assert.match(webhook, /"id, created_at, estado,[^"]*mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at(, [a-z_]+)*"/)
   // El pago aprobado propio pasa la validación y una orden ya confirmada sigue
   // tratándose como duplicado.
   assert.equal(isMercadoPagoPaymentForOrder(ownApprovedPayment, currentOrder()), true)

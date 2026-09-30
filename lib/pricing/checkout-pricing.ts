@@ -642,29 +642,73 @@ export interface MercadoPagoPreferenceInstallmentsSource {
   } | null
 }
 
+export type MercadoPagoExcludedPaymentType = {
+  id: "credit_card" | "debit_card" | "prepaid_card" | "ticket" | "atm"
+}
+
+export type MercadoPagoPreferencePaymentMethods = {
+  installments: number
+  default_installments?: number
+  excluded_payment_types?: MercadoPagoExcludedPaymentType[]
+}
+
+/**
+ * Tipos de pago excluidos por modalidad (Checkout Pro, `payment_methods.
+ * excluded_payment_types`):
+ *
+ * - Al contado: pago inmediato -> débito, dinero en cuenta o prepaga. Fuera
+ *   crédito y los medios diferidos en efectivo (Rapipago/Pago Fácil =
+ *   `ticket`, cajeros/Red Link = `atm`).
+ * - Crédito: tarjeta de crédito (1 pago o cuotas hasta el máximo). Fuera
+ *   débito, prepaga y los medios diferidos.
+ *
+ * "Dinero en cuenta" (`account_money`) NO se excluye: Mercado Pago no lo
+ * permite en Checkout Pro ("El medio de pago Dinero en cuenta no puede ser
+ * excluido"), por eso puede seguir apareciendo en ambas modalidades. El monto
+ * de la preferencia es fijo: con cualquier medio se cobra el total de la
+ * modalidad elegida.
+ */
+export const MERCADOPAGO_CASH_EXCLUDED_PAYMENT_TYPES: MercadoPagoExcludedPaymentType[] = [
+  { id: "credit_card" },
+  { id: "ticket" },
+  { id: "atm" },
+]
+export const MERCADOPAGO_CREDIT_EXCLUDED_PAYMENT_TYPES: MercadoPagoExcludedPaymentType[] = [
+  { id: "debit_card" },
+  { id: "prepaid_card" },
+  { id: "ticket" },
+  { id: "atm" },
+]
+
 /**
  * `payment_methods` de la preferencia, derivado SIEMPRE de lo persistido en
- * la orden (nunca del request): contado => installments=1 (Checkout Pro no
- * ofrece cuotas); en cuotas => tope = cuota máxima elegible y el cliente
- * elige dentro de Mercado Pago. Órdenes anteriores a este modelo (sin
- * `mercadoPagoModality`) conservan su comportamiento: la cuota elegida como
- * tope y preselección, o 1 pago.
+ * la orden (nunca del request): al contado => installments=1 y sin crédito ni
+ * medios diferidos; crédito => tope = cuota máxima elegible (Checkout Pro sólo
+ * admite un máximo, no una lista exacta) y sólo tarjeta de crédito, en 1 pago
+ * o en cuotas. Órdenes anteriores a este modelo (sin `mercadoPagoModality`)
+ * conservan su comportamiento: la cuota elegida como tope y preselección, o
+ * 1 pago, sin exclusiones.
  */
-export function getMercadoPagoPreferenceInstallments(
+export function getMercadoPagoPreferencePaymentMethods(
   order: MercadoPagoPreferenceInstallmentsSource,
-): { installments: number; default_installments?: number } {
+): MercadoPagoPreferencePaymentMethods {
   const modality = order.pricing_snapshot?.mercadoPagoModality
 
   if (modality === "mercadopago_financed") {
     const max = Number(order.pricing_snapshot?.preferenceMaxInstallments)
-    if (max === 2 || max === 3 || max === 6) return { installments: max }
+    const excluded_payment_types = [...MERCADOPAGO_CREDIT_EXCLUDED_PAYMENT_TYPES]
+    if (max === 2 || max === 3 || max === 6) return { installments: max, excluded_payment_types }
     // Snapshot financiado sin tope válido: nunca se abre a más cuotas de
-    // las calculadas -- se degrada a 1 pago.
-    return { installments: 1, default_installments: 1 }
+    // las calculadas -- se degrada a crédito en 1 pago.
+    return { installments: 1, default_installments: 1, excluded_payment_types }
   }
 
   if (modality === "mercadopago_cash") {
-    return { installments: 1, default_installments: 1 }
+    return {
+      installments: 1,
+      default_installments: 1,
+      excluded_payment_types: [...MERCADOPAGO_CASH_EXCLUDED_PAYMENT_TYPES],
+    }
   }
 
   const legacyCount = Number(order.installments_count)
