@@ -2,9 +2,12 @@ import {
   getEligibleReview,
   getEligibleProductReview,
   getOwnOrderReviewWindow,
+  getPublicReviewerNames,
+  toPublicEligibleReview,
   toPublicReview,
-  type EligibleReview,
+  type PublicEligibleReview,
 } from "@/lib/reviews/server"
+import { PUBLIC_REVIEWER_FALLBACK_NAME } from "@/lib/reviews/public-name"
 import type { ReviewWindow } from "@/lib/reviews/review-window"
 import { validateReviewComment } from "@/lib/reviews/review-text"
 
@@ -17,7 +20,9 @@ import {
 export const dynamic = "force-dynamic"
 
 const HOME_FEATURED_REVIEWS_LIMIT = 12
-const PUBLIC_REVIEW_COLUMNS = "id, product_id, rating, comment, nickname, city, province, created_at"
+// user_id sólo se usa del lado del servidor para resolver el primer nombre
+// público (profiles.nombre); nunca se devuelve al navegador.
+const PUBLIC_REVIEW_COLUMNS = "id, user_id, rating, comment, city, province, created_at"
 
 export async function GET(request: Request) {
   try {
@@ -27,9 +32,11 @@ export async function GET(request: Request) {
     const hasProduct = Number.isInteger(productId) && productId > 0
     const hasOrder = Number.isInteger(orderId) && orderId > 0
 
-    // Producto: todas sus reseñas aprobadas. Home: solo las que el Admin
-    // destacó; el promedio sigue calculándose sobre todas las experiencias
-    // aprobadas para no mostrar un puntaje curado.
+    // Producto: todas sus reseñas aprobadas. Home: SOLO experiencias de
+    // compra (product_id null), aprobadas y destacadas por el Admin; una
+    // reseña de producto nunca aparece ahí aunque esté destacada. El
+    // promedio sigue calculándose sobre todas las experiencias aprobadas
+    // para no mostrar un puntaje curado.
     const reviewsQuery = hasProduct
       ? admin
           .schema("public")
@@ -44,6 +51,7 @@ export async function GET(request: Request) {
           .select(PUBLIC_REVIEW_COLUMNS)
           .eq("approved", true)
           .eq("featured", true)
+          .is("product_id", null)
           .order("created_at", { ascending: false })
           .order("id", { ascending: false })
           .limit(HOME_FEATURED_REVIEWS_LIMIT)
@@ -64,6 +72,10 @@ export async function GET(request: Request) {
     if (summaryResult?.error) throw summaryResult.error
 
     const data = reviewsResult.data ?? []
+    const reviewerNames = await getPublicReviewerNames(
+      admin,
+      data.map((review) => String(review.user_id)),
+    )
     const summaryRatings = (summaryResult?.data ?? []).map((row) => Number(row.rating))
     const summary = hasProduct
       ? undefined
@@ -75,7 +87,7 @@ export async function GET(request: Request) {
         }
 
     let ownReviewIds = new Set<number>()
-    let eligibleReview: EligibleReview | null = null
+    let eligibleReview: PublicEligibleReview | null = null
     let ownProductReviews: Array<Record<string, unknown>> = []
     let ownExperienceReview: Record<string, unknown> | null = null
     let reviewWindow: ReviewWindow | null = null
@@ -140,7 +152,7 @@ export async function GET(request: Request) {
           user,
           hasOrder ? orderId : undefined,
         )
-        eligibleReview = eligibility.ok ? eligibility.review : null
+        eligibleReview = eligibility.ok ? toPublicEligibleReview(eligibility.review) : null
       } catch (eligibilityError) {
         console.error("REVIEW ELIGIBILITY ERROR:", eligibilityError)
       }
@@ -149,7 +161,11 @@ export async function GET(request: Request) {
     return Response.json(
       {
         reviews: data.map((review) =>
-          toPublicReview(review, ownReviewIds.has(Number(review.id)))
+          toPublicReview(
+            review,
+            reviewerNames.get(String(review.user_id)) ?? PUBLIC_REVIEWER_FALLBACK_NAME,
+            ownReviewIds.has(Number(review.id)),
+          )
         ),
         summary,
         eligibleReview,
@@ -248,7 +264,7 @@ export async function POST(request: Request) {
         approved: true,
       })
       .select(
-        "id, rating, comment, nickname, city, province, created_at"
+        "id, rating, comment, city, province, created_at"
       )
       .single()
 
@@ -271,7 +287,7 @@ export async function POST(request: Request) {
     if (error) throw error
 
     return Response.json(
-      { review: toPublicReview(data, true) },
+      { review: toPublicReview(data, eligibleReview.name, true) },
       { status: 201 }
     )
   } catch (error) {

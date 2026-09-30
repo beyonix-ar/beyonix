@@ -123,12 +123,13 @@ export function hasInstallmentsWithoutSurcharge(
   )
 }
 
-/** Copy de cara al cliente para las cuotas del producto ("Hasta N {copy} de $X"). */
-export function getInstallmentsCopy(product: EligibleInstallmentsProduct): string {
-  return hasInstallmentsWithoutSurcharge(product)
-    ? "cuotas sin recargo"
-    : "cuotas sin interés"
-}
+/**
+ * Copy de cara al cliente para las cuotas ("Hasta N {copy} de $X"), igual
+ * para todos los productos y para el checkout: siempre "sin interés", nunca
+ * "sin recargo". La regla de precio de cada producto (`cuotas_sin_recargo`)
+ * sigue definiendo sólo el importe, no el texto.
+ */
+export const INSTALLMENTS_COPY = "cuotas sin interés"
 
 /**
  * Precio financiado de UN producto según su regla: con cuotas sin recargo es

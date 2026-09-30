@@ -35,6 +35,7 @@ import {
 import {
   getSiteSettings,
 } from "@/lib/site-settings"
+import { getShippingTermsCopy } from "@/lib/legal/shipping-terms"
 import {
   PAYMENT_PROOF_ALLOWED_EXTENSIONS,
   PAYMENT_PROOF_MAX_SIZE,
@@ -70,14 +71,6 @@ const LEGAL_SECTIONS = [
   { id: "propiedad", label: "Propiedad intelectual" },
   { id: "vigencia", label: "Vigencia y normativa" },
 ]
-
-function formatARS(value: number) {
-  return new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(value)
-}
 
 function LegalSection({
   id,
@@ -163,11 +156,8 @@ function KeyFact({
 
 export default async function TerminosPage() {
   const siteSettings = await getSiteSettings()
-  const shippingSettings = siteSettings.shipping
-  const isShippingBonusEnabled = shippingSettings.freeShippingMode === "full"
-  const shippingBenefitText = isShippingBonusEnabled
-    ? `Desde ${formatARS(shippingSettings.freeShippingMinAmount)}`
-    : "Según promoción vigente"
+  // Misma configuración de Admin que usa la cotización real del envío.
+  const shippingTerms = getShippingTermsCopy(siteSettings.shipping)
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -233,12 +223,8 @@ export default async function TerminosPage() {
             <KeyFact
               icon={Truck}
               label="Envío bonificado"
-              value={shippingBenefitText}
-              detail={
-                isShippingBonusEnabled
-                  ? `Bonificación de hasta ${formatARS(shippingSettings.shippingBonusMax)}.`
-                  : "Se informa, si corresponde, antes de pagar."
-              }
+              value={shippingTerms.keyFactValue}
+              detail={shippingTerms.keyFactDetail}
             />
           </div>
         </div>
@@ -418,12 +404,10 @@ export default async function TerminosPage() {
                 <LegalListItem>Los beneficios asignados a una cuenta son personales, se validan al pagar y pueden tener condiciones o vencimiento visibles antes de utilizarlos.</LegalListItem>
                 <LegalListItem>Los errores manifiestos de publicación serán revisados antes de confirmar la operación y nunca habilitan cobros distintos de los aceptados por el cliente.</LegalListItem>
               </LegalList>
-              {isShippingBonusEnabled && (
+              {shippingTerms.bonusNotice && (
                 <div className="beyonix-terms-highlight rounded-xl border border-beyonix-blue-light/18 bg-beyonix-blue/10 p-4 text-white/72">
                   <strong className="text-white">Envío bonificado vigente.</strong>{" "}
-                  Desde un subtotal de productos de {formatARS(shippingSettings.freeShippingMinAmount)}, BEYONIX
-                  bonifica hasta {formatARS(shippingSettings.shippingBonusMax)} del costo logístico. Si el envío
-                  supera ese tope, la diferencia queda informada antes de pagar.
+                  {shippingTerms.bonusNotice}
                 </div>
               )}
             </LegalSection>

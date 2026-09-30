@@ -8,10 +8,13 @@ import { PGlite } from "@electric-sql/pglite"
 // delivered_at, comentario obligatorio, destacado solo por service_role (API
 // Admin) y compatibilidad con reseñas existentes.
 
-const MIGRATION = readFileSync(
-  new URL("../../supabase/migrations/20261001150000_reviews_featured_and_review_window.sql", import.meta.url),
-  "utf8",
-)
+const readMigration = (name: string) =>
+  readFileSync(new URL(`../../supabase/migrations/${name}`, import.meta.url), "utf8")
+
+const FEATURED_MIGRATION = readMigration("20261001150000_reviews_featured_and_review_window.sql")
+const PRIVACY_MIGRATION = readMigration("20261001160000_reviews_private_columns_and_experience_featured.sql")
+// Esquema vigente: ambas migraciones en el orden en que se aplican.
+const MIGRATION = `${FEATURED_MIGRATION}\n${PRIVACY_MIGRATION}`
 
 const CLIENT = "00000000-0000-0000-0000-00000000000a"
 const OTHER = "00000000-0000-0000-0000-00000000000b"
@@ -201,16 +204,131 @@ test("M/N. service_role (API Admin) destaca y quita; Home lee solo destacadas", 
         "reseña existente sin comentario no se destaca",
       )
 
-      const home = await db.query<{ id: number }>(
-        "select id from public.reviews where approved and featured order by created_at desc, id desc",
+      // F. Reseña de PRODUCTO: la base rechaza destacarla aunque venga de
+      // service_role (API Admin); el Home tampoco la mostraría.
+      const productReview = (await db.query<{ id: number }>(
+        `insert into public.reviews (user_id, order_id, product_id, rating, comment, nickname, city, province)
+         values ($1, 1, 1, 5, 'Muy buen producto, llegó perfecto', 'Lucas', 'Rosario', 'Santa Fe') returning id`,
+        [CLIENT],
+      )).rows[0].id
+      await assert.rejects(
+        db.query("update public.reviews set featured = true where id = $1", [productReview]),
+        /REVIEW_FEATURED_EXPERIENCE_ONLY/,
       )
-      assert.deepEqual(home.rows.map((row) => row.id), [second])
-      assert.ok(!home.rows.some((row) => row.id === first))
+
+      const home = await db.query<{ id: number }>(
+        "select id from public.reviews where approved and featured and product_id is null order by created_at desc, id desc",
+      )
+      assert.deepEqual(home.rows.map((row) => row.id), [second], "sólo la experiencia destacada")
+      assert.ok(!home.rows.some((row) => row.id === first), "experiencia NO destacada: no aparece")
+      assert.ok(!home.rows.some((row) => row.id === productReview), "reseña de producto destacada: no aparece")
 
       const removed = await db.query<{ featured: boolean; featured_at: string | null }>(
         "update public.reviews set featured = false where id = $1 returning featured, featured_at", [second],
       )
       assert.deepEqual(removed.rows[0], { featured: false, featured_at: null })
+    })
+  } finally {
+    await db.close()
+  }
+})
+
+// ─────────── 20261001160000: privacidad de la lectura directa ───────────
+
+const SENSITIVE_COLUMNS = ["user_id", "order_id", "nickname", "comment", "city", "province", "featured", "created_at"]
+
+test("A. anon no lee user_id/order_id ni ninguna columna fuera de las públicas; sí el promedio del catálogo", async () => {
+  const db = await setup()
+  try {
+    await db.exec(MIGRATION)
+    await db.exec(MIGRATION)
+    await asRole(db, "anon", async () => {
+      for (const column of SENSITIVE_COLUMNS) {
+        await assert.rejects(db.query(`select ${column} from public.reviews`), /permission denied/, column)
+      }
+      await assert.rejects(db.query("select * from public.reviews"), /permission denied/)
+      await assert.rejects(
+        db.query("select count(*) from public.reviews where user_id is not null"),
+        /permission denied/,
+        "tampoco como filtro",
+      )
+      // Lo único que lee el navegador directo: product-review-summary.ts.
+      const summary = await db.query<{ product_id: number; rating: number }>(
+        "select product_id, rating from public.reviews where approved = true and product_id in (1)",
+      )
+      assert.deepEqual(summary.rows, [{ product_id: 1, rating: 4 }])
+      await assert.rejects(db.query("delete from public.reviews"), /permission denied/, "anon no borra")
+      await assert.rejects(db.query("truncate public.reviews"), /permission denied/, "anon no trunca")
+    })
+  } finally {
+    await db.close()
+  }
+})
+
+test("B. authenticated tampoco extrae columnas sensibles; sólo borra su propia reseña; service_role conserva todo", async () => {
+  const db = await setup()
+  try {
+    await db.exec(MIGRATION)
+    const others = await asRole(db, "service_role", () => db.query<{ id: number }>(
+      `insert into public.reviews (user_id, order_id, product_id, rating, comment, nickname, city, province)
+       values ($1, 6, null, 5, 'Excelente atención de BEYONIX', 'Otro', 'Rosario', 'Santa Fe') returning id`,
+      [OTHER],
+    ))
+    const otherId = others.rows[0].id
+
+    await asRole(db, "authenticated", async () => {
+      for (const column of SENSITIVE_COLUMNS) {
+        await assert.rejects(db.query(`select ${column} from public.reviews`), /permission denied/, column)
+      }
+      await assert.rejects(db.query("select * from public.reviews"), /permission denied/)
+      await assert.rejects(db.query("truncate public.reviews"), /permission denied/)
+
+      const foreign = await db.query("delete from public.reviews where id = $1 returning id", [otherId])
+      assert.equal(foreign.rows.length, 0, "no borra reseñas ajenas")
+      const own = await db.query<{ id: number }>("delete from public.reviews where id = 2 returning id")
+      assert.deepEqual(own.rows, [{ id: 2 }], "borra su propia reseña (policy existente)")
+    })
+
+    const full = await asRole(db, "service_role", () =>
+      db.query<{ user_id: string }>("select user_id, order_id, nickname from public.reviews where id = $1", [otherId]),
+    )
+    assert.equal(full.rows[0].user_id, OTHER, "las APIs del servidor siguen leyendo todo")
+  } finally {
+    await db.close()
+  }
+})
+
+test("D/F/G. se destaca una experiencia; nunca una reseña de producto (tampoco con service_role); quitar sí", async () => {
+  const db = await setup()
+  try {
+    // Estado previo: con la primera migración una reseña de producto podía
+    // quedar destacada. Tras la nueva se puede quitar, pero no volver a poner.
+    await db.exec(FEATURED_MIGRATION)
+    await asRole(db, "service_role", () => db.query("update public.reviews set featured = true where id = 2"))
+    await db.exec(PRIVACY_MIGRATION)
+
+    await asRole(db, "service_role", async () => {
+      const experience = (await insertAs(db, 1, "Excelente atención, llegó rápido")).rows[0].id
+      const featured = await db.query<{ featured: boolean }>(
+        "update public.reviews set featured = true where id = $1 returning featured",
+        [experience],
+      )
+      assert.equal(featured.rows[0].featured, true, "D. experiencia general destacable")
+
+      const removed = await db.query<{ featured: boolean }>(
+        "update public.reviews set featured = false where id = 2 returning featured",
+      )
+      assert.equal(removed.rows[0].featured, false, "una reseña de producto destacada de antes se puede quitar")
+      await assert.rejects(
+        db.query("update public.reviews set featured = true where id = 2"),
+        /REVIEW_FEATURED_EXPERIENCE_ONLY/,
+        "F. reseña de producto: rechazada por la base",
+      )
+
+      const home = await db.query<{ id: number }>(
+        "select id from public.reviews where approved and featured and product_id is null order by created_at desc, id desc",
+      )
+      assert.deepEqual(home.rows.map((row) => row.id), [experience], "G. Home: sólo experiencias destacadas")
     })
   } finally {
     await db.close()

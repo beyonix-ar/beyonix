@@ -239,6 +239,7 @@ const TEST_FILES = [
   "lib/reviews/review-text.test.ts",
   "lib/reviews/review-window.test.ts",
   "lib/reviews/reviews-featured-window-sql.test.ts",
+  "lib/reviews/public-name.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
@@ -250,6 +251,7 @@ const TSX_TEST_FILES = [
   "components/checkout/transfer-flow-validation.test.tsx",
   "app/admin/sections/facturacion/admin-facturacion-arca.test.tsx",
   "lib/orders/admin-claim-wizard.test.ts",
+  "lib/cart/shipping-bonus-copy.test.tsx",
 ]
 
 // PostgreSQL embebido con conexiones concurrentes: correrlo fuera del batch
@@ -276,6 +278,7 @@ const SERVER_TSX_TEST_FILES = [
   "lib/arca/invoice-pdf-environment.test.ts",
   "scripts/arca-homologation/harness.test.ts",
   "lib/reviews/reviews-routes.test.ts",
+  "lib/cart/shipping-bonus-terms.test.ts",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))

@@ -1,31 +1,23 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import {
   ArrowDownWideNarrow,
   Check,
   ChevronDown,
   LoaderCircle,
-  MapPin,
   MessageSquareText,
-  Star,
-  UserRound,
   X,
 } from "lucide-react"
 
+import {
+  PublicReviewCard,
+  ReviewStars,
+  type PublicReviewView,
+} from "@/components/reviews/public-review-card"
 import { cn } from "@/lib/utils"
 
-import { ProductRatingSummary } from "./product-rating-summary"
-
-type ProductReview = {
-  id: number
-  rating: number
-  comment: string
-  nickname: string
-  city: string
-  province: string
-  createdAt: string
-}
+type ProductReview = PublicReviewView
 
 type ReviewSort = "relevant" | "recent" | "highest"
 
@@ -60,18 +52,6 @@ function getReviewDateValue(review: ProductReview) {
   return Number.isFinite(date) ? date : 0
 }
 
-function formatReviewDate(value: string) {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) return null
-
-  return new Intl.DateTimeFormat("es-AR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date)
-}
-
 function getSortedReviews(reviews: ProductReview[], sort: ReviewSort) {
   return [...reviews].sort((first, second) => {
     const firstDate = getReviewDateValue(first)
@@ -100,6 +80,14 @@ function getSortedReviews(reviews: ProductReview[], sort: ReviewSort) {
   })
 }
 
+/** "5" / "4,5" / "3,2" -- coma decimal es-AR, sin ",0" innecesario. */
+function formatAverage(value: number) {
+  return new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value)
+}
+
 export function ProductReviewsDialog({
   productId,
   productName,
@@ -113,6 +101,8 @@ export function ProductReviewsDialog({
   const [sort, setSort] = useState<ReviewSort>("relevant")
   const [sortOpen, setSortOpen] = useState(false)
   const sortMenuRef = useRef<HTMLDivElement>(null)
+  const sortTriggerRef = useRef<HTMLButtonElement>(null)
+  const sortListRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!sortOpen) return
@@ -130,6 +120,14 @@ export function ProductReviewsDialog({
     }
   }, [sortOpen])
 
+  // Al abrir el desplegable, el foco va a la opción elegida (teclado).
+  useEffect(() => {
+    if (!sortOpen) return
+    sortListRef.current
+      ?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"]')
+      ?.focus()
+  }, [sortOpen])
+
   useEffect(() => {
     if (!isOpen) setSortOpen(false)
   }, [isOpen])
@@ -140,7 +138,7 @@ export function ProductReviewsDialog({
     const previousBodyOverflow = document.body.style.overflow
     const previousHtmlOverflow = document.documentElement.style.overflow
 
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setIsOpen(false)
       }
@@ -207,14 +205,40 @@ export function ProductReviewsDialog({
     reviews.length > 0
       ? reviews.reduce((total, review) => total + review.rating, 0) /
         reviews.length
-      : averageRating
-  const averageLabel = Number(average)
-  const safeAverageLabel = Number.isFinite(averageLabel)
-    ? averageLabel.toFixed(1).replace(".0", "")
-    : "0"
+      : Number(averageRating)
+  const safeAverage = Number.isFinite(average) ? average : 0
   const selectedSortLabel =
     sortOptions.find((option) => option.value === sort)?.label ??
     sortOptions[0].label
+
+  const closeSortMenu = () => {
+    setSortOpen(false)
+    sortTriggerRef.current?.focus()
+  }
+
+  const handleSortListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const options = Array.from(
+      sortListRef.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? [],
+    )
+    const current = options.indexOf(document.activeElement as HTMLButtonElement)
+    const moves: Record<string, number> = {
+      ArrowDown: current + 1,
+      ArrowUp: current - 1,
+      Home: 0,
+      End: options.length - 1,
+    }
+
+    if (event.key === "Escape") {
+      event.stopPropagation()
+      closeSortMenu()
+      return
+    }
+    if (!(event.key in moves) || options.length === 0) return
+
+    event.preventDefault()
+    const next = (moves[event.key] + options.length) % options.length
+    options[next]?.focus()
+  }
 
   return (
     <>
@@ -230,7 +254,7 @@ export function ProductReviewsDialog({
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm sm:p-4">
           <button
             type="button"
             aria-label="Cerrar reseñas"
@@ -239,24 +263,28 @@ export function ProductReviewsDialog({
             className="absolute inset-0 cursor-pointer"
           />
 
+          {/* Colores sólo con tokens de tema (--account-*): Light usa texto
+              oscuro sobre superficies claras y Dark conserva el aspecto
+              oscuro. Antes eran literales text-white/NN sobre
+              bg-beyonix-surface, que en Light resolvía a blanco sobre blanco. */}
           <section
             role="dialog"
             aria-modal="true"
             aria-labelledby="product-reviews-dialog-title"
-            className="product-reviews-dialog relative z-10 flex max-h-[min(780px,calc(100vh-32px))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-beyonix-blue-light/28 bg-beyonix-surface text-white shadow-[0_24px_72px_rgba(0,0,0,0.72),0_0_38px_rgba(30,140,255,0.1)]"
+            className="product-reviews-dialog relative z-10 flex max-h-[min(780px,calc(100vh-24px))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--account-border)] text-[var(--account-text-primary)] shadow-[0_24px_72px_rgba(0,0,0,0.45)]"
           >
-            <header className="product-reviews-dialog-header flex shrink-0 items-start justify-between gap-4 border-b border-beyonix-blue-light/16 bg-beyonix-surface px-5 py-5 md:px-6">
+            <header className="product-reviews-dialog-header flex shrink-0 items-start justify-between gap-4 border-b border-[var(--account-border-subtle)] px-4 py-4 sm:px-6 sm:py-5">
               <div className="min-w-0">
-                <p className="text-12px font-bold uppercase tracking-widest text-[#8CC8F2]">
+                <p className="text-12px font-bold uppercase tracking-widest text-[var(--account-accent-soft)]">
                   Opiniones verificadas
                 </p>
                 <h3
                   id="product-reviews-dialog-title"
-                  className="mt-1 text-25px font-black leading-tight text-white"
+                  className="mt-1 text-xl font-black leading-tight text-[var(--account-text-primary)] sm:text-25px"
                 >
                   Ver todas las reseñas
                 </h3>
-                <p className="mt-1 line-clamp-1 text-15px font-semibold text-white/58">
+                <p className="mt-1 line-clamp-1 text-15px font-semibold text-[var(--account-text-secondary)]">
                   {productName}
                 </p>
               </div>
@@ -266,34 +294,35 @@ export function ProductReviewsDialog({
                 aria-label="Cerrar reseñas"
                 title="Cerrar reseñas"
                 onClick={() => setIsOpen(false)}
-                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-beyonix-blue-light/32 bg-[#07121E] text-white/84 transition-all hover:border-beyonix-sky/62 hover:bg-beyonix-blue/45 hover:text-white active:scale-95"
+                className="flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-primary)] transition-colors hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]"
               >
                 <X className="size-4" />
               </button>
             </header>
 
-            <div className="product-reviews-dialog-body custom-scrollbar min-h-0 flex-1 overflow-y-auto bg-beyonix-surface px-5 py-5 md:px-6">
-              <div className="flex flex-col gap-3 rounded-lg border border-beyonix-blue-500/40 bg-beyonix-surface-2 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 items-center gap-3">
-                  <p className="shrink-0 text-25px font-black leading-none text-white">
-                    {safeAverageLabel}
-                    <span className="ml-1 text-15px font-semibold text-beyonix-gray-500">
+            <div className="product-reviews-dialog-body custom-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+              <div className="flex flex-col gap-4 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div data-reviews-summary className="flex min-w-0 items-center gap-4">
+                  {/* Promedio en azul BEYONIX (--account-accent-soft: #1E4D7B en
+                      Light, #8CC8F2 en Dark) para cualquier valor. */}
+                  <p className="shrink-0 leading-none">
+                    <span
+                      data-reviews-average
+                      className="text-[32px] font-black tracking-tight text-[var(--account-accent-soft)]"
+                    >
+                      {formatAverage(safeAverage)}
+                    </span>
+                    <span className="ml-1 text-base font-bold text-[var(--account-text-secondary)]">
                       / 5
                     </span>
                   </p>
                   <span
-                    className="h-8 w-px shrink-0 bg-beyonix-gray-700"
+                    className="h-10 w-px shrink-0 bg-[var(--account-border)]"
                     aria-hidden="true"
                   />
                   <div className="min-w-0">
-                    <ProductRatingSummary
-                      averageRating={average}
-                      reviewsCount={visibleReviewsCount}
-                      className="text-13px"
-                      starClassName="size-3.5"
-                      countClassName="text-beyonix-gray-500"
-                    />
-                    <p className="mt-1 text-11px font-medium text-beyonix-gray-300">
+                    <ReviewStars rating={safeAverage} />
+                    <p className="mt-1 text-13px font-medium text-[var(--account-text-secondary)]">
                       {visibleReviewsCount}{" "}
                       {visibleReviewsCount === 1
                         ? "reseña verificada"
@@ -302,33 +331,44 @@ export function ProductReviewsDialog({
                   </div>
                 </div>
 
-                <div className="flex min-w-0 items-center gap-2 sm:shrink-0">
-                  <span className="inline-flex shrink-0 items-center gap-1.5 text-11px font-medium uppercase tracking-widest text-beyonix-sky">
-                    <ArrowDownWideNarrow className="size-3" />
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 sm:shrink-0 sm:flex-nowrap">
+                  <span
+                    id="product-reviews-sort-label"
+                    className="inline-flex shrink-0 items-center gap-1.5 text-11px font-bold uppercase tracking-widest text-[var(--account-text-secondary)]"
+                  >
+                    <ArrowDownWideNarrow className="size-3.5" aria-hidden="true" />
                     Ordenar por
                   </span>
                   <div
                     ref={sortMenuRef}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Escape" || !sortOpen) return
-                      event.stopPropagation()
-                      setSortOpen(false)
-                    }}
-                    className="relative min-w-0 flex-1 sm:w-44 sm:flex-none"
+                    className="relative min-w-44 flex-1 sm:w-52 sm:flex-none"
                   >
                     <button
+                      ref={sortTriggerRef}
                       type="button"
-                      aria-label="Ordenar reseñas"
+                      aria-label={`Ordenar reseñas: ${selectedSortLabel}`}
                       aria-haspopup="listbox"
                       aria-expanded={sortOpen}
+                      aria-controls="product-reviews-sort-options"
                       title="Ordenar reseñas"
                       onClick={() => setSortOpen((current) => !current)}
-                      className="flex h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 px-2.5 text-left text-11px font-medium text-white outline-none transition-colors hover:border-beyonix-blue-300 hover:bg-beyonix-blue-700 focus-visible:border-beyonix-blue-300"
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown" && !sortOpen) {
+                          event.preventDefault()
+                          setSortOpen(true)
+                        }
+                      }}
+                      className={cn(
+                        "flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-lg border bg-[var(--account-surface)] px-3 text-left text-sm font-semibold text-[var(--account-text-primary)] outline-none transition-colors hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]",
+                        sortOpen
+                          ? "border-[var(--account-border-strong)]"
+                          : "border-[var(--account-border)]",
+                      )}
                     >
                       <span className="truncate">{selectedSortLabel}</span>
                       <ChevronDown
                         className={cn(
-                          "size-3 shrink-0 text-white transition-transform",
+                          "size-4 shrink-0 text-[var(--account-text-secondary)] transition-transform",
                           sortOpen && "rotate-180",
                         )}
                         aria-hidden="true"
@@ -337,9 +377,12 @@ export function ProductReviewsDialog({
 
                     {sortOpen && (
                       <div
+                        ref={sortListRef}
+                        id="product-reviews-sort-options"
                         role="listbox"
-                        aria-label="Opciones de orden"
-                        className="absolute right-0 top-full z-20 mt-1 w-full min-w-44 overflow-hidden rounded-lg border border-beyonix-blue-500/50 bg-beyonix-surface p-1"
+                        aria-labelledby="product-reviews-sort-label"
+                        onKeyDown={handleSortListKeyDown}
+                        className="absolute right-0 top-full z-20 mt-1.5 w-full overflow-hidden rounded-xl border border-[var(--account-border)] bg-[var(--account-surface)] p-1 shadow-[0_16px_40px_rgba(15,23,42,0.18)]"
                       >
                         {sortOptions.map((option) => {
                           const active = option.value === sort
@@ -354,19 +397,19 @@ export function ProductReviewsDialog({
                               title={option.label}
                               onClick={() => {
                                 setSort(option.value)
-                                setSortOpen(false)
+                                closeSortMenu()
                               }}
                               className={cn(
-                                "flex h-7 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-2.5 text-left text-8px font-normal transition-colors",
+                                "flex h-9 w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--account-focus-ring)]",
                                 active
-                                  ? "bg-beyonix-blue-500 text-white"
-                                  : "text-beyonix-gray-300 hover:bg-beyonix-blue-700 hover:text-white",
+                                  ? "bg-[var(--account-accent)] font-semibold text-white"
+                                  : "font-medium text-[var(--account-text-primary)] hover:bg-[var(--account-surface-hover)] focus-visible:bg-[var(--account-surface-hover)]",
                               )}
                             >
                               <span>{option.label}</span>
                               {active && (
                                 <Check
-                                  className="size-3 shrink-0 text-white"
+                                  className="size-4 shrink-0 text-white"
                                   aria-hidden="true"
                                 />
                               )}
@@ -380,82 +423,29 @@ export function ProductReviewsDialog({
               </div>
 
               {loading ? (
-                <div className="flex min-h-52 items-center justify-center gap-2 text-15px font-semibold text-beyonix-sky/75">
+                <div className="flex min-h-52 items-center justify-center gap-2 text-15px font-semibold text-[var(--account-text-secondary)]">
                   <LoaderCircle className="size-5 animate-spin" />
                   Cargando reseñas...
                 </div>
               ) : errorMessage ? (
                 <p
                   role="alert"
-                  className="mt-5 rounded-xl border border-red-300/24 bg-red-500/10 px-4 py-3 text-15px font-semibold text-red-100"
+                  className="mt-5 rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-15px font-semibold text-[var(--account-danger-text)]"
                 >
                   {errorMessage}
                 </p>
               ) : visibleReviews.length === 0 ? (
-                <div className="mt-5 rounded-xl border border-beyonix-blue-light/18 bg-[#0D1720] px-4 py-8 text-center">
-                  <MessageSquareText className="mx-auto size-6 text-beyonix-sky" />
-                  <p className="mt-3 text-15px font-bold text-white">
+                <div className="mt-5 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-4 py-8 text-center">
+                  <MessageSquareText className="mx-auto size-6 text-[var(--account-accent-soft)]" />
+                  <p className="mt-3 text-15px font-bold text-[var(--account-text-primary)]">
                     Todavía no hay reseñas para este producto
                   </p>
                 </div>
               ) : (
-                <div className="mt-5 grid gap-3">
-                  {visibleReviews.map((review) => {
-                    const dateLabel = formatReviewDate(review.createdAt)
-
-                    return (
-                      <article
-                        key={review.id}
-                        className="rounded-xl border border-white/8 bg-[#12171D] p-4"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div
-                            className="flex gap-1"
-                            aria-label={`${review.rating} de 5 estrellas`}
-                          >
-                            {[1, 2, 3, 4, 5].map((rating) => (
-                              <Star
-                                key={rating}
-                                className={cn(
-                                  "size-4",
-                                  rating <= review.rating
-                                    ? "fill-amber-300 text-amber-300"
-                                    : "text-white/20"
-                                )}
-                              />
-                            ))}
-                          </div>
-
-                          {dateLabel && (
-                            <span className="text-12px font-bold uppercase tracking-widest text-white/36">
-                              {dateLabel}
-                            </span>
-                          )}
-                        </div>
-
-                        {review.comment.trim() ? (
-                          <p className="mt-3 text-15px leading-6 text-white/84">
-                            “{review.comment}”
-                          </p>
-                        ) : (
-                          <p className="mt-3 text-15px font-semibold text-white/55">
-                            Calificación verificada
-                          </p>
-                        )}
-
-                        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/8 pt-3 text-13px font-semibold text-white/58">
-                          <span className="inline-flex items-center gap-2 text-white/82">
-                            <UserRound className="size-3.5 text-beyonix-sky" />
-                            {review.nickname}
-                          </span>
-                          <span className="inline-flex items-center gap-2">
-                            <MapPin className="size-3.5 text-beyonix-cyan" />
-                            {review.city} · {review.province}
-                          </span>
-                        </div>
-                      </article>
-                    )
-                  })}
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  {visibleReviews.map((review) => (
+                    <PublicReviewCard key={review.id} review={review} />
+                  ))}
                 </div>
               )}
             </div>

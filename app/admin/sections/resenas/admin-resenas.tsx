@@ -222,6 +222,7 @@ export function AdminResenas() {
           {reviews.map((review) => {
             const dateLabel = formatReviewDate(review.createdAt)
             const hasComment = review.comment.trim().length > 0
+            const isProductReview = review.productId != null
             const canFeature = review.approved && hasComment
 
             return (
@@ -229,8 +230,8 @@ export function AdminResenas() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <ReviewStars rating={review.rating} />
                   <div className="flex flex-wrap gap-1.5">
-                    <AdminBadge tone={review.productId ? "info" : "neutral"}>
-                      {review.productId ? "Producto" : "Experiencia"}
+                    <AdminBadge tone={isProductReview ? "info" : "neutral"}>
+                      {isProductReview ? "Reseña de producto" : "Experiencia"}
                     </AdminBadge>
                     {!review.approved && <AdminBadge tone="warning">No publicada</AdminBadge>}
                     {review.featured && (
@@ -263,7 +264,15 @@ export function AdminResenas() {
                 </div>
 
                 <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-                  {review.featured ? (
+                  {/* El Home sólo muestra experiencias: una reseña de producto
+                      no ofrece "Destacar en Home" (la API y la base también lo
+                      rechazan). Si alguna quedó destacada de antes, sólo se
+                      permite quitarla. */}
+                  {isProductReview && !review.featured ? (
+                    <p data-product-review-note className="text-xs font-medium text-white/66">
+                      Las reseñas de producto se muestran en la ficha del producto, no en Home.
+                    </p>
+                  ) : review.featured ? (
                     <AdminSecondaryButton
                       size="sm"
                       aria-label={`Quitar de Home la reseña de ${review.nickname}`}

@@ -160,7 +160,7 @@ const PROBE_STOREFRONT = `(() => {
       toggle: read(root.querySelector("button[aria-label^='Cambiar a modo']")),
       staffBell: read(root.querySelector("button[aria-label='Abrir notificaciones administrativas']")),
       menuIcons: [...root.querySelectorAll(".beyonix-account-menu-icon")].map((icon) => ({
-        bg: getComputedStyle(icon).backgroundColor, icon: getComputedStyle(icon.querySelector("svg")).color,
+        bg: getComputedStyle(icon).backgroundColor, icon: getComputedStyle(icon.querySelector("svg")).stroke,
       })),
     }
   }
@@ -210,7 +210,7 @@ for (const theme of ["light", "dark"] as const) {
       for (const scope of ["header", "checkout", "contenido"] as const) {
         assert.equal(data[scope].menuIcons.length, 7, scope)
         for (const icon of data[scope].menuIcons) {
-          assert.equal(icon.icon, "rgb(255, 255, 255)", `${scope}: ícono blanco`)
+          assert.equal(icon.icon, "rgb(255, 255, 255)", `${scope}: trazo blanco`)
           if (theme === "light") assert.equal(icon.bg, "rgb(17, 42, 67)", `${scope}: contenedor navy`)
         }
       }
@@ -219,7 +219,7 @@ for (const theme of ["light", "dark"] as const) {
       await logout.hover()
       // El ícono tiene transition-all: se espera el color final.
       await page.waitForFunction(
-        `getComputedStyle(document.querySelector("[data-actions=checkout] button[aria-label='Cerrar sesión'] .beyonix-account-menu-icon svg")).color === "rgb(239, 68, 68)"`,
+        `getComputedStyle(document.querySelector("[data-actions=checkout] button[aria-label='Cerrar sesión'] .beyonix-account-menu-icon svg")).stroke === "rgb(239, 68, 68)"`,
         undefined,
         { timeout: 3_000 },
       )

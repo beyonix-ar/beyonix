@@ -18,8 +18,8 @@ import {
 } from "@/components/beyonix-ui"
 import {
   getInstallmentAmount,
-  getInstallmentsCopy,
   getMaxEligibleInstallmentCount,
+  INSTALLMENTS_COPY,
   getProductFinancedPrice,
 } from "@/lib/pricing/financed-pricing"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
@@ -100,7 +100,7 @@ export function HeroSection({
       : null
   const installmentLabel =
     featuredProduct && maxEligibleInstallmentCount != null && featuredInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} ${getInstallmentsCopy(featuredProduct)} de ${formatPrice(featuredInstallmentAmount)}`
+      ? `Hasta ${maxEligibleInstallmentCount} ${INSTALLMENTS_COPY} de ${formatPrice(featuredInstallmentAmount)}`
       : null
 
   const openFeaturedProduct = () => {

@@ -61,11 +61,14 @@ export function FreeShippingBar({
   // una diferencia después de la bonificación (por poca o mucha plata que
   // sea) no se comunica como una celebración, sólo como el aporte real de
   // BEYONIX, para que nunca contradiga lo que después se ve en el resumen.
+  // Sin cotización real no se muestra el tope de bonificación: queda
+  // informado en Términos y condiciones (misma configuración de Admin,
+  // site_settings.shipping.shippingBonusMax).
   const bonusMessage = hasRealQuote
     ? isFullyFree
       ? "🎉 ¡Conseguiste envío gratis!"
       : `Ahorrás ${formatPrice(shippingBonus)} en tu envío`
-    : `Tenés envío bonificado hasta ${formatPrice(settings.shippingBonusMax)}`
+    : "Tenés envío bonificado"
 
   return (
     <div className="space-y-1.5">

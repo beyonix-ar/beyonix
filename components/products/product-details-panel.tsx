@@ -75,7 +75,6 @@ import {
   getPriceWithoutNationalTaxes,
   getProductFinancedPrice,
   getTransferPrice,
-  hasInstallmentsWithoutSurcharge,
 } from "@/lib/pricing/financed-pricing"
 import {
   MAX_CART_ITEM_QUANTITY,
@@ -186,7 +185,6 @@ export function ProductDetailsPanel({
   const { installmentsFinancing, pricing } = useSiteSettings()
   const cashPrice = selectedOption?.price ?? product.precio
   const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
-  const installmentsWithoutSurcharge = hasInstallmentsWithoutSurcharge(product)
   const financedPrice = getProductFinancedPrice(product, cashPrice, installmentsFinancing)
   const installmentPlans = getInstallmentPlans(product, cashPrice, installmentsFinancing)
   const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
@@ -293,7 +291,6 @@ export function ProductDetailsPanel({
           financedPrice={financedPrice}
           installmentPlans={installmentPlans}
           cfteaPercent={cftea}
-          installmentsWithoutSurcharge={installmentsWithoutSurcharge}
           priceWithoutNationalTaxesCash={priceWithoutNationalTaxesCash}
           isInCart={isInCart}
           cartQuantity={cartQuantity}

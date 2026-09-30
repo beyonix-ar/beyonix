@@ -368,9 +368,9 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
   const cash = modal.slice(modal.indexOf('data-mercadopago-confirm="cash"'))
   assert.match(cash, /Elegiste pagar al contado\./)
   assert.match(cash, /Total: \{formatPrice\(finalTotal\)\}/)
-  assert.match(cash, /<MercadoPagoCashMediaList \/>/)
-  // Sólo medios que la preferencia al contado (installments=1) admite.
-  assert.match(checkout, /"Dinero disponible en tu cuenta de Mercado Pago",\s*"Tarjeta de débito",\s*"Tarjeta de crédito en 1 pago",/)
+  // Mismos medios que "Ver medios" (un solo componente y una sola lista).
+  assert.match(cash, /<MercadoPagoCashMedia \/>/)
+  assert.match(checkout, /import \{ MercadoPagoCashMedia \} from "@\/components\/checkout\/mercadopago-cash-media"/)
 })
 
 // ─────────────────────────────────────────────────────────────

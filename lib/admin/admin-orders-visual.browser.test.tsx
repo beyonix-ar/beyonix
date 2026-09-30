@@ -109,10 +109,10 @@ const DETAIL_ONLY = [
   order(6, { invoice_status: "authorized", invoice_arca_environment: "production" }),
 ]
 
-const pageHtml = (theme: "dark" | "light", css: string, bundle: string, orderId?: number) => `<!doctype html>
+const pageHtml = (theme: "dark" | "light", css: string, bundle: string, orderId?: number, pedidos?: unknown[]) => `<!doctype html>
 <html data-admin-theme="${theme}"><head><meta charset="utf-8"><style>${css}</style></head><body>
 <div class="beyonix-admin-shell"><main class="beyonix-admin-main"><div id="root"></div></main></div>
-<script>window.__pedidos = ${JSON.stringify(orderId ? [...PEDIDOS, ...DETAIL_ONLY].filter((p) => p.id === orderId) : PEDIDOS)}; window.__initialOrderId = ${orderId ?? 0}</script>
+<script>window.__pedidos = ${JSON.stringify(pedidos ?? (orderId ? [...PEDIDOS, ...DETAIL_ONLY].filter((p) => p.id === orderId) : PEDIDOS))}; window.__initialOrderId = ${orderId ?? 0}</script>
 <script>${bundle}</script></body></html>`
 
 // Helpers de color (canvas: acepta oklch/oklab/color-mix), ejecutados como string.
@@ -149,10 +149,10 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(theme: "dark" | "light", { width = 1440, orderId, tab }: { width?: number; orderId?: number; tab?: string } = {}): Promise<Page> {
+async function open(theme: "dark" | "light", { width = 1440, orderId, tab, pedidos }: { width?: number; orderId?: number; tab?: string; pedidos?: unknown[] } = {}): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: 1000 } })
   page.setDefaultTimeout(15000)
-  const html = pageHtml(theme, css, bundle, orderId)
+  const html = pageHtml(theme, css, bundle, orderId, pedidos)
   await page.route("**/*", (route) =>
     route.request().url().startsWith("http://localhost/pedidos") ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
   )
@@ -477,6 +477,52 @@ test("camioncito de la fila: blanco en Light (igual que Dark, que no cambia); el
     }
   }
 })
+
+// Todos los íconos en círculo de la fila (recordatorio de factura y
+// camioncito de despacho), en desktop y mobile: el dibujo interno es
+// blanco en Light y Dark; el círculo (fondo, borde, tamaño) no cambia.
+const ROW_ICON_PEDIDOS = [
+  order(1, { invoice_status: "authorized" }),
+  order(7, { invoice_status: "pending", invoice_cae: null, invoice_number: null, invoice_point: null }),
+]
+const ROW_ICONS = `(() => { ${COLOR_HELPERS}
+  const icons = [...document.querySelectorAll(".admin-orders-list-row .admin-order-row-icon")].filter((b) => b.getBoundingClientRect().width > 0)
+  return icons.map((b) => { const svg = b.querySelector("svg"); const s = getComputedStyle(b)
+    return { kind: b.getAttribute("data-row-icon"), icon: key(getComputedStyle(svg).color), stroke: key(getComputedStyle(svg).stroke), fill: getComputedStyle(svg).fill,
+      badge: [key(s.backgroundColor), key(s.borderTopColor), s.width, s.height].join(" | ") } })
+})()`
+
+for (const width of [1920, 390]) {
+  test(`A (${width}px): íconos internos de la fila blancos en Light y Dark; el contenedor no cambia`, async () => {
+    const pages = { dark: await open("dark", { width, pedidos: ROW_ICON_PEDIDOS }), light: await open("light", { width, pedidos: ROW_ICON_PEDIDOS }) }
+    try {
+      type RowIcon = { kind: string; icon: string; stroke: string; fill: string; badge: string }
+      const dark = (await pages.dark.evaluate(ROW_ICONS)) as RowIcon[]
+      const light = (await pages.light.evaluate(ROW_ICONS)) as RowIcon[]
+      assert.deepEqual(light.map((icon) => icon.kind).sort(), ["invoice", "shipping"], "factura pendiente y camioncito")
+      for (const [theme, icons] of [["light", light], ["dark", dark]] as const) {
+        for (const icon of icons) {
+          assert.equal(icon.stroke, "255,255,255,1", `${theme}/${icon.kind}: trazo blanco`)
+          assert.equal(icon.fill, "none", `${theme}/${icon.kind}: sin relleno`)
+        }
+      }
+      // El círculo conserva su tamaño (cuadrado, igual para ambos íconos) y
+      // su tono: la regla nueva sólo toca el <svg>, nunca el contenedor.
+      for (const icons of [light, dark]) {
+        const sizes = icons.map((icon) => icon.badge.split(" | ").slice(2).join(" @ "))
+        assert.equal(new Set(sizes).size, 1, `mismo tamaño: ${sizes.join(", ")}`)
+        const [w, h] = sizes[0].split(" @ ")
+        assert.equal(w, h, "círculo cuadrado")
+      }
+      const rules = readFileSync("app/globals.css", "utf8").replace(/\r\n/g, "\n").split("}").filter((rule) => rule.includes("admin-order-row-icon"))
+      assert.ok(rules.length > 0)
+      for (const rule of rules) assert.match(rule.slice(0, rule.indexOf("{")), /svg\.lucide/, "la regla compartida apunta sólo al dibujo")
+    } finally {
+      await pages.dark.close()
+      await pages.light.close()
+    }
+  })
+}
 
 test("CSS: sin guerra de especificidad -- exclusiones semánticas explícitas", () => {
   // Literales con "\n": independiente del fin de línea del checkout.

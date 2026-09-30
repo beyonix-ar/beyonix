@@ -6943,7 +6943,8 @@ function ShippingMiniCard({
 function InvoiceReminderBell({ compact = false }: { compact?: boolean }) {
   return (
     <span
-      className={`inline-flex items-center justify-center admin-order-pill admin-order-tone-warning ${
+      data-row-icon="invoice"
+      className={`admin-order-row-icon inline-flex items-center justify-center admin-order-pill admin-order-tone-warning ${
         compact ? "size-4" : "size-7"
       }`}
     >
@@ -6962,7 +6963,8 @@ function ShippingReminderBadge({ compact = false }: { compact?: boolean }) {
     <span
       title="Facturado: listo para preparar y despachar"
       aria-label="Facturado: listo para preparar y despachar"
-      className={`inline-flex items-center justify-center admin-order-pill admin-order-shipping-reminder ${
+      data-row-icon="shipping"
+      className={`admin-order-row-icon inline-flex items-center justify-center admin-order-pill admin-order-shipping-reminder ${
         compact ? "size-4" : "size-7"
       }`}
     >

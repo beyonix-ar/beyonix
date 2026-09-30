@@ -7,9 +7,9 @@ import {
   getCartFinancedTotal,
   getFinancedPrice,
   getInstallmentPlans,
-  getInstallmentsCopy,
   getProductFinancedPrice,
   hasInstallmentsWithoutSurcharge,
+  INSTALLMENTS_COPY,
 } from "./financed-pricing.ts"
 import {
   buildCheckoutEconomicState,
@@ -89,7 +89,7 @@ test("toggle OFF (default): mismo financiado con recargo que antes", () => {
   for (const product of [ALL, { ...ALL, cuotas_sin_recargo: false }, { ...ALL, cuotas_sin_recargo: null }]) {
     assert.equal(hasInstallmentsWithoutSurcharge(product), false)
     assert.equal(getProductFinancedPrice(product, 100_000, REAL_CONFIG), getFinancedPrice(100_000, 6, REAL_CONFIG))
-    assert.equal(getInstallmentsCopy(product), "cuotas sin interés")
+    assert.equal(INSTALLMENTS_COPY, "cuotas sin interés")
   }
   assert.ok(getProductFinancedPrice(ALL, 100_000, REAL_CONFIG)! > 100_000)
 })
@@ -102,7 +102,7 @@ test("toggle ON: financiado = contado, cuotas = contado / N, sin CFTEA", () => {
   const plans = getInstallmentPlans(ALL_WITHOUT_SURCHARGE, 90_000, REAL_CONFIG)
   assert.deepEqual(plans, [{ count: 2, amount: 45_000 }, { count: 3, amount: 30_000 }, { count: 6, amount: 15_000 }])
   for (const plan of plans) assert.equal(calculateCftea(90_000, plan.amount, plan.count), null)
-  assert.equal(getInstallmentsCopy(ALL_WITHOUT_SURCHARGE), "cuotas sin recargo")
+  // El copy de cara al cliente es el mismo con la regla activa: "sin interés".
 })
 
 test("toggle ON sin cuotas habilitadas: no habilita cuotas por sí solo", () => {
@@ -110,8 +110,7 @@ test("toggle ON sin cuotas habilitadas: no habilita cuotas por sí solo", () => 
   assert.equal(hasInstallmentsWithoutSurcharge(onlyFlag), false)
   assert.equal(getProductFinancedPrice(onlyFlag, 100_000, REAL_CONFIG), null)
   assert.deepEqual(getInstallmentPlans(onlyFlag, 100_000, REAL_CONFIG), [])
-  assert.equal(getInstallmentsCopy(onlyFlag), "cuotas sin interés")
-  assert.equal(price([line(1, 50_000, onlyFlag)]).financed, null)
+ assert.equal(price([line(1, 50_000, onlyFlag)]).financed, null)
 })
 
 test("checkout todo sin recargo: en cuotas se cobra EXACTAMENTE el contado (sin redondeo) y MP ofrece hasta la cuota máxima", () => {

@@ -27,10 +27,10 @@ import {
 } from "@/lib/products/product-variants"
 import {
   getInstallmentAmount,
-  getInstallmentsCopy,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
   getProductFinancedPrice,
+  INSTALLMENTS_COPY,
 } from "@/lib/pricing/financed-pricing"
 import {
   MAX_CART_ITEM_QUANTITY,
@@ -114,7 +114,7 @@ export default function SharedProductCard({
       : null
   const installmentLabel =
     maxEligibleInstallmentCount != null && maxInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} ${getInstallmentsCopy(product)} de $${maxInstallmentAmount.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`
+      ? `Hasta ${maxEligibleInstallmentCount} ${INSTALLMENTS_COPY} de $${maxInstallmentAmount.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`
       : null
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     defaultVariant.price,

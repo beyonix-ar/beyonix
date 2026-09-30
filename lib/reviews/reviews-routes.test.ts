@@ -45,12 +45,19 @@ async function withSupabase(handler: Handler, run: (requests: Array<{ method: st
 }
 
 const review = (id: number, featured: boolean) => ({
-  id, product_id: null, rating: 5, comment: "Excelente producto", nickname: "Lucas",
+  id, user_id: "user-secret-uuid", rating: 5, comment: "Excelente producto",
   city: "Rosario", province: "Santa Fe", created_at: "2026-09-20T12:00:00Z", featured,
 })
 
-test("N. Home pide solo reseñas aprobadas y destacadas; el promedio usa todas las experiencias", async () => {
+// Perfil real del autor: nombre completo en mayúsculas y username distinto.
+const PROFILE = { id: "user-secret-uuid", nombre: "LUCAS ALBERTO Espinosa", username: "antares" }
+
+test("E/F. Home: sólo experiencias (product_id null) aprobadas y destacadas, con primer nombre y sin datos de más", async () => {
   await withSupabase((url) => {
+    if (url.pathname === "/rest/v1/profiles") {
+      assert.equal(url.searchParams.get("select"), "id,nombre", "sólo el nombre del perfil")
+      return [PROFILE]
+    }
     if (url.pathname !== "/rest/v1/reviews") throw new Error(`consulta inesperada ${url.pathname}`)
     return url.searchParams.get("featured") ? [review(2, true)] : [{ rating: 5 }, { rating: 4 }, { rating: 3 }]
   }, async (requests) => {
@@ -63,25 +70,34 @@ test("N. Home pide solo reseñas aprobadas y destacadas; el promedio usa todas l
     assert.ok(home, "consulta de Home")
     assert.equal(home.url.searchParams.get("featured"), "eq.true")
     assert.equal(home.url.searchParams.get("approved"), "eq.true")
+    assert.equal(home.url.searchParams.get("product_id"), "is.null", "reseñas de producto nunca en Home")
     assert.equal(home.url.searchParams.get("order"), "created_at.desc,id.desc")
     assert.equal(home.url.searchParams.get("limit"), "12")
+    assert.doesNotMatch(home.url.searchParams.get("select") ?? "", /nickname|order_id|product_id/)
 
     assert.deepEqual(payload.reviews.map((item: { id: number }) => item.id), [2])
     assert.deepEqual(payload.summary, { count: 3, average: 4 })
-    // Privacidad: solo datos públicos permitidos.
-    assert.deepEqual(Object.keys(payload.reviews[0]).sort(), ["canDelete", "city", "comment", "createdAt", "id", "nickname", "province", "rating"])
+    // Privacidad: sólo primer nombre, localidad, provincia, rating, comentario y fecha.
+    assert.deepEqual(Object.keys(payload.reviews[0]).sort(), ["canDelete", "city", "comment", "createdAt", "id", "name", "province", "rating"])
+    assert.equal(payload.reviews[0].name, "Lucas")
+    const raw = JSON.stringify(payload)
+    for (const secret of ["user-secret-uuid", "antares", "Espinosa", "ALBERTO", "user_id", "order_id", "nickname"]) {
+      assert.equal(raw.includes(secret), false, `no expone ${secret}`)
+    }
   })
 })
 
-test("la página de producto sigue mostrando todas sus reseñas aprobadas (sin filtro de destacado)", async () => {
-  await withSupabase(() => [review(3, false)], async (requests) => {
+test("la página de producto sigue mostrando todas sus reseñas aprobadas (sin filtro de destacado), con primer nombre", async () => {
+  await withSupabase((url) => (url.pathname === "/rest/v1/profiles" ? [PROFILE] : [review(3, false)]), async (requests) => {
     const { GET } = await import("../../app/api/reviews/route")
     const response = await GET(new Request("http://localhost/api/reviews?productId=5"))
     assert.equal(response.status, 200)
-    assert.equal(requests.length, 1)
-    assert.equal(requests[0].url.searchParams.get("product_id"), "eq.5")
-    assert.equal(requests[0].url.searchParams.get("featured"), null)
-    assert.deepEqual((await response.json()).reviews.map((item: { id: number }) => item.id), [3])
+    const reviewsRequest = requests.find((request) => request.url.pathname === "/rest/v1/reviews")!
+    assert.equal(reviewsRequest.url.searchParams.get("product_id"), "eq.5")
+    assert.equal(reviewsRequest.url.searchParams.get("featured"), null)
+    const payload = await response.json()
+    assert.deepEqual(payload.reviews.map((item: { id: number; name: string }) => [item.id, item.name]), [[3, "Lucas"]])
+    assert.equal(JSON.stringify(payload).includes("user-secret-uuid"), false)
   })
 })
 
@@ -103,7 +119,7 @@ test("F/G/H/I. el POST rechaza comentario vacío, espacios o basura antes de toc
 function eligibilityHandler(deliveredAt: string | null) {
   return (url: URL): Row[] | Row | null => {
     if (url.pathname === "/rest/v1/reviews") return []
-    if (url.pathname === "/rest/v1/profiles") return { username: "Lucas", direccion: "", codigo_postal: "2000", provincia: "Santa Fe" }
+    if (url.pathname === "/rest/v1/profiles") return { nombre: "LUCAS ALBERTO", username: "Lucas", direccion: "", codigo_postal: "2000", provincia: "Santa Fe" }
     if (url.pathname === "/rest/v1/ordenes") {
       return [{ id: 1, localidad: "Rosario", provincia: "Santa Fe", estado: "entregado", payment_status: "approved", delivered_at: deliveredAt, created_at: "2026-09-01T00:00:00Z" }]
     }
@@ -132,6 +148,7 @@ test("D/J. dentro del plazo con comentario real: inserta sin featured ni datos d
     const { POST } = await import("../../app/api/reviews/route")
     const response = await POST(post({ orderId: 1, rating: 5, comment: "  Todo bien,   llegó rápido  ", featured: true }))
     assert.equal(response.status, 201)
+    assert.equal((await response.json()).review.name, "Lucas", "la respuesta pública usa el primer nombre")
     const insert = requests.find((request) => request.method === "POST")
     assert.ok(insert)
     const body = insert.body as Row
@@ -199,5 +216,75 @@ test("M. no se destaca una reseña sin comentario ni con datos inválidos", asyn
     assert.equal((await PATCH(patch({ id: 1, featured: "true" }))).status, 400)
     assert.equal((await PATCH(patch({ id: -1, featured: true }))).status, 400)
     assert.ok(!requests.some((request) => request.method === "PATCH"))
+  })
+})
+
+const adminProfile = { id: "actor", email: "admin@example.test", rol: "admin" }
+
+test("D. experiencia general (product_id null): el Admin la destaca", async () => {
+  await withSupabase((url, init) => {
+    if (url.pathname === "/rest/v1/profiles") return adminProfile
+    if (url.pathname === "/rest/v1/reviews" && init?.method === "PATCH") return { id: 6, featured: true, featured_at: "2026-09-30T12:00:00Z" }
+    if (url.pathname === "/rest/v1/reviews") {
+      assert.match(url.searchParams.get("select") ?? "", /product_id/, "el Admin lee el tipo de reseña")
+      return { id: 6, product_id: null, approved: true, comment: "Excelente atención", featured: false, featured_at: null }
+    }
+    if (url.pathname === "/rest/v1/audit_logs") return null
+    throw new Error(`consulta inesperada ${url.pathname}`)
+  }, async () => {
+    const { PATCH } = await import("../../app/api/admin/reviews/route")
+    const response = await PATCH(patch({ id: 6, featured: true }))
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).review.featured, true)
+  })
+})
+
+test("E/F. reseña de producto: el backend rechaza featured=true aunque el pedido llegue directo (sin botón); quitar sí", async () => {
+  for (const featured of [true, false]) {
+    await withSupabase((url, init) => {
+      if (url.pathname === "/rest/v1/profiles") return adminProfile
+      if (url.pathname === "/rest/v1/reviews" && init?.method === "PATCH") return { id: 5, featured: false, featured_at: null }
+      if (url.pathname === "/rest/v1/reviews") return { id: 5, product_id: 1, approved: true, comment: "Muy buen producto", featured: !featured, featured_at: null }
+      if (url.pathname === "/rest/v1/audit_logs") return null
+      throw new Error(`consulta inesperada ${url.pathname}`)
+    }, async (requests) => {
+      const { PATCH } = await import("../../app/api/admin/reviews/route")
+      const response = await PATCH(patch({ id: 5, featured }))
+      if (featured) {
+        assert.equal(response.status, 400)
+        assert.equal((await response.json()).error, "Las reseñas de producto no se muestran en Home: solo se destacan experiencias de compra.")
+        assert.ok(!requests.some((request) => request.method === "PATCH"), "no intenta el update")
+      } else {
+        assert.equal(response.status, 200, "quitar de Home siempre se permite")
+      }
+    })
+  }
+})
+
+test("F. si la base rechaza (REVIEW_FEATURED_EXPERIENCE_ONLY), la API responde 400 con el mismo mensaje", async () => {
+  await withSupabase((url, init) => {
+    if (url.pathname === "/rest/v1/profiles") return adminProfile
+    // Lectura previa: la reseña figura como experiencia (el tipo cambió entre
+    // la lectura y el update; el trigger es la última barrera).
+    if (url.pathname === "/rest/v1/reviews" && init?.method !== "PATCH") return { id: 6, product_id: null, approved: true, comment: "Excelente atención", featured: false, featured_at: null }
+    throw new Error(`consulta inesperada ${url.pathname}`)
+  }, async () => {
+    // El update responde como PostgREST cuando el trigger rechaza: 400 con el
+    // mensaje de la excepción.
+    const fetchMock = globalThis.fetch
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        return Response.json({ code: "23514", message: "REVIEW_FEATURED_EXPERIENCE_ONLY" }, { status: 400 })
+      }
+      return fetchMock(input, init)
+    }) as typeof fetch
+    try {
+      const { PATCH } = await import("../../app/api/admin/reviews/route")
+      const response = await PATCH(patch({ id: 6, featured: true }))
+      assert.equal(response.status, 400)
+      assert.match((await response.json()).error, /solo se destacan experiencias de compra/)
+    } finally {
+      globalThis.fetch = fetchMock
+    }
   })
 })

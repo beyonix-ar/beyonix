@@ -39,6 +39,7 @@ import { createElement, Fragment } from "react"
 import { createRoot } from "react-dom/client"
 import { ReviewsSection } from "@/components/reviews-section"
 import { OrderExperienceFeedback, OrderProductFeedback } from "@/components/account/account-order-components"
+import { ProductReviewsDialog } from "@/components/products/product-reviews-dialog"
 
 const producto = { id: 1, nombre: "Auricular Ñandú", imagen_principal: null }
 const order = {
@@ -46,6 +47,7 @@ const order = {
   orden_items: [{ id: 7, orden_id: 50, producto_id: 1, cantidad: 1, precio: 1000, productos: producto }],
 }
 createRoot(document.getElementById("home-root")).render(createElement(ReviewsSection))
+createRoot(document.getElementById("dialog-root")).render(createElement(ProductReviewsDialog, { productId: 1, productName: "Auricular Ñandú", averageRating: 4.5, reviewsCount: 3 }))
 createRoot(document.getElementById("account-root")).render(
   createElement(Fragment, null, createElement(OrderProductFeedback, { order }), createElement(OrderExperienceFeedback, { order })),
 )
@@ -55,15 +57,21 @@ const API_STUB = `
 window.process = { env: { NODE_ENV: "production" } }
 window.fetch = async (input) => {
   const url = String(input)
-  const body = url.includes("orderId=")
+  const body = url.includes("productId=")
+    ? { reviews: [
+        { id: 11, rating: 5, comment: "Excelente sonido y batería. Lo uso todos los días para trabajar y entrenar, muy recomendable.", name: "Maximiliano", city: "San Fernando del Valle de Catamarca", province: "Catamarca", createdAt: "2026-09-28T12:00:00Z", canDelete: false },
+        { id: 12, rating: 4, comment: "Muy bueno, llegó rápido", name: "María", city: "Rosario", province: "Santa Fe", createdAt: "2026-09-30T12:00:00Z", canDelete: false },
+        { id: 13, rating: 5, comment: "Superó lo esperado", name: "Lucas", city: "Córdoba", province: "Córdoba", createdAt: "2026-09-29T12:00:00Z", canDelete: false },
+      ] }
+    : url.includes("orderId=")
     ? { ownProductReviews: [], ownExperienceReview: null, reviewWindow: { status: "open", deadline: null } }
     : {
         reviews: [
-          { id: 2, rating: 5, comment: "Excelente atención, llegó rápido y muy bien embalado", nickname: "Lucía", city: "Rosario", province: "Santa Fe", createdAt: "2026-09-29T12:00:00Z", canDelete: false },
-          { id: 5, rating: 4, comment: "Muy buen producto, lo recomiendo", nickname: "Martín", city: "Córdoba", province: "Córdoba", createdAt: "2026-09-20T12:00:00Z", canDelete: false },
+          { id: 2, rating: 5, comment: "Excelente atención, llegó rápido y muy bien embalado", name: "Lucía", city: "Rosario", province: "Santa Fe", createdAt: "2026-09-29T12:00:00Z", canDelete: false },
+          { id: 5, rating: 4, comment: "Muy buen producto, lo recomiendo", name: "Martín", city: "Córdoba", province: "Córdoba", createdAt: "2026-09-20T12:00:00Z", canDelete: false },
         ],
         summary: { count: 7, average: 4.3 },
-        eligibleReview: { orderId: 50, nickname: "Lucas", city: "Rosario", province: "Santa Fe" },
+        eligibleReview: { orderId: 50, name: "Lucas", city: "Rosario", province: "Santa Fe" },
       }
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
 }
@@ -74,6 +82,7 @@ const pageHtml = (theme: "dark" | "light", css: string, bundle: string) => `<!do
 <body class="bg-beyonix-page">
 <div id="home-root"></div>
 <div id="account-root" class="max-w-3xl p-4"></div>
+<div id="dialog-root" class="p-4"></div>
 <script>${API_STUB}</script>
 <script>${bundle}</script></body></html>`
 
@@ -124,7 +133,7 @@ const AUDIT_HOME_CARDS = `(() => {
   ${BROWSER_HELPERS}
   const failures = []
   const texts = []
-  for (const card of document.querySelectorAll("[data-testid=home-review-card]")) {
+  for (const card of document.querySelectorAll("#home-root [data-public-review]")) {
     for (const el of card.querySelectorAll("*")) {
       const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(" ").trim()
       if (!own || own === "·") continue
@@ -169,8 +178,8 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(theme: "dark" | "light"): Promise<Page> {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } })
+async function open(theme: "dark" | "light", width = 1280): Promise<Page> {
+  const page = await browser.newPage({ viewport: { width, height: 1600 } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Origen http (no about:blank): la sección de Home usa localStorage.
@@ -181,7 +190,7 @@ async function open(theme: "dark" | "light"): Promise<Page> {
   )
   await page.goto("http://reviews.test/")
   try {
-    await page.waitForSelector("[data-testid=home-review-card]", { timeout: 10_000 })
+    await page.waitForSelector("#home-root [data-public-review]", { timeout: 10_000 })
     await page.waitForSelector("[data-review-rating-selector]", { timeout: 10_000 })
   } catch (error) {
     await page.close()
@@ -196,7 +205,7 @@ for (const theme of ["light", "dark"] as const) {
     try {
       const { texts, failures } = (await page.evaluate(AUDIT_HOME_CARDS)) as { texts: string[]; failures: string[] }
       const compact = (value: string) => value.replace(/\s+/g, "")
-      for (const expected of ["“Excelente atención, llegó rápido y muy bien embalado”", "Lucía", "Rosario, Santa Fe", "29/09/2026", "Martín", "Córdoba, Córdoba"]) {
+      for (const expected of ["“Excelente atención, llegó rápido y muy bien embalado”", "Lucía", "Rosario · Santa Fe", "29/09/2026", "Martín", "Córdoba · Córdoba"]) {
         assert.ok(texts.some((text) => compact(text).includes(compact(expected))), `visible: ${expected} (${texts.join(" | ")})`)
       }
       assert.deepEqual(failures, [])
@@ -208,8 +217,8 @@ for (const theme of ["light", "dark"] as const) {
   test(`N. ${theme}: Home pinta solo las reseñas que devuelve la API (destacadas) y el promedio general`, async () => {
     const page = await open(theme)
     try {
-      assert.equal(await page.locator("[data-testid=home-review-card]").count(), 2)
-      assert.ok(await page.getByText("4.3/5 basado en 7 experiencias verificadas").isVisible())
+      assert.equal(await page.locator("#home-root [data-public-review]").count(), 2)
+      assert.ok(await page.getByText("4,3/5 basado en 7 experiencias verificadas").isVisible())
     } finally {
       await page.close()
     }
@@ -265,3 +274,136 @@ test("comentario obligatorio en Mis compras: elegir estrellas sin escribir no en
     await page.close()
   }
 })
+
+// ─────────────── Modal "Ver todas las reseñas" (ProductReviewsDialog) ───────────────
+
+const AUDIT_DIALOG = `(() => {
+  ${BROWSER_HELPERS}
+  const dialog = document.querySelector("[role=dialog]")
+  const failures = []
+  const texts = []
+  for (const el of dialog.querySelectorAll("*")) {
+    const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent.trim()).join(" ").trim()
+    const rect = el.getBoundingClientRect()
+    if (!own || own === "·" || rect.width === 0) continue
+    const s = getComputedStyle(el)
+    const bg = background(el)
+    const fg = over(parse(s.color), bg)
+    const r = ratio(fg, bg)
+    texts.push(own)
+    if (r < 4.5) failures.push(own.slice(0, 40) + " -> " + r.toFixed(2) + " (" + s.color + ")")
+  }
+  const average = dialog.querySelector("[data-reviews-average]")
+  const cards = [...dialog.querySelectorAll("[data-public-review]")]
+  return {
+    texts, failures,
+    average: { text: average.textContent.trim(), color: getComputedStyle(average).color },
+    dialogOverflow: dialog.scrollWidth > dialog.clientWidth + 1,
+    cardsOverflow: cards.some((card) => card.scrollWidth > card.clientWidth + 1),
+    maxCardHeight: Math.max(...cards.map((card) => card.getBoundingClientRect().height)),
+    pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  }
+})()`
+
+type DialogAudit = {
+  texts: string[]; failures: string[]; average: { text: string; color: string }
+  dialogOverflow: boolean; cardsOverflow: boolean; maxCardHeight: number; pageOverflow: boolean
+}
+
+async function openDialog(theme: "dark" | "light", width: number) {
+  const page = await open(theme, width)
+  await page.getByRole("button", { name: "Ver todas las reseñas de Auricular Ñandú" }).click()
+  await page.waitForSelector("[role=dialog] [data-public-review]")
+  return page
+}
+
+// Azul BEYONIX para texto (--account-accent-soft): #1E4D7B en Light, #8CC8F2 en Dark.
+const BEYONIX_BLUE = { light: "rgb(30, 77, 123)", dark: "rgb(140, 200, 242)" } as const
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 768, 390]) {
+    test(`C/G. ${theme} ${width}px: modal de reseñas legible, promedio azul BEYONIX, nombres públicos y sin desbordes`, async () => {
+      const page = await openDialog(theme, width)
+      try {
+        const audit = (await page.evaluate(AUDIT_DIALOG)) as DialogAudit
+        if (process.env.REVIEWS_SHOTS) await page.screenshot({ path: `${process.env.REVIEWS_SHOTS}/dialog-${theme}-${width}.png` })
+        assert.deepEqual(audit.failures, [], "todo texto del modal cumple AA contra su fondo real")
+        for (const expected of ["Opiniones verificadas", "Ver todas las reseñas", "Auricular Ñandú", "3 reseñas verificadas", "Ordenar por", "Maximiliano", "San Fernando del Valle de Catamarca · Catamarca", "Rosario · Santa Fe", "30/09/2026"]) {
+          assert.ok(audit.texts.some((text) => text.replace(/\s+/g, " ").includes(expected)), `visible: ${expected}`)
+        }
+        assert.equal(audit.average.text, "4,7")
+        assert.equal(audit.average.color, BEYONIX_BLUE[theme], "promedio en azul BEYONIX")
+        assert.notEqual(audit.average.color, "rgb(255, 255, 255)")
+        assert.equal(audit.dialogOverflow, false, "sin overflow horizontal en el modal")
+        assert.equal(audit.cardsOverflow, false, "comentarios y ubicaciones largas envuelven")
+        assert.equal(audit.pageOverflow, false)
+        assert.ok(audit.maxCardHeight < 360, `tarjetas de alto razonable (${audit.maxCardHeight}px)`)
+      } finally {
+        await page.close()
+      }
+    })
+  }
+
+  test(`D. ${theme}: "Ordenar por" mantiene opciones y criterio; teclado, selección y desplegable dentro de pantalla`, async () => {
+    for (const width of [1280, 390]) {
+      const page = await openDialog(theme, width)
+      try {
+        const names = () => page.locator("[role=dialog] [data-public-review] footer p:first-child").allInnerTexts()
+        // "Más relevantes" (default): comentario, luego puntaje, luego fecha.
+        assert.deepEqual(await names(), ["Lucas", "Maximiliano", "María"])
+
+        const trigger = page.getByRole("button", { name: /^Ordenar reseñas:/ })
+        await trigger.focus()
+        await page.keyboard.press("ArrowDown")
+        const listbox = page.getByRole("listbox")
+        await listbox.waitFor()
+        const options = await listbox.getByRole("option").allInnerTexts()
+        assert.deepEqual(options.map((option) => option.trim()), ["Más relevantes", "Más recientes", "Mejor puntuadas"])
+        assert.equal(await listbox.getByRole("option", { selected: true }).innerText(), "Más relevantes")
+        assert.equal(await page.evaluate(`document.activeElement.getAttribute("aria-selected")`), "true", "el foco arranca en la opción elegida")
+
+        // Desplegable completo dentro de la pantalla, opciones legibles.
+        const box = (await listbox.boundingBox())!
+        const viewport = page.viewportSize()!
+        assert.ok(box.x >= 0 && box.x + box.width <= viewport.width, `desplegable dentro del ancho (${width}px)`)
+        const optionStyle = await listbox.getByRole("option").first().evaluate((el) => ({ size: parseFloat(getComputedStyle(el).fontSize), height: el.getBoundingClientRect().height }))
+        assert.ok(optionStyle.size >= 13 && optionStyle.height >= 32, `opciones legibles (${JSON.stringify(optionStyle)})`)
+
+        await page.keyboard.press("ArrowDown")
+        await page.keyboard.press("Enter")
+        await listbox.waitFor({ state: "detached" })
+        assert.match((await trigger.getAttribute("aria-label")) ?? "", /Más recientes$/)
+        assert.deepEqual(await names(), ["María", "Lucas", "Maximiliano"], "más recientes primero")
+
+        await trigger.click()
+        await listbox.getByRole("option", { name: "Ordenar por Mejor puntuadas" }).click()
+        assert.deepEqual(await names(), ["Lucas", "Maximiliano", "María"])
+        await trigger.click()
+        assert.equal(await listbox.getByRole("option", { selected: true }).innerText(), "Mejor puntuadas")
+        await page.keyboard.press("Escape")
+        await listbox.waitFor({ state: "detached" })
+        assert.equal(await page.locator("[role=dialog]").count(), 1, "Escape cierra sólo el desplegable")
+      } finally {
+        await page.close()
+      }
+    }
+  })
+
+  test(`G. ${theme}: tarjetas del Home sin overflow en desktop, tablet y mobile`, async () => {
+    for (const width of [1280, 768, 390]) {
+      const page = await open(theme, width)
+      try {
+        const layout = (await page.evaluate(`(() => {
+          const cards = [...document.querySelectorAll("#home-root [data-public-review]")]
+          return { overflow: cards.some((c) => c.scrollWidth > c.clientWidth + 1), page: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            maxHeight: Math.max(...cards.map((c) => c.getBoundingClientRect().height)) }
+        })()`)) as { overflow: boolean; page: boolean; maxHeight: number }
+        assert.equal(layout.overflow, false, `${width}px: sin overflow en tarjetas`)
+        assert.equal(layout.page, false, `${width}px: sin scroll horizontal`)
+        assert.ok(layout.maxHeight < 340, `${width}px: alto razonable (${layout.maxHeight}px)`)
+      } finally {
+        await page.close()
+      }
+    }
+  })
+}

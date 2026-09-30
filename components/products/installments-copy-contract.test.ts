@@ -1,45 +1,56 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { readdirSync, readFileSync, statSync } from "node:fs"
+import { join } from "node:path"
 import test from "node:test"
 
-// Decisión de negocio vigente (ver comentarios actualizados en
-// product-purchase-box.tsx): las cuotas se comunican como "sin interés" en
-// PDP, modal, tarjetas de catálogo y checkout -- el precio financiado ya
-// incorpora el costo de Mercado Pago de antemano, así que ninguna cuota
-// agrega recargo adicional sobre ese total. Este contrato sólo verifica EL
-// TEXTO -- el cálculo (financedPrice, installmentPlans, getInstallmentAmount,
-// roundUpCheckoutTotalForInstallments) es responsabilidad de
-// financed-price-display-contract.test.ts y no se toca acá.
-//
-// Excepción por producto: con "Mismo precio en contado y cuotas"
-// (`cuotas_sin_recargo`) el copy pasa a "sin recargo" (el financiado es el
-// contado). El copy sale de UNA variable por pantalla (`installmentsCopy` /
-// `getInstallmentsCopy`), así las dos variantes nunca divergen entre textos.
+import { INSTALLMENTS_COPY } from "../../lib/pricing/financed-pricing.ts"
+
+// Decisión de negocio vigente: de cara al cliente las cuotas se comunican
+// SIEMPRE como "sin interés" (nunca "sin recargo") en PDP, modal, tarjetas
+// de catálogo, hero y checkout, desde una sola constante (INSTALLMENTS_COPY).
+// La regla "Mismo precio en contado y cuotas" (`cuotas_sin_recargo`) sigue
+// definiendo sólo el importe; su texto ya no se muestra al cliente. Este
+// contrato sólo verifica EL TEXTO -- el cálculo (financedPrice,
+// installmentPlans, getInstallmentAmount, roundUpCheckoutTotalForInstallments)
+// es responsabilidad de financed-price-display-contract.test.ts.
 
 function readSource(path: string) {
   return readFileSync(new URL(path, import.meta.url), "utf8")
 }
 
-test("PDP/modal (product-purchase-box.tsx, componente compartido): cuota máxima y opciones expandidas usan el copy del producto", () => {
+function listSources(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name)
+    if (statSync(path).isDirectory()) return listSources(path)
+    return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : []
+  })
+}
+
+test("C. copy único: 'cuotas sin interés'", () => {
+  assert.equal(INSTALLMENTS_COPY, "cuotas sin interés")
+})
+
+test("B/D. ningún componente de cara al cliente dice 'sin recargo' ni 'Mismo precio en contado…/que al contado'", () => {
+  // El Admin (app/admin y sus APIs) conserva el nombre interno de la regla de precio.
+  const sources = [...listSources("components"), ...listSources("app")].filter(
+    (path) => !/^app\/(api\/)?admin\//.test(path.replace(/\\/g, "/")),
+  )
+  const offenders = sources.filter((path) => {
+    const source = readFileSync(path, "utf8")
+    return /sin recargo|Mismo precio en contado|Mismo precio que al contado/i.test(source)
+  })
+  assert.deepEqual(offenders, [])
+})
+
+test("PDP/modal (product-purchase-box.tsx): cuota máxima y opciones expandidas usan INSTALLMENTS_COPY, sin línea extra", () => {
   const source = readSource("./product-purchase-box.tsx")
 
-  assert.match(
-    source,
-    /const installmentsCopy = installmentsWithoutSurcharge \? "cuotas sin recargo" : "cuotas sin interés"/,
-  )
-  assert.match(
-    source,
-    /Hasta \{maxInstallmentPlan\.count\} \{installmentsCopy\} de \{formatPrice\(maxInstallmentPlan\.amount\)\}/,
-  )
-  assert.match(
-    source,
-    /\{plan\.count\} \{installmentsCopy\} de \{formatPrice\(plan\.amount\)\}/,
-  )
-  assert.match(source, /Mismo precio en contado y en cuotas/)
-  assert.match(
-    readSource("./product-details-panel.tsx"),
-    /installmentsWithoutSurcharge=\{installmentsWithoutSurcharge\}/,
-  )
+  assert.match(source, /Hasta \{maxInstallmentPlan\.count\} \{INSTALLMENTS_COPY\} de \{formatPrice\(maxInstallmentPlan\.amount\)\}/)
+  assert.match(source, /\{plan\.count\} \{INSTALLMENTS_COPY\} de \{formatPrice\(plan\.amount\)\}/)
+  // Debajo de la cuota máxima sólo queda "Ver opciones de financiación".
+  const block = source.slice(source.indexOf("Hasta {maxInstallmentPlan.count}"), source.indexOf("Ver opciones de financiación"))
+  assert.doesNotMatch(block, /<p/)
+  assert.doesNotMatch(source, /installmentsWithoutSurcharge/)
 })
 
 test("PDP se sirve a través de product-details-panel.tsx en la página de producto y en el modal -- un solo lugar para corregir", () => {
@@ -52,28 +63,24 @@ test("PDP se sirve a través de product-details-panel.tsx en la página de produ
 
 // La tarjeta de catálogo real es shared-product-card (categorías, productos,
 // home y favoritos); category-product-card.tsx no se renderizaba desde 6e2d4f8.
-test("tarjeta de catálogo (shared-product-card) y hero usan getInstallmentsCopy(producto)", () => {
+test("tarjeta de catálogo (shared-product-card) y hero usan INSTALLMENTS_COPY", () => {
   const sharedCard = readSource("./shared/shared-product-card.tsx")
   const hero = readSource("../hero-section.tsx")
 
-  assert.match(sharedCard, /\$\{getInstallmentsCopy\(product\)\} de \$\$\{maxInstallmentAmount/)
-  assert.match(hero, /\$\{getInstallmentsCopy\(featuredProduct\)\} de \$\{formatPrice\(featuredInstallmentAmount\)\}/)
+  assert.match(sharedCard, /\$\{INSTALLMENTS_COPY\} de \$\$\{maxInstallmentAmount/)
+  assert.match(hero, /\$\{INSTALLMENTS_COPY\} de \$\{formatPrice\(featuredInstallmentAmount\)\}/)
   // Precio financiado de cada card según la regla del producto (nunca el
-  // gross-up directo, que ignoraría "sin recargo").
+  // gross-up directo, que ignoraría la regla del producto).
   for (const source of [sharedCard, hero]) {
     assert.match(source, /getProductFinancedPrice\(/)
     assert.doesNotMatch(source, /getFinancedPrice\(/)
   }
 })
 
-test("checkout: Mercado Pago en cuotas, método de pago y resumen usan el copy de la regla del carrito -- el CFTEA no se tocó", () => {
+test("checkout: Mercado Pago en cuotas, método de pago y resumen usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
   const checkout = readSource("../../app/checkout/page.tsx")
 
-  // "sin recargo" sólo si TODO el carrito es sin recargo; si no, "sin interés".
-  assert.match(
-    checkout,
-    /mercadoPagoPricing\.installmentsPricingRule === "without_surcharge"\s*const installmentsCopy = installmentsWithoutSurcharge\s*\? "cuotas sin recargo"\s*: "cuotas sin interés"/,
-  )
+  assert.match(checkout, /const installmentsCopy = INSTALLMENTS_COPY/)
   // Opción "Mercado Pago en cuotas": badge "Hasta N cuotas ..." y detalle
   // "N cuotas ... de $X" (modal informativo).
   assert.match(checkout, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} \{installmentsCopy\}/)
@@ -83,7 +90,6 @@ test("checkout: Mercado Pago en cuotas, método de pago y resumen usan el copy d
     checkout,
     /`Hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/,
   )
-  assert.match(checkout, /Mismo precio que al contado\./)
   assert.doesNotMatch(checkout, /cuotas fijas/)
 
   // CFTEA: disclosure legal intacta (compacta, en el detalle de cuotas),

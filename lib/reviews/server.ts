@@ -1,6 +1,7 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js"
 
 import { parseDeliveryAddress } from "@/lib/delivery-address"
+import { getPublicReviewerName } from "@/lib/reviews/public-name"
 import {
   getReviewWindow,
   REVIEW_WINDOW_MESSAGES,
@@ -26,28 +27,42 @@ type OrderRow = {
 }
 
 type ProfileRow = {
+  nombre: string | null
   username: string | null
   direccion: string | null
   codigo_postal: string | null
   provincia: string | null
 }
 
+const PROFILE_REVIEW_COLUMNS = "nombre, username, direccion, codigo_postal, provincia"
+
 export type EligibleReview = {
   orderId: number
+  /** Nombre interno guardado en reviews.nickname (username); nunca se publica. */
   nickname: string
+  /** Primer nombre público, igual al que verá el resto en la reseña. */
+  name: string
   city: string
   province: string
 }
+
+/** Lo único que viaja al navegador de una compra reseñable. */
+export type PublicEligibleReview = Omit<EligibleReview, "nickname">
 
 export type ReviewEligibility =
   | { ok: true; review: EligibleReview }
   | { ok: false; error: string }
 
+/**
+ * Datos públicos de una reseña: nada que identifique a la persona más allá
+ * del primer nombre, la localidad y la provincia (sin user_id, order_id,
+ * username, apellido, email, teléfono ni dirección).
+ */
 export type PublicReview = {
   id: number
   rating: number
   comment: string
-  nickname: string
+  name: string
   city: string
   province: string
   createdAt: string
@@ -117,7 +132,14 @@ function buildEligibleReview(
 
   if (!nickname || !city || !province) return { ok: false, error: NOT_ELIGIBLE_ERROR }
 
-  return { ok: true, review: { orderId: order.id, nickname, city, province } }
+  return {
+    ok: true,
+    review: { orderId: order.id, nickname, name: getPublicReviewerName(profile?.nombre), city, province },
+  }
+}
+
+export function toPublicEligibleReview({ orderId, name, city, province }: EligibleReview): PublicEligibleReview {
+  return { orderId, name, city, province }
 }
 
 export async function getEligibleReview(
@@ -142,7 +164,7 @@ export async function getEligibleReview(
       .is("product_id", null),
     admin
       .from("profiles")
-      .select("username, direccion, codigo_postal, provincia")
+      .select(PROFILE_REVIEW_COLUMNS)
       .eq("id", user.id)
       .maybeSingle(),
     hasRequestedOrder
@@ -192,7 +214,7 @@ export async function getEligibleProductReview(
       .maybeSingle(),
     admin
       .from("profiles")
-      .select("username, direccion, codigo_postal, provincia")
+      .select(PROFILE_REVIEW_COLUMNS)
       .eq("id", user.id)
       .maybeSingle(),
     admin
@@ -240,15 +262,37 @@ export async function getOwnOrderReviewWindow(
   return data ? getReviewWindow(data) : null
 }
 
+/**
+ * Primer nombre público de cada autor (profiles.nombre), resuelto del lado
+ * del servidor: el navegador nunca recibe user_id ni el nombre completo.
+ */
+export async function getPublicReviewerNames(
+  admin: AdminClient,
+  userIds: string[],
+): Promise<Map<string, string>> {
+  const uniqueIds = [...new Set(userIds.filter(Boolean))]
+  const names = new Map<string, string>()
+  if (uniqueIds.length === 0) return names
+
+  const { data, error } = await admin.from("profiles").select("id, nombre").in("id", uniqueIds)
+  if (error) throw error
+
+  for (const profile of data ?? []) {
+    names.set(String(profile.id), getPublicReviewerName(profile.nombre))
+  }
+  return names
+}
+
 export function toPublicReview(
   row: Record<string, unknown>,
-  canDelete = false
+  name: string,
+  canDelete = false,
 ): PublicReview {
   return {
     id: Number(row.id),
     rating: Number(row.rating),
     comment: String(row.comment),
-    nickname: String(row.nickname),
+    name,
     city: String(row.city),
     province: String(row.province),
     createdAt: String(row.created_at),

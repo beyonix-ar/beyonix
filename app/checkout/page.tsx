@@ -69,6 +69,7 @@ import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { PublicMinimalHeader } from "@/components/public-minimal-header"
 import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
 import { PaymentInfoModal } from "@/components/checkout/payment-info-modal"
+import { MercadoPagoCashMedia } from "@/components/checkout/mercadopago-cash-media"
 import {
   InsufficientStockModal,
   type InsufficientStockModalItem,
@@ -94,7 +95,7 @@ import {
 import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
-import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
+import { getPriceWithoutNationalTaxes, INSTALLMENTS_COPY } from "@/lib/pricing/financed-pricing"
 import { getTransferSummaryBreakdown } from "@/lib/payments/transfer-checkout"
 import {
   calculateMercadoPagoCheckoutPricing,
@@ -442,25 +443,6 @@ function InstallmentPlanList({
 /** Advertencia obligatoria del modal "en cuotas" (Checkout Pro permite 1 pago sobre el total financiado). */
 const MERCADOPAGO_FINANCED_TOTAL_WARNING =
   "Si dentro de Mercado Pago elegís pagar en 1 solo pago o con dinero en cuenta, se mantendrá este total financiado."
-
-/** Medios que admite la preferencia al contado (installments=1). */
-const MERCADOPAGO_CASH_MEDIA = [
-  "Dinero disponible en tu cuenta de Mercado Pago",
-  "Tarjeta de débito",
-  "Tarjeta de crédito en 1 pago",
-] as const
-
-function MercadoPagoCashMediaList() {
-  return (
-    <ul className="beyonix-modal-list divide-y divide-white/[0.06] rounded-lg border border-white/8 bg-white/[0.03] px-3">
-      {MERCADOPAGO_CASH_MEDIA.map((medium) => (
-        <li key={medium} className="beyonix-modal-title py-2 text-[13px] text-white/90">
-          {medium}
-        </li>
-      ))}
-    </ul>
-  )
-}
 
 function CheckoutPaymentInfoLink({
   onClick,
@@ -1246,14 +1228,9 @@ export default function CheckoutPage() {
         (plan) => plan.count === mercadoPagoPricing.maxInstallmentCount,
       ) ?? null
     : null
-  // "Mismo precio en contado y cuotas" en TODO el carrito: el total en cuotas
-  // es el de contado. Con un solo producto con recargo se mantiene el copy
-  // habitual.
-  const installmentsWithoutSurcharge =
-    mercadoPagoPricing.installmentsPricingRule === "without_surcharge"
-  const installmentsCopy = installmentsWithoutSurcharge
-    ? "cuotas sin recargo"
-    : "cuotas sin interés"
+  // Mismo copy de cuotas que PDP, modal y tarjetas ("sin interés"); la regla
+  // de precio del carrito sólo define el importe.
+  const installmentsCopy = INSTALLMENTS_COPY
   // Total que se envía como `expectedTotal` (Mercado Pago y transferencia):
   // sólo para que el servidor rechace (409) si recalcula otro monto; nunca
   // se usa para cobrar.
@@ -3046,14 +3023,6 @@ export default function CheckoutPage() {
                             {formatPrice(financedPreviewQuote.externalAmountDue)}
                           </span>
                         </p>
-                        {installmentsWithoutSurcharge && (
-                          <p
-                            data-installments-without-surcharge
-                            className="beyonix-modal-body mt-1 text-[12px] font-semibold leading-5 text-emerald-400"
-                          >
-                            Mismo precio que al contado.
-                          </p>
-                        )}
                         <p className="beyonix-modal-body mt-1 text-[12px] leading-5 text-white/65">
                           La cantidad de cuotas la elegís dentro de Mercado Pago.
                         </p>
@@ -3080,10 +3049,7 @@ export default function CheckoutPage() {
                       title="Mercado Pago al contado"
                       onClose={() => setPaymentInfoModal(null)}
                     >
-                      <MercadoPagoCashMediaList />
-                      <p className="beyonix-modal-muted mt-2.5 text-[12px] leading-5 text-white/55">
-                        Es el precio de contado: se paga en un solo pago, sin cuotas.
-                      </p>
+                      <MercadoPagoCashMedia />
                     </PaymentInfoModal>
                   )}
 
@@ -3702,10 +3668,9 @@ export default function CheckoutPage() {
               <p className="beyonix-modal-title mt-2 text-[15px] font-bold text-white">
                 Total: {formatPrice(finalTotal)}
               </p>
-              <p className="beyonix-modal-body mb-2 mt-3 text-[13px] text-white/65">
-                Dentro de Mercado Pago elegí:
-              </p>
-              <MercadoPagoCashMediaList />
+              <div className="mt-3">
+                <MercadoPagoCashMedia />
+              </div>
             </div>
           )}
         </PaymentInfoModal>

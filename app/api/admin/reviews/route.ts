@@ -1,5 +1,9 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
-import { getFeatureReviewError, REVIEW_FEATURE_ROLES } from "@/lib/reviews/review-featured"
+import {
+  FEATURE_EXPERIENCE_ONLY_ERROR,
+  getFeatureReviewError,
+  REVIEW_FEATURE_ROLES,
+} from "@/lib/reviews/review-featured"
 
 const PAGE_SIZE = 30
 const ADMIN_REVIEW_COLUMNS =
@@ -83,7 +87,7 @@ export async function PATCH(request: Request) {
   const featured = body.featured
   const before = await auth.admin
     .from("reviews")
-    .select("id, approved, comment, featured, featured_at")
+    .select("id, product_id, approved, comment, featured, featured_at")
     .eq("id", reviewId)
     .maybeSingle()
 
@@ -111,6 +115,12 @@ export async function PATCH(request: Request) {
     .eq("id", reviewId)
     .select("id, featured, featured_at")
     .single()
+
+  // El trigger vuelve a exigir la regla (carrera: el tipo cambió entre la
+  // lectura y el update): se informa igual que la validación de arriba.
+  if (error?.message?.includes("REVIEW_FEATURED_EXPERIENCE_ONLY")) {
+    return Response.json({ error: FEATURE_EXPERIENCE_ONLY_ERROR }, { status: 400 })
+  }
 
   if (error) {
     console.error("ADMIN REVIEWS PATCH ERROR:", error)

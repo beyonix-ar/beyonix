@@ -4,12 +4,10 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import {
   LoaderCircle,
-  MapPin,
   MessageSquareText,
   ShieldCheck,
   Star,
   Trash2,
-  UserRound,
   X,
 } from "lucide-react"
 
@@ -20,7 +18,11 @@ import {
   BeyonixSectionHeader,
 } from "@/components/beyonix-ui"
 import { Textarea } from "@/components/ui/textarea"
-import { formatReviewDate } from "@/lib/reviews/review-format"
+import {
+  formatReviewLocation,
+  PublicReviewCard,
+  type PublicReviewView,
+} from "@/components/reviews/public-review-card"
 import {
   REVIEW_COMMENT_MAX_LENGTH,
   REVIEW_COMMENT_MIN_LENGTH,
@@ -28,20 +30,13 @@ import {
 } from "@/lib/reviews/review-text"
 import { getSafeSupabaseSession, supabase } from "@/lib/supabase/client"
 
-type Review = {
-  id: number
-  rating: number
-  comment: string
-  nickname: string
-  city: string
-  province: string
-  createdAt: string
+type Review = PublicReviewView & {
   canDelete: boolean
 }
 
 type EligibleReview = {
   orderId: number
-  nickname: string
+  name: string
   city: string
   province: string
 }
@@ -213,73 +208,36 @@ export function ReviewsSection() {
   }
 
   const visibleReviews = reviews.slice(0, 3)
-  const averageRating = summary.average.toFixed(1)
+  // Coma decimal es-AR, igual que el promedio del modal de reseñas.
+  const averageRating = new Intl.NumberFormat("es-AR", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(summary.average)
 
-  const ReviewCard = ({ review }: { review: Review }) => {
-    const dateLabel = formatReviewDate(review.createdAt)
-
-    return (
-    <BeyonixCard asChild variant="default" className="relative overflow-hidden p-6">
-      <article data-testid="home-review-card">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div
-            className="flex gap-1"
-            role="img"
-            aria-label={`${review.rating} de 5 estrellas`}
+  const ReviewCard = ({ review }: { review: Review }) => (
+    <PublicReviewCard
+      review={review}
+      action={
+        review.canDelete ? (
+          <BeyonixButton
+            type="button"
+            aria-label="Eliminar mi reseña"
+            variant="destructive"
+            size="icon"
+            onClick={() => void handleDeleteReview(review)}
+            disabled={deletingId === review.id}
+            className="size-8"
           >
-            {Array.from({ length: 5 }).map((_, index) => (
-              <Star
-                key={index}
-                className={
-                  index < review.rating
-                    ? "size-4 fill-amber-400 text-amber-600"
-                    : "size-4 text-[var(--beyonix-text-muted)]"
-                }
-              />
-            ))}
-          </div>
-
-          {review.canDelete && (
-            <BeyonixButton
-              type="button"
-              aria-label="Eliminar mi reseña"
-              variant="destructive"
-              size="icon"
-              onClick={() => void handleDeleteReview(review)}
-              disabled={deletingId === review.id}
-              className="size-8"
-            >
-              {deletingId === review.id ? (
-                <LoaderCircle className="size-4 animate-spin" />
-              ) : (
-                <Trash2 className="size-4" />
-              )}
-            </BeyonixButton>
-          )}
-        </div>
-
-        {review.comment.trim() && (
-          <p className="mb-5 text-base font-medium leading-relaxed text-[var(--beyonix-text-primary)]">
-            “{review.comment}”
-          </p>
-        )}
-
-        <div className="border-t border-[var(--beyonix-border-default)] pt-4">
-          <p className="flex items-center gap-2 text-sm font-semibold text-[var(--beyonix-text-primary)]">
-            <UserRound className="size-4 shrink-0 text-[var(--beyonix-text-secondary)]" />
-            {review.nickname}
-          </p>
-          <p className="mt-2 flex items-center gap-2 text-sm text-[var(--beyonix-text-secondary)]">
-            <MapPin className="size-4 shrink-0 text-[var(--beyonix-text-secondary)]" />
-            {review.city}, {review.province}
-            {dateLabel && <span aria-hidden="true">·</span>}
-            {dateLabel}
-          </p>
-        </div>
-      </article>
-    </BeyonixCard>
-    )
-  }
+            {deletingId === review.id ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Trash2 className="size-4" />
+            )}
+          </BeyonixButton>
+        ) : null
+      }
+    />
+  )
 
   return (
     <section className="beyonix-section-spacing">
@@ -310,8 +268,7 @@ export function ReviewsSection() {
                 Compra verificada
               </p>
               <p className="beyonix-modal-body text-sm text-white/72">
-                {eligibleReview.nickname} · {eligibleReview.city} ·{" "}
-                {eligibleReview.province}
+                {eligibleReview.name} · {formatReviewLocation(eligibleReview.city, eligibleReview.province)}
               </p>
             </div>
 

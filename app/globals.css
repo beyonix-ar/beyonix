@@ -12206,15 +12206,12 @@ html[data-account-theme="light"][data-account-scope] .beyonix-account-menu-icon 
   background: var(--account-accent) !important;
   border-color: var(--account-accent) !important;
 }
-/* Ícono siempre blanco sobre su contenedor navy, en ambos temas y en
-   cualquier página: el color vive acá (clase propia del componente) y no en
-   la utilidad text-white, que los remapeos de Light por página
-   (.checkout-page, #contenido) convierten en texto oscuro. */
-.beyonix-account-menu-icon {
-  color: #ffffff;
-}
-.group:is(:hover, :focus-visible) .beyonix-account-menu-icon-danger {
-  color: #ef4444;
+/* El blanco del ícono viaja como atributos stroke/fill del SVG en
+   AccountMenuIcon (account-menu.tsx), independiente de este archivo. Acá
+   sólo el hover rojo de "Cerrar sesión" (la propiedad CSS stroke le gana al
+   atributo de presentación). */
+.group:is(:hover, :focus-visible) .beyonix-account-menu-icon-danger svg {
+  stroke: #ef4444;
 }
 
 /* Notificaciones (components/customer-notifications-bell.tsx). El botón usa
@@ -15721,9 +15718,11 @@ html[data-admin-theme="light"] .admin-orders-list-row .admin-orders-action-butto
   stroke: currentColor !important;
 }
 
-/* Camioncito "listo para despachar" de la fila: sólo el ícono, blanco en
-   Light como ya lo es en Dark (el badge conserva fondo, borde y tamaño). */
-html[data-admin-theme="light"] .admin-orders-list-row .admin-order-shipping-reminder.admin-order-shipping-reminder svg.lucide.lucide {
+/* Íconos en círculo de la fila (.admin-order-row-icon: recordatorio de
+   factura, camioncito de despacho): sólo el dibujo, blanco en Light como ya
+   lo es en Dark (regla svg.lucide del shell). El círculo conserva fondo,
+   borde y tamaño de su tono. Pisa el svg.lucide global de Light (0,5,2). */
+html[data-admin-theme="light"] .admin-orders-list-row .admin-order-row-icon.admin-order-row-icon svg.lucide.lucide {
   color: #ffffff !important;
   stroke: currentColor !important;
 }

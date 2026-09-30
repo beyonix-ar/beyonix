@@ -22,6 +22,8 @@ import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { formatARS } from "@/lib/customer-credit"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
+const ACCOUNT_MENU_ICON_COLOR = "#ffffff"
+
 export function AccountMenuIcon({
   Icon,
   filled = false,
@@ -38,18 +40,20 @@ export function AccountMenuIcon({
   return (
     <span
       className={cn(
-        // Color del ícono en .beyonix-account-menu-icon (globals.css), no
-        // en text-white: los remapeos de Light de .checkout-page/#contenido
-        // pasan text-white a texto oscuro y lo dejaban negro sobre navy.
         "beyonix-account-menu-icon relative flex size-7 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/34 bg-[linear-gradient(135deg,rgba(17,42,67,0.86),rgba(7,18,31,0.9))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_12px_rgba(30,140,255,0.1)] transition-all group-hover:border-beyonix-sky/58 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.11),0_0_16px_rgba(140,200,242,0.16)]",
         danger &&
           "beyonix-account-menu-icon-danger group-hover:border-red-500/70 group-hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.10),0_0_16px_rgba(239,68,68,0.22)] group-focus-visible:border-red-500/70",
       )}
     >
+      {/* Blanco como atributos del propio SVG (stroke/fill), no por color
+          heredado ni por una regla de globals.css: el ícono queda blanco
+          sobre el navy aunque un contexto remapee text-white/currentColor
+          (.checkout-page, #contenido) o el CSS publicado no esté al día con
+          el componente. Sólo el hover rojo de "Cerrar sesión" usa CSS. */}
       <Icon
-        className={`size-4 stroke-[2.35] drop-shadow-[0_0_4px_rgba(255,255,255,0.18)] ${
-          filled ? "fill-white" : "fill-none"
-        }`}
+        color={ACCOUNT_MENU_ICON_COLOR}
+        fill={filled ? ACCOUNT_MENU_ICON_COLOR : "none"}
+        className="size-4 stroke-[2.35] drop-shadow-[0_0_4px_rgba(255,255,255,0.18)]"
       />
       {dollarBadge && (
         <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full border border-white/24 bg-white text-[9px] font-black leading-none text-[#07121E] shadow-[0_0_8px_rgba(255,255,255,0.14)]">
