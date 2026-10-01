@@ -425,6 +425,11 @@ async function handleWebhook(request: Request) {
               transaction_amount: payment.transaction_amount ?? null,
               fee_details: payment.fee_details ?? null,
               transaction_details: payment.transaction_details ?? null,
+              // Cargos reales discriminados (tasa exacta cobrada) y
+              // liberación del dinero: histórico congelado de ESTE pago.
+              charges_details: payment.charges_details ?? null,
+              money_release_date: payment.money_release_date ?? null,
+              money_release_status: payment.money_release_status ?? null,
               payment_type_id: paymentMedium.payment_type_id,
               payment_method_id: paymentMedium.payment_method_id,
               checkout_modality: paymentMedium.checkout_modality,

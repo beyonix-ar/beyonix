@@ -163,9 +163,14 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     assert.equal(reload.disabled, false, "libera loading tras el error")
     settingsFail = false
     await act(async () => reload.click())
+    // Guardado por bloque: sin cambios propios el bloque no guarda nada.
+    assert.equal(save().disabled, true, "sin cambios no hay nada que guardar")
+    const criticalStock = document.querySelector<HTMLInputElement>('[aria-label="Crítico"]')!
+    await act(async () => { setter.call(criticalStock, "2"); criticalStock.dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
     assert.equal(save().disabled, false)
     await act(async () => save().click())
     assert.equal(save().disabled, false, "libera saving tras el error de red")
+    assert.match(document.body.textContent || "", /No se pudo confirmar el guardado/)
 
     const { saveMercadoLibreReturnReview } = await import("../supabase/queries/mercadolibre-sales")
     await assert.rejects(saveMercadoLibreReturnReview("sale-1", { expectedApprovedAt: null, receivedQuantity: 1, sellableQuantity: 1, discountedQuantity: 0, nonSellableQuantity: 0, discountPercent: null, discountReason: "", nonSellableReason: "", notes: "" }), /modificada por otro administrador/)

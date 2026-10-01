@@ -53,32 +53,32 @@ function assertAddsUp(summary: { productsSubtotal: number; storeBenefitDiscount:
 // Jerarquía visual de "Método de pago"
 // ─────────────────────────────────────────────────────────────
 
-test("1-2. lista simple en orden: Transferencia, Mercado Pago al contado, Mercado Pago en cuotas; sin paneles anidados", () => {
+test("1-2. lista simple en orden: Transferencia, Mercado Pago en 1 pago, cuotas confirmadas; sin paneles anidados", () => {
   const listStart = checkout.indexOf("<fieldset className=\"grid gap-3\" data-payment-options>")
   const listEnd = checkout.indexOf("</fieldset>", listStart)
   assert.ok(listStart > 0 && listEnd > listStart)
   const list = checkout.slice(listStart, listEnd)
-  const order = ["transferencia", "mercadopago_cash", "mercadopago_financed"].map((option) =>
-    list.indexOf(`option="${option}"`),
-  )
+  const order = [
+    list.indexOf('option="transferencia"'),
+    list.indexOf('option="mercadopago_cash"'),
+    list.indexOf("{offeredInstallmentPlans.map((plan) => ("),
+  ]
   assert.ok(order.every((index) => index > 0))
   assert.ok(order[0] < order[1] && order[1] < order[2])
   // Cada opción es una única tarjeta: no hay grupos anidados ni radiogroups internos.
   assert.doesNotMatch(list, /role="radiogroup"|data-mercadopago-modes|data-mercadopago-mode=/)
-  // "En cuotas" sólo aparece si el carrito admite financiación.
-  assert.match(list, /\{isMercadoPagoFinancingAvailable &&/)
+  // Mientras Mercado Pago confirma, se avisa en vez de mostrar cuotas.
+  assert.match(list, /\{interestFreeConfirmationPending && mercadoPagoPricingBeforeCredit\.maxInstallmentCount != null && \(/)
 })
 
-test("3-4. el cliente sólo elige una de tres opciones; 2/3/6 cuotas siguen sin ser controles", () => {
+test("3-4. el cliente elige UNA opción (1 pago o una cuota): todas son el mismo radio", () => {
   const cardStart = checkout.indexOf("function CheckoutPaymentOptionCard(")
   const card = checkout.slice(cardStart, checkout.indexOf("\n}\n", cardStart))
   assert.match(card, /type="radio"/)
   assert.match(card, /name="checkout-payment-option"/)
   assert.match(card, /onChange=\{\(\) => onSelect\(option\)\}/)
-  const rowsStart = checkout.indexOf("{plans.map((plan) => (")
-  assert.ok(rowsStart > 0)
-  const rows = checkout.slice(rowsStart, checkout.indexOf("</ul>", rowsStart))
-  assert.doesNotMatch(rows, /onClick|role="radio"|<button|<input|aria-checked/)
+  // No queda una lista informativa aparte con otras cuotas.
+  assert.doesNotMatch(checkout, /function InstallmentPlanList\(/)
 })
 
 function hexLuminance(hex: string) {
@@ -139,6 +139,7 @@ test("9. al contado: productos contado + envío = total contado", () => {
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   const summary = getMercadoPagoSummaryBreakdown(pricing, "cash")
   assert.deepEqual(summary, { productsSubtotal: 1_000, storeBenefitDiscount: 0, shipping: 6_900, total: 7_900 })
@@ -153,6 +154,7 @@ test("10/12/14. en cuotas: productos FINANCIADOS canónicos + envío real = tota
       storeBenefitPercent: null,
       requestedCustomerCredit: 0,
       settings: SETTINGS,
+      interestFreeLookup: () => [2, 3, 6],
     })
     const summary = getMercadoPagoSummaryBreakdown(pricing, "financed")
     assertAddsUp(summary)
@@ -182,6 +184,7 @@ test("con beneficio de tienda y saldo el resumen sigue cerrando en las tres moda
     storeBenefitPercent: 10,
     requestedCustomerCredit: 2_000,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   for (const mode of ["cash", "financed"] as const) {
     const summary = getMercadoPagoSummaryBreakdown(pricing, mode)
@@ -242,6 +245,7 @@ test("13. el precio del producto (DB/carrito) nunca se modifica para cerrar el r
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   getMercadoPagoSummaryBreakdown(pricing, "financed")
   assert.equal(JSON.stringify(lines), snapshot)
@@ -256,6 +260,7 @@ test("15-17. CFTEA y fórmulas financieras intactas (valores de referencia)", ()
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   assert.equal(pricing.cash.externalAmountDue, 54_000)
   assert.equal(pricing.financed?.externalAmountDue, 74_672.04)
@@ -267,7 +272,6 @@ test("15-17. CFTEA y fórmulas financieras intactas (valores de referencia)", ()
       [6, 12_445.34, "218.3"],
     ],
   )
-  // CFTEA sólo en el detalle de "Mercado Pago en cuotas".
-  assert.match(checkout, /\{paymentInfoModal === "installments" && financedPreviewQuote && \(/)
-  assert.match(checkout, /\{cfteaSummary && \(\s*<p\s+data-cftea-disclosure/)
+  // CFTEA sólo junto a las cuotas confirmadas.
+  assert.match(checkout, /\{offeredInstallmentPlans\.length > 0 && cfteaSummary && \(\s*<p\s+data-cftea-disclosure/)
 })

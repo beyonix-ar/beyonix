@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Boxes, CreditCard, ImageIcon, Save, Truck } from "lucide-react"
+import { ImageIcon } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -9,265 +9,139 @@ import {
   type ShippingBonusSettings,
 } from "@/lib/store-config"
 import {
+  DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
   DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
-  DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
   DEFAULT_PRICING_SETTINGS,
   DEFAULT_STOCK_SETTINGS,
+  type AndreaniCommercialSettings,
   type CustomerCreditPaymentSettings,
-  type InstallmentsFinancingSettings,
+  type MercadoPagoCostsOverview,
   type PricingSettings,
   type StockSettings,
+  type StoredInstallmentsFinancingSettings,
 } from "@/lib/site-settings"
-import {
-  getFinancedPrice,
-  getInstallmentAmount,
-  getTransferPrice,
-} from "@/lib/pricing/financed-pricing"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
-  AdminFormField,
   AdminInfoBlock,
   AdminPageHeader,
-  AdminPrimaryButton,
   AdminSection,
-  AdminSelect,
-  AdminTextInput,
 } from "../../components/admin-controls"
 import { AdminBanners } from "../banners/admin-banners"
 import { AndreaniIntegrationCard } from "./andreani-integration-card"
+import type { ConfigFeedback } from "./config-ui"
+import { MercadoPagoCostsSection } from "./mercadopago-costs-section"
+import {
+  CustomerCreditSection,
+  PricingSection,
+  ShippingSection,
+  StockSection,
+} from "./store-config-sections"
+
+interface AdminSettings {
+  shipping: ShippingBonusSettings
+  customerCreditPayments: CustomerCreditPaymentSettings
+  stock: StockSettings
+  pricing: PricingSettings
+  andreaniCommercial: AndreaniCommercialSettings
+}
 
 interface SettingsResponse {
-  settings?: {
-    shipping?: ShippingBonusSettings
-    customerCreditPayments?: CustomerCreditPaymentSettings
-    stock?: StockSettings
-    installmentsFinancing?: InstallmentsFinancingSettings
-    pricing?: PricingSettings
-  }
+  settings?: Partial<AdminSettings>
+  mercadoPagoCosts?: MercadoPagoCostsOverview
   error?: string
 }
 
-function toInputValue(value: number) {
-  return Number.isFinite(value) ? String(Math.round(value)) : "0"
+interface SettingsPatch {
+  shipping?: ShippingBonusSettings
+  customerCreditPayments?: CustomerCreditPaymentSettings
+  stock?: StockSettings
+  pricing?: PricingSettings
+  installmentsFinancing?: StoredInstallmentsFinancingSettings
 }
 
-function normalizeAmount(value: string) {
-  const amount = Number.parseInt(value.replace(/[^\d]/g, ""), 10)
+type SectionId = "stock" | "shipping" | "mercadoPago" | "pricing" | "customerCredit"
 
-  return Number.isFinite(amount) && amount >= 0 ? amount : 0
+const SECTION_IDS: SectionId[] = ["stock", "shipping", "mercadoPago", "pricing", "customerCredit"]
+
+const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
+  shipping: DEFAULT_SHIPPING_SETTINGS,
+  customerCreditPayments: DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
+  stock: DEFAULT_STOCK_SETTINGS,
+  pricing: DEFAULT_PRICING_SETTINGS,
+  andreaniCommercial: DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
 }
 
-function normalizePercentage(value: string) {
-  const percentage = Number(value.replace(",", "."))
-  return Number.isFinite(percentage)
-    ? Math.min(100, Math.max(0, Math.round(percentage * 100) / 100))
-    : 0
+function toAdminSettings(settings: Partial<AdminSettings>): AdminSettings {
+  return { ...DEFAULT_ADMIN_SETTINGS, ...settings }
 }
 
-function normalizeTwoDigits(value: string) {
-  return value.replace(/\D/g, "").slice(0, 2)
+async function getAccessToken() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  return session?.access_token ?? null
 }
 
-function withInputSymbol(value: string, symbol: "$" | "%") {
-  return value ? `${symbol} ${value}` : ""
-}
-
-function normalizeNumericInput(value: string) {
-  return value.replace(/\D/g, "")
-}
-
-const formatARS = (value: number) =>
-  new Intl.NumberFormat("es-AR", {
-    style: "currency",
-    currency: "ARS",
-    maximumFractionDigits: 0,
-  }).format(value)
-
-const compactInputClassName = "h-9 text-sm"
-const compactLabelClassName = "mb-1.5 text-12px"
-const compactHelpClassName = "mt-1 text-12px leading-4"
-
-type StockTone = "critical" | "low" | "available"
-
-const stockToneClassNames: Record<StockTone, { border: string; text: string }> = {
-  critical: {
-    border: "border-red-500/40 focus-within:border-red-400/75",
-    text: "text-red-200",
-  },
-  low: {
-    border: "border-amber-500/40 focus-within:border-amber-400/75",
-    text: "text-amber-200",
-  },
-  available: {
-    border: "border-emerald-500/40 focus-within:border-emerald-400/75",
-    text: "text-emerald-200",
-  },
-}
-
-interface StockThresholdBoxProps {
-  label: string
-  value: string
-  tone: StockTone
-  disabled: boolean
-  onChange: (value: string) => void
-}
-
-function StockThresholdBox({ label, value, tone, disabled, onChange }: StockThresholdBoxProps) {
-  const toneClassNames = stockToneClassNames[tone]
-
-  return (
-    <label
-      className={`admin-stock-threshold-box flex w-auto min-w-28 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border bg-white/[0.02] px-3.5 py-2 transition-colors ${toneClassNames.border}`}
-    >
-      <span className="whitespace-nowrap text-11px font-bold uppercase tracking-wide text-white/50">{label}</span>
-      <input
-        type="text"
-        aria-label={label}
-        inputMode="numeric"
-        maxLength={2}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className={`w-full min-w-0 bg-transparent text-center text-lg font-black outline-none disabled:opacity-45 ${toneClassNames.text}`}
-      />
-    </label>
-  )
-}
+const SAVED_MESSAGE = "Guardado. Los textos y cálculos ya usan estos valores."
 
 export function AdminModificaciones() {
-  const [defaultShippingCost, setDefaultShippingCost] = useState(
-    toInputValue(DEFAULT_SHIPPING_SETTINGS.defaultShippingCost),
-  )
-  const [freeShippingMinAmount, setFreeShippingMinAmount] = useState(
-    toInputValue(DEFAULT_SHIPPING_SETTINGS.freeShippingMinAmount),
-  )
-  const [shippingBonusMax, setShippingBonusMax] = useState(
-    toInputValue(DEFAULT_SHIPPING_SETTINGS.shippingBonusMax),
-  )
-  const [freeShippingMode, setFreeShippingMode] = useState(
-    DEFAULT_SHIPPING_SETTINGS.freeShippingMode,
-  )
-  const [logisticsBaseSubsidy, setLogisticsBaseSubsidy] = useState(
-    toInputValue(DEFAULT_SHIPPING_SETTINGS.logisticsBaseSubsidy),
-  )
-  const [mercadoPagoSurchargePercent, setMercadoPagoSurchargePercent] = useState(
-    String(DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS.mercadoPagoSurchargePercent),
-  )
-  const [mercadoPagoMinimumAmount, setMercadoPagoMinimumAmount] = useState(
-    toInputValue(DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS.mercadoPagoMinimumAmount),
-  )
-  const [baseProcessingPercent, setBaseProcessingPercent] = useState(
-    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.baseProcessingPercent),
-  )
-  const [ivaPercent, setIvaPercent] = useState(
-    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.ivaPercent),
-  )
-  const [surcharge2Percent, setSurcharge2Percent] = useState(
-    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[2]),
-  )
-  const [surcharge3Percent, setSurcharge3Percent] = useState(
-    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[3]),
-  )
-  const [surcharge6Percent, setSurcharge6Percent] = useState(
-    String(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS.surchargePercentByCount[6]),
-  )
-  const [transferDiscountPercent, setTransferDiscountPercent] = useState(
-    String(DEFAULT_PRICING_SETTINGS.transferDiscountPercent),
-  )
-  const [nationalTaxesIncidencePercent, setNationalTaxesIncidencePercent] = useState(
-    String(DEFAULT_PRICING_SETTINGS.nationalTaxesIncidencePercent),
-  )
-  const [criticalStockThreshold, setCriticalStockThreshold] = useState(
-    String(DEFAULT_STOCK_SETTINGS.criticalStockThreshold),
-  )
-  const [lowStockThreshold, setLowStockThreshold] = useState(
-    String(DEFAULT_STOCK_SETTINGS.lowStockThreshold),
-  )
-  const [availableStockThreshold, setAvailableStockThreshold] = useState(
-    String(DEFAULT_STOCK_SETTINGS.availableStockThreshold),
-  )
+  const [settings, setSettings] = useState<AdminSettings>(DEFAULT_ADMIN_SETTINGS)
+  const [mercadoPagoCosts, setMercadoPagoCosts] = useState<MercadoPagoCostsOverview | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  const [message, setMessage] = useState("")
-  const [error, setError] = useState("")
+  const [loadError, setLoadError] = useState("")
+  const [savingSection, setSavingSection] = useState<SectionId | null>(null)
+  const [feedback, setFeedback] = useState<Partial<Record<SectionId, ConfigFeedback>>>({})
+  // Cada bloque edita un borrador propio; al cargar o guardar su versión
+  // cambia y el borrador se reinicia con los valores confirmados por el server.
+  const [versions, setVersions] = useState<Record<SectionId, number>>({
+    stock: 0,
+    shipping: 0,
+    mercadoPago: 0,
+    pricing: 0,
+    customerCredit: 0,
+  })
 
-  const applyShipping = (nextShipping: ShippingBonusSettings) => {
-    setDefaultShippingCost(toInputValue(nextShipping.defaultShippingCost))
-    setFreeShippingMinAmount(toInputValue(nextShipping.freeShippingMinAmount))
-    setShippingBonusMax(toInputValue(nextShipping.shippingBonusMax))
-    setFreeShippingMode(nextShipping.freeShippingMode)
-    setLogisticsBaseSubsidy(toInputValue(nextShipping.logisticsBaseSubsidy))
-  }
+  const bumpVersions = (ids: SectionId[]) =>
+    setVersions((current) => {
+      const next = { ...current }
+      for (const id of ids) next[id] += 1
+      return next
+    })
 
-  const applyStock = (nextStock: StockSettings) => {
-    setCriticalStockThreshold(String(nextStock.criticalStockThreshold))
-    setLowStockThreshold(String(nextStock.lowStockThreshold))
-    setAvailableStockThreshold(String(nextStock.availableStockThreshold))
-  }
-
-  const applyInstallmentsFinancing = (next: InstallmentsFinancingSettings) => {
-    setBaseProcessingPercent(String(next.baseProcessingPercent))
-    setIvaPercent(String(next.ivaPercent))
-    setSurcharge2Percent(String(next.surchargePercentByCount[2]))
-    setSurcharge3Percent(String(next.surchargePercentByCount[3]))
-    setSurcharge6Percent(String(next.surchargePercentByCount[6]))
-  }
-
-  const applyPricing = (next: PricingSettings) => {
-    setTransferDiscountPercent(String(next.transferDiscountPercent))
-    setNationalTaxesIncidencePercent(String(next.nationalTaxesIncidencePercent))
+  const applyResponse = (data: SettingsResponse) => {
+    setSettings(toAdminSettings(data.settings ?? {}))
+    if (data.mercadoPagoCosts) setMercadoPagoCosts(data.mercadoPagoCosts)
   }
 
   const loadSettings = async () => {
     setLoading(true)
     setLoaded(false)
-    setError("")
+    setLoadError("")
     try {
+      const token = await getAccessToken()
+      if (!token) {
+        setLoadError("No se pudo validar la sesión.")
+        return
+      }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+      const response = await fetch("/api/admin/settings", {
+        signal: AbortSignal.timeout(25_000),
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = (await response.json()) as SettingsResponse
 
-    if (!session?.access_token) {
-      setError("No se pudo validar la sesión.")
-      setLoading(false)
-      return
-    }
+      if (!response.ok || !data.settings?.shipping) {
+        setLoadError(data.error ?? "No se pudo cargar la configuración.")
+        return
+      }
 
-    const response = await fetch("/api/admin/settings", {
-      signal: AbortSignal.timeout(25_000),
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    })
-    const data = (await response.json()) as SettingsResponse
-
-    if (!response.ok || !data.settings?.shipping) {
-      setError(data.error ?? "No se pudo cargar la configuración.")
-      setLoading(false)
-      return
-    }
-
-    applyShipping(data.settings.shipping)
-    const nextCustomerCreditPayments =
-      data.settings.customerCreditPayments ??
-      DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS
-    setMercadoPagoSurchargePercent(
-      String(nextCustomerCreditPayments.mercadoPagoSurchargePercent),
-    )
-    setMercadoPagoMinimumAmount(
-      toInputValue(nextCustomerCreditPayments.mercadoPagoMinimumAmount),
-    )
-    applyStock(data.settings.stock ?? DEFAULT_STOCK_SETTINGS)
-    applyInstallmentsFinancing(
-      data.settings.installmentsFinancing ?? DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
-    )
-    applyPricing(data.settings.pricing ?? DEFAULT_PRICING_SETTINGS)
-    setLoaded(true)
-    setLoading(false)
+      applyResponse(data)
+      setFeedback({})
+      bumpVersions(SECTION_IDS)
+      setLoaded(true)
     } catch {
-      setError("No se pudo cargar la configuración. Revisá la conexión y reintentá.")
+      setLoadError("No se pudo cargar la configuración. Revisá la conexión y reintentá.")
     } finally {
       setLoading(false)
     }
@@ -277,534 +151,123 @@ export function AdminModificaciones() {
     void loadSettings()
   }, [])
 
-  const saveSettings = async () => {
-    if (!loaded || loading || saving) return
-    setSaving(true)
-    setMessage("")
-    setError("")
+  const saveSection = async (section: SectionId, patch: SettingsPatch) => {
+    if (!loaded || loading || savingSection) return
+    setSavingSection(section)
+    setFeedback((current) => ({ ...current, [section]: undefined }))
     try {
+      const token = await getAccessToken()
+      if (!token) {
+        setFeedback((current) => ({ ...current, [section]: { tone: "danger", text: "No se pudo validar la sesión." } }))
+        return
+      }
 
-    const nextShipping: ShippingBonusSettings = {
-      defaultShippingCost: normalizeAmount(defaultShippingCost),
-      freeShippingMinAmount: normalizeAmount(freeShippingMinAmount),
-      shippingBonusMax: normalizeAmount(shippingBonusMax),
-      freeShippingMode,
-      logisticsBaseSubsidy: normalizeAmount(logisticsBaseSubsidy),
-    }
-    const nextCustomerCreditPayments: CustomerCreditPaymentSettings = {
-      mercadoPagoSurchargePercent: normalizePercentage(
-        mercadoPagoSurchargePercent,
-      ),
-      mercadoPagoMinimumAmount: normalizeAmount(mercadoPagoMinimumAmount),
-    }
-    const nextStock: StockSettings = {
-      criticalStockThreshold: normalizeAmount(criticalStockThreshold),
-      lowStockThreshold: normalizeAmount(lowStockThreshold),
-      availableStockThreshold: normalizeAmount(availableStockThreshold),
-    }
-    const nextInstallmentsFinancing: InstallmentsFinancingSettings = {
-      baseProcessingPercent: normalizePercentage(baseProcessingPercent),
-      ivaPercent: normalizePercentage(ivaPercent),
-      surchargePercentByCount: {
-        2: normalizePercentage(surcharge2Percent),
-        3: normalizePercentage(surcharge3Percent),
-        6: normalizePercentage(surcharge6Percent),
-      },
-    }
-    const nextPricing: PricingSettings = {
-      transferDiscountPercent: normalizePercentage(transferDiscountPercent),
-      nationalTaxesIncidencePercent: normalizePercentage(nationalTaxesIncidencePercent),
-    }
+      const response = await fetch("/api/admin/settings", {
+        method: "PATCH",
+        signal: AbortSignal.timeout(25_000),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(patch),
+      })
+      const data = (await response.json()) as SettingsResponse
 
-    if (nextStock.criticalStockThreshold >= nextStock.lowStockThreshold) {
-      setError("El límite de stock crítico debe ser menor que el de stock bajo.")
-      setSaving(false)
-      return
-    }
+      if (!response.ok || !data.settings?.shipping) {
+        setFeedback((current) => ({
+          ...current,
+          [section]: { tone: "danger", text: data.error ?? "No se pudo guardar este bloque." },
+        }))
+        return
+      }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session?.access_token) {
-      setError("No se pudo validar la sesión.")
-      setSaving(false)
-      return
-    }
-
-    const response = await fetch("/api/admin/settings", {
-      method: "PATCH",
-      signal: AbortSignal.timeout(25_000),
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        shipping: nextShipping,
-        customerCreditPayments: nextCustomerCreditPayments,
-        stock: nextStock,
-        installmentsFinancing: nextInstallmentsFinancing,
-        pricing: nextPricing,
-      }),
-    })
-    const data = (await response.json()) as SettingsResponse
-
-    if (!response.ok || !data.settings?.shipping) {
-      setError(data.error ?? "No se pudo guardar la configuración.")
-      setSaving(false)
-      return
-    }
-
-    invalidateSiteSettingsClientCache()
-    applyShipping(data.settings.shipping)
-    const savedCustomerCreditPayments =
-      data.settings.customerCreditPayments ?? nextCustomerCreditPayments
-    setMercadoPagoSurchargePercent(
-      String(savedCustomerCreditPayments.mercadoPagoSurchargePercent),
-    )
-    setMercadoPagoMinimumAmount(
-      toInputValue(savedCustomerCreditPayments.mercadoPagoMinimumAmount),
-    )
-    applyStock(data.settings.stock ?? nextStock)
-    applyInstallmentsFinancing(
-      data.settings.installmentsFinancing ?? nextInstallmentsFinancing,
-    )
-    applyPricing(data.settings.pricing ?? nextPricing)
-    setMessage("Configuración actualizada. Los textos y cálculos ya usan estos valores.")
-    setSaving(false)
+      invalidateSiteSettingsClientCache()
+      applyResponse(data)
+      bumpVersions([section])
+      setFeedback((current) => ({ ...current, [section]: { tone: "success", text: SAVED_MESSAGE } }))
     } catch {
-      setError("No se pudo confirmar el guardado. Recargá la configuración para comprobar los valores antes de reintentar.")
+      setFeedback((current) => ({
+        ...current,
+        [section]: {
+          tone: "danger",
+          text: "No se pudo confirmar el guardado. Recargá la configuración para comprobar los valores antes de reintentar.",
+        },
+      }))
     } finally {
-      setSaving(false)
+      setSavingSection(null)
     }
   }
 
-  const previewInstallmentsFinancing: InstallmentsFinancingSettings = {
-    baseProcessingPercent: normalizePercentage(baseProcessingPercent),
-    ivaPercent: normalizePercentage(ivaPercent),
-    surchargePercentByCount: {
-      2: normalizePercentage(surcharge2Percent),
-      3: normalizePercentage(surcharge3Percent),
-      6: normalizePercentage(surcharge6Percent),
-    },
-  }
-  const installmentsPreviewAmount = 75_000
-  const previewMin = normalizeAmount(freeShippingMinAmount)
-  const previewBonus = normalizeAmount(shippingBonusMax)
-  const previewLogisticsBaseSubsidy = normalizeAmount(logisticsBaseSubsidy)
-  const previewCriticalStock = normalizeAmount(criticalStockThreshold)
-  const previewLowStock = normalizeAmount(lowStockThreshold)
-  const previewAvailableStock = normalizeAmount(availableStockThreshold)
-  const previewLowStockStart = previewCriticalStock + 1
-
-  const saveButton = (
-    <AdminPrimaryButton
-      type="button"
-      size="sm"
-      onClick={() => void saveSettings()}
-      disabled={!loaded || loading || saving}
-      className="shrink-0"
-    >
-      <Save className="size-3.5" />
-      {saving ? "Guardando…" : "Guardar cambios"}
-    </AdminPrimaryButton>
-  )
+  const disabled = !loaded || loading
+  const sectionProps = (section: SectionId) => ({
+    disabled: disabled || (savingSection !== null && savingSection !== section),
+    saving: savingSection === section,
+    feedback: feedback[section] ?? null,
+  })
 
   return (
     <div className="admin-config-page space-y-3 p-4 sm:p-6 lg:p-8">
       <AdminPageHeader
         title="Configuración"
+        description="Integraciones, inventario, envíos y pagos. Cada bloque se guarda por separado."
         className="gap-2"
       />
 
-      {message ? (
-        <AdminInfoBlock tone="success" className="py-2 text-xs">{message}</AdminInfoBlock>
+      {loadError ? (
+        <AdminInfoBlock tone="danger" className="py-2 text-xs">
+          {loadError}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void loadSettings()}
+            className="ml-3 underline"
+          >
+            Recargar configuración
+          </button>
+        </AdminInfoBlock>
       ) : null}
-      {error ? <AdminInfoBlock tone="danger" className="py-2 text-xs">{error}<button type="button" disabled={loading || saving} onClick={() => void loadSettings()} className="ml-3 underline">Recargar configuración</button></AdminInfoBlock> : null}
 
-      <AndreaniIntegrationCard />
+      <AndreaniIntegrationCard commercialEnabled={loaded ? settings.andreaniCommercial.enabled : null} />
 
-      <AdminSection
-        compact
-        icon={<Boxes className="size-3.5" />}
-        eyebrow="Inventario"
-        title="Stock"
-        description="Cuándo cambia el estado visual del inventario."
-        actions={saveButton}
-      >
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <StockThresholdBox
-              label="Stock crítico"
-              tone="critical"
-              value={criticalStockThreshold}
-              disabled={loading || saving}
-              onChange={(value) => setCriticalStockThreshold(normalizeTwoDigits(value))}
-            />
+      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
+        <StockSection
+          key={`stock-${versions.stock}`}
+          saved={settings.stock}
+          {...sectionProps("stock")}
+          onSave={(stock) => void saveSection("stock", { stock })}
+        />
+        <ShippingSection
+          key={`shipping-${versions.shipping}`}
+          saved={settings.shipping}
+          {...sectionProps("shipping")}
+          onSave={(shipping) => void saveSection("shipping", { shipping })}
+        />
+      </div>
 
-            <StockThresholdBox
-              label="Stock bajo"
-              tone="low"
-              value={lowStockThreshold}
-              disabled={loading || saving}
-              onChange={(value) => {
-                const normalized = normalizeTwoDigits(value)
-                const nextValue = Math.min(98, normalizeAmount(normalized))
-                setLowStockThreshold(normalized ? String(nextValue) : "")
-                setAvailableStockThreshold(normalized ? String(nextValue + 1) : "")
-              }}
-            />
+      <MercadoPagoCostsSection
+        key={`mercadopago-${versions.mercadoPago}`}
+        overview={mercadoPagoCosts}
+        {...sectionProps("mercadoPago")}
+        // Sin el estado real de costos nunca se guardan defaults encima.
+        disabled={sectionProps("mercadoPago").disabled || mercadoPagoCosts === null}
+        onSave={(installmentsFinancing) => void saveSection("mercadoPago", { installmentsFinancing })}
+      />
 
-            <StockThresholdBox
-              label="Disponible desde"
-              tone="available"
-              value={availableStockThreshold}
-              disabled
-              onChange={(value) => {
-                const normalized = normalizeTwoDigits(value)
-                const nextValue = Math.max(2, normalizeAmount(normalized))
-                setAvailableStockThreshold(normalized ? String(nextValue) : "")
-                setLowStockThreshold(normalized ? String(nextValue - 1) : "")
-              }}
-            />
-          </div>
+      <div className="grid items-start gap-3 xl:grid-cols-2">
+        <PricingSection
+          key={`pricing-${versions.pricing}`}
+          saved={settings.pricing}
+          {...sectionProps("pricing")}
+          onSave={(pricing) => void saveSection("pricing", { pricing })}
+        />
+        <CustomerCreditSection
+          key={`credit-${versions.customerCredit}`}
+          saved={settings.customerCreditPayments}
+          {...sectionProps("customerCredit")}
+          onSave={(customerCreditPayments) => void saveSection("customerCredit", { customerCreditPayments })}
+        />
+      </div>
 
-          <span className="hidden h-10 w-px shrink-0 bg-white/8 sm:block" />
-
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-12px font-semibold text-white/55">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-red-400" />
-              Crítico: {previewCriticalStock > 0 ? `1 a ${previewCriticalStock}` : "sin rango"}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-amber-400" />
-              Bajo: {previewLowStock >= previewLowStockStart ? `${previewLowStockStart} a ${previewLowStock}` : "revisar"}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-emerald-400" />
-              Disponible: desde {previewAvailableStock}
-            </span>
-          </p>
-        </div>
-      </AdminSection>
-
-      <AdminSection
-        compact
-        icon={<Truck className="size-3.5" />}
-        eyebrow="Comercial"
-        title="Envíos"
-        description="Costo y bonificación de envío."
-        actions={saveButton}
-      >
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <AdminFormField label="Costo de envío predeterminado" help="Valor de referencia; las cotizaciones de Andreani usan el costo informado por el transportista.">
-            <AdminTextInput title="Costo de envío predeterminado" placeholder="0" value={defaultShippingCost} inputMode="decimal" disabled={loading || saving} onChange={setDefaultShippingCost} />
-          </AdminFormField>
-          <AdminFormField
-            label="Compra mínima"
-            help="Activa la bonificación."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Compra mínima"
-              ariaLabel="Monto mínimo para acceder a envío bonificado"
-              value={withInputSymbol(freeShippingMinAmount, "$")}
-              placeholder="$ 75000"
-              inputMode="numeric"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setFreeShippingMinAmount(normalizeNumericInput(value))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="Bonif. máxima"
-            help="Tope de BEYONIX."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Bonificación máxima"
-              ariaLabel="Tope máximo de bonificación de envío"
-              value={withInputSymbol(shippingBonusMax, "$")}
-              placeholder="$ 12000"
-              inputMode="numeric"
-              className={`text-center font-bold text-beyonix-cyan ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setShippingBonusMax(normalizeNumericInput(value))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="Bonif. base"
-            help="Antes del mínimo."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Bonificación base"
-              ariaLabel="Bonificación base de envío para compras por debajo del mínimo"
-              value={withInputSymbol(logisticsBaseSubsidy, "$")}
-              placeholder="$ 3000"
-              inputMode="numeric"
-              className={`text-center font-bold text-beyonix-cyan ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setLogisticsBaseSubsidy(normalizeNumericInput(value))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="Estado"
-            labelClassName={compactLabelClassName}
-          >
-            <AdminSelect
-              title="Estado"
-              value={freeShippingMode}
-              centered
-              leadingIcon={
-                <span
-                  className={`size-2 rounded-full shadow-[0_0_10px_currentColor] ${
-                    freeShippingMode === "full"
-                      ? "bg-emerald-400 text-emerald-400"
-                      : "bg-white/35 text-white/35"
-                  }`}
-                />
-              }
-              triggerClassName="admin-modifications-status-select !text-sm !font-bold"
-              optionClassName="font-bold hover:!bg-beyonix-blue/25"
-              disabled={loading || saving}
-              onChange={(value) =>
-                setFreeShippingMode(value === "off" ? "off" : "full")
-              }
-            >
-              <option value="full">Activo</option>
-              <option value="off">Desactivado</option>
-            </AdminSelect>
-          </AdminFormField>
-        </div>
-
-        <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
-          Desde <strong className="text-white">{formatARS(previewMin)}</strong> de
-          compra, BEYONIX bonifica hasta{" "}
-          <strong className="text-beyonix-cyan">{formatARS(previewBonus)}</strong>{" "}
-          del envío.
-          {previewLogisticsBaseSubsidy > 0 && (
-            <>
-              {" "}Por debajo de ese monto, absorbe una bonificación base de{" "}
-              <strong className="text-beyonix-cyan">
-                {formatARS(previewLogisticsBaseSubsidy)}
-              </strong>
-              .
-            </>
-          )}
-        </p>
-      </AdminSection>
-
-      <AdminSection
-        compact
-        icon={<CreditCard className="size-3.5" />}
-        eyebrow="Comercial"
-        title="Financiación Mercado Pago"
-        description="Costos reales de Mercado Pago usados para calcular el precio financiado en cuotas."
-        actions={saveButton}
-      >
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <AdminFormField
-            label="Costo base"
-            help="Procesamiento c/tarjeta."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Costo base de procesamiento"
-              ariaLabel="Costo base de procesamiento con tarjeta"
-              value={withInputSymbol(baseProcessingPercent, "%")}
-              placeholder="% 6.42"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setBaseProcessingPercent(value.replace(/[^0-9,.]/g, ""))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="IVA"
-            help="Sobre la comisión."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="IVA sobre comisiones de Mercado Pago"
-              ariaLabel="IVA sobre comisiones de Mercado Pago"
-              value={withInputSymbol(ivaPercent, "%")}
-              placeholder="% 21"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setIvaPercent(value.replace(/[^0-9,.]/g, ""))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="+2 cuotas"
-            help="Costo adicional MP."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Costo adicional de Mercado Pago por 2 cuotas"
-              ariaLabel="Costo adicional de Mercado Pago por 2 cuotas"
-              value={withInputSymbol(surcharge2Percent, "%")}
-              placeholder="% 7.79"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setSurcharge2Percent(value.replace(/[^0-9,.]/g, ""))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="+3 cuotas"
-            help="Costo adicional MP."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Costo adicional de Mercado Pago por 3 cuotas"
-              ariaLabel="Costo adicional de Mercado Pago por 3 cuotas"
-              value={withInputSymbol(surcharge3Percent, "%")}
-              placeholder="% 10.49"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setSurcharge3Percent(value.replace(/[^0-9,.]/g, ""))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="+6 cuotas"
-            help="Costo adicional MP."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Costo adicional de Mercado Pago por 6 cuotas"
-              ariaLabel="Costo adicional de Mercado Pago por 6 cuotas"
-              value={withInputSymbol(surcharge6Percent, "%")}
-              placeholder="% 18.69"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setSurcharge6Percent(value.replace(/[^0-9,.]/g, ""))}
-            />
-          </AdminFormField>
-        </div>
-
-        <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
-          Estos porcentajes son costos internos utilizados para calcular el
-          precio financiado. El cliente no ve estos porcentajes. Ejemplo con
-          las 6 cuotas habilitadas, sobre un contado de{" "}
-          {formatARS(installmentsPreviewAmount)}:{" "}
-          {(() => {
-            const financedPreview = getFinancedPrice(
-              installmentsPreviewAmount,
-              6,
-              previewInstallmentsFinancing,
-            )
-            if (financedPreview === null) return null
-            return (
-              <>
-                Financiado <strong className="text-beyonix-cyan">{formatARS(financedPreview)}</strong>
-                {" — "}
-                {([2, 3, 6] as const).map((count, index) => {
-                  const installmentAmount = getInstallmentAmount(financedPreview, count)
-                  if (installmentAmount === null) return null
-                  return (
-                    <span key={count}>
-                      {index > 0 && " · "}
-                      <strong className="text-beyonix-cyan">
-                        {count} cuotas de {formatARS(installmentAmount)}
-                      </strong>
-                    </span>
-                  )
-                })}
-              </>
-            )
-          })()}
-        </p>
-      </AdminSection>
-
-      <AdminSection
-        compact
-        icon={<CreditCard className="size-3.5" />}
-        eyebrow="Comercial"
-        title="Precios y transferencia"
-        description="Descuento por transferencia y leyenda legal de precio sin impuestos nacionales."
-        actions={saveButton}
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <AdminFormField
-            label="Descuento por transferencia"
-            help="Sobre el precio de contado."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Descuento por transferencia"
-              ariaLabel="Descuento por transferencia"
-              value={withInputSymbol(transferDiscountPercent, "%")}
-              placeholder="% 10"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) => setTransferDiscountPercent(value.replace(/[^0-9,.]/g, ""))}
-            />
-          </AdminFormField>
-
-          <AdminFormField
-            label="Incidencia de impuestos nacionales"
-            help="Sólo para la leyenda 'Precio sin impuestos nacionales'. Confirmalo con tu contador."
-            labelClassName={compactLabelClassName}
-            helpClassName={compactHelpClassName}
-          >
-            <AdminTextInput
-              title="Incidencia de impuestos nacionales"
-              ariaLabel="Incidencia de impuestos nacionales para exhibición"
-              value={withInputSymbol(nationalTaxesIncidencePercent, "%")}
-              placeholder="% 21"
-              inputMode="decimal"
-              className={`text-center font-bold ${compactInputClassName}`}
-              disabled={loading || saving}
-              onChange={(value) =>
-                setNationalTaxesIncidencePercent(value.replace(/[^0-9,.]/g, ""))
-              }
-            />
-          </AdminFormField>
-        </div>
-
-        <p className="mt-3 rounded-lg border border-beyonix-blue-light/16 bg-beyonix-blue/8 px-3 py-2 text-xs leading-5 text-white/74">
-          Este valor se utiliza únicamente para calcular la leyenda legal
-          &quot;PRECIO SIN IMPUESTOS NACIONALES&quot;. Confirmalo con tu contador.
-          Ejemplo sobre {formatARS(installmentsPreviewAmount)}:{" "}
-          <strong className="text-beyonix-cyan">
-            {formatARS(
-              getTransferPrice(
-                installmentsPreviewAmount,
-                normalizePercentage(transferDiscountPercent),
-              ),
-            )}
-          </strong>{" "}
-          por transferencia.
-        </p>
-      </AdminSection>
-
-      <AdminSection compact title="Recargas de saldo por Mercado Pago" description="Condiciones comerciales de las recargas; no modifica las credenciales de pago." actions={saveButton}>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <AdminFormField label="Recargo de la recarga (%)" help="Entre 0 y 100%."><AdminTextInput title="Recargo de recargas MP" placeholder="0" value={mercadoPagoSurchargePercent} inputMode="decimal" disabled={loading || saving} onChange={setMercadoPagoSurchargePercent} /></AdminFormField>
-          <AdminFormField label="Importe mínimo de recarga" help="Importe en pesos."><AdminTextInput title="Importe mínimo MP" placeholder="0" value={mercadoPagoMinimumAmount} inputMode="decimal" disabled={loading || saving} onChange={setMercadoPagoMinimumAmount} /></AdminFormField>
-        </div>
-      </AdminSection>
       <AdminSection
         compact
         icon={<ImageIcon className="size-3.5" />}

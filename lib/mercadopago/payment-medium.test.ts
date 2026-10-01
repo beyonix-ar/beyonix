@@ -7,8 +7,8 @@ import { getMercadoPagoPaymentMedium } from "./payment-medium.ts"
 // D. Medio REAL del pago (tipo, marca y cuotas) frente a la modalidad que
 // eligió el cliente: sólo trazabilidad, nunca rechaza un pago aprobado.
 
-test("D. crédito pagado con tarjeta de crédito: se registra tipo, marca y cuotas reales", () => {
-  for (const installments of [1, 3, 4, 6]) {
+test("D. cuotas pagadas con tarjeta de crédito en cuotas: se registra tipo, marca y cuotas reales", () => {
+  for (const installments of [2, 3, 6]) {
     assert.deepEqual(
       getMercadoPagoPaymentMedium({ payment_type_id: "credit_card", payment_method_id: "visa", installments }, "mercadopago_financed"),
       {
@@ -18,9 +18,14 @@ test("D. crédito pagado con tarjeta de crédito: se registra tipo, marca y cuot
         checkout_modality: "mercadopago_financed",
         matches_checkout_modality: true,
       },
-      `1 pago o ${installments} cuotas con crédito es válido`,
+      `${installments} cuotas con crédito`,
     )
   }
+  // Cuotas (precio financiado) pagadas en 1 pago dentro de Mercado Pago: a revisión, sin rechazar.
+  assert.equal(
+    getMercadoPagoPaymentMedium({ payment_type_id: "credit_card", payment_method_id: "visa", installments: 1 }, "mercadopago_financed").matches_checkout_modality,
+    false,
+  )
 })
 
 test("D. crédito pagado con Dinero en cuenta: se registra y queda marcado (no coincide), sin rechazar", () => {
@@ -36,8 +41,8 @@ test("D. crédito pagado con Dinero en cuenta: se registra y queda marcado (no c
   )
 })
 
-test("al contado: débito, dinero en cuenta y prepaga coinciden; crédito no", () => {
-  for (const [type, method] of [["debit_card", "debvisa"], ["account_money", "account_money"], ["prepaid_card", "prepaid"]]) {
+test("1 pago (precio contado): crédito, débito, dinero en cuenta y prepaga coinciden", () => {
+  for (const [type, method] of [["credit_card", "master"], ["debit_card", "debvisa"], ["account_money", "account_money"], ["prepaid_card", "prepaid"]]) {
     assert.equal(
       getMercadoPagoPaymentMedium({ payment_type_id: type, payment_method_id: method, installments: 1 }, "mercadopago_cash").matches_checkout_modality,
       true,
@@ -45,8 +50,9 @@ test("al contado: débito, dinero en cuenta y prepaga coinciden; crédito no", (
     )
   }
   assert.equal(
-    getMercadoPagoPaymentMedium({ payment_type_id: "credit_card", payment_method_id: "master", installments: 1 }, "mercadopago_cash").matches_checkout_modality,
+    getMercadoPagoPaymentMedium({ payment_type_id: "ticket", payment_method_id: "rapipago", installments: 1 }, "mercadopago_cash").matches_checkout_modality,
     false,
+    "medios diferidos excluidos",
   )
 })
 
@@ -75,6 +81,20 @@ test("D. el webhook persiste el medio real: payment_type_id (tipo) y, en el snap
   for (const field of ["installments: paymentMedium.installments", "payment_type_id: paymentMedium.payment_type_id", "payment_method_id: paymentMedium.payment_method_id", "checkout_modality: paymentMedium.checkout_modality", "matches_checkout_modality: paymentMedium.matches_checkout_modality", "fee_details", "transaction_details"]) {
     assert.ok(snapshot.includes(field), field)
   }
+})
+
+test("snapshot del pago: guarda también charges_details y la liberación real, una sola vez al confirmar", () => {
+  const start = webhook.indexOf("mercadopago_payment_snapshot: {")
+  const snapshot = webhook.slice(start, webhook.indexOf("} as never)", start))
+  for (const field of [
+    "charges_details: payment.charges_details ?? null",
+    "money_release_date: payment.money_release_date ?? null",
+    "money_release_status: payment.money_release_status ?? null",
+  ]) {
+    assert.ok(snapshot.includes(field), field)
+  }
+  // Histórico congelado: sólo lo escribe la confirmación del pago.
+  assert.equal(webhook.split("mercadopago_payment_snapshot: {").length - 1, 1)
 })
 
 test("un medio fuera de modalidad sólo se audita DESPUÉS de confirmar: no rechaza, no cambia estado ni monto", () => {

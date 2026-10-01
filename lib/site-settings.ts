@@ -7,6 +7,16 @@ import {
 } from "./store-config.ts"
 import { SITE_SETTINGS } from "../config/site-settings.ts"
 import type { InstallmentsFinancingConfig } from "./products/installments.ts"
+import {
+  deriveMercadoPagoObservedCosts,
+  MERCADOPAGO_OBSERVATION_SAMPLE_SIZE,
+  normalizeMercadoPagoCostsMode,
+  resolveInstallmentsFinancing,
+  type MercadoPagoCostsMode,
+  type MercadoPagoObservationSourceRow,
+  type MercadoPagoObservedCosts,
+  type ResolvedInstallmentsFinancing,
+} from "./mercadopago/observed-costs.ts"
 
 export interface SiteSettings {
   shipping: ShippingBonusSettings
@@ -42,7 +52,24 @@ export interface AndreaniCommercialSettings {
   enabled: boolean
 }
 
+/**
+ * Costos EFECTIVOS de Mercado Pago que usan precios, checkout y simulaciones
+ * (`SiteSettings.installmentsFinancing`). Según el modo guardado salen de los
+ * valores manuales o de los costos observados en pagos reales.
+ */
 export type InstallmentsFinancingSettings = InstallmentsFinancingConfig
+
+/** Lo que se guarda en `site_settings.installments_financing`: valores manuales + modo. */
+export interface StoredInstallmentsFinancingSettings extends InstallmentsFinancingConfig {
+  mode: MercadoPagoCostsMode
+}
+
+/** Vista sólo para Admin: nunca viaja en `SiteSettings` (que es pública). */
+export interface MercadoPagoCostsOverview extends ResolvedInstallmentsFinancing {
+  mode: MercadoPagoCostsMode
+  manual: InstallmentsFinancingConfig
+  observed: MercadoPagoObservedCosts | null
+}
 
 export interface StockSettings {
   criticalStockThreshold: number
@@ -206,6 +233,20 @@ export function normalizeInstallmentsFinancingSettings(
   }
 }
 
+export function normalizeStoredInstallmentsFinancingSettings(
+  value: unknown,
+): StoredInstallmentsFinancingSettings {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {}
+
+  return {
+    ...normalizeInstallmentsFinancingSettings(source),
+    mode: normalizeMercadoPagoCostsMode(source.mode),
+  }
+}
+
 export function normalizePricingSettings(value: unknown): PricingSettings {
   const source =
     value && typeof value === "object"
@@ -303,7 +344,7 @@ export function normalizeSiteSettingsPatch(body: unknown) {
     shipping: normalizeShippingSettings,
     customerCreditPayments: normalizeCustomerCreditPaymentSettings,
     stock: normalizeStockSettings,
-    installmentsFinancing: normalizeInstallmentsFinancingSettings,
+    installmentsFinancing: normalizeStoredInstallmentsFinancingSettings,
     andreaniCommercial: normalizeAndreaniCommercialSettings,
     pricing: normalizePricingSettings,
   }
@@ -381,15 +422,24 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
     const settingsByKey = new Map(
       (data ?? []).map((setting) => [setting.key, setting.value]),
     )
+    const storedFinancing = normalizeStoredInstallmentsFinancingSettings(
+      settingsByKey.get("installments_financing"),
+    )
+    const observedCosts =
+      storedFinancing.mode === "automatic"
+        ? await loadMercadoPagoObservedCosts(admin)
+        : null
     const settings: SiteSettings = {
       shipping: normalizeShippingSettings(settingsByKey.get("shipping")),
       customerCreditPayments: normalizeCustomerCreditPaymentSettings(
         settingsByKey.get("customer_credit_payments"),
       ),
       stock: normalizeStockSettings(settingsByKey.get("stock")),
-      installmentsFinancing: normalizeInstallmentsFinancingSettings(
-        settingsByKey.get("installments_financing"),
-      ),
+      installmentsFinancing: resolveInstallmentsFinancing(
+        storedFinancing,
+        storedFinancing.mode,
+        observedCosts,
+      ).effective,
       andreaniCommercial: normalizeAndreaniCommercialSettings(
         settingsByKey.get("andreani_commercial"),
       ),
@@ -410,6 +460,53 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         : new SiteSettingsUnavailableError()
     }
     return getFallbackSiteSettings()
+  }
+}
+
+/**
+ * Últimos pagos aprobados de Mercado Pago con costo real persistido. Una
+ * falla de lectura devuelve null: en automático se usan los valores manuales
+ * (el checkout detecta cualquier diferencia con lo que vio el cliente por su
+ * huella económica y nunca cobra un total distinto sin avisar).
+ */
+async function loadMercadoPagoObservedCosts(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<MercadoPagoObservedCosts | null> {
+  try {
+    const { data, error } = await admin
+      .from("ordenes")
+      .select("id, paid_at, mercadopago_payment_snapshot")
+      .not("mercadopago_payment_snapshot", "is", null)
+      .not("paid_at", "is", null)
+      .order("paid_at", { ascending: false })
+      .limit(MERCADOPAGO_OBSERVATION_SAMPLE_SIZE)
+    if (error) return null
+    const rows: MercadoPagoObservationSourceRow[] = data ?? []
+    return deriveMercadoPagoObservedCosts(rows)
+  } catch {
+    return null
+  }
+}
+
+/** Estado completo de costos de Mercado Pago para Admin (lectura fresca). */
+export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOverview> {
+  const admin = createAdminClient()
+  const [{ data, error }, observed] = await Promise.all([
+    admin
+      .from("site_settings")
+      .select("value")
+      .eq("key", "installments_financing")
+      .maybeSingle(),
+    loadMercadoPagoObservedCosts(admin),
+  ])
+  if (error) throw new SiteSettingsUnavailableError()
+  const stored = normalizeStoredInstallmentsFinancingSettings(data?.value)
+  const { mode, ...manual } = stored
+  return {
+    mode,
+    manual,
+    observed,
+    ...resolveInstallmentsFinancing(manual, mode, observed),
   }
 }
 

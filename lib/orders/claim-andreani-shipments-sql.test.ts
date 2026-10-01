@@ -41,6 +41,8 @@ const CHAIN = [
   "20261001100000_claim_logistics_hardening",
   "20261001120000_reopen_rejected_order_claim",
   "20261001130000_cancel_order_claim",
+  // Devolución: sucursal Andreani habilitada + etiqueta (nunca una sucursal fija).
+  "20261001170000_claim_return_dropoff_copy",
 ]
 
 type Db = PGlite
@@ -297,7 +299,11 @@ test("RETIRO + REVISIÓN + REENVÍO: RETIRO 400042114 -> recepción -> inspecci�
     await assert.rejects(reserve(db, id, 1, 1, 2, randomUUID(), "garantia"), /REPLACEMENT_REQUIRES_PLAN/, "ni siquiera con excepción de garantía")
     await assert.rejects(plan(db, id, "reemplazo"), /CLAIM_LOGISTICS_OPEN|CLAIM_LOGISTICS_NOT_ALLOWED/)
     await generate(db, returnLeg, ...RETURN, "360000000301")
-    assert.match((await messages(db, id)).at(-1)?.message ?? "", /llevalo a Sucursal Once/)
+    // Mensaje de la base (20261001170000): sucursal Andreani habilitada + etiqueta, nunca una sucursal fija.
+    const returnMessage = (await messages(db, id)).at(-1)?.message ?? ""
+    assert.match(returnMessage, /acercalo a una sucursal Andreani habilitada con la etiqueta de devolución/)
+    assert.match(returnMessage, /Andreani identificará automáticamente los datos del envío y su destino/)
+    assert.doesNotMatch(returnMessage, /Sucursal Once|llevalo a/)
     await track(db, returnLeg, "en_transito", "EnvioDespachado", "2026-09-28T10:00:00Z")
     assert.deepEqual(await units(db, id), { "original:en_andreani": 2 })
     await track(db, returnLeg, "entregada", "EnvioEntregado", "2026-09-29T10:00:00Z")

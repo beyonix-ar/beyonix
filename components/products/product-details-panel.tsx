@@ -71,9 +71,9 @@ import {
 } from "@/lib/products/product-variants"
 import {
   calculateCftea,
-  getInstallmentPlans,
   getPriceWithoutNationalTaxes,
-  getProductFinancedPrice,
+  getProductFinancingCandidates,
+  getProductInterestFreeOffer,
   getTransferPrice,
 } from "@/lib/pricing/financed-pricing"
 import {
@@ -81,6 +81,7 @@ import {
   getQuantityLimitMessage,
 } from "@/lib/cart/stock-status"
 import { useSiteSettings } from "@/hooks/use-site-settings"
+import { useInterestFreeInstallments } from "@/hooks/use-interest-free-installments"
 
 interface ProductDetailsPanelProps {
   product: SupabaseProducto
@@ -185,8 +186,21 @@ export function ProductDetailsPanel({
   const { installmentsFinancing, pricing } = useSiteSettings()
   const cashPrice = selectedOption?.price ?? product.precio
   const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
-  const financedPrice = getProductFinancedPrice(product, cashPrice, installmentsFinancing)
-  const installmentPlans = getInstallmentPlans(product, cashPrice, installmentsFinancing)
+  // Tier confirmado por Mercado Pago para el precio de UNA unidad: precio
+  // financiado con el costo de ese tier y sólo sus cuotas sin interés. Sin
+  // confirmación (cargando o error) no se ofrecen cuotas.
+  const financingCandidates = getProductFinancingCandidates(product, cashPrice, installmentsFinancing)
+  const interestFreeFor = useInterestFreeInstallments(
+    financingCandidates.map((candidate) => candidate.amount),
+  )
+  const interestFreeOffer = getProductInterestFreeOffer(
+    product,
+    cashPrice,
+    installmentsFinancing,
+    interestFreeFor,
+  )
+  const financedPrice = interestFreeOffer?.financedPrice ?? null
+  const installmentPlans = interestFreeOffer?.plans ?? []
   const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
   const cftea =
     maxInstallmentPlan && maxInstallmentPlan.count > 1

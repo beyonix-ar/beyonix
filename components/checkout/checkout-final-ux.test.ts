@@ -78,16 +78,17 @@ const CARTS: CheckoutPricingLine[][] = [
 // PRESENTACIÓN (complementa checkout-presentation y el contrato de UI)
 // ─────────────────────────────────────────────────────────────
 
-test("4-5. MP contado lleva badge '1 pago'; MP cuotas muestra el máximo elegible dinámico", () => {
+test("4-5. 1 pago muestra 'Precio contado' y su total; cada cuota confirmada muestra el valor de la cuota y el total", () => {
   const listStart = checkout.indexOf('<fieldset className="grid gap-3" data-payment-options>')
   const list = checkout.slice(listStart, checkout.indexOf("</fieldset>", listStart))
-  const cash = list.slice(list.indexOf('option="mercadopago_cash"'), list.indexOf('option="mercadopago_financed"'))
-  const financed = list.slice(list.indexOf('option="mercadopago_financed"'))
-  assert.match(cash, /checkout-badge-neutral">1 pago</)
+  const cash = list.slice(list.indexOf('option="mercadopago_cash"'), list.indexOf("{offeredInstallmentPlans.map("))
+  const installments = list.slice(list.indexOf("{offeredInstallmentPlans.map("))
+  assert.match(cash, /checkout-badge-neutral">Precio contado</)
+  assert.match(cash, /\{formatPrice\(cashOptionAmount\)\}/)
   assert.match(cash, />\s*Ver medios\s*</)
-  assert.match(financed, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} \{installmentsCopy\}/)
-  assert.match(financed, />\s*Ver cuotas\s*</)
-  assert.doesNotMatch(list, /Hasta [0-9] cuotas/)
+  assert.match(installments, /\{formatPrice\(plan\.amount\)\} c\/u/)
+  assert.match(installments, /Total \$\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
+  assert.doesNotMatch(list, /Hasta [0-9] cuotas|Ver cuotas/)
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ test("9-11. las líneas de producto suman exactamente 'Productos' en transferenc
       storeBenefitPercent: null,
       requestedCustomerCredit: 0,
       settings: SETTINGS,
+      interestFreeLookup: () => [2, 3, 6],
     })
 
     for (const mode of ["cash", "financed"] as const) {
@@ -110,6 +112,7 @@ test("9-11. las líneas de producto suman exactamente 'Productos' en transferenc
         lines,
         mode,
         installmentsFinancing: SETTINGS.installmentsFinancing,
+        financingCount: pricing.offeredInstallmentCount,
         productsSubtotal: summary.productsSubtotal,
       })
       assert.equal(sumCents(amounts), cents(summary.productsSubtotal), `${mode}`)
@@ -134,6 +137,7 @@ test("9-11. las líneas de producto suman exactamente 'Productos' en transferenc
       lines,
       mode: "transfer",
       installmentsFinancing: SETTINGS.installmentsFinancing,
+      financingCount: null,
       productsSubtotal: transferSummary.productsSubtotal,
     })
     assert.equal(sumCents(transferAmounts), cents(transferSummary.productsSubtotal))
@@ -148,11 +152,13 @@ test("contado: cada línea es exactamente su precio de contado; cuotas: su finan
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   const cash = getCheckoutSummaryLineAmounts({
     lines,
     mode: "cash",
     installmentsFinancing: SETTINGS.installmentsFinancing,
+    financingCount: null,
     productsSubtotal: getMercadoPagoSummaryBreakdown(pricing, "cash").productsSubtotal,
   })
   assert.deepEqual(cash, [46_000, 24_690])
@@ -161,6 +167,7 @@ test("contado: cada línea es exactamente su precio de contado; cuotas: su finan
     lines,
     mode: "financed",
     installmentsFinancing: SETTINGS.installmentsFinancing,
+    financingCount: pricing.offeredInstallmentCount,
     productsSubtotal: getMercadoPagoSummaryBreakdown(pricing, "financed").productsSubtotal,
   })
   // 46.000 financiado canónico (máx. 6 cuotas) = 66.672; el ajuste de
@@ -178,6 +185,7 @@ test("12-14. Productos − beneficio + envío (− saldo) = total; el envío nun
     storeBenefitPercent: 10,
     requestedCustomerCredit: 2_000,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   for (const mode of ["cash", "financed"] as const) {
     const summary = getMercadoPagoSummaryBreakdown(pricing, mode)
@@ -204,7 +212,7 @@ test("reparto proporcional exacto en centavos (sin perder ni inventar un centavo
 // SALDO: las cuotas informativas usan el total real
 // ─────────────────────────────────────────────────────────────
 
-test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al elegir 'en cuotas' y siguen siendo divisibles", () => {
+test("15-16. con saldo a favor, las opciones de cuotas muestran las MISMAS cuotas que al elegirlas y siguen siendo divisibles", () => {
   const lines = [line(1, 46_000)]
   const shipping = 8_000
   for (const balance of [0, 1_234.56, 5_000, 20_000]) {
@@ -214,6 +222,7 @@ test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al el
       storeBenefitPercent: null,
       requestedCustomerCredit: 0,
       settings: SETTINGS,
+      interestFreeLookup: () => [2, 3, 6],
     })
     const financedTotal = beforeCredit.financedTotal!
 
@@ -229,6 +238,7 @@ test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al el
       storeBenefitPercent: null,
       requestedCustomerCredit: selectedCredit,
       settings: SETTINGS,
+      interestFreeLookup: () => [2, 3, 6],
     })
 
     // Lo que muestra "Ver cuotas" ANTES de elegir la opción.
@@ -238,6 +248,7 @@ test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al el
       storeBenefitPercent: null,
       requestedCustomerCredit: getMaxApplicableCustomerCredit(balance, financedTotal),
       settings: SETTINGS,
+      interestFreeLookup: () => [2, 3, 6],
     })
 
     assert.deepEqual(preview.installmentPlans, selected.installmentPlans, `saldo ${balance}`)
@@ -246,10 +257,7 @@ test("15-16. con saldo a favor, 'Ver cuotas' muestra las MISMAS cuotas que al el
       assert.equal(cents(plan.amount) * plan.count, cents(preview.financed!.externalAmountDue))
     }
   }
-  assert.match(
-    checkout,
-    /<InstallmentPlanList\s+plans=\{financedPreviewPricing\.installmentPlans\}\s+installmentsCopy=\{installmentsCopy\}\s*\/>/,
-  )
+  assert.match(checkout, /const offeredInstallmentPlans = financedPreviewPricing\.installmentPlans/)
   assert.match(checkout, /getMaxApplicableCustomerCredit\(\s*customerCredit\.balance,\s*mercadoPagoPricingBeforeCredit\.financedTotal,\s*\)/)
 })
 
@@ -352,24 +360,21 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
   assert.match(modal, /title="Vas a continuar a Mercado Pago"/)
 
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
-  assert.match(financed, /Elegiste pagar con tarjeta de crédito\./)
+  assert.match(financed, /Elegiste pagar con tarjeta de crédito en cuotas sin interés\./)
   assert.match(financed, /Total financiado: \{formatPrice\(finalTotal\)\}/)
-  // C. 1 pago con crédito es válido: se ofrece junto con las cuotas.
-  assert.match(financed, /En 1 pago o hasta \{maxInstallmentPlan\.count\} \{installmentsCopy\} con tarjeta de crédito\./)
-  assert.match(
-    financed,
-    /<InstallmentPlanList\s+plans=\{mercadoPagoPricing\.installmentPlans\}\s+installmentsCopy=\{installmentsCopy\}\s*\/>/,
-  )
+  // La cuota ELEGIDA en BEYONIX, con su valor.
+  assert.match(financed, /\{selectedInstallmentPlan\.count\} \{installmentsCopy\} de \{formatPrice\(selectedInstallmentPlan\.amount\)\}\./)
   assert.match(financed, /\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)
-  // C. Advertencia sólo por Dinero en cuenta (no se puede excluir); 1 pago con crédito ya no es un problema.
+  // Checkout Pro no permite excluir Dinero en cuenta ni fijar un mínimo de
+  // cuotas: se avisa que el total es el financiado y dónde está el contado.
   assert.match(
     checkout,
-    /const MERCADOPAGO_FINANCED_TOTAL_WARNING =\s*"Mercado Pago puede mostrar Dinero en cuenta aunque hayas elegido crédito\. Si lo usás, se mantiene este total financiado\."/,
+    /const MERCADOPAGO_FINANCED_TOTAL_WARNING =\s*"Mercado Pago puede mostrarte 1 pago o Dinero en cuenta: si los usás, se cobra este mismo total financiado\. Para pagar el precio contado, volvé y elegí “Mercado Pago en 1 pago”\."/,
   )
   assert.doesNotMatch(checkout, /1 solo pago/)
 
   const cash = modal.slice(modal.indexOf('data-mercadopago-confirm="cash"'))
-  assert.match(cash, /Elegiste pagar al contado\./)
+  assert.match(cash, /Elegiste pagar en 1 pago a precio contado\./)
   assert.match(cash, /Total: \{formatPrice\(finalTotal\)\}/)
   // Mismos medios que "Ver medios" (un solo componente y una sola lista).
   assert.match(cash, /<MercadoPagoCashMedia \/>/)
@@ -397,6 +402,7 @@ test("31-35. huellas, retry, refresco de precios, revalidación de transferencia
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
   assert.equal(pricing.cash.externalAmountDue, 54_000)
   assert.equal(pricing.financed?.externalAmountDue, 74_672.04)
@@ -506,7 +512,8 @@ test("visual 6. los modales siguen con el mismo componente y quedan blancos/prol
   assert.match(modal, /\{footer \?\? \(/)
   assert.match(css, /\.checkout-info-modal \{\n  background: #ffffff !important;/)
   assert.match(css, /\.checkout-info-modal \.beyonix-modal-list > li \+ li \{\n  border-top: 1px solid #e8eef5 !important;/)
-  assert.equal((checkout.match(/<PaymentInfoModal/g) ?? []).length, 3)
+  // Medios de 1 pago + confirmación (las cuotas son opciones, no un modal).
+  assert.equal((checkout.match(/<PaymentInfoModal/g) ?? []).length, 2)
 })
 
 function contrastRatio(foreground: string, background: string) {
@@ -542,21 +549,10 @@ test("visual 7. confirmación con crédito: aclaración destacada ('Importante')
   assert.ok(contrastRatio("#92400e", "#fff4d6") >= 4.5)
 })
 
-test("visual 8. 'Ver cuotas' (Crédito): total y aclaración en líneas propias; cuotas como ejemplos, sin prometer una lista exacta", () => {
-  const start = checkout.indexOf('title="Crédito con Mercado Pago"')
-  assert.ok(start > 0)
-  const intro = checkout.slice(start, checkout.indexOf("<InstallmentPlanList", start))
-  assert.match(intro, /data-installments-intro/)
-  assert.match(intro, />\s*Total financiado\s*</)
-  assert.match(intro, /\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
-  assert.match(
-    intro,
-    /<p className="beyonix-modal-body mt-1[^"]*">\s*Con tarjeta de crédito, en 1 pago o hasta \{mercadoPagoPricing\.maxInstallmentCount\} cuotas\. La cantidad la elegís dentro de Mercado Pago\.\s*<\/p>/,
-  )
-  assert.doesNotMatch(intro, /Total financiado:|\n\s*\. La cantidad/)
-
-  // C. Las filas 2/3/6 se presentan como ejemplos: Checkout Pro sólo fija un máximo.
-  const list = checkout.slice(checkout.indexOf("function InstallmentPlanList("), checkout.indexOf("const MERCADOPAGO_FINANCED_TOTAL_WARNING"))
-  assert.match(list, /data-installment-plans-title[\s\S]*?>\s*Ejemplos de financiación\s*</)
-  assert.doesNotMatch(checkout, /[Ss]olo 2, 3 o 6|únicamente 2, 3 o 6|2, 3 o 6 cuotas/)
+test("visual 8. cuotas: sólo las confirmadas por Mercado Pago, mismo total en todas, sin prometer una lista fija", () => {
+  // Sin confirmación (consultando o error) no hay ninguna opción de cuotas.
+  assert.match(checkout, /const offeredInstallmentPlans = financedPreviewPricing\.installmentPlans/)
+  assert.match(checkout, /Consultando cuotas sin interés disponibles…/)
+  assert.match(checkout, /Mismo total en cualquier cantidad de cuotas\. CFTEA: \{cfteaSummary\}/)
+  assert.doesNotMatch(checkout, /[Ss]olo 2, 3 o 6|únicamente 2, 3 o 6|2, 3 o 6 cuotas|title="Crédito con Mercado Pago"/)
 })

@@ -27,7 +27,7 @@ test("Andreani, incidencia, recepción y finanzas: cada uno con su acceso", () =
   assert.deepEqual(views.map((view) => [view.code, view.actionLabel, view.step, view.focus]), [
     ["andreani_uncertain", "Ir a operación", "logistics", "reconcile"],
     ["andreani_open", "Ir a operación", "logistics", "cancel_leg"],
-    ["incident", "Ir a incidencia", "reception", "incident_resolve"],
+    ["incident", "Ir al problema", "reception", "incident_resolve"],
     ["return_in_transit", "Ir a recepción", "reception", "arrival_original"],
     ["replacement_in_transit", "Ir a recepción", "reception", "arrival_replacement"],
     ["inspection_pending", "Ir a recepción", "reception", "inspection"],

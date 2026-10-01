@@ -36,13 +36,33 @@ type AdminReview = {
   createdAt: string
 }
 
-type AdminReviewFilter = "all" | "featured" | "not_featured"
+type AdminReviewFilter = "all" | "experiences" | "featured" | "not_featured"
 
 const FILTERS: Array<{ value: AdminReviewFilter; label: string }> = [
   { value: "all", label: "Todas" },
-  { value: "featured", label: "Destacadas" },
+  { value: "experiences", label: "Experiencias" },
+  { value: "featured", label: "Destacadas en Home" },
   { value: "not_featured", label: "No destacadas" },
 ]
+
+type AdminReviewStatus = "pending" | "approved" | "featured_home" | "featured_product"
+
+/**
+ * Estado visible para el Admin. Home muestra SOLO experiencias aprobadas y
+ * destacadas; una reseña de producto destacada de antes nunca llega a Home.
+ */
+function getAdminReviewStatus(review: AdminReview): AdminReviewStatus {
+  if (!review.approved) return "pending"
+  if (!review.featured) return "approved"
+  return review.productId == null ? "featured_home" : "featured_product"
+}
+
+const STATUS_BADGES: Record<AdminReviewStatus, { label: string; tone: "warning" | "info" | "success" }> = {
+  pending: { label: "Pendiente", tone: "warning" },
+  approved: { label: "Aprobada", tone: "info" },
+  featured_home: { label: "Destacada en Home", tone: "success" },
+  featured_product: { label: "Destacada · no se muestra en Home", tone: "warning" },
+}
 
 async function getAuthHeaders(): Promise<Record<string, string> | null> {
   const {
@@ -153,7 +173,7 @@ export function AdminResenas() {
 
       const updated = data.review
       setReviews((current) =>
-        filter === "all"
+        filter === "all" || filter === "experiences"
           ? current.map((item) =>
               item.id === review.id
                 ? { ...item, featured: updated.featured, featuredAt: updated.featuredAt }
@@ -174,7 +194,7 @@ export function AdminResenas() {
       <AdminPageHeader
         eyebrow="Clientes"
         title="Reseñas"
-        description="Elegí qué reseñas se muestran en la página de inicio. Solo aparecen en Home las reseñas destacadas."
+        description="Home muestra solo experiencias de compra aprobadas y destacadas. Las reseñas de producto se ven en la ficha de cada producto."
       />
 
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar reseñas">
@@ -224,24 +244,33 @@ export function AdminResenas() {
             const hasComment = review.comment.trim().length > 0
             const isProductReview = review.productId != null
             const canFeature = review.approved && hasComment
+            const status = getAdminReviewStatus(review)
+            const statusBadge = STATUS_BADGES[status]
 
             return (
-              <AdminCard key={review.id} className="flex flex-col gap-3">
+              <AdminCard key={review.id} className="flex flex-col gap-3" data-review-status={status}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <ReviewStars rating={review.rating} />
                   <div className="flex flex-wrap gap-1.5">
                     <AdminBadge tone={isProductReview ? "info" : "neutral"}>
                       {isProductReview ? "Reseña de producto" : "Experiencia"}
                     </AdminBadge>
-                    {!review.approved && <AdminBadge tone="warning">No publicada</AdminBadge>}
-                    {review.featured && (
-                      <AdminBadge tone="success">
-                        <Check className="size-3" />
-                        Destacada
-                      </AdminBadge>
-                    )}
+                    <AdminBadge tone={statusBadge.tone} data-review-status-badge="">
+                      {status === "featured_home" ? <Check className="size-3" /> : null}
+                      {statusBadge.label}
+                    </AdminBadge>
                   </div>
                 </div>
+
+                {status === "approved" && !isProductReview ? (
+                  <p data-review-home-hint className="text-xs font-semibold text-amber-200">
+                    Aprobada. No aparece en Home hasta que la destaques.
+                  </p>
+                ) : status === "pending" ? (
+                  <p className="text-xs font-semibold text-amber-200">
+                    Pendiente de publicación: no se muestra en la tienda.
+                  </p>
+                ) : null}
 
                 {review.productId && (
                   <p className="truncate text-xs font-semibold text-white/66">

@@ -2682,6 +2682,210 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
   font-size: 19px !important;
 }
 
+/*
+ * Configuración: piezas propias (tiles, chips, estado, tabla de costos y
+ * selector Automático/Manual). Usan clases admin-config-* SIN utilidades
+ * "rounded"/"border" para no quedar atrapadas por la regla genérica de
+ * superficies anidadas del Admin oscuro; cada pieza define sus colores para
+ * oscuro (default) y claro (html[data-admin-theme="light"]).
+ */
+.beyonix-admin-main .admin-config-page {
+  --admin-config-neutral-bg: rgba(255, 255, 255, 0.025);
+  --admin-config-neutral-border: rgba(92, 159, 215, 0.2);
+  --admin-config-info-bg: rgba(56, 189, 248, 0.07);
+  --admin-config-info-border: rgba(125, 211, 252, 0.32);
+  --admin-config-info-dot: #38bdf8;
+  --admin-config-success-bg: rgba(16, 185, 129, 0.08);
+  --admin-config-success-border: rgba(52, 211, 153, 0.36);
+  --admin-config-success-dot: #34d399;
+  --admin-config-warning-bg: rgba(245, 158, 11, 0.08);
+  --admin-config-warning-border: rgba(251, 191, 36, 0.38);
+  --admin-config-warning-dot: #fbbf24;
+  --admin-config-danger-bg: rgba(239, 68, 68, 0.08);
+  --admin-config-danger-border: rgba(248, 113, 113, 0.38);
+  --admin-config-danger-dot: #f87171;
+  --admin-config-neutral-dot: rgba(248, 250, 252, 0.38);
+  --admin-config-chip-neutral: rgba(248, 250, 252, 0.72);
+  --admin-config-chip-info: #7dd3fc;
+  --admin-config-chip-success: #6ee7b7;
+  --admin-config-chip-warning: #fcd34d;
+  --admin-config-chip-danger: #fca5a5;
+}
+
+html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
+  --admin-config-neutral-bg: #f8fafc;
+  --admin-config-neutral-border: rgba(30, 58, 95, 0.16);
+  --admin-config-info-bg: #eff6ff;
+  --admin-config-info-border: #bfdbfe;
+  --admin-config-info-dot: #2563eb;
+  --admin-config-success-bg: #ecfdf5;
+  --admin-config-success-border: #a7f3d0;
+  --admin-config-success-dot: #059669;
+  --admin-config-warning-bg: #fffbeb;
+  --admin-config-warning-border: #fcd34d;
+  --admin-config-warning-dot: #d97706;
+  --admin-config-danger-bg: #fef2f2;
+  --admin-config-danger-border: #fecaca;
+  --admin-config-danger-dot: #dc2626;
+  --admin-config-neutral-dot: #94a3b8;
+  --admin-config-chip-neutral: #334155;
+  --admin-config-chip-info: #1e40af;
+  --admin-config-chip-success: #065f46;
+  --admin-config-chip-warning: #92400e;
+  --admin-config-chip-danger: #991b1b;
+}
+
+.beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status, .admin-config-summary, .admin-config-cost-table) {
+  border: 1px solid var(--admin-config-neutral-border);
+  border-radius: var(--admin-radius);
+  background: var(--admin-config-neutral-bg);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-summary {
+  border-color: var(--admin-config-info-border);
+  background: var(--admin-config-info-bg);
+}
+
+.beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status)[data-tone="info"] {
+  border-color: var(--admin-config-info-border);
+  background: var(--admin-config-info-bg);
+}
+
+.beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status)[data-tone="success"] {
+  border-color: var(--admin-config-success-border);
+  background: var(--admin-config-success-bg);
+}
+
+.beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status)[data-tone="warning"] {
+  border-color: var(--admin-config-warning-border);
+  background: var(--admin-config-warning-bg);
+}
+
+.beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status)[data-tone="danger"] {
+  border-color: var(--admin-config-danger-border);
+  background: var(--admin-config-danger-bg);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-dot { background: var(--admin-config-neutral-dot); }
+.beyonix-admin-main .admin-config-page .admin-config-dot[data-tone="info"] { background: var(--admin-config-info-dot); }
+.beyonix-admin-main .admin-config-page .admin-config-dot[data-tone="success"] { background: var(--admin-config-success-dot); }
+.beyonix-admin-main .admin-config-page .admin-config-dot[data-tone="warning"] { background: var(--admin-config-warning-dot); }
+.beyonix-admin-main .admin-config-page .admin-config-dot[data-tone="danger"] { background: var(--admin-config-danger-dot); }
+
+/* Las etiquetas en mayúsculas (tracking-widest) del Admin se apagan a
+   --admin-text-muted con !important; sobre los fondos teñidos de estos
+   bloques eso queda debajo de AA, así que acá usan el texto secundario. */
+.beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-cost-table, .admin-config-summary, .admin-config-mode-option) :is(p, span)[class*="tracking-widest"] {
+  color: var(--admin-text-soft) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.45rem;
+  border: 1px solid var(--admin-config-neutral-border);
+  border-radius: 999px;
+  background: var(--admin-config-neutral-bg);
+  color: var(--admin-config-chip-neutral) !important;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-chip[data-tone="info"] {
+  border-color: var(--admin-config-info-border);
+  background: var(--admin-config-info-bg);
+  color: var(--admin-config-chip-info) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-chip[data-tone="success"] {
+  border-color: var(--admin-config-success-border);
+  background: var(--admin-config-success-bg);
+  color: var(--admin-config-chip-success) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-chip[data-tone="warning"] {
+  border-color: var(--admin-config-warning-border);
+  background: var(--admin-config-warning-bg);
+  color: var(--admin-config-chip-warning) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-dirty {
+  color: var(--admin-text-muted);
+  white-space: nowrap;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-dirty[data-dirty="true"] {
+  color: var(--admin-config-chip-warning);
+}
+
+/* Selector Automático / Manual: la opción elegida queda inequívoca. */
+.beyonix-admin-main .admin-config-page .admin-config-mode-option {
+  border: 1px solid var(--admin-config-neutral-border);
+  border-radius: var(--admin-radius);
+  background: var(--admin-config-neutral-bg);
+  color: var(--admin-text);
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option:not(:disabled):hover {
+  border-color: var(--admin-border-strong);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option:focus-visible {
+  outline: 2px solid var(--admin-config-info-dot);
+  outline-offset: 2px;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option .admin-config-mode-icon {
+  color: var(--admin-text-muted);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option[data-selected="true"][data-mode="automatic"] {
+  border-color: var(--admin-config-success-dot);
+  background: var(--admin-config-success-bg);
+  box-shadow: 0 0 0 1px var(--admin-config-success-dot);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option[data-selected="true"][data-mode="automatic"] .admin-config-mode-icon {
+  color: var(--admin-config-success-dot);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option[data-selected="true"][data-mode="manual"] {
+  border-color: var(--admin-config-warning-dot);
+  background: var(--admin-config-warning-bg);
+  box-shadow: 0 0 0 1px var(--admin-config-warning-dot);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-mode-option[data-selected="true"][data-mode="manual"] .admin-config-mode-icon {
+  color: var(--admin-config-warning-dot);
+}
+
+/* Tabla de costos: filas separadas por línea, sin cajas anidadas. */
+.beyonix-admin-main .admin-config-page .admin-config-cost-table {
+  overflow: hidden;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-cost-head {
+  border-bottom: 1px solid var(--admin-config-neutral-border);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-cost-row + .admin-config-cost-row {
+  border-top: 1px solid var(--admin-config-neutral-border);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-muted {
+  opacity: 0.62;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-details > summary {
+  width: fit-content;
+  list-style-position: inside;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-stock-input:disabled {
+  cursor: default;
+}
+
 .beyonix-section-spacing {
   padding-block: var(--beyonix-section-y);
 }

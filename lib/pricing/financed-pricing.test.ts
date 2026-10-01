@@ -10,12 +10,18 @@ import {
   getFinancedPriceDivisor,
   getFinancedPrice,
   getInstallmentAmount,
-  getInstallmentPlans,
+  getProductInterestFreeOffer,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
   getTransferPrice,
 } from "./financed-pricing.ts"
 import type { InstallmentsFinancingConfig } from "../products/installments.ts"
+
+// Precio/planes del TIER máximo que admite el producto, como si Mercado Pago
+// lo confirmara sin interés: verifica las fórmulas, no la disponibilidad.
+function maxTierPlans(product: Parameters<typeof getProductInterestFreeOffer>[0], cashPrice: number, config: InstallmentsFinancingConfig) {
+  return getProductInterestFreeOffer(product, cashPrice, config, () => [2, 3, 6])?.plans ?? []
+}
 
 const REAL_CONFIG: InstallmentsFinancingConfig = {
   baseProcessingPercent: 6.42,
@@ -68,7 +74,7 @@ test("CASO C: con máximo 3 cuotas habilitado, 2 y 3 cuotas dividen el mismo pre
   const prod = product({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true })
   const cashPrice = 100_000
   const financedPrice = getFinancedPrice(cashPrice, 3, REAL_CONFIG)!
-  const plans = getInstallmentPlans(prod, cashPrice, REAL_CONFIG)
+  const plans = maxTierPlans(prod, cashPrice, REAL_CONFIG)
 
   assert.deepEqual(
     plans.map((plan) => plan.count),
@@ -88,7 +94,7 @@ test("CASO D: con máximo 6 cuotas habilitado, 2, 3 y 6 cuotas dividen el mismo 
   })
   const cashPrice = 100_000
   const financedPrice = getFinancedPrice(cashPrice, 6, REAL_CONFIG)!
-  const plans = getInstallmentPlans(prod, cashPrice, REAL_CONFIG)
+  const plans = maxTierPlans(prod, cashPrice, REAL_CONFIG)
 
   assert.deepEqual(
     plans.map((plan) => plan.count),
@@ -250,7 +256,7 @@ test("montos inválidos (0, negativo, NaN) no generan cuotas", () => {
 })
 
 test("producto sin ninguna cuota habilitada no genera planes de financiación", () => {
-  assert.deepEqual(getInstallmentPlans(product(), 75_000, REAL_CONFIG), [])
+  assert.deepEqual(maxTierPlans(product(), 75_000, REAL_CONFIG), [])
 })
 
 // CASO O: el total financiado es IDÉNTICO sin importar cuántas cuotas se
@@ -282,7 +288,7 @@ test("CASO O (obligatorio): máximo 6 -> 2, 3 y 6 cuotas cierran EXACTO el mismo
     assert.equal(installment2 * 2, installment3 * 3)
     assert.equal(installment3 * 3, installment6 * 6)
 
-    for (const plan of getInstallmentPlans(prod, cashPrice, REAL_CONFIG)) {
+    for (const plan of maxTierPlans(prod, cashPrice, REAL_CONFIG)) {
       assert.equal(plan.amount * plan.count, financedTotal)
     }
   }

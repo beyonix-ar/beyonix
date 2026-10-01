@@ -6,13 +6,13 @@
  *
  * Mercado Pago tiene exactamente dos modalidades:
  *
- * - `cash` (al contado): se cobra el total de CONTADO y la preferencia se
- *   crea con `payment_methods.installments = 1` -- Checkout Pro no puede
- *   financiar el precio de contado.
- * - `financed` (en cuotas): se cobra el total FINANCIADO (gross-up calculado
- *   con la cuota máxima de cada línea, ver `getCartFinancedTotal`) y la
- *   preferencia permite hasta la cuota máxima elegible del carrito. BEYONIX
- *   no necesita saber cuántas cuotas elige el cliente: el total no cambia.
+ * - `cash` (1 pago, con crédito, débito o dinero en cuenta): se cobra el
+ *   total de CONTADO y la preferencia se crea con `installments = 1`.
+ * - `financed` (cuotas sin interés): se cobra el total FINANCIADO calculado
+ *   con el costo del TIER (la cuota sin interés más alta que Mercado Pago
+ *   confirma para ese monto, ver `resolveFinancingTier`) y la preferencia
+ *   permite hasta ese tier. El cliente elige la cuota antes de Mercado Pago;
+ *   cualquier cuota dentro del tier cobra el mismo total.
  *
  * Módulo puro (sin I/O ni `node:crypto`): el hash de
  * `buildCheckoutEconomicState` vive en `lib/mercadopago/checkout-attempt.ts`.
@@ -38,10 +38,13 @@ import {
   getInstallmentAmount,
   getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
-  getProductFinancedPrice,
+  getProductFinancedPriceForCount,
   getTransferPrice,
   hasInstallmentsWithoutSurcharge,
+  resolveFinancingTier,
   roundUpCheckoutTotalForInstallments,
+  type FinancingTierCandidate,
+  type InterestFreeLookup,
 } from "./financed-pricing.ts"
 
 export const MERCADOPAGO_CHECKOUT_MODES = ["cash", "financed"] as const
@@ -131,6 +134,13 @@ export interface MercadoPagoCheckoutPricingInput {
   /** Saldo a favor pedido por el cliente. La disponibilidad real se valida aparte, server-side. */
   requestedCustomerCredit: number
   settings: CheckoutPricingSettings
+  /**
+   * Cuotas que Mercado Pago confirma SIN INTERÉS para cada monto candidato
+   * (lib/mercadopago/interest-free-installments.ts). Define el TIER de
+   * financiación (ver `resolveFinancingTier`). `null` = sin confirmación
+   * (todavía no consultado o error): sólo 1 pago a precio contado.
+   */
+  interestFreeLookup: InterestFreeLookup | null
 }
 
 export interface MercadoPagoModeQuote {
@@ -165,10 +175,18 @@ export interface MercadoPagoCheckoutPricing {
   shippingCharged: number
   /** Productos netos + envío, a precio de contado. */
   cashTotal: number
-  /** Productos financiados netos + envío, antes del redondeo final. `null` si el carrito no admite cuotas. */
+  /**
+   * Productos financiados netos + envío (calculado con el costo del TIER),
+   * antes del redondeo final. `null` sin cuotas sin interés confirmadas.
+   */
   financedTotal: number | null
   cartInstallmentEligibility: InstallmentCount[]
+  /** Cuota máxima que ADMITEN los productos (configuración; nunca define el precio por sí sola). */
   maxInstallmentCount: InstallmentCount | null
+  /** Cuotas que se ofrecen: elegibles, <= tier y confirmadas sin interés por Mercado Pago. */
+  interestFreeInstallmentCounts: InstallmentCount[]
+  /** TIER: cuota sin interés más alta confirmada; su costo define el precio financiado (`null`: sólo 1 pago). */
+  offeredInstallmentCount: InstallmentCount | null
   installmentsPricingRule: InstallmentsPricingRule
   installmentsWithoutSurchargeProductIds: number[]
   cash: MercadoPagoModeQuote
@@ -202,60 +220,158 @@ function sumCashProducts(lines: CheckoutPricingLine[]) {
   )
 }
 
-export function calculateMercadoPagoCheckoutPricing({
-  lines,
-  shippingCharged,
-  storeBenefitPercent,
-  requestedCustomerCredit,
-  settings,
-}: MercadoPagoCheckoutPricingInput): MercadoPagoCheckoutPricing {
-  const shipping = roundMoney(Math.max(shippingCharged, 0))
-  const productsTotal = sumCashProducts(lines)
-  const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
-    productsTotal,
-    storeBenefitPercent,
-  )
-  const cashTotal = roundMoney(
-    Math.max(productsTotal - storeBenefitDiscountAmount, 0) + shipping,
-  )
+interface FinancingTierQuote {
+  count: InstallmentCount
+  financedTotal: number
+  financedStoreBenefitDiscountAmount: number
+  quote: MercadoPagoModeQuote
+}
 
-  // Financiado: suma de los financiados INDIVIDUALES de cada línea (cada una
-  // con SU máximo de cuotas). El beneficio de tienda es un % uniforme: como
-  // el gross-up es lineal, aplicarlo sobre el financiado crudo equivale a
-  // aplicarlo línea por línea antes de financiar. Las líneas con cuotas sin
-  // recargo aportan su contado.
+/**
+ * Cotización financiada de UN tier: todas las líneas con el costo de `tier`
+ * cuotas (el tier está en la intersección del carrito, así que todas lo
+ * admiten); las líneas "Mismo precio en contado y cuotas" aportan su contado.
+ * El redondeo usa las cuotas elegibles <= tier. Nunca depende de cuál de
+ * esas cuotas elija el cliente.
+ */
+function buildFinancingTierQuote(
+  input: Omit<MercadoPagoCheckoutPricingInput, "interestFreeLookup">,
+  context: { cashTotal: number; storeBenefitDiscountAmount: number; shipping: number; sameAsCash: boolean; eligibility: InstallmentCount[] },
+  tier: InstallmentCount,
+): FinancingTierQuote | null {
   const rawFinancedProducts = getCartFinancedTotal(
-    lines.map((line) => ({
+    input.lines.map((line) => ({
       cashPrice: getEffectiveUnitPrice(line),
-      maxEligibleCount: getMaxEligibleInstallmentCount(line.installments),
+      maxEligibleCount: tier,
       quantity: line.quantity,
       withoutSurcharge: hasInstallmentsWithoutSurcharge(line.installments),
     })),
-    settings.installmentsFinancing,
+    input.settings.installmentsFinancing,
   )
-  const cartInstallmentEligibility = getCartInstallmentEligibility(
-    lines.map((line) => line.installments),
+  if (rawFinancedProducts <= 0) return null
+
+  const financedStoreBenefitDiscountAmount = context.sameAsCash
+    ? context.storeBenefitDiscountAmount
+    : calculateStoreBenefitDiscount(rawFinancedProducts, input.storeBenefitPercent)
+  const financedTotal = context.sameAsCash
+    ? context.cashTotal
+    : roundMoney(Math.max(rawFinancedProducts - financedStoreBenefitDiscountAmount, 0) + context.shipping)
+  const financedCredit = calculateCustomerCreditApplication({
+    availableBalance: input.requestedCustomerCredit,
+    eligibleTotal: financedTotal,
+    requestedAmount: input.requestedCustomerCredit,
+  })
+  // Sin recargo no se redondea: cobrar un centavo más ya no sería "mismo precio".
+  const rounded = context.sameAsCash
+    ? {
+        total: financedTotal,
+        externalAmountDue: financedCredit.externalAmountDue,
+        customerCreditApplied: financedCredit.appliedAmount,
+        roundingAdjustment: 0,
+      }
+    : roundUpCheckoutTotalForInstallments({
+        total: financedTotal,
+        customerCreditApplied: financedCredit.appliedAmount,
+        offeredCounts: context.eligibility.filter((count) => count <= tier),
+      })
+
+  return {
+    count: tier,
+    financedTotal,
+    financedStoreBenefitDiscountAmount,
+    quote: {
+      mode: "financed",
+      modality: getMercadoPagoPaymentModality("financed"),
+      total: rounded.total,
+      externalAmountDue: rounded.externalAmountDue,
+      customerCreditApplied: rounded.customerCreditApplied,
+      roundingAdjustment: rounded.roundingAdjustment,
+      preferenceMaxInstallments: tier,
+      requestedCreditExceedsTotal: exceedsRequestedCredit(
+        financedCredit.appliedAmount,
+        input.requestedCustomerCredit,
+      ),
+    },
+  }
+}
+
+function getCheckoutPricingContext(input: Omit<MercadoPagoCheckoutPricingInput, "interestFreeLookup">) {
+  const shipping = roundMoney(Math.max(input.shippingCharged, 0))
+  const productsTotal = sumCashProducts(input.lines)
+  const storeBenefitDiscountAmount = calculateStoreBenefitDiscount(
+    productsTotal,
+    input.storeBenefitPercent,
   )
+  const cashTotal = roundMoney(Math.max(productsTotal - storeBenefitDiscountAmount, 0) + shipping)
+  const eligibility = getCartInstallmentEligibility(input.lines.map((line) => line.installments))
+  const installmentsPricingRule = getInstallmentsPricingRule(input.lines)
+  return {
+    shipping,
+    productsTotal,
+    storeBenefitDiscountAmount,
+    cashTotal,
+    eligibility,
+    installmentsPricingRule,
+    // Todo el carrito sin recargo: en cuotas se cobra EXACTAMENTE el contado.
+    sameAsCash: installmentsPricingRule === "without_surcharge",
+  }
+}
+
+/**
+ * Montos que hay que consultar a Mercado Pago: lo que se cobraría (neto de
+ * saldo) en cada tier posible del carrito. Mismo cálculo que el checkout.
+ */
+export function getMercadoPagoFinancingCandidates(
+  input: Omit<MercadoPagoCheckoutPricingInput, "interestFreeLookup">,
+): FinancingTierCandidate[] {
+  const context = getCheckoutPricingContext(input)
+  return context.eligibility.flatMap((count) => {
+    const tier = buildFinancingTierQuote(input, context, count)
+    return tier ? [{ count, amount: tier.quote.externalAmountDue }] : []
+  })
+}
+
+/**
+ * Regla de negocio:
+ * - 1 pago (cualquier medio): precio CONTADO.
+ * - Cuotas: precio financiado con el costo del TIER = la cuota sin interés
+ *   más alta que Mercado Pago confirma para ese monto (2/3 -> costo de 3;
+ *   2/3/6 -> costo de 6). Elegir menos cuotas dentro del tier no baja el
+ *   precio. La configuración del producto sólo limita qué cuotas admite.
+ * - Sin confirmación (o error): no hay cuotas; sólo 1 pago a contado.
+ */
+export function calculateMercadoPagoCheckoutPricing(
+  input: MercadoPagoCheckoutPricingInput,
+): MercadoPagoCheckoutPricing {
+  const { lines, requestedCustomerCredit, interestFreeLookup } = input
+  const context = getCheckoutPricingContext(input)
+  const {
+    shipping,
+    productsTotal,
+    storeBenefitDiscountAmount,
+    cashTotal,
+    eligibility: cartInstallmentEligibility,
+    installmentsPricingRule,
+  } = context
   const maxInstallmentCount: InstallmentCount | null =
-    cartInstallmentEligibility.length
-      ? cartInstallmentEligibility[cartInstallmentEligibility.length - 1]
-      : null
-  const installmentsPricingRule = getInstallmentsPricingRule(lines)
-  // Todo el carrito sin recargo: en cuotas se cobra EXACTAMENTE el contado
-  // (mismos productos, beneficio y envío), sin ajuste de redondeo.
-  const sameAsCash = installmentsPricingRule === "without_surcharge"
-  const financedStoreBenefitDiscountAmount = sameAsCash
-    ? storeBenefitDiscountAmount
-    : calculateStoreBenefitDiscount(rawFinancedProducts, storeBenefitPercent)
-  const financedTotal =
-    rawFinancedProducts > 0 && maxInstallmentCount != null
-      ? sameAsCash
-        ? cashTotal
-        : roundMoney(
-            Math.max(rawFinancedProducts - financedStoreBenefitDiscountAmount, 0) +
-              shipping,
-          )
-      : null
+    cartInstallmentEligibility[cartInstallmentEligibility.length - 1] ?? null
+
+  const tiers = new Map<InstallmentCount, FinancingTierQuote>()
+  for (const count of cartInstallmentEligibility) {
+    const tier = buildFinancingTierQuote(input, context, count)
+    if (tier) tiers.set(count, tier)
+  }
+  const resolved = resolveFinancingTier(
+    [...tiers.values()].map((tier) => ({ count: tier.count, amount: tier.quote.externalAmountDue })),
+    cartInstallmentEligibility,
+    interestFreeLookup,
+  )
+  const chosen = resolved ? tiers.get(resolved.tier.count) ?? null : null
+  const interestFreeInstallmentCounts = resolved?.offeredCounts ?? []
+  const offeredInstallmentCount = chosen?.count ?? null
+  const financedTotal = chosen?.financedTotal ?? null
+  const financedStoreBenefitDiscountAmount =
+    chosen?.financedStoreBenefitDiscountAmount ?? storeBenefitDiscountAmount
 
   const cashCredit = calculateCustomerCreditApplication({
     availableBalance: requestedCustomerCredit,
@@ -276,50 +392,17 @@ export function calculateMercadoPagoCheckoutPricing({
     ),
   }
 
-  let financed: MercadoPagoModeQuote | null = null
+  const financed: MercadoPagoModeQuote | null = chosen?.quote ?? null
   let installmentPlans: CheckoutInstallmentPlan[] = []
 
-  if (financedTotal != null && maxInstallmentCount != null) {
-    const financedCredit = calculateCustomerCreditApplication({
-      availableBalance: requestedCustomerCredit,
-      eligibleTotal: financedTotal,
-      requestedAmount: requestedCustomerCredit,
-    })
-    // Ajuste de redondeo final de cuotas, una única vez, con divisor = cuotas
-    // OFRECIDAS al carrito (no la elegida): 2/3/6 cobran el mismo total. Sin
-    // recargo no se redondea: cobrar un centavo más ya no sería "mismo precio".
-    const rounded = sameAsCash
-      ? {
-          total: financedTotal,
-          externalAmountDue: financedCredit.externalAmountDue,
-          customerCreditApplied: financedCredit.appliedAmount,
-          roundingAdjustment: 0,
-        }
-      : roundUpCheckoutTotalForInstallments({
-          total: financedTotal,
-          customerCreditApplied: financedCredit.appliedAmount,
-          offeredCounts: cartInstallmentEligibility,
-        })
-    financed = {
-      mode: "financed",
-      modality: getMercadoPagoPaymentModality("financed"),
-      total: rounded.total,
-      externalAmountDue: rounded.externalAmountDue,
-      customerCreditApplied: rounded.customerCreditApplied,
-      roundingAdjustment: rounded.roundingAdjustment,
-      preferenceMaxInstallments: maxInstallmentCount,
-      requestedCreditExceedsTotal: exceedsRequestedCredit(
-        financedCredit.appliedAmount,
-        requestedCustomerCredit,
-      ),
-    }
+  if (financed) {
     // CFTEA sobre el total financiado final ANTES de saldo (describe el
     // producto financiero, no un residuo que depende del saldo), contra el
     // contado. Fórmula sin cambios (calculateCftea).
-    installmentPlans = cartInstallmentEligibility.flatMap((count) => {
-      const amount = getInstallmentAmount(rounded.externalAmountDue, count)
+    installmentPlans = interestFreeInstallmentCounts.flatMap((count) => {
+      const amount = getInstallmentAmount(financed.externalAmountDue, count)
       if (amount == null) return []
-      const legalAmount = getInstallmentAmount(rounded.total, count)
+      const legalAmount = getInstallmentAmount(financed.total, count)
       return [
         {
           count,
@@ -342,6 +425,8 @@ export function calculateMercadoPagoCheckoutPricing({
     financedTotal,
     cartInstallmentEligibility,
     maxInstallmentCount,
+    interestFreeInstallmentCounts,
+    offeredInstallmentCount,
     installmentsPricingRule,
     installmentsWithoutSurchargeProductIds:
       getInstallmentsWithoutSurchargeProductIds(lines),
@@ -435,10 +520,9 @@ export type CheckoutSummaryMode = "cash" | "financed" | "transfer"
  * Importe de cada línea del resumen según la modalidad elegida (sólo
  * presentación; nunca toca el precio real del producto):
  * - contado: precio de contado de la línea;
- * - cuotas: precio financiado canónico de la línea (`getProductFinancedPrice`:
- *   SU cuota máxima o su contado si es sin recargo, igual que
- *   `getCartFinancedTotal`); el ajuste de
- *   redondeo de cuotas (centavos) se reparte entre las líneas;
+ * - cuotas: precio financiado de la línea con el costo del TIER (el mismo
+ *   que usa el total, `financingCount`) o su contado si es sin recargo; el
+ *   ajuste de redondeo de cuotas (centavos) se reparte entre las líneas;
  * - transferencia: el descuento canónico (calculado sobre el total de
  *   productos) se reparte en proporción al precio de contado de cada línea.
  * Las líneas suman EXACTAMENTE `productsSubtotal` (la fila "Productos").
@@ -447,21 +531,25 @@ export function getCheckoutSummaryLineAmounts({
   lines,
   mode,
   installmentsFinancing,
+  financingCount,
   productsSubtotal,
 }: {
   lines: CheckoutPricingLine[]
   mode: CheckoutSummaryMode
   installmentsFinancing: InstallmentsFinancingConfig
+  /** Tier de la cotización financiada (`pricing.offeredInstallmentCount`). */
+  financingCount: InstallmentCount | null
   productsSubtotal: number
 }): number[] {
   const weights = lines.map((line) => {
     const cashUnit = getEffectiveUnitPrice(line)
     const quantity = Math.max(0, line.quantity)
-    if (mode !== "financed") return cashUnit * quantity
+    if (mode !== "financed" || financingCount == null) return cashUnit * quantity
 
-    const financedUnit = getProductFinancedPrice(
+    const financedUnit = getProductFinancedPriceForCount(
       line.installments,
       cashUnit,
+      financingCount,
       installmentsFinancing,
     )
     return (financedUnit ?? cashUnit) * quantity
@@ -517,6 +605,12 @@ export interface MercadoPagoPricingSnapshotFields {
   externalAmountDue: number
   customerCreditApplied: number
   preferenceMaxInstallments: number
+  /** Cuotas que Mercado Pago confirmó sin interés al crear la orden (histórico). */
+  interestFreeInstallmentCounts: InstallmentCount[]
+  /** Tier cuyo costo definió el precio financiado (`null` en 1 pago). */
+  financingTier: InstallmentCount | null
+  /** Cuota que eligió el cliente en BEYONIX (`null` en 1 pago). Preselección en Mercado Pago. */
+  selectedInstallmentCount: InstallmentCount | null
   cfteaByCount: Partial<Record<InstallmentCount, number>> | null
   installmentsFinancing: InstallmentsFinancingConfig
   /** Regla de cuotas vigente al comprar ("Mismo precio en contado y cuotas" por producto). */
@@ -535,16 +629,21 @@ export function buildMercadoPagoPricingSnapshot({
   mode,
   settings,
   economicFingerprint,
+  selectedInstallmentCount = null,
 }: {
   pricing: MercadoPagoCheckoutPricing
   mode: MercadoPagoCheckoutMode
   settings: CheckoutPricingSettings
   economicFingerprint: string
+  selectedInstallmentCount?: InstallmentCount | null
 }): MercadoPagoPricingSnapshotFields {
   const quote = getMercadoPagoModeQuote(pricing, mode) ?? pricing.cash
   const isFinanced = quote.mode === "financed"
   const maxCount = pricing.maxInstallmentCount
-  const maxPlan = pricing.installmentPlans.find((plan) => plan.count === maxCount)
+  // CFTEA de la cuota máxima realmente OFRECIDA (confirmada sin interés).
+  const maxPlan = pricing.installmentPlans.find(
+    (plan) => plan.count === pricing.offeredInstallmentCount,
+  )
   const cfteaByCount = isFinanced
     ? Object.fromEntries(
         pricing.installmentPlans.flatMap((plan) =>
@@ -590,6 +689,9 @@ export function buildMercadoPagoPricingSnapshot({
     externalAmountDue: quote.externalAmountDue,
     customerCreditApplied: quote.customerCreditApplied,
     preferenceMaxInstallments: quote.preferenceMaxInstallments,
+    interestFreeInstallmentCounts: isFinanced ? pricing.interestFreeInstallmentCounts : [],
+    financingTier: isFinanced ? pricing.offeredInstallmentCount : null,
+    selectedInstallmentCount: isFinanced ? selectedInstallmentCount : null,
     cfteaByCount,
     installmentsFinancing: settings.installmentsFinancing,
     installmentsPricingRule: pricing.installmentsPricingRule,
@@ -610,23 +712,19 @@ export function getMercadoPagoOrderInstallmentsFields(
   mode: MercadoPagoCheckoutMode,
   installmentsFinancing: InstallmentsFinancingConfig,
 ) {
-  if (
-    mode !== "financed" ||
-    pricing.financedTotal == null ||
-    pricing.maxInstallmentCount == null
-  ) {
+  // El costo y el máximo son los del TIER (lo que habilitó Mercado Pago),
+  // nunca la cuota máxima configurada del producto.
+  const tier = pricing.offeredInstallmentCount
+  if (mode !== "financed" || pricing.financedTotal == null || tier == null) {
     return null
   }
 
   return {
     count: null,
-    percent: getEffectiveInstallmentPercent(
-      pricing.maxInstallmentCount,
-      installmentsFinancing,
-    ),
+    percent: getEffectiveInstallmentPercent(tier, installmentsFinancing),
     productsBaseAmount: pricing.cashTotal,
     surchargeAmount: roundMoney(pricing.financedTotal - pricing.cashTotal),
-    maxEligibleCount: pricing.maxInstallmentCount,
+    maxEligibleCount: tier,
   }
 }
 
@@ -639,6 +737,7 @@ export interface MercadoPagoPreferenceInstallmentsSource {
   pricing_snapshot?: {
     mercadoPagoModality?: string | null
     preferenceMaxInstallments?: number | null
+    selectedInstallmentCount?: number | null
   } | null
 }
 
@@ -656,11 +755,11 @@ export type MercadoPagoPreferencePaymentMethods = {
  * Tipos de pago excluidos por modalidad (Checkout Pro, `payment_methods.
  * excluded_payment_types`):
  *
- * - Al contado: pago inmediato -> débito, dinero en cuenta o prepaga. Fuera
- *   crédito y los medios diferidos en efectivo (Rapipago/Pago Fácil =
- *   `ticket`, cajeros/Red Link = `atm`).
- * - Crédito: tarjeta de crédito (1 pago o cuotas hasta el máximo). Fuera
- *   débito, prepaga y los medios diferidos.
+ * - 1 pago (precio contado): crédito, débito, prepaga o dinero en cuenta, en
+ *   1 pago. Fuera sólo los medios diferidos en efectivo (Rapipago/Pago
+ *   Fácil = `ticket`, cajeros/Red Link = `atm`).
+ * - Cuotas sin interés (precio financiado del tier): sólo tarjeta de crédito,
+ *   hasta el tier. Fuera débito, prepaga y los medios diferidos.
  *
  * "Dinero en cuenta" (`account_money`) NO se excluye: Mercado Pago no lo
  * permite en Checkout Pro ("El medio de pago Dinero en cuenta no puede ser
@@ -669,7 +768,6 @@ export type MercadoPagoPreferencePaymentMethods = {
  * modalidad elegida.
  */
 export const MERCADOPAGO_CASH_EXCLUDED_PAYMENT_TYPES: MercadoPagoExcludedPaymentType[] = [
-  { id: "credit_card" },
   { id: "ticket" },
   { id: "atm" },
 ]
@@ -682,10 +780,10 @@ export const MERCADOPAGO_CREDIT_EXCLUDED_PAYMENT_TYPES: MercadoPagoExcludedPayme
 
 /**
  * `payment_methods` de la preferencia, derivado SIEMPRE de lo persistido en
- * la orden (nunca del request): al contado => installments=1 y sin crédito ni
- * medios diferidos; crédito => tope = cuota máxima elegible (Checkout Pro sólo
- * admite un máximo, no una lista exacta) y sólo tarjeta de crédito, en 1 pago
- * o en cuotas. Órdenes anteriores a este modelo (sin `mercadoPagoModality`)
+ * la orden (nunca del request): 1 pago => installments=1, cualquier medio
+ * salvo los diferidos; cuotas => tope = TIER (Checkout Pro sólo admite un
+ * máximo) con la cuota que eligió el cliente preseleccionada, sólo tarjeta de
+ * crédito. Órdenes anteriores a este modelo (sin `mercadoPagoModality`)
  * conservan su comportamiento: la cuota elegida como tope y preselección, o
  * 1 pago, sin exclusiones.
  */
@@ -696,8 +794,13 @@ export function getMercadoPagoPreferencePaymentMethods(
 
   if (modality === "mercadopago_financed") {
     const max = Number(order.pricing_snapshot?.preferenceMaxInstallments)
+    const selected = Number(order.pricing_snapshot?.selectedInstallmentCount)
     const excluded_payment_types = [...MERCADOPAGO_CREDIT_EXCLUDED_PAYMENT_TYPES]
-    if (max === 2 || max === 3 || max === 6) return { installments: max, excluded_payment_types }
+    if (max === 2 || max === 3 || max === 6) {
+      return [2, 3, 6].includes(selected) && selected <= max
+        ? { installments: max, default_installments: selected, excluded_payment_types }
+        : { installments: max, excluded_payment_types }
+    }
     // Snapshot financiado sin tope válido: nunca se abre a más cuotas de
     // las calculadas -- se degrada a crédito en 1 pago.
     return { installments: 1, default_installments: 1, excluded_payment_types }

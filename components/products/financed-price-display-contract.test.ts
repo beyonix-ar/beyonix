@@ -4,10 +4,16 @@ import test from "node:test"
 
 import {
   getFinancedPrice,
-  getInstallmentPlans,
+  getProductInterestFreeOffer,
   getMaxEligibleInstallmentCount,
 } from "../../lib/pricing/financed-pricing.ts"
 import type { InstallmentsFinancingConfig } from "../../lib/products/installments.ts"
+
+// Precio/planes del TIER máximo que admite el producto, como si Mercado Pago
+// lo confirmara sin interés: verifica las fórmulas, no la disponibilidad.
+function maxTierPlans(product: Parameters<typeof getProductInterestFreeOffer>[0], cashPrice: number, config: InstallmentsFinancingConfig) {
+  return getProductInterestFreeOffer(product, cashPrice, config, () => [2, 3, 6])?.plans ?? []
+}
 
 const REAL_CONFIG: InstallmentsFinancingConfig = {
   baseProcessingPercent: 6.42,
@@ -36,7 +42,7 @@ test("PDP: el precio financiado mostrado es el canónico para máximo 2, 3 y 6 -
         getMaxEligibleInstallmentCount(product),
         REAL_CONFIG,
       )
-      const plans = getInstallmentPlans(product, cashPrice, REAL_CONFIG)
+      const plans = maxTierPlans(product, cashPrice, REAL_CONFIG)
 
       assert.equal(displayedFinancedPrice, canonical)
       assert.equal(plans[plans.length - 1].count, maxCount)
@@ -51,9 +57,11 @@ test("PDP: el panel pasa el financiado y los planes canónicos sin ningún ajust
   const panel = readSource("./product-details-panel.tsx")
   const purchaseBox = readSource("./product-purchase-box.tsx")
 
-  // Regla del producto (con o sin recargo) resuelta por la función canónica.
-  assert.match(panel, /const financedPrice = getProductFinancedPrice\(product, cashPrice, installmentsFinancing\)/)
-  assert.match(panel, /const installmentPlans = getInstallmentPlans\(product, cashPrice, installmentsFinancing\)/)
+  // Tier confirmado por Mercado Pago (función canónica), nunca la cuota
+  // configurada a ciegas: financiado y planes salen de la misma oferta.
+  assert.match(panel, /const interestFreeOffer = getProductInterestFreeOffer\(\s*product,\s*cashPrice,\s*installmentsFinancing,\s*interestFreeFor,\s*\)/)
+  assert.match(panel, /const financedPrice = interestFreeOffer\?\.financedPrice \?\? null/)
+  assert.match(panel, /const installmentPlans = interestFreeOffer\?\.plans \?\? \[\]/)
   assert.match(panel, /financedPrice=\{financedPrice\}/)
   assert.match(panel, /installmentPlans=\{installmentPlans\}/)
   // La ficha muestra el monto de cada plan tal cual, sin recalcular.
@@ -95,7 +103,8 @@ test("checkout y create-preference aplican el MISMO ajuste final de redondeo de 
   // Una única implementación del ajuste (lib/pricing/checkout-pricing.ts),
   // compartida por servidor y cliente.
   assert.match(pricing, /roundUpCheckoutTotalForInstallments\(\{/)
-  assert.match(pricing, /offeredCounts: cartInstallmentEligibility/)
+  // Divisor = cuotas del carrito dentro del TIER (las que se pueden elegir).
+  assert.match(pricing, /offeredCounts: context\.eligibility\.filter\(\(count\) => count <= tier\)/)
   assert.match(pricing, /roundingAdjustment: rounded\.roundingAdjustment/)
   for (const source of [route, checkout]) {
     assert.match(source, /calculateMercadoPagoCheckoutPricing\(\{/)
@@ -126,11 +135,10 @@ test("CFTEA: el precio financiado informado es el MISMO total final ajustado que
   const pricing = readSource("../../lib/pricing/checkout-pricing.ts")
 
   // Cada plan usa el total final ajustado (antes de saldo) contra el contado.
-  assert.match(pricing, /const legalAmount = getInstallmentAmount\(rounded\.total, count\)/)
+  assert.match(pricing, /const legalAmount = getInstallmentAmount\(financed\.total, count\)/)
   assert.match(pricing, /calculateCftea\(cashTotal, legalAmount, count\)/)
-  // El checkout muestra el precio financiado de la opción "En cuotas" con el
-  // total final ajustado (el mismo que se cobra) y el CFTEA sale de los
-  // planes canónicos, nunca recalculado en la UI.
+  // Cada opción de cuotas muestra el total final ajustado (el mismo que se
+  // cobra) y el CFTEA sale de los planes canónicos, nunca recalculado en la UI.
   assert.match(checkout, /formatPrice\(financedPreviewQuote\.externalAmountDue\)/)
   assert.match(checkout, /formatCfteaPercent\(plan\.cfteaPercent\)/)
   assert.doesNotMatch(checkout, /calculateCftea\(/)

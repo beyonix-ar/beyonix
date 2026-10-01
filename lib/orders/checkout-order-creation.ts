@@ -133,8 +133,10 @@ export interface CheckoutOrderRequestPayload {
   shipping?: CheckoutOrderShippingInput
   /** Legado (clientes previos al modelo contado/cuotas): una cuota 2/3/6 equivale a `mercadoPagoMode: "financed"`. */
   installmentsModality?: number | string | null
-  /** Modalidad de Mercado Pago elegida: "cash" (al contado) o "financed" (en cuotas). Se revalida server-side. */
+  /** Modalidad de Mercado Pago elegida: "cash" (1 pago, precio contado) o "financed" (cuotas sin interés). Se revalida server-side. */
   mercadoPagoMode?: string | null
+  /** Cuota elegida en BEYONIX (2/3/6) con "financed": tiene que estar confirmada sin interés por Mercado Pago. */
+  mercadoPagoInstallments?: number | null
   /**
    * Total que el cliente vio en pantalla. NUNCA se usa para cobrar: sólo
    * para rechazar el pago (409 PRICING_CHANGED) si el total recalculado en
@@ -142,6 +144,12 @@ export interface CheckoutOrderRequestPayload {
    * cliente no vio.
    */
   expectedTotal?: number | null
+  /**
+   * Cuota máxima sin interés que el cliente vio (1 = crédito en 1 pago). Igual
+   * que `expectedTotal`: nunca decide nada, sólo rechaza (409) si Mercado Pago
+   * ya no confirma lo que se le mostró.
+   */
+  expectedMaxInstallments?: number | null
   /** Aceptación explícita de términos y condiciones (checkbox obligatorio del checkout). */
   termsAccepted?: boolean | null
 }

@@ -124,7 +124,7 @@ window.fetch = async (input, init) => {
   if (url.endsWith("/api/admin/order-claims/900") && init && init.method === "PATCH") {
     window.__patches.push(JSON.parse(init.body))
     if (scenario === "cancel_bloqueado_servidor") {
-      return Response.json({ error: "No se puede cancelar todavía.", blockers: ["Hay una incidencia abierta."], blockerCodes: ["incident"] }, { status: 409 })
+      return Response.json({ error: "No se puede cancelar todavía.", blockers: ["Hay un problema abierto."], blockerCodes: ["incident"] }, { status: 409 })
     }
     return Response.json({ claim })
   }
@@ -415,7 +415,7 @@ test("Recepción: pantalla propia, acciones visibles por producto (sin desplegab
   try {
     assert.equal(await heading(page), "Recepción")
     const summary = (await page.locator("[data-claim-logistics-summary] dt").allInnerTexts()).map((label) => label.trim().toLowerCase())
-    assert.deepEqual(summary, ["método", "sucursal", "estado", "incidencias"])
+    assert.deepEqual(summary, ["método", "sucursal", "estado", "problemas"])
     assert.equal(await page.locator("[data-claim-logistics-status]").innerText(), "Recibido")
     assert.equal(await page.locator("[data-claim-current-action]").count(), 0, "sin acciones de logística en Recepción")
     assert.equal(await page.locator(methodPanel).count(), 0, "el método se revisa en su propio paso")
@@ -423,10 +423,10 @@ test("Recepción: pantalla propia, acciones visibles por producto (sin desplegab
     assert.equal(await page.getByRole("button", { name: /Generar|Cancelar operación|Reservar reemplazo|Registrar reemplazo/ }).count(), 0,
       "nada de la operación Andreani ni del reemplazo en Recepción")
     const actions = page.locator("[data-claim-logistics-item-actions]").getByRole("button")
-    assert.ok((await actions.allInnerTexts()).includes("Registrar incidencia"))
-    await actions.filter({ hasText: "Registrar incidencia" }).click()
+    assert.ok((await actions.allInnerTexts()).includes("Registrar problema"))
+    await actions.filter({ hasText: "Registrar problema" }).click()
     await page.waitForSelector("[data-claim-logistics-unit-form=incident_open]")
-    assert.equal(await page.getByRole("button", { name: "Registrar", exact: true }).isDisabled(), true, "incidencia: tipo obligatorio")
+    assert.equal(await page.getByRole("button", { name: "Registrar", exact: true }).isDisabled(), true, "problema: tipo obligatorio")
     await page.getByRole("button", { name: "Cancelar", exact: true }).click()
 
     const reception = page.locator(".admin-claim-reception-panel")
@@ -451,8 +451,8 @@ test("Recepción antes de que llegue: se registra la llegada; stock/baja recién
     assert.equal(await page.locator(".admin-claim-reception-panel").getByRole("button", { name: "Volver al stock", exact: true }).count(), 0)
     const arrival = page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar llegada/ })
     assert.match(await arrival.getAttribute("class") ?? "", /admin-ds-button-primary/, "la llegada es la acción principal del producto")
-    const incident = page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar incidencia/ })
-    assert.doesNotMatch(await incident.getAttribute("class") ?? "", /admin-ds-button-primary/, "la incidencia es secundaria")
+    const incident = page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar problema/ })
+    assert.doesNotMatch(await incident.getAttribute("class") ?? "", /admin-ds-button-primary/, "registrar un problema es secundario")
     assert.match(await page.locator("[data-claim-item-status]").innerText(), /Pendiente de llegada: 1/)
     await arrival.click()
     await page.waitForSelector("[data-claim-logistics-unit-form=arrival_original]")
@@ -610,7 +610,7 @@ test("Cancelar reclamo: si la base encuentra algo pendiente, se muestra y no se 
     await modal.getByRole("button", { name: "Confirmar cancelación" }).click()
     await modal.locator("[data-claim-cancel-blockers]").waitFor()
     const items = (await modal.locator("[data-claim-cancel-blockers] li").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
-    assert.deepEqual(items, ["Hay una incidencia abierta. Ir a incidencia"], "lo que devuelve la base también trae su acceso")
+    assert.deepEqual(items, ["Hay un problema abierto. Ir al problema"], "lo que devuelve la base también trae su acceso")
     assert.match(await modal.innerText(), /No se puede cancelar todavía\./)
   } finally { await page.close() }
 })

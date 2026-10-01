@@ -27,11 +27,12 @@ import {
 } from "@/lib/products/product-variants"
 import {
   getInstallmentAmount,
-  getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
-  getProductFinancedPrice,
+  getProductFinancingCandidates,
+  getProductInterestFreeOffer,
   INSTALLMENTS_COPY,
 } from "@/lib/pricing/financed-pricing"
+import { useInterestFreeInstallments } from "@/hooks/use-interest-free-installments"
 import {
   MAX_CART_ITEM_QUANTITY,
   getQuantityLimitMessage,
@@ -102,16 +103,27 @@ export default function SharedProductCard({
     defaultVariant.price,
     defaultVariant.originalPrice
   )
-  const maxEligibleInstallmentCount = getMaxEligibleInstallmentCount(product)
-  const financedPrice = getProductFinancedPrice(
+  // Tier confirmado por Mercado Pago para el precio de UNA unidad (lo mínimo
+  // que se puede comprar): el precio financiado usa el costo de ese tier y
+  // nunca se promete "sin interés" sin confirmación.
+  const financingCandidates = getProductFinancingCandidates(
     product,
     defaultVariant.price,
     installmentsFinancing,
   )
-  const maxInstallmentAmount =
-    financedPrice != null && maxEligibleInstallmentCount != null
-      ? getInstallmentAmount(financedPrice, maxEligibleInstallmentCount)
-      : null
+  const interestFreeFor = useInterestFreeInstallments(
+    financingCandidates.map((candidate) => candidate.amount),
+  )
+  const interestFreeOffer = getProductInterestFreeOffer(
+    product,
+    defaultVariant.price,
+    installmentsFinancing,
+    interestFreeFor,
+  )
+  const maxEligibleInstallmentCount = interestFreeOffer?.count ?? null
+  const maxInstallmentAmount = interestFreeOffer
+    ? getInstallmentAmount(interestFreeOffer.financedPrice, interestFreeOffer.count)
+    : null
   const installmentLabel =
     maxEligibleInstallmentCount != null && maxInstallmentAmount != null
       ? `Hasta ${maxEligibleInstallmentCount} ${INSTALLMENTS_COPY} de $${maxInstallmentAmount.toLocaleString("es-AR", { maximumFractionDigits: 2 })}`

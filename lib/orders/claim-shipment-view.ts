@@ -82,6 +82,13 @@ export const CUSTOMER_CLAIM_SHIPMENT_COLUMNS =
 export const CLAIM_RETURN_PACKING_INSTRUCTIONS =
   "Prepará el producto completo, con caja, bolsas, manuales, accesorios y todos los elementos recibidos, correctamente embalado y en el mejor estado posible."
 
+/**
+ * Devolución: nunca una sucursal fija ni la dirección de BEYONIX. Mismo texto
+ * que el mensaje del reclamo (20261001170000_claim_return_dropoff_copy.sql).
+ */
+export const CLAIM_RETURN_DROPOFF_INSTRUCTIONS =
+  "Cuando tengas el paquete listo, acercalo a una sucursal Andreani habilitada con la etiqueta de devolución. Al escanearla, Andreani identificará automáticamente los datos del envío y su destino."
+
 export const CLAIM_INCIDENT_LABELS: Record<ClaimIncidentType, string> = {
   producto_distinto: "Producto distinto",
   cantidad_incorrecta: "Cantidad incorrecta",
@@ -220,7 +227,8 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
       instructions.push(CLAIM_RETURN_PACKING_INSTRUCTIONS)
       instructions.push(source.status === "pendiente"
         ? "Estamos generando la devolución con Andreani. Te vamos a avisar por este medio cómo enviarlo."
-        : `Descargá e imprimí la etiqueta de devolución, pegala en el paquete cerrado y llevalo a ${where}.`)
+        : "Descargá e imprimí la etiqueta de devolución y pegala en el paquete cerrado.")
+      if (source.status !== "pendiente") instructions.push(CLAIM_RETURN_DROPOFF_INSTRUCTIONS)
     }
   } else if (source.status === "pendiente") {
     instructions.push("Estamos preparando el envío de tu producto de reemplazo.")
@@ -242,7 +250,9 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
     direction: source.direction,
     title: LEG_TITLES[source.direction],
     statusLabel,
-    branchLabel: branch,
+    // En una devolución la sucursal no es un destino para el cliente: la
+    // etiqueta define el envío y el destino (ver CLAIM_RETURN_DROPOFF_INSTRUCTIONS).
+    branchLabel: source.direction === "devolucion" ? null : branch,
     tracking,
     instructions,
     label: source.direction === "devolucion" && source.status !== "pendiente" && source.status !== "entregada",
@@ -594,7 +604,7 @@ export function getAdminClaimLogisticsView(input: {
   effectCount("original", ["en_andreani"], "Producto original en viaje con Andreani")
   effectCount("original", ["recibida_beyonix"], "Recepción registrada")
   effectCount("original", ["reincorporada_stock", "baja"], "Inspección registrada")
-  if (incidentOpen) effects.push(reviewLeg ? "Evento de Andreani pendiente de revisión" : "Incidencia de inspección abierta")
+  if (incidentOpen) effects.push(reviewLeg ? "Evento de Andreani pendiente de revisión" : "Problema de inspección abierto")
   if (creditNoteActive) effects.push("Nota de crédito emitida o en proceso")
 
   // Sin alternativa (reintegro: sólo retiro) no hay nada que corregir salvo efectos reales.
@@ -607,7 +617,7 @@ export function getAdminClaimLogisticsView(input: {
         correction: closed
           ? "El reclamo está finalizado."
           : incidentOpen
-            ? "Resolvé primero la incidencia o el evento de Andreani (con motivo)."
+            ? "Resolvé primero el problema o el evento de Andreani (con motivo)."
             : openLeg && !openIsFree
               ? current && adminLegView(current, units).canCancel
                 ? "Para cambiar de método, primero cancelá la operación Andreani con un motivo."
@@ -652,8 +662,8 @@ export function getAdminClaimLogisticsView(input: {
         const roleUnits = itemUnits.filter((unit) => unit.role === role)
         if (!roleUnits.length) continue
         const label = role === "original" ? "original" : "reemplazo"
-        if (roleUnits.some((unit) => unit.incident_open)) push("incident_resolve", role, 1, `Resolver incidencia (${label})`, 10)
-        else push("incident_open", role, 1, `Registrar incidencia de inspección (${label})`, 5)
+        if (roleUnits.some((unit) => unit.incident_open)) push("incident_resolve", role, 1, `Resolver problema (${label})`, 10)
+        else push("incident_open", role, 1, `Registrar problema de inspección (${label})`, 5)
       }
     }
   }
@@ -677,7 +687,7 @@ export function getAdminClaimLogisticsView(input: {
   } else if (shipments.some((row) => row.creation_status === "manual_review")) {
     nextStep = "Resultado incierto con Andreani: verificá la operación y conciliala antes de continuar. No se reintenta sola."
   } else if (incidentOpen) {
-    nextStep = "Hay una incidencia de inspección abierta: nada se reenvía, reintegra ni cierra hasta resolverla."
+    nextStep = "Hay un problema de inspección abierto: nada se reenvía, reintegra ni cierra hasta resolverlo."
   } else if (has("reemplazo", ["recibida_beyonix"])) {
     nextStep = "El producto nuevo volvió a BEYONIX: inspeccionalo y decidí si vuelve a stock o se da de baja."
   } else if (has("original", ["recibida_beyonix"])) {
@@ -712,7 +722,7 @@ export function getAdminClaimLogisticsView(input: {
   } else if (has("original", ["en_andreani"])) {
     nextStep = "Andreani trae el producto original a BEYONIX: registrá su llegada cuando esté en el depósito."
   } else if (canAuthorizeResend) {
-    nextStep = "Original inspeccionado y sin incidencias: autorizá el reemplazo para enviarlo a una sucursal, o finalizá con otra resolución."
+    nextStep = "Original inspeccionado y sin problemas: autorizá el reemplazo para enviarlo a una sucursal, o finalizá con otra resolución."
   } else if (unassignedReservations.length > 0) {
     nextStep = "Hay una reserva de reemplazo sin operación: generala o liberala."
   } else if (canRetryExchange) {

@@ -19,6 +19,7 @@ import {
   validateReviewComment,
 } from "@/lib/reviews/review-text"
 import { REVIEW_WINDOW_MESSAGES, type ReviewWindow } from "@/lib/reviews/review-window"
+import { getReviewRatingLabel } from "@/lib/reviews/rating-label"
 
 function getReviewWindowClosedMessage(reviewWindow: ReviewWindow | null) {
   return reviewWindow && reviewWindow.status !== "open"
@@ -89,14 +90,6 @@ function ReviewRatingSelector({
       })}
     </div>
   )
-}
-
-const EXPERIENCE_RATING_LABELS: Record<number, string> = {
-  1: "Muy mala",
-  2: "Mala",
-  3: "Regular",
-  4: "Muy buena",
-  5: "Excelente",
 }
 
 export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
@@ -737,7 +730,7 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                 />
                 <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-beyonix-status-success/35 bg-beyonix-status-success/10 px-2.5 text-10px font-semibold text-beyonix-status-success">
                   <Check className="size-3" />
-                  {EXPERIENCE_RATING_LABELS[submittedReview.rating]} · Enviada
+                  {getReviewRatingLabel(submittedReview.rating)} · Enviada
                 </span>
               </div>
             ) : windowClosedMessage ? (
@@ -759,7 +752,7 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
                 />
                 {visualRating > 0 && (
                   <span className="text-11px font-bold text-[var(--account-accent-soft)]">
-                    {EXPERIENCE_RATING_LABELS[visualRating]}
+                    {getReviewRatingLabel(visualRating)}
                   </span>
                 )}
               </div>

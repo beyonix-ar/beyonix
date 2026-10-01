@@ -77,8 +77,8 @@ function actionButtonLabel(option: ClaimUnitActionOption, multipleRoles: boolean
     case "arrival_original": return "Registrar llegada"
     case "arrival_replacement": return option.noteMin ? "Corregir: el producto nuevo volvió" : "Registrar regreso del producto nuevo"
     case "inspect_replacement": return "Revisar producto nuevo devuelto"
-    case "incident_open": return `Registrar incidencia${role}`
-    case "incident_resolve": return `Resolver incidencia${role}`
+    case "incident_open": return `Registrar problema${role}`
+    case "incident_resolve": return `Resolver problema${role}`
     case "waive_original": return "El cliente conserva el original"
     case "release_reservation": return "Liberar reserva"
     case "deliver_manual": return "Entregado fuera de Andreani"
@@ -402,7 +402,7 @@ export function ClaimAndreaniShipmentPanel({
             <div><dt>Método</dt><dd>{summary.method}</dd></div>
             <div><dt>Sucursal</dt><dd>{summary.branch}</dd></div>
             <div><dt>Estado</dt><dd data-claim-logistics-status>{summary.status}</dd></div>
-            <div><dt>Incidencias</dt><dd>{summary.incidents}</dd></div>
+            <div><dt>Problemas</dt><dd>{summary.incidents}</dd></div>
           </dl>
           {flow.checklist.length > 0 && (
             <ol className="admin-claim-checklist" aria-label="Avance del reclamo" data-claim-checklist>
@@ -639,7 +639,7 @@ export function ClaimAndreaniShipmentPanel({
                 <p className="font-semibold text-white">{itemLabel(item.orderItemId)}</p>
                 <p className="admin-claim-logistics-hint" data-claim-item-status>
                   {[pendingArrival > 0 && `Pendiente de llegada: ${pendingArrival}`, arrived > 0 && `En BEYONIX para inspeccionar: ${arrived}`,
-                    returnedNew > 0 && `Producto nuevo devuelto: ${returnedNew}`, item.incident && `Incidencia: ${item.incident}`]
+                    returnedNew > 0 && `Producto nuevo devuelto: ${returnedNew}`, item.incident && `Problema: ${item.incident}`]
                     .filter(Boolean).join(" · ") || "Sin pendientes"}
                 </p>
                 {(primaryAction || others.length > 0) && (
@@ -694,7 +694,7 @@ export function ClaimAndreaniShipmentPanel({
               <span className="admin-claim-logistics-label">{incidentRequired ? "Resultado de la inspección" : "Al abrir el paquete"}</span>
               <select className={`${adminControlClassName} admin-claim-compact-input`} value={incidentType} onChange={(event) => setIncidentType(event.target.value as ClaimIncidentType | "")}>
                 {!incidentRequired && <option value="">Sin novedad</option>}
-                {incidentRequired && <option value="">Elegí la incidencia…</option>}
+                {incidentRequired && <option value="">Elegí el problema…</option>}
                 {INCIDENT_TYPES.map((type) => <option key={type} value={type}>{CLAIM_INCIDENT_LABELS[type]}</option>)}
               </select>
             </label>

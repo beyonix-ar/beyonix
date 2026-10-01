@@ -9,10 +9,10 @@ const PAGE_SIZE = 30
 const ADMIN_REVIEW_COLUMNS =
   "id, order_id, product_id, rating, comment, nickname, city, province, approved, featured, featured_at, created_at, productos(nombre)"
 
-type AdminReviewFilter = "all" | "featured" | "not_featured"
+type AdminReviewFilter = "all" | "experiences" | "featured" | "not_featured"
 
 function parseFilter(value: string | null): AdminReviewFilter {
-  return value === "featured" || value === "not_featured" ? value : "all"
+  return value === "experiences" || value === "featured" || value === "not_featured" ? value : "all"
 }
 
 export async function GET(request: Request) {
@@ -32,6 +32,7 @@ export async function GET(request: Request) {
     .order("id", { ascending: false })
     .range(from, from + PAGE_SIZE - 1)
 
+  if (filter === "experiences") query = query.is("product_id", null)
   if (filter === "featured") query = query.eq("featured", true)
   if (filter === "not_featured") query = query.eq("featured", false)
 

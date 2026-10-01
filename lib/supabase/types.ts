@@ -306,6 +306,16 @@ export interface SupabasePedido {
       net_received_amount?: number | null
       total_paid_amount?: number | null
     } | null
+    /** Cargos reales de Mercado Pago (tasa y monto por concepto), tal como los informó. */
+    charges_details?: Array<{
+      name?: string | null
+      type?: string | null
+      rate?: number | null
+      amounts?: { original?: number | null; refunded?: number | null } | null
+    }> | null
+    /** Fecha real de liberación del dinero informada por Mercado Pago. */
+    money_release_date?: string | null
+    money_release_status?: string | null
     /** Tipo real de Mercado Pago (credit_card, debit_card, account_money…). */
     payment_type_id?: string | null
     /** Medio/marca real de Mercado Pago (visa, master, account_money…). */

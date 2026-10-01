@@ -33,6 +33,15 @@ import {
   ORDER_CLAIM_VIDEO_MAX_BYTES,
 } from "@/lib/order-claims"
 import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
+import {
+  buildClaimUnits,
+  getInitialClaimSelection,
+  isSingleUnitClaim,
+  isWholeOrderSelection,
+  toClaimAffectedItems,
+  toggleClaimUnit,
+  WHOLE_ORDER_SELECTION,
+} from "@/lib/claims/claim-unit-selection"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { CustomerClaimShipmentsNotice } from "@/components/claims/customer-claim-shipments-notice"
 import {
@@ -516,13 +525,14 @@ export function CustomerClaimExperience({
   const canCreatePostDeliveryClaim = delivered && !effectiveCancelled
   const canCreateHelpMessage = !delivered && !effectiveCancelled
   const initialProblemAllowed = POST_DELIVERY_PROBLEMS.some((item) => item.id === initialProblem)
-  const defaultAffectedItems = orderItems.length === 1 ? [String(orderItems[0].id)] : []
+  const claimUnits = buildClaimUnits(orderItems)
+  const singleUnitClaim = isSingleUnitClaim(claimUnits)
   const initialClaims = order.order_claims ?? []
   const initialClaimsReady = claimsVerified || initialClaims.length > 0
 
   const [claims, setClaims] = useState<SupabaseOrderClaim[]>(initialClaims)
-  const [affectedItems, setAffectedItems] = useState<string[]>(defaultAffectedItems)
-  const [affectedQuantities, setAffectedQuantities] = useState<Record<number, number>>({})
+  // Claves de unidad (`itemId:n`) o WHOLE_ORDER_SELECTION ("Todo el pedido").
+  const [affectedItems, setAffectedItems] = useState<string[]>(() => getInitialClaimSelection(claimUnits))
   const [problem, setProblem] = useState<ClaimProblemId | null>(
     initialProblemAllowed ? initialProblem ?? null : null,
   )
@@ -674,7 +684,7 @@ export function CustomerClaimExperience({
     const trimmedDescription = description.trim()
 
     if (!affectedItems.length) {
-      setError("Elegí el producto afectado.")
+      setError("Marcá las unidades con falla.")
       return
     }
 
@@ -707,12 +717,10 @@ export function CustomerClaimExperience({
       const formData = new FormData()
       formData.set("claimType", CLAIM_REASON_TYPES[selectedProblem.id as keyof typeof CLAIM_REASON_TYPES])
       formData.set("problemType", selectedProblem.id)
-      formData.set("affectedItemIds", affectedItems.filter((item) => item !== "order").join(","))
-      formData.set("affectedItems", JSON.stringify(affectedItems.filter((item) => item !== "order").map((id) => ({
-        order_item_id: Number(id),
-        quantity: affectedQuantities[Number(id)] ?? Number(orderItems.find((item) => item.id === Number(id))?.cantidad ?? 0),
-      }))))
-      formData.set("affectedWholeOrder", String(affectedItems.includes("order")))
+      const claimAffectedItems = toClaimAffectedItems(affectedItems, claimUnits)
+      formData.set("affectedItemIds", claimAffectedItems.map((item) => item.order_item_id).join(","))
+      formData.set("affectedItems", JSON.stringify(claimAffectedItems))
+      formData.set("affectedWholeOrder", String(isWholeOrderSelection(affectedItems)))
       formData.set("description", trimmedDescription)
       appendFiles(formData, files, "evidencia_inicial")
 
@@ -938,20 +946,13 @@ export function CustomerClaimExperience({
     }
   }
 
-  const toggleAffectedProduct = (value: string) => {
-    setAffectedItems((current) => {
-      const withoutWholeOrder = current.filter((item) => item !== "order")
-      const nextSelection = withoutWholeOrder.includes(value)
-        ? withoutWholeOrder.filter((item) => item !== value)
-        : [...withoutWholeOrder, value]
-
-      return nextSelection
-    })
+  const toggleAffectedUnit = (key: string) => {
+    setAffectedItems((current) => toggleClaimUnit(current, key, claimUnits))
     setError("")
   }
 
   const selectWholeOrder = () => {
-    setAffectedItems(["order"])
+    setAffectedItems([WHOLE_ORDER_SELECTION])
     setError("")
   }
 
@@ -1492,29 +1493,47 @@ export function CustomerClaimExperience({
               </div>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {orderItems.map((item) => {
-                const value = String(item.id)
+            {claimUnits.length > 1 && (
+              <p data-claim-units-hint className="mt-2.5 text-sm font-bold text-[var(--account-text-primary)] underline decoration-[var(--account-accent-soft)] decoration-2 underline-offset-4">
+                Marcá únicamente las unidades con falla
+              </p>
+            )}
+
+            <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3" role="group" aria-label="Unidades del pedido">
+              {claimUnits.map((unit) => {
+                const item = orderItems.find((orderItem) => orderItem.id === unit.itemId)
+                if (!item) return null
                 const image = getItemImage(item)
-                const selectedItem = affectedItems.includes(value)
+                const selectedItem = affectedItems.includes(unit.key)
                 const name = item.productos?.nombre ?? `Producto #${item.producto_id}`
                 return (
                   <button
-                    key={item.id}
+                    key={unit.key}
                     type="button"
-                    onClick={() => toggleAffectedProduct(value)}
+                    onClick={() => toggleAffectedUnit(unit.key)}
                     aria-pressed={selectedItem}
+                    aria-disabled={singleUnitClaim || undefined}
+                    data-claim-unit={unit.key}
+                    title={singleUnitClaim ? "Es la única unidad del pedido" : undefined}
                     className={`customer-claim-product-option relative flex min-h-[68px] min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--account-focus-ring)] ${
+                      singleUnitClaim ? "cursor-default" : ""
+                    } ${
                       selectedItem
                         ? "border-[var(--account-accent-soft)] bg-[var(--account-accent)]"
                         : "border-[var(--account-border)] bg-[var(--account-surface-raised)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)]"
                     }`}
                   >
-                    {selectedItem && (
-                      <span className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full border border-[var(--account-accent-soft)]/60 bg-[var(--account-accent-hover)]">
-                        <Check className="size-3 text-white" />
-                      </span>
-                    )}
+                    <span
+                      aria-hidden="true"
+                      data-claim-unit-check={selectedItem ? "on" : "off"}
+                      className={`customer-claim-unit-check absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full border ${
+                        selectedItem
+                          ? "border-emerald-700 bg-emerald-500"
+                          : "border-[var(--account-border-strong)] bg-transparent"
+                      }`}
+                    >
+                      {selectedItem ? <Check className="size-3 text-white" strokeWidth={3.5} /> : null}
+                    </span>
                     <span className={`flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--account-border)] ${image ? "bg-white" : "bg-[var(--account-surface-hover)]"}`}>
                       {image ? (
                         <img src={image} alt={name} className="size-full object-contain" />
@@ -1524,7 +1543,11 @@ export function CustomerClaimExperience({
                     </span>
                     <span className="min-w-0 pr-5">
                       <strong className={`block truncate text-sm font-black leading-5 ${selectedItem ? "text-white" : "text-[var(--account-text-primary)]"}`}>{name}</strong>
-                      <span className={`mt-0.5 block truncate text-xs leading-4 ${selectedItem ? "text-white/75" : "text-[var(--account-text-secondary)]"}`}>{getItemVariant(item)} · Cantidad: {item.cantidad}</span>
+                      <span className={`mt-0.5 block truncate text-xs leading-4 ${selectedItem ? "text-white/75" : "text-[var(--account-text-secondary)]"}`}>
+                        {getItemVariant(item)}
+                        {unit.unitCount > 1 ? ` · Unidad ${unit.unitNumber} de ${unit.unitCount}` : ""}
+                        {singleUnitClaim ? " · Única unidad del pedido" : ""}
+                      </span>
                     </span>
                   </button>
                 )
@@ -1540,11 +1563,16 @@ export function CustomerClaimExperience({
                       : "border-[var(--account-border)] bg-[var(--account-surface-raised)] hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)]"
                   }`}
                 >
-                  {affectedItems.includes("order") && (
-                    <span className="absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full border border-[var(--account-accent-soft)]/60 bg-[var(--account-accent-hover)]">
-                      <Check className="size-3 text-white" />
-                    </span>
-                  )}
+                  <span
+                    aria-hidden="true"
+                    className={`customer-claim-unit-check absolute right-2.5 top-2.5 flex size-5 items-center justify-center rounded-full border ${
+                      affectedItems.includes("order")
+                        ? "border-emerald-700 bg-emerald-500"
+                        : "border-[var(--account-border-strong)] bg-transparent"
+                    }`}
+                  >
+                    {affectedItems.includes("order") ? <Check className="size-3 text-white" strokeWidth={3.5} /> : null}
+                  </span>
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-hover)]">
                     <Truck className={`size-5 ${affectedItems.includes("order") ? "text-white" : "text-[var(--account-text-secondary)]"}`} />
                   </span>
@@ -1560,14 +1588,6 @@ export function CustomerClaimExperience({
                 Para &ldquo;Producto faltante&rdquo;, elegí el producto específico que no llegó.
               </p>
             )}
-            {!affectedItems.includes("order") && orderItems.filter((item) => affectedItems.includes(String(item.id)) && item.cantidad > 1).map((item) => (
-              <label key={item.id} className="mt-3 flex items-center justify-between gap-3 text-xs text-[var(--account-text-secondary)]">
-                Unidades afectadas de {item.productos?.nombre ?? "Producto"} ({getItemVariant(item)})
-                <input type="number" min={1} max={item.cantidad} step={1} value={affectedQuantities[item.id] ?? item.cantidad}
-                  onChange={(event) => setAffectedQuantities((current) => ({ ...current, [item.id]: Number(event.target.value) }))}
-                  className="w-20 rounded border border-[var(--account-border)] bg-[var(--account-input)] p-2" />
-              </label>
-            ))}
           </div>
 
           <div className="customer-claim-step-panel mt-3 rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-3.5 sm:p-4">

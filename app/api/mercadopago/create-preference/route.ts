@@ -44,6 +44,7 @@ import {
   buildCheckoutEconomicState,
   buildMercadoPagoPricingSnapshot,
   calculateMercadoPagoCheckoutPricing,
+  getMercadoPagoFinancingCandidates,
   getMercadoPagoModeQuote,
   getMercadoPagoOrderInstallmentsFields,
   getMercadoPagoPreferencePaymentMethods,
@@ -51,6 +52,7 @@ import {
   type CheckoutPricingLine,
   type CheckoutPricingSettings,
 } from "@/lib/pricing/checkout-pricing"
+import type { InstallmentCount } from "@/lib/products/installments"
 import {
   MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
   MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR,
@@ -87,6 +89,7 @@ import {
   type CheckoutStoreBenefitPreview,
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
+import { getInterestFreeInstallments } from "@/lib/mercadopago/interest-free-installments"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
@@ -113,6 +116,8 @@ const ALREADY_PAID_MESSAGE =
   "Esta compra ya fue pagada y no puede iniciarse nuevamente."
 const PRICING_CHANGED_MESSAGE =
   "Los precios o condiciones de tu compra se actualizaron. Revisá el nuevo total antes de pagar."
+const INSTALLMENTS_CHANGED_MESSAGE =
+  "Las cuotas sin interés disponibles para tu compra cambiaron. Revisá las opciones de pago y volvé a confirmar."
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
 
@@ -123,6 +128,16 @@ const mercadoPagoClient = accessToken
 function normalizeExpectedTotal(value: unknown) {
   const parsed = typeof value === "number" ? value : Number.NaN
   return Number.isFinite(parsed) && parsed >= 0 ? roundMoney(parsed) : null
+}
+
+function normalizeSelectedInstallmentCount(value: unknown): InstallmentCount | null {
+  return value === 2 || value === 3 || value === 6 ? value : null
+}
+
+function normalizeExpectedMaxInstallments(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 24
+    ? value
+    : null
 }
 
 function buildCheckoutPricingLines(
@@ -297,21 +312,58 @@ export async function POST(request: Request) {
     }
 
     // ── 3. Precio canónico y huella económica ──
-    const pricing = calculateMercadoPagoCheckoutPricing({
+    const pricingInput = {
       lines: pricingLines,
       shippingCharged: shipping.shipping_cost_charged,
       storeBenefitPercent: storeBenefit?.percent ?? null,
       requestedCustomerCredit: requestedCredit,
       settings: pricingSettings,
+    }
+    // Cuotas sin interés: Mercado Pago confirma, para el monto REAL que se
+    // cobraría en cada tier (neto de saldo), qué cuotas son sin interés. El
+    // tier (la más alta confirmada) define el precio financiado. Sin
+    // confirmación (error/timeout) no hay cuotas: sólo 1 pago a contado.
+    // 1 pago nunca consulta: siempre es el precio contado.
+    const financingCandidates = mode === "financed" ? getMercadoPagoFinancingCandidates(pricingInput) : []
+    const confirmations = new Map(
+      await Promise.all(
+        financingCandidates.map(async (candidate) => [candidate.amount, await getInterestFreeInstallments(candidate.amount)] as const),
+      ),
+    )
+    const pricing = calculateMercadoPagoCheckoutPricing({
+      ...pricingInput,
+      interestFreeLookup: financingCandidates.length
+        ? (amount) => {
+            const result = confirmations.get(amount)
+            return result?.status === "confirmed" ? result.counts : null
+          }
+        : null,
     })
     const quote = getMercadoPagoModeQuote(pricing, mode)
+    const selectedInstallmentCount = normalizeSelectedInstallmentCount(
+      payload.mercadoPagoInstallments ?? Number(payload.installmentsModality),
+    )
+
+    // Cuotas pedidas que Mercado Pago ya no confirma (o una cuota fuera del
+    // tier): nunca se cobra con otras condiciones -- el cliente revisa.
+    if (
+      mode === "financed" &&
+      (!quote || selectedInstallmentCount == null || !pricing.interestFreeInstallmentCounts.includes(selectedInstallmentCount))
+    ) {
+      return NextResponse.json(
+        {
+          code: "PRICING_CHANGED",
+          error: INSTALLMENTS_CHANGED_MESSAGE,
+          total: pricing.cash.externalAmountDue,
+          mode: "cash",
+        },
+        { status: 409 },
+      )
+    }
 
     if (!quote) {
       return NextResponse.json(
-        {
-          error:
-            "La financiación en cuotas no está disponible para los productos de tu carrito.",
-        },
+        { error: "La modalidad de pago elegida no está disponible." },
         { status: 400 },
       )
     }
@@ -334,9 +386,15 @@ export async function POST(request: Request) {
     // de lo que tenía en pantalla (admin cambió algo mientras tanto). Se
     // corta antes de cualquier efecto (reuso, baja, claims, órdenes).
     const expectedTotal = normalizeExpectedTotal(payload.expectedTotal)
+    const expectedMaxInstallments = normalizeExpectedMaxInstallments(payload.expectedMaxInstallments)
     if (
-      expectedTotal != null &&
-      Math.abs(expectedTotal - quote.externalAmountDue) > 0.009
+      (expectedTotal != null &&
+        Math.abs(expectedTotal - quote.externalAmountDue) > 0.009) ||
+      // Lo que se mostró como "hasta N cuotas sin interés" ya no está
+      // confirmado (o cambió): nunca se cobra con otras condiciones.
+      (quote.mode === "financed" &&
+        expectedMaxInstallments != null &&
+        expectedMaxInstallments !== quote.preferenceMaxInstallments)
     ) {
       return NextResponse.json(
         {
@@ -468,6 +526,7 @@ export async function POST(request: Request) {
       mode,
       settings: pricingSettings,
       economicFingerprint,
+      selectedInstallmentCount,
     })
     const newPreferenceClaimToken = randomUUID()
     const orderPayload = {

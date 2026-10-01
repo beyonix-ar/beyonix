@@ -1,5 +1,6 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import {
+  getMercadoPagoCostsOverview,
   getSiteSettings,
   invalidateSiteSettingsCache,
   normalizeSiteSettingsPatch,
@@ -7,13 +8,19 @@ import {
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
 
+async function loadAdminSettings() {
+  const [settings, mercadoPagoCosts] = await Promise.all([
+    getSiteSettings({ fresh: true }),
+    getMercadoPagoCostsOverview(),
+  ])
+  return { settings, mercadoPagoCosts }
+}
+
 export async function GET(request: Request) {
   const auth = await requireInternalUser(request, [...MANAGE_ROLES])
   if ("error" in auth) return auth.error
 
-  const settings = await getSiteSettings({ fresh: true })
-
-  return Response.json({ settings })
+  return Response.json(await loadAdminSettings())
 }
 
 export async function PATCH(request: Request) {
@@ -54,5 +61,5 @@ export async function PATCH(request: Request) {
     console.error("SITE_SETTINGS_AUDIT_FAILED", { code: auditError.code })
   }
 
-  return Response.json({ settings: await getSiteSettings({ fresh: true }) })
+  return Response.json(await loadAdminSettings())
 }

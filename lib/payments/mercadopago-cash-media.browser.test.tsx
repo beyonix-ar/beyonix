@@ -8,7 +8,7 @@ import { chromium, type Browser, type Page } from "playwright-core"
 
 import { MERCADOPAGO_CASH_MEDIA_GROUPS } from "./mercadopago-cash-media.ts"
 
-// "Mercado Pago al contado → Ver medios" con el PaymentInfoModal y el
+// "Mercado Pago en 1 pago → Ver medios" con el PaymentInfoModal y el
 // contenido REALES (bundle esbuild) y el CSS del proyecto, en Light/Dark y en
 // desktop, tablet y mobile: marcas agrupadas en chips compactos, sin bancos,
 // con la aclaración de disponibilidad, legible (AA) y sin desbordes.
@@ -21,7 +21,7 @@ import { createRoot } from "react-dom/client"
 import { PaymentInfoModal } from "@/components/checkout/payment-info-modal"
 import { MercadoPagoCashMedia } from "@/components/checkout/mercadopago-cash-media"
 createRoot(document.getElementById("root")).render(
-  h(PaymentInfoModal, { title: "Mercado Pago al contado", onClose() {} }, h(MercadoPagoCashMedia)),
+  h(PaymentInfoModal, { title: "Mercado Pago en 1 pago", onClose() {} }, h(MercadoPagoCashMedia)),
 )
 `
 
@@ -116,8 +116,8 @@ for (const theme of ["light", "dark"] as const) {
         const data = (await page.evaluate(MEASURE)) as Measure
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/cash-media-${theme}-${width}.png` })
 
-        assert.equal(data.title, "Mercado Pago al contado")
-        assert.match(data.text, /^Mercado Pago al contado Podés pagar con:/)
+        assert.equal(data.title, "Mercado Pago en 1 pago")
+        assert.match(data.text, /^Mercado Pago en 1 pago Podés pagar con:/)
         assert.deepEqual(data.groups, MERCADOPAGO_CASH_MEDIA_GROUPS.map((group) => ({ id: group.id, items: [...group.items] })))
         assert.match(data.text, /Los medios disponibles pueden variar según tu cuenta, tarjeta y las condiciones de Mercado Pago\. Entendido$/)
         assert.doesNotMatch(data.text, BANKS, "sin bancos emisores")

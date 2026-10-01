@@ -6,8 +6,7 @@ import {
   calculateCftea,
   getCartFinancedTotal,
   getFinancedPrice,
-  getInstallmentPlans,
-  getProductFinancedPrice,
+  getProductInterestFreeOffer,
   hasInstallmentsWithoutSurcharge,
   INSTALLMENTS_COPY,
 } from "./financed-pricing.ts"
@@ -28,6 +27,15 @@ import {
 } from "./product-pricing.ts"
 import { createCheckoutEconomicFingerprint } from "../mercadopago/checkout-attempt.ts"
 import type { InstallmentCount, InstallmentsFinancingConfig } from "../products/installments.ts"
+
+// Precio/planes del TIER máximo que admite el producto, como si Mercado Pago
+// lo confirmara sin interés: verifica las fórmulas, no la disponibilidad.
+function maxTierPlans(product: Parameters<typeof getProductInterestFreeOffer>[0], cashPrice: number, config: InstallmentsFinancingConfig) {
+  return getProductInterestFreeOffer(product, cashPrice, config, () => [2, 3, 6])?.plans ?? []
+}
+function maxTierPrice(product: Parameters<typeof getProductInterestFreeOffer>[0], cashPrice: number, config: InstallmentsFinancingConfig) {
+  return getProductInterestFreeOffer(product, cashPrice, config, () => [2, 3, 6])?.financedPrice ?? null
+}
 
 type InstallmentCountList = InstallmentCount[]
 
@@ -67,6 +75,7 @@ function price(lines: CheckoutPricingLine[], { credit = 0, shipping = 7_500 } = 
     storeBenefitPercent: null,
     requestedCustomerCredit: credit,
     settings: SETTINGS,
+    interestFreeLookup: () => [2, 3, 6],
   })
 }
 
@@ -88,18 +97,18 @@ function fingerprint(lines: CheckoutPricingLine[], mode: MercadoPagoCheckoutMode
 test("toggle OFF (default): mismo financiado con recargo que antes", () => {
   for (const product of [ALL, { ...ALL, cuotas_sin_recargo: false }, { ...ALL, cuotas_sin_recargo: null }]) {
     assert.equal(hasInstallmentsWithoutSurcharge(product), false)
-    assert.equal(getProductFinancedPrice(product, 100_000, REAL_CONFIG), getFinancedPrice(100_000, 6, REAL_CONFIG))
+    assert.equal(maxTierPrice(product, 100_000, REAL_CONFIG), getFinancedPrice(100_000, 6, REAL_CONFIG))
     assert.equal(INSTALLMENTS_COPY, "cuotas sin interés")
   }
-  assert.ok(getProductFinancedPrice(ALL, 100_000, REAL_CONFIG)! > 100_000)
+  assert.ok(maxTierPrice(ALL, 100_000, REAL_CONFIG)! > 100_000)
 })
 
 test("toggle ON: financiado = contado, cuotas = contado / N, sin CFTEA", () => {
   assert.equal(hasInstallmentsWithoutSurcharge(ALL_WITHOUT_SURCHARGE), true)
-  assert.equal(getProductFinancedPrice(ALL_WITHOUT_SURCHARGE, 100_000, REAL_CONFIG), 100_000)
+  assert.equal(maxTierPrice(ALL_WITHOUT_SURCHARGE, 100_000, REAL_CONFIG), 100_000)
   // Sin redondeo al múltiplo de cuotas: ni un centavo por encima del contado.
-  assert.equal(getProductFinancedPrice(ALL_WITHOUT_SURCHARGE, 99_999, REAL_CONFIG), 99_999)
-  const plans = getInstallmentPlans(ALL_WITHOUT_SURCHARGE, 90_000, REAL_CONFIG)
+  assert.equal(maxTierPrice(ALL_WITHOUT_SURCHARGE, 99_999, REAL_CONFIG), 99_999)
+  const plans = maxTierPlans(ALL_WITHOUT_SURCHARGE, 90_000, REAL_CONFIG)
   assert.deepEqual(plans, [{ count: 2, amount: 45_000 }, { count: 3, amount: 30_000 }, { count: 6, amount: 15_000 }])
   for (const plan of plans) assert.equal(calculateCftea(90_000, plan.amount, plan.count), null)
   // El copy de cara al cliente es el mismo con la regla activa: "sin interés".
@@ -108,8 +117,8 @@ test("toggle ON: financiado = contado, cuotas = contado / N, sin CFTEA", () => {
 test("toggle ON sin cuotas habilitadas: no habilita cuotas por sí solo", () => {
   const onlyFlag = { cuotas_sin_recargo: true }
   assert.equal(hasInstallmentsWithoutSurcharge(onlyFlag), false)
-  assert.equal(getProductFinancedPrice(onlyFlag, 100_000, REAL_CONFIG), null)
-  assert.deepEqual(getInstallmentPlans(onlyFlag, 100_000, REAL_CONFIG), [])
+  assert.equal(maxTierPrice(onlyFlag, 100_000, REAL_CONFIG), null)
+  assert.deepEqual(maxTierPlans(onlyFlag, 100_000, REAL_CONFIG), [])
  assert.equal(price([line(1, 50_000, onlyFlag)]).financed, null)
 })
 
@@ -133,6 +142,7 @@ test("checkout todo sin recargo: en cuotas se cobra EXACTAMENTE el contado (sin 
     lines: [line(1, 33_333, ALL_WITHOUT_SURCHARGE, { quantity: 2 }), line(2, 10_001, ALL_WITHOUT_SURCHARGE)],
     mode: "financed",
     installmentsFinancing: REAL_CONFIG,
+    financingCount: pricing.offeredInstallmentCount,
     productsSubtotal: summary.productsSubtotal,
   })
   assert.deepEqual(financedLines, [66_666, 10_001])
@@ -167,7 +177,7 @@ test("carrito mixto: la línea sin recargo aporta su contado y la otra su financ
     assert.equal(cents(plan.amount) * plan.count, cents(pricing.financed!.externalAmountDue))
   }
   const productsSubtotal = getMercadoPagoSummaryBreakdown(pricing, "financed").productsSubtotal
-  const amounts = getCheckoutSummaryLineAmounts({ lines, mode: "financed", installmentsFinancing: REAL_CONFIG, productsSubtotal })
+  const amounts = getCheckoutSummaryLineAmounts({ lines, mode: "financed", installmentsFinancing: REAL_CONFIG, financingCount: pricing.offeredInstallmentCount, productsSubtotal })
   // El ajuste de redondeo de cuotas va a la línea CON recargo; la otra muestra su contado exacto.
   assert.equal(amounts[0], 100_000)
   assert.equal(cents(amounts[0]) + cents(amounts[1]), cents(productsSubtotal))
@@ -186,7 +196,7 @@ test("variantes heredan la regla del producto, cada una con su propio precio", (
   assert.equal(pricing.installmentsPricingRule, "without_surcharge")
   assert.deepEqual(pricing.installmentsWithoutSurchargeProductIds, [7])
   assert.equal(pricing.financedTotal, 245_500)
-  assert.equal(getInstallmentPlans(ALL_WITHOUT_SURCHARGE, 125_500, REAL_CONFIG)[2].amount, 125_500 / 6)
+  assert.equal(maxTierPlans(ALL_WITHOUT_SURCHARGE, 125_500, REAL_CONFIG)[2].amount, 125_500 / 6)
 })
 
 test("saldo a favor sin recargo: external = total - saldo exacto (sin llevar el saldo al múltiplo de cuotas)", () => {

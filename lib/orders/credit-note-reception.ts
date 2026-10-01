@@ -49,7 +49,7 @@ export function getClaimReturnPendingError(): string {
 
 /** Incidencia de inspección abierta: bloquea NC/reintegro hasta resolverla (auditado). */
 export function getClaimIncidentOpenError(): string {
-  return "La inspección del producto tiene una incidencia abierta. Resolvela desde el reclamo antes de emitir la nota de crédito o el reintegro."
+  return "La inspección del producto tiene un problema abierto. Resolvelo desde el reclamo antes de emitir la nota de crédito o el reintegro."
 }
 
 /**

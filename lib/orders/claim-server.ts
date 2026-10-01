@@ -59,7 +59,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   // Logística de postventa (20260928100000).
   CLAIM_LOGISTICS_FORBIDDEN: [403, "Sólo un administrador puede gestionar la logística del reclamo."],
   CLAIM_LOGISTICS_OPEN: [409, "La logística del reclamo sigue en curso: hay unidades en Andreani, sin inspeccionar, reservas sin resolver u operaciones abiertas."],
-  CLAIM_LOGISTICS_INCIDENT: [409, "Hay una incidencia abierta en las unidades del reclamo. Resolvela antes de continuar."],
+  CLAIM_LOGISTICS_INCIDENT: [409, "Hay un problema abierto en las unidades del reclamo. Resolvelo antes de continuar."],
   CLAIM_LOGISTICS_LOCKED: [409, "La logística física ya empezó: la resolución no puede cambiarse desde acá."],
   CLAIM_REOPEN_REASON_REQUIRED: [400, "Escribí el motivo de la corrección (mínimo 10 caracteres)."],
   CLAIM_REOPEN_NOT_ALLOWED: [409, "Este reclamo no se puede volver a revisar."],
@@ -70,7 +70,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_LOGISTICS_NOT_ALLOWED: [409, "Esta operación no corresponde a la solución aceptada del reclamo."],
   CLAIM_LOGISTICS_NOT_NEEDED: [409, "No quedan unidades en poder del cliente para esta operación."],
   CLAIM_LOGISTICS_ATTEMPTS: [409, "Se alcanzó el máximo de intentos logísticos para este reclamo."],
-  CLAIM_LOGISTICS_NOTE_REQUIRED: [400, "Indicá el motivo (mínimo 10 caracteres; 5 para incidencias y llegadas con novedad)."],
+  CLAIM_LOGISTICS_NOTE_REQUIRED: [400, "Indicá el motivo (mínimo 10 caracteres; 5 para problemas y llegadas con novedad)."],
   CLAIM_LOGISTICS_INVALID: [400, "Revisá la acción, el producto y la cantidad."],
   CLAIM_LOGISTICS_IDEMPOTENCY_KEY_REQUIRED: [400, "La operación no tiene una clave de idempotencia válida."],
   CLAIM_LOGISTICS_IDEMPOTENCY_CONFLICT: [409, "Esta operación ya se registró con otros datos. Actualizá el reclamo."],
@@ -84,10 +84,10 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_LOGISTICS_PLAN_LOCKED: [409, "Ya hubo una operación Andreani: cambiar de método requiere un motivo (mínimo 10 caracteres)."],
   CLAIM_LOGISTICS_RESERVATION_ACTIVE: [409, "Hay stock reservado para el reemplazo: liberá la reserva (con motivo) antes de cambiar el método."],
   CLAIM_LOGISTICS_CREDIT_NOTE_ACTIVE: [409, "El reclamo tiene una nota de crédito vigente: el método no se puede cambiar."],
-  CLAIM_LOGISTICS_REQUIRES_INSPECTION: [409, "El reemplazo se autoriza cuando el producto original fue recibido e inspeccionado sin incidencias."],
+  CLAIM_LOGISTICS_REQUIRES_INSPECTION: [409, "El reemplazo se autoriza cuando el producto original fue recibido e inspeccionado sin problemas."],
   CLAIM_LOGISTICS_LEGACY: [409, "Este reclamo es anterior al circuito por sucursal y ya tuvo movimientos: continuá con su flujo original."],
   CLAIM_INSPECTION_NOT_RESTOCKABLE: [409, "Un paquete vacío o un producto distinto nunca vuelve a stock: registralo como baja."],
-  CLAIM_MONEY_INCIDENT_OPEN: [409, "Hay una incidencia o revisión abierta en el reclamo: resolvela antes de la nota de crédito o el reintegro."],
+  CLAIM_MONEY_INCIDENT_OPEN: [409, "Hay un problema o una revisión abierta en el reclamo: resolvelo antes de la nota de crédito o el reintegro."],
   CLAIM_MONEY_RETURN_PENDING: [409, "El producto todavía no volvió a BEYONIX o no terminó su inspección. Registrá la recepción e inspección, o la excepción administrativa con su motivo."],
 }
 

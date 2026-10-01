@@ -95,6 +95,9 @@ for (const theme of ["light", "dark"] as const) {
       const experience = card("Excelente atención, llegó rápido")
       assert.equal(await experience.getByText("Experiencia", { exact: true }).count(), 1)
       assert.equal(await experience.getByRole("button", { name: /Destacar en Home/ }).count(), 1)
+      // Estado claro: aprobada pero todavía fuera de Home.
+      assert.equal(await experience.locator("[data-review-status-badge]").innerText(), "APROBADA")
+      assert.ok(await experience.locator("[data-review-home-hint]").isVisible())
 
       const product = card("Muy buen producto")
       assert.equal(await product.getByText("Reseña de producto", { exact: true }).count(), 1)
@@ -105,10 +108,13 @@ for (const theme of ["light", "dark"] as const) {
       // Reseña de producto destacada de antes: sólo se puede quitar.
       const legacy = card("Excelente trípode")
       assert.equal(await legacy.getByRole("button", { name: /Destacar en Home/ }).count(), 0)
+      assert.match(await legacy.locator("[data-review-status-badge]").innerText(), /NO SE MUESTRA EN HOME/)
       await legacy.getByRole("button", { name: /Quitar de Home/ }).click()
       await experience.getByRole("button", { name: /Destacar en Home/ }).click()
       await page.getByText("Reseña destacada en Home.").waitFor()
       assert.deepEqual(await page.evaluate("window.__patches"), [{ id: 4, featured: false }, { id: 6, featured: true }])
+      assert.equal(await experience.locator("[data-review-status-badge]").innerText(), "DESTACADA EN HOME")
+      assert.equal(await experience.locator("[data-review-home-hint]").count(), 0)
     } finally {
       await page.close()
     }

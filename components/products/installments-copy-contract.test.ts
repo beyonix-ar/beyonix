@@ -69,26 +69,24 @@ test("tarjeta de catálogo (shared-product-card) y hero usan INSTALLMENTS_COPY",
 
   assert.match(sharedCard, /\$\{INSTALLMENTS_COPY\} de \$\$\{maxInstallmentAmount/)
   assert.match(hero, /\$\{INSTALLMENTS_COPY\} de \$\{formatPrice\(featuredInstallmentAmount\)\}/)
-  // Precio financiado de cada card según la regla del producto (nunca el
-  // gross-up directo, que ignoraría la regla del producto).
+  // Precio financiado de cada card: tier confirmado por Mercado Pago con la
+  // regla del producto (nunca el gross-up directo ni la cuota configurada).
   for (const source of [sharedCard, hero]) {
-    assert.match(source, /getProductFinancedPrice\(/)
+    assert.match(source, /getProductInterestFreeOffer\(/)
     assert.doesNotMatch(source, /getFinancedPrice\(/)
   }
 })
 
-test("checkout: Mercado Pago con crédito, método de pago y resumen usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
+test("checkout: cada cuota sin interés, método de pago y resumen usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
   const checkout = readSource("../../app/checkout/page.tsx")
 
   assert.match(checkout, /const installmentsCopy = INSTALLMENTS_COPY/)
-  // Opción "Mercado Pago con crédito": badge "Hasta N cuotas ..." y detalle
-  // "N cuotas ... de $X" (modal informativo, como ejemplos).
-  assert.match(checkout, /Hasta \{mercadoPagoPricing\.maxInstallmentCount\} \{installmentsCopy\}/)
-  assert.match(checkout, /\{plan\.count\} \{installmentsCopy\} de/)
-  // Resumen del pedido con crédito: "Tarjeta de crédito: hasta N cuotas ... de $X".
+  // Una opción por cuota confirmada: "N cuotas sin interés".
+  assert.match(checkout, /title=\{`\$\{plan\.count\} \$\{installmentsCopy\}`\}/)
+  // Resumen con la cuota ELEGIDA: "Tarjeta de crédito: N cuotas ... de $X".
   assert.match(
     checkout,
-    /`Tarjeta de crédito: hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/,
+    /`Tarjeta de crédito: \$\{selectedInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(selectedInstallmentPlan\.amount\)\}`/,
   )
   assert.doesNotMatch(checkout, /cuotas fijas/)
 
@@ -107,14 +105,14 @@ test("checkout: Mercado Pago con crédito, método de pago y resumen usan INSTAL
   )
 })
 
-test("al contado sigue usando el precio de contado/transferencia -- ninguna cuota lo modifica", () => {
+test("1 pago sigue usando el precio de contado -- ninguna cuota lo modifica", () => {
   const checkout = readSource("../../app/checkout/page.tsx")
   const pricing = readSource("../../lib/pricing/checkout-pricing.ts")
 
-  // "En cuotas" sólo si el carrito lo admite; en cualquier otro caso, contado.
+  // Cuotas sólo con una cuota elegida y confirmada sin interés; si no, 1 pago (contado).
   assert.match(
     checkout,
-    /mercadoPagoMode === "financed" && mercadoPagoPricingBeforeCredit\.financed[\s\S]{0,20}\? "financed"[\s\S]{0,20}: "cash"/,
+    /mercadoPagoMode === "financed" &&\s*selectedInstallmentCount != null &&\s*mercadoPagoPricingBeforeCredit\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)\s*\? "financed"\s*: "cash"/,
   )
   // Contado: total = contado, preferencia en 1 pago, sin redondeo de cuotas.
   assert.match(pricing, /total: cashTotal,[\s\S]{0,200}roundingAdjustment: 0,\s*preferenceMaxInstallments: 1,/)

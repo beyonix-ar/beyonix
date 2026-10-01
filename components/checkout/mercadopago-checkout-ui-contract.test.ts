@@ -20,16 +20,19 @@ function extractBlock(source: string, startMarker: string) {
 // UI de Mercado Pago
 // ─────────────────────────────────────────────────────────────
 
-test("se muestran exactamente tres opciones: transferencia, Mercado Pago al contado y con crédito (sin MODO)", () => {
+test("opciones: transferencia, Mercado Pago en 1 pago (contado) y UNA opción por cuota sin interés confirmada (sin MODO)", () => {
   const options = [...checkout.matchAll(/option="([^"]+)"\n/g)].map((match) => match[1])
-  assert.deepEqual(options, ["transferencia", "mercadopago_cash", "mercadopago_financed"])
+  assert.deepEqual(options, ["transferencia", "mercadopago_cash"])
   assert.match(checkout, /title="Depósito \/ Transferencia"/)
-  assert.match(checkout, /title="Mercado Pago al contado"/)
-  assert.match(checkout, /description="Débito o dinero en cuenta de Mercado Pago"/, "al contado ya no ofrece crédito")
-  // C. "Cuotas" pasa a "Crédito": tarjeta de crédito en 1 pago o en cuotas.
-  assert.match(checkout, /title="Mercado Pago con crédito"/)
-  assert.match(checkout, /description="Pagá con tarjeta de crédito en 1 pago o en cuotas"/)
-  assert.doesNotMatch(checkout, /title="Mercado Pago en cuotas"|crédito en 1 pago o dinero en cuenta/)
+  // 1 pago: precio contado con cualquier medio (crédito incluido).
+  assert.match(checkout, /title="Mercado Pago en 1 pago"/)
+  assert.match(checkout, /description="Tarjeta de crédito, débito o dinero en cuenta"/)
+  assert.match(checkout, /badge=\{<span className="checkout-badge checkout-badge-neutral">Precio contado<\/span>\}/)
+  // Cuotas: sólo las confirmadas por Mercado Pago, cada una su opción.
+  assert.match(checkout, /\{offeredInstallmentPlans\.map\(\(plan\) => \(\s*<CheckoutPaymentOptionCard/)
+  assert.match(checkout, /option=\{`mercadopago_installments_\$\{plan\.count\}`\}/)
+  // Nunca una opción "crédito" genérica que permita algo distinto a lo calculado.
+  assert.doesNotMatch(checkout, /title="Mercado Pago con crédito"|option="mercadopago_financed"|title="Mercado Pago al contado"/)
   assert.doesNotMatch(checkout, /\bMODO\b/)
   // Sólo dos medios reales por debajo; el payload sigue siendo el mismo.
   assert.match(checkout, /const CHECKOUT_PAYMENT_METHOD_IDS = \["mercadopago", "transferencia"\] as const/)
@@ -38,24 +41,21 @@ test("se muestran exactamente tres opciones: transferencia, Mercado Pago al cont
   assert.doesNotMatch(checkout, /setInstallmentsModality/)
 })
 
-test("una sola elección (radio nativo) y sin estado extra: la opción se deriva del estado existente", () => {
+test("una sola elección (radio nativo): la cuota se elige ANTES de Mercado Pago y la opción se deriva del estado", () => {
   assert.equal((checkout.match(/name="checkout-payment-option"/g) ?? []).length, 1)
   assert.match(checkout, /type="radio"/)
   assert.match(
     checkout,
-    /const selectedPaymentOption = getCheckoutPaymentOption\(\s*selectedPayment,\s*effectiveMercadoPagoMode,\s*\)/,
+    /const selectedPaymentOption = getCheckoutPaymentOption\(\s*selectedPayment,\s*effectiveMercadoPagoMode,\s*selectedInstallmentCount,\s*\)/,
   )
   assert.doesNotMatch(checkout, /useState<CheckoutPaymentOption/)
+  // La cuota elegida viaja al servidor, que exige que siga confirmada.
+  assert.match(checkout, /mercadoPagoInstallments: isMercadoPagoFinanced \? selectedInstallmentCount : undefined,/)
 })
 
-test("el detalle de cuotas es informativo: modal con filas <li>, sin controles ni estado de pago", () => {
-  const rowsStart = checkout.indexOf("{plans.map((plan) => (")
-  assert.ok(rowsStart > 0)
-  const rows = checkout.slice(rowsStart, checkout.indexOf("</ul>", rowsStart))
-  assert.match(rows, /<li\s+key=\{plan\.count\}\s+data-installment-plan=\{plan\.count\}/)
-  assert.doesNotMatch(rows, /onClick|role="radio"|<button|<input|aria-checked|set[A-Z]\w*\(/)
+test("el modal de medios sólo informa: sin controles de pago", () => {
   // El modal sólo abre/cierra información: nunca cambia medio ni modalidad.
-  assert.match(checkout, /useState<"installments" \| "mercadopago_cash" \| null>\(null\)/)
+  assert.match(checkout, /useState<"mercadopago_cash" \| null>\(null\)/)
   const infoLinkStart = checkout.indexOf("function CheckoutPaymentInfoLink(")
   const infoLink = checkout.slice(infoLinkStart, checkout.indexOf("\n}\n", infoLinkStart))
   assert.match(infoLink, /type="button"/)
@@ -64,18 +64,16 @@ test("el detalle de cuotas es informativo: modal con filas <li>, sin controles n
   assert.doesNotMatch(modal, /setSelectedPayment|setMercadoPagoMode|type="radio"/)
 })
 
-test("resumen: contado dice 'Pago con Mercado Pago al contado'; crédito 'Tarjeta de crédito: hasta N cuotas sin interés de $X'", () => {
-  assert.match(checkout, /"Pago con Mercado Pago al contado"/)
-  assert.match(checkout, /`Tarjeta de crédito: hasta \$\{maxInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(maxInstallmentPlan\.amount\)\}`/)
+test("resumen: 1 pago dice 'precio contado'; cuotas 'Tarjeta de crédito: N cuotas sin interés de $X'", () => {
+  assert.match(checkout, /"Mercado Pago en 1 pago · precio contado"/)
+  assert.match(checkout, /`Tarjeta de crédito: \$\{selectedInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(selectedInstallmentPlan\.amount\)\}`/)
   // El total del resumen es el de la modalidad elegida (el mismo que se cobra).
   assert.match(checkout, /mercadoPagoQuote\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
 })
 
-test("CFTEA: discreto, dentro del detalle de cuotas y nunca en la pantalla principal", () => {
+test("CFTEA: discreto, junto a las opciones de cuotas y sólo si hay cuotas confirmadas", () => {
   assert.equal((checkout.match(/data-cftea-disclosure/g) ?? []).length, 1)
-  const modalStart = checkout.indexOf('{paymentInfoModal === "installments" && financedPreviewQuote && (')
-  const modalEnd = checkout.indexOf("</PaymentInfoModal>", modalStart)
-  assert.ok(modalStart > 0 && checkout.indexOf("data-cftea-disclosure") > modalStart && checkout.indexOf("data-cftea-disclosure") < modalEnd)
+  assert.match(checkout, /\{offeredInstallmentPlans\.length > 0 && cfteaSummary && \(/)
   assert.match(checkout, /CFTEA: \{cfteaSummary\}/)
   assert.doesNotMatch(checkout, /Costo financiero total efectivo anual/)
   assert.doesNotMatch(checkout, /— precio financiado/)

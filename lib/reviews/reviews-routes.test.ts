@@ -87,6 +87,40 @@ test("E/F. Home: sólo experiencias (product_id null) aprobadas y destacadas, co
   })
 })
 
+// Mini PostgREST: aplica a un conjunto de filas los filtros eq/is que manda
+// la ruta, para probar el RESULTADO de Home y no sólo los parámetros.
+function applyPostgrestFilters(rows: Row[], url: URL) {
+  return rows.filter((row) =>
+    [...url.searchParams].every(([column, filter]) => {
+      if (["select", "order", "limit", "offset"].includes(column)) return true
+      if (filter === "is.null") return row[column] === null
+      if (filter.startsWith("eq.")) return String(row[column]) === filter.slice(3)
+      return true
+    }),
+  )
+}
+
+test("Home: aparece la experiencia aprobada + destacada; ni la no destacada, ni la pendiente, ni una reseña de producto", async () => {
+  const dataset: Row[] = [
+    { ...review(10, true), product_id: null, approved: true },
+    { ...review(11, false), product_id: null, approved: true },
+    { ...review(12, true), product_id: 7, approved: true },
+    { ...review(13, true), product_id: null, approved: false },
+  ]
+  await withSupabase((url) => {
+    if (url.pathname === "/rest/v1/profiles") return [PROFILE]
+    return applyPostgrestFilters(dataset, url).map((row) =>
+      url.searchParams.get("select") === "rating" ? { rating: row.rating } : row,
+    )
+  }, async () => {
+    const { GET } = await import("../../app/api/reviews/route")
+    const payload = await (await GET(new Request("http://localhost/api/reviews"))).json()
+    assert.deepEqual(payload.reviews.map((item: { id: number }) => item.id), [10])
+    // El promedio considera todas las experiencias aprobadas (destacadas o no).
+    assert.equal(payload.summary.count, 2)
+  })
+})
+
 test("la página de producto sigue mostrando todas sus reseñas aprobadas (sin filtro de destacado), con primer nombre", async () => {
   await withSupabase((url) => (url.pathname === "/rest/v1/profiles" ? [PROFILE] : [review(3, false)]), async (requests) => {
     const { GET } = await import("../../app/api/reviews/route")

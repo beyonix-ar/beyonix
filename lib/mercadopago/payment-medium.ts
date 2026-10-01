@@ -3,14 +3,16 @@
 //
 // Nunca se usa para rechazar ni recalcular un pago aprobado: el monto de la
 // preferencia es fijo y ya se validó (monto exacto + moneda). Sólo deja
-// trazabilidad. El caso esperable de diferencia es "Crédito" pagado con
-// Dinero en cuenta (`account_money`), que Checkout Pro no permite excluir.
+// trazabilidad. Casos esperables de diferencia en "cuotas" (precio
+// financiado): pagar con Dinero en cuenta (Checkout Pro no permite excluirlo)
+// o elegir 1 pago dentro de Mercado Pago (Checkout Pro no admite un mínimo).
 
 export type MercadoPagoCheckoutModality = "mercadopago_cash" | "mercadopago_financed"
 
 /** Tipos de pago que corresponden a cada modalidad (ver exclusiones en checkout-pricing.ts). */
 const EXPECTED_PAYMENT_TYPES: Record<MercadoPagoCheckoutModality, readonly string[]> = {
-  mercadopago_cash: ["debit_card", "account_money", "prepaid_card"],
+  // 1 pago a precio contado: cualquier medio inmediato, crédito incluido.
+  mercadopago_cash: ["credit_card", "debit_card", "account_money", "prepaid_card"],
   mercadopago_financed: ["credit_card"],
 }
 
@@ -41,14 +43,19 @@ export function getMercadoPagoPaymentMedium(
 ): MercadoPagoPaymentMedium {
   const paymentTypeId = textOrNull(payment.payment_type_id)
   const modality = toMercadoPagoCheckoutModality(checkoutModality)
-  const installments = Number(payment.installments)
+  const rawInstallments = Number(payment.installments)
+  const installments = Number.isInteger(rawInstallments) && rawInstallments > 0 ? rawInstallments : null
+  const typeMatches =
+    modality && paymentTypeId ? EXPECTED_PAYMENT_TYPES[modality].includes(paymentTypeId) : null
 
   return {
     payment_type_id: paymentTypeId,
     payment_method_id: textOrNull(payment.payment_method_id),
-    installments: Number.isInteger(installments) && installments > 0 ? installments : null,
+    installments,
     checkout_modality: modality,
+    // Cuotas pagadas en 1 pago: se cobró el precio financiado por un pago
+    // único (el cliente tenía "1 pago" a contado en BEYONIX) -> a revisión.
     matches_checkout_modality:
-      modality && paymentTypeId ? EXPECTED_PAYMENT_TYPES[modality].includes(paymentTypeId) : null,
+      typeMatches === true && modality === "mercadopago_financed" && installments === 1 ? false : typeMatches,
   }
 }

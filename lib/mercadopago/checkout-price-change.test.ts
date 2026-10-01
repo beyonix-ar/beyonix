@@ -91,6 +91,7 @@ function evaluate({
     storeBenefitPercent: storeBenefit?.percent ?? null,
     requestedCustomerCredit: requestedCredit,
     settings,
+    interestFreeLookup: () => [2, 3, 6],
   })
   const quote = getMercadoPagoModeQuote(pricing, mode)
   assert.ok(quote, "la modalidad pedida tiene que existir para el carrito")
@@ -382,7 +383,7 @@ test("cantidad, variante, beneficio y saldo pedido también invalidan el intento
 
 const CREDIT_EXCLUSIONS = [{ id: "debit_card" }, { id: "prepaid_card" }, { id: "ticket" }, { id: "atm" }]
 
-test("A. preferencia al contado -> 1 pago, sin crédito ni medios diferidos (ticket/atm)", () => {
+test("A. preferencia en 1 pago (precio contado) -> 1 pago con cualquier medio (crédito incluido), sin medios diferidos", () => {
   const cash = evaluate({ mode: "cash" })
   assert.equal(cash.snapshot.mercadoPagoModality, "mercadopago_cash")
   assert.deepEqual(
@@ -390,7 +391,7 @@ test("A. preferencia al contado -> 1 pago, sin crédito ni medios diferidos (tic
     {
       installments: 1,
       default_installments: 1,
-      excluded_payment_types: [{ id: "credit_card" }, { id: "ticket" }, { id: "atm" }],
+      excluded_payment_types: [{ id: "ticket" }, { id: "atm" }],
     },
   )
   assert.equal(cash.snapshot.cftea, null, "al contado nunca hay CFTEA")

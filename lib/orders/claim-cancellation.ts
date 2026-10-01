@@ -32,7 +32,7 @@ export const CLAIM_CANCELLATION_BLOCKER_LABELS: Record<ClaimCancellationBlocker,
   replacement_delivered: "El reemplazo ya fue entregado: corresponde finalizar el reclamo.",
   return_in_transit: "El producto original está en camino a BEYONIX.",
   inspection_pending: "Hay un producto recibido sin inspeccionar.",
-  incident: "Hay una incidencia abierta.",
+  incident: "Hay un problema abierto.",
   credit_note_pending: "Hay una nota de crédito en curso.",
   credit_note_issued: "Ya se emitió la nota de crédito: corresponde finalizar el reclamo.",
   credit_applied: "Ya se acreditó saldo a favor: corresponde finalizar el reclamo.",
@@ -100,8 +100,8 @@ export function getClaimCancellationBlockerViews(codes: readonly ClaimCancellati
         return view(code, "Ir a operación", legStep, "cancel_leg")
       case "incident":
         return context.incidentOnUnits
-          ? view(code, "Ir a incidencia", "reception", "incident_resolve")
-          : view(code, "Ir a incidencia", legStep, "review_resolve")
+          ? view(code, "Ir al problema", "reception", "incident_resolve")
+          : view(code, "Ir al problema", legStep, "review_resolve")
       case "replacement_in_transit":
         return view(code, "Ir a recepción", "reception", "arrival_replacement")
       case "return_in_transit":

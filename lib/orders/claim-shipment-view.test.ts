@@ -51,7 +51,11 @@ test("cliente, CAMBIO: sucursal, qué preparar y qué pasa si no entrega el orig
 test("cliente, RETIRO y REENVÍO: etiqueta sólo de la devolución generada; reenvío a retirar en sucursal", () => {
   const dropoff = getCustomerClaimShipmentView({ direction: "devolucion", status: "generada", modality: "despacho_sucursal", branch_name: "Sucursal Once" })
   assert.equal(dropoff?.label, true)
-  assert.match(dropoff?.instructions[1] ?? "", /llevalo a Sucursal Once/)
+  // Devolución: nunca una sucursal fija ni la de BEYONIX. Sucursal Andreani
+  // habilitada + etiqueta, que define envío y destino.
+  assert.match(dropoff?.instructions.join(" ") ?? "", /acercalo a una sucursal Andreani habilitada con la etiqueta de devolución\. Al escanearla, Andreani identificará automáticamente los datos del envío y su destino\./)
+  assert.doesNotMatch(JSON.stringify(dropoff), /Sucursal Once|llevalo a/i)
+  assert.equal(dropoff?.branchLabel, null)
   assert.equal(getCustomerClaimShipmentView({ direction: "devolucion", status: "pendiente" })?.label, false)
   assert.equal(getCustomerClaimShipmentView({ direction: "devolucion", status: "entregada" })?.label, false)
   const resend = getCustomerClaimShipmentView({ direction: "reemplazo", status: "en_sucursal", modality: "entrega_sucursal", branch_name: "Sucursal Once" })

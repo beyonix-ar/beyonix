@@ -4,7 +4,7 @@ import {
 } from "@/lib/payments/mercadopago-cash-media"
 
 /**
- * Contenido de "Mercado Pago al contado → Ver medios": marcas y medios en
+ * Contenido de "Mercado Pago en 1 pago → Ver medios": marcas y medios en
  * chips compactos agrupados (nunca bancos emisores). Los nombres van como
  * texto: el proyecto no tiene logos oficiales de las marcas y no se imitan.
  */

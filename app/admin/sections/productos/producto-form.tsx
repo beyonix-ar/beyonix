@@ -50,8 +50,8 @@ import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
 import { getEffectiveInstallmentPercent } from "@/lib/products/installments"
 import {
-  getInstallmentPlans,
-  getProductFinancedPrice,
+  getInstallmentAmount,
+  getProductFinancingCandidates,
   getTransferPrice,
 } from "@/lib/pricing/financed-pricing"
 import { useSiteSettings } from "@/hooks/use-site-settings"
@@ -193,14 +193,19 @@ export function ProductoForm({
     cashPricePreview != null
       ? getTransferPrice(cashPricePreview, pricing.transferDiscountPercent)
       : null
-  const financedPricePreview =
+  // Vista previa por TIER: el cliente paga el financiado de la cuota más alta
+  // que Mercado Pago habilite sin interés para ese monto (puede ser menor a
+  // la configurada). Cada cuota muestra su valor si Mercado Pago habilita
+  // hasta esa cuota; "Financiado" es el de la cuota máxima configurada.
+  const tierPricesPreview =
     cashPricePreview != null
-      ? getProductFinancedPrice(installmentsPreviewProduct, cashPricePreview, installmentsFinancing)
-      : null
-  const installmentPlansPreview =
-    cashPricePreview != null
-      ? getInstallmentPlans(installmentsPreviewProduct, cashPricePreview, installmentsFinancing)
+      ? getProductFinancingCandidates(installmentsPreviewProduct, cashPricePreview, installmentsFinancing)
       : []
+  const financedPricePreview = tierPricesPreview[tierPricesPreview.length - 1]?.amount ?? null
+  const installmentPlansPreview = tierPricesPreview.flatMap((tier) => {
+    const amount = getInstallmentAmount(tier.amount, tier.count)
+    return amount == null ? [] : [{ count: tier.count, amount }]
+  })
   const targetMarginPercentValue = form.targetMarginPercent
     ? Number(form.targetMarginPercent)
     : null
@@ -787,7 +792,7 @@ export function ProductoForm({
                       </p>
                     </div>
                     <div>
-                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Financiado</p>
+                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Financiado (cuota máx.)</p>
                       <p className="text-sm font-black text-white">
                         {financedPricePreview != null
                           ? productPriceFormatter.format(financedPricePreview)

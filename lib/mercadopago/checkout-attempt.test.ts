@@ -73,6 +73,7 @@ function economicFingerprintFor({
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
     settings,
+    interestFreeLookup: () => [2, 3, 6],
   })
   return createCheckoutEconomicFingerprint(
     buildCheckoutEconomicState({

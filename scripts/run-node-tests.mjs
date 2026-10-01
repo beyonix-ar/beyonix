@@ -241,6 +241,11 @@ const TEST_FILES = [
   "lib/reviews/reviews-featured-window-sql.test.ts",
   "lib/reviews/public-name.test.ts",
   "lib/mercadopago/payment-medium.test.ts",
+  "lib/mercadopago/observed-costs.test.ts",
+  "lib/mercadopago/interest-free-installments.test.ts",
+  "lib/pricing/financing-tier.test.ts",
+  "lib/claims/claim-unit-selection.test.ts",
+  "lib/reviews/rating-label.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN

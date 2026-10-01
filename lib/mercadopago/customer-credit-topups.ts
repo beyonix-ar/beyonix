@@ -35,6 +35,16 @@ export interface MercadoPagoPayment {
   fee_details?: MercadoPagoPaymentFeeDetail[] | null
   /** Monto bruto pagado y neto recibido/a liquidar, según informa Mercado Pago. */
   transaction_details?: MercadoPagoPaymentTransactionDetails | null
+  /** Cargos reales discriminados (nombre, tasa exacta con IVA y montos). */
+  charges_details?: Array<{
+    name?: string | null
+    type?: string | null
+    rate?: number | null
+    amounts?: { original?: number | null; refunded?: number | null } | null
+  }> | null
+  /** Fecha y estado de liberación del dinero, según Mercado Pago. */
+  money_release_date?: string | null
+  money_release_status?: string | null
 }
 
 interface MercadoPagoSearchResponse {

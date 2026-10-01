@@ -153,7 +153,7 @@ export async function POST(
       return NextResponse.json({
         error: planRequired
           ? "Primero elegí el método logístico del cambio (cambio directo o retiro + revisión) y, si corresponde, autorizá el reemplazo."
-          : "El reemplazo se reserva recién con el original recibido, inspeccionado y sin incidencias abiertas.",
+          : "El reemplazo se reserva recién con el original recibido, inspeccionado y sin problemas abiertos.",
       }, { status: 409 })
     }
     const logisticsLocked = /REPLACEMENT_LOGISTICS_LOCKED/.test(message)
