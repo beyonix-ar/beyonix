@@ -8,7 +8,7 @@ import {
   type CheckoutPricingLine,
   type CheckoutPricingSettings,
 } from "../../lib/pricing/checkout-pricing.ts"
-import { getCartFinancedTotal, getMaxEligibleInstallmentCount } from "../../lib/pricing/financed-pricing.ts"
+import { getCartFinancedTotal } from "../../lib/pricing/financed-pricing.ts"
 import {
   calculateTransferCheckoutPricing,
   getTransferSummaryBreakdown,
@@ -31,10 +31,8 @@ const SETTINGS: CheckoutPricingSettings = {
   nationalTaxesIncidencePercent: 21,
 }
 
-const ALL_INSTALLMENTS = { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }
-
 function line(productId: number, unitPrice: number, quantity = 1): CheckoutPricingLine {
-  return { productId, variantId: null, conditionedStockId: null, quantity, unitPrice, installments: ALL_INSTALLMENTS }
+  return { productId, variantId: null, conditionedStockId: null, quantity, unitPrice }
 }
 
 function cents(value: number) {
@@ -53,22 +51,23 @@ function assertAddsUp(summary: { productsSubtotal: number; storeBenefitDiscount:
 // Jerarquía visual de "Método de pago"
 // ─────────────────────────────────────────────────────────────
 
-test("1-2. lista simple en orden: Transferencia, Mercado Pago en 1 pago, cuotas confirmadas; sin paneles anidados", () => {
-  const listStart = checkout.indexOf("<fieldset className=\"grid gap-3\" data-payment-options>")
+test("1-2. lista simple en orden: Transferencia, Mercado Pago · 1 pago, cuotas sin interés; sin paneles anidados", () => {
+  const listStart = checkout.indexOf("<fieldset className=\"grid gap-2.5\" data-payment-options>")
   const listEnd = checkout.indexOf("</fieldset>", listStart)
   assert.ok(listStart > 0 && listEnd > listStart)
   const list = checkout.slice(listStart, listEnd)
   const order = [
     list.indexOf('option="transferencia"'),
     list.indexOf('option="mercadopago_cash"'),
-    list.indexOf("{offeredInstallmentPlans.map((plan) => ("),
+    list.indexOf('option="mercadopago_installments"'),
   ]
   assert.ok(order.every((index) => index > 0))
   assert.ok(order[0] < order[1] && order[1] < order[2])
   // Cada opción es una única tarjeta: no hay grupos anidados ni radiogroups internos.
   assert.doesNotMatch(list, /role="radiogroup"|data-mercadopago-modes|data-mercadopago-mode=/)
-  // Mientras Mercado Pago confirma, se avisa en vez de mostrar cuotas.
-  assert.match(list, /\{interestFreeConfirmationPending && mercadoPagoPricingBeforeCredit\.maxInstallmentCount != null && \(/)
+  // Mientras Mercado Pago confirma: la tarjeta global lo dice ("Consultando…") o, sin oferta global, un aviso.
+  assert.match(list, /\{interestFreeConfirmationPending && !globalInterestFreeMessage && \(/)
+  assert.match(list, /Consultando disponibilidad para tu total…/)
 })
 
 test("3-4. el cliente elige UNA opción (1 pago o una cuota): todas son el mismo radio", () => {
@@ -114,7 +113,7 @@ test("5-6. en light la opción elegida es sobria: fondo blanco/gris muy claro, b
 })
 
 test("7-8. transferencia: '¡Mejor precio!' y 'Incluye N% de descuento' dinámico y destacado", () => {
-  const listStart = checkout.indexOf("<fieldset className=\"grid gap-3\" data-payment-options>")
+  const listStart = checkout.indexOf("<fieldset className=\"grid gap-2.5\" data-payment-options>")
   const list = checkout.slice(listStart, checkout.indexOf("</fieldset>", listStart))
   assert.match(list, /title="Depósito \/ Transferencia"/)
   assert.match(list, /description="En cuenta bancaria o virtual"/)
@@ -163,11 +162,8 @@ test("10/12/14. en cuotas: productos FINANCIADOS canónicos + envío real = tota
     assert.equal(summary.shipping, 6_900)
     // "Productos" = suma de financiados canónicos por línea + ajuste de redondeo de cuotas.
     const canonicalFinancedProducts = getCartFinancedTotal(
-      lines.map((item) => ({
-        cashPrice: item.unitPrice,
-        maxEligibleCount: getMaxEligibleInstallmentCount(item.installments),
-        quantity: item.quantity,
-      })),
+      lines.map((item) => ({ cashPrice: item.unitPrice, quantity: item.quantity })),
+      pricing.offeredInstallmentCount!,
       SETTINGS.installmentsFinancing,
     )
     assert.equal(

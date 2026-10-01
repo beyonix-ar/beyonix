@@ -1,25 +1,23 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { CheckCircle2, ChevronDown, ShieldCheck, Truck } from "lucide-react"
+import { CheckCircle2, ShieldCheck, Truck } from "lucide-react"
 
 import { BeyonixButton } from "@/components/beyonix-ui"
 
 import { ProductCartToggleButton } from "./product-cart-toggle-button"
 import { getDiscountPercent } from "@/lib/products/product-variants"
-import { INSTALLMENTS_COPY, type InstallmentPlan } from "@/lib/pricing/financed-pricing"
 
 interface ProductPurchaseBoxProps {
   price: number
   originalPrice?: number
   transferPrice?: number | null
   transferDiscountPercent?: number
-  /** Precio financiado total (constante, calculado con la cuota máxima habilitada). `null` si el producto no financia. */
-  financedPrice?: number | null
-  /** Todas las modalidades habilitadas, en orden ascendente, mismo `financedPrice`. */
-  installmentPlans?: InstallmentPlan[]
-  /** CFTEA anual (%), sólo cuando hay financiación real (nunca en 1 pago). */
-  cfteaPercent?: number | null
+  /**
+   * Regla GLOBAL vigente de cuotas sin interés ("Hasta N cuotas sin interés a
+   * partir de $X"), confirmada por Mercado Pago. `null`: no se comunica nada.
+   */
+  interestFreeText?: string | null
   priceWithoutNationalTaxesCash?: number | null
   isInCart?: boolean
   cartQuantity?: number
@@ -40,16 +38,6 @@ function formatPrice(price: number) {
   }).format(price)
 }
 
-/** Línea "CFTEA: x%" de la ficha oculta temporalmente, pendiente de definición legal. */
-const SHOW_CFTEA_ON_PRODUCT = false
-
-function formatPercent(value: number) {
-  return new Intl.NumberFormat("es-AR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value)
-}
-
 /** "10" -> "10%", "7.5" -> "7,5%" -- nunca fuerza un decimal ",0" innecesario. */
 function formatOffPercent(value: number) {
   return new Intl.NumberFormat("es-AR", {
@@ -63,9 +51,7 @@ export function ProductPurchaseBox({
   originalPrice,
   transferPrice = null,
   transferDiscountPercent = 0,
-  financedPrice = null,
-  installmentPlans = [],
-  cfteaPercent = null,
+  interestFreeText = null,
   priceWithoutNationalTaxesCash = null,
   isInCart = false,
   cartQuantity = 0,
@@ -77,7 +63,6 @@ export function ProductPurchaseBox({
   onViewCart,
 }: ProductPurchaseBoxProps) {
   const [quantity, setQuantity] = useState(cartQuantity)
-  const [showInstallmentOptions, setShowInstallmentOptions] = useState(false)
 
   useEffect(() => {
     setQuantity(cartQuantity)
@@ -107,7 +92,6 @@ export function ProductPurchaseBox({
   }
 
   const discount = getDiscountPercent(price, originalPrice)
-  const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
 
   return (
     <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
@@ -138,52 +122,10 @@ export function ProductPurchaseBox({
         </p>
       )}
 
-      {!!maxInstallmentPlan && financedPrice != null && (
-        <div className="mb-2">
-          {/* Concepto de cara al cliente: "Hasta N cuotas sin interés de
-              $X" -- decisión de negocio vigente (no "precio financiado",
-              texto técnico). El precio financiado ya incorpora el costo de
-              MP de antemano, así que ninguna cuota agrega recargo adicional
-              sobre ese total: el disclosure legal (CFTEA) sigue vivo más
-              abajo para cubrir la diferencia contado/financiado. */}
-          <p className="beyonix-modal-title text-14px font-semibold text-white">
-            Hasta {maxInstallmentPlan.count} {INSTALLMENTS_COPY} de {formatPrice(maxInstallmentPlan.amount)}
-          </p>
-
-          {installmentPlans.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setShowInstallmentOptions((current) => !current)}
-              className="mt-1 inline-flex items-center gap-1 text-12px font-medium text-beyonix-sky/85 transition-colors hover:text-beyonix-sky"
-            >
-              Ver opciones de financiación
-              <ChevronDown
-                className={`size-3.5 transition-transform ${showInstallmentOptions ? "rotate-180" : ""}`}
-              />
-            </button>
-          )}
-
-          {showInstallmentOptions && installmentPlans.length > 1 && (
-            <ul className="mt-2 space-y-1 border-l border-[#21476B]/65 pl-3">
-              {installmentPlans.map((plan) => (
-                <li key={plan.count} className="beyonix-modal-body text-12px font-medium text-white/70">
-                  {plan.count} {INSTALLMENTS_COPY} de {formatPrice(plan.amount)}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Disclosure legal Argentina (CFTEA): al haber precio financiado >
-              contado, se informa el costo financiero total efectivo anual
-              como transparencia adicional al copy "sin interés" de arriba.
-              Oculto temporalmente en la ficha (SHOW_CFTEA_ON_PRODUCT); el
-              cálculo sigue vivo y se muestra igual en el checkout. */}
-          {SHOW_CFTEA_ON_PRODUCT && cfteaPercent != null && (
-            <p className="beyonix-modal-muted mt-1 text-10px font-medium leading-4 text-white/45">
-              CFTEA: {formatPercent(cfteaPercent)}%
-            </p>
-          )}
-        </div>
+      {interestFreeText && (
+        <p data-interest-free-global className="beyonix-modal-title mb-2 text-14px font-semibold text-white">
+          {interestFreeText}
+        </p>
       )}
 
       {priceWithoutNationalTaxesCash != null && (

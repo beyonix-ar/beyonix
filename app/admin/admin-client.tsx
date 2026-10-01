@@ -7,6 +7,7 @@ import {
   BarChart3,
   BellRing,
   CalendarDays,
+  CreditCard,
   FileText,
   GripVertical,
   History,
@@ -341,6 +342,12 @@ export function AdminClient({ children }: { children: ReactNode }) {
         icon: <Settings2 className="size-4" />,
       },
       {
+        key: "financiacion",
+        label: "Financiación",
+        description: "Mercado Pago, cuotas y costos",
+        icon: <CreditCard className="size-4" />,
+      },
+      {
         key: "notificaciones",
         label: "Notificaciones",
         description: "Promos y avisos a clientes",
@@ -349,7 +356,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
       {
         key: "editor-masivo",
         label: "Editor masivo",
-        description: "Ofertas, precios y cuotas",
+        description: "Ofertas y precios",
         icon: <Percent className="size-4" />,
       },
       {
@@ -415,9 +422,16 @@ export function AdminClient({ children }: { children: ReactNode }) {
     const ordered = navigationOrder
       .map((key) => byKey.get(key))
       .filter((item): item is NavigationItem => Boolean(item))
-    const missing = navigation.filter((item) => !navigationOrder.includes(item.key))
+    // Una sección nueva (que el orden guardado no conoce) entra junto a la
+    // que la precede en el orden por defecto, no al final del menú.
+    for (const [index, item] of navigation.entries()) {
+      if (navigationOrder.includes(item.key)) continue
+      const previousKey = navigation[index - 1]?.key
+      const previousIndex = previousKey ? ordered.findIndex((entry) => entry.key === previousKey) : -1
+      ordered.splice(previousIndex + 1, 0, item)
+    }
 
-    return [...ordered, ...missing]
+    return ordered
   }, [isSuperAdmin, navigation, navigationOrder])
 
   const moveNavigationItem = (source: AdminRouteKey, target: AdminRouteKey) => {

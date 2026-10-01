@@ -22,10 +22,7 @@ interface ProductsFiltersSidebarProps {
 
   onlyBestSellers: boolean
   setOnlyBestSellers: (value: boolean) => void
-  onlyInstallments: boolean
-  setOnlyInstallments: (value: boolean) => void
 
-  showInstallmentsFilter: boolean
   showFeaturedFilter: boolean
   showOfferFilter: boolean
   showPriceFilter: boolean
@@ -53,10 +50,7 @@ export function ProductsFiltersSidebar({
 
   onlyBestSellers,
   setOnlyBestSellers,
-  onlyInstallments,
-  setOnlyInstallments,
 
-  showInstallmentsFilter,
   showFeaturedFilter,
   showOfferFilter,
   showPriceFilter,
@@ -109,20 +103,15 @@ export function ProductsFiltersSidebar({
         }`}
       >
 
-        {(showOfferFilter ||
-          showFeaturedFilter ||
-          showInstallmentsFilter) && (
+        {(showOfferFilter || showFeaturedFilter) && (
         <div className="pb-5">
           <CommerceFilter
             onlyOffers={onlyOffers}
             setOnlyOffers={setOnlyOffers}
             onlyBestSellers={onlyBestSellers}
             setOnlyBestSellers={setOnlyBestSellers}
-            onlyInstallments={onlyInstallments}
-            setOnlyInstallments={setOnlyInstallments}
             showOfferFilter={showOfferFilter}
             showFeaturedFilter={showFeaturedFilter}
-            showInstallmentsFilter={showInstallmentsFilter}
           />
         </div>
         )}

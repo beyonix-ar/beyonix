@@ -54,9 +54,10 @@ const cents = (amount: number) => Math.round(amount * 100)
 function financedCheckoutWithCredit(shipping: number, creditBalance: number) {
   const financedProducts = getCartFinancedTotal(
     [
-      { cashPrice: 51_673, maxEligibleCount: 6, quantity: 1 },
-      { cashPrice: 12_345, maxEligibleCount: 6, quantity: 2 },
+      { cashPrice: 51_673, quantity: 1 },
+      { cashPrice: 12_345, quantity: 2 },
     ],
+    6,
     REAL_CONFIG,
   )
   const financedTotal = roundMoney(financedProducts + shipping)

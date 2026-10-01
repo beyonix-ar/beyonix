@@ -5,21 +5,13 @@ interface CommerceFilterProps {
   setOnlyOffers: (value: boolean) => void
   onlyBestSellers: boolean
   setOnlyBestSellers: (value: boolean) => void
-  onlyInstallments: boolean
-  setOnlyInstallments: (value: boolean) => void
   showOfferFilter: boolean
   showFeaturedFilter: boolean
-  showInstallmentsFilter: boolean
 }
 
 const options = [
   { label: "En oferta", key: "offers", visibleKey: "showOfferFilter" },
   { label: "Destacados", key: "featured", visibleKey: "showFeaturedFilter" },
-  {
-    label: "Con cuotas",
-    key: "installments",
-    visibleKey: "showInstallmentsFilter",
-  },
 ] as const
 
 export function CommerceFilter({
@@ -27,28 +19,22 @@ export function CommerceFilter({
   setOnlyOffers,
   onlyBestSellers,
   setOnlyBestSellers,
-  onlyInstallments,
-  setOnlyInstallments,
   showOfferFilter,
   showFeaturedFilter,
-  showInstallmentsFilter,
 }: CommerceFilterProps) {
   const checkedMap: Record<string, boolean> = {
     offers: onlyOffers,
     featured: onlyBestSellers,
-    installments: onlyInstallments,
   }
 
   const setterMap: Record<string, (value: boolean) => void> = {
     offers: setOnlyOffers,
     featured: setOnlyBestSellers,
-    installments: setOnlyInstallments,
   }
 
   const visibilityMap: Record<string, boolean> = {
     showOfferFilter,
     showFeaturedFilter,
-    showInstallmentsFilter,
   }
 
   const visibleOptions = options.filter(

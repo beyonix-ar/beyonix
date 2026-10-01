@@ -7,7 +7,6 @@ import {
   resolveTargetMarginPrice,
   type TargetMarginVariantState,
 } from "@/lib/pricing/product-target-margin"
-import type { InstallmentCount } from "@/lib/products/installments"
 
 function parseProductId(value: string) {
   const parsed = Number(value)
@@ -93,15 +92,18 @@ export async function PATCH(
   const targetMarginPercent = parseTargetMarginPercent(catalogInput.target_margin_percent)
   delete catalogInput.pricing_mode
   delete catalogInput.target_margin_percent
-
-  if (
-    catalogInput.cuotas_sin_recargo !== undefined &&
-    typeof catalogInput.cuotas_sin_recargo !== "boolean"
-  ) {
-    return Response.json(
-      { error: "La opción de cuotas sin recargo no es válida." },
-      { status: 400 },
-    )
+  // La financiación ya no es una propiedad del producto (Admin → Financiación):
+  // las columnas legacy de cuotas nunca se escriben desde acá.
+  for (const legacyField of [
+    "cuotas_2_habilitadas",
+    "cuotas_3_habilitadas",
+    "cuotas_6_habilitadas",
+    "cuotas_sin_recargo",
+    "promo_original_cuotas_2_habilitadas",
+    "promo_original_cuotas_3_habilitadas",
+    "promo_original_cuotas_6_habilitadas",
+  ]) {
+    delete catalogInput[legacyField]
   }
 
   if (pricingMode === "target_margin") {
@@ -112,20 +114,12 @@ export async function PATCH(
       )
     }
 
-    const eligibleInstallmentCounts: InstallmentCount[] = [
-      ...(catalogInput.cuotas_2_habilitadas ? [2 as const] : []),
-      ...(catalogInput.cuotas_3_habilitadas ? [3 as const] : []),
-      ...(catalogInput.cuotas_6_habilitadas ? [6 as const] : []),
-    ]
-
     let targetMarginResult
     try {
       targetMarginResult = await resolveTargetMarginPrice({
         admin: auth.admin,
         productId,
         targetMarginPercent,
-        eligibleInstallmentCounts,
-        installmentsWithoutSurcharge: catalogInput.cuotas_sin_recargo === true,
         variantStates: variantStates as TargetMarginVariantState[],
       })
     } catch {

@@ -11,11 +11,10 @@ import { ToggleLeft, ToggleRight } from "lucide-react"
 import { AdminSecondaryButton } from "@/app/admin/components/admin-controls"
 
 // Toggles de habilitar/deshabilitar del Admin (patrón único .admin-toggle):
-// botón real + CSS compilado del proyecto, medido en Edge/Chrome dentro de la
-// fila superior REAL del editor (.product-editor-workspace > .product-editor-
-// row-top: Información | Precio 25.5rem | Financiación). En desktop los 4
-// controles de Financiación van en UNA fila, mismo alto y sin desbordar;
-// habilitado = verde oscuro, deshabilitado = neutro; legibles y con foco.
+// botón real + CSS compilado del proyecto, medido en Edge/Chrome dentro de una
+// tarjeta del editor de productos. Habilitado = verde oscuro, deshabilitado =
+// neutro; legibles y con foco. (La ficha de producto ya no tiene toggles de
+// cuotas: la financiación es global, Admin → Financiación.)
 
 let browser: Browser
 let css: string
@@ -33,14 +32,14 @@ test.after(async () => {
 const toggleIcon = (active: boolean) =>
   createElement(active ? ToggleRight : ToggleLeft, { "aria-hidden": "true", className: "admin-toggle-icon size-4 shrink-0" })
 
-// Mismo markup que producto-form.tsx (Financiación).
-function installmentToggle(label: string, active: boolean, detail: string) {
+// Mismo patrón que los toggles reales del editor (Estado, especificaciones).
+function adminToggle(label: string, active: boolean, detail: string) {
   return createElement(
     AdminSecondaryButton,
     {
       "aria-pressed": active,
       "aria-label": `${label}: ${active ? "habilitado" : "deshabilitado"}`,
-      className: `admin-toggle product-editor-financing-toggle grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 gap-y-0.5 px-1.5 py-1 text-left ${active ? "admin-toggle-on" : ""}`,
+      className: `admin-toggle grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 gap-y-0.5 px-1.5 py-1 text-left ${active ? "admin-toggle-on" : ""}`,
     },
     toggleIcon(active),
     createElement("span", { className: "whitespace-nowrap text-xs font-black leading-4 text-white" }, label),
@@ -48,32 +47,16 @@ function installmentToggle(label: string, active: boolean, detail: string) {
   )
 }
 
-function samePriceToggle(active: boolean) {
-  return createElement(
-    AdminSecondaryButton,
-    {
-      "aria-pressed": active,
-      "aria-label": `Mismo precio en contado y cuotas: ${active ? "activado" : "desactivado"}`,
-      className: `admin-toggle product-editor-financing-toggle product-editor-financing-toggle-wide grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 px-1.5 py-1 text-left ${active ? "admin-toggle-on" : ""}`,
-    },
-    toggleIcon(active),
-    createElement("span", { className: "text-xs font-black leading-4 text-white" }, "Mismo precio en contado y cuotas"),
-  )
-}
-
-// Montos largos a propósito (peor caso de ancho de las cuotas).
 const financingCard = renderToStaticMarkup(
   createElement(
     "div",
     { id: "card", className: "product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5" },
-    createElement("h2", { className: "text-base font-black text-white" }, "Financiación"),
+    createElement("h2", { className: "text-base font-black text-white" }, "Estado"),
     createElement(
       "div",
-      { className: "product-editor-financing-grid gap-1.5" },
-      installmentToggle("2 cuotas", true, "$ 123.456 c/u"),
-      installmentToggle("3 cuotas", false, "Deshabilitado"),
-      installmentToggle("6 cuotas", true, "$ 41.152 c/u"),
-      samePriceToggle(true),
+      { className: "flex flex-wrap gap-1.5" },
+      adminToggle("Activa", true, "Visible en la tienda"),
+      adminToggle("Destacado", false, "Sin destacar"),
     ),
   ),
 )
@@ -174,44 +157,6 @@ async function render(theme: "light" | "dark", workspaceRem: number) {
   }
 }
 
-function assertInsideCard({ cardLeft, cardRight, toggles }: Layout, label: string) {
-  for (const toggle of toggles) {
-    assert.ok(toggle.left >= cardLeft - 0.5 && toggle.right <= cardRight + 0.5, `${label}: no desborda la tarjeta`)
-  }
-}
-
-// 76rem = umbral de 3 columnas (Financiación ~28rem, lo más angosto en
-// desktop); 80/90/105rem = notebooks y monitores; 60rem = 1 columna.
-for (const workspaceRem of [76, 80, 90, 105, 60]) {
-  test(`desktop (workspace ${workspaceRem}rem): [2 cuotas] [3 cuotas] [6 cuotas] [Mismo precio] en UNA fila, mismo alto`, async () => {
-    const { layout } = await render("dark", workspaceRem)
-    const { toggles } = layout
-    assert.equal(toggles.length, 4)
-    assert.equal(new Set(toggles.map((toggle) => toggle.top)).size, 1, `una sola fila (tops ${toggles.map((toggle) => toggle.top).join(",")})`)
-    assert.equal(new Set(toggles.map((toggle) => toggle.height)).size, 1, `mismo alto (${toggles.map((toggle) => toggle.height).join(",")})`)
-    for (let index = 1; index < toggles.length; index++) {
-      const gap = toggles[index].left - toggles[index - 1].right
-      assert.ok(gap >= 5 && gap <= 7, `gap chico y parejo (${gap}px)`)
-    }
-    // La fuente raíz del Admin escala con el viewport: alto y texto se miden en rem.
-    const rem = layout.rootFontSize
-    for (const toggle of toggles) {
-      const heightRem = toggle.height / rem
-      assert.ok(heightRem >= 2.6 && heightRem <= 3.3, `compacto y clickeable (${toggle.height}px = ${heightRem.toFixed(2)}rem)`)
-      assert.ok(toggle.height >= 40, `área clickeable >= 40px (${toggle.height}px)`)
-      assert.ok(toggle.labelFontSize / rem >= 0.74, `texto sin achicar (${toggle.labelFontSize}px)`)
-    }
-    // Cuotas: nombre en 1 línea; "Mismo precio en / contado y cuotas" siempre en 2.
-    assert.deepEqual(toggles.map((toggle) => toggle.labelLines), [1, 1, 1, 2])
-    assertInsideCard(layout, `${workspaceRem}rem`)
-  })
-}
-
-test("mobile (tarjeta angosta): pueden bajar de fila, sin desbordar", async () => {
-  const { layout } = await render("dark", 20)
-  assert.ok(new Set(layout.toggles.map((toggle) => toggle.top)).size > 1, "envuelven")
-  assertInsideCard(layout, "mobile")
-})
 
 for (const theme of ["dark", "light"] as const) {
   test(`${theme}: habilitado verde oscuro, deshabilitado neutro, legibles y con foco de teclado`, async () => {
@@ -238,15 +183,14 @@ for (const theme of ["dark", "light"] as const) {
   })
 }
 
-test("producto-form: los 4 controles viven en la MISMA fila y todos los toggles on/off usan el patrón único", () => {
+test("producto-form: sin toggles de cuotas por producto; todos los toggles on/off usan el patrón único", () => {
   const read = (path: string) => readFileSync(path, "utf8")
   const form = read("app/admin/sections/productos/producto-form.tsx")
   const specs = read("app/admin/sections/productos/product-specifications-editor.tsx")
   const conditioned = read("app/admin/sections/productos/productos-row.tsx")
-  const row = form.slice(form.indexOf('<div className="product-editor-financing-grid'), form.indexOf("product-installments-without-surcharge-note\"\n"))
-  assert.match(row, /\{toggle\.label\}/)
-  assert.match(row, /Mismo precio en contado y cuotas\s*<\/span>\s*<\/AdminSecondaryButton>\s*<\/div>/, "Mismo precio cierra la misma fila")
-  assert.equal(form.match(/admin-toggle product-editor-financing-toggle/g)?.length, 2, "cuotas + mismo precio")
+  // La financiación es global (Admin → Financiación): ni cuotas ni "Mismo precio" por producto.
+  assert.doesNotMatch(form, /product-editor-financing|Mismo precio en contado y cuotas|cuotas2|cuotasSinRecargo/)
+  assert.match(form, /data-product-financing-global/)
   assert.match(form, /admin-toggle inline-flex min-w-12/, "Estado / Destacado")
   assert.equal(specs.match(/className=\{`admin-toggle /g)?.length, 2, "especificación: botón y acción")
   assert.match(conditioned, /admin-toggle flex w-full/, "stock condicionado")

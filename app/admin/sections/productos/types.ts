@@ -16,10 +16,6 @@ export interface ProductoFormState {
   video_url: string
   precio: string
   precio_anterior: string
-  cuotas2: boolean
-  cuotas3: boolean
-  cuotas6: boolean
-  cuotasSinRecargo: boolean
   pricingMode: "manual" | "target_margin"
   targetMarginPercent: string
   categoria_id: string

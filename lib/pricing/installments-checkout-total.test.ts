@@ -45,7 +45,9 @@ function financedCheckout({
   creditBalance?: number
   offeredCounts?: InstallmentCount[]
 }) {
-  const rawFinancedProducts = getCartFinancedTotal(lines, REAL_CONFIG)
+  // Tier = la mayor cuota ofrecida (la financiación es del total, no del producto).
+  const tier = offeredCounts.length ? offeredCounts[offeredCounts.length - 1] : 6
+  const rawFinancedProducts = getCartFinancedTotal(lines, tier, REAL_CONFIG)
   const storeBenefitDiscount = calculateStoreBenefitDiscount(
     rawFinancedProducts,
     storeBenefitPercent,
@@ -103,8 +105,8 @@ function assertRoundingInvariants(result: ReturnType<typeof financedCheckout>, d
 }
 
 const LINES: CartFinanceableLine[] = [
-  { cashPrice: 51_673, maxEligibleCount: 6, quantity: 1 },
-  { cashPrice: 12_345, maxEligibleCount: 6, quantity: 2 },
+  { cashPrice: 51_673, quantity: 1 },
+  { cashPrice: 12_345, quantity: 2 },
 ]
 
 test("CHECKOUT A: sólo productos -- 2, 3 y 6 cuotas cierran exacto el total final", () => {
@@ -125,7 +127,7 @@ test("CHECKOUT B: productos + envío con centavos no divisible -- el envío no s
   // El envío entra a costo real: total antes del ajuste = financiado productos + envío.
   assert.equal(
     cents(result.financedTotal),
-    cents(getCartFinancedTotal(LINES, REAL_CONFIG)) + cents(shipping),
+    cents(getCartFinancedTotal(LINES, 6, REAL_CONFIG)) + cents(shipping),
   )
   assertExactInstallments(result.externalAmountDue, ALL_COUNTS)
 })
@@ -181,7 +183,7 @@ test("el divisor es el mínimo común múltiplo de las cuotas OFRECIDAS al carri
   assert.equal(getInstallmentCountsDivisor([]), 1)
 
   const onlyTwo = financedCheckout({
-    lines: [{ cashPrice: 10_000, maxEligibleCount: 2, quantity: 1 }],
+    lines: [{ cashPrice: 10_000, quantity: 1 }],
     shipping: 1_234.57,
     offeredCounts: [2],
   })
@@ -195,8 +197,8 @@ test("barrido: con 2/3/6 ofrecidas el ajuste nunca supera 5 centavos y siempre d
     const creditBalance = step % 3 === 0 ? roundMoney((step * 91.07) % 30_000) : 0
     const result = financedCheckout({
       lines: [
-        { cashPrice: 10_000 + step * 173, maxEligibleCount: 6, quantity: 1 + (step % 3) },
-        { cashPrice: 4_999 + step * 11, maxEligibleCount: 3, quantity: 1 },
+        { cashPrice: 10_000 + step * 173, quantity: 1 + (step % 3) },
+        { cashPrice: 4_999 + step * 11, quantity: 1 },
       ],
       shipping,
       storeBenefitPercent: step % 4 === 0 ? 5 + (step % 20) : null,

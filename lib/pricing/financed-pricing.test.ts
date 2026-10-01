@@ -10,17 +10,19 @@ import {
   getFinancedPriceDivisor,
   getFinancedPrice,
   getInstallmentAmount,
-  getProductInterestFreeOffer,
-  getMaxEligibleInstallmentCount,
   getPriceWithoutNationalTaxes,
   getTransferPrice,
 } from "./financed-pricing.ts"
-import type { InstallmentsFinancingConfig } from "../products/installments.ts"
+import { INSTALLMENT_COUNTS, type InstallmentCount, type InstallmentsFinancingConfig } from "../products/installments.ts"
 
-// Precio/planes del TIER máximo que admite el producto, como si Mercado Pago
-// lo confirmara sin interés: verifica las fórmulas, no la disponibilidad.
-function maxTierPlans(product: Parameters<typeof getProductInterestFreeOffer>[0], cashPrice: number, config: InstallmentsFinancingConfig) {
-  return getProductInterestFreeOffer(product, cashPrice, config, () => [2, 3, 6])?.plans ?? []
+// Planes de un TIER (la cuota máxima que confirma Mercado Pago para el total):
+// todas las cuotas <= tier dividen el MISMO financiado. La financiación ya no
+// depende del producto.
+function tierPlans(tier: InstallmentCount, cashPrice: number, config: InstallmentsFinancingConfig) {
+  const financed = getFinancedPrice(cashPrice, tier, config)
+  return financed == null
+    ? []
+    : INSTALLMENT_COUNTS.filter((count) => count <= tier).map((count) => ({ count, amount: getInstallmentAmount(financed, count)! }))
 }
 
 const REAL_CONFIG: InstallmentsFinancingConfig = {
@@ -29,14 +31,6 @@ const REAL_CONFIG: InstallmentsFinancingConfig = {
   surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 },
 }
 
-function product(overrides: Partial<Record<"cuotas_2_habilitadas" | "cuotas_3_habilitadas" | "cuotas_6_habilitadas", boolean>> = {}) {
-  return {
-    cuotas_2_habilitadas: false,
-    cuotas_3_habilitadas: false,
-    cuotas_6_habilitadas: false,
-    ...overrides,
-  }
-}
 
 // CASO A: contado $100.000, transferencia 10% -> $90.000.
 test("CASO A: getTransferPrice aplica el % configurado sobre el contado", () => {
@@ -44,16 +38,9 @@ test("CASO A: getTransferPrice aplica el % configurado sobre el contado", () => 
   assert.equal(getTransferPrice(100_000, 0), 100_000)
 })
 
-test("getCashPrice / getMaxEligibleInstallmentCount: básicos", () => {
+test("getCashPrice: básicos", () => {
   assert.equal(getCashPrice({ precio: 50_000 }), 50_000)
   assert.equal(getCashPrice({ precio: -10 }), 0)
-
-  assert.equal(getMaxEligibleInstallmentCount(product()), null)
-  assert.equal(getMaxEligibleInstallmentCount(product({ cuotas_2_habilitadas: true })), 2)
-  assert.equal(
-    getMaxEligibleInstallmentCount(product({ cuotas_2_habilitadas: true, cuotas_6_habilitadas: true })),
-    6,
-  )
 })
 
 // CASO B: máximo 2 cuotas -> el financiado usa el fee de 2 cuotas (18% efectivo).
@@ -65,16 +52,15 @@ test("CASO B: getFinancedPrice usa la tasa efectiva de la cuota máxima habilita
   assert.ok(financedPrice! > 100_000)
 })
 
-test("sin cuota máxima (producto sin cuotas habilitadas) no hay precio financiado", () => {
+test("sin tier confirmado no hay precio financiado", () => {
   assert.equal(getFinancedPrice(100_000, null, REAL_CONFIG), null)
 })
 
 // CASO C: máximo 3 -> 2 y 3 cuotas comparten el MISMO total financiado.
 test("CASO C: con máximo 3 cuotas habilitado, 2 y 3 cuotas dividen el mismo precio financiado", () => {
-  const prod = product({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true })
   const cashPrice = 100_000
   const financedPrice = getFinancedPrice(cashPrice, 3, REAL_CONFIG)!
-  const plans = maxTierPlans(prod, cashPrice, REAL_CONFIG)
+  const plans = tierPlans(3, cashPrice, REAL_CONFIG)
 
   assert.deepEqual(
     plans.map((plan) => plan.count),
@@ -87,14 +73,9 @@ test("CASO C: con máximo 3 cuotas habilitado, 2 y 3 cuotas dividen el mismo pre
 
 // CASO D: máximo 6 -> 2, 3 y 6 cuotas comparten el MISMO total financiado.
 test("CASO D: con máximo 6 cuotas habilitado, 2, 3 y 6 cuotas dividen el mismo precio financiado", () => {
-  const prod = product({
-    cuotas_2_habilitadas: true,
-    cuotas_3_habilitadas: true,
-    cuotas_6_habilitadas: true,
-  })
   const cashPrice = 100_000
   const financedPrice = getFinancedPrice(cashPrice, 6, REAL_CONFIG)!
-  const plans = maxTierPlans(prod, cashPrice, REAL_CONFIG)
+  const plans = tierPlans(6, cashPrice, REAL_CONFIG)
 
   assert.deepEqual(
     plans.map((plan) => plan.count),
@@ -133,31 +114,26 @@ test("CASO F: cambiar el máximo habilitado (3 -> 6) recalcula el financiado, si
 // CASO H: carrito con producto de máximo 6 + producto de máximo 3 -- el
 // total financiado del carrito es la SUMA de los financiados individuales,
 // nunca recalculado con la tasa del mínimo común (3).
-test("CASO H: getCartFinancedTotal suma los financiados INDIVIDUALES, nunca recalcula con el mínimo común del carrito", () => {
-  const lineMax6 = { cashPrice: 100_000, maxEligibleCount: 6 as const, quantity: 1 }
-  const lineMax3 = { cashPrice: 50_000, maxEligibleCount: 3 as const, quantity: 1 }
-
-  const total = getCartFinancedTotal([lineMax6, lineMax3], REAL_CONFIG)
-  const expectedIndividualSum =
-    getFinancedPrice(100_000, 6, REAL_CONFIG)! + getFinancedPrice(50_000, 3, REAL_CONFIG)!
-  const hypotheticalCommonMaxSum =
-    getFinancedPrice(100_000, 3, REAL_CONFIG)! + getFinancedPrice(50_000, 3, REAL_CONFIG)!
-
-  assert.equal(total, expectedIndividualSum)
-  assert.notEqual(total, hypotheticalCommonMaxSum)
+test("CASO H: getCartFinancedTotal suma los financiados de cada línea con el MISMO tier (el del total)", () => {
+  const total = getCartFinancedTotal(
+    [
+      { cashPrice: 100_000, quantity: 1 },
+      { cashPrice: 50_000, quantity: 1 },
+    ],
+    6,
+    REAL_CONFIG,
+  )
+  assert.equal(total, getFinancedPrice(100_000, 6, REAL_CONFIG)! + getFinancedPrice(50_000, 6, REAL_CONFIG)!)
+  // Con tier 3 el total financiado es menor (costo de 3).
+  assert.ok(
+    getCartFinancedTotal([{ cashPrice: 100_000, quantity: 1 }, { cashPrice: 50_000, quantity: 1 }], 3, REAL_CONFIG) < total,
+  )
 })
 
-test("línea de carrito sin cuotas habilitadas aporta su precio de contado (no hay financiado que calcular)", () => {
-  const line = { cashPrice: 20_000, maxEligibleCount: null, quantity: 3 }
-  assert.equal(getCartFinancedTotal([line], REAL_CONFIG), 60_000)
-})
 
 test("cantidad > 1 multiplica el financiado por unidad", () => {
   const financedPerUnit = getFinancedPrice(100_000, 6, REAL_CONFIG)!
-  const total = getCartFinancedTotal(
-    [{ cashPrice: 100_000, maxEligibleCount: 6, quantity: 2 }],
-    REAL_CONFIG,
-  )
+  const total = getCartFinancedTotal([{ cashPrice: 100_000, quantity: 2 }], 6, REAL_CONFIG)
   assert.equal(total, financedPerUnit * 2)
 })
 
@@ -255,9 +231,6 @@ test("montos inválidos (0, negativo, NaN) no generan cuotas", () => {
   assert.equal(getInstallmentAmount(Number.NaN, 3), null)
 })
 
-test("producto sin ninguna cuota habilitada no genera planes de financiación", () => {
-  assert.deepEqual(maxTierPlans(product(), 75_000, REAL_CONFIG), [])
-})
 
 // CASO O: el total financiado es IDÉNTICO sin importar cuántas cuotas se
 // elijan -- ni $1 de diferencia. Regla: redondeo hacia arriba al múltiplo
@@ -269,12 +242,6 @@ test("CASO O: getFinancedPriceDivisor es el mínimo común múltiplo de las cuot
 })
 
 test("CASO O (obligatorio): máximo 6 -> 2, 3 y 6 cuotas cierran EXACTO el mismo total financiado", () => {
-  const prod = product({
-    cuotas_2_habilitadas: true,
-    cuotas_3_habilitadas: true,
-    cuotas_6_habilitadas: true,
-  })
-
   for (const cashPrice of [1, 999, 45_677, 51_673, 63_014, 100_000, 1_234_567]) {
     const financedTotal = getFinancedPrice(cashPrice, 6, REAL_CONFIG)!
     const installment2 = getInstallmentAmount(financedTotal, 2)!
@@ -288,7 +255,7 @@ test("CASO O (obligatorio): máximo 6 -> 2, 3 y 6 cuotas cierran EXACTO el mismo
     assert.equal(installment2 * 2, installment3 * 3)
     assert.equal(installment3 * 3, installment6 * 6)
 
-    for (const plan of maxTierPlans(prod, cashPrice, REAL_CONFIG)) {
+    for (const plan of tierPlans(6, cashPrice, REAL_CONFIG)) {
       assert.equal(plan.amount * plan.count, financedTotal)
     }
   }
@@ -330,25 +297,16 @@ test("CASO O: un gross-up que ya es múltiplo exacto no sube al múltiplo siguie
   assert.equal(getFinancedPrice(63_014, 6, zeroFee), 63_018)
 })
 
-test("CASO O: carrito mixto -- cada línea conserva la divisibilidad y el total cierra exacto con cualquier cuota ofrecida al carrito", () => {
+test("CASO O: varias líneas y cantidades -- con el tier del total, cada cuota ofrecida cierra exacto", () => {
   const lines = [
-    { cashPrice: 63_014, maxEligibleCount: 6 as const, quantity: 3 },
-    { cashPrice: 45_677, maxEligibleCount: 3 as const, quantity: 2 },
-    { cashPrice: 12_345, maxEligibleCount: 2 as const, quantity: 1 },
+    { cashPrice: 63_014, quantity: 3 },
+    { cashPrice: 45_677, quantity: 2 },
+    { cashPrice: 12_345, quantity: 1 },
   ]
-
-  for (const line of lines) {
-    const perUnit = getFinancedPrice(line.cashPrice, line.maxEligibleCount, REAL_CONFIG)!
-    assert.equal(perUnit % getFinancedPriceDivisor(line.maxEligibleCount), 0)
+  for (const tier of [2, 3, 6] as const) {
+    const total = getCartFinancedTotal(lines, tier, REAL_CONFIG)
+    for (const count of INSTALLMENT_COUNTS.filter((value) => value <= tier)) {
+      assert.equal(getInstallmentAmount(total, count)! * count, total, `tier ${tier}, ${count} cuotas`)
+    }
   }
-
-  // El carrito sólo ofrece la intersección de cuotas (acá: 2), que divide
-  // exacto a cada línea -- por lo tanto también a la suma.
-  const total = getCartFinancedTotal(lines, REAL_CONFIG)
-  assert.equal(getInstallmentAmount(total, 2)! * 2, total)
-
-  // Sin la línea de máximo 2, el carrito ofrece 2 y 3: ambas cierran exacto.
-  const totalMax3 = getCartFinancedTotal(lines.slice(0, 2), REAL_CONFIG)
-  assert.equal(getInstallmentAmount(totalMax3, 2)! * 2, totalMax3)
-  assert.equal(getInstallmentAmount(totalMax3, 3)! * 3, totalMax3)
 })

@@ -18,7 +18,6 @@ import {
   type MercadoPagoCostsOverview,
   type PricingSettings,
   type StockSettings,
-  type StoredInstallmentsFinancingSettings,
 } from "@/lib/site-settings"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
 import {
@@ -29,7 +28,7 @@ import {
 import { AdminBanners } from "../banners/admin-banners"
 import { AndreaniIntegrationCard } from "./andreani-integration-card"
 import type { ConfigFeedback } from "./config-ui"
-import { MercadoPagoCostsSection } from "./mercadopago-costs-section"
+import { FinancingShortcutCard } from "./financing-shortcut-card"
 import {
   CustomerCreditSection,
   PricingSection,
@@ -56,12 +55,11 @@ interface SettingsPatch {
   customerCreditPayments?: CustomerCreditPaymentSettings
   stock?: StockSettings
   pricing?: PricingSettings
-  installmentsFinancing?: StoredInstallmentsFinancingSettings
 }
 
-type SectionId = "stock" | "shipping" | "mercadoPago" | "pricing" | "customerCredit"
+type SectionId = "stock" | "shipping" | "pricing" | "customerCredit"
 
-const SECTION_IDS: SectionId[] = ["stock", "shipping", "mercadoPago", "pricing", "customerCredit"]
+const SECTION_IDS: SectionId[] = ["stock", "shipping", "pricing", "customerCredit"]
 
 const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   shipping: DEFAULT_SHIPPING_SETTINGS,
@@ -97,7 +95,6 @@ export function AdminModificaciones() {
   const [versions, setVersions] = useState<Record<SectionId, number>>({
     stock: 0,
     shipping: 0,
-    mercadoPago: 0,
     pricing: 0,
     customerCredit: 0,
   })
@@ -244,14 +241,7 @@ export function AdminModificaciones() {
         />
       </div>
 
-      <MercadoPagoCostsSection
-        key={`mercadopago-${versions.mercadoPago}`}
-        overview={mercadoPagoCosts}
-        {...sectionProps("mercadoPago")}
-        // Sin el estado real de costos nunca se guardan defaults encima.
-        disabled={sectionProps("mercadoPago").disabled || mercadoPagoCosts === null}
-        onSave={(installmentsFinancing) => void saveSection("mercadoPago", { installmentsFinancing })}
-      />
+      <FinancingShortcutCard overview={mercadoPagoCosts} />
 
       <div className="grid items-start gap-3 xl:grid-cols-2">
         <PricingSection

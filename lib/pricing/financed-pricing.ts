@@ -11,9 +11,9 @@
  *    `precio_anterior`). Es también el precio de débito/tarjeta en 1 pago.
  * 2. TRANSFERENCIA = contado * (1 - transferDiscountPercent/100).
  * 3. FINANCIADO = contado / (1 - feeRate(tier)), donde `tier` es la MAYOR
- *    cuota SIN INTERÉS que Mercado Pago confirma para ese monto
- *    (`resolveFinancingTier`), limitada a las cuotas que admite el producto,
- *    y `feeRate` es el costo interno efectivo de Mercado Pago para esa
+ *    cuota SIN INTERÉS (2, 3 o 6; nunca más) que Mercado Pago confirma para
+ *    el TOTAL que se cobra (`resolveFinancingTier`), y `feeRate` es el
+ *    costo interno efectivo de Mercado Pago para esa
  *    cantidad de cuotas (`getEffectiveInstallmentPercent`). La cuota
  *    configurada NUNCA define el precio por sí sola. El total financiado NO
  *    cambia según cuántas cuotas elija el cliente dentro del tier -- sólo
@@ -21,9 +21,9 @@
  *    siempre CONTADO.
  *    El resultado se redondea HACIA ARRIBA al múltiplo común de las cuotas
  *    (`getFinancedPriceDivisor`), así N cuotas x monto cierran exacto.
- * 4. CUOTAS SIN RECARGO (`cuotas_sin_recargo`, por producto, heredado por sus
- *    variantes): FINANCIADO = CONTADO, sin gross-up ni redondeo. BEYONIX
- *    absorbe el costo de Mercado Pago. Ver `getProductFinancedPriceForCount`.
+ * 4. La financiación NO es una propiedad del producto: no hay cuotas ni
+ *    "mismo precio en contado y cuotas" por producto (columnas legacy
+ *    `productos.cuotas_*` sin uso). Todo se decide en Admin → Financiación.
  *
  * El precio financiado NUNCA se persiste como columna -- se deriva siempre de
  * precio + config vigente, igual que el precio por margen objetivo
@@ -33,25 +33,11 @@
 import {
   INSTALLMENT_COUNTS,
   getEffectiveInstallmentPercent,
-  getEligibleInstallmentCounts,
-  type EligibleInstallmentsProduct,
   type InstallmentCount,
   type InstallmentsFinancingConfig,
 } from "../products/installments.ts"
 
 export type { InstallmentCount, InstallmentsFinancingConfig } from "../products/installments.ts"
-
-/**
- * MAYOR cuota habilitada en la publicación, o `null` si no tiene ninguna.
- * `getEligibleInstallmentCounts` ya devuelve en orden ascendente (recorre
- * `INSTALLMENT_COUNTS`), así que el último elemento es el máximo.
- */
-export function getMaxEligibleInstallmentCount(
-  product: EligibleInstallmentsProduct,
-): InstallmentCount | null {
-  const counts = getEligibleInstallmentCounts(product)
-  return counts.length ? counts[counts.length - 1] : null
-}
 
 export function getCashPrice(product: { precio: number }): number {
   return Number.isFinite(product.precio) ? Math.max(product.precio, 0) : 0
@@ -85,7 +71,7 @@ export function getFinancedFeeRate(
  * Precio financiado total (constante sin importar qué cuota elija el
  * cliente), en pesos enteros y redondeado hacia arriba al múltiplo de
  * `getFinancedPriceDivisor(maxCount)` -- nunca se ajustan cuotas
- * individuales para esconder diferencias. `null` si el producto no tiene ninguna cuota habilitada, si el
+ * individuales para esconder diferencias. `null` sin cuota, si el
  * contado no es válido, o si la tasa efectiva es matemáticamente imposible
  * de "resolver" (>=100%, config extrema).
  */
@@ -111,44 +97,34 @@ export function getFinancedPrice(
 }
 
 /**
- * `true` sólo si el producto tiene "Mismo precio en contado y cuotas" Y al
- * menos una cuota habilitada: el flag solo nunca habilita cuotas.
- */
-export function hasInstallmentsWithoutSurcharge(
-  product: EligibleInstallmentsProduct,
-): boolean {
-  return (
-    product.cuotas_sin_recargo === true &&
-    getMaxEligibleInstallmentCount(product) != null
-  )
-}
-
-/**
- * Copy de cara al cliente para las cuotas ("Hasta N {copy} de $X"), igual
- * para todos los productos y para el checkout: siempre "sin interés", nunca
- * "sin recargo". La regla de precio de cada producto (`cuotas_sin_recargo`)
- * sigue definiendo sólo el importe, no el texto.
+ * Copy de cara al cliente para las cuotas, igual en toda la tienda: siempre
+ * "sin interés", nunca "sin recargo".
  */
 export const INSTALLMENTS_COPY = "cuotas sin interés"
 
+const INSTALLMENT_COUNT_LIST_FORMAT = new Intl.ListFormat("es-AR", {
+  style: "long",
+  type: "conjunction",
+})
+
 /**
- * Precio financiado de UN producto calculado con el costo de `count` cuotas
- * (el TIER que habilita Mercado Pago, nunca la cuota configurada a ciegas).
- * Con "Mismo precio en contado y cuotas" es el contado. `null` si el producto
- * no admite esa cuota o el contado no es válido.
+ * Copy de la ÚNICA opción de cuotas del checkout a partir de las cuotas que
+ * Mercado Pago confirmó sin interés: "Hasta 6 cuotas sin interés" /
+ * "Disponibles: 2, 3 y 6 cuotas". BEYONIX no preselecciona la cantidad: el
+ * cliente la elige dentro de Mercado Pago, hasta el máximo confirmado. `null`
+ * sin cuotas confirmadas (sólo 1 pago).
  */
-export function getProductFinancedPriceForCount(
-  product: EligibleInstallmentsProduct,
-  cashPrice: number,
-  count: InstallmentCount,
-  config: InstallmentsFinancingConfig,
-): number | null {
-  if (!getEligibleInstallmentCounts(product).includes(count)) return null
-  if (product.cuotas_sin_recargo === true) {
-    const safeCash = Number.isFinite(cashPrice) ? Math.max(cashPrice, 0) : 0
-    return safeCash > 0 ? safeCash : null
+export function getCheckoutInstallmentsOptionCopy(counts: readonly number[]) {
+  const sorted = [...new Set(counts)]
+    .filter((count) => Number.isInteger(count) && count > 1)
+    .sort((a, b) => a - b)
+  const maxCount = sorted.at(-1)
+  if (maxCount == null) return null
+  return {
+    maxCount,
+    headline: `Hasta ${maxCount} ${INSTALLMENTS_COPY}`,
+    available: `Disponibles: ${INSTALLMENT_COUNT_LIST_FORMAT.format(sorted.map(String))} cuotas`,
   }
-  return getFinancedPrice(cashPrice, count, config)
 }
 
 /**
@@ -169,13 +145,13 @@ export interface FinancingTierCandidate {
  * TIER de financiación: la MAYOR cuota que Mercado Pago confirma sin interés
  * para el monto calculado con el costo de ESA cuota. Se prueba de mayor a
  * menor (el precio de un tier más alto es mayor, así que si califica, cubre
- * el peor costo dentro de lo habilitado). Sin confirmación -> `null`: 1 pago
- * a precio contado. Las cuotas ofrecidas son las elegibles <= tier que
- * Mercado Pago confirmó para ese mismo monto.
+ * el peor costo dentro de lo ofrecido). Sin confirmación -> `null`: 1 pago
+ * a precio contado. Las cuotas ofrecidas son las de BEYONIX (2/3/6) <= tier
+ * que Mercado Pago confirmó para ese mismo monto: aunque Mercado Pago ofrezca
+ * 9/12/18 sin interés, BEYONIX nunca pasa de 6.
  */
 export function resolveFinancingTier(
   candidates: readonly FinancingTierCandidate[],
-  eligibleCounts: readonly InstallmentCount[],
   lookup: InterestFreeLookup | null,
 ): { tier: FinancingTierCandidate; offeredCounts: InstallmentCount[] } | null {
   if (!lookup) return null
@@ -187,60 +163,12 @@ export function resolveFinancingTier(
     if (!confirmed?.includes(candidate.count)) continue
     return {
       tier: candidate,
-      offeredCounts: eligibleCounts.filter(
+      offeredCounts: INSTALLMENT_COUNTS.filter(
         (count) => count <= candidate.count && confirmed.includes(count),
       ),
     }
   }
   return null
-}
-
-export interface ProductInterestFreeOffer {
-  /** Tier: cuota máxima sin interés confirmada para este precio. */
-  count: InstallmentCount
-  /** Precio financiado calculado con el costo del tier (igual para 2/3/6 dentro del tier). */
-  financedPrice: number
-  plans: InstallmentPlan[]
-}
-
-/** Precios por tier del producto (los montos que hay que consultar a Mercado Pago). */
-export function getProductFinancingCandidates(
-  product: EligibleInstallmentsProduct,
-  cashPrice: number,
-  config: InstallmentsFinancingConfig,
-): FinancingTierCandidate[] {
-  return getEligibleInstallmentCounts(product).flatMap((count) => {
-    const amount = getProductFinancedPriceForCount(product, cashPrice, count, config)
-    return amount == null ? [] : [{ count, amount }]
-  })
-}
-
-/**
- * Oferta de cuotas sin interés de UN producto (1 unidad, sin envío: lo más
- * conservador que se puede prometer antes del carrito). `null` si Mercado
- * Pago no confirma ninguna: no se promete "sin interés".
- */
-export function getProductInterestFreeOffer(
-  product: EligibleInstallmentsProduct,
-  cashPrice: number,
-  config: InstallmentsFinancingConfig,
-  lookup: InterestFreeLookup | null,
-): ProductInterestFreeOffer | null {
-  const resolved = resolveFinancingTier(
-    getProductFinancingCandidates(product, cashPrice, config),
-    getEligibleInstallmentCounts(product),
-    lookup,
-  )
-  if (!resolved) return null
-  const financedPrice = resolved.tier.amount
-  return {
-    count: resolved.tier.count,
-    financedPrice,
-    plans: resolved.offeredCounts.flatMap((count) => {
-      const amount = getInstallmentAmount(financedPrice, count)
-      return amount == null ? [] : [{ count, amount }]
-    }),
-  }
 }
 
 function greatestCommonDivisor(a: number, b: number): number {
@@ -340,10 +268,7 @@ function toCents(amount: number): number {
  * Monto de cada cuota: división EXACTA, sin redondear, del total canónico
  * (`getFinancedPrice` o `roundUpCheckoutTotalForInstallments`, que ya
  * garantizan divisibilidad al centavo). Nunca se ajusta una cuota para que
- * cierre: si el total no divide, el error está en el total, no acá. Única
- * excepción: con cuotas sin recargo el total es el contado tal cual (sin
- * redondeo, para no cobrar ni un centavo más) y la cuota puede tener
- * fracción de centavo; Mercado Pago define el importe final de cada cuota.
+ * cierre: si el total no divide, el error está en el total, no acá.
  */
 export function getInstallmentAmount(
   financedPrice: number,
@@ -361,32 +286,23 @@ export interface InstallmentPlan {
 
 export interface CartFinanceableLine {
   cashPrice: number
-  /** Cuota cuyo costo se usa para el gross-up de la línea (en checkout: el TIER confirmado por Mercado Pago). */
-  maxEligibleCount: InstallmentCount | null
   quantity: number
-  /** Regla del producto "Mismo precio en contado y cuotas": la línea aporta su contado. */
-  withoutSurcharge?: boolean
 }
 
 /**
- * Total financiado del CARRITO: suma de los precios financiados
- * INDIVIDUALES de cada línea (cada uno calculado con SU propio máximo de
- * cuotas), nunca recalculado con la tasa del mínimo común del carrito. El
- * mínimo común (`getCartInstallmentEligibility`) sólo limita qué cantidades
- * de cuotas se OFRECEN al cliente para pagar este mismo total -- nunca
- * cambia el total en sí. Una línea sin ninguna cuota habilitada aporta su
- * precio de contado (no hay financiado que calcular), igual que una línea
- * con cuotas sin recargo.
+ * Total financiado del CARRITO con el costo de `financingCount` cuotas (el
+ * TIER que confirmó Mercado Pago para el total): suma de los financiados
+ * unitarios de cada línea por su cantidad. Ninguna línea tiene reglas
+ * propias de financiación.
  */
 export function getCartFinancedTotal(
   lines: CartFinanceableLine[],
+  financingCount: InstallmentCount,
   config: InstallmentsFinancingConfig,
 ): number {
   return lines.reduce((total, line) => {
-    const financedPrice = line.withoutSurcharge
-      ? null
-      : getFinancedPrice(line.cashPrice, line.maxEligibleCount, config)
-    const perUnit = financedPrice ?? getCashPrice({ precio: line.cashPrice })
+    const perUnit =
+      getFinancedPrice(line.cashPrice, financingCount, config) ?? getCashPrice({ precio: line.cashPrice })
     return total + perUnit * Math.max(0, line.quantity)
   }, 0)
 }

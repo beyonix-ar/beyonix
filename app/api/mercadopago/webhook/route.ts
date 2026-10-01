@@ -26,6 +26,7 @@ import { validateMercadoPagoWebhookSignature } from "@/lib/mercadopago/webhook-s
 import { getMercadoPagoPaymentMedium } from "@/lib/mercadopago/payment-medium"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { invalidateSiteSettingsCache } from "@/lib/site-settings"
 
 interface OrderRow {
   id: number
@@ -552,6 +553,11 @@ async function handleWebhook(request: Request) {
         reason: paymentResult.kind,
       })
     }
+
+    // El costo real de este pago ya quedó en mercadopago_payment_snapshot: en
+    // modo Automático la próxima venta lo usa (checkout lee siempre fresco;
+    // esto sólo acorta la caché corta de lectura de esta instancia).
+    invalidateSiteSettingsCache()
 
     await appendOrderAuditEvent(supabase, {
       orderId,

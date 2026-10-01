@@ -329,16 +329,8 @@ export function ProductosRow({
     return "Producto"
   }
   const categoryLabel = producto.categorias?.nombre?.trim() || "Sin categoría"
-  const enabledInstallmentCounts = [
-    producto.cuotas_2_habilitadas && "2",
-    producto.cuotas_3_habilitadas && "3",
-    producto.cuotas_6_habilitadas && "6",
-  ].filter(Boolean)
-  const installmentsLabel =
-    enabledInstallmentCounts.length > 0
-      ? `Hasta ${enabledInstallmentCounts.join("/")} cuotas`
-      : "Sin cuotas"
-  const commercialSubtitle = `${categoryLabel} · ${installmentsLabel}`
+  // La financiación es global (Admin → Financiación), no una propiedad del producto.
+  const commercialSubtitle = categoryLabel
   const replaceConditionedStock = (nextItem: SupabaseConditionedStock) => {
     setLocalConditionedStock((current) =>
       current.map((item) =>

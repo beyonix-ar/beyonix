@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/arca-invoices",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-mercadopago-installments",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

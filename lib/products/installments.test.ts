@@ -2,10 +2,10 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
-  getCartInstallmentEligibility,
   getEffectiveInstallmentPercent,
-  getEligibleInstallmentCounts,
   getSinglePaymentEffectivePercent,
+  INSTALLMENT_COUNTS,
+  MAX_INTEREST_FREE_INSTALLMENTS,
   type InstallmentsFinancingConfig,
 } from "./installments.ts"
 
@@ -15,16 +15,7 @@ const REAL_CONFIG: InstallmentsFinancingConfig = {
   surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 },
 }
 
-function noFinancing(overrides: Partial<Record<"cuotas_2_habilitadas" | "cuotas_3_habilitadas" | "cuotas_6_habilitadas", boolean>> = {}) {
-  return {
-    cuotas_2_habilitadas: false,
-    cuotas_3_habilitadas: false,
-    cuotas_6_habilitadas: false,
-    ...overrides,
-  }
-}
-
-// Este archivo sólo cubre elegibilidad y el % interno de costo de MP -- las
+// Este archivo sólo cubre las cuotas posibles y el % interno de costo de MP -- las
 // fórmulas de precio (contado/transferencia/financiado/CFTEA) viven en
 // lib/pricing/financed-pricing.test.ts, el módulo canónico que las reemplaza.
 
@@ -50,36 +41,8 @@ test("cambiar cualquiera de los 3 ingredientes recalcula el % efectivo sin tocar
   assert.equal(getEffectiveInstallmentPercent(3, higherBase), 23) // 18.49 * 1.21 = 22.3729
 })
 
-test("elegibilidad por producto: ninguna, una, dos y las tres modalidades", () => {
-  assert.deepEqual(getEligibleInstallmentCounts(noFinancing()), [])
-  assert.deepEqual(getEligibleInstallmentCounts(noFinancing({ cuotas_3_habilitadas: true })), [3])
-  assert.deepEqual(
-    getEligibleInstallmentCounts(noFinancing({ cuotas_2_habilitadas: true, cuotas_6_habilitadas: true })),
-    [2, 6],
-  )
-  assert.deepEqual(
-    getEligibleInstallmentCounts(
-      noFinancing({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }),
-    ),
-    [2, 3, 6],
-  )
-})
-
-test("CASO H: carrito con máximo 6 + máximo 3 -- la modalidad ofrecida sólo se habilita si TODOS los productos la permiten (regla AND), el carrito queda en máximo 3", () => {
-  const productoMax6 = noFinancing({ cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true })
-  const productoMax3 = noFinancing({ cuotas_3_habilitadas: true })
-  const productoSinCuotas = noFinancing()
-
-  // A permite 3/6, B permite 3, C no permite nada -> no se ofrece financiación del carrito.
-  assert.deepEqual(getCartInstallmentEligibility([productoMax6, productoMax3, productoSinCuotas]), [])
-
-  // A permite 2/3/6, B permite sólo 3 -> el carrito queda en máximo 3, nunca 6.
-  const eligible = getCartInstallmentEligibility([productoMax6, productoMax3])
-  assert.deepEqual(eligible, [3])
-  assert.equal(eligible.includes(6), false)
-  assert.equal(Math.max(...eligible), 3)
-})
-
-test("carrito vacío no ofrece ninguna modalidad", () => {
-  assert.deepEqual(getCartInstallmentEligibility([]), [])
+test("la financiación no es una propiedad del producto: sólo 2, 3 y 6 cuotas, máximo comercial 6", () => {
+  assert.deepEqual([...INSTALLMENT_COUNTS], [2, 3, 6])
+  assert.equal(MAX_INTEREST_FREE_INSTALLMENTS, 6)
+  assert.ok(!INSTALLMENT_COUNTS.some((count) => count > MAX_INTEREST_FREE_INSTALLMENTS), "nunca 9/12/18")
 })

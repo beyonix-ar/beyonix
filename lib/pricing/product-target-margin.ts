@@ -8,7 +8,6 @@ import {
 } from "@/lib/business/product-costs"
 import { resolveProductKnownCost } from "@/lib/admin/product-known-cost"
 import { getSiteSettings } from "@/lib/site-settings"
-import type { InstallmentCount } from "@/lib/products/installments"
 import { calculateTargetMarginPrice } from "@/lib/pricing/product-pricing"
 
 export interface TargetMarginVariantState {
@@ -64,8 +63,6 @@ export interface ResolveTargetMarginPriceInput {
   admin: ReturnType<typeof createAdminClient>
   productId: number
   targetMarginPercent: number
-  eligibleInstallmentCounts: InstallmentCount[]
-  installmentsWithoutSurcharge?: boolean
   variantStates?: TargetMarginVariantState[] | null
 }
 
@@ -85,8 +82,6 @@ export async function resolveTargetMarginPrice({
   admin,
   productId,
   targetMarginPercent,
-  eligibleInstallmentCounts,
-  installmentsWithoutSurcharge = false,
   variantStates = null,
 }: ResolveTargetMarginPriceInput): Promise<TargetMarginPriceResolution> {
   const knownCost = await resolveProductKnownCost(admin, productId)
@@ -110,10 +105,8 @@ export async function resolveTargetMarginPrice({
   const result = calculateTargetMarginPrice({
     cost: basis.cost,
     targetMarginPercent,
-    eligibleInstallmentCounts,
     config: installmentsFinancing,
     transferDiscountPercent: pricing.transferDiscountPercent,
-    installmentsWithoutSurcharge,
   })
 
   if (!result) {

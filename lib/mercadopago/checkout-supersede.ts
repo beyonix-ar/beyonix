@@ -48,6 +48,15 @@ export interface SupersedableMercadoPagoOrder extends MercadoPagoCheckoutAttempt
   pricing_snapshot?: { economicFingerprint?: string | null } | null
 }
 
+/**
+ * Por qué se da de baja (auditoría): cambiaron las condiciones económicas, o
+ * la orden pertenece a otra sesión de checkout (otra reserva del Paso 3) y la
+ * compra continúa con la reserva vigente de la sesión actual.
+ */
+export type SupersedeMercadoPagoOrderReason =
+  | "economic_conditions_changed"
+  | "reservation_session_replaced"
+
 export type SupersedeMercadoPagoOrderResult =
   | "superseded"
   | "busy"
@@ -125,10 +134,12 @@ export async function supersedeStaleMercadoPagoOrder(
   {
     dependencies,
     currentEconomicFingerprint,
+    reason = "economic_conditions_changed",
     now = new Date(),
   }: {
     dependencies: SupersedeMercadoPagoOrderDependencies
     currentEconomicFingerprint: string
+    reason?: SupersedeMercadoPagoOrderReason
     now?: Date
   },
 ): Promise<SupersedeMercadoPagoOrderResult> {
@@ -235,7 +246,7 @@ export async function supersedeStaleMercadoPagoOrder(
     previousStatus: "pending_payment",
     newStatus: "cancelled",
     metadata: {
-      reason: "economic_conditions_changed",
+      reason,
       previousTotal: order.total ?? null,
       previousExternalAmountDue: order.external_amount_due ?? null,
       previousEconomicFingerprint: order.pricing_snapshot?.economicFingerprint ?? null,

@@ -5,7 +5,6 @@ import {
   resolveTargetMarginPrice,
   selectRelevantVariantCosts,
 } from "@/lib/pricing/product-target-margin"
-import { getEligibleInstallmentCounts } from "@/lib/products/installments"
 
 function parseProductId(value: string) {
   const parsed = Number(value)
@@ -14,10 +13,6 @@ function parseProductId(value: string) {
 
 interface ProductPricingProductRow {
   precio: number | null
-  cuotas_2_habilitadas: boolean | null
-  cuotas_3_habilitadas: boolean | null
-  cuotas_6_habilitadas: boolean | null
-  cuotas_sin_recargo: boolean | null
 }
 
 /**
@@ -134,9 +129,7 @@ async function resolveTargetMarginRecalculation({
 
   const productResult = await admin
     .from("productos")
-    .select(
-      "precio, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, cuotas_sin_recargo",
-    )
+    .select("precio")
     .eq("id", productId)
     .maybeSingle()
 
@@ -147,12 +140,6 @@ async function resolveTargetMarginRecalculation({
     admin,
     productId,
     targetMarginPercent,
-    eligibleInstallmentCounts: getEligibleInstallmentCounts({
-      cuotas_2_habilitadas: product.cuotas_2_habilitadas ?? false,
-      cuotas_3_habilitadas: product.cuotas_3_habilitadas ?? false,
-      cuotas_6_habilitadas: product.cuotas_6_habilitadas ?? false,
-    }),
-    installmentsWithoutSurcharge: product.cuotas_sin_recargo === true,
   })
 
   if (!resolution.ok) {

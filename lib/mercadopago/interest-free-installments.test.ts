@@ -9,6 +9,7 @@ import {
   INTEREST_FREE_CACHE_TTL_MS,
   INTEREST_FREE_ERROR_CACHE_TTL_MS,
   parseInterestFreeInstallmentCounts,
+  parseInterestFreeInstallmentsByBrand,
 } from "./interest-free-installments.ts"
 
 // Respuestas con la MISMA forma que devuelve GET /v1/payment_methods/installments
@@ -47,6 +48,23 @@ test("conservador: si un banco cobra interés en esa cuota, o una cuota menor of
   assert.equal(parseInterestFreeInstallmentCounts([{ message: "invalid" }]), null)
 })
 
+test("marcas por separado: una marca sin la cuota no la elimina para todos; se informa a qué marcas aplica", () => {
+  // Visa 2/3/6 sin interés; Mastercard sólo 2: BEYONIX puede ofrecer hasta 6 con Visa.
+  const byBrand = parseInterestFreeInstallmentsByBrand([
+    { brand: "visa", response: HIGH_AMOUNT },
+    { brand: "master", response: [issuer(cost(2, true), cost(3, false), cost(6, false))] },
+  ])
+  assert.deepEqual(byBrand?.counts, [2, 3, 6])
+  assert.deepEqual(byBrand?.brandsByCount, { 2: ["visa", "master"], 3: ["visa"], 6: ["visa"] })
+  // 2 no implica 3: con 2 sin interés y 3 con interés en todas las marcas, sólo 2.
+  assert.deepEqual(parseInterestFreeInstallmentCounts([MID_AMOUNT.map(() => issuer(cost(2, true), cost(3, false), cost(6, false))), MID_AMOUNT.map(() => issuer(cost(2, true), cost(3, false)))]), [2])
+  // Bancos que no ofrecen cuotas (sólo 1 pago) no cuentan en contra.
+  const onlyCash = { issuer: { name: "Sólo 1 pago" }, payer_costs: [cost(1, false)] }
+  assert.deepEqual(parseInterestFreeInstallmentCounts([[...HIGH_AMOUNT, onlyCash], [onlyCash]]), [2, 3, 6])
+  // Cualquier respuesta inválida: nada confirmado.
+  assert.equal(parseInterestFreeInstallmentsByBrand([{ brand: "visa", response: HIGH_AMOUNT }, { brand: "master", response: { error: "x" } }]), null)
+})
+
 function fakeFetch(body: unknown, status = 200) {
   const calls: string[] = []
   const fetch = async (url: string) => {
@@ -62,7 +80,11 @@ test("consulta a Mercado Pago del lado servidor (Visa y Mastercard) y cachea 10 
   const { fetch, calls } = fakeFetch(HIGH_AMOUNT)
   const dependencies = { fetch, accessToken: "TEST-token", now: () => now }
 
-  assert.deepEqual(await getInterestFreeInstallments(70_000, dependencies), { status: "confirmed", counts: [2, 3, 6] })
+  assert.deepEqual(await getInterestFreeInstallments(70_000, dependencies), {
+    status: "confirmed",
+    counts: [2, 3, 6],
+    brandsByCount: { 2: ["visa", "master"], 3: ["visa", "master"], 6: ["visa", "master"] },
+  })
   assert.equal(calls.length, 2)
   assert.match(calls[0], /\/v1\/payment_methods\/installments\?amount=70000&payment_method_id=visa$/)
   assert.match(calls[1], /payment_method_id=master$/)

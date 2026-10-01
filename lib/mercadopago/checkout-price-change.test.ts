@@ -1,13 +1,16 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
   createCheckoutEconomicFingerprint,
   createMercadoPagoCheckoutFingerprint,
   getMercadoPagoCheckoutAttemptDecision,
+  getMercadoPagoReservationPreferenceExpiration,
   getPendingCustomerCheckoutOrderAction,
   getStaleMercadoPagoAttemptAction,
   isEconomicallyEquivalentAttempt,
+  isMercadoPagoOrderFromReservationSession,
 } from "./checkout-attempt.ts"
 import {
   MERCADOPAGO_SUPERSEDED_PAYMENT_STATUS,
@@ -44,12 +47,6 @@ const SETTINGS: CheckoutPricingSettings = {
   nationalTaxesIncidencePercent: 21,
 }
 
-const ALL_INSTALLMENTS = {
-  cuotas_2_habilitadas: true,
-  cuotas_3_habilitadas: true,
-  cuotas_6_habilitadas: true,
-}
-
 interface Scenario {
   unitPrice?: number
   quantity?: number
@@ -58,7 +55,8 @@ interface Scenario {
   shippingType?: string
   mode?: MercadoPagoCheckoutMode
   settings?: CheckoutPricingSettings
-  installments?: CheckoutPricingLine["installments"]
+  /** Cuotas que Mercado Pago confirma sin interés para el total (la financiación no depende del producto). */
+  confirmed?: Array<2 | 3 | 6>
   storeBenefit?: { id: string; percent: number } | null
   requestedCredit?: number
 }
@@ -71,7 +69,7 @@ function evaluate({
   shippingType = "domicilio",
   mode = "financed",
   settings = SETTINGS,
-  installments = ALL_INSTALLMENTS,
+  confirmed = [2, 3, 6],
   storeBenefit = null,
   requestedCredit = 0,
 }: Scenario = {}) {
@@ -82,7 +80,6 @@ function evaluate({
       conditionedStockId: null,
       quantity,
       unitPrice,
-      installments,
     },
   ]
   const pricing = calculateMercadoPagoCheckoutPricing({
@@ -91,7 +88,7 @@ function evaluate({
     storeBenefitPercent: storeBenefit?.percent ?? null,
     requestedCustomerCredit: requestedCredit,
     settings,
-    interestFreeLookup: () => [2, 3, 6],
+    interestFreeLookup: () => confirmed,
   })
   const quote = getMercadoPagoModeQuote(pricing, mode)
   assert.ok(quote, "la modalidad pedida tiene que existir para el carrito")
@@ -128,7 +125,10 @@ const CUSTOMER = {
   cliente_email: "martin@example.com",
 }
 
-function mercadoPagoFingerprint(economicFingerprint: string, sessionId = "session-tab-a-0001") {
+const TAB_A_SESSION = "session-tab-a-0001"
+const TAB_B_SESSION = "session-tab-b-0002"
+
+function mercadoPagoFingerprint(economicFingerprint: string, sessionId = TAB_A_SESSION) {
   return createMercadoPagoCheckoutFingerprint({
     sessionId,
     userId: "user-1",
@@ -156,6 +156,7 @@ function persistedOrder(
     mercadopago_preference_id: "pref-viejo",
     mercadopago_preference_expires_at: "2026-09-23T15:30:00.000Z",
     mercadopago_preference_claimed_at: null,
+    mercadopago_reservation_session_id: TAB_A_SESSION,
     store_benefit_id: null,
     pricing_snapshot: state.snapshot,
     ...overrides,
@@ -267,7 +268,7 @@ test("1-5. preference inicial a $46.000 financiado; Admin baja a $1.000 -> Pagar
   // La orden vieja tiene preferencia VIVA (antes -> "reuse" del init_point viejo).
   assert.equal(getMercadoPagoCheckoutAttemptDecision(oldOrder, NOW).kind, "reuse")
   assert.equal(
-    getPendingCustomerCheckoutOrderAction(oldOrder, afterPriceChange.economicFingerprint),
+    getPendingCustomerCheckoutOrderAction(oldOrder, afterPriceChange.economicFingerprint, TAB_A_SESSION),
     "supersede_stale",
   )
   assert.equal(isEconomicallyEquivalentAttempt(oldOrder, afterPriceChange.economicFingerprint), false)
@@ -345,11 +346,9 @@ test("8. cambia el fee de Mercado Pago -> huella y total financiado distintos", 
   assert.notEqual(ivaChanged.economicFingerprint, base.economicFingerprint)
 })
 
-test("9. cambia el máximo de cuotas -> huella distinta y otro tope para la preferencia", () => {
+test("9. Mercado Pago confirma otro máximo -> huella distinta y otro tope para la preferencia", () => {
   const base = evaluate()
-  const upToThree = evaluate({
-    installments: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: false },
-  })
+  const upToThree = evaluate({ confirmed: [2, 3] })
   assert.notEqual(upToThree.economicFingerprint, base.economicFingerprint)
   assert.equal(base.quote.preferenceMaxInstallments, 6)
   assert.equal(upToThree.quote.preferenceMaxInstallments, 3)
@@ -397,7 +396,7 @@ test("A. preferencia en 1 pago (precio contado) -> 1 pago con cualquier medio (c
   assert.equal(cash.snapshot.cftea, null, "al contado nunca hay CFTEA")
 })
 
-test("B. preferencia crédito -> máximo elegible real del carrito, sólo tarjeta de crédito", () => {
+test("B. preferencia crédito -> máximo que confirma Mercado Pago para el total, sólo tarjeta de crédito", () => {
   const financed = evaluate({ mode: "financed" })
   assert.equal(financed.snapshot.mercadoPagoModality, "mercadopago_financed")
   assert.deepEqual(
@@ -405,10 +404,7 @@ test("B. preferencia crédito -> máximo elegible real del carrito, sólo tarjet
     { installments: 6, excluded_payment_types: CREDIT_EXCLUSIONS },
   )
 
-  const upToThree = evaluate({
-    mode: "financed",
-    installments: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: false },
-  })
+  const upToThree = evaluate({ mode: "financed", confirmed: [2, 3] })
   assert.deepEqual(
     getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: upToThree.snapshot }),
     { installments: 3, excluded_payment_types: CREDIT_EXCLUSIONS },
@@ -464,21 +460,21 @@ test("15. reintento sin ningún cambio económico -> reutiliza correctamente", (
     mercadoPagoFingerprint(first.economicFingerprint),
   )
   const order = persistedOrder(first)
-  assert.equal(getPendingCustomerCheckoutOrderAction(order, retry.economicFingerprint), "resume_equivalent")
+  assert.equal(getPendingCustomerCheckoutOrderAction(order, retry.economicFingerprint, TAB_A_SESSION), "resume_equivalent")
   assert.equal(getMercadoPagoCheckoutAttemptDecision(order, NOW).kind, "reuse")
 })
 
 test("16. reintento con cambio económico -> NO reutiliza", () => {
   const order = persistedOrder(evaluate())
   const changed = evaluate({ unitPrice: 45_999 })
-  assert.equal(getPendingCustomerCheckoutOrderAction(order, changed.economicFingerprint), "supersede_stale")
+  assert.equal(getPendingCustomerCheckoutOrderAction(order, changed.economicFingerprint, TAB_A_SESSION), "supersede_stale")
 })
 
 test("16b. una orden previa a esta versión (sin huella económica) nunca se reutiliza", () => {
   const order = persistedOrder(evaluate(), {
     pricing_snapshot: { economicFingerprint: null },
   })
-  assert.equal(getPendingCustomerCheckoutOrderAction(order, evaluate().economicFingerprint), "supersede_stale")
+  assert.equal(getPendingCustomerCheckoutOrderAction(order, evaluate().economicFingerprint, TAB_A_SESSION), "supersede_stale")
 })
 
 test("17. la huella sigue impidiendo dos órdenes simultáneas idénticas", () => {
@@ -487,15 +483,25 @@ test("17. la huella sigue impidiendo dos órdenes simultáneas idénticas", () =
   assert.equal(mercadoPagoFingerprint(a.economicFingerprint), mercadoPagoFingerprint(b.economicFingerprint))
 })
 
-test("18. dos pestañas (otra sesión) con las mismas condiciones retoman la misma orden, nunca la reemplazan", () => {
+test("18. otra sesión de checkout (otra reserva del Paso 3) con las mismas condiciones nunca retoma la orden ajena: la reemplaza", () => {
+  // Cada sesión tiene su propia reserva de 20 minutos. Retomar la orden de
+  // la sesión A desde B juzgaba el pago con el vencimiento de la reserva de A
+  // (ya vencida -> "Tu reserva venció" con la reserva de B recién creada) y
+  // dejaba la reserva de B huérfana.
   const tabA = evaluate()
   const tabB = evaluate()
+  assert.equal(tabA.economicFingerprint, tabB.economicFingerprint)
   assert.notEqual(
-    mercadoPagoFingerprint(tabA.economicFingerprint, "session-tab-a-0001"),
-    mercadoPagoFingerprint(tabB.economicFingerprint, "session-tab-b-0002"),
+    mercadoPagoFingerprint(tabA.economicFingerprint, TAB_A_SESSION),
+    mercadoPagoFingerprint(tabB.economicFingerprint, TAB_B_SESSION),
   )
   const order = persistedOrder(tabA)
-  assert.equal(getPendingCustomerCheckoutOrderAction(order, tabB.economicFingerprint), "resume_equivalent")
+  assert.equal(getPendingCustomerCheckoutOrderAction(order, tabB.economicFingerprint, TAB_B_SESSION), "supersede_stale")
+  // La misma sesión sigue siendo idempotente.
+  assert.equal(getPendingCustomerCheckoutOrderAction(order, tabA.economicFingerprint, TAB_A_SESSION), "resume_equivalent")
+  // Una orden previa a la columna de sesión tampoco se retoma desde un checkout nuevo.
+  const legacy = persistedOrder(tabA, { mercadopago_reservation_session_id: null })
+  assert.equal(getPendingCustomerCheckoutOrderAction(legacy, tabB.economicFingerprint, TAB_B_SESSION), "supersede_stale")
 })
 
 test("19. un pago aprobado sigue bloqueando: nunca se reemplaza ni se toca la orden", async () => {
@@ -662,4 +668,148 @@ test("órdenes previas al modelo contado/cuotas conservan su tope de cuotas al r
     installments: 1,
     default_installments: 1,
   })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Reserva del Paso 3: "Tu reserva venció" con una reserva vigente
+// ─────────────────────────────────────────────────────────────
+//
+// Bug real: un intento en cuotas anterior (sesión A) quedó `pendiente` con su
+// reserva de 20 minutos ya vencida (la expiración automática recién lo cancela
+// 24 h después). El cliente vuelve, reserva de nuevo (sesión B, 20 minutos
+// nuevos), elige cuotas con las mismas condiciones y presiona Pagar. La orden
+// de A se encontraba por `customer_checkout_fingerprint` (sin sesión), era
+// económicamente idéntica y se "retomaba": su plazo se leía de la reserva de A
+// (`loadMercadoPagoReservationDeadline`), vencida -> RESERVATION_EXPIRED -> el
+// checkout mostraba "Tu reserva venció" aunque la reserva de B estaba vigente.
+
+const ROUTE = readFileSync(
+  new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url),
+  "utf8",
+).replace(/\r\n/g, "\n")
+
+function expiredOrderFromPreviousSession(state: ReturnType<typeof evaluate>) {
+  return persistedOrder(state, {
+    // Preferencia y reserva de la sesión A vencidas: ya no se puede reutilizar.
+    mercadopago_preference_expires_at: new Date(NOW.getTime() - 30 * 60_000).toISOString(),
+    mercadopago_reservation_session_id: TAB_A_SESSION,
+  })
+}
+
+test("reserva: una orden pendiente de otra sesión (reserva vencida) nunca se retoma desde un checkout con reserva vigente", () => {
+  const previous = evaluate({ mode: "financed" })
+  const current = evaluate({ mode: "financed" })
+  const order = expiredOrderFromPreviousSession(previous)
+  // Mismas condiciones: antes esto era "resume_equivalent" con el plazo de A.
+  assert.ok(isEconomicallyEquivalentAttempt(order, current.economicFingerprint))
+  assert.equal(isMercadoPagoOrderFromReservationSession(order, TAB_B_SESSION), false)
+  assert.equal(
+    getPendingCustomerCheckoutOrderAction(order, current.economicFingerprint, TAB_B_SESSION),
+    "supersede_stale",
+  )
+  // Se da de baja (preferencia vieja vencida, sin claim) y la compra sigue con B.
+  assert.equal(getStaleMercadoPagoAttemptAction(order, NOW), "supersede")
+})
+
+test("reserva: la baja de la orden de otra sesión queda auditada con su motivo y no cambia el mecanismo de liberación", async () => {
+  const admin = createFakeAdmin()
+  const result = await supersedeStaleMercadoPagoOrder(
+    admin.client,
+    expiredOrderFromPreviousSession(evaluate()),
+    {
+      dependencies: createDependencies().dependencies,
+      currentEconomicFingerprint: evaluate().economicFingerprint,
+      reason: "reservation_session_replaced",
+      now: NOW,
+    },
+  )
+  assert.equal(result, "superseded")
+  const cancel = admin.operations.find(
+    (operation) => operation.table === "ordenes" && operation.kind === "update",
+  )
+  // Misma transición que cualquier baja: la cancelación dispara
+  // release_order_stock_reservation (sin cambios) sobre la reserva de A.
+  assert.equal((cancel?.payload as { estado?: string }).estado, "cancelado")
+  assert.equal(
+    (cancel?.payload as { payment_status?: string }).payment_status,
+    MERCADOPAGO_SUPERSEDED_PAYMENT_STATUS,
+  )
+  const audit = admin.operations.find(
+    (operation) => operation.table === "order_audit_events" && operation.kind === "insert",
+  )
+  assert.equal(
+    (audit?.payload as { metadata?: { reason?: string } }).metadata?.reason,
+    "reservation_session_replaced",
+  )
+})
+
+test("reserva: cambiar entre 1 pago y cuotas en la misma sesión reemplaza el intento, nunca lo trata como reserva vencida", () => {
+  const cashOrder = persistedOrder(evaluate({ mode: "cash" }))
+  const financedNow = evaluate({ mode: "financed" })
+  assert.equal(
+    getPendingCustomerCheckoutOrderAction(cashOrder, financedNow.economicFingerprint, TAB_A_SESSION),
+    "supersede_stale",
+  )
+  const financedOrder = persistedOrder(evaluate({ mode: "financed" }))
+  const cashNow = evaluate({ mode: "cash" })
+  assert.equal(
+    getPendingCustomerCheckoutOrderAction(financedOrder, cashNow.economicFingerprint, TAB_A_SESSION),
+    "supersede_stale",
+  )
+  // Elegir modalidad no toca la reserva: el reemplazo pasa por la baja segura,
+  // no por loadMercadoPagoReservationDeadline.
+  const supersede = ROUTE.slice(ROUTE.indexOf("async function resolvePendingCustomerCheckoutOrder("))
+  const supersedeBranch = supersede.slice(supersede.indexOf("const result = await supersedeStaleMercadoPagoOrder("), supersede.indexOf("switch (result)"))
+  assert.doesNotMatch(supersedeBranch, /loadMercadoPagoReservationDeadline/)
+})
+
+test("reserva: el plazo de una orden sólo se lee si es de la sesión del request (nunca el de otra reserva)", () => {
+  const resolver = ROUTE.slice(
+    ROUTE.indexOf("async function resolveMercadoPagoOrderAttempt("),
+    ROUTE.indexOf("async function releaseMercadoPagoPreferenceClaim("),
+  )
+  const guard = resolver.indexOf("!isMercadoPagoOrderFromReservationSession(order, reservationSessionId)")
+  const deadline = resolver.indexOf("await loadMercadoPagoReservationDeadline(admin, order.id)")
+  assert.ok(guard > 0 && deadline > guard, "la sesión se valida antes de leer el plazo")
+  // Los tres caminos que retoman una orden pasan la sesión del request.
+  assert.equal((ROUTE.match(/economicFingerprint,\s*reservationSessionId: checkoutSessionId,/g) ?? []).length, 3)
+  assert.match(ROUTE, /mercadopago_reservation_session_id,/)
+})
+
+test("reserva vigente permite crear la preferencia; una realmente vencida (o con menos de 1 minuto) bloquea", () => {
+  const vigente = new Date(NOW.getTime() + 12 * 60_000).toISOString()
+  assert.equal(
+    getMercadoPagoReservationPreferenceExpiration(vigente, NOW)?.toISOString(),
+    vigente,
+    "la preferencia hereda el vencimiento de la reserva, sin renovarlo",
+  )
+  assert.equal(getMercadoPagoReservationPreferenceExpiration(new Date(NOW.getTime() - 1_000).toISOString(), NOW), null)
+  assert.equal(getMercadoPagoReservationPreferenceExpiration(new Date(NOW.getTime() + 30_000).toISOString(), NOW), null)
+  // El servidor sigue respondiendo RESERVATION_EXPIRED cuando la reserva propia vence.
+  assert.match(ROUTE, /if \(!expiresAt\) throw new CheckoutReservationExpiredError\(\)/)
+  assert.match(ROUTE, /error instanceof CheckoutReservationExpiredError\) \{\s*return NextResponse\.json\(\s*\{ code: "RESERVATION_EXPIRED"/)
+  const commit = readFileSync(
+    new URL("../../supabase/migrations/20260925130000_mercadopago_checkout_reservation_commit.sql", import.meta.url),
+    "utf8",
+  )
+  assert.match(commit, /if v_session\.expires_at <= v_now \+ interval '60 seconds' then\s*raise exception 'RESERVATION_EXPIRED';/)
+})
+
+test("reserva: cuotas sin cantidad preseleccionada se aceptan; una cantidad no confirmada sigue rechazándose (409)", () => {
+  assert.match(
+    ROUTE,
+    /mode === "financed" &&\s*\(!quote \|\|\s*\(selectedInstallmentCount != null &&\s*!pricing\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)\)\)/,
+  )
+  // La preferencia en cuotas abre hasta el tier, sin preseleccionar cantidad.
+  const financed = evaluate({ mode: "financed" })
+  const snapshot = buildMercadoPagoPricingSnapshot({
+    pricing: financed.pricing,
+    mode: "financed",
+    settings: SETTINGS,
+    economicFingerprint: financed.economicFingerprint,
+    selectedInstallmentCount: null,
+  })
+  const methods = getMercadoPagoPreferencePaymentMethods({ pricing_snapshot: snapshot })
+  assert.equal(methods.installments, 6)
+  assert.equal(methods.default_installments, undefined)
 })

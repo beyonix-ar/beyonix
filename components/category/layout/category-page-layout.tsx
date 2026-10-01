@@ -59,8 +59,6 @@ export function CategoryPageLayout({
     setOnlyOffers,
     onlyBestSellers,
     setOnlyBestSellers,
-    onlyInstallments,
-    setOnlyInstallments,
     minPrice,
     setMinPrice,
     maxPrice,
@@ -165,8 +163,6 @@ export function CategoryPageLayout({
               setOnlyOffers={setOnlyOffers}
               onlyBestSellers={onlyBestSellers}
               setOnlyBestSellers={setOnlyBestSellers}
-              onlyInstallments={onlyInstallments}
-              setOnlyInstallments={setOnlyInstallments}
               minPrice={minPrice}
               setMinPrice={setMinPrice}
               maxPrice={maxPrice}
@@ -174,7 +170,6 @@ export function CategoryPageLayout({
               minPriceLimit={priceRange.min}
               maxPriceLimit={priceRange.max}
               priceStep={priceRange.step}
-              showInstallmentsFilter={SITE_SETTINGS.filters.showInstallmentsFilter}
               showFeaturedFilter={SITE_SETTINGS.filters.showFeaturedFilter}
               showOfferFilter={SITE_SETTINGS.filters.showOfferFilter}
               showPriceFilter={SITE_SETTINGS.filters.showPriceFilter}

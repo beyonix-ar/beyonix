@@ -40,10 +40,7 @@ import type {
   InstallmentCount,
   InstallmentsFinancingConfig,
 } from "../products/installments.ts"
-import type {
-  InstallmentsPricingRule,
-  MercadoPagoPaymentModality,
-} from "../pricing/checkout-pricing.ts"
+import type { MercadoPagoPaymentModality } from "../pricing/checkout-pricing.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import type { ShippingBonusSettings } from "../store-config.ts"
 import {
@@ -189,10 +186,6 @@ export interface CheckoutOrderProductRow {
   precio: number
   stock: number
   activo: boolean
-  cuotas_2_habilitadas?: boolean
-  cuotas_3_habilitadas?: boolean
-  cuotas_6_habilitadas?: boolean
-  cuotas_sin_recargo?: boolean
 }
 
 export interface CheckoutOrderVariantRow {
@@ -259,8 +252,11 @@ export interface CheckoutOrderPricingSnapshot {
   preferenceMaxInstallments?: number
   cfteaByCount?: Partial<Record<InstallmentCount, number>> | null
   installmentsFinancing?: InstallmentsFinancingConfig
-  /** Regla "Mismo precio en contado y cuotas" usada; ausente en pedidos previos (= con recargo). */
-  installmentsPricingRule?: InstallmentsPricingRule
+  /**
+   * LEGACY (sólo pedidos anteriores a la financiación centralizada): regla
+   * de precio en cuotas por producto (sin recargo). Ya no se escribe.
+   */
+  installmentsPricingRule?: "surcharge" | "without_surcharge" | "mixed"
   installmentsWithoutSurchargeProductIds?: number[]
   economicFingerprint?: string
 }
@@ -305,8 +301,7 @@ interface PersistCheckoutOrderItemsParams {
 
 type CheckoutOrderDatabaseClient = ReturnType<typeof createAdminClient>
 
-const PRODUCT_SELECT =
-  "id, nombre, precio, stock, activo, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, cuotas_sin_recargo"
+const PRODUCT_SELECT = "id, nombre, precio, stock, activo"
 const VARIANT_SELECT = "id, producto_id, nombre, color_hex, stock, activo, orden"
 
 export function normalizeCheckoutOrderItems(

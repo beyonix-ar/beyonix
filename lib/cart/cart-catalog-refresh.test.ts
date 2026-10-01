@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import fs from "node:fs"
 import test from "node:test"
 
 import {
@@ -26,9 +27,6 @@ function makeProduct(overrides: Partial<SupabaseProducto> = {}): SupabaseProduct
     imagenes_producto: [],
     producto_variantes: [],
     conditioned_stock: [],
-    cuotas_2_habilitadas: true,
-    cuotas_3_habilitadas: true,
-    cuotas_6_habilitadas: true,
     ...overrides,
   } as unknown as SupabaseProducto
 }
@@ -49,13 +47,9 @@ function makeItem(product: SupabaseProducto, overrides: Partial<RefreshableCartI
   }
 }
 
-test("activar 'Mismo precio en contado y cuotas' en Admin refresca el carrito abierto", () => {
-  const items = [makeItem(makeProduct())]
-  const result = reconcileCartWithCatalog(items, [makeProduct({ cuotas_sin_recargo: true })])
-  assert.equal(result.changed, true)
-  assert.equal(result.items[0].product.cuotas_sin_recargo, true)
-  // Snapshot viejo sin la clave (sessionStorage previo a la columna) = OFF: no cambia nada.
-  assert.equal(reconcileCartWithCatalog(items, [makeProduct({ cuotas_sin_recargo: false })]).changed, false)
+test("la financiación no forma parte de la firma comercial del producto (es global)", () => {
+  const source = fs.readFileSync(new URL("./cart-catalog-refresh.ts", import.meta.url), "utf8")
+  assert.doesNotMatch(source, /cuotas_(2|3|6)_habilitadas|cuotas_sin_recargo/)
 })
 
 test("sin cambios comerciales el carrito NO se altera (misma referencia, sin re-render)", () => {
@@ -79,12 +73,6 @@ test("detecta el cambio de precio del Admin y actualiza precio unitario y produc
   )
 })
 
-test("detecta el cambio de cuotas habilitadas (máximo de cuotas)", () => {
-  const items = [makeItem(makeProduct())]
-  const result = reconcileCartWithCatalog(items, [makeProduct({ cuotas_6_habilitadas: false })])
-  assert.equal(result.changed, true)
-  assert.equal(result.items[0].product.cuotas_6_habilitadas, false)
-})
 
 test("producto desactivado/borrado se quita del carrito y se informa", () => {
   const product = makeProduct()

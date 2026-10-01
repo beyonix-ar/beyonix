@@ -96,21 +96,18 @@ test("AUDITORÍA: la misma tasa nominal exige precios distintos según sea descu
   assert.ok(asFeePrice! > asDiscountPrice!)
 })
 
-test("getPaymentScenarioRates: sin cuotas habilitadas, sólo transferencia y MP 1 pago -- ambas de base CONTADO", () => {
-  const scenarios = getPaymentScenarioRates([], REAL_CONFIG, TRANSFER_DISCOUNT_PERCENT)
-  assert.deepEqual(
-    scenarios.map((scenario) => scenario.id),
-    ["transferencia", "mp_unico"],
-  )
-  assert.equal(scenarios[0].ratePercent, 10)
-  assert.equal(scenarios[1].ratePercent, 8) // ceil(6.42 * 1.21) = ceil(7.7682)
-  assert.equal(scenarios[0].kind, "discount")
-  assert.equal(scenarios[1].kind, "fee")
-  assert.ok(scenarios.every((scenario) => scenario.priceBasis === "cash"))
+test("getPaymentScenarioRates: los mismos escenarios para todos los productos -- transferencia y MP 1 pago son de base CONTADO", () => {
+  const scenarios = getPaymentScenarioRates(REAL_CONFIG, TRANSFER_DISCOUNT_PERCENT)
+  const cash = scenarios.filter((scenario) => scenario.priceBasis === "cash")
+  assert.deepEqual(cash.map((scenario) => scenario.id), ["transferencia", "mp_unico"])
+  assert.equal(cash[0].ratePercent, 10)
+  assert.equal(cash[1].ratePercent, 8) // ceil(6.42 * 1.21) = ceil(7.7682)
+  assert.equal(cash[0].kind, "discount")
+  assert.equal(cash[1].kind, "fee")
 })
 
-test("getPaymentScenarioRates: agrega una entrada FINANCIADA por cada cuota habilitada, en orden ascendente", () => {
-  const scenarios = getPaymentScenarioRates([6, 2, 3], REAL_CONFIG, TRANSFER_DISCOUNT_PERCENT)
+test("getPaymentScenarioRates: una entrada FINANCIADA por cada tier que BEYONIX puede absorber (2/3/6), en orden ascendente", () => {
+  const scenarios = getPaymentScenarioRates(REAL_CONFIG, TRANSFER_DISCOUNT_PERCENT)
   assert.deepEqual(
     scenarios.map((scenario) => scenario.id),
     ["transferencia", "mp_unico", "mp_2", "mp_3", "mp_6"],
@@ -130,7 +127,6 @@ test("simulateProductProfitability: costo desconocido devuelve null, nunca inven
     simulateProductProfitability({
       price: 29_900,
       cost: null,
-      eligibleInstallmentCounts: [],
       config: REAL_CONFIG,
       transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
     }),
@@ -142,7 +138,6 @@ test("simulateProductProfitability: sin cuotas habilitadas, MP 1 pago (8%) es el
   const result = simulateProductProfitability({
     price: 29_900,
     cost: 15_000,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -158,7 +153,6 @@ test("CASO D: con cuotas habilitadas, el 'peor escenario' SIGUE siendo de base c
   const result = simulateProductProfitability({
     price: 29_900,
     cost: 15_000,
-    eligibleInstallmentCounts: [2, 3, 6],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -167,56 +161,38 @@ test("CASO D: con cuotas habilitadas, el 'peor escenario' SIGUE siendo de base c
   assert.equal(result!.worstCase.priceBasis, "cash")
 })
 
-test("CASO E: la ganancia en PESOS de la cuota máxima es idéntica a la de contado (por construcción del gross-up); en cuotas por debajo del máximo es MAYOR -- margen extra intencional, nunca un error", () => {
+test("CASO E: cada tier (2/3/6) cobra su propio financiado y deja la MISMA ganancia en pesos que el contado sin comisión", () => {
   const price = 29_900 // contado
   const cost = 15_000
   const result = simulateProductProfitability({
     price,
     cost,
-    eligibleInstallmentCounts: [2, 3, 6],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
   assert.ok(result)
 
   const mpUnico = result!.scenarios.find((scenario) => scenario.id === "mp_unico")!
-  const mp2 = result!.scenarios.find((scenario) => scenario.id === "mp_2")!
-  const mp3 = result!.scenarios.find((scenario) => scenario.id === "mp_3")!
-  const mp6 = result!.scenarios.find((scenario) => scenario.id === "mp_6")!
-
-  // mp_6 usa el precio financiado (mayor al contado) y la tasa de la cuota
-  // MÁXIMA -- por construcción, netAmount = financedPrice*(1-feeRate6) ==
-  // price (contado, sin ninguna comisión) exacto, así que su ganancia en
-  // pesos coincide con "precio de contado - costo" (no con mp_unico, que
-  // tiene su PROPIA comisión de 8% aunque sea pago único). El financiado se
-  // redondea HACIA ARRIBA al múltiplo de 6 (getFinancedPriceDivisor), así
-  // que la ganancia nunca queda por debajo y la excede en menos de $6.
-  assert.ok(mp6.profitAmount >= price - cost - 1e-6)
-  assert.ok(mp6.profitAmount - (price - cost) < 6)
-  assert.ok(mp6.profitAmount > mpUnico.profitAmount)
-  // Pero mp_2 y mp_3 usan la MISMA base financiada (financedPrice de la
-  // cuota 6) con una tasa REAL menor (18%/21% vs 31%) -- más ganancia en
-  // pesos que contado sin comisión, el margen adicional intencional de la
-  // regla 5.
-  assert.ok(mp2.profitAmount > mpUnico.profitAmount)
-  assert.ok(mp3.profitAmount > mpUnico.profitAmount)
-  assert.ok(mp2.profitAmount > mp3.profitAmount)
-  assert.ok(mp3.profitAmount > mp6.profitAmount)
-  // Los tres comparten el mismo precio financiado (el total nunca cambia
-  // según la cuota elegida).
-  assert.equal(mp2.price, mp3.price)
-  assert.equal(mp3.price, mp6.price)
-  assert.ok(mp6.price > price)
-  // El margen % de las modalidades financiadas es MENOR al de contado (se
-  // divide por un ingreso mayor) -- no es peor caso, es aritmética distinta.
-  assert.ok(mp6.marginPercent < calculateMarginFromPrice(price, cost, 0).marginPercent)
+  const tiers = (["mp_2", "mp_3", "mp_6"] as const).map(
+    (id) => result!.scenarios.find((scenario) => scenario.id === id)!,
+  )
+  // Precio financiado con el costo de SU tier: sube con la cantidad de cuotas.
+  assert.ok(tiers[0].price < tiers[1].price && tiers[1].price < tiers[2].price)
+  for (const tier of tiers) {
+    assert.ok(tier.price > price)
+    // Por el gross-up: neto = contado (redondeado hacia arriba al múltiplo, < $6 extra).
+    assert.ok(tier.profitAmount >= price - cost - 1e-6)
+    assert.ok(tier.profitAmount - (price - cost) < 6)
+    assert.ok(tier.profitAmount > mpUnico.profitAmount)
+    // Margen % menor al de contado: se divide por un ingreso mayor, no es pérdida.
+    assert.ok(tier.marginPercent < calculateMarginFromPrice(price, cost, 0).marginPercent)
+  }
 })
 
-test("simulateProductProfitability: producto con una sola modalidad (2 cuotas) -- el peor escenario sigue siendo de base contado, nunca la cuota", () => {
+test("simulateProductProfitability: el peor escenario sigue siendo de base contado, nunca una cuota", () => {
   const result = simulateProductProfitability({
     price: 29_900,
     cost: 15_000,
-    eligibleInstallmentCounts: [2],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -224,7 +200,7 @@ test("simulateProductProfitability: producto con una sola modalidad (2 cuotas) -
   assert.equal(result!.worstCase.id, "mp_unico")
   assert.deepEqual(
     result!.scenarios.map((scenario) => scenario.id),
-    ["transferencia", "mp_unico", "mp_2"],
+    ["transferencia", "mp_unico", "mp_2", "mp_3", "mp_6"],
   )
 })
 
@@ -232,7 +208,6 @@ test("simulateProductProfitability: precio manual por debajo del costo -- margen
   const result = simulateProductProfitability({
     price: 10_000,
     cost: 15_000,
-    eligibleInstallmentCounts: [2],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -246,7 +221,6 @@ test("calculateTargetMarginPrice: precio de CONTADO que garantiza el margen obje
   const result = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [2, 3, 6],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -262,21 +236,18 @@ test("CASO F: el precio de contado por margen objetivo YA NO depende de la confi
   const withoutInstallments = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
   const withThreeInstallments = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [3],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
   const withAllInstallments = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [2, 3, 6],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -291,7 +262,6 @@ test("calculateTargetMarginPrice: margen 0% como objetivo es válido", () => {
   const result = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 0,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -304,7 +274,6 @@ test("calculateTargetMarginPrice: costo inválido o margen objetivo inalcanzable
     calculateTargetMarginPrice({
       cost: 0,
       targetMarginPercent: 40,
-      eligibleInstallmentCounts: [],
       config: REAL_CONFIG,
       transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
     }),
@@ -314,7 +283,6 @@ test("calculateTargetMarginPrice: costo inválido o margen objetivo inalcanzable
     calculateTargetMarginPrice({
       cost: 15_000,
       targetMarginPercent: 95,
-      eligibleInstallmentCounts: [2, 3, 6],
       config: REAL_CONFIG,
       transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
     }),
@@ -329,7 +297,6 @@ test("calculateTargetMarginPrice: SIN CUOTAS, el peor escenario real es MP 1 pag
   const result = calculateTargetMarginPrice({
     cost,
     targetMarginPercent,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -339,12 +306,13 @@ test("calculateTargetMarginPrice: SIN CUOTAS, el peor escenario real es MP 1 pag
   const simulation = simulateProductProfitability({
     price: result!.commercialPrice,
     cost,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
   assert.ok(simulation)
-  for (const scenario of simulation!.scenarios) {
+  // La garantía es sobre los escenarios de base contado (las cuotas tienen
+  // la misma ganancia en pesos, con margen % menor por aritmética).
+  for (const scenario of simulation!.scenarios.filter((entry) => entry.priceBasis === "cash")) {
     assert.ok(
       scenario.marginPercent >= targetMarginPercent - 0.01,
       `${scenario.id} quedó en ${scenario.marginPercent}%, por debajo del 40% objetivo`,
@@ -376,14 +344,12 @@ test("cambiar baseProcessingPercent/ivaPercent (afectan mp_unico) SÍ cambia el 
   const withRealConfig = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [6],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
   const withCheaperConfig = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [6],
     config: cheaperBaseConfig,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -402,14 +368,12 @@ test("cambiar sólo surchargePercentByCount (no afecta mp_unico/transferencia) N
   const withRealConfig = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [6],
     config: REAL_CONFIG,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
   const withCheaperInstallments = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 40,
-    eligibleInstallmentCounts: [6],
     config: cheaperInstallmentsConfig,
     transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
   })
@@ -422,14 +386,12 @@ test("cambiar transferDiscountPercent (site_settings.pricing) cambia el precio c
   const result10 = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 5,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: 10,
   })
   const result30 = calculateTargetMarginPrice({
     cost: 15_000,
     targetMarginPercent: 5,
-    eligibleInstallmentCounts: [],
     config: REAL_CONFIG,
     transferDiscountPercent: 30,
   })

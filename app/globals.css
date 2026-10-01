@@ -2860,6 +2860,13 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   color: var(--admin-config-warning-dot);
 }
 
+/* Financiación en modo Manual / Emergencia: borde y franja ámbar en todo el
+   panel, imposible de confundir con Automático. */
+.beyonix-admin-main .admin-config-page .admin-financing-panel.admin-financing-manual:not(#\#) {
+  border-color: var(--admin-config-warning-dot) !important;
+  box-shadow: inset 4px 0 0 var(--admin-config-warning-dot), 0 0 0 1px var(--admin-config-warning-border) !important;
+}
+
 /* Tabla de costos: filas separadas por línea, sin cajas anidadas. */
 .beyonix-admin-main .admin-config-page .admin-config-cost-table {
   overflow: hidden;
@@ -8379,45 +8386,6 @@ span.admin-claim-status-finalized,
    ningún cálculo de auto-sizing de por medio, así que no puede desbordar. */
 .product-editor-screen .product-editor-price-grid {
   grid-template-columns: 7rem 8rem 8rem;
-}
-
-/* Toggles de Financiación: [2 cuotas] [3 cuotas] [6 cuotas] [Mismo precio en
-   contado y cuotas] en UNA sola fila desde 22rem de tarjeta (todo desktop:
-   el mínimo real es ~28rem con el umbral de 76rem de .product-editor-row-top).
-   Grid de columnas `auto` sin wrap: las cuotas miden su contenido (texto en
-   nowrap) y "Mismo precio" toma el resto, partiendo su nombre en 2 líneas si
-   hace falta -- mismo alto que cuota + detalle. Todas las celdas se estiran
-   al alto de la fila. Por debajo de 22rem (mobile) bajan de fila sin
-   desbordar. */
-.product-editor-screen .product-editor-financing-grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-}
-
-.product-editor-screen .product-editor-financing-toggle {
-  flex: 0 0 auto;
-  min-height: 2.75rem;
-}
-
-.product-editor-screen .product-editor-financing-toggle-wide {
-  max-width: 100%;
-}
-
-@container (min-width: 22rem) {
-  .product-editor-screen .product-editor-financing-grid {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: auto;
-    justify-content: start;
-    align-items: stretch;
-  }
-
-  /* Corta siempre igual ("Mismo precio en / contado y cuotas") a cualquier
-     ancho de desktop: 2 líneas = mismo alto que las cuotas. */
-  .product-editor-screen .product-editor-financing-toggle-wide {
-    max-width: 9.5rem;
-  }
 }
 
 /* Fila 2+3 -- bloque [Estado comercial+Stock]+Especificaciones (izquierda)

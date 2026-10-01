@@ -69,19 +69,13 @@ import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
 } from "@/lib/products/product-variants"
-import {
-  calculateCftea,
-  getPriceWithoutNationalTaxes,
-  getProductFinancingCandidates,
-  getProductInterestFreeOffer,
-  getTransferPrice,
-} from "@/lib/pricing/financed-pricing"
+import { getPriceWithoutNationalTaxes, getTransferPrice } from "@/lib/pricing/financed-pricing"
+import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import {
   MAX_CART_ITEM_QUANTITY,
   getQuantityLimitMessage,
 } from "@/lib/cart/stock-status"
 import { useSiteSettings } from "@/hooks/use-site-settings"
-import { useInterestFreeInstallments } from "@/hooks/use-interest-free-installments"
 
 interface ProductDetailsPanelProps {
   product: SupabaseProducto
@@ -183,29 +177,12 @@ export function ProductDetailsPanel({
   const displayedColorName = formatColorName(
     previewedColor?.name ?? selectedOption?.name ?? "",
   )
-  const { installmentsFinancing, pricing } = useSiteSettings()
+  const { pricing, interestFreeOffer } = useSiteSettings()
   const cashPrice = selectedOption?.price ?? product.precio
   const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
-  // Tier confirmado por Mercado Pago para el precio de UNA unidad: precio
-  // financiado con el costo de ese tier y sólo sus cuotas sin interés. Sin
-  // confirmación (cargando o error) no se ofrecen cuotas.
-  const financingCandidates = getProductFinancingCandidates(product, cashPrice, installmentsFinancing)
-  const interestFreeFor = useInterestFreeInstallments(
-    financingCandidates.map((candidate) => candidate.amount),
-  )
-  const interestFreeOffer = getProductInterestFreeOffer(
-    product,
-    cashPrice,
-    installmentsFinancing,
-    interestFreeFor,
-  )
-  const financedPrice = interestFreeOffer?.financedPrice ?? null
-  const installmentPlans = interestFreeOffer?.plans ?? []
-  const maxInstallmentPlan = installmentPlans[installmentPlans.length - 1] ?? null
-  const cftea =
-    maxInstallmentPlan && maxInstallmentPlan.count > 1
-      ? calculateCftea(cashPrice, maxInstallmentPlan.amount, maxInstallmentPlan.count)
-      : null
+  // Regla GLOBAL de la tienda (no del producto), con el rango que alcanza
+  // este precio: el monto real lo define el total del carrito en el checkout.
+  const interestFreeText = getInterestFreeMessage(interestFreeOffer, cashPrice)?.text ?? null
   const priceWithoutNationalTaxesCash = getPriceWithoutNationalTaxes(
     cashPrice,
     pricing.nationalTaxesIncidencePercent,
@@ -302,9 +279,7 @@ export function ProductDetailsPanel({
           }
           transferPrice={transferPrice}
           transferDiscountPercent={pricing.transferDiscountPercent}
-          financedPrice={financedPrice}
-          installmentPlans={installmentPlans}
-          cfteaPercent={cftea}
+          interestFreeText={interestFreeText}
           priceWithoutNationalTaxesCash={priceWithoutNationalTaxesCash}
           isInCart={isInCart}
           cartQuantity={cartQuantity}

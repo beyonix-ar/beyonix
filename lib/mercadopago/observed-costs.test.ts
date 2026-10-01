@@ -94,18 +94,20 @@ test("la base prefiere la última tarjeta de crédito aunque haya pagos más nue
   assert.equal(observed.base?.percentWithIva, 5)
 })
 
-test("descarta pagos viejos, chicos, futuros, sin costo o con tasas imposibles", () => {
+test("descarta pagos chicos, futuros, sin costo, sin medio o con tasas imposibles", () => {
   const rows = [
+    // Sin medio de pago: no se puede saber de qué modalidad es.
     payment(1, "2026-05-01T00:00:00.000Z", { installments: 1, transaction_amount: 10_000, fee_details: [{ type: "mercadopago_fee", amount: 400 }] }),
     payment(2, "2026-09-30T00:00:00.000Z", { installments: 1, transaction_amount: 50, fee_details: [{ type: "mercadopago_fee", amount: 2 }] }),
     payment(3, "2026-10-05T00:00:00.000Z", { installments: 1, transaction_amount: 10_000, fee_details: [{ type: "mercadopago_fee", amount: 400 }] }),
     payment(4, "2026-09-30T00:00:00.000Z", { installments: 1, transaction_amount: 10_000, fee_details: null }),
-    payment(5, "2026-09-30T00:00:00.000Z", { installments: 1, transaction_amount: 10_000, fee_details: [{ type: "mercadopago_fee", amount: 9_000 }] }),
+    payment(5, "2026-09-30T00:00:00.000Z", { installments: 1, transaction_amount: 10_000, fee_details: [{ type: "mercadopago_fee", amount: 9_000 }], payment_type_id: "credit_card" }),
     { id: 6, paid_at: null, mercadopago_payment_snapshot: { installments: 1, transaction_amount: 10_000, fee_details: [] } },
   ]
   const observed = deriveMercadoPagoObservedCosts(rows, NOW)
   assert.equal(observed.base, null)
-  assert.equal(observed.analyzedPayments, 1, "sólo el pago con tasa imposible pasó los filtros de fecha/monto")
+  assert.equal(observed.analyzedPayments, 2, "pasan fecha/monto el pago sin medio y el de tasa imposible")
+  assert.deepEqual(observed.history, [], "nada confiable: ningún costo aprendido")
 })
 
 test("costo por cuotas: sólo con cargo de financiación (cuotas sin interés absorbidas)", () => {
@@ -157,11 +159,21 @@ test("modo guardado: sin modo o inválido = manual (compatibilidad con la config
   assert.equal(normalizeMercadoPagoCostsMode(undefined), "manual")
   assert.equal(normalizeMercadoPagoCostsMode("otro"), "manual")
   assert.equal(normalizeMercadoPagoCostsMode("automatic"), "automatic")
-  assert.deepEqual(normalizeStoredInstallmentsFinancingSettings(MANUAL), { ...MANUAL, mode: "manual" })
+  // Sin política guardada: cuotas sin interés activas y sin mínimos propios (comportamiento previo).
+  const DEFAULT_POLICY = { enabled: true, minimumAmountByCount: { 3: null, 6: null } }
+  assert.deepEqual(normalizeStoredInstallmentsFinancingSettings(MANUAL), { ...MANUAL, mode: "manual", interestFreePolicy: DEFAULT_POLICY })
 
   const [change] = normalizeSiteSettingsPatch({ installmentsFinancing: { ...MANUAL, mode: "automatic" } })
   assert.equal(change.key, "installments_financing")
-  assert.deepEqual(change.value, { ...MANUAL, mode: "automatic" })
+  assert.deepEqual(change.value, { ...MANUAL, mode: "automatic", interestFreePolicy: DEFAULT_POLICY })
+
+  const [withPolicy] = normalizeSiteSettingsPatch({
+    installmentsFinancing: { ...MANUAL, mode: "automatic", interestFreePolicy: { enabled: false, minimumAmountByCount: { 3: "50000", 6: -1 } } },
+  })
+  assert.deepEqual((withPolicy.value as { interestFreePolicy: unknown }).interestFreePolicy, {
+    enabled: false,
+    minimumAmountByCount: { 3: 50_000, 6: null },
+  })
 })
 
 function readSource(path: string) {
@@ -184,21 +196,29 @@ test("contrato: la configuración pública lleva sólo el costo efectivo; las ob
   assert.doesNotMatch(publicRoute, /getMercadoPagoCostsOverview|mercadoPagoCosts/)
 })
 
-test("UI: Automático (recomendado) y Manual (emergencia) separados, con estados y guardado por bloque", () => {
-  const section = readSource("../../app/admin/sections/modificaciones/mercadopago-costs-section.tsx")
+test("UI: Financiación tiene Automático (recomendado) y Manual (emergencia); Configuración sólo deriva", () => {
+  const section = readSource("../../app/admin/sections/financiacion/financing-panel.tsx")
   assert.match(section, /role="radiogroup"/)
   assert.match(section, /role="radio"/)
   assert.match(section, /"Recomendado" : "Emergencia"/)
-  assert.match(section, /Todavía no hay datos observados/)
-  assert.match(section, /Se usarán los valores de respaldo hasta detectar pagos reales aprobados\./)
   assert.match(section, /El cálculo deja de seguir los costos observados\./)
+  assert.match(
+    section,
+    /"Estás usando valores manuales\. BEYONIX dejará de usar automáticamente los costos observados hasta volver al modo Automático\."/,
+  )
   // El IVA nunca se presenta como observado: Mercado Pago no lo discrimina.
   assert.match(section, /Mercado Pago no lo informa por separado/)
 
-  const page = readSource("../../app/admin/sections/modificaciones/admin-modificaciones.tsx")
-  for (const section of ["stock", "shipping", "mercadoPago", "pricing", "customerCredit"]) {
-    assert.match(page, new RegExp(`saveSection\\("${section}", \\{ \\w+ \\}\\)`))
-  }
+  const container = readSource("../../app/admin/sections/financiacion/admin-financiacion.tsx")
   // Nunca se guardan defaults de costos si no llegó el estado real.
-  assert.match(page, /disabled=\{sectionProps\("mercadoPago"\)\.disabled \|\| mercadoPagoCosts === null\}/)
+  assert.match(container, /disabled=\{loading \|\| overview === null\}/)
+  assert.match(container, /body: JSON\.stringify\(\{ installmentsFinancing \}\)/)
+
+  const page = readSource("../../app/admin/sections/modificaciones/admin-modificaciones.tsx")
+  for (const block of ["stock", "shipping", "pricing", "customerCredit"]) {
+    assert.match(page, new RegExp(`saveSection\\("${block}", \\{ \\w+ \\}\\)`))
+  }
+  // Sin controles duplicados: Configuración no edita installmentsFinancing.
+  assert.doesNotMatch(page, /installmentsFinancing|MercadoPagoCostsSection/)
+  assert.match(page, /<FinancingShortcutCard overview=\{mercadoPagoCosts\} \/>/)
 })

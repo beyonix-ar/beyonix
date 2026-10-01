@@ -66,6 +66,7 @@ import {
   getMercadoPagoRequestFingerprint,
   getPendingCustomerCheckoutOrderAction,
   isEconomicallyEquivalentAttempt,
+  isMercadoPagoOrderFromReservationSession,
   isPostgresUniqueViolation,
   normalizeMercadoPagoCheckoutSessionId,
   type MercadoPagoCheckoutAttemptRow,
@@ -90,6 +91,7 @@ import {
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
 import { getInterestFreeInstallments } from "@/lib/mercadopago/interest-free-installments"
+import { applyInterestFreePolicy } from "@/lib/mercadopago/interest-free-policy"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
@@ -151,7 +153,6 @@ function buildCheckoutPricingLines(
     conditionedStockId: items[index].conditionedStockId,
     quantity: row.quantity,
     unitPrice: row.unitPrice,
-    installments: row.product,
   }))
 }
 
@@ -323,8 +324,14 @@ export async function POST(request: Request) {
     // cobraría en cada tier (neto de saldo), qué cuotas son sin interés. El
     // tier (la más alta confirmada) define el precio financiado. Sin
     // confirmación (error/timeout) no hay cuotas: sólo 1 pago a contado.
-    // 1 pago nunca consulta: siempre es el precio contado.
-    const financingCandidates = mode === "financed" ? getMercadoPagoFinancingCandidates(pricingInput) : []
+    // 1 pago nunca consulta: siempre es el precio contado. Sobre lo que
+    // confirma Mercado Pago rige la política de BEYONIX (ON/OFF y mínimos por
+    // total, Admin → Financiación); en OFF ni siquiera se consulta.
+    const interestFreePolicy = siteSettings.interestFreePolicy
+    const financingCandidates =
+      mode === "financed" && interestFreePolicy.enabled
+        ? getMercadoPagoFinancingCandidates(pricingInput)
+        : []
     const confirmations = new Map(
       await Promise.all(
         financingCandidates.map(async (candidate) => [candidate.amount, await getInterestFreeInstallments(candidate.amount)] as const),
@@ -335,7 +342,9 @@ export async function POST(request: Request) {
       interestFreeLookup: financingCandidates.length
         ? (amount) => {
             const result = confirmations.get(amount)
-            return result?.status === "confirmed" ? result.counts : null
+            return result?.status === "confirmed"
+              ? applyInterestFreePolicy(result.counts, amount, interestFreePolicy)
+              : null
           }
         : null,
     })
@@ -344,11 +353,15 @@ export async function POST(request: Request) {
       payload.mercadoPagoInstallments ?? Number(payload.installmentsModality),
     )
 
-    // Cuotas pedidas que Mercado Pago ya no confirma (o una cuota fuera del
-    // tier): nunca se cobra con otras condiciones -- el cliente revisa.
+    // Cuotas que Mercado Pago ya no confirma: nunca se cobra con otras
+    // condiciones -- el cliente revisa. La cantidad la elige el cliente dentro
+    // de Mercado Pago (hasta el tier); si un cliente anterior la manda, tiene
+    // que seguir confirmada.
     if (
       mode === "financed" &&
-      (!quote || selectedInstallmentCount == null || !pricing.interestFreeInstallmentCounts.includes(selectedInstallmentCount))
+      (!quote ||
+        (selectedInstallmentCount != null &&
+          !pricing.interestFreeInstallmentCounts.includes(selectedInstallmentCount)))
     ) {
       return NextResponse.json(
         {
@@ -461,6 +474,7 @@ export async function POST(request: Request) {
         payload,
         request,
         economicFingerprint,
+        reservationSessionId: checkoutSessionId,
       })
       if (response) return response
     }
@@ -474,6 +488,7 @@ export async function POST(request: Request) {
         payload,
         request,
         economicFingerprint,
+        reservationSessionId: checkoutSessionId,
       })
       if (response) return response
     }
@@ -604,6 +619,7 @@ export async function POST(request: Request) {
             payload,
             request,
             economicFingerprint,
+            reservationSessionId: checkoutSessionId,
           })
           if (response) return response
         }
@@ -777,7 +793,7 @@ async function releaseStoreBenefitClaimSafely(admin: AdminClient, benefitId: str
 }
 
 const MERCADOPAGO_ATTEMPT_SELECT =
-  "id, created_at, estado, total, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count, pricing_snapshot, store_benefit_id, andreani_creation_status, andreani_envio_id" as const
+  "id, created_at, estado, total, financial_status, payment_status, payment_method_id, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, mercadopago_init_point, mercadopago_preference_id, mercadopago_preference_expires_at, mercadopago_preference_claimed_at, mercadopago_preference_generation, installments_count, pricing_snapshot, store_benefit_id, mercadopago_reservation_session_id, andreani_creation_status, andreani_envio_id" as const
 
 async function loadMercadoPagoCheckoutAttempts(
   admin: AdminClient,
@@ -840,6 +856,7 @@ async function resolvePendingCustomerCheckoutOrder({
   payload,
   request,
   economicFingerprint,
+  reservationSessionId,
 }: {
   client: MercadoPagoConfig
   admin: AdminClient
@@ -847,8 +864,13 @@ async function resolvePendingCustomerCheckoutOrder({
   payload: CheckoutPayload
   request: Request
   economicFingerprint: string
+  reservationSessionId: string
 }): Promise<Response | null> {
-  const action = getPendingCustomerCheckoutOrderAction(order, economicFingerprint)
+  const action = getPendingCustomerCheckoutOrderAction(
+    order,
+    economicFingerprint,
+    reservationSessionId,
+  )
 
   if (action === "other_payment_method") {
     return NextResponse.json(
@@ -865,6 +887,7 @@ async function resolvePendingCustomerCheckoutOrder({
       payload,
       request,
       economicFingerprint,
+      reservationSessionId,
     })
     return (
       response ??
@@ -875,6 +898,9 @@ async function resolvePendingCustomerCheckoutOrder({
   const result = await supersedeStaleMercadoPagoOrder(admin, order, {
     dependencies: createMercadoPagoSupersedeDependencies(),
     currentEconomicFingerprint: economicFingerprint,
+    reason: isMercadoPagoOrderFromReservationSession(order, reservationSessionId)
+      ? "economic_conditions_changed"
+      : "reservation_session_replaced",
   })
 
   switch (result) {
@@ -914,6 +940,7 @@ async function resolveMercadoPagoOrderAttempt({
   payload,
   request,
   economicFingerprint,
+  reservationSessionId,
 }: {
   client: MercadoPagoConfig
   admin: AdminClient
@@ -921,6 +948,7 @@ async function resolveMercadoPagoOrderAttempt({
   payload: CheckoutPayload
   request: Request
   economicFingerprint: string
+  reservationSessionId: string
 }): Promise<Response | null> {
   const decision = getMercadoPagoCheckoutAttemptDecision(order)
 
@@ -928,7 +956,12 @@ async function resolveMercadoPagoOrderAttempt({
     return NextResponse.json({ error: ALREADY_PAID_MESSAGE }, { status: 409 })
   }
 
-  if (!isEconomicallyEquivalentAttempt(order, economicFingerprint)) {
+  // Su plazo es el de la reserva que comprometió: desde otra sesión nunca se
+  // retoma (ni se juzga con ese vencimiento la reserva vigente de este request).
+  if (
+    !isEconomicallyEquivalentAttempt(order, economicFingerprint) ||
+    !isMercadoPagoOrderFromReservationSession(order, reservationSessionId)
+  ) {
     return null
   }
 

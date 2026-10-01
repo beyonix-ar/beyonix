@@ -8,7 +8,20 @@ import {
 import { SITE_SETTINGS } from "../config/site-settings.ts"
 import type { InstallmentsFinancingConfig } from "./products/installments.ts"
 import {
+  DEFAULT_INTEREST_FREE_POLICY,
+  normalizeInterestFreePolicy,
+  normalizeMercadoPagoInterestFreeStatus,
+  type InterestFreePolicy,
+  type MercadoPagoInterestFreeReference,
+  type MercadoPagoInterestFreeStatus,
+} from "./mercadopago/interest-free-policy.ts"
+import {
+  buildPublicInterestFreeOffer,
+  type PublicInterestFreeOffer,
+} from "./pricing/interest-free-communication.ts"
+import {
   deriveMercadoPagoObservedCosts,
+  MERCADOPAGO_COST_MODALITIES,
   MERCADOPAGO_OBSERVATION_SAMPLE_SIZE,
   normalizeMercadoPagoCostsMode,
   resolveInstallmentsFinancing,
@@ -23,6 +36,14 @@ export interface SiteSettings {
   customerCreditPayments: CustomerCreditPaymentSettings
   stock: StockSettings
   installmentsFinancing: InstallmentsFinancingSettings
+  /** Cuotas sin interés ON/OFF y mínimos propios (sobre lo que confirma Mercado Pago). */
+  interestFreePolicy: InterestFreePolicy
+  /**
+   * Comunicación pública vigente ("Hasta N cuotas sin interés a partir de
+   * $X"), derivada de la última sincronización EXITOSA con Mercado Pago y de
+   * la política. `null` = no se comunica ninguna promoción.
+   */
+  interestFreeOffer: PublicInterestFreeOffer | null
   andreaniCommercial: AndreaniCommercialSettings
   pricing: PricingSettings
 }
@@ -59,9 +80,13 @@ export interface AndreaniCommercialSettings {
  */
 export type InstallmentsFinancingSettings = InstallmentsFinancingConfig
 
-/** Lo que se guarda en `site_settings.installments_financing`: valores manuales + modo. */
+/**
+ * Lo que se guarda en `site_settings.installments_financing`: valores
+ * manuales + modo + política de cuotas sin interés (Admin → Financiación).
+ */
 export interface StoredInstallmentsFinancingSettings extends InstallmentsFinancingConfig {
   mode: MercadoPagoCostsMode
+  interestFreePolicy: InterestFreePolicy
 }
 
 /** Vista sólo para Admin: nunca viaja en `SiteSettings` (que es pública). */
@@ -69,7 +94,15 @@ export interface MercadoPagoCostsOverview extends ResolvedInstallmentsFinancing 
   mode: MercadoPagoCostsMode
   manual: InstallmentsFinancingConfig
   observed: MercadoPagoObservedCosts | null
+  interestFreePolicy: InterestFreePolicy
+  /** Sincronización con Mercado Pago: última referencia exitosa (estimada) y último intento. */
+  interestFreeStatus: MercadoPagoInterestFreeStatus
+  /** Lo que la tienda comunica hoy con esa referencia y la política (`null`: nada). */
+  interestFreeOffer: PublicInterestFreeOffer | null
 }
+
+/** Clave de `site_settings` con la última referencia observada de Mercado Pago. */
+export const MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY = "mercadopago_interest_free_reference"
 
 export interface StockSettings {
   criticalStockThreshold: number
@@ -244,6 +277,7 @@ export function normalizeStoredInstallmentsFinancingSettings(
   return {
     ...normalizeInstallmentsFinancingSettings(source),
     mode: normalizeMercadoPagoCostsMode(source.mode),
+    interestFreePolicy: normalizeInterestFreePolicy(source.interestFreePolicy),
   }
 }
 
@@ -317,6 +351,8 @@ export function getFallbackSiteSettings(): SiteSettings {
     customerCreditPayments: DEFAULT_CUSTOMER_CREDIT_PAYMENT_SETTINGS,
     stock: DEFAULT_STOCK_SETTINGS,
     installmentsFinancing: DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
+    interestFreePolicy: DEFAULT_INTEREST_FREE_POLICY,
+    interestFreeOffer: null,
     andreaniCommercial: DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
     pricing: DEFAULT_PRICING_SETTINGS,
   }
@@ -412,6 +448,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         "installments_financing",
         "andreani_commercial",
         "pricing",
+        MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY,
       ])
 
     if (error) {
@@ -440,6 +477,11 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         storedFinancing.mode,
         observedCosts,
       ).effective,
+      interestFreePolicy: storedFinancing.interestFreePolicy,
+      interestFreeOffer: buildPublicInterestFreeOffer(
+        normalizeMercadoPagoInterestFreeStatus(settingsByKey.get(MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY)),
+        storedFinancing.interestFreePolicy,
+      ),
       andreaniCommercial: normalizeAndreaniCommercialSettings(
         settingsByKey.get("andreani_commercial"),
       ),
@@ -464,48 +506,82 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
 }
 
 /**
- * Últimos pagos aprobados de Mercado Pago con costo real persistido. Una
- * falla de lectura devuelve null: en automático se usan los valores manuales
- * (el checkout detecta cualquier diferencia con lo que vio el cliente por su
- * huella económica y nunca cobra un total distinto sin avisar).
+ * Últimos pagos aprobados de Mercado Pago con costo real persistido, POR
+ * MODALIDAD (crédito 1/2/3/6, débito, dinero en cuenta): cada una conserva
+ * su último costo aprendido aunque se venda poco, sin que las ventas de otra
+ * modalidad lo desplacen. `mercadopago_payment_snapshot` sólo se escribe al
+ * confirmar un pago aprobado (webhook). Una falla de lectura devuelve null:
+ * en automático se usan los valores manuales (el checkout detecta cualquier
+ * diferencia con lo que vio el cliente por su huella económica y nunca cobra
+ * un total distinto sin avisar).
  */
 async function loadMercadoPagoObservedCosts(
   admin: ReturnType<typeof createAdminClient>,
 ): Promise<MercadoPagoObservedCosts | null> {
   try {
-    const { data, error } = await admin
-      .from("ordenes")
-      .select("id, paid_at, mercadopago_payment_snapshot")
-      .not("mercadopago_payment_snapshot", "is", null)
-      .not("paid_at", "is", null)
-      .order("paid_at", { ascending: false })
-      .limit(MERCADOPAGO_OBSERVATION_SAMPLE_SIZE)
-    if (error) return null
-    const rows: MercadoPagoObservationSourceRow[] = data ?? []
+    const results = await Promise.all(
+      MERCADOPAGO_COST_MODALITIES.map(({ paymentTypeId, installments }) =>
+        admin
+          .from("ordenes")
+          .select("id, paid_at, mercadopago_payment_snapshot")
+          .not("paid_at", "is", null)
+          .eq("mercadopago_payment_snapshot->>payment_type_id", paymentTypeId)
+          .eq("mercadopago_payment_snapshot->>installments", String(installments))
+          .order("paid_at", { ascending: false })
+          .limit(MERCADOPAGO_OBSERVATION_SAMPLE_SIZE),
+      ),
+    )
+    if (results.some(({ error }) => error)) return null
+    const rows: MercadoPagoObservationSourceRow[] = results.flatMap(({ data }) => data ?? [])
     return deriveMercadoPagoObservedCosts(rows)
   } catch {
     return null
   }
 }
 
+async function loadMercadoPagoInterestFreeStatus(
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<MercadoPagoInterestFreeStatus> {
+  const { data, error } = await admin
+    .from("site_settings")
+    .select("value")
+    .eq("key", MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY)
+    .maybeSingle()
+  return normalizeMercadoPagoInterestFreeStatus(error ? null : data?.value)
+}
+
+/** Estado de sincronización guardado (para conservar la última referencia ante un fallo). */
+export function getMercadoPagoInterestFreeStatus() {
+  return loadMercadoPagoInterestFreeStatus(createAdminClient())
+}
+
+/** Última referencia observada de Mercado Pago (para validar los mínimos propios). */
+export async function getMercadoPagoInterestFreeReference(): Promise<MercadoPagoInterestFreeReference | null> {
+  return (await loadMercadoPagoInterestFreeStatus(createAdminClient())).reference
+}
+
 /** Estado completo de costos de Mercado Pago para Admin (lectura fresca). */
 export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOverview> {
   const admin = createAdminClient()
-  const [{ data, error }, observed] = await Promise.all([
+  const [{ data, error }, observed, interestFreeStatus] = await Promise.all([
     admin
       .from("site_settings")
       .select("value")
       .eq("key", "installments_financing")
       .maybeSingle(),
     loadMercadoPagoObservedCosts(admin),
+    loadMercadoPagoInterestFreeStatus(admin),
   ])
   if (error) throw new SiteSettingsUnavailableError()
   const stored = normalizeStoredInstallmentsFinancingSettings(data?.value)
-  const { mode, ...manual } = stored
+  const { mode, interestFreePolicy, ...manual } = stored
   return {
     mode,
     manual,
     observed,
+    interestFreePolicy,
+    interestFreeStatus,
+    interestFreeOffer: buildPublicInterestFreeOffer(interestFreeStatus, interestFreePolicy),
     ...resolveInstallmentsFinancing(manual, mode, observed),
   }
 }

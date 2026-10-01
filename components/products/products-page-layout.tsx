@@ -188,11 +188,6 @@ export function ProductsPageLayout({
     setOnlyBestSellers,
   ] = useState(false)
 
-  const [
-    onlyInstallments,
-    setOnlyInstallments,
-  ] = useState(false)
-
   const [minPrice, setMinPrice] =
     useState(initialPriceRange.min)
 
@@ -365,12 +360,6 @@ export function ProductsPageLayout({
             !onlyBestSellers ||
             product.destacado
 
-          const matchInstallments =
-            !SITE_SETTINGS.filters.showInstallmentsFilter ||
-            !onlyInstallments ||
-            product.cuotas_2_habilitadas === true ||
-            product.cuotas_3_habilitadas === true ||
-            product.cuotas_6_habilitadas === true
 
           const matchPrice =
             !SITE_SETTINGS.filters.showPriceFilter ||
@@ -401,7 +390,6 @@ export function ProductsPageLayout({
             matchCategory &&
             matchOffers &&
             matchBestSellers &&
-            matchInstallments &&
             matchPrice &&
             matchColor &&
             matchSearch
@@ -435,7 +423,6 @@ export function ProductsPageLayout({
       selectedCategories,
       onlyOffers,
       onlyBestSellers,
-      onlyInstallments,
       minPrice,
       maxPrice,
       selectedColors,
@@ -636,16 +623,6 @@ export function ProductsPageLayout({
               }
               setOnlyBestSellers={
                 setOnlyBestSellers
-              }
-              onlyInstallments={
-                onlyInstallments
-              }
-              setOnlyInstallments={
-                setOnlyInstallments
-              }
-              showInstallmentsFilter={
-                SITE_SETTINGS.filters
-                  .showInstallmentsFilter
               }
               showFeaturedFilter={
                 SITE_SETTINGS.filters

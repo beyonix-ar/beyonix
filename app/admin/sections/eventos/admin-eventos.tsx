@@ -34,9 +34,8 @@ import type {
 } from "@/lib/supabase/types"
 
 type EventScope = "store" | "category" | "product"
-type EventActionKind =
-  | "discount_percent"
-  | "installments"
+// Los eventos ya no habilitan cuotas: la financiación es global (Admin → Financiación).
+type EventActionKind = "discount_percent"
 
 type TargetItem = {
   type: "category" | "product"
@@ -56,7 +55,6 @@ type EventForm = {
   targetItems: TargetItem[]
   actionKind: EventActionKind
   value: string
-  installments: string
 }
 
 const EMPTY_FORM: EventForm = {
@@ -68,7 +66,6 @@ const EMPTY_FORM: EventForm = {
   targetItems: [],
   actionKind: "discount_percent",
   value: "10",
-  installments: "3",
 }
 
 const ACTION_OPTIONS: Array<{
@@ -80,11 +77,6 @@ const ACTION_OPTIONS: Array<{
     value: "discount_percent",
     label: "Descuento especial",
     help: "Baja el precio y guarda el anterior para mostrar el % OFF.",
-  },
-  {
-    value: "installments",
-    label: "Cuotas",
-    help: "Activa 3 o 6 cuotas.",
   },
 ]
 
@@ -103,7 +95,8 @@ function getActionLabel(kind: EventActionKind) {
 }
 
 function normalizeEventActionKind(value: string | null | undefined): EventActionKind {
-  return value === "installments" ? "installments" : "discount_percent"
+  void value
+  return "discount_percent"
 }
 
 function formatEventDate(value: string | null) {
@@ -170,10 +163,6 @@ function formatEventDetail(event: SupabaseProductBulkEvent) {
 
   if (PERCENT_ACTIONS.includes(actionKind)) {
     return `${getActionLabel(actionKind)} ${event.value ?? 0}%`
-  }
-
-  if (actionKind === "installments") {
-    return `${event.installments ?? 3} cuotas`
   }
 
   return getActionLabel(actionKind)
@@ -347,7 +336,6 @@ export function AdminEventos() {
           target_items: form.targetItems,
           action_kind: form.actionKind,
           value: form.value ? Number(form.value) : null,
-          installments: Number(form.installments),
         }),
       })
       const data = (await response.json()) as {
@@ -382,7 +370,6 @@ export function AdminEventos() {
         targetItems: data.event.target_items ?? [],
         actionKind: normalizeEventActionKind(data.event.action_kind),
         value: String(data.event.value ?? ""),
-        installments: String(data.event.installments ?? "3"),
       })
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "No se pudo guardar el evento.")
@@ -401,7 +388,6 @@ export function AdminEventos() {
       targetItems: event.target_items ?? [],
       actionKind: normalizeEventActionKind(event.action_kind),
       value: String(event.value ?? ""),
-      installments: String(event.installments ?? "3"),
     })
   }
 
@@ -625,22 +611,6 @@ export function AdminEventos() {
                     value={form.value}
                     onChange={(value) => setForm((current) => ({ ...current, value }))}
                   />
-                </AdminFormField>
-              )}
-
-              {form.actionKind === "installments" && (
-                <AdminFormField label="Cuotas">
-                  <AdminSelect
-                    title="Cuotas"
-                    value={form.installments}
-                    onChange={(value) =>
-                      setForm((current) => ({ ...current, installments: value }))
-                    }
-                  >
-                    <option value="2">2 cuotas</option>
-                    <option value="3">3 cuotas</option>
-                    <option value="6">6 cuotas</option>
-                  </AdminSelect>
                 </AdminFormField>
               )}
 

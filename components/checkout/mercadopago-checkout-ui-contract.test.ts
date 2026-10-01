@@ -20,17 +20,20 @@ function extractBlock(source: string, startMarker: string) {
 // UI de Mercado Pago
 // ─────────────────────────────────────────────────────────────
 
-test("opciones: transferencia, Mercado Pago en 1 pago (contado) y UNA opción por cuota sin interés confirmada (sin MODO)", () => {
+test("opciones: transferencia, Mercado Pago · 1 pago (contado) y UNA sola opción de cuotas sin interés (sin MODO)", () => {
   const options = [...checkout.matchAll(/option="([^"]+)"\n/g)].map((match) => match[1])
-  assert.deepEqual(options, ["transferencia", "mercadopago_cash"])
+  assert.deepEqual(options, ["transferencia", "mercadopago_cash", "mercadopago_installments", "mercadopago_installments"])
   assert.match(checkout, /title="Depósito \/ Transferencia"/)
   // 1 pago: precio contado con cualquier medio (crédito incluido).
-  assert.match(checkout, /title="Mercado Pago en 1 pago"/)
+  assert.match(checkout, /title="Mercado Pago · 1 pago"/)
   assert.match(checkout, /description="Tarjeta de crédito, débito o dinero en cuenta"/)
   assert.match(checkout, /badge=\{<span className="checkout-badge checkout-badge-neutral">Precio contado<\/span>\}/)
-  // Cuotas: sólo las confirmadas por Mercado Pago, cada una su opción.
-  assert.match(checkout, /\{offeredInstallmentPlans\.map\(\(plan\) => \(\s*<CheckoutPaymentOptionCard/)
-  assert.match(checkout, /option=\{`mercadopago_installments_\$\{plan\.count\}`\}/)
+  // Cuotas: UNA opción, sólo si Mercado Pago confirmó alguna cuota sin interés.
+  assert.match(checkout, /\{installmentsOptionCopy && financedPreviewQuote \? \(\s*<CheckoutPaymentOptionCard\s+option="mercadopago_installments"/)
+  assert.match(checkout, /title="Mercado Pago · Cuotas sin interés"/)
+  // Nunca una tarjeta por cada cantidad de cuotas.
+  assert.doesNotMatch(checkout, /offeredInstallmentPlans\.map\(\(plan\) => \(\s*<CheckoutPaymentOptionCard/)
+  assert.doesNotMatch(checkout, /mercadopago_installments_\$\{/)
   // Nunca una opción "crédito" genérica que permita algo distinto a lo calculado.
   assert.doesNotMatch(checkout, /title="Mercado Pago con crédito"|option="mercadopago_financed"|title="Mercado Pago al contado"/)
   assert.doesNotMatch(checkout, /\bMODO\b/)
@@ -41,16 +44,19 @@ test("opciones: transferencia, Mercado Pago en 1 pago (contado) y UNA opción po
   assert.doesNotMatch(checkout, /setInstallmentsModality/)
 })
 
-test("una sola elección (radio nativo): la cuota se elige ANTES de Mercado Pago y la opción se deriva del estado", () => {
+test("una sola elección (radio nativo): 1 pago o cuotas; la cantidad de cuotas se elige en Mercado Pago", () => {
   assert.equal((checkout.match(/name="checkout-payment-option"/g) ?? []).length, 1)
   assert.match(checkout, /type="radio"/)
   assert.match(
     checkout,
-    /const selectedPaymentOption = getCheckoutPaymentOption\(\s*selectedPayment,\s*effectiveMercadoPagoMode,\s*selectedInstallmentCount,\s*\)/,
+    /const selectedPaymentOption = getCheckoutPaymentOption\(\s*selectedPayment,\s*effectiveMercadoPagoMode,\s*\)/,
   )
   assert.doesNotMatch(checkout, /useState<CheckoutPaymentOption/)
-  // La cuota elegida viaja al servidor, que exige que siga confirmada.
-  assert.match(checkout, /mercadoPagoInstallments: isMercadoPagoFinanced \? selectedInstallmentCount : undefined,/)
+  // BEYONIX no preselecciona 2/3/6: no hay estado de cuota elegida ni se manda.
+  assert.doesNotMatch(checkout, /selectedInstallmentCount|mercadoPagoInstallments:/)
+  assert.match(checkout, /setMercadoPagoMode\(option === "mercadopago_installments" \? "financed" : "cash"\)/)
+  // El servidor acepta cuotas sin cantidad preseleccionada (la valida sólo si llega).
+  assert.match(route, /selectedInstallmentCount != null &&\s*!pricing\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)/)
 })
 
 test("el modal de medios sólo informa: sin controles de pago", () => {
@@ -64,9 +70,9 @@ test("el modal de medios sólo informa: sin controles de pago", () => {
   assert.doesNotMatch(modal, /setSelectedPayment|setMercadoPagoMode|type="radio"/)
 })
 
-test("resumen: 1 pago dice 'precio contado'; cuotas 'Tarjeta de crédito: N cuotas sin interés de $X'", () => {
-  assert.match(checkout, /"Mercado Pago en 1 pago · precio contado"/)
-  assert.match(checkout, /`Tarjeta de crédito: \$\{selectedInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(selectedInstallmentPlan\.amount\)\}`/)
+test("resumen: 1 pago dice 'precio contado'; cuotas 'Tarjeta de crédito · Hasta N cuotas sin interés'", () => {
+  assert.match(checkout, /"Mercado Pago · 1 pago · precio contado"/)
+  assert.match(checkout, /`Tarjeta de crédito · \$\{selectedInstallmentsCopy\.headline\}`/)
   // El total del resumen es el de la modalidad elegida (el mismo que se cobra).
   assert.match(checkout, /mercadoPagoQuote\?\.externalAmountDue \?\? customerCreditApplication\.externalAmountDue/)
 })
@@ -99,8 +105,11 @@ test("pagar fuerza validación server-side: catálogo y configuración frescos A
   assert.ok(pricingIndex < expectedTotalIndex)
   assert.ok(expectedTotalIndex < reuseIndex)
   assert.ok(reuseIndex < pendingIndex && pendingIndex < insertIndex)
-  // Nunca se reutiliza una orden con otra huella económica.
-  assert.match(route, /if \(!isEconomicallyEquivalentAttempt\(order, economicFingerprint\)\) \{\s*return null/)
+  // Nunca se reutiliza una orden con otra huella económica ni de otra sesión de checkout.
+  assert.match(
+    route,
+    /!isEconomicallyEquivalentAttempt\(order, economicFingerprint\) \|\|\s*!isMercadoPagoOrderFromReservationSession\(order, reservationSessionId\)\s*\) \{\s*return null/,
+  )
 })
 
 test("el checkout reacciona al 409 PRICING_CHANGED: refresca, avisa el nuevo total y no redirige a Mercado Pago", () => {

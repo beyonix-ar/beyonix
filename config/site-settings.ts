@@ -23,9 +23,6 @@ export const SITE_SETTINGS = {
   },
 
   filters: {
-    // Muestra u oculta el filtro "Con cuotas" en /productos.
-    showInstallmentsFilter: true,
-
     // Muestra u oculta el filtro "Destacados".
     showFeaturedFilter: true,
 

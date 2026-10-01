@@ -227,10 +227,6 @@ export function useProductoForm({
       Number(producto?.precio_anterior ?? 0) > 0
         ? String(producto?.precio_anterior)
         : "",
-    cuotas2: producto?.cuotas_2_habilitadas ?? false,
-    cuotas3: producto?.cuotas_3_habilitadas ?? false,
-    cuotas6: producto?.cuotas_6_habilitadas ?? false,
-    cuotasSinRecargo: producto?.cuotas_sin_recargo ?? false,
     // Método de precio: se completa de verdad al resolver getProductPricing()
     // (abajo) -- hasta entonces, "manual" es el default seguro (igual que un
     // producto sin fila en product_pricing).
@@ -410,18 +406,6 @@ export function useProductoForm({
             )
           : null,
 
-      cuotas_2_habilitadas:
-        form.cuotas2,
-
-      cuotas_3_habilitadas:
-        form.cuotas3,
-
-      cuotas_6_habilitadas:
-        form.cuotas6,
-
-      cuotas_sin_recargo:
-        form.cuotasSinRecargo,
-
       pricing_mode:
         form.pricingMode,
 
@@ -440,15 +424,6 @@ export function useProductoForm({
         null,
 
       promo_original_descuento:
-        null,
-
-      promo_original_cuotas_2_habilitadas:
-        null,
-
-      promo_original_cuotas_3_habilitadas:
-        null,
-
-      promo_original_cuotas_6_habilitadas:
         null,
 
       categoria_id:

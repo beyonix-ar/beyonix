@@ -12,10 +12,12 @@ import { INSTALLMENT_COUNTS, type InstallmentCount } from "../products/installme
  * Distinto de los costos observados (lib/mercadopago/observed-costs.ts), que
  * responden cuánto le cuesta Mercado Pago a BEYONIX.
  *
- * Criterio conservador: se consultan Visa y Mastercard; una cuota califica si
- * al menos un banco la ofrece y TODOS los que la ofrecen la marcan sin
- * interés. Ante cualquier duda (timeout, error, respuesta inválida) no se
- * confirma ninguna cuota: nunca se promete "sin interés" sin confirmación.
+ * Marcas de referencia: Visa y Mastercard, evaluadas POR SEPARADO. Una cuota
+ * califica si al menos una de ellas la confirma (dentro de esa marca, todos
+ * los bancos que la ofrecen la marcan sin interés); otra marca que no la
+ * tenga no la elimina para todos, y se informa a qué marcas aplica. Ante
+ * cualquier duda (timeout, error, respuesta inválida) no se confirma ninguna
+ * cuota: nunca se promete "sin interés" sin confirmación.
  */
 
 export const INTEREST_FREE_REFERENCE_PAYMENT_METHODS = ["visa", "master"] as const
@@ -29,7 +31,12 @@ const MAX_LOOKUPS_PER_MINUTE = 240
 const LOOKUP_WINDOW_MS = 60 * 1000
 
 export type InterestFreeInstallmentsResult =
-  | { status: "confirmed"; counts: InstallmentCount[] }
+  | {
+      status: "confirmed"
+      counts: InstallmentCount[]
+      /** Marcas de referencia que confirman cada cuota. */
+      brandsByCount?: Partial<Record<InstallmentCount, InterestFreeBrand[]>>
+    }
   | { status: "unavailable" }
 
 const INTEREST_FREE_LABEL = "interest_deduction_by_collector"
@@ -41,31 +48,30 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
- * Cuotas sin interés confirmadas a partir de las respuestas crudas de
- * Mercado Pago (una por medio de referencia). `null` si alguna respuesta no
- * tiene el formato esperado: sin datos confiables, nada se confirma.
+ * Cuotas sin interés de UNA marca (la respuesta de Mercado Pago para ese
+ * medio de pago). Dentro de la marca: la cuota tiene que estar ofrecida por
+ * al menos un banco y marcada sin interés por todos los bancos que la ofrecen
+ * (los que no la ofrecen no cuentan), y toda cuota menor ofrecida también
+ * tiene que ser sin interés (con un máximo N en la preferencia el comprador
+ * puede elegir cualquier cuota menor). `null` si la respuesta no tiene el
+ * formato esperado.
  */
-export function parseInterestFreeInstallmentCounts(responses: unknown[]): InstallmentCount[] | null {
-  // Todas las cuotas > 1 que ofrece Mercado Pago (no sólo 2/3/6): con un
-  // máximo N en la preferencia, el comprador puede elegir cualquier cuota
-  // menor que Mercado Pago ofrezca.
+function parseBrandInterestFreeCounts(response: unknown): InstallmentCount[] | null {
+  if (!Array.isArray(response)) return null
   const offered = new Map<number, { free: number; paid: number }>()
 
-  for (const response of responses) {
-    if (!Array.isArray(response)) return null
-    for (const issuerValue of response) {
-      const issuer = asRecord(issuerValue)
-      if (!issuer || !Array.isArray(issuer.payer_costs)) return null
-      for (const costValue of issuer.payer_costs) {
-        const cost = asRecord(costValue)
-        const count = Number(cost?.installments)
-        if (!cost || !Number.isInteger(count) || count <= 1) continue
-        const labels = Array.isArray(cost.labels) ? cost.labels : []
-        const free = Number(cost.installment_rate) === 0 && labels.includes(INTEREST_FREE_LABEL)
-        const entry = offered.get(count) ?? { free: 0, paid: 0 }
-        entry[free ? "free" : "paid"] += 1
-        offered.set(count, entry)
-      }
+  for (const issuerValue of response) {
+    const issuer = asRecord(issuerValue)
+    if (!issuer || !Array.isArray(issuer.payer_costs)) return null
+    for (const costValue of issuer.payer_costs) {
+      const cost = asRecord(costValue)
+      const count = Number(cost?.installments)
+      if (!cost || !Number.isInteger(count) || count <= 1) continue
+      const labels = Array.isArray(cost.labels) ? cost.labels : []
+      const free = Number(cost.installment_rate) === 0 && labels.includes(INTEREST_FREE_LABEL)
+      const entry = offered.get(count) ?? { free: 0, paid: 0 }
+      entry[free ? "free" : "paid"] += 1
+      offered.set(count, entry)
     }
   }
 
@@ -78,6 +84,52 @@ export function parseInterestFreeInstallmentCounts(responses: unknown[]): Instal
     (count) =>
       isFree(count) &&
       [...offered.keys()].every((other) => other >= count || isFree(other)),
+  )
+}
+
+export type InterestFreeBrand = (typeof INTEREST_FREE_REFERENCE_PAYMENT_METHODS)[number]
+
+export interface InterestFreeInstallmentsByBrand {
+  counts: InstallmentCount[]
+  /** Marcas de referencia que confirman cada cuota (para no prometer compatibilidad universal). */
+  brandsByCount: Partial<Record<InstallmentCount, InterestFreeBrand[]>>
+}
+
+/**
+ * Cada marca se evalúa POR SEPARADO y la cuota se ofrece si al menos una
+ * marca de referencia (Visa o Mastercard) la confirma sin interés: que otra
+ * marca no la tenga no la elimina para todos. `brandsByCount` dice a qué
+ * marcas aplica. `null` si alguna respuesta no tiene el formato esperado:
+ * sin datos confiables, nada se confirma.
+ */
+export function parseInterestFreeInstallmentsByBrand(
+  responses: ReadonlyArray<{ brand: InterestFreeBrand; response: unknown }>,
+): InterestFreeInstallmentsByBrand | null {
+  const brandsByCount: Partial<Record<InstallmentCount, InterestFreeBrand[]>> = {}
+  for (const { brand, response } of responses) {
+    const counts = parseBrandInterestFreeCounts(response)
+    if (counts === null) return null
+    for (const count of counts) brandsByCount[count] = [...(brandsByCount[count] ?? []), brand]
+  }
+  return {
+    counts: INSTALLMENT_COUNTS.filter((count) => brandsByCount[count]?.length),
+    brandsByCount,
+  }
+}
+
+/**
+ * Cuotas sin interés confirmadas a partir de las respuestas crudas de
+ * Mercado Pago, una por marca de referencia en el orden de
+ * `INTEREST_FREE_REFERENCE_PAYMENT_METHODS`.
+ */
+export function parseInterestFreeInstallmentCounts(responses: unknown[]): InstallmentCount[] | null {
+  return (
+    parseInterestFreeInstallmentsByBrand(
+      responses.map((response, index) => ({
+        brand: INTEREST_FREE_REFERENCE_PAYMENT_METHODS[index % INTEREST_FREE_REFERENCE_PAYMENT_METHODS.length],
+        response,
+      })),
+    )?.counts ?? null
   )
 }
 
@@ -94,6 +146,8 @@ interface Dependencies {
   fetch?: Fetcher
   accessToken?: string | null
   now?: () => number
+  /** Ignora la caché (Admin "Comprobar ahora" y la sincronización periódica); el resultado igual se cachea. */
+  fresh?: boolean
 }
 
 const cache = new Map<number, { expiresAt: number; result: InterestFreeInstallmentsResult }>()
@@ -129,19 +183,21 @@ async function lookup(amount: number, dependencies: Dependencies): Promise<Inter
 
   try {
     const responses = await Promise.all(
-      INTEREST_FREE_REFERENCE_PAYMENT_METHODS.map(async (method) => {
-        const url = `https://api.mercadopago.com/v1/payment_methods/installments?amount=${amount}&payment_method_id=${method}`
+      INTEREST_FREE_REFERENCE_PAYMENT_METHODS.map(async (brand) => {
+        const url = `https://api.mercadopago.com/v1/payment_methods/installments?amount=${amount}&payment_method_id=${brand}`
         const response = await fetcher(url, {
           headers: { Authorization: `Bearer ${accessToken}` },
           signal: AbortSignal.timeout(INTEREST_FREE_REQUEST_TIMEOUT_MS),
           cache: "no-store",
         })
         if (!response.ok) throw new Error(`MERCADOPAGO_INSTALLMENTS_${response.status}`)
-        return (await response.json()) as unknown
+        return { brand, response: (await response.json()) as unknown }
       }),
     )
-    const counts = parseInterestFreeInstallmentCounts(responses)
-    return counts ? { status: "confirmed", counts } : { status: "unavailable" }
+    const parsed = parseInterestFreeInstallmentsByBrand(responses)
+    return parsed
+      ? { status: "confirmed", counts: parsed.counts, brandsByCount: parsed.brandsByCount }
+      : { status: "unavailable" }
   } catch (error) {
     console.error("MERCADOPAGO_INTEREST_FREE_LOOKUP_FAILED", {
       amount,
@@ -165,7 +221,7 @@ export async function getInterestFreeInstallments(
   const now = (dependencies.now ?? Date.now)()
 
   const cached = cache.get(amount)
-  if (cached && cached.expiresAt > now) return cached.result
+  if (!dependencies.fresh && cached && cached.expiresAt > now) return cached.result
 
   const pending = inFlight.get(amount)
   if (pending) return pending

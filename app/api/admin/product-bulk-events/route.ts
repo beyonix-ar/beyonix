@@ -1,11 +1,13 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
+// Sin acción de cuotas: la financiación es global (Admin → Financiación).
+// Las columnas legacy de cuotas del producto (y `product_bulk_events.installments`)
+// ya no se leen ni se escriben.
 const ACTION_KINDS = new Set([
   "discount_percent",
   "price_increase_percent",
   "price_decrease_percent",
-  "installments",
   "clear_offer",
 ])
 const SCOPES = new Set(["store", "category", "product"])
@@ -25,16 +27,10 @@ type ProductSnapshot = {
   precio?: unknown
   precio_anterior?: unknown
   descuento?: unknown
-  cuotas_2_habilitadas?: unknown
-  cuotas_3_habilitadas?: unknown
-  cuotas_6_habilitadas?: unknown
   promo_event_id?: unknown
   promo_original_precio?: unknown
   promo_original_precio_anterior?: unknown
   promo_original_descuento?: unknown
-  promo_original_cuotas_2_habilitadas?: unknown
-  promo_original_cuotas_3_habilitadas?: unknown
-  promo_original_cuotas_6_habilitadas?: unknown
 }
 
 function normalizeText(value: unknown) {
@@ -113,10 +109,6 @@ function toNullableNumber(value: unknown) {
   return Number.isFinite(number) ? number : null
 }
 
-function toNullableBoolean(value: unknown) {
-  return typeof value === "boolean" ? value : null
-}
-
 function getSlugFromUrl(url: string, prefix: string) {
   return url.startsWith(prefix) ? url.slice(prefix.length) : ""
 }
@@ -127,7 +119,6 @@ function validatePayload(payload: {
   targetItems: Array<{ type: "category" | "product"; label: string; url: string }>
   actionKind: string
   value: number | null
-  installments: number | null
   durationDays: number | null
 }) {
   if (!payload.internalName) return "Escribí un nombre interno para el evento."
@@ -149,10 +140,6 @@ function validatePayload(payload: {
     return "El porcentaje debe estar entre 1 y 99."
   }
 
-  if (payload.actionKind === "installments" && ![2, 3, 6].includes(payload.installments ?? 0)) {
-    return "Elegí 2, 3 o 6 cuotas."
-  }
-
   if (payload.durationDays !== null && (payload.durationDays < 1 || payload.durationDays > 365)) {
     return "La duración debe estar entre 1 y 365 días."
   }
@@ -170,7 +157,6 @@ function readPayload(body: Record<string, unknown>) {
     targetItems: normalizeTargetItems(body.target_items),
     actionKind: normalizeText(body.action_kind),
     value: normalizeNullableNumber(body.value),
-    installments: normalizeNullableNumber(body.installments),
   }
 }
 
@@ -183,12 +169,11 @@ async function applyEventAction(
     target_items: Array<{ type: "category" | "product"; label: string; url: string }>
     action_kind: string
     value: number | null
-    installments: number | null
   },
 ) {
   let query = admin
     .from("productos")
-    .select("id, nombre, slug, precio, precio_anterior, descuento, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, categoria_id, promo_event_id, promo_original_precio, promo_original_precio_anterior, promo_original_descuento, promo_original_cuotas_2_habilitadas, promo_original_cuotas_3_habilitadas, promo_original_cuotas_6_habilitadas")
+    .select("id, nombre, slug, precio, precio_anterior, descuento, categoria_id, promo_event_id, promo_original_precio, promo_original_precio_anterior, promo_original_descuento")
 
   if (event.scope === "product") {
     const slugs = event.target_items
@@ -227,7 +212,6 @@ async function applyEventAction(
   if (!products?.length) return { error: "No hay productos para activar el evento.", status: 404 }
 
   const value = Number(event.value ?? 0)
-  const installments = Number(event.installments ?? 0)
   const lockedByAnotherEvent = (products as Array<{ nombre?: string; promo_event_id?: string | null }>)
     .find((product) => product.promo_event_id && product.promo_event_id !== event.id)
 
@@ -244,16 +228,10 @@ async function applyEventAction(
     precio: number | null
     precio_anterior: number | null
     descuento: number | null
-    cuotas_2_habilitadas: boolean | null
-    cuotas_3_habilitadas: boolean | null
-    cuotas_6_habilitadas: boolean | null
     promo_event_id?: string | null
     promo_original_precio?: number | null
     promo_original_precio_anterior?: number | null
     promo_original_descuento?: number | null
-    promo_original_cuotas_2_habilitadas?: boolean | null
-    promo_original_cuotas_3_habilitadas?: boolean | null
-    promo_original_cuotas_6_habilitadas?: boolean | null
   }>) {
     const currentPrice = Number(product.precio ?? 0)
     const update: Record<string, unknown> = {
@@ -267,15 +245,6 @@ async function applyEventAction(
       promo_original_descuento: product.promo_event_id
         ? product.promo_original_descuento ?? null
         : product.descuento ?? null,
-      promo_original_cuotas_2_habilitadas: product.promo_event_id
-        ? product.promo_original_cuotas_2_habilitadas ?? false
-        : product.cuotas_2_habilitadas ?? false,
-      promo_original_cuotas_3_habilitadas: product.promo_event_id
-        ? product.promo_original_cuotas_3_habilitadas ?? false
-        : product.cuotas_3_habilitadas ?? false,
-      promo_original_cuotas_6_habilitadas: product.promo_event_id
-        ? product.promo_original_cuotas_6_habilitadas ?? false
-        : product.cuotas_6_habilitadas ?? false,
     }
 
     if (event.action_kind === "discount_percent" || event.action_kind === "price_decrease_percent") {
@@ -286,16 +255,9 @@ async function applyEventAction(
       update.precio = roundPrice(currentPrice * (1 + value / 100))
       update.precio_anterior = null
       update.descuento = null
-    } else if (event.action_kind === "installments") {
-      if (installments === 2) update.cuotas_2_habilitadas = true
-      if (installments === 3) update.cuotas_3_habilitadas = true
-      if (installments === 6) update.cuotas_6_habilitadas = true
     } else if (event.action_kind === "clear_offer") {
       update.precio_anterior = null
       update.descuento = null
-      update.cuotas_2_habilitadas = false
-      update.cuotas_3_habilitadas = false
-      update.cuotas_6_habilitadas = false
     }
 
     const { error } = await admin.from("productos").update(update).eq("id", product.id)
@@ -315,7 +277,7 @@ async function getEventProducts(
 ) {
   let query = admin
     .from("productos")
-    .select("id, nombre, slug, precio, precio_anterior, descuento, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, categoria_id, promo_event_id, promo_original_precio, promo_original_precio_anterior, promo_original_descuento, promo_original_cuotas_2_habilitadas, promo_original_cuotas_3_habilitadas, promo_original_cuotas_6_habilitadas")
+    .select("id, nombre, slug, precio, precio_anterior, descuento, categoria_id, promo_event_id, promo_original_precio, promo_original_precio_anterior, promo_original_descuento")
 
   if (event.scope === "product") {
     const slugs = event.target_items
@@ -375,22 +337,10 @@ async function restoreProductSnapshots(admin: AdminDatabaseClient, snapshot: Pro
         descuento: hasEventLock
           ? toNullableNumber(product.promo_original_descuento)
           : product.descuento ?? null,
-        cuotas_2_habilitadas: hasEventLock
-          ? toNullableBoolean(product.promo_original_cuotas_2_habilitadas) ?? false
-          : product.cuotas_2_habilitadas ?? false,
-        cuotas_3_habilitadas: hasEventLock
-          ? toNullableBoolean(product.promo_original_cuotas_3_habilitadas) ?? false
-          : product.cuotas_3_habilitadas ?? false,
-        cuotas_6_habilitadas: hasEventLock
-          ? toNullableBoolean(product.promo_original_cuotas_6_habilitadas) ?? false
-          : product.cuotas_6_habilitadas ?? false,
         promo_event_id: null,
         promo_original_precio: null,
         promo_original_precio_anterior: null,
         promo_original_descuento: null,
-        promo_original_cuotas_2_habilitadas: null,
-        promo_original_cuotas_3_habilitadas: null,
-        promo_original_cuotas_6_habilitadas: null,
       })
       .eq("id", id)
 
@@ -426,10 +376,6 @@ async function restoreActiveEventFallback(
       update.precio = product.precio_anterior ?? product.precio ?? null
       update.precio_anterior = null
       update.descuento = null
-    } else if (event.action_kind === "installments") {
-      update.cuotas_2_habilitadas = false
-      update.cuotas_3_habilitadas = false
-      update.cuotas_6_habilitadas = false
     } else {
       continue
     }
@@ -455,7 +401,7 @@ async function restoreLastActivation(
 ) {
   const { data: lockedProducts, error: lockedProductsError } = await admin
     .from("productos")
-    .select("id, precio, precio_anterior, descuento, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, promo_event_id, promo_original_precio, promo_original_precio_anterior, promo_original_descuento, promo_original_cuotas_2_habilitadas, promo_original_cuotas_3_habilitadas, promo_original_cuotas_6_habilitadas")
+    .select("id, precio, precio_anterior, descuento, promo_event_id, promo_original_precio, promo_original_precio_anterior, promo_original_descuento")
     .eq("promo_event_id", eventId)
 
   if (lockedProductsError) return { error: lockedProductsError.message, status: 500 }
@@ -529,9 +475,6 @@ async function cleanupLegacyOrphanOffers(admin: AdminDatabaseClient) {
         promo_original_precio: null,
         promo_original_precio_anterior: null,
         promo_original_descuento: null,
-        promo_original_cuotas_2_habilitadas: null,
-        promo_original_cuotas_3_habilitadas: null,
-        promo_original_cuotas_6_habilitadas: null,
       })
       .eq("id", product.id)
 
@@ -577,7 +520,8 @@ export async function POST(request: Request) {
       target_items: payload.targetItems,
       action_kind: payload.actionKind,
       value: payload.value,
-      installments: payload.installments,
+      // Columna legacy: los eventos ya no habilitan cuotas.
+      installments: null,
       status: "draft",
       created_by: auth.user.id,
       updated_by: auth.user.id,
@@ -790,7 +734,8 @@ export async function PATCH(request: Request) {
       target_items: payload.targetItems,
       action_kind: payload.actionKind,
       value: payload.value,
-      installments: payload.installments,
+      // Columna legacy: los eventos ya no habilitan cuotas.
+      installments: null,
       status: "draft",
       activated_at: null,
       updated_by: auth.user.id,

@@ -65,7 +65,7 @@ test("CASO G (precio único): en modo manual, el precio que manda el navegador s
   )
 })
 
-test("precio objetivo (margen): siempre recalculado server-side con la modalidad de cuotas HABILITADA real del catálogo, nunca confía en el precio del navegador", () => {
+test("precio objetivo (margen): siempre recalculado server-side con la configuración financiera global, nunca confía en el precio del navegador", () => {
   const route = source("app/api/admin/products/[id]/catalog/route.ts")
   // El cálculo vive en un único módulo server-only compartido con el GET de
   // pricing, para que guardar y detectar precio desactualizado no puedan
@@ -73,9 +73,10 @@ test("precio objetivo (margen): siempre recalculado server-side con la modalidad
   const resolver = source("lib/pricing/product-target-margin.ts")
 
   assert.match(route, /resolveTargetMarginPrice\(\{/)
-  assert.match(route, /eligibleInstallmentCounts,/)
+  // La financiación ya no es del producto: nada de cuotas habilitadas por ficha.
+  assert.doesNotMatch(route, /eligibleInstallmentCounts|installmentsWithoutSurcharge/)
   assert.match(resolver, /calculateTargetMarginPrice\(\{/)
-  assert.match(resolver, /eligibleInstallmentCounts,\s*\n\s*config: installmentsFinancing,/)
+  assert.match(resolver, /targetMarginPercent,\s*\n\s*config: installmentsFinancing,/)
   assert.match(
     route,
     /Autoritativo: el precio que haya mandado el navegador se ignora/,

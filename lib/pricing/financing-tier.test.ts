@@ -12,11 +12,7 @@ import {
   type CheckoutPricingLine,
   type CheckoutPricingSettings,
 } from "./checkout-pricing.ts"
-import {
-  getFinancedPrice,
-  getProductInterestFreeOffer,
-  type InterestFreeLookup,
-} from "./financed-pricing.ts"
+import { getFinancedPrice, type InterestFreeLookup } from "./financed-pricing.ts"
 import { deriveMercadoPagoObservedCosts, resolveInstallmentsFinancing } from "../mercadopago/observed-costs.ts"
 import { getMercadoPagoPaymentMedium } from "../mercadopago/payment-medium.ts"
 import type { InstallmentCount } from "../products/installments.ts"
@@ -27,7 +23,6 @@ import type { InstallmentCount } from "../products/installments.ts"
 
 const CONFIG = { baseProcessingPercent: 3.46, ivaPercent: 21, surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 } }
 const SETTINGS: CheckoutPricingSettings = { installmentsFinancing: CONFIG, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21 }
-const UP_TO_6 = { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true }
 
 /**
  * Mercado Pago SIMULADO (sólo en el test): confirma 2/3 desde `twoThree` y
@@ -38,8 +33,8 @@ function fakeMercadoPago(twoThree: number, six: number): InterestFreeLookup {
 }
 const MP = fakeMercadoPago(33_000, 60_000)
 
-function line(productId: number, unitPrice: number, installments = UP_TO_6, quantity = 1): CheckoutPricingLine {
-  return { productId, variantId: productId, conditionedStockId: null, quantity, unitPrice, installments }
+function line(productId: number, unitPrice: number, quantity = 1): CheckoutPricingLine {
+  return { productId, variantId: productId, conditionedStockId: null, quantity, unitPrice }
 }
 
 function pricing(lines: CheckoutPricingLine[], interestFreeLookup: InterestFreeLookup | null, credit = 0) {
@@ -63,9 +58,8 @@ test("CASO A: Mercado Pago no habilita cuotas sin interés -> sólo 1 pago a pre
   assert.equal(result.cash.preferenceMaxInstallments, 1)
 })
 
-test("CASO B: MP habilita 2 y 3 -> el financiado usa el costo de 3 (no el de 6 aunque el producto admita 6)", () => {
+test("CASO B: MP habilita 2 y 3 -> el financiado usa el costo de 3 (nunca el de 6)", () => {
   const result = pricing([line(1, 30_000)], MP)
-  assert.equal(result.maxInstallmentCount, 6, "configurado hasta 6")
   assert.equal(result.offeredInstallmentCount, 3, "tier = 3")
   assert.equal(result.financed?.total, getFinancedPrice(30_000, 3, CONFIG))
   assert.notEqual(result.financed?.total, getFinancedPrice(30_000, 6, CONFIG))
@@ -152,8 +146,6 @@ test("CASO H: MP falla -> sin cuotas, 1 pago a precio contado y sin 'sin interé
     assert.deepEqual(result.installmentPlans, [])
     assert.equal(result.cash.total, 50_000)
   }
-  // Producto: tampoco promete cuotas.
-  assert.equal(getProductInterestFreeOffer(UP_TO_6, 50_000, CONFIG, () => null), null)
   // Consultando el tier más alto: no baja a uno menor (no muestra un precio que después cambia).
   assert.equal(pricing([line(1, 50_000)], (amount) => (amount > 60_000 ? undefined : [2, 3])).financed, null)
 })
@@ -186,7 +178,7 @@ test("CASO I: no mezcla medios -- dinero en cuenta, débito, crédito 1/3/6 tien
 })
 
 test("CASO J: precio mostrado = precio enviado -- mismo cálculo, mismos montos consultados, mismo total en la preferencia", () => {
-  const input = { lines: [line(1, 30_000, UP_TO_6, 2)], shippingCharged: 5_000, storeBenefitPercent: null, requestedCustomerCredit: 0, settings: SETTINGS }
+  const input = { lines: [line(1, 30_000, 2)], shippingCharged: 5_000, storeBenefitPercent: null, requestedCustomerCredit: 0, settings: SETTINGS }
   // El cliente y el servidor consultan exactamente los mismos montos.
   const candidates = getMercadoPagoFinancingCandidates(input)
   const shown = calculateMercadoPagoCheckoutPricing({ ...input, interestFreeLookup: MP })
@@ -202,21 +194,12 @@ test("CASO J: precio mostrado = precio enviado -- mismo cálculo, mismos montos 
   assert.match(route, /unit_price: externalAmountDue,/)
 })
 
-test("carrito: usa el TOTAL real (2 x $20.000 califica aunque 1 unidad no) y nunca el máximo de cada producto", () => {
+test("carrito: usa el TOTAL real (2 x $20.000 califica aunque 1 unidad no); todas las líneas con el mismo tier", () => {
   assert.equal(pricing([line(1, 20_000)], MP).financed, null, "1 unidad: no califica")
-  const two = pricing([line(1, 20_000, UP_TO_6, 2)], MP)
+  const two = pricing([line(1, 20_000, 2)], MP)
   assert.equal(two.offeredInstallmentCount, 3, "2 unidades: califica para 2/3")
-  // Producto hasta 6 + producto hasta 3: el carrito admite hasta 3 y AMBOS usan el costo de 3.
-  const mixed = pricing([line(1, 40_000), line(2, 30_000, { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: false })], MP)
-  assert.equal(mixed.offeredInstallmentCount, 3)
-  assert.equal(mixed.financedTotal, getFinancedPrice(40_000, 3, CONFIG)! + getFinancedPrice(30_000, 3, CONFIG)!)
-})
-
-test("producto: tier conservador con el precio de 1 unidad; plans sólo del tier", () => {
-  const offer = getProductInterestFreeOffer(UP_TO_6, 30_000, CONFIG, MP)!
-  assert.equal(offer.count, 3)
-  assert.equal(offer.financedPrice, getFinancedPrice(30_000, 3, CONFIG))
-  assert.deepEqual(offer.plans.map((plan) => plan.count), [2, 3])
-  assert.equal(getProductInterestFreeOffer(UP_TO_6, 50_000, CONFIG, MP)!.count, 6)
-  assert.equal(getProductInterestFreeOffer(UP_TO_6, 20_000, CONFIG, MP), null)
+  // Varios productos: ninguno tiene topes propios, el tier sale del total.
+  const mixed = pricing([line(1, 40_000), line(2, 30_000)], MP)
+  assert.equal(mixed.offeredInstallmentCount, 6)
+  assert.equal(mixed.financedTotal, getFinancedPrice(40_000, 6, CONFIG)! + getFinancedPrice(30_000, 6, CONFIG)!)
 })

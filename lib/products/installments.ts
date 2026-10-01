@@ -1,4 +1,12 @@
+/**
+ * Cuotas sin interés que BEYONIX puede absorber: hasta 6. La financiación ya
+ * NO es una propiedad del producto: depende del TOTAL que se cobra y de lo
+ * que Mercado Pago confirma (Admin → Financiación). Si Mercado Pago ofrece
+ * 9/12/18, BEYONIX no las absorbe ni las comunica.
+ */
 export const INSTALLMENT_COUNTS = [2, 3, 6] as const
+/** Máximo comercial de cuotas sin interés que BEYONIX absorbe. */
+export const MAX_INTEREST_FREE_INSTALLMENTS = 6
 export type InstallmentCount = (typeof INSTALLMENT_COUNTS)[number]
 
 export interface InstallmentsFinancingConfig {
@@ -8,14 +16,6 @@ export interface InstallmentsFinancingConfig {
   ivaPercent: number
   /** Costo ADICIONAL que cobra Mercado Pago por ofrecer esa cantidad de cuotas, antes de IVA. */
   surchargePercentByCount: Record<InstallmentCount, number>
-}
-
-export interface EligibleInstallmentsProduct {
-  cuotas_2_habilitadas?: boolean
-  cuotas_3_habilitadas?: boolean
-  cuotas_6_habilitadas?: boolean
-  /** "Mismo precio en contado y cuotas": el financiado es igual al contado. No habilita cuotas por sí solo. */
-  cuotas_sin_recargo?: boolean | null
 }
 
 const ROUNDING_EPSILON = 1e-6
@@ -63,34 +63,8 @@ export function getSinglePaymentEffectivePercent(
   return ceilPercentWithIva(config.baseProcessingPercent, config)
 }
 
-export function getEligibleInstallmentCounts(
-  product: EligibleInstallmentsProduct,
-): InstallmentCount[] {
-  const counts: InstallmentCount[] = []
-  if (product.cuotas_2_habilitadas) counts.push(2)
-  if (product.cuotas_3_habilitadas) counts.push(3)
-  if (product.cuotas_6_habilitadas) counts.push(6)
-  return counts
-}
-
-/**
- * Regla del carrito: una modalidad sólo puede ofrecerse si TODOS los
- * productos distintos del carrito la permiten (intersección, no unión). Un
- * producto sin financiación anula esa modalidad para todo el carrito -- no
- * se financia nunca algo que el producto no admite.
- */
-export function getCartInstallmentEligibility(
-  products: EligibleInstallmentsProduct[],
-): InstallmentCount[] {
-  if (products.length === 0) return []
-
-  return INSTALLMENT_COUNTS.filter((count) =>
-    products.every((product) => getEligibleInstallmentCounts(product).includes(count)),
-  )
-}
-
 // Las funciones de precio/etiqueta de cara al cliente (contado,
 // transferencia, financiado, "Hasta N cuotas de $X") viven en
 // `lib/pricing/financed-pricing.ts` -- ese módulo es la única fuente de
 // verdad de precios, reutilizada por producto/carrito/checkout/MP/admin.
-// Este archivo sólo resuelve ELEGIBILIDAD y el % interno de costo de MP.
+// Este archivo sólo define las cuotas posibles y el % interno de costo de MP.

@@ -139,18 +139,15 @@ export function calculatePriceFromTargetMargin(
 
 /**
  * Arma la lista de escenarios de pago con su tasa de costo variable, en el
- * mismo orden en que se muestran al admin: Transferencia y Mercado Pago 1
- * pago siempre están disponibles (no dependen de las cuotas habilitadas del
- * producto); las cuotas sólo aparecen si están habilitadas. Reutiliza la
- * config financiera global -- nada hardcodeado acá. Con cuotas sin recargo
- * (`installmentsWithoutSurcharge`) las cuotas se cobran al precio de contado:
- * su base pasa a ser "cash" y cuentan para el peor caso y el margen objetivo.
+ * mismo orden en que se muestran al admin: Transferencia, Mercado Pago 1 pago
+ * y cada tier de cuotas sin interés que BEYONIX puede absorber (2/3/6, con
+ * precio financiado). La financiación ya no es una propiedad del producto:
+ * los escenarios son los mismos para todos. Reutiliza la config financiera
+ * global -- nada hardcodeado acá.
  */
 export function getPaymentScenarioRates(
-  eligibleInstallmentCounts: InstallmentCount[],
   config: InstallmentsFinancingConfig,
   transferDiscountPercent: number,
-  installmentsWithoutSurcharge = false,
 ): PaymentScenarioRate[] {
   const scenarios: PaymentScenarioRate[] = [
     {
@@ -170,13 +167,12 @@ export function getPaymentScenarioRates(
   ]
 
   for (const count of INSTALLMENT_COUNTS) {
-    if (!eligibleInstallmentCounts.includes(count)) continue
     scenarios.push({
       id: `mp_${count}`,
       label: `Mercado Pago — ${count} cuotas`,
       ratePercent: getEffectiveInstallmentPercent(count, config),
       kind: "fee",
-      priceBasis: installmentsWithoutSurcharge ? "cash" : "financed",
+      priceBasis: "financed",
     })
   }
 
@@ -188,18 +184,15 @@ export interface SimulateProductProfitabilityInput {
   price: number
   /** `null`/desconocido cuando el producto no tiene costo cargado en Compras -- nunca se inventa un costo. */
   cost: number | null
-  eligibleInstallmentCounts: InstallmentCount[]
   config: InstallmentsFinancingConfig
   transferDiscountPercent: number
-  /** "Mismo precio en contado y cuotas": las cuotas se cobran al contado. */
-  installmentsWithoutSurcharge?: boolean
 }
 
 /**
  * Rentabilidad de un precio de contado ya definido (modo manual o margen
- * objetivo), desglosada por medio de pago. Los escenarios de cuotas usan el
- * precio FINANCIADO (constante, derivado de la cuota máxima habilitada), no
- * el de contado -- ver `PaymentScenarioPriceBasis`.
+ * objetivo), desglosada por medio de pago. Cada escenario de cuotas usa el
+ * precio FINANCIADO con el costo de SU tier (2/3/6), no el de contado -- ver
+ * `PaymentScenarioPriceBasis`.
  *
  * `worstCase` es el escenario con MENOR margen resultante ENTRE LOS DE BASE
  * CONTADO (transferencia/MP 1 pago) -- el piso real de rentabilidad de ese
@@ -212,24 +205,16 @@ export interface SimulateProductProfitabilityInput {
 export function simulateProductProfitability({
   price,
   cost,
-  eligibleInstallmentCounts,
   config,
   transferDiscountPercent,
-  installmentsWithoutSurcharge = false,
 }: SimulateProductProfitabilityInput): ProductProfitabilitySimulation | null {
   if (cost == null || !Number.isFinite(cost) || cost < 0) return null
 
-  const maxEligibleCount = eligibleInstallmentCounts.length
-    ? (Math.max(...eligibleInstallmentCounts) as InstallmentCount)
-    : null
-  const financedPrice = getFinancedPrice(price, maxEligibleCount, config)
-
-  const scenarios = getPaymentScenarioRates(
-    eligibleInstallmentCounts,
-    config,
-    transferDiscountPercent,
-    installmentsWithoutSurcharge,
-  ).map((scenario) => {
+  const scenarios = getPaymentScenarioRates(config, transferDiscountPercent).map((scenario) => {
+    const tier = scenario.id.startsWith("mp_") && scenario.id !== "mp_unico"
+      ? (Number(scenario.id.slice(3)) as InstallmentCount)
+      : null
+    const financedPrice = tier ? getFinancedPrice(price, tier, config) : null
     const scenarioPrice =
       scenario.priceBasis === "financed" && financedPrice != null
         ? financedPrice
@@ -254,11 +239,8 @@ export function simulateProductProfitability({
 export interface CalculateTargetMarginPriceInput {
   cost: number
   targetMarginPercent: number
-  eligibleInstallmentCounts: InstallmentCount[]
   config: InstallmentsFinancingConfig
   transferDiscountPercent: number
-  /** Con cuotas sin recargo, el margen objetivo también se garantiza en cada cuota habilitada. */
-  installmentsWithoutSurcharge?: boolean
 }
 
 /**
@@ -269,7 +251,7 @@ export interface CalculateTargetMarginPriceInput {
  * las dos.
  *
  * Las modalidades de cuotas NO participan de esta resolución: su precio
- * (financiado, derivado de la cuota máxima habilitada) se calcula aparte y,
+ * (financiado, derivado del tier) se calcula aparte y,
  * por construcción del gross-up, siempre preserva como mínimo la misma
  * ganancia en PESOS que el contado -- nunca hace falta "proteger" ese
  * escenario con un precio más alto (ver `simulateProductProfitability`).
@@ -290,19 +272,14 @@ export interface CalculateTargetMarginPriceInput {
 export function calculateTargetMarginPrice({
   cost,
   targetMarginPercent,
-  eligibleInstallmentCounts,
   config,
   transferDiscountPercent,
-  installmentsWithoutSurcharge = false,
 }: CalculateTargetMarginPriceInput): TargetMarginPriceResult | null {
   if (!Number.isFinite(cost) || cost <= 0) return null
 
-  const rates = getPaymentScenarioRates(
-    eligibleInstallmentCounts,
-    config,
-    transferDiscountPercent,
-    installmentsWithoutSurcharge,
-  ).filter((scenario) => scenario.priceBasis === "cash")
+  const rates = getPaymentScenarioRates(config, transferDiscountPercent).filter(
+    (scenario) => scenario.priceBasis === "cash",
+  )
 
   let bindingScenario: PaymentScenarioRate | null = null
   let requiredPrice = -Infinity

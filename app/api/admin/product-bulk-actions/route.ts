@@ -1,11 +1,12 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
+// Sin acción de cuotas: la financiación es global (Admin → Financiación),
+// nunca una propiedad que se habilite por producto.
 const ACTION_KINDS = new Set([
   "discount_percent",
   "price_increase_percent",
   "price_decrease_percent",
-  "installments",
   "clear_offer",
 ])
 
@@ -54,12 +55,10 @@ export async function POST(request: Request) {
     target_items?: Array<{ type?: unknown; url?: unknown }>
     action_kind?: unknown
     value?: unknown
-    installments?: unknown
   }
   const scope = normalizeText(body.scope)
   const actionKind = normalizeText(body.action_kind)
   const value = normalizeNumber(body.value)
-  const installments = normalizeNumber(body.installments)
   const targetItems = Array.isArray(body.target_items) ? body.target_items : []
 
   if (!ACTION_KINDS.has(actionKind)) {
@@ -73,13 +72,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "El porcentaje debe estar entre 1 y 99." }, { status: 400 })
   }
 
-  if (actionKind === "installments" && ![2, 3, 6].includes(installments)) {
-    return Response.json({ error: "Elegí 2, 3 o 6 cuotas." }, { status: 400 })
-  }
-
   let query = auth.admin
     .from("productos")
-    .select("id, nombre, slug, precio, precio_anterior, descuento, cuotas_2_habilitadas, cuotas_3_habilitadas, cuotas_6_habilitadas, categoria_id")
+    .select("id, nombre, slug, precio, precio_anterior, descuento, categoria_id")
 
   if (scope === "product") {
     const slugs = targetItems
@@ -148,16 +143,9 @@ export async function POST(request: Request) {
       payload.precio = roundBulkPrice(currentPrice * (1 + value / 100))
       payload.precio_anterior = null
       payload.descuento = null
-    } else if (actionKind === "installments") {
-      if (installments === 2) payload.cuotas_2_habilitadas = true
-      if (installments === 3) payload.cuotas_3_habilitadas = true
-      if (installments === 6) payload.cuotas_6_habilitadas = true
     } else if (actionKind === "clear_offer") {
       payload.precio_anterior = null
       payload.descuento = null
-      payload.cuotas_2_habilitadas = false
-      payload.cuotas_3_habilitadas = false
-      payload.cuotas_6_habilitadas = false
     }
 
     const { error } = await auth.admin
@@ -180,7 +168,6 @@ export async function POST(request: Request) {
     after_data: {
       action_kind: actionKind,
       value,
-      installments,
       scope,
       affected_count: products.length,
     },

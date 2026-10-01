@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import {
   ArrowLeft,
   Eye,
@@ -16,7 +17,6 @@ import {
   calculateTargetMarginPrice,
   simulateProductProfitability,
 } from "@/lib/pricing/product-pricing"
-import type { InstallmentCount } from "@/lib/products/installments"
 
 import type {
   SupabaseProducto,
@@ -48,12 +48,8 @@ import {
 import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
-import { getEffectiveInstallmentPercent } from "@/lib/products/installments"
-import {
-  getInstallmentAmount,
-  getProductFinancingCandidates,
-  getTransferPrice,
-} from "@/lib/pricing/financed-pricing"
+import { getTransferPrice } from "@/lib/pricing/financed-pricing"
+import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
   normalizeLogisticsDecimalInput,
@@ -169,43 +165,12 @@ export function ProductoForm({
     (category) => String(category.id) === form.categoria_id,
   )?.nombre
   const currentPrice = Number(form.precio)
-  const eligibleInstallmentCounts: InstallmentCount[] = useMemo(
-    () => [
-      ...(form.cuotas2 ? [2 as const] : []),
-      ...(form.cuotas3 ? [3 as const] : []),
-      ...(form.cuotas6 ? [6 as const] : []),
-    ],
-    [form.cuotas2, form.cuotas3, form.cuotas6],
-  )
-  const installmentsPreviewProduct = {
-    cuotas_2_habilitadas: form.cuotas2,
-    cuotas_3_habilitadas: form.cuotas3,
-    cuotas_6_habilitadas: form.cuotas6,
-    cuotas_sin_recargo: form.cuotasSinRecargo,
-  }
-  // Misma regla que hasInstallmentsWithoutSurcharge (flag + al menos una
-  // cuota), derivada de valores primitivos/memoizados para el React Compiler.
-  const installmentsWithoutSurcharge =
-    form.cuotasSinRecargo && eligibleInstallmentCounts.length > 0
   const cashPricePreview =
     Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : null
   const transferPricePreview =
     cashPricePreview != null
       ? getTransferPrice(cashPricePreview, pricing.transferDiscountPercent)
       : null
-  // Vista previa por TIER: el cliente paga el financiado de la cuota más alta
-  // que Mercado Pago habilite sin interés para ese monto (puede ser menor a
-  // la configurada). Cada cuota muestra su valor si Mercado Pago habilita
-  // hasta esa cuota; "Financiado" es el de la cuota máxima configurada.
-  const tierPricesPreview =
-    cashPricePreview != null
-      ? getProductFinancingCandidates(installmentsPreviewProduct, cashPricePreview, installmentsFinancing)
-      : []
-  const financedPricePreview = tierPricesPreview[tierPricesPreview.length - 1]?.amount ?? null
-  const installmentPlansPreview = tierPricesPreview.flatMap((tier) => {
-    const amount = getInstallmentAmount(tier.amount, tier.count)
-    return amount == null ? [] : [{ count: tier.count, amount }]
-  })
   const targetMarginPercentValue = form.targetMarginPercent
     ? Number(form.targetMarginPercent)
     : null
@@ -222,20 +187,16 @@ export function ProductoForm({
         ? calculateTargetMarginPrice({
             cost: knownUnitCost,
             targetMarginPercent: targetMarginPercentValue,
-            eligibleInstallmentCounts,
             config: installmentsFinancing,
             transferDiscountPercent: pricing.transferDiscountPercent,
-            installmentsWithoutSurcharge,
           })
         : null,
     [
       form.pricingMode,
       knownUnitCost,
       targetMarginPercentValue,
-      eligibleInstallmentCounts,
       installmentsFinancing,
       pricing.transferDiscountPercent,
-      installmentsWithoutSurcharge,
     ],
   )
   // En modo margen objetivo, el precio público es SIEMPRE el que calcula el
@@ -257,10 +218,8 @@ export function ProductoForm({
       ? simulateProductProfitability({
           price: profitabilityPrice,
           cost: knownUnitCost ?? null,
-          eligibleInstallmentCounts,
           config: installmentsFinancing,
           transferDiscountPercent: pricing.transferDiscountPercent,
-          installmentsWithoutSurcharge,
         })
       : null
   // Regla de negocio puramente de UI: el precio anterior (el que se muestra
@@ -290,13 +249,6 @@ export function ProductoForm({
     form.precio.trim() && Number.isFinite(currentPrice)
       ? productPriceFormatter.format(currentPrice)
       : null,
-    [
-      form.cuotas2 && "2 cuotas",
-      form.cuotas3 && "3 cuotas",
-      form.cuotas6 && "6 cuotas",
-    ]
-      .filter(Boolean)
-      .join(" · ") || null,
   ].filter((item): item is string => Boolean(item))
   const activationStatus = useMemo(() => {
     const parseLogisticsValue = (value: string) => {
@@ -504,10 +456,6 @@ export function ProductoForm({
               ((safePreviousPrice - safePrice) / safePreviousPrice) * 100,
             )
           : null,
-      cuotas_2_habilitadas: form.cuotas2,
-      cuotas_3_habilitadas: form.cuotas3,
-      cuotas_6_habilitadas: form.cuotas6,
-      cuotas_sin_recargo: form.cuotasSinRecargo,
       stock,
       categoria_id: form.categoria_id ? Number(form.categoria_id) : null,
       destacado: form.destacado,
@@ -611,8 +559,8 @@ export function ProductoForm({
           {/*
             Fila 1: Información del producto (identidad) + Precio (modo $/%,
             inputs compactos de ancho fijo, rentabilidad bajo demanda vía
-            Eye) + Financiación -- las tres juntas porque Financiación afecta
-            directamente cómo se calcula/vende el precio. Proporciones
+            Eye) + Precios de venta (contado y transferencia; la financiación
+            es global y vive en Admin → Financiación, nunca en el producto). Proporciones
             ~27/25/48 por container query sobre el ancho real del workspace
             (ver .product-editor-row-top en globals.css); 1 columna por
             debajo del umbral.
@@ -697,86 +645,10 @@ export function ProductoForm({
             <div className="product-editor-cell">
               <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                 <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">Financiación</h2>
+                  <h2 className="text-base font-black text-white">Precios de venta</h2>
                 </div>
-                <div className="product-editor-financing-grid gap-1.5">
-                  {(
-                    [
-                      { key: "cuotas2" as const, count: 2 as const, label: "2 cuotas" },
-                      { key: "cuotas3" as const, count: 3 as const, label: "3 cuotas" },
-                      { key: "cuotas6" as const, count: 6 as const, label: "6 cuotas" },
-                    ]
-                  ).map((toggle) => {
-                    const active = form[toggle.key]
-                    // Precio financiado (derivado, nunca editable a mano):
-                    // constante sin importar la cuota elegida -- ver
-                    // lib/pricing/financed-pricing.ts. La cuota mostrada acá
-                    // es ese total dividido por `toggle.count`.
-                    const installmentAmount = active
-                      ? (installmentPlansPreview.find((plan) => plan.count === toggle.count)
-                          ?.amount ?? null)
-                      : null
-
-                    const installmentDetail = installmentAmount
-                      ? `${productPriceFormatter.format(installmentAmount)} c/u`
-                      : "Deshabilitado"
-
-                    return (
-                      <AdminSecondaryButton
-                        key={toggle.key}
-                        title={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}${installmentAmount ? ` · ${productPriceFormatter.format(installmentAmount)} por cuota` : ""}`}
-                        aria-label={`${toggle.label}: ${active ? "habilitado" : "deshabilitado"}`}
-                        aria-pressed={active}
-                        onClick={() => setField(toggle.key, !active)}
-                        className={`admin-toggle product-editor-financing-toggle grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 gap-y-0.5 px-1.5 py-1 text-left ${active ? "admin-toggle-on" : ""}`}
-                      >
-                        {active ? (
-                          <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
-                        ) : (
-                          <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
-                        )}
-                        <span className="whitespace-nowrap text-xs font-black leading-4 text-white">
-                          {toggle.label}
-                        </span>
-                        <span className="admin-toggle-detail col-span-2 whitespace-nowrap text-10px font-semibold leading-4 text-white/70">
-                          {installmentDetail}
-                        </span>
-                      </AdminSecondaryButton>
-                    )
-                  })}
-                  {/* Misma fila que las cuotas: el nombre puede partirse en 2
-                      líneas (mismo alto que cuota + detalle); la explicación
-                      del estado va en la nota de abajo, no dentro del botón. */}
-                  <AdminSecondaryButton
-                    title={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
-                    aria-label={`Mismo precio en contado y cuotas: ${form.cuotasSinRecargo ? "activado" : "desactivado"}`}
-                    aria-describedby={form.cuotasSinRecargo ? "product-installments-without-surcharge-note" : undefined}
-                    aria-pressed={form.cuotasSinRecargo}
-                    onClick={() => setField("cuotasSinRecargo", !form.cuotasSinRecargo)}
-                    className={`admin-toggle product-editor-financing-toggle product-editor-financing-toggle-wide grid min-h-11 grid-cols-[auto_minmax(0,1fr)] content-center items-center gap-x-1 px-1.5 py-1 text-left ${form.cuotasSinRecargo ? "admin-toggle-on" : ""}`}
-                  >
-                    {form.cuotasSinRecargo ? (
-                      <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
-                    ) : (
-                      <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4 shrink-0" />
-                    )}
-                    <span className="text-xs font-black leading-4 text-white">
-                      Mismo precio en contado y cuotas
-                    </span>
-                  </AdminSecondaryButton>
-                </div>
-                {form.cuotasSinRecargo && (
-                  <p
-                    id="product-installments-without-surcharge-note"
-                    className="text-10px font-semibold leading-4 text-white/70"
-                  >
-                    {installmentsWithoutSurcharge
-                      ? "Cuotas sin recargo: el costo de Mercado Pago lo absorbe BEYONIX."
-                      : "Sin efecto hasta habilitar al menos una cuota."}
-                  </p>
-                )}
                 {cashPricePreview != null && (
-                  <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-white/8 bg-white/[0.02] p-2">
+                  <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-white/8 bg-white/[0.02] p-2">
                     <div>
                       <p className="text-9px font-bold uppercase tracking-widest text-white/50">Contado</p>
                       <p className="text-sm font-black text-white">
@@ -791,28 +663,15 @@ export function ProductoForm({
                           : "—"}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Financiado (cuota máx.)</p>
-                      <p className="text-sm font-black text-white">
-                        {financedPricePreview != null
-                          ? productPriceFormatter.format(financedPricePreview)
-                          : "—"}
-                      </p>
-                    </div>
                   </div>
                 )}
-
-                {(form.cuotas2 || form.cuotas3 || form.cuotas6) && (
-                  <p className="text-xs font-medium leading-5 text-white">
-                    {[
-                      form.cuotas2 && `2 cuotas · costo ${getEffectiveInstallmentPercent(2, installmentsFinancing)}%`,
-                      form.cuotas3 && `3 cuotas · costo ${getEffectiveInstallmentPercent(3, installmentsFinancing)}%`,
-                      form.cuotas6 && `6 cuotas · costo ${getEffectiveInstallmentPercent(6, installmentsFinancing)}%`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                )}
+                <p data-product-financing-global className="text-xs font-medium leading-5 text-white/80">
+                  Las cuotas sin interés no se configuran por producto: dependen del total de la compra y de lo
+                  que confirma Mercado Pago.{" "}
+                  <Link href={ADMIN_ROUTES.financiacion} className="font-bold text-beyonix-sky underline-offset-2 hover:underline">
+                    Gestionar en Financiación
+                  </Link>
+                </p>
               </AdminCard>
             </div>
           </div>

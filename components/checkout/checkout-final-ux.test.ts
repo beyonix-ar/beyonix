@@ -44,13 +44,8 @@ const SETTINGS: CheckoutPricingSettings = {
   nationalTaxesIncidencePercent: 21,
 }
 
-function line(
-  productId: number,
-  unitPrice: number,
-  quantity = 1,
-  installments = { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true },
-): CheckoutPricingLine {
-  return { productId, variantId: null, conditionedStockId: null, quantity, unitPrice, installments }
+function line(productId: number, unitPrice: number, quantity = 1): CheckoutPricingLine {
+  return { productId, variantId: null, conditionedStockId: null, quantity, unitPrice }
 }
 
 function cents(value: number) {
@@ -70,25 +65,30 @@ function block(source: string, startMarker: string) {
 const CARTS: CheckoutPricingLine[][] = [
   [line(1, 1_000)],
   [line(1, 46_000), line(2, 12_345, 2)],
-  // Un producto admite sólo hasta 3 cuotas: su financiado usa SU máximo.
-  [line(1, 9_999, 3), line(2, 4_500, 1, { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: false })],
+  // Varias unidades y productos: la financiación depende sólo del total.
+  [line(1, 9_999, 3), line(2, 4_500, 1)],
 ]
 
 // ─────────────────────────────────────────────────────────────
 // PRESENTACIÓN (complementa checkout-presentation y el contrato de UI)
 // ─────────────────────────────────────────────────────────────
 
-test("4-5. 1 pago muestra 'Precio contado' y su total; cada cuota confirmada muestra el valor de la cuota y el total", () => {
-  const listStart = checkout.indexOf('<fieldset className="grid gap-3" data-payment-options>')
+test("4-5. 1 pago muestra 'Precio contado' y su total; la opción de cuotas muestra hasta N, las disponibles y el total financiado", () => {
+  const listStart = checkout.indexOf('<fieldset className="grid gap-2.5" data-payment-options>')
   const list = checkout.slice(listStart, checkout.indexOf("</fieldset>", listStart))
-  const cash = list.slice(list.indexOf('option="mercadopago_cash"'), list.indexOf("{offeredInstallmentPlans.map("))
-  const installments = list.slice(list.indexOf("{offeredInstallmentPlans.map("))
+  const cash = list.slice(list.indexOf('option="mercadopago_cash"'), list.indexOf('option="mercadopago_installments"'))
+  const installments = list.slice(list.indexOf('option="mercadopago_installments"'))
   assert.match(cash, /checkout-badge-neutral">Precio contado</)
   assert.match(cash, /\{formatPrice\(cashOptionAmount\)\}/)
   assert.match(cash, />\s*Ver medios\s*</)
-  assert.match(installments, /\{formatPrice\(plan\.amount\)\} c\/u/)
-  assert.match(installments, /Total \$\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
-  assert.doesNotMatch(list, /Hasta [0-9] cuotas|Ver cuotas/)
+  assert.match(installments, /description=\{`\$\{installmentsOptionCopy\.headline\} con \$\{installmentsBrands\}`\}/)
+  assert.match(installments, /\{installmentsOptionCopy\.available\}/)
+  assert.match(installments, /Total financiado:\{" "\}[\s\S]*\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
+  // Sin valor por cuota ni una tarjeta por cantidad: una sola opción (activa
+  // o, si el total todavía no alcanza, la misma tarjeta con el texto global).
+  assert.doesNotMatch(list, /c\/u|Ver cuotas/)
+  assert.equal((list.match(/<CheckoutPaymentOptionCard/g) ?? []).length, 4)
+  assert.match(list, /\) : globalInterestFreeMessage \? \(/)
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -362,14 +362,14 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
   assert.match(financed, /Elegiste pagar con tarjeta de crédito en cuotas sin interés\./)
   assert.match(financed, /Total financiado: \{formatPrice\(finalTotal\)\}/)
-  // La cuota ELEGIDA en BEYONIX, con su valor.
-  assert.match(financed, /\{selectedInstallmentPlan\.count\} \{installmentsCopy\} de \{formatPrice\(selectedInstallmentPlan\.amount\)\}\./)
+  // Hasta cuántas cuotas y cuáles: la cantidad se elige en Mercado Pago.
+  assert.match(financed, /\{selectedInstallmentsCopy\.headline\}\. \{selectedInstallmentsCopy\.available\}: elegís la cantidad en Mercado Pago\./)
   assert.match(financed, /\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)
   // Checkout Pro no permite excluir Dinero en cuenta ni fijar un mínimo de
   // cuotas: se avisa que el total es el financiado y dónde está el contado.
   assert.match(
     checkout,
-    /const MERCADOPAGO_FINANCED_TOTAL_WARNING =\s*"Mercado Pago puede mostrarte 1 pago o Dinero en cuenta: si los usás, se cobra este mismo total financiado\. Para pagar el precio contado, volvé y elegí “Mercado Pago en 1 pago”\."/,
+    /const MERCADOPAGO_FINANCED_TOTAL_WARNING =\s*"Mercado Pago puede mostrarte 1 pago o Dinero en cuenta: si los usás, se cobra este mismo total financiado\. Para pagar el precio contado, volvé y elegí “Mercado Pago · 1 pago”\."/,
   )
   assert.doesNotMatch(checkout, /1 solo pago/)
 

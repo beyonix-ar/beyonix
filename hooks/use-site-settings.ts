@@ -13,6 +13,7 @@ import {
   type StockSettings,
 } from "@/lib/site-settings"
 import { DEFAULT_SHIPPING_SETTINGS, type ShippingBonusSettings } from "@/lib/store-config"
+import type { PublicInterestFreeOffer } from "@/lib/pricing/interest-free-communication"
 
 interface SiteSettingsResponse {
   settings?: {
@@ -21,6 +22,7 @@ interface SiteSettingsResponse {
     stock?: StockSettings
     installmentsFinancing?: InstallmentsFinancingSettings
     pricing?: PricingSettings
+    interestFreeOffer?: PublicInterestFreeOffer | null
   }
 }
 
@@ -117,6 +119,8 @@ export function useSiteSettings() {
       DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
     )
   const [pricing, setPricing] = useState<PricingSettings>(DEFAULT_PRICING_SETTINGS)
+  // Comunicación global de cuotas sin interés: sin dato confirmado, nada.
+  const [interestFreeOffer, setInterestFreeOffer] = useState<PublicInterestFreeOffer | null>(null)
 
   useEffect(() => {
     let active = true
@@ -138,6 +142,7 @@ export function useSiteSettings() {
       if (data.settings?.pricing) {
         setPricing(data.settings.pricing)
       }
+      setInterestFreeOffer(data.settings?.interestFreeOffer ?? null)
     }
 
     siteSettingsListeners.add(applySettings)
@@ -151,6 +156,7 @@ export function useSiteSettings() {
         setStock(DEFAULT_STOCK_SETTINGS)
         setInstallmentsFinancing(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS)
         setPricing(DEFAULT_PRICING_SETTINGS)
+        setInterestFreeOffer(null)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -169,5 +175,6 @@ export function useSiteSettings() {
     stock,
     installmentsFinancing,
     pricing,
+    interestFreeOffer,
   }
 }

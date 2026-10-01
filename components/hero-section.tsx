@@ -16,13 +16,7 @@ import {
   BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
-import {
-  getInstallmentAmount,
-  getProductFinancingCandidates,
-  getProductInterestFreeOffer,
-  INSTALLMENTS_COPY,
-} from "@/lib/pricing/financed-pricing"
-import { useInterestFreeInstallments } from "@/hooks/use-interest-free-installments"
+import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
 import type { SupabaseProducto } from "@/lib/supabase/types"
@@ -88,28 +82,10 @@ export function HeroSection({
     ? Math.round((1 - finalPrice / originalPrice) * 100)
     : 0
   const hasSale = discountPercentage > 0
-  const { installmentsFinancing } = useSiteSettings()
-  // Tier confirmado por Mercado Pago para este precio: "sin interés" sólo
-  // con confirmación y con el precio financiado de ese tier.
-  const financingCandidates = featuredProduct
-    ? getProductFinancingCandidates(featuredProduct, finalPrice, installmentsFinancing)
-    : []
-  const interestFreeFor = useInterestFreeInstallments(
-    financingCandidates.map((candidate) => candidate.amount),
-  )
-  const interestFreeOffer = featuredProduct
-    ? getProductInterestFreeOffer(featuredProduct, finalPrice, installmentsFinancing, interestFreeFor)
-    : null
-  const featuredFinancedPrice = interestFreeOffer?.financedPrice ?? null
-  const maxEligibleInstallmentCount = interestFreeOffer?.count ?? null
-  const featuredInstallmentAmount =
-    featuredFinancedPrice != null && maxEligibleInstallmentCount != null
-      ? getInstallmentAmount(featuredFinancedPrice, maxEligibleInstallmentCount)
-      : null
-  const installmentLabel =
-    featuredProduct && maxEligibleInstallmentCount != null && featuredInstallmentAmount != null
-      ? `Hasta ${maxEligibleInstallmentCount} ${INSTALLMENTS_COPY} de ${formatPrice(featuredInstallmentAmount)}`
-      : null
+  const { interestFreeOffer } = useSiteSettings()
+  // Regla GLOBAL vigente de la tienda (Home): el mayor rango que Mercado Pago
+  // confirma hoy. Nunca una característica fija del producto.
+  const installmentLabel = featuredProduct ? getInterestFreeMessage(interestFreeOffer)?.text ?? null : null
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {

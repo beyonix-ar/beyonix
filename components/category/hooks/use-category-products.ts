@@ -22,7 +22,6 @@ export function useCategoryProducts(
   const [sortBy, setSortBy] = useState("relevance")
   const [onlyOffers, setOnlyOffers] = useState(false)
   const [onlyBestSellers, setOnlyBestSellers] = useState(false)
-  const [onlyInstallments, setOnlyInstallments] = useState(false)
   const [minPrice, setMinPrice] = useState(
     priceRange.min
   )
@@ -49,13 +48,6 @@ export function useCategoryProducts(
         !onlyBestSellers ||
         product.destacado
 
-      const matchInstallments =
-        !SITE_SETTINGS.filters.showInstallmentsFilter ||
-        !onlyInstallments ||
-        product.cuotas_2_habilitadas === true ||
-        product.cuotas_3_habilitadas === true ||
-        product.cuotas_6_habilitadas === true
-
       const matchPrice =
         !SITE_SETTINGS.filters.showPriceFilter ||
         (product.precio >= minPrice &&
@@ -65,7 +57,6 @@ export function useCategoryProducts(
         matchSearch &&
         matchOffers &&
         matchBestSellers &&
-        matchInstallments &&
         matchPrice
       )
     })
@@ -89,7 +80,6 @@ export function useCategoryProducts(
     sortBy,
     onlyOffers,
     onlyBestSellers,
-    onlyInstallments,
     minPrice,
     maxPrice,
   ])
@@ -103,8 +93,6 @@ export function useCategoryProducts(
     setOnlyOffers,
     onlyBestSellers,
     setOnlyBestSellers,
-    onlyInstallments,
-    setOnlyInstallments,
     minPrice,
     setMinPrice,
     maxPrice,

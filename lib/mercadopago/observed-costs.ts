@@ -7,10 +7,22 @@ import {
 /**
  * Costos de Mercado Pago "observados": se derivan de los pagos aprobados que
  * el webhook ya persiste en `ordenes.mercadopago_payment_snapshot`
- * (fee_details / transaction_amount, dato REAL cobrado por Mercado Pago).
- * Mercado Pago no expone por API la comisión ni el plazo configurados en la
+ * (charges_details / fee_details / transaction_amount, dato REAL cobrado por
+ * Mercado Pago). Mercado Pago no expone por API la comisión configurada en la
  * cuenta antes de vender, así que la única fuente automática honesta es lo
- * que efectivamente cobró en los últimos pagos.
+ * que efectivamente cobró en los pagos reales.
+ *
+ * Aprendizaje: cada modalidad (crédito 1 pago, crédito 2/3/6 cuotas, débito,
+ * dinero en cuenta) aprende SU propio costo, nunca de otra. El último pago
+ * aprobado y confiable de esa modalidad es el costo vigente hasta que otro
+ * pago muestre un valor distinto: UN solo pago aprobado y confiable alcanza
+ * para aprender, aunque el cambio sea grande. Los datos no confiables
+ * (modalidad o cuotas inconsistentes, cargo inexistente, porcentaje no
+ * finito, <= 0 o fuera del rango técnicamente posible) nunca reemplazan el
+ * costo vigente.
+ *
+ * El historial se deriva de los mismos pagos (inmutables): nada se reescribe
+ * y cada venta conserva su propio snapshot de precio.
  *
  * Las tasas observadas incluyen IVA (Mercado Pago no lo discrimina en el
  * pago): se convierten a "sin IVA" con el IVA configurado para mantener el
@@ -21,14 +33,38 @@ export type MercadoPagoCostsMode = "automatic" | "manual"
 
 export const DEFAULT_MERCADOPAGO_COSTS_MODE: MercadoPagoCostsMode = "manual"
 
-/** Observaciones más viejas que esto no se usan: pueden no reflejar la tasa vigente. */
-export const MERCADOPAGO_OBSERVATION_MAX_AGE_DAYS = 90
 /** Monto mínimo del pago: por debajo, el redondeo a centavos distorsiona la tasa. */
 export const MERCADOPAGO_OBSERVATION_MIN_AMOUNT = 100
-/** Pagos recientes que se leen para buscar observaciones. */
-export const MERCADOPAGO_OBSERVATION_SAMPLE_SIZE = 50
+/** Pagos recientes que se leen POR MODALIDAD (cada una conserva su último costo aunque se venda poco). */
+export const MERCADOPAGO_OBSERVATION_SAMPLE_SIZE = 20
+/** Cambios menores a esto (puntos) son redondeo: no cuentan como cambio de costo. */
+const CHANGE_EPSILON_POINTS = 0.01
+const HISTORY_LIMIT = 20
 
-const MAX_PLAUSIBLE_PERCENT = 60
+export type MercadoPagoCostModality =
+  | "credit_1"
+  | "credit_2"
+  | "credit_3"
+  | "credit_6"
+  | "debit_1"
+  | "account_money_1"
+
+/** Qué se lee de cada modalidad: medio de pago + cuotas (también lo usa la consulta a la base). */
+export const MERCADOPAGO_COST_MODALITIES: ReadonlyArray<{
+  modality: MercadoPagoCostModality
+  paymentTypeId: ObservedSinglePaymentType
+  installments: 1 | InstallmentCount
+}> = [
+  { modality: "credit_1", paymentTypeId: "credit_card", installments: 1 },
+  { modality: "credit_2", paymentTypeId: "credit_card", installments: 2 },
+  { modality: "credit_3", paymentTypeId: "credit_card", installments: 3 },
+  { modality: "credit_6", paymentTypeId: "credit_card", installments: 6 },
+  { modality: "debit_1", paymentTypeId: "debit_card", installments: 1 },
+  { modality: "account_money_1", paymentTypeId: "account_money", installments: 1 },
+]
+
+/** Tope razonable (con IVA) por tipo de costo: por encima el dato no es confiable. */
+const MAX_PLAUSIBLE_PERCENT = { single: 15, financing: 45 } as const
 
 export interface MercadoPagoObservationSourceRow {
   id: number
@@ -41,6 +77,7 @@ export interface MercadoPagoObservationSourceRow {
     money_release_date?: string | null
     payment_type_id?: string | null
     payment_method_id?: string | null
+    checkout_modality?: string | null
   } | null
 }
 
@@ -59,6 +96,16 @@ export interface MercadoPagoCostObservation {
 /** Medios en 1 pago que se observan por separado (nunca se mezclan). */
 export type ObservedSinglePaymentType = "credit_card" | "debit_card" | "account_money"
 
+/** Cambio de costo detectado en un pago real: se aplica desde la próxima venta. */
+export interface MercadoPagoCostChangeEvent {
+  modality: MercadoPagoCostModality
+  /** `null` = primer costo observado de esta modalidad. */
+  previousPercentWithIva: number | null
+  percentWithIva: number
+  observedAt: string
+  orderId: number
+}
+
 export interface MercadoPagoObservedCosts {
   /** Comisión base: SÓLO tarjeta de crédito en 1 pago (con lo que se cobra el precio financiado). */
   base: MercadoPagoCostObservation | null
@@ -68,6 +115,10 @@ export interface MercadoPagoObservedCosts {
   singlePaymentByType: Record<ObservedSinglePaymentType, MercadoPagoCostObservation | null>
   /** Pagos aprobados con costo informado que se analizaron. */
   analyzedPayments: number
+  /** Cambios detectados, del más nuevo al más viejo (compacto). */
+  history: MercadoPagoCostChangeEvent[]
+  /** Último costo nuevo aplicado automáticamente. */
+  lastAppliedAt: string | null
 }
 
 export type MercadoPagoCostSource = "observed" | "manual"
@@ -90,6 +141,8 @@ export function getEmptyMercadoPagoObservedCosts(): MercadoPagoObservedCosts {
     surchargeByCount: { 2: null, 3: null, 6: null },
     singlePaymentByType: { credit_card: null, debit_card: null, account_money: null },
     analyzedPayments: 0,
+    history: [],
+    lastAppliedAt: null,
   }
 }
 
@@ -104,13 +157,15 @@ function isFinancingCharge(name: string | null | undefined) {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+type Snapshot = NonNullable<MercadoPagoObservationSourceRow["mercadopago_payment_snapshot"]>
+
 /**
  * Tasa con IVA de los cargos que cumplen `matches`: la exacta de
  * `charges_details` si Mercado Pago la informó; si no, monto / importe del
  * pago (fee_details, redondeado a centavos por Mercado Pago).
  */
 function getChargePercent(
-  snapshot: NonNullable<MercadoPagoObservationSourceRow["mercadopago_payment_snapshot"]>,
+  snapshot: Snapshot,
   matches: (name: string | null | undefined) => boolean,
 ): number | null {
   const rates = (snapshot.charges_details ?? [])
@@ -125,47 +180,72 @@ function getChargePercent(
   return fee > 0 && amount > 0 ? (fee / amount) * 100 : null
 }
 
-function toObservation(
-  row: MercadoPagoObservationSourceRow,
-  percentWithIva: number | null,
-): MercadoPagoCostObservation | null {
-  if (percentWithIva == null || !Number.isFinite(percentWithIva) || percentWithIva <= 0 || percentWithIva > MAX_PLAUSIBLE_PERCENT) {
+/**
+ * Modalidad de un pago aprobado (nunca se mezclan): 1 pago por medio; cuotas
+ * SÓLO crédito en 2/3/6 con cargo de financiación (cuotas sin interés que
+ * absorbió BEYONIX). Un pago en cuotas sin ese cargo lo financió el
+ * comprador, y uno en cuotas de una compra "1 pago" no es posible (la
+ * preferencia se crea con 1 cuota): ninguno de los dos dice nada del costo.
+ */
+function getModality(snapshot: Snapshot): MercadoPagoCostModality | null {
+  const installments = Number(snapshot.installments ?? 1)
+  const paymentType = snapshot.payment_type_id
+  if (installments <= 1) {
+    if (paymentType === "credit_card") return "credit_1"
+    if (paymentType === "debit_card") return "debit_1"
+    if (paymentType === "account_money") return "account_money_1"
     return null
   }
-  const snapshot = row.mercadopago_payment_snapshot
+  if (paymentType !== "credit_card" || !INSTALLMENT_COUNTS.includes(installments as InstallmentCount)) return null
+  if (snapshot.checkout_modality === "mercadopago_cash") return null
+  return `credit_${installments}` as MercadoPagoCostModality
+}
+
+function toObservation(
+  row: MercadoPagoObservationSourceRow,
+  modality: MercadoPagoCostModality,
+): MercadoPagoCostObservation | null {
+  const snapshot = row.mercadopago_payment_snapshot as Snapshot
+  const financing = modality === "credit_2" || modality === "credit_3" || modality === "credit_6"
+  const percentWithIva = getChargePercent(
+    snapshot,
+    financing ? isFinancingCharge : (name) => name === "mercadopago_fee",
+  )
+  const max = financing ? MAX_PLAUSIBLE_PERCENT.financing : MAX_PLAUSIBLE_PERCENT.single
+  if (percentWithIva == null || !Number.isFinite(percentWithIva) || percentWithIva <= 0 || percentWithIva > max) {
+    return null
+  }
   const paidAt = Date.parse(row.paid_at as string)
-  const releaseAt = snapshot?.money_release_date ? Date.parse(snapshot.money_release_date) : Number.NaN
+  const releaseAt = snapshot.money_release_date ? Date.parse(snapshot.money_release_date) : Number.NaN
   return {
     percentWithIva: roundTo(percentWithIva, 3),
     observedAt: row.paid_at as string,
-    paymentTypeId: snapshot?.payment_type_id ?? null,
-    paymentMethodId: snapshot?.payment_method_id ?? null,
-    installments: Number(snapshot?.installments ?? 1),
+    paymentTypeId: snapshot.payment_type_id ?? null,
+    paymentMethodId: snapshot.payment_method_id ?? null,
+    installments: Number(snapshot.installments ?? 1),
     releaseDays: Number.isFinite(releaseAt) && releaseAt >= paidAt ? Math.round((releaseAt - paidAt) / DAY_MS) : null,
     orderId: row.id,
   }
 }
 
-const OBSERVED_SINGLE_PAYMENT_TYPES: ObservedSinglePaymentType[] = ["credit_card", "debit_card", "account_money"]
-
 /**
- * Observación segmentada por medio y cuotas (nunca se mezclan): dinero en
- * cuenta ≠ débito ≠ crédito 1 pago ≠ crédito 3 cuotas ≠ crédito 6 cuotas.
- *
- * - Comisión base: SÓLO crédito en 1 pago (`mercadopago_fee`); dinero en
- *   cuenta y débito se registran aparte, como referencia, y no la alimentan.
- * - Costo por N cuotas: SÓLO crédito en N cuotas con un cargo de
- *   financiación (cuotas sin interés absorbidas por BEYONIX). Un pago en
- *   cuotas SIN ese cargo lo financió el comprador y no dice nada del costo.
- * - Siempre la observación más reciente de cada combinación.
+ * Costo vigente por modalidad y cambios detectados, recorriendo los pagos
+ * del más viejo al más nuevo:
+ * - el primer pago confiable define el costo;
+ * - cada pago nuevo confiable lo reemplaza de inmediato, sin importar el
+ *   tamaño del cambio (si cambió, queda en el historial como aplicado para
+ *   las próximas ventas);
+ * - un pago no confiable se ignora y sigue el costo anterior.
  */
 export function deriveMercadoPagoObservedCosts(
   rows: MercadoPagoObservationSourceRow[],
   now: Date = new Date(),
 ): MercadoPagoObservedCosts {
-  const minTime = now.getTime() - MERCADOPAGO_OBSERVATION_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
+  const seen = new Set<number>()
   const eligible = rows
     .filter((row) => {
+      if (seen.has(row.id)) return false
+      seen.add(row.id)
       const snapshot = row.mercadopago_payment_snapshot
       const paidAt = row.paid_at ? Date.parse(row.paid_at) : Number.NaN
       return (
@@ -173,38 +253,52 @@ export function deriveMercadoPagoObservedCosts(
         Array.isArray(snapshot.fee_details) &&
         Number(snapshot.transaction_amount) >= MERCADOPAGO_OBSERVATION_MIN_AMOUNT &&
         Number.isFinite(paidAt) &&
-        paidAt >= minTime &&
         paidAt <= now.getTime()
       )
     })
-    .sort((a, b) => Date.parse(b.paid_at as string) - Date.parse(a.paid_at as string))
+    .sort((a, b) => Date.parse(a.paid_at as string) - Date.parse(b.paid_at as string) || a.id - b.id)
+
+  const current = new Map<MercadoPagoCostModality, MercadoPagoCostObservation>()
+  const history: MercadoPagoCostChangeEvent[] = []
+  const event = (
+    modality: MercadoPagoCostModality,
+    previous: MercadoPagoCostObservation | undefined,
+    observation: MercadoPagoCostObservation,
+  ) =>
+    history.push({
+      modality,
+      previousPercentWithIva: previous?.percentWithIva ?? null,
+      percentWithIva: observation.percentWithIva,
+      observedAt: observation.observedAt,
+      orderId: observation.orderId,
+    })
+
+  for (const row of eligible) {
+    const modality = getModality(row.mercadopago_payment_snapshot as Snapshot)
+    if (!modality) continue
+    const observation = toObservation(row, modality)
+    if (!observation) continue
+
+    const previous = current.get(modality)
+    if (!previous || Math.abs(observation.percentWithIva - previous.percentWithIva) >= CHANGE_EPSILON_POINTS) {
+      event(modality, previous, observation)
+    }
+    current.set(modality, observation)
+  }
 
   const result = getEmptyMercadoPagoObservedCosts()
   result.analyzedPayments = eligible.length
-
-  for (const row of eligible) {
-    const snapshot = row.mercadopago_payment_snapshot!
-    const installments = Number(snapshot.installments ?? 1)
-    const paymentType = snapshot.payment_type_id
-
-    if (installments <= 1) {
-      const type = OBSERVED_SINGLE_PAYMENT_TYPES.find((candidate) => candidate === paymentType)
-      if (!type || result.singlePaymentByType[type]) continue
-      const observation = toObservation(row, getChargePercent(snapshot, (name) => name === "mercadopago_fee"))
-      if (observation) result.singlePaymentByType[type] = observation
-      continue
-    }
-
-    // Cuotas: sólo crédito, y sólo con cargo de financiación a cargo de BEYONIX.
-    const count = installments as InstallmentCount
-    if (paymentType !== "credit_card" || !INSTALLMENT_COUNTS.includes(count) || result.surchargeByCount[count]) {
-      continue
-    }
-    const observation = toObservation(row, getChargePercent(snapshot, isFinancingCharge))
-    if (observation) result.surchargeByCount[count] = observation
+  result.singlePaymentByType = {
+    credit_card: current.get("credit_1") ?? null,
+    debit_card: current.get("debit_1") ?? null,
+    account_money: current.get("account_money_1") ?? null,
   }
-
   result.base = result.singlePaymentByType.credit_card
+  for (const count of INSTALLMENT_COUNTS) {
+    result.surchargeByCount[count] = current.get(`credit_${count}`) ?? null
+  }
+  result.history = history.reverse().slice(0, HISTORY_LIMIT)
+  result.lastAppliedAt = result.history[0]?.observedAt ?? null
   return result
 }
 

@@ -2,73 +2,35 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import {
-  getFinancedPrice,
-  getProductInterestFreeOffer,
-  getMaxEligibleInstallmentCount,
-} from "../../lib/pricing/financed-pricing.ts"
-import type { InstallmentsFinancingConfig } from "../../lib/products/installments.ts"
-
-// Precio/planes del TIER máximo que admite el producto, como si Mercado Pago
-// lo confirmara sin interés: verifica las fórmulas, no la disponibilidad.
-function maxTierPlans(product: Parameters<typeof getProductInterestFreeOffer>[0], cashPrice: number, config: InstallmentsFinancingConfig) {
-  return getProductInterestFreeOffer(product, cashPrice, config, () => [2, 3, 6])?.plans ?? []
-}
-
-const REAL_CONFIG: InstallmentsFinancingConfig = {
-  baseProcessingPercent: 6.42,
-  ivaPercent: 21,
-  surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 },
-}
-
 function readSource(path: string) {
   return readFileSync(new URL(path, import.meta.url), "utf8")
 }
 
-const PRODUCTS_BY_MAX = {
-  2: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: false, cuotas_6_habilitadas: false },
-  3: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: false },
-  6: { cuotas_2_habilitadas: true, cuotas_3_habilitadas: true, cuotas_6_habilitadas: true },
-} as const
+// La financiación ya no es una propiedad del producto: PDP, tarjetas y Home
+// muestran la regla GLOBAL vigente ("Hasta N cuotas sin interés a partir de
+// $X"), confirmada por Mercado Pago (Admin → Financiación). El monto real lo
+// define el total del checkout.
 
-test("PDP: el precio financiado mostrado es el canónico para máximo 2, 3 y 6 -- cada cuota cierra exacto", () => {
-  for (const maxCount of [2, 3, 6] as const) {
-    const product = PRODUCTS_BY_MAX[maxCount]
-    for (const cashPrice of [999, 45_677, 63_014, 100_000]) {
-      // Mismo cálculo que product-details-panel.tsx (verificado abajo por contrato).
-      const canonical = getFinancedPrice(cashPrice, maxCount, REAL_CONFIG)!
-      const displayedFinancedPrice = getFinancedPrice(
-        cashPrice,
-        getMaxEligibleInstallmentCount(product),
-        REAL_CONFIG,
-      )
-      const plans = maxTierPlans(product, cashPrice, REAL_CONFIG)
-
-      assert.equal(displayedFinancedPrice, canonical)
-      assert.equal(plans[plans.length - 1].count, maxCount)
-      for (const plan of plans) {
-        assert.equal(plan.amount * plan.count, canonical)
-      }
-    }
+test("PDP, tarjetas y Home usan la comunicación global, nunca una oferta calculada por producto", () => {
+  for (const path of [
+    "./product-details-panel.tsx",
+    "./shared/shared-product-card.tsx",
+    "../hero-section.tsx",
+  ]) {
+    const source = readSource(path)
+    assert.match(source, /getInterestFreeMessage\(/, path)
+    assert.match(source, /interestFreeOffer/, path)
+    assert.doesNotMatch(
+      source,
+      /getProductInterestFreeOffer|getProductFinancingCandidates|useInterestFreeInstallments|cuotas_(2|3|6)_habilitadas|cuotas_sin_recargo/,
+      path,
+    )
   }
-})
-
-test("PDP: el panel pasa el financiado y los planes canónicos sin ningún ajuste local", () => {
-  const panel = readSource("./product-details-panel.tsx")
-  const purchaseBox = readSource("./product-purchase-box.tsx")
-
-  // Tier confirmado por Mercado Pago (función canónica), nunca la cuota
-  // configurada a ciegas: financiado y planes salen de la misma oferta.
-  assert.match(panel, /const interestFreeOffer = getProductInterestFreeOffer\(\s*product,\s*cashPrice,\s*installmentsFinancing,\s*interestFreeFor,\s*\)/)
-  assert.match(panel, /const financedPrice = interestFreeOffer\?\.financedPrice \?\? null/)
-  assert.match(panel, /const installmentPlans = interestFreeOffer\?\.plans \?\? \[\]/)
-  assert.match(panel, /financedPrice=\{financedPrice\}/)
-  assert.match(panel, /installmentPlans=\{installmentPlans\}/)
-  // La ficha muestra el monto de cada plan tal cual, sin recalcular.
-  assert.match(purchaseBox, /formatPrice\(maxInstallmentPlan\.amount\)/)
-  assert.match(purchaseBox, /formatPrice\(plan\.amount\)/)
-  // CFTEA sigue oculto en la ficha hasta la definición legal.
-  assert.match(purchaseBox, /const SHOW_CFTEA_ON_PRODUCT = false/)
+  // La ficha muestra una sola línea global (sin planes por cuota del producto).
+  const box = readSource("./product-purchase-box.tsx")
+  assert.match(box, /interestFreeText\?: string \| null/)
+  assert.match(box, /data-interest-free-global/)
+  assert.doesNotMatch(box, /installmentPlans|financedPrice|Ver opciones de financiación/)
 })
 
 test("ningún consumidor de precios financiados hace redondeos o ajustes ±1 propios", () => {
@@ -103,8 +65,8 @@ test("checkout y create-preference aplican el MISMO ajuste final de redondeo de 
   // Una única implementación del ajuste (lib/pricing/checkout-pricing.ts),
   // compartida por servidor y cliente.
   assert.match(pricing, /roundUpCheckoutTotalForInstallments\(\{/)
-  // Divisor = cuotas del carrito dentro del TIER (las que se pueden elegir).
-  assert.match(pricing, /offeredCounts: context\.eligibility\.filter\(\(count\) => count <= tier\)/)
+  // Divisor = cuotas de BEYONIX dentro del TIER (las que se pueden elegir).
+  assert.match(pricing, /offeredCounts: INSTALLMENT_COUNTS\.filter\(\(count\) => count <= tier\)/)
   assert.match(pricing, /roundingAdjustment: rounded\.roundingAdjustment/)
   for (const source of [route, checkout]) {
     assert.match(source, /calculateMercadoPagoCheckoutPricing\(\{/)

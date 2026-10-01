@@ -110,18 +110,13 @@ export interface SupabaseProducto {
   precio: number
   precio_anterior: number | null
   descuento: number | null
-  cuotas_2_habilitadas: boolean
-  cuotas_3_habilitadas: boolean
-  cuotas_6_habilitadas: boolean
-  /** "Mismo precio en contado y cuotas" (heredado por las variantes). Opcional: carritos guardados antes de la columna no lo traen. */
-  cuotas_sin_recargo?: boolean
+  // La financiación ya no es una propiedad del producto: las columnas legacy
+  // `cuotas_2/3/6_habilitadas`, `cuotas_sin_recargo` y
+  // `promo_original_cuotas_*` siguen en la base pero no se leen ni escriben.
   promo_event_id?: string | null
   promo_original_precio?: number | null
   promo_original_precio_anterior?: number | null
   promo_original_descuento?: number | null
-  promo_original_cuotas_2_habilitadas?: boolean | null
-  promo_original_cuotas_3_habilitadas?: boolean | null
-  promo_original_cuotas_6_habilitadas?: boolean | null
 
   stock: number
   /**

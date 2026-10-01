@@ -42,15 +42,13 @@ test("B/D. ningún componente de cara al cliente dice 'sin recargo' ni 'Mismo pr
   assert.deepEqual(offenders, [])
 })
 
-test("PDP/modal (product-purchase-box.tsx): cuota máxima y opciones expandidas usan INSTALLMENTS_COPY, sin línea extra", () => {
+test("PDP/modal (product-purchase-box.tsx): una sola línea con la regla global de cuotas, sin planes por producto", () => {
   const source = readSource("./product-purchase-box.tsx")
-
-  assert.match(source, /Hasta \{maxInstallmentPlan\.count\} \{INSTALLMENTS_COPY\} de \{formatPrice\(maxInstallmentPlan\.amount\)\}/)
-  assert.match(source, /\{plan\.count\} \{INSTALLMENTS_COPY\} de \{formatPrice\(plan\.amount\)\}/)
-  // Debajo de la cuota máxima sólo queda "Ver opciones de financiación".
-  const block = source.slice(source.indexOf("Hasta {maxInstallmentPlan.count}"), source.indexOf("Ver opciones de financiación"))
-  assert.doesNotMatch(block, /<p/)
-  assert.doesNotMatch(source, /installmentsWithoutSurcharge/)
+  assert.match(source, /\{interestFreeText && \(/)
+  assert.doesNotMatch(source, /maxInstallmentPlan|installmentPlans|Ver opciones de financiación|installmentsWithoutSurcharge/)
+  const communication = readSource("../../lib/pricing/interest-free-communication.ts")
+  // El texto global usa el mismo copy "cuotas sin interés".
+  assert.match(communication, /`Hasta \$\{tier\.count\} \$\{INSTALLMENTS_COPY\} a partir de \$\{AMOUNT_FORMAT\.format\(tier\.minimumAmount\)\}/)
 })
 
 test("PDP se sirve a través de product-details-panel.tsx en la página de producto y en el modal -- un solo lugar para corregir", () => {
@@ -63,31 +61,24 @@ test("PDP se sirve a través de product-details-panel.tsx en la página de produ
 
 // La tarjeta de catálogo real es shared-product-card (categorías, productos,
 // home y favoritos); category-product-card.tsx no se renderizaba desde 6e2d4f8.
-test("tarjeta de catálogo (shared-product-card) y hero usan INSTALLMENTS_COPY", () => {
+test("tarjeta de catálogo (shared-product-card) y hero usan el texto global, nunca una oferta del producto", () => {
   const sharedCard = readSource("./shared/shared-product-card.tsx")
   const hero = readSource("../hero-section.tsx")
-
-  assert.match(sharedCard, /\$\{INSTALLMENTS_COPY\} de \$\$\{maxInstallmentAmount/)
-  assert.match(hero, /\$\{INSTALLMENTS_COPY\} de \$\{formatPrice\(featuredInstallmentAmount\)\}/)
-  // Precio financiado de cada card: tier confirmado por Mercado Pago con la
-  // regla del producto (nunca el gross-up directo ni la cuota configurada).
+  assert.match(sharedCard, /getInterestFreeMessage\(interestFreeOffer, defaultVariant\.price\)/)
+  assert.match(hero, /getInterestFreeMessage\(interestFreeOffer\)/)
   for (const source of [sharedCard, hero]) {
-    assert.match(source, /getProductInterestFreeOffer\(/)
-    assert.doesNotMatch(source, /getFinancedPrice\(/)
+    assert.doesNotMatch(source, /getProductInterestFreeOffer\(|getFinancedPrice\(|maxInstallmentAmount|featuredInstallmentAmount/)
   }
 })
 
-test("checkout: cada cuota sin interés, método de pago y resumen usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
+test("checkout: la opción de cuotas, el resumen y la confirmación usan INSTALLMENTS_COPY -- el CFTEA no se tocó", () => {
   const checkout = readSource("../../app/checkout/page.tsx")
+  const financed = readSource("../../lib/pricing/financed-pricing.ts")
 
-  assert.match(checkout, /const installmentsCopy = INSTALLMENTS_COPY/)
-  // Una opción por cuota confirmada: "N cuotas sin interés".
-  assert.match(checkout, /title=\{`\$\{plan\.count\} \$\{installmentsCopy\}`\}/)
-  // Resumen con la cuota ELEGIDA: "Tarjeta de crédito: N cuotas ... de $X".
-  assert.match(
-    checkout,
-    /`Tarjeta de crédito: \$\{selectedInstallmentPlan\.count\} \$\{installmentsCopy\} de \$\{formatPrice\(selectedInstallmentPlan\.amount\)\}`/,
-  )
+  // Un solo copy de cuotas: "Hasta N cuotas sin interés" sale de INSTALLMENTS_COPY.
+  assert.match(financed, /headline: `Hasta \$\{maxCount\} \$\{INSTALLMENTS_COPY\}`/)
+  assert.match(checkout, /getCheckoutInstallmentsOptionCopy\(\s*offeredInstallmentPlans\.map\(\(plan\) => plan\.count\),\s*\)/)
+  assert.match(checkout, /`Tarjeta de crédito · \$\{selectedInstallmentsCopy\.headline\}`/)
   assert.doesNotMatch(checkout, /cuotas fijas/)
 
   // CFTEA: disclosure legal intacta (compacta, en el detalle de cuotas),
@@ -109,10 +100,10 @@ test("1 pago sigue usando el precio de contado -- ninguna cuota lo modifica", ()
   const checkout = readSource("../../app/checkout/page.tsx")
   const pricing = readSource("../../lib/pricing/checkout-pricing.ts")
 
-  // Cuotas sólo con una cuota elegida y confirmada sin interés; si no, 1 pago (contado).
+  // Cuotas sólo con alguna cuota confirmada sin interés (tier); si no, 1 pago (contado).
   assert.match(
     checkout,
-    /mercadoPagoMode === "financed" &&\s*selectedInstallmentCount != null &&\s*mercadoPagoPricingBeforeCredit\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)\s*\? "financed"\s*: "cash"/,
+    /mercadoPagoMode === "financed" &&\s*mercadoPagoPricingBeforeCredit\.offeredInstallmentCount != null\s*\? "financed"\s*: "cash"/,
   )
   // Contado: total = contado, preferencia en 1 pago, sin redondeo de cuotas.
   assert.match(pricing, /total: cashTotal,[\s\S]{0,200}roundingAdjustment: 0,\s*preferenceMaxInstallments: 1,/)

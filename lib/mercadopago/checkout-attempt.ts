@@ -40,7 +40,24 @@ export interface MercadoPagoCheckoutAttemptRow {
   mercadopago_init_point?: string | null
   mercadopago_preference_expires_at?: string | null
   mercadopago_preference_claimed_at?: string | null
+  /** Sesión de checkout cuya reserva del Paso 3 quedó comprometida con esta orden. */
+  mercadopago_reservation_session_id?: string | null
   installments_count?: number | null
+}
+
+/**
+ * Una orden sólo puede retomarse desde la MISMA sesión de checkout que
+ * comprometió su reserva: su plazo y su stock son los de esa reserva. Otra
+ * sesión ya tiene su propia reserva vigente; retomar la orden ajena dejaría
+ * esa reserva huérfana y juzgaría el pago con el vencimiento de una reserva
+ * que no es la suya (una reserva vieja vencida bloqueaba un checkout recién
+ * reservado con "Tu reserva venció").
+ */
+export function isMercadoPagoOrderFromReservationSession(
+  order: { mercadopago_reservation_session_id?: string | null },
+  reservationSessionId: string,
+) {
+  return order.mercadopago_reservation_session_id === reservationSessionId
 }
 
 /**
@@ -61,20 +78,24 @@ export type PendingCustomerCheckoutOrderAction =
 
 /**
  * Orden pendiente del mismo cliente+carrito (índice de
- * `customer_checkout_fingerprint`, que NO incluye precios): sólo se retoma
- * si su huella económica es idéntica a la actual (dos pestañas, reintento
- * sin cambios). Cualquier diferencia económica -> se reemplaza.
+ * `customer_checkout_fingerprint`, que NO incluye precios ni sesión): sólo
+ * se retoma si es de la misma sesión de checkout (misma reserva del Paso 3) y
+ * su huella económica es idéntica a la actual (reintento sin cambios).
+ * Cualquier diferencia económica, o una orden de otra sesión -> se reemplaza.
  */
 export function getPendingCustomerCheckoutOrderAction(
   order: {
     payment_method_id?: string | null
+    mercadopago_reservation_session_id?: string | null
     pricing_snapshot?: { economicFingerprint?: string | null } | null
   },
   currentEconomicFingerprint: string,
+  currentReservationSessionId: string,
 ): PendingCustomerCheckoutOrderAction {
   if (order.payment_method_id !== "mercadopago") return "other_payment_method"
 
-  return isEconomicallyEquivalentAttempt(order, currentEconomicFingerprint)
+  return isMercadoPagoOrderFromReservationSession(order, currentReservationSessionId) &&
+    isEconomicallyEquivalentAttempt(order, currentEconomicFingerprint)
     ? "resume_equivalent"
     : "supersede_stale"
 }

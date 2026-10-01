@@ -1,9 +1,12 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import { validateInterestFreePolicy } from "@/lib/mercadopago/interest-free-policy"
 import {
   getMercadoPagoCostsOverview,
+  getMercadoPagoInterestFreeReference,
   getSiteSettings,
   invalidateSiteSettingsCache,
   normalizeSiteSettingsPatch,
+  normalizeStoredInstallmentsFinancingSettings,
 } from "@/lib/site-settings"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
@@ -32,6 +35,16 @@ export async function PATCH(request: Request) {
     changes = normalizeSiteSettingsPatch(await request.json())
   } catch {
     return Response.json({ error: "La configuración no es válida." }, { status: 400 })
+  }
+  // BEYONIX sólo puede ser MÁS restrictivo que Mercado Pago: un mínimo propio
+  // por debajo de la referencia observada se rechaza server-side.
+  const financing = changes.find(({ field }) => field === "installmentsFinancing")
+  if (financing) {
+    const policyError = validateInterestFreePolicy(
+      normalizeStoredInstallmentsFinancingSettings(financing.value).interestFreePolicy,
+      await getMercadoPagoInterestFreeReference(),
+    )
+    if (policyError) return Response.json({ error: policyError }, { status: 400 })
   }
   const before = await getSiteSettings({ fresh: true })
   const updatedAt = new Date().toISOString()

@@ -2,7 +2,6 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { calculateCartTotals } from "./cart-totals.ts"
-import { getCartInstallmentEligibility } from "../products/installments.ts"
 
 // CASO H (informe de precio único): carrito multiproducto, cada producto con
 // su propio precio público y su propio tope de cuotas habilitado.
@@ -31,31 +30,14 @@ test("CASO H: calculateCartTotals nunca recibe ni usa la modalidad de cuotas -- 
   }
 })
 
-test("CASO H: disponibilidad de cuotas del carrito -- intersección entre productos con distinto tope, el subtotal no depende de cuál quede habilitada", () => {
-  // Producto A: $6.000, hasta 6 cuotas. Producto B: $10.000, hasta 3 cuotas.
-  const productoA = {
-    id: 1,
-    precio: 6_000,
-    cuotas_2_habilitadas: true,
-    cuotas_3_habilitadas: true,
-    cuotas_6_habilitadas: true,
-  }
-  const productoB = {
-    id: 2,
-    precio: 10_000,
-    cuotas_2_habilitadas: true,
-    cuotas_3_habilitadas: true,
-    cuotas_6_habilitadas: false,
-  }
-
-  // El carrito sólo ofrece 2 y 3 (6 queda afuera porque B no lo permite).
-  assert.deepEqual(getCartInstallmentEligibility([productoA, productoB]), [2, 3])
-
+test("la financiación no depende de cada producto: el subtotal del carrito es la suma de precios por cantidad", () => {
+  const productoA = { id: 1, precio: 6_000 }
+  const productoB = { id: 2, precio: 10_000 }
   const totals = calculateCartTotals([
-    { product: productoA, quantity: 1 },
+    { product: productoA, quantity: 2 },
     { product: productoB, quantity: 1 },
   ])
-  // El subtotal ($16.000) es el mismo sin importar cuál de las dos
-  // modalidades ofrecidas termine eligiendo el cliente.
-  assert.equal(totals.productsTotal, 16_000)
+  // Las cuotas se deciden sobre el TOTAL a cobrar (Admin → Financiación),
+  // nunca con topes por producto.
+  assert.equal(totals.productsTotal, 22_000)
 })

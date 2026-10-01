@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import {
   BadgePercent,
   Check,
-  CheckCircle2,
   Package,
   RotateCcw,
   Search,
@@ -32,7 +31,6 @@ type BulkActionKind =
   | "discount_percent"
   | "price_decrease_percent"
   | "price_increase_percent"
-  | "installments"
   | "clear_offer"
 
 type TargetItem = {
@@ -65,14 +63,9 @@ const ACTION_OPTIONS: Array<{
     help: "Aumenta precios en porcentaje y limpia descuentos previos.",
   },
   {
-    value: "installments",
-    label: "Cuotas",
-    help: "Activa 3 o 6 cuotas en los productos alcanzados.",
-  },
-  {
     value: "clear_offer",
     label: "Quitar oferta",
-    help: "Limpia descuentos, precio anterior y cuotas especiales.",
+    help: "Limpia descuentos y precio anterior.",
   },
 ]
 
@@ -94,7 +87,6 @@ export function AdminAccionesMasivas() {
   const [scope, setScope] = useState<BulkScope>("product")
   const [actionKind, setActionKind] = useState<BulkActionKind>("discount_percent")
   const [value, setValue] = useState("10")
-  const [installments, setInstallments] = useState("3")
   const [categories, setCategories] = useState<CategoryOption[]>([])
   const [products, setProducts] = useState<ProductOption[]>([])
   const [productSearch, setProductSearch] = useState("")
@@ -198,7 +190,6 @@ export function AdminAccionesMasivas() {
           target_items: targetItems,
           action_kind: actionKind,
           value: Number(value),
-          installments: Number(installments),
         }),
       })
       const data = (await response.json()) as {
@@ -225,7 +216,7 @@ export function AdminAccionesMasivas() {
       <AdminPageHeader
         eyebrow="Comercial"
         title="Editor masivo"
-        description="Aplicá descuentos, aumentos, bajas de precio o cuotas a muchos productos sin editarlos uno por uno."
+        description="Aplicá descuentos, aumentos o bajas de precio a muchos productos sin editarlos uno por uno. Las cuotas sin interés son globales (Admin → Financiación)."
       />
 
       {(feedback || error) && (
@@ -273,16 +264,6 @@ export function AdminAccionesMasivas() {
                   value={value}
                   onChange={setValue}
                 />
-              </AdminFormField>
-            )}
-
-            {actionKind === "installments" && (
-              <AdminFormField label="Cuotas">
-                <AdminSelect title="Cuotas" value={installments} onChange={setInstallments}>
-                  <option value="2">2 cuotas</option>
-                  <option value="3">3 cuotas</option>
-                  <option value="6">6 cuotas</option>
-                </AdminSelect>
               </AdminFormField>
             )}
 
@@ -337,8 +318,6 @@ export function AdminAccionesMasivas() {
                     <TrendingUp className="size-3.5" />
                   ) : actionKind === "price_decrease_percent" ? (
                     <TrendingDown className="size-3.5" />
-                  ) : actionKind === "installments" ? (
-                    <CheckCircle2 className="size-3.5" />
                   ) : actionKind === "clear_offer" ? (
                     <RotateCcw className="size-3.5" />
                   ) : (
