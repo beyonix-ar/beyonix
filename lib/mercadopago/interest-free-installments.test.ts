@@ -74,7 +74,7 @@ function fakeFetch(body: unknown, status = 200) {
   return { fetch, calls }
 }
 
-test("consulta a Mercado Pago del lado servidor (Visa y Mastercard) y cachea 10 minutos por monto", async () => {
+test("consulta a Mercado Pago del lado servidor (Visa y Mastercard) y cachea poco tiempo por monto", async () => {
   clearInterestFreeInstallmentsCache()
   let now = 1_000_000
   const { fetch, calls } = fakeFetch(HIGH_AMOUNT)
@@ -101,7 +101,7 @@ test("fallo de Mercado Pago -> 'unavailable' (nunca 'sin interés'); el error se
   let now = 5_000_000
   const failing = fakeFetch({ message: "error" }, 500)
   const dependencies = { fetch: failing.fetch, accessToken: "TEST-token", now: () => now }
-  assert.deepEqual(await getInterestFreeInstallments(40_000, dependencies), { status: "unavailable" })
+  assert.deepEqual(await getInterestFreeInstallments(40_000, dependencies), { status: "unavailable", reason: "http_error" })
   const callsAfterError = failing.calls.length
   await getInterestFreeInstallments(40_000, dependencies)
   assert.equal(failing.calls.length, callsAfterError, "no martilla a Mercado Pago")
@@ -111,10 +111,22 @@ test("fallo de Mercado Pago -> 'unavailable' (nunca 'sin interés'); el error se
 
   clearInterestFreeInstallmentsCache()
   const timeout = async () => { throw new DOMException("timeout", "TimeoutError") }
-  assert.deepEqual(await getInterestFreeInstallments(40_000, { fetch: timeout, accessToken: "TEST-token" }), { status: "unavailable" })
+  assert.deepEqual(await getInterestFreeInstallments(40_000, { fetch: timeout, accessToken: "TEST-token" }), { status: "unavailable", reason: "timeout" })
   clearInterestFreeInstallmentsCache()
-  assert.deepEqual(await getInterestFreeInstallments(40_000, { fetch: fakeFetch(MID_AMOUNT).fetch, accessToken: "" }), { status: "unavailable" }, "sin token no consulta")
-  assert.deepEqual(await getInterestFreeInstallments(-5, { fetch: fakeFetch(MID_AMOUNT).fetch, accessToken: "TEST-token" }), { status: "unavailable" })
+  assert.deepEqual(await getInterestFreeInstallments(40_000, { fetch: fakeFetch(MID_AMOUNT).fetch, accessToken: "" }), { status: "unavailable", reason: "not_configured" }, "sin token no consulta")
+  assert.deepEqual(await getInterestFreeInstallments(-5, { fetch: fakeFetch(MID_AMOUNT).fetch, accessToken: "TEST-token" }), { status: "unavailable", reason: "invalid_amount" })
+})
+
+test("'Comprobar ahora' / preferencia (fresh) ignoran la caché aunque esté vigente", async () => {
+  clearInterestFreeInstallmentsCache()
+  const { fetch, calls } = fakeFetch(HIGH_AMOUNT)
+  const dependencies = { fetch, accessToken: "TEST-token" }
+  await getInterestFreeInstallments(70_000, dependencies)
+  assert.equal(calls.length, 2)
+  await getInterestFreeInstallments(70_000, dependencies)
+  assert.equal(calls.length, 2, "sin fresh: desde caché")
+  await getInterestFreeInstallments(70_000, { ...dependencies, fresh: true })
+  assert.equal(calls.length, 4, "fresh: consulta nueva a Mercado Pago")
 })
 
 test("consultas simultáneas del mismo monto comparten un solo pedido", async () => {

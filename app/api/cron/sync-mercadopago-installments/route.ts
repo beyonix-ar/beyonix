@@ -1,29 +1,21 @@
 import { NextResponse } from "next/server"
 
+import { isCronRequestAuthorized } from "@/lib/auth/cron-auth"
 import { syncMercadoPagoInterestFreeReference } from "@/lib/mercadopago/interest-free-sync"
 import { getSiteSettings } from "@/lib/site-settings"
 import { createAdminClient } from "@/lib/supabase/admin"
 
-// Consultas secuenciales a Mercado Pago (escalera de montos + búsqueda binaria por cuota).
-export const maxDuration = 60
-
 /**
  * Sincronización periódica de las cuotas sin interés que confirma Mercado
- * Pago (ver vercel.json). Con cuotas sin interés desactivadas en Admin →
+ * Pago. En producción (VPS + PM2) la dispara el timer de systemd
+ * `deploy/systemd/beyonix-sync-mercadopago-installments.timer` por loopback;
+ * no hay cron de Vercel. Con cuotas sin interés desactivadas en Admin →
  * Financiación no consulta nada: no hay promoción que comunicar.
  */
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET
-  const authorization = request.headers.get("authorization")
-
-  if (!cronSecret) {
-    return NextResponse.json(
-      { error: "La tarea programada no está configurada." },
-      { status: 503 },
-    )
-  }
-
-  if (authorization !== `Bearer ${cronSecret}`) {
+  // Falla cerrado: sin CRON_SECRET configurado nadie puede gastar la cuota
+  // de consultas a Mercado Pago desde afuera.
+  if (!isCronRequestAuthorized(request.headers.get("authorization"), process.env.CRON_SECRET)) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 })
   }
 

@@ -97,9 +97,9 @@ export default function SharedProductCard({
     defaultVariant.price,
     defaultVariant.originalPrice
   )
-  // Regla GLOBAL de la tienda (no una propiedad del producto): lo que
-  // Mercado Pago confirma hoy, con el rango que alcanza este precio.
-  const installmentLabel = getInterestFreeMessage(interestFreeOffer, defaultVariant.price)?.text ?? null
+  // Regla GLOBAL de compra (no una propiedad del producto): el mismo texto
+  // en toda la tienda, sin importar el precio de este producto.
+  const installmentLabel = getInterestFreeMessage(interestFreeOffer)?.text ?? null
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     defaultVariant.price,
     pricing.nationalTaxesIncidencePercent,

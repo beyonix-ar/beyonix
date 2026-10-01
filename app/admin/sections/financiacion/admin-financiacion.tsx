@@ -47,7 +47,8 @@ const SAVED_MESSAGE = "Guardado. Los precios y el checkout ya usan estos valores
 
 /**
  * Admin → Financiación: centro de control de costos de Mercado Pago, cuotas
- * sin interés (ON/OFF y mínimos) y aprendizaje automático. Lee y guarda por
+ * sin interés (ON/OFF; lo que se ofrece lo decide Mercado Pago) y
+ * aprendizaje automático. Lee y guarda por
  * la misma API de configuración (`installmentsFinancing`), sin duplicar lógica.
  */
 export function AdminFinanciacion() {

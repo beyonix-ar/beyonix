@@ -64,7 +64,8 @@ test("PDP se sirve a través de product-details-panel.tsx en la página de produ
 test("tarjeta de catálogo (shared-product-card) y hero usan el texto global, nunca una oferta del producto", () => {
   const sharedCard = readSource("./shared/shared-product-card.tsx")
   const hero = readSource("../hero-section.tsx")
-  assert.match(sharedCard, /getInterestFreeMessage\(interestFreeOffer, defaultVariant\.price\)/)
+  // Mismo texto global para todos los productos: nunca depende de su precio.
+  assert.match(sharedCard, /getInterestFreeMessage\(interestFreeOffer\)/)
   assert.match(hero, /getInterestFreeMessage\(interestFreeOffer\)/)
   for (const source of [sharedCard, hero]) {
     assert.doesNotMatch(source, /getProductInterestFreeOffer\(|getFinancedPrice\(|maxInstallmentAmount|featuredInstallmentAmount/)

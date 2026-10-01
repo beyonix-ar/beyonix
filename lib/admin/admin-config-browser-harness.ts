@@ -73,11 +73,12 @@ export function costsOverview(
     mode,
     manual: MANUAL,
     observed,
-    interestFreePolicy: { enabled: options.enabled ?? true, minimumAmountByCount: { 3: null, 6: null } },
+    interestFreePolicy: { enabled: options.enabled ?? true },
     interestFreeStatus: {
       reference: options.reference ?? null,
       lastAttemptAt: options.syncError ? "2026-10-01T13:00:00.000Z" : null,
       lastError: options.syncError ?? null,
+      lastFailure: options.syncError ? { at: "2026-10-01T13:00:00.000Z", message: options.syncError } : null,
     },
     interestFreeOffer: options.offer ?? null,
     effective: {

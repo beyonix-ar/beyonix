@@ -12,7 +12,6 @@ import {
   normalizeInterestFreePolicy,
   normalizeMercadoPagoInterestFreeStatus,
   type InterestFreePolicy,
-  type MercadoPagoInterestFreeReference,
   type MercadoPagoInterestFreeStatus,
 } from "./mercadopago/interest-free-policy.ts"
 import {
@@ -36,12 +35,12 @@ export interface SiteSettings {
   customerCreditPayments: CustomerCreditPaymentSettings
   stock: StockSettings
   installmentsFinancing: InstallmentsFinancingSettings
-  /** Cuotas sin interés ON/OFF y mínimos propios (sobre lo que confirma Mercado Pago). */
+  /** Cuotas sin interés ON/OFF (lo que se ofrece lo decide Mercado Pago). */
   interestFreePolicy: InterestFreePolicy
   /**
    * Comunicación pública vigente ("Hasta N cuotas sin interés a partir de
-   * $X"), derivada de la última sincronización EXITOSA con Mercado Pago y de
-   * la política. `null` = no se comunica ninguna promoción.
+   * $X"), derivada de la última sincronización EXITOSA con Mercado Pago.
+   * `null` = no se comunica ninguna promoción.
    */
   interestFreeOffer: PublicInterestFreeOffer | null
   andreaniCommercial: AndreaniCommercialSettings
@@ -553,11 +552,6 @@ async function loadMercadoPagoInterestFreeStatus(
 /** Estado de sincronización guardado (para conservar la última referencia ante un fallo). */
 export function getMercadoPagoInterestFreeStatus() {
   return loadMercadoPagoInterestFreeStatus(createAdminClient())
-}
-
-/** Última referencia observada de Mercado Pago (para validar los mínimos propios). */
-export async function getMercadoPagoInterestFreeReference(): Promise<MercadoPagoInterestFreeReference | null> {
-  return (await loadMercadoPagoInterestFreeStatus(createAdminClient())).reference
 }
 
 /** Estado completo de costos de Mercado Pago para Admin (lectura fresca). */

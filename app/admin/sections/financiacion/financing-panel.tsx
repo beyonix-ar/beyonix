@@ -8,6 +8,7 @@ import {
   Hand,
   History,
   ListChecks,
+  Megaphone,
   RefreshCw,
   ToggleLeft,
   ToggleRight,
@@ -30,8 +31,7 @@ import {
 } from "@/lib/mercadopago/observed-costs"
 import {
   DEFAULT_INTEREST_FREE_POLICY,
-  validateInterestFreePolicy,
-  type InterestFreePolicy,
+  getConfirmedInterestFreeMax,
 } from "@/lib/mercadopago/interest-free-policy"
 import { REFERENCE_PROBE_MAX_AMOUNT } from "@/lib/mercadopago/interest-free-reference"
 import { MAX_INTEREST_FREE_INSTALLMENTS } from "@/lib/products/installments"
@@ -49,9 +49,7 @@ import {
   formatARS,
   formatDateTime,
   formatPercent,
-  parseAmount,
   parsePercentage,
-  sanitizeAmountInput,
   sanitizePercentInput,
   withInputSymbol,
   type ConfigFeedback,
@@ -85,7 +83,6 @@ interface Draft {
   iva: string
   surcharge: Record<InstallmentCount, string>
   interestFreeEnabled: boolean
-  minimum: Record<3 | 6, string>
 }
 
 function toDraft(overview: MercadoPagoCostsOverview | null): Draft {
@@ -101,18 +98,6 @@ function toDraft(overview: MercadoPagoCostsOverview | null): Draft {
       6: String(manual.surchargePercentByCount[6]),
     },
     interestFreeEnabled: policy.enabled,
-    minimum: {
-      3: policy.minimumAmountByCount[3] === null ? "" : String(policy.minimumAmountByCount[3]),
-      6: policy.minimumAmountByCount[6] === null ? "" : String(policy.minimumAmountByCount[6]),
-    },
-  }
-}
-
-function toPolicy(draft: Draft): InterestFreePolicy {
-  const minimum = (value: string) => (value.trim() === "" ? null : parseAmount(value) || null)
-  return {
-    enabled: draft.interestFreeEnabled,
-    minimumAmountByCount: { 3: minimum(draft.minimum[3]), 6: minimum(draft.minimum[6]) },
   }
 }
 
@@ -126,7 +111,7 @@ function toStored(draft: Draft): StoredInstallmentsFinancingSettings {
       3: parsePercentage(draft.surcharge[3]),
       6: parsePercentage(draft.surcharge[6]),
     },
-    interestFreePolicy: toPolicy(draft),
+    interestFreePolicy: { enabled: draft.interestFreeEnabled },
   }
 }
 
@@ -136,9 +121,7 @@ function sameStored(a: StoredInstallmentsFinancingSettings, b: StoredInstallment
     a.baseProcessingPercent === b.baseProcessingPercent &&
     a.ivaPercent === b.ivaPercent &&
     INSTALLMENT_COUNTS.every((count) => a.surchargePercentByCount[count] === b.surchargePercentByCount[count]) &&
-    a.interestFreePolicy.enabled === b.interestFreePolicy.enabled &&
-    a.interestFreePolicy.minimumAmountByCount[3] === b.interestFreePolicy.minimumAmountByCount[3] &&
-    a.interestFreePolicy.minimumAmountByCount[6] === b.interestFreePolicy.minimumAmountByCount[6]
+    a.interestFreePolicy.enabled === b.interestFreePolicy.enabled
   )
 }
 
@@ -227,6 +210,7 @@ const COST_GRID =
 function CostRow({
   label,
   hint,
+  availability,
   observation,
   observationUnavailableText,
   ivaPercent,
@@ -241,6 +225,8 @@ function CostRow({
 }: {
   label: string
   hint: string
+  /** Disponibilidad actual en Mercado Pago (las cuotas no disponibles conservan su histórico de costos). */
+  availability?: ReactNode
   observation: MercadoPagoCostObservation | null
   observationUnavailableText: string
   ivaPercent: number
@@ -263,7 +249,10 @@ function CostRow({
       className={cn("admin-config-cost-row grid grid-cols-2 items-center gap-x-3 gap-y-2 px-3 py-2.5", COST_GRID)}
     >
       <div className="col-span-2 min-w-0 md:col-span-1">
-        <p className="text-sm font-black text-white">{label}</p>
+        <p className="flex flex-wrap items-center gap-1.5 text-sm font-black text-white">
+          {label}
+          {availability}
+        </p>
         <p className="text-12px leading-4 text-white/58">{hint}</p>
       </div>
 
@@ -367,11 +356,17 @@ function brandsText(brands: string[] | undefined) {
   return brands?.length ? brands.map((brand) => BRAND_LABELS[brand] ?? brand).join(" · ") : null
 }
 
-function referenceText(amount: number | null, checked: boolean) {
-  if (!checked) return "Sin comprobar"
-  return amount === null
-    ? `Sin interés no confirmado (probado hasta ${formatARS(REFERENCE_PROBE_MAX_AMOUNT)})`
-    : `Desde aprox. ${formatARS(amount)}`
+function AvailabilityChip({ minimum, checked }: { minimum: number | null; checked: boolean }) {
+  if (!checked) return null
+  return (
+    <span
+      className="admin-config-chip text-10px font-black uppercase tracking-widest"
+      data-tone={minimum === null ? "neutral" : "success"}
+      data-availability={minimum === null ? "unavailable" : "available"}
+    >
+      {minimum === null ? "No disponible hoy" : `Desde aprox. ${formatARS(minimum)}`}
+    </span>
+  )
 }
 
 interface FinancingPanelProps {
@@ -400,46 +395,35 @@ export function FinancingPanel({
   const syncStatus = overview?.interestFreeStatus ?? null
   const reference = syncStatus?.reference ?? null
   const syncFailed = Boolean(syncStatus?.lastError)
-  // Máximo sin interés que hoy confirma Mercado Pago (BEYONIX nunca pasa de 6).
-  const confirmedMax = reference
-    ? reference.minimumAmountByCount[6] !== null
-      ? { count: 6, minimum: reference.minimumAmountByCount[6], brands: reference.brandsByCount[6] }
-      : reference.minimumAmountByCount[3] !== null
-        ? { count: 3, minimum: reference.minimumAmountByCount[3], brands: reference.brandsByCount[3] }
-        : reference.minimumAmountForTwo !== null
-          ? { count: 2, minimum: reference.minimumAmountForTwo, brands: reference.brandsByCount[2] }
-          : null
-    : null
+  // Máximo sin interés que confirma Mercado Pago (BEYONIX nunca pasa de 6).
+  const confirmedMax = getConfirmedInterestFreeMax(reference)
   const publicMessage = getInterestFreeMessage(overview?.interestFreeOffer)
   const resolved = resolveInstallmentsFinancing(stored, draft.mode, observed)
   const effective: InstallmentsFinancingConfig = resolved.effective
   const inputsDisabled = disabled || saving
-  const policyError = validateInterestFreePolicy(stored.interestFreePolicy, reference, formatARS)
   const manual = draft.mode === "manual"
   const manualLabel = manual ? "Manual" : "Respaldo manual"
 
   const setSurcharge = (count: InstallmentCount, value: string) =>
     setDraft((current) => ({ ...current, surcharge: { ...current.surcharge, [count]: value } }))
-  const setMinimum = (count: 3 | 6, value: string) =>
-    setDraft((current) => ({ ...current, minimum: { ...current.minimum, [count]: value } }))
 
-  const mercadoPagoStatus: { tone: ConfigTone; value: string; detail: string } = syncFailed
-    ? {
-        tone: "danger",
-        value: "No se pudo verificar",
-        detail: syncStatus?.lastAttemptAt ? `Falló ${formatDateTime(syncStatus.lastAttemptAt)}` : "Falló la última consulta",
-      }
-    : reference
-      ? { tone: "success", value: "Sincronizado", detail: `Última comprobación ${formatDateTime(reference.checkedAt)}` }
-      : observed === null
-        ? { tone: "danger", value: "Sin lectura de pagos", detail: "Se usan los valores de respaldo." }
+  const mercadoPagoStatus: { tone: ConfigTone; value: string; detail: string } = !draft.interestFreeEnabled
+    ? { tone: "neutral", value: "En pausa", detail: "Cuotas desactivadas: no se consulta a Mercado Pago." }
+    : syncFailed
+      ? {
+          tone: "danger",
+          value: "⚠ No se pudo verificar",
+          detail: syncStatus?.lastAttemptAt ? `Falló ${formatDateTime(syncStatus.lastAttemptAt)}` : "Falló la última consulta",
+        }
+      : reference
+        ? { tone: "success", value: "Sincronizado", detail: `Última comprobación ${formatDateTime(reference.checkedAt)}` }
         : { tone: "info", value: "Sin comprobar", detail: "Usá “Comprobar ahora”" }
 
   const costRows: Array<{ key: "base" | InstallmentCount; label: string; hint: string }> = [
-    { key: "base", label: "1 pago", hint: "Comisión de tarjeta de crédito en 1 pago." },
-    { key: 3, label: "3 cuotas", hint: "Costo extra de hasta 3 cuotas sin interés." },
-    { key: 6, label: "6 cuotas", hint: "Costo extra de hasta 6 cuotas sin interés." },
-    { key: 2, label: "2 cuotas", hint: "Sólo si Mercado Pago confirma hasta 2." },
+    { key: "base", label: "1 pago", hint: "Crédito en 1 pago. 1 pago siempre se cobra a precio contado." },
+    { key: 2, label: "2 cuotas", hint: "Se usa cuando el máximo confirmado es 2." },
+    { key: 3, label: "3 cuotas", hint: "Se usa cuando el máximo confirmado es 3." },
+    { key: 6, label: "6 cuotas", hint: "Se usa cuando el máximo confirmado es 6." },
   ]
 
   return (
@@ -454,7 +438,7 @@ export function FinancingPanel({
         <ConfigSaveActions
           dirty={dirty}
           saving={saving}
-          disabled={disabled || policyError !== null}
+          disabled={disabled}
           onSave={() => onSave(stored)}
         />
       }
@@ -494,11 +478,11 @@ export function FinancingPanel({
             <ConfigTile
               label="Última actualización automática"
               value={observed?.lastAppliedAt ? formatDateTime(observed.lastAppliedAt) : "Sin datos todavía"}
-              tone={observed?.lastAppliedAt ? "info" : "neutral"}
-              detail={observed ? `${observed.analyzedPayments} pagos aprobados analizados` : undefined}
+              tone={observed ? (observed.lastAppliedAt ? "info" : "neutral") : "danger"}
+              detail={observed ? `${observed.analyzedPayments} pagos aprobados analizados` : "No se pudieron leer los pagos: se usa el respaldo."}
             />
             <ConfigTile
-              label="Mercado Pago"
+              label="Sincronización MP"
               value={mercadoPagoStatus.value}
               tone={mercadoPagoStatus.tone}
               detail={mercadoPagoStatus.detail}
@@ -540,10 +524,135 @@ export function FinancingPanel({
           ) : null}
         </Block>
 
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+          <Block
+            icon={<CreditCard className="size-3.5" />}
+            title="Promoción actual"
+            help="Lo que Mercado Pago confirma hoy para Checkout Pro. BEYONIX ofrece exactamente eso (máximo 6), desde el mismo monto."
+            data-financing-block="promocion"
+          >
+            <div
+              className="admin-config-status mb-2 space-y-0.5 px-3 py-2 text-12px leading-5 text-white/80"
+              data-tone={syncFailed ? "danger" : confirmedMax ? "success" : "info"}
+              data-mercadopago-sync
+              role="status"
+            >
+              {syncFailed ? (
+                <>
+                  <p className="font-black text-white">⚠ Mercado Pago no pudo verificarse</p>
+                  <p data-sync-error>
+                    {syncStatus?.lastError}
+                    {syncStatus?.lastAttemptAt ? ` Falló: ${formatDateTime(syncStatus.lastAttemptAt)}.` : ""}
+                  </p>
+                  <p data-last-success>
+                    {reference
+                      ? `Última consulta exitosa: ${formatDateTime(reference.checkedAt)}.`
+                      : "Sin consultas exitosas todavía."}
+                  </p>
+                  <p>Mientras tanto la tienda no comunica ninguna promoción y el checkout sólo ofrece 1 pago a precio contado si Mercado Pago no confirma en vivo.</p>
+                </>
+              ) : reference ? (
+                confirmedMax ? (
+                  <dl data-confirmed-max className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3">
+                    <dt className="text-white/62">Máximo confirmado:</dt>
+                    <dd className="font-black text-white">{confirmedMax.count} cuotas sin interés</dd>
+                    <dt className="text-white/62">Desde aprox.:</dt>
+                    <dd className="font-black text-white">{formatARS(confirmedMax.minimumAmount)}</dd>
+                    <dt className="text-white/62">Compatible:</dt>
+                    <dd className="font-black text-white">{brandsText(confirmedMax.brands) ?? "Sin dato de marcas"}</dd>
+                  </dl>
+                ) : (
+                  <p data-confirmed-max>
+                    Mercado Pago no confirma cuotas sin interés para ningún monto probado (hasta{" "}
+                    {formatARS(REFERENCE_PROBE_MAX_AMOUNT)}): sólo 1 pago a precio contado.
+                  </p>
+                )
+              ) : (
+                <p>Todavía no se comprobó Mercado Pago: no se comunica ninguna promoción.</p>
+              )}
+            </div>
+            <div className="admin-config-cost-table">
+              {INSTALLMENT_COUNTS.map((count) => {
+                const minimum = reference?.minimumAmountByCount[count] ?? null
+                return (
+                  <div
+                    key={count}
+                    data-availability-row={count}
+                    className="admin-config-cost-row flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
+                  >
+                    <span className="text-sm font-black text-white">{count} cuotas sin interés</span>
+                    <span className="flex flex-wrap items-center gap-1.5 text-12px text-white/70">
+                      {reference ? (
+                        <>
+                          <AvailabilityChip minimum={minimum} checked />
+                          {minimum !== null && brandsText(reference.brandsByCount[count]) ? (
+                            <span data-reference-brands>{brandsText(reference.brandsByCount[count])}</span>
+                          ) : null}
+                        </>
+                      ) : (
+                        "Sin comprobar"
+                      )}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0 text-12px leading-5 text-white/58">
+                {reference ? (
+                  <p data-reference-checked>Última comprobación exitosa: {formatDateTime(reference.checkedAt)}</p>
+                ) : null}
+                {syncStatus?.lastFailure && !syncFailed ? (
+                  <p data-last-failure>
+                    Último fallo: {formatDateTime(syncStatus.lastFailure.at)} · {syncStatus.lastFailure.message}
+                  </p>
+                ) : null}
+                <p>Mínimos estimados con consultas reales a Mercado Pago (no expone el umbral). Se sincroniza solo cada ~15 min.</p>
+              </div>
+              <AdminSecondaryButton
+                size="sm"
+                disabled={disabled || checkingReference}
+                onClick={onCheckReference}
+                data-check-reference
+              >
+                <RefreshCw className={cn("size-3.5", checkingReference && "animate-spin")} />
+                {checkingReference ? "Comprobando…" : "Comprobar ahora"}
+              </AdminSecondaryButton>
+            </div>
+          </Block>
+
+          <div className="space-y-4">
+            <Block icon={<Megaphone className="size-3.5" />} title="Comunicación pública" data-financing-block="comunicacion">
+              <div
+                className="admin-config-status px-3 py-2 text-12px leading-5 text-white/80"
+                data-tone={publicMessage ? "success" : "neutral"}
+                data-public-message
+              >
+                {publicMessage ? (
+                  <p className="text-sm font-black text-white">“{publicMessage.text}”</p>
+                ) : (
+                  <p>Ninguna: no hay promoción confirmada y vigente para comunicar.</p>
+                )}
+                <p className="mt-0.5 text-white/62">Mismo texto en Home, categorías, tarjetas, ficha, carrito y checkout.</p>
+              </div>
+            </Block>
+
+            <Block icon={<ListChecks className="size-3.5" />} title="Reglas activas" data-financing-block="reglas">
+              <ul className="admin-config-summary space-y-1 px-3.5 py-3 text-12px leading-5 text-white/78">
+                <li><strong className="text-white">1 pago</strong> → precio contado (crédito, débito o dinero en cuenta).</li>
+                <li><strong className="text-white">Cuotas</strong> → un solo precio financiado con el costo del máximo confirmado (2, 3 o 6).</li>
+                <li>Elegir menos cuotas no baja el precio.</li>
+                <li>Se ofrece exactamente lo que confirma Mercado Pago, desde el mismo monto. Máximo {MAX_INTEREST_FREE_INSTALLMENTS} (9, 12 o 18 nunca).</li>
+                <li>Cuenta el <strong className="text-white">monto final que cobra Mercado Pago</strong>: productos + envío pagado − descuentos − saldo.</li>
+              </ul>
+            </Block>
+          </div>
+        </div>
+
         <Block
           icon={<Wallet className="size-3.5" />}
-          title="Costos actuales"
-          help="Porcentajes sin IVA. Observado = lo que Mercado Pago cobró en el último pago real de esa modalidad."
+          title="Costos"
+          help="Porcentajes sin IVA. Observado = lo que Mercado Pago cobró en el último pago real y confiable de esa modalidad: una sola venta alcanza para actualizarlo."
           data-financing-block="costos"
         >
           <div className="admin-config-cost-table">
@@ -562,6 +671,11 @@ export function FinancingPanel({
                   key={row.key}
                   label={row.label}
                   hint={row.hint}
+                  availability={
+                    isBase ? null : (
+                      <AvailabilityChip minimum={reference?.minimumAmountByCount[count] ?? null} checked={reference !== null} />
+                    )
+                  }
                   observation={isBase ? observed?.base ?? null : observed?.surchargeByCount[count] ?? null}
                   observationUnavailableText={
                     isBase ? "Sin pagos con crédito en 1 pago todavía" : "Sin pagos con crédito en estas cuotas sin interés todavía"
@@ -612,135 +726,6 @@ export function FinancingPanel({
             </p>
           ) : null}
         </Block>
-
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-          <Block
-            icon={<CreditCard className="size-3.5" />}
-            title="Disponibilidad de cuotas"
-            help="Se evalúa siempre el total final del carrito. BEYONIX puede exigir más que Mercado Pago, nunca menos."
-            data-financing-block="disponibilidad"
-          >
-            <div
-              className="admin-config-status mb-2 space-y-0.5 px-3 py-2 text-12px leading-5 text-white/80"
-              data-tone={syncFailed ? "danger" : confirmedMax ? "success" : "info"}
-              data-mercadopago-sync
-              role="status"
-            >
-              {syncFailed ? (
-                <>
-                  <p className="font-black text-white">⚠️ No se pudo verificar Mercado Pago</p>
-                  <p data-sync-error>
-                    {syncStatus?.lastError}
-                    {syncStatus?.lastAttemptAt ? ` Falló: ${formatDateTime(syncStatus.lastAttemptAt)}.` : ""}
-                    {reference ? ` Última consulta exitosa: ${formatDateTime(reference.checkedAt)}.` : " Sin consultas exitosas todavía."}
-                  </p>
-                  <p>Mientras tanto la tienda no comunica ninguna promoción y el checkout sigue con 1 pago seguro.</p>
-                </>
-              ) : reference ? (
-                <>
-                  <p>
-                    <strong className="text-white">Mercado Pago · Sincronizado.</strong>{" "}
-                    {confirmedMax ? (
-                      <span data-confirmed-max>
-                        Máximo sin interés confirmado: hasta {confirmedMax.count} cuotas · desde aprox.{" "}
-                        {formatARS(confirmedMax.minimum ?? 0)}
-                        {brandsText(confirmedMax.brands) ? ` · Marcas compatibles: ${brandsText(confirmedMax.brands)}` : ""}
-                      </span>
-                    ) : (
-                      <span data-confirmed-max>Mercado Pago no confirma cuotas sin interés para ningún monto probado.</span>
-                    )}
-                  </p>
-                  {reference.minimumAmountByCount[3] === null && reference.minimumAmountByCount[6] === null ? (
-                    <p data-no-three-six>Actualmente Mercado Pago no confirma 3 o 6 cuotas sin interés para Checkout Pro.</p>
-                  ) : null}
-                </>
-              ) : (
-                <p>Todavía no se comprobó Mercado Pago: no se comunica ninguna promoción.</p>
-              )}
-              <p data-public-message>
-                <strong className="text-white">Comunicación pública:</strong>{" "}
-                {publicMessage ? `“${publicMessage.text}”` : "ninguna (no hay promoción confirmada para comunicar)."}
-              </p>
-            </div>
-            <div className="admin-config-cost-table">
-              {([3, 6] as const).map((count) => (
-                <div
-                  key={count}
-                  data-availability-row={count}
-                  className="admin-config-cost-row grid grid-cols-1 items-center gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.2fr)_minmax(0,1fr)]"
-                >
-                  <p className="text-sm font-black text-white">Hasta {count} cuotas</p>
-                  <div className="min-w-0">
-                    <p className="text-10px font-black uppercase tracking-widest text-white/50">Referencia Mercado Pago</p>
-                    <p className="text-sm font-bold text-white">
-                      {referenceText(reference?.minimumAmountByCount[count] ?? null, reference !== null)}
-                    </p>
-                    {reference?.minimumAmountByCount[count] != null && brandsText(reference.brandsByCount[count]) ? (
-                      <p className="text-12px text-white/62" data-reference-brands>
-                        {brandsText(reference.brandsByCount[count])}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-10px font-black uppercase tracking-widest text-white/50">Mínimo BEYONIX</p>
-                    <AdminTextInput
-                      title={`Mínimo BEYONIX para ofrecer ${count} cuotas`}
-                      ariaLabel={`Mínimo BEYONIX para ofrecer ${count} cuotas`}
-                      value={withInputSymbol(draft.minimum[count], "$")}
-                      placeholder="Sin límite propio"
-                      inputMode="numeric"
-                      className="text-sm font-bold"
-                      disabled={inputsDisabled}
-                      onChange={(value) => setMinimum(count, sanitizeAmountInput(value))}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-            {policyError ? (
-              <p role="alert" data-policy-error className="mt-1.5 text-12px font-semibold text-red-200">
-                {policyError}
-              </p>
-            ) : null}
-            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0 text-12px leading-5 text-white/58">
-                {reference ? (
-                  <>
-                    <p data-reference-checked>Última comprobación exitosa: {formatDateTime(reference.checkedAt)}</p>
-                    {reference.minimumAmountForTwo !== null ? (
-                      <p data-reference-two>
-                        2 cuotas sin interés: desde aprox. {formatARS(reference.minimumAmountForTwo)}
-                        {reference.minimumAmountByCount[3] === null ? " (hoy es lo máximo que confirma Mercado Pago)" : ""}
-                      </p>
-                    ) : null}
-                  </>
-                ) : null}
-                <p>Referencia estimada a partir de consultas reales a Mercado Pago. Mercado Pago no expone directamente el umbral.</p>
-              </div>
-              <AdminSecondaryButton
-                size="sm"
-                disabled={disabled || checkingReference}
-                onClick={onCheckReference}
-                data-check-reference
-              >
-                <RefreshCw className={cn("size-3.5", checkingReference && "animate-spin")} />
-                {checkingReference ? "Comprobando…" : "Comprobar ahora"}
-              </AdminSecondaryButton>
-            </div>
-          </Block>
-
-          <Block icon={<ListChecks className="size-3.5" />} title="Reglas activas" data-financing-block="reglas">
-            <ul className="admin-config-summary space-y-1 px-3.5 py-3 text-12px leading-5 text-white/78">
-              <li><strong className="text-white">1 pago</strong> → precio contado (también con crédito).</li>
-              <li><strong className="text-white">Hasta 3 cuotas</strong> → precio con el costo de 3.</li>
-              <li><strong className="text-white">Hasta 6 cuotas</strong> → precio con el costo de 6.</li>
-              <li>Elegir menos cuotas dentro del rango no baja el precio.</li>
-              <li>Máximo comercial de BEYONIX: {MAX_INTEREST_FREE_INSTALLMENTS} cuotas sin interés (9, 12 o 18 nunca).</li>
-              <li>Sólo se ofrece lo que Mercado Pago confirma; un mínimo propio nunca crea una promoción.</li>
-              <li>La compra se evalúa por su <strong className="text-white">total final</strong>.</li>
-            </ul>
-          </Block>
-        </div>
 
         <Block icon={<History className="size-3.5" />} title="Historial" data-financing-block="historial">
           {observed && observed.history.length > 0 ? (

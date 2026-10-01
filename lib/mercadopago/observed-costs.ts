@@ -78,6 +78,7 @@ export interface MercadoPagoObservationSourceRow {
     payment_type_id?: string | null
     payment_method_id?: string | null
     checkout_modality?: string | null
+    transaction_details?: { total_paid_amount?: number | null } | null
   } | null
 }
 
@@ -180,16 +181,34 @@ function getChargePercent(
   return fee > 0 && amount > 0 ? (fee / amount) * 100 : null
 }
 
+/** Centavos de tolerancia para comparar lo pagado por el comprador con el importe del pago. */
+const BUYER_INTEREST_TOLERANCE = 0.01
+
+/**
+ * El comprador pagó más que el importe del pago: Mercado Pago le cobró
+ * interés (cuotas CON interés). Ese pago no dice nada del costo que absorbe
+ * BEYONIX.
+ */
+function buyerPaidInterest(snapshot: Snapshot) {
+  const paid = Number(snapshot.transaction_details?.total_paid_amount)
+  const amount = Number(snapshot.transaction_amount)
+  return Number.isFinite(paid) && Number.isFinite(amount) && paid - amount > BUYER_INTEREST_TOLERANCE
+}
+
 /**
  * Modalidad de un pago aprobado (nunca se mezclan): 1 pago por medio; cuotas
  * SÓLO crédito en 2/3/6 con cargo de financiación (cuotas sin interés que
- * absorbió BEYONIX). Un pago en cuotas sin ese cargo lo financió el
- * comprador, y uno en cuotas de una compra "1 pago" no es posible (la
- * preferencia se crea con 1 cuota): ninguno de los dos dice nada del costo.
+ * absorbió BEYONIX). Un pago en cuotas sin ese cargo, o en el que el
+ * comprador pagó interés, lo financió el comprador, y uno en cuotas de una
+ * compra "1 pago" no es posible (la preferencia se crea con 1 cuota):
+ * ninguno dice nada del costo. Un pago en 1 pago dentro de una compra "en
+ * cuotas" (dinero en cuenta, o el cliente eligió 1 cuota) sí informa el
+ * costo real de SU modalidad.
  */
 function getModality(snapshot: Snapshot): MercadoPagoCostModality | null {
   const installments = Number(snapshot.installments ?? 1)
   const paymentType = snapshot.payment_type_id
+  if (!Number.isInteger(installments) || buyerPaidInterest(snapshot)) return null
   if (installments <= 1) {
     if (paymentType === "credit_card") return "credit_1"
     if (paymentType === "debit_card") return "debit_1"

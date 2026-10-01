@@ -159,8 +159,8 @@ test("modo guardado: sin modo o inválido = manual (compatibilidad con la config
   assert.equal(normalizeMercadoPagoCostsMode(undefined), "manual")
   assert.equal(normalizeMercadoPagoCostsMode("otro"), "manual")
   assert.equal(normalizeMercadoPagoCostsMode("automatic"), "automatic")
-  // Sin política guardada: cuotas sin interés activas y sin mínimos propios (comportamiento previo).
-  const DEFAULT_POLICY = { enabled: true, minimumAmountByCount: { 3: null, 6: null } }
+  // Sin política guardada: cuotas sin interés activas (sin mínimos propios: manda Mercado Pago).
+  const DEFAULT_POLICY = { enabled: true }
   assert.deepEqual(normalizeStoredInstallmentsFinancingSettings(MANUAL), { ...MANUAL, mode: "manual", interestFreePolicy: DEFAULT_POLICY })
 
   const [change] = normalizeSiteSettingsPatch({ installmentsFinancing: { ...MANUAL, mode: "automatic" } })
@@ -170,10 +170,8 @@ test("modo guardado: sin modo o inválido = manual (compatibilidad con la config
   const [withPolicy] = normalizeSiteSettingsPatch({
     installmentsFinancing: { ...MANUAL, mode: "automatic", interestFreePolicy: { enabled: false, minimumAmountByCount: { 3: "50000", 6: -1 } } },
   })
-  assert.deepEqual((withPolicy.value as { interestFreePolicy: unknown }).interestFreePolicy, {
-    enabled: false,
-    minimumAmountByCount: { 3: 50_000, 6: null },
-  })
+  // Un mínimo propio enviado (formato anterior) se descarta: sólo queda ON/OFF.
+  assert.deepEqual((withPolicy.value as { interestFreePolicy: unknown }).interestFreePolicy, { enabled: false })
 })
 
 function readSource(path: string) {

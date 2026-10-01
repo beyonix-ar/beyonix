@@ -17,33 +17,34 @@ import {
 } from "./admin-config-browser-harness.ts"
 
 // Admin → Financiación con el componente REAL (AdminFinanciacion, bundle
-// esbuild) en claro y oscuro, desktop y mobile: estado, costos 1/3/6 con su
-// fuente, Automático vs Manual (advertencia ámbar), cuotas sin interés ON/OFF,
-// mínimos BEYONIX contra la referencia de Mercado Pago, historial y AA.
+// esbuild) en claro y oscuro, desktop y mobile: estado, promoción actual
+// (lo que confirma Mercado Pago, sin mínimos propios), comunicación pública,
+// costos 1/2/3/6 con su fuente y disponibilidad, Automático vs Manual
+// (advertencia ámbar), cuotas sin interés ON/OFF, historial y AA.
 
+// Umbrales arbitrarios de prueba (no son reglas de negocio).
 const REFERENCE = {
   checkedAt: "2026-10-01T12:00:00.000Z",
-  minimumAmountByCount: { 3: 35_000, 6: 60_000 },
-  minimumAmountForTwo: 35_000,
+  minimumAmountByCount: { 2: 31_000, 3: 44_000, 6: 67_000 },
   brandsByCount: { 2: ["visa", "master"], 3: ["visa", "master"], 6: ["visa"] },
   maxProbedAmount: 2_000_000,
 }
 const OFFER = {
   checkedAt: REFERENCE.checkedAt,
   tiers: [
-    { count: 2, minimumAmount: 35_000, brands: ["visa", "master"] },
-    { count: 3, minimumAmount: 35_000, brands: ["visa", "master"] },
-    { count: 6, minimumAmount: 60_000, brands: ["visa"] },
+    { count: 2, minimumAmount: 31_000, brands: ["visa", "master"] },
+    { count: 3, minimumAmount: 44_000, brands: ["visa", "master"] },
+    { count: 6, minimumAmount: 67_000, brands: ["visa"] },
   ],
 }
 // Respuesta real de la cuenta hoy: sólo 2 cuotas sin interés.
 const TWO_ONLY_REFERENCE = {
   checkedAt: "2026-10-01T12:00:00.000Z",
-  minimumAmountByCount: { 3: null, 6: null },
-  minimumAmountForTwo: 35_000,
+  minimumAmountByCount: { 2: 31_000, 3: null, 6: null },
   brandsByCount: { 2: ["visa", "master"], 3: [], 6: [] },
   maxProbedAmount: 2_000_000,
 }
+const TWO_ONLY_OFFER = { checkedAt: REFERENCE.checkedAt, tiers: [OFFER.tiers[0]] }
 
 const entry = (costs: unknown) => `
 import { createElement } from "react"
@@ -58,7 +59,7 @@ window.fetch = async (input, init) => {
     window.__referenceChecks += 1
     costs = {
       ...costs,
-      interestFreeStatus: { reference: ${JSON.stringify(REFERENCE)}, lastAttemptAt: ${JSON.stringify(REFERENCE.checkedAt)}, lastError: null },
+      interestFreeStatus: { reference: ${JSON.stringify(REFERENCE)}, lastAttemptAt: ${JSON.stringify(REFERENCE.checkedAt)}, lastError: null, lastFailure: null },
       interestFreeOffer: ${JSON.stringify(OFFER)},
     }
     return Response.json({ mercadoPagoCosts: costs })
@@ -135,7 +136,7 @@ for (const theme of ["light", "dark"] as const) {
       const automatic = page.getByRole("radio", { name: /Automático/ })
       const manual = page.getByRole("radio", { name: /Manual/ })
       assert.equal(await automatic.getAttribute("aria-checked"), "true")
-      for (const block of ["estado", "costos", "disponibilidad", "reglas", "historial"]) {
+      for (const block of ["estado", "promocion", "comunicacion", "costos", "reglas", "historial"]) {
         assert.equal(await page.locator(`[data-financing-block='${block}']`).count(), 1, block)
       }
       // 4,25% con IVA = 3,51% sin IVA (1 pago); 24,2% con IVA = 20% sin IVA (6 cuotas).
@@ -172,7 +173,7 @@ for (const theme of ["light", "dark"] as const) {
           installmentsFinancing: {
             ...MANUAL,
             mode: "manual",
-            interestFreePolicy: { enabled: true, minimumAmountByCount: { 3: null, 6: null } },
+            interestFreePolicy: { enabled: true },
           },
         },
       ])
@@ -203,24 +204,27 @@ for (const theme of ["light", "dark"] as const) {
     }
   })
 
-  test(`${theme}: el mínimo BEYONIX no puede ser menor que la referencia de Mercado Pago`, async () => {
-    const page = await open(theme, costsOverview("automatic", OBSERVED, { reference: REFERENCE }))
+  test(`${theme}: promoción actual = lo que confirma Mercado Pago (sin mínimos propios), por cuota y con marcas`, async () => {
+    const page = await open(theme, costsOverview("automatic", OBSERVED, { reference: REFERENCE, offer: OFFER }))
     try {
+      // Ningún control de mínimos propios.
+      assert.equal(await page.getByLabel(/Mínimo BEYONIX/).count(), 0)
+      assert.equal(await page.getByText("Mínimo BEYONIX").count(), 0)
+      const max = page.locator("[data-confirmed-max]")
+      await max.getByText("6 cuotas sin interés", { exact: true }).waitFor()
+      await max.getByText("$ 67.000", { exact: true }).waitFor()
+      await max.getByText("Visa", { exact: true }).waitFor()
       const three = page.locator("[data-availability-row='3']")
-      await three.getByText("Desde aprox. $ 35.000").waitFor()
+      await three.getByText("Desde aprox. $ 44.000").waitFor()
       await three.getByText("Visa · Mastercard").waitFor()
+      await page.locator("[data-availability-row='2']").getByText("Desde aprox. $ 31.000").waitFor()
       await page.locator("[data-availability-row='6']").getByText("Visa", { exact: true }).waitFor()
-      await page.getByLabel("Mínimo BEYONIX para ofrecer 3 cuotas").fill("20000")
-      await page.locator("[data-policy-error]").getByText(/no puede ser menor que la referencia de Mercado Pago/).waitFor()
-      assert.equal(await page.getByRole("button", { name: /Guardar cambios/ }).isDisabled(), true)
-
-      await page.getByLabel("Mínimo BEYONIX para ofrecer 3 cuotas").fill("50000")
-      await page.getByLabel("Mínimo BEYONIX para ofrecer 6 cuotas").fill("80000")
-      assert.equal(await page.locator("[data-policy-error]").count(), 0)
-      await page.getByRole("button", { name: /Guardar cambios/ }).click()
-      await page.getByText(/Guardado\./).waitFor()
-      const [patch] = (await page.evaluate("window.__patches")) as Array<{ installmentsFinancing: { interestFreePolicy: unknown } }>
-      assert.deepEqual(patch.installmentsFinancing.interestFreePolicy, { enabled: true, minimumAmountByCount: { 3: 50_000, 6: 80_000 } })
+      await page.locator("[data-public-message]").getByText("“Hasta 6 cuotas sin interés a partir de $ 67.000 con Visa”").waitFor()
+      // Costos: 1 pago, 2, 3 y 6, cada cuota con su disponibilidad actual.
+      for (const label of ["1 pago", "2 cuotas", "3 cuotas", "6 cuotas"]) {
+        assert.equal(await page.locator(`[data-cost-row='${label}']`).count(), 1, label)
+      }
+      await page.locator("[data-cost-row='6 cuotas'] [data-availability='available']").getByText("Desde aprox. $ 67.000").waitFor()
     } finally {
       await page.close()
     }
@@ -230,29 +234,31 @@ for (const theme of ["light", "dark"] as const) {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
       assert.equal(await page.locator("[data-availability-row='6']").getByText("Sin comprobar").count(), 1)
-      await page.getByText("Referencia estimada a partir de consultas reales a Mercado Pago. Mercado Pago no expone directamente el umbral.").waitFor()
-      await page.locator("[data-public-message]").getByText("ninguna (no hay promoción confirmada para comunicar).", { exact: false }).waitFor()
+      await page.locator("[data-public-message]").getByText("Ninguna: no hay promoción confirmada y vigente para comunicar.").waitFor()
       await page.locator("[data-check-reference]").click()
-      await page.locator("[data-availability-row='6']").getByText("Desde aprox. $ 60.000").waitFor()
+      await page.locator("[data-availability-row='6']").getByText("Desde aprox. $ 67.000").waitFor()
       await page.locator("[data-reference-checked]").waitFor()
-      // Sincronizado: máximo confirmado con marcas y la comunicación pública vigente.
-      await page.locator("[data-confirmed-max]").getByText("Máximo sin interés confirmado: hasta 6 cuotas · desde aprox. $ 60.000 · Marcas compatibles: Visa", { exact: false }).waitFor()
-      await page.locator("[data-public-message]").getByText("Hasta 6 cuotas sin interés a partir de $ 60.000 con Visa", { exact: false }).waitFor()
+      await page.locator("[data-confirmed-max]").getByText("6 cuotas sin interés", { exact: true }).waitFor()
+      await page.locator("[data-public-message]").getByText("Hasta 6 cuotas sin interés a partir de $ 67.000 con Visa", { exact: false }).waitFor()
       assert.equal(await page.evaluate("window.__referenceChecks"), 1)
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: si Mercado Pago sólo confirma 2 cuotas, 3 y 6 no se dan por disponibles y se explica`, async () => {
-    const page = await open(theme, costsOverview("automatic", OBSERVED, { reference: TWO_ONLY_REFERENCE }))
+  test(`${theme}: si Mercado Pago sólo confirma 2 cuotas: hasta 2; 3 y 6 no disponibles pero conservan su histórico de costos`, async () => {
+    const page = await open(theme, costsOverview("automatic", OBSERVED, { reference: TWO_ONLY_REFERENCE, offer: TWO_ONLY_OFFER }))
     try {
+      await page.locator("[data-confirmed-max]").getByText("2 cuotas sin interés", { exact: true }).waitFor()
+      await page.locator("[data-confirmed-max]").getByText("Visa · Mastercard", { exact: true }).waitFor()
       for (const count of [3, 6]) {
-        await page.locator(`[data-availability-row='${count}']`).getByText("Sin interés no confirmado (probado hasta $ 2.000.000)").waitFor()
+        await page.locator(`[data-availability-row='${count}']`).getByText("No disponible hoy").waitFor()
       }
-      await page.locator("[data-reference-two]").getByText("2 cuotas sin interés: desde aprox. $ 35.000 (hoy es lo máximo que confirma Mercado Pago)").waitFor()
-      assert.equal(await page.locator("[data-reference-brands]").count(), 0)
-      await page.locator("[data-no-three-six]").getByText("Actualmente Mercado Pago no confirma 3 o 6 cuotas sin interés para Checkout Pro.").waitFor()
+      await page.locator("[data-public-message]").getByText("“Hasta 2 cuotas sin interés a partir de $ 31.000”").waitFor()
+      // 6 cuotas no está disponible hoy, pero su costo observado sigue a la vista (no se borra el histórico).
+      const six = page.locator("[data-cost-row='6 cuotas']")
+      await six.locator("[data-availability='unavailable']").getByText("No disponible hoy").waitFor()
+      await six.getByText("20%", { exact: true }).first().waitFor()
     } finally {
       await page.close()
     }
@@ -261,14 +267,15 @@ for (const theme of ["light", "dark"] as const) {
   test(`${theme}: si Mercado Pago falla se avisa con hora, motivo y última consulta exitosa; no se comunica promoción`, async () => {
     const page = await open(
       theme,
-      costsOverview("automatic", OBSERVED, { reference: REFERENCE, syncError: "Mercado Pago no respondió de forma confiable (error, demora o límite de consultas)." }),
+      costsOverview("automatic", OBSERVED, { reference: REFERENCE, syncError: "Mercado Pago no respondió a tiempo." }),
     )
     try {
       const sync = page.locator("[data-mercadopago-sync]")
-      await sync.getByText("⚠️ No se pudo verificar Mercado Pago").waitFor()
-      await sync.locator("[data-sync-error]").getByText("Mercado Pago no respondió de forma confiable", { exact: false }).waitFor()
-      await sync.locator("[data-sync-error]").getByText("Última consulta exitosa:", { exact: false }).waitFor()
-      await sync.locator("[data-public-message]").getByText("ninguna", { exact: false }).waitFor()
+      await sync.getByText("⚠ Mercado Pago no pudo verificarse").waitFor()
+      await sync.locator("[data-sync-error]").getByText("Mercado Pago no respondió a tiempo.", { exact: false }).waitFor()
+      await sync.locator("[data-sync-error]").getByText("Falló:", { exact: false }).waitFor()
+      await sync.locator("[data-last-success]").getByText("Última consulta exitosa:", { exact: false }).waitFor()
+      await page.locator("[data-public-message]").getByText("Ninguna", { exact: false }).waitFor()
       assert.equal(await sync.getAttribute("data-tone"), "danger")
     } finally {
       await page.close()

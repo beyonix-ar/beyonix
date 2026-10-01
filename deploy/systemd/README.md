@@ -148,3 +148,56 @@ distingue loopback de tráfico externo, así que sin el header sigue respondiend
 Esta tarea sólo dejó los archivos preparados y los comandos documentados. No se
 instaló ningún timer, no se conectó a la VPS, no se llamó al endpoint contra
 producción.
+
+---
+
+# Sincronización de cuotas sin interés de Mercado Pago (systemd)
+
+`/api/cron/sync-mercadopago-installments` consulta a Mercado Pago (sin caché) desde
+qué total confirma 2, 3 y 6 cuotas sin interés y guarda la referencia que usa la
+comunicación pública ("Hasta N cuotas sin interés a partir de $X") y Admin →
+Financiación. La comunicación pública se apaga sola si la última sincronización
+exitosa tiene más de 2 horas o si el último intento falló, así que **sin este timer
+la tienda deja de comunicar la promoción** ~2 h después del último "Comprobar ahora"
+manual. El checkout no depende de esto: consulta a Mercado Pago en vivo y la
+preferencia revalida fresco.
+
+Es el **único** scheduler de esta tarea: no hay cron de Vercel (producción no corre
+en Vercel; la entrada se quitó de `vercel.json`).
+
+Archivos (no instalados, no ejecutados):
+
+- `deploy/systemd/beyonix-sync-mercadopago-installments.service`
+- `deploy/systemd/beyonix-sync-mercadopago-installments.timer` (cada ~15 min,
+  `Persistent=true`)
+
+Reutiliza el **mismo** archivo de curl con el secreto
+(`/etc/beyonix/curl-verify-transfer-orders.conf`). Si todavía no existe, crearlo
+primero con el comando de la sección "Requisito previo en la VPS" de arriba.
+
+## Instalación (ejecutar en la VPS, desde `~/apps/beyonix`, después del deploy del código)
+
+```bash
+sudo cp deploy/systemd/beyonix-sync-mercadopago-installments.service /etc/systemd/system/
+sudo cp deploy/systemd/beyonix-sync-mercadopago-installments.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now beyonix-sync-mercadopago-installments.timer
+```
+
+## Verificación
+
+```bash
+# Primera corrida manual (no espera al timer)
+sudo systemctl start beyonix-sync-mercadopago-installments.service
+sudo systemctl status beyonix-sync-mercadopago-installments.service --no-pager
+journalctl -u beyonix-sync-mercadopago-installments.service -n 20 --no-pager
+
+# Próxima corrida programada
+systemctl list-timers | grep beyonix-sync-mercadopago-installments
+```
+
+Después, en Admin → Financiación el estado "Sincronización MP" debe mostrar la hora
+de esa corrida. Un servicio en `failed` con `curl: (22) ... 502` significa que
+Mercado Pago no respondió de forma confiable (Admin muestra el motivo resumido);
+`401` significa que el secreto del archivo de curl no coincide con `CRON_SECRET`
+de PM2.

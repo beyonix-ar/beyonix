@@ -9,11 +9,9 @@ import {
   type MercadoPagoObservationSourceRow,
 } from "./observed-costs.ts"
 import {
-  applyInterestFreePolicy,
   DEFAULT_INTEREST_FREE_POLICY,
+  getConfirmedInterestFreeMax,
   normalizeInterestFreePolicy,
-  validateInterestFreePolicy,
-  type InterestFreePolicy,
 } from "./interest-free-policy.ts"
 import { probeInterestFreeMinimum, probeMercadoPagoInterestFreeReference } from "./interest-free-reference.ts"
 import {
@@ -26,7 +24,7 @@ import type { InstallmentCount, InstallmentsFinancingConfig } from "../products/
 
 // Admin → Financiación: aprendizaje automático de costos reales de Mercado
 // Pago (una venta alcanza), Automático/Manual, cuotas sin interés ON/OFF y
-// mínimos propios evaluados sobre el TOTAL final.
+// referencia de Mercado Pago (sin mínimos propios).
 
 const NOW = new Date("2026-10-01T12:00:00.000Z")
 const MANUAL: InstallmentsFinancingConfig = {
@@ -260,62 +258,6 @@ test("1 pago es siempre precio contado (también con crédito); el financiado cu
   assert.equal(pricing.financed?.preferenceMaxInstallments, 6)
 })
 
-// ─── Política: ON/OFF, mínimos y total final ───
-
-const policy = (enabled: boolean, three: number | null, six: number | null): InterestFreePolicy => ({
-  enabled,
-  minimumAmountByCount: { 3: three, 6: six },
-})
-
-test("OFF desactiva las cuotas sin interés para cualquier total", () => {
-  assert.deepEqual(applyInterestFreePolicy([2, 3, 6], 500_000, policy(false, null, null)), [])
-  const route = readFileSync(new URL("../../app/api/mercadopago/installments/route.ts", import.meta.url), "utf8")
-  assert.match(route, /if \(!interestFreePolicy\.enabled\) return \[String\(amount\), \[\]\] as const/)
-  const preference = readFileSync(new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url), "utf8")
-  assert.match(preference, /mode === "financed" && interestFreePolicy\.enabled/)
-  assert.match(preference, /applyInterestFreePolicy\(result\.counts, amount, interestFreePolicy\)/)
-})
-
-test("el total final manda: $20.000 sin cuotas, $40.000 hasta 3, $95.000 hasta 6 (según lo que confirme Mercado Pago)", () => {
-  const mercadoPago = (amount: number): InstallmentCount[] => (amount >= 60_000 ? [2, 3, 6] : amount >= 35_000 ? [2, 3] : [])
-  const own = DEFAULT_INTEREST_FREE_POLICY
-  assert.deepEqual(applyInterestFreePolicy(mercadoPago(20_000), 20_000, own), [])
-  assert.deepEqual(applyInterestFreePolicy(mercadoPago(40_000), 40_000, own), [2, 3])
-  assert.deepEqual(applyInterestFreePolicy(mercadoPago(95_000), 95_000, own), [2, 3, 6])
-
-  // Mínimos BEYONIX más restrictivos: 3 desde $50.000 y 6 desde $80.000.
-  const strict = policy(true, 50_000, 80_000)
-  assert.deepEqual(applyInterestFreePolicy(mercadoPago(40_000), 40_000, strict), [])
-  assert.deepEqual(applyInterestFreePolicy(mercadoPago(70_000), 70_000, strict), [2, 3])
-  assert.deepEqual(applyInterestFreePolicy(mercadoPago(95_000), 95_000, strict), [2, 3, 6])
-  // Nunca agrega lo que Mercado Pago no confirmó.
-  assert.deepEqual(applyInterestFreePolicy([2, 3], 500_000, strict), [2, 3])
-})
-
-test("mínimo BEYONIX >= referencia de Mercado Pago (y 6 >= 3); sin referencia no se inventa", () => {
-  const reference = {
-    checkedAt: NOW.toISOString(),
-    minimumAmountByCount: { 3: 35_000, 6: 60_000 },
-    minimumAmountForTwo: 35_000,
-    brandsByCount: {},
-    maxProbedAmount: 2_000_000,
-  }
-  assert.equal(validateInterestFreePolicy(policy(true, 50_000, 80_000), reference), null)
-  assert.match(validateInterestFreePolicy(policy(true, 20_000, null), reference) ?? "", /3 cuotas .* no puede ser menor que la referencia de Mercado Pago/)
-  assert.match(validateInterestFreePolicy(policy(true, null, 59_000), reference) ?? "", /6 cuotas/)
-  assert.match(validateInterestFreePolicy(policy(true, 90_000, 80_000), reference) ?? "", /6 cuotas no puede ser menor que el mínimo para 3/)
-  assert.equal(validateInterestFreePolicy(policy(true, 20_000, null), null), null)
-  // El servidor repite la validación al guardar.
-  const settingsRoute = readFileSync(new URL("../../app/api/admin/settings/route.ts", import.meta.url), "utf8")
-  assert.match(settingsRoute, /validateInterestFreePolicy\(/)
-  assert.match(settingsRoute, /await getMercadoPagoInterestFreeReference\(\)/)
-})
-
-test("política guardada: valores inválidos se normalizan sin romper el comportamiento actual", () => {
-  assert.deepEqual(normalizeInterestFreePolicy(undefined), DEFAULT_INTEREST_FREE_POLICY)
-  assert.deepEqual(normalizeInterestFreePolicy({ enabled: "no", minimumAmountByCount: { 3: "abc", 6: 0 } }), DEFAULT_INTEREST_FREE_POLICY)
-})
-
 // ─── Referencia observada de Mercado Pago ───
 
 type ProbeLookupResult = { status: "confirmed"; counts: InstallmentCount[]; brandsByCount: Partial<Record<InstallmentCount, Array<"visa" | "master">>> }
@@ -331,32 +273,81 @@ function fakeMercadoPago(thresholds: Partial<Record<InstallmentCount, number>>) 
   return { lookup, lookups }
 }
 
-test("la referencia busca cada cuota por separado: 3 busca 3 y 6 busca 6 (sin hardcodear umbrales)", async () => {
+async function probe(thresholds: Partial<Record<InstallmentCount, number>>) {
+  const fake = fakeMercadoPago(thresholds)
+  const result = await probeMercadoPagoInterestFreeReference(fake.lookup, NOW)
+  assert.ok(result.ok)
+  return { reference: result.reference, lookups: fake.lookups }
+}
+
+test("la referencia busca 2, 3 y 6 por separado (sin hardcodear umbrales) y cada monto se consulta una vez", async () => {
   for (const thresholds of [
     { 2: 21_000, 3: 47_000, 6: 83_000 },
     { 2: 12_000, 3: 12_000, 6: 1_340_000 },
+    { 2: 38_000, 3: 61_000, 6: 97_000 },
   ]) {
-    const { lookup, lookups } = fakeMercadoPago(thresholds)
-    const reference = await probeMercadoPagoInterestFreeReference(lookup, NOW)
-    assert.deepEqual(reference?.minimumAmountByCount, { 3: thresholds[3], 6: thresholds[6] })
-    assert.equal(reference?.minimumAmountForTwo, thresholds[2])
-    assert.deepEqual(reference?.brandsByCount[6], ["visa", "master"])
-    assert.equal(reference?.checkedAt, NOW.toISOString())
-    assert.ok(new Set(lookups).size <= 60, `búsqueda acotada (${new Set(lookups).size} montos)`)
+    const { reference, lookups } = await probe(thresholds)
+    assert.deepEqual(reference.minimumAmountByCount, thresholds)
+    assert.deepEqual(reference.brandsByCount[6], ["visa", "master"])
+    assert.equal(reference.checkedAt, NOW.toISOString())
+    assert.equal(lookups.length, new Set(lookups).size, "una sola consulta por monto en la misma corrida")
+    assert.ok(lookups.length <= 60, `búsqueda acotada (${lookups.length} montos)`)
   }
 })
 
-test("2 no implica 3: si Mercado Pago sólo confirma 2 (caso real de la cuenta hoy), 3 y 6 quedan sin referencia", async () => {
-  const { lookup } = fakeMercadoPago({ 2: 35_000 })
-  const reference = await probeMercadoPagoInterestFreeReference(lookup, NOW)
-  assert.equal(reference?.minimumAmountForTwo, 35_000)
-  assert.deepEqual(reference?.minimumAmountByCount, { 3: null, 6: null })
-  // Y con 2 confirmada, 3 no se da por buena: la búsqueda de 3 no se detiene en 2.
-  assert.deepEqual(await probeInterestFreeMinimum(3, lookup), { status: "ok", minimum: null, brands: [] })
+test("hoy MP sólo 2 -> hasta 2; mañana activa 3 -> la próxima sincronización encuentra su mínimo; después 6 también", async () => {
+  // Hoy: sólo 2. Encontrar 2 no corta la búsqueda de 3/6, y 2 no implica 3.
+  const today = (await probe({ 2: 35_000 })).reference
+  assert.deepEqual(today.minimumAmountByCount, { 2: 35_000, 3: null, 6: null })
+  assert.deepEqual(await probeInterestFreeMinimum(3, fakeMercadoPago({ 2: 35_000 }).lookup), { status: "ok", minimum: null, brands: [] })
+  assert.deepEqual(getConfirmedInterestFreeMax(today), { count: 2, minimumAmount: 35_000, brands: ["visa", "master"] })
+
+  const tomorrow = (await probe({ 2: 35_000, 3: 58_000 })).reference
+  assert.deepEqual(getConfirmedInterestFreeMax(tomorrow), { count: 3, minimumAmount: 58_000, brands: ["visa", "master"] })
+
+  const later = (await probe({ 2: 35_000, 3: 58_000, 6: 91_000 })).reference
+  assert.deepEqual(getConfirmedInterestFreeMax(later), { count: 6, minimumAmount: 91_000, brands: ["visa", "master"] })
 })
 
-test("la referencia nunca se inventa: sin respuesta confiable de Mercado Pago no hay referencia", async () => {
-  assert.equal(await probeMercadoPagoInterestFreeReference(async () => ({ status: "unavailable" })), null)
+test("la referencia nunca se inventa: sin respuesta confiable de Mercado Pago no hay referencia y queda el motivo", async () => {
+  assert.deepEqual(
+    await probeMercadoPagoInterestFreeReference(async () => ({ status: "unavailable", reason: "timeout" })),
+    { ok: false, reason: "timeout" },
+  )
   const source = readFileSync(new URL("./interest-free-reference.ts", import.meta.url), "utf8")
   assert.doesNotMatch(source, /\b(35[._]?000|60[._]?000)\b/, "sin umbrales de negocio en el código")
+})
+
+test("cuotas OFF / política: sólo ON/OFF, los mínimos propios viejos se ignoran", () => {
+  assert.deepEqual(normalizeInterestFreePolicy(undefined), DEFAULT_INTEREST_FREE_POLICY)
+  assert.deepEqual(normalizeInterestFreePolicy({ enabled: "no", minimumAmountByCount: { 3: "abc", 6: 0 } }), DEFAULT_INTEREST_FREE_POLICY)
+  assert.deepEqual(normalizeInterestFreePolicy({ enabled: false, minimumAmountByCount: { 3: 50_000 } }), { enabled: false })
+})
+
+test("un pago donde el comprador pagó interés no enseña el costo de BEYONIX", () => {
+  const observed = deriveMercadoPagoObservedCosts(
+    [
+      credit(6, 22.62, "2026-09-20T10:00:00.000Z"),
+      // Cuotas CON interés: el comprador pagó más que el importe del pago.
+      credit(6, 30, "2026-09-25T10:00:00.000Z", { transaction_details: { total_paid_amount: 125_000 } }),
+    ],
+    NOW,
+  )
+  assert.equal(observed.surchargeByCount[6]?.percentWithIva, 22.62)
+  // Sin interés para el comprador (pagó exactamente el importe): sí cuenta.
+  const valid = deriveMercadoPagoObservedCosts(
+    [credit(6, 26.62, "2026-09-25T10:00:00.000Z", { transaction_details: { total_paid_amount: 100_000 } })],
+    NOW,
+  )
+  assert.equal(valid.surchargeByCount[6]?.percentWithIva, 26.62)
+})
+
+test("ejemplo del negocio: costo 6 observado 18,69% + venta real al 22% -> la siguiente venta usa 22%", () => {
+  const before = deriveMercadoPagoObservedCosts([credit(6, 18.69 * 1.21, "2026-09-20T10:00:00.000Z")], NOW)
+  assert.equal(resolveInstallmentsFinancing(MANUAL, "automatic", before).effective.surchargePercentByCount[6], 18.69)
+  const after = deriveMercadoPagoObservedCosts(
+    [credit(6, 18.69 * 1.21, "2026-09-20T10:00:00.000Z"), credit(6, 22 * 1.21, "2026-09-30T10:00:00.000Z")],
+    NOW,
+  )
+  assert.equal(resolveInstallmentsFinancing(MANUAL, "automatic", after).effective.surchargePercentByCount[6], 22)
 })

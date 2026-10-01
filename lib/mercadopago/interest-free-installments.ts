@@ -21,8 +21,12 @@ import { INSTALLMENT_COUNTS, type InstallmentCount } from "../products/installme
  */
 
 export const INTEREST_FREE_REFERENCE_PAYMENT_METHODS = ["visa", "master"] as const
-export const INTEREST_FREE_CACHE_TTL_MS = 10 * 60 * 1000
-export const INTEREST_FREE_ERROR_CACHE_TTL_MS = 60 * 1000
+/**
+ * Caché corta: el checkout tiene que ver la disponibilidad prácticamente en
+ * tiempo real, y la creación de la preferencia siempre consulta fresco.
+ */
+export const INTEREST_FREE_CACHE_TTL_MS = 2 * 60 * 1000
+export const INTEREST_FREE_ERROR_CACHE_TTL_MS = 30 * 1000
 export const INTEREST_FREE_REQUEST_TIMEOUT_MS = 4_000
 export const INTEREST_FREE_MAX_AMOUNT = 15_000_000
 const MAX_CACHE_ENTRIES = 2_000
@@ -37,7 +41,17 @@ export type InterestFreeInstallmentsResult =
       /** Marcas de referencia que confirman cada cuota. */
       brandsByCount?: Partial<Record<InstallmentCount, InterestFreeBrand[]>>
     }
-  | { status: "unavailable" }
+  | { status: "unavailable"; reason?: InterestFreeUnavailableReason }
+
+/** Motivo resumido (sin secretos) de una consulta no confirmada. */
+export type InterestFreeUnavailableReason =
+  | "not_configured"
+  | "invalid_amount"
+  | "rate_limited"
+  | "timeout"
+  | "http_error"
+  | "invalid_response"
+  | "network_error"
 
 const INTEREST_FREE_LABEL = "interest_deduction_by_collector"
 
@@ -178,7 +192,7 @@ function takeLookupBudget(now: number) {
 
 async function lookup(amount: number, dependencies: Dependencies): Promise<InterestFreeInstallmentsResult> {
   const accessToken = dependencies.accessToken ?? process.env.MERCADOPAGO_ACCESS_TOKEN
-  if (!accessToken) return { status: "unavailable" }
+  if (!accessToken) return { status: "unavailable", reason: "not_configured" }
   const fetcher: Fetcher = dependencies.fetch ?? fetch
 
   try {
@@ -197,27 +211,38 @@ async function lookup(amount: number, dependencies: Dependencies): Promise<Inter
     const parsed = parseInterestFreeInstallmentsByBrand(responses)
     return parsed
       ? { status: "confirmed", counts: parsed.counts, brandsByCount: parsed.brandsByCount }
-      : { status: "unavailable" }
+      : { status: "unavailable", reason: "invalid_response" }
   } catch (error) {
     console.error("MERCADOPAGO_INTEREST_FREE_LOOKUP_FAILED", {
       amount,
       message: error instanceof Error ? error.message : "unknown",
     })
-    return { status: "unavailable" }
+    return { status: "unavailable", reason: lookupFailureReason(error) }
   }
 }
 
+function lookupFailureReason(error: unknown): InterestFreeUnavailableReason {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") return "timeout"
+    if (error.message.startsWith("MERCADOPAGO_INSTALLMENTS_")) return "http_error"
+    if (error instanceof SyntaxError) return "invalid_response"
+  }
+  return "network_error"
+}
+
 /**
- * Cuotas sin interés para un monto, con caché por monto (10 min si Mercado
- * Pago respondió; 1 min si falló, para reintentar pronto sin martillarlo) y
- * una sola consulta en curso por monto. Nunca lanza.
+ * Cuotas sin interés para un monto, con caché corta por monto (2 min si
+ * Mercado Pago respondió; 30 s si falló, para reintentar pronto sin
+ * martillarlo) y una sola consulta en curso por monto. `fresh` ignora lo
+ * cacheado (creación de preferencia, "Comprobar ahora", sincronización
+ * periódica). Nunca lanza.
  */
 export async function getInterestFreeInstallments(
   amountValue: number,
   dependencies: Dependencies = {},
 ): Promise<InterestFreeInstallmentsResult> {
   const amount = normalizeInstallmentsAmount(amountValue)
-  if (amount === null) return { status: "unavailable" }
+  if (amount === null) return { status: "unavailable", reason: "invalid_amount" }
   const now = (dependencies.now ?? Date.now)()
 
   const cached = cache.get(amount)
@@ -226,7 +251,7 @@ export async function getInterestFreeInstallments(
   const pending = inFlight.get(amount)
   if (pending) return pending
 
-  if (!takeLookupBudget(now)) return { status: "unavailable" }
+  if (!takeLookupBudget(now)) return { status: "unavailable", reason: "rate_limited" }
 
   const request = lookup(amount, dependencies)
     .then((result) => {

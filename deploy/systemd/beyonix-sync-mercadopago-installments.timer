@@ -1,0 +1,12 @@
+[Unit]
+Description=Corre beyonix-sync-mercadopago-installments.service cada ~15 minutos
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Unit=beyonix-sync-mercadopago-installments.service
+# Si la VPS estuvo apagada/el timer inactivo, ejecuta la corrida pendiente al reactivarse.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,30 @@
+[Unit]
+Description=BEYONIX - Sincronizacion de cuotas sin interes de Mercado Pago (sync-mercadopago-installments)
+After=network.target
+
+[Service]
+Type=oneshot
+
+# Mismo mecanismo que beyonix-verify-transfer-orders.service (ver
+# deploy/systemd/README.md):
+#
+# - CRON_SECRET NUNCA viaja como argumento: el header vive en el archivo de
+#   configuracion de curl /etc/beyonix/curl-verify-transfer-orders.conf
+#   (permisos 600, root:root, fuera del repo), el MISMO que ya usa la
+#   conciliacion de transferencias -- un solo archivo con el secreto, no dos.
+# - flock -n: si una corrida anterior sigue activa (Mercado Pago lento), esta
+#   se cancela en vez de superponerse.
+# - -o /dev/null: la respuesta nunca va a journalctl; SUCCESS/FAILURE sale del
+#   exit code (--fail: 4xx/5xx => servicio "failed", p. ej. 502 cuando Mercado
+#   Pago no respondio de forma confiable y la tienda deja de comunicar la
+#   promocion hasta la proxima corrida exitosa).
+# - Sin --retry: el proximo tick del timer (~15 min) es el reintento.
+# - --max-time 120: la sincronizacion hace consultas secuenciales a Mercado
+#   Pago (escalera de montos + busqueda binaria por cuota, 4 s de timeout por
+#   consulta); en condiciones normales tarda unos segundos.
+# - Loopback: la app (PM2, `npm start`) escucha en 127.0.0.1:3000.
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-sync-mercadopago-installments.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 120 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/sync-mercadopago-installments

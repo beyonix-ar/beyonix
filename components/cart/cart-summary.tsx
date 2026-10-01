@@ -17,6 +17,7 @@ import {
   getMaxApplicableCustomerCredit,
 } from "@/lib/customer-credit"
 import { useSiteSettings } from "@/hooks/use-site-settings"
+import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 
 interface Props {
   subtotal: number
@@ -59,6 +60,9 @@ export function CartSummary({
     requestedAmount: maxApplicableCredit,
   })
   const showCustomerCreditRow = creditApplication.appliedAmount > 0
+  // Regla GLOBAL de compra, mismo texto que en Home/PDP/tarjetas: no cambia
+  // al tocar + / −; el checkout decide con el total real.
+  const interestFreeText = getInterestFreeMessage(siteSettings.interestFreeOffer)?.text ?? null
 
   useEffect(() => {
     if (customerCredit.loading && customerCredit.balance <= 0) return
@@ -154,6 +158,12 @@ export function CartSummary({
               {formatPrice(creditApplication.externalAmountDue)}
             </span>
           </div>
+
+          {interestFreeText && (
+            <p data-interest-free-global className="beyonix-cart-item-meta text-xs leading-snug text-white/60">
+              {interestFreeText}
+            </p>
+          )}
         </div>
       </div>
 

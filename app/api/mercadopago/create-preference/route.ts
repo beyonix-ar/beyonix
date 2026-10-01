@@ -91,7 +91,6 @@ import {
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
 import { getInterestFreeInstallments } from "@/lib/mercadopago/interest-free-installments"
-import { applyInterestFreePolicy } from "@/lib/mercadopago/interest-free-policy"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type CheckoutPayload = CheckoutOrderRequestPayload
@@ -321,20 +320,23 @@ export async function POST(request: Request) {
       settings: pricingSettings,
     }
     // Cuotas sin interés: Mercado Pago confirma, para el monto REAL que se
-    // cobraría en cada tier (neto de saldo), qué cuotas son sin interés. El
-    // tier (la más alta confirmada) define el precio financiado. Sin
-    // confirmación (error/timeout) no hay cuotas: sólo 1 pago a contado.
-    // 1 pago nunca consulta: siempre es el precio contado. Sobre lo que
-    // confirma Mercado Pago rige la política de BEYONIX (ON/OFF y mínimos por
-    // total, Admin → Financiación); en OFF ni siquiera se consulta.
-    const interestFreePolicy = siteSettings.interestFreePolicy
+    // cobraría en cada tier (neto de saldo, con envío cobrado y beneficio),
+    // qué cuotas son sin interés. El tier (la más alta confirmada, máximo 6)
+    // define el precio financiado. Consulta FRESCA, sin caché: nunca se cobra
+    // con lo que se vio minutos antes. Sin confirmación (error/timeout) no
+    // hay cuotas: sólo 1 pago a contado. 1 pago nunca consulta: siempre es el
+    // precio contado. Con cuotas sin interés desactivadas (Admin →
+    // Financiación) ni siquiera se consulta.
     const financingCandidates =
-      mode === "financed" && interestFreePolicy.enabled
+      mode === "financed" && siteSettings.interestFreePolicy.enabled
         ? getMercadoPagoFinancingCandidates(pricingInput)
         : []
     const confirmations = new Map(
       await Promise.all(
-        financingCandidates.map(async (candidate) => [candidate.amount, await getInterestFreeInstallments(candidate.amount)] as const),
+        financingCandidates.map(
+          async (candidate) =>
+            [candidate.amount, await getInterestFreeInstallments(candidate.amount, { fresh: true })] as const,
+        ),
       ),
     )
     const pricing = calculateMercadoPagoCheckoutPricing({
@@ -342,9 +344,7 @@ export async function POST(request: Request) {
       interestFreeLookup: financingCandidates.length
         ? (amount) => {
             const result = confirmations.get(amount)
-            return result?.status === "confirmed"
-              ? applyInterestFreePolicy(result.counts, amount, interestFreePolicy)
-              : null
+            return result?.status === "confirmed" ? result.counts : null
           }
         : null,
     })

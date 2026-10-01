@@ -196,6 +196,7 @@ import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
   invalidateInterestFreeInstallments,
+  readInterestFreeBrands,
   useInterestFreeInstallments,
 } from "@/hooks/use-interest-free-installments"
 
@@ -1265,18 +1266,21 @@ export default function CheckoutPage() {
   const installmentsOptionCopy = getCheckoutInstallmentsOptionCopy(
     offeredInstallmentPlans.map((plan) => plan.count),
   )
-  // Comunicación GLOBAL vigente (Admin → Financiación) para el total que se
-  // paga: mantiene la opción de cuotas en pantalla de forma estable ("Hasta N
+  // Comunicación GLOBAL vigente (la misma de Home/PDP/tarjetas/carrito):
+  // mantiene la opción de cuotas en pantalla de forma estable ("Hasta N
   // cuotas sin interés a partir de $X") aunque el total todavía no alcance.
   // Lo que se cobra lo decide siempre la consulta en vivo sobre el total real.
-  const globalInterestFreeMessage = getInterestFreeMessage(siteSettings.interestFreeOffer, cashOptionAmount)
-  const installmentsBrands =
-    globalInterestFreeMessage &&
-    installmentsOptionCopy &&
-    globalInterestFreeMessage.count === installmentsOptionCopy.maxCount &&
-    isPartialBrandCoverage(globalInterestFreeMessage.brands)
-      ? formatInterestFreeBrands(globalInterestFreeMessage.brands)
-      : "tarjeta de crédito"
+  const globalInterestFreeMessage = getInterestFreeMessage(siteSettings.interestFreeOffer)
+  // Marcas con las que Mercado Pago confirmó EN VIVO la cuota máxima para
+  // este total: nunca se presenta compatibilidad universal si no existe.
+  const financedPreviewTier = financedPreviewPricing.offeredInstallmentCount
+  const liveMaxCountBrands =
+    financedPreviewQuote && financedPreviewTier != null
+      ? readInterestFreeBrands(financedPreviewQuote.externalAmountDue)[financedPreviewTier] ?? []
+      : []
+  const installmentsBrands = isPartialBrandCoverage(liveMaxCountBrands)
+    ? formatInterestFreeBrands(liveMaxCountBrands)
+    : "tarjeta de crédito"
   // Copy de la modalidad ya elegida (con el saldo que efectivamente aplica).
   const selectedInstallmentsCopy = isMercadoPagoFinanced
     ? getCheckoutInstallmentsOptionCopy(mercadoPagoPricing.interestFreeInstallmentCounts)

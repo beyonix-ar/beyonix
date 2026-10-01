@@ -180,9 +180,9 @@ export function ProductDetailsPanel({
   const { pricing, interestFreeOffer } = useSiteSettings()
   const cashPrice = selectedOption?.price ?? product.precio
   const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
-  // Regla GLOBAL de la tienda (no del producto), con el rango que alcanza
-  // este precio: el monto real lo define el total del carrito en el checkout.
-  const interestFreeText = getInterestFreeMessage(interestFreeOffer, cashPrice)?.text ?? null
+  // Regla GLOBAL de compra (no del producto): el mismo texto en toda la
+  // tienda; lo que se ofrece lo define el total real en el checkout.
+  const interestFreeText = getInterestFreeMessage(interestFreeOffer)?.text ?? null
   const priceWithoutNationalTaxesCash = getPriceWithoutNationalTaxes(
     cashPrice,
     pricing.nationalTaxesIncidencePercent,
