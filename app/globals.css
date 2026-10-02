@@ -2640,14 +2640,10 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
   min-height: 2.25rem !important;
 }
 
-/* Casillas compactas de Stock: label + valor dentro del mismo borde semántico. */
-.beyonix-admin-main .admin-stock-threshold-box input {
-  min-height: 0 !important;
-  height: auto !important;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
+/* Configuración en edición: controles a la altura de una fila de lectura. */
+.beyonix-admin-main .admin-settings-page .admin-config-value-row :is(.admin-ds-control, .admin-control-select) {
+  height: 2rem !important;
+  min-height: 2rem !important;
 }
 
 /*
@@ -2733,6 +2729,21 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   --admin-config-chip-success: #065f46;
   --admin-config-chip-warning: #92400e;
   --admin-config-chip-danger: #991b1b;
+}
+
+/* Configuración en Light: jerarquía real. Página gris suave > tarjeta blanca
+   con borde fino y sombra mínima > subsección gris apenas distinto (también
+   las tarjetas internas de Banners) > inputs blancos con borde visible. Sólo
+   redefine tokens dentro de esta pantalla. */
+html[data-admin-theme="light"] .beyonix-admin-main .admin-settings-page {
+  --bx-surface-section: #ffffff;
+  --bx-border-section: #d6dee8;
+  --bx-shadow-section: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --bx-surface-card: #f4f6f9;
+  --bx-border-card: #e1e7ee;
+  --bx-shadow-card: none;
+  --admin-config-neutral-bg: #f4f6f9;
+  --admin-config-neutral-border: #e3e8ef;
 }
 
 .beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status) {
@@ -2837,6 +2848,40 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   border-top: 1px solid var(--admin-config-neutral-border);
 }
 
+/* Desglose de costos (base + financiación = total; total con IVA). */
+.beyonix-admin-main .admin-config-page .admin-config-breakdown {
+  border-radius: 0.5rem;
+  background: var(--admin-config-neutral-bg);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-breakdown .admin-config-breakdown-total {
+  color: var(--admin-config-chip-info) !important;
+}
+
+/* Configuración, "lectura primero": filas etiqueta … valor separadas por una
+   línea fina, y una frase resumen apenas destacada (sin cajas anidadas). */
+.beyonix-admin-main .admin-config-page .admin-config-value-row + .admin-config-value-row {
+  border-top: 1px solid var(--admin-config-neutral-border);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-callout {
+  border-radius: 0.5rem;
+  background: var(--admin-config-neutral-bg);
+}
+
+.beyonix-admin-main .admin-config-page :is(.admin-config-link, .admin-config-details > summary):focus-visible {
+  outline: 2px solid var(--admin-config-info-dot);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Configuración: foco de teclado visible en todos los botones (Editar,
+   Cancelar, Guardar, acciones de Andreani, selects). */
+.beyonix-admin-main .admin-settings-page button:focus-visible {
+  outline: 2px solid var(--admin-config-info-dot) !important;
+  outline-offset: 2px;
+}
+
 /* Vista previa del texto publicado: acento lateral, sin caja pesada. */
 .beyonix-admin-main .admin-config-page .admin-config-preview {
   border-left: 3px solid var(--admin-config-info-dot);
@@ -2926,10 +2971,6 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
 .beyonix-admin-main .admin-config-page .admin-config-section.admin-financing-manual:not(#\#) {
   border-color: var(--admin-config-warning-dot) !important;
   box-shadow: inset 3px 0 0 var(--admin-config-warning-dot) !important;
-}
-
-.beyonix-admin-main .admin-config-page .admin-config-stock-input:disabled {
-  cursor: default;
 }
 
 .beyonix-section-spacing {

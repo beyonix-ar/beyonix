@@ -1,7 +1,7 @@
 "use client"
 
-import type { ReactNode } from "react"
-import { CheckCircle2, ChevronRight, Save, ShieldAlert } from "lucide-react"
+import { useState, type ReactNode } from "react"
+import { CheckCircle2, ChevronRight, Pencil, Save, ShieldAlert } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
@@ -187,6 +187,125 @@ export function ConfigDisclosure({
       </summary>
       <div className="mt-1.5 space-y-1 pl-4.5">{children}</div>
     </details>
+  )
+}
+
+/**
+ * "Lectura primero, edición después": filas "etiqueta … valor". En edición
+ * el valor se reemplaza por su control (a ancho completo en mobile).
+ */
+export function ConfigValueList({ className, children }: { className?: string; children: ReactNode }) {
+  return <dl className={cn("admin-config-values", className)}>{children}</dl>
+}
+
+export function ConfigValueRow({
+  label,
+  tone,
+  editing = false,
+  className,
+  children,
+  ...rest
+}: {
+  label: string
+  tone?: ConfigTone
+  editing?: boolean
+  className?: string
+  children: ReactNode
+  [dataAttribute: `data-${string}`]: string | undefined
+}) {
+  return (
+    <div
+      className={cn(
+        "admin-config-value-row flex min-h-8 justify-between gap-x-3 py-1",
+        editing ? "flex-col items-stretch gap-y-1 sm:flex-row sm:items-center" : "items-center",
+        className,
+      )}
+      {...rest}
+    >
+      <dt className="flex min-w-0 items-center gap-1.5 text-12px font-semibold text-white/72">
+        {tone ? <span className="admin-config-dot size-2 shrink-0 rounded-full" data-tone={tone} /> : null}
+        {label}
+      </dt>
+      <dd
+        className={cn(
+          "min-w-0 text-sm font-black text-white",
+          // En edición el control ocupa todo el ancho en mobile (AdminTextInput envuelve el input en un <label>).
+          editing ? "flex items-center gap-1.5 sm:justify-end [&>label]:w-full sm:[&>label]:w-auto" : "text-right",
+        )}
+      >
+        {children}
+      </dd>
+    </div>
+  )
+}
+
+/** Estado local de un bloque editable: lectura por defecto, borrador sólo al editar. */
+export function useConfigEditing<T>(initial: T) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(initial)
+  return {
+    editing,
+    draft,
+    setField: <K extends keyof T>(key: K, value: T[K]) => setDraft((current) => ({ ...current, [key]: value })),
+    start: () => setEditing(true),
+    /** Descarta los cambios locales y vuelve a lectura (no toca otros bloques). */
+    cancel: () => {
+      setDraft(initial)
+      setEditing(false)
+    },
+  }
+}
+
+/**
+ * Acciones de un bloque editable: en lectura sólo [Editar]; en edición el
+ * estado de cambios + [Cancelar] [Guardar] (guarda sólo este bloque).
+ */
+export function ConfigEditActions({
+  editing,
+  dirty,
+  saving,
+  disabled,
+  canSave = true,
+  onEdit,
+  onCancel,
+  onSave,
+}: {
+  editing: boolean
+  dirty: boolean
+  saving: boolean
+  disabled: boolean
+  canSave?: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: () => void
+}) {
+  if (!editing) {
+    return (
+      <AdminSecondaryButton type="button" size="sm" onClick={onEdit} disabled={disabled} data-config-edit>
+        <Pencil className="size-3.5" />
+        Editar
+      </AdminSecondaryButton>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2" data-config-editing>
+      <span className="admin-config-dirty text-11px font-bold" data-dirty={dirty ? "true" : "false"}>
+        {saving ? "Guardando…" : dirty ? "Cambios sin guardar" : "Sin cambios"}
+      </span>
+      <AdminSecondaryButton type="button" size="sm" onClick={onCancel} disabled={saving} data-config-cancel>
+        Cancelar
+      </AdminSecondaryButton>
+      <AdminPrimaryButton
+        type="button"
+        size="sm"
+        onClick={onSave}
+        disabled={disabled || saving || !dirty || !canSave}
+        data-config-save
+      >
+        <Save className="size-3.5" />
+        {saving ? "Guardando…" : "Guardar"}
+      </AdminPrimaryButton>
+    </div>
   )
 }
 

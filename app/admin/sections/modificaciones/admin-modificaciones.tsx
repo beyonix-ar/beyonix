@@ -203,7 +203,7 @@ export function AdminModificaciones() {
   })
 
   return (
-    <div className="admin-config-page space-y-4 p-4 sm:p-6 lg:p-8">
+    <div className="admin-config-page admin-settings-page space-y-4 p-4 sm:p-6 lg:p-8">
       <AdminPageHeader
         title="Configuración"
         description="Cada bloque se guarda por separado."
@@ -267,7 +267,7 @@ export function AdminModificaciones() {
       </div>
 
       <ConfigGroup id="visuales" label="Visuales">
-        <AdminSection compact icon={<ImageIcon className="size-3.5" />} title="Banners">
+        <AdminSection compact icon={<ImageIcon className="size-3.5" />} title="Banners" data-config-block="banners">
           <AdminBanners embedded />
         </AdminSection>
       </ConfigGroup>

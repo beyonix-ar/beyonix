@@ -5,7 +5,7 @@ import { ArrowRight, CreditCard } from "lucide-react"
 
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import type { MercadoPagoCostsOverview } from "@/lib/site-settings"
-import { ConfigSection, ConfigStat, ConfigStats } from "./config-ui"
+import { ConfigSection, ConfigValueList, ConfigValueRow } from "./config-ui"
 
 /**
  * Configuración sólo resume y deriva: los controles de costos, cuotas y
@@ -24,27 +24,29 @@ export function FinancingShortcutCard({ overview }: { overview: MercadoPagoCosts
         <Link
           href={ADMIN_ROUTES.financiacion}
           data-financing-shortcut
-          className="admin-config-link inline-flex items-center gap-1 text-12px font-black underline-offset-2 hover:underline"
+          className="admin-config-link inline-flex items-center gap-1 rounded-md text-12px font-black underline-offset-2 hover:underline"
         >
           Ir a Financiación
           <ArrowRight className="size-3.5" />
         </Link>
       }
     >
-      <ConfigStats className="grid-cols-2">
-        <ConfigStat
+      <ConfigValueList>
+        <ConfigValueRow
           label="Modo"
-          data-financing-mode={overview?.mode ?? "loading"}
           tone={!overview ? "neutral" : manual ? "warning" : "success"}
-          value={!overview ? "Consultando…" : manual ? "Manual" : "Automático"}
-        />
-        <ConfigStat
+          data-financing-mode={overview?.mode ?? "loading"}
+        >
+          {!overview ? "Consultando…" : manual ? "Manual" : "Automático"}
+        </ConfigValueRow>
+        <ConfigValueRow
           label="Cuotas sin interés"
-          data-financing-installments={enabled === undefined ? "loading" : enabled ? "active" : "inactive"}
           tone={enabled === undefined ? "neutral" : enabled ? "success" : "neutral"}
-          value={enabled === undefined ? "Consultando…" : enabled ? "Activas" : "Inactivas"}
-        />
-      </ConfigStats>
+          data-financing-installments={enabled === undefined ? "loading" : enabled ? "active" : "inactive"}
+        >
+          {enabled === undefined ? "Consultando…" : enabled ? "Activas" : "Inactivas"}
+        </ConfigValueRow>
+      </ConfigValueList>
     </ConfigSection>
   )
 }

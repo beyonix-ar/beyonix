@@ -16,11 +16,12 @@ import {
 } from "./admin-config-browser-harness.ts"
 
 // Admin → Configuración con el componente REAL (AdminModificaciones, bundle
-// esbuild) en claro y oscuro, desktop y mobile: agrupación por categoría
-// (Integraciones, Inventario, Comercial, Pagos), Andreani compacto con el
-// detalle técnico colapsado, guardado por bloque, la tarjeta que deriva a
-// Admin → Financiación (sin controles duplicados) y contraste AA. Stubs sólo
-// de infraestructura (sesión y banners).
+// esbuild) en claro y oscuro, desktop y mobile. "Lectura primero, edición
+// después": cada bloque muestra sus valores como texto y recién con
+// [Editar] aparecen los controles con [Cancelar] [Guardar] (sólo ese
+// bloque). Agrupación por categoría, Andreani resumido con el detalle
+// colapsado, Financiación sólo como acceso, jerarquía visual en claro y
+// contraste AA. Stubs sólo de infraestructura (sesión y banners).
 
 const entry = (costs: unknown) => `
 import { createElement } from "react"
@@ -84,6 +85,7 @@ async function open(theme: "dark" | "light", costs: unknown, width = 1280): Prom
     await page.getByText("Financiación Mercado Pago").waitFor({ timeout: 10_000 })
     await page.getByText("Configuradas").waitFor({ timeout: 10_000 })
     await page.locator("[data-financing-mode='automatic'], [data-financing-mode='manual']").waitFor({ timeout: 10_000 })
+    await page.locator("[data-config-block='stock'] [data-config-edit]:not([disabled])").waitFor({ timeout: 10_000 })
   } catch (error) {
     await page.close()
     throw new Error(`No renderizó: ${errors.join(" | ") || String(error)}`)
@@ -91,11 +93,25 @@ async function open(theme: "dark" | "light", costs: unknown, width = 1280): Prom
   return page
 }
 
+const EDITABLE = ["stock", "shipping", "pricing", "customer-credit"] as const
 const configBlock = (page: Page, name: string) => page.locator(`[data-config-block='${name}']`)
-const saveButton = (page: Page, name: string) => configBlock(page, name).getByRole("button", { name: /Guardar cambios/ })
+const edit = (page: Page, name: string) => configBlock(page, name).locator("[data-config-edit]").click()
+const saveButton = (page: Page, name: string) => configBlock(page, name).locator("[data-config-save]")
+const cancel = (page: Page, name: string) => configBlock(page, name).locator("[data-config-cancel]").click()
+const mode = (page: Page, name: string) => configBlock(page, name).getAttribute("data-config-mode")
+const row = (page: Page, name: string, label: string) =>
+  configBlock(page, name).locator(".admin-config-value-row", { has: page.locator("dt", { hasText: label }) }).first()
+const rowValue = async (page: Page, name: string, label: string) =>
+  (await row(page, name, label).locator("dd").innerText()).replace(/ /g, " ").trim()
+const settled = (page: Page) =>
+  // Una transición reemplazada rechaza `finished`: igual cuenta como terminada.
+  page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined))))
+const patches = (page: Page) => page.evaluate("window.__patches") as Promise<unknown[]>
+const background = (page: Page, selector: string) =>
+  page.locator(selector).first().evaluate((element) => getComputedStyle(element).backgroundColor)
 
 for (const theme of ["light", "dark"] as const) {
-  test(`${theme}: bloques agrupados por categoría (Integraciones, Inventario, Comercial, Pagos)`, async () => {
+  test(`${theme}: bloques agrupados por categoría y Banners a ancho completo`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
       const groups = await page.locator("[data-config-group]").evaluateAll((elements) =>
@@ -105,85 +121,168 @@ for (const theme of ["light", "dark"] as const) {
           blocks: [...group.querySelectorAll("[data-config-block]")].map((block) => block.getAttribute("data-config-block")),
         })),
       )
-      assert.deepEqual(groups.slice(0, 4), [
+      assert.deepEqual(groups, [
         { id: "integraciones", label: "Integraciones", blocks: ["andreani"] },
         { id: "inventario", label: "Inventario", blocks: ["stock"] },
         { id: "comercial", label: "Comercial", blocks: ["shipping", "pricing"] },
         { id: "pagos", label: "Pagos", blocks: ["financing", "customer-credit"] },
+        { id: "visuales", label: "Visuales", blocks: ["banners"] },
       ])
-      // Desktop: dos columnas (Integraciones junto a Inventario).
-      const [integraciones, inventario] = await Promise.all([
+      const [integraciones, inventario, banners] = await Promise.all([
         page.locator("[data-config-group='integraciones']").boundingBox(),
         page.locator("[data-config-group='inventario']").boundingBox(),
+        configBlock(page, "banners").boundingBox(),
       ])
-      assert.ok(integraciones && inventario && Math.abs(integraciones.y - inventario.y) < 2 && inventario.x > integraciones.x)
+      assert.ok(integraciones && inventario && Math.abs(integraciones.y - inventario.y) < 2 && inventario.x > integraciones.x, "dos columnas")
+      assert.ok(banners && integraciones && banners.width > integraciones.width * 1.8, "Banners ocupa el ancho completo")
+      await configBlock(page, "banners").getByRole("heading", { name: "Banners", exact: true }).waitFor()
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: Andreani compacto: estado arriba, acciones a mano y el detalle técnico colapsado`, async () => {
+  test(`${theme}: lectura por defecto: valores como texto, sin inputs ni botón Guardar`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
-      const andreani = configBlock(page, "andreani")
-      for (const [label, value] of [
-        ["Ambiente", "QA"],
-        ["Credenciales", "Configuradas"],
-        ["Venta", "Activa"],
-        ["Creación de envíos", "PROD · Bloqueada"],
-      ]) {
-        await andreani.locator("div", { has: page.getByText(label, { exact: true }) }).getByText(value, { exact: true }).first().waitFor()
+      for (const name of EDITABLE) {
+        assert.equal(await mode(page, name), "read", name)
+        await configBlock(page, name).locator("[data-config-edit]").waitFor()
       }
-      await andreani.getByRole("button", { name: "Probar conexión QA" }).waitFor()
-      await andreani.getByRole("button", { name: "Desactivar venta" }).waitFor()
-      const detail = page.locator("[data-andreani-detail]")
-      assert.equal(await detail.evaluate((element) => (element as HTMLDetailsElement).open), false)
-      assert.equal(await page.getByText("Creación de envíos: Creación en PROD sin autorizar.").isVisible(), false)
-      await detail.locator("summary").click()
-      await page.getByText("Creación de envíos: Creación en PROD sin autorizar.").waitFor()
-      await page.getByText("un resultado QA exitoso no valida PROD", { exact: false }).waitFor()
+      assert.equal(await page.locator(".admin-config-section input, .admin-config-section [role='combobox']").count(), 0)
+      assert.equal(await page.locator("[data-config-save]").count(), 0)
+
+      assert.equal(await rowValue(page, "stock", "Crítico"), "1 a 3")
+      assert.equal(await rowValue(page, "stock", "Bajo"), "4 a 6")
+      assert.equal(await rowValue(page, "stock", "Disponible"), "7+")
+      await configBlock(page, "shipping").locator("[data-shipping-summary]").getByText("Desde $ 75.000 de compra, BEYONIX bonifica hasta $ 12.000 del envío.").waitFor()
+      assert.equal(await rowValue(page, "shipping", "Compra mínima"), "$ 75.000")
+      assert.equal(await rowValue(page, "shipping", "Bonificación máxima"), "$ 12.000")
+      assert.equal(await rowValue(page, "shipping", "Bonificación base"), "$ 3.000")
+      assert.equal(await rowValue(page, "shipping", "Estado"), "Activa")
+      assert.equal(await rowValue(page, "pricing", "Transferencia"), "10% OFF")
+      assert.equal(await rowValue(page, "pricing", "Impuestos nacionales"), "21%")
+      assert.equal(await rowValue(page, "pricing", "Ejemplo"), "$ 75.000 → $ 67.500")
+      assert.equal(await rowValue(page, "customer-credit", "Recargo"), "0%")
+      assert.equal(await rowValue(page, "customer-credit", "Importe mínimo"), "$ 10.000")
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: Stock con tres estados alineados y guardado propio`, async () => {
+  test(`${theme}: bloques compactos (2–4 valores no ocupan media pantalla)`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
+      for (const [name, max] of [
+        ["andreani", 300],
+        ["stock", 200],
+        ["shipping", 300],
+        ["pricing", 200],
+        ["financing", 160],
+        ["customer-credit", 160],
+      ] as const) {
+        const box = await configBlock(page, name).boundingBox()
+        assert.ok(box && box.height <= max, `${name}: ${box?.height}px`)
+      }
+    } finally {
+      await page.close()
+    }
+  })
+
+  test(`${theme}: Stock: Editar muestra los valores editables; Cancelar descarta; Guardar guarda sólo Stock`, async () => {
+    const page = await open(theme, costsOverview("automatic", OBSERVED))
+    try {
+      await edit(page, "stock")
+      assert.equal(await mode(page, "stock"), "edit")
       const stock = configBlock(page, "stock")
-      const tops = await stock.locator(".admin-stock-threshold-box").evaluateAll((tiles) => tiles.map((tile) => Math.round(tile.getBoundingClientRect().top)))
-      assert.equal(tops.length, 3)
-      assert.equal(new Set(tops).size, 1, "crítico, bajo y disponible en la misma fila")
-      await stock.getByText("Desde 7 u.").waitFor()
+      assert.equal(await stock.locator("input").count(), 2, "Crítico y Bajo; Disponible se calcula")
+      await stock.getByText("Sin cambios").waitFor()
       assert.equal(await saveButton(page, "stock").isDisabled(), true)
       await stock.getByLabel("Crítico").fill("2")
       await stock.getByText("Cambios sin guardar").waitFor()
-      // Sólo este bloque queda con cambios.
-      assert.equal(await page.getByText("Cambios sin guardar").count(), 1)
+      assert.equal(await rowValue(page, "stock", "Disponible"), "7+")
+
+      await cancel(page, "stock")
+      assert.equal(await mode(page, "stock"), "read")
+      assert.equal(await rowValue(page, "stock", "Crítico"), "1 a 3", "Cancelar descarta el cambio local")
+      assert.deepEqual(await patches(page), [])
+
+      await edit(page, "stock")
+      await stock.getByLabel("Crítico").fill("2")
+      await stock.getByLabel("Bajo").fill("1")
+      await stock.getByText("El stock crítico debe ser menor que el stock bajo.").waitFor()
+      assert.equal(await saveButton(page, "stock").isDisabled(), true, "no guarda un rango inválido")
+      await stock.getByLabel("Bajo").fill("6")
       await saveButton(page, "stock").click()
       await stock.getByText(/Guardado\./).waitFor()
-      assert.deepEqual(await page.evaluate("window.__patches"), [
-        { stock: { criticalStockThreshold: 2, lowStockThreshold: 6, availableStockThreshold: 7 } },
+      assert.equal(await mode(page, "stock"), "read", "tras guardar vuelve a lectura")
+      assert.deepEqual(await patches(page), [{ stock: { criticalStockThreshold: 2, lowStockThreshold: 6, availableStockThreshold: 7 } }])
+    } finally {
+      await page.close()
+    }
+  })
+
+  test(`${theme}: Envíos: edición con inputs y estado; costo de referencia secundario; Cancelar no toca otros bloques`, async () => {
+    const page = await open(theme, costsOverview("automatic", OBSERVED))
+    try {
+      const reference = page.locator("[data-shipping-reference]")
+      assert.equal(await reference.evaluate((element) => (element as HTMLDetailsElement).open), false)
+      await reference.locator("summary").click()
+      assert.equal(await rowValue(page, "shipping", "Costo predeterminado"), "$ 9.000")
+
+      await edit(page, "pricing")
+      await edit(page, "shipping")
+      const shipping = configBlock(page, "shipping")
+      for (const label of [
+        "Monto mínimo para acceder a envío bonificado",
+        "Tope máximo de bonificación de envío",
+        "Bonificación base de envío para compras por debajo del mínimo",
+        "Costo de envío predeterminado",
+      ]) {
+        await shipping.getByLabel(label).waitFor()
+      }
+      await shipping.getByRole("button", { name: "Estado de la bonificación" }).waitFor()
+      await shipping.getByLabel("Monto mínimo para acceder a envío bonificado").fill("$ 100000")
+      await shipping.locator("[data-shipping-summary]").getByText("Desde $ 100.000 de compra", { exact: false }).waitFor()
+
+      await cancel(page, "shipping")
+      assert.equal(await rowValue(page, "shipping", "Compra mínima"), "$ 75.000")
+      assert.equal(await mode(page, "pricing"), "edit", "cancelar Envíos no toca Precios")
+
+      await edit(page, "shipping")
+      await shipping.getByLabel("Tope máximo de bonificación de envío").fill("$ 20000")
+      await saveButton(page, "shipping").click()
+      await shipping.getByText(/Guardado\./).waitFor()
+      assert.deepEqual(await patches(page), [
+        { shipping: { defaultShippingCost: 9000, freeShippingMinAmount: 75000, shippingBonusMax: 20000, freeShippingMode: "full", logisticsBaseSubsidy: 3000 } },
       ])
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: Envíos se entiende con una frase; el costo de referencia queda secundario`, async () => {
-    const page = await open(theme, costsOverview("automatic", OBSERVED))
+  test(`${theme}: Precios y Recargas: edición compacta y cada bloque guarda sólo lo suyo`, async () => {
+    const page = await open(theme, costsOverview("manual", null))
     try {
-      const shipping = configBlock(page, "shipping")
-      await shipping.locator("[data-shipping-summary]").getByText("Desde $ 75.000 de compra, BEYONIX bonifica hasta $ 12.000 del envío.", { exact: false }).waitFor()
-      await shipping.getByText("Bonificación activa").waitFor()
-      for (const label of ["Compra mínima", "Bonificación máxima", "Bonificación base", "Estado"]) {
-        await shipping.getByText(label, { exact: true }).waitFor()
-      }
-      const reference = page.locator("[data-shipping-reference]")
-      assert.equal(await reference.evaluate((element) => (element as HTMLDetailsElement).open), false)
-      assert.equal(await page.getByLabel("Costo de envío predeterminado").isVisible(), false)
-      await reference.locator("summary").click()
-      await page.getByLabel("Costo de envío predeterminado").waitFor()
+      await edit(page, "pricing")
+      const pricing = configBlock(page, "pricing")
+      assert.equal(await pricing.locator("input").count(), 2)
+      await pricing.getByLabel("Descuento por transferencia").fill("% 20")
+      assert.equal(await rowValue(page, "pricing", "Ejemplo"), "$ 75.000 → $ 60.000", "el ejemplo sigue al valor editado")
+      await saveButton(page, "pricing").click()
+      await pricing.getByText(/Guardado\./).waitFor()
+
+      await edit(page, "customer-credit")
+      const credit = configBlock(page, "customer-credit")
+      assert.equal(await credit.locator("input").count(), 2)
+      await credit.getByLabel("Importe mínimo de recarga con Mercado Pago").fill("$ 12000")
+      await saveButton(page, "customer-credit").click()
+      await credit.getByText(/Guardado\./).waitFor()
+
+      assert.deepEqual(await patches(page), [
+        { pricing: { transferDiscountPercent: 20, nationalTaxesIncidencePercent: 21 } },
+        { customerCreditPayments: { mercadoPagoSurchargePercent: 0, mercadoPagoMinimumAmount: 12_000 } },
+      ])
+      for (const name of ["stock", "shipping"]) assert.equal(await mode(page, name), "read", name)
     } finally {
       await page.close()
     }
@@ -193,80 +292,128 @@ for (const theme of ["light", "dark"] as const) {
     const page = await open(theme, costsOverview("manual", OBSERVED, { enabled: false }))
     try {
       const financing = configBlock(page, "financing")
-      await financing.locator("[data-financing-mode='manual']").getByText("Manual", { exact: true }).waitFor()
-      await financing.locator("[data-financing-installments='inactive']").getByText("Inactivas", { exact: true }).waitFor()
+      assert.equal(await rowValue(page, "financing", "Modo"), "Manual")
+      assert.equal(await rowValue(page, "financing", "Cuotas sin interés"), "Inactivas")
       const link = financing.getByRole("link", { name: /Ir a Financiación/ })
       assert.equal(await link.getAttribute("href"), "/admin/financiacion")
       assert.equal(await financing.locator("input, button").count(), 0, "sin controles: sólo el enlace")
       assert.equal(await page.getByRole("radiogroup", { name: /Origen de los costos/ }).count(), 0)
-      assert.equal(await page.locator("input[aria-label*='respaldo' i], input[aria-label*='valor manual' i]").count(), 0)
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: Precios con ejemplo corto y Recargas compactas`, async () => {
+  test(`${theme}: Andreani resumido con acciones; el detalle técnico colapsado`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
-      const pricing = configBlock(page, "pricing")
-      await pricing.locator("[data-pricing-example]").getByText("Contado $ 75.000 → Transferencia $ 67.500").waitFor()
-      await pricing.getByLabel("Descuento por transferencia").fill("% 20")
-      await pricing.locator("[data-pricing-example]").getByText("Transferencia $ 60.000", { exact: false }).waitFor()
-      const credit = configBlock(page, "customer-credit")
-      assert.equal(await credit.locator("input").count(), 2)
-      await credit.getByLabel("Recargo de las recargas de saldo con Mercado Pago").waitFor()
-      await credit.getByLabel("Importe mínimo de recarga con Mercado Pago").waitFor()
+      assert.equal(await rowValue(page, "andreani", "Ambiente"), "QA")
+      assert.equal(await rowValue(page, "andreani", "Credenciales"), "Configuradas")
+      assert.equal(await rowValue(page, "andreani", "Venta"), "Activa")
+      assert.equal(await rowValue(page, "andreani", "Creación de envíos"), "PROD · Bloqueada")
+      const actions = page.locator("[data-andreani-actions]")
+      await actions.getByRole("button", { name: "Probar conexión QA" }).waitFor()
+      await actions.getByRole("button", { name: "Desactivar venta" }).waitFor()
+      const detail = page.locator("[data-andreani-detail]")
+      assert.equal(await detail.evaluate((element) => (element as HTMLDetailsElement).open), false)
+      assert.equal(await page.getByText("Creación de envíos: Creación en PROD sin autorizar.").isVisible(), false)
+      await detail.locator("summary").click()
+      await page.getByText("Creación de envíos: Creación en PROD sin autorizar.").waitFor()
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: cada bloque guarda sólo lo suyo y nada se guarda sin cambios`, async () => {
-    const page = await open(theme, costsOverview("manual", null))
+  test(`${theme}: jerarquía visual: tarjetas distintas del fondo; inputs de edición legibles con borde`, async () => {
+    const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
-      for (const name of ["stock", "shipping", "pricing", "customer-credit"]) {
-        assert.equal(await saveButton(page, name).isDisabled(), true, name)
+      const pageBackground = await page.locator(".beyonix-admin-main").evaluate((element) => {
+        for (let node: Element | null = element; node; node = node.parentElement) {
+          const color = getComputedStyle(node).backgroundColor
+          if (color !== "rgba(0, 0, 0, 0)") return color
+        }
+        return getComputedStyle(document.body).backgroundColor
+      })
+      const card = await background(page, "[data-config-block='stock']")
+      assert.notEqual(card, pageBackground, "la tarjeta se distingue del fondo")
+      if (theme === "light") {
+        assert.equal(card, "rgb(255, 255, 255)", "tarjetas blancas en claro")
+        assert.equal(await background(page, "[data-config-block='banners']"), "rgb(255, 255, 255)", "Banners combina con el resto")
       }
-      assert.deepEqual(await page.evaluate("window.__patches"), [])
-      await configBlock(page, "customer-credit").getByLabel("Importe mínimo de recarga con Mercado Pago").fill("$ 12000")
-      assert.equal(await saveButton(page, "pricing").isDisabled(), true, "otro bloque no se habilita")
-      await saveButton(page, "customer-credit").click()
-      await configBlock(page, "customer-credit").getByText(/Guardado\./).waitFor()
-      assert.deepEqual(await page.evaluate("window.__patches"), [
-        { customerCreditPayments: { mercadoPagoSurchargePercent: 0, mercadoPagoMinimumAmount: 12_000 } },
-      ])
+      await edit(page, "pricing")
+      const input = configBlock(page, "pricing").getByLabel("Descuento por transferencia")
+      const style = await input.evaluate((element) => {
+        const computed = getComputedStyle(element)
+        return { background: computed.backgroundColor, border: computed.borderTopColor, width: computed.borderTopWidth }
+      })
+      assert.notEqual(style.border, "rgba(0, 0, 0, 0)")
+      assert.ok(parseFloat(style.width) >= 1, "borde visible")
+      if (theme === "light") assert.equal(style.background, "rgb(255, 255, 255)")
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: todo el texto visible de Configuración cumple contraste AA (también con desplegables abiertos)`, async () => {
+  test(`${theme}: foco visible al navegar con teclado`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
-      await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)))
-      const { audited, failures } = (await page.evaluate(CONTRAST_AUDIT)) as { audited: number; failures: string[] }
-      assert.ok(audited > 40, `se auditaron ${audited} textos`)
-      assert.deepEqual(failures, [])
+      const target = configBlock(page, "stock").locator("[data-config-edit]")
+      await page.locator("body").click({ position: { x: 2, y: 2 } })
+      let reached = false
+      for (let step = 0; step < 40 && !reached; step++) {
+        await page.keyboard.press("Tab")
+        reached = await target.evaluate((element) => element === document.activeElement)
+      }
+      assert.ok(reached, "el botón Editar es alcanzable con Tab")
+      const ring = await target.evaluate((element) => {
+        const computed = getComputedStyle(element)
+        return computed.outlineStyle !== "none" || computed.boxShadow !== "none"
+      })
+      assert.ok(ring, "indicador de foco visible")
+    } finally {
+      await page.close()
+    }
+  })
+
+  test(`${theme}: contraste AA en lectura y en edición (con desplegables abiertos)`, async () => {
+    const page = await open(theme, costsOverview("automatic", OBSERVED))
+    try {
+      await settled(page)
+      const read = (await page.evaluate(CONTRAST_AUDIT)) as { audited: number; failures: string[] }
+      assert.ok(read.audited > 40, `se auditaron ${read.audited} textos`)
+      assert.deepEqual(read.failures, [], "lectura")
       await page.locator("[data-andreani-detail] summary").click()
       await page.locator("[data-shipping-reference] summary").click()
+      for (const name of EDITABLE) await edit(page, name)
       await configBlock(page, "pricing").getByLabel("Descuento por transferencia").fill("% 15")
-      const opened = (await page.evaluate(CONTRAST_AUDIT)) as { audited: number; failures: string[] }
-      assert.deepEqual(opened.failures, [], "desplegables abiertos y bloque con cambios")
+      await configBlock(page, "stock").getByLabel("Bajo").fill("1")
+      await settled(page)
+      const editing = (await page.evaluate(CONTRAST_AUDIT)) as { audited: number; failures: string[] }
+      assert.deepEqual(editing.failures, [], "edición, cambios sin guardar, error de validación y desplegables")
     } finally {
       await page.close()
     }
   })
 
-  test(`${theme}: en mobile (390px) una columna, sin scroll horizontal`, async () => {
+  test(`${theme}: mobile (390px): una columna, lectura compacta, inputs a ancho completo sólo en edición, sin overflow`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED), 390)
     try {
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-      assert.ok(overflow <= 0, `desborde horizontal de ${overflow}px`)
+      const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      assert.ok((await overflow()) <= 0, `desborde en lectura: ${await overflow()}px`)
       const [integraciones, inventario] = await Promise.all([
         page.locator("[data-config-group='integraciones']").boundingBox(),
         page.locator("[data-config-group='inventario']").boundingBox(),
       ])
       assert.ok(integraciones && inventario && inventario.y >= integraciones.y + integraciones.height, "grupos apilados")
+      const editButton = await configBlock(page, "shipping").locator("[data-config-edit]").boundingBox()
+      assert.ok(editButton && editButton.x + editButton.width <= 390, "Editar visible")
+
+      for (const name of EDITABLE) await edit(page, name)
+      assert.ok((await overflow()) <= 0, `desborde en edición: ${await overflow()}px`)
+      const [input, rowBox] = await Promise.all([
+        configBlock(page, "shipping").getByLabel("Monto mínimo para acceder a envío bonificado").boundingBox(),
+        row(page, "shipping", "Compra mínima").boundingBox(),
+      ])
+      assert.ok(input && rowBox && input.width >= rowBox.width - 2, "input a ancho completo en mobile")
     } finally {
       await page.close()
     }

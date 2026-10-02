@@ -14,7 +14,7 @@ import {
   AdminModal,
   AdminSecondaryButton,
 } from "../../components/admin-controls"
-import { ConfigDisclosure, ConfigSection, ConfigStat, ConfigStats, formatDateTime } from "./config-ui"
+import { ConfigDisclosure, ConfigSection, ConfigValueList, ConfigValueRow, formatDateTime } from "./config-ui"
 
 async function getAccessToken() {
   const {
@@ -157,63 +157,56 @@ export function AndreaniIntegrationCard({
       icon={<Cable className="size-3.5" />}
       title="Andreani"
       data-config-block="andreani"
-      actions={
-        <>
-          <AdminSecondaryButton
-            type="button"
-            size="sm"
-            onClick={() => void testConnection()}
-            disabled={testing || !integration?.configured}
-            className="shrink-0"
-          >
-            {testing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Cable className="size-3.5" />}
-            {testing ? "Probando QA…" : "Probar conexión QA"}
-          </AdminSecondaryButton>
-          <AdminSecondaryButton
-            type="button"
-            size="sm"
-            data-andreani-commercial-toggle
-            onClick={() => setConfirmCommercial(true)}
-            disabled={togglingCommercial || commercialEnabled === null}
-            className="shrink-0"
-          >
-            {togglingCommercial ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-            {commercialEnabled === false ? "Activar venta" : "Desactivar venta"}
-          </AdminSecondaryButton>
-        </>
-      }
     >
-      <ConfigStats className="flex flex-wrap gap-x-6">
-        <ConfigStat
-          label="Ambiente"
-          tone={integration ? "info" : "neutral"}
-          value={integration?.environment ?? "Consultando…"}
-        />
-        <ConfigStat
-          label="Credenciales"
-          tone={!integration ? "neutral" : integration.configured ? "success" : "warning"}
-          value={!integration ? "Consultando…" : integration.configured ? "Configuradas" : "Incompletas"}
-        />
-        <ConfigStat
+      <ConfigValueList>
+        <ConfigValueRow label="Ambiente" tone={integration ? "info" : "neutral"}>
+          {integration?.environment ?? "Consultando…"}
+        </ConfigValueRow>
+        <ConfigValueRow label="Credenciales" tone={!integration ? "neutral" : integration.configured ? "success" : "warning"}>
+          {!integration ? "Consultando…" : integration.configured ? "Configuradas" : "Incompletas"}
+        </ConfigValueRow>
+        <ConfigValueRow
           label="Venta"
-          data-andreani-commercial={commercialEnabled === null ? "loading" : commercialEnabled ? "active" : "inactive"}
           tone={commercialEnabled === null ? "neutral" : commercialEnabled ? "success" : "warning"}
-          value={commercialEnabled === null ? "Consultando…" : commercialEnabled ? "Activa" : "Desactivada"}
-        />
-        <ConfigStat
+          data-andreani-commercial={commercialEnabled === null ? "loading" : commercialEnabled ? "active" : "inactive"}
+        >
+          {commercialEnabled === null ? "Consultando…" : commercialEnabled ? "Activa" : "Desactivada"}
+        </ConfigValueRow>
+        <ConfigValueRow
           label="Creación de envíos"
           tone={!shipmentCreation ? "neutral" : shipmentCreation.configured ? "success" : "danger"}
-          value={
-            !shipmentCreation
-              ? "Consultando…"
-              : `${shipmentCreation.environment} · ${shipmentCreation.configured ? "Lista" : "Bloqueada"}`
-          }
-        />
-      </ConfigStats>
+        >
+          {!shipmentCreation
+            ? "Consultando…"
+            : `${shipmentCreation.environment} · ${shipmentCreation.configured ? "Lista" : "Bloqueada"}`}
+        </ConfigValueRow>
+      </ConfigValueList>
+
+      <div className="mt-2 flex flex-wrap gap-2" data-andreani-actions>
+        <AdminSecondaryButton
+          type="button"
+          size="sm"
+          onClick={() => void testConnection()}
+          disabled={testing || !integration?.configured}
+        >
+          {testing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Cable className="size-3.5" />}
+          {testing ? "Probando QA…" : "Probar conexión QA"}
+        </AdminSecondaryButton>
+        <AdminSecondaryButton
+          type="button"
+          size="sm"
+          data-andreani-commercial-toggle
+          onClick={() => setConfirmCommercial(true)}
+          disabled={togglingCommercial || commercialEnabled === null}
+        >
+          {togglingCommercial ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+          {commercialEnabled === false ? "Activar venta" : "Desactivar venta"}
+        </AdminSecondaryButton>
+      </div>
 
       {lastTest ? (
         <p
-          className="admin-config-feedback mt-2.5 flex items-start gap-1.5 text-12px font-semibold leading-5"
+          className="admin-config-feedback mt-2 flex items-start gap-1.5 text-12px font-semibold leading-5"
           data-tone={lastTest.status === "success" ? "success" : "danger"}
           data-andreani-last-test
         >
@@ -226,7 +219,7 @@ export function AndreaniIntegrationCard({
         </p>
       ) : null}
 
-      <ConfigDisclosure summary="Ver detalle de integración" className="mt-2.5" data-andreani-detail>
+      <ConfigDisclosure summary="Ver detalle de integración" className="mt-2" data-andreani-detail>
         {integration?.message ? <p>{integration.message}</p> : null}
         {shipmentCreation?.message ? <p>Creación de envíos: {shipmentCreation.message}</p> : null}
         {lastTest ? <p>Última prueba: {lastTest.message}</p> : <p>Sin pruebas de conexión en esta sesión.</p>}

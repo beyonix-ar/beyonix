@@ -238,6 +238,60 @@ for (const theme of ["light", "dark"] as const) {
     }
   })
 
+  test(`${theme}: cada fila desglosa base + financiación = total sin IVA y el total final con IVA`, async () => {
+    // Manual: base 3,46%, extra 2/3/6 = 7,79/10,49/18,69%, IVA 21% (valores de Mercado Pago).
+    const page = await open(theme, costsOverview("manual", OBSERVED))
+    try {
+      const breakdown = async (label: string) =>
+        Object.fromEntries(
+          await costRow(page, label)
+            .locator("[data-cost-breakdown] [data-breakdown]")
+            .evaluateAll((items) =>
+              items.map((item) => [
+                item.getAttribute("data-breakdown"),
+                `${item.querySelector("dt")?.textContent} ${item.querySelector("dd")?.textContent}`,
+              ]),
+            ),
+        )
+      assert.deepEqual(await breakdown("1 pago"), {
+        base: "Costo base MP 3,46%",
+        "total-iva": "Total final con IVA 4,19%",
+      })
+      for (const [label, financing, total, totalWithIva] of [
+        ["2 cuotas", "7,79%", "11,25%", "13,61%"],
+        ["3 cuotas", "10,49%", "13,95%", "16,88%"],
+        ["6 cuotas", "18,69%", "22,15%", "26,80%"],
+      ]) {
+        assert.deepEqual(
+          await breakdown(label),
+          {
+            base: "Costo base MP 3,46%",
+            financing: `Financiación ${financing}`,
+            total: `Total MP sin IVA ${total}`,
+            "total-iva": `Total final con IVA ${totalWithIva}`,
+          },
+          label,
+        )
+      }
+      assert.equal(await costRow(page, "IVA").locator("[data-cost-breakdown]").count(), 0)
+      // El valor de la fila dice qué es: la financiación, nunca el total.
+      await costRow(page, "6 cuotas").getByText("Financiación en uso", { exact: true }).waitFor()
+      await costRow(page, "1 pago").getByText("Costo base MP en uso", { exact: true }).waitFor()
+      await block(page, "costos").getByText("Comisiones sin IVA; el total final incluye IVA").waitFor()
+
+      // Sólo presentación: editar la financiación actualiza el desglose y lo guardado sigue siendo el extra.
+      await page.getByLabel("6 cuotas: valor manual").fill("20")
+      await costRow(page, "6 cuotas").locator("[data-breakdown='total']").getByText("23,46%").waitFor()
+      await page.getByRole("button", { name: /Guardar cambios/ }).click()
+      await page.getByText(/Guardado\./).waitFor()
+      const [patch] = (await page.evaluate("window.__patches")) as Array<{ installmentsFinancing: typeof MANUAL }>
+      assert.deepEqual(patch.installmentsFinancing.surchargePercentByCount, { ...MANUAL.surchargePercentByCount, 6: 20 })
+      assert.equal(patch.installmentsFinancing.baseProcessingPercent, MANUAL.baseProcessingPercent)
+    } finally {
+      await page.close()
+    }
+  })
+
   test(`${theme}: cuotas sin interés OFF se guarda y lo dice en una línea`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED, { reference: REFERENCE, offer: OFFER }))
     try {
@@ -292,7 +346,7 @@ for (const theme of ["light", "dark"] as const) {
       for (const label of ["3 cuotas", "6 cuotas"]) {
         const row = costRow(page, label)
         await row.getByText("No disponible hoy").waitFor()
-        await row.getByText("Costo guardado").waitFor()
+        await row.getByText("Financiación (guardado)").waitFor()
       }
       // 6 cuotas no está disponible hoy pero conserva su costo observado (no se borra el histórico).
       await costRow(page, "6 cuotas").locator("[data-cost-effective]").getByText("20%").waitFor()

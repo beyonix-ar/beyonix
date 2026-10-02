@@ -211,10 +211,55 @@ function CostCell({ label, children, className }: { label: string; children: Rea
   )
 }
 
+const BREAKDOWN_PERCENT_FORMAT = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const formatBreakdownPercent = (value: number) => `${BREAKDOWN_PERCENT_FORMAT.format(value)}%`
+
+/**
+ * Desglose SÓLO informativo de lo que cobra Mercado Pago por una modalidad,
+ * con los mismos valores en uso de la fila: costo base + financiación =
+ * total sin IVA, y ese total con IVA. No interviene en ningún cálculo de
+ * precios (que siguen en lib/products/installments.ts).
+ */
+function CostBreakdown({ base, financing, ivaPercent }: { base: number; financing: number | null; ivaPercent: number }) {
+  const totalWithoutIva = Math.round((base + (financing ?? 0)) * 100) / 100
+  const totalWithIva = totalWithoutIva * (1 + ivaPercent / 100)
+  const items: Array<{ key: string; label: string; value: number; operator?: string; strong?: boolean }> = [
+    { key: "base", label: "Costo base MP", value: base },
+    ...(financing === null
+      ? []
+      : [
+          { key: "financing", label: "Financiación", value: financing, operator: "+" },
+          { key: "total", label: "Total MP sin IVA", value: totalWithoutIva, operator: "=" },
+        ]),
+    { key: "total-iva", label: "Total final con IVA", value: totalWithIva, strong: true },
+  ]
+  return (
+    <dl data-cost-breakdown className="admin-config-breakdown col-span-full flex flex-wrap items-baseline gap-x-2.5 gap-y-1 px-2.5 py-1.5 text-12px">
+      {items.map((item) => (
+        <div key={item.key} data-breakdown={item.key} className="flex items-baseline gap-1">
+          {item.operator ? (
+            <span aria-hidden="true" className="font-black text-white/62">
+              {item.operator}
+            </span>
+          ) : null}
+          <dt className="font-semibold text-white/72">{item.label}</dt>
+          <dd className={cn("font-black text-white", item.strong && "admin-config-breakdown-total")}>
+            {formatBreakdownPercent(item.value)}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 interface CostRowProps {
   label: string
   /** `null` = 1 pago / IVA (sin disponibilidad propia); `false` = no disponible hoy en Mercado Pago. */
   available: boolean | null
+  /** Nombre de lo que es `effectiveValue` (p. ej. "Financiación"): nunca se confunde con el total. */
+  valueLabel: string
+  /** Desglose base + financiación + IVA (1 pago y cuotas; el IVA no lleva). */
+  breakdown?: { base: number; financing: number | null; ivaPercent: number }
   effectiveValue: number
   source: MercadoPagoCostSource
   mode: MercadoPagoCostsMode
@@ -236,6 +281,8 @@ interface CostRowProps {
 function CostRow({
   label,
   available,
+  valueLabel,
+  breakdown,
   effectiveValue,
   source,
   mode,
@@ -268,11 +315,11 @@ function CostRow({
           </ConfigChip>
         ) : null}
       </div>
-      <CostCell label={available === false ? "Costo guardado" : "En uso"}>
+      <CostCell label={available === false ? `${valueLabel} (guardado)` : `${valueLabel} en uso`}>
         <span data-cost-effective>{formatPercent(effectiveValue)}</span>
         <SourcePill source={source} mode={mode} />
       </CostCell>
-      <CostCell label="Observado">
+      <CostCell label={breakdown ? `${valueLabel} observado` : "Observado"}>
         {observation && observedValue !== null ? (
           <span title={`${formatPercent(observation.percentWithIva, 3)} con IVA · ${describeObservation(observation)}`}>
             {formatPercent(observedValue)}
@@ -299,6 +346,7 @@ function CostRow({
           />
         </div>
       ) : null}
+      {breakdown ? <CostBreakdown {...breakdown} /> : null}
     </li>
   )
 }
@@ -590,7 +638,11 @@ export function FinancingPanel({
         <ConfigSection
           icon={<Wallet className="size-3.5" />}
           title="Costos"
-          summary={<span className="text-12px font-semibold text-white/62">sin IVA</span>}
+          summary={
+            <span className="text-12px font-semibold text-white/62">
+              Comisiones sin IVA; el total final incluye IVA
+            </span>
+          }
           className={cn(manual && "admin-financing-manual")}
           data-financing-block="costos"
           actions={
@@ -617,6 +669,12 @@ export function FinancingPanel({
                   key={row.key}
                   label={row.label}
                   available={isBase || reference === null ? null : reference.minimumAmountByCount[count] !== null}
+                  valueLabel={isBase ? "Costo base MP" : "Financiación"}
+                  breakdown={{
+                    base: effective.baseProcessingPercent,
+                    financing: isBase ? null : effective.surchargePercentByCount[count],
+                    ivaPercent: effective.ivaPercent,
+                  }}
                   effectiveValue={isBase ? effective.baseProcessingPercent : effective.surchargePercentByCount[count]}
                   source={source}
                   mode={draft.mode}
@@ -638,6 +696,7 @@ export function FinancingPanel({
             <CostRow
               label="IVA"
               available={null}
+              valueLabel="IVA"
               effectiveValue={effective.ivaPercent}
               source="manual"
               mode="manual"

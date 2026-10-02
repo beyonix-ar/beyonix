@@ -157,12 +157,16 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
 
     const { AdminModificaciones } = await import("../../app/admin/sections/modificaciones/admin-modificaciones")
     await render(<AdminModificaciones />)
-    const save = () => [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Guardar cambios"))!
-    assert.equal(save().disabled, true, "no guarda defaults ante fallo de carga")
+    // Lectura primero: sin datos reales no se puede ni entrar a editar (nunca se guardan defaults).
+    const editStock = () => document.querySelector<HTMLButtonElement>('[data-config-block="stock"] [data-config-edit]')!
+    const save = () => document.querySelector<HTMLButtonElement>('[data-config-block="stock"] [data-config-save]')!
+    assert.equal(editStock().disabled, true, "no edita ni guarda defaults ante fallo de carga")
+    assert.equal(document.querySelectorAll("[data-config-save]").length, 0, "en lectura no hay botón Guardar")
     const reload = [...document.querySelectorAll("button")].find((button) => button.textContent?.includes("Recargar configuración"))!
     assert.equal(reload.disabled, false, "libera loading tras el error")
     settingsFail = false
     await act(async () => reload.click())
+    await act(async () => editStock().click())
     // Guardado por bloque: sin cambios propios el bloque no guarda nada.
     assert.equal(save().disabled, true, "sin cambios no hay nada que guardar")
     const criticalStock = document.querySelector<HTMLInputElement>('[aria-label="Crítico"]')!
