@@ -47,3 +47,6 @@ pnpm-debug.log*
 .vercel
 .env*
 .netlify
+.browser-run.log
+.test-run.log
+.test-os-shim.cjs
