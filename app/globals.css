@@ -2772,6 +2772,10 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   box-shadow: var(--admin-config-section-shadow) !important;
 }
 
+html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .admin-config-section:is([data-config-block], [data-financing-block]) {
+  background-color: #f2f4f7 !important;
+}
+
 .beyonix-admin-main .admin-config-page .admin-config-subpanel {
   border: 1px solid var(--admin-config-subpanel-border);
   border-radius: 0.625rem;

@@ -153,6 +153,15 @@ for (const theme of ["light", "dark"] as const) {
         elements.map((element) => element.getAttribute("data-financing-block")),
       )
       assert.deepEqual(blocks, ["estado", "cuotas", "costos", "historial"])
+      if (theme === "light") {
+        for (const name of ["estado", "cuotas", "costos", "historial"]) {
+          assert.equal(
+            await block(page, name).evaluate((element) => getComputedStyle(element).backgroundColor),
+            "rgb(242, 244, 247)",
+            name,
+          )
+        }
+      }
       // Lo técnico se despliega: "Cómo funciona" y "Ver detalle" cerrados.
       for (const selector of ["[data-financing-rules]", "[data-sync-detail]"]) {
         assert.equal(await page.locator(selector).evaluate((element) => (element as HTMLDetailsElement).open), false, selector)
