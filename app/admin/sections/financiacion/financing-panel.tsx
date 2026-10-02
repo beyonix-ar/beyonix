@@ -4,11 +4,12 @@ import { useState, type ReactNode } from "react"
 import {
   Activity,
   AlertTriangle,
+  Check,
   CreditCard,
   Hand,
   History,
-  ListChecks,
-  Megaphone,
+  Minus,
+  Pencil,
   RefreshCw,
   ToggleLeft,
   ToggleRight,
@@ -18,6 +19,7 @@ import {
 import { cn } from "@/lib/utils"
 import {
   INSTALLMENT_COUNTS,
+  MAX_INTEREST_FREE_INSTALLMENTS,
   type InstallmentCount,
   type InstallmentsFinancingConfig,
 } from "@/lib/products/installments"
@@ -34,7 +36,6 @@ import {
   getConfirmedInterestFreeMax,
 } from "@/lib/mercadopago/interest-free-policy"
 import { REFERENCE_PROBE_MAX_AMOUNT } from "@/lib/mercadopago/interest-free-reference"
-import { MAX_INTEREST_FREE_INSTALLMENTS } from "@/lib/products/installments"
 import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import {
   DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
@@ -43,9 +44,12 @@ import {
 } from "@/lib/site-settings"
 import { AdminSecondaryButton, AdminTextInput } from "../../components/admin-controls"
 import {
+  ConfigChip,
+  ConfigDisclosure,
   ConfigSaveActions,
   ConfigSection,
-  ConfigTile,
+  ConfigStat,
+  ConfigStats,
   formatARS,
   formatDateTime,
   formatPercent,
@@ -56,10 +60,11 @@ import {
   type ConfigTone,
 } from "../modificaciones/config-ui"
 
-const DIFFERENCE_THRESHOLD = 0.01
-
 export const MANUAL_MODE_WARNING =
   "Estás usando valores manuales. BEYONIX dejará de usar automáticamente los costos observados hasta volver al modo Automático."
+
+/** Eventos de historial visibles antes de "Ver historial completo". */
+const HISTORY_PREVIEW = 5
 
 const PAYMENT_TYPE_LABELS: Record<string, string> = {
   credit_card: "tarjeta de crédito",
@@ -76,6 +81,8 @@ const MODALITY_LABELS: Record<MercadoPagoCostModality, string> = {
   debit_1: "Débito",
   account_money_1: "Dinero en cuenta",
 }
+
+const BRAND_LABELS: Record<string, string> = { visa: "Visa", master: "Mastercard" }
 
 interface Draft {
   mode: MercadoPagoCostsMode
@@ -142,16 +149,24 @@ function describeObservation(observation: MercadoPagoCostObservation) {
     .join(" · ")
 }
 
+function brandsText(brands: string[] | undefined) {
+  return brands?.length ? brands.map((brand) => BRAND_LABELS[brand] ?? brand).join(" · ") : null
+}
+
+const MODE_DESCRIPTIONS: Record<MercadoPagoCostsMode, string> = {
+  automatic: "Usa lo que Mercado Pago cobró en pagos reales; donde todavía no hay datos, el respaldo manual.",
+  manual: "Fuerza los valores cargados a mano. El cálculo deja de seguir los costos observados.",
+}
+
+/** Segmento del selector Automático / Manual (radio accesible). */
 function ModeOption({
   mode,
   selected,
-  saved,
   disabled,
   onSelect,
 }: {
   mode: MercadoPagoCostsMode
   selected: boolean
-  saved: boolean
   disabled: boolean
   onSelect: (mode: MercadoPagoCostsMode) => void
 }) {
@@ -165,29 +180,14 @@ function ModeOption({
       aria-checked={selected}
       disabled={disabled}
       onClick={() => onSelect(mode)}
+      title={MODE_DESCRIPTIONS[mode]}
       data-mode={mode}
       data-selected={selected ? "true" : "false"}
-      className="admin-config-mode-option flex w-full items-start gap-2.5 px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
+      className="admin-config-mode-option flex min-w-0 flex-1 items-center justify-center gap-1.5 px-2.5 py-1.5 text-left disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
     >
-      <Icon className="admin-config-mode-icon mt-0.5 size-4 shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-black text-white">{automatic ? "Automático" : "Manual / Emergencia"}</span>
-          <span className="admin-config-chip text-10px font-black uppercase tracking-widest" data-tone={automatic ? "success" : "warning"}>
-            {automatic ? "Recomendado" : "Emergencia"}
-          </span>
-          {saved ? (
-            <span className="admin-config-chip text-10px font-black uppercase tracking-widest" data-tone="info">
-              En uso
-            </span>
-          ) : null}
-        </span>
-        <span className="mt-0.5 block text-12px leading-4 text-white/62">
-          {automatic
-            ? "Usa lo que Mercado Pago cobró en pagos reales; donde todavía no hay datos, el respaldo manual."
-            : "Fuerza los valores cargados a mano. El cálculo deja de seguir los costos observados."}
-        </span>
-      </span>
+      <Icon className="admin-config-mode-icon size-3.5 shrink-0" />
+      <span className="text-12px font-black text-white">{automatic ? "Automático" : "Manual"}</span>
+      <span className="admin-config-mode-hint hidden text-11px font-bold min-[420px]:inline">{automatic ? "Recomendado" : "Emergencia"}</span>
     </button>
   )
 }
@@ -195,178 +195,116 @@ function ModeOption({
 function SourcePill({ source, mode }: { source: MercadoPagoCostSource; mode: MercadoPagoCostsMode }) {
   const observed = source === "observed"
   return (
-    <span
-      className="admin-config-chip text-10px font-black uppercase tracking-widest"
-      data-tone={observed ? "success" : mode === "manual" ? "warning" : "neutral"}
-    >
+    <ConfigChip tone={observed ? "success" : mode === "manual" ? "warning" : "neutral"}>
       {observed ? "Observado" : mode === "manual" ? "Manual" : "Respaldo"}
-    </span>
+    </ConfigChip>
   )
 }
 
-const COST_GRID =
-  "md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,0.85fr)_minmax(0,0.85fr)]"
-
-function CostRow({
-  label,
-  hint,
-  availability,
-  observation,
-  observationUnavailableText,
-  ivaPercent,
-  manualValue,
-  manualLabel,
-  manualInUse,
-  effectiveValue,
-  source,
-  mode,
-  disabled,
-  onManualChange,
-}: {
-  label: string
-  hint: string
-  /** Disponibilidad actual en Mercado Pago (las cuotas no disponibles conservan su histórico de costos). */
-  availability?: ReactNode
-  observation: MercadoPagoCostObservation | null
-  observationUnavailableText: string
-  ivaPercent: number
-  manualValue: string
-  manualLabel: string
-  manualInUse: boolean
-  effectiveValue: number
-  source: MercadoPagoCostSource
-  mode: MercadoPagoCostsMode
-  disabled: boolean
-  onManualChange: (value: string) => void
-}) {
-  const observedValue = observation ? withoutIva(observation.percentWithIva, ivaPercent) : null
-  const manualNumber = parsePercentage(manualValue)
-  const differs = observedValue !== null && Math.abs(observedValue - manualNumber) >= DIFFERENCE_THRESHOLD
-
+/** Celda chica "etiqueta / valor" de una fila de costos. */
+function CostCell({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div
-      data-cost-row={label}
-      className={cn("admin-config-cost-row grid grid-cols-2 items-center gap-x-3 gap-y-2 px-3 py-2.5", COST_GRID)}
-    >
-      <div className="col-span-2 min-w-0 md:col-span-1">
-        <p className="flex flex-wrap items-center gap-1.5 text-sm font-black text-white">
-          {label}
-          {availability}
-        </p>
-        <p className="text-12px leading-4 text-white/58">{hint}</p>
-      </div>
-
-      <div className="col-span-2 min-w-0 md:col-span-1">
-        <p className="admin-config-cell-label text-10px font-black uppercase tracking-widest text-white/50 md:hidden">
-          Observado en Mercado Pago
-        </p>
-        {observation && observedValue !== null ? (
-          <>
-            <p className="flex flex-wrap items-center gap-1.5 text-sm font-black text-emerald-200">
-              {formatPercent(observedValue)}
-              {differs ? (
-                <span className="admin-config-chip text-10px font-black uppercase tracking-widest" data-tone="warning">
-                  Manual: {formatPercent(manualNumber)}
-                </span>
-              ) : null}
-            </p>
-            <p className="text-12px leading-4 text-white/58" title={`${formatPercent(observation.percentWithIva, 3)} con IVA`}>
-              {describeObservation(observation)}
-            </p>
-          </>
-        ) : (
-          <p className="text-12px font-semibold leading-4 text-white/52">{observationUnavailableText}</p>
-        )}
-      </div>
-
-      <div className={cn("min-w-0", !manualInUse && "admin-config-muted")}>
-        <p className="admin-config-cell-label text-10px font-black uppercase tracking-widest text-white/50 md:hidden">
-          {manualLabel}
-        </p>
-        <AdminTextInput
-          title={`${label} (${manualLabel.toLowerCase()})`}
-          ariaLabel={`${label}: valor ${manualLabel.toLowerCase()}`}
-          value={withInputSymbol(manualValue, "%")}
-          placeholder="% 0"
-          inputMode="decimal"
-          className="text-center text-sm font-bold"
-          disabled={disabled}
-          onChange={(value) => onManualChange(sanitizePercentInput(value))}
-        />
-      </div>
-
-      <div className="min-w-0">
-        <p className="admin-config-cell-label text-10px font-black uppercase tracking-widest text-white/50 md:hidden">
-          En uso
-        </p>
-        <p className="flex flex-wrap items-center gap-1.5">
-          <span className="text-sm font-black text-white">{formatPercent(effectiveValue)}</span>
-          <SourcePill source={source} mode={mode} />
-        </p>
-      </div>
+    <div className={cn("min-w-0", className)}>
+      <p className="text-11px font-bold text-white/62">{label}</p>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5 text-sm font-black text-white">{children}</div>
     </div>
   )
 }
 
-function Block({
-  icon,
-  title,
-  help,
-  children,
-  className,
-  ...rest
-}: {
-  icon: ReactNode
-  title: string
-  help?: string
-  children: ReactNode
-  className?: string
-  [dataAttribute: `data-${string}`]: string | undefined
-}) {
+interface CostRowProps {
+  label: string
+  /** `null` = 1 pago / IVA (sin disponibilidad propia); `false` = no disponible hoy en Mercado Pago. */
+  available: boolean | null
+  effectiveValue: number
+  source: MercadoPagoCostSource
+  mode: MercadoPagoCostsMode
+  observation: MercadoPagoCostObservation | null
+  observationUnavailableText: string
+  ivaPercent: number
+  showInput: boolean
+  manualValue: string
+  manualLabel: string
+  disabled: boolean
+  onManualChange: (value: string) => void
+}
+
+/**
+ * Una modalidad: en uso + fuente y observado siempre a la vista; el valor
+ * manual sólo cuando se edita (Manual, o "Editar respaldo manual"). Una
+ * cuota no disponible hoy conserva su costo guardado e histórico.
+ */
+function CostRow({
+  label,
+  available,
+  effectiveValue,
+  source,
+  mode,
+  observation,
+  observationUnavailableText,
+  ivaPercent,
+  showInput,
+  manualValue,
+  manualLabel,
+  disabled,
+  onManualChange,
+}: CostRowProps) {
+  const observedValue = observation ? withoutIva(observation.percentWithIva, ivaPercent) : null
   return (
-    <section className={cn("min-w-0", className)} {...rest}>
-      <h3 className="mb-1.5 flex items-center gap-1.5 text-11px font-black uppercase tracking-widest text-white/62">
-        {icon}
-        {title}
-        {help ? (
-          <span
-            className="admin-config-chip cursor-help text-10px font-black normal-case tracking-normal"
-            data-tone="neutral"
-            title={help}
-            aria-label={help}
-          >
-            ?
-          </span>
+    <li
+      data-cost-row={label}
+      data-available={available === false ? "false" : "true"}
+      className={cn(
+        "grid grid-cols-2 items-center gap-x-3 gap-y-1.5 py-2",
+        showInput
+          ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_minmax(0,0.9fr)]"
+          : "sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)]",
+      )}
+    >
+      <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-1.5 sm:col-span-1">
+        <span className="text-sm font-black text-white">{label}</span>
+        {available === false ? (
+          <ConfigChip tone="neutral" data-availability="unavailable">
+            No disponible hoy
+          </ConfigChip>
         ) : null}
-      </h3>
-      {children}
-    </section>
+      </div>
+      <CostCell label={available === false ? "Costo guardado" : "En uso"}>
+        <span data-cost-effective>{formatPercent(effectiveValue)}</span>
+        <SourcePill source={source} mode={mode} />
+      </CostCell>
+      <CostCell label="Observado">
+        {observation && observedValue !== null ? (
+          <span title={`${formatPercent(observation.percentWithIva, 3)} con IVA · ${describeObservation(observation)}`}>
+            {formatPercent(observedValue)}
+            <span className="ml-1.5 whitespace-nowrap text-12px font-semibold text-white/62">{formatDateTime(observation.observedAt)}</span>
+          </span>
+        ) : (
+          <span className="text-12px font-semibold text-white/62" title={observationUnavailableText}>
+            —
+          </span>
+        )}
+      </CostCell>
+      {showInput ? (
+        <div className="col-span-2 min-w-0 sm:col-span-1">
+          <p className="text-11px font-bold text-white/62">{manualLabel}</p>
+          <AdminTextInput
+            title={`${label} (${manualLabel.toLowerCase()})`}
+            ariaLabel={`${label}: valor ${manualLabel.toLowerCase()}`}
+            value={withInputSymbol(manualValue, "%")}
+            placeholder="% 0"
+            inputMode="decimal"
+            className="mt-0.5 text-center text-sm font-bold"
+            disabled={disabled}
+            onChange={(value) => onManualChange(sanitizePercentInput(value))}
+          />
+        </div>
+      ) : null}
+    </li>
   )
 }
 
 function historyStatusText(event: MercadoPagoCostChangeEvent) {
-  return event.previousPercentWithIva === null
-    ? "Primer costo observado. Aplicado para ventas futuras."
-    : "Aplicado automáticamente para ventas futuras."
-}
-
-const BRAND_LABELS: Record<string, string> = { visa: "Visa", master: "Mastercard" }
-
-function brandsText(brands: string[] | undefined) {
-  return brands?.length ? brands.map((brand) => BRAND_LABELS[brand] ?? brand).join(" · ") : null
-}
-
-function AvailabilityChip({ minimum, checked }: { minimum: number | null; checked: boolean }) {
-  if (!checked) return null
-  return (
-    <span
-      className="admin-config-chip text-10px font-black uppercase tracking-widest"
-      data-tone={minimum === null ? "neutral" : "success"}
-      data-availability={minimum === null ? "unavailable" : "available"}
-    >
-      {minimum === null ? "No disponible hoy" : `Desde aprox. ${formatARS(minimum)}`}
-    </span>
-  )
+  return event.previousPercentWithIva === null ? "Primer costo observado" : "Aplicado automáticamente"
 }
 
 interface FinancingPanelProps {
@@ -379,6 +317,11 @@ interface FinancingPanelProps {
   onCheckReference: () => void
 }
 
+/**
+ * Admin → Financiación en 4 bloques: Estado, Cuotas disponibles, Costos e
+ * Historial. "Lo importante se ve, lo técnico se despliega": detalle de
+ * sincronización, reglas y referencias van colapsados.
+ */
 export function FinancingPanel({
   overview,
   disabled,
@@ -389,12 +332,15 @@ export function FinancingPanel({
   onCheckReference,
 }: FinancingPanelProps) {
   const [draft, setDraft] = useState<Draft>(() => toDraft(overview))
+  const [editingBackup, setEditingBackup] = useState(false)
+  const [showAllHistory, setShowAllHistory] = useState(false)
   const stored = toStored(draft)
   const dirty = !sameStored(stored, toStored(toDraft(overview)))
   const observed = overview?.observed ?? null
   const syncStatus = overview?.interestFreeStatus ?? null
   const reference = syncStatus?.reference ?? null
   const syncFailed = Boolean(syncStatus?.lastError)
+  const enabled = draft.interestFreeEnabled
   // Máximo sin interés que confirma Mercado Pago (BEYONIX nunca pasa de 6).
   const confirmedMax = getConfirmedInterestFreeMax(reference)
   const publicMessage = getInterestFreeMessage(overview?.interestFreeOffer)
@@ -402,266 +348,266 @@ export function FinancingPanel({
   const effective: InstallmentsFinancingConfig = resolved.effective
   const inputsDisabled = disabled || saving
   const manual = draft.mode === "manual"
-  const manualLabel = manual ? "Manual" : "Respaldo manual"
+  // En Automático los costos se leen; el respaldo manual se edita a pedido.
+  const showInputs = manual || editingBackup
+  const manualLabel = manual ? "Manual" : "Respaldo"
+  const history = observed?.history ?? []
+  const visibleHistory = showAllHistory ? history : history.slice(0, HISTORY_PREVIEW)
 
   const setSurcharge = (count: InstallmentCount, value: string) =>
     setDraft((current) => ({ ...current, surcharge: { ...current.surcharge, [count]: value } }))
 
-  const mercadoPagoStatus: { tone: ConfigTone; value: string; detail: string } = !draft.interestFreeEnabled
-    ? { tone: "neutral", value: "En pausa", detail: "Cuotas desactivadas: no se consulta a Mercado Pago." }
+  const mercadoPagoStatus: { tone: ConfigTone; value: string; state: string } = !enabled
+    ? { tone: "neutral", value: "En pausa", state: "paused" }
     : syncFailed
-      ? {
-          tone: "danger",
-          value: "⚠ No se pudo verificar",
-          detail: syncStatus?.lastAttemptAt ? `Falló ${formatDateTime(syncStatus.lastAttemptAt)}` : "Falló la última consulta",
-        }
+      ? { tone: "danger", value: "No se pudo verificar", state: "failed" }
       : reference
-        ? { tone: "success", value: "Sincronizado", detail: `Última comprobación ${formatDateTime(reference.checkedAt)}` }
-        : { tone: "info", value: "Sin comprobar", detail: "Usá “Comprobar ahora”" }
+        ? { tone: "success", value: "Sincronizado", state: "synced" }
+        : { tone: "info", value: "Sin comprobar", state: "unchecked" }
 
-  const costRows: Array<{ key: "base" | InstallmentCount; label: string; hint: string }> = [
-    { key: "base", label: "1 pago", hint: "Crédito en 1 pago. 1 pago siempre se cobra a precio contado." },
-    { key: 2, label: "2 cuotas", hint: "Se usa cuando el máximo confirmado es 2." },
-    { key: 3, label: "3 cuotas", hint: "Se usa cuando el máximo confirmado es 3." },
-    { key: 6, label: "6 cuotas", hint: "Se usa cuando el máximo confirmado es 6." },
+  const costRows: Array<{ key: "base" | InstallmentCount; label: string }> = [
+    { key: "base", label: "1 pago" },
+    { key: 2, label: "2 cuotas" },
+    { key: 3, label: "3 cuotas" },
+    { key: 6, label: "6 cuotas" },
   ]
 
   return (
-    <ConfigSection
-      icon={<CreditCard className="size-3.5" />}
-      eyebrow="Centro de control"
-      title="Costos y cuotas de Mercado Pago"
-      description="Costos internos para calcular el precio financiado. El cliente nunca ve estos porcentajes."
-      feedback={feedback}
-      className={cn("admin-financing-panel", manual && "admin-financing-manual")}
-      actions={
-        <ConfigSaveActions
-          dirty={dirty}
-          saving={saving}
-          disabled={disabled}
-          onSave={() => onSave(stored)}
-        />
-      }
-    >
-      <div className="space-y-4">
-        <Block icon={<Activity className="size-3.5" />} title="Estado" data-financing-block="estado">
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <ConfigTile
-              label="Modo"
-              value={manual ? "Manual / Emergencia" : "Automático"}
-              tone={manual ? "warning" : "success"}
-              detail={draft.mode !== overview?.mode ? "Sin guardar" : manual ? "Valores cargados a mano" : "Costos de pagos reales"}
-            />
-            <ConfigTile
-              label="Cuotas sin interés"
-              value={draft.interestFreeEnabled ? "Activas" : "Inactivas"}
-              tone={draft.interestFreeEnabled ? "success" : "neutral"}
-              action={
-                <AdminSecondaryButton
-                  size="sm"
-                  aria-label={draft.interestFreeEnabled ? "Desactivar cuotas sin interés" : "Activar cuotas sin interés"}
-                  aria-pressed={draft.interestFreeEnabled}
-                  disabled={inputsDisabled}
-                  onClick={() => setDraft((current) => ({ ...current, interestFreeEnabled: !current.interestFreeEnabled }))}
-                  data-interest-free-toggle
-                  className={cn("admin-toggle min-w-0 justify-start px-2.5", draft.interestFreeEnabled && "admin-toggle-on")}
-                >
-                  {draft.interestFreeEnabled ? (
-                    <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4" />
-                  ) : (
-                    <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4" />
-                  )}
-                  <span className="text-xs text-white">{draft.interestFreeEnabled ? "Activadas" : "Desactivadas"}</span>
-                </AdminSecondaryButton>
-              }
-            />
-            <ConfigTile
-              label="Última actualización automática"
-              value={observed?.lastAppliedAt ? formatDateTime(observed.lastAppliedAt) : "Sin datos todavía"}
-              tone={observed ? (observed.lastAppliedAt ? "info" : "neutral") : "danger"}
-              detail={observed ? `${observed.analyzedPayments} pagos aprobados analizados` : "No se pudieron leer los pagos: se usa el respaldo."}
-            />
-            <ConfigTile
-              label="Sincronización MP"
-              value={mercadoPagoStatus.value}
-              tone={mercadoPagoStatus.tone}
-              detail={mercadoPagoStatus.detail}
-            />
-          </div>
+    <div className="admin-financing-panel space-y-3" data-financing-mode={draft.mode}>
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5" data-financing-toolbar>
+        {feedback ? (
+          <p
+            role={feedback.tone === "danger" ? "alert" : "status"}
+            className="admin-config-feedback mr-auto text-12px font-semibold"
+            data-tone={feedback.tone}
+          >
+            {feedback.text}
+          </p>
+        ) : null}
+        <ConfigSaveActions dirty={dirty} saving={saving} disabled={disabled} onSave={() => onSave(stored)} />
+      </div>
 
-          <div role="radiogroup" aria-label="Origen de los costos de Mercado Pago" className="mt-2 grid gap-2 md:grid-cols-2">
-            {(["automatic", "manual"] as const).map((mode) => (
-              <ModeOption
-                key={mode}
-                mode={mode}
-                selected={draft.mode === mode}
-                saved={overview?.mode === mode}
-                disabled={inputsDisabled}
-                onSelect={(next) => setDraft((current) => ({ ...current, mode: next }))}
-              />
-            ))}
+      <div className="grid items-start gap-3 lg:grid-cols-2">
+        {/* ── A. Estado ── */}
+        <ConfigSection
+          icon={<Activity className="size-3.5" />}
+          title="Estado"
+          className={cn(manual && "admin-financing-manual")}
+          data-financing-block="estado"
+          actions={
+            <AdminSecondaryButton
+              size="sm"
+              disabled={disabled || checkingReference}
+              onClick={onCheckReference}
+              data-check-reference
+            >
+              <RefreshCw className={cn("size-3.5", checkingReference && "animate-spin")} />
+              {checkingReference ? "Comprobando…" : "Comprobar ahora"}
+            </AdminSecondaryButton>
+          }
+        >
+          <ConfigStats className="grid-cols-2">
+            <ConfigStat
+              label="Mercado Pago"
+              tone={mercadoPagoStatus.tone}
+              value={mercadoPagoStatus.value}
+              data-mercadopago-status={mercadoPagoStatus.state}
+            />
+            <ConfigStat
+              label="Última sincronización"
+              value={reference ? formatDateTime(reference.checkedAt) : "Sin comprobar"}
+              data-reference-checked={reference ? "true" : "false"}
+            />
+            <ConfigStat
+              label="Modo"
+              tone={manual ? "warning" : "success"}
+              value={manual ? "Manual" : "Automático"}
+              detail={draft.mode !== overview?.mode ? "Sin guardar" : undefined}
+              data-mode-state={draft.mode}
+            />
+            <ConfigStat
+              label="Cuotas sin interés"
+              tone={enabled ? "success" : "neutral"}
+              value={enabled ? "Activas" : "Inactivas"}
+              data-interest-free-state={enabled ? "on" : "off"}
+            />
+          </ConfigStats>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div role="radiogroup" aria-label="Origen de los costos de Mercado Pago" className="admin-config-segmented flex w-full sm:inline-flex sm:w-auto">
+              {(["automatic", "manual"] as const).map((mode) => (
+                <ModeOption
+                  key={mode}
+                  mode={mode}
+                  selected={draft.mode === mode}
+                  disabled={inputsDisabled}
+                  onSelect={(next) => setDraft((current) => ({ ...current, mode: next }))}
+                />
+              ))}
+            </div>
+            <AdminSecondaryButton
+              size="sm"
+              aria-label={enabled ? "Desactivar cuotas sin interés" : "Activar cuotas sin interés"}
+              aria-pressed={enabled}
+              disabled={inputsDisabled}
+              onClick={() => setDraft((current) => ({ ...current, interestFreeEnabled: !current.interestFreeEnabled }))}
+              data-interest-free-toggle
+              className={cn("admin-toggle min-w-0 justify-start px-2.5", enabled && "admin-toggle-on")}
+            >
+              {enabled ? (
+                <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4" />
+              ) : (
+                <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4" />
+              )}
+              <span className="text-xs text-white">{enabled ? "Cuotas activadas" : "Cuotas desactivadas"}</span>
+            </AdminSecondaryButton>
           </div>
 
           {manual ? (
-            <div
-              className="admin-config-status mt-2 flex items-start gap-2 px-3 py-2"
-              data-tone="warning"
-              data-manual-warning
-              role="status"
-            >
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" />
-              <p className="text-12px font-semibold leading-5 text-white/85">{MANUAL_MODE_WARNING}</p>
-            </div>
+            <p className="admin-config-status mt-2.5 flex items-start gap-1.5 px-2.5 py-1.5 text-12px font-semibold leading-4 text-white/85" data-tone="warning" data-manual-warning role="status">
+              <AlertTriangle className="admin-config-warning-icon mt-px size-3.5 shrink-0" />
+              {MANUAL_MODE_WARNING}
+            </p>
           ) : null}
 
-          {!draft.interestFreeEnabled ? (
-            <div className="admin-config-status mt-2 px-3 py-2" data-tone="info" data-interest-free-off role="status">
-              <p className="text-12px leading-5 text-white/80">
-                <strong className="text-white">Cuotas sin interés desactivadas.</strong> BEYONIX no comunica &quot;sin
-                interés&quot; ni absorbe financiación: sólo ofrece Mercado Pago en 1 pago a precio contado.
-              </p>
-            </div>
+          {!enabled ? (
+            <p className="mt-2.5 text-12px leading-4 text-white/72" data-interest-free-off role="status">
+              Cuotas desactivadas: sólo Mercado Pago en 1 pago a precio contado, sin comunicar &quot;sin interés&quot;.
+            </p>
+          ) : syncFailed ? (
+            <p className="admin-config-feedback mt-2.5 text-12px font-semibold leading-4" data-tone="danger" data-mercadopago-sync role="status">
+              Sin promociones públicas hasta volver a verificar; el checkout sigue con 1 pago.
+            </p>
           ) : null}
-        </Block>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-          <Block
-            icon={<CreditCard className="size-3.5" />}
-            title="Promoción actual"
-            help="Lo que Mercado Pago confirma hoy para Checkout Pro. BEYONIX ofrece exactamente eso (máximo 6), desde el mismo monto."
-            data-financing-block="promocion"
-          >
-            <div
-              className="admin-config-status mb-2 space-y-0.5 px-3 py-2 text-12px leading-5 text-white/80"
-              data-tone={syncFailed ? "danger" : confirmedMax ? "success" : "info"}
-              data-mercadopago-sync
-              role="status"
-            >
+          {syncStatus && (reference || syncStatus.lastFailure) ? (
+            <ConfigDisclosure summary="Ver detalle" className="mt-2" data-sync-detail>
               {syncFailed ? (
-                <>
-                  <p className="font-black text-white">⚠ Mercado Pago no pudo verificarse</p>
-                  <p data-sync-error>
-                    {syncStatus?.lastError}
-                    {syncStatus?.lastAttemptAt ? ` Falló: ${formatDateTime(syncStatus.lastAttemptAt)}.` : ""}
-                  </p>
-                  <p data-last-success>
-                    {reference
-                      ? `Última consulta exitosa: ${formatDateTime(reference.checkedAt)}.`
-                      : "Sin consultas exitosas todavía."}
-                  </p>
-                  <p>Mientras tanto la tienda no comunica ninguna promoción y el checkout sólo ofrece 1 pago a precio contado si Mercado Pago no confirma en vivo.</p>
-                </>
-              ) : reference ? (
-                confirmedMax ? (
-                  <dl data-confirmed-max className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3">
-                    <dt className="text-white/62">Máximo confirmado:</dt>
-                    <dd className="font-black text-white">{confirmedMax.count} cuotas sin interés</dd>
-                    <dt className="text-white/62">Desde aprox.:</dt>
-                    <dd className="font-black text-white">{formatARS(confirmedMax.minimumAmount)}</dd>
-                    <dt className="text-white/62">Compatible:</dt>
-                    <dd className="font-black text-white">{brandsText(confirmedMax.brands) ?? "Sin dato de marcas"}</dd>
-                  </dl>
-                ) : (
-                  <p data-confirmed-max>
-                    Mercado Pago no confirma cuotas sin interés para ningún monto probado (hasta{" "}
-                    {formatARS(REFERENCE_PROBE_MAX_AMOUNT)}): sólo 1 pago a precio contado.
-                  </p>
-                )
-              ) : (
-                <p>Todavía no se comprobó Mercado Pago: no se comunica ninguna promoción.</p>
-              )}
-            </div>
-            <div className="admin-config-cost-table">
-              {INSTALLMENT_COUNTS.map((count) => {
-                const minimum = reference?.minimumAmountByCount[count] ?? null
-                return (
-                  <div
-                    key={count}
-                    data-availability-row={count}
-                    className="admin-config-cost-row flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3 py-2"
-                  >
-                    <span className="text-sm font-black text-white">{count} cuotas sin interés</span>
-                    <span className="flex flex-wrap items-center gap-1.5 text-12px text-white/70">
-                      {reference ? (
-                        <>
-                          <AvailabilityChip minimum={minimum} checked />
-                          {minimum !== null && brandsText(reference.brandsByCount[count]) ? (
-                            <span data-reference-brands>{brandsText(reference.brandsByCount[count])}</span>
-                          ) : null}
-                        </>
-                      ) : (
-                        "Sin comprobar"
-                      )}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0 text-12px leading-5 text-white/58">
-                {reference ? (
-                  <p data-reference-checked>Última comprobación exitosa: {formatDateTime(reference.checkedAt)}</p>
-                ) : null}
-                {syncStatus?.lastFailure && !syncFailed ? (
-                  <p data-last-failure>
-                    Último fallo: {formatDateTime(syncStatus.lastFailure.at)} · {syncStatus.lastFailure.message}
-                  </p>
-                ) : null}
-                <p>Mínimos estimados con consultas reales a Mercado Pago (no expone el umbral). Se sincroniza solo cada ~15 min.</p>
-              </div>
-              <AdminSecondaryButton
-                size="sm"
-                disabled={disabled || checkingReference}
-                onClick={onCheckReference}
-                data-check-reference
-              >
-                <RefreshCw className={cn("size-3.5", checkingReference && "animate-spin")} />
-                {checkingReference ? "Comprobando…" : "Comprobar ahora"}
-              </AdminSecondaryButton>
-            </div>
-          </Block>
+                <p data-sync-error>
+                  Motivo: {syncStatus.lastError}
+                  {syncStatus.lastAttemptAt ? ` Falló: ${formatDateTime(syncStatus.lastAttemptAt)}.` : ""}
+                </p>
+              ) : null}
+              <p data-last-success>
+                {reference ? `Última consulta exitosa: ${formatDateTime(reference.checkedAt)}.` : "Sin consultas exitosas todavía."}
+              </p>
+              {syncStatus.lastFailure && !syncFailed ? (
+                <p data-last-failure>
+                  Último fallo: {formatDateTime(syncStatus.lastFailure.at)} · {syncStatus.lastFailure.message}
+                </p>
+              ) : null}
+              <p>Se sincroniza solo cada ~15 min; &quot;Comprobar ahora&quot; consulta en el momento.</p>
+            </ConfigDisclosure>
+          ) : null}
+        </ConfigSection>
 
-          <div className="space-y-4">
-            <Block icon={<Megaphone className="size-3.5" />} title="Comunicación pública" data-financing-block="comunicacion">
-              <div
-                className="admin-config-status px-3 py-2 text-12px leading-5 text-white/80"
-                data-tone={publicMessage ? "success" : "neutral"}
-                data-public-message
-              >
-                {publicMessage ? (
-                  <p className="text-sm font-black text-white">“{publicMessage.text}”</p>
-                ) : (
-                  <p>Ninguna: no hay promoción confirmada y vigente para comunicar.</p>
-                )}
-                <p className="mt-0.5 text-white/62">Mismo texto en Home, categorías, tarjetas, ficha, carrito y checkout.</p>
-              </div>
-            </Block>
-
-            <Block icon={<ListChecks className="size-3.5" />} title="Reglas activas" data-financing-block="reglas">
-              <ul className="admin-config-summary space-y-1 px-3.5 py-3 text-12px leading-5 text-white/78">
-                <li><strong className="text-white">1 pago</strong> → precio contado (crédito, débito o dinero en cuenta).</li>
-                <li><strong className="text-white">Cuotas</strong> → un solo precio financiado con el costo del máximo confirmado (2, 3 o 6).</li>
-                <li>Elegir menos cuotas no baja el precio.</li>
-                <li>Se ofrece exactamente lo que confirma Mercado Pago, desde el mismo monto. Máximo {MAX_INTEREST_FREE_INSTALLMENTS} (9, 12 o 18 nunca).</li>
-                <li>Cuenta el <strong className="text-white">monto final que cobra Mercado Pago</strong>: productos + envío pagado − descuentos − saldo.</li>
-              </ul>
-            </Block>
+        {/* ── B. Cuotas disponibles ── */}
+        <ConfigSection icon={<CreditCard className="size-3.5" />} title="Cuotas disponibles" data-financing-block="cuotas">
+          <div data-confirmed-max={confirmedMax && enabled ? String(confirmedMax.count) : "none"}>
+            {!enabled ? (
+              <>
+                <p className="text-lg font-black leading-tight text-white">Cuotas desactivadas</p>
+                <p className="mt-0.5 text-sm text-white/72">Sólo 1 pago a precio contado.</p>
+              </>
+            ) : !reference ? (
+              <>
+                <p className="text-lg font-black leading-tight text-white">Sin comprobar</p>
+                <p className="mt-0.5 text-sm text-white/72">Usá “Comprobar ahora” para consultar a Mercado Pago.</p>
+              </>
+            ) : confirmedMax ? (
+              <>
+                <p className="flex flex-wrap items-center gap-2 text-lg font-black leading-tight text-white">
+                  Hasta {confirmedMax.count} cuotas sin interés
+                  {syncFailed ? <ConfigChip tone="warning">Último dato verificado</ConfigChip> : null}
+                </p>
+                <p className="mt-0.5 text-sm text-white/80">
+                  Desde aprox. <strong className="text-white">{formatARS(confirmedMax.minimumAmount)}</strong>
+                  {brandsText(confirmedMax.brands) ? (
+                    <>
+                      {" · "}
+                      <span data-confirmed-brands>{brandsText(confirmedMax.brands)}</span>
+                    </>
+                  ) : null}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-black leading-tight text-white">Sin cuotas sin interés</p>
+                <p className="mt-0.5 text-sm text-white/72">
+                  Mercado Pago no las confirma (probado hasta {formatARS(REFERENCE_PROBE_MAX_AMOUNT)}): sólo 1 pago.
+                </p>
+              </>
+            )}
           </div>
-        </div>
 
-        <Block
+          <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1" aria-label="Disponibilidad por cuota" data-availability-list>
+            {INSTALLMENT_COUNTS.map((count) => {
+              const minimum = reference?.minimumAmountByCount[count] ?? null
+              const available = reference !== null && minimum !== null
+              return (
+                <li
+                  key={count}
+                  data-availability-row={count}
+                  data-availability={reference ? (available ? "available" : "unavailable") : "unchecked"}
+                  title={available ? `Desde aprox. ${formatARS(minimum)}${brandsText(reference?.brandsByCount[count]) ? ` · ${brandsText(reference?.brandsByCount[count])}` : ""}` : undefined}
+                  className="flex items-center gap-1 text-12px font-semibold text-white/80"
+                >
+                  {available ? (
+                    <Check aria-hidden="true" className="admin-config-check size-3.5" />
+                  ) : (
+                    <Minus aria-hidden="true" className="size-3.5 text-white/62" />
+                  )}
+                  {count} cuotas
+                  <span className="sr-only">{available ? "disponible" : reference ? "no disponible" : "sin comprobar"}</span>
+                </li>
+              )
+            })}
+          </ul>
+
+          <div className="admin-config-preview mt-3 px-3 py-2" data-public-message>
+            <p className="text-11px font-bold text-white/62">Texto publicado</p>
+            {publicMessage ? (
+              <p className="mt-0.5 text-sm font-black text-white">“{publicMessage.text}”</p>
+            ) : (
+              <p className="mt-0.5 text-12px font-semibold text-white/72">Ninguno: no hay promoción verificada para comunicar.</p>
+            )}
+          </div>
+
+          <ConfigDisclosure summary="Cómo funciona" className="mt-2.5" data-financing-rules>
+            <ul className="list-disc space-y-0.5 pl-4">
+              <li><strong className="text-white">1 pago</strong> = precio contado (crédito, débito o dinero en cuenta).</li>
+              <li><strong className="text-white">Cuotas</strong> = un precio financiado con el costo del máximo confirmado; elegir menos cuotas no lo baja.</li>
+              <li>Se ofrece exactamente lo que confirma Mercado Pago, desde el mismo monto. Máximo {MAX_INTEREST_FREE_INSTALLMENTS} (9, 12 o 18 nunca).</li>
+              <li>Manda el <strong className="text-white">total final</strong>: productos + envío pagado − descuentos − saldo.</li>
+              <li>Los montos &quot;desde&quot; se estiman con consultas reales: Mercado Pago no expone el umbral.</li>
+            </ul>
+          </ConfigDisclosure>
+        </ConfigSection>
+      </div>
+
+      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        {/* ── C. Costos ── */}
+        <ConfigSection
           icon={<Wallet className="size-3.5" />}
           title="Costos"
-          help="Porcentajes sin IVA. Observado = lo que Mercado Pago cobró en el último pago real y confiable de esa modalidad: una sola venta alcanza para actualizarlo."
+          summary={<span className="text-12px font-semibold text-white/62">sin IVA</span>}
+          className={cn(manual && "admin-financing-manual")}
           data-financing-block="costos"
+          actions={
+            manual ? null : (
+              <AdminSecondaryButton
+                size="sm"
+                aria-expanded={editingBackup}
+                onClick={() => setEditingBackup((current) => !current)}
+                data-edit-backup
+              >
+                <Pencil className="size-3.5" />
+                {editingBackup ? "Ocultar respaldo manual" : "Editar respaldo manual"}
+              </AdminSecondaryButton>
+            )
+          }
         >
-          <div className="admin-config-cost-table">
-            <div className={cn("admin-config-cost-head hidden gap-3 px-3 py-2 text-10px font-black uppercase tracking-widest text-white/55 md:grid", COST_GRID)}>
-              <span>Modalidad (sin IVA)</span>
-              <span>Observado · última observación</span>
-              <span>{manualLabel}</span>
-              <span>En uso · fuente</span>
-            </div>
+          <ul className="admin-config-list" data-cost-list>
             {costRows.map((row) => {
               const isBase = row.key === "base"
               const count = row.key as InstallmentCount
@@ -670,23 +616,18 @@ export function FinancingPanel({
                 <CostRow
                   key={row.key}
                   label={row.label}
-                  hint={row.hint}
-                  availability={
-                    isBase ? null : (
-                      <AvailabilityChip minimum={reference?.minimumAmountByCount[count] ?? null} checked={reference !== null} />
-                    )
-                  }
+                  available={isBase || reference === null ? null : reference.minimumAmountByCount[count] !== null}
+                  effectiveValue={isBase ? effective.baseProcessingPercent : effective.surchargePercentByCount[count]}
+                  source={source}
+                  mode={draft.mode}
                   observation={isBase ? observed?.base ?? null : observed?.surchargeByCount[count] ?? null}
                   observationUnavailableText={
                     isBase ? "Sin pagos con crédito en 1 pago todavía" : "Sin pagos con crédito en estas cuotas sin interés todavía"
                   }
                   ivaPercent={effective.ivaPercent}
+                  showInput={showInputs}
                   manualValue={isBase ? draft.base : draft.surcharge[count]}
                   manualLabel={manualLabel}
-                  manualInUse={source === "manual"}
-                  effectiveValue={isBase ? effective.baseProcessingPercent : effective.surchargePercentByCount[count]}
-                  source={source}
-                  mode={draft.mode}
                   disabled={inputsDisabled}
                   onManualChange={(value) =>
                     isBase ? setDraft((current) => ({ ...current, base: value })) : setSurcharge(count, value)
@@ -696,72 +637,80 @@ export function FinancingPanel({
             })}
             <CostRow
               label="IVA"
-              hint="Sobre las comisiones de Mercado Pago."
-              observation={null}
-              observationUnavailableText="Mercado Pago no lo informa por separado: siempre se usa este valor."
-              ivaPercent={effective.ivaPercent}
-              manualValue={draft.iva}
-              manualLabel={manualLabel}
-              manualInUse
+              available={null}
               effectiveValue={effective.ivaPercent}
               source="manual"
               mode="manual"
+              observation={null}
+              observationUnavailableText="Mercado Pago no lo informa por separado: siempre se usa este valor."
+              ivaPercent={effective.ivaPercent}
+              showInput={showInputs}
+              manualValue={draft.iva}
+              manualLabel={manualLabel}
               disabled={inputsDisabled}
               onManualChange={(value) => setDraft((current) => ({ ...current, iva: value }))}
             />
-          </div>
+          </ul>
           {observed ? (
-            <p data-observed-references className="mt-1.5 text-12px leading-5 text-white/62">
-              <strong className="text-white/80">Referencia (no se usa para calcular):</strong>{" "}
+            <p data-observed-references className="mt-1.5 text-12px leading-4 text-white/62">
+              Referencia (no se usa para calcular):{" "}
               {(["debit_card", "account_money"] as const)
                 .map((type) => {
                   const observation = observed.singlePaymentByType[type]
                   const label = PAYMENT_TYPE_LABELS[type]
                   const name = `${label[0].toUpperCase()}${label.slice(1)}`
                   return observation
-                    ? `${name}: ${formatPercent(withoutIva(observation.percentWithIva, effective.ivaPercent))}`
-                    : `${name}: sin datos`
+                    ? `${name} ${formatPercent(withoutIva(observation.percentWithIva, effective.ivaPercent))}`
+                    : `${name} sin datos`
                 })
                 .join(" · ")}
             </p>
-          ) : null}
-        </Block>
+          ) : (
+            <p className="mt-1.5 text-12px leading-4 text-white/62">No se pudieron leer los pagos observados: se usa el respaldo.</p>
+          )}
+        </ConfigSection>
 
-        <Block icon={<History className="size-3.5" />} title="Historial" data-financing-block="historial">
-          {observed && observed.history.length > 0 ? (
-            <ul className="admin-config-cost-table" data-cost-history>
-              {observed.history.slice(0, 8).map((event) => (
-                <li
-                  key={`${event.modality}-${event.orderId}-${event.observedAt}`}
-                  className="admin-config-cost-row flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 px-3 py-2"
-                >
-                  <span className="text-sm font-black text-white">
-                    {MODALITY_LABELS[event.modality]}{" "}
-                    <span className="font-bold text-white/80">
+        {/* ── D. Historial ── */}
+        <ConfigSection icon={<History className="size-3.5" />} title="Historial" data-financing-block="historial">
+          {history.length > 0 ? (
+            <>
+              <ul className="admin-config-list" data-cost-history>
+                {visibleHistory.map((event) => (
+                  <li key={`${event.modality}-${event.orderId}-${event.observedAt}`} className="py-1.5">
+                    <p className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-black text-white">{MODALITY_LABELS[event.modality]}</span>
+                      <span className="shrink-0 text-12px text-white/62">{formatDateTime(event.observedAt)}</span>
+                    </p>
+                    <p className="text-sm font-bold text-white/85">
                       {event.previousPercentWithIva === null
                         ? formatPercent(withoutIva(event.percentWithIva, effective.ivaPercent))
                         : `${formatPercent(withoutIva(event.previousPercentWithIva, effective.ivaPercent))} → ${formatPercent(withoutIva(event.percentWithIva, effective.ivaPercent))}`}
-                    </span>
-                  </span>
-                  <span className="text-12px text-white/62">
-                    Detectado en pago real · {formatDateTime(event.observedAt)} · BX-{1000 + event.orderId}
-                  </span>
-                  <span
-                    className="admin-config-chip w-full whitespace-normal text-10px font-black normal-case tracking-normal sm:w-auto"
-                    data-tone="success"
-                  >
-                    {historyStatusText(event)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    </p>
+                    <p className="text-12px leading-4 text-white/62">
+                      Detectado en pago real · {historyStatusText(event)} · BX-{1000 + event.orderId}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {history.length > HISTORY_PREVIEW ? (
+                <button
+                  type="button"
+                  className="admin-config-link mt-1.5 text-12px font-black underline-offset-2 hover:underline"
+                  aria-expanded={showAllHistory}
+                  onClick={() => setShowAllHistory((current) => !current)}
+                  data-history-toggle
+                >
+                  {showAllHistory ? "Ver menos" : `Ver historial completo (${history.length})`}
+                </button>
+              ) : null}
+            </>
           ) : (
-            <p className="text-12px text-white/58">
+            <p className="text-12px text-white/62">
               {observed ? "Todavía no hay cambios detectados en pagos reales." : "No se pudieron leer los pagos observados."}
             </p>
           )}
-        </Block>
+        </ConfigSection>
       </div>
-    </ConfigSection>
+    </div>
   )
 }

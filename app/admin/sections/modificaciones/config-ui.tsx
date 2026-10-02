@@ -1,10 +1,15 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { CheckCircle2, Save, ShieldAlert } from "lucide-react"
+import { CheckCircle2, ChevronRight, Save, ShieldAlert } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { AdminPrimaryButton, AdminSection } from "../../components/admin-controls"
+import {
+  AdminPrimaryButton,
+  AdminSecondaryButton,
+  adminCardClassName,
+  adminSurfaceLevel,
+} from "../../components/admin-controls"
 
 export type ConfigTone = "neutral" | "info" | "success" | "warning" | "danger"
 
@@ -20,66 +25,81 @@ interface ConfigSaveActionsProps {
   onSave: () => void
 }
 
-/** Guardado por bloque: sólo se habilita con cambios propios del bloque. */
+/**
+ * Guardado por bloque: sólo se habilita con cambios propios del bloque. Sin
+ * cambios queda discreto (botón secundario); con cambios pasa a primario.
+ */
 export function ConfigSaveActions({ dirty, saving, disabled, onSave }: ConfigSaveActionsProps) {
+  const Button = dirty ? AdminPrimaryButton : AdminSecondaryButton
   return (
     <div className="flex items-center gap-2">
       <span className="admin-config-dirty text-11px font-bold" data-dirty={dirty ? "true" : "false"}>
         {dirty ? "Cambios sin guardar" : "Sin cambios"}
       </span>
-      <AdminPrimaryButton
+      <Button
         type="button"
         size="sm"
         onClick={onSave}
         disabled={disabled || saving || !dirty}
-        className="shrink-0"
+        className="admin-config-save shrink-0"
       >
         <Save className="size-3.5" />
         {saving ? "Guardando…" : "Guardar cambios"}
-      </AdminPrimaryButton>
+      </Button>
     </div>
   )
 }
 
 interface ConfigSectionProps {
-  icon: ReactNode
-  eyebrow: string
+  icon?: ReactNode
   title: string
-  description: string
+  /** Estado corto junto al título (chip o texto), nunca un párrafo. */
+  summary?: ReactNode
+  description?: string
   actions?: ReactNode
   feedback?: ConfigFeedback | null
   className?: string
   children: ReactNode
+  [dataAttribute: `data-${string}`]: string | undefined
 }
 
+/**
+ * Tarjeta de un bloque de configuración: título compacto con su estado y
+ * acciones a la derecha; el contenido sin cajas anidadas.
+ */
 export function ConfigSection({
   icon,
-  eyebrow,
   title,
+  summary,
   description,
   actions,
   feedback,
   className,
   children,
+  ...rest
 }: ConfigSectionProps) {
   return (
-    <AdminSection
-      compact
-      icon={icon}
-      eyebrow={eyebrow}
-      title={title}
-      description={description}
-      actions={actions}
-      className={cn("admin-config-section", className)}
+    <section
+      className={cn(adminCardClassName, adminSurfaceLevel.section, "admin-config-section min-w-0 p-3.5", className)}
+      {...rest}
     >
+      <header className="mb-2.5 flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            {icon ? <span className="admin-config-icon flex shrink-0 items-center">{icon}</span> : null}
+            <h3 className="text-sm font-black leading-tight text-white">{title}</h3>
+            {summary}
+          </div>
+          {description ? <p className="mt-0.5 text-12px leading-4 text-white/62">{description}</p> : null}
+        </div>
+        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+      </header>
       {children}
       {feedback ? (
         <p
           role={feedback.tone === "danger" ? "alert" : "status"}
-          className={cn(
-            "mt-3 flex items-center gap-1.5 text-12px font-semibold",
-            feedback.tone === "success" ? "text-emerald-200" : "text-red-200",
-          )}
+          className="admin-config-feedback mt-2.5 flex items-center gap-1.5 text-12px font-semibold"
+          data-tone={feedback.tone}
         >
           {feedback.tone === "success" ? (
             <CheckCircle2 className="size-3.5 shrink-0" />
@@ -89,40 +109,103 @@ export function ConfigSection({
           {feedback.text}
         </p>
       ) : null}
-    </AdminSection>
+    </section>
   )
 }
 
-interface ConfigTileProps {
+/** Agrupación de bloques por categoría (Integraciones, Inventario, …). */
+export function ConfigGroup({
+  id,
+  label,
+  className,
+  children,
+}: {
+  id: string
+  label: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <section aria-labelledby={`config-group-${id}`} data-config-group={id} className={cn("min-w-0 space-y-2", className)}>
+      <h2 id={`config-group-${id}`} className="admin-config-group-title px-0.5 text-11px font-black uppercase tracking-widest">
+        {label}
+      </h2>
+      <div className="grid gap-3">{children}</div>
+    </section>
+  )
+}
+
+/** Fila de datos "etiqueta: valor" sin cajas, para estados de un vistazo. */
+export function ConfigStats({ className, children }: { className?: string; children: ReactNode }) {
+  return <dl className={cn("grid gap-x-4 gap-y-2.5", className)}>{children}</dl>
+}
+
+export function ConfigStat({
+  label,
+  value,
+  tone,
+  detail,
+  className,
+  ...rest
+}: {
   label: string
   value: ReactNode
   tone?: ConfigTone
   detail?: ReactNode
-  action?: ReactNode
   className?: string
-}
-
-/** Mini tarjeta de estado: etiqueta chica, valor con punto de color y detalle opcional. */
-export function ConfigTile({ label, value, tone = "neutral", detail, action, className }: ConfigTileProps) {
+  [dataAttribute: `data-${string}`]: string | undefined
+}) {
   return (
-    <div className={cn("admin-config-tile flex min-w-0 flex-col gap-1 px-3 py-2.5", className)} data-tone={tone}>
-      <p className="text-10px font-black uppercase tracking-widest text-white/55">{label}</p>
-      <p className="flex min-w-0 items-center gap-1.5 text-sm font-black text-white">
-        <span className="admin-config-dot size-1.5 shrink-0 rounded-full" data-tone={tone} />
-        <span className="truncate">{value}</span>
-      </p>
-      {detail ? <p className="text-12px leading-4 text-white/62">{detail}</p> : null}
-      {action ? <div className="mt-auto pt-1">{action}</div> : null}
+    <div className={cn("min-w-0", className)} {...rest}>
+      <dt className="text-11px font-bold text-white/62">{label}</dt>
+      <dd className="mt-0.5 flex min-w-0 items-center gap-1.5 text-sm font-black text-white">
+        {tone ? <span className="admin-config-dot size-2 shrink-0 rounded-full" data-tone={tone} /> : null}
+        <span className="min-w-0 truncate">{value}</span>
+      </dd>
+      {detail ? <dd className="mt-0.5 text-12px leading-4 text-white/62">{detail}</dd> : null}
     </div>
   )
 }
 
-/** Recuadro destacado para el resumen de una regla (envíos, ejemplos de precio). */
-export function ConfigSummary({ className, children }: { className?: string; children: ReactNode }) {
+/** "Lo técnico se despliega": detalle colapsado por defecto. */
+export function ConfigDisclosure({
+  summary,
+  className,
+  children,
+  ...rest
+}: {
+  summary: string
+  className?: string
+  children: ReactNode
+  [dataAttribute: `data-${string}`]: string | undefined
+}) {
   return (
-    <div className={cn("admin-config-summary px-3.5 py-3 text-12px leading-5 text-white/74", className)}>
+    <details className={cn("admin-config-details group text-12px leading-5 text-white/72", className)} {...rest}>
+      <summary className="flex cursor-pointer items-center gap-1 font-bold text-white/80">
+        <ChevronRight className="admin-config-details-icon size-3.5 shrink-0 transition-transform" aria-hidden="true" />
+        {summary}
+      </summary>
+      <div className="mt-1.5 space-y-1 pl-4.5">{children}</div>
+    </details>
+  )
+}
+
+/** Chip discreto de estado. */
+export function ConfigChip({
+  tone = "neutral",
+  className,
+  children,
+  ...rest
+}: {
+  tone?: ConfigTone
+  className?: string
+  children: ReactNode
+  [dataAttribute: `data-${string}`]: string | undefined
+}) {
+  return (
+    <span className={cn("admin-config-chip text-11px font-bold", className)} data-tone={tone} {...rest}>
       {children}
-    </div>
+    </span>
   )
 }
 

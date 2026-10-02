@@ -16,9 +16,10 @@ import {
   AdminTextInput,
 } from "../../components/admin-controls"
 import {
+  ConfigChip,
+  ConfigDisclosure,
   ConfigSaveActions,
   ConfigSection,
-  ConfigSummary,
   formatARS,
   parseAmount,
   parsePercentage,
@@ -37,9 +38,76 @@ export interface ConfigSectionProps<T> {
   onSave: (value: T) => void
 }
 
-const fieldLabelClassName = "mb-1.5 text-11px"
+const fieldLabelClassName = "mb-1 text-11px"
 const fieldHelpClassName = "mt-1 text-12px leading-4"
 const inputClassName = "text-center text-sm font-bold"
+const iconClassName = "size-3.5"
+
+function MoneyField({
+  label,
+  help,
+  ariaLabel,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string
+  help?: string
+  ariaLabel: string
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <AdminFormField label={label} help={help} labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
+      <AdminTextInput
+        title={label}
+        ariaLabel={ariaLabel}
+        value={withInputSymbol(value, "$")}
+        placeholder="$ 0"
+        inputMode="numeric"
+        className={inputClassName}
+        disabled={disabled}
+        onChange={(nextValue) => onChange(sanitizeAmountInput(nextValue))}
+      />
+    </AdminFormField>
+  )
+}
+
+function PercentField({
+  label,
+  help,
+  title,
+  ariaLabel,
+  placeholder,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string
+  help?: string
+  title: string
+  ariaLabel: string
+  placeholder: string
+  value: string
+  disabled: boolean
+  onChange: (value: string) => void
+}) {
+  return (
+    <AdminFormField label={label} help={help} labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
+      <AdminTextInput
+        title={title}
+        ariaLabel={ariaLabel}
+        value={withInputSymbol(value, "%")}
+        placeholder={placeholder}
+        inputMode="decimal"
+        className={inputClassName}
+        disabled={disabled}
+        onChange={(nextValue) => onChange(sanitizePercentInput(nextValue))}
+      />
+    </AdminFormField>
+  )
+}
 
 // ─────────────────────────────────────────────────────────────
 // Stock
@@ -57,8 +125,8 @@ interface StockTileProps {
 
 function StockTile({ label, tone, value, range, disabled, readOnly = false, onChange }: StockTileProps) {
   return (
-    <label className="admin-config-tile admin-stock-threshold-box flex min-w-0 flex-col items-center gap-0.5 px-3 py-2" data-tone={tone}>
-      <span className="flex items-center gap-1.5 text-10px font-black uppercase tracking-widest text-white/60">
+    <label className="admin-config-tile admin-stock-threshold-box flex min-w-0 flex-col items-center gap-0.5 px-2 py-1.5" data-tone={tone}>
+      <span className="flex items-center gap-1.5 text-11px font-black text-white/70">
         <span className="admin-config-dot size-1.5 rounded-full" data-tone={tone} />
         {label}
       </span>
@@ -71,9 +139,9 @@ function StockTile({ label, tone, value, range, disabled, readOnly = false, onCh
         disabled={disabled || readOnly}
         readOnly={readOnly}
         onChange={(event) => onChange?.(event.target.value.replace(/\D/g, "").slice(0, 2))}
-        className="admin-config-stock-input w-full min-w-0 bg-transparent text-center text-xl font-black text-white outline-none disabled:opacity-80"
+        className="admin-config-stock-input w-full min-w-0 bg-transparent text-center text-lg font-black text-white outline-none disabled:opacity-80"
       />
-      <span className="text-12px font-semibold text-white/60">{range}</span>
+      <span className="text-12px font-semibold text-white/62">{range}</span>
     </label>
   )
 }
@@ -95,11 +163,10 @@ export function StockSection({ saved, disabled, saving, feedback, onSave }: Conf
 
   return (
     <ConfigSection
-      icon={<Boxes className="size-3.5" />}
-      eyebrow="Inventario"
+      icon={<Boxes className={iconClassName} />}
       title="Stock"
-      description="Cuándo cambia el estado de stock en el panel y en la tienda."
       feedback={feedback}
+      data-config-block="stock"
       actions={
         <ConfigSaveActions dirty={dirty} saving={saving} disabled={disabled || invalid} onSave={() => onSave(next)} />
       }
@@ -130,11 +197,11 @@ export function StockSection({ saved, disabled, saving, feedback, onSave }: Conf
           readOnly
         />
       </div>
-      <p className={`mt-2 text-12px leading-4 ${invalid ? "font-semibold text-red-200" : "text-white/58"}`}>
-        {invalid
-          ? "El stock crítico debe ser menor que el stock bajo."
-          : "Editá crítico y bajo; disponible se calcula solo (bajo + 1)."}
-      </p>
+      {invalid ? (
+        <p role="alert" className="admin-config-feedback mt-2 text-12px font-semibold leading-4" data-tone="danger">
+          El stock crítico debe ser menor que el stock bajo.
+        </p>
+      ) : null}
     </ConfigSection>
   )
 }
@@ -160,82 +227,62 @@ export function ShippingSection({ saved, disabled, saving, feedback, onSave }: C
   const inputsDisabled = disabled || saving
   const active = next.freeShippingMode === "full"
 
-  const moneyField = (
-    label: string,
-    help: string,
-    value: string,
-    onChange: (value: string) => void,
-    ariaLabel: string,
-  ) => (
-    <AdminFormField label={label} help={help} labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
-      <AdminTextInput
-        title={label}
-        ariaLabel={ariaLabel}
-        value={withInputSymbol(value, "$")}
-        placeholder="$ 0"
-        inputMode="numeric"
-        className={inputClassName}
-        disabled={inputsDisabled}
-        onChange={(nextValue) => onChange(sanitizeAmountInput(nextValue))}
-      />
-    </AdminFormField>
-  )
-
   return (
     <ConfigSection
-      icon={<Truck className="size-3.5" />}
-      eyebrow="Comercial"
+      icon={<Truck className={iconClassName} />}
       title="Envíos"
-      description="Bonificación del envío según el monto de compra."
+      summary={<ConfigChip tone={active ? "success" : "neutral"}>{active ? "Bonificación activa" : "Bonificación desactivada"}</ConfigChip>}
       feedback={feedback}
+      data-config-block="shipping"
       actions={<ConfigSaveActions dirty={dirty} saving={saving} disabled={disabled} onSave={() => onSave(next)} />}
     >
-      <ConfigSummary className="mb-3">
-        <p className="flex items-center gap-1.5 font-bold text-white">
-          <span className="admin-config-dot size-1.5 rounded-full" data-tone={active ? "success" : "neutral"} />
-          {active ? "Bonificación por monto activa" : "Bonificación por monto desactivada"}
-        </p>
-        <p className="mt-0.5">
-          {active ? (
-            <>
-              Desde <strong className="text-white">{formatARS(next.freeShippingMinAmount)}</strong> de compra, BEYONIX bonifica
-              hasta <strong className="text-beyonix-cyan">{formatARS(next.shippingBonusMax)}</strong> del envío.{" "}
-              {next.logisticsBaseSubsidy > 0 ? (
-                <>
-                  Por debajo de ese monto, absorbe una bonificación base de{" "}
-                  <strong className="text-beyonix-cyan">{formatARS(next.logisticsBaseSubsidy)}</strong>.
-                </>
-              ) : (
-                "Por debajo de ese monto, el cliente paga el costo real del envío."
-              )}
-            </>
-          ) : next.logisticsBaseSubsidy > 0 ? (
-            <>
-              En todas las compras se aplica sólo la bonificación base de{" "}
-              <strong className="text-beyonix-cyan">{formatARS(next.logisticsBaseSubsidy)}</strong>.
-            </>
-          ) : (
-            "El cliente paga el costo real del envío en todas las compras."
-          )}
-        </p>
-      </ConfigSummary>
+      <p data-shipping-summary className="mb-3 text-sm leading-5 text-white/80">
+        {active ? (
+          <>
+            Desde <strong className="text-white">{formatARS(next.freeShippingMinAmount)}</strong> de compra, BEYONIX bonifica
+            hasta <strong className="text-white">{formatARS(next.shippingBonusMax)}</strong> del envío.
+            {next.logisticsBaseSubsidy > 0 ? (
+              <> Debajo, bonificación base de <strong className="text-white">{formatARS(next.logisticsBaseSubsidy)}</strong>.</>
+            ) : null}
+          </>
+        ) : next.logisticsBaseSubsidy > 0 ? (
+          <>
+            Sólo se aplica la bonificación base de <strong className="text-white">{formatARS(next.logisticsBaseSubsidy)}</strong>.
+          </>
+        ) : (
+          "El cliente paga el costo real del envío."
+        )}
+      </p>
 
-      <div className="grid grid-cols-2 gap-3">
-        {moneyField("Compra mínima", "Activa la bonificación.", minAmount, setMinAmount, "Monto mínimo para acceder a envío bonificado")}
-        {moneyField("Bonificación máxima", "Tope que cubre BEYONIX.", bonusMax, setBonusMax, "Tope máximo de bonificación de envío")}
-        {moneyField("Bonificación base", "Debajo del mínimo.", baseSubsidy, setBaseSubsidy, "Bonificación base de envío para compras por debajo del mínimo")}
-        <AdminFormField label="Estado" help="Bonificación por monto." labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+        <MoneyField
+          label="Compra mínima"
+          ariaLabel="Monto mínimo para acceder a envío bonificado"
+          value={minAmount}
+          disabled={inputsDisabled}
+          onChange={setMinAmount}
+        />
+        <MoneyField
+          label="Bonificación máxima"
+          ariaLabel="Tope máximo de bonificación de envío"
+          value={bonusMax}
+          disabled={inputsDisabled}
+          onChange={setBonusMax}
+        />
+        <MoneyField
+          label="Bonificación base"
+          help="Debajo de la compra mínima."
+          ariaLabel="Bonificación base de envío para compras por debajo del mínimo"
+          value={baseSubsidy}
+          disabled={inputsDisabled}
+          onChange={setBaseSubsidy}
+        />
+        <AdminFormField label="Estado" labelClassName={fieldLabelClassName}>
           <AdminSelect
             title="Estado de la bonificación"
             value={mode}
             centered
-            leadingIcon={
-              <span
-                className={`size-2 rounded-full shadow-[0_0_10px_currentColor] ${
-                  active ? "bg-emerald-400 text-emerald-400" : "bg-white/35 text-white/35"
-                }`}
-              />
-            }
+            leadingIcon={<span className="admin-config-dot size-2 rounded-full" data-tone={active ? "success" : "neutral"} />}
             triggerClassName="admin-modifications-status-select !text-sm !font-bold"
             optionClassName="font-bold hover:!bg-beyonix-blue/25"
             disabled={inputsDisabled}
@@ -247,18 +294,18 @@ export function ShippingSection({ saved, disabled, saving, feedback, onSave }: C
         </AdminFormField>
       </div>
 
-      <details className="admin-config-details mt-3 text-12px leading-5 text-white/62">
-        <summary className="cursor-pointer font-bold text-white/72">Costo de envío de referencia</summary>
-        <div className="mt-2 max-w-xs">
-          {moneyField(
-            "Costo predeterminado",
-            "Referencia cuando no hay cotización; Andreani usa el costo real que informa.",
-            defaultCost,
-            setDefaultCost,
-            "Costo de envío predeterminado",
-          )}
+      <ConfigDisclosure summary="Costo de envío de referencia" className="mt-2.5" data-shipping-reference>
+        <div className="max-w-56">
+          <MoneyField
+            label="Costo predeterminado"
+            help="Sin cotización; Andreani usa su costo real."
+            ariaLabel="Costo de envío predeterminado"
+            value={defaultCost}
+            disabled={inputsDisabled}
+            onChange={setDefaultCost}
+          />
         </div>
-      </details>
+      </ConfigDisclosure>
     </ConfigSection>
   )
 }
@@ -283,47 +330,37 @@ export function PricingSection({ saved, disabled, saving, feedback, onSave }: Co
 
   return (
     <ConfigSection
-      icon={<Percent className="size-3.5" />}
-      eyebrow="Comercial"
+      icon={<Percent className={iconClassName} />}
       title="Precios y transferencia"
-      description="Descuento por transferencia y leyenda legal de impuestos."
       feedback={feedback}
+      data-config-block="pricing"
       actions={<ConfigSaveActions dirty={dirty} saving={saving} disabled={disabled} onSave={() => onSave(next)} />}
     >
-      <div className="grid grid-cols-2 gap-3">
-        <AdminFormField label="Descuento transferencia" help="Sobre el precio de contado." labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
-          <AdminTextInput
-            title="Descuento por transferencia"
-            ariaLabel="Descuento por transferencia"
-            value={withInputSymbol(transferDiscount, "%")}
-            placeholder="% 10"
-            inputMode="decimal"
-            className={inputClassName}
-            disabled={inputsDisabled}
-            onChange={(value) => setTransferDiscount(sanitizePercentInput(value))}
-          />
-        </AdminFormField>
-        <AdminFormField label="Impuestos nacionales" help="Sólo para la leyenda legal." labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
-          <AdminTextInput
-            title="Incidencia de impuestos nacionales"
-            ariaLabel="Incidencia de impuestos nacionales para exhibición"
-            value={withInputSymbol(taxesIncidence, "%")}
-            placeholder="% 21"
-            inputMode="decimal"
-            className={inputClassName}
-            disabled={inputsDisabled}
-            onChange={(value) => setTaxesIncidence(sanitizePercentInput(value))}
-          />
-        </AdminFormField>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+        <PercentField
+          label="Descuento transferencia"
+          title="Descuento por transferencia"
+          ariaLabel="Descuento por transferencia"
+          placeholder="% 10"
+          value={transferDiscount}
+          disabled={inputsDisabled}
+          onChange={setTransferDiscount}
+        />
+        <PercentField
+          label="Impuestos nacionales"
+          help="Sólo para la leyenda legal."
+          title="Incidencia de impuestos nacionales"
+          ariaLabel="Incidencia de impuestos nacionales para exhibición"
+          placeholder="% 21"
+          value={taxesIncidence}
+          disabled={inputsDisabled}
+          onChange={setTaxesIncidence}
+        />
       </div>
-      <ConfigSummary className="mt-3">
-        Contado de {formatARS(PRICING_PREVIEW_AMOUNT)} →{" "}
-        <strong className="text-beyonix-cyan">
-          {formatARS(getTransferPrice(PRICING_PREVIEW_AMOUNT, next.transferDiscountPercent))}
-        </strong>{" "}
-        por transferencia. La incidencia de impuestos sólo calcula la leyenda &quot;Precio sin impuestos
-        nacionales&quot;: confirmala con tu contador.
-      </ConfigSummary>
+      <p data-pricing-example className="mt-2.5 text-sm text-white/80">
+        Contado {formatARS(PRICING_PREVIEW_AMOUNT)} → Transferencia{" "}
+        <strong className="text-white">{formatARS(getTransferPrice(PRICING_PREVIEW_AMOUNT, next.transferDiscountPercent))}</strong>
+      </p>
     </ConfigSection>
   )
 }
@@ -352,40 +389,30 @@ export function CustomerCreditSection({
 
   return (
     <ConfigSection
-      icon={<Wallet className="size-3.5" />}
-      eyebrow="Pagos"
+      icon={<Wallet className={iconClassName} />}
       title="Recargas de saldo"
-      description="Condiciones de las recargas con Mercado Pago."
       feedback={feedback}
+      data-config-block="customer-credit"
       actions={<ConfigSaveActions dirty={dirty} saving={saving} disabled={disabled} onSave={() => onSave(next)} />}
     >
-      <div className="grid grid-cols-2 gap-3">
-        <AdminFormField label="Recargo" help="Entre 0 y 100%." labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
-          <AdminTextInput
-            title="Recargo de recargas MP"
-            ariaLabel="Recargo de las recargas de saldo con Mercado Pago"
-            value={withInputSymbol(surcharge, "%")}
-            placeholder="% 0"
-            inputMode="decimal"
-            className={inputClassName}
-            disabled={inputsDisabled}
-            onChange={(value) => setSurcharge(sanitizePercentInput(value))}
-          />
-        </AdminFormField>
-        <AdminFormField label="Importe mínimo" help="Por recarga." labelClassName={fieldLabelClassName} helpClassName={fieldHelpClassName}>
-          <AdminTextInput
-            title="Importe mínimo MP"
-            ariaLabel="Importe mínimo de recarga con Mercado Pago"
-            value={withInputSymbol(minimum, "$")}
-            placeholder="$ 0"
-            inputMode="numeric"
-            className={inputClassName}
-            disabled={inputsDisabled}
-            onChange={(value) => setMinimum(sanitizeAmountInput(value))}
-          />
-        </AdminFormField>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+        <PercentField
+          label="Recargo"
+          title="Recargo de recargas MP"
+          ariaLabel="Recargo de las recargas de saldo con Mercado Pago"
+          placeholder="% 0"
+          value={surcharge}
+          disabled={inputsDisabled}
+          onChange={setSurcharge}
+        />
+        <MoneyField
+          label="Importe mínimo"
+          ariaLabel="Importe mínimo de recarga con Mercado Pago"
+          value={minimum}
+          disabled={inputsDisabled}
+          onChange={setMinimum}
+        />
       </div>
-      <p className="mt-2 text-12px leading-4 text-white/58">No modifica credenciales ni la integración de pagos.</p>
     </ConfigSection>
   )
 }

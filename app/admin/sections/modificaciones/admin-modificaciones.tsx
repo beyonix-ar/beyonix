@@ -27,7 +27,7 @@ import {
 } from "../../components/admin-controls"
 import { AdminBanners } from "../banners/admin-banners"
 import { AndreaniIntegrationCard } from "./andreani-integration-card"
-import type { ConfigFeedback } from "./config-ui"
+import { ConfigGroup, type ConfigFeedback } from "./config-ui"
 import { FinancingShortcutCard } from "./financing-shortcut-card"
 import {
   CustomerCreditSection,
@@ -203,10 +203,10 @@ export function AdminModificaciones() {
   })
 
   return (
-    <div className="admin-config-page space-y-3 p-4 sm:p-6 lg:p-8">
+    <div className="admin-config-page space-y-4 p-4 sm:p-6 lg:p-8">
       <AdminPageHeader
         title="Configuración"
-        description="Integraciones, inventario, envíos y pagos. Cada bloque se guarda por separado."
+        description="Cada bloque se guarda por separado."
         className="gap-2"
       />
 
@@ -224,49 +224,53 @@ export function AdminModificaciones() {
         </AdminInfoBlock>
       ) : null}
 
-      <AndreaniIntegrationCard commercialEnabled={loaded ? settings.andreaniCommercial.enabled : null} />
+      {/* Dos columnas en desktop: integraciones e inventario arriba,
+          comercial y pagos abajo; una sola columna en mobile. */}
+      <div className="grid items-start gap-x-4 gap-y-4 xl:grid-cols-2">
+        <ConfigGroup id="integraciones" label="Integraciones">
+          <AndreaniIntegrationCard commercialEnabled={loaded ? settings.andreaniCommercial.enabled : null} />
+        </ConfigGroup>
 
-      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-        <StockSection
-          key={`stock-${versions.stock}`}
-          saved={settings.stock}
-          {...sectionProps("stock")}
-          onSave={(stock) => void saveSection("stock", { stock })}
-        />
-        <ShippingSection
-          key={`shipping-${versions.shipping}`}
-          saved={settings.shipping}
-          {...sectionProps("shipping")}
-          onSave={(shipping) => void saveSection("shipping", { shipping })}
-        />
+        <ConfigGroup id="inventario" label="Inventario">
+          <StockSection
+            key={`stock-${versions.stock}`}
+            saved={settings.stock}
+            {...sectionProps("stock")}
+            onSave={(stock) => void saveSection("stock", { stock })}
+          />
+        </ConfigGroup>
+
+        <ConfigGroup id="comercial" label="Comercial">
+          <ShippingSection
+            key={`shipping-${versions.shipping}`}
+            saved={settings.shipping}
+            {...sectionProps("shipping")}
+            onSave={(shipping) => void saveSection("shipping", { shipping })}
+          />
+          <PricingSection
+            key={`pricing-${versions.pricing}`}
+            saved={settings.pricing}
+            {...sectionProps("pricing")}
+            onSave={(pricing) => void saveSection("pricing", { pricing })}
+          />
+        </ConfigGroup>
+
+        <ConfigGroup id="pagos" label="Pagos">
+          <FinancingShortcutCard overview={mercadoPagoCosts} />
+          <CustomerCreditSection
+            key={`credit-${versions.customerCredit}`}
+            saved={settings.customerCreditPayments}
+            {...sectionProps("customerCredit")}
+            onSave={(customerCreditPayments) => void saveSection("customerCredit", { customerCreditPayments })}
+          />
+        </ConfigGroup>
       </div>
 
-      <FinancingShortcutCard overview={mercadoPagoCosts} />
-
-      <div className="grid items-start gap-3 xl:grid-cols-2">
-        <PricingSection
-          key={`pricing-${versions.pricing}`}
-          saved={settings.pricing}
-          {...sectionProps("pricing")}
-          onSave={(pricing) => void saveSection("pricing", { pricing })}
-        />
-        <CustomerCreditSection
-          key={`credit-${versions.customerCredit}`}
-          saved={settings.customerCreditPayments}
-          {...sectionProps("customerCredit")}
-          onSave={(customerCreditPayments) => void saveSection("customerCredit", { customerCreditPayments })}
-        />
-      </div>
-
-      <AdminSection
-        compact
-        icon={<ImageIcon className="size-3.5" />}
-        eyebrow="Visuales"
-        title="Banners"
-        description="Imagen destacada que se muestra en la tienda."
-      >
-        <AdminBanners embedded />
-      </AdminSection>
+      <ConfigGroup id="visuales" label="Visuales">
+        <AdminSection compact icon={<ImageIcon className="size-3.5" />} title="Banners">
+          <AdminBanners embedded />
+        </AdminSection>
+      </ConfigGroup>
     </div>
   )
 }

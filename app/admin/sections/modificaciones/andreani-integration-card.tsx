@@ -14,7 +14,7 @@ import {
   AdminModal,
   AdminSecondaryButton,
 } from "../../components/admin-controls"
-import { ConfigSection, ConfigTile, formatDateTime } from "./config-ui"
+import { ConfigDisclosure, ConfigSection, ConfigStat, ConfigStats, formatDateTime } from "./config-ui"
 
 async function getAccessToken() {
   const {
@@ -155,66 +155,52 @@ export function AndreaniIntegrationCard({
   return (
     <ConfigSection
       icon={<Cable className="size-3.5" />}
-      eyebrow="Integraciones"
       title="Andreani"
-      description="Cotización, creación de envíos y seguimiento."
+      data-config-block="andreani"
       actions={
-        <AdminSecondaryButton
-          type="button"
-          size="sm"
-          onClick={() => void testConnection()}
-          disabled={testing || !integration?.configured}
-          className="shrink-0"
-        >
-          {testing ? (
-            <LoaderCircle className="size-3.5 animate-spin" />
-          ) : (
-            <Cable className="size-3.5" />
-          )}
-          {testing ? "Probando QA…" : "Probar conexión QA"}
-        </AdminSecondaryButton>
+        <>
+          <AdminSecondaryButton
+            type="button"
+            size="sm"
+            onClick={() => void testConnection()}
+            disabled={testing || !integration?.configured}
+            className="shrink-0"
+          >
+            {testing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Cable className="size-3.5" />}
+            {testing ? "Probando QA…" : "Probar conexión QA"}
+          </AdminSecondaryButton>
+          <AdminSecondaryButton
+            type="button"
+            size="sm"
+            data-andreani-commercial-toggle
+            onClick={() => setConfirmCommercial(true)}
+            disabled={togglingCommercial || commercialEnabled === null}
+            className="shrink-0"
+          >
+            {togglingCommercial ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
+            {commercialEnabled === false ? "Activar venta" : "Desactivar venta"}
+          </AdminSecondaryButton>
+        </>
       }
     >
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <ConfigTile
+      <ConfigStats className="flex flex-wrap gap-x-6">
+        <ConfigStat
           label="Ambiente"
           tone={integration ? "info" : "neutral"}
           value={integration?.environment ?? "Consultando…"}
-          detail="Cotización y seguimiento."
         />
-        <ConfigTile
+        <ConfigStat
           label="Credenciales"
           tone={!integration ? "neutral" : integration.configured ? "success" : "warning"}
           value={!integration ? "Consultando…" : integration.configured ? "Configuradas" : "Incompletas"}
-          detail={
-            lastTest
-              ? `Última prueba ${lastTest.environment}: ${lastTest.status === "success" ? "OK" : "con error"} · ${formatDateTime(lastTest.testedAt)}`
-              : "Sin pruebas en esta sesión."
-          }
         />
-        <ConfigTile
-          label="Venta con Andreani"
+        <ConfigStat
+          label="Venta"
+          data-andreani-commercial={commercialEnabled === null ? "loading" : commercialEnabled ? "active" : "inactive"}
           tone={commercialEnabled === null ? "neutral" : commercialEnabled ? "success" : "warning"}
           value={commercialEnabled === null ? "Consultando…" : commercialEnabled ? "Activa" : "Desactivada"}
-          detail={
-            commercialEnabled === false
-              ? "No se cotiza ni se crean envíos nuevos."
-              : "Se cotiza y se crean envíos nuevos."
-          }
-          action={
-            <AdminSecondaryButton
-              type="button"
-              size="sm"
-              onClick={() => setConfirmCommercial(true)}
-              disabled={togglingCommercial || commercialEnabled === null}
-              className="w-full"
-            >
-              {togglingCommercial ? <LoaderCircle className="size-3.5 animate-spin" /> : null}
-              {commercialEnabled === false ? "Activar" : "Desactivar"}
-            </AdminSecondaryButton>
-          }
         />
-        <ConfigTile
+        <ConfigStat
           label="Creación de envíos"
           tone={!shipmentCreation ? "neutral" : shipmentCreation.configured ? "success" : "danger"}
           value={
@@ -222,36 +208,39 @@ export function AndreaniIntegrationCard({
               ? "Consultando…"
               : `${shipmentCreation.environment} · ${shipmentCreation.configured ? "Lista" : "Bloqueada"}`
           }
-          detail={shipmentCreation?.message}
         />
-      </div>
+      </ConfigStats>
 
       {lastTest ? (
         <p
-          className={`mt-2.5 flex items-start gap-1.5 text-12px font-semibold leading-5 ${
-            lastTest.status === "success" ? "text-emerald-200" : "text-red-200"
-          }`}
+          className="admin-config-feedback mt-2.5 flex items-start gap-1.5 text-12px font-semibold leading-5"
+          data-tone={lastTest.status === "success" ? "success" : "danger"}
+          data-andreani-last-test
         >
           {lastTest.status === "success" ? (
             <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" />
           ) : (
             <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
           )}
-          {lastTest.message}
+          Prueba {lastTest.environment} {lastTest.status === "success" ? "OK" : "con error"} · {formatDateTime(lastTest.testedAt)}
         </p>
       ) : null}
 
-      <details className="admin-config-details mt-2.5 text-12px leading-5 text-white/62">
-        <summary className="cursor-pointer font-bold text-white/72">Detalle de la integración</summary>
-        <div className="mt-1.5 space-y-1">
-          {integration?.message ? <p>{integration.message}</p> : null}
-          <p>
-            Andreani desactivado no afecta el seguimiento de envíos ya creados. La prueba de
-            conexión verifica QA (pruebas); la creación en PROD requiere una prueba controlada
-            con sus propias credenciales, contrato y sucursal, y un resultado QA exitoso no valida PROD.
-          </p>
-        </div>
-      </details>
+      <ConfigDisclosure summary="Ver detalle de integración" className="mt-2.5" data-andreani-detail>
+        {integration?.message ? <p>{integration.message}</p> : null}
+        {shipmentCreation?.message ? <p>Creación de envíos: {shipmentCreation.message}</p> : null}
+        {lastTest ? <p>Última prueba: {lastTest.message}</p> : <p>Sin pruebas de conexión en esta sesión.</p>}
+        <p>
+          {commercialEnabled === false
+            ? "Venta desactivada: no se cotiza ni se crean envíos nuevos."
+            : "Venta activa: se cotiza y se crean envíos nuevos."}{" "}
+          Desactivarla no afecta el seguimiento de envíos ya creados.
+        </p>
+        <p>
+          La prueba de conexión verifica QA. La creación en PROD requiere una prueba controlada con sus
+          propias credenciales, contrato y sucursal: un resultado QA exitoso no valida PROD.
+        </p>
+      </ConfigDisclosure>
       <AdminModal open={confirmCommercial} title={commercialEnabled ? "Desactivar Andreani" : "Activar Andreani"} onClose={() => { if (!togglingCommercial) setConfirmCommercial(false) }} footer={<div className="flex gap-2"><AdminSecondaryButton disabled={togglingCommercial} onClick={() => setConfirmCommercial(false)}>Cancelar</AdminSecondaryButton><AdminPrimaryButton disabled={togglingCommercial} onClick={() => void toggleCommercialEnabled()}>{togglingCommercial ? "Guardando…" : "Confirmar cambio"}</AdminPrimaryButton></div>}>
         <p>{commercialEnabled ? "Se dejarán de ofrecer cotizaciones y crear envíos nuevos. El seguimiento de envíos existentes continuará funcionando." : "Se habilitarán cotizaciones y envíos nuevos con la configuración vigente. Verificá que el ambiente de creación indicado sea el esperado."}</p>
         {error && <p role="alert">{error}</p>}

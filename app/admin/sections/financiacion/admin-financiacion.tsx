@@ -137,7 +137,7 @@ export function AdminFinanciacion() {
     <div className="admin-config-page admin-financing-page space-y-3 p-4 sm:p-6 lg:p-8">
       <AdminPageHeader
         title="Financiación"
-        description="Costos de Mercado Pago, cuotas sin interés y automatización."
+        description="Cuotas sin interés y costos de Mercado Pago."
         className="gap-2"
       />
 
