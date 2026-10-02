@@ -2686,6 +2686,14 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
  * oscuro (default) y claro (html[data-admin-theme="light"]).
  */
 .beyonix-admin-main .admin-config-page {
+  --admin-config-cluster-bg: #0b1520;
+  --admin-config-cluster-border: rgba(125, 171, 207, 0.16);
+  --admin-config-cluster-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  --admin-config-section-bg: #11202f;
+  --admin-config-section-border: rgba(125, 171, 207, 0.18);
+  --admin-config-section-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --admin-config-subpanel-bg: #17283a;
+  --admin-config-subpanel-border: rgba(125, 171, 207, 0.14);
   --admin-config-neutral-bg: rgba(255, 255, 255, 0.025);
   --admin-config-neutral-border: rgba(92, 159, 215, 0.2);
   --admin-config-info-bg: rgba(56, 189, 248, 0.07);
@@ -2709,8 +2717,16 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
-  --admin-config-neutral-bg: #f8fafc;
-  --admin-config-neutral-border: rgba(30, 58, 95, 0.16);
+  --admin-config-cluster-bg: #edf1f5;
+  --admin-config-cluster-border: #d7e0e9;
+  --admin-config-cluster-shadow: 0 1px 2px rgba(15, 23, 42, 0.035);
+  --admin-config-section-bg: #ffffff;
+  --admin-config-section-border: #d6dee8;
+  --admin-config-section-shadow: 0 1px 3px rgba(15, 23, 42, 0.055);
+  --admin-config-subpanel-bg: #f4f7fa;
+  --admin-config-subpanel-border: #e1e8ef;
+  --admin-config-neutral-bg: #f4f7fa;
+  --admin-config-neutral-border: #e1e8ef;
   --admin-config-info-bg: #eff6ff;
   --admin-config-info-border: #bfdbfe;
   --admin-config-info-dot: #2563eb;
@@ -2731,19 +2747,35 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   --admin-config-chip-danger: #991b1b;
 }
 
-/* Configuración en Light: jerarquía real. Página gris suave > tarjeta blanca
-   con borde fino y sombra mínima > subsección gris apenas distinto (también
-   las tarjetas internas de Banners) > inputs blancos con borde visible. Sólo
-   redefine tokens dentro de esta pantalla. */
-html[data-admin-theme="light"] .beyonix-admin-main .admin-settings-page {
+/* Configuración y Financiación comparten página suave, grupos discretos,
+   tarjetas claras y superficies internas apenas diferenciadas. */
+html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   --bx-surface-section: #ffffff;
   --bx-border-section: #d6dee8;
-  --bx-shadow-section: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --bx-shadow-section: 0 1px 3px rgba(15, 23, 42, 0.055);
   --bx-surface-card: #f4f6f9;
   --bx-border-card: #e1e7ee;
   --bx-shadow-card: none;
-  --admin-config-neutral-bg: #f4f6f9;
-  --admin-config-neutral-border: #e3e8ef;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-cluster {
+  padding: 0.75rem;
+  border: 1px solid var(--admin-config-cluster-border);
+  border-radius: 1rem;
+  background: var(--admin-config-cluster-bg);
+  box-shadow: var(--admin-config-cluster-shadow);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-section {
+  background: var(--admin-config-section-bg) !important;
+  border-color: var(--admin-config-section-border) !important;
+  box-shadow: var(--admin-config-section-shadow) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-subpanel {
+  border: 1px solid var(--admin-config-subpanel-border);
+  border-radius: 0.625rem;
+  background: var(--admin-config-subpanel-bg);
 }
 
 .beyonix-admin-main .admin-config-page :is(.admin-config-tile, .admin-config-status) {

@@ -126,7 +126,7 @@ export function ConfigGroup({
   children: ReactNode
 }) {
   return (
-    <section aria-labelledby={`config-group-${id}`} data-config-group={id} className={cn("min-w-0 space-y-2", className)}>
+    <section aria-labelledby={`config-group-${id}`} data-config-group={id} className={cn("admin-config-cluster min-w-0 space-y-2", className)}>
       <h2 id={`config-group-${id}`} className="admin-config-group-title px-0.5 text-11px font-black uppercase tracking-widest">
         {label}
       </h2>

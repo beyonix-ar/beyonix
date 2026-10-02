@@ -538,7 +538,7 @@ export function FinancingPanel({
         />
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-2">
+      <div className="admin-config-cluster grid items-start gap-3 lg:grid-cols-2">
         {/* ── A. Estado ── */}
         <ConfigSection
           icon={<Activity className="size-3.5" />}
@@ -557,7 +557,7 @@ export function FinancingPanel({
             </AdminSecondaryButton>
           }
         >
-          <ConfigStats className="grid-cols-2">
+          <ConfigStats className="admin-config-subpanel grid-cols-2 p-3">
             <ConfigStat
               label="Mercado Pago"
               tone={mercadoPagoStatus.tone}
@@ -662,7 +662,7 @@ export function FinancingPanel({
 
         {/* ── B. Cuotas disponibles ── */}
         <ConfigSection icon={<CreditCard className="size-3.5" />} title="Cuotas disponibles" data-financing-block="cuotas">
-          <div data-confirmed-max={confirmedMax && enabled ? String(confirmedMax.count) : "none"}>
+          <div className="admin-config-subpanel p-3" data-confirmed-max={confirmedMax && enabled ? String(confirmedMax.count) : "none"}>
             {!enabled ? (
               <>
                 <p className="text-lg font-black leading-tight text-white">Cuotas desactivadas</p>
@@ -744,7 +744,7 @@ export function FinancingPanel({
         </ConfigSection>
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+      <div className="admin-config-cluster grid items-start gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* ── C. Costos ── */}
         <ConfigSection
           icon={<Wallet className="size-3.5" />}
