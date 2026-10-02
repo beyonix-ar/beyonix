@@ -2773,7 +2773,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .admin-config-section:is([data-config-block], [data-financing-block]) {
-  background-color: #f2f4f7 !important;
+  background-color: #D9D9D9 !important;
 }
 
 .beyonix-admin-main .admin-config-page .admin-config-subpanel {
