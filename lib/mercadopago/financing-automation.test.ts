@@ -79,7 +79,7 @@ function financedTotal(config: InstallmentsFinancingConfig, confirmed: Installme
     shippingCharged: 0,
     storeBenefitPercent: null,
     requestedCustomerCredit: 0,
-    settings: { installmentsFinancing: config, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21 },
+    settings: { installmentsFinancing: config, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21, financedPricePolicy: "cover_costs" },
     interestFreeLookup: () => confirmed,
   })
 }
@@ -235,7 +235,7 @@ test("el histórico no se modifica retroactivamente: ventas viejas conservan su 
   const snapshot = buildMercadoPagoPricingSnapshot({
     pricing: oldPricing,
     mode: "financed",
-    settings: { installmentsFinancing: oldConfig, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21 },
+    settings: { installmentsFinancing: oldConfig, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21, financedPricePolicy: "cover_costs" },
     economicFingerprint: "fp",
   })
   const frozen = JSON.stringify(snapshot)

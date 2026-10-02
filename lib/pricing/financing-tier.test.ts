@@ -22,7 +22,7 @@ import type { InstallmentCount } from "../products/installments.ts"
 // monto). La configuración del producto sólo limita qué cuotas admite.
 
 const CONFIG = { baseProcessingPercent: 3.46, ivaPercent: 21, surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 } }
-const SETTINGS: CheckoutPricingSettings = { installmentsFinancing: CONFIG, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21 }
+const SETTINGS: CheckoutPricingSettings = { installmentsFinancing: CONFIG, transferDiscountPercent: 10, nationalTaxesIncidencePercent: 21, financedPricePolicy: "cover_costs" }
 
 /**
  * Mercado Pago SIMULADO (sólo en el test): confirma 2/3 desde `twoThree` y

@@ -66,6 +66,7 @@ function economicFingerprintFor({
     installmentsFinancing: DEFAULT_FINANCING,
     transferDiscountPercent: 10,
     nationalTaxesIncidencePercent: 21,
+    financedPricePolicy: "cover_costs" as const,
   }
   const pricing = calculateMercadoPagoCheckoutPricing({
     lines,

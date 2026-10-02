@@ -1,0 +1,24 @@
+[Unit]
+Description=BEYONIX - Eventos comerciales programados (run-commercial-events)
+After=network.target
+
+[Service]
+Type=oneshot
+
+# Mismo mecanismo que los otros timers de deploy/systemd (ver README.md):
+#
+# - CRON_SECRET NUNCA viaja como argumento: el header vive en
+#   /etc/beyonix/curl-verify-transfer-orders.conf (600, root:root, fuera del
+#   repo), el mismo archivo que usan los otros timers.
+# - flock -n: si una corrida sigue activa (un evento masivo grande), la
+#   siguiente se saltea en vez de superponerse. Igual cada evento es una
+#   transaccion idempotente en la base: nunca se aplica dos veces.
+# - -o /dev/null + --fail: el resultado sale del exit code (502 si algun
+#   evento fallo; el evento queda en "Error" en Admin y NO se reintenta solo).
+# - Sin --retry: el proximo tick (1 min) solo toma eventos nuevos o vencidos.
+# - Loopback: la app (PM2, `npm start`) escucha en 127.0.0.1:3000.
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-run-commercial-events.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 110 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/run-commercial-events

@@ -19,6 +19,17 @@ import {
   type PublicInterestFreeOffer,
 } from "./pricing/interest-free-communication.ts"
 import {
+  DEFAULT_FINANCED_PRICE_POLICY,
+  FINANCED_PRICE_POLICY_KEY,
+  normalizeFinancedPricePolicy,
+  type FinancedPricePolicy,
+} from "./pricing/financed-price-policy.ts"
+import {
+  COMMERCIAL_EVENT_COLUMNS,
+  getControllingFinancingEvent,
+  type CommercialEventRow,
+} from "./commercial-events/scheduled-events.ts"
+import {
   deriveMercadoPagoObservedCosts,
   MERCADOPAGO_COST_MODALITIES,
   MERCADOPAGO_OBSERVATION_SAMPLE_SIZE,
@@ -43,8 +54,24 @@ export interface SiteSettings {
    * `null` = no se comunica ninguna promoción.
    */
   interestFreeOffer: PublicInterestFreeOffer | null
+  /**
+   * Política global de precio financiado vigente (manual o puesta por un
+   * evento): cubrir costos de Mercado Pago o mismo precio que contado.
+   */
+  financedPricePolicy: FinancedPricePolicy
   andreaniCommercial: AndreaniCommercialSettings
   pricing: PricingSettings
+}
+
+/** Evento de financiación que controla (o va a controlar) la política, para Admin. */
+export interface FinancingPolicyEventSummary {
+  id: string
+  name: string
+  status: CommercialEventRow["status"]
+  startsAt: string | null
+  endsAt: string | null
+  /** Política a la que vuelve al terminar (`null` si todavía no empezó). */
+  previousPolicy: FinancedPricePolicy | null
 }
 
 /**
@@ -98,6 +125,12 @@ export interface MercadoPagoCostsOverview extends ResolvedInstallmentsFinancing 
   interestFreeStatus: MercadoPagoInterestFreeStatus
   /** Lo que la tienda comunica hoy con esa referencia y la política (`null`: nada). */
   interestFreeOffer: PublicInterestFreeOffer | null
+  /** Política de precio financiado vigente. */
+  financedPricePolicy: FinancedPricePolicy
+  /** Evento que la controla ahora (no se cambia a mano mientras dure). */
+  financingPolicyEvent: FinancingPolicyEventSummary | null
+  /** Próximo evento de financiación programado. */
+  upcomingFinancingPolicyEvent: FinancingPolicyEventSummary | null
 }
 
 /** Clave de `site_settings` con la última referencia observada de Mercado Pago. */
@@ -352,6 +385,7 @@ export function getFallbackSiteSettings(): SiteSettings {
     installmentsFinancing: DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
     interestFreePolicy: DEFAULT_INTEREST_FREE_POLICY,
     interestFreeOffer: null,
+    financedPricePolicy: DEFAULT_FINANCED_PRICE_POLICY,
     andreaniCommercial: DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
     pricing: DEFAULT_PRICING_SETTINGS,
   }
@@ -364,7 +398,13 @@ const SITE_SETTING_KEYS = {
   installmentsFinancing: "installments_financing",
   andreaniCommercial: "andreani_commercial",
   pricing: "pricing",
+  financedPricePolicy: FINANCED_PRICE_POLICY_KEY,
 } as const
+
+/** Cambio manual de la política (nunca lleva `eventId`: eso sólo lo pone un evento). */
+function normalizeFinancedPricePolicyPatch(value: unknown) {
+  return { policy: normalizeFinancedPricePolicy(value) }
+}
 
 /** Escribe sólo los grupos enviados; otros PATCH concurrentes no pierden sus cambios. */
 export function normalizeSiteSettingsPatch(body: unknown) {
@@ -382,6 +422,7 @@ export function normalizeSiteSettingsPatch(body: unknown) {
     installmentsFinancing: normalizeStoredInstallmentsFinancingSettings,
     andreaniCommercial: normalizeAndreaniCommercialSettings,
     pricing: normalizePricingSettings,
+    financedPricePolicy: normalizeFinancedPricePolicyPatch,
   }
   return (Object.keys(SITE_SETTING_KEYS) as Array<keyof typeof SITE_SETTING_KEYS>)
     .filter((key) => Object.hasOwn(input, key))
@@ -448,6 +489,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         "andreani_commercial",
         "pricing",
         MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY,
+        FINANCED_PRICE_POLICY_KEY,
       ])
 
     if (error) {
@@ -481,6 +523,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         normalizeMercadoPagoInterestFreeStatus(settingsByKey.get(MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY)),
         storedFinancing.interestFreePolicy,
       ),
+      financedPricePolicy: normalizeFinancedPricePolicy(settingsByKey.get(FINANCED_PRICE_POLICY_KEY)),
       andreaniCommercial: normalizeAndreaniCommercialSettings(
         settingsByKey.get("andreani_commercial"),
       ),
@@ -554,10 +597,43 @@ export function getMercadoPagoInterestFreeStatus() {
   return loadMercadoPagoInterestFreeStatus(createAdminClient())
 }
 
+function toFinancingEventSummary(event: CommercialEventRow): FinancingPolicyEventSummary {
+  return {
+    id: event.id,
+    name: event.internal_name,
+    status: event.status,
+    startsAt: event.starts_at,
+    endsAt: event.ends_at,
+    previousPolicy: event.previous_financing_policy,
+  }
+}
+
+/**
+ * Eventos de financiación en curso o por venir. El que la controla (activo o
+ * trabado al restaurar) bloquea el cambio manual de la política.
+ */
+export async function loadFinancingPolicyEvents(admin: ReturnType<typeof createAdminClient>) {
+  const { data, error } = await admin
+    .from("product_bulk_events")
+    .select(COMMERCIAL_EVENT_COLUMNS)
+    .eq("event_type", "financing_policy")
+    .in("status", ["scheduled", "active", "error"])
+    .order("starts_at", { ascending: true })
+  if (error) return { error: true as const }
+  const events = (data ?? []) as unknown as CommercialEventRow[]
+  const controlling = getControllingFinancingEvent(events)
+  const upcoming = events.find((event) => event.status === "scheduled") ?? null
+  return {
+    error: false as const,
+    controlling: controlling ? toFinancingEventSummary(controlling) : null,
+    upcoming: upcoming ? toFinancingEventSummary(upcoming) : null,
+  }
+}
+
 /** Estado completo de costos de Mercado Pago para Admin (lectura fresca). */
 export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOverview> {
   const admin = createAdminClient()
-  const [{ data, error }, observed, interestFreeStatus] = await Promise.all([
+  const [{ data, error }, observed, interestFreeStatus, policyResult, financingEvents] = await Promise.all([
     admin
       .from("site_settings")
       .select("value")
@@ -565,8 +641,10 @@ export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOve
       .maybeSingle(),
     loadMercadoPagoObservedCosts(admin),
     loadMercadoPagoInterestFreeStatus(admin),
+    admin.from("site_settings").select("value").eq("key", FINANCED_PRICE_POLICY_KEY).maybeSingle(),
+    loadFinancingPolicyEvents(admin),
   ])
-  if (error) throw new SiteSettingsUnavailableError()
+  if (error || policyResult.error) throw new SiteSettingsUnavailableError()
   const stored = normalizeStoredInstallmentsFinancingSettings(data?.value)
   const { mode, interestFreePolicy, ...manual } = stored
   return {
@@ -576,6 +654,9 @@ export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOve
     interestFreePolicy,
     interestFreeStatus,
     interestFreeOffer: buildPublicInterestFreeOffer(interestFreeStatus, interestFreePolicy),
+    financedPricePolicy: normalizeFinancedPricePolicy(policyResult.data?.value),
+    financingPolicyEvent: financingEvents.error ? null : financingEvents.controlling,
+    upcomingFinancingPolicyEvent: financingEvents.error ? null : financingEvents.upcoming,
     ...resolveInstallmentsFinancing(manual, mode, observed),
   }
 }

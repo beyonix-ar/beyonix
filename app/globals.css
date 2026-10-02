@@ -2929,6 +2929,25 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-settings-page {
   transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
 }
 
+/* Política de precio financiado: dos opciones; la elegida queda inequívoca. */
+.beyonix-admin-main .admin-config-page .admin-config-policy-option {
+  border: 1px solid var(--admin-config-neutral-border);
+  border-radius: 0.5rem;
+  background: var(--admin-config-neutral-bg);
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-policy-option[data-selected="true"] {
+  border-color: var(--admin-config-info-dot);
+  background: var(--admin-config-info-bg);
+  box-shadow: 0 0 0 1px var(--admin-config-info-dot);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-policy-option:focus-visible {
+  outline: 2px solid var(--admin-config-info-dot);
+  outline-offset: 2px;
+}
+
 .beyonix-admin-main .admin-config-page .admin-config-mode-option .admin-config-mode-hint {
   color: var(--admin-text-soft);
 }

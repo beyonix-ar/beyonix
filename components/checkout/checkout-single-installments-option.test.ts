@@ -33,6 +33,7 @@ const SETTINGS: CheckoutPricingSettings = {
   },
   transferDiscountPercent: 10,
   nationalTaxesIncidencePercent: 21,
+  financedPricePolicy: "cover_costs",
 }
 
 const LINES: CheckoutPricingLine[] = [

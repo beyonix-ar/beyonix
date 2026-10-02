@@ -634,12 +634,15 @@ export interface SupabaseCustomerNotificationCampaign {
   updated_at: string
 }
 
-export type SupabaseProductBulkEventStatus = "draft" | "active"
+/** `draft`/`active`: eventos manuales previos; el resto, eventos programados. */
+export type SupabaseProductBulkEventStatus = "draft" | "active" | "scheduled" | "finished" | "cancelled" | "error"
 
 export type SupabaseProductBulkEventActionKind =
   | "discount_percent"
   | "price_decrease_percent"
   | "price_increase_percent"
+  | "price_decrease_amount"
+  | "price_increase_amount"
   | "installments"
   | "clear_offer"
 

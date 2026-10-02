@@ -147,6 +147,8 @@ export interface CheckoutOrderRequestPayload {
    * ya no confirma lo que se le mostró.
    */
   expectedMaxInstallments?: number | null
+  /** Política de financiación que vio el cliente; sólo se usa para detectar un cambio y devolver 409. */
+  expectedFinancedPricePolicy?: "cover_costs" | "same_as_cash" | null
   /** Aceptación explícita de términos y condiciones (checkbox obligatorio del checkout). */
   termsAccepted?: boolean | null
 }

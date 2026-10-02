@@ -44,6 +44,7 @@ import {
   type FinancingTierCandidate,
   type InterestFreeLookup,
 } from "./financed-pricing.ts"
+import type { FinancedPricePolicy } from "./financed-price-policy.ts"
 
 export const MERCADOPAGO_CHECKOUT_MODES = ["cash", "financed"] as const
 export type MercadoPagoCheckoutMode = (typeof MERCADOPAGO_CHECKOUT_MODES)[number]
@@ -90,6 +91,11 @@ export interface CheckoutPricingSettings {
   installmentsFinancing: InstallmentsFinancingConfig
   transferDiscountPercent: number
   nationalTaxesIncidencePercent: number
+  /**
+   * Política global vigente (Admin → Financiación o un evento): con
+   * `same_as_cash` el total en cuotas sin interés es exactamente el de contado.
+   */
+  financedPricePolicy: FinancedPricePolicy
 }
 
 export interface MercadoPagoCheckoutPricingInput {
@@ -153,6 +159,8 @@ export interface MercadoPagoCheckoutPricing {
   cash: MercadoPagoModeQuote
   financed: MercadoPagoModeQuote | null
   installmentPlans: CheckoutInstallmentPlan[]
+  /** Política con la que se calculó el financiado. */
+  financedPricePolicy: FinancedPricePolicy
 }
 
 function exceedsRequestedCredit(appliedAmount: number, requested: number) {
@@ -195,9 +203,36 @@ interface FinancingTierQuote {
  */
 function buildFinancingTierQuote(
   input: Omit<MercadoPagoCheckoutPricingInput, "interestFreeLookup">,
-  context: { shipping: number },
+  context: ReturnType<typeof getCheckoutPricingContext>,
   tier: InstallmentCount,
 ): FinancingTierQuote | null {
+  if (input.settings.financedPricePolicy === "same_as_cash") {
+    // Mismo precio que contado: el total en cuotas ES el de contado (mismo
+    // cálculo de productos, beneficio y saldo), sin gross-up ni redondeo de
+    // cuotas. BEYONIX absorbe el costo de financiación de Mercado Pago.
+    if (context.cashTotal <= 0) return null
+    const credit = calculateCustomerCreditApplication({
+      availableBalance: input.requestedCustomerCredit,
+      eligibleTotal: context.cashTotal,
+      requestedAmount: input.requestedCustomerCredit,
+    })
+    return {
+      count: tier,
+      financedTotal: context.cashTotal,
+      financedStoreBenefitDiscountAmount: context.storeBenefitDiscountAmount,
+      quote: {
+        mode: "financed",
+        modality: getMercadoPagoPaymentModality("financed"),
+        total: context.cashTotal,
+        externalAmountDue: credit.externalAmountDue,
+        customerCreditApplied: credit.appliedAmount,
+        roundingAdjustment: 0,
+        preferenceMaxInstallments: tier,
+        requestedCreditExceedsTotal: exceedsRequestedCredit(credit.appliedAmount, input.requestedCustomerCredit),
+      },
+    }
+  }
+
   const rawFinancedProducts = getCartFinancedTotal(
     input.lines.map((line) => ({ cashPrice: getEffectiveUnitPrice(line), quantity: line.quantity })),
     tier,
@@ -356,6 +391,7 @@ export function calculateMercadoPagoCheckoutPricing(
     cash,
     financed,
     installmentPlans,
+    financedPricePolicy: input.settings.financedPricePolicy,
   }
 }
 
@@ -455,6 +491,7 @@ export function getCheckoutSummaryLineAmounts({
   mode,
   installmentsFinancing,
   financingCount,
+  financedPricePolicy,
   productsSubtotal,
 }: {
   lines: CheckoutPricingLine[]
@@ -462,12 +499,14 @@ export function getCheckoutSummaryLineAmounts({
   installmentsFinancing: InstallmentsFinancingConfig
   /** Tier de la cotización financiada (`pricing.offeredInstallmentCount`). */
   financingCount: InstallmentCount | null
+  /** Con "mismo precio que contado" cada línea en cuotas vale su contado. */
+  financedPricePolicy: FinancedPricePolicy
   productsSubtotal: number
 }): number[] {
   const weights = lines.map((line) => {
     const cashUnit = getEffectiveUnitPrice(line)
     const quantity = Math.max(0, line.quantity)
-    if (mode !== "financed" || financingCount == null) return cashUnit * quantity
+    if (mode !== "financed" || financingCount == null || financedPricePolicy === "same_as_cash") return cashUnit * quantity
 
     const financedUnit = getFinancedPrice(cashUnit, financingCount, installmentsFinancing)
     return (financedUnit ?? cashUnit) * quantity
@@ -511,6 +550,8 @@ export interface MercadoPagoPricingSnapshotFields {
   selectedInstallmentCount: InstallmentCount | null
   cfteaByCount: Partial<Record<InstallmentCount, number>> | null
   installmentsFinancing: InstallmentsFinancingConfig
+  /** Política de precio financiado vigente al crear la orden (histórico). */
+  financedPricePolicy: FinancedPricePolicy
   economicFingerprint: string
 }
 
@@ -588,6 +629,7 @@ export function buildMercadoPagoPricingSnapshot({
     selectedInstallmentCount: isFinanced ? selectedInstallmentCount : null,
     cfteaByCount,
     installmentsFinancing: settings.installmentsFinancing,
+    financedPricePolicy: settings.financedPricePolicy,
     economicFingerprint,
   }
 }
@@ -612,7 +654,9 @@ export function getMercadoPagoOrderInstallmentsFields(
 
   return {
     count: null,
-    percent: getEffectiveInstallmentPercent(tier, installmentsFinancing),
+    // Mismo precio que contado: el cliente no paga recargo (BEYONIX lo absorbe).
+    percent:
+      pricing.financedPricePolicy === "same_as_cash" ? 0 : getEffectiveInstallmentPercent(tier, installmentsFinancing),
     productsBaseAmount: pricing.cashTotal,
     surchargeAmount: roundMoney(pricing.financedTotal - pricing.cashTotal),
     maxEligibleCount: tier,
@@ -804,6 +848,9 @@ export function buildCheckoutEconomicState({
       },
       transferDiscountBp: toBasisPoints(settings.transferDiscountPercent),
       nationalTaxesIncidenceBp: toBasisPoints(settings.nationalTaxesIncidencePercent),
+      // Si la política cambia entre que el cliente ve el total y paga, la
+      // huella cambia: el servidor nunca reutiliza el intento ni cobra otro total.
+      financedPricePolicy: settings.financedPricePolicy,
     },
     totals: {
       cashTotalCents: toCents(pricing.cashTotal),

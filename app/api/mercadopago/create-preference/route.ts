@@ -247,6 +247,9 @@ export async function POST(request: Request) {
       transferDiscountPercent: siteSettings.pricing.transferDiscountPercent,
       nationalTaxesIncidencePercent:
         siteSettings.pricing.nationalTaxesIncidencePercent,
+      // Política vigente leída fresca: si cambió desde que el cliente vio el
+      // total (manual o por un evento), el total esperado no coincide → 409.
+      financedPricePolicy: siteSettings.financedPricePolicy,
     }
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
@@ -405,6 +408,9 @@ export async function POST(request: Request) {
         Math.abs(expectedTotal - quote.externalAmountDue) > 0.009) ||
       // Lo que se mostró como "hasta N cuotas sin interés" ya no está
       // confirmado (o cambió): nunca se cobra con otras condiciones.
+      (quote.mode === "financed" &&
+        payload.expectedFinancedPricePolicy != null &&
+        payload.expectedFinancedPricePolicy !== siteSettings.financedPricePolicy) ||
       (quote.mode === "financed" &&
         expectedMaxInstallments != null &&
         expectedMaxInstallments !== quote.preferenceMaxInstallments)

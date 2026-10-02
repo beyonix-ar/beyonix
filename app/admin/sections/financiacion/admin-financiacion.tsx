@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase/client"
 import type { MercadoPagoCostsOverview, StoredInstallmentsFinancingSettings } from "@/lib/site-settings"
 import { invalidateSiteSettingsClientCache } from "@/hooks/use-site-settings"
+import type { FinancedPricePolicy } from "@/lib/pricing/financed-price-policy"
 import { AdminInfoBlock, AdminPageHeader } from "../../components/admin-controls"
 import type { ConfigFeedback } from "../modificaciones/config-ui"
 import { FinancingPanel } from "./financing-panel"
@@ -81,7 +82,10 @@ export function AdminFinanciacion() {
     void load()
   }, [load])
 
-  const save = async (installmentsFinancing: StoredInstallmentsFinancingSettings) => {
+  const save = async (
+    installmentsFinancing: StoredInstallmentsFinancingSettings,
+    financedPricePolicy: FinancedPricePolicy | null,
+  ) => {
     if (saving || loading || !overview) return
     setSaving(true)
     setFeedback(null)
@@ -89,7 +93,11 @@ export function AdminFinanciacion() {
       const next = await request("/api/admin/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ installmentsFinancing }),
+        // La política se manda sólo si cambió: el servidor la rechaza (409)
+        // mientras un evento de financiación la controla.
+        body: JSON.stringify(
+          financedPricePolicy ? { installmentsFinancing, financedPricePolicy: { policy: financedPricePolicy } } : { installmentsFinancing },
+        ),
       })
       invalidateSiteSettingsClientCache()
       setOverview(next)
@@ -158,7 +166,7 @@ export function AdminFinanciacion() {
         saving={saving}
         checkingReference={checkingReference}
         feedback={feedback}
-        onSave={(value) => void save(value)}
+        onSave={(value, policy) => void save(value, policy)}
         onCheckReference={() => void checkReference()}
       />
     </div>

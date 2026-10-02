@@ -210,7 +210,7 @@ test("UI: Financiación tiene Automático (recomendado) y Manual (emergencia); C
   const container = readSource("../../app/admin/sections/financiacion/admin-financiacion.tsx")
   // Nunca se guardan defaults de costos si no llegó el estado real.
   assert.match(container, /disabled=\{loading \|\| overview === null\}/)
-  assert.match(container, /body: JSON\.stringify\(\{ installmentsFinancing \}\)/)
+  assert.match(container, /financedPricePolicy \? \{ installmentsFinancing, financedPricePolicy: \{ policy: financedPricePolicy \} \} : \{ installmentsFinancing \}/)
 
   const page = readSource("../../app/admin/sections/modificaciones/admin-modificaciones.tsx")
   for (const block of ["stock", "shipping", "pricing", "customerCredit"]) {

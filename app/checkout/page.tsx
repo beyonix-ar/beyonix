@@ -1080,7 +1080,13 @@ export default function CheckoutPage() {
     installmentsFinancing: siteSettings.installmentsFinancing,
     transferDiscountPercent: siteSettings.pricing.transferDiscountPercent,
     nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
+    financedPricePolicy: siteSettings.financedPricePolicy,
   }
+  // Con "mismo precio que contado" nunca se presenta un "precio financiado".
+  const financedPriceCopy =
+    siteSettings.financedPricePolicy === "same_as_cash"
+      ? { badge: "Mismo precio que contado", total: "Total (igual al contado)" }
+      : { badge: "Precio financiado", total: "Total financiado" }
   const mercadoPagoBaseInput = {
     lines: checkoutPricingLines,
     shippingCharged: totals.shipping,
@@ -1241,6 +1247,7 @@ export default function CheckoutPage() {
         : "cash",
     installmentsFinancing: siteSettings.installmentsFinancing,
     financingCount: mercadoPagoPricing.offeredInstallmentCount,
+    financedPricePolicy: siteSettings.financedPricePolicy,
     productsSubtotal: checkoutSummary.productsSubtotal,
   })
   // Opciones de cuotas con el MISMO saldo a favor que se aplicaría al
@@ -2147,6 +2154,7 @@ export default function CheckoutPage() {
           // la confirma, el servidor rechaza (409) en vez de cobrar otra cosa.
           expectedMaxInstallments:
             mercadoPagoQuote?.mode === "financed" ? mercadoPagoQuote.preferenceMaxInstallments : undefined,
+          expectedFinancedPricePolicy: siteSettings.financedPricePolicy,
           items: items.map((item) => ({
             productId: item.product.id,
             quantity: item.quantity,
@@ -3062,12 +3070,12 @@ export default function CheckoutPage() {
                         icon={CreditCard}
                         title="Mercado Pago · Cuotas sin interés"
                         description={`${installmentsOptionCopy.headline} con ${installmentsBrands}`}
-                        badge={<span className="checkout-badge checkout-badge-info">Precio financiado</span>}
+                        badge={<span className="checkout-badge checkout-badge-info">{financedPriceCopy.badge}</span>}
                         highlight={
                           <span data-option-amount className="flex flex-wrap gap-x-3">
                             <span data-installments-available>{installmentsOptionCopy.available}</span>
                             <span>
-                              Total financiado:{" "}
+                              {financedPriceCopy.total}:{" "}
                               <span className="font-semibold text-white">
                                 {formatPrice(financedPreviewQuote.externalAmountDue)}
                               </span>
@@ -3700,7 +3708,7 @@ export default function CheckoutPage() {
                 Elegiste pagar con tarjeta de crédito en cuotas sin interés.
               </p>
               <p className="beyonix-modal-title mt-2 text-[15px] font-bold text-white">
-                Total financiado: {formatPrice(finalTotal)}
+                {financedPriceCopy.total}: {formatPrice(finalTotal)}
               </p>
               {selectedInstallmentsCopy && (
                 <p className="beyonix-modal-body mt-0.5 text-[13px] text-white/65" data-selected-installments>

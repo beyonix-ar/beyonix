@@ -14,6 +14,11 @@ import {
 } from "@/lib/site-settings"
 import { DEFAULT_SHIPPING_SETTINGS, type ShippingBonusSettings } from "@/lib/store-config"
 import type { PublicInterestFreeOffer } from "@/lib/pricing/interest-free-communication"
+import {
+  DEFAULT_FINANCED_PRICE_POLICY,
+  isFinancedPricePolicy,
+  type FinancedPricePolicy,
+} from "@/lib/pricing/financed-price-policy"
 
 interface SiteSettingsResponse {
   settings?: {
@@ -23,6 +28,7 @@ interface SiteSettingsResponse {
     installmentsFinancing?: InstallmentsFinancingSettings
     pricing?: PricingSettings
     interestFreeOffer?: PublicInterestFreeOffer | null
+    financedPricePolicy?: FinancedPricePolicy
   }
 }
 
@@ -121,6 +127,8 @@ export function useSiteSettings() {
   const [pricing, setPricing] = useState<PricingSettings>(DEFAULT_PRICING_SETTINGS)
   // Comunicación global de cuotas sin interés: sin dato confirmado, nada.
   const [interestFreeOffer, setInterestFreeOffer] = useState<PublicInterestFreeOffer | null>(null)
+  // Sólo informativo en el cliente: el servidor recalcula con la política vigente.
+  const [financedPricePolicy, setFinancedPricePolicy] = useState<FinancedPricePolicy>(DEFAULT_FINANCED_PRICE_POLICY)
 
   useEffect(() => {
     let active = true
@@ -143,6 +151,11 @@ export function useSiteSettings() {
         setPricing(data.settings.pricing)
       }
       setInterestFreeOffer(data.settings?.interestFreeOffer ?? null)
+      setFinancedPricePolicy(
+        isFinancedPricePolicy(data.settings?.financedPricePolicy)
+          ? data.settings.financedPricePolicy
+          : DEFAULT_FINANCED_PRICE_POLICY,
+      )
     }
 
     siteSettingsListeners.add(applySettings)
@@ -176,5 +189,6 @@ export function useSiteSettings() {
     installmentsFinancing,
     pricing,
     interestFreeOffer,
+    financedPricePolicy,
   }
 }

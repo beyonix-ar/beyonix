@@ -201,3 +201,51 @@ de esa corrida. Un servicio en `failed` con `curl: (22) ... 502` significa que
 Mercado Pago no respondió de forma confiable (Admin muestra el motivo resumido);
 `401` significa que el secreto del archivo de curl no coincide con `CRON_SECRET`
 de PM2.
+
+---
+
+# Eventos comerciales programados (systemd)
+
+`/api/cron/run-commercial-events` ejecuta los eventos de Admin → Eventos que
+vencieron: primero restaura los que terminan (precios exactos del snapshot o la
+política de financiación anterior) y después aplica los que empiezan ("Cambio
+programado de precios" y "Financiación promocional").
+
+Antes de este timer los eventos sólo se activaban a mano: **no existía ningún
+scheduler de eventos** (ni Vercel cron ni systemd), así que este es el único.
+
+- Cada minuto, al segundo 0 (`OnCalendar=*-*-* *:*:00`): un evento de las 03:00
+  hora Argentina se ejecuta a las 03:00 (los instantes se guardan en UTC).
+- Cada fase es una transacción SQL idempotente: si el timer corre dos veces o la
+  VPS se reinicia en medio, no se duplica nada.
+- Un evento que falla queda en **Error** en Admin con el motivo y **no se
+  reintenta solo**: se reintenta desde Admin → Eventos (reintento seguro).
+- Requiere aplicar antes la migración
+  `supabase/migrations/20261002100000_scheduled_commercial_events.sql`.
+
+Archivos (no instalados, no ejecutados):
+
+- `deploy/systemd/beyonix-run-commercial-events.service`
+- `deploy/systemd/beyonix-run-commercial-events.timer`
+
+Reutiliza el mismo archivo de curl con el secreto
+(`/etc/beyonix/curl-verify-transfer-orders.conf`).
+
+## Instalación (en la VPS, desde `~/apps/beyonix`, después del deploy y de la migración)
+
+```bash
+sudo cp deploy/systemd/beyonix-run-commercial-events.service /etc/systemd/system/
+sudo cp deploy/systemd/beyonix-run-commercial-events.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now beyonix-run-commercial-events.timer
+```
+
+## Verificación
+
+```bash
+sudo systemctl start beyonix-run-commercial-events.service
+journalctl -u beyonix-run-commercial-events.service -n 20 --no-pager
+systemctl list-timers | grep beyonix-run-commercial-events
+```
+
+`502` en journalctl = algún evento quedó en Error (ver Admin → Eventos).

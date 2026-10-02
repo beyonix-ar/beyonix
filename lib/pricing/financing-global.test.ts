@@ -39,6 +39,7 @@ const SETTINGS: CheckoutPricingSettings = {
   installmentsFinancing: { baseProcessingPercent: 3.46, ivaPercent: 21, surchargePercentByCount: { 2: 7.79, 3: 10.49, 6: 18.69 } },
   transferDiscountPercent: 10,
   nationalTaxesIncidencePercent: 21,
+  financedPricePolicy: "cover_costs",
 }
 const NOW = new Date("2026-10-01T12:00:00.000Z")
 

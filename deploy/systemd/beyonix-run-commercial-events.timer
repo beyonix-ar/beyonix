@@ -1,0 +1,13 @@
+[Unit]
+Description=Corre beyonix-run-commercial-events.service cada minuto
+
+[Timer]
+# Al segundo 0 de cada minuto: un evento de las 03:00 se ejecuta a las 03:00.
+OnCalendar=*-*-* *:*:00
+AccuracySec=1s
+Unit=beyonix-run-commercial-events.service
+# Si la VPS estuvo apagada, al volver corre una vez y procesa todo lo vencido.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

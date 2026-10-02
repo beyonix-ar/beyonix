@@ -45,6 +45,7 @@ const SETTINGS: CheckoutPricingSettings = {
   },
   transferDiscountPercent: 10,
   nationalTaxesIncidencePercent: 21,
+  financedPricePolicy: "cover_costs",
 }
 
 interface Scenario {
@@ -687,6 +688,13 @@ const ROUTE = readFileSync(
   new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url),
   "utf8",
 ).replace(/\r\n/g, "\n")
+
+test("política: el checkout envía la versión visible y la preferencia devuelve PRICING_CHANGED si cambió", () => {
+  const checkout = readFileSync(new URL("../../app/checkout/page.tsx", import.meta.url), "utf8")
+  assert.match(checkout, /expectedFinancedPricePolicy: siteSettings\.financedPricePolicy/)
+  assert.match(ROUTE, /payload\.expectedFinancedPricePolicy !== siteSettings\.financedPricePolicy/)
+  assert.match(ROUTE, /code: "PRICING_CHANGED"/)
+})
 
 function expiredOrderFromPreviousSession(state: ReturnType<typeof evaluate>) {
   return persistedOrder(state, {

@@ -42,6 +42,7 @@ const SETTINGS: CheckoutPricingSettings = {
   },
   transferDiscountPercent: 10,
   nationalTaxesIncidencePercent: 21,
+  financedPricePolicy: "cover_costs",
 }
 
 function line(productId: number, unitPrice: number, quantity = 1): CheckoutPricingLine {
@@ -83,7 +84,7 @@ test("4-5. 1 pago muestra 'Precio contado' y su total; la opción de cuotas mues
   assert.match(cash, />\s*Ver medios\s*</)
   assert.match(installments, /description=\{`\$\{installmentsOptionCopy\.headline\} con \$\{installmentsBrands\}`\}/)
   assert.match(installments, /\{installmentsOptionCopy\.available\}/)
-  assert.match(installments, /Total financiado:\{" "\}[\s\S]*\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
+  assert.match(installments, /\{financedPriceCopy\.total\}:\{" "\}[\s\S]*\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
   // Sin valor por cuota ni una tarjeta por cantidad: una sola opción (activa
   // o, si el total todavía no alcanza, la misma tarjeta con el texto global).
   assert.doesNotMatch(list, /c\/u|Ver cuotas/)
@@ -113,6 +114,7 @@ test("9-11. las líneas de producto suman exactamente 'Productos' en transferenc
         mode,
         installmentsFinancing: SETTINGS.installmentsFinancing,
         financingCount: pricing.offeredInstallmentCount,
+        financedPricePolicy: "cover_costs",
         productsSubtotal: summary.productsSubtotal,
       })
       assert.equal(sumCents(amounts), cents(summary.productsSubtotal), `${mode}`)
@@ -138,6 +140,7 @@ test("9-11. las líneas de producto suman exactamente 'Productos' en transferenc
       mode: "transfer",
       installmentsFinancing: SETTINGS.installmentsFinancing,
       financingCount: null,
+      financedPricePolicy: "cover_costs",
       productsSubtotal: transferSummary.productsSubtotal,
     })
     assert.equal(sumCents(transferAmounts), cents(transferSummary.productsSubtotal))
@@ -159,6 +162,7 @@ test("contado: cada línea es exactamente su precio de contado; cuotas: su finan
     mode: "cash",
     installmentsFinancing: SETTINGS.installmentsFinancing,
     financingCount: null,
+    financedPricePolicy: "cover_costs",
     productsSubtotal: getMercadoPagoSummaryBreakdown(pricing, "cash").productsSubtotal,
   })
   assert.deepEqual(cash, [46_000, 24_690])
@@ -168,6 +172,7 @@ test("contado: cada línea es exactamente su precio de contado; cuotas: su finan
     mode: "financed",
     installmentsFinancing: SETTINGS.installmentsFinancing,
     financingCount: pricing.offeredInstallmentCount,
+    financedPricePolicy: "cover_costs",
     productsSubtotal: getMercadoPagoSummaryBreakdown(pricing, "financed").productsSubtotal,
   })
   // 46.000 financiado canónico (máx. 6 cuotas) = 66.672; el ajuste de
@@ -361,7 +366,7 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
 
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
   assert.match(financed, /Elegiste pagar con tarjeta de crédito en cuotas sin interés\./)
-  assert.match(financed, /Total financiado: \{formatPrice\(finalTotal\)\}/)
+  assert.match(financed, /\{financedPriceCopy\.total\}: \{formatPrice\(finalTotal\)\}/)
   // Hasta cuántas cuotas y cuáles: la cantidad se elige en Mercado Pago.
   assert.match(financed, /\{selectedInstallmentsCopy\.headline\}\. \{selectedInstallmentsCopy\.available\}: elegís la cantidad en Mercado Pago\./)
   assert.match(financed, /\{MERCADOPAGO_FINANCED_TOTAL_WARNING\}/)

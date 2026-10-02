@@ -31,6 +31,8 @@ type BulkActionKind =
   | "discount_percent"
   | "price_decrease_percent"
   | "price_increase_percent"
+  | "price_decrease_amount"
+  | "price_increase_amount"
   | "clear_offer"
 
 type TargetItem = {
@@ -67,6 +69,8 @@ const ACTION_OPTIONS: Array<{
     label: "Quitar oferta",
     help: "Limpia descuentos y precio anterior.",
   },
+  { value: "price_decrease_amount", label: "Baja por monto", help: "Resta un monto fijo y muestra el precio anterior." },
+  { value: "price_increase_amount", label: "Aumento por monto", help: "Suma un monto fijo y limpia descuentos previos." },
 ]
 
 const PERCENT_ACTIONS: BulkActionKind[] = [
@@ -250,16 +254,18 @@ export function AdminAccionesMasivas() {
               </AdminSelect>
             </AdminFormField>
 
-            {isPercentAction && (
+            {actionKind !== "clear_offer" && (
               <AdminFormField
-                label="Porcentaje"
+                label={isPercentAction ? "Porcentaje" : "Monto ($)"}
                 help="El precio resultante se redondeará al importe más cercano terminado en 000, 500 o 900."
                 className="max-w-[320px]"
               >
                 <AdminTextInput
-                  title="Porcentaje"
+                  title={isPercentAction ? "Porcentaje" : "Monto en pesos"}
                   type="number"
-                  inputMode="numeric"
+                  inputMode="decimal"
+                  min="0.01"
+                  step={isPercentAction ? "1" : "0.01"}
                   placeholder="10"
                   value={value}
                   onChange={setValue}

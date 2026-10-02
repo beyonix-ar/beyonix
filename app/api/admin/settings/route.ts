@@ -1,8 +1,10 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import { normalizeFinancedPricePolicy } from "@/lib/pricing/financed-price-policy"
 import {
   getMercadoPagoCostsOverview,
   getSiteSettings,
   invalidateSiteSettingsCache,
+  loadFinancingPolicyEvents,
   normalizeSiteSettingsPatch,
 } from "@/lib/site-settings"
 
@@ -34,13 +36,50 @@ export async function PATCH(request: Request) {
     return Response.json({ error: "La configuración no es válida." }, { status: 400 })
   }
   const before = await getSiteSettings({ fresh: true })
+
+  // Política de precio financiado: mientras un evento de financiación la
+  // controla, no se cambia a mano (nunca se pisa en silencio la
+  // programación). Para salir antes: Admin → Eventos → "Finalizar ahora".
+  const policyChange = changes.find(({ field }) => field === "financedPricePolicy")
+  if (policyChange) {
+    const events = await loadFinancingPolicyEvents(auth.admin)
+    if (events.error) {
+      return Response.json({ error: "No se pudo verificar si hay un evento de financiación activo." }, { status: 503 })
+    }
+    const requested = normalizeFinancedPricePolicy(policyChange.value)
+    if (events.controlling && requested !== before.financedPricePolicy) {
+      return Response.json(
+        {
+          code: "FINANCING_POLICY_CONTROLLED_BY_EVENT",
+          error: `La política está controlada por el evento "${events.controlling.name}". Finalizalo desde Eventos para cambiarla a mano.`,
+        },
+        { status: 409 },
+      )
+    }
+  }
+
   const updatedAt = new Date().toISOString()
-  const { error } = await auth.admin.from("site_settings").upsert(
-    changes.map(({ key, value }) => ({
+  if (policyChange) {
+    const { error: policyError } = await auth.admin.rpc("set_financed_price_policy", {
+      p_policy: normalizeFinancedPricePolicy(policyChange.value),
+      p_actor: auth.user.id,
+      p_now: updatedAt,
+    })
+    if (policyError) {
+      const controlled = policyError.message.includes("FINANCING_POLICY_CONTROLLED_BY_EVENT")
+      return Response.json({
+        code: controlled ? "FINANCING_POLICY_CONTROLLED_BY_EVENT" : undefined,
+        error: controlled ? "La política está controlada por un evento. Finalizalo desde Eventos antes de cambiarla." : "No se pudo guardar la política de financiación.",
+      }, { status: controlled ? 409 : 500 })
+    }
+  }
+  const otherChanges = changes.filter(({ field }) => field !== "financedPricePolicy")
+  const { error } = otherChanges.length ? await auth.admin.from("site_settings").upsert(
+    otherChanges.map(({ key, value }) => ({
       key, value, updated_by: auth.user.id, updated_at: updatedAt,
     })),
     { onConflict: "key" },
-  )
+  ) : { error: null }
 
   if (error) {
     return Response.json({ error: "No se pudo guardar la configuración." }, { status: 500 })

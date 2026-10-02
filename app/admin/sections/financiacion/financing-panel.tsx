@@ -1,9 +1,12 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
+import Link from "next/link"
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
+  Clock,
   Check,
   CreditCard,
   Hand,
@@ -38,7 +41,17 @@ import {
 import { REFERENCE_PROBE_MAX_AMOUNT } from "@/lib/mercadopago/interest-free-reference"
 import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import {
+  DEFAULT_FINANCED_PRICE_POLICY,
+  FINANCED_PRICE_POLICIES,
+  FINANCED_PRICE_POLICY_LABELS,
+  SAME_AS_CASH_WARNING,
+  type FinancedPricePolicy,
+} from "@/lib/pricing/financed-price-policy"
+import { formatArgentinaDateTime } from "@/lib/commercial-events/argentina-time"
+import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
+import {
   DEFAULT_INSTALLMENTS_FINANCING_SETTINGS,
+  type FinancingPolicyEventSummary,
   type MercadoPagoCostsOverview,
   type StoredInstallmentsFinancingSettings,
 } from "@/lib/site-settings"
@@ -90,12 +103,14 @@ interface Draft {
   iva: string
   surcharge: Record<InstallmentCount, string>
   interestFreeEnabled: boolean
+  financedPricePolicy: FinancedPricePolicy
 }
 
 function toDraft(overview: MercadoPagoCostsOverview | null): Draft {
   const manual = overview?.manual ?? DEFAULT_INSTALLMENTS_FINANCING_SETTINGS
   const policy = overview?.interestFreePolicy ?? DEFAULT_INTEREST_FREE_POLICY
   return {
+    financedPricePolicy: overview?.financedPricePolicy ?? DEFAULT_FINANCED_PRICE_POLICY,
     mode: overview?.mode ?? "manual",
     base: String(manual.baseProcessingPercent),
     iva: String(manual.ivaPercent),
@@ -361,8 +376,87 @@ interface FinancingPanelProps {
   saving: boolean
   checkingReference: boolean
   feedback: ConfigFeedback | null
-  onSave: (value: StoredInstallmentsFinancingSettings) => void
+  /** `policy` sólo cuando cambió la política de precio financiado (se guarda aparte). */
+  onSave: (value: StoredInstallmentsFinancingSettings, policy: FinancedPricePolicy | null) => void
   onCheckReference: () => void
+}
+
+const POLICY_HELP: Record<FinancedPricePolicy, string> = {
+  cover_costs: "El precio en cuotas incluye los costos de financiación.",
+  same_as_cash: "BEYONIX absorbe el costo de financiación.",
+}
+
+/**
+ * Política GLOBAL de precio financiado. Cambio manual inmediato (compras
+ * futuras; lo histórico no cambia). Mientras un evento de Admin → Eventos la
+ * controla no se edita acá: se ve el evento, cuándo termina y a qué vuelve.
+ */
+function FinancedPolicyControl({
+  value,
+  disabled,
+  controllingEvent,
+  upcomingEvent,
+  onChange,
+}: {
+  value: FinancedPricePolicy
+  disabled: boolean
+  controllingEvent: FinancingPolicyEventSummary | null
+  upcomingEvent: FinancingPolicyEventSummary | null
+  onChange: (policy: FinancedPricePolicy) => void
+}) {
+  return (
+    <div className="mt-3" data-financed-policy={value}>
+      <p className="text-11px font-bold text-white/62">Política de precio financiado</p>
+      {controllingEvent ? (
+        <div className="admin-config-status mt-1 space-y-0.5 px-2.5 py-2 text-12px leading-4 text-white/80" data-tone="info" data-financed-policy-event>
+          <p className="text-sm font-black text-white">{FINANCED_PRICE_POLICY_LABELS[value]}</p>
+          <p>
+            <Clock className="mr-1 inline size-3.5 align-[-2px]" aria-hidden="true" />
+            Controlado temporalmente por el evento <strong className="text-white">“{controllingEvent.name}”</strong>
+            {controllingEvent.status === "error" ? " (con error al restaurar)" : ""}
+          </p>
+          <p>Finaliza: {formatArgentinaDateTime(controllingEvent.endsAt)}</p>
+          {controllingEvent.previousPolicy ? (
+            <p data-financed-policy-restore>Volverá a: {FINANCED_PRICE_POLICY_LABELS[controllingEvent.previousPolicy]}</p>
+          ) : null}
+          <Link href={ADMIN_ROUTES.eventos} className="admin-config-link inline-flex items-center gap-1 font-black underline-offset-2 hover:underline">
+            Ver evento
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+      ) : (
+        <div role="radiogroup" aria-label="Política de precio financiado" className="mt-1 grid gap-1.5 sm:grid-cols-2">
+          {FINANCED_PRICE_POLICIES.map((policy) => (
+            <button
+              key={policy}
+              type="button"
+              role="radio"
+              aria-checked={value === policy}
+              disabled={disabled}
+              onClick={() => onChange(policy)}
+              data-policy={policy}
+              data-selected={value === policy ? "true" : "false"}
+              className="admin-config-policy-option flex min-w-0 flex-col items-start gap-0.5 px-2.5 py-1.5 text-left disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="text-12px font-black text-white">{FINANCED_PRICE_POLICY_LABELS[policy]}</span>
+              <span className="text-11px font-semibold leading-4 text-white/72">{POLICY_HELP[policy]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {value === "same_as_cash" ? (
+        <p className="admin-config-status mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 text-12px font-semibold leading-4 text-white/85" data-tone="warning" data-same-as-cash-warning role="status">
+          <AlertTriangle className="admin-config-warning-icon mt-px size-3.5 shrink-0" />
+          {SAME_AS_CASH_WARNING}
+        </p>
+      ) : null}
+      {!controllingEvent && upcomingEvent ? (
+        <p className="mt-1.5 text-12px leading-4 text-white/72" data-financed-policy-upcoming>
+          Programado: “{upcomingEvent.name}” · {formatArgentinaDateTime(upcomingEvent.startsAt)} → {formatArgentinaDateTime(upcomingEvent.endsAt)}
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
 /**
@@ -383,7 +477,11 @@ export function FinancingPanel({
   const [editingBackup, setEditingBackup] = useState(false)
   const [showAllHistory, setShowAllHistory] = useState(false)
   const stored = toStored(draft)
-  const dirty = !sameStored(stored, toStored(toDraft(overview)))
+  const savedPolicy = overview?.financedPricePolicy ?? DEFAULT_FINANCED_PRICE_POLICY
+  const controllingEvent = overview?.financingPolicyEvent ?? null
+  // Mientras un evento la controla, la política no forma parte del guardado.
+  const policyDirty = !controllingEvent && draft.financedPricePolicy !== savedPolicy
+  const dirty = !sameStored(stored, toStored(toDraft(overview))) || policyDirty
   const observed = overview?.observed ?? null
   const syncStatus = overview?.interestFreeStatus ?? null
   const reference = syncStatus?.reference ?? null
@@ -432,7 +530,12 @@ export function FinancingPanel({
             {feedback.text}
           </p>
         ) : null}
-        <ConfigSaveActions dirty={dirty} saving={saving} disabled={disabled} onSave={() => onSave(stored)} />
+        <ConfigSaveActions
+          dirty={dirty}
+          saving={saving}
+          disabled={disabled}
+          onSave={() => onSave(stored, policyDirty ? draft.financedPricePolicy : null)}
+        />
       </div>
 
       <div className="grid items-start gap-3 lg:grid-cols-2">
@@ -510,6 +613,14 @@ export function FinancingPanel({
               <span className="text-xs text-white">{enabled ? "Cuotas activadas" : "Cuotas desactivadas"}</span>
             </AdminSecondaryButton>
           </div>
+
+          <FinancedPolicyControl
+            value={controllingEvent ? savedPolicy : draft.financedPricePolicy}
+            disabled={inputsDisabled}
+            controllingEvent={controllingEvent}
+            upcomingEvent={overview?.upcomingFinancingPolicyEvent ?? null}
+            onChange={(financedPricePolicy) => setDraft((current) => ({ ...current, financedPricePolicy }))}
+          />
 
           {manual ? (
             <p className="admin-config-status mt-2.5 flex items-start gap-1.5 px-2.5 py-1.5 text-12px font-semibold leading-4 text-white/85" data-tone="warning" data-manual-warning role="status">
