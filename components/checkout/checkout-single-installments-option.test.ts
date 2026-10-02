@@ -58,7 +58,7 @@ function pricingWith(lookup: InterestFreeLookup) {
 }
 
 function paymentList() {
-  const start = checkout.indexOf('<fieldset className="grid gap-2.5" data-payment-options>')
+  const start = checkout.indexOf('<fieldset className="grid gap-2" data-payment-options>')
   assert.ok(start > 0)
   return checkout.slice(start, checkout.indexOf("</fieldset>", start))
 }
@@ -68,8 +68,8 @@ test("el checkout muestra UNA sola opción de cuotas (no una tarjeta por 2, 3 y 
   // Transferencia, 1 pago y cuotas; la de cuotas es UNA sola (activa o con el texto global).
   assert.equal((list.match(/<CheckoutPaymentOptionCard/g) ?? []).length, 4)
   assert.equal((list.match(/option="mercadopago_installments"/g) ?? []).length, 2)
-  assert.match(list, /\{installmentsOptionCopy && financedPreviewQuote \? \([\s\S]*\) : globalInterestFreeMessage \? \([\s\S]*\) : null\}/)
-  assert.match(list, /description=\{globalInterestFreeMessage\.text\}/)
+  assert.match(list, /\{installmentsOptionCopy && financedPreviewQuote \? \([\s\S]*\) : \([\s\S]*\)\}/)
+  assert.match(list, /description=\{globalInterestFreeMessage\?\.text \?\? "Sin cuotas sin interés confirmadas para este total\."\}/)
   assert.match(list, /\n\s+disabled\n/)
   assert.match(list, /title="Mercado Pago · 1 pago"/)
   assert.match(list, /title="Mercado Pago · Cuotas sin interés"/)
@@ -104,10 +104,11 @@ test("MP confirma 2, 3 y 6 -> 'Hasta 6 cuotas sin interés', 'Disponibles: 2, 3 
   assert.ok(pricing.financed!.externalAmountDue > twoThree.financed!.externalAmountDue)
 })
 
-test("sin cuotas confirmadas no hay opción de cuotas (sólo 1 pago)", () => {
+test("sin cuotas confirmadas se muestra la opción de cuotas deshabilitada", () => {
   assert.equal(getCheckoutInstallmentsOptionCopy([]), null)
   assert.equal(pricingWith(() => []).financed, null)
   assert.match(paymentList(), /\{installmentsOptionCopy && financedPreviewQuote \? \(/)
+  assert.match(paymentList(), /\n\s+disabled\n/)
 })
 
 test("1 pago sigue usando el precio contado; cuotas el financiado del tier, sin mezclar precios", () => {

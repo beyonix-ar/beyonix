@@ -28,6 +28,7 @@ function readSource(path: string) {
 }
 
 const checkout = readSource("../../app/checkout/page.tsx")
+const paymentPanel = readSource("./checkout-payment-media-panel.tsx")
 const routes = {
   mercadopago: readSource("../../app/api/mercadopago/create-preference/route.ts"),
   transferencia: readSource("../../app/api/transferencia/create-order/route.ts"),
@@ -75,21 +76,22 @@ const CARTS: CheckoutPricingLine[][] = [
 // ─────────────────────────────────────────────────────────────
 
 test("4-5. 1 pago muestra 'Precio contado' y su total; la opción de cuotas muestra hasta N, las disponibles y el total financiado", () => {
-  const listStart = checkout.indexOf('<fieldset className="grid gap-2.5" data-payment-options>')
+  const listStart = checkout.indexOf('<fieldset className="grid gap-2" data-payment-options>')
   const list = checkout.slice(listStart, checkout.indexOf("</fieldset>", listStart))
   const cash = list.slice(list.indexOf('option="mercadopago_cash"'), list.indexOf('option="mercadopago_installments"'))
   const installments = list.slice(list.indexOf('option="mercadopago_installments"'))
-  assert.match(cash, /checkout-badge-neutral">Precio contado</)
+  assert.match(cash, /description="Precio contado"/)
   assert.match(cash, /\{formatPrice\(cashOptionAmount\)\}/)
-  assert.match(cash, />\s*Ver medios\s*</)
-  assert.match(installments, /description=\{`\$\{installmentsOptionCopy\.headline\} con \$\{installmentsBrands\}`\}/)
+  assert.doesNotMatch(cash, /Ver medios/)
+  assert.match(installments, /description=\{installmentsOptionCopy\.headline\}/)
   assert.match(installments, /\{installmentsOptionCopy\.available\}/)
-  assert.match(installments, /\{financedPriceCopy\.total\}:\{" "\}[\s\S]*\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
+  assert.match(installments, /amountLabel=\{financedPriceCopy\.total\}/)
+  assert.match(installments, /amount=\{formatPrice\(financedPreviewQuote\.externalAmountDue\)\}/)
   // Sin valor por cuota ni una tarjeta por cantidad: una sola opción (activa
   // o, si el total todavía no alcanza, la misma tarjeta con el texto global).
   assert.doesNotMatch(list, /c\/u|Ver cuotas/)
   assert.equal((list.match(/<CheckoutPaymentOptionCard/g) ?? []).length, 4)
-  assert.match(list, /\) : globalInterestFreeMessage \? \(/)
+  assert.match(list, /\) : \(/)
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -453,13 +455,13 @@ test("visual 1-2. seleccionada en light: celeste muy claro (no navy), borde azul
 })
 
 test("visual 3. el radio elegido muestra un check (radio nativo sigue siendo el control accesible)", () => {
-  const start = checkout.indexOf("function CheckoutRadioIndicator(")
-  const indicator = checkout.slice(start, checkout.indexOf("\n}\n", start))
+  const start = paymentPanel.indexOf("function CheckoutRadioIndicator(")
+  const indicator = paymentPanel.slice(start, paymentPanel.indexOf("\n}\n", start))
   assert.match(indicator, /aria-hidden="true"/)
-  assert.match(indicator, /\{checked && \(\s*<Check[\s\S]*className="checkout-choice-radio-check/)
+  assert.match(indicator, /\{checked && <Check[\s\S]*className="checkout-choice-radio-check/)
   assert.match(indicator, /bg-\[var\(--checkout-choice-indicator\)\]/)
-  const cardStart = checkout.indexOf("function CheckoutPaymentOptionCard(")
-  const card = checkout.slice(cardStart, checkout.indexOf("\n}\n", cardStart))
+  const cardStart = paymentPanel.indexOf("function CheckoutPaymentOptionCard(")
+  const card = paymentPanel.slice(cardStart, paymentPanel.indexOf("\n}\n", cardStart))
   assert.match(card, /type="radio"[\s\S]*className="sr-only"/)
   assert.match(card, /has-\[:focus-visible\]:ring-2/)
 })
@@ -474,7 +476,8 @@ test("visual 4. el descuento de transferencia usa el token verde claro (light) y
   assert.match(css, /:root \{\n  --checkout-choice-selected-bg: #112a43;[\s\S]{0,300}--checkout-offer-text: #34d399;/)
   // Mismo verde que "10% OFF" para el descuento (2), el envío "GRATIS" del
   // resumen (2 ramas) y la bonificación "Ahorrás ... en tu envío" (1).
-  assert.equal((checkout.match(/text-\[var\(--checkout-offer-text\)\]/g) ?? []).length, 5)
+  assert.equal((checkout.match(/text-\[var\(--checkout-offer-text\)\]/g) ?? []).length, 4)
+  assert.match(checkout, /data-transfer-discount-highlight>\{siteSettings\.pricing\.transferDiscountPercent\}% OFF/)
   assert.match(checkout, /customerCreditCoversShipping\s*\? "font-semibold text-\[var\(--checkout-offer-text\)\]"/)
   assert.match(checkout, /<p className="text-right text-11px font-semibold text-\[var\(--checkout-offer-text\)\]">\s*Ahorrás/)
 })
@@ -510,15 +513,15 @@ test("visual 5. dark mode intacto: tokens y estilo base de la seleccionada sin c
   }
 })
 
-test("visual 6. los modales siguen con el mismo componente y quedan blancos/prolijos en light", () => {
+test("visual 6. el modal de confirmación permanece y los medios pasan al panel visible", () => {
   const modal = readSource("./payment-info-modal.tsx")
   assert.match(modal, /className="beyonix-modal-shell checkout-info-modal /)
   assert.match(modal, /role="dialog"/)
   assert.match(modal, /\{footer \?\? \(/)
   assert.match(css, /\.checkout-info-modal \{\n  background: #ffffff !important;/)
   assert.match(css, /\.checkout-info-modal \.beyonix-modal-list > li \+ li \{\n  border-top: 1px solid #e8eef5 !important;/)
-  // Medios de 1 pago + confirmación (las cuotas son opciones, no un modal).
-  assert.equal((checkout.match(/<PaymentInfoModal/g) ?? []).length, 2)
+  assert.equal((checkout.match(/<PaymentInfoModal/g) ?? []).length, 1)
+  assert.match(checkout, /<CheckoutPaymentMediaPanel/)
 })
 
 function contrastRatio(foreground: string, background: string) {

@@ -1,0 +1,191 @@
+import type { ReactNode } from "react"
+import Image from "next/image"
+import { Check, Landmark, type LucideIcon } from "lucide-react"
+
+import {
+  MERCADOPAGO_CASH_MEDIA_DISCLAIMER,
+  MERCADOPAGO_CASH_MEDIA_GROUPS,
+} from "@/lib/payments/mercadopago-cash-media"
+import { cn } from "@/lib/utils"
+
+export type CheckoutPaymentOption = "transferencia" | "mercadopago_cash" | "mercadopago_installments"
+
+export const checkoutOptionClassName =
+  "checkout-option flex w-full cursor-pointer rounded-lg border border-beyonix-blue-light/16 bg-[#10151C] text-left transition-all hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/38 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/22"
+
+export const checkoutOptionSelectedClassName =
+  "checkout-option-selected border-beyonix-blue-light/70 bg-[#112A43] shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_0_0_1px_rgba(79,131,173,0.18)]"
+
+export function CheckoutPaymentOptionCard({
+  option,
+  checked,
+  onSelect,
+  icon: Icon,
+  title,
+  description,
+  badge,
+  highlight,
+  amountLabel,
+  amount,
+  disabled = false,
+}: {
+  option: CheckoutPaymentOption
+  checked: boolean
+  onSelect: (option: CheckoutPaymentOption) => void
+  icon: LucideIcon
+  title: string
+  description: string
+  badge?: ReactNode
+  highlight?: ReactNode
+  amountLabel?: string
+  amount?: string
+  disabled?: boolean
+}) {
+  return (
+    <label
+      data-payment-option={option}
+      data-disabled={disabled ? "true" : undefined}
+      aria-disabled={disabled || undefined}
+      className={cn(
+        checkoutOptionClassName,
+        "checkout-choice items-start gap-2.5 px-3 py-2.5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-beyonix-blue-light/40",
+        checked && checkoutOptionSelectedClassName,
+        disabled && "cursor-not-allowed",
+      )}
+    >
+      <input
+        type="radio"
+        name="checkout-payment-option"
+        value={option}
+        checked={checked}
+        disabled={disabled}
+        onChange={() => onSelect(option)}
+        className="sr-only"
+      />
+      <span className="mt-0.5"><CheckoutRadioIndicator checked={checked} /></span>
+      <span className="checkout-choice-icon flex size-8 shrink-0 items-center justify-center rounded-lg bg-black/35 text-white/65">
+        <Icon aria-hidden="true" className="size-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-semibold text-white">{title}</span>
+          {badge}
+        </span>
+        <span className="mt-0.5 block text-sm text-white/55">{description}</span>
+        {highlight && <span className="mt-0.5 block text-sm text-white/55">{highlight}</span>}
+      </span>
+      {amount ? (
+        <span className="checkout-choice-total ml-auto shrink-0 text-right">
+          <span className="block text-11px text-white/55">{amountLabel}</span>
+          <strong className="block text-sm tabular-nums text-white">{amount}</strong>
+        </span>
+      ) : null}
+    </label>
+  )
+}
+
+function CheckoutRadioIndicator({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-checked={checked ? "true" : "false"}
+      className={cn(
+        "checkout-choice-radio flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+        checked
+          ? "border-[var(--checkout-choice-indicator)] bg-[var(--checkout-choice-indicator)]"
+          : "border-[var(--checkout-choice-indicator-idle)]",
+      )}
+    >
+      {checked && <Check strokeWidth={3.5} className="checkout-choice-radio-check size-3 text-[var(--checkout-choice-indicator-dot)]" />}
+    </span>
+  )
+}
+
+const MEDIA_LOGOS: Record<string, string> = {
+  Visa: "/payment-methods/visa.svg",
+  Mastercard: "/payment-methods/mastercard.svg",
+  "American Express": "/payment-methods/americanexpress.svg",
+  "Visa Débito": "/payment-methods/visa.svg",
+  "Mastercard Débito": "/payment-methods/mastercard.svg",
+}
+
+const INSTALLMENT_BRANDS: Record<string, string> = {
+  visa: "Visa",
+  master: "Mastercard",
+}
+
+function MediaBrand({ name, confirmed = false }: { name: string; confirmed?: boolean }) {
+  const logo = MEDIA_LOGOS[name]
+  const label = name === "Naranja" ? "Naranja X" : name
+
+  return (
+    <li className="checkout-media-brand" data-media-brand={name} data-confirmed={confirmed || undefined}>
+      {logo ? <Image src={logo} alt="" width={28} height={28} className="checkout-media-brand-logo" /> : null}
+      <span>{label}</span>
+    </li>
+  )
+}
+
+export function CheckoutPaymentMediaPanel({
+  option,
+  installmentBrands,
+}: {
+  option: CheckoutPaymentOption | null
+  installmentBrands: readonly string[]
+}) {
+  const confirmedBrands = installmentBrands.filter((brand) => brand === "visa" || brand === "master")
+
+  return (
+    <aside className="checkout-payment-media" data-payment-media={option ?? "none"} aria-label="Pagá con">
+      <div className="checkout-payment-media-heading">
+        <p className="checkout-payment-media-kicker">Medios de pago</p>
+        <h3>Pagá con</h3>
+      </div>
+
+      {option === "transferencia" ? (
+        <div className="checkout-payment-media-content" data-media-transfer>
+          <div className="checkout-payment-media-transfer-icon"><Landmark aria-hidden="true" className="size-5" /></div>
+          <p className="checkout-payment-media-title">Transferencia bancaria</p>
+          <p className="checkout-payment-media-muted">Los datos de la cuenta se muestran después de confirmar el pedido.</p>
+          <p className="checkout-payment-media-note">Podés transferir desde una cuenta bancaria o virtual.</p>
+        </div>
+      ) : option === "mercadopago_installments" ? (
+        <div className="checkout-payment-media-content" data-media-installments>
+          <p className="checkout-payment-media-title">Tarjetas de crédito con cuotas confirmadas</p>
+          {confirmedBrands.length > 0 ? (
+            <ul className="checkout-payment-media-brands" aria-label="Tarjetas con cuotas sin interés confirmadas">
+              {confirmedBrands.map((brand) => (
+                <MediaBrand key={brand} name={INSTALLMENT_BRANDS[brand]} confirmed />
+              ))}
+            </ul>
+          ) : (
+            <p className="checkout-payment-media-muted">Mercado Pago todavía no confirmó tarjetas para este total.</p>
+          )}
+          <p className="checkout-payment-media-note">La cantidad disponible se elige en Mercado Pago.</p>
+        </div>
+      ) : option === "mercadopago_cash" ? (
+        <div className="checkout-payment-media-content" data-media-cash>
+          {MERCADOPAGO_CASH_MEDIA_GROUPS.map((group) => (
+            <section key={group.id} className="checkout-payment-media-group" data-media-group={group.id}>
+              <h4>{group.label}</h4>
+              {group.id === "mercadopago" ? (
+                <div className="checkout-payment-media-wallet">
+                  <Image src="/payment-methods/mercadopago.svg" alt="Mercado Pago" width={30} height={30} className="checkout-payment-media-wallet-logo" />
+                  <span>Dinero disponible en tu cuenta</span>
+                </div>
+              ) : (
+                <ul className="checkout-payment-media-brands">
+                  {group.items.map((name) => <MediaBrand key={name} name={name} />)}
+                </ul>
+              )}
+            </section>
+          ))}
+          <p className="checkout-payment-media-note">Y más medios de pago disponibles en Mercado Pago.</p>
+          <p className="checkout-payment-media-muted">{MERCADOPAGO_CASH_MEDIA_DISCLAIMER}</p>
+        </div>
+      ) : (
+        <p className="checkout-payment-media-empty">Elegí una opción de pago para ver sus medios disponibles.</p>
+      )}
+    </aside>
+  )
+}

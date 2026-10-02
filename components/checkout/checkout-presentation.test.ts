@@ -19,6 +19,7 @@ function readSource(path: string) {
 }
 
 const checkout = readSource("../../app/checkout/page.tsx")
+const paymentPanel = readSource("./checkout-payment-media-panel.tsx")
 const css = readSource("../../app/globals.css")
 
 const SETTINGS: CheckoutPricingSettings = {
@@ -53,7 +54,7 @@ function assertAddsUp(summary: { productsSubtotal: number; storeBenefitDiscount:
 // ─────────────────────────────────────────────────────────────
 
 test("1-2. lista simple en orden: Transferencia, Mercado Pago · 1 pago, cuotas sin interés; sin paneles anidados", () => {
-  const listStart = checkout.indexOf("<fieldset className=\"grid gap-2.5\" data-payment-options>")
+  const listStart = checkout.indexOf("<fieldset className=\"grid gap-2\" data-payment-options>")
   const listEnd = checkout.indexOf("</fieldset>", listStart)
   assert.ok(listStart > 0 && listEnd > listStart)
   const list = checkout.slice(listStart, listEnd)
@@ -72,8 +73,8 @@ test("1-2. lista simple en orden: Transferencia, Mercado Pago · 1 pago, cuotas 
 })
 
 test("3-4. el cliente elige UNA opción (1 pago o una cuota): todas son el mismo radio", () => {
-  const cardStart = checkout.indexOf("function CheckoutPaymentOptionCard(")
-  const card = checkout.slice(cardStart, checkout.indexOf("\n}\n", cardStart))
+  const cardStart = paymentPanel.indexOf("function CheckoutPaymentOptionCard(")
+  const card = paymentPanel.slice(cardStart, paymentPanel.indexOf("\n}\n", cardStart))
   assert.match(card, /type="radio"/)
   assert.match(card, /name="checkout-payment-option"/)
   assert.match(card, /onChange=\{\(\) => onSelect\(option\)\}/)
@@ -103,8 +104,8 @@ test("5-6. en light la opción elegida es sobria: fondo blanco/gris muy claro, b
     css,
     /\.checkout-choice\.checkout-option-selected \[class~="text-white\/45"\],[\s\S]{0,300}color: var\(--beyonix-light-text-secondary\) !important;/,
   )
-  const cardStart = checkout.indexOf("function CheckoutPaymentOptionCard(")
-  const card = checkout.slice(cardStart, checkout.indexOf("\n}\n", cardStart))
+  const cardStart = paymentPanel.indexOf("function CheckoutPaymentOptionCard(")
+  const card = paymentPanel.slice(cardStart, paymentPanel.indexOf("\n}\n", cardStart))
   assert.match(card, /"checkout-choice items-start/)
   assert.match(card, /checked && checkoutOptionSelectedClassName/)
   // Badges chicos con tokens por tema (success/info/neutral).
@@ -113,16 +114,14 @@ test("5-6. en light la opción elegida es sobria: fondo blanco/gris muy claro, b
   }
 })
 
-test("7-8. transferencia: '¡Mejor precio!' y 'Incluye N% de descuento' dinámico y destacado", () => {
-  const listStart = checkout.indexOf("<fieldset className=\"grid gap-2.5\" data-payment-options>")
+test("7-8. transferencia: descuento dinámico y total visible al seleccionarla", () => {
+  const listStart = checkout.indexOf("<fieldset className=\"grid gap-2\" data-payment-options>")
   const list = checkout.slice(listStart, checkout.indexOf("</fieldset>", listStart))
-  assert.match(list, /title="Depósito \/ Transferencia"/)
-  assert.match(list, /description="En cuenta bancaria o virtual"/)
-  assert.match(list, /checkout-badge-success">¡Mejor precio!</)
-  assert.match(
-    list,
-    /className="font-semibold text-\[var\(--checkout-offer-text\)\]"\s*>\s*\{siteSettings\.pricing\.transferDiscountPercent\}% de descuento/,
-  )
+  assert.match(list, /title="Transferencia bancaria"/)
+  assert.match(list, /description="Datos bancarios al confirmar"/)
+  assert.match(list, /checkout-badge-success" data-transfer-discount-highlight>\{siteSettings\.pricing\.transferDiscountPercent\}% OFF/)
+  assert.match(list, /amountLabel="Total transferencia"/)
+  assert.match(list, /amount=\{isTransferPayment \? formatPrice\(finalTotal\) : undefined\}/)
   assert.doesNotMatch(list, /10%/)
   // Verde de beneficio en light con contraste AA (ver checkout-final-ux).
   assert.match(css, /--checkout-offer-text: #157a3a;/)

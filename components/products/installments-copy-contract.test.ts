@@ -90,7 +90,7 @@ test("checkout: la opción de cuotas, el resumen y la confirmación usan INSTALL
 
   // Transferencia sigue mostrando su propio descuento, sin relación con cuotas:
   // en la opción de pago y como nota bajo "Productos" del resumen.
-  assert.match(checkout, /\{siteSettings\.pricing\.transferDiscountPercent\}% de descuento/)
+  assert.match(checkout, /data-transfer-discount-highlight>\{siteSettings\.pricing\.transferDiscountPercent\}% OFF/)
   assert.match(
     checkout,
     /Incluye \{siteSettings\.pricing\.transferDiscountPercent\}% OFF por transferencia/,

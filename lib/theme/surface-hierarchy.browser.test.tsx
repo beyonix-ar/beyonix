@@ -124,7 +124,7 @@ test("el marcado de los fixtures usa las clases reales de cada zona", () => {
   assert.match(claims, /admin-claim-chat-panel bx-surface bx-surface-section/)
   const checkout = source("app/checkout/page.tsx")
   assert.match(checkout, /"checkout-panel checkout-form-panel relative overflow-hidden rounded-xl border border-\[#112A43\] bg-\[#070C12\]/)
-  assert.match(checkout, /"checkout-option flex w-full cursor-pointer rounded-lg border border-beyonix-blue-light\/16 bg-\[#10151C\]/)
+  assert.match(source("components/checkout/checkout-payment-media-panel.tsx"), /"checkout-option flex w-full cursor-pointer rounded-lg border border-beyonix-blue-light\/16 bg-\[#10151C\]/)
   // La card real del catálogo es una isla propia (no usa bx-surface): conserva
   // su clase y su variante Light explícita.
   assert.match(source("components/products/shared/shared-product-card.tsx"), /className="beyonix-product-card group /)

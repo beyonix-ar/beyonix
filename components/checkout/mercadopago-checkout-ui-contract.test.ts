@@ -7,6 +7,7 @@ function readSource(path: string) {
 }
 
 const checkout = readSource("../../app/checkout/page.tsx")
+const paymentPanel = readSource("./checkout-payment-media-panel.tsx")
 const route = readSource("../../app/api/mercadopago/create-preference/route.ts")
 const css = readSource("../../app/globals.css")
 
@@ -23,11 +24,10 @@ function extractBlock(source: string, startMarker: string) {
 test("opciones: transferencia, Mercado Pago · 1 pago (contado) y UNA sola opción de cuotas sin interés (sin MODO)", () => {
   const options = [...checkout.matchAll(/option="([^"]+)"\n/g)].map((match) => match[1])
   assert.deepEqual(options, ["transferencia", "mercadopago_cash", "mercadopago_installments", "mercadopago_installments"])
-  assert.match(checkout, /title="Depósito \/ Transferencia"/)
+  assert.match(checkout, /title="Transferencia bancaria"/)
   // 1 pago: precio contado con cualquier medio (crédito incluido).
   assert.match(checkout, /title="Mercado Pago · 1 pago"/)
-  assert.match(checkout, /description="Tarjeta de crédito, débito o dinero en cuenta"/)
-  assert.match(checkout, /badge=\{<span className="checkout-badge checkout-badge-neutral">Precio contado<\/span>\}/)
+  assert.match(checkout, /description="Precio contado"/)
   // Cuotas: UNA opción, sólo si Mercado Pago confirmó alguna cuota sin interés.
   assert.match(checkout, /\{installmentsOptionCopy && financedPreviewQuote \? \(\s*<CheckoutPaymentOptionCard\s+option="mercadopago_installments"/)
   assert.match(checkout, /title="Mercado Pago · Cuotas sin interés"/)
@@ -45,8 +45,8 @@ test("opciones: transferencia, Mercado Pago · 1 pago (contado) y UNA sola opci�
 })
 
 test("una sola elección (radio nativo): 1 pago o cuotas; la cantidad de cuotas se elige en Mercado Pago", () => {
-  assert.equal((checkout.match(/name="checkout-payment-option"/g) ?? []).length, 1)
-  assert.match(checkout, /type="radio"/)
+  assert.equal((paymentPanel.match(/name="checkout-payment-option"/g) ?? []).length, 1)
+  assert.match(paymentPanel, /type="radio"/)
   assert.match(
     checkout,
     /const selectedPaymentOption = getCheckoutPaymentOption\(\s*selectedPayment,\s*effectiveMercadoPagoMode,\s*\)/,
@@ -59,15 +59,14 @@ test("una sola elección (radio nativo): 1 pago o cuotas; la cantidad de cuotas 
   assert.match(route, /selectedInstallmentCount != null &&\s*!pricing\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)/)
 })
 
-test("el modal de medios sólo informa: sin controles de pago", () => {
-  // El modal sólo abre/cierra información: nunca cambia medio ni modalidad.
-  assert.match(checkout, /useState<"mercadopago_cash" \| null>\(null\)/)
-  const infoLinkStart = checkout.indexOf("function CheckoutPaymentInfoLink(")
-  const infoLink = checkout.slice(infoLinkStart, checkout.indexOf("\n}\n", infoLinkStart))
-  assert.match(infoLink, /type="button"/)
-  assert.doesNotMatch(infoLink, /setSelectedPayment|setMercadoPagoMode/)
-  const modal = readSource("./payment-info-modal.tsx")
-  assert.doesNotMatch(modal, /setSelectedPayment|setMercadoPagoMode|type="radio"/)
+test("el panel de medios informa según la opción sin modificar la modalidad", () => {
+  assert.match(checkout, /<CheckoutPaymentMediaPanel\s+option=\{selectedPaymentOption\}/)
+  assert.match(paymentPanel, /data-payment-media=\{option \?\? "none"\}/)
+  assert.match(paymentPanel, /data-media-transfer/)
+  assert.match(paymentPanel, /data-media-cash/)
+  assert.match(paymentPanel, /data-media-installments/)
+  assert.doesNotMatch(paymentPanel, /setSelectedPayment|setMercadoPagoMode/)
+  assert.doesNotMatch(checkout, /Ver medios/)
 })
 
 test("resumen: 1 pago dice 'precio contado'; cuotas 'Tarjeta de crédito · Hasta N cuotas sin interés'", () => {
