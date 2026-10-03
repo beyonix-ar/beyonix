@@ -85,6 +85,9 @@ test("Facturación: emitir sólo con configuración ARCA válida; homologación 
         orders: [{ id: 76, cliente_nombre: "María Núñez", cliente_email: "maria@example.com", total: 900, created_at: "2026-09-29T12:00:00Z", invoice_status: "pending" }],
       })
     }
+    if (path.startsWith("/api/admin/facturacion/history?")) {
+      return Response.json({ items: [], total: 0, page: 1, pageSize: 30 })
+    }
     if (path === "/api/admin/orders/76/invoice" && init?.method === "POST") {
       invoiceRequests += 1
       return Response.json({ invoice: { invoice_status: "authorized" } })
@@ -148,6 +151,20 @@ test("Facturación: emitir sólo con configuración ARCA válida; homologación 
     assert.match(text(), /Facturación automáticaInactiva/)
     assert.ok(document.querySelector("[data-arca-summary]"))
     assert.ok(document.querySelector("[data-arca-diagnostic-surface]"))
+    assert.ok(document.querySelector("[data-arca-pending-surface]"))
+    assert.equal(document.querySelectorAll('[role="tablist"] [role="tab"]').length, 3)
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[role="tablist"] [role="tab"]:nth-child(2)')?.click()
+    })
+    assert.ok(document.querySelector('[data-fiscal-history="invoice"]'))
+    assert.equal(document.querySelector("[data-arca-pending-surface]"), null)
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[role="tablist"] [role="tab"]:nth-child(3)')?.click()
+    })
+    assert.ok(document.querySelector('[data-fiscal-history="credit_note"]'))
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[role="tablist"] [role="tab"]:nth-child(1)')?.click()
+    })
     assert.ok(document.querySelector("[data-arca-pending-surface]"))
     for (const theme of ["light", "dark"]) {
       document.documentElement.setAttribute("data-admin-theme", theme)

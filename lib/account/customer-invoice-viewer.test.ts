@@ -35,6 +35,15 @@ test("'Ver factura' abre el visor (sin ícono, sin descarga directa)", () => {
   assert.match(button, />\s*Ver factura\s*</)
 })
 
+test("un pedido pagado pendiente muestra el aviso en el lugar del botón y lo oculta al autorizarse", () => {
+  const client = source("app/cuenta/cuenta-client.tsx")
+  const header = client.match(/customer-order-detail-header[\s\S]*?<\/header>/)
+  assert.ok(header, "no se encontró el encabezado del detalle del pedido")
+  assert.match(header[0], /\{invoiceAvailable && \([\s\S]*?Ver factura[\s\S]*?<\/button>/)
+  assert.match(header[0], /\{invoiceGenerating && \([\s\S]*?role="status"[\s\S]*?Tu factura se está generando\. En unos minutos vas a poder verla y descargarla desde acá\./)
+  assert.match(client, /const invoiceGenerating = isInvoiceGenerating\(order\)/)
+})
+
 test("el botón 'Ver factura' NO dispara ningún fetch: abrir el visor sólo cambia un estado local", () => {
   const client = source("app/cuenta/cuenta-client.tsx")
 

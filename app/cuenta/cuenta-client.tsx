@@ -63,6 +63,7 @@ import {
   getCuentaItemImage,
   getOrderPaymentTotalDisplay,
   isInvoiceAvailable,
+  isInvoiceGenerating,
 } from "@/lib/account/account-utils"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
@@ -673,6 +674,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     order.shipping_cost_charged ?? Math.max(0, Number(order.total) + discount - productsSubtotal),
   )
   const invoiceAvailable = isInvoiceAvailable(order)
+  const invoiceGenerating = isInvoiceGenerating(order)
   const hasProof = Boolean(order.payment_proof_url)
   const paymentStatus = (order.payment_status ?? "pendiente_comprobante").toLowerCase()
   const isTransferPayment = order.payment_method_id === "transferencia"
@@ -982,6 +984,11 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   >
                     Ver factura
                   </button>
+                )}
+                {invoiceGenerating && (
+                  <p className="max-w-full text-xs font-medium leading-5 text-[var(--account-text-secondary)]" role="status">
+                    Tu factura se está generando. En unos minutos vas a poder verla y descargarla desde acá.
+                  </p>
                 )}
                 {invoiceAvailable && !isFiscalArcaVoucher(order.invoice_arca_environment) && (
                   <span

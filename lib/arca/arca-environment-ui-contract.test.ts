@@ -31,7 +31,7 @@ test("Admin NC: otro ambiente se rechaza ANTES de reservar importes y el ambient
 })
 
 test("PDF Admin y Mis compras: el ambiente de la factura y de la NC llega al generador", () => {
-  for (const path of ["app/api/admin/orders/[id]/invoice/pdf/route.ts", "app/api/orders/[id]/invoice/route.ts"]) {
+  for (const path of ["lib/arca/admin-invoice-pdf.ts", "app/api/orders/[id]/invoice/route.ts"]) {
     const route = read(path)
     assert.match(
       route,
@@ -39,6 +39,9 @@ test("PDF Admin y Mis compras: el ambiente de la factura y de la NC llega al gen
       path,
     )
   }
+  const adminRoute = read("app/api/admin/orders/[id]/invoice/pdf/route.ts")
+  assert.match(adminRoute, /const auth = await requireAdmin\(request\)/)
+  assert.match(adminRoute, /return renderAdminInvoicePdf\(auth\.admin, Number\(id\), documentType, url\.searchParams\.get\("note"\)\)/)
 })
 
 test("Mis compras: la API expone el ambiente y la compra muestra el aviso de prueba", () => {

@@ -1,0 +1,368 @@
+import { NextResponse } from "next/server"
+
+import type { AdminApiAuth } from "@/lib/auth/admin-api"
+import {
+  generateInvoicePdf,
+  invoicePdfFilename,
+  type InvoicePdfOrder,
+} from "@/lib/arca/invoice-pdf"
+
+type CreditNotePdfRecord = {
+  id: string
+  total_amount: number | string
+  manual_amount: number | string
+  original_shipping_refunded?: number | string
+  other_adjustment_amount?: number | string
+  voucher_number: number
+  voucher_point: number
+  arca_environment: string | null
+  cae: string
+  cae_due: string
+  authorized_at: string
+  reason: string
+  order_credit_note_items?: Array<{
+    quantity: number
+    total_amount: number | string
+    product_name: string
+    variant_name?: string | null
+  }>
+}
+
+function optionalText(value: unknown) {
+  if (typeof value !== "string") return null
+  const text = value.trim()
+  return text || null
+}
+
+export async function renderAdminInvoicePdf(
+  admin: AdminApiAuth["admin"],
+  orderId: number,
+  documentType: "invoice" | "credit_note",
+  requestedNoteId: string | null = null,
+) {
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return NextResponse.json({ error: "Orden inválida." }, { status: 400 })
+  }
+
+  const { data: order, error: orderError } = await admin
+    .from("ordenes")
+    .select("*")
+    .eq("id", orderId)
+    .maybeSingle()
+
+  if (orderError) {
+    console.error("ADMIN_INVOICE_PDF_ORDER_ERROR", {
+      orderId,
+      step: "buscar orden",
+      message: orderError.message,
+      code: orderError.code,
+    })
+    return NextResponse.json(
+      { error: "No se pudieron recuperar los datos de la factura." },
+      { status: 500 },
+    )
+  }
+
+  if (!order || order.invoice_status !== "authorized") {
+    return NextResponse.json(
+      { error: "La factura no está disponible." },
+      { status: 404 },
+    )
+  }
+
+  if (
+    order.invoice_number == null ||
+    order.invoice_point == null ||
+    !order.invoice_cae ||
+    !order.invoice_cae_due ||
+    !order.invoice_created_at
+  ) {
+    return NextResponse.json(
+      { error: "La factura autorizada tiene datos incompletos." },
+      { status: 409 },
+    )
+  }
+
+  let creditNoteRecord: CreditNotePdfRecord | null = null
+
+  if (documentType === "credit_note") {
+    let noteQuery = admin
+      .from("order_credit_notes")
+      .select("*, order_credit_note_items(*)")
+      .eq("order_id", orderId)
+      .eq("status", "authorized")
+
+    noteQuery = requestedNoteId
+      ? noteQuery.eq("id", requestedNoteId)
+      : noteQuery.order("authorized_at", { ascending: false }).limit(1)
+
+    const { data: noteRows, error: noteError } = await noteQuery
+    if (noteError) {
+      return NextResponse.json(
+        { error: "No se pudo recuperar la nota de crédito autorizada." },
+        { status: 500 },
+      )
+    }
+    creditNoteRecord = (noteRows?.[0] ?? null) as CreditNotePdfRecord | null
+  }
+
+  if (
+    documentType === "credit_note" &&
+    (!creditNoteRecord ||
+      !creditNoteRecord.voucher_number ||
+      !creditNoteRecord.voucher_point ||
+      !creditNoteRecord.cae ||
+      !creditNoteRecord.cae_due ||
+      !creditNoteRecord.authorized_at ||
+      Number(creditNoteRecord.total_amount ?? 0) <= 0)
+  ) {
+    return NextResponse.json(
+      { error: "La nota de crédito autorizada tiene datos incompletos." },
+      { status: 409 },
+    )
+  }
+
+  const { data: itemRows, error: itemsError } = await admin
+    .from("orden_items")
+    .select("*")
+    .eq("orden_id", orderId)
+
+  if (itemsError) {
+    console.error("ADMIN_INVOICE_PDF_ITEMS_ERROR", {
+      orderId,
+      step: "buscar ítems",
+      message: itemsError.message,
+      code: itemsError.code,
+    })
+    return NextResponse.json(
+      { error: "No se pudo recuperar el detalle de la factura." },
+      { status: 500 },
+    )
+  }
+
+  const items = itemRows ?? []
+  const productIds = [...new Set(items.map((item) => item.producto_id))]
+  const variantIds = [
+    ...new Set(
+      items
+        .map((item) => item.variante_id)
+        .filter((id): id is number => typeof id === "number"),
+    ),
+  ]
+  const [productsResult, variantsResult] = await Promise.all([
+    productIds.length
+      ? admin.from("productos").select("*").in("id", productIds)
+      : Promise.resolve({ data: [], error: null }),
+    variantIds.length
+      ? admin
+          .from("producto_variantes")
+          .select("*")
+          .in("id", variantIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (productsResult.error || variantsResult.error) {
+    console.error("ADMIN_INVOICE_PDF_CATALOG_ERROR", {
+      orderId,
+      step: "buscar productos y variantes",
+      productsError: productsResult.error?.message,
+      variantsError: variantsResult.error?.message,
+    })
+    return NextResponse.json(
+      { error: "No se pudieron recuperar los productos de la factura." },
+      { status: 500 },
+    )
+  }
+
+  const productsById = new Map(
+    (productsResult.data ?? []).map((product) => [product.id, product]),
+  )
+  const variantsById = new Map(
+    (variantsResult.data ?? []).map((variant) => [variant.id, variant]),
+  )
+  let profile: Record<string, unknown> | null = null
+
+  if (order.usuario_id) {
+    const { data: profileData, error: profileError } = await admin
+      .from("profiles")
+      .select("*")
+      .eq("id", order.usuario_id)
+      .maybeSingle()
+
+    if (profileError) {
+      console.error("ADMIN_INVOICE_PDF_PROFILE_ERROR", {
+        orderId,
+        step: "buscar perfil del cliente",
+        message: profileError.message,
+        code: profileError.code,
+      })
+    } else {
+      profile = profileData as Record<string, unknown> | null
+    }
+  }
+
+  const profileAddress = [
+    optionalText(profile?.calle),
+    optionalText(profile?.numero),
+    optionalText(profile?.piso)
+      ? `Piso ${optionalText(profile?.piso)}`
+      : null,
+    optionalText(profile?.departamento)
+      ? `Dpto. ${optionalText(profile?.departamento)}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" ")
+  const orderRecord = order as Record<string, unknown>
+  const isCreditNote = documentType === "credit_note"
+  const creditNotePdfItems = creditNoteRecord
+    ? [
+        ...(creditNoteRecord.order_credit_note_items ?? []).map((item) => ({
+          cantidad: Number(item.quantity),
+          precio:
+            Number(item.quantity) > 0
+              ? Number(item.total_amount) / Number(item.quantity)
+              : 0,
+          productos: { nombre: item.product_name },
+          producto_variantes: item.variant_name
+            ? { nombre: item.variant_name }
+            : null,
+        })),
+        {
+          cantidad: 1,
+          precio: Number(creditNoteRecord.original_shipping_refunded ?? 0),
+          productos: {
+            nombre: "Envío reintegrado",
+          },
+          producto_variantes: null,
+        },
+        ...(Number(creditNoteRecord.other_adjustment_amount ?? 0) > 0
+          ? [
+              {
+                cantidad: 1,
+                precio: Number(creditNoteRecord.other_adjustment_amount),
+                productos: {
+                  nombre: `Otros ajustes: ${creditNoteRecord.reason}`,
+                },
+                producto_variantes: null,
+              },
+            ]
+          : []),
+      ]
+    : []
+  const invoiceOrder = {
+    ...order,
+    total: isCreditNote
+      ? Number(creditNoteRecord?.total_amount ?? 0)
+      : Number(order.invoice_requested_total ?? order.total ?? 0),
+    cliente_nombre:
+      optionalText(order.cliente_nombre) ??
+      optionalText(profile?.nombre) ??
+      optionalText(profile?.username) ??
+      "Consumidor final",
+    cliente_dni:
+      optionalText(order.cliente_dni) ??
+      optionalText(profile?.dni) ??
+      "No informado",
+    cliente_email:
+      optionalText(order.cliente_email) ??
+      optionalText(profile?.email) ??
+      "No informado",
+    cliente_telefono:
+      optionalText(order.cliente_telefono) ??
+      optionalText(profile?.telefono) ??
+      "No informado",
+    cliente_direccion:
+      optionalText(order.cliente_direccion) ??
+      optionalText(profileAddress) ??
+      "No informada",
+    localidad:
+      optionalText(order.localidad) ?? optionalText(profile?.localidad),
+    provincia:
+      optionalText(order.provincia) ?? optionalText(profile?.provincia),
+    shipping_cost_charged:
+      isCreditNote
+        ? 0
+        : orderRecord.shipping_cost_charged ?? orderRecord.andreani_costo ?? 0,
+    shipping_type: orderRecord.shipping_type ?? null,
+    shipping_provider:
+      orderRecord.shipping_provider ?? orderRecord.envio_proveedor ?? null,
+    envio_proveedor: orderRecord.envio_proveedor ?? null,
+    andreani_costo: orderRecord.andreani_costo ?? null,
+    free_shipping_applied:
+      orderRecord.free_shipping_applied === true,
+    payment_method_id: orderRecord.payment_method_id ?? null,
+    transfer_discount_amount:
+      isCreditNote ? 0 : orderRecord.transfer_discount_amount ?? 0,
+    invoice_number: isCreditNote
+      ? Number(creditNoteRecord?.voucher_number)
+      : Number(order.invoice_number),
+    invoice_point: isCreditNote
+      ? Number(creditNoteRecord?.voucher_point)
+      : Number(order.invoice_point),
+    invoice_cae: isCreditNote
+      ? String(creditNoteRecord?.cae)
+      : String(order.invoice_cae),
+    invoice_cae_due: isCreditNote
+      ? String(creditNoteRecord?.cae_due)
+      : String(order.invoice_cae_due),
+    invoice_created_at: isCreditNote
+      ? String(creditNoteRecord?.authorized_at)
+      : String(order.invoice_created_at),
+    arca_environment: isCreditNote
+      ? creditNoteRecord?.arca_environment ?? null
+      : order.invoice_arca_environment ?? null,
+    voucher_type: isCreditNote ? 13 : 11,
+    document_title: isCreditNote ? "NOTA DE CRÉDITO" : "FACTURA",
+    detail_title: isCreditNote
+      ? "DETALLE DE NOTA DE CRÉDITO"
+      : "DETALLE DE FACTURA",
+    filename_prefix: isCreditNote ? "Nota-Credito" : "Factura",
+    original_invoice_total: isCreditNote ? Number(order.invoice_requested_total ?? order.total ?? 0) : null,
+    original_invoice_created_at: isCreditNote
+      ? String(order.invoice_created_at)
+      : null,
+    original_invoice_cae: isCreditNote ? String(order.invoice_cae) : null,
+    credit_note_for_invoice: isCreditNote
+      ? {
+          point: Number(order.invoice_point),
+          number: Number(order.invoice_number),
+        }
+      : undefined,
+    orden_items: isCreditNote ? creditNotePdfItems : items.map((item) => ({
+      cantidad: Number(item.cantidad ?? 0),
+      precio: Number(item.precio ?? item.precio_unitario ?? 0),
+      productos: productsById.get(item.producto_id) ?? null,
+      producto_variantes:
+        typeof item.conditioned_name === "string" &&
+        item.conditioned_name.trim()
+          ? { nombre: item.conditioned_name }
+          : typeof item.variante_id === "number"
+          ? variantsById.get(item.variante_id) ?? null
+          : null,
+    })),
+  } as InvoicePdfOrder
+
+  let pdf: Uint8Array
+  try {
+    pdf = await generateInvoicePdf(invoiceOrder)
+  } catch (error) {
+    console.error("ADMIN_INVOICE_PDF_GENERATION_ERROR", {
+      orderId,
+      step: "generar PDF",
+      message: error instanceof Error ? error.message : String(error),
+    })
+    return NextResponse.json(
+      { error: "No se pudo generar el PDF de la factura." },
+      { status: 500 },
+    )
+  }
+
+  return new NextResponse(Buffer.from(pdf), {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="${invoicePdfFilename(invoiceOrder)}"`,
+      "Cache-Control": "private, no-store",
+    },
+  })
+}

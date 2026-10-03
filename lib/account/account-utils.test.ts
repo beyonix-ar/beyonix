@@ -1,7 +1,30 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { getOrderPaymentTotalDisplay } from "./account-utils.ts"
+import { getOrderPaymentTotalDisplay, isInvoiceGenerating } from "./account-utils.ts"
+import type { SupabasePedido } from "../supabase/types.ts"
+
+function order(invoiceStatus: SupabasePedido["invoice_status"], paid = true): SupabasePedido {
+  return {
+    id: 1,
+    usuario_id: "cliente-1",
+    estado: paid ? "pagado" : "pendiente",
+    total: 100,
+    created_at: "2026-10-03T12:00:00.000Z",
+    payment_status: paid ? "approved" : "preference_created",
+    paid_at: paid ? "2026-10-03T12:05:00.000Z" : null,
+    invoice_status: invoiceStatus,
+  }
+}
+
+test("el aviso de factura en generación solo aparece para pagos confirmados pendientes o en proceso", () => {
+  assert.equal(isInvoiceGenerating(order("pending")), true)
+  assert.equal(isInvoiceGenerating(order("processing")), true)
+  assert.equal(isInvoiceGenerating(order("pending", false)), false)
+  assert.equal(isInvoiceGenerating(order("authorized")), false)
+  assert.equal(isInvoiceGenerating(order("error")), false)
+  assert.equal(isInvoiceGenerating(order(null)), false)
+})
 
 // BX-1001 (auditoría): intento de Mercado Pago abandonado -- estado='pendiente',
 // payment_status='preference_created', financial_status='pending_payment',

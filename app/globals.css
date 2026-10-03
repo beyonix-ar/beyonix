@@ -15044,6 +15044,16 @@ html[data-admin-theme="light"] .beyonix-admin-main [data-arca-pending-surface].b
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06) !important;
 }
 
+html[data-admin-theme="light"] .beyonix-admin-main [data-fiscal-history].bx-surface.bx-surface-section {
+  background: #dce8f2 !important;
+  border-color: #b8cadc !important;
+}
+
+html[data-admin-theme="dark"] .beyonix-admin-main [data-fiscal-history] {
+  background: #0b1724 !important;
+  border-color: rgba(148, 197, 255, 0.16) !important;
+}
+
 /* Checkout: los campos se distinguen de la card que los contiene por borde
    de campo (fondo blanco = nivel field). Las opciones de pago/envío son
    cards (#10151C -> card, ver regla del checkout) y la seleccionada conserva

@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase/client"
 import { humanizeBillingError } from "@/lib/admin/billing-errors"
 import { getArcaIssueBlockReason } from "@/lib/arca/configuration-view"
 import { ArcaConfigurationPanel, useArcaConfigurationStatus } from "./arca-configuration-panel"
+import { FiscalHistoryPanel } from "./fiscal-history-panel"
 import {
   adminPageClassName,
   AdminBadge,
@@ -72,6 +73,7 @@ function getInvoiceErrorText(order: PendingInvoiceOrder) {
 
 export function AdminFacturacion() {
   const router = useRouter()
+  const [activeTab, setActiveTab] = useState<"pending" | "invoice" | "credit_note">("pending")
   const [orders, setOrders] = useState<PendingInvoiceOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState("")
@@ -206,9 +208,9 @@ export function AdminFacturacion() {
     <section className={adminPageClassName}>
       <AdminPageHeader
         eyebrow="Facturación"
-        title="Facturas pendientes"
-        description="Pedidos pagos que necesitan emisión de Factura C."
-        actions={
+        title="Facturación"
+        description={activeTab === "pending" ? "Pedidos pagos que necesitan emisión de Factura C." : "Comprobantes fiscales emitidos y consultables."}
+        actions={activeTab === "pending" ?
           <div className="w-full min-w-80 sm:w-96">
             <AdminSearchInput
             title="Buscar factura pendiente"
@@ -217,7 +219,7 @@ export function AdminFacturacion() {
             placeholder="Buscar pedido, cliente o error"
             onChange={setSearch}
           />
-          </div>
+          </div> : undefined
         }
       />
 
@@ -237,7 +239,17 @@ export function AdminFacturacion() {
         </AdminInfoBlock>
       )}
 
-      <section data-arca-pending-surface className={`${adminSurfaceLevel.section} rounded-2xl border border-white/10 bg-white/3 p-3 sm:p-4`}>
+      <div role="tablist" aria-label="Secciones de Facturación" className="flex flex-wrap gap-2">
+        {([
+          ["pending", "Pendientes"],
+          ["invoice", "Facturas"],
+          ["credit_note", "Notas de crédito"],
+        ] as const).map(([value, label]) => (
+          <button key={value} type="button" role="tab" aria-selected={activeTab === value} onClick={() => setActiveTab(value)} className={`min-h-9 rounded-lg border px-3 py-1.5 text-sm font-bold transition-colors ${activeTab === value ? "border-sky-300/45 bg-sky-400/14 text-white" : "border-white/10 bg-white/4 text-white/65 hover:bg-white/8"}`}>{label}</button>
+        ))}
+      </div>
+
+      {activeTab === "pending" ? <section data-arca-pending-surface className={`${adminSurfaceLevel.section} rounded-2xl border border-white/10 bg-white/3 p-3 sm:p-4`}>
         <h2 className="mb-3 px-1 text-sm font-black text-white">Pedidos pendientes</h2>
       <AdminTable className={adminSurfaceLevel.card}>
         <div className="hidden grid-cols-[1fr_1.8fr_1fr_1fr_1fr_1.8fr] gap-3 border-b border-white/8 px-4 py-3 text-11px font-black uppercase tracking-wide text-white/55 xl:grid">
@@ -355,7 +367,7 @@ export function AdminFacturacion() {
           </div>
         )}
       </AdminTable>
-      </section>
+      </section> : <FiscalHistoryPanel key={activeTab} kind={activeTab} />}
     </section>
   )
 }

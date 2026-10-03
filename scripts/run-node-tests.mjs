@@ -141,6 +141,7 @@ const TEST_FILES = [
   "lib/arca/arca-configuration.test.ts",
   "lib/arca/auto-invoicing-activation.test.ts",
   "lib/arca/auto-invoicing-deployment.test.ts",
+  "lib/arca/fiscal-history.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",
@@ -265,6 +266,7 @@ const TSX_TEST_FILES = [
   "components/claims/use-claim-wizard-scroll.test.tsx",
   "components/checkout/transfer-flow-validation.test.tsx",
   "app/admin/sections/facturacion/admin-facturacion-arca.test.tsx",
+  "app/admin/sections/facturacion/fiscal-history-panel.test.tsx",
   "lib/orders/admin-claim-wizard.test.ts",
   "lib/cart/shipping-bonus-copy.test.tsx",
 ]
@@ -279,6 +281,7 @@ const DB_TEST_FILES = [
   "lib/mercadopago/checkout-reservation-phase3.test.mjs",
   "lib/arca/arca-invoicing-concurrency.test.mjs",
   "lib/arca/arca-credit-note-concurrency.test.mjs",
+  "lib/arca/fiscal-history-sql.test.mjs",
   "lib/orders/claim-logistics-method-race.test.mjs",
 ]
 
@@ -290,6 +293,7 @@ const DB_ROUTE_TEST_FILES = [
 
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
+  "lib/arca/fiscal-history-routes.test.ts",
   "lib/arca/invoice-pdf-environment.test.ts",
   "scripts/arca-homologation/harness.test.ts",
   "lib/reviews/reviews-routes.test.ts",

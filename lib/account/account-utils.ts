@@ -50,6 +50,12 @@ export function isInvoiceAvailable(order: SupabasePedido) {
   return order.invoice_status === "authorized"
 }
 
+export function isInvoiceGenerating(order: SupabasePedido) {
+  return isOrderPaymentConfirmed(order) &&
+    !isInvoiceAvailable(order) &&
+    (order.invoice_status === "pending" || order.invoice_status === "processing")
+}
+
 type OrderStatusFields = Pick<
   SupabasePedido,
   "estado" | "payment_status" | "financial_status"
