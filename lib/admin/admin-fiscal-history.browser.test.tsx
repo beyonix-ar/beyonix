@@ -82,4 +82,30 @@ for (const theme of ["light", "dark"] as const) {
       }
     })
   }
+
+  test(`${theme}: Facturación reutiliza Select y calendario Admin, sin controles nativos`, async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 900 } })
+    await page.route("**/*", (route) => route.request().url() === "http://admin.test/"
+      ? route.fulfill({ contentType: "text/html; charset=utf-8", body: adminPageHtml(theme, css, bundle) })
+      : route.abort())
+    try {
+      await page.goto("http://admin.test/")
+      await page.locator("[data-fiscal-row]").waitFor({ timeout: 10_000 })
+      assert.equal(await page.locator("[data-fiscal-history] select, [data-fiscal-history] input[type=date]").count(), 0)
+      await page.getByRole("button", { name: "Mes fiscal" }).click()
+      assert.equal(await page.getByRole("listbox", { name: "Mes fiscal" }).isVisible(), true)
+      await page.getByRole("option", { name: "Octubre" }).click()
+      await page.getByText("Filtros", { exact: true }).click()
+      await page.getByRole("button", { name: "Estado" }).click()
+      assert.equal(await page.getByRole("listbox", { name: "Estado" }).isVisible(), true)
+      await page.getByRole("option", { name: "Autorizada" }).click()
+      assert.equal(await page.getByRole("textbox", { name: "Fecha desde" }).getAttribute("type"), "text")
+      await page.getByRole("button", { name: "Abrir calendario" }).first().click()
+      assert.equal(await page.getByText("Seleccionar fecha").isVisible(), true)
+      const dimensions = await page.evaluate(() => ({ document: document.documentElement.scrollWidth, viewport: innerWidth }))
+      assert.ok(dimensions.document <= dimensions.viewport + 1, JSON.stringify(dimensions))
+    } finally {
+      await page.close()
+    }
+  })
 }

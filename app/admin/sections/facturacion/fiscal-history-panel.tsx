@@ -13,13 +13,16 @@ import {
   type FiscalPeriod,
 } from "@/lib/arca/fiscal-history"
 import { formatPrice } from "../productos/helpers"
+import { AdminDatePicker } from "../../components/admin-date-picker"
 import {
   AdminBadge,
   AdminEmptyState,
   AdminPrimaryButton,
   AdminSearchInput,
+  AdminSelect,
   AdminSecondaryButton,
   AdminSkeleton,
+  AdminTextInput,
   adminSurfaceLevel,
 } from "../../components/admin-controls"
 
@@ -31,13 +34,14 @@ type Filters = {
   order: string
   client: string
   document: string
-  date: string
+  from: string
+  to: string
   cae: string
   amount: string
   status: string
 }
 
-const EMPTY_FILTERS: Filters = { search: "", number: "", order: "", client: "", document: "", date: "", cae: "", amount: "", status: "" }
+const EMPTY_FILTERS: Filters = { search: "", number: "", order: "", client: "", document: "", from: "", to: "", cae: "", amount: "", status: "" }
 
 function documentDate(day: string) {
   return new Intl.DateTimeFormat("es-AR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`))
@@ -89,6 +93,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
 
@@ -114,6 +119,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
   const load = useCallback(async () => {
     setLoading(true)
     setError("")
+    setLoadFailed(false)
     try {
       const response = await adminRequest(`/api/admin/facturacion/history?${query}`)
       const result = await response.json() as { items?: FiscalDocument[]; total?: number; error?: string }
@@ -122,6 +128,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
       setTotal(result.total ?? 0)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo cargar el historial fiscal.")
+      setLoadFailed(true)
       setItems([])
       setTotal(0)
     } finally {
@@ -135,6 +142,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
     setFilters((current) => ({ ...current, [name]: value }))
     if (value.trim()) setPeriod("all")
   }
+  const clearDateRange = () => setFilters((current) => current.from || current.to ? { ...current, from: "", to: "" } : current)
   const groups = groupedByDay(items)
   const visibleIds = items.map((item) => item.id)
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
@@ -219,28 +227,29 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
   return (
     <section data-fiscal-history={kind} className={`${adminSurfaceLevel.section} min-w-0 rounded-2xl border border-white/10 bg-white/3 p-3 sm:p-5`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="text-sm font-black text-white">{title}</h2><p className="mt-1 text-xs text-white/55">Historial fiscal persistido · {total} comprobantes en este resultado</p></div>
+        <div><h2 className="text-sm font-black text-white">{title}</h2><p className="mt-1 text-xs text-white/55">{loading ? "Cargando historial fiscal..." : loadFailed ? "No se pudo cargar el historial fiscal." : `Historial fiscal persistido · ${total} comprobantes en este resultado`}</p></div>
         <div className="flex flex-wrap gap-2" aria-label="Período fiscal">
           {(["today", "month", "all"] as const).map((value) => (
             <AdminSecondaryButton key={value} size="sm" aria-pressed={period === value} onClick={() => {
               if (value === "month") { setYear(Number(today.slice(0, 4))); setMonth(Number(today.slice(5, 7))) }
+              if (value !== "all") clearDateRange()
               setPeriod(value); setPage(1)
             }}>{value === "today" ? "Hoy" : value === "month" ? "Este mes" : "Historial"}</AdminSecondaryButton>
           ))}
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-end gap-3">
+      <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-white/2 p-2.5">
         <div className="min-w-48 flex-1 sm:max-w-sm"><AdminSearchInput title="Búsqueda general" ariaLabel="Buscar comprobantes" value={filters.search} placeholder="Número, pedido, cliente, CAE..." onChange={(value) => changeFilter("search", value)} /></div>
-        <label className="text-xs font-semibold text-white/70">Mes
-          <select aria-label="Mes fiscal" value={month} onChange={(event) => { setMonth(Number(event.target.value)); setPeriod("month"); setPage(1) }} className="mt-1 block h-10 rounded-lg border border-white/15 bg-[#111c2b] px-3 text-sm text-white">
-            {MONTHS.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
-          </select>
-        </label>
+        <div className="w-36">
+          <AdminSelect title="Mes" ariaLabel="Mes fiscal" value={String(month)} compact wrapperClassName="w-36" onChange={(value) => { clearDateRange(); setMonth(Number(value)); setPeriod("month"); setPage(1) }}>
+            {MONTHS.map((name, index) => <option key={name} value={String(index + 1)}>{name}</option>)}
+          </AdminSelect>
+        </div>
         <div className="flex items-center gap-1 text-xs font-semibold text-white/70">
-          <AdminSecondaryButton size="sm" aria-label="Año anterior" onClick={() => { setYear((value) => Math.max(2000, value - 1)); setPeriod("month"); setPage(1) }}>‹</AdminSecondaryButton>
+          <AdminSecondaryButton size="sm" aria-label="Año anterior" onClick={() => { clearDateRange(); setYear((value) => Math.max(2000, value - 1)); setPeriod("month"); setPage(1) }}>‹</AdminSecondaryButton>
           <span aria-label="Año fiscal" className="min-w-12 text-center">{year}</span>
-          <AdminSecondaryButton size="sm" aria-label="Año siguiente" onClick={() => { setYear((value) => Math.min(2100, value + 1)); setPeriod("month"); setPage(1) }}>›</AdminSecondaryButton>
+          <AdminSecondaryButton size="sm" aria-label="Año siguiente" onClick={() => { clearDateRange(); setYear((value) => Math.min(2100, value + 1)); setPeriod("month"); setPage(1) }}>›</AdminSecondaryButton>
         </div>
         <AdminSecondaryButton size="sm" disabled={busy} onClick={() => void exportDocuments("month")}><Download className="size-4" />Descargar mes completo</AdminSecondaryButton>
       </div>
@@ -248,13 +257,18 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
       <details className="mt-3 rounded-xl border border-white/10 bg-white/2 px-3 py-2 text-xs text-white/70">
         <summary className="cursor-pointer font-bold">Filtros</summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {([
-            ["number", "Número de comprobante", "text"], ["order", "Pedido", "text"],
-            ["client", "Cliente", "text"], ["document", "Documento", "text"],
-            ["date", "Fecha", "date"], ["cae", "CAE", "text"],
-            ["amount", "Importe", "number"],
-          ] as const).map(([name, label, type]) => <label key={name} className="font-semibold">{label}<input aria-label={label} type={type} min={type === "number" ? "0" : undefined} step={type === "number" ? "0.01" : undefined} value={filters[name]} onChange={(event) => changeFilter(name, event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-white/15 bg-[#111c2b] px-2 text-sm text-white" /></label>)}
-          <label className="font-semibold">Estado<select aria-label="Estado" value={filters.status} onChange={(event) => changeFilter("status", event.target.value)} className="mt-1 block h-9 w-full rounded-lg border border-white/15 bg-[#111c2b] px-2 text-sm text-white"><option value="">Todos</option><option value="authorized">Autorizada</option></select></label>
+          <AdminTextInput title="Número de comprobante" ariaLabel="Número de comprobante" value={filters.number} placeholder="Número" onChange={(value) => changeFilter("number", value)} />
+          <AdminTextInput title="Pedido" ariaLabel="Pedido" value={filters.order} placeholder="Pedido" onChange={(value) => changeFilter("order", value)} />
+          <AdminTextInput title="Cliente" ariaLabel="Cliente" value={filters.client} placeholder="Cliente" onChange={(value) => changeFilter("client", value)} />
+          <AdminTextInput title="Documento" ariaLabel="Documento" value={filters.document} placeholder="DNI o documento" onChange={(value) => changeFilter("document", value)} />
+          <AdminDatePicker title="Fecha desde" ariaLabel="Fecha desde" value={filters.from} placeholder="Desde" onChange={(value) => changeFilter("from", value)} />
+          <AdminDatePicker title="Fecha hasta" ariaLabel="Fecha hasta" value={filters.to} placeholder="Hasta" onChange={(value) => changeFilter("to", value)} />
+          <AdminTextInput title="CAE" ariaLabel="CAE" value={filters.cae} placeholder="CAE" onChange={(value) => changeFilter("cae", value)} />
+          <AdminTextInput title="Importe" ariaLabel="Importe" value={filters.amount} placeholder="Importe" type="number" min="0" step="0.01" onChange={(value) => changeFilter("amount", value)} />
+          <AdminSelect title="Estado" ariaLabel="Estado" value={filters.status} compact onChange={(value) => changeFilter("status", value)}>
+            <option value="">Todos</option>
+            <option value="authorized">Autorizada</option>
+          </AdminSelect>
         </div>
       </details>
 
@@ -264,7 +278,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
         {selected.size > 0 && <><span className="ml-auto font-bold">{selected.size} {selectedCountLabel}</span><AdminPrimaryButton size="sm" disabled={busy || selected.size > FISCAL_EXPORT_LIMIT} onClick={() => void exportDocuments("selected")}><Download className="size-4" />Descargar seleccionadas</AdminPrimaryButton><AdminSecondaryButton size="sm" onClick={() => setSelected(new Set())}>Limpiar selección</AdminSecondaryButton></>}
       </div>
 
-      {loading ? <AdminSkeleton rows={5} className="p-3" /> : items.length === 0 ? <AdminEmptyState icon={<FileText className="size-5" />} title="No hay comprobantes para este período y filtros." /> : groups.map(([day, rows]) => (
+      {loading ? <AdminSkeleton rows={5} className="p-3" /> : loadFailed ? null : items.length === 0 ? <AdminEmptyState icon={<FileText className="size-5" />} title="No hay comprobantes para este período y filtros." /> : groups.map(([day, rows]) => (
         <div key={day} data-fiscal-day={day} className="mt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/15 px-1 pb-2">
             <h3 className="text-sm font-black capitalize text-white">{documentDate(day)}</h3>
@@ -290,10 +304,10 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
         </div>
       ))}
 
-      <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-white/60">
+      {!loadFailed && <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-white/60">
         <span>{loading ? <LoaderCircle className="size-4 animate-spin" /> : `${total} resultados · página ${page} de ${Math.max(1, Math.ceil(total / 30))}`}</span>
         <div className="flex gap-2"><AdminSecondaryButton size="sm" disabled={page <= 1 || loading} onClick={() => setPage((value) => value - 1)}>Anterior</AdminSecondaryButton><AdminSecondaryButton size="sm" disabled={page * 30 >= total || loading} onClick={() => setPage((value) => value + 1)}>Siguiente</AdminSecondaryButton></div>
-      </div>
+      </div>}
       <p className="mt-2 text-11px text-white/45">Máximo {FISCAL_EXPORT_LIMIT} comprobantes por descarga.</p>
     </section>
   )

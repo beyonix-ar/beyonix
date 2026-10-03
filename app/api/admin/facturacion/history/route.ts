@@ -45,10 +45,15 @@ export async function GET(request: Request) {
   let filters: Record<string, string | number | null>
   try {
     const bounds = fiscalPeriodBounds(idsOnly ? "all" : period as FiscalPeriod, year, month)
+    const from = period === "all" || idsOnly ? optionalFilter(params, "from", 10) : null
+    const to = period === "all" || idsOnly ? optionalFilter(params, "to", 10) : null
+    const dateFrom = from ? fiscalDayBounds(from).from : bounds.from
+    const dateTo = to ? fiscalDayBounds(to).to : bounds.to
+    if (dateFrom && dateTo && dateFrom >= dateTo) throw new Error("Rango de fechas inválido.")
     filters = {
       p_kind: kind as FiscalKind,
-      p_from: bounds.from,
-      p_to: bounds.to,
+      p_from: dateFrom,
+      p_to: dateTo,
       p_search: optionalFilter(params, "search"),
       p_number: optionalFilter(params, "number", 80),
       p_order: optionalFilter(params, "order", 80),

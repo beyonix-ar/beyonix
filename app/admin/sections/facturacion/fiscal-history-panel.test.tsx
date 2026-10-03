@@ -45,6 +45,7 @@ test("historial abre en hoy, navega por días, filtra, selecciona y descarga fac
   const session = mock.method(supabase.auth, "getSession", async () => ({ data: { session: { access_token: "test-token" } }, error: null }))
   const requests: URL[] = []
   const exports: Array<{ kind: string; scope: string; ids?: string[]; year?: number; month?: number }> = []
+  let historyMode: "normal" | "empty" | "error" = "normal"
   const createUrl = URL.createObjectURL
   const revokeUrl = URL.revokeObjectURL
   const click = dom.window.HTMLAnchorElement.prototype.click
@@ -58,6 +59,8 @@ test("historial abre en hoy, navega por días, filtra, selecciona y descarga fac
     const url = new URL(String(input), "http://localhost")
     requests.push(url)
     if (url.pathname === "/api/admin/facturacion/history") {
+      if (historyMode === "error") return Response.json({ error: "No se pudo consultar el historial fiscal." }, { status: 503 })
+      if (historyMode === "empty") return Response.json({ items: [], total: 0, page: 1, pageSize: 30 })
       const kind = url.searchParams.get("kind") as FiscalKind
       const rows = [fixtureDocument(kind, kind === "invoice" ? "19" : "00000000-0000-4000-8000-000000000019", day, 3),
         fixtureDocument(kind, kind === "invoice" ? "18" : "00000000-0000-4000-8000-000000000018", previousDay, 2)]
@@ -105,6 +108,17 @@ test("historial abre en hoy, navega por días, filtra, selecciona y descarga fac
     await clickButton("Descargar seleccionadas")
     assert.equal(exports.at(-1)?.kind, "credit_note")
     assert.equal(exports.at(-1)?.ids?.length, 2)
+
+    historyMode = "empty"
+    await render("invoice")
+    assert.match(document.body.textContent ?? "", /No hay comprobantes para este período y filtros\./)
+    assert.doesNotMatch(document.body.textContent ?? "", /No se pudo consultar el historial fiscal\./)
+
+    historyMode = "error"
+    await render("credit_note")
+    assert.match(document.body.textContent ?? "", /No se pudo consultar el historial fiscal\./)
+    assert.doesNotMatch(document.body.textContent ?? "", /No hay comprobantes para este período y filtros\./)
+    assert.doesNotMatch(document.body.textContent ?? "", /Historial fiscal persistido · 0 comprobantes/)
   } finally {
     await act(async () => root.unmount())
     fetchMock.mock.restore(); session.mock.restore()
