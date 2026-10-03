@@ -57,11 +57,18 @@ Los mensajes nunca incluyen PEM, claves, passphrase ni el CUIT.
    FECompUltimoAutorizado (Factura C y NC C). Resultado esperado:
    "Listo para emitir la primera Factura C fiscal (manual)" y el número de la
    próxima Factura C.
-5. Primera emisión: **una** Factura C manual desde Admin → Facturación (o el
-   detalle del pedido). Verificarla en ARCA (QR del PDF y consulta de
-   comprobantes emitidos).
-6. Recién después, si corresponde: `ARCA_AUTO_INVOICING_ENABLED=true` y
-   `pm2 restart beyonix`.
+5. Antes del deploy del código, aplicar la migración
+   `20261003120000_arca_auto_invoicing_activation.sql` con `npx supabase db push`.
+   Nace apagada y no toca pedidos históricos. Después del deploy, verificar de
+   nuevo el diagnóstico PROD.
+6. Emitir **una** Factura C manual real desde Admin → Facturación (o el detalle
+   del pedido). Comprobar CAE y PDF, y verificarla en ARCA (QR y consulta de
+   comprobantes emitidos). Instalar el timer systemd de `deploy/systemd/` mientras
+   el flag sigue apagado. Luego configurar `ARCA_AUTO_INVOICING_ENABLED=true` en
+   el entorno del VPS y reiniciar PM2. El control persistente sigue apagado.
+   Por último, activar desde Admin → Facturación. La base registra el instante
+   de activación y sólo toma automáticamente pedidos encolados después de ese
+   cutoff. No usar Vercel cron.
 
 ## Comprobantes de homologación existentes (NO remediados todavía)
 

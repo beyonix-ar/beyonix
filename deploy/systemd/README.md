@@ -249,3 +249,47 @@ systemctl list-timers | grep beyonix-run-commercial-events
 ```
 
 `502` en journalctl = algún evento quedó en Error (ver Admin → Eventos).
+
+---
+
+# Facturación automática ARCA (preparada, todavía apagada)
+
+El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada 10 minutos);
+su entrada se retiró de `vercel.json`. El servicio usa loopback, `flock -n`, timeout
+y el archivo privado de curl `/etc/beyonix/curl-verify-transfer-orders.conf` descrito
+arriba. El secreto no va en argumentos ni en estos archivos del repositorio.
+
+**Orden de activación, después de aprobar el despliegue:**
+
+1. Aplicar `20261003120000_arca_auto_invoicing_activation.sql` mediante el flujo de
+   migraciones del proyecto. La tabla nace con `enabled=false`; no cambia pedidos
+   existentes ni emite comprobantes.
+2. Con `ARCA_AUTO_INVOICING_ENABLED=false`, emitir **una** Factura C real desde Admin
+   → Facturación. Comprobar CAE y PDF, y verificarla en ARCA.
+3. Instalar los archivos `beyonix-arca-invoices.service` y `.timer` en
+   `/etc/systemd/system/`, ejecutar `sudo systemctl daemon-reload` y
+   `sudo systemctl enable --now beyonix-arca-invoices.timer`. El servicio corre
+   como root para leer el archivo curl privado (600, root:root), con directorio `/`.
+   El flag del servidor sigue apagado, por lo que el timer no toma pedidos.
+
+   ```bash
+   sudo test -r /etc/beyonix/curl-verify-transfer-orders.conf
+   sudo cp deploy/systemd/beyonix-arca-invoices.service /etc/systemd/system/
+   sudo cp deploy/systemd/beyonix-arca-invoices.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now beyonix-arca-invoices.timer
+   systemctl list-timers | grep beyonix-arca-invoices
+   ```
+4. Poner `ARCA_AUTO_INVOICING_ENABLED=true` en el entorno de PM2 y reiniciar la app.
+   El runner todavía queda bloqueado por el control persistente apagado.
+5. En Admin → Facturación, revisar la advertencia y activar. La base guarda la
+   hora exacta de activación. Solo se tomarán pedidos con `invoice_queued_at`
+   **posterior** a esa hora; el backlog anterior permanece manual.
+
+Al desactivar desde Admin, las nuevas tomas se detienen. Una reactivación crea un
+cutoff nuevo; no recupera automáticamente pedidos del período apagado. El control
+requiere una Factura C de producción emitida manualmente antes de permitir activar.
+
+Para comprobar el timer sin emitir: primero verificar que el control Admin y el
+flag de PM2 siguen apagados; luego consultar `systemctl list-timers | grep
+beyonix-arca-invoices` y `journalctl -u beyonix-arca-invoices.service`.

@@ -19,6 +19,7 @@ import {
   AdminSecondaryButton,
   AdminSkeleton,
   AdminTable,
+  adminSurfaceLevel,
 } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
@@ -236,7 +237,9 @@ export function AdminFacturacion() {
         </AdminInfoBlock>
       )}
 
-      <AdminTable>
+      <section data-arca-pending-surface className={`${adminSurfaceLevel.section} rounded-2xl border border-white/10 bg-white/3 p-3 sm:p-4`}>
+        <h2 className="mb-3 px-1 text-sm font-black text-white">Pedidos pendientes</h2>
+      <AdminTable className={adminSurfaceLevel.card}>
         <div className="hidden grid-cols-[1fr_1.8fr_1fr_1fr_1fr_1.8fr] gap-3 border-b border-white/8 px-4 py-3 text-11px font-black uppercase tracking-wide text-white/55 xl:grid">
           <span>Pedido</span>
           <span>Cliente</span>
@@ -352,6 +355,7 @@ export function AdminFacturacion() {
           </div>
         )}
       </AdminTable>
+      </section>
     </section>
   )
 }

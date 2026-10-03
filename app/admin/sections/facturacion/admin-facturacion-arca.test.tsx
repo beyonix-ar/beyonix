@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom"
 import { act } from "react"
 
 import type { ArcaConfigurationStatus } from "../../../../lib/arca/configuration"
+import type { ArcaAutoInvoicingView } from "../../../../lib/arca/auto-invoicing-control"
 
 // Panel de Facturación con React real (JSDOM): el estado ARCA del servidor
 // decide si se puede emitir. Configuración inválida o sin verificar ->
@@ -44,6 +45,7 @@ const invalidStatus: ArcaConfigurationStatus = {
 }
 
 let arcaReply: ArcaConfigurationStatus | "error" = invalidStatus
+let autoReply: ArcaAutoInvoicingView = { enabled: false, controlEnabled: false, canActivate: false, cutoffAt: null, serverEnabled: false }
 let invoiceRequests = 0
 let mountKey = 0
 
@@ -60,6 +62,23 @@ test("Facturación: emitir sólo con configuración ARCA válida; homologación 
     if (path === "/api/admin/arca/status") {
       if (arcaReply === "error") return Response.json({ error: "Error interno" }, { status: 500 })
       return Response.json({ arca: arcaReply })
+    }
+    if (path === "/api/admin/arca/auto-invoicing") {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { enabled: boolean }
+        autoReply = { ...autoReply, enabled: body.enabled, controlEnabled: body.enabled, cutoffAt: body.enabled ? "2026-10-03T15:00:00Z" : autoReply.cutoffAt }
+      }
+      return Response.json({ autoInvoicing: autoReply })
+    }
+    if (path === "/api/admin/arca/diagnostics") {
+      return Response.json({ diagnostics: {
+        ok: true,
+        environment: "production",
+        pointOfSale: 1,
+        readyForFirstFiscalInvoice: true,
+        nextInvoiceNumber: 1,
+        steps: ["Configuración", "FEDummy", "WSAA", "Punto de venta", "Última Factura C", "Última Nota de Crédito C"].map((label, index) => ({ id: String(index), label, ok: true, detail: "OK" })),
+      } })
     }
     if (path === "/api/admin/facturacion") {
       return Response.json({
@@ -127,6 +146,58 @@ test("Facturación: emitir sólo con configuración ARCA válida; homologación 
     assert.match(text(), /Punto de venta1/)
     assert.match(text(), /CertificadoProducción · vence 12\/06\/2028/)
     assert.match(text(), /Facturación automáticaInactiva/)
+    assert.ok(document.querySelector("[data-arca-summary]"))
+    assert.ok(document.querySelector("[data-arca-diagnostic-surface]"))
+    assert.ok(document.querySelector("[data-arca-pending-surface]"))
+    for (const theme of ["light", "dark"]) {
+      document.documentElement.setAttribute("data-admin-theme", theme)
+      for (const selector of ["[data-arca-summary]", "[data-arca-diagnostic-surface]", "[data-arca-pending-surface]"]) {
+        assert.match(document.querySelector(selector)?.className ?? "", /bx-surface-section/)
+      }
+      assert.match(document.querySelector("[data-arca-pending-surface] .bx-surface-card")?.className ?? "", /bx-surface-card/)
+    }
+    assert.match(document.querySelector("[data-arca-summary]")?.className ?? "", /sm:p-5/)
+    assert.match(text(), /Los comprobantes históricos no se procesarán automáticamente/)
+    assert.equal(document.querySelector<HTMLButtonElement>("[data-arca-summary] button")?.disabled, true)
+
+    autoReply = { enabled: true, controlEnabled: true, canActivate: true, cutoffAt: "2026-10-03T15:00:00Z", serverEnabled: true }
+    arcaReply = { ...baseStatus, autoInvoicingEnabled: true }
+    await mount()
+    assert.match(text(), /Facturación automáticaActiva/)
+    assert.match(text(), /Pedidos elegibles desde:/)
+    await act(async () => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>("[data-arca-diagnostic-surface] button")][0]
+      button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))
+    })
+    assert.equal(document.querySelectorAll("[data-arca-diagnostics] li").length, 6)
+    assert.match(document.querySelector("[data-arca-diagnostics]")?.className ?? "", /sm:grid-cols-2/)
+    assert.match(document.querySelector("[data-arca-final-state]")?.textContent ?? "", /Listo para emitir la primera Factura C fiscal/)
+    assert.match(document.querySelector("[data-arca-final-state]")?.className ?? "", /bx-surface-card/)
+
+    autoReply = { enabled: false, controlEnabled: true, canActivate: false, cutoffAt: "2026-10-03T15:00:00Z", serverEnabled: false }
+    arcaReply = baseStatus
+    await mount()
+    assert.match(text(), /Control activo, interruptor del servidor apagado/)
+    const disableButton = [...document.querySelectorAll<HTMLButtonElement>("[data-arca-summary] button")][0]
+    assert.equal(disableButton.disabled, false)
+    await act(async () => disableButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true })))
+    assert.equal(autoReply.controlEnabled, false)
+
+    autoReply = { enabled: false, controlEnabled: false, canActivate: true, cutoffAt: null, serverEnabled: true }
+    arcaReply = { ...baseStatus, autoInvoicingEnabled: true }
+    await mount()
+    await act(async () => {
+      const button = [...document.querySelectorAll<HTMLButtonElement>("[data-arca-summary] button")][0]
+      button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))
+    })
+    assert.match(document.querySelector("[role=dialog]")?.textContent ?? "", /Los comprobantes históricos no se procesarán automáticamente/)
+    await act(async () => {
+      const confirm = [...document.querySelectorAll<HTMLButtonElement>("[role=dialog] button")].find((button) => button.textContent?.includes("Confirmar activación"))
+      assert.ok(confirm)
+      confirm.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }))
+    })
+    assert.equal(autoReply.enabled, true)
+    assert.match(text(), /Pedidos elegibles desde:/)
     await clickIssue()
     assert.equal(invoiceRequests, 1)
   } finally {

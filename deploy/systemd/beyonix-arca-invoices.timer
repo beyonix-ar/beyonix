@@ -1,0 +1,11 @@
+[Unit]
+Description=Corre beyonix-arca-invoices.service cada 10 minutos
+
+[Timer]
+OnCalendar=*-*-* *:0/10:00
+AccuracySec=1min
+Persistent=true
+Unit=beyonix-arca-invoices.service
+
+[Install]
+WantedBy=timers.target

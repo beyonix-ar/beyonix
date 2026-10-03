@@ -139,6 +139,8 @@ const TEST_FILES = [
   "lib/arca/wsaa-ticket-cache.test.ts",
   "lib/arca/transport.test.ts",
   "lib/arca/arca-configuration.test.ts",
+  "lib/arca/auto-invoicing-activation.test.ts",
+  "lib/arca/auto-invoicing-deployment.test.ts",
   "lib/cart/cart-catalog-refresh.test.ts",
   "components/checkout/mercadopago-checkout-ui-contract.test.ts",
   "components/checkout/checkout-presentation.test.ts",

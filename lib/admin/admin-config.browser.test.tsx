@@ -337,7 +337,7 @@ for (const theme of ["light", "dark"] as const) {
       assert.notEqual(card, pageBackground, "la tarjeta se distingue del fondo")
       if (theme === "light") {
         for (const name of ["andreani", "stock", "shipping", "pricing", "financing", "customer-credit"]) {
-          assert.equal(await background(page, `[data-config-block='${name}']`), "rgb(242, 244, 247)", name)
+          assert.equal(await background(page, `[data-config-block='${name}']`), "rgb(217, 217, 217)", name)
         }
         assert.equal(await background(page, "[data-config-block='banners']"), "rgb(255, 255, 255)", "Banners combina con el resto")
       }

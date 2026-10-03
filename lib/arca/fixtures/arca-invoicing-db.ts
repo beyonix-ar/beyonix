@@ -14,6 +14,7 @@ const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n")
 
 export const ENVIRONMENT_ISOLATION_MIGRATION = "supabase/migrations/20260927120000_arca_environment_isolation.sql"
+export const AUTO_ACTIVATION_MIGRATION = "supabase/migrations/20261003120000_arca_auto_invoicing_activation.sql"
 
 /**
  * environmentIsolation=false deja la base como estaba ANTES de 20260927120000
@@ -36,6 +37,10 @@ export async function setupInvoicingDb({ environmentIsolation = true } = {}) {
 
 export async function applyEnvironmentIsolation(db: PGlite) {
   await db.exec(read(ENVIRONMENT_ISOLATION_MIGRATION))
+}
+
+export async function applyAutoActivation(db: PGlite) {
+  await db.exec(read(AUTO_ACTIVATION_MIGRATION))
 }
 
 export type OrderSeed = {

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 
 import { isCronRequestAuthorized } from "@/lib/auth/cron-auth"
-import { requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/configuration"
+import { arcaAutoInvoicingView, type ArcaAutoInvoicingControl } from "@/lib/arca/auto-invoicing-control"
+import { getArcaConfigurationStatus, requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/configuration"
 import { ArcaConfigurationError } from "@/lib/arca/environment"
 import { processArcaInvoiceQueue } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
@@ -41,7 +42,20 @@ export async function GET(request: Request) {
     )
   }
 
-  const summary = await processArcaInvoiceQueue(createAdminClient(), {
+  const admin = createAdminClient()
+  const { data: control, error: controlError } = await admin
+    .from("arca_auto_invoicing_control")
+    .select("enabled, cutoff_at, updated_at")
+    .eq("id", true)
+    .single()
+  if (controlError || !control) {
+    return NextResponse.json({ ok: false, error: "Control automático ARCA no disponible." }, { status: 503 })
+  }
+  if (!arcaAutoInvoicingView(control as ArcaAutoInvoicingControl, getArcaConfigurationStatus()).enabled) {
+    return NextResponse.json({ ok: true, skipped: "Facturación automática no activada en Admin." })
+  }
+
+  const summary = await processArcaInvoiceQueue(admin, {
     gateway: createWsfeInvoiceGateway(configuration),
     pointOfSale: configuration.pointOfSale,
   })

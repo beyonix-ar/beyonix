@@ -11,10 +11,6 @@
     {
       "path": "/api/cron/expire-mercadopago-orders",
       "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/arca-invoices",
-      "schedule": "*/10 * * * *"
     }
   ]
 }

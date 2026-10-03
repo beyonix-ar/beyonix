@@ -17,9 +17,9 @@ test("un solo camino de emisión: Admin y worker usan el mismo servicio; nadie l
   assert.doesNotMatch(adminRoute, /fecaeSolicitar|begin_arca_invoice_processing|\.update\(/)
   assert.match(cron, /isCronRequestAuthorized\(request\.headers\.get\("authorization"\), process\.env\.CRON_SECRET\)/)
   assert.match(cron, /ARCA_AUTO_INVOICING_ENABLED\?\.trim\(\)\.toLowerCase\(\) !== "true"/)
-  assert.match(cron, /processArcaInvoiceQueue\(createAdminClient\(\)/)
+  assert.match(cron, /processArcaInvoiceQueue\(admin,/)
   const vercel = JSON.parse(read("vercel.json")) as { crons: Array<{ path: string }> }
-  assert.ok(vercel.crons.some((cron) => cron.path === "/api/cron/arca-invoices"))
+  assert.ok(!vercel.crons.some((cron) => cron.path === "/api/cron/arca-invoices"))
 
   // fecaeSolicitar sólo lo usa el gateway del servicio.
   const offenders: string[] = []

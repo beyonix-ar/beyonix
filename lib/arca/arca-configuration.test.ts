@@ -342,7 +342,7 @@ test("todos los caminos (manual, automático, NC, conciliación y diagnóstico) 
   const reconcile = read("app/api/admin/credit-notes/[noteId]/reconcile/route.ts")
   for (const [name, source, before] of [
     ["emisión manual", invoice, "processArcaInvoice(auth.admin"],
-    ["automática", cron, "processArcaInvoiceQueue(createAdminClient()"],
+    ["automática", cron, "processArcaInvoiceQueue(admin"],
     ["nota de crédito", creditNote, '.rpc("begin_partial_credit_note"'],
     ["conciliación", reconcile, "reconcileCreditNote(auth.admin"],
   ] as const) {

@@ -1,0 +1,16 @@
+[Unit]
+Description=BEYONIX - Facturación automática ARCA
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/
+# El secreto vive en el archivo curl privado ya usado por otros timers.
+# Ni CRON_SECRET ni el cuerpo de la respuesta aparecen en argv o journalctl.
+TimeoutStartSec=190
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-arca-invoices.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 180 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/arca-invoices
