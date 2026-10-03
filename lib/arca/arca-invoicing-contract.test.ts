@@ -51,16 +51,18 @@ test("ambiente ARCA: sólo explícito; sin valor o con otro valor es error (sin 
   const wsaa = read("lib/arca/wsaa.ts")
   // Fuente única (lib/arca/environment.ts) y guard central (configuration.ts).
   assert.match(wsfe, /return getConfiguredArcaEnvironment\(\)/)
-  assert.match(wsaa, /fetch\(WSAA_URLS\[configuration\.environment\]/)
+  assert.match(wsaa, /arcaFetch\(WSAA_URLS\[configuration\.environment\]/)
+  assert.match(wsfe, /arcaFetch\(WSFE_URLS\[configuration\.environment\]/)
+  assert.match(wsfe, /arcaFetch\(WSFE_URLS\[environment\]/)
   for (const value of [undefined, "", "   ", "prod", "produccion", "PRODUCCIÓN", "Production", "homologacion", "test"]) {
     assert.throws(() => getConfiguredArcaEnvironment(value), ArcaConfigurationError, String(value))
   }
   assert.equal(getConfiguredArcaEnvironment("homologation"), "homologation")
   assert.equal(getConfiguredArcaEnvironment(" production "), "production")
-  assert.match(wsfe, /production: "https:\/\/servicios1\.afip\.gov\.ar\/wsfev1\/service\.asmx"/)
+  assert.match(wsfe, /production: WSFE_PRODUCTION_URL/)
   assert.match(wsaa, /production: "https:\/\/wsaa\.afip\.gov\.ar\/ws\/services\/LoginCms"/)
-  assert.doesNotMatch(wsfe, /fetch\(WSFE_HOMOLOGATION_URL/)
-  assert.doesNotMatch(wsaa, /fetch\(WSAA_HOMOLOGATION_URL/)
+  assert.doesNotMatch(wsfe, /arcaFetch\(WSFE_HOMOLOGATION_URL/)
+  assert.doesNotMatch(wsaa, /arcaFetch\(WSAA_HOMOLOGATION_URL/)
   // Sólo un rechazo explícito de ARCA libera el número pedido.
   assert.match(wsfe, /\], errors\.length > 0\)/)
   assert.match(wsfe, /\], resultCode === "R"\)/)

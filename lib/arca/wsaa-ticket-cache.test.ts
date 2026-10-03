@@ -219,7 +219,7 @@ test("wsaa.ts y wsfe.ts toman el ambiente de una sola fuente; el TA va por obtai
   // Ambiente, certificado y endpoint salen de la configuración validada.
   assert.match(wsaa, /getWsaaCredentials\(configuration: ArcaConfiguration = requireArcaConfiguration\(\)\)/)
   assert.match(wsaa, /environment: configuration\.environment,/)
-  assert.match(wsaa, /fetch\(WSAA_URLS\[configuration\.environment\]/)
+  assert.match(wsaa, /arcaFetch\(WSAA_URLS\[configuration\.environment\]/)
   assert.match(wsaa, /obtainWsaaTicket\(\{/)
   assert.match(wsaa, /request: \(\) => requestCredentials\(configuration\),/)
   assert.equal(

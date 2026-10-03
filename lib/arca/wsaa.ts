@@ -2,6 +2,7 @@ import forge from "node-forge"
 
 import { requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/configuration"
 import type { ArcaEnvironment } from "@/lib/arca/environment"
+import { arcaFetch } from "@/lib/arca/transport"
 import {
   isUsableTicket,
   isWsaaAlreadyAuthenticatedFault,
@@ -106,7 +107,7 @@ async function requestCredentials(configuration: ArcaConfiguration) {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(WSAA_URLS[configuration.environment], {
+  const response = await arcaFetch(WSAA_URLS[configuration.environment], {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",

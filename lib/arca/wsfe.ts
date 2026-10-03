@@ -2,10 +2,11 @@ import { requireArcaConfiguration, type ArcaConfiguration } from "@/lib/arca/con
 import { getConfiguredArcaEnvironment, type ArcaEnvironment } from "@/lib/arca/environment"
 import { asArray, escapeXml, getSoapFaultMessage, parseXml } from "@/lib/arca/xml"
 import { getWsaaCredentials } from "@/lib/arca/wsaa"
+import { arcaFetch, WSFE_PRODUCTION_URL } from "@/lib/arca/transport"
 
 const WSFE_URLS: Record<ArcaEnvironment, string> = {
   homologation: "https://wswhomo.afip.gov.ar/wsfev1/service.asmx",
-  production: "https://servicios1.afip.gov.ar/wsfev1/service.asmx",
+  production: WSFE_PRODUCTION_URL,
 }
 const WSFE_NAMESPACE = "http://ar.gov.afip.dif.FEV1/"
 
@@ -146,7 +147,7 @@ async function callWsfe(operation: string, body: string) {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(WSFE_URLS[configuration.environment], {
+  const response = await arcaFetch(WSFE_URLS[configuration.environment], {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
@@ -184,7 +185,7 @@ async function callWsfePublic(operation: string, body = "") {
   </soapenv:Body>
 </soapenv:Envelope>`
 
-  const response = await fetch(WSFE_URLS[environment], {
+  const response = await arcaFetch(WSFE_URLS[environment], {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",

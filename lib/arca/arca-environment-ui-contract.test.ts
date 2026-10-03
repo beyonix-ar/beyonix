@@ -14,10 +14,10 @@ test("gateway: el ambiente persistido es el mismo con el que se eligen los endpo
   assert.match(gateway, /configuration: ArcaConfiguration = requireArcaConfiguration\(\),/)
   assert.match(gateway, /environment: configuration\.environment,/)
   const wsfe = read("lib/arca/wsfe.ts")
-  assert.match(wsfe, /fetch\(WSFE_URLS\[configuration\.environment\]/)
-  assert.match(wsfe, /fetch\(WSFE_URLS\[environment\]/)
+  assert.match(wsfe, /arcaFetch\(WSFE_URLS\[configuration\.environment\]/)
+  assert.match(wsfe, /arcaFetch\(WSFE_URLS\[environment\]/)
   const wsaa = read("lib/arca/wsaa.ts")
-  assert.match(wsaa, /fetch\(WSAA_URLS\[configuration\.environment\]/)
+  assert.match(wsaa, /arcaFetch\(WSAA_URLS\[configuration\.environment\]/)
   assert.match(wsaa, /environment: configuration\.environment,/, "el TA persistido usa el mismo ambiente")
 })
 
