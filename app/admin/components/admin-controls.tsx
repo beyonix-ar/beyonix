@@ -96,6 +96,8 @@ interface AdminTextInputProps {
   value: string
   placeholder: string
   ariaLabel?: string
+  name?: string
+  autoComplete?: InputHTMLAttributes<HTMLInputElement>["autoComplete"]
   icon?: ReactNode
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"]
   type?: InputHTMLAttributes<HTMLInputElement>["type"]
@@ -713,6 +715,8 @@ export function AdminTextInput({
   value,
   placeholder,
   ariaLabel,
+  name,
+  autoComplete,
   icon,
   inputMode,
   type = "text",
@@ -733,6 +737,8 @@ export function AdminTextInput({
       )}
       <input
         type={type}
+        name={name}
+        autoComplete={autoComplete}
         aria-label={ariaLabel ?? title}
         value={value}
         placeholder={placeholder}

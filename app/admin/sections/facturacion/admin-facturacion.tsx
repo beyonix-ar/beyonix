@@ -215,6 +215,8 @@ export function AdminFacturacion() {
             <AdminSearchInput
             title="Buscar factura pendiente"
             ariaLabel="Buscar factura pendiente"
+            name="bx_fiscal_pending_search"
+            autoComplete="off"
             value={search}
             placeholder="Buscar pedido, cliente o error"
             onChange={setSearch}

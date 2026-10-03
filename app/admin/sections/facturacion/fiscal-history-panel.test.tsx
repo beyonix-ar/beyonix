@@ -85,6 +85,9 @@ test("historial abre en hoy, navega por días, filtra, selecciona y descarga fac
   try {
     await render("invoice")
     assert.equal(requests.at(-1)?.searchParams.get("period"), "today")
+    const invoiceSearch = document.querySelector<HTMLInputElement>('input[aria-label="Buscar comprobantes"]')
+    assert.equal(invoiceSearch?.autocomplete, "off")
+    assert.equal(invoiceSearch?.name, "bx_fiscal_invoice_search")
     assert.equal(document.querySelectorAll("[data-fiscal-row]").length, 1)
     await clickButton("Historial")
     assert.equal(document.querySelectorAll("[data-fiscal-day]").length, 2)
@@ -101,6 +104,9 @@ test("historial abre en hoy, navega por días, filtra, selecciona y descarga fac
 
     await render("credit_note")
     assert.equal(requests.at(-1)?.searchParams.get("period"), "today")
+    const noteSearch = document.querySelector<HTMLInputElement>('input[aria-label="Buscar comprobantes"]')
+    assert.equal(noteSearch?.autocomplete, "off")
+    assert.equal(noteSearch?.name, "bx_fiscal_credit_note_search")
     await clickButton("Historial")
     assert.equal(document.querySelectorAll("[data-fiscal-day]").length, 2)
     await act(async () => { (document.querySelector('input[aria-label="Seleccionar todas las visibles"]') as HTMLInputElement).click() })

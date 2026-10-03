@@ -240,7 +240,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-white/2 p-2.5">
-        <div className="min-w-48 flex-1 sm:max-w-sm"><AdminSearchInput title="Búsqueda general" ariaLabel="Buscar comprobantes" value={filters.search} placeholder="Número, pedido, cliente, CAE..." onChange={(value) => changeFilter("search", value)} /></div>
+        <div className="min-w-48 flex-1 sm:max-w-sm"><AdminSearchInput title="Búsqueda general" ariaLabel="Buscar comprobantes" name={`bx_fiscal_${kind}_search`} autoComplete="off" value={filters.search} placeholder="Número, pedido, cliente, CAE..." onChange={(value) => changeFilter("search", value)} /></div>
         <div className="w-36">
           <AdminSelect title="Mes" ariaLabel="Mes fiscal" value={String(month)} compact wrapperClassName="w-36" onChange={(value) => { clearDateRange(); setMonth(Number(value)); setPeriod("month"); setPage(1) }}>
             {MONTHS.map((name, index) => <option key={name} value={String(index + 1)}>{name}</option>)}
@@ -257,14 +257,14 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
       <details className="mt-3 rounded-xl border border-white/10 bg-white/2 px-3 py-2 text-xs text-white/70">
         <summary className="cursor-pointer font-bold">Filtros</summary>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <AdminTextInput title="Número de comprobante" ariaLabel="Número de comprobante" value={filters.number} placeholder="Número" onChange={(value) => changeFilter("number", value)} />
-          <AdminTextInput title="Pedido" ariaLabel="Pedido" value={filters.order} placeholder="Pedido" onChange={(value) => changeFilter("order", value)} />
-          <AdminTextInput title="Cliente" ariaLabel="Cliente" value={filters.client} placeholder="Cliente" onChange={(value) => changeFilter("client", value)} />
-          <AdminTextInput title="Documento" ariaLabel="Documento" value={filters.document} placeholder="DNI o documento" onChange={(value) => changeFilter("document", value)} />
-          <AdminDatePicker title="Fecha desde" ariaLabel="Fecha desde" value={filters.from} placeholder="Desde" onChange={(value) => changeFilter("from", value)} />
-          <AdminDatePicker title="Fecha hasta" ariaLabel="Fecha hasta" value={filters.to} placeholder="Hasta" onChange={(value) => changeFilter("to", value)} />
-          <AdminTextInput title="CAE" ariaLabel="CAE" value={filters.cae} placeholder="CAE" onChange={(value) => changeFilter("cae", value)} />
-          <AdminTextInput title="Importe" ariaLabel="Importe" value={filters.amount} placeholder="Importe" type="number" min="0" step="0.01" onChange={(value) => changeFilter("amount", value)} />
+          <AdminTextInput title="Número de comprobante" ariaLabel="Número de comprobante" name={`bx_fiscal_${kind}_number`} autoComplete="off" value={filters.number} placeholder="Número" onChange={(value) => changeFilter("number", value)} />
+          <AdminTextInput title="Pedido" ariaLabel="Pedido" name={`bx_fiscal_${kind}_order`} autoComplete="off" value={filters.order} placeholder="Pedido" onChange={(value) => changeFilter("order", value)} />
+          <AdminTextInput title="Cliente" ariaLabel="Cliente" name={`bx_fiscal_${kind}_client`} autoComplete="off" value={filters.client} placeholder="Cliente" onChange={(value) => changeFilter("client", value)} />
+          <AdminTextInput title="Documento" ariaLabel="Documento" name={`bx_fiscal_${kind}_document`} autoComplete="off" value={filters.document} placeholder="DNI o documento" onChange={(value) => changeFilter("document", value)} />
+          <AdminDatePicker title="Fecha desde" ariaLabel="Fecha desde" name={`bx_fiscal_${kind}_from`} value={filters.from} placeholder="Desde" onChange={(value) => changeFilter("from", value)} />
+          <AdminDatePicker title="Fecha hasta" ariaLabel="Fecha hasta" name={`bx_fiscal_${kind}_to`} value={filters.to} placeholder="Hasta" onChange={(value) => changeFilter("to", value)} />
+          <AdminTextInput title="CAE" ariaLabel="CAE" name={`bx_fiscal_${kind}_cae`} autoComplete="off" value={filters.cae} placeholder="CAE" onChange={(value) => changeFilter("cae", value)} />
+          <AdminTextInput title="Importe" ariaLabel="Importe" name={`bx_fiscal_${kind}_amount`} autoComplete="off" value={filters.amount} placeholder="Importe" type="number" min="0" step="0.01" onChange={(value) => changeFilter("amount", value)} />
           <AdminSelect title="Estado" ariaLabel="Estado" value={filters.status} compact onChange={(value) => changeFilter("status", value)}>
             <option value="">Todos</option>
             <option value="authorized">Autorizada</option>

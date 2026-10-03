@@ -96,6 +96,11 @@ for (const theme of ["light", "dark"] as const) {
       assert.equal(await page.getByRole("listbox", { name: "Mes fiscal" }).isVisible(), true)
       await page.getByRole("option", { name: "Octubre" }).click()
       await page.getByText("Filtros", { exact: true }).click()
+      for (const label of ["Buscar comprobantes", "Número de comprobante", "Pedido", "Cliente", "Documento", "Fecha desde", "Fecha hasta", "CAE", "Importe"]) {
+        const input = page.getByLabel(label, { exact: true })
+        assert.equal(await input.getAttribute("autocomplete"), "off", label)
+        assert.match(await input.getAttribute("name") ?? "", /^bx_fiscal_invoice_(?:search|number|order|client|document|from|to|cae|amount)$/, label)
+      }
       await page.getByRole("button", { name: "Estado" }).click()
       assert.equal(await page.getByRole("listbox", { name: "Estado" }).isVisible(), true)
       await page.getByRole("option", { name: "Autorizada" }).click()

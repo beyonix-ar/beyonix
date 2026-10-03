@@ -152,6 +152,9 @@ test("Facturación: emitir sólo con configuración ARCA válida; homologación 
     assert.ok(document.querySelector("[data-arca-summary]"))
     assert.ok(document.querySelector("[data-arca-diagnostic-surface]"))
     assert.ok(document.querySelector("[data-arca-pending-surface]"))
+    const pendingSearch = document.querySelector<HTMLInputElement>('input[aria-label="Buscar factura pendiente"]')
+    assert.equal(pendingSearch?.autocomplete, "off")
+    assert.equal(pendingSearch?.name, "bx_fiscal_pending_search")
     assert.equal(document.querySelectorAll('[role="tablist"] [role="tab"]').length, 3)
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[role="tablist"] [role="tab"]:nth-child(2)')?.click()

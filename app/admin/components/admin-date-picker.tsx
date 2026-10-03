@@ -27,6 +27,7 @@ interface AdminDatePickerProps {
   title: string
   ariaLabel: string
   value: string
+  name?: string
   minDate?: string
   placeholder?: string
   centered?: boolean
@@ -125,6 +126,7 @@ export function AdminDatePicker({
   title,
   ariaLabel,
   value,
+  name,
   minDate,
   placeholder = "dd/mm/aaaa",
   centered = false,
@@ -359,7 +361,7 @@ export function AdminDatePicker({
       <div className="relative">
         <input
           type="text"
-          name={inputName}
+          name={name ?? inputName}
           aria-label={ariaLabel}
           value={textValue}
           placeholder={placeholder}
