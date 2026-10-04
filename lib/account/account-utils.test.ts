@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { getOrderPaymentTotalDisplay, isInvoiceGenerating } from "./account-utils.ts"
+import { getOrderPaymentTotalDisplay, isInvoiceAwaitingRetry, isInvoiceGenerating } from "./account-utils.ts"
 import type { SupabasePedido } from "../supabase/types.ts"
 
 function order(invoiceStatus: SupabasePedido["invoice_status"], paid = true): SupabasePedido {
@@ -24,6 +24,13 @@ test("el aviso de factura en generación solo aparece para pagos confirmados pen
   assert.equal(isInvoiceGenerating(order("authorized")), false)
   assert.equal(isInvoiceGenerating(order("error")), false)
   assert.equal(isInvoiceGenerating(order(null)), false)
+})
+
+test("un pago confirmado con error fiscal muestra espera sin exponer detalles de ARCA", () => {
+  assert.equal(isInvoiceAwaitingRetry(order("error")), true)
+  assert.equal(isInvoiceAwaitingRetry(order("error", false)), false)
+  assert.equal(isInvoiceAwaitingRetry(order("authorized")), false)
+  assert.equal(isInvoiceAwaitingRetry({ ...order("error"), invoice_cae: "CAE" }), false)
 })
 
 // BX-1001 (auditoría): intento de Mercado Pago abandonado -- estado='pendiente',

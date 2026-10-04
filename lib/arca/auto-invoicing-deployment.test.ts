@@ -60,7 +60,7 @@ test("systemd ARCA usa loopback, secreto privado, flock y timeout; Vercel no lo 
   assert.match(service, /TimeoutStartSec=190/)
   assert.match(service, /http:\/\/127\.0\.0\.1:3000\/api\/cron\/arca-invoices/)
   assert.doesNotMatch(service, /\$\{CRON_SECRET\}|-H\s+["']?Authorization/)
-  assert.match(timer, /OnCalendar=\*-\*-\* \*:0\/10:00/)
+  assert.match(timer, /OnCalendar=\*-\*-\* \*:0\/5:00/)
   assert.match(timer, /Persistent=true/)
   assert.ok(vercel.crons.every((cron) => cron.path !== "/api/cron/arca-invoices"))
 })

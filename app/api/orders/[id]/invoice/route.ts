@@ -5,6 +5,7 @@ import {
   invoicePdfFilename,
   type InvoicePdfOrder,
 } from "@/lib/arca/invoice-pdf"
+import { loadFiscalInvoiceTotal, loadFiscalPdfItems } from "@/lib/arca/invoice-pdf-data"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 
@@ -169,37 +170,18 @@ export async function GET(
     )
   }
 
-  const items = itemRows ?? []
-  const productIds = [...new Set(items.map((item) => item.producto_id))]
-  const variantIds = [
-    ...new Set(
-      items
-        .map((item) => item.variante_id)
-        .filter((id): id is number => typeof id === "number"),
-    ),
-  ]
-  const [productsResult, variantsResult] = await Promise.all([
-    productIds.length
-      ? admin.from("productos").select("id, nombre").in("id", productIds)
-      : Promise.resolve({ data: [], error: null }),
-    variantIds.length
-      ? admin.from("producto_variantes").select("id, nombre").in("id", variantIds)
-      : Promise.resolve({ data: [], error: null }),
-  ])
-
-  if (productsResult.error || variantsResult.error) {
-    return NextResponse.json(
-      { error: "No se pudieron recuperar los productos de la factura." },
-      { status: 500 },
-    )
+  let fiscalItems
+  let originalFiscalTotal: number
+  try {
+    const [items, total] = await Promise.all([
+      isCreditNote ? Promise.resolve([]) : loadFiscalPdfItems(admin, orderId, itemRows ?? []),
+      loadFiscalInvoiceTotal(admin, orderId, order),
+    ])
+    fiscalItems = items
+    originalFiscalTotal = total
+  } catch {
+    return NextResponse.json({ error: "No se pudo recuperar el detalle de la factura." }, { status: 500 })
   }
-
-  const productsById = new Map(
-    (productsResult.data ?? []).map((product) => [product.id, product]),
-  )
-  const variantsById = new Map(
-    (variantsResult.data ?? []).map((variant) => [variant.id, variant]),
-  )
   const orderRecord = order as Record<string, unknown>
   const creditNotePdfItems = creditNoteRecord
     ? [
@@ -225,7 +207,7 @@ export async function GET(
     ...order,
     total: isCreditNote
       ? Number(creditNoteRecord?.total_amount ?? 0)
-      : Number(order.total ?? 0),
+      : originalFiscalTotal,
     cliente_dni:
       typeof order.cliente_dni === "string" && order.cliente_dni.trim()
         ? order.cliente_dni.trim()
@@ -264,7 +246,7 @@ export async function GET(
       ? "DETALLE DE NOTA DE CRÉDITO"
       : "DETALLE DE FACTURA",
     filename_prefix: isCreditNote ? "Nota-Credito" : "Factura",
-    original_invoice_total: isCreditNote ? Number(order.total ?? 0) : null,
+    original_invoice_total: isCreditNote ? originalFiscalTotal : null,
     original_invoice_created_at: isCreditNote
       ? String(order.invoice_created_at)
       : null,
@@ -275,18 +257,7 @@ export async function GET(
           number: Number(order.invoice_number),
         }
       : undefined,
-    orden_items: isCreditNote ? creditNotePdfItems : items.map((item) => ({
-      cantidad: Number(item.cantidad ?? 0),
-      precio: Number(item.precio ?? 0),
-      productos: productsById.get(item.producto_id) ?? null,
-      producto_variantes:
-        typeof item.conditioned_name === "string" &&
-        item.conditioned_name.trim()
-          ? { nombre: item.conditioned_name }
-          : typeof item.variante_id === "number"
-          ? variantsById.get(item.variante_id) ?? null
-          : null,
-    })),
+    orden_items: isCreditNote ? creditNotePdfItems : fiscalItems,
   } as InvoicePdfOrder
   const pdf = await generateInvoicePdf(invoiceOrder)
 

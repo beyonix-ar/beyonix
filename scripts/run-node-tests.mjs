@@ -282,6 +282,7 @@ const DB_TEST_FILES = [
   "lib/arca/arca-invoicing-concurrency.test.mjs",
   "lib/arca/arca-credit-note-concurrency.test.mjs",
   "lib/arca/fiscal-history-sql.test.mjs",
+  "lib/arca/invoice-item-snapshots-sql.test.mjs",
   "lib/orders/claim-logistics-method-race.test.mjs",
 ]
 
@@ -295,6 +296,7 @@ const DB_ROUTE_TEST_FILES = [
 const SERVER_TSX_TEST_FILES = [
   "lib/arca/fiscal-history-routes.test.ts",
   "lib/arca/invoice-pdf-environment.test.ts",
+  "lib/arca/invoice-pdf-data.test.ts",
   "scripts/arca-homologation/harness.test.ts",
   "lib/reviews/reviews-routes.test.ts",
   "lib/cart/shipping-bonus-terms.test.ts",

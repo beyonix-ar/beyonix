@@ -254,7 +254,7 @@ systemctl list-timers | grep beyonix-run-commercial-events
 
 # Facturación automática ARCA (preparada, todavía apagada)
 
-El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada 10 minutos);
+El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada 5 minutos);
 su entrada se retiró de `vercel.json`. El servicio usa loopback, `flock -n`, timeout
 y el archivo privado de curl `/etc/beyonix/curl-verify-transfer-orders.conf` descrito
 arriba. El secreto no va en argumentos ni en estos archivos del repositorio.

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Download, ExternalLink, FileText, LoaderCircle } from "lucide-react"
 
@@ -116,27 +116,33 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
     return params
   }, [kind, period, year, month, page, appliedFilters])
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    const controller = new AbortController()
+    let current = true
     setLoading(true)
     setError("")
     setLoadFailed(false)
-    try {
-      const response = await adminRequest(`/api/admin/facturacion/history?${query}`)
-      const result = await response.json() as { items?: FiscalDocument[]; total?: number; error?: string }
-      if (!response.ok || !result.items) throw new Error(result.error || "No se pudo cargar el historial fiscal.")
-      setItems(result.items)
-      setTotal(result.total ?? 0)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo cargar el historial fiscal.")
-      setLoadFailed(true)
-      setItems([])
-      setTotal(0)
-    } finally {
-      setLoading(false)
+    const load = async () => {
+      try {
+        const response = await adminRequest(`/api/admin/facturacion/history?${query}`, { signal: controller.signal })
+        const result = await response.json() as { items?: FiscalDocument[]; total?: number; error?: string }
+        if (!response.ok || !result.items) throw new Error(result.error || "No se pudo cargar el historial fiscal.")
+        if (!current) return
+        setItems(result.items)
+        setTotal(result.total ?? 0)
+      } catch (cause) {
+        if (!current) return
+        setError(cause instanceof Error ? cause.message : "No se pudo cargar el historial fiscal.")
+        setLoadFailed(true)
+        setItems([])
+        setTotal(0)
+      } finally {
+        if (current) setLoading(false)
+      }
     }
+    void load()
+    return () => { current = false; controller.abort() }
   }, [query])
-
-  useEffect(() => { void load() }, [load])
 
   const changeFilter = (name: keyof Filters, value: string) => {
     setFilters((current) => ({ ...current, [name]: value }))
@@ -231,7 +237,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
         <div className="flex flex-wrap gap-2" aria-label="Período fiscal">
           {(["today", "month", "all"] as const).map((value) => (
             <AdminSecondaryButton key={value} size="sm" aria-pressed={period === value} onClick={() => {
-              if (value === "month") { setYear(Number(today.slice(0, 4))); setMonth(Number(today.slice(5, 7))) }
+              if (value === "month") { const currentDay = argentinaToday(); setYear(Number(currentDay.slice(0, 4))); setMonth(Number(currentDay.slice(5, 7))) }
               if (value !== "all") clearDateRange()
               setPeriod(value); setPage(1)
             }}>{value === "today" ? "Hoy" : value === "month" ? "Este mes" : "Historial"}</AdminSecondaryButton>

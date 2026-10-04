@@ -44,6 +44,12 @@ test("un pedido pagado pendiente muestra el aviso en el lugar del botón y lo oc
   assert.match(client, /const invoiceGenerating = isInvoiceGenerating\(order\)/)
 })
 
+test("un pedido pagado con error fiscal muestra un mensaje útil en lugar de un espacio vacío", () => {
+  const client = source("app/cuenta/cuenta-client.tsx")
+  assert.match(client, /const invoiceAwaitingRetry = isInvoiceAwaitingRetry\(order\)/)
+  assert.match(client, /\{invoiceAwaitingRetry && \([\s\S]*?Estamos procesando tu factura\. Si demora más de lo habitual, volvé a intentar en unos minutos\./)
+})
+
 test("el botón 'Ver factura' NO dispara ningún fetch: abrir el visor sólo cambia un estado local", () => {
   const client = source("app/cuenta/cuenta-client.tsx")
 

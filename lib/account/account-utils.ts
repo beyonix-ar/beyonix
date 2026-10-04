@@ -56,6 +56,12 @@ export function isInvoiceGenerating(order: SupabasePedido) {
     (order.invoice_status === "pending" || order.invoice_status === "processing")
 }
 
+export function isInvoiceAwaitingRetry(order: SupabasePedido) {
+  return isOrderPaymentConfirmed(order) &&
+    order.invoice_status === "error" &&
+    !order.invoice_cae
+}
+
 type OrderStatusFields = Pick<
   SupabasePedido,
   "estado" | "payment_status" | "financial_status"

@@ -6,6 +6,7 @@ import {
   invoicePdfFilename,
   type InvoicePdfOrder,
 } from "@/lib/arca/invoice-pdf"
+import { loadFiscalInvoiceTotal, loadFiscalPdfItems } from "@/lib/arca/invoice-pdf-data"
 
 type CreditNotePdfRecord = {
   id: string
@@ -26,12 +27,6 @@ type CreditNotePdfRecord = {
     product_name: string
     variant_name?: string | null
   }>
-}
-
-function optionalText(value: unknown) {
-  if (typeof value !== "string") return null
-  const text = value.trim()
-  return text || null
 }
 
 export async function renderAdminInvoicePdf(
@@ -124,7 +119,7 @@ export async function renderAdminInvoicePdf(
 
   const { data: itemRows, error: itemsError } = await admin
     .from("orden_items")
-    .select("*")
+    .select("id, producto_id, variante_id, conditioned_name, cantidad, precio")
     .eq("orden_id", orderId)
 
   if (itemsError) {
@@ -140,79 +135,19 @@ export async function renderAdminInvoicePdf(
     )
   }
 
-  const items = itemRows ?? []
-  const productIds = [...new Set(items.map((item) => item.producto_id))]
-  const variantIds = [
-    ...new Set(
-      items
-        .map((item) => item.variante_id)
-        .filter((id): id is number => typeof id === "number"),
-    ),
-  ]
-  const [productsResult, variantsResult] = await Promise.all([
-    productIds.length
-      ? admin.from("productos").select("*").in("id", productIds)
-      : Promise.resolve({ data: [], error: null }),
-    variantIds.length
-      ? admin
-          .from("producto_variantes")
-          .select("*")
-          .in("id", variantIds)
-      : Promise.resolve({ data: [], error: null }),
-  ])
-
-  if (productsResult.error || variantsResult.error) {
-    console.error("ADMIN_INVOICE_PDF_CATALOG_ERROR", {
-      orderId,
-      step: "buscar productos y variantes",
-      productsError: productsResult.error?.message,
-      variantsError: variantsResult.error?.message,
-    })
-    return NextResponse.json(
-      { error: "No se pudieron recuperar los productos de la factura." },
-      { status: 500 },
-    )
+  let fiscalItems
+  let originalFiscalTotal: number
+  try {
+    const [items, total] = await Promise.all([
+      documentType === "invoice" ? loadFiscalPdfItems(admin, orderId, itemRows ?? []) : Promise.resolve([]),
+      loadFiscalInvoiceTotal(admin, orderId, order),
+    ])
+    fiscalItems = items
+    originalFiscalTotal = total
+  } catch (error) {
+    console.error("ADMIN_INVOICE_PDF_DETAIL_ERROR", { orderId, message: error instanceof Error ? error.message : String(error) })
+    return NextResponse.json({ error: "No se pudo recuperar el detalle de la factura." }, { status: 500 })
   }
-
-  const productsById = new Map(
-    (productsResult.data ?? []).map((product) => [product.id, product]),
-  )
-  const variantsById = new Map(
-    (variantsResult.data ?? []).map((variant) => [variant.id, variant]),
-  )
-  let profile: Record<string, unknown> | null = null
-
-  if (order.usuario_id) {
-    const { data: profileData, error: profileError } = await admin
-      .from("profiles")
-      .select("*")
-      .eq("id", order.usuario_id)
-      .maybeSingle()
-
-    if (profileError) {
-      console.error("ADMIN_INVOICE_PDF_PROFILE_ERROR", {
-        orderId,
-        step: "buscar perfil del cliente",
-        message: profileError.message,
-        code: profileError.code,
-      })
-    } else {
-      profile = profileData as Record<string, unknown> | null
-    }
-  }
-
-  const profileAddress = [
-    optionalText(profile?.calle),
-    optionalText(profile?.numero),
-    optionalText(profile?.piso)
-      ? `Piso ${optionalText(profile?.piso)}`
-      : null,
-    optionalText(profile?.departamento)
-      ? `Dpto. ${optionalText(profile?.departamento)}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" ")
   const orderRecord = order as Record<string, unknown>
   const isCreditNote = documentType === "credit_note"
   const creditNotePdfItems = creditNoteRecord
@@ -254,32 +189,11 @@ export async function renderAdminInvoicePdf(
     ...order,
     total: isCreditNote
       ? Number(creditNoteRecord?.total_amount ?? 0)
-      : Number(order.invoice_requested_total ?? order.total ?? 0),
-    cliente_nombre:
-      optionalText(order.cliente_nombre) ??
-      optionalText(profile?.nombre) ??
-      optionalText(profile?.username) ??
-      "Consumidor final",
+      : originalFiscalTotal,
     cliente_dni:
-      optionalText(order.cliente_dni) ??
-      optionalText(profile?.dni) ??
-      "No informado",
-    cliente_email:
-      optionalText(order.cliente_email) ??
-      optionalText(profile?.email) ??
-      "No informado",
-    cliente_telefono:
-      optionalText(order.cliente_telefono) ??
-      optionalText(profile?.telefono) ??
-      "No informado",
-    cliente_direccion:
-      optionalText(order.cliente_direccion) ??
-      optionalText(profileAddress) ??
-      "No informada",
-    localidad:
-      optionalText(order.localidad) ?? optionalText(profile?.localidad),
-    provincia:
-      optionalText(order.provincia) ?? optionalText(profile?.provincia),
+      typeof order.cliente_dni === "string" && order.cliente_dni.trim()
+        ? order.cliente_dni.trim()
+        : "No informado",
     shipping_cost_charged:
       isCreditNote
         ? 0
@@ -318,7 +232,7 @@ export async function renderAdminInvoicePdf(
       ? "DETALLE DE NOTA DE CRÉDITO"
       : "DETALLE DE FACTURA",
     filename_prefix: isCreditNote ? "Nota-Credito" : "Factura",
-    original_invoice_total: isCreditNote ? Number(order.invoice_requested_total ?? order.total ?? 0) : null,
+    original_invoice_total: isCreditNote ? originalFiscalTotal : null,
     original_invoice_created_at: isCreditNote
       ? String(order.invoice_created_at)
       : null,
@@ -329,18 +243,7 @@ export async function renderAdminInvoicePdf(
           number: Number(order.invoice_number),
         }
       : undefined,
-    orden_items: isCreditNote ? creditNotePdfItems : items.map((item) => ({
-      cantidad: Number(item.cantidad ?? 0),
-      precio: Number(item.precio ?? item.precio_unitario ?? 0),
-      productos: productsById.get(item.producto_id) ?? null,
-      producto_variantes:
-        typeof item.conditioned_name === "string" &&
-        item.conditioned_name.trim()
-          ? { nombre: item.conditioned_name }
-          : typeof item.variante_id === "number"
-          ? variantsById.get(item.variante_id) ?? null
-          : null,
-    })),
+    orden_items: isCreditNote ? creditNotePdfItems : fiscalItems,
   } as InvoicePdfOrder
 
   let pdf: Uint8Array
