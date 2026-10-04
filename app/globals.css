@@ -16642,3 +16642,84 @@ html[data-admin-theme="light"] .admin-credit-decision-missing { background: #fff
   .admin-credit-process-card .admin-credit-note-balance { grid-template-columns: minmax(0, 1fr); }
   .admin-credit-decision-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Nota de crédito: una sola superficie de trabajo por paso. */
+.admin-credit-note-steps { display: flex; gap: .35rem; overflow-x: auto; }
+.admin-credit-note-steps > button { flex: 1 0 auto; min-width: 6rem; padding: .2rem .35rem; }
+.admin-credit-wizard-shell {
+  background: #101e2e;
+  border: 1px solid rgba(140, 200, 242, .24);
+  border-radius: .85rem;
+  margin: .8rem auto 0;
+  max-width: 48rem;
+  overflow: hidden;
+}
+.admin-credit-wizard-topline {
+  align-items: center;
+  border-bottom: 1px solid rgba(140, 200, 242, .16);
+  color: #b8d3e8;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: .72rem;
+  font-weight: 700;
+  gap: .5rem;
+  justify-content: space-between;
+  padding: .6rem .85rem;
+}
+.admin-credit-wizard-topline button,
+.admin-credit-fiscal-details summary { color: #9dd5f8; cursor: pointer; font-size: .7rem; font-weight: 750; }
+.admin-credit-wizard-topline button:hover,
+.admin-credit-fiscal-details summary:hover { text-decoration: underline; }
+.admin-credit-fiscal-details { width: 100%; }
+.admin-credit-fiscal-details .admin-order-bl-meta { margin-top: .65rem; }
+.admin-credit-wizard-stage { min-height: 15rem; padding: 1.1rem; }
+.admin-credit-wizard-stage section { display: grid; gap: .75rem; }
+.admin-credit-wizard-stage h4 { color: #f4f9ff; font-size: 1rem; font-weight: 850; }
+.admin-credit-wizard-stage section > p { color: #b6c9dc; font-size: .75rem; line-height: 1.5; }
+.admin-credit-wizard-options { display: grid; gap: .6rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.admin-credit-wizard-wait { background: #2a231b; border: 1px solid rgba(245, 179, 96, .3); border-radius: .7rem; color: #f5d2a4; display: flex; flex-wrap: wrap; gap: .65rem; padding: .7rem; }
+.admin-credit-wizard-wait p { flex-basis: 100%; font-size: .73rem; }
+.admin-credit-wizard-wait button { border: 1px solid rgba(245, 179, 96, .35); border-radius: .5rem; font-size: .7rem; font-weight: 750; padding: .45rem .65rem; }
+.admin-credit-wizard-wait button:hover { background: rgba(245, 179, 96, .12); }
+.admin-credit-wizard-exception { color: #a7f3d0 !important; }
+.admin-credit-wizard-shell > .admin-credit-note-wizard-nav { margin: 0; padding: .75rem .9rem; }
+.admin-credit-wizard-advanced { display: grid; gap: .85rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.admin-credit-wizard-advanced label { color: #d7e7f4; display: grid; font-size: .72rem; font-weight: 750; gap: .3rem; min-width: 0; }
+.admin-credit-wizard-advanced input,
+.admin-credit-wizard-advanced textarea,
+.admin-credit-wizard-exception-reason textarea { background: #0c1928; border: 1px solid rgba(140, 200, 242, .22); border-radius: .55rem; color: #f4f9ff; min-height: 2.2rem; padding: .45rem .6rem; width: 100%; }
+.admin-credit-wizard-advanced input:focus-visible,
+.admin-credit-wizard-advanced textarea:focus-visible,
+.admin-credit-wizard-exception-reason textarea:focus-visible { outline: 2px solid #73c8fa; outline-offset: 2px; }
+.admin-credit-wizard-advanced .admin-credit-wizard-check { align-items: center; display: flex; }
+.admin-credit-wizard-check input { min-height: 0; width: auto; }
+.admin-credit-wizard-advanced-items { border-top: 1px solid rgba(140, 200, 242, .16); display: grid; gap: .5rem; grid-column: 1 / -1; padding-top: .7rem; }
+.admin-credit-wizard-advanced-items label { align-items: center; display: flex; justify-content: space-between; }
+.admin-credit-wizard-advanced-items input { max-width: 5rem; }
+.admin-credit-wizard-exception-reason { color: #d7e7f4; display: grid; font-size: .75rem; font-weight: 750; gap: .4rem; }
+.admin-credit-wizard-exception-reason textarea { min-height: 6rem; }
+html[data-admin-theme="light"] .admin-credit-wizard-shell { background: #f4f8fc; border-color: #c5d8e8; }
+html[data-admin-theme="light"] .admin-credit-wizard-topline { border-color: #d4e1ec; color: #415d75; }
+html[data-admin-theme="light"] .admin-credit-wizard-topline button,
+html[data-admin-theme="light"] .admin-credit-fiscal-details summary { color: #205784; }
+html[data-admin-theme="light"] .admin-credit-wizard-stage h4 { color: #142b40; }
+html[data-admin-theme="light"] .admin-credit-wizard-stage section > p { color: #4d6478; }
+html[data-admin-theme="light"] .admin-credit-wizard-wait { background: #fff5e8; border-color: #e3c692; color: #67441b; }
+html[data-admin-theme="light"] .admin-credit-wizard-wait button { border-color: #d5b075; }
+html[data-admin-theme="light"] .admin-credit-wizard-advanced label { color: #21384d; }
+html[data-admin-theme="light"] .admin-credit-wizard-advanced input,
+html[data-admin-theme="light"] .admin-credit-wizard-advanced textarea,
+html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { background: #f8fbfe; border-color: #bfd2e2; color: #142b40; }
+@media (max-width: 620px) {
+  .admin-credit-wizard-options,
+  .admin-credit-wizard-advanced { grid-template-columns: 1fr; }
+  .admin-credit-wizard-stage { min-height: 18rem; padding: .85rem; }
+  .admin-credit-wizard-advanced-items { grid-column: auto; }
+  .admin-credit-note-steps > button { min-width: 5.7rem; }
+}
+.admin-credit-wizard-shell > .admin-credit-note-wizard-nav .admin-credit-note-submit {
+  margin-top: 0;
+  white-space: nowrap;
+  width: auto;
+}
+@media (max-width: 620px) { .admin-credit-wizard-stage { min-height: 22rem; } }

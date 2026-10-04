@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
@@ -31,10 +31,8 @@ import {
   LoaderCircle,
   MapPin,
   MessageCircle,
-  Minus,
   Package,
   Pencil,
-  Plus,
   Printer,
   RefreshCw,
   Settings2,
@@ -141,6 +139,7 @@ import {
   AdminEmptyState,
   AdminFiltersBar,
   AdminInfoBlock,
+  AdminModal,
   AdminPageHeader,
   AdminSearchInput,
   AdminSelect,
@@ -2673,15 +2672,6 @@ function RefundManagementPanel({
   )
 }
 
-const OPERATION_TYPE_LABELS: Record<string, string> = {
-  devolucion_parcial: "Devolución parcial",
-  devolucion_total: "Devolución total",
-  cambio_producto: "Cambio de producto",
-  cancelacion_antes_despacho: "Cancelación antes del despacho",
-  reembolso_excepcional: "Reembolso excepcional",
-  ajuste_manual: "Ajuste manual",
-}
-
 const REASON_CODE_LABELS: Record<string, string> = {
   arrepentimiento: "Arrepentimiento del cliente",
   producto_defectuoso: "Producto defectuoso",
@@ -2706,67 +2696,6 @@ const FAILURE_TYPE_TO_REASON_CODE: Record<string, string> = {
   faltante: "producto_faltante",
   cantidad_menor: "producto_faltante",
   cancelar_compra: "cancelacion_antes_despacho",
-}
-
-const RETURN_SHIPPING_PARTY_LABELS: Record<string, string> = {
-  cliente: "A cargo del cliente",
-  beyonix: "A cargo de BEYONIX",
-  no_corresponde: "No corresponde",
-}
-
-const NEW_SHIPPING_PARTY_LABELS: Record<string, string> = {
-  cliente: "A cargo del cliente",
-  beyonix: "Bonificado por BEYONIX",
-  no_corresponde: "No corresponde",
-}
-
-const RECEPTION_STATUS_LABELS: Record<string, string> = {
-  no_requiere: "No requiere devolución",
-  pendiente_despacho: "Pendiente de despacho del cliente",
-  en_transito: "En tránsito",
-  recibido_revision: "Recibido, pendiente de revisión",
-  producto_aprobado: "Producto aprobado",
-  producto_rechazado: "Producto rechazado",
-  aprobado_parcial: "Aprobado parcialmente",
-}
-
-const STOCK_DESTINATION_LABELS: Record<string, string> = {
-  pendiente_revision: "Pendiente de revisión",
-  stock_vendible: "Reingresar a stock vendible",
-  stock_observaciones: "Stock con observaciones",
-  fallado: "Marcar como fallado",
-  garantia_proveedor: "Garantía / proveedor",
-  no_reingresar: "No reingresar",
-}
-
-/**
- * Opción de un segmented control de Resolución: además del color, el
- * estado seleccionado suma un check para que sea inequívoco de un vistazo.
- */
-function ResolutionSegment({
-  selected,
-  disabled,
-  onClick,
-  children,
-}: {
-  selected: boolean
-  disabled?: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      disabled={disabled}
-      onClick={onClick}
-      className={`admin-resolution-segment ${selected ? "is-selected" : ""}`}
-    >
-      {selected && <Check className="admin-resolution-segment-check size-3" />}
-      {children}
-    </button>
-  )
 }
 
 function CreditDestinationOption({
@@ -2846,9 +2775,9 @@ function BillingManagementPanel({
 }) {
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
   const testInvoice = invoiceIssued && !isFiscalArcaVoucher(pedido.invoice_arca_environment)
+  const creditNoteNeeded = needsCreditNoteReminder(pedido)
   const arcaConfiguration = useArcaConfigurationStatus()
   const invoiceIssueBlockReason = getArcaIssueBlockReason(arcaConfiguration.status, arcaConfiguration.loadError)
-  const creditNoteNeeded = needsCreditNoteReminder(pedido)
   const [creditSaving, setCreditSaving] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
   const [creditQuantities, setCreditQuantities] = useState<Record<number, number>>({})
@@ -2877,6 +2806,8 @@ function BillingManagementPanel({
   const [newShippingCost, setNewShippingCost] = useState("")
   const [receptionStatus, setReceptionStatus] = useState("pendiente_despacho")
   const [receptionException, setReceptionException] = useState(false)
+  const [receptionExceptionReason, setReceptionExceptionReason] = useState("")
+  const [exceptionConfirmationOpen, setExceptionConfirmationOpen] = useState(false)
   const [receptionDate, setReceptionDate] = useState("")
   const [receptionNotes, setReceptionNotes] = useState("")
   const [physicalCondition, setPhysicalCondition] = useState("")
@@ -3044,7 +2975,6 @@ function BillingManagementPanel({
   const hasAnyCommercialClaim = (pedido.order_claims ?? []).some(
     (claim) => claim.failure_type !== "consulta_pedido",
   )
-  const linkedClaimCode = linkedClaim ? `REC-${String(linkedClaim.id).padStart(5, "0")}` : null
   const linkedClaimReasonLabel = linkedClaim
     ? PROBLEM_LABELS[linkedClaim.failure_type ?? ""] ?? "Motivo informado por el cliente"
     : null
@@ -3074,6 +3004,27 @@ function BillingManagementPanel({
     },
     0,
   )
+  const trackedReturnUnits = (linkedClaim?.order_claim_units ?? []).filter(
+    (unit) => unit.role === "original",
+  )
+  const claimReturnPending = trackedReturnUnits.some((unit) =>
+    ["con_cliente", "en_andreani", "recibida_beyonix"].includes(unit.location),
+  )
+  const returnAlreadyStarted = trackedReturnUnits.some((unit) =>
+    ["en_andreani", "recibida_beyonix", "reincorporada_stock", "baja"].includes(unit.location),
+  )
+  const trackedReturnInspected = trackedReturnUnits.length > 0 &&
+    trackedReturnUnits.every((unit) =>
+      !unit.incident_open && ["reincorporada_stock", "baja"].includes(unit.location),
+    )
+
+  useEffect(() => {
+    if (!productDecisionMade || returnShippingParty === "no_corresponde" || !trackedReturnInspected) return
+    setReceptionStatus("producto_aprobado")
+    setStockDestination("no_reingresar")
+    setReceptionDecisionMade(true)
+    setReceptionException(false)
+  }, [productDecisionMade, returnShippingParty, trackedReturnInspected])
 
   useEffect(() => {
     setMessage(null)
@@ -3092,6 +3043,8 @@ function BillingManagementPanel({
     setNewShippingCost("")
     setReceptionStatus("pendiente_despacho")
     setReceptionException(false)
+    setReceptionExceptionReason("")
+    setExceptionConfirmationOpen(false)
     setReceptionDate("")
     setReceptionNotes("")
     setPhysicalCondition("")
@@ -3111,6 +3064,12 @@ function BillingManagementPanel({
     setReceptionDecisionMade(false)
     setShowAdminAdjustmentForm(false)
   }, [pedido.id])
+
+  useEffect(() => {
+    if (!returnAlreadyStarted || productDecisionMade) return
+    setReturnShippingParty("cliente")
+    setProductDecisionMade(true)
+  }, [returnAlreadyStarted, productDecisionMade])
 
   // Traduce el motivo que el cliente ya informó en su reclamo al reason_code
   // interno, sin obligar al Admin a elegirlo de nuevo. Si el Admin corrige
@@ -3147,6 +3106,17 @@ function BillingManagementPanel({
   // reescribir las cantidades de una cancelación mientras el Admin opera.
   const linkedClaimResolution = linkedClaim?.resolution ?? ""
   const linkedClaimCustomerResolution = linkedClaim?.customer_selected_resolution ?? ""
+  const knownMoneyDestination = [linkedClaimCustomerResolution, linkedClaimResolution]
+    .find((value) => ["saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(value))
+  useEffect(() => {
+    if (knownMoneyDestination === "saldo_a_favor" && pedido.usuario_id) {
+      setCreditDestination("customer_balance")
+      setMoneyDecisionMade(true)
+    } else if (knownMoneyDestination?.startsWith("reintegro_")) {
+      setCreditDestination("external_refund")
+      setMoneyDecisionMade(true)
+    }
+  }, [knownMoneyDestination, pedido.usuario_id])
   const cancellationCreditQuantitiesKey = JSON.stringify(
     creditableOrderItems.map((item) => [
       item.id,
@@ -3159,6 +3129,12 @@ function BillingManagementPanel({
       ),
     ]),
   )
+  useEffect(() => {
+    if (manualGestionOverride) return
+    setCreditQuantities(
+      Object.fromEntries(JSON.parse(cancellationCreditQuantitiesKey) as Array<[number, number]>),
+    )
+  }, [cancellationCreditQuantitiesKey, manualGestionOverride])
   useEffect(() => {
     if (manualGestionOverride) return
     if (linkedClaimFailureType === "cancelar_compra") {
@@ -3261,6 +3237,8 @@ function BillingManagementPanel({
     setProductDecisionMade(true)
     if (party !== returnShippingParty) {
       setReceptionDecisionMade(false)
+      setReceptionException(false)
+      setReceptionExceptionReason("")
       setReturnShippingProvider("")
       setReturnShippingTracking("")
       setReturnShippingCost("")
@@ -3281,9 +3259,11 @@ function BillingManagementPanel({
   // al estado pendiente por defecto al cruzar de un lado al otro.
   const selectReceptionPresence = (received: boolean) => {
     setReceptionDecisionMade(true)
+    setReceptionException(false)
+    setReceptionExceptionReason("")
     if (received) {
       if (!isPhysicallyReceivedStatus(receptionStatus)) {
-        handleReceptionStatusChange("recibido_revision")
+        handleReceptionStatusChange(trackedReturnUnits.length > 0 && !trackedReturnInspected ? "recibido_revision" : "producto_aprobado")
       }
     } else if (isPhysicallyReceivedStatus(receptionStatus)) {
       handleReceptionStatusChange("pendiente_despacho")
@@ -3334,6 +3314,7 @@ function BillingManagementPanel({
             Number(newShippingCost.replace(/\./g, "").replace(",", ".")) || 0,
           reception_status: receptionStatus,
           reception_exception: receptionException,
+          reception_exception_reason: receptionException ? receptionExceptionReason.trim() : null,
           reception_date: receptionDate,
           reception_notes: receptionNotes,
           physical_condition: physicalCondition,
@@ -3423,6 +3404,7 @@ function BillingManagementPanel({
   }
 
   const canReviewAndEmit =
+    selectedCreditUnits > 0 &&
     productDecisionMade &&
     moneyDecisionMade &&
     (returnShippingParty === "no_corresponde" || receptionDecisionMade) &&
@@ -3430,6 +3412,9 @@ function BillingManagementPanel({
     newCreditTotal <= invoiceCreditRemaining + 0.005 &&
     !(reasonCode === "otro" && !reasonDetail.trim()) &&
     !(receptionStatus === "producto_rechazado" && !receptionNotes.trim()) &&
+    (!receptionException || receptionExceptionReason.trim().length >= 10) &&
+    (!claimReturnPending || receptionException) &&
+    !trackedReturnUnits.some((unit) => unit.incident_open) &&
     !(
       !["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(
         receptionStatus,
@@ -3447,6 +3432,9 @@ function BillingManagementPanel({
     wizardStep >= 3 && productDecisionMade && receptionDecisionMade && !["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(receptionStatus) && !receptionException
       ? "Registrá la recepción o autorizá la excepción para continuar."
       : null,
+    receptionException && receptionExceptionReason.trim().length < 10 ? "Explicá el motivo de la excepción para que quede auditado." : null,
+    trackedReturnUnits.some((unit) => unit.incident_open) ? "Resolvé el incidente del reclamo antes de emitir." : null,
+    claimReturnPending && returnShippingParty === "no_corresponde" && !receptionException ? "Confirmá la excepción para emitir sin devolución física." : null,
   ].filter((item): item is string => Boolean(item))
 
   return (
@@ -3468,7 +3456,7 @@ function BillingManagementPanel({
           </div>
           {invoiceIssued && (
             <p className="admin-order-bl-subtitle">
-              Emitida {formatOptionalOrderDate(pedido.invoice_created_at)}
+              Pedido {formatPublicOrderId(pedido.id)} · Total {formatPrice(Number(pedido.total ?? 0))} · Nota de crédito: {creditNoteIssued ? "emitida" : creditNoteProcessing ? "en proceso" : pedido.credit_note_status === "error" ? "con error" : creditNoteNeeded ? "pendiente" : "no requerida"}
             </p>
           )}
         </div>
@@ -3508,11 +3496,14 @@ function BillingManagementPanel({
           </button>
         )}
         {invoiceIssued && (
-          <div className="admin-order-bl-meta admin-credit-invoice-meta">
+          <details className="admin-credit-fiscal-details">
+            <summary>Ver detalles fiscales</summary>
+            <div className="admin-order-bl-meta admin-credit-invoice-meta">
             <BillingDetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
             <BillingDetailValue label="Fecha de emisión" value={formatOptionalOrderDate(pedido.invoice_created_at)} />
             <BillingDetailValue label="Vencimiento CAE" value={formatInvoiceDate(pedido.invoice_cae_due)} />
-          </div>
+            </div>
+          </details>
         )}
       </div>
 
@@ -3541,86 +3532,7 @@ function BillingManagementPanel({
         onBillingUpdated={onBillingUpdated}
       />
 
-      {creditNoteNeeded && (
-        <div className="admin-order-bl-alert">
-          <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="admin-order-bl-alert-title">Nota de crédito requerida</p>
-            <p className="admin-order-bl-alert-desc">
-              La Factura C ya fue emitida y el pedido tiene una nota de crédito pendiente.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {invoiceIssued ? (
-        <section className="admin-order-bl-body admin-credit-process-card" aria-labelledby="credit-process-title">
-          <div className="admin-credit-process-heading">
-            <h4 id="credit-process-title">Estado del proceso de cancelación / nota de crédito</h4>
-            <p>Comprobantes y saldo disponible para esta gestión.</p>
-          </div>
-          <div className="admin-order-bl-status-list">
-            <AccountingStatusRow
-              Icon={CheckCircle2}
-              title="Factura emitida"
-              badge="Completado"
-              tone="green"
-            />
-            <AccountingStatusRow
-              Icon={
-                creditNoteIssued
-                  ? CheckCircle2
-                  : pedido.credit_note_status === "error"
-                    ? AlertTriangle
-                    : Clock3
-              }
-              title={
-                creditNoteIssued
-                  ? "Nota de crédito emitida"
-                  : creditNoteProcessing
-                    ? "Nota de crédito en proceso"
-                    : pedido.credit_note_status === "error"
-                      ? "Nota de crédito con error"
-                      : creditNoteNeeded
-                        ? "Nota de crédito pendiente"
-                        : "Nota de crédito no requerida"
-              }
-              badge={
-                creditNoteIssued
-                  ? "Completado"
-                  : creditNoteProcessing
-                    ? "Procesando"
-                    : pedido.credit_note_status === "error"
-                      ? "Error"
-                      : creditNoteNeeded
-                        ? "Pendiente"
-                        : "No requerida"
-              }
-              tone={
-                creditNoteIssued
-                  ? "green"
-                  : creditNoteProcessing
-                    ? "blue"
-                    : pedido.credit_note_status === "error"
-                      ? "red"
-                      : creditNoteNeeded
-                        ? "amber"
-                        : "gray"
-              }
-            />
-            <AccountingStatusRow
-              Icon={Download}
-              title="Descarga disponible"
-              badge="Disponible"
-              tone="green"
-            />
-          </div>
-          <div className="admin-credit-note-balance">
-            <div><span>Monto acreditado</span><strong>{formatPrice(authorizedCreditTotal)}</strong></div>
-            <div className="admin-credit-note-balance-primary"><span>Disponible para resolver</span><strong>{formatPrice(invoiceCreditRemaining)}</strong></div>
-          </div>
-        </section>
-      ) : !isApprovedPayment(pedido) ? (
+      {invoiceIssued ? null : !isApprovedPayment(pedido) ? (
         <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
           Confirmá el pago antes de emitir la factura.
         </p>
@@ -3635,7 +3547,7 @@ function BillingManagementPanel({
               <div>
                 <p className="admin-order-bl-eyebrow">Asistente de resolución</p>
                 <h3 className="admin-order-bl-title">Crear nota de crédito</h3>
-                <p className="admin-credit-note-intro">Elegí los productos, definí el dinero y registrá la devolución. Antes de emitir, vas a revisar todo.</p>
+                <p className="admin-credit-note-intro">Un paso por vez. Los datos del reclamo ya están cargados.</p>
               </div>
             </div>
           </header>
@@ -3787,850 +3699,117 @@ function BillingManagementPanel({
 
           {invoiceCreditRemaining > 0 && hasEligibleClaim && (
             <>
-              <div className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
-                <button
-                  type="button"
-                  aria-current={wizardStep === 1 ? "step" : undefined}
-                  onClick={() => setWizardStep(1)}
-                  className={`cursor-pointer border-0 bg-transparent p-0 text-left ${wizardStep === 1 ? "is-current" : selectedCreditUnits > 0 && productDecisionMade ? "is-complete" : ""}`}
-                >
-                  <b>1</b> Producto
-                </button>
-                <button
-                  type="button"
-                  disabled={selectedCreditUnits === 0 || !productDecisionMade}
-                  aria-current={wizardStep === 2 ? "step" : undefined}
-                  onClick={() => selectedCreditUnits > 0 && productDecisionMade && setWizardStep(2)}
-                  className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 2 ? "is-current" : wizardStep > 2 ? "is-complete" : ""}`}
-                >
-                  <b>2</b> Dinero
-                </button>
-                <button
-                  type="button"
-                  disabled={wizardStep < 3}
-                  aria-current={wizardStep === 3 ? "step" : undefined}
-                  onClick={() => wizardStep >= 3 && setWizardStep(3)}
-                  className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 3 ? "is-current" : wizardStep === 4 ? "is-complete" : ""}`}
-                >
-                  <b>3</b> Devolución
-                </button>
-              </div>
-
-              <section className="admin-credit-decision-summary" aria-labelledby="credit-decision-summary-title" aria-live="polite">
-                <div className="admin-credit-decision-summary-heading">
-                  <div>
-                    <h4 id="credit-decision-summary-title">Resumen de la nota de crédito</h4>
-                    <p>Se actualiza con las decisiones de esta gestión.</p>
-                  </div>
-                  <strong>{formatPrice(newCreditTotal)}</strong>
-                </div>
-                <dl>
-                  <div><dt>Motivo</dt><dd>{reasonDetail || creditReason || (REASON_CODE_LABELS[reasonCode] ?? reasonCode)}</dd></div>
-                  <div><dt>Productos</dt><dd>{selectedCreditUnits ? `${selectedCreditUnits} ${selectedCreditUnits === 1 ? "unidad" : "unidades"}` : "Sin seleccionar"}</dd></div>
-                  <div><dt>Producto</dt><dd>{!productDecisionMade ? "Por definir" : returnShippingParty === "no_corresponde" ? "No vuelve" : "Debe volver"}</dd></div>
-                  <div><dt>Dinero</dt><dd>{!moneyDecisionMade ? "Por definir" : creditDestination === "customer_balance" ? "Saldo BEYONIX" : "Reintegro externo"}</dd></div>
-                  <div><dt>Recepción</dt><dd>{!productDecisionMade ? "Por definir" : returnShippingParty === "no_corresponde" ? "No corresponde" : !receptionDecisionMade ? "Por definir" : isPhysicallyReceivedStatus(receptionStatus) ? "Recibido" : "Pendiente"}</dd></div>
-                  <div><dt>Excepción</dt><dd>{receptionException ? "Autorizada" : "No"}</dd></div>
-                </dl>
-                {creditNoteMissing.length > 0 && (
-                  <div className="admin-credit-decision-missing" role="status">
-                    <strong>Antes de emitir falta:</strong>
-                    <ul>{creditNoteMissing.map((item) => <li key={item}>{item}</li>)}</ul>
-                  </div>
-                )}
-                <p>Al continuar, podrás revisar y emitir la nota de crédito. Ningún saldo ni reintegro se aplica sin un CAE válido.</p>
-              </section>
-
-              {wizardStep === 1 && (
-                <div className="admin-credit-note-editor-step mt-3">
-                <section className="admin-credit-note-step-card admin-credit-note-products-panel">
-                  <div className="admin-credit-note-step-heading">
-                    <div>
-                      <h4>Paso 1 — ¿Qué pasa con el producto?</h4>
-                      <p>Elegí las unidades del reclamo que incluirá la nota y si deben volver.</p>
-                    </div>
-                  </div>
-
-                  <div className="admin-credit-note-products">
-                    <div className="admin-credit-note-product-head" aria-hidden="true">
-                      <span>Producto</span>
-                      <span>Disponible</span>
-                      <span>Precio</span>
-                      <span>Cantidad</span>
-                      <span>Se acreditan</span>
-                    </div>
-                    {creditableOrderItems.map((item) => {
-                      const allocation = itemAllocations.get(item.id)
-                      const used = committedQuantityByItem.get(item.id) ?? 0
-                      const available = Math.max(
-                        0,
-                        Math.min(
-                          Number(item.cantidad),
-                          claimAffectedQuantityByItem.get(item.id) ?? 0,
-                        ) - used,
-                      )
-                      const quantity = Math.min(
-                        available,
-                        Number(creditQuantities[item.id] ?? 0),
-                      )
-                      const lineAmount = allocation
-                        ? calculatePartialLineAmount(allocation, quantity)
-                        : 0
-                      const productName =
-                        item.productos?.nombre ?? `Artículo #${item.producto_id}`
-                      const variantName =
-                        item.conditioned_name ||
-                        item.producto_variantes?.nombre
-                      const productImage = getItemImage(item)
-                      const unitPrice = Number(item.precio ?? 0)
-                      const changeQuantity = (next: number) =>
-                        setCreditQuantities((current) => ({
-                          ...current,
-                          [item.id]: Math.max(0, Math.min(available, next)),
-                        }))
-
-                      return (
-                        <article
-                          key={item.id}
-                          className={`admin-credit-note-product ${
-                            quantity > 0 ? "is-selected" : ""
-                          } ${available === 0 ? "is-disabled" : ""}`}
-                        >
-                          <div className="admin-credit-note-product-copy">
-                            <span className="admin-credit-note-product-thumb">
-                              {productImage ? (
-                                <img src={productImage} alt={productName} className="size-full object-contain" />
-                              ) : (
-                                <Package className="size-4 text-black/35" />
-                              )}
-                            </span>
-                            <div>
-                              <h5>{productName}</h5>
-                              {variantName && <p>{variantName}</p>}
-                            </div>
-                          </div>
-
-                          <span className="admin-credit-note-product-available">
-                            {available > 0
-                              ? `${available} ${available === 1 ? "unidad" : "unidades"}`
-                              : "Acreditado"}
-                          </span>
-
-                          <span className="admin-credit-note-product-price">
-                            {formatPrice(unitPrice)}
-                          </span>
-
-                          {available > 0 ? (
-                            <div className="admin-credit-note-counter" aria-label={`Cantidad de ${productName}`}>
-                              <button
-                                type="button"
-                                aria-label={`Quitar una unidad de ${productName}`}
-                                disabled={quantity === 0 || creditNoteProcessing}
-                                onClick={() => changeQuantity(quantity - 1)}
-                              >
-                                <Minus className="size-3.5" />
-                              </button>
-                              <strong>{quantity}</strong>
-                              <button
-                                type="button"
-                                aria-label={`Agregar una unidad de ${productName}`}
-                                disabled={quantity >= available || creditNoteProcessing}
-                                onClick={() => changeQuantity(quantity + 1)}
-                              >
-                                <Plus className="size-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="admin-credit-note-product-dash">—</span>
-                          )}
-
-                          {available > 0 ? (
-                            <span className="admin-credit-note-product-total">
-                              {formatPrice(lineAmount)}
-                            </span>
-                          ) : (
-                            <span className="admin-credit-note-product-dash">—</span>
-                          )}
-                        </article>
-                      )
-                    })}
-                  </div>
-                  {selectedCreditUnits === 0 && (
-                    <p className="admin-credit-note-guidance">
-                      Usá el botón <Plus className="size-3" /> para agregar las
-                      unidades incluidas en el reclamo.
-                    </p>
-                  )}
-                  <div className="admin-credit-decision-card">
-                    <h5>¿El producto vuelve?</h5>
-                    <p>Esto define si hay que registrar una devolución y su recepción.</p>
-                    <div className="admin-resolution-segmented" role="radiogroup" aria-label="Devolución del producto">
-                      <ResolutionSegment selected={productDecisionMade && returnShippingParty === "no_corresponde"} disabled={creditNoteProcessing} onClick={() => selectReturnShippingMode("no_corresponde")}>No vuelve</ResolutionSegment>
-                      <ResolutionSegment selected={productDecisionMade && returnShippingParty !== "no_corresponde"} disabled={creditNoteProcessing} onClick={() => selectReturnShippingMode("cliente")}>Debe volver</ResolutionSegment>
-                    </div>
-                  </div>
-                </section>
-
-                <div className="admin-credit-note-wizard-nav">
-                  <span className="admin-credit-note-wizard-hint">
-                    {selectedCreditUnits > 0 && productDecisionMade
-                      ? `${selectedCreditUnits} ${selectedCreditUnits === 1 ? "unidad seleccionada" : "unidades seleccionadas"} · ${formatPrice(selectedItemsAmount)}`
-                      : selectedCreditUnits === 0 ? "Seleccioná al menos un producto para continuar." : "Falta definir qué pasa con el producto."}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={selectedCreditUnits === 0 || !productDecisionMade}
-                    onClick={() => setWizardStep(2)}
-                    className="admin-credit-note-wizard-next"
-                  >
-                    Continuar a dinero
-                    <ArrowRight className="size-3.5" />
+              <nav className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
+                {([
+                  [1, "Producto"], [2, "Resolución"],
+                  ...(productDecisionMade && returnShippingParty === "no_corresponde" ? [] : [[3, "Devolución"]]),
+                  [4, "Revisar"],
+                ] as Array<[1 | 2 | 3 | 4, string]>).map(([step, label], index) => (
+                  <button key={step} type="button" aria-current={wizardStep === step ? "step" : undefined}
+                    disabled={step > wizardStep || (step === 4 && !canReviewAndEmit)}
+                    onClick={() => setWizardStep(step)}
+                    className={wizardStep === step ? "is-current" : step < wizardStep ? "is-complete" : ""}>
+                    <b>{index + 1}</b> {label}
                   </button>
+                ))}
+              </nav>
+              <div className="admin-credit-wizard-shell">
+                <div className="admin-credit-wizard-topline">
+                  <span>{formatPrice(invoiceCreditRemaining)} disponibles para resolver</span>
+                  <button type="button" onClick={() => setAdvancedOptionsOpen(true)}>Opciones avanzadas</button>
                 </div>
-                </div>
-              )}
-
-              {(wizardStep === 2 || wizardStep === 3) && (
-                <div className="admin-credit-note-editor-step mt-3">
-                <section className="admin-credit-note-step-card admin-credit-note-resolution-panel">
-                  <div className="admin-credit-note-step-heading">
-                    <div>
-                      <h4>{wizardStep === 2 ? "Paso 2 — ¿Cómo se resuelve el dinero?" : "Paso 3 — Devolución y recepción"}</h4>
-                      <p>{wizardStep === 2 ? "Elegí cómo recibirá el cliente el importe de la nota de crédito." : "Si el producto vuelve, registrá quién gestiona la devolución y el estado de recepción."}</p>
+                <div className="admin-credit-wizard-stage">
+                  {wizardStep === 1 && <section aria-labelledby="credit-wizard-product-title">
+                    <h4 id="credit-wizard-product-title">¿Qué pasa con el producto?</h4>
+                    <p>Los artículos y las cantidades se toman del reclamo aprobado.</p>
+                    <div className="admin-credit-wizard-options" role="radiogroup" aria-label="Devolución del producto">
+                      <CreditDestinationOption selected={productDecisionMade && returnShippingParty === "no_corresponde"} onClick={() => selectReturnShippingMode("no_corresponde")} title="No vuelve" description="No hay devolución ni recepción que registrar." />
+                      <CreditDestinationOption selected={productDecisionMade && returnShippingParty !== "no_corresponde"} onClick={() => selectReturnShippingMode("cliente")} title="Debe volver" description="Se comprobará la recepción antes de emitir." />
                     </div>
-                  </div>
-
-                  <div className="admin-resolution-context">
-                    {linkedClaim && (
-                      <div className="admin-resolution-context-motive">
-                        <span className="admin-resolution-context-label">
-                          Motivo informado por el cliente
-                        </span>
-                        <span className="admin-resolution-context-value">{linkedClaimReasonLabel}</span>
+                    {productDecisionMade && returnShippingParty === "no_corresponde" && claimReturnPending && !receptionException && (
+                      <div className="admin-credit-wizard-wait" role="status">
+                        <p>El reclamo registra unidades pendientes de devolución. Para emitir sin recibirlas, se necesita una excepción auditada.</p>
+                        <button type="button" onClick={() => setExceptionConfirmationOpen(true)}>Continuar excepcionalmente</button>
                       </div>
                     )}
-                    <div className="admin-resolution-context-aside">
-                      {linkedClaimCode && (
-                        <span className="admin-resolution-context-code">{linkedClaimCode}</span>
-                      )}
-                      <span className="admin-resolution-context-meta">
-                        {selectedCreditUnits > 0
-                          ? `${selectedCreditUnits} ${selectedCreditUnits === 1 ? "unidad" : "unidades"} · ${formatPrice(selectedItemsAmount)}`
-                          : formatPrice(selectedItemsAmount)}
-                      </span>
+                  </section>}
+                  {wizardStep === 2 && <section aria-labelledby="credit-wizard-money-title">
+                    <h4 id="credit-wizard-money-title">¿Cómo querés resolver los {formatPrice(newCreditTotal)}?</h4>
+                    <p>El movimiento se aplica después de que ARCA autorice la nota.</p>
+                    <div className="admin-credit-wizard-options" role="radiogroup" aria-label="Destino del dinero">
+                      {pedido.usuario_id && <CreditDestinationOption selected={moneyDecisionMade && creditDestination === "customer_balance"} onClick={() => { setCreditDestination("customer_balance"); setMoneyDecisionMade(true) }} title="Saldo BEYONIX" description="El importe queda acreditado en la cuenta del cliente." />}
+                      <CreditDestinationOption selected={moneyDecisionMade && creditDestination === "external_refund"} onClick={() => { setCreditDestination("external_refund"); setMoneyDecisionMade(true) }} title="Reintegro externo" description="El dinero se devuelve por fuera de BEYONIX." />
                     </div>
-                  </div>
-
-                  <div className="admin-resolution-decisions">
-                  {wizardStep === 2 && <div className="admin-credit-decision-card">
-                    <h5>Dinero / resolución</h5>
-                    <p>El movimiento se registra después de que ARCA autorice la nota de crédito.</p>
-                  <div className="admin-resolution-grid">
-                    <div className="admin-resolution-question">
-                      <span className="admin-resolution-question-label">¿Cómo se resuelve el dinero?</span>
-                      <div
-                        className="admin-resolution-segmented"
-                        role="radiogroup"
-                        aria-label="Destino del dinero"
-                      >
-                        <ResolutionSegment
-                          selected={moneyDecisionMade && creditDestination === "customer_balance"}
-                          disabled={creditNoteProcessing}
-                          onClick={() => { setCreditDestination("customer_balance"); setMoneyDecisionMade(true) }}
-                        >
-                          Saldo BEYONIX
-                        </ResolutionSegment>
-                        <ResolutionSegment
-                          selected={moneyDecisionMade && creditDestination === "external_refund"}
-                          disabled={creditNoteProcessing}
-                          onClick={() => { setCreditDestination("external_refund"); setMoneyDecisionMade(true) }}
-                        >
-                          Reintegro externo
-                        </ResolutionSegment>
+                  </section>}
+                  {wizardStep === 3 && returnShippingParty !== "no_corresponde" && <section aria-labelledby="credit-wizard-return-title">
+                    <h4 id="credit-wizard-return-title">¿El producto ya volvió a BEYONIX?</h4>
+                    {trackedReturnInspected ? <p role="status">La recepción y revisión ya están registradas en el reclamo.</p> : <>
+                      <div className="admin-credit-wizard-options" role="radiogroup" aria-label="Recepción del producto">
+                        <CreditDestinationOption selected={receptionDecisionMade && isPhysicallyReceivedStatus(receptionStatus)} onClick={() => selectReceptionPresence(true)} title="Sí, ya fue recibido" description="Usaremos la recepción registrada en el reclamo." />
+                        <CreditDestinationOption selected={receptionDecisionMade && !isPhysicallyReceivedStatus(receptionStatus)} onClick={() => selectReceptionPresence(false)} title="No, todavía no" description="Esperá la recepción o autorizá una excepción." />
                       </div>
-                      <p className="admin-credit-choice-help"><b>Saldo BEYONIX:</b> el importe queda acreditado como saldo a favor del cliente.<br /><b>Reintegro externo:</b> el dinero se devuelve por fuera del sistema.</p>
-                    </div>
-                  </div>
-                  </div>}
-                  {wizardStep === 2 && originalShippingPaid > 0 && (
-                    <label className="admin-return-check-row admin-return-check-row-compact">
-                      <span><b>Reintegrar envío original</b><small>Pagado: {formatPrice(originalShippingPaid)}</small></span>
-                      <input type="checkbox" checked={includeOriginalShipping} disabled={creditNoteProcessing} onChange={(event) => setIncludeOriginalShipping(event.target.checked)} />
-                    </label>
-                  )}
-
-                  {wizardStep === 3 && <div className="admin-credit-decision-card">
-                    <h5>Devolución / recepción</h5>
-                    <p>{returnShippingParty === "no_corresponde" ? "El producto no vuelve; no hace falta registrar recepción." : "Indicá quién canaliza la devolución y si el producto llegó a BEYONIX."}</p>
-                  <div className="admin-resolution-grid">
-
-                    {returnShippingParty !== "no_corresponde" && (
-                      <div className="admin-resolution-question">
-                        <span className="admin-resolution-question-label">Canal de devolución</span>
-                        <div
-                          className="admin-resolution-segmented"
-                          role="radiogroup"
-                          aria-label="Responsable de la devolución"
-                        >
-                          <ResolutionSegment
-                            selected={returnShippingParty === "beyonix"}
-                            disabled={creditNoteProcessing}
-                            onClick={() => selectReturnShippingMode("beyonix")}
-                          >
-                            BEYONIX
-                          </ResolutionSegment>
-                          <ResolutionSegment
-                            selected={returnShippingParty === "cliente"}
-                            disabled={creditNoteProcessing}
-                            onClick={() => selectReturnShippingMode("cliente")}
-                          >
-                            Cliente / externo
-                          </ResolutionSegment>
-                        </div>
-                      </div>
-                    )}
-
-                    {returnShippingParty !== "no_corresponde" && (
-                      <div className="admin-resolution-question">
-                        <span className="admin-resolution-question-label">Estado de recepción</span>
-                        <div
-                          className="admin-resolution-segmented"
-                          role="radiogroup"
-                          aria-label="Recepción del producto"
-                        >
-                          <ResolutionSegment
-                            selected={receptionDecisionMade && !isPhysicallyReceivedStatus(receptionStatus)}
-                            disabled={creditNoteProcessing}
-                            onClick={() => selectReceptionPresence(false)}
-                          >
-                            Todavía no
-                          </ResolutionSegment>
-                          <ResolutionSegment
-                            selected={receptionDecisionMade && isPhysicallyReceivedStatus(receptionStatus)}
-                            disabled={creditNoteProcessing}
-                            onClick={() => selectReceptionPresence(true)}
-                          >
-                            Recibido
-                          </ResolutionSegment>
-                        </div>
-                      </div>
-                    )}
-
-                    {isPhysicallyReceivedStatus(receptionStatus) && (
-                      <div className="admin-resolution-question">
-                        <span className="admin-resolution-question-label">Resultado</span>
-                        <div
-                          className="admin-resolution-segmented"
-                          role="radiogroup"
-                          aria-label="Resultado de la revisión"
-                        >
-                          <ResolutionSegment
-                            selected={receptionStatus === "producto_aprobado"}
-                            disabled={creditNoteProcessing}
-                            onClick={() => handleReceptionStatusChange("producto_aprobado")}
-                          >
-                            Aprobado
-                          </ResolutionSegment>
-                          <ResolutionSegment
-                            selected={receptionStatus === "aprobado_parcial"}
-                            disabled={creditNoteProcessing}
-                            onClick={() => handleReceptionStatusChange("aprobado_parcial")}
-                          >
-                            Parcial
-                          </ResolutionSegment>
-                          <ResolutionSegment
-                            selected={receptionStatus === "producto_rechazado"}
-                            disabled={creditNoteProcessing}
-                            onClick={() => handleReceptionStatusChange("producto_rechazado")}
-                          >
-                            Rechazado
-                          </ResolutionSegment>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {wizardStep === 3 && (["producto_aprobado", "aprobado_parcial", "producto_rechazado"].includes(
-                      receptionStatus,
-                    ) ||
-                    receptionStatus === "aprobado_parcial" ||
-                    receptionStatus === "producto_rechazado" ||
-                    operationType === "cambio_producto") && (
-                    <div className="admin-resolution-decisions-extra">
-                      {["producto_aprobado", "aprobado_parcial", "producto_rechazado"].includes(
-                        receptionStatus,
-                      ) && (
-                        <div className="admin-resolution-question">
-                          <span className="admin-resolution-question-label">
-                            Destino del producto
-                          </span>
-                          <AdminSelect
-                            title="Destino del producto"
-                            ariaLabel="Seleccionar destino del producto devuelto"
-                            value={stockDestination}
-                            disabled={creditNoteProcessing}
-                            compact
-                            onChange={setStockDestination}
-                          >
-                            <option value="pendiente_revision">Pendiente de revisión</option>
-                            <option value="stock_vendible">Reingresar a stock vendible</option>
-                            <option value="stock_observaciones">
-                              Stock con observaciones
-                            </option>
-                            <option value="fallado">Marcar como fallado</option>
-                            <option value="garantia_proveedor">
-                              Garantía / proveedor
-                            </option>
-                            <option value="no_reingresar">No reingresar</option>
-                          </AdminSelect>
-                          {stockDestination === "stock_observaciones" && (
-                            <input
-                              type="number"
-                              min="1"
-                              max="99"
-                              step="1"
-                              value={conditionedDiscountPercent}
-                              onChange={(event) =>
-                                setConditionedDiscountPercent(event.target.value)
-                              }
-                              aria-label="Porcentaje de descuento del producto devuelto"
-                              className="admin-resolution-compact-input"
-                            />
-                          )}
-                        </div>
-                      )}
-
-                      {(receptionStatus === "aprobado_parcial" ||
-                        receptionStatus === "producto_rechazado") && (
-                        <label className="admin-resolution-required-field">
-                          <span>
-                            {receptionStatus === "producto_rechazado"
-                              ? "Observación (obligatoria)"
-                              : "Observación"}
-                          </span>
-                          <textarea
-                            value={receptionNotes}
-                            onChange={(event) => setReceptionNotes(event.target.value)}
-                            placeholder={
-                              receptionStatus === "producto_rechazado"
-                                ? "Motivo del rechazo"
-                                : "Qué diferencia se detectó al revisar"
-                            }
-                            rows={2}
-                          />
-                        </label>
-                      )}
-
-                      {operationType === "cambio_producto" && (
-                        <div className="admin-resolution-question">
-                          <span className="admin-resolution-question-label">Nuevo envío</span>
-                          <AdminSelect
-                            title="Nuevo envío"
-                            ariaLabel="Seleccionar responsable del nuevo envío"
-                            value={newShippingParty}
-                            disabled={creditNoteProcessing}
-                            compact
-                            onChange={setNewShippingParty}
-                          >
-                            <option value="cliente">A cargo del cliente</option>
-                            <option value="beyonix">Bonificado por BEYONIX</option>
-                            <option value="no_corresponde">No corresponde</option>
-                          </AdminSelect>
-                          {newShippingParty !== "no_corresponde" && (
-                            <input
-                              inputMode="decimal"
-                              value={newShippingCost}
-                              onChange={(event) => setNewShippingCost(event.target.value)}
-                              placeholder="Costo del nuevo envío"
-                              className="admin-resolution-compact-input"
-                            />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  </div>}
-                  </div>
-
-                  {wizardStep === 3 && !["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(
-                    receptionStatus,
-                  ) && (
-                    <label className="admin-return-exception-row">
-                      <AlertTriangle className="admin-resolution-exception-icon size-4" />
-                      <span>
-                        Autorizar excepción sin recepción aprobada
-                        <small>Permite continuar sin registrar la recepción física del producto. Quedará auditado el administrador responsable.</small>
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={receptionException}
-                        onChange={(event) =>
-                          setReceptionException(event.target.checked)
-                        }
-                      />
-                    </label>
-                  )}
-
-                  {wizardStep === 3 && (advancedOptionsOpen ? (
-                    <div className="admin-resolution-advanced-panel">
-                      <div className="admin-credit-note-refund-extras">
-                        <label className="admin-credit-note-field">
-                          <span>Tipo de gestión</span>
-                          <AdminSelect
-                            title="Tipo de gestión"
-                            ariaLabel="Seleccionar tipo de gestión"
-                            value={operationType}
-                            disabled={creditNoteProcessing}
-                            onChange={(value) => {
-                              setManualGestionOverride(true)
-                              selectOperationType(value)
-                            }}
-                            compact
-                          >
-                            <option value="devolucion_parcial">Devolución parcial</option>
-                            <option value="devolucion_total">Devolución total</option>
-                            <option value="cambio_producto">Cambio de producto</option>
-                            {linkedClaim?.failure_type === "cancelar_compra" && (
-                              <option value="cancelacion_antes_despacho">
-                                Cancelación antes del despacho
-                              </option>
-                            )}
-                          </AdminSelect>
-                        </label>
-
-                        {reasonCode === "otro" && (
-                          <label className="admin-credit-note-reason admin-credit-note-field-wide">
-                            <span>Detalle del motivo</span>
-                            <input
-                              required
-                              type="text"
-                              maxLength={500}
-                              value={reasonDetail}
-                              disabled={creditNoteProcessing}
-                              onChange={(event) => setReasonDetail(event.target.value)}
-                              placeholder="Describí el motivo de la gestión"
-                            />
-                          </label>
-                        )}
-                        {manualGestionOverride && (
-                          <button
-                            type="button"
-                            className="admin-credit-note-disclosure"
-                            onClick={() => setManualGestionOverride(false)}
-                          >
-                            Volver a automático
-                          </button>
-                        )}
-
-                        <label className="admin-credit-note-reason">
-                          <span>
-                            Observación interna
-                            <small>Opcional · máximo 120 caracteres</small>
-                          </span>
-                          <input
-                            type="text"
-                            maxLength={120}
-                            value={creditReason}
-                            disabled={creditNoteProcessing}
-                            onChange={(event) => setCreditReason(event.target.value)}
-                            placeholder="Detalle breve para auditoría"
-                          />
-                        </label>
-
-                        <label>
-                          <span>
-                            Ajuste adicional <small>Opcional · se suma al importe de productos</small>
-                          </span>
-                          <div className="admin-credit-note-money-input">
-                            <b>$</b>
-                            <input
-                              inputMode="decimal"
-                              value={manualCreditAmount}
-                              disabled={creditNoteProcessing}
-                              onChange={(event) => handleManualAmountChange(event.target.value)}
-                              placeholder="0,00"
-                              aria-invalid={manualAmountRejected || undefined}
-                            />
-                          </div>
-                          {manualAmountRejected && (
-                            <em role="alert" className="admin-credit-adjustment-error">
-                              Usá sólo números, con punto o coma para los decimales (máximo 2).
-                            </em>
-                          )}
-                          <em>No reemplaza el importe de los productos: se suma. No incluye el envío original, que se calcula por separado.</em>
-                        </label>
-
-                        {returnShippingParty !== "no_corresponde" && (
-                          <label className="admin-credit-note-field admin-credit-note-field-wide">
-                            <span>
-                              Datos del envío de devolución <small>Opcional</small>
-                            </span>
-                            <div className="admin-return-inline-fields">
-                              <input
-                                type="text"
-                                value={returnShippingProvider}
-                                onChange={(event) =>
-                                  setReturnShippingProvider(event.target.value)
-                                }
-                                placeholder="Operador logístico"
-                              />
-                              <input
-                                type="text"
-                                value={returnShippingTracking}
-                                onChange={(event) =>
-                                  setReturnShippingTracking(event.target.value)
-                                }
-                                placeholder="Seguimiento"
-                              />
-                              <input
-                                inputMode="decimal"
-                                value={returnShippingCost}
-                                onChange={(event) =>
-                                  setReturnShippingCost(event.target.value)
-                                }
-                                placeholder="Costo del envío"
-                              />
-                            </div>
-                          </label>
-                        )}
-
-                        {isPhysicallyReceivedStatus(receptionStatus) && (
-                          <div className="admin-credit-note-inspection-meta">
-                            {receptionStatus === "producto_aprobado" && (
-                              <textarea
-                                value={receptionNotes}
-                                onChange={(event) => setReceptionNotes(event.target.value)}
-                                placeholder="Observaciones internas (opcional)"
-                                rows={2}
-                              />
-                            )}
-                            <div className="admin-return-inline-fields">
-                              <input
-                                type="date"
-                                value={receptionDate}
-                                onChange={(event) => setReceptionDate(event.target.value)}
-                                aria-label="Fecha de recepción"
-                              />
-                              <input
-                                type="text"
-                                value={physicalCondition}
-                                onChange={(event) => setPhysicalCondition(event.target.value)}
-                                placeholder="Estado físico"
-                              />
-                            </div>
-                            <div className="admin-return-inline-fields">
-                              <label className="admin-credit-note-field">
-                                <span>Accesorios completos</span>
-                                <AdminSelect
-                                  title="Accesorios completos"
-                                  ariaLabel="Indicar si los accesorios están completos"
-                                  value={accessoriesComplete}
-                                  compact
-                                  onChange={setAccessoriesComplete}
-                                >
-                                  <option value="no_informado">No informado</option>
-                                  <option value="si">Sí</option>
-                                  <option value="no">No</option>
-                                </AdminSelect>
-                              </label>
-                              <label className="admin-credit-note-field">
-                                <span>Embalaje original</span>
-                                <AdminSelect
-                                  title="Embalaje original"
-                                  ariaLabel="Indicar estado del embalaje original"
-                                  value={originalPackaging}
-                                  compact
-                                  onChange={setOriginalPackaging}
-                                >
-                                  <option value="si">Sí</option>
-                                  <option value="no">No</option>
-                                  <option value="no_requerido">No requerido</option>
-                                </AdminSelect>
-                              </label>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        className="admin-credit-note-disclosure"
-                        onClick={() => setAdvancedOptionsOpen(false)}
-                      >
-                        Ocultar opciones avanzadas
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="admin-credit-note-disclosure"
-                      onClick={() => setAdvancedOptionsOpen(true)}
-                    >
-                      + Opciones avanzadas
-                    </button>
-                  ))}
-                </section>
-
-                <div className="admin-credit-note-wizard-nav">
-                  <button
-                    type="button"
-                    onClick={() => setWizardStep(wizardStep === 2 ? 1 : 2)}
-                    className="admin-credit-note-wizard-back"
-                  >
-                    <ArrowLeft className="size-3.5" />
-                    Volver
-                  </button>
-                  <span className="admin-credit-note-wizard-hint">
-                    {wizardStep === 2
-                      ? moneyDecisionMade ? `Importe a resolver: ${formatPrice(newCreditTotal)}` : "Falta definir cómo se resuelve el dinero."
-                      : canReviewAndEmit
-                        ? `Total a resolver: ${formatPrice(newCreditTotal)}`
-                        : creditNoteMissing[0] ?? "Completá los datos obligatorios para continuar."}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={wizardStep === 2 ? !moneyDecisionMade : !canReviewAndEmit}
-                    onClick={() => setWizardStep(wizardStep === 2 ? 3 : 4)}
-                    className="admin-credit-note-wizard-next"
-                  >
-                    {wizardStep === 2 ? "Continuar a devolución" : "Continuar a revisión"}
-                    <ArrowRight className="size-3.5" />
-                  </button>
-                </div>
-                </div>
-              )}
-
-              {wizardStep === 4 && (
-                <div className="admin-credit-note-editor-step mt-3">
-                <section className="admin-credit-note-review admin-credit-note-review-full">
-                    <div className="admin-credit-note-step-heading">
-                      <div>
-                        <h4>Revisar antes de emitir</h4>
-                        <p>ARCA no permite editar el comprobante luego del CAE.</p>
-                      </div>
-                    </div>
+                      {receptionDecisionMade && !receptionException && !["producto_aprobado", "aprobado_parcial"].includes(receptionStatus) && <div className="admin-credit-wizard-wait" role="status">
+                        <p>La nota de crédito normalmente se emite después de recibir y revisar el producto en el reclamo.</p>
+                        <button type="button" onClick={() => setMessage({ ok: true, text: "La gestión queda pendiente de recepción." })}>Esperar recepción</button>
+                        <button type="button" onClick={() => setExceptionConfirmationOpen(true)}>Continuar excepcionalmente</button>
+                      </div>}
+                      {receptionException && <p className="admin-credit-wizard-exception" role="status">Excepción confirmada. Quedará auditada con tu usuario administrador.</p>}
+                    </>}
+                  </section>}
+                  {wizardStep === 4 && <section className="admin-credit-note-review" aria-labelledby="credit-wizard-review-title">
+                    <h4 id="credit-wizard-review-title">Revisar nota de crédito</h4>
+                    <p>Comprobá los datos antes de la confirmación fiscal.</p>
                     <dl>
-                      <div>
-                        <dt>Gestión</dt>
-                        <dd>{OPERATION_TYPE_LABELS[operationType] ?? operationType}</dd>
-                      </div>
-                      <div>
-                        <dt>Motivo</dt>
-                        <dd>{reasonDetail || creditReason || (REASON_CODE_LABELS[reasonCode] ?? reasonCode)}</dd>
-                      </div>
-                      <div>
-                        <dt>Productos ({selectedCreditUnits} u.)</dt>
-                        <dd>{formatPrice(selectedItemsAmount)}</dd>
-                      </div>
-                      <div>
-                        <dt>Envío original reintegrado</dt>
-                        <dd>{formatPrice(originalShippingRefunded)}</dd>
-                      </div>
-                      <div>
-                        <dt>Envío de devolución</dt>
-                        <dd>{RETURN_SHIPPING_PARTY_LABELS[returnShippingParty] ?? returnShippingParty}</dd>
-                      </div>
-                      {operationType === "cambio_producto" && (
-                        <div>
-                          <dt>Nuevo envío</dt>
-                          <dd>{NEW_SHIPPING_PARTY_LABELS[newShippingParty] ?? newShippingParty}</dd>
-                        </div>
-                      )}
-                      <div>
-                        <dt>Recepción</dt>
-                        <dd>{RECEPTION_STATUS_LABELS[receptionStatus] ?? receptionStatus}</dd>
-                      </div>
-                      {isPhysicallyReceivedStatus(receptionStatus) && (
-                      <div>
-                        <dt>Destino del producto</dt>
-                        <dd>{STOCK_DESTINATION_LABELS[stockDestination] ?? stockDestination}</dd>
-                      </div>
-                      )}
-                      <div>
-                        <dt>Otros ajustes</dt>
-                        <dd>{formatPrice(parsedManualAmount)}</dd>
-                      </div>
-                      <div className="admin-credit-note-review-total">
-                        <dt>Total de la nota de crédito</dt>
-                        <dd>{formatPrice(newCreditTotal)}</dd>
-                      </div>
-                      <div>
-                        <dt>Destino del dinero</dt>
-                        <dd>
-                          {creditDestination === "customer_balance"
-                            ? "Saldo en cuenta BEYONIX"
-                            : "Devolución de dinero"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Saldo a acreditar</dt>
-                        <dd>
-                          {formatPrice(
-                            creditDestination === "customer_balance"
-                              ? newCreditTotal
-                              : 0,
-                          )}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Importe a reembolsar</dt>
-                        <dd>
-                          {formatPrice(
-                            creditDestination === "external_refund"
-                              ? newCreditTotal
-                              : 0,
-                          )}
-                        </dd>
-                      </div>
+                      <div><dt>Pedido</dt><dd>{formatPublicOrderId(pedido.id)}</dd></div>
+                      <div><dt>Factura</dt><dd>{formatInvoiceNumber(pedido.invoice_point, pedido.invoice_number)}</dd></div>
+                      <div><dt>Motivo</dt><dd>{reasonDetail || creditReason || linkedClaimReasonLabel || (REASON_CODE_LABELS[reasonCode] ?? reasonCode)}</dd></div>
+                      <div><dt>Producto</dt><dd>{returnShippingParty === "no_corresponde" ? "No vuelve" : "Debe volver"}</dd></div>
+                      {returnShippingParty !== "no_corresponde" && <div><dt>Recepción</dt><dd>{receptionException ? "Excepción autorizada" : ["producto_aprobado", "aprobado_parcial"].includes(receptionStatus) ? "Recibido y revisado" : "Pendiente"}</dd></div>}
+                      <div><dt>Resolución</dt><dd>{creditDestination === "customer_balance" ? "Saldo BEYONIX" : "Reintegro externo"}</dd></div>
+                      <div className="admin-credit-note-review-total"><dt>Importe de Nota de Crédito</dt><dd>{formatPrice(newCreditTotal)}</dd></div>
                     </dl>
-                    <div className="admin-credit-note-review-action">
-                      <p
-                        className={`admin-credit-note-error ${
-                          newCreditTotal > invoiceCreditRemaining + 0.005
-                            ? "is-visible"
-                            : ""
-                        }`}
-                      >
-                        El total supera el disponible de la factura.
-                      </p>
-                      <div className="admin-credit-note-wizard-nav admin-credit-note-wizard-nav-review">
-                        <button
-                          type="button"
-                          onClick={() => setWizardStep(3)}
-                          className="admin-credit-note-wizard-back"
-                        >
-                          <ArrowLeft className="size-3.5" />
-                          Volver
-                        </button>
-                        <button
-                          type="button"
-                          disabled={creditNoteProcessing || !canReviewAndEmit}
-                          onClick={() => {
-                            creditNoteSnapshotRef.current = (pedido.order_credit_notes ?? []).filter((note) => ["processing", "authorized"].includes(note.status)).map((note) => note.id)
-                            setShowCreditConfirmation(true)
-                          }}
-                          className="admin-credit-note-submit"
-                        >
-                          {creditNoteProcessing ? (
-                            <LoaderCircle className="size-4 animate-spin" />
-                          ) : (
-                            <ShieldCheck className="size-4" />
-                          )}
-                          {creditNoteProcessing
-                            ? "Validando con ARCA..."
-                            : "Emitir nota de crédito"}
-                        </button>
-                      </div>
-                      <p className="admin-credit-note-secure-copy">
-                        <ShieldCheck className="size-3.5" />
-                        Ningún saldo ni reintegro se acredita sin un CAE válido.
-                      </p>
-                    </div>
-                </section>
+                  </section>}
+                </div>
+                <div className="admin-credit-note-wizard-nav">
+                  {wizardStep > 1 ? <button type="button" className="admin-credit-note-wizard-back" onClick={() => setWizardStep(wizardStep === 4 ? returnShippingParty === "no_corresponde" ? 2 : 3 : wizardStep === 3 ? 2 : 1)}><ArrowLeft className="size-3.5" /> Volver</button> : <span />}
+                  <span className="admin-credit-note-wizard-hint" role="status">{wizardStep === 1 ? !productDecisionMade ? "Elegí qué pasa con el producto." : selectedCreditUnits === 0 ? "No hay unidades disponibles en el reclamo." : claimReturnPending && returnShippingParty === "no_corresponde" && !receptionException ? "Confirmá la excepción para seguir." : "" : wizardStep === 2 ? !moneyDecisionMade ? "Elegí cómo devolver el dinero." : newCreditTotal > invoiceCreditRemaining + 0.005 ? "El importe supera el saldo disponible." : "" : wizardStep === 3 && !canReviewAndEmit ? creditNoteMissing[0] : ""}</span>
+                  {wizardStep === 4 ? <button type="button" className="admin-credit-note-submit" disabled={creditNoteProcessing || !canReviewAndEmit} onClick={() => { creditNoteSnapshotRef.current = (pedido.order_credit_notes ?? []).filter((note) => ["processing", "authorized"].includes(note.status)).map((note) => note.id); setShowCreditConfirmation(true) }}><ShieldCheck className="size-4" /> Emitir nota de crédito</button>
+                    : <button type="button" className="admin-credit-note-wizard-next" disabled={wizardStep === 1 ? !productDecisionMade || selectedCreditUnits === 0 || (claimReturnPending && returnShippingParty === "no_corresponde" && !receptionException) : wizardStep === 2 ? !moneyDecisionMade || newCreditTotal <= 0 || newCreditTotal > invoiceCreditRemaining + 0.005 : !canReviewAndEmit} onClick={() => setWizardStep(wizardStep === 1 ? 2 : wizardStep === 2 && returnShippingParty !== "no_corresponde" ? 3 : 4)}>{wizardStep === 1 ? "Continuar" : "Continuar a revisión"} <ArrowRight className="size-3.5" /></button>}
+                </div>
               </div>
-              )}
+              <AdminModal open={advancedOptionsOpen} onClose={() => setAdvancedOptionsOpen(false)} title="Opciones avanzadas" description="Ajustes administrativos del caso. El flujo normal ya usa los datos del reclamo." wide footer={<button type="button" className="admin-ds-button admin-ds-button-primary" onClick={() => setAdvancedOptionsOpen(false)}>Listo</button>}>
+                <div className="admin-credit-wizard-advanced">
+                  <label>Tipo de gestión<AdminSelect title="Tipo de gestión" ariaLabel="Seleccionar tipo de gestión" value={operationType} onChange={(value) => { setManualGestionOverride(true); selectOperationType(value) }} compact><option value="devolucion_parcial">Devolución parcial</option><option value="devolucion_total">Devolución total</option><option value="cambio_producto">Cambio de producto</option>{linkedClaim?.failure_type === "cancelar_compra" && <option value="cancelacion_antes_despacho">Cancelación antes del despacho</option>}</AdminSelect></label>
+                  {manualGestionOverride && <button type="button" className="admin-credit-note-disclosure" onClick={() => setManualGestionOverride(false)}>Volver a los datos del reclamo</button>}
+                  {reasonCode === "otro" && <label>Detalle del motivo<input value={reasonDetail} onChange={(event) => setReasonDetail(event.target.value)} maxLength={500} /></label>}
+                  <label>Observación interna<input value={creditReason} onChange={(event) => setCreditReason(event.target.value)} maxLength={120} /></label>
+                  <label>Ajuste adicional<input inputMode="decimal" value={manualCreditAmount} onChange={(event) => handleManualAmountChange(event.target.value)} aria-invalid={manualAmountRejected || undefined} /></label>
+                  {manualAmountRejected && <p role="alert">Usá sólo números con hasta dos decimales.</p>}
+                  {originalShippingPaid > 0 && <label className="admin-credit-wizard-check"><input type="checkbox" checked={includeOriginalShipping} onChange={(event) => setIncludeOriginalShipping(event.target.checked)} /> Reintegrar envío original ({formatPrice(originalShippingPaid)})</label>}
+                  <div className="admin-credit-wizard-advanced-items"><strong>Unidades del reclamo</strong>{creditableOrderItems.map((item) => { const available = Math.max(0, Math.min(Number(item.cantidad), claimAffectedQuantityByItem.get(item.id) ?? 0) - (committedQuantityByItem.get(item.id) ?? 0)); return <label key={item.id}>{item.productos?.nombre ?? "Artículo del pedido"}<input type="number" min={0} max={available} step={1} value={creditQuantities[item.id] ?? 0} onChange={(event) => { setManualGestionOverride(true); setCreditQuantities((current) => ({ ...current, [item.id]: Math.max(0, Math.min(available, Math.trunc(Number(event.target.value) || 0))) })) }} /></label> })}</div>
+                  {returnShippingParty !== "no_corresponde" && <>
+                    <label>Canal de devolución<AdminSelect title="Canal de devolución" ariaLabel="Canal de devolución" value={returnShippingParty} onChange={(value) => selectReturnShippingMode(value as "cliente" | "beyonix")} compact><option value="cliente">Cliente / externo</option><option value="beyonix">BEYONIX</option></AdminSelect></label>
+                    <label>Operador logístico<input value={returnShippingProvider} onChange={(event) => setReturnShippingProvider(event.target.value)} /></label>
+                    <label>Seguimiento<input value={returnShippingTracking} onChange={(event) => setReturnShippingTracking(event.target.value)} /></label>
+                    <label>Costo de devolución<input inputMode="decimal" value={returnShippingCost} onChange={(event) => setReturnShippingCost(event.target.value)} /></label>
+                    <label>Estado de recepción<AdminSelect title="Estado de recepción" ariaLabel="Estado de recepción" value={receptionStatus} onChange={handleReceptionStatusChange} compact><option value="pendiente_despacho">Pendiente</option><option value="recibido_revision">Recibido, en revisión</option><option value="producto_aprobado">Aprobado</option><option value="aprobado_parcial">Aprobado parcialmente</option><option value="producto_rechazado">Rechazado</option></AdminSelect></label>
+                    <label>Observación de recepción<textarea value={receptionNotes} onChange={(event) => setReceptionNotes(event.target.value)} /></label>
+                    <label>Fecha de recepción<input type="date" value={receptionDate} onChange={(event) => setReceptionDate(event.target.value)} /></label>
+                    <label>Estado físico<input value={physicalCondition} onChange={(event) => setPhysicalCondition(event.target.value)} /></label>
+                    <label>Accesorios<AdminSelect title="Accesorios" ariaLabel="Accesorios" value={accessoriesComplete} onChange={setAccessoriesComplete} compact><option value="no_informado">No informado</option><option value="si">Completos</option><option value="no">Incompletos</option></AdminSelect></label>
+                    <label>Embalaje<AdminSelect title="Embalaje" ariaLabel="Embalaje" value={originalPackaging} onChange={setOriginalPackaging} compact><option value="no_requerido">No requerido</option><option value="si">Original</option><option value="no">Otro</option></AdminSelect></label>
+                    <label>Destino del producto<AdminSelect title="Destino del producto" ariaLabel="Destino del producto" value={stockDestination} onChange={setStockDestination} compact><option value="pendiente_revision">Pendiente de revisión</option><option value="stock_vendible">Stock vendible</option><option value="stock_observaciones">Stock con observaciones</option><option value="fallado">Fallado</option><option value="garantia_proveedor">Garantía / proveedor</option><option value="no_reingresar">No reingresar</option></AdminSelect></label>
+                    {stockDestination === "stock_observaciones" && <label>Descuento por condición (%)<input type="number" min="1" max="99" value={conditionedDiscountPercent} onChange={(event) => setConditionedDiscountPercent(event.target.value)} /></label>}
+                  </>}
+                  {operationType === "cambio_producto" && <><label>Nuevo envío<AdminSelect title="Nuevo envío" ariaLabel="Nuevo envío" value={newShippingParty} onChange={setNewShippingParty} compact><option value="cliente">Cliente</option><option value="beyonix">BEYONIX</option><option value="no_corresponde">No corresponde</option></AdminSelect></label>{newShippingParty !== "no_corresponde" && <label>Costo del nuevo envío<input inputMode="decimal" value={newShippingCost} onChange={(event) => setNewShippingCost(event.target.value)} /></label>}</>}
+                </div>
+              </AdminModal>
+              <AdminModal open={exceptionConfirmationOpen} onClose={() => setExceptionConfirmationOpen(false)} title="Continuar sin recepción aprobada" description="Esta excepción quedará registrada con tu usuario administrador." compact footer={<button type="button" className="admin-ds-button admin-ds-button-primary" disabled={receptionExceptionReason.trim().length < 10} onClick={() => { setReceptionException(true); setExceptionConfirmationOpen(false) }}>Confirmar excepción</button>}>
+                <label className="admin-credit-wizard-exception-reason">Motivo de la excepción<textarea value={receptionExceptionReason} maxLength={500} onChange={(event) => setReceptionExceptionReason(event.target.value)} placeholder="Explicá por qué se autoriza antes de la recepción" /></label>
+                <p>Se requiere una explicación breve para la auditoría.</p>
+              </AdminModal>
             </>
           )}
-
           {invoiceCreditRemaining <= 0 && authorizedCreditNotes.length > 0 && (
             <section className="admin-return-closed-summary">
               <CheckCircle2 className="size-6" />
@@ -4881,28 +4060,6 @@ function BillingDetailValue({
     <div className="admin-order-bl-meta-item">
       <p className={`admin-order-bl-meta-label ${labelClassName ?? ""}`}>{label}</p>
       <p className={`admin-order-bl-meta-value ${valueClassName ?? ""}`}>{value}</p>
-    </div>
-  )
-}
-
-type AccountingStatusTone = "green" | "amber" | "blue" | "red" | "gray"
-
-function AccountingStatusRow({
-  Icon,
-  title,
-  badge,
-  tone,
-}: {
-  Icon: LucideIcon
-  title: string
-  badge: string
-  tone: AccountingStatusTone
-}) {
-  return (
-    <div className={`admin-order-bl-status-item admin-order-bl-status-item--${tone}`}>
-      <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-      <p className="admin-order-bl-status-title">{title}</p>
-      <span className="admin-order-bl-status-badge">{badge}</span>
     </div>
   )
 }

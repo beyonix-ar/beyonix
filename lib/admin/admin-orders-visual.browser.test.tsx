@@ -112,6 +112,18 @@ const DETAIL_ONLY = [
     resolution: "devolucion_dinero", description: "Producto con falla", affected_items: [{ order_item_id: 70, quantity: 1 }],
     created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
   }] }),
+  order(8, { invoice_status: "authorized", invoice_arca_environment: "production", order_claims: [{
+    id: 801, order_id: 8, user_id: "c1", status: "aprobado", failure_type: "falla",
+    resolution: "saldo_a_favor", description: "Producto con falla", affected_items: [{ order_item_id: 80, quantity: 1 }],
+    order_claim_units: [{ id: 1, order_item_id: 80, role: "original", location: "reincorporada_stock", incident_open: false }],
+    created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
+  }] }),
+  order(9, { invoice_status: "authorized", invoice_arca_environment: "production", order_claims: [{
+    id: 901, order_id: 9, user_id: "c1", status: "aprobado", failure_type: "falla",
+    description: "Producto con falla", affected_items: [{ order_item_id: 90, quantity: 1 }],
+    order_claim_units: [{ id: 2, order_item_id: 90, role: "original", location: "con_cliente", incident_open: false }],
+    created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
+  }] }),
 ]
 
 const pageHtml = (theme: "dark" | "light", css: string, bundle: string, orderId?: number, pedidos?: unknown[]) => `<!doctype html>
@@ -363,71 +375,123 @@ test("Facturación: una factura de homologación se identifica como prueba; una 
   }
 })
 
-test("Nota de crédito: comprobante, proceso y asistente son superficies separadas y la decisión se resume", async () => {
+test("Nota de crédito: el wizard muestra un solo paso y omite devolución si el producto no vuelve", async () => {
   for (const [theme, width] of [["dark", 1440], ["light", 1440], ["dark", 390], ["light", 390]] as const) {
     const page = await open(theme, { width, orderId: 7, tab: "facturacion" })
     try {
-      const invoice = page.locator(".admin-credit-invoice-card")
-      const process = page.locator(".admin-credit-process-card")
-      const wizard = page.locator(".admin-credit-note-workflow")
-      const summary = page.locator(".admin-credit-decision-summary")
-      await summary.waitFor({ state: "visible" })
-      assert.match(String(await invoice.textContent()).replace(/\s+/g, " "), /Factura C.*CAE.*Fecha de emisión.*Vencimiento CAE/)
-      assert.match(String(await process.textContent()).replace(/\s+/g, " "), /Estado del proceso.*Monto acreditado.*Disponible para resolver/)
-      assert.match(String(await wizard.textContent()).replace(/\s+/g, " "), /Asistente de resolución.*Paso 1/)
-      const surfaces = await page.evaluate(() => [".admin-credit-invoice-card", ".admin-credit-process-card", ".admin-credit-note-workflow", ".admin-credit-decision-summary"].map((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor))
-      assert.equal(new Set(surfaces).size, 4, `${theme} ${width}px: cuatro superficies diferenciadas`)
-      assert.match(String(await summary.textContent()).replace(/\s+/g, " "), /Sin seleccionar/)
-      await page.getByRole("button", { name: /Agregar una unidad de/ }).click()
-      assert.equal(await page.getByRole("button", { name: "Continuar a dinero" }).isDisabled(), true)
-      assert.match(String(await summary.textContent()), /Falta definir qué pasa con el producto/)
-      await page.getByRole("radio", { name: "No vuelve" }).click()
-      assert.match(String(await summary.textContent()).replace(/\s+/g, " "), /1 unidad.*No vuelve/)
-      await page.getByRole("button", { name: "Continuar a dinero" }).click()
-      assert.match(String(await wizard.textContent()).replace(/\s+/g, " "), /Paso 2.*¿Cómo se resuelve el dinero\?.*Saldo BEYONIX.*Reintegro externo/)
-      assert.equal(await page.getByRole("button", { name: "Continuar a devolución" }).isDisabled(), true)
-      await page.getByRole("radio", { name: "Reintegro externo" }).click()
-      assert.match(String(await summary.textContent()).replace(/\s+/g, " "), /Reintegro externo/)
-      await page.getByRole("button", { name: "Continuar a devolución" }).click()
-      assert.match(String(await wizard.textContent()).replace(/\s+/g, " "), /Paso 3.*Devolución y recepción/)
-      assert.equal(await page.getByRole("button", { name: "Continuar a revisión" }).isDisabled(), false)
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${theme} ${width}px: sin overflow`)
-    } finally {
-      await page.close()
-    }
+      await page.getByRole("heading", { name: "¿Qué pasa con el producto?" }).waitFor()
+      assert.equal(await page.getByRole("button", { name: "Continuar" }).isDisabled(), true)
+      assert.equal(await page.getByRole("heading", { name: /Cómo querés resolver/ }).count(), 0)
+      await page.getByRole("radio", { name: /No vuelve/ }).click()
+      assert.equal(await page.locator(".admin-credit-note-steps > button").count(), 3)
+      const firstHeight = (await page.locator(".admin-credit-wizard-shell").boundingBox())?.height ?? 0
+      // La cantidad proviene del reclamo: no se vuelve a pedir en el flujo normal.
+      assert.equal(await page.getByRole("button", { name: "Continuar" }).isDisabled(), false)
+      await page.getByRole("button", { name: "Continuar" }).click()
+      assert.equal(await page.getByRole("heading", { name: "¿Qué pasa con el producto?" }).count(), 0)
+      assert.equal(await page.getByRole("radio", { name: /Devolución del producto/ }).count(), 0)
+      assert.equal(await page.getByRole("button", { name: /Devolución/ }).count(), 0)
+      await page.getByRole("radio", { name: /Reintegro externo/ }).click()
+      await page.getByRole("button", { name: "Continuar a revisión" }).click()
+      const reviewHeight = (await page.locator(".admin-credit-wizard-shell").boundingBox())?.height ?? 0
+      assert.ok(Math.abs(reviewHeight - firstHeight) <= 50, `${theme} ${width}px: altura compacta entre pasos (${firstHeight} → ${reviewHeight})`)
+      assert.equal(await page.getByRole("heading", { name: "Revisar nota de crédito" }).count(), 1)
+      assert.equal(await page.getByRole("heading", { name: /Cómo querés resolver/ }).count(), 0)
+      assert.match(String(await page.locator(".admin-credit-note-review").textContent()), /No vuelve/)
+      await page.getByRole("button", { name: "Volver", exact: true }).click()
+      assert.equal(await page.getByRole("radio", { name: /Reintegro externo/ }).getAttribute("aria-checked"), "true")
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, theme + " mobile sin overflow")
+    } finally { await page.close() }
   }
 })
 
-test("Nota de crédito: si el producto vuelve, recepción y excepción se explican antes de revisión", async () => {
+test("Nota de crédito: producto recibido, revisión y cambio de decisión conservan o limpian estado", async () => {
   const page = await open("dark", { orderId: 7, tab: "facturacion" })
   try {
-    await page.getByRole("button", { name: /Agregar una unidad de/ }).click()
-    await page.getByRole("radio", { name: "Debe volver" }).click()
-    await page.getByRole("button", { name: "Continuar a dinero" }).click()
-    await page.getByRole("radio", { name: "Saldo BEYONIX" }).click()
-    await page.getByRole("button", { name: "Continuar a devolución" }).click()
-    const next = page.getByRole("button", { name: "Continuar a revisión" })
-    assert.equal(await next.isDisabled(), true)
-    assert.match(String(await page.locator(".admin-credit-decision-missing").textContent()), /Falta indicar el estado de recepción/)
-    await page.getByRole("radio", { name: "Todavía no" }).click()
-    assert.equal(await next.isDisabled(), true)
-    assert.match(String(await page.locator(".admin-credit-decision-missing").textContent()), /Registrá la recepción o autorizá la excepción/)
-    await page.getByText("Autorizar excepción sin recepción aprobada").click()
-    assert.equal(await next.isDisabled(), false)
-    await next.click()
-    assert.match(String(await page.locator(".admin-credit-note-review").textContent()), /Revisar antes de emitir/)
-    assert.equal(await page.getByRole("button", { name: "Emitir nota de crédito" }).count(), 1)
-    await page.locator(".admin-credit-note-review").getByRole("button", { name: "Volver" }).click()
-    await page.getByRole("radio", { name: "Recibido" }).click()
-    await page.getByRole("radio", { name: "Aprobado" }).click()
-    assert.equal(await page.getByText("Autorizar excepción sin recepción aprobada").count(), 0)
-    assert.equal(await next.isDisabled(), false)
-    assert.match(String(await page.locator(".admin-credit-decision-summary").textContent()), /Recibido/)
-  } finally {
-    await page.close()
-  }
+    await page.getByRole("radio", { name: /Debe volver/ }).click()
+    assert.equal(await page.locator(".admin-credit-note-steps > button").count(), 4)
+    await page.getByRole("button", { name: "Continuar" }).click()
+    await page.getByRole("radio", { name: /Saldo BEYONIX/ }).click()
+    await page.getByRole("button", { name: "Continuar a revisión" }).click()
+    assert.equal(await page.getByRole("heading", { name: "¿El producto ya volvió a BEYONIX?" }).count(), 1)
+    assert.equal(await page.getByRole("button", { name: "Continuar a revisión" }).isDisabled(), true)
+    await page.getByRole("radio", { name: /Sí, ya fue recibido/ }).click()
+    assert.equal(await page.getByRole("button", { name: "Continuar a revisión" }).isDisabled(), false)
+    await page.getByRole("button", { name: "Volver", exact: true }).click()
+    await page.getByRole("button", { name: "Volver", exact: true }).click()
+    await page.getByRole("radio", { name: /No vuelve/ }).click()
+    assert.equal(await page.getByRole("button", { name: /Devolución/ }).count(), 0)
+    await page.getByRole("button", { name: "Continuar" }).click()
+    await page.getByRole("button", { name: "Continuar a revisión" }).click()
+    assert.equal(await page.locator(".admin-credit-note-review").getByText("Recepción").count(), 0)
+    assert.match(String(await page.locator(".admin-credit-note-review").textContent()), /Saldo BEYONIX/)
+  } finally { await page.close() }
 })
 
+test("Nota de crédito: sin recepción exige excepción explícita y motivo auditado", async () => {
+  const page = await open("dark", { orderId: 7, tab: "facturacion" })
+  try {
+    await page.getByRole("radio", { name: /Debe volver/ }).click()
+    await page.getByRole("button", { name: "Continuar" }).click()
+    await page.getByRole("radio", { name: /Saldo BEYONIX/ }).click()
+    await page.getByRole("button", { name: "Continuar a revisión" }).click()
+    await page.getByRole("radio", { name: /No, todavía no/ }).click()
+    assert.equal(await page.getByRole("button", { name: "Continuar a revisión" }).isDisabled(), true)
+    await page.getByRole("button", { name: "Continuar excepcionalmente" }).click()
+    const dialog = page.getByRole("dialog", { name: "Continuar sin recepción aprobada" })
+    assert.equal(await dialog.getByRole("button", { name: "Confirmar excepción" }).isDisabled(), true)
+    await dialog.getByRole("textbox", { name: "Motivo de la excepción" }).fill("Gerencia autoriza reintegro anticipado")
+    await dialog.getByRole("button", { name: "Confirmar excepción" }).click()
+    await page.getByRole("button", { name: "Continuar a revisión" }).click()
+    await page.getByRole("button", { name: "Emitir nota de crédito" }).click()
+    await page.getByRole("dialog", { name: "Confirmar nota de crédito" }).getByRole("button", { name: "Emitir nota de crédito" }).click()
+    const post = await page.evaluate(() => (window as unknown as { __creditNotePosts: Array<Record<string, unknown>> }).__creditNotePosts[0])
+    assert.equal(post.reception_exception, true)
+    assert.equal(post.reception_exception_reason, "Gerencia autoriza reintegro anticipado")
+    assert.equal(post.reception_status, "pendiente_despacho")
+  } finally { await page.close() }
+})
+
+test("Nota de crédito: opciones avanzadas no agrandan el wizard", async () => {
+  const page = await open("light", { width: 390, orderId: 7, tab: "facturacion" })
+  try {
+    const before = await page.locator(".admin-credit-wizard-shell").boundingBox()
+    await page.getByRole("button", { name: "Opciones avanzadas" }).click()
+    assert.equal(await page.getByRole("dialog", { name: "Opciones avanzadas" }).count(), 1)
+    const after = await page.locator(".admin-credit-wizard-shell").boundingBox()
+    assert.equal(Math.round(after?.height ?? 0), Math.round(before?.height ?? 0))
+    await page.getByRole("dialog", { name: "Opciones avanzadas" }).getByRole("button", { name: "Listo" }).click()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  } finally { await page.close() }
+})
+
+test("Nota de crédito: reutiliza resolución y recepción inspeccionada del reclamo", async () => {
+  const page = await open("dark", { orderId: 8, tab: "facturacion" })
+  try {
+    await page.getByRole("radio", { name: /Debe volver/ }).waitFor()
+    assert.equal(await page.getByRole("radio", { name: /Debe volver/ }).getAttribute("aria-checked"), "true")
+    await page.getByRole("button", { name: "Continuar" }).click()
+    assert.equal(await page.getByRole("radio", { name: /Saldo BEYONIX/ }).getAttribute("aria-checked"), "true")
+    await page.getByRole("button", { name: "Continuar a revisión" }).click()
+    await page.getByText("La recepción y revisión ya están registradas en el reclamo.").waitFor()
+    assert.equal(await page.getByRole("button", { name: "Continuar a revisión" }).isDisabled(), false)
+  } finally { await page.close() }
+})
+
+test("Nota de crédito: no vuelve con unidades aún en cliente exige excepción auditada", async () => {
+  const page = await open("dark", { orderId: 9, tab: "facturacion" })
+  try {
+    await page.getByRole("radio", { name: /No vuelve/ }).click()
+    assert.equal(await page.getByRole("button", { name: "Continuar", exact: true }).isDisabled(), true)
+    await page.getByRole("button", { name: "Continuar excepcionalmente" }).click()
+    const dialog = page.getByRole("dialog", { name: "Continuar sin recepción aprobada" })
+    await dialog.getByRole("textbox", { name: "Motivo de la excepción" }).fill("Producto queda en poder del cliente por decisión comercial")
+    await dialog.getByRole("button", { name: "Confirmar excepción" }).click()
+    assert.equal(await page.getByRole("button", { name: "Continuar", exact: true }).isDisabled(), false)
+    await page.getByRole("button", { name: "Continuar", exact: true }).click()
+    assert.equal(await page.getByRole("button", { name: /Devolución/ }).count(), 0)
+  } finally { await page.close() }
+})
 test("Dark: la jerarquía de fondos del detalle no cambia", async () => {
   // Valores Dark medidos y verificados sin cambios contra HEAD.
   const expected: Record<string, string> = { resumen: "1,15,25,1", pago: "1,15,25,1", facturacion: "1,15,25,1", envio: "21,21,21,1", atencion: "21,21,21,1", historial: "21,21,21,1" }
