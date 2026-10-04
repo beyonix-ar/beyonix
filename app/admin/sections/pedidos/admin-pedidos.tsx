@@ -2889,13 +2889,16 @@ function BillingManagementPanel({
   const creditNoteSnapshotRef = useRef<string[] | null>(null)
   const [advancedOptionsOpen, setAdvancedOptionsOpen] = useState(false)
   const [manualGestionOverride, setManualGestionOverride] = useState(false)
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1)
   const [showAdminAdjustmentForm, setShowAdminAdjustmentForm] = useState(false)
   const [showClosedDetail, setShowClosedDetail] = useState(false)
   const [settlementSavingId, setSettlementSavingId] = useState<string | null>(null)
   const [creditDestination, setCreditDestination] = useState<
     "external_refund" | "customer_balance"
   >("customer_balance")
+  const [productDecisionMade, setProductDecisionMade] = useState(false)
+  const [moneyDecisionMade, setMoneyDecisionMade] = useState(false)
+  const [receptionDecisionMade, setReceptionDecisionMade] = useState(false)
   const creditNotes = useMemo(
     () => pedido.order_credit_notes ?? [],
     [pedido.order_credit_notes],
@@ -3103,6 +3106,9 @@ function BillingManagementPanel({
     setWizardStep(1)
     setSettlementSavingId(null)
     setCreditDestination("customer_balance")
+    setProductDecisionMade(false)
+    setMoneyDecisionMade(false)
+    setReceptionDecisionMade(false)
     setShowAdminAdjustmentForm(false)
   }, [pedido.id])
 
@@ -3159,6 +3165,7 @@ function BillingManagementPanel({
       setOperationType("cancelacion_antes_despacho")
       setReasonCode("cancelacion_antes_despacho")
       setReturnShippingParty("no_corresponde")
+      setProductDecisionMade(true)
       setIncludeOriginalShipping(originalShippingPaid > 0)
       setCreditQuantities(
         Object.fromEntries(JSON.parse(cancellationCreditQuantitiesKey) as Array<[number, number]>),
@@ -3217,6 +3224,7 @@ function BillingManagementPanel({
 
 
   const handleReceptionStatusChange = (value: string) => {
+    setReceptionDecisionMade(true)
     const inspectionResultChanged =
       value !== receptionStatus &&
       ["producto_aprobado", "aprobado_parcial", "producto_rechazado"].includes(
@@ -3250,7 +3258,9 @@ function BillingManagementPanel({
   function selectReturnShippingMode(
     party: "cliente" | "beyonix" | "no_corresponde",
   ) {
+    setProductDecisionMade(true)
     if (party !== returnShippingParty) {
+      setReceptionDecisionMade(false)
       setReturnShippingProvider("")
       setReturnShippingTracking("")
       setReturnShippingCost("")
@@ -3262,6 +3272,7 @@ function BillingManagementPanel({
     )
     if (nextReceptionStatus !== receptionStatus) {
       handleReceptionStatusChange(nextReceptionStatus)
+      setReceptionDecisionMade(false)
     }
   }
 
@@ -3269,6 +3280,7 @@ function BillingManagementPanel({
   // conserva el resultado de revisión ya cargado si lo hay, y solo reinicia
   // al estado pendiente por defecto al cruzar de un lado al otro.
   const selectReceptionPresence = (received: boolean) => {
+    setReceptionDecisionMade(true)
     if (received) {
       if (!isPhysicallyReceivedStatus(receptionStatus)) {
         handleReceptionStatusChange("recibido_revision")
@@ -3411,6 +3423,9 @@ function BillingManagementPanel({
   }
 
   const canReviewAndEmit =
+    productDecisionMade &&
+    moneyDecisionMade &&
+    (returnShippingParty === "no_corresponde" || receptionDecisionMade) &&
     newCreditTotal > 0 &&
     newCreditTotal <= invoiceCreditRemaining + 0.005 &&
     !(reasonCode === "otro" && !reasonDetail.trim()) &&
@@ -3420,10 +3435,23 @@ function BillingManagementPanel({
         receptionStatus,
       ) && !receptionException
     )
+  const creditNoteMissing = [
+    selectedCreditUnits === 0 ? "Seleccioná los productos de la nota de crédito." : null,
+    !productDecisionMade ? "Falta definir qué pasa con el producto." : null,
+    wizardStep >= 2 && !moneyDecisionMade ? "Falta definir cómo se resuelve el dinero." : null,
+    wizardStep >= 3 && productDecisionMade && returnShippingParty !== "no_corresponde" && !receptionDecisionMade ? "Falta indicar el estado de recepción." : null,
+    wizardStep >= 2 && selectedCreditUnits > 0 && newCreditTotal <= 0 ? "El importe a resolver debe ser mayor que cero." : null,
+    wizardStep >= 2 && newCreditTotal > invoiceCreditRemaining + 0.005 ? "El importe supera el disponible de la factura." : null,
+    wizardStep >= 3 && reasonCode === "otro" && !reasonDetail.trim() ? "Completá el motivo de la gestión." : null,
+    wizardStep >= 3 && receptionStatus === "producto_rechazado" && !receptionNotes.trim() ? "Explicá por qué se rechazó el producto." : null,
+    wizardStep >= 3 && productDecisionMade && receptionDecisionMade && !["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(receptionStatus) && !receptionException
+      ? "Registrá la recepción o autorizá la excepción para continuar."
+      : null,
+  ].filter((item): item is string => Boolean(item))
 
   return (
     <section className="admin-order-data-panel admin-order-invoice-panel admin-order-billing-section rounded-xl border border-white/8 p-3">
-      <div className="admin-order-bl-header">
+      <div className={`admin-order-bl-header ${invoiceIssued ? "admin-credit-invoice-card" : ""}`}>
         <div className="admin-order-bl-header-copy min-w-0">
           <p className="admin-order-bl-eyebrow">Facturación</p>
           <div className="admin-order-bl-title-row">
@@ -3479,6 +3507,13 @@ function BillingManagementPanel({
                 : "Emitir Factura C"}
           </button>
         )}
+        {invoiceIssued && (
+          <div className="admin-order-bl-meta admin-credit-invoice-meta">
+            <BillingDetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
+            <BillingDetailValue label="Fecha de emisión" value={formatOptionalOrderDate(pedido.invoice_created_at)} />
+            <BillingDetailValue label="Vencimiento CAE" value={formatInvoiceDate(pedido.invoice_cae_due)} />
+          </div>
+        )}
       </div>
 
       {pedido.invoice_status !== "authorized" && invoiceIssueBlockReason && (arcaConfiguration.status || arcaConfiguration.loadError) && (
@@ -3519,19 +3554,11 @@ function BillingManagementPanel({
       )}
 
       {invoiceIssued ? (
-        <div className="admin-order-bl-body">
-          <div className="admin-order-bl-meta">
-            <BillingDetailValue label="CAE" value={pedido.invoice_cae || "No informado"} />
-            <BillingDetailValue
-              label="Vencimiento CAE"
-              value={formatInvoiceDate(pedido.invoice_cae_due)}
-            />
-            <BillingDetailValue
-              label="Fecha de emisión"
-              value={formatOptionalOrderDate(pedido.invoice_created_at)}
-            />
+        <section className="admin-order-bl-body admin-credit-process-card" aria-labelledby="credit-process-title">
+          <div className="admin-credit-process-heading">
+            <h4 id="credit-process-title">Estado del proceso de cancelación / nota de crédito</h4>
+            <p>Comprobantes y saldo disponible para esta gestión.</p>
           </div>
-
           <div className="admin-order-bl-status-list">
             <AccountingStatusRow
               Icon={CheckCircle2}
@@ -3588,7 +3615,11 @@ function BillingManagementPanel({
               tone="green"
             />
           </div>
-        </div>
+          <div className="admin-credit-note-balance">
+            <div><span>Monto acreditado</span><strong>{formatPrice(authorizedCreditTotal)}</strong></div>
+            <div className="admin-credit-note-balance-primary"><span>Disponible para resolver</span><strong>{formatPrice(invoiceCreditRemaining)}</strong></div>
+          </div>
+        </section>
       ) : !isApprovedPayment(pedido) ? (
         <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
           Confirmá el pago antes de emitir la factura.
@@ -3602,18 +3633,9 @@ function BillingManagementPanel({
           <header className="admin-credit-note-header">
             <div className="admin-credit-note-title">
               <div>
-                <p className="admin-order-bl-eyebrow">Gestión unificada</p>
-                <h3 className="admin-order-bl-title">Devoluciones y reintegros</h3>
-              </div>
-            </div>
-            <div className="admin-credit-note-balance">
-              <div>
-                <span>Acreditado</span>
-                <strong>{formatPrice(authorizedCreditTotal)}</strong>
-              </div>
-              <div className="admin-credit-note-balance-primary">
-                <span>Disponible</span>
-                <strong>{formatPrice(invoiceCreditRemaining)}</strong>
+                <p className="admin-order-bl-eyebrow">Asistente de resolución</p>
+                <h3 className="admin-order-bl-title">Crear nota de crédito</h3>
+                <p className="admin-credit-note-intro">Elegí los productos, definí el dinero y registrá la devolución. Antes de emitir, vas a revisar todo.</p>
               </div>
             </div>
           </header>
@@ -3770,37 +3792,62 @@ function BillingManagementPanel({
                   type="button"
                   aria-current={wizardStep === 1 ? "step" : undefined}
                   onClick={() => setWizardStep(1)}
-                  className={`cursor-pointer border-0 bg-transparent p-0 text-left ${wizardStep === 1 ? "is-current" : selectedCreditUnits > 0 ? "is-complete" : ""}`}
+                  className={`cursor-pointer border-0 bg-transparent p-0 text-left ${wizardStep === 1 ? "is-current" : selectedCreditUnits > 0 && productDecisionMade ? "is-complete" : ""}`}
                 >
-                  <b>1</b> Productos
+                  <b>1</b> Producto
                 </button>
                 <button
                   type="button"
-                  disabled={selectedCreditUnits === 0}
+                  disabled={selectedCreditUnits === 0 || !productDecisionMade}
                   aria-current={wizardStep === 2 ? "step" : undefined}
-                  onClick={() => selectedCreditUnits > 0 && setWizardStep(2)}
+                  onClick={() => selectedCreditUnits > 0 && productDecisionMade && setWizardStep(2)}
                   className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 2 ? "is-current" : wizardStep > 2 ? "is-complete" : ""}`}
                 >
-                  <b>2</b> Resolución
+                  <b>2</b> Dinero
                 </button>
                 <button
                   type="button"
-                  disabled={!canReviewAndEmit}
+                  disabled={wizardStep < 3}
                   aria-current={wizardStep === 3 ? "step" : undefined}
-                  onClick={() => canReviewAndEmit && setWizardStep(3)}
-                  className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 3 ? "is-current" : ""}`}
+                  onClick={() => wizardStep >= 3 && setWizardStep(3)}
+                  className={`cursor-pointer border-0 bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-45 ${wizardStep === 3 ? "is-current" : wizardStep === 4 ? "is-complete" : ""}`}
                 >
-                  <b>3</b> Revisar y emitir
+                  <b>3</b> Devolución
                 </button>
               </div>
+
+              <section className="admin-credit-decision-summary" aria-labelledby="credit-decision-summary-title" aria-live="polite">
+                <div className="admin-credit-decision-summary-heading">
+                  <div>
+                    <h4 id="credit-decision-summary-title">Resumen de la nota de crédito</h4>
+                    <p>Se actualiza con las decisiones de esta gestión.</p>
+                  </div>
+                  <strong>{formatPrice(newCreditTotal)}</strong>
+                </div>
+                <dl>
+                  <div><dt>Motivo</dt><dd>{reasonDetail || creditReason || (REASON_CODE_LABELS[reasonCode] ?? reasonCode)}</dd></div>
+                  <div><dt>Productos</dt><dd>{selectedCreditUnits ? `${selectedCreditUnits} ${selectedCreditUnits === 1 ? "unidad" : "unidades"}` : "Sin seleccionar"}</dd></div>
+                  <div><dt>Producto</dt><dd>{!productDecisionMade ? "Por definir" : returnShippingParty === "no_corresponde" ? "No vuelve" : "Debe volver"}</dd></div>
+                  <div><dt>Dinero</dt><dd>{!moneyDecisionMade ? "Por definir" : creditDestination === "customer_balance" ? "Saldo BEYONIX" : "Reintegro externo"}</dd></div>
+                  <div><dt>Recepción</dt><dd>{!productDecisionMade ? "Por definir" : returnShippingParty === "no_corresponde" ? "No corresponde" : !receptionDecisionMade ? "Por definir" : isPhysicallyReceivedStatus(receptionStatus) ? "Recibido" : "Pendiente"}</dd></div>
+                  <div><dt>Excepción</dt><dd>{receptionException ? "Autorizada" : "No"}</dd></div>
+                </dl>
+                {creditNoteMissing.length > 0 && (
+                  <div className="admin-credit-decision-missing" role="status">
+                    <strong>Antes de emitir falta:</strong>
+                    <ul>{creditNoteMissing.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                )}
+                <p>Al continuar, podrás revisar y emitir la nota de crédito. Ningún saldo ni reintegro se aplica sin un CAE válido.</p>
+              </section>
 
               {wizardStep === 1 && (
                 <div className="admin-credit-note-editor-step mt-3">
                 <section className="admin-credit-note-step-card admin-credit-note-products-panel">
                   <div className="admin-credit-note-step-heading">
                     <div>
-                      <h4>Productos a devolver</h4>
-                      <p>Indicá la cantidad exacta de cada artículo reclamado.</p>
+                      <h4>Paso 1 — ¿Qué pasa con el producto?</h4>
+                      <p>Elegí las unidades del reclamo que incluirá la nota y si deben volver.</p>
                     </div>
                   </div>
 
@@ -3914,34 +3961,42 @@ function BillingManagementPanel({
                       unidades incluidas en el reclamo.
                     </p>
                   )}
+                  <div className="admin-credit-decision-card">
+                    <h5>¿El producto vuelve?</h5>
+                    <p>Esto define si hay que registrar una devolución y su recepción.</p>
+                    <div className="admin-resolution-segmented" role="radiogroup" aria-label="Devolución del producto">
+                      <ResolutionSegment selected={productDecisionMade && returnShippingParty === "no_corresponde"} disabled={creditNoteProcessing} onClick={() => selectReturnShippingMode("no_corresponde")}>No vuelve</ResolutionSegment>
+                      <ResolutionSegment selected={productDecisionMade && returnShippingParty !== "no_corresponde"} disabled={creditNoteProcessing} onClick={() => selectReturnShippingMode("cliente")}>Debe volver</ResolutionSegment>
+                    </div>
+                  </div>
                 </section>
 
                 <div className="admin-credit-note-wizard-nav">
                   <span className="admin-credit-note-wizard-hint">
-                    {selectedCreditUnits > 0
+                    {selectedCreditUnits > 0 && productDecisionMade
                       ? `${selectedCreditUnits} ${selectedCreditUnits === 1 ? "unidad seleccionada" : "unidades seleccionadas"} · ${formatPrice(selectedItemsAmount)}`
-                      : "Seleccioná al menos un producto para continuar."}
+                      : selectedCreditUnits === 0 ? "Seleccioná al menos un producto para continuar." : "Falta definir qué pasa con el producto."}
                   </span>
                   <button
                     type="button"
-                    disabled={selectedCreditUnits === 0}
+                    disabled={selectedCreditUnits === 0 || !productDecisionMade}
                     onClick={() => setWizardStep(2)}
                     className="admin-credit-note-wizard-next"
                   >
-                    Continuar
+                    Continuar a dinero
                     <ArrowRight className="size-3.5" />
                   </button>
                 </div>
                 </div>
               )}
 
-              {wizardStep === 2 && (
+              {(wizardStep === 2 || wizardStep === 3) && (
                 <div className="admin-credit-note-editor-step mt-3">
                 <section className="admin-credit-note-step-card admin-credit-note-resolution-panel">
                   <div className="admin-credit-note-step-heading">
                     <div>
-                      <h4>Resolución</h4>
-                      <p>La acción se ejecutará únicamente después del CAE.</p>
+                      <h4>{wizardStep === 2 ? "Paso 2 — ¿Cómo se resuelve el dinero?" : "Paso 3 — Devolución y recepción"}</h4>
+                      <p>{wizardStep === 2 ? "Elegí cómo recibirá el cliente el importe de la nota de crédito." : "Si el producto vuelve, registrá quién gestiona la devolución y el estado de recepción."}</p>
                     </div>
                   </div>
 
@@ -3967,62 +4022,51 @@ function BillingManagementPanel({
                   </div>
 
                   <div className="admin-resolution-decisions">
+                  {wizardStep === 2 && <div className="admin-credit-decision-card">
+                    <h5>Dinero / resolución</h5>
+                    <p>El movimiento se registra después de que ARCA autorice la nota de crédito.</p>
                   <div className="admin-resolution-grid">
                     <div className="admin-resolution-question">
-                      <span className="admin-resolution-question-label">Resolución</span>
+                      <span className="admin-resolution-question-label">¿Cómo se resuelve el dinero?</span>
                       <div
                         className="admin-resolution-segmented"
                         role="radiogroup"
                         aria-label="Destino del dinero"
                       >
                         <ResolutionSegment
-                          selected={creditDestination === "customer_balance"}
+                          selected={moneyDecisionMade && creditDestination === "customer_balance"}
                           disabled={creditNoteProcessing}
-                          onClick={() => setCreditDestination("customer_balance")}
+                          onClick={() => { setCreditDestination("customer_balance"); setMoneyDecisionMade(true) }}
                         >
                           Saldo BEYONIX
                         </ResolutionSegment>
                         <ResolutionSegment
-                          selected={creditDestination === "external_refund"}
+                          selected={moneyDecisionMade && creditDestination === "external_refund"}
                           disabled={creditNoteProcessing}
-                          onClick={() => setCreditDestination("external_refund")}
+                          onClick={() => { setCreditDestination("external_refund"); setMoneyDecisionMade(true) }}
                         >
                           Reintegro externo
                         </ResolutionSegment>
                       </div>
+                      <p className="admin-credit-choice-help"><b>Saldo BEYONIX:</b> el importe queda acreditado como saldo a favor del cliente.<br /><b>Reintegro externo:</b> el dinero se devuelve por fuera del sistema.</p>
                     </div>
+                  </div>
+                  </div>}
+                  {wizardStep === 2 && originalShippingPaid > 0 && (
+                    <label className="admin-return-check-row admin-return-check-row-compact">
+                      <span><b>Reintegrar envío original</b><small>Pagado: {formatPrice(originalShippingPaid)}</small></span>
+                      <input type="checkbox" checked={includeOriginalShipping} disabled={creditNoteProcessing} onChange={(event) => setIncludeOriginalShipping(event.target.checked)} />
+                    </label>
+                  )}
 
-                    <div className="admin-resolution-question">
-                      <span className="admin-resolution-question-label">Producto</span>
-                      <div
-                        className="admin-resolution-segmented"
-                        role="radiogroup"
-                        aria-label="Devolución del producto"
-                      >
-                        <ResolutionSegment
-                          selected={returnShippingParty === "no_corresponde"}
-                          disabled={creditNoteProcessing}
-                          onClick={() => selectReturnShippingMode("no_corresponde")}
-                        >
-                          No vuelve
-                        </ResolutionSegment>
-                        <ResolutionSegment
-                          selected={returnShippingParty !== "no_corresponde"}
-                          disabled={creditNoteProcessing}
-                          onClick={() => {
-                            if (returnShippingParty === "no_corresponde") {
-                              selectReturnShippingMode("cliente")
-                            }
-                          }}
-                        >
-                          Debe volver
-                        </ResolutionSegment>
-                      </div>
-                    </div>
+                  {wizardStep === 3 && <div className="admin-credit-decision-card">
+                    <h5>Devolución / recepción</h5>
+                    <p>{returnShippingParty === "no_corresponde" ? "El producto no vuelve; no hace falta registrar recepción." : "Indicá quién canaliza la devolución y si el producto llegó a BEYONIX."}</p>
+                  <div className="admin-resolution-grid">
 
                     {returnShippingParty !== "no_corresponde" && (
                       <div className="admin-resolution-question">
-                        <span className="admin-resolution-question-label">Devolución</span>
+                        <span className="admin-resolution-question-label">Canal de devolución</span>
                         <div
                           className="admin-resolution-segmented"
                           role="radiogroup"
@@ -4048,21 +4092,21 @@ function BillingManagementPanel({
 
                     {returnShippingParty !== "no_corresponde" && (
                       <div className="admin-resolution-question">
-                        <span className="admin-resolution-question-label">Recepción</span>
+                        <span className="admin-resolution-question-label">Estado de recepción</span>
                         <div
                           className="admin-resolution-segmented"
                           role="radiogroup"
                           aria-label="Recepción del producto"
                         >
                           <ResolutionSegment
-                            selected={!isPhysicallyReceivedStatus(receptionStatus)}
+                            selected={receptionDecisionMade && !isPhysicallyReceivedStatus(receptionStatus)}
                             disabled={creditNoteProcessing}
                             onClick={() => selectReceptionPresence(false)}
                           >
                             Todavía no
                           </ResolutionSegment>
                           <ResolutionSegment
-                            selected={isPhysicallyReceivedStatus(receptionStatus)}
+                            selected={receptionDecisionMade && isPhysicallyReceivedStatus(receptionStatus)}
                             disabled={creditNoteProcessing}
                             onClick={() => selectReceptionPresence(true)}
                           >
@@ -4106,31 +4150,13 @@ function BillingManagementPanel({
                     )}
                   </div>
 
-                  {(originalShippingPaid > 0 ||
-                    ["producto_aprobado", "aprobado_parcial", "producto_rechazado"].includes(
+                  {wizardStep === 3 && (["producto_aprobado", "aprobado_parcial", "producto_rechazado"].includes(
                       receptionStatus,
                     ) ||
                     receptionStatus === "aprobado_parcial" ||
                     receptionStatus === "producto_rechazado" ||
                     operationType === "cambio_producto") && (
                     <div className="admin-resolution-decisions-extra">
-                      {originalShippingPaid > 0 && (
-                        <label className="admin-return-check-row admin-return-check-row-compact">
-                          <span>
-                            <b>Reintegrar envío original</b>
-                            <small>Pagado: {formatPrice(originalShippingPaid)}</small>
-                          </span>
-                          <input
-                            type="checkbox"
-                            checked={includeOriginalShipping}
-                            disabled={creditNoteProcessing}
-                            onChange={(event) =>
-                              setIncludeOriginalShipping(event.target.checked)
-                            }
-                          />
-                        </label>
-                      )}
-
                       {["producto_aprobado", "aprobado_parcial", "producto_rechazado"].includes(
                         receptionStatus,
                       ) && (
@@ -4223,16 +4249,17 @@ function BillingManagementPanel({
                       )}
                     </div>
                   )}
+                  </div>}
                   </div>
 
-                  {!["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(
+                  {wizardStep === 3 && !["no_requiere", "producto_aprobado", "aprobado_parcial"].includes(
                     receptionStatus,
                   ) && (
                     <label className="admin-return-exception-row">
                       <AlertTriangle className="admin-resolution-exception-icon size-4" />
                       <span>
                         Autorizar excepción sin recepción aprobada
-                        <small>Quedará registrada con el administrador responsable.</small>
+                        <small>Permite continuar sin registrar la recepción física del producto. Quedará auditado el administrador responsable.</small>
                       </span>
                       <input
                         type="checkbox"
@@ -4244,7 +4271,7 @@ function BillingManagementPanel({
                     </label>
                   )}
 
-                  {advancedOptionsOpen ? (
+                  {wizardStep === 3 && (advancedOptionsOpen ? (
                     <div className="admin-resolution-advanced-panel">
                       <div className="admin-credit-note-refund-extras">
                         <label className="admin-credit-note-field">
@@ -4440,37 +4467,39 @@ function BillingManagementPanel({
                     >
                       + Opciones avanzadas
                     </button>
-                  )}
+                  ))}
                 </section>
 
                 <div className="admin-credit-note-wizard-nav">
                   <button
                     type="button"
-                    onClick={() => setWizardStep(1)}
+                    onClick={() => setWizardStep(wizardStep === 2 ? 1 : 2)}
                     className="admin-credit-note-wizard-back"
                   >
                     <ArrowLeft className="size-3.5" />
                     Volver
                   </button>
                   <span className="admin-credit-note-wizard-hint">
-                    {canReviewAndEmit
-                      ? `Total a resolver: ${formatPrice(newCreditTotal)}`
-                      : "Completá los datos obligatorios para continuar."}
+                    {wizardStep === 2
+                      ? moneyDecisionMade ? `Importe a resolver: ${formatPrice(newCreditTotal)}` : "Falta definir cómo se resuelve el dinero."
+                      : canReviewAndEmit
+                        ? `Total a resolver: ${formatPrice(newCreditTotal)}`
+                        : creditNoteMissing[0] ?? "Completá los datos obligatorios para continuar."}
                   </span>
                   <button
                     type="button"
-                    disabled={!canReviewAndEmit}
-                    onClick={() => setWizardStep(3)}
+                    disabled={wizardStep === 2 ? !moneyDecisionMade : !canReviewAndEmit}
+                    onClick={() => setWizardStep(wizardStep === 2 ? 3 : 4)}
                     className="admin-credit-note-wizard-next"
                   >
-                    Continuar a revisión
+                    {wizardStep === 2 ? "Continuar a devolución" : "Continuar a revisión"}
                     <ArrowRight className="size-3.5" />
                   </button>
                 </div>
                 </div>
               )}
 
-              {wizardStep === 3 && (
+              {wizardStep === 4 && (
                 <div className="admin-credit-note-editor-step mt-3">
                 <section className="admin-credit-note-review admin-credit-note-review-full">
                     <div className="admin-credit-note-step-heading">
@@ -4566,7 +4595,7 @@ function BillingManagementPanel({
                       <div className="admin-credit-note-wizard-nav admin-credit-note-wizard-nav-review">
                         <button
                           type="button"
-                          onClick={() => setWizardStep(2)}
+                          onClick={() => setWizardStep(3)}
                           className="admin-credit-note-wizard-back"
                         >
                           <ArrowLeft className="size-3.5" />
@@ -4588,7 +4617,7 @@ function BillingManagementPanel({
                           )}
                           {creditNoteProcessing
                             ? "Validando con ARCA..."
-                            : "Revisar y emitir"}
+                            : "Emitir nota de crédito"}
                         </button>
                       </div>
                       <p className="admin-credit-note-secure-copy">
@@ -4814,7 +4843,7 @@ function BillingManagementPanel({
                 ) : (
                   <ShieldCheck className="size-4" />
                 )}
-                Emitir nota de crédito y aplicar resolución
+                Emitir nota de crédito
               </button>
             </footer>
           </section>
