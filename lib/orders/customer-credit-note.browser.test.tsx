@@ -30,15 +30,17 @@ import { createRoot } from "react-dom/client"
 import { CompraDetalleClient } from "@/app/cuenta/cuenta-client"
 const withNote = new URLSearchParams(location.search).get("note") !== "no"
 const activeOrder = new URLSearchParams(location.search).get("status") === "active"
+const financialStatus = new URLSearchParams(location.search).get("finance") ?? "refunded"
 const order = {
   id: 500, usuario_id: "customer-1", cliente_nombre: "María Núñez", estado: activeOrder ? "entregado" : "cancelado",
-  financial_status: "refunded", payment_status: "approved", total: 45000,
+  financial_status: financialStatus, payment_status: "approved", total: 45000,
   invoice_status: "authorized", invoice_number: 5, invoice_point: 1, invoice_cae: "12345678901234",
   credit_note_status: withNote ? "authorized" : null,
   credit_note_number: withNote ? 9 : null, credit_note_point: withNote ? 1 : null,
   credit_note_cae: withNote ? "98765432109876" : null,
   created_at: "2026-09-20T12:00:00Z", cancelled_at: "2026-09-22T12:00:00Z",
-  orden_items: [], order_audit_events: [], order_claims: [],
+  orden_items: [{ id: 1, producto_id: 9, cantidad: 1, precio: 45000, productos: { nombre: "Producto de prueba" } }],
+  order_audit_events: [], order_claims: [],
 }
 window.__pdfRequests = []
 window.fetch = async (input) => {
@@ -101,9 +103,19 @@ for (const theme of ["dark", "light"] as const) {
       assert.equal(noteSurface.image, "none")
       assert.equal(noteSurface.opacity, "1")
       assert.match(noteSurface.background, /^rgb\(/)
+      const cardSurfaces = await page.locator(".customer-cancelled-order-surface section, .customer-cancelled-order-surface dl > div, .customer-cancelled-order-surface .size-12, .customer-cancelled-order-surface section:has(h2:text-is('Productos comprados')) .mt-2\\.5 > div").evaluateAll((elements) =>
+        elements.map((element) => ({ background: getComputedStyle(element).backgroundColor, opacity: getComputedStyle(element).opacity })),
+      )
+      assert.ok(cardSurfaces.length >= 8)
+      for (const card of cardSurfaces) {
+        assert.match(card.background, /^rgb\(/)
+        assert.equal(card.opacity, "1")
+      }
+      assert.equal(await page.locator(".customer-cancelled-order-page").evaluate((element) => getComputedStyle(element).backgroundColor), "rgba(0, 0, 0, 0)")
       await note.getByRole("button", { name: "Ver nota de crédito" }).click()
       const modal = page.locator(".beyonix-modal-shell")
       await modal.getByRole("button", { name: "Descargar nota de crédito" }).waitFor()
+      assert.match(await modal.evaluate((element) => getComputedStyle(element).backgroundColor), /^rgb\(/)
       assert.deepEqual(await page.evaluate(() => (window as unknown as { __pdfRequests: string[] }).__pdfRequests), ["/api/orders/500/invoice?type=credit_note"])
       await modal.getByRole("button", { name: "Cerrar" }).click()
       const downloadPromise = page.waitForEvent("download")
@@ -114,6 +126,26 @@ for (const theme of ["dark", "light"] as const) {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
       assert.deepEqual(errors, [])
     } finally { await page.close() }
+  })
+}
+
+for (const finance of ["refund_pending", "cancelled"] as const) {
+  test(`pedido ${finance}: las cards mantienen fondo opaco en móvil y escritorio`, async () => {
+    for (const [theme, width] of [["dark", 390], ["light", 1280]] as const) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const html = `<!doctype html><html data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><style>${css}</style></head><body><div id="root"></div><script>${bundle}</script></body></html>`
+      await page.route("**/*", (route) => route.request().url().startsWith("http://localhost/compras") ? route.fulfill({ contentType: "text/html", body: html }) : route.abort())
+      try {
+        await page.goto(`http://localhost/compras?finance=${finance}`)
+        await page.getByRole("heading", { name: "Pedido cancelado correctamente" }).waitFor()
+        const backgrounds = await page.locator(".customer-cancelled-order-surface section, .customer-cancelled-order-surface dl > div, .customer-cancelled-order-surface .size-12, .customer-cancelled-order-surface section:has(h2:text-is('Productos comprados')) .mt-2\\.5 > div").evaluateAll((elements) =>
+          elements.map((element) => getComputedStyle(element).backgroundColor),
+        )
+        assert.ok(backgrounds.length >= 7)
+        for (const background of backgrounds) assert.match(background, /^rgb\(/)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+      } finally { await page.close() }
+    }
   })
 }
 

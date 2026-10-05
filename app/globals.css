@@ -3170,10 +3170,10 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .admin-con
   width: 3px;
 }
 
-main[class*="bg-"]:where(:not(.customer-cancelled-order-page)),
+main[class*="bg-"],
 section[class*="bg-"]:not(.checkout-form-panel):not(.customer-claim-solid-form-panel):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section)),
 footer[class*="bg-"],
-body > div.relative.z-10 main:where(:not(.customer-cancelled-order-page)),
+body > div.relative.z-10 main,
 body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell):not(.customer-claim-solid-form-panel):not(.customer-cancellation-success-card):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section)),
 body > div.relative.z-10 footer,
 body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
@@ -6065,16 +6065,10 @@ div.claim-form-shell::after {
   gap: 0.35rem;
 }
 
-.customer-cancelled-order-page,
 .customer-cancelled-order-surface {
-  background-color: var(--account-background, #05070a) !important;
-  background-image: none !important;
+  background: var(--account-surface, #0d1117) !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
-}
-
-.customer-cancelled-order-surface {
-  background-color: var(--account-surface, #0d1117) !important;
 }
 
 .customer-credit-note-surface {

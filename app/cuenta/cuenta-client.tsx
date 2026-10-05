@@ -807,17 +807,17 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               <div className="space-y-3">
                 <section className={`rounded-xl border px-4 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.16)] ${
                   refunded
-                    ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                    ? "border-[var(--account-success-border)] bg-[var(--account-surface-raised)]"
                     : rejectedByAdmin
-                      ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]"
+                      ? "border-[var(--account-danger-border)] bg-[var(--account-surface-raised)]"
                       : "border-[var(--account-border)] bg-[var(--account-surface-raised)]"
                 }`}>
                   <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
                     <span className={`flex size-12 shrink-0 items-center justify-center rounded-full border ${
                       refunded
-                        ? "border-[var(--account-success-border)] bg-[var(--account-success-bg)]"
+                        ? "border-[var(--account-success-border)] bg-[var(--account-surface-hover)]"
                         : rejectedByAdmin
-                          ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)]"
+                          ? "border-[var(--account-danger-border)] bg-[var(--account-surface-hover)]"
                           : "border-[var(--account-border)] bg-[var(--account-surface-hover)]"
                     }`}>
                       <CheckCircle2 className={`size-6 ${
