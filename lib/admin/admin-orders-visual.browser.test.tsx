@@ -70,7 +70,12 @@ import { createRoot } from "react-dom/client"
 import { AdminPedidos } from "@/app/admin/sections/pedidos/admin-pedidos"
 import { AdminThemeProvider } from "@/context/admin-theme-context"
 window.__creditNotePosts = []
+window.__pdfRequests = []
 window.fetch = async (input, init) => {
+  if (String(input).includes("/invoice/pdf?type=credit_note")) {
+    window.__pdfRequests.push({ url: String(input), authorization: init?.headers?.Authorization })
+    return new Response(new Blob(["%PDF-1.4\\n%%EOF"], { type: "application/pdf" }), { headers: { "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="Nota-Credito-BEYONIX.pdf"' } })
+  }
   if (String(input).includes("/credit-note") && init && init.method === "POST") {
     window.__creditNotePosts.push(JSON.parse(init.body))
     return Response.json({ error: "Sin emisión en el test." }, { status: 400 })
@@ -123,6 +128,11 @@ const DETAIL_ONLY = [
     description: "Producto con falla", affected_items: [{ order_item_id: 90, quantity: 1 }],
     order_claim_units: [{ id: 2, order_item_id: 90, role: "original", location: "con_cliente", incident_open: false }],
     created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
+  }] }),
+  order(10, { invoice_status: "authorized", invoice_arca_environment: "production", order_credit_notes: [{
+    id: "note-10", order_id: 10, status: "authorized", destination: "external_refund",
+    total_amount: 45000, voucher_point: 1, voucher_number: 9, cae: "12345678901234",
+    authorized_at: "2026-09-22T12:00:00Z", arca_environment: "production", created_at: "2026-09-22T12:00:00Z",
   }] }),
 ]
 
@@ -372,6 +382,33 @@ test("Facturación: una factura de homologación se identifica como prueba; una 
     } finally {
       await fiscalPage.close()
     }
+  }
+})
+
+test("Nota de crédito autorizada: permanece visible en el pedido resuelto y abre su PDF con autorización Admin", async () => {
+  for (const theme of ["dark", "light"] as const) {
+    const page = await open(theme, { orderId: 10, tab: "facturacion" })
+    try {
+      const note = page.getByRole("region", { name: "Notas de crédito emitidas" })
+      await note.waitFor()
+      assert.match(String(await note.textContent()), /Nota de Crédito C 0001-00000009/)
+      assert.match(String(await note.textContent()), /12345678901234/)
+      assert.match(String(await note.textContent()), /22\/9\/26/)
+      assert.match(String(await note.textContent()), /\$\s*45[.,]000/)
+      assert.match(String(await note.textContent()), /Autorizada/)
+      await note.getByRole("button", { name: "Ver nota de crédito" }).click()
+      await page.getByRole("button", { name: "Descargar nota de crédito" }).waitFor()
+      const requests = await page.evaluate(() => (window as unknown as { __pdfRequests: Array<{ url: string; authorization: string }> }).__pdfRequests)
+      assert.equal(requests.length, 1)
+      assert.match(requests[0].url, /\/api\/admin\/orders\/10\/invoice\/pdf\?type=credit_note&note=note-10/)
+      assert.equal(requests[0].authorization, "Bearer t")
+      assert.equal(await note.getByRole("button", { name: "Descargar PDF" }).count(), 1)
+      await page.locator(".beyonix-modal-shell").getByRole("button", { name: "Cerrar" }).click()
+      const downloadPromise = page.waitForEvent("download")
+      await note.getByRole("button", { name: "Descargar PDF" }).click()
+      assert.equal((await downloadPromise).suggestedFilename(), "Nota-Credito-BEYONIX.pdf")
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    } finally { await page.close() }
   }
 })
 

@@ -70,7 +70,7 @@ test("la factura NO se solicita al cargar el detalle del pedido: sólo el visor 
   const modal = source("components/account/invoice-viewer-modal.tsx")
   // El propio visor sólo dispara su fetch en un useEffect atado a su
   // montaje/orderId — nunca se monta hasta que se abre invoiceViewerOpen.
-  assert.match(modal, /fetch\(`\/api\/orders\/\$\{orderId\}\/invoice`\)/)
+  assert.match(modal, /fetch\(requestUrl \?\? `\/api\/orders\/\$\{orderId\}\/invoice`/)
 })
 
 test("un fallo al obtener el PDF queda contenido en el visor: no toca el estado de error global de la página", () => {
@@ -100,7 +100,8 @@ test("el visor usa un solo PDF por apertura y descarga exactamente el mismo Blob
   assert.match(modal, /const blob = await response\.blob\(\)/)
   assert.match(modal, /objectUrl = URL\.createObjectURL\(blob\)/)
   assert.match(modal, /<iframe src=\{fileUrl\}/)
-  assert.match(modal, /Descargar factura/)
+  assert.match(modal, /documentLabel = "factura"/)
+  assert.match(modal, /Descargar \{documentLabel\}/)
   assert.match(modal, /const handleDownload = \(\) =>/)
   assert.match(modal, /anchor\.href = fileUrl/)
   assert.match(modal, /anchor\.download = fileName/)

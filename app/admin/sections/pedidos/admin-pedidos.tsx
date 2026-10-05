@@ -98,6 +98,7 @@ import { getArcaIssueBlockReason } from "@/lib/arca/configuration-view"
 import { useArcaConfigurationStatus } from "../facturacion/arca-configuration-panel"
 import { CreditNoteReconcileAlert } from "./credit-note-reconcile-alert"
 import { getNotesPendingReconciliation } from "@/lib/arca/credit-note-reconciliation-view"
+import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import {
   formatAdminPendingActionCount,
   getAdminPendingOrderActions,
@@ -2822,7 +2823,7 @@ function BillingManagementPanel({
   const [manualGestionOverride, setManualGestionOverride] = useState(false)
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1)
   const [showAdminAdjustmentForm, setShowAdminAdjustmentForm] = useState(false)
-  const [showClosedDetail, setShowClosedDetail] = useState(false)
+  const [creditNotePreview, setCreditNotePreview] = useState<{ noteId: string; token: string } | null>(null)
   const [settlementSavingId, setSettlementSavingId] = useState<string | null>(null)
   const [creditDestination, setCreditDestination] = useState<
     "external_refund" | "customer_balance"
@@ -2938,6 +2939,14 @@ function BillingManagementPanel({
       : `Nota de Crédito C ${creditNoteFormattedNumber}`
   const creditNoteCaeLabel = formatBillingDash(pedido.credit_note_cae)
   const creditNoteAmountLabel = creditNoteAmount > 0 ? formatPrice(creditNoteAmount) : "-"
+  const openCreditNotePreview = async (noteId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      setMessage({ ok: false, text: "Iniciá sesión nuevamente para ver la nota de crédito." })
+      return
+    }
+    setCreditNotePreview({ noteId, token: session.access_token })
+  }
   const managementEvents = (pedido.order_audit_events ?? [])
     .filter((event) =>
       [
@@ -3055,7 +3064,6 @@ function BillingManagementPanel({
     setShowCreditConfirmation(false)
     setAdvancedOptionsOpen(false)
     setManualGestionOverride(false)
-    setShowClosedDetail(false)
     setWizardStep(1)
     setSettlementSavingId(null)
     setCreditDestination("customer_balance")
@@ -3532,6 +3540,49 @@ function BillingManagementPanel({
         onBillingUpdated={onBillingUpdated}
       />
 
+      {authorizedCreditNotes.length > 0 && (
+        <section className="admin-credit-note-history" aria-label="Notas de crédito emitidas">
+          <div>
+            <CheckCircle2 className="size-4" />
+            <p>
+              <strong>Nota de crédito emitida{authorizedCreditNotes.length > 1 ? "s" : ""}</strong>
+              <span>Comprobante{authorizedCreditNotes.length > 1 ? "s" : ""} autorizado{authorizedCreditNotes.length > 1 ? "s" : ""} por ARCA</span>
+            </p>
+          </div>
+          <div className="admin-credit-note-history-list">
+            {authorizedCreditNotes.map((note) => (
+              <div key={note.id} className="admin-credit-note-history-item">
+                <div className="admin-credit-note-history-data">
+                  <strong>Nota de Crédito C {formatInvoiceNumberOrDash(note.voucher_point, note.voucher_number)}{!isFiscalArcaVoucher(note.arca_environment) && " · prueba"}</strong>
+                  <span>CAE {formatBillingDash(note.cae)} · Emitida {formatOptionalOrderDate(note.authorized_at ?? note.created_at)}</span>
+                  <span>Importe {formatPrice(Number(note.total_amount))} · Estado: Autorizada</span>
+                </div>
+                <div className="admin-credit-note-history-actions">
+                  <button type="button" onClick={() => void openCreditNotePreview(note.id)}><Eye className="size-3.5" />Ver nota de crédito</button>
+                  <button type="button" onClick={() => void onDownloadCreditNote(note.id)}><Download className="size-3.5" />Descargar PDF</button>
+                  {note.destination === "customer_balance" && note.settlement_status !== "completado" && (
+                    <button type="button" className="is-settlement-retry" disabled={settlementSavingId === note.id} onClick={() => void retryCreditSettlement(note.id)}>
+                      {settlementSavingId === note.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                      Reintentar acreditación
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {creditNotePreview && (
+        <InvoiceViewerModal
+          title="Nota de crédito"
+          orderId={pedido.id}
+          requestUrl={`/api/admin/orders/${pedido.id}/invoice/pdf?type=credit_note&note=${encodeURIComponent(creditNotePreview.noteId)}`}
+          bearerToken={creditNotePreview.token}
+          documentLabel="nota de crédito"
+          onClose={() => setCreditNotePreview(null)}
+        />
+      )}
+
       {invoiceIssued ? null : !isApprovedPayment(pedido) ? (
         <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
           Confirmá el pago antes de emitir la factura.
@@ -3823,63 +3874,6 @@ function BillingManagementPanel({
                     : "notas autorizadas"}{" "}
                   por ARCA · Importe resuelto {formatPrice(authorizedCreditTotal)}
                 </span>
-              </div>
-              <button
-                type="button"
-                className="cursor-pointer"
-                onClick={() => setShowClosedDetail((current) => !current)}
-              >
-                {showClosedDetail ? "Ocultar detalle" : "Ver detalle completo"}
-              </button>
-            </section>
-          )}
-
-          {authorizedCreditNotes.length > 0 &&
-            (invoiceCreditRemaining > 0 || showClosedDetail) && (
-            <section className="admin-credit-note-history">
-              <div>
-                <CheckCircle2 className="size-4" />
-                <p>
-                  <strong>
-                    {authorizedCreditNotes.length === 1
-                      ? "1 nota autorizada"
-                      : `${authorizedCreditNotes.length} notas autorizadas`}
-                  </strong>
-                  <span>Comprobantes validados por ARCA</span>
-                </p>
-              </div>
-              <div className="admin-credit-note-history-list">
-                {authorizedCreditNotes.map((note) => (
-                  <div key={note.id} className="admin-credit-note-history-item">
-                    <button
-                      type="button"
-                      onClick={() => void onDownloadCreditNote(note.id)}
-                    >
-                      <span>
-                        NC {formatInvoiceNumberOrDash(note.voucher_point, note.voucher_number)}
-                        {!isFiscalArcaVoucher(note.arca_environment) && " · prueba"}
-                      </span>
-                      <strong>{formatPrice(Number(note.total_amount))}</strong>
-                      <Download className="size-3.5" />
-                    </button>
-                    {note.destination === "customer_balance" &&
-                      note.settlement_status !== "completado" && (
-                        <button
-                          type="button"
-                          className="is-settlement-retry"
-                          disabled={settlementSavingId === note.id}
-                          onClick={() => void retryCreditSettlement(note.id)}
-                        >
-                          {settlementSavingId === note.id ? (
-                            <LoaderCircle className="size-3.5 animate-spin" />
-                          ) : (
-                            <RefreshCw className="size-3.5" />
-                          )}
-                          Reintentar acreditación
-                        </button>
-                      )}
-                  </div>
-                ))}
               </div>
             </section>
           )}

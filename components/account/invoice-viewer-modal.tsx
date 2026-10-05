@@ -8,6 +8,9 @@ interface InvoiceViewerModalProps {
   title: string
   orderId: number
   onClose: () => void
+  requestUrl?: string
+  bearerToken?: string
+  documentLabel?: string
 }
 
 /**
@@ -20,12 +23,15 @@ export function InvoiceViewerModal({
   title,
   orderId,
   onClose,
+  requestUrl,
+  bearerToken,
+  documentLabel = "factura",
 }: InvoiceViewerModalProps) {
   const [mounted, setMounted] = useState(false)
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
   const [errorMessage, setErrorMessage] = useState("")
   const [fileUrl, setFileUrl] = useState<string | null>(null)
-  const [fileName, setFileName] = useState(`Factura-${orderId}.pdf`)
+  const [fileName, setFileName] = useState(`${documentLabel === "factura" ? "Factura" : "Nota-Credito"}-${orderId}.pdf`)
 
   useEffect(() => {
     setMounted(true)
@@ -49,13 +55,15 @@ export function InvoiceViewerModal({
       setErrorMessage("")
 
       try {
-        const response = await fetch(`/api/orders/${orderId}/invoice`)
+        const response = await fetch(requestUrl ?? `/api/orders/${orderId}/invoice`, {
+          headers: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : undefined,
+        })
 
         if (!response.ok) {
           const data = (await response.json().catch(() => null)) as
             | { error?: string }
             | null
-          throw new Error(data?.error || "No se pudo obtener la factura.")
+          throw new Error(data?.error || `No se pudo obtener la ${documentLabel}.`)
         }
 
         const blob = await response.blob()
@@ -72,7 +80,7 @@ export function InvoiceViewerModal({
         setErrorMessage(
           loadError instanceof Error
             ? loadError.message
-            : "No se pudo obtener la factura.",
+            : `No se pudo obtener la ${documentLabel}.`,
         )
         setStatus("error")
       }
@@ -84,7 +92,7 @@ export function InvoiceViewerModal({
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [orderId])
+  }, [orderId, requestUrl, bearerToken, documentLabel])
 
   if (!mounted) return null
 
@@ -118,7 +126,7 @@ export function InvoiceViewerModal({
               className="beyonix-modal-action inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-white/10 px-3 text-xs font-bold text-white transition-colors hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Download className="size-3.5" />
-              Descargar factura
+              Descargar {documentLabel}
             </button>
             <button
               type="button"
@@ -138,7 +146,7 @@ export function InvoiceViewerModal({
           {status === "loading" && (
             <div className="flex size-full flex-col items-center justify-center gap-2 text-white/60">
               <Loader2 className="size-6 animate-spin" />
-              <p className="text-xs font-medium">Cargando factura...</p>
+              <p className="text-xs font-medium">Cargando {documentLabel}...</p>
             </div>
           )}
 

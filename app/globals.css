@@ -3170,11 +3170,11 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .admin-con
   width: 3px;
 }
 
-main[class*="bg-"],
-section[class*="bg-"]:not(.checkout-form-panel):not(.customer-claim-solid-form-panel),
+main[class*="bg-"]:where(:not(.customer-cancelled-order-page)),
+section[class*="bg-"]:not(.checkout-form-panel):not(.customer-claim-solid-form-panel):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section)),
 footer[class*="bg-"],
-body > div.relative.z-10 main,
-body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell):not(.customer-claim-solid-form-panel):not(.customer-cancellation-success-card),
+body > div.relative.z-10 main:where(:not(.customer-cancelled-order-page)),
+body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell):not(.customer-claim-solid-form-panel):not(.customer-cancellation-success-card):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section)),
 body > div.relative.z-10 footer,
 body > div.relative.z-10 > div[class*="min-h-screen"][class*="bg-"] {
   background-color: transparent !important;
@@ -6060,6 +6060,45 @@ div.claim-form-shell::after {
 
 .admin-credit-note-history-item {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.customer-cancelled-order-page,
+.customer-cancelled-order-surface {
+  background-color: var(--account-background, #05070a) !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}
+
+.customer-cancelled-order-surface {
+  background-color: var(--account-surface, #0d1117) !important;
+}
+
+.customer-credit-note-surface {
+  background: var(--account-surface-raised, #111923) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}
+
+.admin-credit-note-history-data {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  margin-right: 0.4rem;
+  color: #d1fae5;
+  font-size: 0.68rem;
+}
+
+.admin-credit-note-history-data span {
+  color: rgba(209, 250, 229, 0.74);
+}
+
+.admin-credit-note-history-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.35rem;
 }
 
@@ -10929,6 +10968,12 @@ html[data-admin-theme="light"] .admin-credit-note-history-list button:hover {
 }
 html[data-admin-theme="light"] .admin-credit-note-history-list button strong {
   color: var(--admin-text) !important;
+}
+html[data-admin-theme="light"] .admin-credit-note-history-data {
+  color: var(--admin-text);
+}
+html[data-admin-theme="light"] .admin-credit-note-history-data span {
+  color: var(--beyonix-light-text-secondary);
 }
 html[data-admin-theme="light"] .admin-return-check-row,
 html[data-admin-theme="light"] .admin-return-exception-row {

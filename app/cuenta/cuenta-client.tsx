@@ -529,6 +529,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const [refundProofOpening, setRefundProofOpening] = useState(false)
   const [refundProofError, setRefundProofError] = useState("")
   const [invoiceViewerOpen, setInvoiceViewerOpen] = useState(false)
+  const [creditNoteViewerOpen, setCreditNoteViewerOpen] = useState(false)
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" })
@@ -677,6 +678,25 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const invoiceAvailable = isInvoiceAvailable(order)
   const invoiceGenerating = isInvoiceGenerating(order)
   const invoiceAwaitingRetry = isInvoiceAwaitingRetry(order)
+  const creditNoteAvailable =
+    isOrderDetailInvoiced(order) &&
+    order.credit_note_status === "authorized" &&
+    Boolean(order.credit_note_number && order.credit_note_point && order.credit_note_cae)
+  const creditNoteSection = creditNoteAvailable ? (
+    <section className="customer-credit-note-surface rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.16)]" aria-label="Nota de crédito emitida">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-10px font-medium uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">Comprobante fiscal</p>
+          <h2 className="mt-0.5 text-sm font-bold text-[var(--account-text-primary)]">Nota de crédito emitida</h2>
+          <p className="mt-1 text-xs text-[var(--account-text-secondary)]">N.º {String(order.credit_note_point).padStart(4, "0")}-{String(order.credit_note_number).padStart(8, "0")}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setCreditNoteViewerOpen(true)} className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-beyonix-blue-light/25 bg-[#112A43] px-3 text-xs font-medium text-white transition")}><Eye className="size-3.5" />Ver nota de crédito</button>
+          <button type="button" disabled={downloadingCreditNote} onClick={() => void handleDownloadCreditNote()} className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-beyonix-blue-light/25 bg-[#112A43] px-3 text-xs font-medium text-white transition disabled:cursor-wait disabled:opacity-60")}><Download className="size-3.5" />Descargar nota de crédito</button>
+        </div>
+      </div>
+    </section>
+  ) : null
   const hasProof = Boolean(order.payment_proof_url)
   const paymentStatus = (order.payment_status ?? "pendiente_comprobante").toLowerCase()
   const isTransferPayment = order.payment_method_id === "transferencia"
@@ -729,12 +749,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const refunded = order.financial_status === "refunded"
     const refundFlow = refundPending || refunded
     const cancellationDate = order.cancellation_requested_at || order.cancelled_at
-    const invoiceIssued = isOrderDetailInvoiced(order)
     const orderDispatched = isOrderDetailDispatched(order)
-    const creditNoteAvailable =
-      invoiceIssued &&
-      order.credit_note_status === "authorized" &&
-      Boolean(order.credit_note_number && order.credit_note_point && order.credit_note_cae)
     const refundProofAvailable = Boolean(order.refund_proof_url)
     const shippingChargeDetail = orderDispatched
       ? "El pedido ya fue despachado. Podés cancelar la compra, pero el costo del envío queda a tu cargo."
@@ -759,7 +774,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
           ? "border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] text-[var(--account-danger-text)]"
           : "border-[var(--account-neutral-border)] bg-[var(--account-neutral-bg)] text-[var(--account-neutral-text)]"
     return (
-      <main className="relative isolate min-h-screen overflow-hidden bg-[var(--account-background)] px-3 py-24 font-heading sm:px-5 lg:px-8">
+      <main className="customer-cancelled-order-page relative isolate min-h-screen overflow-hidden bg-[var(--account-background)] px-3 py-24 font-heading sm:px-5 lg:px-8">
         <div className="relative z-20 mx-auto flex min-h-[calc(100vh-12rem)] max-w-[860px] flex-col justify-center">
           <button
             type="button"
@@ -770,7 +785,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             Volver a Mis compras
           </button>
 
-          <section className="relative isolate z-30 overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.28)] sm:p-4">
+          <section className="customer-cancelled-order-surface relative isolate z-30 overflow-hidden rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface)] p-3 shadow-[0_18px_44px_rgba(0,0,0,0.28)] sm:p-4">
             <div className="relative z-20 flex flex-col gap-3 rounded-xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.16)] sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-10px font-medium uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
@@ -855,6 +870,8 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   </div>
                 </section>
 
+                {creditNoteSection}
+
                 {refundFlow && (
                   <section className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.16)]">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -871,7 +888,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                       </p>
                     </div>
 
-                    {(refundProofAvailable || creditNoteAvailable) && (
+                    {refundProofAvailable && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {refundProofAvailable && (
                           <button
@@ -883,18 +900,6 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                           >
                             <Eye className="size-3.5" />
                             Comprobante
-                          </button>
-                        )}
-                        {creditNoteAvailable && (
-                          <button
-                            type="button"
-                            aria-label="Descargar nota de crédito"
-                            disabled={downloadingCreditNote}
-                            onClick={() => void handleDownloadCreditNote()}
-                            className={cn(beyonixHoverBorder, "inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border-beyonix-blue-light/25 bg-[#112A43] px-3 text-xs font-medium text-white transition disabled:cursor-wait disabled:opacity-60")}
-                          >
-                            <Download className="size-3.5" />
-                            Nota de crédito
                           </button>
                         )}
                       </div>
@@ -963,6 +968,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             </div>
           </section>
         </div>
+        {creditNoteViewerOpen && (
+          <InvoiceViewerModal
+            title="Nota de crédito"
+            orderId={order.id}
+            requestUrl={`/api/orders/${order.id}/invoice?type=credit_note`}
+            documentLabel="nota de crédito"
+            onClose={() => setCreditNoteViewerOpen(false)}
+          />
+        )}
       </main>
     )
   }
@@ -1021,6 +1035,8 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         </header>
 
         {error && <p className="mt-3 rounded-xl border border-[var(--account-danger-border)] bg-[var(--account-danger-bg)] px-4 py-3 text-sm font-bold text-[var(--account-danger-text)]">{error}</p>}
+
+        {creditNoteSection && <div className="mt-3">{creditNoteSection}</div>}
 
         <div className="customer-order-detail-timeline mt-3">
           <OrderProgressTimeline order={order} />
@@ -1336,6 +1352,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
           title="Factura"
           orderId={order.id}
           onClose={() => setInvoiceViewerOpen(false)}
+        />
+      )}
+      {creditNoteViewerOpen && (
+        <InvoiceViewerModal
+          title="Nota de crédito"
+          orderId={order.id}
+          requestUrl={`/api/orders/${order.id}/invoice?type=credit_note`}
+          documentLabel="nota de crédito"
+          onClose={() => setCreditNoteViewerOpen(false)}
         />
       )}
     </main>
