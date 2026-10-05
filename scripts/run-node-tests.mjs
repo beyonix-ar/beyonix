@@ -7,6 +7,9 @@ import { spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 
 const TEST_FILES = [
+  "lib/admin/dispatch-stage3.test.ts",
+  "lib/orders/dispatch-db.test.ts",
+  "lib/orders/dispatch-eligibility.test.ts",
   "lib/mercadolibre/import-integrity.test.ts",
   "lib/mercadolibre/sales-report.test.ts",
   "lib/mercadolibre/sku-reconciliation.test.ts",

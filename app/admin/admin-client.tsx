@@ -15,6 +15,7 @@ import {
   Menu,
   MessageSquareText,
   Package,
+  PackageCheck,
   Percent,
   Settings2,
   ShieldCheck,
@@ -328,6 +329,12 @@ export function AdminClient({ children }: { children: ReactNode }) {
         icon: <ShoppingCart className="size-4" />,
         notificationCount: orderNotificationCount,
         notificationTone,
+      },
+      {
+        key: "despachos",
+        label: "Despachos",
+        description: "Preparación y tandas",
+        icon: <PackageCheck className="size-4" />,
       },
     ]
 

@@ -5,6 +5,7 @@ export const ADMIN_ROUTES = {
   productos: "/admin/productos",
   compras: "/admin/compras",
   pedidos: "/admin/pedidos",
+  despachos: "/admin/despachos",
   modificaciones: "/admin/modificaciones",
   financiacion: "/admin/financiacion",
   notificaciones: "/admin/notificaciones",
@@ -26,6 +27,7 @@ const LEGACY_ADMIN_SECTION_KEYS: Record<string, AdminRouteKey> = {
   productos: "productos",
   compras: "compras",
   pedidos: "pedidos",
+  despachos: "despachos",
   modificaciones: "modificaciones",
   banners: "modificaciones",
   financiacion: "financiacion",
@@ -45,6 +47,7 @@ const OPERATOR_ROUTES = new Set<AdminRouteKey>([
   "dashboard",
   "productos",
   "pedidos",
+  "despachos",
 ])
 
 export function normalizeAdminRouteKey(value: string | null | undefined) {

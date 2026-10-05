@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
 import { OrderReplacements } from "./order-replacements"
+import { OrderDispatchStatus } from "./order-dispatch-status"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import { shareUnchanged } from "@/lib/admin/structural-sharing"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
@@ -5490,6 +5491,7 @@ function PedidoDetailModal({
 
           {activeView === "envio" && (
           <div className="admin-order-shipping-refined mt-3 space-y-2.5">
+            <OrderDispatchStatus orderId={pedido.id} />
             <section className="admin-order-shipping-card admin-order-shipping-overview rounded-lg border p-3">
               <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">

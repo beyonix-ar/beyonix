@@ -16555,6 +16555,7 @@ html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer .admin-claim-chat
   /* Una sola columna: el (?) de Stock queda al borde derecho del
      encabezado, así que ahí vuelve a abrir hacia la izquierda. */
   .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble { right: -0.25rem; left: auto; }
+<<<<<<< HEAD
   .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble::after { right: 0.75rem; left: auto; }
 }
 
@@ -16762,3 +16763,20 @@ html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { 
   width: auto;
 }
 @media (max-width: 620px) { .admin-credit-wizard-stage { min-height: 22rem; } }
+=======
+  .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble::after { right: 0.75rem; left: auto; }
+}
+/* Despachos usa superficies opacas en ambos temas para el flujo de escaneo. */
+.beyonix-admin-main .admin-ds-surface.dispatch-surface {
+  background: #07111b !important;
+}
+.beyonix-admin-main .admin-ds-card.dispatch-card {
+  background: #0c1927 !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface.dispatch-surface {
+  background: var(--bx-surface-section) !important;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card {
+  background: var(--bx-surface-card) !important;
+}
+>>>>>>> d2787fe (implementa preparacion y tandas de despacho)
