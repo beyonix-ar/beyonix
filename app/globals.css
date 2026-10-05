@@ -2694,7 +2694,7 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
   --admin-config-section-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   --admin-config-subpanel-bg: #17283a;
   --admin-config-subpanel-border: rgba(125, 171, 207, 0.14);
-  --admin-config-neutral-bg: rgba(255, 255, 255, 0.025);
+  --admin-config-neutral-bg: var(--admin-config-subpanel-bg);
   --admin-config-neutral-border: rgba(92, 159, 215, 0.2);
   --admin-config-info-bg: rgba(56, 189, 248, 0.07);
   --admin-config-info-border: rgba(125, 211, 252, 0.32);
@@ -2717,16 +2717,16 @@ html[data-admin-theme="light"] .admin-claim-closed-text { color: #334155 !import
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
-  --admin-config-cluster-bg: #edf1f5;
-  --admin-config-cluster-border: #d7e0e9;
+  --admin-config-cluster-bg: var(--bx-surface-section);
+  --admin-config-cluster-border: var(--bx-border-section);
   --admin-config-cluster-shadow: 0 1px 2px rgba(15, 23, 42, 0.035);
-  --admin-config-section-bg: #ffffff;
-  --admin-config-section-border: #d6dee8;
+  --admin-config-section-bg: var(--bx-surface-raised);
+  --admin-config-section-border: var(--bx-border-card);
   --admin-config-section-shadow: 0 1px 3px rgba(15, 23, 42, 0.055);
-  --admin-config-subpanel-bg: #f4f7fa;
-  --admin-config-subpanel-border: #e1e8ef;
-  --admin-config-neutral-bg: #f4f7fa;
-  --admin-config-neutral-border: #e1e8ef;
+  --admin-config-subpanel-bg: var(--bx-surface-card);
+  --admin-config-subpanel-border: var(--bx-border-card);
+  --admin-config-neutral-bg: var(--bx-surface-card);
+  --admin-config-neutral-border: var(--bx-border-card);
   --admin-config-info-bg: #eff6ff;
   --admin-config-info-border: #bfdbfe;
   --admin-config-info-dot: #2563eb;
@@ -2749,15 +2749,6 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
 
 /* Configuración y Financiación comparten página suave, grupos discretos,
    tarjetas claras y superficies internas apenas diferenciadas. */
-html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
-  --bx-surface-section: #ffffff;
-  --bx-border-section: #d6dee8;
-  --bx-shadow-section: 0 1px 3px rgba(15, 23, 42, 0.055);
-  --bx-surface-card: #f4f6f9;
-  --bx-border-card: #e1e7ee;
-  --bx-shadow-card: none;
-}
-
 .beyonix-admin-main .admin-config-page .admin-config-cluster {
   padding: 0.75rem;
   border: 1px solid var(--admin-config-cluster-border);
@@ -2773,7 +2764,19 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
 }
 
 html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .admin-config-section:is([data-config-block], [data-financing-block]) {
-  background-color: #D9D9D9 !important;
+  background: var(--admin-config-section-bg) !important;
+}
+
+html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .bx-surface[data-config-block="banners"] {
+  background: var(--admin-config-section-bg) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-value-row {
+  background: var(--admin-config-neutral-bg);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-subpanel :is(.admin-config-tile, .admin-config-status, .admin-config-callout, .admin-config-breakdown, .admin-config-preview) {
+  background: var(--admin-config-section-bg);
 }
 
 .beyonix-admin-main .admin-config-page .admin-config-subpanel {
@@ -4733,14 +4736,29 @@ div.claim-form-shell::after {
 }
 
 .order-detail-components-shell {
-  background: var(--account-surface-raised) !important;
-  background-color: var(--account-surface-raised) !important;
+  background: var(--account-surface) !important;
+  background-color: var(--account-surface) !important;
   background-image: none !important;
   border: 1px solid var(--account-border-subtle) !important;
   opacity: 1 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  box-shadow: inset 0 0 0 9999px var(--account-surface-raised);
+  box-shadow: inset 0 0 0 9999px var(--account-surface);
+}
+
+.customer-order-detail-page .customer-order-detail-timeline > section,
+.customer-order-detail-page :is(.customer-order-products, .customer-order-payment-summary, .customer-order-branch-delivery) {
+  background: var(--account-surface-raised) !important;
+  background-image: none !important;
+}
+.customer-order-detail-page :is(.customer-order-management, .customer-order-help) {
+  background: var(--account-surface-highlight) !important;
+  background-image: none !important;
+  box-shadow: inset 0 0 0 9999px var(--account-surface-highlight);
+}
+.customer-order-detail-page .customer-order-products > div > div {
+  background: var(--account-surface) !important;
+  background-image: none !important;
 }
 
 @media (min-width: 1024px) and (max-height: 1100px) {
@@ -13230,7 +13248,7 @@ html[data-account-theme="light"][data-account-scope] #contenido .beyonix-terms-h
    vez de tocar .beyonix-modal-body (compartida por modales/carrito/etc. en
    todo el sitio). */
 html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-link {
-  color: rgba(15, 23, 42, 0.85) !important;
+  color: var(--account-text-primary) !important;
 }
 html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-link:hover,
 html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-link:focus-visible {
@@ -13240,13 +13258,16 @@ html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-fo
    celeste calibrado de Light (--beyonix-cyan) queda legible pero no lo
    suficientemente "fuerte" para un heading -- navy sólido en su lugar. */
 html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-heading {
-  color: #112a43 !important;
+  color: var(--account-accent) !important;
 }
 /* Descripción ("Conectados con tu comodidad") + ubicación/envíos: mismo
    tier ~80% negro que .beyonix-about-card-text (Sobre BEYONIX), reutilizado
    acá para consistencia entre ambas superficies. */
 html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-footer-text {
-  color: #374151 !important;
+  color: var(--account-text-secondary) !important;
+}
+html[data-account-theme="light"][data-account-scope] footer#contacto .beyonix-modal-muted {
+  color: var(--account-text-secondary) !important;
 }
 
 html[data-account-theme="light"][data-account-scope] .beyonix-success-note {
@@ -16555,7 +16576,6 @@ html[data-admin-theme="light"] .admin-claim-wizard-chat-drawer .admin-claim-chat
   /* Una sola columna: el (?) de Stock queda al borde derecho del
      encabezado, así que ahí vuelve a abrir hacia la izquierda. */
   .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble { right: -0.25rem; left: auto; }
-<<<<<<< HEAD
   .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble::after { right: 0.75rem; left: auto; }
 }
 
@@ -16763,9 +16783,6 @@ html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { 
   width: auto;
 }
 @media (max-width: 620px) { .admin-credit-wizard-stage { min-height: 22rem; } }
-=======
-  .admin-replacement-modal__stock-head .admin-claim-help.is-align-start .admin-claim-help-bubble::after { right: 0.75rem; left: auto; }
-}
 /* Despachos usa superficies opacas en ambos temas para el flujo de escaneo. */
 .beyonix-admin-main .admin-ds-surface.dispatch-surface {
   background: #07111b !important;
@@ -16779,4 +16796,3 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface.dispatch-su
 html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card {
   background: var(--bx-surface-card) !important;
 }
->>>>>>> d2787fe (implementa preparacion y tandas de despacho)

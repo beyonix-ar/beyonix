@@ -157,7 +157,7 @@ for (const theme of ["light", "dark"] as const) {
         for (const name of ["estado", "cuotas", "costos", "historial"]) {
           assert.equal(
             await block(page, name).evaluate((element) => getComputedStyle(element).backgroundColor),
-            "rgb(217, 217, 217)",
+            "rgb(255, 255, 255)",
             name,
           )
         }
