@@ -147,7 +147,8 @@ export function useAdminNotifications(enabled = true) {
           if (["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages", "ordenes", "orden_items", "order_claims", "order_refund_proofs"].includes(table)) {
             window.dispatchEvent(new CustomEvent(ADMIN_DISPATCH_CHANGED_EVENT, { detail: table }))
           }
-          if (!["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages"].includes(table)) scheduleReload()
+          // Las tareas de despacho de los pedidos también viven en la campana.
+          scheduleReload()
         },
       )
     }

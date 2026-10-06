@@ -29,8 +29,8 @@ test("contador del ojo: cero acciones no renderiza badge", () => {
 
 test("contador del ojo: cualquier acción urgente conserva el tono crítico", () => {
   const badge = getOrderEyeBadge([
-    { kind: "invoice", label: "Emitir factura", urgent: false },
-    { kind: "refund", label: "Reintegrar pago", urgent: true },
+    { kind: "invoice", label: "Emitir factura", urgent: false, priority: 2, href: "/admin/pedidos/1?tab=facturacion" },
+    { kind: "refund", label: "Resolver reintegro", urgent: true, priority: 1, href: "/admin/pedidos/1?tab=cancelacion" },
   ])
   assert.ok(badge)
   assert.ok(typeof badge.props.className === "string")
@@ -39,7 +39,7 @@ test("contador del ojo: cualquier acción urgente conserva el tono crítico", ()
 })
 
 test("contador del ojo: acciones no urgentes conservan el tono ámbar", () => {
-  const badge = getOrderEyeBadge([{ kind: "invoice", label: "Emitir factura", urgent: false }])
+  const badge = getOrderEyeBadge([{ kind: "invoice", label: "Emitir factura", urgent: false, priority: 2, href: "/admin/pedidos/1?tab=facturacion" }])
   assert.ok(badge)
   assert.ok(typeof badge.props.className === "string")
   assert.match(badge.props.className, /admin-order-eye-attention-badge--warning/)
@@ -49,14 +49,14 @@ test("contador del ojo: acciones no urgentes conservan el tono ámbar", () => {
 test("contador del ojo: muestra el count real sin truncarlo y preserva el tooltip", () => {
   for (const count of [1, 2, 12]) {
     const badge = getOrderEyeBadge(Array.from({ length: count }, () => ({
-      kind: "claim" as const, label: "Revisar reclamo", urgent: true,
+      kind: "claim" as const, label: "Resolver reclamo", urgent: true, priority: 1 as const, href: "/admin/pedidos/1?tab=atencion",
     })))
     assert.ok(badge)
     assert.equal(badge.props["data-pending-action-count"], count)
     assert.equal(badge.props.children, count)
     assert.equal(badge.props.role, "status")
     assert.ok(typeof badge.props.title === "string")
-    assert.match(badge.props.title, /Revisar reclamo/)
+    assert.match(badge.props.title, /Resolver reclamo/)
   }
 })
 

@@ -26,9 +26,11 @@ import { isClaimVisibleForMode } from "@/lib/orders/claim-visibility"
 import {
   buildCancellationNotification,
   buildClaimNotification,
+  buildOrderWorkNotifications,
   claimNeedsAdminAttention,
   dedupeNotifications,
   formatOrderId,
+  isAdminActionNotification,
   keepDistinctOperationalTasks,
   type AdminNotification,
   type AdminNotificationType,
@@ -43,6 +45,7 @@ export {
   buildClaimNotification,
   dedupeNotifications,
   getOperationalPriority,
+  isAdminActionNotification,
   keepLatestNotificationByOrder,
 } from "@/lib/admin/admin-notification-rules"
 export type {
@@ -58,7 +61,9 @@ export type AdminNotificationTone = AdminNotificationType
 export type AdminNotificationGroups = Record<AdminNotificationType, number>
 
 export interface AdminNotificationSummary {
+  /** Sólo acciones humanas: es el número del badge rojo. */
   count: number
+  infoCount: number
   tone: AdminNotificationTone
   groups: AdminNotificationGroups
   notifications: AdminNotification[]
@@ -217,41 +222,6 @@ function isOrderVisible(order: SupabasePedido) {
   return isAdminOrderVisible(order)
 }
 
-function isOrderPaidForInvoice(order: {
-  estado?: string | null
-  payment_status?: string | null
-  paid_at?: string | null
-  payment_confirmed_amount?: number | string | null
-  total?: number | null
-}) {
-  if (Number(order.total ?? 0) <= 0) return false
-  if (["rechazado", "rejected"].includes(order.payment_status ?? "")) {
-    return false
-  }
-
-  return (
-    Boolean(order.paid_at) ||
-    Number(order.payment_confirmed_amount ?? 0) > 0 ||
-    order.payment_status === "confirmado" ||
-    order.payment_status === "approved" ||
-    order.payment_status === "confirmed" ||
-    [
-      "pagado",
-      "enviado",
-      "en_camino",
-      "visita_fallida",
-      "en_sucursal",
-      "retiro_pendiente",
-      "retiro_vencido",
-      "en_devolucion",
-      "devuelto_beyonix",
-      "entregado",
-    ].includes(
-      order.estado ?? "",
-    )
-  )
-}
-
 function isPaymentReceived(order: {
   payment_status?: string | null
   paid_at?: string | null
@@ -292,32 +262,6 @@ function isAdminCancelledOrder(order: {
       order.financial_status ?? "",
     )
   )
-}
-
-function isOrderReadyForShipping(order: {
-  estado?: string | null
-  financial_status?: string | null
-  invoice_status?: string | null
-  invoice_cae?: string | null
-}) {
-  if (isRefundPaymentAttentionOrder(order)) return false
-  if (order.invoice_status !== "authorized" || !order.invoice_cae) return false
-  if (
-    ["cancelled", "cancellation_requested", "refund_pending", "refunded"].includes(
-      order.financial_status ?? "",
-    )
-  ) {
-    return false
-  }
-
-  return ![
-    "preparado",
-    "enviado",
-    "en_camino",
-    "entregado",
-    "cancelado",
-    "rechazado",
-  ].includes(order.estado ?? "")
 }
 
 function formatProfileDetails(profile?: CreditAdminProfile | null) {
@@ -394,6 +338,7 @@ async function getCreditAdminNotifications() {
       actionLabel: "Revisar en Clientes",
       actionUrl: `${ADMIN_ROUTES.clientes}#topup-${encodeURIComponent(topup.id)}`,
       isRead: false,
+      kind: "action",
     })
   }
 
@@ -507,6 +452,7 @@ async function getMercadoLibreReturnNotifications() {
         actionUrl: `${ADMIN_ROUTES.dashboard}?tab=ml&mlSale=${encodeURIComponent(sale.id)}`,
         isRead: false,
         priority: "attention",
+        kind: "action",
       },
     ]
   })
@@ -621,12 +567,13 @@ async function getInventoryIntegrityNotifications() {
       type: "inventory",
       eventKey: `inventory-integrity:${row.product_id}`,
       eventAt,
-      title: "Inventario requiere conciliación",
+      title: "Revisar inventario",
       body: `${row.product_name}: ${details.join(" · ")}.`,
-      actionLabel: "Abrir diagnóstico",
+      actionLabel: "Revisar inventario",
       actionUrl: `/admin/inventario?productId=${encodeURIComponent(String(row.product_id))}`,
       isRead: false,
       priority: "attention",
+      kind: "action",
     }]
   })
 }
@@ -698,16 +645,9 @@ function applyReads(
     .sort(sortByEventDate)
 }
 
+/** Una tarea humana sigue visible hasta resolverse; leerla no la descarta. */
 function isPendingAdminTask(notification: AdminNotification) {
-  return (
-    notification.type === "payment" ||
-    notification.type === "shipping" ||
-    notification.type === "invoice" ||
-    notification.type === "cancellation" ||
-    notification.type === "claim" ||
-    notification.type === "mercadolibre_return" ||
-    notification.type === "inventory"
-  )
+  return isAdminActionNotification(notification)
 }
 
 function getTone(
@@ -739,16 +679,19 @@ function getTone(
   return "order"
 }
 
+/** El contador y el tono sólo consideran acciones humanas; la información se lista aparte. */
 function buildSummary(notifications: AdminNotification[]): AdminNotificationSummary {
   const groups = createGroups()
+  const actions = notifications.filter(isAdminActionNotification)
 
-  for (const notification of notifications) {
+  for (const notification of actions) {
     groups[notification.type] += 1
   }
 
   return {
-    count: notifications.length,
-    tone: getTone(groups, notifications),
+    count: actions.length,
+    infoCount: notifications.length - actions.length,
+    tone: getTone(groups, actions),
     groups,
     notifications,
   }
@@ -824,6 +767,7 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}`,
           orderId,
           isRead: false,
+          kind: "info",
         })
       }
 
@@ -839,53 +783,19 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
           type: "payment",
           eventKey: `payment:${orderId}`,
           eventAt: String(order.payment_proof_uploaded_at),
-          title: "Nuevo comprobante recibido",
-          body: `Pedido ${formatOrderId(orderId)}`,
-          actionLabel: "Ver comprobante",
+          title: "Revisar pago",
+          body: `Pedido ${formatOrderId(orderId)} · Nuevo comprobante recibido`,
+          actionLabel: "Revisar pago",
           actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=pago`,
           orderId,
           isRead: false,
+          kind: "action",
         })
       }
 
-      if (
-        isOrderPaidForInvoice(order) &&
-        !order.invoice_cae &&
-        (
-          order.invoice_status == null ||
-          order.invoice_status === "pending" ||
-          order.invoice_status === "error"
-        )
-      ) {
-        notifications.push({
-          id: `invoice:${orderId}`,
-          type: "invoice",
-          eventKey: `invoice:${orderId}`,
-          eventAt: String(order.paid_at || order.created_at),
-          title: "Factura por emitir",
-          body: `El pedido ${formatOrderId(orderId)} está listo para facturar.`,
-          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=facturacion`,
-          orderId,
-          isRead: false,
-        })
-      }
-
-      if (!isRefundPaymentAttentionOrder(order) && isOrderReadyForShipping(order)) {
-        notifications.push({
-          id: `shipping:${orderId}`,
-          type: "shipping",
-          eventKey: `shipping:${orderId}`,
-          eventAt: String(
-            order.invoice_created_at || order.paid_at || order.created_at,
-          ),
-          title: "Envío pendiente",
-          body: `El pedido ${formatOrderId(orderId)} ya está facturado y listo para preparar/enviar.`,
-          actionLabel: "Ver envío",
-          actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=envio`,
-          orderId,
-          isRead: false,
-        })
-      }
+      // Factura y despacho: sólo cuando requieren a una persona (misma fuente
+      // que el contador del pedido). La facturación automática no avisa.
+      notifications.push(...buildOrderWorkNotifications(order))
 
       const cancellationNotification = buildCancellationNotification(order)
       if (cancellationNotification) notifications.push(cancellationNotification)
@@ -923,6 +833,8 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
         actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=reclamos`,
         orderId,
         isRead: false,
+        // El reclamo ya cuenta como acción: el mensaje sólo informa.
+        kind: "info",
       })
     }
 

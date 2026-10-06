@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import { arcaAutoInvoicingView } from "./auto-invoicing-control.ts"
+import { arcaAutoInvoicingView, isOrderInAutoInvoicingQueue } from "./auto-invoicing-control.ts"
 import type { ArcaConfigurationStatus } from "./configuration.ts"
 
 const read = (path: string) => readFileSync(path, "utf8").replace(/\r\n/g, "\n")
@@ -63,4 +63,32 @@ test("systemd ARCA usa loopback, secreto privado, flock y timeout; Vercel no lo 
   assert.match(timer, /OnCalendar=\*-\*-\* \*:0\/5:00/)
   assert.match(timer, /Persistent=true/)
   assert.ok(vercel.crons.every((cron) => cron.path !== "/api/cron/arca-invoices"))
+})
+
+test("cola automática: misma regla que el claim automático de claim_arca_invoice", () => {
+  const control = { enabled: true, cutoff_at: "2026-10-03T15:00:00Z", updated_at: "2026-10-03T15:00:00Z" }
+  const on = arcaAutoInvoicingView(control, production)
+  const queued = {
+    invoice_status: "pending", invoice_cae: null, invoice_number: null, invoice_arca_environment: null,
+    invoice_next_attempt_at: "2026-10-05T12:00:00Z", invoice_queued_at: "2026-10-05T11:00:00Z",
+  }
+  assert.equal(isOrderInAutoInvoicingQueue(on, queued), true)
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_status: "error" }), true, "reintento con backoff")
+  // Automático desactivado (control, flag del servidor o fuera de PROD): nadie la emite.
+  for (const off of [
+    arcaAutoInvoicingView({ ...control, enabled: false }, production),
+    arcaAutoInvoicingView(control, { ...production, autoInvoicingEnabled: false }),
+    arcaAutoInvoicingView(control, { ...production, environment: "homologation" }),
+  ]) assert.equal(isOrderInAutoInvoicingQueue(off, queued), false)
+  // Fuera de la cola del worker aunque el automático esté activo.
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_queued_at: "2026-10-01T10:00:00Z" }), false, "anterior al corte")
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_queued_at: null }), false)
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_status: "error", invoice_next_attempt_at: null }), false, "error sin reintento")
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_number: 12 }), false, "número pedido: conciliación manual")
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_arca_environment: "homologation" }), false)
+  assert.equal(isOrderInAutoInvoicingQueue(on, { ...queued, invoice_status: null }), false, "fuera de la cola")
+  // La regla espeja el filtro real de la migración.
+  const migration = read("supabase/migrations/20261003120000_arca_auto_invoicing_activation.sql")
+  assert.match(migration, /o\.invoice_status in \('pending', 'error'\) and o\.invoice_next_attempt_at <= v_now/)
+  assert.match(migration, /and o\.invoice_queued_at > v_cutoff\s+and o\.invoice_cae is null\s+and o\.invoice_number is null/)
 })

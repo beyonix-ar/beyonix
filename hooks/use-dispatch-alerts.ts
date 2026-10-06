@@ -10,6 +10,9 @@ type BlockedBatch = {
   id: number
   code: string
   status: string
+  created_at?: string
+  closed_at?: string | null
+  orderCount?: number
   blockedOrders: { orderId: number; reason: string; createdAt: string }[]
 }
 
@@ -67,11 +70,30 @@ export function useDispatchAlerts(enabled: boolean) {
     eventAt: item.createdAt,
     title: `Pedido ${orderCode(item.orderId)} bloqueado`,
     body: `Está incluido en ${batch.code}. Retiralo antes del despacho. ${item.reason}.`,
-    actionLabel: "Abrir tanda",
+    actionLabel: "Retirar del despacho",
     actionUrl: `/admin/despachos?batch=${batch.id}`,
     orderId: item.orderId,
     isRead: false,
     priority: "attention" as const,
+    kind: "action" as const,
   })))
-  return { reviewCount: active.length, notifications }
+  // Tanda cerrada sin bloqueados: UNA acción humana para toda la tanda. Con
+  // bloqueados sólo se pide retirarlos (Despachos no permite confirmar).
+  const readyToHandOver = batches.filter((batch) => batch.status === "closed" && batch.blockedOrders.length === 0)
+  for (const batch of readyToHandOver) {
+    const count = batch.orderCount ?? 0
+    notifications.push({
+      id: `dispatch-handover:${batch.id}`,
+      type: "shipping",
+      eventKey: `dispatch-handover:${batch.id}`,
+      eventAt: batch.closed_at ?? batch.created_at ?? new Date(0).toISOString(),
+      title: `Confirmar entrega de ${batch.code} a Andreani`,
+      body: count === 1 ? "1 pedido listo para entregar al transporte." : `${count} pedidos listos para entregar al transporte.`,
+      actionLabel: "Confirmar entrega",
+      actionUrl: `/admin/despachos?batch=${batch.id}`,
+      isRead: false,
+      kind: "action",
+    })
+  }
+  return { reviewCount: active.length, handoverCount: readyToHandOver.length, notifications }
 }

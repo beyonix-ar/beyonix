@@ -18,6 +18,7 @@ const stubs: Plugin = {
       "^@/context/auth-context$": "auth",
       "^@/lib/supabase/client$": "supabase",
       "^next/navigation$": "navigation",
+      "^next/link$": "link",
       "^@/hooks/use-pedidos$": "pedidos",
     }
     for (const [filter, path] of Object.entries(map)) b.onResolve({ filter: new RegExp(filter) }, () => ({ path, namespace: "stub" }))
@@ -38,6 +39,12 @@ const stubs: Plugin = {
         export function useRouter() { return router }
         export function usePathname() { return useSyncExternalStore(subscribe, () => location.pathname) }
         export function useSearchParams() { return useSyncExternalStore(subscribe, snapshot) }`,
+    }))
+    b.onLoad({ filter: /^link$/, namespace: "stub" }, () => ({
+      loader: "js",
+      resolveDir: process.cwd(),
+      contents: `import { createElement } from "react"
+        export default function Link({ href, prefetch, ...props }) { return createElement("a", { href, ...props }) }`,
     }))
     b.onLoad({ filter: /^supabase$/, namespace: "stub" }, () => ({
       loader: "js",
@@ -654,7 +661,8 @@ test("camioncito de la fila: blanco en Light (igual que Dark, que no cambia); el
 // blanco en Light y Dark; el círculo (fondo, borde, tamaño) no cambia.
 const ROW_ICON_PEDIDOS = [
   order(1, { invoice_status: "authorized" }),
-  order(7, { invoice_status: "pending", invoice_cae: null, invoice_number: null, invoice_point: null }),
+  // Fuera de la cola automática: emitir la factura es una acción humana.
+  order(7, { invoice_status: null, invoice_cae: null, invoice_number: null, invoice_point: null }),
 ]
 const ROW_ICONS = `(() => { ${COLOR_HELPERS}
   const icons = [...document.querySelectorAll(".admin-orders-list-row .admin-order-row-icon")].filter((b) => b.getBoundingClientRect().width > 0)

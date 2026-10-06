@@ -1,5 +1,7 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
+import type { AdminPendingFacts } from "@/lib/orders/admin-pending-actions"
+import { loadAdminPendingFacts } from "@/lib/orders/admin-pending-facts-server"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -62,6 +64,16 @@ export async function GET(request: Request) {
     "cancelled_at",
     "cancellation_requested_at",
     "refund_pending_at",
+    "invoice_next_attempt_at",
+    "invoice_queued_at",
+    "invoice_number",
+    "invoice_arca_environment",
+    "shipping_provider",
+    "envio_proveedor",
+    "andreani_handed_over_at",
+    "return_status",
+    "return_resolved_at",
+    "transfer_verification_status",
   ].join(", ")
 
   // Mantenimiento (expirar transferencias vencidas sin comprobante) NO corre
@@ -118,9 +130,17 @@ export async function GET(request: Request) {
     return Response.json({ pedidos, total: notificationView ? 0 : searchTotal ?? count ?? 0 })
   }
 
+  // Hechos de despacho y del orquestador financiero para las acciones
+  // pendientes. Si fallan, el listado sigue con la lógica de cancelación previa.
+  const pendingFactsPromise = loadAdminPendingFacts(auth.admin, pedidos, auth.profile.rol !== "operador")
+    .catch((error: unknown) => {
+      console.error("ADMIN_PENDING_FACTS_ERROR", { message: error instanceof Error ? error.message : String(error) })
+      return new Map<number, AdminPendingFacts>()
+    })
+
   if (notificationView) {
     const orderIds = pedidos.map((pedido) => pedido.id)
-    const [claimsResult, creditNotesResult, mpRefundsResult] = await Promise.all([
+    const [claimsResult, creditNotesResult, mpRefundsResult, pendingFacts] = await Promise.all([
       auth.admin
         .from("order_claims")
         .select("*, order_claim_messages(*)")
@@ -139,6 +159,7 @@ export async function GET(request: Request) {
         .select("id, order_id, status, amount, error_code, created_at, completed_at")
         .in("order_id", orderIds)
         .order("created_at", { ascending: false }),
+      pendingFactsPromise,
     ])
 
     if (claimsResult.error) {
@@ -180,6 +201,7 @@ export async function GET(request: Request) {
         orden_items: [],
         order_refund_proofs: [],
         order_audit_events: [],
+        admin_pending_facts: pendingFacts.get(pedido.id) ?? null,
       })),
       total: pedidos.length,
     })
@@ -439,9 +461,12 @@ export async function GET(request: Request) {
     }
   }
 
+  const pendingFacts = await pendingFactsPromise
+
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
+      admin_pending_facts: pendingFacts.get(pedido.id) ?? null,
       total: auth.profile.rol === "operador" ? 0 : pedido.total,
       shipping_cost_real:
         auth.profile.rol === "operador" ? null : pedido.shipping_cost_real,

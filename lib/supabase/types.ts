@@ -3,6 +3,7 @@ import type {
   ClaimShipmentCustomerSource,
   ClaimUnitSource,
 } from "../orders/claim-shipment-view.ts"
+import type { AdminPendingFacts } from "../orders/admin-pending-actions.ts"
 
 // ─────────────────────────────────────────────────────────────
 // Categorías
@@ -440,6 +441,9 @@ export interface SupabasePedido {
   customer_credit_restored_amount?: number | null
   /** created_at del mismo movimiento 'reversal' -- sólo para mostrar la fecha real en el historial, nunca para decidir nada. */
   customer_credit_restored_at?: string | null
+  andreani_handed_over_at?: string | null
+  /** Hechos server-side para las acciones pendientes (despacho y orquestador financiero). */
+  admin_pending_facts?: AdminPendingFacts | null
 }
 
 export interface SupabaseMercadoPagoOrderRefund {

@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import {
+  isAdminActionNotification,
   markAdminNotificationRead,
   type AdminNotification,
   type AdminNotificationType,
@@ -34,8 +35,8 @@ const TYPE_LABELS: Record<AdminNotificationType, string> = {
   order: "Pedido nuevo",
   message: "Mensaje nuevo",
   payment: "Pago / reintegro",
-  invoice: "Factura por emitir",
-  shipping: "Envío pendiente",
+  invoice: "Facturación",
+  shipping: "Despacho",
   cancellation: "Compra cancelada",
   claim: "Reclamo por responder",
   mercadolibre_return: "Devolución de Mercado Libre",
@@ -103,6 +104,9 @@ export function AdminNotificationsPopover({
   variant = "admin",
 }: AdminNotificationsPopoverProps) {
   const isStorefront = variant === "storefront"
+  // Acciones (requieren intervención) primero; la información nunca suma al contador.
+  const actions = notifications.filter(isAdminActionNotification)
+  const information = notifications.filter((notification) => !isAdminActionNotification(notification))
 
   return (
     <div
@@ -121,9 +125,9 @@ export function AdminNotificationsPopover({
           {isStorefront ? "Notificaciones" : "Notificaciones admin"}
         </p>
         <p className={cn("mt-0.5 text-10px", isStorefront ? "beyonix-header-notif-muted" : "text-white/50")}>
-          {error ? "No se pudieron cargar las alertas" : loading ? "Cargando alertas…" : notifications.length > 0
-            ? `${notifications.length} pendientes`
-            : "Todo está al día"}
+          {error ? "No se pudieron cargar las alertas" : loading ? "Cargando alertas…" : actions.length > 0
+            ? actions.length === 1 ? "1 acción pendiente" : `${actions.length} acciones pendientes`
+            : information.length > 0 ? "Sin acciones pendientes" : "Todo está al día"}
         </p>
       </div>
 
@@ -181,7 +185,17 @@ export function AdminNotificationsPopover({
           </div>
         ) : (
           <div className="space-y-1.5">
-            {notifications.map((notification) => {
+            {[
+              { key: "actions", title: "Acciones", items: actions },
+              { key: "info", title: "Información", items: information },
+            ].filter((section) => section.items.length > 0).map((section) => (
+              <section key={section.key} aria-label={section.title} data-notification-section={section.key} className="space-y-1.5">
+                {actions.length > 0 && information.length > 0 && (
+                  <p className={cn("px-1 pt-1 text-10px font-black uppercase tracking-widest", isStorefront ? "beyonix-header-notif-muted" : "text-white/50")}>
+                    {section.title}
+                  </p>
+                )}
+            {section.items.map((notification) => {
               const Icon = getNotificationIcon(notification.type)
               const mercadoLibreReturn =
                 notification.type === "mercadolibre_return"
@@ -361,6 +375,8 @@ export function AdminNotificationsPopover({
                 </button>
               )
             })}
+              </section>
+            ))}
           </div>
         )}
       </div>

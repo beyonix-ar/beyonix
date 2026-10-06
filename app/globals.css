@@ -3936,6 +3936,44 @@ button[aria-label^="Ver pedido"]:not(:disabled):hover {
   color: var(--admin-text-muted) !important;
 }
 
+/* Acciones humanas de cada pedido (Etapa 7): etiquetas compactas con los
+   tonos de pedidos ya existentes; el color lo define admin-order-tone-*. */
+.admin-order-action-chips {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.admin-order-action-chip {
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  display: inline-flex;
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.32rem 0.62rem;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  transition: filter 130ms ease;
+  white-space: nowrap;
+}
+
+a.admin-order-action-chip:hover {
+  filter: brightness(1.18);
+}
+
+a.admin-order-action-chip:focus-visible {
+  outline: 2px solid var(--beyonix-sky);
+  outline-offset: 2px;
+}
+
 /* Panel de cancelación en Dark: el catch-all [class*="rounded"][class*="border"]
    lo pintaba con un gradiente al 98% (fondo transparente). Superficies sólidas
    por jerarquía: panel -> cards -> subcards. Light no cambia. */

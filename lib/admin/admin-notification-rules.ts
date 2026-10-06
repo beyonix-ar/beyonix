@@ -12,13 +12,16 @@
  */
 
 import { ADMIN_ROUTES } from "./admin-routes.ts"
+import { claimNeedsAdminAttention } from "../orders/claim-attention.ts"
+
+export { claimNeedsAdminAttention }
 import { isClaimVisibleForMode } from "../orders/claim-visibility.ts"
 import {
-  getCancellationNextAction,
-  getCancellationNextActionCopy,
-  type CancellationNextActionOrder,
-  type CancellationNextActionState,
-} from "../orders/cancellation-next-action.ts"
+  getAdminPendingOrderActions,
+  type AdminPendingActionsOrder,
+  type AdminPendingOrderAction,
+  type AdminPendingOrderActionKind,
+} from "../orders/admin-pending-actions.ts"
 
 export type AdminNotificationType =
   | "order"
@@ -44,6 +47,11 @@ export interface AdminNotification {
   isRead: boolean
   priority?: "attention"
   /**
+   * action: requiere intervención humana y suma al contador rojo.
+   * info: evento para leer (pedido nuevo, mensaje); nunca suma al contador.
+   */
+  kind?: "action" | "info"
+  /**
    * true cuando una acción financiera de cancelación lleva pendiente más del
    * umbral esperado para su estado (ver STALE_THRESHOLD_MS_BY_STATE). Sólo
    * afecta el ORDEN en que se muestra (keepLatestNotificationByOrder empuja
@@ -63,92 +71,104 @@ export function formatOrderId(orderId: number) {
   return `#BX-${1000 + orderId}`
 }
 
-/**
- * Única regla de "este reclamo necesita que el Admin haga algo" (campana,
- * contador del pedido y punto rojo de Atención al cliente). Un reclamo
- * finalizado, rechazado o cancelado (status 'cerrado' + cancelled_at) nunca
- * avisa, aunque haya quedado un admin_needs_action viejo. Uno en curso avisa
- * sólo si la base lo marcó, si nunca se revisó o si el cliente escribió
- * después de la última respuesta: esperar a Andreani no es una acción.
- */
-export function claimNeedsAdminAttention(claim: {
-  admin_needs_action?: boolean | null
-  first_reviewed_at?: string | null
-  last_customer_message_at?: string | null
-  last_admin_response_at?: string | null
-  status?: string | null
-}) {
-  if (["cerrado", "rechazado"].includes(claim.status ?? "")) return false
-  if (claim.admin_needs_action) return true
-  if (claim.status === "recibido" || (!claim.status && !claim.first_reviewed_at)) return true
-  return getTime(claim.last_customer_message_at) > getTime(claim.last_admin_response_at)
-}
 
-export interface CancellationNotificationOrder extends CancellationNextActionOrder {
+export interface CancellationNotificationOrder extends AdminPendingActionsOrder {
   id: number
   created_at?: string | null
   cancelled_at?: string | null
   cancellation_requested_at?: string | null
   refund_pending_at?: string | null
+  paid_at?: string | null
+  invoice_created_at?: string | null
+}
+
+/** Acciones de dinero de una cancelación (misma fuente que el contador del pedido). */
+const CANCELLATION_ACTION_COPY: Partial<Record<AdminPendingOrderActionKind, string>> = {
+  cancellation_request: "El cliente pidió cancelar la compra.",
+  refund: "Elegí cómo devolver el dinero.",
+  refund_manual: "Registrá el reintegro realizado por fuera del sistema.",
+  refund_retry: "BEYONIX no pudo completar una actualización interna.",
+  advanced_case: "El reintegro necesita la gestión completa.",
 }
 
 /**
- * Umbral a partir del cual una acción de cancelación pendiente se marca
- * `stale` (ver AdminNotification.stale). needs_reconciliation es dinero en
- * un estado ambiguo frente a Mercado Pago -- se vuelve crítico mucho antes
- * que el resto. `null` = ese estado nunca se marca stale (wait_credit_note
- * depende de ARCA, no de una acción del admin).
+ * Umbral a partir del cual una acción pendiente se marca `stale` (ver
+ * AdminNotification.stale): un reintento pendiente se vuelve crítico mucho
+ * antes que el resto.
  */
-const STALE_THRESHOLD_MS_BY_STATE: Partial<Record<CancellationNextActionState, number>> = {
-  reconcile_mp_refund: 6 * 60 * 60 * 1000,
-  emit_credit_note: 48 * 60 * 60 * 1000,
-  register_external_refund: 48 * 60 * 60 * 1000,
-  execute_mp_refund: 48 * 60 * 60 * 1000,
-  blocked: 24 * 60 * 60 * 1000,
+const STALE_THRESHOLD_MS_BY_KIND: Partial<Record<AdminPendingOrderActionKind, number>> = {
+  refund_retry: 6 * 60 * 60 * 1000,
+  advanced_case: 24 * 60 * 60 * 1000,
+  refund: 48 * 60 * 60 * 1000,
+  refund_manual: 48 * 60 * 60 * 1000,
+}
+
+function actionNotification(
+  order: CancellationNotificationOrder,
+  action: AdminPendingOrderAction,
+  type: AdminNotificationType,
+  eventAt: string,
+  body: string,
+  now: number,
+): AdminNotification {
+  const eventKey = type === "cancellation" ? `cancellation:${action.kind}:${order.id}` : `${type}:${order.id}`
+  const threshold = STALE_THRESHOLD_MS_BY_KIND[action.kind]
+  return {
+    id: eventKey,
+    type,
+    eventKey,
+    eventAt,
+    title: action.label,
+    body: `${formatOrderId(order.id)} — ${body}`,
+    actionLabel: action.label,
+    actionUrl: action.href,
+    orderId: order.id,
+    isRead: false,
+    priority: action.urgent ? "attention" : undefined,
+    stale: Boolean(threshold && now - getTime(eventAt) > threshold),
+    kind: "action",
+  }
 }
 
 /**
- * Única fuente de "qué necesita este pedido cancelado ahora" -- ver
- * lib/orders/cancellation-next-action.ts. Reemplaza el criterio anterior
- * (hasCancellationAdminAttention + texto ad-hoc por financial_status), que
- * no distinguía "falta emitir NC" de "falta cargar comprobante" de "hay que
- * revisar un refund de Mercado Pago". Devuelve `null` cuando no hay nada
- * pendiente (sin pago confirmado, o ya resuelto) -- así la notificación
- * desaparece sola en el siguiente poll en vez de quedar una alerta de algo
- * ya resuelto.
+ * Tarea de dinero de una cancelación, derivada de getAdminPendingOrderActions
+ * (única fuente del contador). `null` cuando no hay intervención humana: sin
+ * pago confirmado, ya resuelto, o un paso automático (NC en ARCA, reintegro
+ * en proceso) -- así la alerta desaparece sola al resolverse.
  */
 export function buildCancellationNotification(
   order: CancellationNotificationOrder,
   now: number = Date.now(),
 ): AdminNotification | null {
-  const nextAction = getCancellationNextAction(order)
-  const copy = getCancellationNextActionCopy(nextAction.state, nextAction.reason)
-  if (!copy) return null
-
   const cancelledAt =
     order.refund_pending_at || order.cancellation_requested_at || order.cancelled_at
   if (!cancelledAt) return null
+  const action = getAdminPendingOrderActions(order).find((item) => CANCELLATION_ACTION_COPY[item.kind])
+  if (!action) return null
+  return actionNotification(order, action, "cancellation", String(cancelledAt), CANCELLATION_ACTION_COPY[action.kind]!, now)
+}
 
-  const orderId = order.id
-  const orderCode = formatOrderId(orderId)
-  const eventKey = `cancellation:${nextAction.state}:${orderId}`
-  const threshold = STALE_THRESHOLD_MS_BY_STATE[nextAction.state]
-  const stale = Boolean(threshold && now - getTime(String(cancelledAt)) > threshold)
-
-  return {
-    id: eventKey,
-    type: "cancellation",
-    eventKey,
-    eventAt: String(cancelledAt),
-    title: copy.title,
-    body: `${orderCode} — ${copy.description}`,
-    actionLabel: copy.title,
-    actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=${copy.tab}`,
-    orderId,
-    isRead: false,
-    priority: nextAction.urgent ? "attention" : undefined,
-    stale,
+/**
+ * Tareas humanas del flujo normal (factura que la cola automática no cubre,
+ * preparar o entregar el despacho). La facturación en cola y los reintentos
+ * automáticos no generan tarea.
+ */
+export function buildOrderWorkNotifications(
+  order: CancellationNotificationOrder,
+  now: number = Date.now(),
+): AdminNotification[] {
+  const notifications: AdminNotification[] = []
+  for (const action of getAdminPendingOrderActions(order)) {
+    if (action.kind === "invoice") {
+      notifications.push(actionNotification(order, action, "invoice", String(order.paid_at || order.created_at),
+        "La factura no se emite automáticamente.", now))
+    } else if (action.kind === "dispatch_prepare" || action.kind === "shipping") {
+      notifications.push(actionNotification(order, action, "shipping",
+        String(order.invoice_created_at || order.paid_at || order.created_at),
+        "Pedido facturado y listo para preparar.", now))
+    }
   }
+  return notifications
 }
 
 export interface ClaimAttentionInput {
@@ -190,10 +210,17 @@ export function buildClaimNotification(
     body: helpMessage
       ? `El mensaje de ayuda del pedido ${formatOrderId(orderId)} requiere atención.`
       : `El reclamo del pedido ${formatOrderId(orderId)} requiere atención.`,
+    actionLabel: helpMessage ? "Responder mensaje" : "Resolver reclamo",
     actionUrl: `${ADMIN_ROUTES.pedidos}/${orderId}?tab=reclamos`,
     orderId,
     isRead: false,
+    kind: "action",
   }
+}
+
+/** Acción vs información: sólo lo primero suma al contador rojo. */
+export function isAdminActionNotification(notification: Pick<AdminNotification, "kind" | "type">) {
+  return notification.kind ? notification.kind === "action" : !["order", "message"].includes(notification.type)
 }
 
 export function dedupeNotifications(notifications: AdminNotification[]) {

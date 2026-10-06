@@ -269,6 +269,7 @@ const TEST_FILES = [
 const TSX_TEST_FILES = [
   "lib/admin/dispatch-realtime.test.tsx",
   "app/admin/sections/pedidos/financial-resolution-wizard.test.tsx",
+  "lib/admin/admin-pending-realtime.test.tsx",
   "components/claims/claim-reply-draft.test.tsx",
   "components/claims/return-inventory-refresh.test.tsx",
   "components/claims/use-claim-wizard-scroll.test.tsx",
@@ -302,6 +303,7 @@ const DB_ROUTE_TEST_FILES = [
 
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
+  "lib/orders/admin-pending-facts-server.test.ts",
   "lib/arca/fiscal-history-routes.test.ts",
   "lib/arca/invoice-pdf-environment.test.ts",
   "lib/arca/invoice-pdf-data.test.ts",

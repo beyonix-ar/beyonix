@@ -103,9 +103,12 @@ import { getNotesPendingReconciliation } from "@/lib/arca/credit-note-reconcilia
 import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import {
   formatAdminPendingActionCount,
+  getAdminOrderWork,
   getAdminPendingOrderActions,
   type AdminPendingOrderAction,
+  type AdminPendingOrderActionKind,
 } from "@/lib/orders/admin-pending-actions"
+import { OrderPendingActionChips } from "./order-pending-actions"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import {
   ADMIN_EXECUTIVE_STATUS,
@@ -113,11 +116,6 @@ import {
   getAdminExecutiveStatusFromEstado,
   type AdminOrderStatusPresentation,
 } from "@/lib/orders/admin-order-status-presentation"
-import {
-  getCancellationNextAction,
-  getCancellationNextActionCopy,
-  type CancellationNextActionState,
-} from "@/lib/orders/cancellation-next-action"
 import { getCancellationPanelViewModel } from "@/lib/orders/cancellation-panel-view"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
 import {
@@ -725,19 +723,6 @@ function shouldShowClaimsTab(pedido: SupabasePedido) {
   )
 }
 
-function needsReturnInventoryDecision(pedido: SupabasePedido) {
-  const productArrived =
-    pedido.estado === "devuelto_beyonix" ||
-    ["en_revision", "aprobada", "rechazada", "resuelta"].includes(
-      pedido.return_status ?? "",
-    )
-
-  return (
-    productArrived &&
-    (pedido.orden_items ?? []).some((item) => !item.return_inventory_processed_at)
-  )
-}
-
 type OrderSectionNotificationType =
   | "new"
   | "warning"
@@ -766,9 +751,12 @@ function getAdminOrderTabState(
     pendingClaim?: SupabaseOrderClaim | null
   },
 ) {
-  const refundPending = isRefundPaymentAttentionOrder(pedido)
+  // Insignias rojas sólo para tareas humanas (misma fuente que el contador):
+  // la NC y la factura automáticas no se marcan como pendientes del Admin.
+  const { actions } = getAdminOrderWork(pedido)
+  const financialAction = actions.find((action) =>
+    ["cancellation_request", "refund", "refund_manual", "refund_retry", "advanced_case"].includes(action.kind))
   const refunded = isRefundedOrder(pedido)
-  const creditNotePending = needsCreditNoteReminder(pedido)
 
   return {
     visible: {
@@ -782,24 +770,18 @@ function getAdminOrderTabState(
             label: "Comprobante pendiente de revisión",
           }
         : null,
-      envio: needsShippingReminder(pedido)
+      envio: actions.some((action) => ["dispatch_blocked", "dispatch_prepare", "shipping"].includes(action.kind))
         ? {
             type: "info",
             label: "Acción logística pendiente",
           }
         : null,
-      facturacion: creditNotePending
+      facturacion: actions.some((action) => action.kind === "invoice")
         ? {
-            type: "danger",
-            label: "Falta registrar nota de crédito",
-            critical: true,
+            type: "success",
+            label: "Facturación pendiente",
           }
-        : needsInvoiceReminder(pedido)
-            ? {
-                type: "success",
-                label: "Facturación pendiente",
-              }
-            : null,
+        : null,
       atencion: pendingClaim && isFormalClaim(pendingClaim)
         ? {
             type: "danger",
@@ -813,21 +795,18 @@ function getAdminOrderTabState(
               critical: true,
             }
           : null,
-      cancelacion: refundPending
+      cancelacion: financialAction
         ? {
             type: "danger",
-            label: "Reintegro pendiente",
+            label: financialAction.label,
             critical: true,
           }
-        : refunded
+        : refunded || !isCancellationFlowOrder(pedido)
           ? null
-          : isCancellationFlowOrder(pedido)
-            ? {
-                type: "danger",
-                label: "Cancelación en curso",
-                critical: true,
-              }
-            : null,
+          : {
+              type: "info",
+              label: "Cancelación en curso",
+            },
     } satisfies Record<AdminOrderTabBadgeKey, AdminOrderTabBadgeState>,
   }
 }
@@ -835,6 +814,8 @@ type RecommendedAction = {
   title: string
   description: string
   target: AdminOrderDetailView
+  /** Destino fuera del detalle (Despachos); si falta, se abre `target`. */
+  href?: string
   buttonLabel: string | null
   tone: "urgent" | "warning" | "info" | "success"
 }
@@ -869,140 +850,59 @@ function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresen
   return getAdminExecutiveStatusFromEstado(getDisplayedOrderStatus(pedido))
 }
 
-const CANCELLATION_NEXT_ACTION_TARGET: Record<
-  "facturacion" | "cancelacion" | "pago",
-  { target: AdminOrderDetailView; buttonLabel: string }
-> = {
-  facturacion: { target: "facturacion", buttonLabel: "Ir a Facturación" },
-  cancelacion: { target: "cancelacion", buttonLabel: "Ir a Cancelación" },
-  pago: { target: "pago", buttonLabel: "Ir a Pago" },
+const RECOMMENDED_ACTION_DESCRIPTIONS: Record<AdminPendingOrderActionKind, string> = {
+  payment_review: "El cliente subió un comprobante y falta confirmar o rechazar el pago.",
+  payment_conflict: "Hay un pago cobrado que no se pudo confirmar.",
+  cancellation_request: "El cliente pidió cancelar la compra.",
+  refund: "Elegí cómo devolver el dinero.",
+  refund_manual: "Registrá el reintegro realizado por fuera del sistema.",
+  refund_retry: "BEYONIX no pudo completar una actualización interna.",
+  advanced_case: "El reintegro necesita la gestión completa.",
+  invoice: "La factura no se emite automáticamente.",
+  claim: "Hay una gestión del cliente que requiere respuesta.",
+  return: "Revisá el producto devuelto y definí su destino.",
+  dispatch_blocked: "El pedido está en una tanda y no puede despacharse.",
+  dispatch_prepare: "El pedido está facturado y listo para preparar.",
+  shipping: "El pedido está facturado y listo para enviar.",
+}
+
+const RECOMMENDED_ACTION_BUTTONS: Partial<Record<AdminOrderDetailView, string>> = {
+  pago: "Ir a Pago",
+  facturacion: "Ir a Facturación",
+  cancelacion: "Ir a Cancelación",
+  atencion: "Ir a Atención al cliente",
+  envio: "Ir a Envío",
 }
 
 /**
- * Traduce el estado de getCancellationNextAction (única fuente de verdad,
- * también usada por las notificaciones del admin) a la recomendación que
- * ya renderiza esta pantalla. Antes de esto, isRefundPaymentAttentionOrder
- * generaba siempre el mismo texto genérico ("Cargar comprobante de
- * reintegro") sin importar si todavía faltaba emitir la nota de crédito,
- * si había que revisar un refund de Mercado Pago, o si ya estaba todo listo
- * para cargar el comprobante -- exactamente la falta de precisión que pedía
- * corregirse acá.
+ * "Próxima acción" del detalle: la misma fuente que el contador del listado
+ * y la campana (getAdminOrderWork). Si sólo queda algo automático se informa
+ * como tal; nunca "sin acciones" mientras exista una tarea humana.
  */
-function getCancellationRecommendedAction(
-  pedido: SupabasePedido,
-): RecommendedAction | null {
-  const nextAction = getCancellationNextAction(pedido)
-  const copy = getCancellationNextActionCopy(nextAction.state, nextAction.reason)
-  if (!copy) return null
-
-  const { target, buttonLabel } = CANCELLATION_NEXT_ACTION_TARGET[copy.tab]
-  const tone: RecommendedAction["tone"] =
-    nextAction.state === ("wait_credit_note" satisfies CancellationNextActionState)
-      ? "info"
-      : "urgent"
-
-  return {
-    title: copy.title,
-    description: copy.description,
-    target,
-    buttonLabel,
-    tone,
-  }
-}
-
 function getOrderRecommendedAction(pedido: SupabasePedido): RecommendedAction {
-  const cancellationAction = getCancellationRecommendedAction(pedido)
-  if (cancellationAction) return cancellationAction
-
-  // Sólo un reclamo que necesita acción (misma regla que el punto rojo); una
-  // solicitud de cancelación abierta se sigue marcando por defensa (abajo).
-  const openClaim = (pedido.order_claims ?? []).find(
-    (claim) =>
-      claimNeedsAdminAttention(claim) ||
-      (claim.failure_type === "cancelar_compra" && !["cerrado", "rechazado"].includes(claim.status ?? "")),
-  )
-
-  if (openClaim) {
-    // Defensa: getCancellationRecommendedAction ya cubre el caso normal
-    // (financiero pendiente); esto sólo protege contra un claim de
-    // cancelar_compra que quedó sin cerrar aunque el reintegro ya se haya
-    // resuelto (approve_order_claim_cancellation/mutate_admin_order_claim
-    // no lo cierran automáticamente al completarse el reintegro externo).
-    // cancelar_compra está excluido de AdminClaimManager modo "all" (ver
-    // isClaimVisibleForMode): mandarlo a "atencion" sería un callejón sin
-    // salida, ahí nunca aparecería listado.
-    if (openClaim.failure_type === "cancelar_compra") {
-      return {
-        title: "Revisar cancelación",
-        description: "El pedido tiene una solicitud de cancelación asociada.",
-        target: "cancelacion",
-        buttonLabel: "Ir a Cancelación",
-        tone: "info",
-      }
-    }
-
-    const helpMessage = openClaim.failure_type === "consulta_pedido"
+  const { actions, automatic } = getAdminOrderWork(pedido)
+  const [first] = actions
+  if (first) {
+    const tab = first.href.startsWith("/admin/pedidos/")
+      ? new URL(first.href, "https://beyonix.local").searchParams.get("tab")
+      : null
+    const target = tab ? getAdminOrderDetailView(tab) : "resumen"
     return {
-      title: helpMessage ? "Responder mensaje de ayuda" : "Resolver reclamo abierto",
-      description: helpMessage
-        ? "Hay una consulta del cliente que requiere respuesta administrativa."
-        : "Hay una gestión de reclamo que requiere revisión administrativa.",
-      target: "atencion",
-      buttonLabel: "Ir a Atención al cliente",
-      tone: "urgent",
+      title: first.label,
+      description: RECOMMENDED_ACTION_DESCRIPTIONS[first.kind],
+      target,
+      href: tab ? undefined : first.href,
+      buttonLabel: tab ? RECOMMENDED_ACTION_BUTTONS[target] ?? "Abrir" : "Ir a Despachos",
+      tone: first.urgent ? "urgent" : first.kind === "payment_review" ? "warning" : "info",
     }
   }
 
-  if (needsReturnInventoryDecision(pedido)) {
+  if (automatic.length > 0) {
     return {
-      title: "Definir destino del producto devuelto",
-      description: "Registrá si vuelve al stock disponible o queda dado de baja como pérdida.",
-      target: "atencion",
-      buttonLabel: "Revisar devolución",
-      tone: "urgent",
-    }
-  }
-
-  if (
-    isTransferOrder(pedido) &&
-    pedido.payment_status === "en_revision" &&
-    Boolean(pedido.payment_proof_url)
-  ) {
-    return {
-      title: "Revisar comprobante de pago",
-      description: "El cliente subió un comprobante y falta confirmar o rechazar el pago.",
-      target: "pago",
-      buttonLabel: "Ir a Pago",
-      tone: "warning",
-    }
-  }
-
-  if (needsCreditNoteReminder(pedido)) {
-    return {
-      title: "Registrar nota de crédito",
-      description: "El pedido cancelado tenía factura emitida y falta registrar la nota de crédito.",
-      target: "facturacion",
-      buttonLabel: "Ir a Facturación",
-      tone: "urgent",
-    }
-  }
-
-  if (needsInvoiceReminder(pedido)) {
-    return {
-      title: "Emitir factura",
-      description: "El pago está confirmado y la factura electrónica todavía no fue emitida.",
-      target: "facturacion",
-      buttonLabel: "Ir a Facturación",
-      tone: "info",
-    }
-  }
-
-  if (needsShippingReminder(pedido)) {
-    return {
-      title: "Preparar despacho",
-      description: "El pedido está facturado y listo para generar o actualizar el envío.",
-      target: "envio",
-      buttonLabel: "Ir a Envío",
+      title: automatic[0],
+      description: "BEYONIX lo completa automáticamente. No requiere acción.",
+      target: "resumen",
+      buttonLabel: null,
       tone: "info",
     }
   }
@@ -4134,6 +4034,7 @@ function AdminOrderSummaryDashboard({
   onGoToView: (view: AdminOrderDetailView) => void
 }) {
   const { user } = useAuth()
+  const router = useRouter()
   const canManageFinancials = getAdminCapabilities(user?.rol).canManageFinancials
   const action = getOrderRecommendedAction(pedido)
   const latestActivity = getOrderLatestActivity(pedido)
@@ -4197,7 +4098,7 @@ function AdminOrderSummaryDashboard({
           {action.buttonLabel && (canManageFinancials || !["pago", "facturacion", "cancelacion"].includes(action.target)) && (
             <button
               type="button"
-              onClick={() => onGoToView(action.target)}
+              onClick={() => (action.href ? router.push(action.href) : onGoToView(action.target))}
               className="admin-ds-button admin-ds-button-primary mt-2 inline-flex h-8 cursor-pointer items-center justify-center px-3 text-10px font-black uppercase tracking-wide transition"
             >
               {action.buttonLabel}
@@ -5341,7 +5242,7 @@ function PedidoDetailModal({
                     </div>
                     <button
                       type="button"
-                      onClick={() => showDetailView(nextAction.target)}
+                      onClick={() => (nextAction.href ? router.push(nextAction.href) : showDetailView(nextAction.target))}
                       className="admin-ds-button admin-ds-button-primary inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 px-3.5 text-11px font-black uppercase tracking-wide transition"
                     >
                       {nextAction.buttonLabel}
@@ -8130,14 +8031,15 @@ export function AdminPedidos({
 
               {pedidosFiltrados.map((pedido) => {
                 const dispatch = getDispatchAlert(pedido)
-                const hasPendingClaim = orderHasPendingClaimAction(pedido)
-                // Contador del ojo = acciones administrativas PENDIENTES reales,
+                // Contador del ojo = acciones HUMANAS pendientes reales,
                 // derivadas del estado actual (lib/orders/admin-pending-actions.ts);
-                // nunca notificaciones leídas/no leídas ni historial. Rojo si
-                // alguna involucra dinero, cancelación o reclamo.
+                // nunca procesos automáticos, notificaciones ni historial. Rojo si
+                // alguna es prioridad 1 (dinero, reclamo, bloqueo).
                 const pendingActions = getAdminPendingOrderActions(pedido)
-                const showInvoiceReminder = needsInvoiceReminder(pedido)
-                const showShippingReminder = needsShippingReminder(pedido)
+                const hasPendingClaim = pendingActions.some((action) => action.kind === "claim")
+                const showInvoiceReminder = pendingActions.some((action) => action.kind === "invoice")
+                const showShippingReminder = pendingActions.some((action) =>
+                  ["dispatch_prepare", "shipping"].includes(action.kind))
                 const orderDate = formatOrderDateParts(pedido.created_at)
                 const isNewOrder = newOrderIds.has(pedido.id)
                 return (
@@ -8212,6 +8114,12 @@ export function AdminPedidos({
                           <PagoBadge pedido={pedido} />
                         </MobileOrderField>
                       </div>
+
+                      {pendingActions.length > 0 && (
+                        <div className="pt-3">
+                          <OrderPendingActionChips actions={pendingActions} visible={1} />
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between gap-3 pt-4">
                         <p className="min-w-0 truncate text-xs text-white/48">
@@ -8313,6 +8221,11 @@ export function AdminPedidos({
                     </span>
                   </div>
                 </div>
+                {pendingActions.length > 0 && (
+                  <div className="mt-2 hidden justify-end 2xl:flex">
+                    <OrderPendingActionChips actions={pendingActions} visible={2} />
+                  </div>
+                )}
                   </article>
                 )
               })}

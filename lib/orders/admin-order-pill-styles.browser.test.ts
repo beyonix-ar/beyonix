@@ -22,8 +22,8 @@ for (const theme of ["dark", "light"]) {
       const page = await browser.newPage()
       await page.route("**/*", (route) => route.abort())
       const badges = [true, false].map((urgent) => renderToStaticMarkup(getOrderEyeBadge([
-        { kind: "invoice", label: "Emitir factura", urgent: false },
-        { kind: "claim", label: "Revisar acción", urgent },
+        { kind: "invoice", label: "Emitir factura", urgent: false, priority: 2, href: "/admin/pedidos/1?tab=facturacion" },
+        { kind: "claim", label: "Resolver reclamo", urgent, priority: urgent ? 1 : 2, href: "/admin/pedidos/1?tab=atencion" },
       ]))).join("")
       await page.setContent(`<html data-admin-theme="${theme}"><head><style>${(await compiledCss).css}</style></head><body>
         <div class="beyonix-admin-shell"><main class="beyonix-admin-main">

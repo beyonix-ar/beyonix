@@ -135,7 +135,7 @@ test("P2: Admin lo ve como pago cobrado sin confirmar (acción urgente), sin ofr
   } as never)
   assert.deepEqual(
     actions.filter((action) => action.kind === "payment_conflict"),
-    [{ kind: "payment_conflict", label: "Resolver pago cobrado sin confirmar", urgent: true }],
+    [{ kind: "payment_conflict", label: "Resolver pago", urgent: true, priority: 1, href: "/admin/pedidos/41?tab=pago" }],
   )
   assert.ok(!actions.some((action) => action.kind === "invoice" || action.kind === "shipping"))
 })

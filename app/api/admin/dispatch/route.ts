@@ -54,5 +54,6 @@ export async function GET(request: Request) {
     return { ...batch, orderCount: items.length, packageCount: items.length, blockedCount: items.filter((item) => blockedIds.has(item.order_id)).length,
       blockedOrders: items.filter((item) => blockedIds.has(item.order_id)).map((item) => ({ orderId: item.order_id, reason: blockedReasons.get(item.order_id) ?? "Revisión requerida", createdAt: blockedAt.get(item.order_id) ?? batch.created_at })) }
   })
-  return Response.json(alertsOnly ? { batches: batchCards.filter((batch) => batch.blockedCount > 0) } : { orders, batches: batchCards }, { headers: { "Cache-Control": "no-store" } })
+  // Alertas: tandas con bloqueados (revisar) y tandas cerradas pendientes de entrega (una acción por tanda).
+  return Response.json(alertsOnly ? { batches: batchCards.filter((batch) => batch.blockedCount > 0 || batch.status === "closed") } : { orders, batches: batchCards }, { headers: { "Cache-Control": "no-store" } })
 }

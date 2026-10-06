@@ -31,6 +31,11 @@ const REALTIME_PEDIDOS_TABLES = [
   "order_audit_events",
   "order_credit_notes",
   "order_credit_note_items",
+  // Acciones de despacho del listado (bloqueos, tandas, preparación).
+  "dispatch_blocks",
+  "dispatch_batches",
+  "dispatch_batch_items",
+  "order_packages",
 ] as const
 
 function dedupePedidos(pedidos: SupabasePedido[]) {

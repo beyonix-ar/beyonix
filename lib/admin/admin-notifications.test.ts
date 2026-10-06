@@ -90,12 +90,13 @@ test("un claim ya resuelto no genera notificación (independiente de cancelar_co
 
 // --- 2/3/4. contenido correcto por próxima acción ---
 
-test("2. pago confirmado + NC pendiente -- 'Emitir nota de crédito' hacia Facturación", () => {
+test("2. pago confirmado + NC requerida -- una sola acción 'Resolver reintegro' (la NC es automática)", () => {
   const notification = buildCancellationNotification(cancellationOrder())
   assert.ok(notification)
-  assert.equal(notification!.title, "Emitir nota de crédito")
-  assert.match(notification!.actionUrl, /\?tab=facturacion$/)
+  assert.equal(notification!.title, "Resolver reintegro")
+  assert.match(notification!.actionUrl, /\?tab=cancelacion$/)
   assert.equal(notification!.priority, "attention")
+  assert.equal(notification!.kind, "action")
 })
 
 test("3. NC autorizada + transferencia pendiente -- 'Registrar reintegro' hacia Cancelación", () => {
@@ -112,11 +113,26 @@ test("3. NC autorizada + transferencia pendiente -- 'Registrar reintegro' hacia 
     }),
   )
   assert.ok(notification)
-  assert.equal(notification!.title, "Registrar reintegro")
+  assert.equal(notification!.title, "Resolver reintegro")
   assert.match(notification!.actionUrl, /\?tab=cancelacion$/)
 })
 
-test("4. Mercado Pago needs_reconciliation -- 'Revisar reintegro de Mercado Pago'", () => {
+test("3b. resolución manual pendiente (Etapa 5) -- 'Registrar reintegro'", () => {
+  const notification = buildCancellationNotification(cancellationOrder({
+    admin_pending_facts: { financial: { mode: "resolution", resolutionStatus: "manual_pending", hasOptions: false }, dispatch: null },
+  }))
+  assert.ok(notification)
+  assert.equal(notification!.title, "Registrar reintegro")
+  assert.match(notification!.actionUrl, /\/pedidos\/123\?tab=cancelacion$/)
+})
+
+test("3c. reintegro en proceso automático -- sin tarea", () => {
+  assert.equal(buildCancellationNotification(cancellationOrder({
+    admin_pending_facts: { financial: { mode: "resolution", resolutionStatus: "processing", hasOptions: false }, dispatch: null },
+  })), null)
+})
+
+test("4. Mercado Pago sin confirmar -- 'Reintentar actualización'", () => {
   const notification = buildCancellationNotification(
     cancellationOrder({
       payment_method_id: "mercadopago",
@@ -126,7 +142,7 @@ test("4. Mercado Pago needs_reconciliation -- 'Revisar reintegro de Mercado Pago
     }),
   )
   assert.ok(notification)
-  assert.equal(notification!.title, "Revisar reintegro de Mercado Pago")
+  assert.equal(notification!.title, "Reintentar actualización")
   assert.equal(notification!.priority, "attention")
 })
 
@@ -167,7 +183,7 @@ test("9. actionUrl siempre incluye el pedido correcto y la pestaña del estado",
   const notification = buildCancellationNotification(cancellationOrder({ id: 456 }))
   assert.ok(notification)
   assert.equal(notification!.orderId, 456)
-  assert.match(notification!.actionUrl, /\/pedidos\/456\?tab=facturacion$/)
+  assert.match(notification!.actionUrl, /\/pedidos\/456\?tab=cancelacion$/)
 })
 
 // --- 7. dedupe deja una sola notificación operativa por pedido ---
@@ -331,14 +347,13 @@ test("15. needs_reconciliation se marca stale mucho antes (6h) que el resto (48h
   assert.equal(sameElapsedButDifferentState?.stale, false)
 })
 
-test("16. wait_credit_note nunca se marca stale (depende de ARCA, no del admin)", () => {
+test("16. NC en trámite (ARCA) es automática: nunca genera tarea", () => {
   const farInTheFuture = new Date("2026-09-10T00:00:00.000Z").getTime()
   const notification = buildCancellationNotification(
     cancellationOrder({ order_credit_notes: [{ status: "processing", destination: "external_refund" }] }),
     farInTheFuture,
   )
-  assert.equal(notification?.title, "Nota de crédito en trámite")
-  assert.equal(notification?.stale, false)
+  assert.equal(notification, null)
 })
 
 test("17. keepLatestNotificationByOrder empuja lo stale arriba, aunque sea más viejo que el resto", () => {
