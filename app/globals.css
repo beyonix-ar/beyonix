@@ -2723,9 +2723,10 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page {
   --admin-config-section-bg: var(--bx-surface-raised);
   --admin-config-section-border: var(--bx-border-card);
   --admin-config-section-shadow: 0 1px 3px rgba(15, 23, 42, 0.055);
-  --admin-config-subpanel-bg: var(--bx-surface-card);
+  /* Subcard/fila: nivel propio entre la tarjeta blanca y el campo blanco. */
+  --admin-config-subpanel-bg: var(--admin-surface-muted);
   --admin-config-subpanel-border: var(--bx-border-card);
-  --admin-config-neutral-bg: var(--bx-surface-card);
+  --admin-config-neutral-bg: var(--admin-surface-muted);
   --admin-config-neutral-border: var(--bx-border-card);
   --admin-config-info-bg: #eff6ff;
   --admin-config-info-border: #bfdbfe;
@@ -2767,12 +2768,22 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .admin-con
   background: var(--admin-config-section-bg) !important;
 }
 
+/* Banners: misma superficie de tarjeta que el resto, en ambos temas. */
+.beyonix-admin-main .admin-config-page .bx-surface[data-config-block="banners"],
 html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .bx-surface[data-config-block="banners"] {
   background: var(--admin-config-section-bg) !important;
 }
 
-.beyonix-admin-main .admin-config-page .admin-config-value-row {
+/* Filas "etiqueta … valor": una subcard redondeada con divisores finos, en
+   lugar de filas sueltas pegadas al borde de la tarjeta. */
+.beyonix-admin-main .admin-config-page .admin-config-values {
+  border-radius: 0.625rem;
   background: var(--admin-config-neutral-bg);
+  padding-inline: 0.625rem;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-value-row {
+  background: transparent;
 }
 
 .beyonix-admin-main .admin-config-page .admin-config-subpanel :is(.admin-config-tile, .admin-config-status, .admin-config-callout, .admin-config-breakdown, .admin-config-preview) {
@@ -2885,6 +2896,23 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .bx-surfac
 /* Listas (costos, historial): filas separadas por una línea, sin cajas. */
 .beyonix-admin-main .admin-config-page .admin-config-list > li + li {
   border-top: 1px solid var(--admin-config-neutral-border);
+}
+
+/* Costos: cada modalidad es una subcard (separada por superficie, no por
+   línea) y su desglose vuelve al tono de la tarjeta, como bloque interno. */
+.beyonix-admin-main .admin-config-page [data-cost-list] > li {
+  border-radius: 0.625rem;
+  background: var(--admin-config-neutral-bg);
+  padding-inline: 0.625rem;
+}
+
+.beyonix-admin-main .admin-config-page [data-cost-list] > li + li {
+  border-top: 0;
+  margin-top: 0.375rem;
+}
+
+.beyonix-admin-main .admin-config-page [data-cost-list] .admin-config-breakdown {
+  background: var(--admin-config-section-bg);
 }
 
 /* Desglose de costos (base + financiación = total; total con IVA). */
@@ -3022,13 +3050,6 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .bx-surfac
 
 .beyonix-admin-main .admin-config-page .admin-config-mode-option[data-selected="true"][data-mode="manual"] .admin-config-mode-icon {
   color: var(--admin-config-warning-dot);
-}
-
-/* Financiación en modo Manual / Emergencia: franja ámbar en Estado y Costos,
-   imposible de confundir con Automático. */
-.beyonix-admin-main .admin-config-page .admin-config-section.admin-financing-manual:not(#\#) {
-  border-color: var(--admin-config-warning-dot) !important;
-  box-shadow: inset 3px 0 0 var(--admin-config-warning-dot) !important;
 }
 
 .beyonix-section-spacing {

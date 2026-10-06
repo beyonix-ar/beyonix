@@ -335,6 +335,12 @@ for (const theme of ["light", "dark"] as const) {
       })
       const card = await background(page, "[data-config-block='stock']")
       assert.notEqual(card, pageBackground, "la tarjeta se distingue del fondo")
+      // Página → grupo → tarjeta → subcard de filas: cuatro superficies sólidas distintas.
+      const cluster = await background(page, "[data-config-group='inventario']")
+      const rows = await background(page, "[data-config-block='stock'] .admin-config-values")
+      assert.equal(new Set([pageBackground, cluster, card, rows]).size, 4, `niveles: ${[pageBackground, cluster, card, rows].join(" · ")}`)
+      for (const color of [cluster, card, rows]) assert.doesNotMatch(color, /rgba\(.*, 0(\.\d+)?\)$/, `superficie sólida: ${color}`)
+      assert.equal(await background(page, "[data-config-block='banners']"), card, "Banners usa la misma superficie de tarjeta")
       if (theme === "light") {
         for (const name of ["andreani", "stock", "shipping", "pricing", "financing", "customer-credit"]) {
           assert.equal(await background(page, `[data-config-block='${name}']`), "rgb(255, 255, 255)", name)

@@ -162,6 +162,17 @@ for (const theme of ["light", "dark"] as const) {
           )
         }
       }
+      // Jerarquía por superficie: sección → card → subcard (modalidad de costo) → desglose/campo.
+      const surfaceOf = (selector: string) => page.locator(selector).first().evaluate((element) => getComputedStyle(element).backgroundColor)
+      const surfaces = {
+        cluster: await surfaceOf(".admin-config-cluster"),
+        card: await surfaceOf("[data-financing-block='costos']"),
+        row: await surfaceOf("[data-cost-list] > li"),
+        breakdown: await surfaceOf("[data-cost-list] .admin-config-breakdown"),
+      }
+      assert.equal(new Set([surfaces.cluster, surfaces.card, surfaces.row]).size, 3, `niveles distintos: ${JSON.stringify(surfaces)}`)
+      assert.notEqual(surfaces.breakdown, surfaces.row, "el desglose se distingue de su fila")
+      for (const color of Object.values(surfaces)) assert.doesNotMatch(color, /rgba\(.*, 0(\.\d+)?\)$/, `superficie sólida: ${color}`)
       // Lo técnico se despliega: "Cómo funciona" y "Ver detalle" cerrados.
       for (const selector of ["[data-financing-rules]", "[data-sync-detail]"]) {
         assert.equal(await page.locator(selector).evaluate((element) => (element as HTMLDetailsElement).open), false, selector)
@@ -227,10 +238,17 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByLabel("1 pago: valor manual").waitFor()
       assert.equal(await sourceChip(block(page, "costos"), "Observado").count(), 0, "manual nunca usa observaciones")
 
-      const accented = page.locator(".admin-financing-manual")
-      assert.equal(await accented.count(), 2, "Estado y Costos con franja ámbar")
-      const borderColor = await accented.first().evaluate((element) => getComputedStyle(element).borderTopColor)
-      assert.equal(borderColor, theme === "light" ? "rgb(217, 119, 6)" : "rgb(251, 191, 36)", "borde ámbar")
+      // El modo Manual se comunica con el selector, los chips y el aviso: sin franja ni borde ámbar estructural.
+      for (const name of ["estado", "costos"]) {
+        const surface = await block(page, name).evaluate((element) => {
+          const style = getComputedStyle(element)
+          return { shadow: style.boxShadow, left: style.borderLeftColor, top: style.borderTopColor }
+        })
+        assert.doesNotMatch(surface.shadow, /inset 3px/, `${name}: sin franja lateral`)
+        for (const color of [surface.left, surface.top]) {
+          assert.ok(!["rgb(217, 119, 6)", "rgb(251, 191, 36)"].includes(color), `${name}: sin borde ámbar (${color})`)
+        }
+      }
 
       await page.getByRole("button", { name: /Guardar cambios/ }).click()
       await page.getByText(/Guardado\./).waitFor()
