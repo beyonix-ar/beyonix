@@ -476,10 +476,6 @@
   grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 1fr);
 }
 
-@utility aspect-category-featured {
-  aspect-ratio: 16 / 8.5;
-}
-
 @utility aspect-product-card-image {
   aspect-ratio: 1 / 0.86;
 }
