@@ -156,6 +156,47 @@ test("A. contexto hostil (text-white/currentColor forzados a oscuro con !importa
   }
 })
 
+// Contraste del link sobre el header (traslúcido en oscuro: se compone sobre la página).
+const WITHDRAWAL_CONTRAST = `(() => {
+  const element = document.querySelector("header.beyonix-site-header .beyonix-site-header-legal-link")
+  const canvas = document.createElement("canvas")
+  canvas.width = canvas.height = 1
+  const context = canvas.getContext("2d", { willReadFrequently: true })
+  function rgba(value) { context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data] }
+  const pageBg = rgba(getComputedStyle(document.querySelector("main")).backgroundColor)
+  const headerBg = rgba(getComputedStyle(element.closest("header")).backgroundColor)
+  const alpha = headerBg[3] / 255
+  const bg = [0, 1, 2].map((i) => headerBg[i] * alpha + pageBg[i] * (1 - alpha))
+  const fg = rgba(getComputedStyle(element).color)
+  function channel(value) { const v = value / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+  function lum(c) { return 0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]) }
+  const a = lum(fg), b = lum(bg)
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+})()`
+
+// Disposición 954/2025: link "BOTÓN DE ARREPENTIMIENTO" a simple vista, en
+// lugar destacado y desde el primer acceso (sin abrir menús ni scrollear).
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1440, 390]) {
+    test(`B. ${theme} ${width}px: "BOTÓN DE ARREPENTIMIENTO" visible en el primer acceso, legible y sin pasos previos`, async () => {
+      const page = await open(theme, width)
+      try {
+        const link = page.locator("header.beyonix-site-header a", { hasText: "BOTÓN DE ARREPENTIMIENTO" })
+        assert.equal(await link.count(), 1)
+        assert.equal(await link.getAttribute("href"), "/arrepentimiento")
+        assert.equal(await link.isVisible(), true, "visible sin abrir el menú")
+        const box = await link.boundingBox()
+        assert.ok(box && box.y >= 0 && box.y + box.height <= 40 && box.x + box.width <= width, `arriba de todo, dentro de la pantalla: ${JSON.stringify(box)}`)
+        const contrast = (await page.evaluate(WITHDRAWAL_CONTRAST)) as number
+        assert.ok(contrast >= 4.5, `contraste AA (${contrast.toFixed(2)})`)
+        if (SHOTS) await page.screenshot({ path: `${SHOTS}/withdrawal-${theme}-${width}.png` })
+      } finally {
+        await page.close()
+      }
+    })
+  }
+}
+
 test("A. hover de \"Cerrar sesión\" sigue pasando el ícono a rojo", async () => {
   const page = await open("light", 1440)
   try {

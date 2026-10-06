@@ -9,6 +9,7 @@ import type { FinancedPricePolicy } from "@/lib/pricing/financed-price-policy"
 import { AdminInfoBlock, AdminPageHeader } from "../../components/admin-controls"
 import type { ConfigFeedback } from "../modificaciones/config-ui"
 import { FinancingPanel } from "./financing-panel"
+import { PaymentMethodsButton } from "./payment-methods-manager"
 
 interface SettingsResponse {
   mercadoPagoCosts?: MercadoPagoCostsOverview
@@ -147,6 +148,7 @@ export function AdminFinanciacion() {
         title="Financiación"
         description="Cuotas sin interés y costos de Mercado Pago."
         className="gap-2"
+        actions={<PaymentMethodsButton />}
       />
 
       {loadError ? (

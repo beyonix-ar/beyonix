@@ -29,6 +29,7 @@ import { useAuth } from "@/context/auth-context"
 import { useCustomerCredit } from "@/context/customer-credit-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
+import { BEYONIX_WITHDRAWAL_PAGE_URL } from "@/lib/legal-contact"
 import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 import { formatARS } from "@/lib/customer-credit"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
@@ -119,6 +120,20 @@ export function SiteHeader() {
         mobileOpen ? "bg-beyonix-surface-2" : "bg-black/78 backdrop-blur-xl"
       )}
     >
+      {/* Disposición 954/2025: link "BOTÓN DE ARREPENTIMIENTO" a simple vista,
+          en lugar destacado y desde el primer acceso, en todas las páginas de
+          la tienda. Su altura (h-6) se compensa en LayoutShell. */}
+      <div className="beyonix-site-header-legal-strip border-b border-white/6">
+        <div className="container mx-auto flex h-6 items-center justify-end px-4 lg:px-8">
+          <Link
+            href={BEYONIX_WITHDRAWAL_PAGE_URL}
+            className="beyonix-site-header-legal-link rounded-sm text-10px font-semibold uppercase leading-none tracking-[0.14em] text-beyonix-sky outline-none transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+          >
+            BOTÓN DE ARREPENTIMIENTO
+          </Link>
+        </div>
+      </div>
+
       <nav className="container mx-auto px-4 lg:px-8">
         <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center lg:h-18 lg:grid-cols-site-header">
           <BeyonixLogoLink />

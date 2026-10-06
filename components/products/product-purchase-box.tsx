@@ -4,9 +4,12 @@ import { useEffect, useState } from "react"
 import { CheckCircle2, ShieldCheck, Truck } from "lucide-react"
 
 import { BeyonixButton } from "@/components/beyonix-ui"
+import { PaymentMethodLogoStrip } from "@/components/payments/payment-method-logo-tile"
 
 import { ProductCartToggleButton } from "./product-cart-toggle-button"
 import { getDiscountPercent } from "@/lib/products/product-variants"
+import { DEFAULT_PRODUCT_WARRANTY_MONTHS } from "@/lib/orders/warranty-policy"
+import { usePaymentMethodLogos } from "@/lib/payments/use-payment-method-logos"
 
 interface ProductPurchaseBoxProps {
   price: number
@@ -92,6 +95,8 @@ export function ProductPurchaseBox({
   }
 
   const discount = getDiscountPercent(price, originalPrice)
+  // Sólo logos cargados en Admin y disponibles hoy (Mercado Pago o habilitados a mano).
+  const paymentLogos = usePaymentMethodLogos() ?? []
 
   return (
     <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
@@ -137,7 +142,7 @@ export function ProductPurchaseBox({
       <div className="beyonix-modal-muted mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-12px font-medium text-white/45">
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
           <ShieldCheck className="beyonix-modal-muted-icon size-3.5 shrink-0 text-white/45" />
-          Garantía de 6 meses
+          Garantía legal de {DEFAULT_PRODUCT_WARRANTY_MONTHS} meses
         </span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -188,6 +193,8 @@ export function ProductPurchaseBox({
           {limitMessage}
         </p>
       )}
+
+      <PaymentMethodLogoStrip logos={paymentLogos} className="mt-3.5" />
     </div>
   )
 }

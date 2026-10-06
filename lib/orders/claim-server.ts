@@ -25,7 +25,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_EXISTS: [409, "El pedido ya tiene una solicitud en curso o un reclamo formal registrado."],
   CLAIM_WAIT_REPLY: [409, "Mensaje enviado. Esperá la respuesta de BEYONIX para continuar."],
   CLAIM_DELIVERY_DATE: [409, "Falta confirmar la fecha de entrega del pedido."],
-  CLAIM_EXPIRED: [409, "El plazo para este tipo de reclamo ya finalizó."],
+  CLAIM_EXPIRED: [409, "El plazo de este canal de reclamo ya finalizó. Escribinos desde Contacto y revisamos el caso."],
   CLAIM_INELIGIBLE: [409, "Este pedido no admite esta solicitud en su estado actual."],
   CLAIM_INVALID_ITEMS: [400, "Revisá los productos y cantidades del reclamo."],
   CLAIM_ITEMS_LOCKED: [409, "Los productos ya están vinculados a una recepción o una nota de crédito y no pueden modificarse."],

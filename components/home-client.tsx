@@ -14,7 +14,6 @@ import { HeroSection } from "@/components/hero-section"
 import { ProductDetailsModal } from "@/components/products/product-details-modal"
 import { ProductsSection } from "@/components/products-section"
 import { ReviewsSection } from "@/components/reviews-section"
-import { WhatsAppButton } from "@/components/whatsapp-button"
 
 interface HomeClientProps {
   featuredProduct: SupabaseProducto | null
@@ -130,8 +129,6 @@ export function HomeClient({ featuredProduct }: HomeClientProps) {
         isInCart={product ? isInCart(product.id, selectedColor) : false}
         cartQuantity={product ? getQuantity(product.id, selectedColor) : 0}
       />
-
-      <WhatsAppButton />
     </>
   )
 }

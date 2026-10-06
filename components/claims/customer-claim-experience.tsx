@@ -31,6 +31,8 @@ import {
   ORDER_CLAIM_FILE_MAX_BYTES,
   ORDER_CLAIM_IMAGE_MAX_BYTES,
   ORDER_CLAIM_VIDEO_MAX_BYTES,
+  TRANSPORT_CLAIM_WINDOW_HOURS,
+  WARRANTY_CLAIM_WINDOW_MONTHS,
 } from "@/lib/order-claims"
 import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
 import {
@@ -1643,7 +1645,7 @@ export function CustomerClaimExperience({
               })}
             </div>
             <p className="mt-3 text-xs text-[var(--account-text-secondary)]">
-              Problemas de entrega: 48 horas desde la entrega. Garantía BEYONIX: 6 meses desde la entrega.
+              Problemas de entrega: aviso prioritario dentro de las {TRANSPORT_CLAIM_WINDOW_HOURS} horas desde la entrega. Garantía legal: {WARRANTY_CLAIM_WINDOW_MONTHS} meses desde la entrega.
             </p>
             {problem && getClaimEligibilityError(order, problem as keyof typeof CLAIM_REASON_TYPES) && (
               <p role="status" className="mt-2 text-xs text-[var(--account-danger-text)]">

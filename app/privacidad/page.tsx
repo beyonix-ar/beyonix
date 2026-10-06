@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 
 import { BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
-import { BEYONIX_EMAIL } from "@/lib/legal-contact"
+import { AAIP_PERSONAL_DATA_NOTICE, BEYONIX_EMAIL } from "@/lib/legal-contact"
 
 export const metadata: Metadata = {
   title: "Política de privacidad | BEYONIX",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     "Información sobre el tratamiento, uso, conservación y protección de datos personales en BEYONIX.",
 }
 
-const LAST_UPDATED = "20 de julio de 2026"
+const LAST_UPDATED = "6 de octubre de 2026"
 
 const dataGroups = [
   {
@@ -144,9 +144,11 @@ export default function PrivacidadPage() {
               condiciones de seguridad y confidencialidad.
             </p>
             <p>
-              Esto puede incluir servicios de pago, envío, facturación, soporte técnico, hosting,
-              email y analítica, siempre en la medida necesaria para brindar el servicio o cumplir
-              obligaciones legales.
+              Esto puede incluir servicios de pago (Mercado Pago), envío (Andreani), facturación
+              (ARCA), soporte técnico, hosting, autenticación, almacenamiento, email y analítica,
+              siempre en la medida necesaria para brindar el servicio o cumplir obligaciones legales.
+              Algunos proveedores de infraestructura pueden alojar la información fuera de la
+              República Argentina.
             </p>
           </PrivacySection>
 
@@ -190,7 +192,19 @@ export default function PrivacidadPage() {
             </p>
           </PrivacySection>
 
-          <PrivacySection icon={LockKeyhole} eyebrow="07 · Vigencia" title="Cambios y marco aplicable">
+          <PrivacySection icon={UserRoundCheck} eyebrow="07 · Derechos" title="Acceso, rectificación y supresión">
+            <p>
+              Podés solicitar acceso a tus datos y, cuando corresponda, su rectificación,
+              actualización, confidencialidad o supresión escribiendo a {BEYONIX_EMAIL} desde el
+              correo asociado a tu cuenta. El acceso es gratuito en intervalos no inferiores a seis
+              meses, salvo interés legítimo, y se responde dentro de los 10 días corridos; la
+              rectificación, actualización o supresión, dentro de los 5 días hábiles, salvo
+              obligaciones legales de conservación.
+            </p>
+            <p className="text-xs leading-6 text-white/52">{AAIP_PERSONAL_DATA_NOTICE}</p>
+          </PrivacySection>
+
+          <PrivacySection icon={LockKeyhole} eyebrow="08 · Vigencia" title="Cambios y marco aplicable">
             <p>
               Esta política se interpreta junto con los Términos y condiciones. Las actualizaciones
               se publicarán con su fecha de vigencia y no reducirán retroactivamente derechos

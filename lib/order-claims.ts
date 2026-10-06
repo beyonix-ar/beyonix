@@ -17,6 +17,12 @@ export const ORDER_CLAIM_FILE_MAX_BYTES = 10 * 1024 * 1024
 export const ORDER_CLAIM_MAX_FILES = 6
 export const TRANSPORT_CLAIM_WINDOW_HOURS = 48
 export const WARRANTY_CLAIM_WINDOW_MONTHS = 6
+// El canal prioritario de entrega (48 h) y la garantía legal tienen plazos operativos
+// propios, pero no limitan derechos legales: siempre se indica una vía alternativa.
+export const CLAIM_WINDOW_CLOSED_MESSAGES: Record<OrderClaimType, string> = {
+  transporte_48hs: "El aviso prioritario de 48 horas ya finalizó. Podés iniciar el reclamo eligiendo «Otro problema» o escribirnos desde Contacto.",
+  garantia_beyonix: "El plazo de garantía legal desde la entrega ya finalizó. Si necesitás ayuda, escribinos desde Contacto y revisamos el caso.",
+}
 
 // Fuente única de motivos válidos para "Iniciar reclamo" (post-entrega).
 // app/api/orders/[id]/claims/route.ts valida contra esta lista -- si se
@@ -69,7 +75,7 @@ export function getClaimEligibilityError(
     return "Falta confirmar la fecha de entrega. Contactanos para registrar la fecha correcta."
   }
   if (!isClaimWindowOpen(order.delivered_at, CLAIM_REASON_TYPES[reason])) {
-    return "El plazo para este tipo de reclamo ya finalizó."
+    return CLAIM_WINDOW_CLOSED_MESSAGES[CLAIM_REASON_TYPES[reason]]
   }
   return null
 }
@@ -210,7 +216,7 @@ export function getOrderClaimStatusLabel(status?: string | null, cancelledAt?: s
 export function getOrderClaimTypeLabel(type?: string | null) {
   const labels: Record<string, string> = {
     transporte_48hs: "Problema con la entrega",
-    garantia_beyonix: "Garantía BEYONIX",
+    garantia_beyonix: "Garantía legal",
   }
 
   return type ? labels[type] ?? type : "Reclamo"

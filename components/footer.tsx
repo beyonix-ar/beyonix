@@ -205,7 +205,7 @@ export function Footer() {
                   aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
                   className={footerLinkClass}
                 >
-                  Botón de arrepentimiento
+                  BOTÓN DE ARREPENTIMIENTO
                 </Link>
               </li>
             </ul>

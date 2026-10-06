@@ -8,8 +8,10 @@ import {
 } from "lucide-react"
 
 import {
+  BEYONIX_CUSTOMER_SERVICE_AREA,
   BEYONIX_EMAIL,
-  BEYONIX_SUPPORT_HOURS,
+  BEYONIX_SUPPORT_HOURS_DETAIL,
+  CONSUMER_COMPLAINTS_URL,
 } from "@/lib/legal-contact"
 import { getSiteSettings } from "@/lib/site-settings"
 
@@ -21,9 +23,9 @@ const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encod
 
 const getInfoCards = (transferDiscountPercent: number) => [
   {
-    label: "GESTIÓN DE PEDIDOS",
-    value: "Validación de pagos y consultas",
-    subValue: BEYONIX_SUPPORT_HOURS,
+    label: BEYONIX_CUSTOMER_SERVICE_AREA.toLocaleUpperCase("es-AR"),
+    value: "Consultas, reclamos y validación de pagos",
+    subValue: BEYONIX_SUPPORT_HOURS_DETAIL,
     icon: Clock,
   },
   {
@@ -172,6 +174,20 @@ export default async function ContactoPage() {
               momento.
             </p>
           </div>
+
+          <p className="beyonix-modal-muted mt-6 text-sm leading-6 text-white/58">
+            Defensa de las y los consumidores: además de nuestros canales, podés
+            iniciar un reclamo en la{" "}
+            <a
+              href={CONSUMER_COMPLAINTS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-beyonix-cyan underline-offset-4 hover:underline"
+            >
+              Ventanilla Federal Única de Reclamos
+            </a>
+            .
+          </p>
         </div>
       </section>
     </main>

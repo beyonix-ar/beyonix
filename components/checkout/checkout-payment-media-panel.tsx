@@ -1,11 +1,19 @@
+"use client"
+
 import type { ReactNode } from "react"
-import Image from "next/image"
 import { Check, Landmark, type LucideIcon } from "lucide-react"
 
+import { PaymentMethodLogoTile } from "@/components/payments/payment-method-logo-tile"
 import {
   MERCADOPAGO_CASH_MEDIA_DISCLAIMER,
   MERCADOPAGO_CASH_MEDIA_GROUPS,
 } from "@/lib/payments/mercadopago-cash-media"
+import {
+  findCreditLogo,
+  getCheckoutCashLogoGroups,
+  type PublicPaymentMethodLogo,
+} from "@/lib/payments/payment-method-logos"
+import { usePaymentMethodLogos } from "@/lib/payments/use-payment-method-logos"
 import { cn } from "@/lib/utils"
 
 export type CheckoutPaymentOption = "transferencia" | "mercadopago_cash" | "mercadopago_installments"
@@ -101,31 +109,22 @@ function CheckoutRadioIndicator({ checked }: { checked: boolean }) {
   )
 }
 
-const MEDIA_LOGOS: Record<string, string> = {
-  Visa: "/payment-methods/visa.svg",
-  Mastercard: "/payment-methods/mastercard.svg",
-  "American Express": "/payment-methods/americanexpress.svg",
-  "Visa Débito": "/payment-methods/visa.svg",
-  "Mastercard Débito": "/payment-methods/mastercard.svg",
-}
-
 const INSTALLMENT_BRANDS: Record<string, string> = {
   visa: "Visa",
   master: "Mastercard",
 }
 
-function MediaBrand({ name, confirmed = false }: { name: string; confirmed?: boolean }) {
-  const logo = MEDIA_LOGOS[name]
+/** Marca como texto (sin logo inventado) o con el logo cargado en Admin. */
+function MediaBrand({ name, logo = null, confirmed = false }: { name: string; logo?: PublicPaymentMethodLogo | null; confirmed?: boolean }) {
   const label = name === "Naranja" ? "Naranja X" : name
 
   return (
-    <li className="checkout-media-brand" data-media-brand={name} data-confirmed={confirmed || undefined}>
-      {logo ? <Image src={logo} alt="" width={28} height={28} className="checkout-media-brand-logo" /> : null}
+    <li className="checkout-media-brand" data-media-brand={name} data-confirmed={confirmed || undefined} data-has-logo={logo ? "true" : undefined}>
+      {logo ? <PaymentMethodLogoTile name={logo.name} imageUrl={logo.imageUrl} /> : null}
       <span>{label}</span>
     </li>
   )
 }
-
 export function CheckoutPaymentMediaPanel({
   option,
   installmentBrands,
@@ -134,6 +133,8 @@ export function CheckoutPaymentMediaPanel({
   installmentBrands: readonly string[]
 }) {
   const confirmedBrands = installmentBrands.filter((brand) => brand === "visa" || brand === "master")
+  const logos = usePaymentMethodLogos() ?? []
+  const cashLogoGroups = getCheckoutCashLogoGroups(logos)
 
   return (
     <aside className="checkout-payment-media" data-payment-media={option ?? "none"} aria-label="Pagá con">
@@ -155,7 +156,7 @@ export function CheckoutPaymentMediaPanel({
           {confirmedBrands.length > 0 ? (
             <ul className="checkout-payment-media-brands" aria-label="Tarjetas con cuotas sin interés confirmadas">
               {confirmedBrands.map((brand) => (
-                <MediaBrand key={brand} name={INSTALLMENT_BRANDS[brand]} confirmed />
+                <MediaBrand key={brand} name={INSTALLMENT_BRANDS[brand]} logo={findCreditLogo(logos, brand)} confirmed />
               ))}
             </ul>
           ) : (
@@ -164,22 +165,37 @@ export function CheckoutPaymentMediaPanel({
           <p className="checkout-payment-media-note">La cantidad disponible se elige en Mercado Pago.</p>
         </div>
       ) : option === "mercadopago_cash" ? (
-        <div className="checkout-payment-media-content" data-media-cash>
-          {MERCADOPAGO_CASH_MEDIA_GROUPS.map((group) => (
-            <section key={group.id} className="checkout-payment-media-group" data-media-group={group.id}>
-              <h4>{group.label}</h4>
-              {group.id === "mercadopago" ? (
-                <div className="checkout-payment-media-wallet">
-                  <Image src="/payment-methods/mercadopago.svg" alt="Mercado Pago" width={30} height={30} className="checkout-payment-media-wallet-logo" />
-                  <span>Dinero disponible en tu cuenta</span>
-                </div>
-              ) : (
-                <ul className="checkout-payment-media-brands">
-                  {group.items.map((name) => <MediaBrand key={name} name={name} />)}
+        <div className="checkout-payment-media-content" data-media-cash data-media-source={cashLogoGroups.length ? "mercadopago" : "reference"}>
+          {cashLogoGroups.length ? (
+            // Logos cargados en Admin y disponibles hoy según Mercado Pago.
+            cashLogoGroups.map((group) => (
+              <section key={group.id} className="checkout-payment-media-group" data-media-group={group.id}>
+                <h4>{group.label}</h4>
+                <ul className="checkout-payment-media-logos">
+                  {group.logos.map((logo) => (
+                    <li key={logo.key} data-media-logo={logo.providerMethodId ?? logo.key}>
+                      <PaymentMethodLogoTile name={logo.name} imageUrl={logo.imageUrl} />
+                    </li>
+                  ))}
                 </ul>
-              )}
-            </section>
-          ))}
+              </section>
+            ))
+          ) : (
+            MERCADOPAGO_CASH_MEDIA_GROUPS.map((group) => (
+              <section key={group.id} className="checkout-payment-media-group" data-media-group={group.id}>
+                <h4>{group.label}</h4>
+                {group.id === "mercadopago" ? (
+                  <div className="checkout-payment-media-wallet">
+                    <span>Dinero disponible en tu cuenta</span>
+                  </div>
+                ) : (
+                  <ul className="checkout-payment-media-brands">
+                    {group.items.map((name) => <MediaBrand key={name} name={name} />)}
+                  </ul>
+                )}
+              </section>
+            ))
+          )}
           <p className="checkout-payment-media-note">Y más medios de pago disponibles en Mercado Pago.</p>
           <p className="checkout-payment-media-muted">{MERCADOPAGO_CASH_MEDIA_DISCLAIMER}</p>
         </div>

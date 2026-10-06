@@ -10,9 +10,11 @@ import {
 
 import { BeyonixButton } from "@/components/beyonix-ui"
 import {
+  BEYONIX_CUSTOMER_SERVICE_AREA,
   BEYONIX_EMAIL,
   BEYONIX_SUPPORT_HOURS_DETAIL,
   BEYONIX_WITHDRAWAL_GMAIL_URL,
+  BEYONIX_WITHDRAWAL_URL,
 } from "@/lib/legal-contact"
 
 export const metadata: Metadata = {
@@ -26,6 +28,13 @@ const requirements = [
   "Número de pedido.",
   "Correo utilizado en la compra.",
   "Producto que querés cancelar.",
+]
+
+const nextSteps = [
+  "Dentro de las 24 horas te enviamos, al mismo correo, el código de identificación del trámite.",
+  "Generamos la etiqueta de Andreani a cargo de BEYONIX y te indicamos cómo embalar el producto.",
+  "Entregás el producto en una sucursal Andreani habilitada (no se realizan retiros a domicilio).",
+  "Al recibirlo, reintegramos lo pagado por el medio de pago utilizado y, si hubo factura, emitimos la nota de crédito.",
 ]
 
 const facts = [
@@ -73,22 +82,26 @@ export default function ArrepentimientoPage() {
 
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
             <BeyonixButton asChild size="lg">
+              <a href={BEYONIX_WITHDRAWAL_URL}>
+                <Mail className="size-4" />
+                Solicitar por email
+              </a>
+            </BeyonixButton>
+            <BeyonixButton asChild size="lg" variant="secondary">
               <a
                 href={BEYONIX_WITHDRAWAL_GMAIL_URL}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <Mail className="size-4" />
-                Solicitar por Gmail
+                Abrir en Gmail
+                <ArrowRight className="size-4" />
               </a>
             </BeyonixButton>
-            <BeyonixButton asChild size="lg" variant="secondary">
-              <Link href="/cuenta?tab=ordenes">
-                Ver mis compras
-                <ArrowRight className="size-4" />
-              </Link>
-            </BeyonixButton>
           </div>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-white/58">
+            No hace falta tener cuenta en BEYONIX. Si tu dispositivo no abre el email, escribí
+            desde cualquier casilla a {BEYONIX_EMAIL}.
+          </p>
         </div>
       </section>
 
@@ -118,8 +131,37 @@ export default function ArrepentimientoPage() {
               ))}
             </ul>
 
+            <p className="mt-4 text-sm leading-6 text-white/52">
+              Si no tenés algún dato a mano (por ejemplo, el número de pedido), enviá la solicitud
+              igual: lo identificamos con el correo de la compra.
+            </p>
+
+            <h2 className="mt-8 text-xl font-bold tracking-tight text-white">
+              Qué pasa después
+            </h2>
+            <ul className="mt-4 space-y-3">
+              {nextSteps.map((item) => (
+                <li key={item} className="flex gap-3 text-sm leading-6 text-white/74">
+                  <CheckCircle2 className="mt-1 size-4 shrink-0 text-beyonix-cyan" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+
             <p className="mt-6 text-sm leading-6 text-white/52">
-              Horario de atención: {BEYONIX_SUPPORT_HOURS_DETAIL}
+              {BEYONIX_CUSTOMER_SERVICE_AREA} · Horario de atención: {BEYONIX_SUPPORT_HOURS_DETAIL}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-white/52">
+              Excepciones (Disposición 954/2025): casos del art. 1116 del Código Civil y Comercial,
+              productos efectivamente utilizados o consumidos, compras para reventa y productos
+              perecederos. Ver el detalle en{" "}
+              <Link
+                href="/terminos#arrepentimiento"
+                className="font-semibold text-beyonix-cyan underline-offset-4 hover:text-white hover:underline"
+              >
+                Términos y condiciones
+              </Link>
+              .
             </p>
           </div>
 

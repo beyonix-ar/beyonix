@@ -1309,7 +1309,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
             )}
           </div>
 
-          <aside className="customer-order-detail-aside space-y-3.5 lg:sticky lg:top-24">
+          <aside className="customer-order-detail-aside space-y-3.5 lg:sticky lg:top-30">
             <section className="customer-order-payment-summary rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
               <h2 className="text-sm font-bold text-[var(--account-text-primary)]">Resumen de pago</h2>
               <dl className="mt-3 space-y-2 text-xs"><div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Productos</dt><dd className="font-semibold text-[var(--account-text-primary)]">{formatCuentaPrice(productsSubtotal)}</dd></div><div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Envío</dt><dd className="font-semibold text-[var(--account-text-primary)]">{shipping > 0 ? formatCuentaPrice(shipping) : "Sin cargo"}</dd></div>{discount > 0 && <div className="flex justify-between gap-3 text-[var(--account-success-text)]"><dt>Descuento transferencia</dt><dd className="font-semibold">− {formatCuentaPrice(discount)}</dd></div>}{creditBalanceUsed > 0 && <div className="flex justify-between gap-3 text-[var(--account-success-text)]"><dt>Saldo a favor</dt><dd className="font-semibold">− {formatCuentaPrice(creditBalanceUsed)}</dd></div>}{creditBalanceUsed > 0 && externalAmountDue > 0 && <div className="flex justify-between gap-3 text-[var(--account-text-secondary)]"><dt>Diferencia pagada</dt><dd className="font-semibold text-[var(--account-text-primary)]">{formatCuentaPrice(externalAmountDue)}</dd></div>}</dl>

@@ -116,7 +116,7 @@ export default function DevolucionesPage() {
                 aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
               >
                 <RefreshCcw className="size-4" />
-                Botón de arrepentimiento
+                BOTÓN DE ARREPENTIMIENTO
               </Link>
             </BeyonixButton>
             <BeyonixButton asChild size="lg" variant="secondary">
@@ -149,14 +149,15 @@ export default function DevolucionesPage() {
           <PolicyCard icon={RefreshCcw} title="Arrepentimiento de una compra a distancia">
             <p>
               Podés revocar la aceptación dentro de los 10 días corridos desde la entrega del
-              producto o la confirmación de la compra, lo último que ocurra. La gestión no requiere
-              justificar el motivo y, cuando el supuesto está legalmente alcanzado, la devolución
-              es a cargo de BEYONIX.
+              producto o la celebración de la compra, lo último que ocurra. La gestión no requiere
+              justificar el motivo ni iniciar sesión, y los gastos de devolución son a cargo de
+              BEYONIX. Dentro de las 24 horas te informamos el código de identificación del trámite.
             </p>
             <p>
-              El producto debe quedar a disposición con sus accesorios y elementos recibidos.
-              Conservá el embalaje siempre que sea posible. Se aplican únicamente las excepciones
-              previstas por la normativa vigente.
+              BEYONIX genera la etiqueta de Andreani y vos entregás el producto en una sucursal
+              Andreani habilitada, con sus accesorios y elementos recibidos. Conservá el embalaje
+              siempre que sea posible. Se aplican únicamente las excepciones previstas por la
+              normativa vigente.
             </p>
           </PolicyCard>
 
@@ -168,7 +169,8 @@ export default function DevolucionesPage() {
             </p>
             <p>
               Guardá el embalaje, la etiqueta y todo el contenido. El plazo prioritario de transporte
-              no reduce derechos legales irrenunciables.
+              no reduce derechos legales irrenunciables: pasado ese plazo, podés iniciar el reclamo
+              desde la compra eligiendo «Otro problema» o escribirnos.
             </p>
           </PolicyCard>
 
@@ -176,6 +178,10 @@ export default function DevolucionesPage() {
             <p>
               Todos los productos nuevos vendidos por BEYONIX tienen una garantía de
               {` ${DEFAULT_PRODUCT_WARRANTY_MONTHS} meses`} desde la entrega.
+            </p>
+            <p>
+              Es la garantía legal de la Ley 24.240; BEYONIX no ofrece una garantía extendida
+              adicional. Si el producto debe trasladarse, el envío por Andreani es a cargo de BEYONIX.
             </p>
             <p>
               La cobertura comprende fallas de origen y defectos de funcionamiento. Los golpes
@@ -215,8 +221,9 @@ export default function DevolucionesPage() {
           <PolicyCard icon={Clock3} title="Reintegros y tiempos de acreditación">
             <p>
               Una vez aprobada la devolución y cumplida la restitución cuando corresponda, el
-              reintegro se procesa por el medio compatible con el pago original. Si hubo factura,
-              se emite la nota de crédito aplicable.
+              reintegro se procesa por el medio compatible con el pago original. El saldo a favor
+              reemplaza a un reintegro de dinero sólo si lo aceptás. Si hubo factura, se emite la
+              nota de crédito aplicable.
             </p>
             <p>
               BEYONIX registra el inicio del reintegro; la acreditación final puede depender de

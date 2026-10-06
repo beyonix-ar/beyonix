@@ -15,9 +15,9 @@ const benefits = [
   },
   {
     icon: ShieldCheck,
-    title: "Garantía por fallas de origen",
+    title: "Garantía legal",
     description:
-      "Porque la confianza también se construye después de la compra.",
+      "Cubre fallas de origen durante el plazo legal, contado desde la entrega.",
   },
   {
     icon: MessageCircle,
