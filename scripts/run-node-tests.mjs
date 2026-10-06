@@ -10,6 +10,9 @@ const TEST_FILES = [
   "lib/admin/dispatch-stage3.test.ts",
   "lib/orders/dispatch-db.test.ts",
   "lib/orders/dispatch-eligibility.test.ts",
+  "lib/orders/financial-resolution.test.ts",
+  "lib/orders/financial-resolution-db.test.ts",
+  "lib/orders/financial-resolution-wizard.test.ts",
   "lib/mercadolibre/import-integrity.test.ts",
   "lib/mercadolibre/sales-report.test.ts",
   "lib/mercadolibre/sku-reconciliation.test.ts",
@@ -264,6 +267,8 @@ const TEST_FILES = [
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
 // --conditions=react-server (los hooks de cliente no existen en ese build).
 const TSX_TEST_FILES = [
+  "lib/admin/dispatch-realtime.test.tsx",
+  "app/admin/sections/pedidos/financial-resolution-wizard.test.tsx",
   "components/claims/claim-reply-draft.test.tsx",
   "components/claims/return-inventory-refresh.test.tsx",
   "components/claims/use-claim-wizard-scroll.test.tsx",

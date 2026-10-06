@@ -3,11 +3,25 @@ import type { createAdminClient } from "@/lib/supabase/admin"
 export type DispatchAdmin = ReturnType<typeof createAdminClient>
 export type DispatchPackage = { id: number; order_id: number; status: "preparing" | "prepared"; attempt_number: number; prepared_at: string | null; prepared_by: string | null }
 export type DispatchLine = { order_item_id: number; expected_sku: string | null; expected_barcode: string | null; expected_quantity: number; scanned_quantity: number; product_id: number; variant_id: number | null; conditioned_stock_id: string | null; name?: string }
-export type DispatchBatch = { id: number; code: string; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; handed_over_at: string | null; handed_over_by: string | null }
+export type DispatchBatch = { id: number; code: string; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; prepared_at?: string | null; handed_over_at: string | null; handed_over_by: string | null }
 export type DispatchMembership = { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null }
 export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null }
 
 export const orderCode = (id: number) => `BX-${1000 + id}`
+
+export function dispatchBlockReason(reason: string): string {
+  const reasons: Record<string, string> = {
+    cancelled: "Cancelación solicitada", claim: "Reclamo abierto",
+    financial_conflict: "Pago en revisión", payment_reversed: "Pago revertido",
+    not_paid: "Pago pendiente", invoice_pending: "Factura pendiente",
+    change: "Cambio de pedido solicitado", return: "Devolución en curso",
+    refund_in_progress: "Reintegro en curso",
+    items_changed: "Cambios en los artículos", wrong_carrier: "Transporte incompatible",
+    shipment_pending: "Envío pendiente", shipment_uncertain: "Envío en revisión",
+    tracking_in_circuit: "Envío ya en curso", already_handed_over: "Ya entregado al transporte",
+  }
+  return reasons[reason] ?? "Revisión requerida"
+}
 
 export function parseOrderCode(value: string): number | null {
   const match = /^#?BX-(\d+)$/i.exec(value.trim())
@@ -80,16 +94,16 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number) {
   const membership = membershipResult.data as DispatchMembership | null
   let batch: DispatchBatch | null = null
   if (membership) {
-    const result = await admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,handed_over_at,handed_over_by").eq("id", membership.batch_id).maybeSingle()
+    const result = await admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by").eq("id", membership.batch_id).maybeSingle()
     if (result.error) throw result.error
     batch = result.data as DispatchBatch | null
   }
-  return { order: orderResult.data as DispatchOrder, package: pkg, lines, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, blocked: (blocksResult.data?.length ?? 0) > 0 }
+  return { order: orderResult.data as DispatchOrder, package: pkg, lines, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, blocked: (blocksResult.data?.length ?? 0) > 0, blockReason: blocksResult.data?.[0] ? dispatchBlockReason(blocksResult.data[0].reason) : null }
 }
 
 export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
   const [batchResult, itemsResult] = await Promise.all([
-    admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,handed_over_at,handed_over_by").eq("id", batchId).maybeSingle(),
+    admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by").eq("id", batchId).maybeSingle(),
     admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").eq("batch_id", batchId).is("removed_at", null).order("order_id"),
   ])
   if (batchResult.error || itemsResult.error) throw batchResult.error ?? itemsResult.error
@@ -97,15 +111,16 @@ export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
   const items = (itemsResult.data ?? []) as DispatchMembership[]
   const ids = items.map((item) => item.order_id)
   const [blocksResult, ordersResult] = ids.length ? await Promise.all([
-    admin.from("dispatch_blocks").select("order_id").in("order_id", ids).is("resolved_at", null),
+    admin.from("dispatch_blocks").select("order_id,reason").in("order_id", ids).is("resolved_at", null),
     admin.from("ordenes").select("id,cancelled_at,andreani_handed_over_at").in("id", ids),
   ]) : [{ data: [], error: null }, { data: [], error: null }]
   if (blocksResult.error || ordersResult.error) throw blocksResult.error ?? ordersResult.error
-  const blockedIds = new Set((blocksResult.data ?? []).map((block) => block.order_id))
+  const blockReasons = new Map((blocksResult.data ?? []).map((block) => [block.order_id, dispatchBlockReason(block.reason)]))
+  const blockedIds = new Set(blockReasons.keys())
   for (const order of ordersResult.data ?? []) if (order.cancelled_at && !order.andreani_handed_over_at) blockedIds.add(order.id)
   const batch = batchResult.data as DispatchBatch
   const operatorResult = batch.handed_over_by ? await admin.from("profiles").select("nombre,username,email").eq("id", batch.handed_over_by).maybeSingle() : null
   if (operatorResult?.error) throw operatorResult.error
   const operator = operatorResult?.data
-  return { batch, items: items.map((item) => ({ ...item, blocked: blockedIds.has(item.order_id) })), blockedCount: blockedIds.size, operatorName: operator?.nombre || operator?.username || operator?.email || null }
+  return { batch, items: items.map((item) => ({ ...item, blocked: blockedIds.has(item.order_id), blockReason: blockReasons.get(item.order_id) ?? (blockedIds.has(item.order_id) ? "Revisión requerida" : null) })), blockedCount: blockedIds.size, operatorName: operator?.nombre || operator?.username || operator?.email || null }
 }

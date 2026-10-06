@@ -27,6 +27,7 @@ import {
 
 import { useAuth } from "@/context/auth-context"
 import { useAdminNotifications } from "@/hooks/use-admin-notifications"
+import { useDispatchAlerts } from "@/hooks/use-dispatch-alerts"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { AdminThemeProvider } from "@/context/admin-theme-context"
 import { AdminThemeToggle } from "@/components/admin-theme-toggle"
@@ -220,6 +221,8 @@ export function AdminClient({ children }: { children: ReactNode }) {
     error: notificationsError,
     reloadNotifications,
   } = useAdminNotifications(hasResolvedInternalAccess)
+  const dispatchAlerts = useDispatchAlerts(hasResolvedInternalAccess)
+  const bellNotifications = [...dispatchAlerts.notifications, ...notifications]
   const [mobileOpen, setMobileOpen] = useState(false)
   const [invoicePendingCount, setInvoicePendingCount] = useState(0)
   const [invoiceCountError, setInvoiceCountError] = useState(false)
@@ -333,8 +336,10 @@ export function AdminClient({ children }: { children: ReactNode }) {
       {
         key: "despachos",
         label: "Despachos",
-        description: "Preparación y tandas",
+        description: dispatchAlerts.reviewCount ? `${dispatchAlerts.reviewCount} requiere revisión` : "Preparación y tandas",
         icon: <PackageCheck className="size-4" />,
+        notificationCount: dispatchAlerts.reviewCount,
+        notificationTone: "shipping",
       },
     ]
 
@@ -411,7 +416,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ]
         : []),
     ]
-  }, [invoicePendingCount, invoiceCountError, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications])
+  }, [invoicePendingCount, invoiceCountError, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications, dispatchAlerts.reviewCount])
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -546,10 +551,10 @@ export function AdminClient({ children }: { children: ReactNode }) {
         </Link>
         <div className="flex shrink-0 items-center gap-1.5">
           <AdminNotificationsBell
-            count={notificationCount}
+            count={notificationCount + dispatchAlerts.notifications.length}
             tone={notificationTone}
             groups={notificationGroups}
-            notifications={notifications}
+            notifications={bellNotifications}
             loading={notificationsLoading}
             error={notificationsError}
             onRetry={reloadNotifications}
@@ -660,10 +665,10 @@ export function AdminClient({ children }: { children: ReactNode }) {
           <p className="text-sm font-black tracking-widest">BEYONIX ADMIN</p>
           <div className="flex shrink-0 items-center gap-1.5">
             <AdminNotificationsBell
-              count={notificationCount}
+              count={notificationCount + dispatchAlerts.notifications.length}
               tone={notificationTone}
               groups={notificationGroups}
-              notifications={notifications}
+              notifications={bellNotifications}
               loading={notificationsLoading}
               error={notificationsError}
               onRetry={reloadNotifications}

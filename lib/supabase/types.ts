@@ -526,10 +526,10 @@ export interface SupabaseOrderRefundProof {
   id: number
   order_id: number
   uploaded_by?: string | null
-  file_name: string
-  file_path: string
-  mime_type: string
-  file_size: number
+  file_name: string | null
+  file_path: string | null
+  mime_type: string | null
+  file_size: number | null
   amount: number
   method?: string | null
   observation?: string | null

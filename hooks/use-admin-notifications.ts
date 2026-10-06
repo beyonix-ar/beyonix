@@ -44,7 +44,13 @@ const REALTIME_TABLES = [
   "producto_variantes",
   "inventory_variant_allocations",
   "external_sales",
+  "dispatch_blocks",
+  "dispatch_batches",
+  "dispatch_batch_items",
+  "order_packages",
 ] as const
+
+export const ADMIN_DISPATCH_CHANGED_EVENT = "beyonix:admin-dispatch-changed"
 
 const FALLBACK_REFRESH_INTERVAL_MS = 60_000
 
@@ -137,7 +143,12 @@ export function useAdminNotifications(enabled = true) {
           schema: "public",
           table,
         },
-        scheduleReload,
+        () => {
+          if (["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages", "ordenes", "orden_items", "order_claims", "order_refund_proofs"].includes(table)) {
+            window.dispatchEvent(new CustomEvent(ADMIN_DISPATCH_CHANGED_EVENT, { detail: table }))
+          }
+          if (!["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages"].includes(table)) scheduleReload()
+        },
       )
     }
 

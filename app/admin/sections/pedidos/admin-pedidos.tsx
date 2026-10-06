@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
 import { OrderReplacements } from "./order-replacements"
 import { OrderDispatchStatus } from "./order-dispatch-status"
+import { FinancialResolutionWizard, useFinancialResolutionView } from "./financial-resolution-wizard"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import { shareUnchanged } from "@/lib/admin/structural-sharing"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
@@ -138,6 +139,7 @@ import type {
   SupabasePedidoItem,
 } from "@/lib/supabase/types"
 import {
+  AdminBadge,
   AdminEmptyState,
   AdminFiltersBar,
   AdminInfoBlock,
@@ -1792,7 +1794,7 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
       at: pedido.refund_pending_at || cancelledAt || "",
       description: hasPhysicalReturn
         ? "Falta cerrar la revisión antes de reintegrar el dinero."
-        : "Falta cargar el comprobante de reintegro.",
+        : "Falta registrar el reintegro.",
       type: "neutral",
     })
   }
@@ -1801,13 +1803,13 @@ function buildOrderTimeline(order: SupabasePedido): OrderTimelineEvent[] {
   )[0]
   addEvent({
     key: "refund-proof-uploaded",
-    title: "Comprobante de reintegro cargado",
+    title: latestRefundProof?.file_path ? "Comprobante de reintegro cargado" : "Reintegro registrado",
     at: refundProofAt || "",
     description: latestRefundProof
-      ? `El comprobante quedó asociado al pedido (${formatPrice(latestRefundProof.amount)}${
+      ? `Se registró el reintegro del pedido (${formatPrice(latestRefundProof.amount)}${
           latestRefundProof.bank_reference ? `, referencia ${latestRefundProof.bank_reference}` : ""
         }).`
-      : "El comprobante quedó asociado al pedido.",
+      : "Se registró el reintegro del pedido.",
     type: "success",
   })
   addEvent({
@@ -2101,12 +2103,21 @@ function RefundManagementPanel({
   pedido,
   onRefundUpdated,
   onOpenBilling,
+  onOpenAttention,
+  onDownloadCreditNote,
 }: {
   pedido: SupabasePedido
   onRefundUpdated: (order: SupabasePedido) => void
   onOpenBilling: () => void
+  onOpenAttention: () => void
+  onDownloadCreditNote: (noteId: string) => void
 }) {
   const shouldShow = isCancellationFlowOrder(pedido)
+  const financial = useFinancialResolutionView(
+    pedido.id,
+    shouldShow,
+    `${pedido.financial_status ?? ""}:${pedido.refunded_at ?? ""}:${pedido.order_credit_notes?.length ?? 0}`,
+  )
   const [file, setFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [mpAction, setMpAction] = useState<"execute" | "reconcile" | null>(null)
@@ -2155,10 +2166,6 @@ function RefundManagementPanel({
     )
   }
 
-  const model = getCancellationPanelViewModel(pedido)
-  const { label: paymentMethodLabel, Icon: PaymentMethodIcon } =
-    CANCELLATION_PAYMENT_METHOD_DISPLAY[model.paymentMethod]
-
   const refreshOrder = async () => {
     try {
       const result = await getPedidos({ orderId: pedido.id })
@@ -2169,6 +2176,37 @@ function RefundManagementPanel({
       // informó el resultado y el próximo reload general lo va a sincronizar.
     }
   }
+
+  if (financial.loading) {
+    return <AdminSkeleton rows={3} />
+  }
+
+  // Resolución guiada (Etapa 6): sólo cuando la API de Etapa 5 ofrece un
+  // camino o ya existe una resolución. El resto sigue en el flujo existente.
+  if (financial.view && (financial.view.mode === "wizard" || financial.view.mode === "resolution")) {
+    return (
+      <FinancialResolutionWizard
+        pedido={pedido}
+        view={financial.view}
+        orderNumber={formatPublicOrderId(pedido.id)}
+        customerName={pedido.cliente_nombre?.trim() || getOrderUsername(pedido)}
+        reason={cancellationInfo.reasonText || null}
+        onChanged={() => {
+          financial.reload()
+          void refreshOrder()
+          notifyOrderNotificationsChanged()
+        }}
+        onOpenBilling={onOpenBilling}
+        onOpenAttention={onOpenAttention}
+        onDownloadCreditNote={onDownloadCreditNote}
+      />
+    )
+  }
+
+  const advancedNotice = financial.view?.mode === "advanced" ? financial.view : null
+  const model = getCancellationPanelViewModel(pedido)
+  const { label: paymentMethodLabel, Icon: PaymentMethodIcon } =
+    CANCELLATION_PAYMENT_METHOD_DISPLAY[model.paymentMethod]
 
   const uploadRefundProof = async () => {
     if (!file) {
@@ -2252,7 +2290,8 @@ function RefundManagementPanel({
 
       const response = await fetch(`/api/admin/pedidos/${pedido.id}/mercadopago-refund`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true }),
       })
       const data = (await response.json()) as { ok?: boolean; status?: string; error?: string }
 
@@ -2349,6 +2388,20 @@ function RefundManagementPanel({
           </div>
         </div>
       </div>
+
+      {advancedNotice && (
+        <div
+          className="admin-financial-wizard-notice mt-3 flex flex-wrap items-center gap-2"
+          data-testid="financial-advanced-case"
+          data-financial-state="Requiere acción"
+          data-requires-action="true"
+        >
+          <AdminBadge tone="warning">Caso avanzado</AdminBadge>
+          <span className="text-xs font-semibold">
+            {advancedNotice.notice ?? "Este caso se resuelve con la gestión completa."}
+          </span>
+        </div>
+      )}
 
       {model.paymentAfterCancellation && !model.isFinished && (
         <p className="admin-order-pg-rejected mt-3" data-testid="payment-after-cancellation">
@@ -5319,6 +5372,8 @@ function PedidoDetailModal({
               pedido={pedido}
               onRefundUpdated={onRefundUpdated}
               onOpenBilling={() => showDetailView("facturacion")}
+              onOpenAttention={() => showDetailView("atencion")}
+              onDownloadCreditNote={(noteId) => void handleDownloadCreditNote(noteId)}
             />
           )}
 

@@ -75,7 +75,7 @@ async function loadOrderReference(
  * exactamente por `expectedAmount` para esta orden. Fail-closed: cualquier
  * discrepancia devuelve un motivo y NO se procede.
  */
-function validateRefundablePayment(
+export function validateRefundablePayment(
   payment: MercadoPagoPayment,
   params: {
     order: MercadoPagoOrderReferenceFields

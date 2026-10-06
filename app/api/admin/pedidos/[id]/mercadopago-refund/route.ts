@@ -3,8 +3,8 @@ import { NextResponse } from "next/server"
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import {
   reconcileMercadoPagoOrderRefund,
-  refundMercadoPagoOrderPayment,
 } from "@/lib/mercadopago/order-refund"
+import { executeFinancialResolution } from "@/lib/orders/financial-resolution-server"
 
 /**
  * Refund REAL contra Mercado Pago (FASE 1). Sólo admin/super_admin
@@ -29,45 +29,18 @@ export async function POST(
     return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
   }
 
-  const result = await refundMercadoPagoOrderPayment(auth.admin, {
-    orderId,
-    adminId: auth.user.id,
-  })
-
-  switch (result.kind) {
-    case "confirmed":
-      return NextResponse.json({
-        ok: true,
-        status: "confirmed",
-        mpRefundId: result.mpRefundId,
-        amount: result.amount,
-      })
-    case "already_confirmed":
-      return NextResponse.json({ ok: true, status: "already_confirmed" })
-    case "in_progress":
-      return NextResponse.json(
-        { ok: false, status: result.status, error: "El refund ya está en curso." },
-        { status: 409 },
-      )
-    case "rejected":
-      return NextResponse.json(
-        { ok: false, status: "failed", error: result.message, code: result.code },
-        { status: 409 },
-      )
-    case "unknown":
-      return NextResponse.json(
-        {
-          ok: false,
-          status: "needs_reconciliation",
-          error: "Mercado Pago no confirmó el resultado del refund. Requiere reconciliación antes de reintentar.",
-        },
-        { status: 202 },
-      )
-    case "validation_failed":
-      return NextResponse.json(
-        { ok: false, error: "No se pudo validar el refund.", reason: result.reason },
-        { status: 409 },
-      )
+  const body = await request.json().catch(() => null) as { confirmed?: boolean } | null
+  if (body?.confirmed !== true) return NextResponse.json({ error: "Confirmá el reintegro." }, { status: 400 })
+  try {
+    const result = await executeFinancialResolution(auth.admin, orderId, auth.user.id,
+      request.headers.get("authorization") ?? "", "mercadopago_refund")
+    return NextResponse.json({ ok: result.status === "completed", status: result.status,
+      error: result.status === "requires_action" ? "Actualización pendiente. Reintentá desde la resolución financiera." : null },
+    { status: result.status === "requires_action" ? 202 : 200 })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : ""
+    return NextResponse.json({ error: /^[A-Z][A-Z_]+/.test(detail) || !detail
+      ? "No se pudo ejecutar el reintegro. Revisá el pedido." : detail }, { status: 409 })
   }
 }
 
