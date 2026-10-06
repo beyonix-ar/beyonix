@@ -3,6 +3,7 @@
 import {
   useMemo,
   useState,
+  useSyncExternalStore,
 } from "react"
 
 import { Search } from "lucide-react"
@@ -28,6 +29,38 @@ interface GlobalSearchBarProps {
   ) => void
 }
 
+const SEARCH_PLACEHOLDER =
+  "Buscá el producto hecho para vos..."
+
+// El texto completo no entra en el input por debajo de 390 px de viewport.
+const COMPACT_SEARCH_PLACEHOLDER =
+  "Buscá tu producto..."
+
+const COMPACT_SEARCH_QUERY =
+  "(max-width: 389px)"
+
+function subscribeCompactSearch(
+  onChange: () => void
+) {
+  const media = window.matchMedia(
+    COMPACT_SEARCH_QUERY
+  )
+
+  media.addEventListener("change", onChange)
+
+  return () =>
+    media.removeEventListener(
+      "change",
+      onChange
+    )
+}
+
+const isCompactSearch = () =>
+  window.matchMedia(COMPACT_SEARCH_QUERY)
+    .matches
+
+const isCompactSearchOnServer = () => false
+
 export function GlobalSearchBar({
   search,
   products,
@@ -41,6 +74,13 @@ export function GlobalSearchBar({
 
   const [isFocused, setIsFocused] =
     useState(false)
+
+  const compactPlaceholder =
+    useSyncExternalStore(
+      subscribeCompactSearch,
+      isCompactSearch,
+      isCompactSearchOnServer
+    )
 
   const [selectedIndex, setSelectedIndex] =
     useState(-1)
@@ -85,7 +125,11 @@ export function GlobalSearchBar({
       >
         <input
           type="text"
-          placeholder="Buscá el producto hecho para vos..."
+          placeholder={
+            compactPlaceholder
+              ? COMPACT_SEARCH_PLACEHOLDER
+              : SEARCH_PLACEHOLDER
+          }
           value={search}
           onChange={(event) => {
             onSearchChange(
@@ -156,7 +200,7 @@ export function GlobalSearchBar({
               )
             }
           }}
-          className={`beyonix-search-input w-full bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/45 ${inputClassName}`}
+          className={`beyonix-search-input w-full min-w-0 text-ellipsis bg-transparent px-5 py-3.5 text-sm text-white outline-none placeholder:text-white/45 ${inputClassName}`}
         />
 
         <button

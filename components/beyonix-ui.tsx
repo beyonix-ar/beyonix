@@ -16,7 +16,9 @@ const beyonixButtonVariants = cva(
           // que se mantiene oscuro en ambos temas.
           "border border-beyonix-blue-light/48 bg-beyonix-blue text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 active:bg-beyonix-blue",
         secondary:
-          "border border-beyonix-blue-light/24 bg-beyonix-blue/20 text-white hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/32 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
+          // Token de texto (no text-white): el fondo es azul al 20% y en
+          // Light queda claro.
+          "border border-beyonix-blue-light/24 bg-beyonix-blue/20 text-[var(--beyonix-text-primary)] hover:border-beyonix-blue-light/55 hover:bg-beyonix-blue/32 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25",
         outline: cn(
           // Superficie propia (--beyonix-btn-secondary-bg), no
           // bg-beyonix-surface: ese token es blanco puro en Light y el

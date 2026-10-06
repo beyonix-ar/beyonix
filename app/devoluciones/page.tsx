@@ -98,7 +98,7 @@ export default function DevolucionesPage() {
   return (
     <main className="min-h-screen bg-black text-white">
       <section className="relative overflow-hidden bg-beyonix-page border-b border-beyonix-blue-light/14">
-        <div className="mx-auto max-w-6xl px-4 pb-12 pt-16 sm:px-6 sm:pb-14 sm:pt-20 lg:px-8 lg:pb-16 lg:pt-24">
+        <div className="mx-auto max-w-6xl px-4 pb-12 pt-20 sm:px-6 sm:pb-14 lg:px-8 lg:pb-16 lg:pt-24">
           <span className="beyonix-history-badge inline-flex items-center gap-2 rounded-full border border-beyonix-blue-light/22 bg-beyonix-blue/16 px-3 py-1 text-10px font-semibold uppercase tracking-[0.18em] text-beyonix-cyan">
             Posventa BEYONIX
           </span>

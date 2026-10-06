@@ -29,6 +29,7 @@ import { useAuth } from "@/context/auth-context"
 import { useCustomerCredit } from "@/context/customer-credit-context"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
+import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 import { formatARS } from "@/lib/customer-credit"
 import { getStoreCategorias } from "@/lib/supabase/queries/store"
 import type { SupabaseCategoria } from "@/lib/supabase/types"
@@ -104,8 +105,20 @@ export function SiteHeader() {
     if (!user) setNotificationsOpen(false)
   }, [user])
 
+  // Con el menú mobile abierto el único scroll es el del panel.
+  useEffect(() => {
+    if (!mobileOpen) return
+    return lockDocumentScroll()
+  }, [mobileOpen])
+
   return (
-    <header className="beyonix-site-header fixed top-0 left-0 right-0 z-50 border-b border-beyonix-blue-light/18 bg-black/78 shadow-[0_8px_30px_rgba(0,0,0,0.38)] backdrop-blur-xl">
+    <header
+      className={cn(
+        "beyonix-site-header fixed top-0 left-0 right-0 z-50 border-b border-beyonix-blue-light/18 shadow-[0_8px_30px_rgba(0,0,0,0.38)]",
+        // Abierto, barra y menú forman un panel sólido sobre la página.
+        mobileOpen ? "bg-beyonix-surface-2" : "bg-black/78 backdrop-blur-xl"
+      )}
+    >
       <nav className="container mx-auto px-4 lg:px-8">
         <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center lg:h-18 lg:grid-cols-site-header">
           <BeyonixLogoLink />
@@ -313,7 +326,7 @@ export function SiteHeader() {
         </div>
 
         {mobileOpen && (
-          <div className="max-h-80vh space-y-1 overflow-y-auto border-t border-white/6 py-3 lg:hidden">
+          <div className="max-h-80vh space-y-1 overflow-y-auto overscroll-contain border-t border-white/6 py-3 lg:hidden">
             <div className="beyonix-site-header-mobile-toggle-row mb-2 flex items-center justify-between gap-3 rounded-lg border border-white/6 px-3 py-2.5">
               <span className="beyonix-site-header-mobile-toggle-label text-15px font-medium text-[#F8FAFC]/88">
                 Apariencia
