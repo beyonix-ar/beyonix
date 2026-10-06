@@ -1383,7 +1383,7 @@ function LoginContent() {
                 aria-label="Olvidé mi contraseña"
                 onClick={handleForgotPassword}
                 disabled={forgotPasswordLoading || forgotPasswordCooldown > 0}
-                className="beyonix-login-forgot-link cursor-pointer text-sm font-semibold text-beyonix-sky transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="beyonix-login-forgot-link inline-flex min-h-9 cursor-pointer items-center text-sm font-semibold text-beyonix-sky transition-colors hover:text-white disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0"
               >
                 {forgotPasswordLoading
                   ? "Enviando..."

@@ -11,11 +11,15 @@ import {
   BEYONIX_EMAIL,
   BEYONIX_SUPPORT_HOURS,
 } from "@/lib/legal-contact"
+import { getSiteSettings } from "@/lib/site-settings"
+
+// El descuento por transferencia se lee de la misma configuración que usa el checkout.
+export const dynamic = "force-dynamic"
 
 const EMAIL_SUBJECT = "Consulta desde beyonix.com.ar"
 const GMAIL_COMPOSE_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(BEYONIX_EMAIL)}&su=${encodeURIComponent(EMAIL_SUBJECT)}`
 
-const infoCards = [
+const getInfoCards = (transferDiscountPercent: number) => [
   {
     label: "GESTIÓN DE PEDIDOS",
     value: "Validación de pagos y consultas",
@@ -34,12 +38,17 @@ const infoCards = [
   },
   {
     label: "FORMAS DE PAGO",
-    value: "Transferencia bancaria (10% OFF) y Mercado Pago",
+    value: transferDiscountPercent > 0
+      ? `Transferencia bancaria (${transferDiscountPercent}% OFF) y Mercado Pago`
+      : "Transferencia bancaria y Mercado Pago",
     icon: CreditCard,
   },
 ]
 
-export default function ContactoPage() {
+export default async function ContactoPage() {
+  const siteSettings = await getSiteSettings()
+  const infoCards = getInfoCards(siteSettings.pricing.transferDiscountPercent)
+
   return (
     <main className="min-h-screen bg-black text-white">
       <section className="bg-beyonix-page">

@@ -36,10 +36,6 @@ const infoLinks = [
     label: "Devoluciones",
     href: "/devoluciones",
   },
-  {
-    label: "Contacto",
-    href: "/contacto",
-  },
 ]
 
 const contactLinks = [
@@ -60,11 +56,12 @@ const contactLinks = [
   },
 ]
 
+// En móvil cada enlace tiene 36px de alto para poder tocarlo; desde sm vuelve al alto del texto.
 const footerLinkClass =
-  "beyonix-footer-link inline-flex rounded-md text-sm text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+  "beyonix-footer-link inline-flex min-h-9 items-center rounded-md text-sm text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 sm:min-h-0"
 
-const withdrawalLinkClass =
-  "beyonix-footer-link inline-flex rounded-md text-xs text-white/64 outline-none transition-colors hover:text-white focus-visible:text-white focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
+// Listas del footer: el espacio táctil reemplaza al espaciado en móvil.
+const footerListClass = "space-y-0 sm:space-y-2.5"
 
 function FooterColumn({
   title,
@@ -163,7 +160,7 @@ export function Footer() {
           </BeyonixCard>
 
           <FooterColumn title="Tienda">
-            <ul className="space-y-2.5">
+            <ul className={footerListClass}>
               {categorias.map((categoria) => (
                 <li key={categoria.id}>
                   <Link
@@ -189,7 +186,7 @@ export function Footer() {
           </FooterColumn>
 
           <FooterColumn title="Información">
-            <ul className="space-y-2.5">
+            <ul className={footerListClass}>
               {infoLinks.map((link) => (
                 <li key={link.label}>
                   <Link
@@ -206,7 +203,7 @@ export function Footer() {
                   href={BEYONIX_WITHDRAWAL_PAGE_URL}
                   onClick={handleWithdrawalClick}
                   aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
-                  className={withdrawalLinkClass}
+                  className={footerLinkClass}
                 >
                   Botón de arrepentimiento
                 </Link>
@@ -215,7 +212,7 @@ export function Footer() {
           </FooterColumn>
 
           <FooterColumn title="Contacto">
-            <ul className="space-y-2.5">
+            <ul className={footerListClass}>
               {contactLinks.map((link) => (
                 <li key={link.label}>
                   {link.external ? (

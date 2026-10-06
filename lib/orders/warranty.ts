@@ -1,6 +1,8 @@
 import "server-only"
 
-export const DEFAULT_PRODUCT_WARRANTY_MONTHS = 6
+import { DEFAULT_PRODUCT_WARRANTY_MONTHS } from "./warranty-policy.ts"
+
+export { DEFAULT_PRODUCT_WARRANTY_MONTHS }
 
 export type OrderItemWarrantyStatus =
   | "pending_delivery"

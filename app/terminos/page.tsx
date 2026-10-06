@@ -52,7 +52,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic"
 
-const LAST_UPDATED = "27 de julio de 2026"
+const LAST_UPDATED = "6 de octubre de 2026"
 const PAYMENT_PROOF_MAX_MB = PAYMENT_PROOF_MAX_SIZE / 1024 / 1024
 
 const LEGAL_SECTIONS = [
@@ -158,6 +158,7 @@ export default async function TerminosPage() {
   const siteSettings = await getSiteSettings()
   // Misma configuración de Admin que usa la cotización real del envío.
   const shippingTerms = getShippingTermsCopy(siteSettings.shipping)
+  const transferDiscountPercent = siteSettings.pricing.transferDiscountPercent
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -211,8 +212,10 @@ export default async function TerminosPage() {
             <KeyFact
               icon={BadgeDollarSign}
               label="Transferencia"
-              value={`${siteSettings.pricing.transferDiscountPercent}% OFF`}
-              detail="Sobre productos; el envío se calcula por separado."
+              value={transferDiscountPercent > 0 ? `${transferDiscountPercent}% OFF` : "Sin descuento vigente"}
+              detail={transferDiscountPercent > 0
+                ? "Sobre productos; el envío se calcula por separado."
+                : "Si se habilita un descuento, se informa antes de pagar."}
             />
             <KeyFact
               icon={Clock3}
@@ -426,7 +429,12 @@ export default async function TerminosPage() {
                 </div>
                 <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><Landmark className="size-4 text-beyonix-cyan" /><strong className="text-white">Transferencia bancaria</strong></div>
-                  <p className="mt-2 text-xs leading-6 text-white/58">Aplica un {siteSettings.pricing.transferDiscountPercent}% de descuento sobre el importe de productos que efectivamente se pague por transferencia. El envío y otros conceptos se calculan por separado.</p>
+                  <p className="mt-2 text-xs leading-6 text-white/58">
+                    {transferDiscountPercent > 0
+                      ? `Aplica un ${transferDiscountPercent}% de descuento sobre el importe de productos que efectivamente se pague por transferencia.`
+                      : "Cuando exista un descuento por transferencia, se informa antes de pagar y aplica sobre el importe de productos que efectivamente se pague por transferencia."}{" "}
+                    El envío y otros conceptos se calculan por separado.
+                  </p>
                 </div>
               </div>
               <p>
@@ -555,10 +563,13 @@ export default async function TerminosPage() {
                   <MessageCircleWarning className="mt-0.5 size-4 shrink-0 text-white/44" />
                   <div>
                     <h3 className="font-bold text-white">
-                      Importante: no es un período de prueba
+                      Excepciones y estado del producto
                     </h3>
                     <p className="mt-2 text-white/64">
-                      No aplica si el producto fue usado, consumido o se encuentra dentro de una excepción legal.
+                      No aplica a los casos exceptuados por el artículo 1116 del Código Civil y Comercial
+                      (por ejemplo, productos personalizados o que por su naturaleza no pueden devolverse).
+                      El uso normal para conocer el producto no impide ejercerlo: debe devolverse completo,
+                      con sus accesorios y elementos recibidos.
                     </p>
                     <p className="mt-3 border-t border-white/8 pt-3 text-white/64">
                       BEYONIX podrá verificar la operación, el plazo y el estado del producto antes de coordinar la restitución.
@@ -609,8 +620,9 @@ export default async function TerminosPage() {
                 medio de pago, la entidad bancaria, Mercado Pago o los ciclos de cierre aplicables.
               </p>
               <p>
-                Cuando BEYONIX solicite la devolución física, informará por el chat el destino y las
-                instrucciones de embalaje.
+                Cuando corresponda devolver el producto, BEYONIX genera el envío con Andreani e informa por el
+                chat cómo embalarlo. El cliente lo entrega en una sucursal Andreani habilitada; no se realizan
+                retiros a domicilio.
               </p>
             </LegalSection>
 
@@ -623,8 +635,8 @@ export default async function TerminosPage() {
             >
               <p>
                 Todos los productos nuevos vendidos por BEYONIX cuentan con una garantía de
-                {` ${DEFAULT_PRODUCT_WARRANTY_MONTHS} meses`} desde su entrega. Ese plazo es el máximo
-                de garantía ofrecido por BEYONIX para sus productos.
+                {` ${DEFAULT_PRODUCT_WARRANTY_MONTHS} meses`} desde su entrega. Es la garantía legal;
+                BEYONIX no ofrece una garantía extendida adicional.
               </p>
               <p>
                 La garantía alcanza defectos o vicios que afecten la identidad entre lo ofrecido y lo

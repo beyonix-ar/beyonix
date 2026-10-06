@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  CreditCard,
-  Headphones,
-  ShieldCheck,
-  Truck,
-} from "lucide-react"
-
+import { StoreBenefits } from "@/components/products/store-benefits"
 import { useCart } from "@/context/cart-context"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import { ProductDetailsModal } from "../../products/product-details-modal"
@@ -27,13 +21,6 @@ interface CategoryPageLayoutProps {
   products: SupabaseProducto[]
   priceRangeProducts?: SupabaseProducto[]
 }
-
-const storeBenefits = [
-  { label: "Envíos a todo el país", icon: Truck },
-  { label: "Hasta 12 cuotas", icon: CreditCard },
-  { label: "Garantía oficial", icon: ShieldCheck },
-  { label: "Atención personalizada", icon: Headphones },
-]
 
 export function CategoryPageLayout({
   title,
@@ -133,21 +120,7 @@ export function CategoryPageLayout({
               />
             </div>
 
-            <div className="mt-6 grid w-full max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {storeBenefits.map(({ label, icon: Icon }) => (
-                <div
-                  key={label}
-                  className="beyonix-benefit-item flex items-center gap-3 rounded-lg px-3 py-3 text-left"
-                >
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-beyonix-blue-light/24 bg-beyonix-blue/34 text-white shadow-[0_0_8px_rgba(30,140,255,0.08)]">
-                    <Icon className="size-4" />
-                  </span>
-                  <span className="beyonix-modal-title text-13px font-semibold text-white/86">
-                    {label}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <StoreBenefits />
           </div>
         </div>
       </div>

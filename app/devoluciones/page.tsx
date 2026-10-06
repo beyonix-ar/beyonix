@@ -43,7 +43,7 @@ const facts = [
     icon: ShieldCheck,
     label: "Garantía legal",
     value: `${DEFAULT_PRODUCT_WARRANTY_MONTHS} meses`,
-    detail: "Plazo mínimo para productos nuevos, contado desde la entrega.",
+    detail: "Para productos nuevos, contados desde la entrega."
   },
 ]
 
@@ -61,7 +61,7 @@ const steps = [
   {
     number: "03",
     title: "Recibí las instrucciones",
-    description: "BEYONIX analizará el pedido y te indicará por el chat la solución, el embalaje y el destino si corresponde devolverlo.",
+    description: "BEYONIX analizará el pedido y te indicará por el chat la solución y, si corresponde devolverlo, cómo embalarlo para entregarlo en una sucursal Andreani (no se realizan retiros a domicilio).",
   },
   {
     number: "04",

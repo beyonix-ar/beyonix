@@ -2894,7 +2894,7 @@ export default function CheckoutPage() {
                       icon={Landmark}
                       title="Transferencia bancaria"
                       description="Datos bancarios al confirmar"
-                      badge={<span className="checkout-badge checkout-badge-success" data-transfer-discount-highlight>{siteSettings.pricing.transferDiscountPercent}% OFF</span>}
+                      badge={siteSettings.pricing.transferDiscountPercent > 0 ? <span className="checkout-badge checkout-badge-success" data-transfer-discount-highlight>{siteSettings.pricing.transferDiscountPercent}% OFF</span> : undefined}
                       amountLabel="Total transferencia"
                       amount={isTransferPayment ? formatPrice(finalTotal) : undefined}
                     />
