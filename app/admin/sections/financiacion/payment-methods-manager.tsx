@@ -166,6 +166,8 @@ function PaymentMethodRow({
         <AdminSecondaryButton
           size="sm"
           aria-pressed={method.enabled}
+          aria-label={method.enabled ? `${method.display_name}: activo en BEYONIX. Desactivar` : `${method.display_name}: inactivo en BEYONIX. Activar`}
+          title={method.enabled ? "Activo en BEYONIX (se muestra si además tiene imagen y está disponible). Clic para desactivar." : "Inactivo en BEYONIX: nunca se muestra. Clic para activar."}
           disabled={busy}
           onClick={onToggle}
           className={cn("admin-toggle", method.enabled && "admin-toggle-on")}

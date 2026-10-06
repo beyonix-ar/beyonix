@@ -227,6 +227,15 @@ for (const theme of ["light", "dark"] as const) {
       await page.locator("[data-sync-payment-methods]").click()
       await row(page, "cabal").getByText("Nuevo medio disponible").waitFor()
       await page.locator("[data-new-methods-alert]").getByText(/Hay 2 nuevos medios disponibles/).waitFor()
+      await page.locator("[data-last-sync]").getByText(/7\/10/).waitFor()
+
+      // "Marcar revisado" quita el aviso sin cargar imagen (el medio sigue oculto).
+      await row(page, "cabal").locator("[data-mark-reviewed]").click()
+      await page.locator("[data-payment-methods-feedback]").getByText("Medio marcado como revisado.").waitFor()
+      assert.equal(await row(page, "cabal").getByText("Nuevo medio disponible").count(), 0)
+      await row(page, "cabal").getByText("Oculto: falta la imagen").waitFor()
+      await page.locator("[data-new-methods-alert]").getByText(/Hay 1 nuevo medio disponible/).waitFor()
+      await page.locator("[data-payment-methods-open] [data-new-methods-count]").getByText("1 nuevo").waitFor()
 
       await page.evaluate(() => { (window as unknown as { __syncMode: string }).__syncMode = "fail" })
       await page.locator("[data-sync-payment-methods]").click()
