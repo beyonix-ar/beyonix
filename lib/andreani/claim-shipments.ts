@@ -56,7 +56,7 @@ import type {
   AndreaniLabelResponse,
   AndreaniTrackingEvent,
 } from "./types.ts"
-import { ANDREANI_PROVIDER_DISABLED_MESSAGE } from "./types.ts"
+import { ANDREANI_PROVIDER_DISABLED_MESSAGE, isAndreaniPreShipmentRejected } from "./types.ts"
 
 /**
  * Operaciones Andreani de un reclamo (order_claim_shipments). La postventa es
@@ -475,7 +475,7 @@ export async function createClaimShipment(
         productionAccess: prepared.environment === "PROD" ? "shipment-creation" : undefined,
       },
     )
-    if (response.estado === "Rechazado") {
+    if (isAndreaniPreShipmentRejected(response.estado)) {
       throw new AndreaniError("REQUEST_FAILED", response.motivo || "Andreani rechazó la orden.", { status: 422 })
     }
     const bulto = response.bultos[0]
@@ -676,7 +676,7 @@ export async function reconcileClaimShipment(
       env: { ...process.env, ANDREANI_ENV: current.environment },
       productionAccess: current.environment === "PROD" ? "shipment-read" : undefined,
     })
-    if (status.estado === "Rechazado") {
+    if (isAndreaniPreShipmentRejected(status.estado)) {
       throw new AndreaniError("VALIDATION_ERROR", "Andreani informa esa orden como rechazada: no se puede vincular.")
     }
     tracking = status.bultos[0]?.numeroDeEnvio ?? null

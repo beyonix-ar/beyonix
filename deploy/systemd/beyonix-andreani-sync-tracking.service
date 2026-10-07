@@ -1,0 +1,26 @@
+[Unit]
+Description=BEYONIX - Sincronizar tracking Andreani (pedidos y operaciones de reclamos)
+After=network-online.target pm2-beyonix.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Mismo patrón que beyonix-verify-transfer-orders.service (ver README):
+# CRON_SECRET nunca viaja en argv -- el header vive en el archivo privado de
+# curl /etc/beyonix/curl-verify-transfer-orders.conf (600, root:root, fuera
+# del repo) y curl lo lee con --config. Por eso el servicio corre como root.
+#
+# flock -n: si una corrida sigue activa cuando el timer vuelve a disparar,
+# la nueva se cancela en vez de superponerse (además de que systemd no
+# lanza dos instancias de la misma unidad).
+#
+# --max-time 120: el lote es acotado (15 pedidos, 1-2 GET a Andreani cada
+# uno, timeout de 10 s por llamada). Sin --retry: el próximo tick es el
+# reintento. -o /dev/null: el resumen de cada corrida queda en los logs de
+# la app (ANDREANI_TRACKING_SYNC_BATCH_FINISHED), no en journalctl.
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-andreani-sync-tracking.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 120 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/andreani-sync-tracking

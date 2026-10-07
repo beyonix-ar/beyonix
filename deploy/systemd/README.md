@@ -252,6 +252,41 @@ systemctl list-timers | grep beyonix-run-commercial-events
 
 ---
 
+# Tracking automático Andreani (systemd, instalado)
+
+Producción es la VPS (PM2 `beyonix` en `127.0.0.1:3000`); ya no hay ningún scheduler
+de Netlify. `/api/cron/andreani-sync-tracking` consulta en Andreani el estado de los
+pedidos y de las operaciones de reclamos ya creados (sólo GET) y avanza los estados.
+
+- `deploy/systemd/beyonix-andreani-sync-tracking.service`: `flock -n`, loopback,
+  `--fail`, secreto vía el archivo privado de curl
+  (`/etc/beyonix/curl-verify-transfer-orders.conf`), nunca en argv.
+- `deploy/systemd/beyonix-andreani-sync-tracking.timer`: `OnCalendar=*:0/15`,
+  `Persistent=true`.
+
+Estado al 2026-10-06: la unidad anterior de la VPS pasaba `Bearer ${CRON_SECRET}`
+desde `~/.config/beyonix/cron.env` (secreto en argv) y fallaba con **401 desde el
+2026-09-27** porque ese archivo tenía un `CRON_SECRET` distinto al de la app. Se
+reemplazó por estos archivos (backup de las unidades previas en `/root/*.bak-*`).
+
+Reinstalar o actualizar (en la VPS, desde `~/apps/beyonix`):
+
+```bash
+sudo cp deploy/systemd/beyonix-andreani-sync-tracking.service /etc/systemd/system/
+sudo cp deploy/systemd/beyonix-andreani-sync-tracking.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now beyonix-andreani-sync-tracking.timer
+sudo systemctl start beyonix-andreani-sync-tracking.service
+systemctl show beyonix-andreani-sync-tracking.service -p Result
+```
+
+`Result=success` es una corrida correcta; el resumen (`checked`, `updated`,
+`statusChanged`, `errors`) queda en `pm2 logs beyonix` como
+`ANDREANI_TRACKING_SYNC_BATCH_FINISHED`. `401` = el archivo de curl no coincide con
+el `CRON_SECRET` de la app.
+
+---
+
 # Facturación automática ARCA (preparada, todavía apagada)
 
 El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada 5 minutos);

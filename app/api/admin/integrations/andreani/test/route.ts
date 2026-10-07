@@ -1,6 +1,7 @@
 import { createAndreaniAdminTestHandlers } from "@/lib/andreani/admin-test-handler"
 import {
   getAndreaniIntegrationStatus,
+  resolveAndreaniReferenceEnvironment,
   testAndreaniQaConnection,
 } from "@/lib/andreani/client"
 import { getAndreaniShipmentCreationConfigStatus } from "@/lib/andreani/order-shipment"
@@ -15,6 +16,13 @@ const handlers = createAndreaniAdminTestHandlers({
   },
   getStatus: () => ({
     ...getAndreaniIntegrationStatus(),
+    quoteEnvironment: (() => {
+      try {
+        return resolveAndreaniReferenceEnvironment()
+      } catch {
+        return "INVALID" as const
+      }
+    })(),
     shipmentCreation: getAndreaniShipmentCreationConfigStatus(),
   }),
   testConnection: testAndreaniQaConnection,

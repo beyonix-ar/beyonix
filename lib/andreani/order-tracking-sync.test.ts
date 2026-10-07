@@ -64,6 +64,46 @@ test("tracking atrasado no pisa un evento más reciente persistido concurrenteme
   assert.equal(auditEvents.length, 0)
 })
 
+// Respuestas reales de Andreani PROD (2026-10-06) para una orden rechazada:
+// GET /v2/ordenes-de-envio/{id} -> estado "Rechazada" (femenino) y la traza
+// OrdenDeEnvioRechazada con ciclo DIRECTO.
+test("tracking detecta el rechazo posterior a la creación con el estado real de PROD (\"Rechazada\")", async () => {
+  const snapshot = await fetchAndreaniOrderTrackingSnapshot(baseOrder(), {
+    env: qaClientEnv,
+    fetch: async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname === "/login") return jsonResponse({ token: "token-prueba" })
+      if (url.pathname.endsWith("/trazas")) {
+        return jsonResponse({
+          eventos: [
+            { Fecha: "2026-10-06T19:26:30.0000000", Evento: "OrdenDeEnvioSolicitada", Estado: "Pendiente de ingreso" },
+            { Fecha: "2026-10-06T19:26:32.3345397", Ciclo: "DIRECTO", Evento: "OrdenDeEnvioRechazada", Motivo: "El contrato 400042104 no permite entrega en sucursal." },
+          ],
+        })
+      }
+      return jsonResponse({ estado: "Rechazada", motivo: "El contrato 400042104 no permite entrega en sucursal.", tipo: "B2C", bultos: [{ numeroDeBulto: "1", numeroDeEnvio: "360003123478040" }] })
+    },
+  })
+  assert.equal(snapshot.rejectedAfterCreation, true)
+  assert.equal(snapshot.logisticsEstado, "Rechazada")
+})
+
+test("tracking no falla durante el estado transitorio real de PROD (\"Solicitada\")", async () => {
+  const snapshot = await fetchAndreaniOrderTrackingSnapshot(baseOrder(), {
+    env: qaClientEnv,
+    fetch: async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname === "/login") return jsonResponse({ token: "token-prueba" })
+      if (url.pathname.endsWith("/trazas")) {
+        return jsonResponse({ eventos: [{ Fecha: "2026-10-06T19:26:30.0000000", Evento: "OrdenDeEnvioSolicitada", Estado: "Pendiente de ingreso" }] })
+      }
+      return jsonResponse({ estado: "Solicitada", tipo: "B2C", bultos: [{ numeroDeBulto: "1", numeroDeEnvio: "360003123479210" }] })
+    },
+  })
+  assert.equal(snapshot.rejectedAfterCreation, false)
+  assert.equal(snapshot.logisticsEstado, "Pendiente de ingreso")
+})
+
 test("resolveAndreaniTrackingEnvironment usa el ambiente donde se creó el envío, nunca el configurado hoy", () => {
   assert.equal(resolveAndreaniTrackingEnvironment({ andreani_creation_environment: "PROD" }), "PROD")
   assert.equal(resolveAndreaniTrackingEnvironment({ andreani_creation_environment: "QA" }), "QA")

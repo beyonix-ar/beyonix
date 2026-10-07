@@ -159,18 +159,23 @@ export function AndreaniIntegrationCard({
       data-config-block="andreani"
     >
       <ConfigValueList>
-        <ConfigValueRow label="Ambiente" tone={integration ? "info" : "neutral"}>
-          {integration?.environment ?? "Consultando…"}
-        </ConfigValueRow>
-        <ConfigValueRow label="Credenciales" tone={!integration ? "neutral" : integration.configured ? "success" : "warning"}>
-          {!integration ? "Consultando…" : integration.configured ? "Configuradas" : "Incompletas"}
+        {/* Cada fila dice qué ambiente usa ese flujo: la prueba de conexión
+            (ANDREANI_ENV) puede ser QA mientras cotización y creación operan en PROD. */}
+        <ConfigValueRow
+          label="Prueba de conexión"
+          tone={!integration ? "neutral" : integration.configured ? "info" : "warning"}
+          data-andreani-connection-env={integration?.environment}
+        >
+          {!integration
+            ? "Consultando…"
+            : `${integration.environment} · ${integration.configured ? "Credenciales configuradas" : "Credenciales incompletas"}`}
         </ConfigValueRow>
         <ConfigValueRow
-          label="Venta"
-          tone={commercialEnabled === null ? "neutral" : commercialEnabled ? "success" : "warning"}
-          data-andreani-commercial={commercialEnabled === null ? "loading" : commercialEnabled ? "active" : "inactive"}
+          label="Cotización"
+          tone={!integration ? "neutral" : integration.quoteEnvironment === "INVALID" ? "danger" : "success"}
+          data-andreani-quote-env={integration?.quoteEnvironment}
         >
-          {commercialEnabled === null ? "Consultando…" : commercialEnabled ? "Activa" : "Desactivada"}
+          {!integration ? "Consultando…" : integration.quoteEnvironment === "INVALID" ? "Sin configurar" : integration.quoteEnvironment ?? "—"}
         </ConfigValueRow>
         <ConfigValueRow
           label="Creación de envíos"
@@ -179,6 +184,13 @@ export function AndreaniIntegrationCard({
           {!shipmentCreation
             ? "Consultando…"
             : `${shipmentCreation.environment} · ${shipmentCreation.configured ? "Lista" : "Bloqueada"}`}
+        </ConfigValueRow>
+        <ConfigValueRow
+          label="Venta"
+          tone={commercialEnabled === null ? "neutral" : commercialEnabled ? "success" : "warning"}
+          data-andreani-commercial={commercialEnabled === null ? "loading" : commercialEnabled ? "active" : "inactive"}
+        >
+          {commercialEnabled === null ? "Consultando…" : commercialEnabled ? "Activa" : "Desactivada"}
         </ConfigValueRow>
       </ConfigValueList>
 

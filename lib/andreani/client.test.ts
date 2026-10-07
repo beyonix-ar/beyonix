@@ -545,6 +545,42 @@ test("parseBranches rechaza una sucursal sin localidad verificable", async () =>
   )
 })
 
+test("parseBranches descarta sólo la sucursal mal formada y conserva las válidas (sin tumbar el catálogo)", async () => {
+  // Caso real PROD (2026-10-06): una sucursal sin región o con coordenadas inválidas.
+  const valid = structuredClone(officialBranchResponse[0]!)
+  const withoutRegion = structuredClone(officialBranchResponse[0]!) as Record<string, unknown> & { direccion: Record<string, unknown> }
+  withoutRegion.id = 99001
+  Reflect.deleteProperty(withoutRegion.direccion, "region")
+  const badCoordinates = { ...structuredClone(officialBranchResponse[0]!), id: 99002, coordenadas: { latitud: 1, longitud: null } }
+  const warnings: unknown[][] = []
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => { warnings.push(args) }
+  try {
+    const client = new AndreaniClient({ env: qaEnvironment(), fetch: async () => Response.json([withoutRegion, valid, badCoordinates]) })
+    const branches = await client.getSucursales({ canal: "B2C" })
+    assert.deepEqual(branches.map((branch) => branch.id), [valid.id])
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.equal(warnings.length, 1)
+  assert.equal(warnings[0][0], "ANDREANI_BRANCH_RECORDS_SKIPPED")
+  assert.deepEqual(warnings[0][1], {
+    skipped: 2,
+    kept: 1,
+    sample: [
+      { id: "99001", reason: "Andreani devolvió una dirección sin región." },
+      { id: "99002", reason: "Andreani devolvió coordenadas inválidas." },
+    ],
+  })
+})
+
+test("parseBranches sigue fallando cerrado si la respuesta no es una lista", async () => {
+  await assert.rejects(
+    () => parseSingleBranch({ sucursales: officialBranchResponse }),
+    (error) => error instanceof AndreaniError && error.code === "INVALID_RESPONSE",
+  )
+})
+
 test("consulta puntos de tercero por contrato con autenticación", async () => {
   resetAndreaniRuntimeStateForTests()
   let requestedUrl = ""
@@ -619,14 +655,17 @@ test("reutiliza la autenticación en endpoints protegidos", async () => {
   )
 })
 
-test("reconoce todos los estados de pre-envío documentados", async () => {
+test("reconoce todos los estados de pre-envío documentados y los que informa PROD en femenino", async () => {
   resetAndreaniRuntimeStateForTests()
+  // PROD real (2026-10-06): Pendiente -> Solicitada -> Creada, y "Rechazada".
   const states = [
     "Pendiente",
     "Solicitado",
+    "Solicitada",
     "Creado",
     "Creada",
     "Rechazado",
+    "Rechazada",
   ] as const
   let stateIndex = 0
   const client = new AndreaniClient({
@@ -652,11 +691,25 @@ test("reconoce todos los estados de pre-envío documentados", async () => {
     [
       { estado: "Pendiente", creada: false },
       { estado: "Solicitado", creada: false },
+      { estado: "Solicitada", creada: false },
       { estado: "Creado", creada: true },
       { estado: "Creada", creada: true },
       { estado: "Rechazado", creada: false },
+      { estado: "Rechazada", creada: false },
     ],
   )
+})
+
+test("un estado de pre-envío fuera de los conocidos sigue fallando cerrado", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const client = new AndreaniClient({
+    env: qaEnvironment(),
+    fetch: async (input) =>
+      String(input).endsWith("/login")
+        ? Response.json({ token: "token-estados" })
+        : Response.json({ ...officialOrderResponse, estado: "Despachada" }),
+  })
+  await assert.rejects(() => client.getEstadoOrden("360000101651699"), /estado de pre-envío desconocido/)
 })
 
 test("recupera etiquetas por la ruta documentada", async () => {

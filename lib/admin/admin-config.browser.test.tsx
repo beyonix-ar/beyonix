@@ -32,7 +32,7 @@ const costs = ${JSON.stringify(costs)}
 window.fetch = async (input, init) => {
   const path = String(input)
   if (path === "/api/admin/integrations/andreani/test") {
-    return Response.json({ configured: true, environment: "QA", message: "Credenciales QA cargadas.", shipmentCreation: { configured: false, environment: "PROD", message: "Creación en PROD sin autorizar." } })
+    return Response.json({ configured: true, environment: "QA", message: "Credenciales QA cargadas.", quoteEnvironment: "PROD", shipmentCreation: { configured: false, environment: "PROD", message: "Creación en PROD sin autorizar." } })
   }
   if (path === "/api/admin/settings") {
     if (init && init.method === "PATCH") window.__patches.push(JSON.parse(init.body))
@@ -306,8 +306,10 @@ for (const theme of ["light", "dark"] as const) {
   test(`${theme}: Andreani resumido con acciones; el detalle técnico colapsado`, async () => {
     const page = await open(theme, costsOverview("automatic", OBSERVED))
     try {
-      assert.equal(await rowValue(page, "andreani", "Ambiente"), "QA")
-      assert.equal(await rowValue(page, "andreani", "Credenciales"), "Configuradas")
+      // QA sólo para la prueba de conexión; cotización y creación muestran su ambiente real.
+      assert.equal(await rowValue(page, "andreani", "Prueba de conexión"), "QA · Credenciales configuradas")
+      assert.equal(await rowValue(page, "andreani", "Cotización"), "PROD")
+      assert.equal(await page.locator("[data-config-block='andreani']").getByText("Ambiente", { exact: true }).count(), 0)
       assert.equal(await rowValue(page, "andreani", "Venta"), "Activa")
       assert.equal(await rowValue(page, "andreani", "Creación de envíos"), "PROD · Bloqueada")
       const actions = page.locator("[data-andreani-actions]")

@@ -9,12 +9,12 @@ import { normalizeAndreaniError } from "@/lib/andreani/client"
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-// IMPORTANTE: nunca usar un Cache-Control público/compartido acá. La CDN de
-// Netlify no varía su caché de borde por query string en esta ruta (lo
-// comprobamos en vivo: pedir provincias distintas -- Jujuy, Chubut, Córdoba --
-// devolvía siempre la misma respuesta cacheada de otra consulta), así que
-// cualquier `public`/`s-maxage` termina sirviéndole a un usuario los datos
-// territoriales de otro. El cacheo real y correctamente segmentado por
+// IMPORTANTE: nunca usar un Cache-Control público/compartido acá. Una caché
+// intermedia que no varíe por query string (ya ocurrió con la CDN del hosting
+// anterior: pedir provincias distintas -- Jujuy, Chubut, Córdoba -- devolvía
+// siempre la misma respuesta cacheada de otra consulta) termina sirviéndole a
+// un usuario los datos territoriales de otro; vale igual detrás del reverse
+// proxy de la VPS. El cacheo real y correctamente segmentado por
 // provincia+localidad ya existe server-side en `checkout-destinations.ts`
 // (Map en memoria, TTL 24h, deduplicado por clave) -- estos headers solo
 // deben impedir que una capa intermedia comparta la respuesta entre queries.

@@ -1,0 +1,11 @@
+[Unit]
+Description=BEYONIX - Sincronizar tracking Andreani cada 15 minutos
+
+[Timer]
+OnCalendar=*:0/15
+# Si la VPS estuvo apagada, ejecuta una única corrida de recuperación al volver.
+Persistent=true
+Unit=beyonix-andreani-sync-tracking.service
+
+[Install]
+WantedBy=timers.target

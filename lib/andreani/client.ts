@@ -30,8 +30,10 @@ import type {
   AndreaniTrackingResponse,
 } from "./types.ts"
 import {
+  ANDREANI_PRE_SHIPMENT_STATUSES,
   ANDREANI_TRACKING_CYCLES,
   ANDREANI_TRACKING_EVENTS,
+  isAndreaniPreShipmentCreated,
 } from "./types.ts"
 import {
   IncompleteProductLogisticsError,
@@ -600,6 +602,13 @@ function parseTariffResponse(payload: unknown): AndreaniTariffResponse {
   }
 }
 
+/**
+ * Tolerante por registro: una sucursal mal formada (p. ej. sin región o con
+ * coordenadas inválidas, observado en PROD 2026-10-06 con los filtros `id` y
+ * `localidad`) se descarta con un warning sin datos sensibles y no tumba el
+ * listado. Si el payload no es una lista, o no queda ninguna sucursal válida
+ * de una lista no vacía, se falla cerrado como antes.
+ */
 function parseBranches(payload: unknown): AndreaniBranch[] {
   if (!Array.isArray(payload)) {
     throw new AndreaniError(
@@ -608,140 +617,170 @@ function parseBranches(payload: unknown): AndreaniBranch[] {
     )
   }
 
-  return payload.map((item) => {
-    const record = requiredRecord(
-      item,
-      "Andreani devolvió una sucursal inválida.",
-    )
-    const address = requiredRecord(
-      record.direccion,
-      "Andreani devolvió una sucursal sin dirección.",
-    )
-    const coordinates = isRecord(record.coordenadas)
-      ? {
-          latitud: requiredResponseString(
-            record.coordenadas,
-            "latitud",
-            "Andreani devolvió coordenadas inválidas.",
-          ),
-          longitud: requiredResponseString(
-            record.coordenadas,
-            "longitud",
-            "Andreani devolvió coordenadas inválidas.",
-          ),
-        }
-      : undefined
-    const additionalData = isRecord(record.datosAdicionales)
-      ? {
-          seHaceAtencionAlCliente:
-            typeof record.datosAdicionales.seHaceAtencionAlCliente === "boolean"
-              ? record.datosAdicionales.seHaceAtencionAlCliente
-              : undefined,
-          conBuzonInteligente:
-            typeof record.datosAdicionales.conBuzonInteligente === "boolean"
-              ? record.datosAdicionales.conBuzonInteligente
-              : undefined,
-          tipo: optionalResponseString(record.datosAdicionales, "tipo"),
-          admiteEnvios:
-            typeof record.datosAdicionales.admiteEnvios === "boolean"
-              ? record.datosAdicionales.admiteEnvios
-              : undefined,
-          entregaEnvios:
-            typeof record.datosAdicionales.entregaEnvios === "boolean"
-              ? record.datosAdicionales.entregaEnvios
-              : undefined,
-        }
-      : undefined
-    const id = requiredResponseNumber(
-      record,
-      "id",
-      "Andreani devolvió una sucursal sin identificador.",
-    )
-    if (!Number.isSafeInteger(id)) {
+  const branches: AndreaniBranch[] = []
+  const skipped: Array<{ id: unknown; reason: string }> = []
+  for (const item of payload) {
+    try {
+      branches.push(parseBranch(item))
+    } catch (error) {
+      if (!(error instanceof AndreaniError) || error.code !== "INVALID_RESPONSE") throw error
+      skipped.push({ id: isRecord(item) ? item.id : undefined, reason: error.message })
+    }
+  }
+
+  if (skipped.length > 0) {
+    if (branches.length === 0) {
       throw new AndreaniError(
         "INVALID_RESPONSE",
-        "Andreani devolvió una sucursal con identificador inválido.",
+        "Andreani devolvió un listado de sucursales sin ninguna sucursal válida.",
       )
     }
+    console.warn("ANDREANI_BRANCH_RECORDS_SKIPPED", {
+      skipped: skipped.length,
+      kept: branches.length,
+      sample: skipped.slice(0, 5).map(({ id, reason }) => ({
+        id: typeof id === "number" || typeof id === "string" ? String(id).slice(0, 20) : null,
+        reason,
+      })),
+    })
+  }
 
-    return {
-      id,
-      codigo: requiredResponseString(
-        record,
-        "codigo",
-        "Andreani devolvió una sucursal sin código.",
+  return branches
+}
+
+function parseBranch(item: unknown): AndreaniBranch {
+  const record = requiredRecord(
+    item,
+    "Andreani devolvió una sucursal inválida.",
+  )
+  const address = requiredRecord(
+    record.direccion,
+    "Andreani devolvió una sucursal sin dirección.",
+  )
+  const coordinates = isRecord(record.coordenadas)
+    ? {
+        latitud: requiredResponseString(
+          record.coordenadas,
+          "latitud",
+          "Andreani devolvió coordenadas inválidas.",
+        ),
+        longitud: requiredResponseString(
+          record.coordenadas,
+          "longitud",
+          "Andreani devolvió coordenadas inválidas.",
+        ),
+      }
+    : undefined
+  const additionalData = isRecord(record.datosAdicionales)
+    ? {
+        seHaceAtencionAlCliente:
+          typeof record.datosAdicionales.seHaceAtencionAlCliente === "boolean"
+            ? record.datosAdicionales.seHaceAtencionAlCliente
+            : undefined,
+        conBuzonInteligente:
+          typeof record.datosAdicionales.conBuzonInteligente === "boolean"
+            ? record.datosAdicionales.conBuzonInteligente
+            : undefined,
+        tipo: optionalResponseString(record.datosAdicionales, "tipo"),
+        admiteEnvios:
+          typeof record.datosAdicionales.admiteEnvios === "boolean"
+            ? record.datosAdicionales.admiteEnvios
+            : undefined,
+        entregaEnvios:
+          typeof record.datosAdicionales.entregaEnvios === "boolean"
+            ? record.datosAdicionales.entregaEnvios
+            : undefined,
+      }
+    : undefined
+  const id = requiredResponseNumber(
+    record,
+    "id",
+    "Andreani devolvió una sucursal sin identificador.",
+  )
+  if (!Number.isSafeInteger(id)) {
+    throw new AndreaniError(
+      "INVALID_RESPONSE",
+      "Andreani devolvió una sucursal con identificador inválido.",
+    )
+  }
+
+  return {
+    id,
+    codigo: requiredResponseString(
+      record,
+      "codigo",
+      "Andreani devolvió una sucursal sin código.",
+    ),
+    numero: requiredResponseString(
+      record,
+      "numero",
+      "Andreani devolvió una sucursal sin número.",
+    ),
+    descripcion: requiredResponseString(
+      record,
+      "descripcion",
+      "Andreani devolvió una sucursal sin descripción.",
+    ),
+    canal: requiredResponseString(
+      record,
+      "canal",
+      "Andreani devolvió una sucursal sin canal.",
+    ),
+    direccion: {
+      calle: optionalAddressComponent(
+        address,
+        "calle",
+        "Andreani devolvió una calle con formato inválido.",
       ),
-      numero: requiredResponseString(
-        record,
+      numero: optionalAddressComponent(
+        address,
         "numero",
-        "Andreani devolvió una sucursal sin número.",
+        "Andreani devolvió un número de calle con formato inválido.",
       ),
-      descripcion: requiredResponseString(
-        record,
-        "descripcion",
-        "Andreani devolvió una sucursal sin descripción.",
+      provincia: requiredResponseString(
+        address,
+        "provincia",
+        "Andreani devolvió una dirección sin provincia.",
       ),
-      canal: requiredResponseString(
-        record,
-        "canal",
-        "Andreani devolvió una sucursal sin canal.",
+      localidad: requiredResponseString(
+        address,
+        "localidad",
+        "Andreani devolvió una dirección sin localidad.",
       ),
-      direccion: {
-        calle: optionalAddressComponent(
-          address,
-          "calle",
-          "Andreani devolvió una calle con formato inválido.",
-        ),
-        numero: optionalAddressComponent(
-          address,
-          "numero",
-          "Andreani devolvió un número de calle con formato inválido.",
-        ),
-        provincia: requiredResponseString(
-          address,
-          "provincia",
-          "Andreani devolvió una dirección sin provincia.",
-        ),
-        localidad: requiredResponseString(
-          address,
-          "localidad",
-          "Andreani devolvió una dirección sin localidad.",
-        ),
-        region: requiredResponseString(
-          address,
-          "region",
-          "Andreani devolvió una dirección sin región.",
-        ),
-        pais: requiredResponseString(
-          address,
-          "pais",
-          "Andreani devolvió una dirección sin país.",
-        ),
-        codigoPostal: requiredResponseString(
-          address,
-          "codigoPostal",
-          "Andreani devolvió una dirección sin código postal.",
-        ),
-      },
-      coordenadas: coordinates,
-      horarioDeAtencion: optionalResponseString(record, "horarioDeAtencion"),
-      datosAdicionales: additionalData,
-      telefonos:
-        record.telefonos === undefined
-          ? undefined
-          : requiredStringArray(
-              record.telefonos,
-              "Andreani devolvió teléfonos inválidos.",
-            ),
-      codigosPostalesAtendidos:
-        record.codigosPostalesAtendidos === undefined
-          ? undefined
-          : requiredStringArray(
-              record.codigosPostalesAtendidos,
-              "Andreani devolvió códigos postales atendidos inválidos.",
-            ),
-    }
-  })
+      region: requiredResponseString(
+        address,
+        "region",
+        "Andreani devolvió una dirección sin región.",
+      ),
+      pais: requiredResponseString(
+        address,
+        "pais",
+        "Andreani devolvió una dirección sin país.",
+      ),
+      codigoPostal: requiredResponseString(
+        address,
+        "codigoPostal",
+        "Andreani devolvió una dirección sin código postal.",
+      ),
+    },
+    coordenadas: coordinates,
+    horarioDeAtencion: optionalResponseString(record, "horarioDeAtencion"),
+    datosAdicionales: additionalData,
+    telefonos:
+      record.telefonos === undefined
+        ? undefined
+        : requiredStringArray(
+            record.telefonos,
+            "Andreani devolvió teléfonos inválidos.",
+          ),
+    codigosPostalesAtendidos:
+      record.codigosPostalesAtendidos === undefined
+        ? undefined
+        : requiredStringArray(
+            record.codigosPostalesAtendidos,
+            "Andreani devolvió códigos postales atendidos inválidos.",
+          ),
+  }
 }
 
 function parseShipmentBranch(value: unknown) {
@@ -814,7 +853,7 @@ function parseCreateShipmentResponse(
     "estado",
     "Andreani devolvió una orden sin estado.",
   )
-  if (!["Pendiente", "Solicitado", "Creado", "Creada", "Rechazado"].includes(estado)) {
+  if (!(ANDREANI_PRE_SHIPMENT_STATUSES as readonly string[]).includes(estado)) {
     throw new AndreaniError(
       "INVALID_RESPONSE",
       "Andreani devolvió un estado de pre-envío desconocido.",
@@ -1818,7 +1857,7 @@ export class AndreaniClient {
 
     return {
       ...response,
-      creada: ["Creado", "Creada"].includes(response.estado),
+      creada: isAndreaniPreShipmentCreated(response.estado),
     }
   }
 

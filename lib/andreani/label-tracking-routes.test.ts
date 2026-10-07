@@ -41,7 +41,7 @@ test("el criterio real de tracking vive en un único módulo compartido, no dupl
 
   assert.match(source, /El pedido todavía no tiene un envío Andreani generado/)
   assert.match(source, /const orderStatus = await getEstadoOrden\(/)
-  assert.match(source, /orderStatus\.estado === "Rechazado"/)
+  assert.match(source, /isAndreaniPreShipmentRejected\(orderStatus\.estado\)/)
   assert.match(source, /sortedEvents\.find\(\(event\) => event\.Estado\)/)
   assert.doesNotMatch(source, /latestEvent\.Estado \?\? latestEvent\.Evento/)
   assert.match(source, /andreani_tracking_checked_at/)

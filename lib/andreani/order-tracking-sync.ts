@@ -14,6 +14,7 @@ import {
 import { parseAndreaniTimestamp } from "./tracking-timestamps.ts"
 import { resolveAndreaniAutoOrderTransition } from "./tracking-status-mapping.ts"
 import type { AndreaniEnvironment, AndreaniTrackingEvent } from "./types.ts"
+import { isAndreaniPreShipmentRejected } from "./types.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -82,7 +83,7 @@ export async function fetchAndreaniOrderTrackingSnapshot(
   const numeroDeTrackingConocido = (order.andreani_tracking ?? "").trim()
   // Se consulta siempre, incluso con tracking ya conocido: es la única
   // forma de detectar que Andreani rechazó la orden después de haberla
-  // creado (estado "Rechazado"), algo que /v3/trazas no informa.
+  // creado (estado "Rechazado"/"Rechazada"), algo que /v3/trazas no informa.
   const orderStatus = await getEstadoOrden(envioId, clientOptions)
   const resolvedTracking =
     numeroDeTrackingConocido || orderStatus.bultos[0]?.numeroDeEnvio || ""
@@ -101,7 +102,7 @@ export async function fetchAndreaniOrderTrackingSnapshot(
   // más reciente sin más (si no, se pisa un estado real como "Pendiente
   // de ingreso" con un código interno como "OrdenDeEnvioCreada").
   const latestEventWithEstado = sortedEvents.find((event) => event.Estado)
-  const rejectedAfterCreation = orderStatus.estado === "Rechazado"
+  const rejectedAfterCreation = isAndreaniPreShipmentRejected(orderStatus.estado)
   const logisticsEstado = rejectedAfterCreation
     ? orderStatus.estado
     : (latestEventWithEstado?.Estado ?? orderStatus.estado)

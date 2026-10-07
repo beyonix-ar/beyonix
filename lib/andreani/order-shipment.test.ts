@@ -1308,6 +1308,26 @@ test("un estado Rechazado de Andreani se persiste como rechazo permanente", asyn
   assert.equal(admin.tables.ordenes.andreani_contrato, "CONTRATO-QA")
 })
 
+test("el estado real de PROD \"Rechazada\" también se persiste como rechazo permanente (nunca como envío creado)", async () => {
+  const admin = createFakeAdmin(singleItemTables())
+
+  await assert.rejects(
+    () =>
+      createAndreaniShipmentForOrder(admin as never, 42, {
+        env: qaEnv(),
+        crearOrdenEnvio: async () => ({
+          ...officialOrderResponse,
+          estado: "Rechazada",
+          motivo: "El contrato no permite entrega en sucursal.",
+        }),
+      }),
+    (error: unknown) =>
+      error instanceof AndreaniError && error.message === "El contrato no permite entrega en sucursal.",
+  )
+  assert.equal(admin.tables.ordenes.andreani_envio_id, null)
+  assert.equal(admin.tables.ordenes.andreani_creation_status, "rejected")
+})
+
 function prodShipmentEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
   return qaEnv({
     NODE_ENV: "production",

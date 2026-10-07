@@ -48,7 +48,7 @@ import type {
   AndreaniCreateShipmentResponse,
   AndreaniEnvironment,
 } from "./types.ts"
-import { ANDREANI_PROVIDER_DISABLED_MESSAGE } from "./types.ts"
+import { ANDREANI_PROVIDER_DISABLED_MESSAGE, isAndreaniPreShipmentRejected } from "./types.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -914,7 +914,7 @@ export async function createAndreaniShipmentForOrder(
       },
     )
 
-    if (response.estado === "Rechazado") {
+    if (isAndreaniPreShipmentRejected(response.estado)) {
       throw new AndreaniError(
         "REQUEST_FAILED",
         response.motivo || "Andreani rechazó la orden de envío.",

@@ -55,12 +55,27 @@ export interface AndreaniLocality {
   codigosPostales: string[]
 }
 
-export type AndreaniPreShipmentStatus =
-  | "Pendiente"
-  | "Solicitado"
-  | "Creado"
-  | "Creada"
-  | "Rechazado"
+// Andreani PROD informa los estados en femenino (observado 2026-10-06:
+// Pendiente -> Solicitada -> Creada, y "Rechazada"); se aceptan ambas formas.
+export const ANDREANI_PRE_SHIPMENT_STATUSES = [
+  "Pendiente",
+  "Solicitado",
+  "Solicitada",
+  "Creado",
+  "Creada",
+  "Rechazado",
+  "Rechazada",
+] as const
+
+export type AndreaniPreShipmentStatus = (typeof ANDREANI_PRE_SHIPMENT_STATUSES)[number]
+
+export function isAndreaniPreShipmentRejected(estado: string) {
+  return estado === "Rechazado" || estado === "Rechazada"
+}
+
+export function isAndreaniPreShipmentCreated(estado: string) {
+  return estado === "Creado" || estado === "Creada"
+}
 
 export interface AndreaniProductQuoteInput {
   codigoPostalOrigen: string
@@ -543,10 +558,13 @@ export interface AndreaniShipmentCreationConfigStatus {
 }
 
 export interface AndreaniIntegrationStatus {
+  /** Ambiente genérico (ANDREANI_ENV): sólo lo usa "Probar conexión QA". */
   environment: AndreaniEnvironment | "INVALID"
   configured: boolean
   message: string
   lastTest: AndreaniConnectionTestResult | null
+  /** Ambiente real de cotización, sucursales y localidades (ANDREANI_TARIFF_ENV). */
+  quoteEnvironment?: AndreaniEnvironment | "INVALID"
   shipmentCreation?: AndreaniShipmentCreationConfigStatus
 }
 import type { ProductLogisticsSource } from "../shipping/product-logistics.ts"

@@ -15,11 +15,11 @@ type AdminClient = ReturnType<typeof createAdminClient>
  * activo se consulta como máximo cada ~20 min, nunca en cada corrida si ya
  * se consultó recientemente.
  *
- * 15 (no más) porque la función programada real (Netlify Scheduled
- * Function, ver netlify/functions/andreani-sync-tracking.mts) corre en un
- * runtime síncrono con límite duro de 30s: cada pedido implica 1-2 llamadas
- * GET reales a Andreani (login se cachea a nivel de módulo tras la primera),
- * así que el lote entero debe terminar con margen amplio.
+ * 15 (no más) porque el scheduler real (timer systemd de la VPS,
+ * deploy/systemd/beyonix-andreani-sync-tracking.{service,timer}) corta la
+ * llamada a los 120 s: cada pedido implica 1-2 llamadas GET reales a
+ * Andreani (login se cachea a nivel de módulo tras la primera), así que el
+ * lote entero debe terminar con margen amplio.
  */
 const DEFAULT_BATCH_SIZE = 15
 const DEFAULT_MIN_RECHECK_INTERVAL_MS = 20 * 60 * 1000

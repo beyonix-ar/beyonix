@@ -2,9 +2,6 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import netlifyHandler, {
-  config as netlifyConfig,
-} from "../../netlify/functions/andreani-sync-tracking.mts"
 import { isAndreaniTrackingCronAuthorized } from "./tracking-sync-cron-auth.ts"
 
 const TEST_CRON_SECRET = "cron-secret-de-prueba"
@@ -63,42 +60,27 @@ test("la ruta rechaza antes de ejecutar el batch de tracking", () => {
   assert.ok(returnsBatchIndex > guard.index, "El batch de devoluciones también")
 })
 
-test("la Scheduled Function de Netlify conserva el Bearer y la frecuencia de 15 minutos", async () => {
-  const previousCronSecret = process.env.CRON_SECRET
-  const previousUrl = process.env.URL
-  const previousFetch = globalThis.fetch
-  let receivedAuthorization: string | null = null
+// Producción corre en la VPS (PM2 + systemd), no en Netlify: el único
+// scheduler del tracking es el timer del repo, instalado en /etc/systemd/system.
+test("el timer systemd del tracking corre cada 15 minutos por loopback, sin el secreto en argv", () => {
+  const read = (name: string) => readFileSync(new URL(`../../deploy/systemd/${name}`, import.meta.url), "utf8")
+  const service = read("beyonix-andreani-sync-tracking.service")
+  const timer = read("beyonix-andreani-sync-tracking.timer")
 
-  process.env.CRON_SECRET = TEST_CRON_SECRET
-  process.env.URL = "https://beyonix.test"
-  globalThis.fetch = async (input, init) => {
-    assert.equal(
-      String(input),
-      "https://beyonix.test/api/cron/andreani-sync-tracking",
-    )
-    receivedAuthorization = new Headers(init?.headers).get("authorization")
-    return Response.json({
-      ok: true,
-      checked: 0,
-      updated: 0,
-      statusChanged: 0,
-      errors: 0,
-    })
-  }
+  const execStart = service.slice(service.indexOf("ExecStart="))
+  assert.match(execStart, /^ExecStart=\/usr\/bin\/flock -n \/run\/lock\/beyonix-andreani-sync-tracking\.lock/)
+  assert.match(execStart, /--config \/etc\/beyonix\/curl-verify-transfer-orders\.conf/)
+  assert.match(execStart, /--fail/)
+  assert.match(execStart, /http:\/\/127\.0\.0\.1:3000\/api\/cron\/andreani-sync-tracking/)
+  assert.doesNotMatch(service, /\$\{?CRON_SECRET|Authorization: Bearer|EnvironmentFile/, "el secreto nunca en argv ni en el repo")
+  assert.match(timer, /^OnCalendar=\*:0\/15$/m)
+  assert.match(timer, /^Persistent=true$/m)
+  assert.match(timer, /^Unit=beyonix-andreani-sync-tracking\.service$/m)
+})
 
-  try {
-    const response = await netlifyHandler()
-
-    assert.equal(response.status, 200)
-    assert.equal(receivedAuthorization, `Bearer ${TEST_CRON_SECRET}`)
-    assert.equal(netlifyConfig.schedule, "*/15 * * * *")
-  } finally {
-    globalThis.fetch = previousFetch
-
-    if (previousCronSecret === undefined) delete process.env.CRON_SECRET
-    else process.env.CRON_SECRET = previousCronSecret
-
-    if (previousUrl === undefined) delete process.env.URL
-    else process.env.URL = previousUrl
-  }
+test("no queda ningún scheduler de Netlify en el repo", () => {
+  assert.throws(
+    () => readFileSync(new URL("../../netlify/functions/andreani-sync-tracking.mts", import.meta.url)),
+    /ENOENT/,
+  )
 })

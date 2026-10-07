@@ -177,6 +177,6 @@ test("la ruta de destinos territoriales nunca usa Cache-Control público/compart
   assert.doesNotMatch(
     source,
     /Cache-Control["']?\s*:\s*["']public/,
-    "un Cache-Control público en esta ruta ya causó que la CDN de Netlify sirviera la respuesta de una provincia para otra distinta (colisión de caché de borde, no varía por query string)",
+    "un Cache-Control público en esta ruta ya causó que una caché de borde (hosting anterior) sirviera la respuesta de una provincia para otra distinta (no varía por query string)",
   )
 })
