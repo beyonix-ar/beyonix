@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import type { CatalogCodeMatch } from "@/lib/barcodes/catalog-lookup"
 
 export interface BusinessCostCatalogVariant {
   id: number
@@ -43,6 +44,8 @@ export interface ProductCostEntry {
   payment_method: string | null
   notes: string | null
   created_at: string
+  /** Código de barra actual del artículo comprado (variante o producto). */
+  barcode?: string | null
 }
 
 export interface BusinessExpense {
@@ -70,10 +73,24 @@ export interface BusinessExpense {
   created_at: string
 }
 
+export interface CatalogPurchaseTarget {
+  value: string
+  label: string
+  sku: string
+}
+
+// `catalog` trae solo los artículos referenciados por el historial cargado y
+// los no catalogados; el resto se busca con searchCostCatalogArticles.
 export interface BusinessCostsData {
   catalog: BusinessCostCatalogProduct[]
   productCosts: ProductCostEntry[]
   expenses: BusinessExpense[]
+  pendingTargets: CatalogPurchaseTarget[]
+}
+
+export interface CostCatalogSearchPage {
+  items: BusinessCostCatalogProduct[]
+  hasMore: boolean
 }
 
 const pendingCreates = new Map<
@@ -112,6 +129,27 @@ async function request(path: string, init?: RequestInit) {
 
 export async function getBusinessCosts() {
   return (await request("/api/admin/costs")) as unknown as BusinessCostsData
+}
+
+export async function searchCostCatalogArticles(
+  query: string,
+  offset: number,
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ q: query.trim(), offset: String(offset) })
+  return (await request(`/api/admin/costs/articles?${params}`, { signal })) as unknown as CostCatalogSearchPage
+}
+
+export async function getCostCatalogArticle(productId: number) {
+  const data = (await request(
+    `/api/admin/costs/articles?productId=${encodeURIComponent(String(productId))}`,
+  )) as unknown as CostCatalogSearchPage
+  return data.items[0] ?? null
+}
+
+export async function findCostArticleByCode(code: string) {
+  const data = await request(`/api/admin/costs/article-by-code?code=${encodeURIComponent(code)}`)
+  return (data?.match ?? null) as CatalogCodeMatch | null
 }
 
 export async function createBusinessCost(

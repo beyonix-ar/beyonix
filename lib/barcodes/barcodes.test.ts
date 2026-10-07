@@ -1,7 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { findCatalogArticleByCode } from "./catalog-lookup.ts"
+import {
+  findCatalogArticleByCode,
+  mergeCatalogMatch,
+  type CatalogCodeOwner,
+  type CatalogCodeStore,
+  type CatalogLookupProduct,
+  type CatalogLookupVariant,
+} from "./catalog-lookup.ts"
 import { BATCH_CODE, PARCEL_CODE, barcodeOrigin, barcodeOriginLabel, isPrintableBarcode, isReservedProductBarcode } from "./codes.ts"
 import { buildLabelsDocument, expandLabels } from "./labels-document.ts"
 import { renderCode128Svg } from "./render.ts"
@@ -52,21 +59,108 @@ test("etiquetas: N copias, A4 o térmica, texto escapado y lote con totales", ()
   assert.throws(() => buildLabelsDocument([{ kind: "product", code: "OTRO", name: "X" }], svgs, "a4"), /Falta el código/)
 })
 
-test("Compras: el escaneo encuentra la variante exacta por código y luego por SKU", () => {
-  const catalog: BusinessCostCatalogProduct[] = [
-    { id: 1, nombre: "Auriculares", activo: true, stock: 5, sku: "AUR", codigo_barra: null, producto_variantes: [
-      { id: 11, nombre: "Negro", sku: "AUR-N", activo: true, stock: 3, codigo_barra: "7790001000017" },
-      { id: 12, nombre: "Blanco", sku: "AUR-B", activo: true, stock: 2, codigo_barra: "BX-AUR-000001" },
-    ] },
-    { id: 2, nombre: "Legacy", activo: true, stock: 1, sku: "LEG", codigo_barra: "LEG-BAR", producto_variantes: [] },
-    { id: "c:x", nombre: "Insumo", activo: true, stock: 0, standalone_key: "x", sku: "AUR-N" },
+type MemoryProduct = CatalogLookupProduct & { variants?: Omit<CatalogLookupVariant, "producto_id">[] }
+
+// Store en memoria con la misma semántica que los registros de identidad
+// (clave exacta normalizada) y contador de consultas por clave.
+function memoryStore(products: MemoryProduct[], costSkus: Record<number, string> = {}) {
+  const barcodes = new Map<string, CatalogCodeOwner>()
+  const skus = new Map<string, CatalogCodeOwner>()
+  const variants = new Map<number, CatalogLookupVariant>()
+  const byId = new Map<number, MemoryProduct>()
+  const calls: string[] = []
+  for (const product of products) {
+    byId.set(product.id, product)
+    if (product.codigo_barra?.trim()) barcodes.set(product.codigo_barra.trim(), { productId: product.id, variantId: null })
+    if (product.sku?.trim()) skus.set(product.sku.trim().toUpperCase(), { productId: product.id, variantId: null })
+    for (const variant of product.variants ?? []) {
+      variants.set(variant.id, { ...variant, producto_id: product.id })
+      if (variant.codigo_barra?.trim()) barcodes.set(variant.codigo_barra.trim(), { productId: null, variantId: variant.id })
+      if (variant.sku?.trim()) skus.set(variant.sku.trim().toUpperCase(), { productId: null, variantId: variant.id })
+    }
+  }
+  const store: CatalogCodeStore = {
+    async barcodeOwner(code) { calls.push(`barcode:${code}`); return barcodes.get(code) ?? null },
+    async skuOwner(sku) { calls.push(`sku:${sku}`); return skus.get(sku) ?? null },
+    async variant(id) { calls.push(`variant:${id}`); return variants.get(id) ?? null },
+    async product(id) {
+      calls.push(`product:${id}`)
+      const product = byId.get(id)
+      if (!product) return null
+      const { variants: productVariants, ...fields } = product
+      return { ...fields, variantCount: productVariants?.length ?? 0 }
+    },
+    async latestProductCostSku(id) { calls.push(`cost-sku:${id}`); return costSkus[id] ?? null },
+  }
+  return { store, calls }
+}
+
+const auriculares: MemoryProduct = {
+  id: 1, nombre: "Auriculares", activo: true, stock: 5, sku: "AUR", codigo_barra: "AUR-PADRE", variants: [
+    { id: 11, nombre: "Negro", activo: true, stock: 3, sku: "AUR-N", color_hex: "#000000", codigo_barra: "7790001000017" },
+    { id: 12, nombre: "Blanco", activo: false, stock: 2, sku: "AUR-B", color_hex: "#FFFFFF", codigo_barra: "BX-AUR-000001" },
+  ],
+}
+const legacy: MemoryProduct = { id: 2, nombre: "Lámpara Ñandú", activo: true, stock: 1, sku: null, codigo_barra: "LEG-BAR" }
+
+test("Compras: el escaneo resuelve server-side la variante exacta (fabricante y BEYONIX)", async () => {
+  const { store } = memoryStore([auriculares, legacy], { 2: "LEG-SKU" })
+  assert.deepEqual(await findCatalogArticleByCode(store, " 7790001000017 "), {
+    value: "v:1:11",
+    matchedBy: "barcode",
+    product: { id: 1, nombre: "Auriculares", activo: true, stock: 5, sku: "AUR", codigo_barra: "AUR-PADRE" },
+    variant: { id: 11, producto_id: 1, nombre: "Negro", activo: true, stock: 3, sku: "AUR-N", color_hex: "#000000", codigo_barra: "7790001000017" },
+  })
+  const beyonix = await findCatalogArticleByCode(store, "BX-AUR-000001")
+  assert.equal(beyonix?.value, "v:1:12")
+  assert.equal(beyonix?.variant?.color_hex, "#FFFFFF")
+  assert.equal((await findCatalogArticleByCode(store, "aur-b"))?.matchedBy, "sku")
+  const legacyMatch = await findCatalogArticleByCode(store, "LEG-BAR")
+  assert.equal(legacyMatch?.value, "p:2")
+  assert.equal(legacyMatch?.variant, null)
+  assert.equal(legacyMatch?.product.sku, "LEG-SKU", "mismo SKU de respaldo que el catálogo de Compras")
+  assert.equal((await findCatalogArticleByCode(store, "leg-sku")), null, "el SKU de costos no es identidad del catálogo")
+})
+
+test("Compras: código inexistente, vacío o del producto padre con variantes no se reconoce", async () => {
+  const { store, calls } = memoryStore([auriculares, legacy])
+  assert.equal(await findCatalogArticleByCode(store, "NO-EXISTE"), null)
+  assert.equal(await findCatalogArticleByCode(store, "7790001000017X"), null, "búsqueda exacta, sin prefijos")
+  assert.equal(await findCatalogArticleByCode(store, "779000100001"), null)
+  assert.equal(await findCatalogArticleByCode(store, "AUR-PADRE"), null, "el código del padre no indica la variante")
+  assert.equal(await findCatalogArticleByCode(store, "AUR"), null)
+  calls.length = 0
+  assert.equal(await findCatalogArticleByCode(store, "   "), null)
+  assert.equal(await findCatalogArticleByCode(store, "X".repeat(129)), null)
+  assert.deepEqual(calls, [], "no consulta la base con códigos inválidos")
+})
+
+test("Compras: con más de 1000 productos encuentra la variante por clave exacta, sin recorrer el catálogo", async () => {
+  const products: MemoryProduct[] = Array.from({ length: 1500 }, (_, index) => ({
+    id: index + 1, nombre: `Producto ${index + 1}`, activo: true, stock: 0, sku: `P-${index + 1}`, codigo_barra: null,
+    variants: [{ id: 100_000 + index, nombre: `Color ${index}`, activo: true, stock: 0, sku: `P-${index + 1}-V`, color_hex: "#123456", codigo_barra: `779${String(index).padStart(10, "0")}` }],
+  }))
+  const { store, calls } = memoryStore(products)
+  const match = await findCatalogArticleByCode(store, "7790000001499")
+  assert.equal(match?.value, "v:1500:101499")
+  assert.equal(match?.product.nombre, "Producto 1500")
+  assert.deepEqual(calls, ["barcode:7790000001499", "variant:101499", "product:1500"])
+})
+
+test("Compras: el artículo escaneado fuera del catálogo cargado se incorpora sin duplicar", async () => {
+  const { store } = memoryStore([auriculares, legacy])
+  const match = await findCatalogArticleByCode(store, "BX-AUR-000001")
+  assert.ok(match)
+  const loaded: BusinessCostCatalogProduct[] = [
+    { id: 1, nombre: "Auriculares", activo: true, stock: 5, sku: "AUR", producto_variantes: [{ id: 12, nombre: "Blanco", activo: false, stock: 2, sku: "AUR-B", color_hex: "#FFFFFF", codigo_barra: "BX-AUR-000001" }] },
   ]
-  assert.deepEqual(findCatalogArticleByCode(catalog, " 7790001000017 "), { value: "v:1:11", productName: "Auriculares", variantName: "Negro", matchedBy: "barcode" })
-  assert.equal(findCatalogArticleByCode(catalog, "BX-AUR-000001")?.value, "v:1:12")
-  assert.equal(findCatalogArticleByCode(catalog, "aur-b")?.matchedBy, "sku")
-  assert.equal(findCatalogArticleByCode(catalog, "LEG-BAR")?.value, "p:2")
-  assert.equal(findCatalogArticleByCode(catalog, "NO-EXISTE"), null)
-  assert.equal(findCatalogArticleByCode(catalog, ""), null)
+  assert.equal(mergeCatalogMatch(loaded, match), loaded, "si ya está cargado no cambia el estado")
+  const missingVariant = mergeCatalogMatch([{ ...loaded[0], producto_variantes: [] }], match)
+  assert.deepEqual(missingVariant[0].producto_variantes?.map((variant) => variant.id), [12])
+  const empty = mergeCatalogMatch([{ id: "cost:x", nombre: "Zeta", activo: true, stock: null, standalone_key: "x" }], match)
+  assert.deepEqual(empty.map((item) => item.id), [1, "cost:x"])
+  assert.equal(empty[0].producto_variantes?.[0]?.codigo_barra, "BX-AUR-000001")
+  assert.equal(empty[0].standalone_key, null)
 })
 
 test("estados de despacho visibles", () => {

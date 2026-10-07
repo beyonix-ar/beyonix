@@ -33,7 +33,11 @@ import {
   createBusinessCost,
   createCostCatalogArticle,
   deleteBusinessCost,
+  findCostArticleByCode,
   getBusinessCosts,
+  getCostCatalogArticle,
+  searchCostCatalogArticles,
+  type BusinessCostCatalogProduct,
   type BusinessCostsData,
   type ProductCostEntry,
   updateBusinessCost,
@@ -42,7 +46,13 @@ import {
   uniqueAutocompleteValues,
   withoutTrailingProductColor,
 } from "@/lib/admin/product-name-autocomplete"
-import { findCatalogArticleByCode } from "@/lib/barcodes/catalog-lookup"
+import { mergeCatalogMatch } from "@/lib/barcodes/catalog-lookup"
+import {
+  CATALOG_SEARCH_PAGE_SIZE,
+  MAX_CATALOG_SEARCH_LENGTH,
+  mergeCatalogProduct,
+  normalizeCatalogSearch,
+} from "@/lib/business/cost-catalog-search"
 import {
   barcodeOrigin,
   barcodeOriginLabel,
@@ -303,6 +313,8 @@ function SummaryCard({ label, value, detail }: {
   )
 }
 
+const CATALOG_SEARCH_DEBOUNCE_MS = 250
+
 function ProductSelect({
   value,
   products,
@@ -311,11 +323,16 @@ function ProductSelect({
 }: {
   value: string
   products: BusinessCostsData["catalog"]
-  onChange: (value: string) => void
+  onChange: (value: string, product?: BusinessCostCatalogProduct) => void
   inventoryMode?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
+  const [offset, setOffset] = useState(0)
+  const [results, setResults] = useState<BusinessCostCatalogProduct[]>([])
+  const [hasMore, setHasMore] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState("")
   const rootRef = useRef<HTMLDivElement>(null)
   const optionValue = (product: BusinessCostsData["catalog"][number]) =>
     product.standalone_key ? `c:${product.standalone_key}` : `p:${product.id}`
@@ -327,23 +344,65 @@ function ProductSelect({
     (variant) => value === `v:${selectedProduct.id}:${variant.id}`,
   )
   const isCreatingNewArticle = value === "custom"
-  const normalizedSearch = search
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLocaleLowerCase("es")
-  const filteredProducts = products.filter((product) =>
-    (!inventoryMode || !product.standalone_key) &&
-    `${product.nombre} ${product.sku ?? ""} ${
-      product.producto_variantes
-        ?.map((variant) => `${variant.nombre} ${variant.sku ?? ""}`)
-        .join(" ") ?? ""
-    }`
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("es")
-      .includes(normalizedSearch),
-  )
+  // El catálogo se busca server-side y paginado; los artículos no catalogados
+  // salen del historial ya cargado y se filtran localmente.
+  const normalizedSearch = normalizeCatalogSearch(search)
+  const filteredProducts = [
+    ...(inventoryMode
+      ? []
+      : products.filter(
+          (product) =>
+            product.standalone_key &&
+            normalizeCatalogSearch(`${product.nombre} ${product.sku ?? ""}`).includes(normalizedSearch),
+        )),
+    ...results,
+  ]
+
+  useEffect(() => {
+    if (!open) return
+    const controller = new AbortController()
+    let current = true
+    setLoading(true)
+    setLoadError("")
+    const timer = window.setTimeout(async () => {
+      try {
+        const page = await searchCostCatalogArticles(search, offset, controller.signal)
+        if (!current) return
+        setResults((previous) => {
+          if (offset === 0) return page.items
+          const known = new Set(previous.map((item) => String(item.id)))
+          return [...previous, ...page.items.filter((item) => !known.has(String(item.id)))]
+        })
+        setHasMore(page.hasMore)
+      } catch {
+        if (!current) return
+        setLoadError("No se pudieron cargar los artículos.")
+        if (offset === 0) {
+          setResults([])
+          setHasMore(false)
+        }
+      } finally {
+        if (current) setLoading(false)
+      }
+    }, offset === 0 ? CATALOG_SEARCH_DEBOUNCE_MS : 0)
+    return () => {
+      current = false
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [open, search, offset])
+
+  const closeList = () => {
+    setOpen(false)
+    setSearch("")
+    setOffset(0)
+    setResults([])
+    setHasMore(false)
+  }
+  const choose = (nextValue: string, product?: BusinessCostCatalogProduct) => {
+    onChange(nextValue, product?.standalone_key ? undefined : product)
+    closeList()
+  }
 
   useEffect(() => {
     if (!open) return
@@ -361,8 +420,8 @@ function ProductSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => {
-          setOpen((current) => !current)
-          if (open) setSearch("")
+          if (open) closeList()
+          else setOpen(true)
         }}
         className={`${inputClass} group flex cursor-pointer items-center justify-between gap-3 border-beyonix-sky/48 bg-[linear-gradient(135deg,rgba(17,42,67,0.72),rgba(7,17,27,0.98))] px-3 shadow-[inset_0_0_0_1px_rgba(140,200,242,0.08),0_0_18px_rgba(30,77,123,0.12)] hover:border-beyonix-sky/75 hover:bg-[linear-gradient(135deg,rgba(30,77,123,0.76),rgba(7,19,31,0.98))] focus:border-beyonix-sky/80 ${open ? "ring-1 ring-beyonix-sky/45" : ""}`}
       >
@@ -387,8 +446,13 @@ function ProductSelect({
             <input
               autoFocus
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar por nombre o SKU..."
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setOffset(0)
+              }}
+              maxLength={MAX_CATALOG_SEARCH_LENGTH}
+              aria-label="Buscar artículo por nombre, SKU o código de barra"
+              placeholder="Buscar por nombre, SKU o código..."
               className="h-9 w-full rounded-xl border border-beyonix-blue-light/18 bg-black/20 pl-9 pr-3 text-xs font-semibold text-white outline-none placeholder:text-white/35 focus:border-beyonix-sky/50"
             />
           </label>
@@ -397,11 +461,7 @@ function ProductSelect({
               type="button"
               role="option"
               aria-selected={isCreatingNewArticle}
-              onClick={() => {
-                onChange("custom")
-                setOpen(false)
-                setSearch("")
-              }}
+              onClick={() => choose("custom")}
               className={`mb-1 flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2.5 text-left text-sm font-bold transition ${isCreatingNewArticle ? "border-beyonix-sky/45 bg-beyonix-blue/55 text-white" : "border-beyonix-sky/20 text-beyonix-sky hover:bg-beyonix-blue/24"}`}
             >
               <span className="truncate">Crear artículo nuevo</span>
@@ -427,11 +487,7 @@ function ProductSelect({
                   aria-selected={active}
                   aria-disabled={productDisabled}
                   disabled={productDisabled}
-                  onClick={() => {
-                    onChange(productValue)
-                    setOpen(false)
-                    setSearch("")
-                  }}
+                  onClick={() => choose(productValue, product)}
                   className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${productDisabled ? "cursor-not-allowed text-white/28" : active ? "cursor-pointer bg-beyonix-blue/55 text-white" : "cursor-pointer text-white/68 hover:bg-beyonix-blue/24 hover:text-white"}`}
                 >
                   <span className="min-w-0 truncate">
@@ -459,11 +515,7 @@ function ProductSelect({
                       aria-selected={variantActive}
                       aria-disabled={variantDisabled}
                       disabled={variantDisabled}
-                      onClick={() => {
-                        onChange(variantValue)
-                        setOpen(false)
-                        setSearch("")
-                      }}
+                      onClick={() => choose(variantValue, product)}
                       className={`flex w-full items-center justify-between gap-3 rounded-xl py-2 pl-7 pr-3 text-left text-xs font-bold transition ${variantDisabled ? "cursor-not-allowed text-white/25" : variantActive ? "cursor-pointer bg-beyonix-blue/55 text-white" : "cursor-pointer text-white/52 hover:bg-beyonix-blue/24 hover:text-white"}`}
                     >
                       <span className="truncate">
@@ -483,7 +535,22 @@ function ProductSelect({
               </div>
             )
           })}
-          {!filteredProducts.length && <p className="px-3 py-4 text-center text-xs font-semibold text-white/42">No se encontraron productos.</p>}
+          {loadError ? (
+            <p role="alert" className="px-3 py-4 text-center text-xs font-semibold text-amber-300">{loadError}</p>
+          ) : loading && !filteredProducts.length ? (
+            <p className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-white/42"><Loader2 className="size-3.5 animate-spin" />Buscando…</p>
+          ) : !filteredProducts.length ? (
+            <p className="px-3 py-4 text-center text-xs font-semibold text-white/42">No se encontraron productos.</p>
+          ) : hasMore && (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => setOffset((current) => current + CATALOG_SEARCH_PAGE_SIZE)}
+              className="mt-1 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/20 px-3 py-2 text-xs font-black text-beyonix-sky transition hover:bg-beyonix-blue/24 disabled:cursor-wait disabled:opacity-60"
+            >
+              {loading ? <><Loader2 className="size-3.5 animate-spin" />Cargando…</> : "Cargar más"}
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -600,6 +667,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const [newArticleBarcode, setNewArticleBarcode] = useState("")
   const [generateArticleBarcode, setGenerateArticleBarcode] = useState(false)
   const [scanCode, setScanCode] = useState("")
+  const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<
     { found: boolean; message: string; unknownCode?: string } | null
   >(null)
@@ -640,7 +708,15 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     try {
       setLoading(true)
       setError("")
-      setData(await getBusinessCosts())
+      const fresh = await getBusinessCosts()
+      // El catálogo recibido solo cubre el historial: se conservan los
+      // artículos ya elegidos por búsqueda o escaneo (los datos nuevos ganan).
+      setData((current) => ({
+        ...fresh,
+        catalog: (current?.catalog ?? [])
+          .filter((product) => !product.standalone_key)
+          .reduce(mergeCatalogProduct, fresh.catalog),
+      }))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudieron cargar los costos.")
     } finally {
@@ -753,7 +829,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         .replace(/[\u0300-\u036f]/g, "")
         .toLocaleLowerCase("es")
 
-      if (normalizedNameFilter && !normalizedName.includes(normalizedNameFilter)) {
+      if (
+        normalizedNameFilter &&
+        !normalizedName.includes(normalizedNameFilter) &&
+        !item.barcode?.toLocaleLowerCase("es").includes(normalizedNameFilter)
+      ) {
         return false
       }
       const itemQuantity = Number(item.quantity)
@@ -855,51 +935,20 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setPurchaseSortDirection("asc")
   }
 
-  const unregisteredCatalogTargets = useMemo(() => {
-    const registered = new Set(
-      (data?.productCosts ?? []).flatMap((item) => {
-        if (item.product_id == null) return []
-        return [
-          item.variant_id
-            ? `v:${item.product_id}:${item.variant_id}`
-            : `p:${item.product_id}`,
-        ]
-      }),
-    )
+  // Calculado en el servidor contra todas las compras, sin traer el catálogo.
+  const unregisteredCatalogTargets = data?.pendingTargets ?? []
 
-    return (data?.catalog ?? []).flatMap((product) => {
-      if (product.standalone_key || typeof product.id !== "number") return []
-
-      const variants = [...(product.producto_variantes ?? [])].sort(
-        (left, right) => left.id - right.id,
-      )
-      if (variants.length) {
-        // Una compra anterior a la creación de variantes pertenece a la
-        // primera variante agregada; no debe solicitarse nuevamente.
-        const hasLegacyProductPurchase = registered.has(`p:${product.id}`)
-        const legacyVariantId = hasLegacyProductPurchase ? variants[0]?.id : null
-
-        return variants
-          .map((variant) => ({
-            value: `v:${product.id}:${variant.id}`,
-            label: `${product.nombre} · ${variant.nombre}`,
-            sku: variant.sku ?? "",
-            coveredByLegacyPurchase: variant.id === legacyVariantId,
-          }))
-          .filter(
-            (target) =>
-              !target.coveredByLegacyPurchase && !registered.has(target.value),
-          )
-      }
-
-      const target = {
-        value: `p:${product.id}`,
-        label: product.nombre,
-        sku: product.sku ?? "",
-      }
-      return registered.has(target.value) ? [] : [target]
-    })
-  }, [data?.catalog, data?.productCosts])
+  // Un artículo elegido desde la búsqueda remota se incorpora al catálogo local
+  // para que selector, autocompletado y guardado lo resuelvan igual que antes.
+  const rememberCatalogProduct = (product?: BusinessCostCatalogProduct) => {
+    const catalog = data?.catalog ?? []
+    if (!product) return catalog
+    const merged = mergeCatalogProduct(catalog, product)
+    if (merged !== catalog) {
+      setData((current) => current && { ...current, catalog: mergeCatalogProduct(current.catalog, product) })
+    }
+    return merged
+  }
 
   const productInvestment = data?.productCosts.reduce(
     (total, item) => total + Number(item.total_cost),
@@ -947,7 +996,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   // Elegir un artículo (selector o escaneo) completa sólo su identidad: nombre,
   // SKU, variante, color y código. Cantidad, costos, proveedor, comprobante,
   // fecha y notas quedan como los cargó el operador.
-  const selectArticle = (value: string) => {
+  const selectArticle = (value: string, catalog = data?.catalog) => {
     setArticle(value)
     setGenerateArticleBarcode(false)
     if (value === "custom") {
@@ -955,7 +1004,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     } else {
       setCustomArticleName("")
     }
-    const selectedProduct = data?.catalog.find((product) =>
+    const selectedProduct = catalog?.find((product) =>
       value ===
         (product.standalone_key
           ? `c:${product.standalone_key}`
@@ -991,24 +1040,39 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  const handleCatalogScan = () => {
+  const handleCatalogScan = async () => {
     const code = scanCode.trim()
-    if (!code) return
+    if (!code || scanning || !data) return
     if (isReservedProductBarcode(code)) {
       setScanResult({ found: false, message: "Ese código es de un bulto o lote de envío, no de un artículo." })
       return
     }
-    const match = findCatalogArticleByCode(data?.catalog ?? [], code)
-    if (!match) {
-      setScanResult({ found: false, message: "Código no reconocido.", unknownCode: code })
-      return
+    setScanning(true)
+    setScanResult(null)
+    try {
+      const match = await findCostArticleByCode(code)
+      if (!match) {
+        setScanResult({ found: false, message: "Código no reconocido.", unknownCode: code })
+        return
+      }
+      const catalog = mergeCatalogMatch(data.catalog, match)
+      if (catalog !== data.catalog) {
+        setData((current) => current && { ...current, catalog: mergeCatalogMatch(current.catalog, match) })
+      }
+      selectArticle(match.value, catalog)
+      setScanCode((current) => (current.trim() === code ? "" : current))
+      setScanResult({
+        found: true,
+        message: `✓ ${[match.product.nombre, match.variant?.nombre].filter(Boolean).join(" · ")}`,
+      })
+    } catch (cause) {
+      setScanResult({
+        found: false,
+        message: cause instanceof Error ? cause.message : "No se pudo buscar el código.",
+      })
+    } finally {
+      setScanning(false)
     }
-    selectArticle(match.value)
-    setScanCode("")
-    setScanResult({
-      found: true,
-      message: `✓ ${[match.productName, match.variantName].filter(Boolean).join(" · ")}`,
-    })
   }
 
   const createArticleWithCode = (code: string) => {
@@ -1066,10 +1130,18 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     })
   }
 
-  const startPurchaseForCatalogTarget = (
+  const startPurchaseForCatalogTarget = async (
     value: string,
     sku: string,
   ) => {
+    const productId = Number(value.split(":")[1])
+    try {
+      rememberCatalogProduct((await getCostCatalogArticle(productId)) ?? undefined)
+    } catch (cause) {
+      setMessage("")
+      setError(cause instanceof Error ? cause.message : "No se pudo cargar el artículo.")
+      return
+    }
     resetProductForm()
     setArticle(value)
     setProductSku(sku.toUpperCase())
@@ -1439,7 +1511,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 className="mb-3 flex flex-col gap-2 rounded-xl border border-beyonix-sky/25 bg-black/20 p-2.5 sm:flex-row sm:items-center"
                 onSubmit={(event) => {
                   event.preventDefault()
-                  handleCatalogScan()
+                  void handleCatalogScan()
                 }}
               >
                 <label className="relative block min-w-0 flex-1">
@@ -1453,7 +1525,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     className={`${inputClass} pl-9`}
                   />
                 </label>
-                <button type="submit" disabled={!scanCode.trim()} className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/38 px-4 text-sm font-black text-white transition hover:border-beyonix-sky/60 disabled:cursor-not-allowed disabled:opacity-50">Buscar</button>
+                <button type="submit" disabled={!scanCode.trim() || scanning || !data} className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/38 px-4 text-sm font-black text-white transition hover:border-beyonix-sky/60 disabled:cursor-not-allowed disabled:opacity-50">{scanning ? "Buscando…" : "Buscar"}</button>
                 {scanResult && (
                   <p role="status" className={`text-xs font-bold sm:max-w-xs ${scanResult.found ? "text-emerald-300" : "text-amber-300"}`}>
                     {scanResult.message}
@@ -1469,7 +1541,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 <ProductSelect
                   value={article}
                   products={data?.catalog ?? []}
-                  onChange={selectArticle}
+                  onChange={(value, product) => selectArticle(value, rememberCatalogProduct(product))}
                 />
               </Field>
               {article === "custom" && (
@@ -1501,8 +1573,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                         <span className="shrink-0 text-10px font-black uppercase tracking-widest text-white/50">{barcodeOriginLabel(barcodeOrigin(persistedArticleBarcode))}</span>
                       </div>
                     ) : generateArticleBarcode ? (
-                      <div className={`${inputClass} flex items-center justify-between gap-2`}>
-                        <span className="truncate text-beyonix-sky">Se generará un código BEYONIX</span>
+                      <div className={`${inputClass} flex items-center justify-between gap-2`} title="El código BEYONIX se asigna recién cuando guardás la compra.">
+                        <span className="truncate text-beyonix-sky">Se generará al guardar</span>
                         <button type="button" onClick={() => setGenerateArticleBarcode(false)} className="shrink-0 cursor-pointer text-11px font-black text-white/60 hover:text-white">Cancelar</button>
                       </div>
                     ) : (
@@ -1573,12 +1645,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 Historial de compras
               </h3>
               <div className="grid w-full max-w-4xl gap-3 sm:grid-cols-3 md:justify-self-center">
-                <Field label="Nombre">
+                <Field label="Nombre / código de barra">
                   <input
                     value={purchaseNameFilter}
                     onChange={(event) => setPurchaseNameFilter(event.target.value)}
                     className={inputClass}
-                    placeholder="Filtrar por nombre"
+                    aria-label="Filtrar historial por nombre o código de barra"
+                    placeholder="Nombre o código"
                   />
                 </Field>
                 <Field label="Cantidad">
@@ -1732,7 +1805,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                       <button
                         type="button"
                         onClick={() =>
-                          startPurchaseForCatalogTarget(
+                          void startPurchaseForCatalogTarget(
                             target.value,
                             target.sku,
                           )
@@ -1820,7 +1893,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     <ProductSelect
                       value={expenseProduct}
                       products={data?.catalog ?? []}
-                      onChange={setExpenseProduct}
+                      onChange={(value, product) => {
+                        rememberCatalogProduct(product)
+                        setExpenseProduct(value)
+                      }}
                       inventoryMode
                     />
                   </Field>

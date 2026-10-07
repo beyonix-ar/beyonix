@@ -4,9 +4,23 @@ import {
   buildStandaloneCostItems,
   type StandaloneCostRow,
 } from "@/lib/business/standalone-cost-items"
+import {
+  loadCatalogProductsByIds,
+  loadPendingPurchaseTargets,
+  withPurchaseBarcode,
+} from "@/lib/business/cost-catalog-server"
 import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
+import type {
+  BusinessCostCatalogProduct,
+  CatalogPurchaseTarget,
+} from "@/lib/supabase/queries/business-costs"
 
 type CostKind = "product" | "expense"
+
+type CostRowWithBarcodes = StandaloneCostRow & {
+  productos: { codigo_barra: string | null } | null
+  producto_variantes: { codigo_barra: string | null } | null
+}
 
 function unauthorized() {
   return Response.json(
@@ -94,16 +108,16 @@ export async function GET(request: Request) {
   const auth = await authorize(request)
   if ("error" in auth) return auth.error
 
-  const [catalogResult, productCostsResult, expensesResult] = await Promise.all([
-    auth.admin
-      .from("productos")
-      .select(
-        "id, nombre, sku, activo, stock, codigo_barra, producto_variantes(id, nombre, sku, activo, stock, color_hex, codigo_barra)",
-      )
-      .order("nombre", { ascending: true }),
+  // El catálogo completo no se carga: el selector busca server-side
+  // (/api/admin/costs/articles) y los pendientes se calculan en la base.
+  const pendingTargetsPromise = loadPendingPurchaseTargets(auth.admin).then(
+    (targets) => ({ targets, failed: false }),
+    () => ({ targets: [] as CatalogPurchaseTarget[], failed: true }),
+  )
+  const [productCostsResult, expensesResult] = await Promise.all([
     auth.admin
       .from("product_cost_entries")
-      .select("*")
+      .select("*, productos(codigo_barra), producto_variantes(codigo_barra)")
       .order("purchase_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(1000),
@@ -115,7 +129,7 @@ export async function GET(request: Request) {
       .limit(1000),
   ])
 
-  const error = catalogResult.error || productCostsResult.error || expensesResult.error
+  const error = productCostsResult.error || expensesResult.error
   if (error) {
     const missingVariantSku =
       /producto_variantes.*sku|sku.*producto_variantes/i.test(error.message)
@@ -136,7 +150,21 @@ export async function GET(request: Request) {
     )
   }
 
-  const costRows = (productCostsResult.data ?? []) as StandaloneCostRow[]
+  const costRows = ((productCostsResult.data ?? []) as CostRowWithBarcodes[]).map(withPurchaseBarcode)
+  const expenses = expensesResult.data ?? []
+  let catalogProducts: BusinessCostCatalogProduct[]
+  try {
+    catalogProducts = await loadCatalogProductsByIds(auth.admin, [
+      ...costRows.flatMap((row) => (row.product_id == null ? [] : [Number(row.product_id)])),
+      ...expenses.flatMap((row: { product_id: number | null }) => (row.product_id == null ? [] : [Number(row.product_id)])),
+    ])
+  } catch {
+    return Response.json({ error: "No se pudieron cargar las compras." }, { status: 500 })
+  }
+  const pendingTargets = await pendingTargetsPromise
+  if (pendingTargets.failed) {
+    return Response.json({ error: "No se pudieron cargar las compras." }, { status: 500 })
+  }
   const latestSkuByProduct = new Map<number, string>()
   costRows.forEach((row) => {
     if (
@@ -149,7 +177,7 @@ export async function GET(request: Request) {
     }
   })
   const catalog = [
-    ...(catalogResult.data ?? []).map((product) => ({
+    ...catalogProducts.map((product) => ({
       ...product,
       sku: product.sku ?? latestSkuByProduct.get(Number(product.id)) ?? null,
       standalone_key: null,
@@ -168,7 +196,8 @@ export async function GET(request: Request) {
   return Response.json({
     catalog,
     productCosts: costRows,
-    expenses: expensesResult.data ?? [],
+    expenses,
+    pendingTargets: pendingTargets.targets,
   })
 }
 

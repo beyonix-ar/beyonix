@@ -1,34 +1,112 @@
+import { mergeCatalogProduct } from "../business/cost-catalog-search.ts"
 import type { BusinessCostCatalogProduct } from "../supabase/queries/business-costs.ts"
 
-export type CatalogScanMatch = {
+// Máximo que acepta el lector de Compras; los códigos del catálogo se guardan
+// recortados a 64 y los SKU a 120.
+export const MAX_SCAN_CODE_LENGTH = 128
+
+export type CatalogCodeOwner = { productId: number | null; variantId: number | null }
+
+export type CatalogLookupProduct = {
+  id: number
+  nombre: string
+  activo: boolean
+  stock: number | null
+  sku: string | null
+  codigo_barra: string | null
+}
+
+export type CatalogLookupVariant = {
+  id: number
+  producto_id: number
+  nombre: string
+  activo: boolean
+  stock: number | null
+  sku: string | null
+  color_hex: string | null
+  codigo_barra: string | null
+}
+
+export type CatalogCodeMatch = {
   value: string
-  productName: string
-  variantName: string | null
   matchedBy: "barcode" | "sku"
+  product: CatalogLookupProduct
+  variant: CatalogLookupVariant | null
+}
+
+// Acceso puntual a la base: cada método resuelve una fila por clave única
+// (catalog_barcode_registry / catalog_sku_registry / PK), nunca el catálogo.
+export interface CatalogCodeStore {
+  barcodeOwner(normalizedBarcode: string): Promise<CatalogCodeOwner | null>
+  skuOwner(normalizedSku: string): Promise<CatalogCodeOwner | null>
+  variant(id: number): Promise<CatalogLookupVariant | null>
+  product(id: number): Promise<(CatalogLookupProduct & { variantCount: number }) | null>
+  latestProductCostSku(productId: number): Promise<string | null>
+}
+
+function productFields({ id, nombre, activo, stock, sku, codigo_barra }: CatalogLookupProduct): CatalogLookupProduct {
+  return { id, nombre, activo, stock, sku, codigo_barra }
+}
+
+async function resolveOwner(
+  store: CatalogCodeStore,
+  owner: CatalogCodeOwner,
+  matchedBy: CatalogCodeMatch["matchedBy"],
+): Promise<CatalogCodeMatch | null> {
+  if (owner.variantId != null) {
+    const variant = await store.variant(owner.variantId)
+    const product = variant && await store.product(variant.producto_id)
+    if (!variant || !product) return null
+    return { value: `v:${product.id}:${variant.id}`, matchedBy, product: productFields(product), variant }
+  }
+  if (owner.productId == null) return null
+  const product = await store.product(owner.productId)
+  // Un producto con variantes se compra siempre por variante: su código o SKU
+  // propio no identifica qué variante ingresa.
+  if (!product || product.variantCount > 0) return null
+  return {
+    value: `p:${product.id}`,
+    matchedBy,
+    product: { ...productFields(product), sku: product.sku ?? await store.latestProductCostSku(product.id) },
+    variant: null,
+  }
 }
 
 // Escaneo en Compras: el código de barra exacto manda sobre el SKU (mismo
 // orden que el armado). Devuelve el valor del selector de artículo
 // (v:<producto>:<variante> o p:<producto> para legacy sin variantes).
-export function findCatalogArticleByCode(
-  catalog: readonly BusinessCostCatalogProduct[],
+export async function findCatalogArticleByCode(
+  store: CatalogCodeStore,
   code: string,
-): CatalogScanMatch | null {
+): Promise<CatalogCodeMatch | null> {
   const barcode = code.trim()
-  const sku = barcode.toUpperCase()
-  if (!barcode) return null
-  const products = catalog.filter((product) => !product.standalone_key)
-  for (const matchedBy of ["barcode", "sku"] as const) {
-    const matches = (value: string | null | undefined) =>
-      matchedBy === "barcode" ? value?.trim() === barcode : value?.trim().toUpperCase() === sku
-    for (const product of products) {
-      const variants = product.producto_variantes ?? []
-      const variant = variants.find((item) => matches(matchedBy === "barcode" ? item.codigo_barra : item.sku))
-      if (variant) return { value: `v:${product.id}:${variant.id}`, productName: product.nombre, variantName: variant.nombre, matchedBy }
-      if (!variants.length && matches(matchedBy === "barcode" ? product.codigo_barra : product.sku)) {
-        return { value: `p:${product.id}`, productName: product.nombre, variantName: null, matchedBy }
-      }
-    }
-  }
-  return null
+  if (!barcode || barcode.length > MAX_SCAN_CODE_LENGTH) return null
+  const barcodeOwner = await store.barcodeOwner(barcode)
+  const byBarcode = barcodeOwner && await resolveOwner(store, barcodeOwner, "barcode")
+  if (byBarcode) return byBarcode
+  const skuOwner = await store.skuOwner(barcode.toUpperCase())
+  return skuOwner && resolveOwner(store, skuOwner, "sku")
+}
+
+// El catálogo de Compras puede no traer el artículo escaneado; se incorpora
+// para que el selector y el autocompletado lo resuelvan igual que al elegirlo.
+export function mergeCatalogMatch(
+  catalog: BusinessCostCatalogProduct[],
+  { product, variant }: CatalogCodeMatch,
+): BusinessCostCatalogProduct[] {
+  return mergeCatalogProduct(catalog, {
+    ...product,
+    standalone_key: null,
+    producto_variantes: variant
+      ? [{
+          id: variant.id,
+          nombre: variant.nombre,
+          activo: variant.activo,
+          stock: variant.stock,
+          sku: variant.sku,
+          color_hex: variant.color_hex,
+          codigo_barra: variant.codigo_barra,
+        }]
+      : [],
+  })
 }

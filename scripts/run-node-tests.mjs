@@ -9,6 +9,8 @@ import { existsSync } from "node:fs"
 const TEST_FILES = [
   "lib/admin/dispatch-stage3.test.ts",
   "lib/barcodes/barcodes.test.ts",
+  "lib/barcodes/catalog-lookup-db.test.ts",
+  "lib/business/cost-catalog-search.test.ts",
   "lib/orders/dispatch-db.test.ts",
   "lib/orders/dispatch-eligibility.test.ts",
   "lib/orders/financial-resolution.test.ts",
