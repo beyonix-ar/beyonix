@@ -5,6 +5,7 @@ import {
   getPaymentProofValidationError,
   sanitizePaymentProofFileName,
 } from "@/lib/payments/transfer"
+import { isValidPaymentProofContent } from "@/lib/payments/payment-proof-content"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { expireTransferOrderIfNeeded } from "@/lib/orders/transfer-expiration"
 import { verifyGuestOrderAccessToken } from "@/lib/orders/guest-order-token"
@@ -195,11 +196,16 @@ export async function POST(request: Request) {
       )
     }
 
+    const fileBytes = new Uint8Array(await file.arrayBuffer())
+    if (!(await isValidPaymentProofContent(fileBytes, file.type))) {
+      return NextResponse.json({ error: "El comprobante no es un JPG, PNG o PDF válido." }, { status: 400 })
+    }
+
     const safeName = sanitizePaymentProofFileName(file.name)
     const path = `${orderId}/${Date.now()}-${safeName}`
     const { error: uploadError } = await admin.storage
       .from(PAYMENT_PROOF_BUCKET)
-      .upload(path, file, {
+      .upload(path, fileBytes, {
         contentType: file.type,
         upsert: false,
       })

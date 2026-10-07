@@ -123,6 +123,7 @@ const TEST_FILES = [
   "lib/site-url.test.ts",
   "lib/auth/cron-auth.test.ts",
   "lib/payments/transfer.test.ts",
+  "lib/payments/payment-proof-content.test.ts",
   "lib/payments/payment-proofs-route-contract.test.ts",
   "lib/customer-credit/customer-balance-retirement.test.ts",
   "lib/mercadopago/order-payment.test.ts",

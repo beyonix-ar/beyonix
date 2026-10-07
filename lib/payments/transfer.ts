@@ -94,7 +94,10 @@ export function getPaymentProofValidationError(file: File | null) {
 
   const extension = file.name.split(".").pop()?.toLowerCase() ?? ""
   const validType = PAYMENT_PROOF_ALLOWED_TYPES.includes(file.type)
-  const validExtension = PAYMENT_PROOF_ALLOWED_EXTENSIONS.includes(extension)
+  const validExtension =
+    (file.type === "image/jpeg" && (extension === "jpg" || extension === "jpeg")) ||
+    (file.type === "image/png" && extension === "png") ||
+    (file.type === "application/pdf" && extension === "pdf")
 
   if (!validType || !validExtension) {
     return "El comprobante debe ser JPG, JPEG, PNG o PDF."
@@ -103,6 +106,8 @@ export function getPaymentProofValidationError(file: File | null) {
   if (file.size > PAYMENT_PROOF_MAX_SIZE) {
     return "El comprobante no puede superar los 5 MB."
   }
+
+  if (file.size === 0) return "El comprobante está vacío."
 
   return ""
 }

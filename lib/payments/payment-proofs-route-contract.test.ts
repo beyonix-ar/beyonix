@@ -11,6 +11,13 @@ const routeSource = readFileSync(
   "utf8",
 )
 
+test("POST /api/payment-proofs comprueba los bytes antes de subir a Storage", () => {
+  const validation = routeSource.indexOf("isValidPaymentProofContent(fileBytes, file.type)")
+  const ownership = routeSource.indexOf("if (order.usuario_id)")
+  const upload = routeSource.indexOf(".upload(path, fileBytes")
+  assert.ok(ownership > 0 && validation > ownership && upload > validation)
+})
+
 // Test de contrato (falla si el endpoint vuelve a exponer la fila completa
 // de `ordenes`): Codex detectó en la segunda auditoría que POST
 // /api/payment-proofs devolvía `{ order: updatedOrder }` con la fila

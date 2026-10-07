@@ -12,7 +12,7 @@ import type { SupabaseOrderClaim } from "../supabase/types"
 import { CUSTOMER_CLAIM_SHIPMENT_COLUMNS } from "./claim-shipment-view.ts"
 import { describeClaimCancellationBlockers, parseClaimCancellationBlockerCodes } from "./claim-cancellation.ts"
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFStream } from "pdf-lib"
+import { isSafeUploadedPdf } from "../security/uploaded-pdf.ts"
 
 type Admin = ReturnType<typeof createAdminClient>
 export type ClaimUpload = { name: string; type: string; size: number; bytes: Uint8Array }
@@ -123,23 +123,7 @@ export async function prepareClaimUploads(files: File[]): Promise<ClaimUpload[]>
     if (getClaimFileValidationError(file)) throw new Error("CLAIM_INVALID")
     const bytes = new Uint8Array(await file.arrayBuffer())
     if (isClaimFileSignatureMismatch(bytes, file.type)) throw new Error("CLAIM_INVALID")
-    if (file.type === "application/pdf") {
-      try {
-        const document = await PDFDocument.load(bytes, { updateMetadata: false })
-        if (!document.getPageCount()) throw new Error("Empty PDF")
-        // Se inspeccionan objetos descomprimidos y nombres decodificados, no texto crudo.
-        const activeNames = new Set(["JS", "JavaScript", "OpenAction", "AA", "Launch", "EmbeddedFiles", "EmbeddedFile", "RichMedia", "XFA", "SubmitForm", "ImportData"])
-        for (const [, object] of document.context.enumerateIndirectObjects()) {
-          const inspect = (value: unknown): void => {
-            if (value instanceof PDFName && activeNames.has(value.decodeText())) throw new Error("Active PDF")
-            if (value instanceof PDFDict) for (const [key, entry] of value.entries()) { inspect(key); inspect(entry) }
-            if (value instanceof PDFArray) for (const entry of value.asArray()) inspect(entry)
-            if (value instanceof PDFStream) inspect(value.dict)
-          }
-          inspect(object)
-        }
-      } catch { throw new Error("CLAIM_INVALID") }
-    }
+    if (file.type === "application/pdf" && !(await isSafeUploadedPdf(bytes))) throw new Error("CLAIM_INVALID")
     uploads.push({ name: file.name, type: file.type, size: file.size, bytes })
   }
   return uploads
