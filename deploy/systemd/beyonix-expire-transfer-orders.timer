@@ -1,0 +1,10 @@
+[Unit]
+Description=BEYONIX - Ejecutar expiracion de transferencias cada 15 minutos
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=beyonix-expire-transfer-orders.service
+
+[Install]
+WantedBy=timers.target

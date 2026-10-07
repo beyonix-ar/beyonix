@@ -1,0 +1,18 @@
+[Unit]
+Description=BEYONIX - Limpiar archivos de reclamos
+After=network-online.target pm2-beyonix.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Mismo patrón que beyonix-verify-transfer-orders.service (ver README): el
+# CRON_SECRET nunca viaja en argv -- curl lee el header del archivo privado
+# /etc/beyonix/curl-verify-transfer-orders.conf (600, root:root) con --config;
+# por eso el servicio corre como root. flock -n evita corridas superpuestas.
+# -o /dev/null: el cuerpo de la respuesta no se vuelca a journalctl.
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-cleanup-claim-uploads.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 120 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/cleanup-claim-uploads

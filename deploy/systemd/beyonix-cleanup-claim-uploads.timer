@@ -1,0 +1,10 @@
+[Unit]
+Description=BEYONIX - Limpieza diaria de archivos de reclamos
+
+[Timer]
+OnCalendar=*-*-* 04:15:00
+Persistent=true
+Unit=beyonix-cleanup-claim-uploads.service
+
+[Install]
+WantedBy=timers.target

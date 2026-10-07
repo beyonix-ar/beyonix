@@ -81,6 +81,7 @@ const TEST_FILES = [
   "lib/orders/admin-cancel-order-previous-estado.test.ts",
   "lib/security/csp-mode.test.ts",
   "lib/security/hsts-header.test.ts",
+  "lib/security/systemd-cron-units.test.ts",
   "lib/canonical-domain.test.ts",
   "lib/site-settings.test.ts",
   "lib/andreani/commercial-sql.test.ts",

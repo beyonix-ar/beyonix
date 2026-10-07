@@ -1,0 +1,10 @@
+[Unit]
+Description=BEYONIX - Reconciliar refunds de Mercado Pago cada 5 minutos
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+Unit=beyonix-reconcile-mercadopago-refunds.service
+
+[Install]
+WantedBy=timers.target

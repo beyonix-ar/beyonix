@@ -1,0 +1,10 @@
+[Unit]
+Description=BEYONIX - Expirar ordenes de Mercado Pago cada 15 minutos
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=beyonix-expire-mercadopago-orders.service
+
+[Install]
+WantedBy=timers.target

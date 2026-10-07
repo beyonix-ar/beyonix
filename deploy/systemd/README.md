@@ -287,6 +287,38 @@ el `CRON_SECRET` de la app.
 
 ---
 
+# Jobs de vencimiento, conciliación y limpieza (systemd, instalados)
+
+| Unidad | Frecuencia | Endpoint |
+|---|---|---|
+| `beyonix-expire-mercadopago-orders` | cada 15 min (`*:0/15`) | `/api/cron/expire-mercadopago-orders` |
+| `beyonix-expire-transfer-orders` | cada 15 min (`*:0/15`) | `/api/cron/expire-transfer-orders` |
+| `beyonix-reconcile-mercadopago-refunds` | cada 5 min (`*:0/5`) | `/api/cron/reconcile-mercadopago-refunds` |
+| `beyonix-cleanup-claim-uploads` | diario 04:15 | `/api/cron/cleanup-claim-uploads` |
+
+Mismo patrón seguro que el resto (`flock -n`, loopback, `--fail`, `-o /dev/null` y el
+secreto en `/etc/beyonix/curl-verify-transfer-orders.conf` vía `--config`; corren como
+root). Hasta el 2026-10-06 estas unidades vivían sólo en la VPS, pasaban
+`Bearer ${CRON_SECRET}` desde `~/.config/beyonix/cron.env` (secreto en argv) y
+fallaban con 401 desde el 2026-09-27 por un `CRON_SECRET` desactualizado. Se migraron
+a estos archivos (backups de las unidades previas en `/root/*.bak-*`); ya ninguna
+unidad usa `cron.env`. `lib/security/systemd-cron-units.test.ts` exige el patrón en
+todas las unidades del repo.
+
+Reinstalar (en la VPS, desde `~/apps/beyonix`):
+
+```bash
+for job in expire-mercadopago-orders expire-transfer-orders reconcile-mercadopago-refunds cleanup-claim-uploads; do
+  sudo cp deploy/systemd/beyonix-$job.service deploy/systemd/beyonix-$job.timer /etc/systemd/system/
+done
+sudo systemctl daemon-reload
+for job in expire-mercadopago-orders expire-transfer-orders reconcile-mercadopago-refunds cleanup-claim-uploads; do
+  sudo systemctl enable --now beyonix-$job.timer
+done
+```
+
+---
+
 # Facturación automática ARCA (preparada, todavía apagada)
 
 El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada 5 minutos);
