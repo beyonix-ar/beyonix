@@ -1,5 +1,9 @@
 import { createBrowserClient } from '@supabase/ssr'
 import type { Session } from '@supabase/supabase-js'
+import {
+  getSupabaseCookieOptions,
+  serializeSupabaseCookieRemoval,
+} from './cookie-options'
 
 installSupabaseAuthConsoleErrorFilter()
 
@@ -7,6 +11,7 @@ export const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   {
+    cookieOptions: getSupabaseCookieOptions(),
     auth: {
       autoRefreshToken: true,
       detectSessionInUrl: false,
@@ -145,7 +150,7 @@ export function clearSupabaseBrowserSession() {
       const name = cookie.split("=")[0]?.trim()
 
       if (name?.startsWith(storagePrefix)) {
-        document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax`
+        document.cookie = serializeSupabaseCookieRemoval(name)
       }
     }
   } catch {

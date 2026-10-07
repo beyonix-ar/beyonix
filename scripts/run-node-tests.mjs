@@ -71,6 +71,7 @@ const TEST_FILES = [
   "lib/auth/confirmar-email-ui-contract.test.ts",
   "lib/auth/reset-password-submit.test.ts",
   "lib/auth/login.test.ts",
+  "lib/supabase/cookie-options.test.ts",
   "lib/auth/safe-redirect.test.ts",
   "lib/auth/username.test.ts",
   "lib/validation/password-policy.test.ts",

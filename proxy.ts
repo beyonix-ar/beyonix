@@ -9,6 +9,7 @@ import {
 import { isInternalRole, isUserRole } from "@/lib/auth/roles"
 import { getCanonicalWwwRedirectUrl } from "@/lib/canonical-domain"
 import { resolveCspMode } from "@/lib/security/csp-mode"
+import { getSupabaseCookieOptions } from "@/lib/supabase/cookie-options"
 
 const IS_DEV = process.env.NODE_ENV !== "production"
 
@@ -162,6 +163,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: getSupabaseCookieOptions(),
       cookies: {
         get(name: string) {
           return request.cookies.get(name)?.value
