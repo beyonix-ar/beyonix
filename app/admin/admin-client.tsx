@@ -340,7 +340,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ? `${dispatchAlerts.reviewCount} requiere revisión`
           : dispatchAlerts.handoverCount
             ? `${dispatchAlerts.handoverCount} lista${dispatchAlerts.handoverCount === 1 ? "" : "s"} para entregar`
-            : "Preparación y tandas",
+            : "Armado y lotes de envío",
         icon: <PackageCheck className="size-4" />,
         notificationCount: dispatchAlerts.reviewCount + dispatchAlerts.handoverCount,
         notificationTone: "shipping",

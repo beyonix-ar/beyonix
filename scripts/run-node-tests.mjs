@@ -8,6 +8,7 @@ import { existsSync } from "node:fs"
 
 const TEST_FILES = [
   "lib/admin/dispatch-stage3.test.ts",
+  "lib/barcodes/barcodes.test.ts",
   "lib/orders/dispatch-db.test.ts",
   "lib/orders/dispatch-eligibility.test.ts",
   "lib/orders/financial-resolution.test.ts",
@@ -272,6 +273,7 @@ const TEST_FILES = [
 // --conditions=react-server (los hooks de cliente no existen en ese build).
 const TSX_TEST_FILES = [
   "lib/admin/dispatch-realtime.test.tsx",
+  "lib/admin/dispatch-armado.test.tsx",
   "app/admin/sections/pedidos/financial-resolution-wizard.test.tsx",
   "lib/admin/admin-pending-realtime.test.tsx",
   "components/claims/claim-reply-draft.test.tsx",

@@ -11,12 +11,14 @@ import {
   type ReactNode,
 } from "react"
 import {
+  Barcode,
   GripVertical,
   ImageIcon,
   Loader2,
   Pencil,
   Play,
   Plus,
+  Printer,
   X,
   Trash2,
 } from "lucide-react"
@@ -39,6 +41,7 @@ import {
 import {
   createProductoVariantWithAllocation,
   deleteProductoVariante,
+  generateProductoVarianteBarcode,
   getProductVariantDistribution,
   getProductoVariantes,
   reorderProductoVariantes,
@@ -46,6 +49,8 @@ import {
   type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
 
+import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
+import { barcodeOrigin, barcodeOriginLabel } from "@/lib/barcodes/codes"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { getVariantActivationError } from "@/lib/products/product-activation"
 import { deriveVariantNameFromColor, getColorName } from "@/lib/products/variant-color"
@@ -185,6 +190,10 @@ export function ProductVariantsEditor({
     useState<number | null>(null)
   const [savingVariantDetailsId, setSavingVariantDetailsId] =
     useState<number | null>(null)
+  const [generatingBarcodeId, setGeneratingBarcodeId] =
+    useState<number | null>(null)
+  const [labelVariant, setLabelVariant] =
+    useState<SupabaseProductoVariante | null>(null)
   const [draggedVariantKey, setDraggedVariantKey] = useState<string | null>(null)
   const [reorderingVariants, setReorderingVariants] = useState(false)
   const [editingVariantKeys, setEditingVariantKeys] = useState<Set<string>>(
@@ -739,6 +748,28 @@ export function ProductVariantsEditor({
     }
   }
 
+  const generateVariantBarcode = async (variant: SupabaseProductoVariante) => {
+    if (!productoId || generatingBarcodeId != null) return
+    try {
+      setGeneratingBarcodeId(variant.id)
+      setError("")
+      setSuccessMessage("")
+      const updated = await generateProductoVarianteBarcode(productoId, variant.id)
+      setVariantes((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+      setSuccessMessage(`Código BEYONIX asignado: ${updated.codigo_barra ?? ""}`)
+    } catch (generateError) {
+      setError(
+        generateError instanceof Error
+          ? generateError.message
+          : "No se pudo generar el código BEYONIX.",
+      )
+    } finally {
+      setGeneratingBarcodeId(null)
+    }
+  }
+
   const confirmVariantDelete = async () => {
     if (!pendingDelete) return
 
@@ -773,6 +804,7 @@ export function ProductVariantsEditor({
         sku: variant.sku ?? null,
         colorHex: variant.color_hex,
         images: variant.imagenes ?? [],
+        barcode: variant.codigo_barra ?? null,
         assignedStock: variant.stock ?? 0,
       })
       if (activationError) {
@@ -976,6 +1008,9 @@ export function ProductVariantsEditor({
       savingImages={savingVariantImagesId === variante.id}
       changingState={false}
       savingDetails={savingVariantDetailsId === variante.id}
+      onGenerateBarcode={variante.codigo_barra?.trim() ? undefined : () => void generateVariantBarcode(variante)}
+      generatingBarcode={generatingBarcodeId === variante.id}
+      onPrintLabel={variante.codigo_barra?.trim() ? () => setLabelVariant(variante) : undefined}
       dropKey={String(variante.id)}
       leadingAccessory={renderVariantHandle(String(variante.id), variante.nombre)}
       />
@@ -1030,6 +1065,20 @@ export function ProductVariantsEditor({
   return (
     <div className="flex w-full min-w-0 flex-col gap-2.5">
       {stockAdjustmentModal}
+      <LabelPrintDialog
+        open={labelVariant != null}
+        title="Imprimir etiqueta"
+        description={labelVariant ? `${productName || labelVariant.nombre} · ${labelVariant.codigo_barra ?? ""}` : undefined}
+        allowCopies
+        labels={labelVariant?.codigo_barra ? [{
+          kind: "product",
+          code: labelVariant.codigo_barra.trim(),
+          name: productName || labelVariant.nombre,
+          variant: getColorName(labelVariant.color_hex, labelVariant.nombre),
+          sku: labelVariant.sku,
+        }] : []}
+        onClose={() => setLabelVariant(null)}
+      />
 
       {error && (
         <AdminInfoBlock role="alert" tone="danger">
@@ -1278,6 +1327,9 @@ interface VariantCardProps {
   savingImages: boolean
   changingState: boolean
   savingDetails: boolean
+  onGenerateBarcode?: () => void
+  generatingBarcode?: boolean
+  onPrintLabel?: () => void
   dropKey?: string
   leadingAccessory?: ReactNode
 }
@@ -1309,6 +1361,9 @@ function VariantCard({
   savingImages,
   changingState,
   savingDetails,
+  onGenerateBarcode,
+  generatingBarcode = false,
+  onPrintLabel,
   dropKey,
   leadingAccessory,
 }: VariantCardProps) {
@@ -1435,6 +1490,14 @@ function VariantCard({
           <p className="truncate text-sm font-black text-white" title={sku?.trim() || "SKU pendiente"}>
             {sku?.trim() || "SKU pendiente"}
           </p>
+          <p
+            className={`truncate text-10px font-bold ${barcode?.trim() ? "text-white/60" : "text-amber-300"}`}
+            title={barcode?.trim() ? `${barcode.trim()} · ${barcodeOriginLabel(barcodeOrigin(barcode))}` : "Código pendiente"}
+          >
+            {barcode?.trim()
+              ? `${barcode.trim()} · ${barcodeOriginLabel(barcodeOrigin(barcode))}`
+              : "Código pendiente"}
+          </p>
         </div>
 
         <div className="product-editor-variant-color hidden min-w-0 items-center gap-2">
@@ -1480,6 +1543,16 @@ function VariantCard({
         )}
 
         <div className="ml-2 flex items-center justify-end gap-1.5">
+          {onPrintLabel && (
+            <AdminSecondaryButton
+              size="icon"
+              title={`Imprimir etiqueta de ${nombre}`}
+              aria-label={`Imprimir etiqueta de ${nombre}`}
+              onClick={onPrintLabel}
+            >
+              <Printer className="size-3.5 text-white" />
+            </AdminSecondaryButton>
+          )}
           <AdminSecondaryButton
             size="icon"
             title={`Editar variante ${nombre}`}
@@ -1682,6 +1755,10 @@ function VariantCard({
             onCommit={commitDetails}
             stock={stock}
             onAdjustStock={onAdjustStock}
+            barcodeOriginText={barcode?.trim() ? barcodeOriginLabel(barcodeOrigin(barcode)) : undefined}
+            onGenerateBarcode={onGenerateBarcode && !localBarcode.trim() ? onGenerateBarcode : undefined}
+            generatingBarcode={generatingBarcode}
+            onPrintLabel={onPrintLabel}
           />
         </div>
       </div>
@@ -1746,6 +1823,10 @@ interface VariantFieldsProps {
   onCommit?: () => void
   stock?: number
   onAdjustStock?: () => void
+  barcodeOriginText?: string
+  onGenerateBarcode?: () => void
+  generatingBarcode?: boolean
+  onPrintLabel?: () => void
 }
 
 function VariantFields({
@@ -1762,6 +1843,10 @@ function VariantFields({
   onCommit,
   stock,
   onAdjustStock,
+  barcodeOriginText,
+  onGenerateBarcode,
+  generatingBarcode = false,
+  onPrintLabel,
 }: VariantFieldsProps) {
   const commitOnEnter = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Enter") {
@@ -1827,7 +1912,7 @@ function VariantFields({
         <input
           type="text"
           value={barcode}
-          placeholder="Opcional"
+          placeholder="Escaneá el código del fabricante"
           maxLength={64}
           disabled={disabled}
           onChange={(event) => onBarcodeChange(event.target.value)}
@@ -1835,6 +1920,31 @@ function VariantFields({
           className={`${inputCls} !h-10 !text-sm`}
         />
       </label>
+
+      {(barcodeOriginText || onGenerateBarcode || onPrintLabel) && (
+        <div className={fieldClassName}>
+          <span className={fieldLabelClassName}>{twoColumn ? "" : "Origen"}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className={`text-xs font-bold ${barcodeOriginText ? "text-white" : "text-amber-300"}`}>
+              {barcodeOriginText ?? "Código pendiente"}
+            </span>
+            {onGenerateBarcode && (
+              <AdminSecondaryButton size="sm" onClick={onGenerateBarcode} disabled={disabled || generatingBarcode}>
+                {generatingBarcode
+                  ? <Loader2 className="size-3.5 animate-spin text-white" />
+                  : <Barcode className="size-3.5 text-white" />}
+                Generar código BEYONIX
+              </AdminSecondaryButton>
+            )}
+            {onPrintLabel && (
+              <AdminSecondaryButton size="sm" onClick={onPrintLabel} disabled={disabled}>
+                <Printer className="size-3.5 text-white" />
+                Imprimir etiqueta
+              </AdminSecondaryButton>
+            )}
+          </div>
+        </div>
+      )}
 
       {!twoColumn && onAdjustStock && (
         <div className={fieldClassName}>

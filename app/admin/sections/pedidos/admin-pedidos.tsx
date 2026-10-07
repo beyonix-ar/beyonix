@@ -5,6 +5,7 @@ import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
 import { OrderReplacements } from "./order-replacements"
 import { OrderDispatchStatus } from "./order-dispatch-status"
+import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
 import { FinancialResolutionWizard, useFinancialResolutionView } from "./financial-resolution-wizard"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import { shareUnchanged } from "@/lib/admin/structural-sharing"
@@ -34,6 +35,7 @@ import {
   MapPin,
   MessageCircle,
   Package,
+  PackageCheck,
   Pencil,
   Printer,
   RefreshCw,
@@ -203,6 +205,7 @@ type AdminOrderDetailView =
   | "resumen"
   | "pago"
   | "envio"
+  | "armado"
   | "facturacion"
   | "atencion"
   | "cancelacion"
@@ -261,6 +264,7 @@ const ADMIN_ORDER_DETAIL_VIEWS: AdminOrderDetailView[] = [
   "resumen",
   "pago",
   "envio",
+  "armado",
   "facturacion",
   "atencion",
   "cancelacion",
@@ -738,7 +742,7 @@ type AdminOrderTabBadgeState = {
 
 type AdminOrderTabBadgeKey = Exclude<
   AdminOrderDetailView,
-  "resumen" | "historial"
+  "resumen" | "historial" | "armado"
 >
 
 function getAdminOrderTabState(
@@ -861,7 +865,7 @@ const RECOMMENDED_ACTION_DESCRIPTIONS: Record<AdminPendingOrderActionKind, strin
   invoice: "La factura no se emite automáticamente.",
   claim: "Hay una gestión del cliente que requiere respuesta.",
   return: "Revisá el producto devuelto y definí su destino.",
-  dispatch_blocked: "El pedido está en una tanda y no puede despacharse.",
+  dispatch_blocked: "El pedido está en un lote de envío y no puede despacharse.",
   dispatch_prepare: "El pedido está facturado y listo para preparar.",
   shipping: "El pedido está facturado y listo para enviar.",
 }
@@ -4456,6 +4460,10 @@ function PedidoDetailModal({
       }),
     [pedido, pendingClaim, showPaymentProofIndicator],
   )
+  // El armado reutiliza el motor de Despachos, que sólo opera envíos Andreani.
+  const usesAndreaniDispatch = (pedido.shipping_provider || pedido.envio_proveedor || "")
+    .toLowerCase()
+    .includes("andreani")
   const detailTabs = useMemo(
     () => [
       {
@@ -4472,13 +4480,16 @@ function PedidoDetailModal({
       { view: "pago" as const, label: "Pago", icon: CreditCard, badge: tabState.badges.pago },
       { view: "facturacion" as const, label: "Facturación", icon: FileText, badge: tabState.badges.facturacion },
       { view: "envio" as const, label: "Envío", icon: Truck, badge: tabState.badges.envio },
+      ...(usesAndreaniDispatch
+        ? [{ view: "armado" as const, label: "Armar pedido", icon: PackageCheck, badge: null }]
+        : []),
       { view: "atencion" as const, label: "Atención al cliente", icon: MessageCircle, badge: tabState.badges.atencion },
       ...(tabState.visible.cancelacion
         ? [{ view: "cancelacion" as const, label: "Cancelación", icon: X, badge: tabState.badges.cancelacion }]
         : []),
       { view: "historial" as const, label: "Historial", icon: Clock3, badge: null },
     ].filter((tab) => capabilities.canManageFinancials || !["pago", "facturacion", "cancelacion"].includes(tab.view)),
-    [showOrderSummaryIndicator, tabState, capabilities.canManageFinancials],
+    [showOrderSummaryIndicator, tabState, capabilities.canManageFinancials, usesAndreaniDispatch],
   )
   const paymentStatusValue =
     pedido.payment_status === "confirmado" || pedido.payment_status === "approved"
@@ -5304,6 +5315,12 @@ function PedidoDetailModal({
             <OrderTimeline pedido={pedido} />
           )}
 
+          {activeView === "armado" && (
+            <section className="admin-order-shipping-card mt-3 rounded-lg border p-3 sm:p-4">
+              <OrderPreparationPanel orderId={pedido.id} />
+            </section>
+          )}
+
           {(activeView === "resumen" || activeView === "envio") && (
             <>
            {activeView === "resumen" && (
@@ -5447,7 +5464,7 @@ function PedidoDetailModal({
 
           {activeView === "envio" && (
           <div className="admin-order-shipping-refined mt-3 space-y-2.5">
-            <OrderDispatchStatus orderId={pedido.id} />
+            <OrderDispatchStatus orderId={pedido.id} onOpenArmado={usesAndreaniDispatch ? () => showDetailView("armado") : undefined} />
             <section className="admin-order-shipping-card admin-order-shipping-overview rounded-lg border p-3">
               <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">

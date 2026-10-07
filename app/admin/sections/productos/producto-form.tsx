@@ -265,6 +265,7 @@ export function ProductoForm({
           sku: variant.sku ?? null,
           colorHex: variant.color_hex,
           images: variant.imagenes ?? [],
+          barcode: variant.codigo_barra ?? null,
           assignedStock: variant.stock ?? 0,
         }))
       : draftVariants.map((variant, index) => ({
@@ -275,6 +276,7 @@ export function ProductoForm({
           sku: index === 0 ? form.sku : variant.sku,
           colorHex: variant.color_hex,
           images: variant.imagenes,
+          barcode: null,
           assignedStock: 0,
         }))
     const primaryVariant = [...sourceVariants].sort((left, right) => {

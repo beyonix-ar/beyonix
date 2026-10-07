@@ -299,6 +299,14 @@ export async function updateProductoVariante(
   return result.variant
 }
 
+export async function generateProductoVarianteBarcode(productId: number, id: number) {
+  const result = await variantRequest<{
+    variant: SupabaseProductoVariante
+  }>(`/api/admin/products/${productId}/variants/${id}/barcode`, { method: "POST" })
+
+  return result.variant
+}
+
 export async function setProductoVarianteActivo(
   productId: number,
   variantId: number,

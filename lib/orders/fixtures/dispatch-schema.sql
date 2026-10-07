@@ -27,11 +27,16 @@ create table public.ordenes (
   andreani_tracking_event_at timestamptz,
   tracking_number text
 );
-create table public.productos (id bigint primary key, sku text, codigo_barra text);
+create table public.productos (id bigint primary key, sku text, codigo_barra text, nombre text);
 create table public.producto_variantes (
   id bigint primary key, producto_id bigint references public.productos(id),
   sku text, codigo_barra text
 );
+create table public.catalog_sku_registry (
+  normalized_sku text primary key, product_id bigint, variant_id bigint
+);
+create function public.is_current_user_internal() returns boolean
+language sql stable as $$ select false $$;
 create table public.orden_items (
   id bigint primary key,
   orden_id bigint references public.ordenes(id),
@@ -64,5 +69,3 @@ create table public.order_audit_events (
 );
 create function public.normalized_catalog_sku(p_value text) returns text
 language sql immutable as $$ select nullif(upper(btrim(p_value)), '') $$;
-create function public.normalized_catalog_barcode(p_value text) returns text
-language sql immutable as $$ select nullif(btrim(p_value), '') $$;

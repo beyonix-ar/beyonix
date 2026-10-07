@@ -14,6 +14,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  Barcode,
   Boxes,
   Check,
   ChevronDown,
@@ -21,6 +22,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  ScanLine,
   Search,
   Trash2,
   WalletCards,
@@ -40,6 +42,12 @@ import {
   uniqueAutocompleteValues,
   withoutTrailingProductColor,
 } from "@/lib/admin/product-name-autocomplete"
+import { findCatalogArticleByCode } from "@/lib/barcodes/catalog-lookup"
+import {
+  barcodeOrigin,
+  barcodeOriginLabel,
+  isReservedProductBarcode,
+} from "@/lib/barcodes/codes"
 import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
@@ -590,6 +598,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const [newArticleColor, setNewArticleColor] = useState("")
   const [newArticleColorName, setNewArticleColorName] = useState("")
   const [newArticleBarcode, setNewArticleBarcode] = useState("")
+  const [generateArticleBarcode, setGenerateArticleBarcode] = useState(false)
+  const [scanCode, setScanCode] = useState("")
+  const [scanResult, setScanResult] = useState<
+    { found: boolean; message: string; unknownCode?: string } | null
+  >(null)
   const [productSku, setProductSku] = useState("")
   const [purchaseDate, setPurchaseDate] = useState(today)
   const [quantity, setQuantity] = useState("")
@@ -914,6 +927,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setNewArticleColor("")
     setNewArticleColorName("")
     setNewArticleBarcode("")
+    setGenerateArticleBarcode(false)
+    setScanResult(null)
     setProductSku("")
     setPurchaseDate(today())
     setQuantity("")
@@ -927,6 +942,80 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setProductDocumentNumber("")
     setProductPaymentMethod("")
     setProductNotes("")
+  }
+
+  // Elegir un artículo (selector o escaneo) completa sólo su identidad: nombre,
+  // SKU, variante, color y código. Cantidad, costos, proveedor, comprobante,
+  // fecha y notas quedan como los cargó el operador.
+  const selectArticle = (value: string) => {
+    setArticle(value)
+    setGenerateArticleBarcode(false)
+    if (value === "custom") {
+      setCustomArticleName(latestArticleBase.toUpperCase())
+    } else {
+      setCustomArticleName("")
+    }
+    const selectedProduct = data?.catalog.find((product) =>
+      value ===
+        (product.standalone_key
+          ? `c:${product.standalone_key}`
+          : `p:${product.id}`) ||
+      (!product.standalone_key &&
+        value.startsWith(`v:${product.id}:`)),
+    )
+    const selectedVariant =
+      selectedProduct?.producto_variantes?.find(
+        (variant) =>
+          value === `v:${selectedProduct.id}:${variant.id}`,
+      )
+    setProductSku(
+      (selectedVariant
+        ? selectedVariant.sku
+        : selectedProduct?.sku
+      )?.toUpperCase() ?? "",
+    )
+    if (value === "custom" || selectedProduct?.standalone_key) {
+      setNewArticleColor("")
+      setNewArticleColorName("")
+      setNewArticleBarcode("")
+    } else {
+      setNewArticleColor(selectedVariant?.color_hex ?? "")
+      setNewArticleColorName(
+        selectedVariant ? selectedVariant.nombre.toUpperCase() : "",
+      )
+      setNewArticleBarcode(
+        (selectedVariant
+          ? selectedVariant.codigo_barra
+          : selectedProduct?.codigo_barra) ?? "",
+      )
+    }
+  }
+
+  const handleCatalogScan = () => {
+    const code = scanCode.trim()
+    if (!code) return
+    if (isReservedProductBarcode(code)) {
+      setScanResult({ found: false, message: "Ese código es de un bulto o lote de envío, no de un artículo." })
+      return
+    }
+    const match = findCatalogArticleByCode(data?.catalog ?? [], code)
+    if (!match) {
+      setScanResult({ found: false, message: "Código no reconocido.", unknownCode: code })
+      return
+    }
+    selectArticle(match.value)
+    setScanCode("")
+    setScanResult({
+      found: true,
+      message: `✓ ${[match.productName, match.variantName].filter(Boolean).join(" · ")}`,
+    })
+  }
+
+  const createArticleWithCode = (code: string) => {
+    selectArticle("custom")
+    setNewArticleBarcode(code)
+    setScanCode("")
+    setScanResult(null)
   }
 
   const editProduct = (item: ProductCostEntry) => {
@@ -993,6 +1082,19 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       })
     })
   }
+
+  const persistedArticleBarcode = (() => {
+    const [kind, productKey, variantKey] = article.split(":")
+    const product = data?.catalog.find(
+      (item) => !item.standalone_key && String(item.id) === productKey,
+    )
+    if (kind === "v") {
+      return product?.producto_variantes?.find((variant) => String(variant.id) === variantKey)?.codigo_barra?.trim() || null
+    }
+    return kind === "p" && !product?.producto_variantes?.length
+      ? product?.codigo_barra?.trim() || null
+      : null
+  })()
 
   const saveProduct = async () => {
     const isNewArticle = article === "custom"
@@ -1064,7 +1166,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
           sku: productSku,
           colorHex: newArticleColorHex || null,
           colorName: newArticleColorNameValue || null,
-          barcode: newArticleBarcodeValue || null,
+          barcode: persistedArticleBarcode || generateArticleBarcode ? null : newArticleBarcodeValue || null,
+          generateBarcode: !persistedArticleBarcode && generateArticleBarcode,
         }
         const attempt = getOrCreateIdempotencyAttempt(
           newArticleCreateAttemptRef.current,
@@ -1075,6 +1178,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         newArticleCreateAttemptRef.current = null
         productId = String(created.productId)
         variantId = created.variantId != null ? String(created.variantId) : null
+        // Si la compra falla después, el reintento usa el artículo ya creado
+        // en vez de intentar crearlo de nuevo.
+        if (isNewArticle) {
+          setArticle(variantId ? `v:${productId}:${variantId}` : `p:${productId}`)
+          setGenerateArticleBarcode(false)
+          setNewArticleBarcode("")
+        }
       }
 
       const payload = {
@@ -1324,53 +1434,42 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               {editingProductId ? <Pencil className="size-4 text-beyonix-sky" /> : <Plus className="size-4 text-beyonix-sky" />}
               <h3 className="text-base font-black text-white">{editingProductId ? "Editar compra" : "Nueva compra"}</h3>
             </div>
+            {!editingProductId && (
+              <form
+                className="mb-3 flex flex-col gap-2 rounded-xl border border-beyonix-sky/25 bg-black/20 p-2.5 sm:flex-row sm:items-center"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  handleCatalogScan()
+                }}
+              >
+                <label className="relative block min-w-0 flex-1">
+                  <ScanLine className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-beyonix-sky" />
+                  <input
+                    value={scanCode}
+                    onChange={(event) => { setScanCode(event.target.value); setScanResult(null) }}
+                    aria-label="Escanear o escribir código de barra o SKU"
+                    placeholder="Escaneá o escribí el código de barra / SKU"
+                    maxLength={128}
+                    className={`${inputClass} pl-9`}
+                  />
+                </label>
+                <button type="submit" disabled={!scanCode.trim()} className="inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/38 px-4 text-sm font-black text-white transition hover:border-beyonix-sky/60 disabled:cursor-not-allowed disabled:opacity-50">Buscar</button>
+                {scanResult && (
+                  <p role="status" className={`text-xs font-bold sm:max-w-xs ${scanResult.found ? "text-emerald-300" : "text-amber-300"}`}>
+                    {scanResult.message}
+                    {scanResult.unknownCode && (
+                      <button type="button" onClick={() => createArticleWithCode(scanResult.unknownCode ?? "")} className="ml-2 cursor-pointer underline">Crear artículo con este código</button>
+                    )}
+                  </p>
+                )}
+              </form>
+            )}
             <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-5">
               <Field label="Artículo" className="xl:col-span-2">
                 <ProductSelect
                   value={article}
                   products={data?.catalog ?? []}
-                  onChange={(value) => {
-                    setArticle(value)
-                    if (value === "custom") {
-                      setCustomArticleName(latestArticleBase.toUpperCase())
-                    } else {
-                      setCustomArticleName("")
-                    }
-                    const selectedProduct = data?.catalog.find((product) =>
-                      value ===
-                        (product.standalone_key
-                          ? `c:${product.standalone_key}`
-                          : `p:${product.id}`) ||
-                      (!product.standalone_key &&
-                        value.startsWith(`v:${product.id}:`)),
-                    )
-                    const selectedVariant =
-                      selectedProduct?.producto_variantes?.find(
-                        (variant) =>
-                          value === `v:${selectedProduct.id}:${variant.id}`,
-                      )
-                    setProductSku(
-                      (selectedVariant
-                        ? selectedVariant.sku
-                        : selectedProduct?.sku
-                      )?.toUpperCase() ?? "",
-                    )
-                    if (value === "custom" || selectedProduct?.standalone_key) {
-                      setNewArticleColor("")
-                      setNewArticleColorName("")
-                      setNewArticleBarcode("")
-                    } else {
-                      setNewArticleColor(selectedVariant?.color_hex ?? "")
-                      setNewArticleColorName(
-                        selectedVariant ? selectedVariant.nombre.toUpperCase() : "",
-                      )
-                      setNewArticleBarcode(
-                        (selectedVariant
-                          ? selectedVariant.codigo_barra
-                          : selectedProduct?.codigo_barra) ?? "",
-                      )
-                    }
-                  }}
+                  onChange={selectArticle}
                 />
               </Field>
               {article === "custom" && (
@@ -1395,14 +1494,33 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                       onColorNameChange={(value) => setNewArticleColorName(value.toUpperCase())}
                     />
                   </Field>
-                  <Field label="Código de barra (opcional)">
-                    <input
-                      value={newArticleBarcode}
-                      onChange={(event) => setNewArticleBarcode(event.target.value)}
-                      className={inputClass}
-                      placeholder="Escaneá o escribí el código"
-                      maxLength={64}
-                    />
+                  <Field label="Código de barra">
+                    {persistedArticleBarcode ? (
+                      <div className={`${inputClass} flex items-center justify-between gap-2`} title="El código se edita desde Productos">
+                        <span className="truncate font-mono">{persistedArticleBarcode}</span>
+                        <span className="shrink-0 text-10px font-black uppercase tracking-widest text-white/50">{barcodeOriginLabel(barcodeOrigin(persistedArticleBarcode))}</span>
+                      </div>
+                    ) : generateArticleBarcode ? (
+                      <div className={`${inputClass} flex items-center justify-between gap-2`}>
+                        <span className="truncate text-beyonix-sky">Se generará un código BEYONIX</span>
+                        <button type="button" onClick={() => setGenerateArticleBarcode(false)} className="shrink-0 cursor-pointer text-11px font-black text-white/60 hover:text-white">Cancelar</button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-1.5">
+                        <input
+                          value={newArticleBarcode}
+                          onChange={(event) => setNewArticleBarcode(event.target.value)}
+                          className={`${inputClass} min-w-0 flex-1`}
+                          placeholder="Escaneá el código del fabricante"
+                          maxLength={64}
+                        />
+                        {(!article.startsWith("p:") || Boolean(newArticleColor)) && !newArticleBarcode.trim() && (
+                          <button type="button" title="Generar código BEYONIX" onClick={() => setGenerateArticleBarcode(true)} className="inline-flex h-10 shrink-0 cursor-pointer items-center gap-1 rounded-xl border border-beyonix-sky/35 bg-beyonix-blue/30 px-2.5 text-11px font-black text-white transition hover:border-beyonix-sky/60">
+                            <Barcode className="size-3.5" /> BEYONIX
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </Field>
                 </>
               )}

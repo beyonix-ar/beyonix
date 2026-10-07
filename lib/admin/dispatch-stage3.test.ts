@@ -1,27 +1,18 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { dispatchError, orderCode, parseOrderCode, resolveScanLine, type DispatchLine } from "./dispatch.ts"
+import { dispatchError, orderCode, parseOrderCode } from "./dispatch.ts"
 import { renderDispatchBarcode } from "./dispatch-barcode.ts"
 
-const lines: DispatchLine[] = [
-  { order_item_id: 1, expected_sku: "TRIPODE-NEGRO", expected_barcode: "779001", expected_quantity: 2, scanned_quantity: 1, product_id: 7, variant_id: 10, conditioned_stock_id: null },
-  { order_item_id: 2, expected_sku: "TRIPODE-BLANCO", expected_barcode: "779002", expected_quantity: 1, scanned_quantity: 0, product_id: 7, variant_id: 11, conditioned_stock_id: null },
-]
-
-test("escaneo desde un solo campo distingue SKU, barcode, variante y exceso", () => {
-  assert.equal(resolveScanLine(lines, "tripode-negro")?.order_item_id, 1)
-  assert.equal(resolveScanLine(lines, "779002")?.order_item_id, 2)
-  assert.equal(resolveScanLine(lines, "779003"), null)
-  assert.equal(resolveScanLine(lines, "TRIPODE") , null)
-  assert.equal(resolveScanLine([{ ...lines[0], scanned_quantity: 2 }], "779001")?.order_item_id, 1)
-  assert.match(dispatchError({ message: "DISPATCH_QUANTITY_EXCEEDED" }), /cantidad requerida/)
+// La resolución de la línea escaneada vive en scan_order_preparation_code
+// (lib/orders/dispatch-db.test.ts); acá se validan los mensajes visibles.
+test("mensajes de armado y lote", () => {
+  assert.match(dispatchError({ message: "DISPATCH_QUANTITY_EXCEEDED" }), /Cantidad requerida ya completada/)
+  assert.match(dispatchError({ message: "DISPATCH_WRONG_SKU_OR_VARIANT" }), /Este producto no pertenece al pedido/)
+  assert.match(dispatchError({ message: "DISPATCH_CODE_UNKNOWN" }), /Código no reconocido/)
+  assert.equal(dispatchError({ message: "DISPATCH_PARCELS_MISSING", details: "50" }), "BX-1050: Faltan escanear bultos del pedido.")
+  assert.equal(dispatchError({ message: "DISPATCH_PARCEL_OTHER_BATCH", details: "DSP-20261007-002" }), "Este bulto pertenece al lote DSP-20261007-002.")
   assert.match(dispatchError({ message: "DISPATCH_ORDER_BLOCKED" }), /requiere revisión/)
-})
-
-test("un SKU repetido se asigna a la primera línea incompleta", () => {
-  const sameCode = [{ ...lines[0], scanned_quantity: 2 }, { ...lines[1], expected_sku: "TRIPODE-NEGRO" }]
-  assert.equal(resolveScanLine(sameCode, "tripode-negro")?.order_item_id, 2)
 })
 
 test("pedido BX y barcode Code 128 conservan identificadores exactos", () => {

@@ -12,6 +12,7 @@ export interface ProductActivationVariant {
   sku: string | null
   colorHex: string
   images: readonly string[] | readonly File[]
+  barcode: string | null
   assignedStock: number
 }
 
@@ -95,6 +96,10 @@ export function getVariantActivationError(
   }
   if (variant.images.length === 0) {
     return `${subject} necesita al menos una imagen.`
+  }
+  // Mismo orden que product_variant_listing_error (20261007100000).
+  if (!variant.barcode?.trim()) {
+    return `${subject} necesita un código de barra (de fabricante o BEYONIX).`
   }
   if (!positiveFinite(variant.assignedStock)) {
     return `${subject} necesita stock asignado.`

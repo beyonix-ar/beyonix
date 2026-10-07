@@ -31,6 +31,7 @@ function completeProduct(
         sku: "AP-NEGRO",
         colorHex: "#000000",
         images: ["https://example.com/negro.webp"],
+        barcode: "7790001000017",
         assignedStock: 5,
       },
     ],
@@ -95,6 +96,11 @@ test("una variante activa debe estar completa", () => {
   const variant = completeProduct().variants[0]!
   assert.equal(getVariantActivationError({ ...variant, sku: null }), "La variante necesita un SKU.")
   assert.equal(getVariantActivationError({ ...variant, colorHex: "" }), "La variante necesita un color.")
+  assert.equal(
+    getVariantActivationError({ ...variant, barcode: " " }),
+    "La variante necesita un código de barra (de fabricante o BEYONIX).",
+  )
+  assert.equal(getVariantActivationError({ ...variant, barcode: "BX-AUR-000001" }), null)
   assert.equal(getVariantActivationError(variant), null)
 })
 

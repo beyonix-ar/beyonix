@@ -13,6 +13,7 @@ import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { ForceDeleteDialog } from "../../components/force-delete-dialog"
 
 import {
+  Barcode,
   Check,
   ChevronDown,
   ChevronRight,
@@ -21,6 +22,7 @@ import {
   ImageIcon,
   Merge,
   Pencil,
+  Printer,
   SlidersHorizontal,
   Trash2,
   X,
@@ -48,10 +50,13 @@ import {
 
 import {
   deleteProductoVariante,
+  generateProductoVarianteBarcode,
   reorderProductoVariantes,
   setProductoVarianteActivo,
   updateProductoVariante,
 } from "@/lib/supabase/queries/producto-variantes"
+import { barcodeOrigin, barcodeOriginLabel } from "@/lib/barcodes/codes"
+import { LabelPrintDialog } from "../../components/label-print-dialog"
 
 import {
   deleteConditionedStock,
@@ -213,6 +218,8 @@ export function ProductosRow({
   const [editBarcode, setEditBarcode] =
     useState("")
   const [pendingBarcodeConfirm, setPendingBarcodeConfirm] =
+    useState<SupabaseProductoVariante | null>(null)
+  const [labelVariant, setLabelVariant] =
     useState<SupabaseProductoVariante | null>(null)
 
   const [localVariantes, setLocalVariantes] =
@@ -536,6 +543,24 @@ export function ProductosRow({
         error instanceof Error
           ? error.message
           : "No se pudo actualizar la variante.",
+      )
+    } finally {
+      setSavingVariantId(null)
+    }
+  }
+
+  const generateVariantBarcode = async (variante: SupabaseProductoVariante) => {
+    if (savingVariantId != null) return
+    try {
+      setSavingVariantId(variante.id)
+      setVariantError("")
+      const updated = await generateProductoVarianteBarcode(producto.id, variante.id)
+      setLocalVariantes((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+    } catch (error) {
+      setVariantError(
+        error instanceof Error ? error.message : "No se pudo generar el código BEYONIX.",
       )
     } finally {
       setSavingVariantId(null)
@@ -1015,7 +1040,12 @@ export function ProductosRow({
                       image={firstUsableImage(variante.imagenes, productImage)}
                       imageCount={variante.imagenes?.length ?? 0}
                       name={producto.nombre}
-                      subtitle={isPrincipal ? "Variante principal" : undefined}
+                      subtitle={[
+                        isPrincipal ? "Variante principal" : null,
+                        variante.codigo_barra?.trim()
+                          ? `${variante.codigo_barra.trim()} · ${barcodeOriginLabel(barcodeOrigin(variante.codigo_barra))}`
+                          : "Código pendiente",
+                      ].filter(Boolean).join(" · ")}
                       sku={variante.sku}
                       colorHex={variante.color_hex}
                       colorLabel={getColorName(variante.color_hex, variante.nombre)}
@@ -1082,6 +1112,19 @@ export function ProductosRow({
                                 icon: <SlidersHorizontal className="size-3.5" />,
                                 onSelect: () => openStockAdjustment(variante),
                               },
+                              variante.codigo_barra?.trim()
+                                ? {
+                                    key: "imprimir-etiqueta",
+                                    label: "Imprimir etiqueta",
+                                    icon: <Printer className="size-3.5" />,
+                                    onSelect: () => setLabelVariant(variante),
+                                  }
+                                : {
+                                    key: "generar-codigo",
+                                    label: "Generar código BEYONIX",
+                                    icon: <Barcode className="size-3.5" />,
+                                    onSelect: () => void generateVariantBarcode(variante),
+                                  },
                               { key: "divider-eliminar", divider: true },
                               {
                                 key: "eliminar",
@@ -1386,6 +1429,20 @@ export function ProductosRow({
         )}
 
       {stockAdjustmentModal}
+      <LabelPrintDialog
+        open={labelVariant != null}
+        title="Imprimir etiqueta"
+        description={labelVariant ? `${producto.nombre} · ${labelVariant.codigo_barra ?? ""}` : undefined}
+        allowCopies
+        labels={labelVariant?.codigo_barra ? [{
+          kind: "product",
+          code: labelVariant.codigo_barra.trim(),
+          name: producto.nombre,
+          variant: getColorName(labelVariant.color_hex, labelVariant.nombre),
+          sku: labelVariant.sku,
+        }] : []}
+        onClose={() => setLabelVariant(null)}
+      />
 
       {pendingBarcodeConfirm &&
         createPortal(

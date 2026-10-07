@@ -1,6 +1,7 @@
-import bwipjs from "bwip-js/node"
+import { BATCH_CODE } from "../barcodes/codes.ts"
+import { renderCode128Svg } from "../barcodes/render.ts"
 
 export function renderDispatchBarcode(code: string) {
-  if (!/^DSP-\d{8}-\d{3,}$/.test(code)) throw new Error("Código de tanda inválido.")
-  return bwipjs.toSVG({ bcid: "code128", text: code, scale: 3, height: 18, includetext: false, backgroundcolor: "FFFFFF" })
+  if (!BATCH_CODE.test(code)) throw new Error("Código de lote inválido.")
+  return renderCode128Svg(code, { height: 18 })
 }
