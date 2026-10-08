@@ -15,6 +15,7 @@ import { getFinancedPrice, type InterestFreeLookup } from "./financed-pricing.ts
 import {
   buildPublicInterestFreeOffer,
   getInterestFreeMessage,
+  getProductInterestFreeMessage,
   INTEREST_FREE_OFFER_MAX_AGE_MS,
 } from "./interest-free-communication.ts"
 import {
@@ -259,19 +260,59 @@ for (const [label, minimums, expected] of [
   })
 }
 
-test("mismo texto global en Home, categorías, tarjetas, ficha, carrito y checkout: nunca depende del precio ni del total", () => {
+test("carrito y checkout: texto global (el total decide); ficha, modal, tarjeta y hero: por producto", () => {
   const offer = buildPublicInterestFreeOffer(ok(reference()), DEFAULT_INTEREST_FREE_POLICY, NOW)
   assert.equal(getInterestFreeMessage.length, 1, "no recibe monto")
   assert.equal(text(offer), "Hasta 6 cuotas sin interés a partir de $ 73.000")
   for (const [path, call] of [
-    ["components/hero-section.tsx", /getInterestFreeMessage\(interestFreeOffer\)/],
-    ["components/products/shared/shared-product-card.tsx", /getInterestFreeMessage\(interestFreeOffer\)/],
-    ["components/products/product-details-panel.tsx", /getInterestFreeMessage\(interestFreeOffer\)/],
+    ["components/hero-section.tsx", /getProductInterestFreeMessage\(interestFreeOffer, finalPrice, installmentsFinancing\)/],
+    ["components/products/shared/shared-product-card.tsx", /getProductInterestFreeMessage\(\s*interestFreeOffer,\s*defaultVariant\.price,/],
+    ["components/products/product-details-panel.tsx", /getProductInterestFreeMessage\(interestFreeOffer, cashPrice, installmentsFinancing\)/],
     ["components/cart/cart-summary.tsx", /getInterestFreeMessage\(siteSettings\.interestFreeOffer\)/],
     ["app/checkout/page.tsx", /getInterestFreeMessage\(siteSettings\.interestFreeOffer\)/],
   ] as const) {
     assert.match(read(path), call, path)
   }
+})
+
+// ─── Cuotas por producto (ficha/modal/tarjeta) ───
+
+const productText = (offer: ReturnType<typeof buildPublicInterestFreeOffer>, cashPrice: number) =>
+  getProductInterestFreeMessage(offer, cashPrice, SETTINGS.installmentsFinancing)?.text.replace(/ /g, " ") ?? null
+
+test("producto debajo del mínimo: no se muestra \"Hasta 6 cuotas… a partir de $60.000\" ni ningún plan", () => {
+  const offer = buildPublicInterestFreeOffer(
+    ok(reference({ minimumAmountByCount: { 2: 60_000, 3: 60_000, 6: 60_000 } })),
+    DEFAULT_INTEREST_FREE_POLICY,
+    NOW,
+  )
+  assert.equal(productText(offer, 10_000), null)
+})
+
+test("producto que alcanza el mínimo: \"Hasta 6 cuotas sin interés\" (sin \"a partir de\")", () => {
+  const offer = buildPublicInterestFreeOffer(
+    ok(reference({ minimumAmountByCount: { 2: 60_000, 3: 60_000, 6: 60_000 } })),
+    DEFAULT_INTEREST_FREE_POLICY,
+    NOW,
+  )
+  assert.equal(productText(offer, 70_000), "Hasta 6 cuotas sin interés")
+})
+
+test("cuotas desactivadas o sin oferta vigente: el bloque no se muestra", () => {
+  assert.equal(buildPublicInterestFreeOffer(ok(reference()), { enabled: false }, NOW), null)
+  assert.equal(productText(null, 500_000), null)
+})
+
+test("se usa el precio financiado de Mercado Pago, no el de contado ni el de transferencia", () => {
+  // Contado $70.000 < mínimo de 6 cuotas ($73.000), pero su precio en 6
+  // cuotas (gross-up del costo de Mercado Pago) sí lo alcanza.
+  const offer = buildPublicInterestFreeOffer(ok(reference()), DEFAULT_INTEREST_FREE_POLICY, NOW)
+  const financed = getFinancedPrice(70_000, 6, SETTINGS.installmentsFinancing)!
+  assert.ok(financed >= 73_000)
+  assert.equal(productText(offer, 70_000), "Hasta 6 cuotas sin interés")
+  // Producto chico: alcanza 2 cuotas pero no 3 ni 6 -> se comunica sólo lo que cumple.
+  assert.equal(productText(offer, 36_000), "Hasta 2 cuotas sin interés")
+  assert.equal(productText(offer, 20_000), null)
 })
 
 test("marcas: si la cuota máxima sólo aplica a Visa lo dice; nunca se comunica como universal", () => {

@@ -4,11 +4,13 @@ import Image from "next/image"
 
 import { productColors } from "@/lib/product-colors"
 import { FALLBACK_PRODUCT_IMAGE } from "@/lib/products/product-variants"
+import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 
 interface ColorOption {
   name: string
   value: string
   colorHex?: string | null
+  secondaryColorHex?: string | null
   image?: string | null
 }
 
@@ -138,9 +140,7 @@ export function ColorSelector({
           >
             <span
               style={{
-                backgroundColor:
-                  color.colorHex ??
-                  undefined,
+                ...variantSwatchStyle(color.colorHex, color.secondaryColorHex),
                 boxShadow:
                   "inset 0 0 0 1.5px rgba(255,255,255,0.2)",
               }}

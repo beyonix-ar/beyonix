@@ -42,7 +42,7 @@ test("B/D. ningún componente de cara al cliente dice 'sin recargo' ni 'Mismo pr
   assert.deepEqual(offenders, [])
 })
 
-test("PDP/modal (product-purchase-box.tsx): una sola línea con la regla global de cuotas, sin planes por producto", () => {
+test("PDP/modal (product-purchase-box.tsx): una sola línea de cuotas, sin tabla de planes", () => {
   const source = readSource("./product-purchase-box.tsx")
   assert.match(source, /\{interestFreeText && \(/)
   assert.doesNotMatch(source, /maxInstallmentPlan|installmentPlans|Ver opciones de financiación|installmentsWithoutSurcharge/)
@@ -61,14 +61,14 @@ test("PDP se sirve a través de product-details-panel.tsx en la página de produ
 
 // La tarjeta de catálogo real es shared-product-card (categorías, productos,
 // home y favoritos); category-product-card.tsx no se renderizaba desde 6e2d4f8.
-test("tarjeta de catálogo (shared-product-card) y hero usan el texto global, nunca una oferta del producto", () => {
+test("tarjeta de catálogo (shared-product-card) y hero: cuotas sólo si el precio del producto alcanza el mínimo", () => {
   const sharedCard = readSource("./shared/shared-product-card.tsx")
   const hero = readSource("../hero-section.tsx")
-  // Mismo texto global para todos los productos: nunca depende de su precio.
-  assert.match(sharedCard, /getInterestFreeMessage\(interestFreeOffer\)/)
-  assert.match(hero, /getInterestFreeMessage\(interestFreeOffer\)/)
+  // Un producto debajo del mínimo de Mercado Pago no muestra "a partir de $X".
+  assert.match(sharedCard, /getProductInterestFreeMessage\(/)
+  assert.match(hero, /getProductInterestFreeMessage\(/)
   for (const source of [sharedCard, hero]) {
-    assert.doesNotMatch(source, /getProductInterestFreeOffer\(|getFinancedPrice\(|maxInstallmentAmount|featuredInstallmentAmount/)
+    assert.doesNotMatch(source, /getInterestFreeMessage\(|getProductInterestFreeOffer\(|maxInstallmentAmount|featuredInstallmentAmount/)
   }
 })
 

@@ -32,9 +32,14 @@ import { FinancingShortcutCard } from "./financing-shortcut-card"
 import {
   CustomerCreditSection,
   PricingSection,
+  ShippingQuoteSection,
   ShippingSection,
   StockSection,
 } from "./store-config-sections"
+import {
+  DEFAULT_SHIPPING_QUOTE_SETTINGS,
+  type ShippingQuoteSettings,
+} from "@/lib/shipping/shipping-quote-settings"
 
 interface AdminSettings {
   shipping: ShippingBonusSettings
@@ -47,6 +52,8 @@ interface AdminSettings {
 interface SettingsResponse {
   settings?: Partial<AdminSettings>
   mercadoPagoCosts?: MercadoPagoCostsOverview
+  /** Interno: nunca forma parte de la configuración pública. */
+  shippingQuote?: ShippingQuoteSettings
   error?: string
 }
 
@@ -55,11 +62,12 @@ interface SettingsPatch {
   customerCreditPayments?: CustomerCreditPaymentSettings
   stock?: StockSettings
   pricing?: PricingSettings
+  shippingQuote?: ShippingQuoteSettings
 }
 
-type SectionId = "stock" | "shipping" | "pricing" | "customerCredit"
+type SectionId = "stock" | "shipping" | "shippingQuote" | "pricing" | "customerCredit"
 
-const SECTION_IDS: SectionId[] = ["stock", "shipping", "pricing", "customerCredit"]
+const SECTION_IDS: SectionId[] = ["stock", "shipping", "shippingQuote", "pricing", "customerCredit"]
 
 const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   shipping: DEFAULT_SHIPPING_SETTINGS,
@@ -85,6 +93,7 @@ const SAVED_MESSAGE = "Guardado. Los textos y cálculos ya usan estos valores."
 export function AdminModificaciones() {
   const [settings, setSettings] = useState<AdminSettings>(DEFAULT_ADMIN_SETTINGS)
   const [mercadoPagoCosts, setMercadoPagoCosts] = useState<MercadoPagoCostsOverview | null>(null)
+  const [shippingQuote, setShippingQuote] = useState<ShippingQuoteSettings>(DEFAULT_SHIPPING_QUOTE_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState("")
@@ -95,6 +104,7 @@ export function AdminModificaciones() {
   const [versions, setVersions] = useState<Record<SectionId, number>>({
     stock: 0,
     shipping: 0,
+    shippingQuote: 0,
     pricing: 0,
     customerCredit: 0,
   })
@@ -109,6 +119,7 @@ export function AdminModificaciones() {
   const applyResponse = (data: SettingsResponse) => {
     setSettings(toAdminSettings(data.settings ?? {}))
     if (data.mercadoPagoCosts) setMercadoPagoCosts(data.mercadoPagoCosts)
+    if (data.shippingQuote) setShippingQuote(data.shippingQuote)
   }
 
   const loadSettings = async () => {
@@ -246,6 +257,12 @@ export function AdminModificaciones() {
             saved={settings.shipping}
             {...sectionProps("shipping")}
             onSave={(shipping) => void saveSection("shipping", { shipping })}
+          />
+          <ShippingQuoteSection
+            key={`shipping-quote-${versions.shippingQuote}`}
+            saved={shippingQuote}
+            {...sectionProps("shippingQuote")}
+            onSave={(next) => void saveSection("shippingQuote", { shippingQuote: next })}
           />
           <PricingSection
             key={`pricing-${versions.pricing}`}

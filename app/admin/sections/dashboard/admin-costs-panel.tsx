@@ -1055,6 +1055,15 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         setScanResult({ found: false, message: "Código no reconocido.", unknownCode: code })
         return
       }
+      // Código del grupo comercial (mismo código para todos los colores): no
+      // identifica la variante física; el stock entra a la que se elija.
+      if (match.requiresVariant) {
+        setScanResult({
+          found: false,
+          message: `Código del grupo «${match.product.nombre}»: elegí la variante física (color) que ingresa.`,
+        })
+        return
+      }
       const catalog = mergeCatalogMatch(data.catalog, match)
       if (catalog !== data.catalog) {
         setData((current) => current && { ...current, catalog: mergeCatalogMatch(current.catalog, match) })
@@ -1063,7 +1072,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       setScanCode((current) => (current.trim() === code ? "" : current))
       setScanResult({
         found: true,
-        message: `✓ ${[match.product.nombre, match.variant?.nombre].filter(Boolean).join(" · ")}`,
+        message: `✓ ${[match.product.nombre, match.variant?.nombre, match.product.venta_aleatoria ? "grupo aleatorio" : null].filter(Boolean).join(" · ")}`,
       })
     } catch (cause) {
       setScanResult({

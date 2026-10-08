@@ -1,4 +1,5 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
+import { sanitizeRichDescription } from "@/lib/products/rich-description"
 import {
   parseRequiredProductLogistics,
   ProductLogisticsValidationError,
@@ -88,6 +89,11 @@ export async function PATCH(
   // en product_pricing (tabla separada, admin-only). Se sacan del catalog
   // antes de mandarlo a la RPC y se procesan/persisten acá mismo.
   const catalogInput = { ...(body.catalog as Record<string, unknown>) }
+  // La descripción enriquecida se vuelve a sanear acá: el navegador no es
+  // fuente de verdad del marcado permitido.
+  if (typeof catalogInput.descripcion === "string") {
+    catalogInput.descripcion = sanitizeRichDescription(catalogInput.descripcion) || null
+  }
   const pricingMode = parsePricingMode(catalogInput.pricing_mode)
   const targetMarginPercent = parseTargetMarginPercent(catalogInput.target_margin_percent)
   delete catalogInput.pricing_mode

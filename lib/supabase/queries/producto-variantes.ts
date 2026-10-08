@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import type { BarcodeAlias } from "@/lib/barcodes/barcode-aliases"
 
 import type {
   SupabaseProductoVariante,
@@ -9,6 +10,7 @@ export interface ProductoVariantePayload {
   nombre: string
   sku?: string | null
   color_hex: string
+  color_hex_secundario?: string | null
   codigo_barra?: string | null
   stock?: number | null
   imagenes?: string[]
@@ -397,4 +399,34 @@ export async function reorderProductoVariantes(
   })
 
   return result.variants
+}
+
+export async function setProductoVentaAleatoria(productId: number, ventaAleatoria: boolean) {
+  const result = await variantRequest<{ ventaAleatoria: boolean }>(
+    `/api/admin/products/${productId}/fulfillment`,
+    { method: "PATCH", body: JSON.stringify({ ventaAleatoria }) },
+  )
+  return result.ventaAleatoria
+}
+
+export async function listBarcodeAliases(productId: number) {
+  const result = await variantRequest<{ aliases: BarcodeAlias[] }>(
+    `/api/admin/products/${productId}/barcode-aliases`,
+  )
+  return result.aliases
+}
+
+export async function addBarcodeAlias(productId: number, barcode: string, variantId: number | null) {
+  const result = await variantRequest<{ alias: BarcodeAlias }>(
+    `/api/admin/products/${productId}/barcode-aliases`,
+    { method: "POST", body: JSON.stringify({ barcode, variantId }) },
+  )
+  return result.alias
+}
+
+export async function removeBarcodeAlias(productId: number, barcode: string) {
+  await variantRequest<{ removed: string }>(
+    `/api/admin/products/${productId}/barcode-aliases?barcode=${encodeURIComponent(barcode)}`,
+    { method: "DELETE" },
+  )
 }

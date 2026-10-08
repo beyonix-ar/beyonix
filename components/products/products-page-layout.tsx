@@ -46,32 +46,7 @@ import {
 } from "@/lib/products/price-range"
 import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 import { SITE_SETTINGS } from "@/config/site-settings"
-
-const baseColorOrder = [
-  "negro",
-  "blanco",
-  "gris",
-  "azul",
-  "rojo",
-  "amarillo",
-  "verde",
-  "rosa",
-  "violeta",
-  "beige",
-]
-
-const baseColorKeywords: Record<string, string[]> = {
-  negro: ["negro", "black"],
-  blanco: ["blanco", "white"],
-  gris: ["gris", "plata", "silver", "titanio", "grafito"],
-  azul: ["azul", "celeste", "turquesa", "cyan", "sky", "lavanda"],
-  rojo: ["rojo", "bordo", "coral"],
-  amarillo: ["amarillo", "mostaza", "dorado"],
-  verde: ["verde", "oliva", "menta", "mint", "sage", "lima", "lime", "aqua"],
-  rosa: ["rosa", "fucsia", "salmon", "durazno", "terracota"],
-  violeta: ["violeta", "morado", "lila", "purple"],
-  beige: ["beige", "crema", "arena"],
-}
+import { BASE_COLOR_ORDER, variantBaseColors } from "@/lib/products/product-color-filters"
 
 interface StoreBanner {
   id: string
@@ -80,30 +55,18 @@ interface StoreBanner {
   sort_order?: number | null
 }
 
-function normalizeColorText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-}
-
+// Colores base de un producto: de sus variantes físicas activas (nombre y
+// cada color, incluido el segundo de una bicolor). Un producto aleatorio se
+// filtra por los colores reales que puede recibir el cliente.
 function getProductBaseColors(product: SupabaseProducto) {
   const colors = new Set<string>()
-
-  getProductVariantOptions(product).forEach((variant) => {
-    const text = normalizeColorText(`${variant.name} ${product.nombre}`)
-
-    baseColorOrder.forEach((baseColor) => {
-      if (
-        baseColorKeywords[baseColor].some((keyword) =>
-          text.includes(keyword)
-        )
-      ) {
-        colors.add(baseColor)
-      }
-    })
-  })
-
+  const activeVariants = (product.producto_variantes ?? []).filter((variant) => variant.activo !== false)
+  const sources = activeVariants.length
+    ? activeVariants.map((variant) => ({ name: variant.nombre, colorHex: variant.color_hex, secondaryColorHex: variant.color_hex_secundario ?? null }))
+    : getProductVariantOptions(product).map((option) => ({ name: option.name, colorHex: option.colorHex, secondaryColorHex: option.secondaryColorHex }))
+  for (const variant of sources) {
+    variantBaseColors(variant, product.nombre).forEach((color) => colors.add(color))
+  }
   return [...colors]
 }
 
@@ -321,7 +284,7 @@ export function ProductsPageLayout({
         )
       })
 
-      return baseColorOrder.filter((color) => colors.has(color))
+      return BASE_COLOR_ORDER.filter((color) => colors.has(color))
     }, [products])
 
   // ─────────────────────────────────────

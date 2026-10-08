@@ -7,8 +7,17 @@ import { CheckCircle2, PackageCheck, Printer, ScanLine, XCircle } from "lucide-r
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_STAGE_LABELS, orderCode, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { DISPATCH_STAGE_LABELS, orderCode, type DispatchShippingInfo, type OrderDispatchDetail } from "@/lib/admin/dispatch"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
+import {
+  EstimateVsReal,
+  initialParcelDrafts,
+  ParcelMeasuresEditor,
+  ParcelQuoteNotice,
+  readParcelDrafts,
+  resizeParcelDrafts,
+  type ParcelDraft,
+} from "./parcel-measures"
 
 type ScanFeedback = { tone: "success" | "error"; message: string }
 type OrderResponse = OrderDispatchDetail & { scan?: { orderItemId: number; scanned: number; expected: number; duplicate: boolean } | null }
@@ -18,6 +27,10 @@ const STAGE_TONE = { pending: "neutral", packing: "info", packed: "warning", par
 // Motor único de armado: Despachos y la solapa "ARMAR PEDIDO" del pedido usan
 // este mismo panel contra las mismas RPC (scan_order_preparation_code y
 // set_order_package_parcels). El escaneo sólo valida identidad: no mueve stock.
+const NO_SHIPPING_INFO: DispatchShippingInfo = { costsVisible: false, estimate: null, parcelQuote: null }
+const formatMeasure = (value: number | null | undefined, digits = 1) =>
+  value == null ? "—" : new Intl.NumberFormat("es-AR", { maximumFractionDigits: digits }).format(value)
+
 export function OrderPreparationPanel({ orderId, onDone, footer }: {
   orderId: number
   onDone?: () => void
@@ -31,6 +44,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const [scan, setScan] = useState("")
   const [dialog, setDialog] = useState<"parcels" | "reset" | "labels" | null>(null)
   const [parcelInput, setParcelInput] = useState("")
+  const [parcelDrafts, setParcelDrafts] = useState<ParcelDraft[]>([])
   const [reason, setReason] = useState("")
   const scanKey = useRef<string | null>(null)
   const parcelsKey = useRef<string | null>(null)
@@ -45,6 +59,14 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   }, [orderId])
 
   useEffect(() => { setLoading(true); setDetail(null); setFeedback(null); void load() }, [load])
+  // La recotización con bultos reales corre después de guardar el armado:
+  // Admin recarga una vez para ver el resultado (el operador no ve importes).
+  const quotePending = Boolean(detail?.shipping?.costsVisible && detail.package?.parcel_count && !detail.shipping.parcelQuote?.current)
+  useEffect(() => {
+    if (!quotePending) return
+    const timer = setTimeout(() => { if (!busyRef.current) void load() }, 5_000)
+    return () => clearTimeout(timer)
+  }, [quotePending, load])
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
     const reload = () => { if (timer) clearTimeout(timer); timer = setTimeout(() => { if (!busyRef.current) void load() }, 200) }
@@ -97,10 +119,18 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const inBatch = Boolean(detail.membership)
   const units = detail.lines.reduce((sum, line) => sum + line.scanned_quantity, 0)
   const code = orderCode(detail.order.id)
+  const shippingInfo = detail.shipping ?? NO_SHIPPING_INFO
   const parcelLabels = detail.parcels.map((parcel) => ({ kind: "parcel" as const, code: parcel.barcode, orderCode: code, index: parcel.parcel_index, count: parcel.parcel_count }))
-  const openParcels = () => { parcelsKey.current = null; setParcelInput(parcelCount ? String(parcelCount) : detail.expectedUnits === 1 ? "1" : ""); setDialog("parcels") }
+  const openParcels = () => {
+    parcelsKey.current = null
+    const count = parcelCount ?? (shippingInfo.estimate?.parcels.length || 1)
+    setParcelInput(String(count))
+    setParcelDrafts(initialParcelDrafts(detail.parcels, count))
+    setDialog("parcels")
+  }
   const parcelValue = Number(parcelInput)
   const validParcels = Number.isInteger(parcelValue) && parcelValue >= 1 && parcelValue <= 50
+  const parcelsReading = validParcels ? readParcelDrafts(parcelDrafts) : null
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-3">
@@ -116,7 +146,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     <div className="space-y-2">{detail.lines.map((line) => {
       const complete = line.scanned_quantity === line.expected_quantity
       return <AdminCard key={line.order_item_id} className={`dispatch-card flex items-center justify-between gap-3 p-3 ${complete ? "border-emerald-500/40" : ""}`}>
-        <span className="min-w-0 text-sm font-bold text-white">{line.name}<span className="block text-xs font-normal text-white/60">{[line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ")}</span></span>
+        <span className="min-w-0 text-sm font-bold text-white">{line.name}<span className="block text-xs font-normal text-white/60">{line.random ? "Escaneá cualquier variante del grupo con stock" : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ")}</span></span>
         <span className={`shrink-0 text-right text-2xl font-black tabular-nums ${complete ? "text-emerald-300" : "text-white"}`} aria-label={`${line.scanned_quantity} escaneados de ${line.expected_quantity} requeridos`}>{line.scanned_quantity}<span className="text-base text-white/50"> / {line.expected_quantity}</span></span>
       </AdminCard>
     })}</div>
@@ -132,7 +162,9 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
       : !parcelCount ? <div className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4"><p className="font-black text-white">✓ Todas las unidades verificadas</p><p className="mt-1 text-sm text-white/70">{code} · {detail.expectedUnits} unidades</p><AdminPrimaryButton className="mt-3 h-12 text-base" disabled={busy || detail.blocked} onClick={openParcels}>FINALIZAR ARMADO</AdminPrimaryButton></div>
       : <div className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
         <p className="font-black text-white"><PackageCheck className="mr-1 inline size-5" /> Armado completo · {parcelCount} {parcelCount === 1 ? "bulto" : "bultos"}</p>
-        <ul className="mt-2 space-y-1 text-sm text-white/80">{detail.parcels.map((parcel) => <li key={parcel.id} className="font-mono">{parcel.barcode} · Bulto {parcel.parcel_index}/{parcel.parcel_count}</li>)}</ul>
+        <ul className="mt-2 space-y-1 text-sm text-white/80">{detail.parcels.map((parcel) => <li key={parcel.id}><span className="font-mono">{parcel.barcode} · Bulto {parcel.parcel_index}/{parcel.parcel_count}</span>{parcel.weight_kg != null ? <span className="block text-xs text-white/65">{formatMeasure(parcel.length_cm)} × {formatMeasure(parcel.width_cm)} × {formatMeasure(parcel.height_cm)} cm · {formatMeasure(parcel.weight_kg, 3)} kg</span> : <span className="block text-xs text-amber-200">Medidas no cargadas</span>}</li>)}</ul>
+        <EstimateVsReal estimate={shippingInfo.estimate} parcels={detail.parcels} />
+        <ParcelQuoteNotice shipping={shippingInfo} />
         <div className="mt-3 flex flex-wrap gap-2">
           <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={!parcelLabels.length} onClick={() => setDialog("labels")}>Imprimir etiquetas de bultos</AdminPrimaryButton>
           {detail.stage === "parcels_ready" || detail.stage === "in_batch" ? <AdminButton disabled={busy} onClick={openParcels}>Cambiar bultos</AdminButton> : null}
@@ -145,14 +177,22 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     {pkg && !inBatch && !detail.order.andreani_handed_over_at && <details className="text-sm text-white/70"><summary className="cursor-pointer">Opciones</summary><AdminButton className="mt-2" size="sm" variant="ghost" onClick={() => { resetKey.current = null; setReason(""); setDialog("reset") }}>Reiniciar armado</AdminButton></details>}
     {footer}
 
-    <AdminModal open={dialog === "parcels"} compact title="FINALIZAR ARMADO" description="¿Cuántos bultos físicos tiene este pedido?" onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2"><AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || !validParcels} onClick={() => void run(async () => {
+    <AdminModal open={dialog === "parcels"} title="FINALIZAR ARMADO" description="¿Cuántos bultos tiene este pedido?" onClose={() => setDialog(null)} footer={<div className="flex flex-wrap items-center justify-end gap-2">{parcelsReading && "error" in parcelsReading ? <span className="mr-auto text-xs font-bold text-amber-200">{parcelsReading.error}</span> : null}<AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || !parcelsReading || "error" in parcelsReading} onClick={() => void run(async () => {
+      if (!parcelsReading || "error" in parcelsReading) return
       parcelsKey.current ??= crypto.randomUUID()
-      setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "parcels", parcelCount: parcelValue, requestKey: parcelsKey.current }))
+      setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "parcels", parcels: parcelsReading.parcels, requestKey: parcelsKey.current }))
       parcelsKey.current = null
       setDialog("labels")
     })}>Confirmar bultos</AdminPrimaryButton></div>}>
-      <AdminTextInput title="Cantidad de bultos" placeholder="Ej.: 2" inputMode="numeric" value={parcelInput} onChange={(value) => { setParcelInput(value.replace(/\D/g, "").slice(0, 2)); parcelsKey.current = null }} className="h-14 text-2xl font-black" />
-      <p className="mt-2 text-xs text-white/60">Contá las cajas o paquetes que salen. Cada bulto lleva su propia etiqueta {code}.</p>
+      <AdminTextInput title="Cantidad de bultos" placeholder="Ej.: 2" inputMode="numeric" value={parcelInput} onChange={(value) => {
+        const next = value.replace(/\D/g, "").slice(0, 2)
+        setParcelInput(next)
+        const count = Number(next)
+        if (Number.isInteger(count) && count >= 1 && count <= 50) setParcelDrafts((current) => resizeParcelDrafts(current, count))
+        parcelsKey.current = null
+      }} className="h-14 text-2xl font-black" />
+      <p className="mt-2 text-xs text-white/60">Contá las cajas o paquetes que salen. Cada bulto lleva su propia etiqueta {code} y necesita su peso y medidas reales.</p>
+      {validParcels ? <ParcelMeasuresEditor drafts={parcelDrafts} disabled={busy} estimate={shippingInfo.estimate} onChange={(drafts) => { setParcelDrafts(drafts); parcelsKey.current = null }} /> : null}
     </AdminModal>
     <AdminModal open={dialog === "reset"} compact title="Reiniciar armado" description="Se vuelven a escanear todas las unidades. Las etiquetas de bultos anteriores quedan anuladas." onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2"><AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || reason.trim().length < 10} onClick={() => void run(async () => {
       resetKey.current ??= crypto.randomUUID()

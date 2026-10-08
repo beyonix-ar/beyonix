@@ -40,7 +40,11 @@ import {
   resolveProductLogistics,
 } from "../shipping/product-logistics.ts"
 import { ProductLogisticsValidationError } from "../shipping/logistics-validation.ts"
-import { ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG } from "./shipment-limits.ts"
+import {
+  ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG,
+  ANDREANI_MAX_SHIPMENT_PACKAGES,
+  ANDREANI_MAX_TARIFF_PACKAGES,
+} from "./shipment-limits.ts"
 
 const DEFAULT_TIMEOUT_MS = 10_000
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000
@@ -1198,10 +1202,16 @@ function validateB2COrderInput(input: AndreaniCreateShipmentInput) {
     validateOrderPerson(person, `destinatario[${index}]`, [1, 2, 3, 4]),
   )
 
-  if (!Array.isArray(input.items) || input.items.length !== 1) {
+  // La API documenta `bultos` como array (máximo 300): cada bulto físico
+  // viaja con sus propias medidas y su etiqueta.
+  if (
+    !Array.isArray(input.items) ||
+    input.items.length < 1 ||
+    input.items.length > ANDREANI_MAX_SHIPMENT_PACKAGES
+  ) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
-      "La orden B2C debe incluir exactamente un bulto.",
+      `La orden B2C debe incluir entre 1 y ${ANDREANI_MAX_SHIPMENT_PACKAGES} bultos.`,
     )
   }
 }
@@ -1694,28 +1704,41 @@ export class AndreaniClient {
     })
   }
 
+  /**
+   * Cotiza uno o varios bultos en UNA consulta. La planilla oficial
+   * (api-cotizador-v2-1) documenta `bultos[0][...]`; una prueba controlada de
+   * sólo lectura en PROD (2026-10-08) confirmó que `bultos[1..n]` se aceptan
+   * y que el total es la suma de la tarifa de cada bulto.
+   */
   async cotizarEnvio(
     input: AndreaniTariffRequest,
   ): Promise<AndreaniTariffResponse> {
-    if (!Array.isArray(input.bultos) || input.bultos.length !== 1) {
+    if (
+      !Array.isArray(input.bultos) ||
+      input.bultos.length < 1 ||
+      input.bultos.length > ANDREANI_MAX_TARIFF_PACKAGES
+    ) {
       throw new AndreaniError(
         "VALIDATION_ERROR",
-        "El cotizador documentado requiere el bulto en la posición cero.",
+        `La cotización requiere entre 1 y ${ANDREANI_MAX_TARIFF_PACKAGES} bultos.`,
       )
     }
-    const bulto = input.bultos[0]
-    return this.requestTariff({
-      codigoPostalDestino: input.cpDestino,
-      contrato: input.contrato,
-      cliente: input.cliente,
-      codigoSucursalOrigen: input.sucursalOrigen,
-      valorDeclarado: bulto.valorDeclarado,
-      pesoKg: bulto.kilos,
-      volumenCm3: bulto.volumen,
-      altoCm: bulto.altoCm,
-      largoCm: bulto.largoCm,
-      anchoCm: bulto.anchoCm,
-    })
+    return this.requestTariffPackages(
+      {
+        codigoPostalDestino: input.cpDestino,
+        contrato: input.contrato,
+        cliente: input.cliente,
+        codigoSucursalOrigen: input.sucursalOrigen,
+      },
+      input.bultos.map((bulto) => ({
+        valorDeclarado: bulto.valorDeclarado,
+        pesoKg: bulto.kilos,
+        volumenCm3: bulto.volumen,
+        altoCm: bulto.altoCm,
+        largoCm: bulto.largoCm,
+        anchoCm: bulto.anchoCm,
+      })),
+    )
   }
 
   async cotizarPaquete(
@@ -1727,62 +1750,45 @@ export class AndreaniClient {
   private async requestTariff(
     input: AndreaniTariffQueryInput,
   ): Promise<AndreaniTariffResponse> {
+    const { valorDeclarado, pesoKg, volumenCm3, altoCm, anchoCm, largoCm, ...destination } = input
+    return this.requestTariffPackages(destination, [
+      { valorDeclarado, pesoKg, volumenCm3, altoCm, anchoCm, largoCm },
+    ])
+  }
+
+  private async requestTariffPackages(
+    destination: Pick<AndreaniTariffQueryInput, "codigoPostalDestino" | "contrato" | "cliente" | "codigoSucursalOrigen">,
+    packages: Array<Pick<AndreaniTariffQueryInput, "valorDeclarado" | "pesoKg" | "volumenCm3" | "altoCm" | "anchoCm" | "largoCm">>,
+  ): Promise<AndreaniTariffResponse> {
     const codigoPostalDestino = assertPostalCode(
-      input.codigoPostalDestino,
+      destination.codigoPostalDestino,
       "código postal de destino",
     )
-    const contrato = assertIdentifier(input.contrato, "contrato")
-    const cliente = assertIdentifier(input.cliente, "cliente")
-    const codigoSucursalOrigen = input.codigoSucursalOrigen
-      ? assertIdentifier(input.codigoSucursalOrigen, "sucursal de origen")
+    const contrato = assertIdentifier(destination.contrato, "contrato")
+    const cliente = assertIdentifier(destination.cliente, "cliente")
+    const codigoSucursalOrigen = destination.codigoSucursalOrigen
+      ? assertIdentifier(destination.codigoSucursalOrigen, "sucursal de origen")
       : undefined
-    const valorDeclarado =
-      input.valorDeclarado === undefined
-        ? undefined
-        : assertPositiveNumber(
-            input.valorDeclarado,
-            "valor declarado",
-            1_000_000_000,
-          )
-    const pesoKg =
-      input.pesoKg === undefined
-        ? undefined
-        : assertPositiveNumber(input.pesoKg, "peso", 1_000)
-    const volumenCm3 = assertPositiveNumber(
-      input.volumenCm3,
-      "volumen",
-      100_000_000,
-    )
-    const query = new URLSearchParams({
-      cpDestino: codigoPostalDestino,
-      contrato,
-      cliente,
-      "bultos[0][volumen]": String(volumenCm3),
+    const query = new URLSearchParams({ cpDestino: codigoPostalDestino, contrato, cliente })
+    packages.forEach((pkg, index) => {
+      const key = (field: string) => `bultos[${index}][${field}]`
+      query.set(key("volumen"), String(assertPositiveNumber(pkg.volumenCm3, "volumen", 100_000_000)))
+      if (pkg.valorDeclarado !== undefined) {
+        query.set(key("valorDeclarado"), String(assertPositiveNumber(pkg.valorDeclarado, "valor declarado", 1_000_000_000)))
+      }
+      if (pkg.pesoKg !== undefined) {
+        query.set(key("kilos"), String(assertPositiveNumber(pkg.pesoKg, "peso", 1_000)))
+      }
+      if (pkg.altoCm !== undefined) {
+        query.set(key("altoCm"), String(assertPositiveNumber(pkg.altoCm, "alto", 500)))
+      }
+      if (pkg.largoCm !== undefined) {
+        query.set(key("largoCm"), String(assertPositiveNumber(pkg.largoCm, "largo", 500)))
+      }
+      if (pkg.anchoCm !== undefined) {
+        query.set(key("anchoCm"), String(assertPositiveNumber(pkg.anchoCm, "ancho", 500)))
+      }
     })
-    if (valorDeclarado !== undefined) {
-      query.set("bultos[0][valorDeclarado]", String(valorDeclarado))
-    }
-    if (pesoKg !== undefined) {
-      query.set("bultos[0][kilos]", String(pesoKg))
-    }
-    if (input.altoCm !== undefined) {
-      query.set(
-        "bultos[0][altoCm]",
-        String(assertPositiveNumber(input.altoCm, "alto", 500)),
-      )
-    }
-    if (input.largoCm !== undefined) {
-      query.set(
-        "bultos[0][largoCm]",
-        String(assertPositiveNumber(input.largoCm, "largo", 500)),
-      )
-    }
-    if (input.anchoCm !== undefined) {
-      query.set(
-        "bultos[0][anchoCm]",
-        String(assertPositiveNumber(input.anchoCm, "ancho", 500)),
-      )
-    }
     if (codigoSucursalOrigen) {
       query.set("sucursalOrigen", codigoSucursalOrigen)
     }

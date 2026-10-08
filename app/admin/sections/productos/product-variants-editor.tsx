@@ -54,7 +54,14 @@ import { barcodeOrigin, barcodeOriginLabel } from "@/lib/barcodes/codes"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { getVariantActivationError } from "@/lib/products/product-activation"
 import { deriveVariantNameFromColor, getColorName } from "@/lib/products/variant-color"
+import {
+  deriveDualColorVariantName,
+  primaryColorName,
+  readableColorName,
+} from "@/lib/products/product-color-filters"
+import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 import { useStockAdjustment } from "./use-stock-adjustment"
+import { ProductSalesOptions } from "./product-sales-options"
 import {
   AdminDangerButton,
   AdminCard,
@@ -87,6 +94,9 @@ interface ProductVariantsEditorProps {
   persistedVariantStates?: Record<number, boolean>
   onPersistedVariantStatesChange?: (states: Record<number, boolean>) => void
   onDistributionChange?: (distribution: ProductVariantDistribution | null) => void
+  /** Venta con color/modelo aleatorio (sólo productos guardados). */
+  ventaAleatoria?: boolean
+  onVentaAleatoriaChange?: (value: boolean) => void
 }
 
 const inputCls =
@@ -143,6 +153,8 @@ export function ProductVariantsEditor({
   persistedVariantStates = {},
   onPersistedVariantStatesChange,
   onDistributionChange,
+  ventaAleatoria = false,
+  onVentaAleatoriaChange,
 }: ProductVariantsEditorProps) {
   const [variantes, setVariantes] =
     useState<SupabaseProductoVariante[]>([])
@@ -704,7 +716,7 @@ export function ProductVariantsEditor({
 
   const saveVariantDetails = async (
     variant: SupabaseProductoVariante,
-    details: { sku: string; colorHex: string; colorName: string; barcode: string },
+    details: VariantDetails,
   ): Promise<boolean> => {
     if (!productoId) return false
 
@@ -721,10 +733,12 @@ export function ProductVariantsEditor({
       setSuccessMessage("")
       // Metadata pura (SKU/color/código de barra): nunca toca stock ni pasa
       // por el sistema de asignación de pool genérico.
+      const secondaryColor = details.secondaryColorHex ? normalizeHex(details.secondaryColorHex) : null
       const updated = await updateProductoVariante(productoId, variant.id, {
-        nombre: cleanColorName,
+        nombre: deriveDualColorVariantName(cleanColorName, secondaryColor),
         sku: details.sku.trim() || null,
         color_hex: normalizedColor,
+        color_hex_secundario: secondaryColor,
         codigo_barra: details.barcode.trim() || null,
       })
 
@@ -987,7 +1001,13 @@ export function ProductVariantsEditor({
       productName={productName}
       sku={variante.sku}
       colorHex={variante.color_hex}
-      colorName={getColorName(variante.color_hex, variante.nombre)}
+      secondaryColorHex={variante.color_hex_secundario ?? null}
+      supportsSecondaryColor
+      colorName={
+        variante.color_hex_secundario
+          ? primaryColorName(variante.nombre)
+          : getColorName(variante.color_hex, variante.nombre)
+      }
       barcode={variante.codigo_barra}
       stock={variante.stock ?? 0}
       active={desiredActive}
@@ -1135,6 +1155,14 @@ export function ProductVariantsEditor({
               : draftVariants.map(renderDraftVariant)}
           </div>
         ) : null}
+        {productoId && onVentaAleatoriaChange && !loading && orderedVariantes.length > 0 && (
+          <ProductSalesOptions
+            productId={productoId}
+            variants={orderedVariantes.map((variant) => ({ id: variant.id, nombre: variant.nombre }))}
+            ventaAleatoria={ventaAleatoria}
+            onVentaAleatoriaChange={onVentaAleatoriaChange}
+          />
+        )}
         {showCreateForm && (
           <section
             ref={formPanelRef}
@@ -1295,11 +1323,23 @@ export function StockSummaryItem({
   )
 }
 
+interface VariantDetails {
+  sku: string
+  colorHex: string
+  colorName: string
+  barcode: string
+  secondaryColorHex: string | null
+}
+
 interface VariantCardProps {
   nombre: string
   productName: string
   sku?: string | null
   colorHex: string
+  /** Segundo color (variante bicolor). */
+  secondaryColorHex?: string | null
+  /** Sólo una variante guardada puede tener segundo color. */
+  supportsSecondaryColor?: boolean
   colorName: string
   barcode?: string | null
   stock: number
@@ -1316,12 +1356,7 @@ interface VariantCardProps {
   onUploadImages: (files: File[]) => void
   onMoveImage: (fromIndex: number, toIndex: number) => void
   onRemoveImage: (imageIndex: number) => void
-  onDetailsChange: (details: {
-    sku: string
-    colorHex: string
-    colorName: string
-    barcode: string
-  }) => boolean | Promise<boolean>
+  onDetailsChange: (details: VariantDetails) => boolean | Promise<boolean>
   onEditingChange?: (editing: boolean) => void
   uploadingImages: boolean
   savingImages: boolean
@@ -1339,6 +1374,8 @@ function VariantCard({
   productName,
   sku,
   colorHex,
+  secondaryColorHex = null,
+  supportsSecondaryColor = false,
   colorName,
   barcode,
   stock,
@@ -1376,6 +1413,7 @@ function VariantCard({
   const [localSku, setLocalSku] = useState((sku ?? "").toUpperCase())
   const [localColor, setLocalColor] = useState(normalizeHex(colorHex))
   const [localColorName, setLocalColorName] = useState(colorName.toUpperCase())
+  const [localSecondaryColor, setLocalSecondaryColor] = useState(secondaryColorHex)
   const [localBarcode, setLocalBarcode] = useState(barcode ?? "")
   const [draggedImageIndex, setDraggedImageIndex] = useState<number | null>(null)
   const draftUrls = useMemo(
@@ -1391,8 +1429,9 @@ function VariantCard({
     setLocalSku((sku ?? "").toUpperCase())
     setLocalColor(normalizeHex(colorHex))
     setLocalColorName(colorName.toUpperCase())
+    setLocalSecondaryColor(secondaryColorHex)
     setLocalBarcode(barcode ?? "")
-  }, [colorHex, colorName, barcode, sku])
+  }, [colorHex, colorName, barcode, sku, secondaryColorHex])
 
   // El nombre visible de la variante es siempre el del producto general; el
   // "nombre" propio de la variante (nombre/color) sólo identifica atributos
@@ -1440,6 +1479,7 @@ function VariantCard({
       colorHex: normalizeHex(localColor),
       colorName: localColorName,
       barcode: localBarcode,
+      secondaryColorHex: localSecondaryColor,
     })
     if (success) setIsEditing(false)
   }
@@ -1503,9 +1543,9 @@ function VariantCard({
         <div className="product-editor-variant-color hidden min-w-0 items-center gap-2">
           <span
             className="size-3.5 shrink-0 rounded-full border border-white/25"
-            style={{ backgroundColor: normalizeHex(colorHex) }}
+            style={variantSwatchStyle(normalizeHex(colorHex), secondaryColorHex)}
           />
-          <span className="truncate text-xs font-bold text-white">{colorName}</span>
+          <span className="truncate text-xs font-bold text-white">{secondaryColorHex ? nombre : colorName}</span>
         </div>
 
         <div className="product-editor-variant-stock hidden text-center">
@@ -1584,7 +1624,7 @@ function VariantCard({
           <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate text-sm font-black text-white" title={nombre}>
             <span
               className="size-3 shrink-0 rounded-full border border-white/25"
-              style={{ backgroundColor: normalizeHex(colorHex) }}
+              style={variantSwatchStyle(normalizeHex(colorHex), secondaryColorHex)}
               aria-hidden="true"
             />
             <span className="truncate">{displayName}</span>
@@ -1752,6 +1792,8 @@ function VariantCard({
             onColorChange={setLocalColor}
             onColorNameChange={setLocalColorName}
             onBarcodeChange={setLocalBarcode}
+            secondaryColorHex={localSecondaryColor}
+            onSecondaryColorChange={supportsSecondaryColor ? setLocalSecondaryColor : undefined}
             onCommit={commitDetails}
             stock={stock}
             onAdjustStock={onAdjustStock}
@@ -1820,6 +1862,9 @@ interface VariantFieldsProps {
   onColorChange: (value: string) => void
   onColorNameChange: (value: string) => void
   onBarcodeChange: (value: string) => void
+  secondaryColorHex?: string | null
+  /** Sin este callback no se ofrece segundo color. */
+  onSecondaryColorChange?: (value: string | null) => void
   onCommit?: () => void
   stock?: number
   onAdjustStock?: () => void
@@ -1840,6 +1885,8 @@ function VariantFields({
   onColorChange,
   onColorNameChange,
   onBarcodeChange,
+  secondaryColorHex = null,
+  onSecondaryColorChange,
   onCommit,
   stock,
   onAdjustStock,
@@ -1906,6 +1953,47 @@ function VariantFields({
           </span>
         </span>
       </label>
+
+      {onSecondaryColorChange && (
+        <div className={fieldClassName}>
+          <span className={fieldLabelClassName}>Segundo color</span>
+          {secondaryColorHex ? (
+            <span className="flex min-w-0 items-center gap-2">
+              <span
+                className="relative size-10 shrink-0 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20"
+                style={{ backgroundColor: secondaryColorHex }}
+              >
+                <input
+                  type="color"
+                  value={normalizeHex(secondaryColorHex)}
+                  aria-label="Elegir segundo color de la variante"
+                  disabled={disabled}
+                  onChange={(event) => onSecondaryColorChange(normalizeHex(event.target.value))}
+                  className="absolute inset-0 size-full cursor-pointer opacity-0"
+                />
+              </span>
+              <span className="truncate text-xs font-bold text-white">
+                {readableColorName(secondaryColorHex)}
+              </span>
+              <AdminSecondaryButton size="sm" onClick={() => onSecondaryColorChange(null)} disabled={disabled}>
+                Quitar
+              </AdminSecondaryButton>
+            </span>
+          ) : (
+            <span className="flex min-w-0 items-center">
+              <AdminSecondaryButton
+                size="sm"
+                onClick={() => onSecondaryColorChange("#FFFFFF")}
+                disabled={disabled}
+                title="Variante de dos colores: se muestra mitad y mitad y se filtra por ambos"
+              >
+                <Plus className="size-3.5 text-white" />
+                Segundo color
+              </AdminSecondaryButton>
+            </span>
+          )}
+        </div>
+      )}
 
       <label className={fieldClassName}>
         <span className={fieldLabelClassName}>Cód. de barra</span>

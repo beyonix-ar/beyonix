@@ -42,6 +42,8 @@ export type FakeDbData = {
   productos: FakeProduct[]
   producto_variantes: FakeVariant[]
   product_cost_entries: FakePurchase[]
+  /** Códigos de barra equivalentes (catalog_barcode_aliases). */
+  catalog_barcode_aliases?: Array<{ normalized_barcode: string; product_id: number; variant_id: number | null }>
 }
 
 export type FakeDb = ReturnType<typeof createFakeCostCatalogDb>
@@ -93,6 +95,7 @@ export function createFakeCostCatalogDb(data: FakeDbData) {
         productos: product(item.product_id),
         producto_variantes: variant(item.variant_id),
       })),
+    catalog_barcode_aliases: () => data.catalog_barcode_aliases ?? [],
     catalog_barcode_registry: () => [
       ...data.productos.flatMap((item) =>
         normalizedBarcode(item.codigo_barra) ? [{ normalized_barcode: normalizedBarcode(item.codigo_barra), product_id: item.id, variant_id: null }] : [],

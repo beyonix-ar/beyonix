@@ -58,6 +58,7 @@ import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
+import { getShippingQuoteSettings } from "@/lib/shipping/shipping-quote-settings"
 
 const CUSTOMER_CREDIT_CHANGED_MESSAGE =
   "El saldo a favor disponible cambió. Revisá el total antes de pagar."
@@ -124,7 +125,10 @@ export async function POST(request: Request) {
       items,
     )
     const baseTotals = calculateCartTotals(catalog.cartRows)
-    const siteSettings = await getSiteSettings({ fresh: true })
+    const [siteSettings, shippingQuoteSettings] = await Promise.all([
+      getSiteSettings({ fresh: true }),
+      getShippingQuoteSettings(),
+    ])
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
       customer: payload.customer,
@@ -132,6 +136,7 @@ export async function POST(request: Request) {
       productsTotal: baseTotals.productsTotal,
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
+      markupPercent: shippingQuoteSettings.logisticsMarkupPercent,
     })
     const shippingBranch = await resolveCheckoutOrderShippingBranch(
       payload.shipping,

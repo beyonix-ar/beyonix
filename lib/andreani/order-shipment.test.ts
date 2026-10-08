@@ -500,6 +500,9 @@ interface FakeTable {
   orden_items: Array<Record<string, unknown>>
   productos: Array<Record<string, unknown>>
   producto_variantes: Array<Record<string, unknown>>
+  /** Armado y bultos reales; vacíos = pedido todavía sin armar. */
+  order_packages?: Array<Record<string, unknown>>
+  order_package_parcels?: Array<Record<string, unknown>>
 }
 
 function createFakeAdmin(tables: FakeTable) {
@@ -523,11 +526,14 @@ function createFakeAdmin(tables: FakeTable) {
     const rowsSource = () =>
       table === "ordenes"
         ? [tables.ordenes as unknown as Record<string, unknown>]
-        : (tables[table] as unknown as Record<string, unknown>[])
+        : ((tables[table] ?? []) as unknown as Record<string, unknown>[])
 
     const builder = {
       eq(col: string, val: unknown) {
         filters.push({ type: "eq", col, val })
+        return builder
+      },
+      order() {
         return builder
       },
       in(col: string, val: unknown[]) {
@@ -765,8 +771,10 @@ test("crea el envío, consolida un único bulto y persiste la referencia", async
   assert.equal(result.tracking, "360000101651699")
   assert.equal(capturedEnvs[0]?.ANDREANI_ENV, "QA")
   assert.equal(capturedInputs[0]?.items.length, 1)
-  assert.equal(capturedInputs[0]?.items[0].producto.peso_empaquetado_kg, 5)
-  assert.equal(capturedInputs[0]?.items[0].bulto?.volumenCm, 2_125)
+  // Sin armado todavía: bulto estimado por el embalador (peso con embalaje).
+  assert.equal(capturedInputs[0]?.items[0].producto.peso_empaquetado_kg, 5.3)
+  assert.equal(capturedInputs[0]?.items[0].producto.largo_paquete_cm, 16)
+  assert.equal(capturedInputs[0]?.items[0].bulto?.volumenCm, 16 * 16 * 16)
   assert.equal(capturedInputs[0]?.items[0].bulto?.valorDeclaradoConImpuestos, 25_000)
   assert.deepEqual(capturedInputs[0]?.items[0].bulto?.referencias, [
     { meta: "idCliente", contenido: "42" },
@@ -812,13 +820,13 @@ test("crea el envío de un pedido sucursal usando el contrato de sucursal y el i
   assert.equal(admin.tables.ordenes.andreani_creation_status, "created")
 })
 
-test("BLOQUEANTE 3: rechaza un pedido con más de 50 kg consolidados ANTES de reclamar la creación (mismo límite que aplica la creación real) -- nunca gasta un intento de claim en un pedido que nunca va a poder crearse", async () => {
+test("BLOQUEANTE 3: una unidad que embalada supera 50 kg se rechaza ANTES de reclamar la creación -- nunca gasta un intento de claim", async () => {
   const admin = createFakeAdmin({
     ordenes: baseOrder() as never,
     orden_items: [
-      { orden_id: 42, producto_id: 1, variante_id: null, conditioned_stock_id: null, cantidad: 30, precio: 10_000 },
+      { orden_id: 42, producto_id: 1, variante_id: null, conditioned_stock_id: null, cantidad: 1, precio: 10_000 },
     ],
-    productos: [productA],
+    productos: [{ ...productA, peso_empaquetado_kg: 51 }],
     producto_variantes: [],
   })
 
@@ -832,6 +840,27 @@ test("BLOQUEANTE 3: rechaza un pedido con más de 50 kg consolidados ANTES de re
   // andreani_creation_status ni a consumir un intento de claim.
   assert.equal(admin.claimCalls.length, 0)
   assert.equal(admin.tables.ordenes.andreani_creation_status, undefined)
+})
+
+test("pedido de 60 kg sin armar: se crea con 2 bultos estimados de hasta 50 kg cada uno", async () => {
+  const admin = createFakeAdmin({
+    ordenes: baseOrder() as never,
+    orden_items: [
+      { orden_id: 42, producto_id: 1, variante_id: null, conditioned_stock_id: null, cantidad: 30, precio: 10_000 },
+    ],
+    productos: [productA],
+    producto_variantes: [],
+  })
+  const captured: AndreaniCreateShipmentInput[] = []
+  await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: qaEnv(),
+    crearOrdenEnvio: async (input) => {
+      captured.push(input)
+      return officialOrderResponse
+    },
+  })
+  assert.equal(captured[0].items.length, 2)
+  assert.ok(captured[0].items.every(({ producto }) => Number(producto.peso_empaquetado_kg) <= 50))
 })
 
 test("no duplica el envío si ya hay un reclamo reciente en curso", async () => {
@@ -1602,4 +1631,79 @@ test("un timeout PROD queda en reconciliation_required y no se reintenta automá
     },
   )
   assert.match(loggedErrors[0]?.attemptId ?? "", /^[0-9a-f-]{36}$/)
+})
+
+function measuredTables(parcels: Array<Record<string, unknown>>) {
+  return {
+    ordenes: baseOrder() as never,
+    orden_items: [
+      { orden_id: 42, producto_id: 1, variante_id: null, conditioned_stock_id: null, cantidad: 2, precio: 10_000 },
+    ],
+    productos: [productA, productB],
+    producto_variantes: [],
+    order_packages: [{ id: 7, order_id: 42, attempt_number: 1, parcel_count: parcels.length, parcels_request_key: "40000000-0000-4000-8000-000000000001" }],
+    order_package_parcels: parcels.map((parcel, index) => ({
+      package_id: 7, attempt_number: 1, parcel_count: parcels.length, parcel_index: index + 1, ...parcel,
+    })),
+  }
+}
+
+test("con armado medido: la creación declara el bulto REAL (peso y medidas exactas)", async () => {
+  const admin = createFakeAdmin(measuredTables([
+    { actual_weight_kg: "2.450", actual_length_cm: "40.0", actual_width_cm: "30.0", actual_height_cm: "20.0" },
+  ]))
+  const captured: AndreaniCreateShipmentInput[] = []
+  await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: qaEnv(),
+    crearOrdenEnvio: async (input) => {
+      captured.push(input)
+      return officialOrderResponse
+    },
+  })
+  const { producto, bulto } = captured[0].items[0]
+  assert.deepEqual(
+    [producto.peso_empaquetado_kg, producto.largo_paquete_cm, producto.ancho_paquete_cm, producto.alto_paquete_cm],
+    [2.45, 40, 30, 20],
+  )
+  assert.equal(bulto?.volumenCm, 24_000)
+  assert.equal(bulto?.valorDeclaradoConImpuestos, 20_000)
+})
+
+test("con 2 bultos reales: la orden lleva 2 bultos, cada uno con su peso y medidas (sin consolidar)", async () => {
+  const admin = createFakeAdmin(measuredTables([
+    { actual_weight_kg: 1.2, actual_length_cm: 30, actual_width_cm: 20, actual_height_cm: 10 },
+    { actual_weight_kg: 0.8, actual_length_cm: 25, actual_width_cm: 20, actual_height_cm: 8 },
+  ]))
+  const captured: AndreaniCreateShipmentInput[] = []
+  await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: qaEnv(),
+    crearOrdenEnvio: async (input) => {
+      captured.push(input)
+      return officialOrderResponse
+    },
+  })
+  assert.equal(captured[0].items.length, 2)
+  assert.deepEqual(
+    captured[0].items.map(({ producto, bulto }) => [producto.peso_empaquetado_kg, producto.largo_paquete_cm, producto.ancho_paquete_cm, producto.alto_paquete_cm, bulto?.volumenCm]),
+    [[1.2, 30, 20, 10, 6_000], [0.8, 25, 20, 8, 4_000]],
+  )
+  assert.deepEqual(captured[0].items.map(({ bulto }) => bulto?.descripcion), ["Pedido BX-1042 · bulto 1/2", "Pedido BX-1042 · bulto 2/2"])
+  assert.deepEqual(captured[0].items.map(({ bulto }) => bulto?.referencias), [[{ meta: "idCliente", contenido: "42" }], [{ meta: "idCliente", contenido: "42" }]])
+  // Valor declarado repartido por peso: suma exactamente el del pedido.
+  assert.equal(captured[0].items.reduce((sum, { bulto }) => sum + Number(bulto?.valorDeclaradoConImpuestos), 0), 20_000)
+})
+
+test("armado legacy sin medidas: se mantiene la estimación (no inventa medidas)", async () => {
+  const admin = createFakeAdmin(measuredTables([
+    { actual_weight_kg: null, actual_length_cm: null, actual_width_cm: null, actual_height_cm: null },
+  ]))
+  const captured: AndreaniCreateShipmentInput[] = []
+  await createAndreaniShipmentForOrder(admin as never, 42, {
+    env: qaEnv(),
+    crearOrdenEnvio: async (input) => {
+      captured.push(input)
+      return officialOrderResponse
+    },
+  })
+  assert.equal(captured[0].items[0].producto.peso_empaquetado_kg, 4.25)
 })

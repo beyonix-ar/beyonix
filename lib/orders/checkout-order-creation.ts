@@ -44,8 +44,10 @@ import type { MercadoPagoPaymentModality } from "../pricing/checkout-pricing.ts"
 import { getPaymentComposition } from "../customer-credit.ts"
 import type { ShippingBonusSettings } from "../store-config.ts"
 import {
+  CheckoutReservationExpiredError,
   commitCheckoutStepReservation,
   deleteIncompleteCheckoutOrder,
+  normalizeReservationSessionId,
   type CheckoutReservationCommitment,
 } from "./checkout-inventory.ts"
 
@@ -169,6 +171,8 @@ export interface NormalizedCheckoutOrderItem {
   quantity: number
   variantId: number | null
   conditionedStockId: string | null
+  /** Unidad de un producto con venta aleatoria (variante física asignada). */
+  randomFulfillment?: boolean
 }
 
 export interface NormalizedCheckoutOrderCustomer {
@@ -188,6 +192,8 @@ export interface CheckoutOrderProductRow {
   precio: number
   stock: number
   activo: boolean
+  /** El cliente no elige variante: BEYONIX asigna una física con stock. */
+  venta_aleatoria?: boolean | null
 }
 
 export interface CheckoutOrderVariantRow {
@@ -224,6 +230,8 @@ interface CheckoutOrderShippingParams {
   productsTotal: number
   customerCreditApplied?: boolean
   settings: ShippingBonusSettings
+  /** Recargo logístico vigente (Admin → Configuración → Cotización de envíos). */
+  markupPercent: number
 }
 
 export interface CheckoutOrderPricingSnapshot {
@@ -303,7 +311,7 @@ interface PersistCheckoutOrderItemsParams {
 
 type CheckoutOrderDatabaseClient = ReturnType<typeof createAdminClient>
 
-const PRODUCT_SELECT = "id, nombre, precio, stock, activo"
+const PRODUCT_SELECT = "id, nombre, precio, stock, activo, venta_aleatoria"
 const VARIANT_SELECT = "id, producto_id, nombre, color_hex, stock, activo, orden"
 
 export function normalizeCheckoutOrderItems(
@@ -513,13 +521,17 @@ export function prepareCheckoutOrderCatalogRows(
         variantsByProductId
           .get(item.productId)
           ?.filter((variant) => variant.activo) ?? []
+      const randomProduct = productRows.find((row) => row.id === item.productId)?.venta_aleatoria === true
       if (activeVariants.length === 1) {
         item.variantId = activeVariants[0].id
-      } else if (activeVariants.length > 1) {
+      } else if (activeVariants.length > 1 && !randomProduct) {
         throw new Error(
           "Elegí la variante exacta antes de confirmar la compra.",
         )
       }
+      // Venta aleatoria: sin variante elegida. El stock que se valida es el
+      // del producto (suma de sus variantes físicas) y la variante concreta
+      // sale de la reserva del Paso 3 (ver resolveRandomFulfillmentItems).
     }
 
     const product = productRows.find((row) => row.id === item.productId)
@@ -608,6 +620,7 @@ export function normalizeCheckoutOrderShipping({
   productsTotal,
   customerCreditApplied = false,
   settings,
+  markupPercent,
 }: CheckoutOrderShippingParams) {
   return normalizeCheckoutShipping(
     shipping,
@@ -620,7 +633,7 @@ export function normalizeCheckoutOrderShipping({
       items,
     },
     productsTotal,
-    { customerCreditApplied, settings },
+    { customerCreditApplied, settings, markupPercent },
   )
 }
 
@@ -670,6 +683,14 @@ export function getCheckoutOrderShippingFields(
     shipping_cost_real: shipping.costReal,
     shipping_cost_charged: shipping.costCharged,
     free_shipping_applied: shipping.freeShippingApplied,
+    // Snapshot permanente: un cambio posterior del recargo en Admin nunca
+    // recalcula estas órdenes.
+    shipping_provider_quote_amount: shipping.pricing.providerAmount,
+    shipping_markup_percent: shipping.pricing.markupPercent,
+    shipping_markup_amount: shipping.pricing.markupAmount,
+    shipping_rounding_amount: shipping.pricing.roundingAmount,
+    shipping_benefit_amount: shipping.benefitAmount,
+    shipping_estimate: shipping.estimate,
     andreani_sucursal_id: branch?.id ?? null,
     andreani_sucursal_codigo: branch?.codigo ?? null,
     andreani_sucursal_nombre: branch?.nombre ?? null,
@@ -828,11 +849,70 @@ export function buildCheckoutOrderItemsPayload(
       producto_id: item.productId,
       ...(!conditioned ? { variante_id: item.variantId } : {}),
       ...getConditionedOrderItemFields(conditioned),
+      ...(item.randomFulfillment ? { random_fulfillment: true } : {}),
       cantidad: item.quantity,
       precio: product
         ? getCheckoutOrderItemUnitPrice(product.id, product.precio, conditioned)
         : 0,
     }
+  })
+}
+
+/**
+ * Venta aleatoria: cada unidad pedida sin variante se convierte en un renglón
+ * de 1 unidad con la variante física que el Paso 3 reservó para esta sesión
+ * (reserve_cart_stock, bajo lock por producto). Un renglón por unidad permite
+ * que el armado cambie la variante de una unidad sin dividir renglones ya
+ * facturados, y que una devolución vuelva a la variante física correcta.
+ */
+export async function resolveRandomFulfillmentItems(
+  admin: CheckoutOrderDatabaseClient,
+  items: NormalizedCheckoutOrderItem[],
+  products: CheckoutOrderProductRow[],
+  reservationSessionId: string | null | undefined,
+): Promise<NormalizedCheckoutOrderItem[]> {
+  const randomProductIds = new Set(
+    items
+      .filter((item) => !item.variantId && !item.conditionedStockId &&
+        products.find((product) => product.id === item.productId)?.venta_aleatoria === true)
+      .map((item) => item.productId),
+  )
+  if (!randomProductIds.size) return items
+  const sessionId = normalizeReservationSessionId(reservationSessionId)
+  if (!sessionId) throw new CheckoutReservationExpiredError()
+
+  const { data, error } = await admin
+    .from("stock_reservations")
+    .select("product_id, variant_id, quantity")
+    .eq("session_id", sessionId)
+    .in("product_id", [...randomProductIds])
+    .is("order_id", null)
+    .is("conditioned_stock_id", null)
+    .not("variant_id", "is", null)
+    .gt("expires_at", new Date().toISOString())
+  if (error) throw new Error("No se pudo validar la reserva de stock.")
+
+  const allocations = new Map<number, Array<{ variantId: number; quantity: number }>>()
+  for (const row of (data ?? []) as Array<{ product_id: number; variant_id: number; quantity: number }>) {
+    const list = allocations.get(Number(row.product_id)) ?? []
+    list.push({ variantId: Number(row.variant_id), quantity: Number(row.quantity) })
+    allocations.set(Number(row.product_id), list)
+  }
+
+  return items.flatMap((item) => {
+    if (!randomProductIds.has(item.productId) || item.variantId || item.conditionedStockId) return [item]
+    const allocated = (allocations.get(item.productId) ?? []).sort((left, right) => left.variantId - right.variantId)
+    if (allocated.reduce((sum, allocation) => sum + allocation.quantity, 0) !== item.quantity) {
+      throw new Error(STOCK_CHANGED_MESSAGE)
+    }
+    return allocated.flatMap((allocation) =>
+      Array.from({ length: allocation.quantity }, (): NormalizedCheckoutOrderItem => ({
+        productId: item.productId,
+        quantity: 1,
+        variantId: allocation.variantId,
+        conditionedStockId: null,
+        randomFulfillment: true,
+      })))
   })
 }
 
@@ -847,9 +927,16 @@ export async function insertCheckoutOrderItemsAndValidateInventory({
   reservationCommitment,
   insertErrorMessage = "No se pudieron crear los ítems de la orden.",
 }: PersistCheckoutOrderItemsParams) {
+  let resolvedItems: NormalizedCheckoutOrderItem[]
+  try {
+    resolvedItems = await resolveRandomFulfillmentItems(admin, items, products, reservationSessionId)
+  } catch (resolutionError) {
+    await deleteIncompleteCheckoutOrder(admin, orderId)
+    throw resolutionError
+  }
   const orderItemsPayload = buildCheckoutOrderItemsPayload(
     orderId,
-    items,
+    resolvedItems,
     products,
     conditionedRows,
   )
@@ -866,7 +953,7 @@ export async function insertCheckoutOrderItemsAndValidateInventory({
     // Todo medio de pago compromete la reserva vigente del Paso 3 sin
     // renovarla (20 minutos desde que se reservó el stock).
     return await commitCheckoutStepReservation(
-      admin, items, reservationSessionId, orderId, reservationCommitment,
+      admin, resolvedItems, reservationSessionId, orderId, reservationCommitment,
     )
   } catch (inventoryError) {
     await deleteIncompleteCheckoutOrder(admin, orderId)

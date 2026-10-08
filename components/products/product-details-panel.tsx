@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 
 import {
   Armchair,
@@ -65,12 +65,14 @@ import { ColorSelector, formatColorName } from "./color-selector"
 import { ProductPurchaseBox } from "./product-purchase-box"
 import { ProductRatingSummary } from "./product-rating-summary"
 import { ProductReviewsDialog } from "./product-reviews-dialog"
+import { RandomVariantHint } from "./random-variant-hint"
 import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
+  RANDOM_VARIANT_LABEL,
 } from "@/lib/products/product-variants"
 import { getPriceWithoutNationalTaxes, getTransferPrice } from "@/lib/pricing/financed-pricing"
-import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
+import { getProductInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import {
   MAX_CART_ITEM_QUANTITY,
   getQuantityLimitMessage,
@@ -174,15 +176,19 @@ export function ProductDetailsPanel({
   const [previewedColor, setPreviewedColor] = useState<
     { name: string; value: string; colorHex?: string | null; image?: string | null } | null
   >(null)
-  const displayedColorName = formatColorName(
-    previewedColor?.name ?? selectedOption?.name ?? "",
-  )
-  const { pricing, interestFreeOffer } = useSiteSettings()
+  // "Aleatorio según stock" es una frase, no un nombre de color: sin
+  // mayúscula por palabra.
+  const displayedColorName =
+    !previewedColor && selectedOption?.isRandom
+      ? RANDOM_VARIANT_LABEL
+      : formatColorName(previewedColor?.name ?? selectedOption?.name ?? "")
+  const { pricing, interestFreeOffer, installmentsFinancing } = useSiteSettings()
   const cashPrice = selectedOption?.price ?? product.precio
   const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
-  // Regla GLOBAL de compra (no del producto): el mismo texto en toda la
-  // tienda; lo que se ofrece lo define el total real en el checkout.
-  const interestFreeText = getInterestFreeMessage(interestFreeOffer)?.text ?? null
+  // Sólo el plan que el precio financiado de esta variante alcanza (nunca
+  // el de transferencia); lo que se cobra lo define el total del checkout.
+  const interestFreeText =
+    getProductInterestFreeMessage(interestFreeOffer, cashPrice, installmentsFinancing)?.text ?? null
   const priceWithoutNationalTaxesCash = getPriceWithoutNationalTaxes(
     cashPrice,
     pricing.nationalTaxesIncidencePercent,
@@ -212,31 +218,12 @@ export function ProductDetailsPanel({
   const hasReviews =
     Number.isInteger(reviewsCount) && reviewsCount > 0
 
-  const descriptionText = product.descripcion?.trim() || ""
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false)
-  const [isDescriptionClamped, setIsDescriptionClamped] = useState(false)
-  const descriptionRef = useRef<HTMLParagraphElement>(null)
-
-  useEffect(() => {
-    const el = descriptionRef.current
-    if (!el) return
-
-    const measure = () => {
-      setIsDescriptionClamped(el.scrollHeight > el.clientHeight + 1)
-    }
-
-    measure()
-
-    const resizeObserver = new ResizeObserver(measure)
-    resizeObserver.observe(el)
-
-    return () => resizeObserver.disconnect()
-  }, [descriptionText])
-
-  const showDescriptionToggle = isDescriptionClamped || isDescriptionExpanded
+  // Venta aleatoria: no hay color para elegir (sin selección falsa); sólo
+  // aparece selector si además hay unidades con descuento para elegir.
+  const isRandomSelected = selectedOption?.isRandom === true
 
   return (
-    <aside className="beyonix-modal-shell flex flex-col bg-[#080D13] text-white md:border-l md:border-white/7">
+    <aside className="beyonix-modal-shell flex min-w-0 flex-col bg-[#080D13] text-white md:border-l md:border-white/7">
       <div className="px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
         {product.categorias?.nombre && (
           <span className="beyonix-category-pill mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
@@ -299,6 +286,7 @@ export function ProductDetailsPanel({
         />
       </div>
 
+      {(limitedFeatures.length > 0 || hasVariants || selectedOption?.isConditioned) && (
       <div className="beyonix-modal-header border-t border-white/7 px-5 py-5 md:px-7">
         <div className="space-y-7">
           {limitedFeatures.length > 0 && (
@@ -342,26 +330,32 @@ export function ProductDetailsPanel({
 
           {hasVariants && (
             <section>
-              <p className="mb-3 text-14px">
-                <span className="beyonix-modal-body text-white/55">Color: </span>
+              <p className={`flex flex-wrap items-center gap-x-1 text-14px ${colors.length > 1 ? "mb-3" : ""}`}>
+                <span className="beyonix-modal-body text-white/55">
+                  {isRandomSelected && !previewedColor ? "Color/modelo:" : "Color:"}
+                </span>
                 <span className="beyonix-modal-title font-semibold text-white">
                   {displayedColorName}
                 </span>
+                {isRandomSelected && !previewedColor && <RandomVariantHint />}
               </p>
 
-              <ColorSelector
-                colors={colors.map((color) => ({
-                  name: color.name,
-                  value: color.value,
-                  colorHex: color.colorHex,
-                  image: color.images[0] ?? null,
-                }))}
-                selectedColor={selectedColor}
-                onSelect={onColorChange}
-                onPreviewChange={setPreviewedColor}
-                thumbnailMode
-                showLabels
-              />
+              {colors.length > 1 && (
+                <ColorSelector
+                  colors={colors.map((color) => ({
+                    name: color.name,
+                    value: color.value,
+                    colorHex: color.colorHex,
+                    secondaryColorHex: color.secondaryColorHex,
+                    image: color.images[0] ?? null,
+                  }))}
+                  selectedColor={selectedColor}
+                  onSelect={onColorChange}
+                  onPreviewChange={setPreviewedColor}
+                  thumbnailMode
+                  showLabels
+                />
+              )}
             </section>
           )}
 
@@ -376,43 +370,9 @@ export function ProductDetailsPanel({
               </p>
             </section>
           )}
-
-          <section>
-            <p className="mb-2 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
-              Descripción
-            </p>
-
-            {descriptionText ? (
-              <>
-                <p
-                  ref={descriptionRef}
-                  className={`beyonix-modal-body text-15px font-normal leading-7 text-white/80 ${
-                    isDescriptionExpanded ? "" : "line-clamp-4"
-                  }`}
-                >
-                  {descriptionText}
-                </p>
-
-                {showDescriptionToggle && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setIsDescriptionExpanded((current) => !current)
-                    }
-                    className="mt-1.5 cursor-pointer text-13px font-semibold text-beyonix-sky/85 transition-colors hover:text-beyonix-sky"
-                  >
-                    {isDescriptionExpanded ? "Ver menos" : "Ver más"}
-                  </button>
-                )}
-              </>
-            ) : (
-              <p className="beyonix-modal-body text-15px leading-6 text-white/68">
-                Producto seleccionado para una experiencia de compra simple y confiable.
-              </p>
-            )}
-          </section>
         </div>
       </div>
+      )}
     </aside>
   )
 }

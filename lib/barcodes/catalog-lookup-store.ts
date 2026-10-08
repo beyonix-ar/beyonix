@@ -29,6 +29,13 @@ export function createSupabaseCatalogCodeStore(admin: SupabaseClient): CatalogCo
         .eq("normalized_barcode", normalizedBarcode)
         .maybeSingle()))
     },
+    async aliasOwner(normalizedBarcode) {
+      return owner(check(await admin
+        .from("catalog_barcode_aliases")
+        .select("product_id, variant_id")
+        .eq("normalized_barcode", normalizedBarcode)
+        .maybeSingle()))
+    },
     async skuOwner(normalizedSku) {
       return owner(check(await admin
         .from("catalog_sku_registry")
@@ -60,7 +67,7 @@ export function createSupabaseCatalogCodeStore(admin: SupabaseClient): CatalogCo
       const [productResult, variantsResult] = await Promise.all([
         admin
           .from("productos")
-          .select("id, nombre, activo, stock, sku, codigo_barra")
+          .select("id, nombre, activo, stock, sku, codigo_barra, venta_aleatoria")
           .eq("id", id)
           .maybeSingle(),
         admin
@@ -79,6 +86,7 @@ export function createSupabaseCatalogCodeStore(admin: SupabaseClient): CatalogCo
         stock: toStock(row.stock),
         sku: toText(row.sku),
         codigo_barra: toText(row.codigo_barra),
+        venta_aleatoria: row.venta_aleatoria === true,
         variantCount: variantsResult.count ?? 0,
       }
     },

@@ -91,6 +91,7 @@ import {
   type CheckoutStoreBenefitPreview,
 } from "@/lib/customer-store-benefits"
 import { getSiteSettings } from "@/lib/site-settings"
+import { getShippingQuoteSettings } from "@/lib/shipping/shipping-quote-settings"
 import { getInterestFreeInstallments } from "@/lib/mercadopago/interest-free-installments"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
@@ -242,7 +243,10 @@ export async function POST(request: Request) {
       items,
     )
     const pricingLines = buildCheckoutPricingLines(items, catalog)
-    const siteSettings = await getSiteSettings({ fresh: true })
+    const [siteSettings, shippingQuoteSettings] = await Promise.all([
+      getSiteSettings({ fresh: true }),
+      getShippingQuoteSettings(),
+    ])
     const pricingSettings: CheckoutPricingSettings = {
       installmentsFinancing: siteSettings.installmentsFinancing,
       transferDiscountPercent: siteSettings.pricing.transferDiscountPercent,
@@ -259,6 +263,7 @@ export async function POST(request: Request) {
       productsTotal: calculateCartTotals(catalog.cartRows).productsTotal,
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
+      markupPercent: shippingQuoteSettings.logisticsMarkupPercent,
     })
     const shippingBranch = await resolveCheckoutOrderShippingBranch(
       payload.shipping,

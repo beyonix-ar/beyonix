@@ -36,7 +36,7 @@ window.fetch = async (input, init) => {
   }
   if (path === "/api/admin/settings") {
     if (init && init.method === "PATCH") window.__patches.push(JSON.parse(init.body))
-    return Response.json({ settings: ${JSON.stringify(SETTINGS)}, mercadoPagoCosts: costs })
+    return Response.json({ settings: ${JSON.stringify(SETTINGS)}, mercadoPagoCosts: costs, shippingQuote: { logisticsMarkupPercent: 3 } })
   }
   return Response.json({})
 }
@@ -124,7 +124,7 @@ for (const theme of ["light", "dark"] as const) {
       assert.deepEqual(groups, [
         { id: "integraciones", label: "Integraciones", blocks: ["andreani"] },
         { id: "inventario", label: "Inventario", blocks: ["stock"] },
-        { id: "comercial", label: "Comercial", blocks: ["shipping", "pricing"] },
+        { id: "comercial", label: "Comercial", blocks: ["shipping", "shipping-quote", "pricing"] },
         { id: "pagos", label: "Pagos", blocks: ["financing", "customer-credit"] },
         { id: "visuales", label: "Visuales", blocks: ["banners"] },
       ])
@@ -283,6 +283,33 @@ for (const theme of ["light", "dark"] as const) {
         { customerCreditPayments: { mercadoPagoSurchargePercent: 0, mercadoPagoMinimumAmount: 12_000 } },
       ])
       for (const name of ["stock", "shipping"]) assert.equal(await mode(page, name), "read", name)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test(`${theme}: Cotización de envíos: recargo con 2 decimales, ejemplo, ayuda y guardado propio`, async () => {
+    const page = await open(theme, costsOverview("manual", null))
+    try {
+      const block = configBlock(page, "shipping-quote")
+      assert.equal(await mode(page, "shipping-quote"), "read")
+      assert.equal(await rowValue(page, "shipping-quote", "Recargo logístico"), "3%")
+      assert.equal(await rowValue(page, "shipping-quote", "Ejemplo"), "$ 10.000 → $ 10.300")
+      await block.getByRole("button", { name: "Ayuda: Recargo logístico" }).hover()
+      await page.getByRole("tooltip").getByText(/Las órdenes ya creadas conservan su porcentaje/).waitFor()
+
+      await edit(page, "shipping-quote")
+      const input = block.getByLabel("Recargo logístico sobre la tarifa de Andreani")
+      await input.fill("% 5,555")
+      await block.getByRole("alert").getByText(/hasta 2 decimales/).waitFor()
+      assert.equal(await saveButton(page, "shipping-quote").isDisabled(), true, "no guarda más de 2 decimales")
+      await input.fill("% 5,5")
+      assert.equal(await rowValue(page, "shipping-quote", "Ejemplo"), "$ 10.000 → $ 10.550")
+      await saveButton(page, "shipping-quote").click()
+      await block.getByText(/Guardado\./).waitFor()
+
+      assert.deepEqual(await patches(page), [{ shippingQuote: { logisticsMarkupPercent: 5.5 } }])
+      for (const name of ["stock", "shipping", "pricing"]) assert.equal(await mode(page, name), "read", name)
     } finally {
       await page.close()
     }

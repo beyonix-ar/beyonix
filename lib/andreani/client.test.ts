@@ -1464,3 +1464,83 @@ test("resolveAndreaniReferenceEnvironment falla cerrado ante un ambiente inváli
     (error: unknown) => error instanceof AndreaniError && error.code === "CONFIGURATION_ERROR",
   )
 })
+
+const MULTI_ENVIO = {
+  contrato: "300006611",
+  origen: { postal: { codigoPostal: "3378", calle: "Av Falsa", numero: "380", localidad: "Puerto Esperanza" } },
+  destino: { postal: { codigoPostal: "1292", calle: "Macacha Guemes", numero: "28", localidad: "C.A.B.A." } },
+  remitente: { nombreCompleto: "Alberto Lopez" },
+  destinatario: [{ nombreCompleto: "Juana Gonzalez" }],
+}
+const parcelItem = (index: number, kilos: number) => ({
+  producto: { id: 0, nombre: `Pedido BX-1042 · bulto ${index}`, peso_empaquetado_kg: kilos, alto_paquete_cm: 20, ancho_paquete_cm: 30, largo_paquete_cm: 40 },
+  bulto: { volumenCm: 24_000, valorDeclaradoConImpuestos: 5_000, referencias: [{ meta: "idCliente", contenido: "42" }] },
+})
+
+test("tarifa multi-bulto: todos los bultos en UNA consulta (bultos[0], bultos[1], ...)", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const urls: string[] = []
+  const client = new AndreaniClient({
+    env: qaEnvironment(),
+    fetch: async (input) => {
+      if (String(input).endsWith("/login")) return Response.json({ token: "token-multi" })
+      urls.push(String(input))
+      return Response.json({
+        pesoAforado: "5600.00",
+        tarifaSinIva: { seguroDistribucion: "0", distribucion: "0", total: "0" },
+        tarifaConIva: { seguroDistribucion: "0", distribucion: "39429.54", total: "39429.54" },
+      })
+    },
+  })
+  const quote = await client.cotizarEnvio({
+    cpDestino: "1414",
+    contrato: "CONTRATO-QA",
+    cliente: "CLIENTE-QA",
+    bultos: [
+      { volumen: 8_000, kilos: 2, largoCm: 20, anchoCm: 20, altoCm: 20, valorDeclarado: 10_000 },
+      { volumen: 24_000, kilos: 3.5, largoCm: 40, anchoCm: 30, altoCm: 20, valorDeclarado: 5_000 },
+    ],
+  })
+  assert.equal(urls.length, 1)
+  const url = new URL(urls[0])
+  assert.equal(url.searchParams.get("bultos[0][kilos]"), "2")
+  assert.equal(url.searchParams.get("bultos[1][kilos]"), "3.5")
+  assert.equal(url.searchParams.get("bultos[1][largoCm]"), "40")
+  assert.equal(url.searchParams.get("bultos[1][volumen]"), "24000")
+  assert.equal(url.searchParams.has("bultos[2][volumen]"), false)
+  assert.equal(quote.tarifaConIva.total, "39429.54")
+
+  for (const bultos of [[], Array.from({ length: 51 }, () => ({ volumen: 1_000 }))]) {
+    await assert.rejects(
+      () => client.cotizarEnvio({ cpDestino: "1414", contrato: "CONTRATO-QA", cliente: "CLIENTE-QA", bultos }),
+      (error) => error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+    )
+  }
+})
+
+test("creación B2C multi-bulto: cada bulto físico viaja con su peso y medidas; 0, más de 300 o más de 50 kg se rechazan sin red", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const bodies: Array<{ bultos: Array<{ kilos: number; largoCm: number }> }> = []
+  let fetchCalls = 0
+  const client = new AndreaniClient({
+    env: qaEnvironment(),
+    fetch: async (input, init) => {
+      fetchCalls += 1
+      if (String(input).endsWith("/login")) return Response.json({ token: "token-multi" })
+      bodies.push(JSON.parse(String(init?.body)))
+      return Response.json(officialOrderResponse)
+    },
+  })
+  await client.crearEnvio({ envio: MULTI_ENVIO, items: [parcelItem(1, 12), parcelItem(2, 48)] } as AndreaniCreateShipmentInput)
+  assert.equal(bodies[0].bultos.length, 2)
+  assert.deepEqual(bodies[0].bultos.map((bulto) => bulto.kilos), [12, 48])
+
+  const callsBefore = fetchCalls
+  for (const items of [[], Array.from({ length: 301 }, (_, index) => parcelItem(index + 1, 1)), [parcelItem(1, 10), parcelItem(2, 50.001)]]) {
+    await assert.rejects(
+      () => client.crearEnvio({ envio: MULTI_ENVIO, items } as AndreaniCreateShipmentInput),
+      (error) => error instanceof AndreaniError && error.code === "VALIDATION_ERROR",
+    )
+  }
+  assert.equal(fetchCalls, callsBefore)
+})

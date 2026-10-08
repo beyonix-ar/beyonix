@@ -31,6 +31,7 @@ function pgStore(db: PGlite, queries: string[]): CatalogCodeStore {
     row && { productId: row.product_id == null ? null : Number(row.product_id), variantId: row.variant_id == null ? null : Number(row.variant_id) }
   return {
     async barcodeOwner(code) { return owner(await one<OwnerRow>("select product_id, variant_id from catalog_barcode_registry where normalized_barcode = $1", [code])) },
+    async aliasOwner() { return null },
     async skuOwner(sku) { return owner(await one<OwnerRow>("select product_id, variant_id from catalog_sku_registry where normalized_sku = $1", [sku])) },
     async variant(id) {
       const row = await one<{ id: number; producto_id: number; nombre: string; activo: boolean; stock: number | null; sku: string | null; color_hex: string | null; codigo_barra: string | null }>(

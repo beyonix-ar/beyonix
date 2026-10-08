@@ -7,15 +7,25 @@ import {
   loadFinancingPolicyEvents,
   normalizeSiteSettingsPatch,
 } from "@/lib/site-settings"
+import {
+  getShippingQuoteSettings,
+  parseShippingQuoteSettingsPatch,
+  SHIPPING_QUOTE_SETTINGS_KEY,
+  type ShippingQuoteSettings,
+} from "@/lib/shipping/shipping-quote-settings"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
 
+// El recargo logístico ("Cotización de envíos") se lee y guarda aparte de
+// SiteSettings: esa configuración se publica en /api/store/settings y el
+// porcentaje es un dato interno.
 async function loadAdminSettings() {
-  const [settings, mercadoPagoCosts] = await Promise.all([
+  const [settings, mercadoPagoCosts, shippingQuote] = await Promise.all([
     getSiteSettings({ fresh: true }),
     getMercadoPagoCostsOverview(),
+    getShippingQuoteSettings(),
   ])
-  return { settings, mercadoPagoCosts }
+  return { settings, mercadoPagoCosts, shippingQuote }
 }
 
 export async function GET(request: Request) {
@@ -30,12 +40,23 @@ export async function PATCH(request: Request) {
   if ("error" in auth) return auth.error
 
   let changes: ReturnType<typeof normalizeSiteSettingsPatch>
+  let shippingQuoteChange: ShippingQuoteSettings | null = null
   try {
-    changes = normalizeSiteSettingsPatch(await request.json())
-  } catch {
-    return Response.json({ error: "La configuración no es válida." }, { status: 400 })
+    const body: unknown = await request.json()
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid")
+    const { shippingQuote, ...rest } = body as Record<string, unknown>
+    if (shippingQuote !== undefined) shippingQuoteChange = parseShippingQuoteSettingsPatch(shippingQuote)
+    changes = Object.keys(rest).length || !shippingQuoteChange ? normalizeSiteSettingsPatch(rest) : []
+  } catch (error) {
+    const message = error instanceof Error && error.name === "ShippingMarkupError"
+      ? error.message
+      : "La configuración no es válida."
+    return Response.json({ error: message }, { status: 400 })
   }
-  const before = await getSiteSettings({ fresh: true })
+  const [before, shippingQuoteBefore] = await Promise.all([
+    getSiteSettings({ fresh: true }),
+    getShippingQuoteSettings(),
+  ])
 
   // Política de precio financiado: mientras un evento de financiación la
   // controla, no se cambia a mano (nunca se pisa en silencio la
@@ -73,7 +94,8 @@ export async function PATCH(request: Request) {
       }, { status: controlled ? 409 : 500 })
     }
   }
-  const otherChanges = changes.filter(({ field }) => field !== "financedPricePolicy")
+  const otherChanges: Array<{ key: string; value: unknown }> = changes.filter(({ field }) => field !== "financedPricePolicy")
+  if (shippingQuoteChange) otherChanges.push({ key: SHIPPING_QUOTE_SETTINGS_KEY, value: shippingQuoteChange })
   const { error } = otherChanges.length ? await auth.admin.from("site_settings").upsert(
     otherChanges.map(({ key, value }) => ({
       key, value, updated_by: auth.user.id, updated_at: updatedAt,
@@ -90,11 +112,17 @@ export async function PATCH(request: Request) {
   const { error: auditError } = await auth.admin.from("audit_logs").insert({
     table_name: "site_settings",
     action: "UPDATE",
-    record_id: changes.map(({ key }) => key).join(","),
+    record_id: [...changes.map(({ key }) => key), ...(shippingQuoteChange ? [SHIPPING_QUOTE_SETTINGS_KEY] : [])].join(","),
     actor_user_id: auth.user.id,
     actor_email: auth.user.email ?? auth.profile.email,
-    before_data: Object.fromEntries(changes.map(({ field }) => [field, before[field]])),
-    after_data: Object.fromEntries(changes.map(({ field, value }) => [field, value])),
+    before_data: {
+      ...Object.fromEntries(changes.map(({ field }) => [field, before[field]])),
+      ...(shippingQuoteChange ? { shippingQuote: shippingQuoteBefore } : {}),
+    },
+    after_data: {
+      ...Object.fromEntries(changes.map(({ field, value }) => [field, value])),
+      ...(shippingQuoteChange ? { shippingQuote: shippingQuoteChange } : {}),
+    },
   })
   if (auditError) {
     console.error("SITE_SETTINGS_AUDIT_FAILED", { code: auditError.code })

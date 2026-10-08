@@ -18,14 +18,25 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json()
     const quotedOptions = await quoteAndreaniCheckout(payload)
+    // Al navegador sólo viajan los campos públicos de cada opción (lista
+    // blanca): la tarifa del proveedor, el recargo y la estimación de bultos
+    // quedan dentro del token cifrado.
     const options = quotedOptions.map((option) => {
-      const tokenOption = { type: option.type, price: option.price, costCharged: option.costCharged }
+      const tokenOption = {
+        type: option.type,
+        price: option.price,
+        costCharged: option.costCharged,
+        pricing: option.pricing,
+        estimate: option.estimate,
+      }
       const branches = option.type === "sucursal" ? option.branches?.map((branch) => ({
         ...branch,
         quoteToken: createCheckoutShippingQuoteToken({ ...payload, sucursalId: branch.id }, tokenOption),
       })) : undefined
       return {
-        ...option,
+        type: option.type,
+        price: option.price,
+        costCharged: option.costCharged,
         branches,
         quoteToken: option.type === "sucursal" ? branches?.[0]?.quoteToken :
           createCheckoutShippingQuoteToken({ ...payload, sucursalId: null }, tokenOption),

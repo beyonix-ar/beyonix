@@ -37,6 +37,7 @@ import {
 } from "@/lib/supabase/queries/productos"
 
 import { slugify } from "./helpers"
+import { sanitizeRichDescription } from "@/lib/products/rich-description"
 import {
   isPlayableProductVideo,
   isValidHttpsVideoUrl,
@@ -382,8 +383,9 @@ export function useProductoForm({
         form.slug.trim() ||
         slugify(form.nombre),
 
+      // Siempre por la allowlist: nunca se persiste marcado libre.
       descripcion:
-        form.descripcion.trim() ||
+        sanitizeRichDescription(form.descripcion) ||
         null,
 
       video_url:

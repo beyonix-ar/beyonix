@@ -116,7 +116,8 @@ export interface AndreaniTariffRequest {
   contrato: string
   cliente: string
   sucursalOrigen?: string
-  bultos: [AndreaniTariffPackage]
+  /** Uno o varios bultos, cotizados en una sola consulta (ver cotizarEnvio). */
+  bultos: AndreaniTariffPackage[]
 }
 
 export type AndreaniTariffResponse = AndreaniQuoteResponse
@@ -328,7 +329,7 @@ export type AndreaniB2COrderRequest = Omit<
   AndreaniCreateShipmentRequest,
   "bultos"
 > & {
-  bultos: [AndreaniPackage]
+  bultos: AndreaniPackage[]
 }
 
 export interface AndreaniShipmentBranch {

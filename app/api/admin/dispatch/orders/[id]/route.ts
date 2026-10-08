@@ -1,7 +1,15 @@
+import { after } from "next/server"
+
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
+import { quoteOrderParcels } from "@/lib/andreani/parcel-quote"
 import { dispatchError, getOrderDispatch, isRequestKey, validId } from "@/lib/admin/dispatch"
+import { parseParcelMeasures, ParcelMeasuresError } from "@/lib/shipping/parcel-measures"
 
 type Context = { params: Promise<{ id: string }> }
+
+// Los costos de envío (cotización y recotización) son datos financieros:
+// el operador arma y carga medidas, pero sólo Admin ve importes.
+const canSeeCosts = (role: string | null | undefined) => role === "admin" || role === "super_admin"
 
 export async function GET(request: Request, context: Context) {
   const id = validId((await context.params).id)
@@ -9,7 +17,7 @@ export async function GET(request: Request, context: Context) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   try {
-    const detail = await getOrderDispatch(auth.admin, id)
+    const detail = await getOrderDispatch(auth.admin, id, { includeCosts: canSeeCosts(auth.profile.rol) })
     return detail ? Response.json(detail, { headers: { "Cache-Control": "no-store" } }) : Response.json({ error: "Pedido no encontrado." }, { status: 404 })
   } catch {
     return Response.json({ error: "No se pudo cargar el pedido." }, { status: 500 })
@@ -23,7 +31,7 @@ export async function POST(request: Request, context: Context) {
   if (!id) return Response.json({ error: "Pedido inválido." }, { status: 400 })
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
-  const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcelCount?: number } | null
+  const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown } | null
   if (!body || !["start", "scan", "reset", "parcels"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
   let scan: ScanResult | null = null
   if (body.action === "start") {
@@ -38,10 +46,21 @@ export async function POST(request: Request, context: Context) {
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
     scan = result.data as ScanResult
   } else if (body.action === "parcels") {
-    const parcelCount = Number(body.parcelCount)
-    if (!Number.isInteger(parcelCount) || parcelCount < 1 || parcelCount > 50 || !isRequestKey(body.requestKey)) return Response.json({ error: "Indicá entre 1 y 50 bultos." }, { status: 400 })
-    const result = await auth.admin.rpc("set_order_package_parcels", { p_order_id: id, p_parcel_count: parcelCount, p_actor_id: auth.user.id, p_request_key: body.requestKey })
+    if (!isRequestKey(body.requestKey)) return Response.json({ error: "Solicitud inválida." }, { status: 400 })
+    let parcels: ReturnType<typeof parseParcelMeasures>
+    try {
+      parcels = parseParcelMeasures(body.parcels)
+    } catch (error) {
+      return Response.json({ error: error instanceof ParcelMeasuresError ? error.message : "Medidas inválidas." }, { status: 400 })
+    }
+    const result = await auth.admin.rpc("set_order_package_parcels_measured", { p_order_id: id, p_parcels: parcels, p_actor_id: auth.user.id, p_request_key: body.requestKey })
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
+    // Recotización con los bultos reales, después de responder: no demora
+    // el armado. Nunca cobra al cliente; sólo deja la comparación guardada.
+    after(async () => {
+      const outcome = await quoteOrderParcels(auth.admin, id).catch(() => ({ status: "failed" as const, error: "UNEXPECTED_ERROR" }))
+      if (outcome.status === "failed") console.warn("ORDER_PARCEL_QUOTE_FAILED", { orderId: id, code: outcome.error })
+    })
   } else {
     const reason = body.reason?.trim() ?? ""
     if (reason.length < 10 || reason.length > 1000 || !isRequestKey(body.requestKey)) return Response.json({ error: "Ingresá un motivo de al menos 10 caracteres." }, { status: 400 })
@@ -49,7 +68,7 @@ export async function POST(request: Request, context: Context) {
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
   }
   try {
-    const detail = await getOrderDispatch(auth.admin, id)
+    const detail = await getOrderDispatch(auth.admin, id, { includeCosts: canSeeCosts(auth.profile.rol) })
     return Response.json({ ...detail, scan }, { headers: { "Cache-Control": "no-store" } })
   } catch {
     return Response.json({ error: "La operación se guardó, pero no se pudo actualizar la vista. Recargá el pedido." }, { status: 503 })

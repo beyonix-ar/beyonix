@@ -6,19 +6,20 @@ function readSource(path: string) {
   return readFileSync(new URL(path, import.meta.url), "utf8")
 }
 
-// La financiación ya no es una propiedad del producto: PDP, tarjetas y Home
-// muestran la regla GLOBAL vigente ("Hasta N cuotas sin interés a partir de
-// $X"), confirmada por Mercado Pago (Admin → Financiación). El monto real lo
-// define el total del checkout.
+// La financiación no es una propiedad del producto (Admin → Financiación):
+// PDP, tarjetas y Home sólo comunican el plan que Mercado Pago confirma y que
+// el precio financiado de ESE producto alcanza ("Hasta N cuotas sin
+// interés"); nunca un "a partir de $X" que el producto no cumple. El monto
+// real lo define el total del checkout.
 
-test("PDP, tarjetas y Home usan la comunicación global, nunca una oferta calculada por producto", () => {
+test("PDP, tarjetas y Home usan la regla vigente de Mercado Pago aplicada al precio del producto", () => {
   for (const path of [
     "./product-details-panel.tsx",
     "./shared/shared-product-card.tsx",
     "../hero-section.tsx",
   ]) {
     const source = readSource(path)
-    assert.match(source, /getInterestFreeMessage\(/, path)
+    assert.match(source, /getProductInterestFreeMessage\(/, path)
     assert.match(source, /interestFreeOffer/, path)
     assert.doesNotMatch(
       source,

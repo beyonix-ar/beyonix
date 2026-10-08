@@ -26,7 +26,7 @@ import {
   getDiscountPercent,
 } from "@/lib/products/product-variants"
 import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
-import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
+import { getProductInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import {
   MAX_CART_ITEM_QUANTITY,
   getQuantityLimitMessage,
@@ -69,7 +69,7 @@ export default function SharedProductCard({
     increaseQuantity,
     decreaseQuantity,
   } = useCart()
-  const { pricing, interestFreeOffer } = useSiteSettings()
+  const { pricing, interestFreeOffer, installmentsFinancing } = useSiteSettings()
   const feedbackTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isFavorite, setIsFavorite] =
@@ -97,9 +97,13 @@ export default function SharedProductCard({
     defaultVariant.price,
     defaultVariant.originalPrice
   )
-  // Regla GLOBAL de compra (no una propiedad del producto): el mismo texto
-  // en toda la tienda, sin importar el precio de este producto.
-  const installmentLabel = getInterestFreeMessage(interestFreeOffer)?.text ?? null
+  // Sólo si el precio en cuotas de ESTE producto alcanza el mínimo que
+  // Mercado Pago confirma para ese plan; si no, no se promete nada.
+  const installmentLabel = getProductInterestFreeMessage(
+    interestFreeOffer,
+    defaultVariant.price,
+    installmentsFinancing,
+  )?.text ?? null
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     defaultVariant.price,
     pricing.nationalTaxesIncidencePercent,

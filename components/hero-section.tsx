@@ -16,7 +16,7 @@ import {
   BeyonixCard,
   BeyonixIconBox,
 } from "@/components/beyonix-ui"
-import { getInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
+import { getProductInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
 import { getDefaultVariantOption } from "@/lib/products/product-variants"
 import { getProductDiscount } from "@/lib/store-config"
 import type { SupabaseProducto } from "@/lib/supabase/types"
@@ -82,10 +82,12 @@ export function HeroSection({
     ? Math.round((1 - finalPrice / originalPrice) * 100)
     : 0
   const hasSale = discountPercentage > 0
-  const { interestFreeOffer } = useSiteSettings()
+  const { interestFreeOffer, installmentsFinancing } = useSiteSettings()
   // Regla GLOBAL vigente de la tienda (Home): el mayor rango que Mercado Pago
   // confirma hoy. Nunca una característica fija del producto.
-  const installmentLabel = featuredProduct ? getInterestFreeMessage(interestFreeOffer)?.text ?? null : null
+  const installmentLabel = featuredProduct
+    ? getProductInterestFreeMessage(interestFreeOffer, finalPrice, installmentsFinancing)?.text ?? null
+    : null
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {

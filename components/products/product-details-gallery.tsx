@@ -50,6 +50,8 @@ interface ProductDetailsGalleryProps {
   productName: string
   selectedStock: number
   videoUrl?: string | null
+  /** Aclaración bajo la galería (p. ej. venta aleatoria: imágenes ilustrativas). */
+  note?: string | null
 
   onNext: () => void
   onPrev: () => void
@@ -65,6 +67,7 @@ export function ProductDetailsGallery({
   productName,
   selectedStock,
   videoUrl,
+  note = null,
   onNext,
   onPrev,
   onSelectImage,
@@ -383,6 +386,12 @@ export function ProductDetailsGallery({
             )}
           </div>
         </div>
+      )}
+
+      {note && (
+        <p className="beyonix-modal-muted pt-2 text-center text-12px font-medium text-white/55">
+          {note}
+        </p>
       )}
     </div>
   )

@@ -20,6 +20,7 @@ import {
   Settings2,
   ShieldCheck,
   ShoppingCart,
+  Truck,
   UserCog,
   Users,
   X,
@@ -362,6 +363,12 @@ export function AdminClient({ children }: { children: ReactNode }) {
         label: "Financiación",
         description: "Mercado Pago, cuotas y costos",
         icon: <CreditCard className="size-4" />,
+      },
+      {
+        key: "logistica",
+        label: "Logística",
+        description: "Costos de envío y bultos reales",
+        icon: <Truck className="size-4" />,
       },
       {
         key: "notificaciones",

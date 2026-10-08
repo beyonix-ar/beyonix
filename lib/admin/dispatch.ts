@@ -1,9 +1,18 @@
 import type { createAdminClient } from "@/lib/supabase/admin"
+import { compareParcelQuote } from "../shipping/shipping-pricing.ts"
 
 export type DispatchAdmin = ReturnType<typeof createAdminClient>
 export type DispatchPackage = { id: number; order_id: number; status: "preparing" | "prepared"; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count?: number | null; parcels_defined_at?: string | null }
-export type DispatchLine = { order_item_id: number; expected_sku: string | null; expected_barcode: string | null; expected_quantity: number; scanned_quantity: number; product_id: number; variant_id: number | null; conditioned_stock_id: string | null; name?: string }
-export type DispatchParcel = { id: number; parcel_index: number; parcel_count: number; barcode: string; attempt_number: number; scanned?: boolean }
+export type DispatchLine = { order_item_id: number; expected_sku: string | null; expected_barcode: string | null; expected_quantity: number; scanned_quantity: number; product_id: number; variant_id: number | null; conditioned_stock_id: string | null; name?: string; /** Venta aleatoria: el armado acepta cualquier variante elegible del grupo. */ random?: boolean }
+export type DispatchParcel = { id: number; parcel_index: number; parcel_count: number; barcode: string; attempt_number: number; scanned?: boolean; weight_kg?: number | null; length_cm?: number | null; width_cm?: number | null; height_cm?: number | null }
+export type DispatchEstimatedParcel = { lengthCm: number; widthCm: number; heightCm: number; volumeCm3: number; weightKg: number }
+/** Estimación usada en checkout (referencia del operador) y recotización con bultos reales (sólo Admin). */
+export type DispatchShippingInfo = {
+  /** true sólo para Admin/Super Admin: el operador no ve importes. */
+  costsVisible: boolean
+  estimate: { parcels: DispatchEstimatedParcel[] } | null
+  parcelQuote: { status: "quoted" | "failed"; current: boolean; amount: number | null; checkoutAmount: number | null; differenceAmount: number | null; differencePercent: number | null; alert: boolean } | null
+}
 export type DispatchBatch = { id: number; code: string; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; prepared_at?: string | null; handed_over_at: string | null; handed_over_by: string | null }
 export type DispatchMembership = { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null }
 export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null }
@@ -73,6 +82,7 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_PARCEL_STALE: "Etiqueta de bulto anterior. Reimprimí las etiquetas del pedido.",
     DISPATCH_PARCEL_OTHER_BATCH: "Este bulto pertenece a otro lote.",
     DISPATCH_PARCEL_COUNT_INVALID: "Indicá entre 1 y 50 bultos.",
+    DISPATCH_PARCEL_MEASURES_INVALID: "Completá peso (hasta 1000 kg) y medidas (hasta 500 cm) mayores que 0 en cada bulto.",
     DISPATCH_PARCELS_PENDING: "Finalizá el armado indicando los bultos.",
     DISPATCH_PARCELS_MISSING: "Faltan escanear bultos del pedido.",
     DISPATCH_PARCELS_LOCKED: "Los bultos ya se escanearon en un lote. Retiralo y reiniciá el armado para cambiarlos.",
@@ -102,31 +112,35 @@ export function dispatchError(error: { message: string; details?: string | null 
   return message
 }
 
-const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at"
+const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,parcels_request_key"
+const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id"
+const ORDER_SHIPPING_COLUMNS = "shipping_estimate,shipping_provider_quote_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount,shipping_parcel_quote_request_key"
 const BATCH_COLUMNS = "id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by"
+
+const optionalNumber = (value: unknown) => value === null || value === undefined ? null : Number(value)
 
 async function currentParcels(admin: DispatchAdmin, packages: Pick<DispatchPackage, "id" | "attempt_number" | "parcel_count">[]) {
   const defined = packages.filter((pkg) => pkg.parcel_count)
   const byPackage = new Map<number, DispatchParcel[]>()
   for (let offset = 0; offset < defined.length; offset += 100) {
     const chunk = defined.slice(offset, offset + 100)
-    const result = await admin.from("order_package_parcels").select("id,package_id,parcel_index,parcel_count,barcode,attempt_number").in("package_id", chunk.map((pkg) => pkg.id)).order("parcel_index")
+    const result = await admin.from("order_package_parcels").select("id,package_id,parcel_index,parcel_count,barcode,attempt_number,actual_weight_kg,actual_length_cm,actual_width_cm,actual_height_cm").in("package_id", chunk.map((pkg) => pkg.id)).order("parcel_index")
     if (result.error) throw result.error
     const attempts = new Map(chunk.map((pkg) => [pkg.id, pkg]))
     for (const row of result.data ?? []) {
       const pkg = attempts.get(row.package_id)
       if (!pkg || row.attempt_number !== pkg.attempt_number || row.parcel_count !== pkg.parcel_count) continue
-      byPackage.set(row.package_id, [...(byPackage.get(row.package_id) ?? []), { id: row.id, parcel_index: row.parcel_index, parcel_count: row.parcel_count, barcode: row.barcode, attempt_number: row.attempt_number }])
+      byPackage.set(row.package_id, [...(byPackage.get(row.package_id) ?? []), { id: row.id, parcel_index: row.parcel_index, parcel_count: row.parcel_count, barcode: row.barcode, attempt_number: row.attempt_number, weight_kg: optionalNumber(row.actual_weight_kg), length_cm: optionalNumber(row.actual_length_cm), width_cm: optionalNumber(row.actual_width_cm), height_cm: optionalNumber(row.actual_height_cm) }])
     }
   }
   return byPackage
 }
 
-export async function getOrderDispatch(admin: DispatchAdmin, orderId: number) {
+export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, options: { includeCosts?: boolean } = {}) {
   const [orderResult, packageResult, itemsResult, membershipResult, blocksResult] = await Promise.all([
-    admin.from("ordenes").select("id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id").eq("id", orderId).maybeSingle(),
+    admin.from("ordenes").select(`${ORDER_COLUMNS},${ORDER_SHIPPING_COLUMNS}`).eq("id", orderId).maybeSingle(),
     admin.from("order_packages").select(PACKAGE_COLUMNS).eq("order_id", orderId).maybeSingle(),
-    admin.from("orden_items").select("id,producto_id,variante_id,conditioned_name,cantidad,productos(nombre),producto_variantes(nombre)").eq("orden_id", orderId).order("id"),
+    admin.from("orden_items").select("id,producto_id,variante_id,conditioned_name,cantidad,random_fulfillment,productos(nombre),producto_variantes(nombre)").eq("orden_id", orderId).order("id"),
     admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").eq("order_id", orderId).is("removed_at", null).maybeSingle(),
     admin.from("dispatch_blocks").select("id,reason").eq("order_id", orderId).is("resolved_at", null),
   ])
@@ -143,16 +157,71 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number) {
   if (linesResult?.error) throw linesResult.error
   if (batchResult?.error) throw batchResult.error
   const names = new Map<number, string>()
+  const randomItems = new Set<number>()
   for (const item of itemsResult.data ?? []) {
     const product = item.productos as unknown as { nombre?: string } | null
     const variant = item.producto_variantes as unknown as { nombre?: string } | null
-    names.set(item.id, [item.conditioned_name || product?.nombre || "Producto", variant?.nombre].filter(Boolean).join(" · "))
+    const variantLabel = item.random_fulfillment === true
+      ? `Color aleatorio${variant?.nombre ? ` (asignado: ${variant.nombre})` : ""}`
+      : variant?.nombre
+    if (item.random_fulfillment === true) randomItems.add(item.id)
+    names.set(item.id, [item.conditioned_name || product?.nombre || "Producto", variantLabel].filter(Boolean).join(" · "))
   }
-  const lines = ((linesResult?.data ?? []) as DispatchLine[]).map((line) => ({ ...line, name: names.get(line.order_item_id) ?? "Producto" }))
+  const lines = ((linesResult?.data ?? []) as DispatchLine[]).map((line) => ({
+    ...line,
+    name: names.get(line.order_item_id) ?? "Producto",
+    ...(randomItems.has(line.order_item_id) ? { random: true } : {}),
+  }))
   const batch = (batchResult?.data ?? null) as DispatchBatch | null
-  const order = orderResult.data as DispatchOrder
+  const { shipping_estimate: estimate, shipping_provider_quote_amount: checkoutQuote, shipping_parcel_quote_status: quoteStatus, shipping_parcel_quote_amount: quoteAmount, shipping_parcel_quote_request_key: quoteKey, ...orderFields } = orderResult.data as unknown as DispatchOrder & DispatchOrderShippingRow
+  const order: DispatchOrder = orderFields
+  const shipping = dispatchShippingInfo({ estimate, checkoutQuote, quoteStatus, quoteAmount, quoteKey, requestKey: (pkg as { parcels_request_key?: string | null } | null)?.parcels_request_key ?? null, includeCosts: Boolean(options.includeCosts) })
   const stage = dispatchStage({ package: pkg, batchStatus: batch?.status ?? null, handedOver: Boolean(order.andreani_handed_over_at) })
-  return { order, package: pkg, lines, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, blocked: (blocksResult.data?.length ?? 0) > 0, blockReason: blocksResult.data?.[0] ? dispatchBlockReason(blocksResult.data[0].reason) : null }
+  return { order, package: pkg, lines, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, shipping, blocked: (blocksResult.data?.length ?? 0) > 0, blockReason: blocksResult.data?.[0] ? dispatchBlockReason(blocksResult.data[0].reason) : null }
+}
+
+type DispatchOrderShippingRow = {
+  shipping_estimate: unknown
+  shipping_provider_quote_amount: number | string | null
+  shipping_parcel_quote_status: "quoted" | "failed" | null
+  shipping_parcel_quote_amount: number | string | null
+  shipping_parcel_quote_request_key: string | null
+}
+
+const isEstimatedParcel = (value: unknown): value is DispatchEstimatedParcel =>
+  Boolean(value) && typeof value === "object" &&
+  (["lengthCm", "widthCm", "heightCm", "volumeCm3", "weightKg"] as const)
+    .every((field) => Number.isFinite((value as Record<string, unknown>)[field]))
+
+export function dispatchShippingInfo(input: {
+  estimate: unknown
+  checkoutQuote: number | string | null
+  quoteStatus: "quoted" | "failed" | null
+  quoteAmount: number | string | null
+  quoteKey: string | null
+  requestKey: string | null
+  includeCosts: boolean
+}): DispatchShippingInfo {
+  const rawParcels = (input.estimate as { parcels?: unknown } | null)?.parcels
+  const parcels = Array.isArray(rawParcels) ? rawParcels.filter(isEstimatedParcel) : []
+  let parcelQuote: DispatchShippingInfo["parcelQuote"] = null
+  if (input.includeCosts && input.quoteStatus) {
+    const amount = input.quoteAmount === null ? null : Number(input.quoteAmount)
+    const checkoutAmount = input.checkoutQuote === null ? null : Number(input.checkoutQuote)
+    const comparison = amount !== null && checkoutAmount !== null
+      ? compareParcelQuote(Math.round(checkoutAmount * 100), Math.round(amount * 100))
+      : null
+    parcelQuote = {
+      status: input.quoteStatus,
+      current: Boolean(input.quoteKey && input.requestKey === input.quoteKey),
+      amount,
+      checkoutAmount,
+      differenceAmount: comparison ? comparison.differenceCents / 100 : null,
+      differencePercent: comparison?.differencePercent ?? null,
+      alert: comparison?.alert ?? false,
+    }
+  }
+  return { costsVisible: input.includeCosts, estimate: parcels.length ? { parcels } : null, parcelQuote }
 }
 
 export type OrderDispatchDetail = NonNullable<Awaited<ReturnType<typeof getOrderDispatch>>>

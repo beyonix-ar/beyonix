@@ -60,6 +60,7 @@ function variantMetadata(value: unknown) {
     "nombre",
     "sku",
     "color_hex",
+    "color_hex_secundario",
     "codigo_barra",
     "imagenes",
     "orden",
@@ -76,6 +77,7 @@ function variantMetadata(value: unknown) {
     nombre?: string
     sku?: string | null
     color_hex?: string
+    color_hex_secundario?: string | null
     codigo_barra?: string | null
     imagenes?: string[]
     orden?: number
@@ -105,6 +107,16 @@ function variantMetadata(value: unknown) {
     // si vino "nombre" en el payload, ese es el que manda.
     if (!("nombre" in record)) {
       payload.nombre = deriveVariantNameFromColor(color)
+    }
+  }
+  // Segundo color opcional (variante bicolor); null lo quita.
+  if ("color_hex_secundario" in record) {
+    if (record.color_hex_secundario == null || record.color_hex_secundario === "") {
+      payload.color_hex_secundario = null
+    } else {
+      const secondary = validColor(record.color_hex_secundario)
+      if (!secondary) return null
+      payload.color_hex_secundario = secondary
     }
   }
   if ("imagenes" in record) {

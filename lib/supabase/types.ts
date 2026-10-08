@@ -43,6 +43,8 @@ export interface SupabaseProductoVariante {
   ancho_paquete_cm?: number | null
   largo_paquete_cm?: number | null
   color_hex: string
+  /** Segundo color de una variante bicolor (Azul / Rosa). */
+  color_hex_secundario?: string | null
   stock: number | null
   /** Ver SupabaseProducto.physical_stock. */
   physical_stock?: number
@@ -103,6 +105,8 @@ export interface SupabaseProductoEspecificacion {
 
 export interface SupabaseProducto {
   id: number
+  /** El cliente no elige color: BEYONIX cumple con una variante física con stock. */
+  venta_aleatoria?: boolean | null
 
   nombre: string
   slug: string
@@ -239,6 +243,12 @@ export interface SupabasePedido {
   shipping_cost_real?: number | null
   shipping_cost_charged?: number | null
   free_shipping_applied?: boolean
+  /** Snapshot de la cotización (tarifa Andreani, recargo, ajuste, beneficio). */
+  shipping_provider_quote_amount?: number | null
+  shipping_markup_percent?: number | null
+  shipping_markup_amount?: number | null
+  shipping_rounding_amount?: number | null
+  shipping_benefit_amount?: number | null
   estado: string
   total: number
   original_total?: number | null

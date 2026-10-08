@@ -9,7 +9,14 @@ import type {
   StockSettings,
 } from "@/lib/site-settings"
 import { getTransferPrice } from "@/lib/pricing/financed-pricing"
+import type { ShippingQuoteSettings } from "@/lib/shipping/shipping-quote-settings"
+import {
+  buildShippingPriceBreakdown,
+  markupPercentToBasisPoints,
+  SHIPPING_MARKUP_MAX_PERCENT,
+} from "@/lib/shipping/shipping-pricing"
 import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import { AdminHelpTip } from "../../components/admin-help-tip"
 import {
   ConfigChip,
   ConfigDisclosure,
@@ -460,6 +467,90 @@ export function CustomerCreditSection({
           )}
         </ConfigValueRow>
       </ConfigValueList>
+    </ConfigSection>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Cotización de envíos
+// ─────────────────────────────────────────────────────────────
+
+const MARKUP_PREVIEW_PROVIDER_AMOUNT = 10_000
+const MARKUP_HELP =
+  "Porcentaje adicional aplicado a la tarifa de Andreani para cubrir embalaje, traslados y costos operativos."
+
+/** Mismo cálculo que el servidor (centavos y puntos básicos). null si es inválido. */
+function parseMarkupDraft(value: string): number | null {
+  if (!value.trim()) return null
+  try {
+    return markupPercentToBasisPoints(value) / 100
+  } catch {
+    return null
+  }
+}
+
+export function ShippingQuoteSection({ saved, disabled, saving, feedback, onSave }: ConfigSectionProps<ShippingQuoteSettings>) {
+  const block = useConfigEditing({ markup: String(saved.logisticsMarkupPercent).replace(".", ",") })
+  const { draft, editing } = block
+  const markupPercent = parseMarkupDraft(draft.markup)
+  const invalid = markupPercent === null
+  const shownPercent = markupPercent ?? saved.logisticsMarkupPercent
+  // Mismo cálculo que el servidor: tarifa + recargo exacto, redondeado a $10.
+  const preview = buildShippingPriceBreakdown(MARKUP_PREVIEW_PROVIDER_AMOUNT, Math.round(shownPercent * 100))
+  const dirty = !invalid && markupPercent !== saved.logisticsMarkupPercent
+  const inputsDisabled = disabled || saving
+
+  return (
+    <ConfigSection
+      icon={<Truck className={iconClassName} />}
+      title="Cotización de envíos"
+      feedback={feedback}
+      data-config-block="shipping-quote"
+      data-config-mode={editing ? "edit" : "read"}
+      actions={
+        <ConfigEditActions
+          editing={editing}
+          dirty={dirty}
+          saving={saving}
+          disabled={disabled}
+          canSave={!invalid}
+          onEdit={block.start}
+          onCancel={block.cancel}
+          onSave={() => markupPercent !== null && onSave({ logisticsMarkupPercent: markupPercent })}
+        />
+      }
+    >
+      <p className="mb-2 text-12px leading-4 text-white/62">{MARKUP_HELP}</p>
+      <ConfigValueList>
+        <ConfigValueRow
+          label={<>Recargo logístico <AdminHelpTip label="Recargo logístico" text="Se suma a la tarifa de Andreani en cada cotización. Las órdenes ya creadas conservan su porcentaje." /></>}
+          editing={editing}
+        >
+          {editing ? (
+            <PercentInput
+              ariaLabel="Recargo logístico sobre la tarifa de Andreani"
+              placeholder="% 0"
+              value={draft.markup}
+              disabled={inputsDisabled}
+              onChange={(value) => block.setField("markup", value)}
+            />
+          ) : (
+            formatPercent(saved.logisticsMarkupPercent)
+          )}
+        </ConfigValueRow>
+        <ConfigValueRow label="Ejemplo" data-shipping-quote-example>
+          {formatARS(MARKUP_PREVIEW_PROVIDER_AMOUNT)} → {formatARS(preview.logisticsCents / 100)}
+        </ConfigValueRow>
+      </ConfigValueList>
+      {editing && invalid ? (
+        <p role="alert" className="admin-config-feedback mt-1.5 text-12px font-semibold leading-4" data-tone="danger">
+          Ingresá un porcentaje entre 0 y {SHIPPING_MARKUP_MAX_PERCENT}, con hasta 2 decimales.
+        </p>
+      ) : (
+        <p className="mt-1.5 text-12px leading-4 text-white/62">
+          El resultado se redondea al múltiplo de $10 y después se aplica la bonificación de envío vigente.
+        </p>
+      )}
     </ConfigSection>
   )
 }

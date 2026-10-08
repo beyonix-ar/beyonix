@@ -58,6 +58,7 @@ import {
   type AdminRouteKey,
 } from "@/lib/admin/admin-routes"
 import { useAdminNotificationGroups } from "@/context/admin-notifications-context"
+import { LogisticsDashboardSection } from "../logistica/logistics-dashboard-section"
 
 function DashboardPanelLoading() {
   return (
@@ -3295,6 +3296,8 @@ export function AdminDashboard() {
               ))}
             </div>
           </section>
+
+          {sensitive && <LogisticsDashboardSection hideAmounts={hiddenValues} />}
 
           <div className="grid gap-5 xl:grid-cols-2">
             <section className="rounded-3xl border border-beyonix-blue-light/16 bg-[linear-gradient(145deg,rgba(7,16,24,0.78),rgba(3,7,13,0.92))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">

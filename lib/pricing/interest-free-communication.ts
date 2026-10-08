@@ -3,7 +3,8 @@ import type {
   InterestFreePolicy,
   MercadoPagoInterestFreeStatus,
 } from "../mercadopago/interest-free-policy.ts"
-import { INSTALLMENTS_COPY } from "./financed-pricing.ts"
+import { getFinancedPrice, INSTALLMENTS_COPY } from "./financed-pricing.ts"
+import type { InstallmentsFinancingConfig } from "../products/installments.ts"
 
 /**
  * Comunicación GLOBAL de cuotas sin interés ("Hasta N cuotas sin interés a
@@ -110,4 +111,33 @@ export function getInterestFreeMessage(
     minimumAmount: tier.minimumAmount,
     brands: tier.brands,
   }
+}
+
+/**
+ * Comunicación de cuotas para UN producto (ficha, modal, tarjeta, hero): sólo
+ * si su precio en cuotas alcanza el mínimo que Mercado Pago confirma para ese
+ * plan. Se prueba de la mayor cuota a la menor con el precio FINANCIADO de
+ * cada una (el que se cobra con Mercado Pago, nunca el de transferencia).
+ * Sin plan alcanzable -> `null`: no se muestra nada (nunca un "a partir de
+ * $X" que el producto no cumple). El cobro real lo sigue decidiendo el
+ * checkout sobre el total.
+ */
+export function getProductInterestFreeMessage(
+  offer: PublicInterestFreeOffer | null | undefined,
+  cashPrice: number,
+  financing: InstallmentsFinancingConfig,
+): InterestFreeMessage | null {
+  if (!offer || !Number.isFinite(cashPrice) || cashPrice <= 0) return null
+  for (const tier of [...offer.tiers].sort((left, right) => right.count - left.count)) {
+    const amount = getFinancedPrice(cashPrice, tier.count, financing) ?? cashPrice
+    if (amount < tier.minimumAmount) continue
+    const partial = isPartialBrandCoverage(tier.brands)
+    return {
+      text: `Hasta ${tier.count} ${INSTALLMENTS_COPY}${partial ? ` con ${formatInterestFreeBrands(tier.brands)}` : ""}`,
+      count: tier.count,
+      minimumAmount: tier.minimumAmount,
+      brands: tier.brands,
+    }
+  }
+  return null
 }

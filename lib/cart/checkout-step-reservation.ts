@@ -35,12 +35,26 @@ function itemKey(item: StockReservationItem) {
   return `${item.productId}:${item.variantId ?? ""}:${item.conditionedStockId ?? ""}`
 }
 
+/**
+ * Una línea sin variante de un producto con variantes (venta aleatoria) se
+ * reserva como unidades de variantes concretas: se compara por producto,
+ * sumando lo reservado de sus variantes (sin el stock condicionado).
+ */
 export function reservationMatchesCart(
   reserved: readonly StockReservationItem[],
   cart: readonly StockReservationItem[],
 ) {
-  if (reserved.length !== cart.length) return false
-  const quantities = new Map(reserved.map((item) => [itemKey(item), item.quantity]))
+  const pooledProducts = new Set(
+    cart.filter((item) => item.variantId == null && item.conditionedStockId == null).map((item) => item.productId),
+  )
+  const quantities = new Map<string, number>()
+  for (const item of reserved) {
+    const key = pooledProducts.has(item.productId) && item.conditionedStockId == null
+      ? `${item.productId}::`
+      : itemKey(item)
+    quantities.set(key, (quantities.get(key) ?? 0) + item.quantity)
+  }
+  if (quantities.size !== cart.length) return false
   return cart.every((item) => quantities.get(itemKey(item)) === item.quantity)
 }
 

@@ -206,7 +206,7 @@ export function ConfigValueRow({
   children,
   ...rest
 }: {
-  label: string
+  label: ReactNode
   tone?: ConfigTone
   editing?: boolean
   className?: string

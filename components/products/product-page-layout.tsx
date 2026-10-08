@@ -8,12 +8,14 @@ import {
   getDefaultVariantValue,
   getProductImagesByVariant,
   getVariantOptionByValue,
+  RANDOM_GALLERY_NOTE,
 } from "@/lib/products/product-variants"
 import {
   getImageUrlFromMediaIndex,
   isPlayableProductVideo,
 } from "@/lib/products/product-video"
 
+import { ProductDescriptionSection } from "./product-description-section"
 import { ProductDetailsGallery } from "./product-details-gallery"
 import { ProductDetailsPanel } from "./product-details-panel"
 import { ProductReviews } from "./product-reviews"
@@ -60,13 +62,14 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
 
   return (
     <main className="beyonix-pdp-page min-h-screen bg-black pt-24 text-white">
-      <div className="grid lg:grid-cols-2">
+      <div className="grid min-w-0 lg:grid-cols-2">
         <ProductDetailsGallery
           images={images}
           selectedImage={selectedImage}
           productName={producto.nombre}
           selectedStock={selectedStock}
           videoUrl={producto.video_url}
+          note={selectedVariant?.isRandom ? RANDOM_GALLERY_NOTE : null}
           onNext={nextImage}
           onPrev={prevImage}
           onSelectImage={setSelectedImage}
@@ -97,6 +100,12 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
           isInCart={isInCart(producto.id, selectedColor)}
           cartQuantity={cartQuantity}
           selectedStock={selectedStock}
+        />
+
+        <ProductDescriptionSection
+          key={producto.id}
+          description={producto.descripcion}
+          className="lg:col-span-2"
         />
       </div>
       <ProductReviews productId={producto.id} />

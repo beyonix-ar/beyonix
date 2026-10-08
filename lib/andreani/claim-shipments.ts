@@ -28,7 +28,7 @@ import {
   ANDREANI_ORDER_SELECT,
   assertAndreaniProdShipmentCreationAuthorized,
   buildAndreaniShipmentEnvio,
-  buildConsolidatedProduct,
+  buildAndreaniShipmentItems,
   crearOrdenEnvioConReintentoDeAutenticacion,
   formatAndreaniErrorForPersistence,
   loadOrderShipmentItems,
@@ -460,15 +460,7 @@ export async function createClaimShipment(
       dependencies.crearOrdenEnvio ?? crearOrdenEnvio,
       {
         envio: prepared.envio,
-        items: [{
-          producto: buildConsolidatedProduct(prepared.order.id, packageData),
-          bulto: {
-            volumenCm: packageData.volumenCm3,
-            valorDeclaradoConImpuestos: packageData.valorDeclarado,
-            referencias: [{ meta: "idCliente", contenido: prepared.reference }],
-            descripcion: prepared.description,
-          },
-        }],
+        items: buildAndreaniShipmentItems(packageData, prepared.reference, prepared.description),
       },
       {
         env: { ...env, ANDREANI_ENV: prepared.environment, ANDREANI_TARIFF_ENV: prepared.environment },

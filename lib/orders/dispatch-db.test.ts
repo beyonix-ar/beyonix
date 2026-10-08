@@ -16,6 +16,18 @@ async function setup() {
   await db.exec(read("supabase/migrations/20261005100000_dispatch_operations.sql"))
   await db.exec(read("supabase/migrations/20261005110000_dispatch_guards.sql"))
   await db.exec(read("supabase/migrations/20261007100000_barcodes_parcels_dispatch.sql"))
+  // Funciones de armado redefinidas por la migración de catálogo (alias y
+  // venta aleatoria): las reglas existentes tienen que seguir valiendo.
+  await db.exec(`
+    alter table productos add column activo boolean not null default true, add column stock integer not null default 0;
+    alter table producto_variantes add column activo boolean not null default true, add column stock integer not null default 0;
+    alter table catalog_sku_registry add column conditioned_stock_id uuid;
+    create table stock_reservations (session_id text, product_id bigint, variant_id bigint,
+      conditioned_stock_id uuid, quantity integer, expires_at timestamptz, order_id bigint);
+    create table checkout_reservation_sessions (session_id text primary key, user_id uuid, order_id bigint,
+      reservation_started_at timestamptz, expires_at timestamptz);
+  `)
+  await db.exec(read("supabase/migrations/20261008120000_catalog_random_dual_color_barcode_aliases.sql"))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   await db.query("insert into profiles(id,rol) values ($1,'operador')", [actor])
   await db.exec("insert into productos(id,sku,codigo_barra,nombre) values (1,'SKU-A','BAR-A','Auriculares Pro'),(2,'SKU-B','BAR-B','Ñandú lámpara'),(3,'SKU-C',null,'Cable')")

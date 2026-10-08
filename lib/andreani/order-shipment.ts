@@ -15,10 +15,12 @@ import {
 } from "./client.ts"
 import {
   aggregateAndreaniPackage,
+  declaredValueOf,
   resolveAndreaniCheckoutConfig,
-  type AggregatedAndreaniPackage,
+  type AndreaniShipmentPackages,
   type LoadedCheckoutQuoteItem,
 } from "./checkout-quote.ts"
+import { loadCurrentMeasuredParcels, shipmentPackagesFromParcels } from "./order-parcels.ts"
 import {
   DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
   getAndreaniCommercialSettings,
@@ -590,26 +592,36 @@ export function buildAndreaniShipmentEnvio(
   return buildAndreaniHomeDeliveryEnvio(order, config)
 }
 
-export function buildConsolidatedProduct(
-  orderId: number,
-  packageData: AggregatedAndreaniPackage,
-): ProductLogisticsSource {
-  const hasExactDimensions =
-    packageData.altoCm !== undefined &&
-    packageData.anchoCm !== undefined &&
-    packageData.largoCm !== undefined
-  const cubicSide = hasExactDimensions
-    ? 0
-    : Math.cbrt(packageData.volumenCm3)
-
-  return {
-    id: 0,
-    nombre: `Pedido BX-${1000 + orderId}`,
-    peso_empaquetado_kg: packageData.pesoKg,
-    alto_paquete_cm: hasExactDimensions ? packageData.altoCm! : cubicSide,
-    ancho_paquete_cm: hasExactDimensions ? packageData.anchoCm! : cubicSide,
-    largo_paquete_cm: hasExactDimensions ? packageData.largoCm! : cubicSide,
-  }
+/**
+ * Un ítem de la orden por cada bulto: el bulto se declara como "producto" con
+ * sus medidas exteriores y peso (la API emite una etiqueta por bulto). El
+ * meta "idCliente" asocia cada bulto B2C al pedido (contrato documentado).
+ */
+export function buildAndreaniShipmentItems(
+  packages: AndreaniShipmentPackages,
+  reference: string,
+  description: string,
+): AndreaniCreateShipmentInput["items"] {
+  const count = packages.parcels.length
+  return packages.parcels.map((parcel, index) => {
+    const label = count > 1 ? `${description} · bulto ${index + 1}/${count}` : description
+    return {
+      producto: {
+        id: 0,
+        nombre: label,
+        peso_empaquetado_kg: parcel.pesoKg,
+        alto_paquete_cm: parcel.altoCm,
+        ancho_paquete_cm: parcel.anchoCm,
+        largo_paquete_cm: parcel.largoCm,
+      },
+      bulto: {
+        volumenCm: parcel.volumenCm3,
+        valorDeclaradoConImpuestos: parcel.valorDeclarado,
+        referencias: [{ meta: "idCliente", contenido: reference }],
+        descripcion: label,
+      },
+    }
+  })
 }
 
 /**
@@ -846,7 +858,12 @@ export async function createAndreaniShipmentForOrder(
 
   const envio = buildAndreaniShipmentEnvio(order, config)
   const items = await loadOrderShipmentItems(admin, orderId)
-  const packageData = aggregateAndreaniPackage(items)
+  // Bultos reales del armado si ya se cargaron sus medidas; si no (envío
+  // generado antes de armar, o armado legacy), los bultos estimados.
+  const measured = await loadCurrentMeasuredParcels(admin, orderId)
+  const packageData = measured
+    ? shipmentPackagesFromParcels(measured.parcels, declaredValueOf(items))
+    : aggregateAndreaniPackage(items)
 
   const claimToken = randomUUID()
   const { data: attempts, error: claimError } = await admin.rpc(
@@ -893,19 +910,7 @@ export async function createAndreaniShipmentForOrder(
       crear,
       {
         envio,
-        items: [
-          {
-            producto: buildConsolidatedProduct(orderId, packageData),
-            bulto: {
-              volumenCm: packageData.volumenCm3,
-              valorDeclaradoConImpuestos: packageData.valorDeclarado,
-              // El contrato B2C documentado asocia el bulto a un identificador
-              // de cliente mediante el meta "idCliente".
-              referencias: [{ meta: "idCliente", contenido: String(orderId) }],
-              descripcion: `Pedido BX-${1000 + orderId}`,
-            },
-          },
-        ],
+        items: buildAndreaniShipmentItems(packageData, String(orderId), `Pedido BX-${1000 + orderId}`),
       },
       {
         env: creationEnv,

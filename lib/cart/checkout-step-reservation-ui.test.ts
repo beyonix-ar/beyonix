@@ -75,6 +75,17 @@ test("8. dos pestañas de la misma sesión comparan composición sin duplicar un
   }])
   assert.equal(reservationMatchesCart(cartItems, [...cartItems]), true)
   assert.equal(reservationMatchesCart(cartItems, [{ ...cartItems[0], quantity: 3 }]), false)
+  // Venta aleatoria: 2 unidades sin variante se reservan como variantes concretas.
+  const randomCart = reservationItemsFromCart([{
+    product: { id: 20 }, quantity: 2, variantId: null, conditionedStockId: null,
+  }])
+  const randomReserved = [
+    { productId: 20, quantity: 1, variantId: 7, conditionedStockId: null },
+    { productId: 20, quantity: 1, variantId: 8, conditionedStockId: null },
+  ]
+  assert.equal(reservationMatchesCart(randomReserved, randomCart), true)
+  assert.equal(reservationMatchesCart(randomReserved.slice(0, 1), randomCart), false)
+  assert.equal(reservationMatchesCart([...randomReserved, ...cartItems], [...randomCart, ...cartItems]), true)
   assert.match(checkout, /window\.addEventListener\("focus", synchronize\)/)
   assert.match(checkout, /La reserva cambió en otra pestaña/)
 })

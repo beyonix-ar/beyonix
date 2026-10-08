@@ -25,15 +25,35 @@ export const ANDREANI_APARTMENT_MAX_LENGTH = 40
 export const ANDREANI_LOCALITY_MAX_LENGTH = 40
 
 /**
- * BLOQUEANTE 3 (auditoría Andreani Parte 2/4): límite real y duro que
- * aplica POST /v2/ordenes-de-envio para un bulto B2C (ver validación en
- * AndreaniClient.crearEnvio, lib/andreani/client.ts). BEYONIX modela cada
- * pedido como UN ÚNICO bulto consolidado (ver aggregateAndreaniPackage en
- * checkout-quote.ts y el array de un solo item en
- * createAndreaniShipmentForOrder, order-shipment.ts) -- por eso la
- * cotización debe rechazar acá, con el mismo número, cualquier carrito cuyo
- * peso consolidado supere este límite: la tarifa (`/v1/tarifas`) por sí sola
- * tolera hasta 1000 kg y nunca avisaría que la creación real (B2C, 50 kg)
- * la va a rechazar después.
+ * Peso máximo POR BULTO B2C. La planilla oficial (api-orden-envio-3) no lo
+ * documenta: es la política que BEYONIX aplica (AndreaniClient.crearEnvio) y
+ * que el estimador respeta al dividir un carrito en bultos. La tarifa
+ * (`/v1/tarifas`) tolera hasta 1000 kg por bulto.
  */
 export const ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG = 50
+
+/**
+ * Bultos por orden de envío: la planilla oficial documenta `bultos` como
+ * array con "Capacidad máxima 300 bultos" y una etiqueta por bulto.
+ */
+export const ANDREANI_MAX_SHIPMENT_PACKAGES = 300
+
+/** Bultos por consulta de tarifa (control propio: una sola llamada por cotización). */
+export const ANDREANI_MAX_TARIFF_PACKAGES = 50
+
+/**
+ * Bultos estimados que se ofrecen en checkout: por encima de este número el
+ * carrito no se cotiza por Andreani (pedido mayorista, se coordina aparte).
+ */
+export const ANDREANI_MAX_CHECKOUT_PACKAGES = 10
+
+/**
+ * Lado máximo que acepta nuestra integración de `/v1/tarifas` (ver
+ * assertPositiveNumber de alto/ancho/largo en requestTariff, client.ts).
+ */
+export const ANDREANI_MAX_PACKAGE_SIDE_CM = 500
+
+export const ANDREANI_PACKAGE_LIMITS = {
+  maxWeightKg: ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG,
+  maxSideCm: ANDREANI_MAX_PACKAGE_SIDE_CM,
+} as const

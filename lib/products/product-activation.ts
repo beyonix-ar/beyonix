@@ -1,3 +1,5 @@
+import { richDescriptionToPlainText } from "./rich-description.ts"
+
 export interface ProductActivationSpecification {
   activo: boolean
   icono: string
@@ -127,6 +129,9 @@ export function getProductActivationStatus(
     .map((variant) => getVariantActivationError(variant))
     .find((error): error is string => error != null) ?? null
 
+  // Una descripción enriquecida sin texto visible ("<p><br></p>") no cuenta.
+  const hasDescription = richDescriptionToPlainText(input.description) !== ""
+
   const requirements: ProductActivationRequirement[] = [
     { key: "title", label: "Título", complete: Boolean(input.title.trim()) },
     { key: "sku", label: "SKU", complete: Boolean(input.sku.trim()) },
@@ -139,14 +144,14 @@ export function getProductActivationStatus(
     {
       key: "description",
       label: "Descripción",
-      complete: Boolean(input.description.trim()),
+      complete: hasDescription,
     },
     {
       key: "specifications",
       label: "Especificaciones",
       complete: activeSpecification,
     },
-    { key: "logistics", label: "Dimensiones", complete: logisticsComplete },
+    { key: "logistics", label: "Logística", complete: logisticsComplete },
     {
       key: "primaryVariant",
       label: "Variante principal",
@@ -167,7 +172,7 @@ export function getProductActivationStatus(
         ? "El precio debe ser mayor a $0."
         : input.categoryId == null || !input.categoryExists
           ? "Seleccioná una categoría."
-          : !input.description.trim()
+          : !hasDescription
             ? "Completá la descripción."
             : !activeSpecification
               ? "Agregá al menos una especificación activa."

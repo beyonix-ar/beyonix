@@ -22,6 +22,7 @@ export interface RefreshableCartItem {
   conditionedStockId: string | null
   variantName: string | null
   colorHex: string | null
+  secondaryColorHex?: string | null
   unitPrice: number
   originalUnitPrice: number | null
   discountReason: string | null
@@ -107,6 +108,7 @@ export function reconcileCartWithCatalog<T extends RefreshableCartItem>(
       product,
       variantName: variant.name,
       colorHex: variant.colorHex,
+      secondaryColorHex: variant.secondaryColorHex,
       unitPrice: variant.price,
       originalUnitPrice: variant.originalPrice,
       discountReason: variant.reason,

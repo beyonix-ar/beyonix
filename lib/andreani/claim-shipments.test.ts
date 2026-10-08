@@ -252,7 +252,7 @@ test("CAMBIO de una compra a DOMICILIO: igual va a la sucursal del tramo con CAM
   assert.deepEqual(envio.destino, { sucursal: { id: "4567" } }, "nunca el domicilio del cliente")
   assert.equal(envio.destinatario[0].nombreCompleto, "María Núñez")
   assert.equal(envio.idPedido, "7-C50")
-  assert.equal(items[0].producto.peso_empaquetado_kg, 7, "2 unidades de la variante de reemplazo (3,5 kg c/u)")
+  assert.equal(items[0].producto.peso_empaquetado_kg, 7.4, "2 unidades de la variante de reemplazo (3,5 kg c/u) + embalaje")
   assert.equal((calls[0].options as { productionAccess?: string }).productionAccess, "shipment-creation")
   assert.deepEqual([leg().modality, leg().contract, leg().status, leg().environment], ["cambio_sucursal", "400042110", "generada", "PROD"])
   assert.equal(tables.order_claim_units.filter((unit) => unit.shipment_id === 1 && unit.role === "reemplazo").length, 2)
@@ -269,7 +269,7 @@ test("RETIRO: el cliente despacha en la sucursal del tramo hacia la sucursal de 
   assert.equal(envio.remitente.nombreCompleto, "María Núñez")
   assert.equal(envio.destinatario[0].nombreCompleto, "BEYONIX")
   assert.equal(envio.idPedido, "7-R50-2", "cada intento con su propia referencia")
-  assert.equal(calls[0].input.items[0].producto.peso_empaquetado_kg, 4, "2 unidades originales")
+  assert.equal(calls[0].input.items[0].producto.peso_empaquetado_kg, 4.25, "2 unidades originales + embalaje")
   assert.equal(leg().modality, "despacho_sucursal")
 })
 

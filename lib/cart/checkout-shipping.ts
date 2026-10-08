@@ -1,4 +1,9 @@
-import { createHmac, timingSafeEqual } from "node:crypto"
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+} from "node:crypto"
 
 import {
   calculateCustomerShippingCost,
@@ -9,6 +14,12 @@ import {
   normalizeArgentineLocationKey,
   normalizeArgentineProvinceKey,
 } from "../validation/account-fields.ts"
+import {
+  fromCents,
+  isConsistentShippingPriceBreakdown,
+  markupPercentToBasisPoints,
+  toCents,
+} from "../shipping/shipping-pricing.ts"
 
 export type CheckoutShippingType = "sucursal" | "domicilio"
 
@@ -36,19 +47,46 @@ export interface CheckoutShippingQuoteBinding {
   items: CheckoutShippingQuoteItem[]
 }
 
+/** Bulto estimado que se usó para cotizar (snapshot para calibrar). */
+export interface CheckoutShippingEstimatedParcel {
+  lengthCm: number
+  widthCm: number
+  heightCm: number
+  volumeCm3: number
+  weightKg: number
+}
+
+export interface CheckoutShippingEstimate {
+  version: string
+  parcels: CheckoutShippingEstimatedParcel[]
+  productsWeightKg: number
+  productsVolumeCm3: number
+}
+
+/** Desglose interno de la tarifa. Nunca se envía al navegador en claro. */
+export interface CheckoutShippingPricing {
+  /** Tarifa de Andreani tal como la informó (con IVA). */
+  providerAmount: number
+  markupPercent: number
+  markupAmount: number
+  /** Ajuste por el redondeo de envío a $10 (puede ser negativo). */
+  roundingAmount: number
+}
+
 export interface CheckoutShippingQuoteOption {
   type: CheckoutShippingType
+  /** Precio logístico = tarifa + recargo + ajuste comercial. */
   price: number
   /**
-   * Importe final que el cliente vio y aceptó para esta opción (tarifa real
-   * ya con la bonificación/subsidio comercial vigente AL MOMENTO DE COTIZAR
-   * aplicada -- ver calculateCustomerShippingCost). Se firma junto con el
-   * resto del token: si al crear la orden el mismo cálculo (con catálogo o
-   * configuración comercial actuales) da un número distinto, la cotización
-   * se trata como vencida y se exige recotizar -- nunca se persiste
-   * silenciosamente un importe distinto del que el cliente aceptó.
+   * Importe final que el cliente vio y aceptó para esta opción (precio
+   * logístico ya con la bonificación/subsidio comercial vigente AL MOMENTO
+   * DE COTIZAR -- ver calculateCustomerShippingCost). Si al crear la orden el
+   * mismo cálculo da otro número, se exige recotizar: nunca se persiste en
+   * silencio un importe distinto del que el cliente aceptó.
    */
   costCharged: number
+  pricing: CheckoutShippingPricing
+  estimate: CheckoutShippingEstimate
 }
 
 export interface NormalizedCheckoutShipping {
@@ -57,6 +95,10 @@ export interface NormalizedCheckoutShipping {
   costReal: number
   costCharged: number
   freeShippingApplied: boolean
+  pricing: CheckoutShippingPricing
+  /** Parte del precio logístico cubierta por BEYONIX (costReal - costCharged). */
+  benefitAmount: number
+  estimate: CheckoutShippingEstimate
 }
 
 interface CanonicalCheckoutShippingQuoteBinding {
@@ -74,16 +116,18 @@ interface CanonicalCheckoutShippingQuoteBinding {
 }
 
 interface CheckoutShippingQuoteClaims {
-  version: 2
+  version: 3
   provider: "andreani"
   type: CheckoutShippingType
+  /** Precio logístico. */
   costCents: number
-  /**
-   * Importe final aceptado por el cliente (post subsidio/bonificación) al
-   * momento de cotizar. `0` es válido (envío gratis) -- ver
-   * toMoneyCentsAllowingZero.
-   */
+  /** Importe final aceptado por el cliente. `0` es válido (envío gratis). */
   costChargedCents: number
+  providerCents: number
+  markupBasisPoints: number
+  markupCents: number
+  roundingCents: number
+  estimate: CheckoutShippingEstimate
   expiresAt: number
   binding: CanonicalCheckoutShippingQuoteBinding
 }
@@ -98,11 +142,16 @@ interface CreateCheckoutShippingQuoteOptions
   ttlMs?: number
 }
 
-const CHECKOUT_SHIPPING_QUOTE_VERSION = 2
+const CHECKOUT_SHIPPING_QUOTE_VERSION = 3
 const CHECKOUT_SHIPPING_QUOTE_TTL_MS = 30 * 60 * 1000
-const CHECKOUT_SHIPPING_QUOTE_DOMAIN =
-  "beyonix:checkout-shipping-quote:v1\0"
+/**
+ * v3 cifra y autentica el contenido (AES-256-GCM): el token viaja por el
+ * navegador y ahora incluye la tarifa del proveedor y el recargo. Un token v2
+ * en vuelo al desplegar se rechaza y el checkout pide recotizar.
+ */
+const CHECKOUT_SHIPPING_QUOTE_DOMAIN = "beyonix:checkout-shipping-quote:v3"
 const MAX_CHECKOUT_SHIPPING_QUOTE_TOKEN_LENGTH = 16_384
+const MAX_ESTIMATED_PARCELS = 50
 
 export class CheckoutShippingQuoteError extends Error {
   constructor(message: string) {
@@ -132,6 +181,10 @@ function getCheckoutShippingQuoteSecret(explicitSecret?: string) {
   return secret
 }
 
+function quoteEncryptionKey(secret: string) {
+  return createHmac("sha256", secret).update(`${CHECKOUT_SHIPPING_QUOTE_DOMAIN}:aes-256-gcm`).digest()
+}
+
 function toMoneyCents(value: number) {
   if (!Number.isFinite(value) || value <= 0) invalidQuote()
 
@@ -151,6 +204,40 @@ function toMoneyCentsAllowingZero(value: number) {
   }
 
   return cents
+}
+
+const isPositiveFinite = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0
+
+function canonicalizeEstimate(estimate: CheckoutShippingEstimate): CheckoutShippingEstimate {
+  if (
+    !estimate ||
+    typeof estimate.version !== "string" ||
+    estimate.version.length > 40 ||
+    !Array.isArray(estimate.parcels) ||
+    estimate.parcels.length < 1 ||
+    estimate.parcels.length > MAX_ESTIMATED_PARCELS ||
+    !isPositiveFinite(estimate.productsWeightKg) ||
+    !isPositiveFinite(estimate.productsVolumeCm3)
+  ) {
+    invalidQuote()
+  }
+  return {
+    version: estimate.version,
+    parcels: estimate.parcels.map((parcel) => {
+      const values = [parcel?.lengthCm, parcel?.widthCm, parcel?.heightCm, parcel?.volumeCm3, parcel?.weightKg]
+      if (!values.every(isPositiveFinite)) invalidQuote()
+      return {
+        lengthCm: parcel.lengthCm,
+        widthCm: parcel.widthCm,
+        heightCm: parcel.heightCm,
+        volumeCm3: parcel.volumeCm3,
+        weightKg: parcel.weightKg,
+      }
+    }),
+    productsWeightKg: estimate.productsWeightKg,
+    productsVolumeCm3: estimate.productsVolumeCm3,
+  }
 }
 
 function canonicalizeQuoteBinding(
@@ -229,11 +316,36 @@ function canonicalizeQuoteBinding(
   return { cpDestino, localidad, provincia, direccion, sucursalId, items }
 }
 
-function signQuotePayload(payload: string, secret: string) {
-  return createHmac("sha256", secret)
-    .update(CHECKOUT_SHIPPING_QUOTE_DOMAIN)
-    .update(payload)
-    .digest("base64url")
+function encryptClaims(claims: CheckoutShippingQuoteClaims, secret: string) {
+  const iv = randomBytes(12)
+  const cipher = createCipheriv("aes-256-gcm", quoteEncryptionKey(secret), iv)
+  cipher.setAAD(Buffer.from(CHECKOUT_SHIPPING_QUOTE_DOMAIN, "utf8"))
+  const encrypted = Buffer.concat([
+    cipher.update(JSON.stringify(claims), "utf8"),
+    cipher.final(),
+    cipher.getAuthTag(),
+  ])
+  return `${iv.toString("base64url")}.${encrypted.toString("base64url")}`
+}
+
+function decryptClaims(token: string, secret: string): CheckoutShippingQuoteClaims {
+  const [ivPart, bodyPart, extraPart] = token.split(".")
+  if (!ivPart || !bodyPart || extraPart) invalidQuote()
+  const iv = Buffer.from(ivPart, "base64url")
+  const body = Buffer.from(bodyPart, "base64url")
+  if (iv.length !== 12 || body.length <= 16) invalidQuote()
+  try {
+    const decipher = createDecipheriv("aes-256-gcm", quoteEncryptionKey(secret), iv)
+    decipher.setAAD(Buffer.from(CHECKOUT_SHIPPING_QUOTE_DOMAIN, "utf8"))
+    decipher.setAuthTag(body.subarray(body.length - 16))
+    const plain = Buffer.concat([
+      decipher.update(body.subarray(0, body.length - 16)),
+      decipher.final(),
+    ])
+    return JSON.parse(plain.toString("utf8")) as CheckoutShippingQuoteClaims
+  } catch {
+    invalidQuote()
+  }
 }
 
 export function createCheckoutShippingQuoteToken(
@@ -252,24 +364,41 @@ export function createCheckoutShippingQuoteToken(
     invalidQuote()
   }
 
+  let markupBasisPoints: number
+  try {
+    markupBasisPoints = markupPercentToBasisPoints(option.pricing?.markupPercent)
+  } catch {
+    invalidQuote()
+  }
+
   const claims: CheckoutShippingQuoteClaims = {
     version: CHECKOUT_SHIPPING_QUOTE_VERSION,
     provider: "andreani",
     type: option.type,
     costCents: toMoneyCents(option.price),
     costChargedCents: toMoneyCentsAllowingZero(option.costCharged),
+    providerCents: toMoneyCents(option.pricing.providerAmount),
+    markupBasisPoints,
+    markupCents: toMoneyCentsAllowingZero(option.pricing.markupAmount),
+    roundingCents: toCents(option.pricing.roundingAmount),
+    estimate: canonicalizeEstimate(option.estimate),
     expiresAt: now + ttlMs,
     binding: canonicalizeQuoteBinding(binding),
   }
-  const payload = Buffer.from(JSON.stringify(claims), "utf8").toString(
-    "base64url",
-  )
-  const signature = signQuotePayload(
-    payload,
-    getCheckoutShippingQuoteSecret(options.secret),
-  )
+  if (
+    claims.costChargedCents > claims.costCents ||
+    !isConsistentShippingPriceBreakdown({
+      providerCents: claims.providerCents,
+      markupBasisPoints: claims.markupBasisPoints,
+      markupCents: claims.markupCents,
+      roundingCents: claims.roundingCents,
+      logisticsCents: claims.costCents,
+    })
+  ) {
+    invalidQuote()
+  }
 
-  return `${payload}.${signature}`
+  return encryptClaims(claims, getCheckoutShippingQuoteSecret(options.secret))
 }
 
 function verifyCheckoutShippingQuote(
@@ -282,30 +411,7 @@ function verifyCheckoutShippingQuote(
     invalidQuote()
   }
 
-  const [payload, receivedSignature, extraPart] = token.split(".")
-  if (!payload || !receivedSignature || extraPart) invalidQuote()
-
-  const expectedSignature = signQuotePayload(
-    payload,
-    getCheckoutShippingQuoteSecret(options.secret),
-  )
-  const expectedBuffer = Buffer.from(expectedSignature)
-  const receivedBuffer = Buffer.from(receivedSignature)
-  if (
-    expectedBuffer.length !== receivedBuffer.length ||
-    !timingSafeEqual(expectedBuffer, receivedBuffer)
-  ) {
-    invalidQuote()
-  }
-
-  let claims: CheckoutShippingQuoteClaims
-  try {
-    claims = JSON.parse(
-      Buffer.from(payload, "base64url").toString("utf8"),
-    ) as CheckoutShippingQuoteClaims
-  } catch {
-    invalidQuote()
-  }
+  const claims = decryptClaims(token, getCheckoutShippingQuoteSecret(options.secret))
 
   const now = options.now ?? Date.now()
   const canonicalBinding = canonicalizeQuoteBinding(binding)
@@ -323,6 +429,13 @@ function verifyCheckoutShippingQuote(
     !Number.isSafeInteger(claims.costChargedCents) ||
     claims.costChargedCents < 0 ||
     claims.costChargedCents > claims.costCents ||
+    !isConsistentShippingPriceBreakdown({
+      providerCents: claims.providerCents,
+      markupBasisPoints: claims.markupBasisPoints,
+      markupCents: claims.markupCents,
+      roundingCents: claims.roundingCents,
+      logisticsCents: claims.costCents,
+    }) ||
     JSON.stringify(claims.binding) !== JSON.stringify(canonicalBinding)
   ) {
     invalidQuote()
@@ -331,8 +444,16 @@ function verifyCheckoutShippingQuote(
   return {
     provider: claims.provider,
     type: claims.type,
-    costReal: claims.costCents / 100,
-    costChargedAtQuote: claims.costChargedCents / 100,
+    costReal: fromCents(claims.costCents),
+    costChargedAtQuote: fromCents(claims.costChargedCents),
+    markupBasisPoints: claims.markupBasisPoints,
+    pricing: {
+      providerAmount: fromCents(claims.providerCents),
+      markupPercent: claims.markupBasisPoints / 100,
+      markupAmount: fromCents(claims.markupCents),
+      roundingAmount: fromCents(claims.roundingCents),
+    },
+    estimate: canonicalizeEstimate(claims.estimate),
   } as const
 }
 
@@ -343,46 +464,54 @@ export function normalizeCheckoutShipping(
   options: {
     customerCreditApplied?: boolean
     settings?: Partial<ShippingBonusSettings> | null
+    /** Recargo logístico vigente al crear la orden (Admin → Configuración). */
+    markupPercent: number
     now?: number
     secret?: string
-  } = {},
+  },
 ): NormalizedCheckoutShipping {
   const verifiedQuote = verifyCheckoutShippingQuote(shipping, binding, options)
   const costReal = verifiedQuote.costReal
 
-  if (options.customerCreditApplied) {
-    return {
-      provider: verifiedQuote.provider,
-      type: verifiedQuote.type,
-      costReal,
-      costCharged: 0,
-      freeShippingApplied: true,
-    }
+  // Mismo criterio que la bonificación: si el recargo cambió entre cotizar y
+  // crear la orden, se recotiza. Cada orden queda con el porcentaje vigente.
+  let currentBasisPoints: number
+  try {
+    currentBasisPoints = markupPercentToBasisPoints(options.markupPercent)
+  } catch {
+    invalidQuote()
   }
+  if (currentBasisPoints !== verifiedQuote.markupBasisPoints) invalidQuote()
 
-  const costCharged = calculateCustomerShippingCost(
-    productsTotal,
-    costReal,
-    options.settings ?? DEFAULT_SHIPPING_SETTINGS,
-  )
+  const costCharged = options.customerCreditApplied
+    ? 0
+    : calculateCustomerShippingCost(
+        productsTotal,
+        costReal,
+        options.settings ?? DEFAULT_SHIPPING_SETTINGS,
+      )
 
   // El importe final que ve y acepta el cliente se firmó al cotizar. Si
   // recalcularlo ahora (con el subtotal/configuración comercial VIGENTES al
-  // crear la orden) da un número distinto del que se firmó, algo cambió
-  // entre medio (precio de catálogo, subsidio, umbral de envío gratis) --
-  // nunca se persiste ese importe distinto en silencio: se trata la
-  // cotización como vencida y se exige recotizar.
-  if (Math.round(costCharged * 100) !== Math.round(verifiedQuote.costChargedAtQuote * 100)) {
+  // crear la orden) da un número distinto, algo cambió entre medio (precio de
+  // catálogo, subsidio, umbral de envío gratis): nunca se persiste ese importe
+  // distinto en silencio, se exige recotizar. El pago con saldo a favor
+  // bonifica el envío completo y no depende de ese importe.
+  if (
+    !options.customerCreditApplied &&
+    Math.round(costCharged * 100) !== Math.round(verifiedQuote.costChargedAtQuote * 100)
+  ) {
     invalidQuote()
   }
-
-  const freeShippingApplied = costCharged === 0
 
   return {
     provider: verifiedQuote.provider,
     type: verifiedQuote.type,
     costReal,
     costCharged,
-    freeShippingApplied,
+    freeShippingApplied: options.customerCreditApplied ? true : costCharged === 0,
+    pricing: verifiedQuote.pricing,
+    benefitAmount: fromCents(Math.round(costReal * 100) - Math.round(costCharged * 100)),
+    estimate: verifiedQuote.estimate,
   }
 }

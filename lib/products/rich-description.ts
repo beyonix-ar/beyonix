@@ -1,0 +1,268 @@
+// Descripción enriquecida de producto. Allowlist estricta: p, br, strong/b,
+// em/i, u, h2, h3 y un span con tamaño discreto (sm/lg/xl). Todo lo demás se
+// descarta (script, iframe, style, atributos on*, javascript:, estilos...).
+// El texto plano legacy (sin etiquetas) sigue funcionando: párrafos por línea
+// en blanco y saltos simples como <br>.
+//
+// La salida del parser es un árbol de datos: la tienda lo renderiza como
+// elementos React (sin innerHTML), así que incluso un valor persistido sin
+// sanitizar no puede inyectar marcado.
+
+export const RICH_TEXT_SIZES = ["sm", "lg", "xl"] as const
+export type RichTextSize = (typeof RICH_TEXT_SIZES)[number]
+
+export type RichInline =
+  | { type: "text"; text: string }
+  | { type: "br" }
+  | { type: "strong" | "em" | "u"; children: RichInline[] }
+  | { type: "size"; size: RichTextSize; children: RichInline[] }
+
+export type RichBlockType = "p" | "h2" | "h3"
+export type RichBlock = { type: RichBlockType; children: RichInline[] }
+
+/** Tope defensivo: una descripción real nunca se acerca a esto. */
+export const RICH_DESCRIPTION_MAX_LENGTH = 50_000
+
+type HtmlNode =
+  | { kind: "text"; text: string }
+  | { kind: "element"; name: string; attrs: Record<string, string>; children: HtmlNode[] }
+
+// Su contenido nunca es texto visible: se descarta entero.
+const DROPPED_WITH_CONTENT = new Set([
+  "script", "style", "iframe", "object", "embed", "template", "noscript",
+  "textarea", "select", "option", "svg", "math", "head", "title", "frame",
+  "frameset", "noframes", "xmp", "plaintext", "canvas", "video", "audio",
+  "picture", "form", "button", "input", "img",
+])
+const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "noscript", "iframe", "noframes", "plaintext"])
+const VOID_ELEMENTS = new Set(["br", "hr", "img", "input", "meta", "link", "wbr", "area", "base", "col", "embed", "source", "track", "param"])
+const BLOCK_ELEMENTS = new Set([
+  "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "blockquote",
+  "section", "article", "header", "footer", "aside", "main", "nav", "pre", "table",
+  "tr", "td", "th", "tbody", "thead", "dl", "dt", "dd", "figure", "figcaption", "hr",
+])
+const HTML_HINT = /<\/?(?:p|br|strong|b|em|i|u|h[1-6]|span|div|font|ul|ol|li)\b[^>]*>/i
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ",
+  aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú",
+  Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú",
+  ntilde: "ñ", Ntilde: "Ñ", uuml: "ü", Uuml: "Ü", iexcl: "¡", iquest: "¿",
+  laquo: "«", raquo: "»", deg: "°", ordm: "º", ordf: "ª", middot: "·",
+  hellip: "…", mdash: "—", ndash: "–", ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’",
+}
+
+function decodeEntities(text: string) {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, entity: string) => {
+    if (entity[0] === "#") {
+      const code = entity[1] === "x" || entity[1] === "X"
+        ? Number.parseInt(entity.slice(2), 16)
+        : Number.parseInt(entity.slice(1), 10)
+      return Number.isInteger(code) && code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+        ? String.fromCodePoint(code)
+        : ""
+    }
+    return NAMED_ENTITIES[entity] ?? match
+  })
+}
+
+function parseAttributes(source: string) {
+  const attrs: Record<string, string> = {}
+  const pattern = /([^\s=/"'<>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g
+  for (const match of source.matchAll(pattern)) {
+    attrs[match[1].toLowerCase()] = decodeEntities(match[2] ?? match[3] ?? match[4] ?? "")
+  }
+  return attrs
+}
+
+/** Árbol HTML tolerante (sin DOM): igual en servidor, navegador y tests. */
+function parseHtml(input: string): HtmlNode[] {
+  const root: HtmlNode = { kind: "element", name: "#root", attrs: {}, children: [] }
+  const stack: Extract<HtmlNode, { kind: "element" }>[] = [root]
+  const token = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![^>]*>|<\?[^>]*>|<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|[^<]+|</g
+  let match: RegExpExecArray | null
+  while ((match = token.exec(input))) {
+    const [raw, closing, rawName, rawAttrs] = match
+    const current = stack[stack.length - 1]
+    if (rawName === undefined) {
+      if (raw.startsWith("<!") || raw.startsWith("<?")) continue
+      current.children.push({ kind: "text", text: decodeEntities(raw) })
+      continue
+    }
+    const name = rawName.toLowerCase()
+    if (closing) {
+      const index = stack.map((node) => node.name).lastIndexOf(name)
+      if (index > 0) stack.length = index
+      continue
+    }
+    if (RAW_TEXT.has(name)) {
+      // Se saltea hasta su cierre: su contenido nunca se interpreta.
+      const close = new RegExp(`</${name}\\b[^>]*>`, "gi")
+      close.lastIndex = token.lastIndex
+      const end = close.exec(input)
+      token.lastIndex = end ? close.lastIndex : input.length
+      continue
+    }
+    const element: HtmlNode = { kind: "element", name, attrs: parseAttributes(rawAttrs ?? ""), children: [] }
+    current.children.push(element)
+    if (!VOID_ELEMENTS.has(name) && !/\/\s*$/.test(rawAttrs ?? "")) stack.push(element)
+  }
+  return root.children
+}
+
+function sizeFromAttributes(name: string, attrs: Record<string, string>): RichTextSize | null {
+  const classSize = /(?:^|\s)rt-size-(sm|lg|xl)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
+  if (classSize) return classSize as RichTextSize
+  if (name === "font" && attrs.size) {
+    const size = Number(attrs.size)
+    if (size <= 2) return "sm"
+    if (size === 4) return "lg"
+    if (size >= 5) return "xl"
+    return null
+  }
+  const cssSize = /font-size\s*:\s*([a-z-]+)/i.exec(attrs.style ?? "")?.[1]?.toLowerCase()
+  if (cssSize === "x-small" || cssSize === "small") return "sm"
+  if (cssSize === "large") return "lg"
+  if (cssSize === "x-large" || cssSize === "xx-large" || cssSize === "xxx-large") return "xl"
+  return null
+}
+
+function hasVisibleContent(nodes: RichInline[]): boolean {
+  return nodes.some((node) =>
+    node.type === "text" ? node.text.trim() !== "" : node.type !== "br" && hasVisibleContent(node.children),
+  )
+}
+
+function blockTypeFor(name: string): RichBlockType {
+  if (name === "h1" || name === "h2") return "h2"
+  if (/^h[3-6]$/.test(name)) return "h3"
+  return "p"
+}
+
+function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
+  const blocks: RichBlock[] = []
+  let pending: RichInline[] = []
+  const flush = (type: RichBlockType = "p") => {
+    if (hasVisibleContent(pending)) blocks.push({ type, children: pending })
+    pending = []
+  }
+
+  const inline = (node: HtmlNode, sink: RichInline[]) => {
+    if (node.kind === "text") {
+      if (node.text) sink.push({ type: "text", text: node.text })
+      return
+    }
+    if (DROPPED_WITH_CONTENT.has(node.name)) return
+    if (BLOCK_ELEMENTS.has(node.name)) {
+      // Un bloque anidado en contenido inline corta el párrafo actual.
+      block(node)
+      return
+    }
+    if (node.name === "br") {
+      sink.push({ type: "br" })
+      return
+    }
+    const children: RichInline[] = []
+    for (const child of node.children) inlineInto(child, children)
+    if (node.name === "strong" || node.name === "b") sink.push({ type: "strong", children })
+    else if (node.name === "em" || node.name === "i") sink.push({ type: "em", children })
+    else if (node.name === "u") sink.push({ type: "u", children })
+    else {
+      const size = node.name === "span" || node.name === "font" ? sizeFromAttributes(node.name, node.attrs) : null
+      if (size) sink.push({ type: "size", size, children })
+      else sink.push(...children)
+    }
+  }
+
+  // Dentro de un inline, un bloque anidado se aplana a su texto (no se puede
+  // cortar un <strong> en dos párrafos sin reconstruir la jerarquía).
+  const inlineInto = (node: HtmlNode, sink: RichInline[]) => {
+    if (node.kind === "element" && BLOCK_ELEMENTS.has(node.name) && !DROPPED_WITH_CONTENT.has(node.name)) {
+      if (sink.length && sink[sink.length - 1].type !== "br") sink.push({ type: "br" })
+      for (const child of node.children) inlineInto(child, sink)
+      return
+    }
+    inline(node, sink)
+  }
+
+  const block = (node: Extract<HtmlNode, { kind: "element" }>) => {
+    flush()
+    if (node.name === "hr") return
+    const type = blockTypeFor(node.name)
+    for (const child of node.children) {
+      if (child.kind === "element" && BLOCK_ELEMENTS.has(child.name)) {
+        flush(type)
+        block(child)
+      } else {
+        inline(child, pending)
+      }
+    }
+    flush(type)
+  }
+
+  for (const node of nodes) inline(node, pending)
+  flush()
+  return blocks.map((entry) => ({ ...entry, children: trimBreaks(entry.children) }))
+}
+
+function trimBreaks(nodes: RichInline[]) {
+  let start = 0
+  let end = nodes.length
+  while (start < end && nodes[start].type === "br") start += 1
+  while (end > start && nodes[end - 1].type === "br") end -= 1
+  return nodes.slice(start, end)
+}
+
+function plainTextToBlocks(text: string): RichBlock[] {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => ({
+      type: "p" as const,
+      children: paragraph.split("\n").flatMap((line, index): RichInline[] =>
+        index === 0 ? [{ type: "text", text: line }] : [{ type: "br" }, { type: "text", text: line }],
+      ),
+    }))
+}
+
+/** Descripción → bloques seguros. Acepta HTML del editor o texto plano legacy. */
+export function parseRichDescription(value: string | null | undefined): RichBlock[] {
+  const input = (value ?? "").slice(0, RICH_DESCRIPTION_MAX_LENGTH)
+  if (!input.trim()) return []
+  return HTML_HINT.test(input) ? htmlToBlocks(parseHtml(input)) : plainTextToBlocks(input)
+}
+
+function escapeHtml(text: string) {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
+function serializeInline(nodes: RichInline[]): string {
+  return nodes.map((node) => {
+    switch (node.type) {
+      case "text": return escapeHtml(node.text)
+      case "br": return "<br>"
+      case "size": return `<span class="rt-size-${node.size}">${serializeInline(node.children)}</span>`
+      default: return `<${node.type}>${serializeInline(node.children)}</${node.type}>`
+    }
+  }).join("")
+}
+
+/** HTML canónico y seguro para persistir ("" si no hay texto visible). */
+export function sanitizeRichDescription(value: string | null | undefined) {
+  return parseRichDescription(value)
+    .map((block) => `<${block.type}>${serializeInline(block.children)}</${block.type}>`)
+    .join("")
+}
+
+function inlineText(nodes: RichInline[]): string {
+  return nodes.map((node) =>
+    node.type === "text" ? node.text : node.type === "br" ? "\n" : inlineText(node.children),
+  ).join("")
+}
+
+/** Texto plano (requisitos de activación, metadatos, búsqueda). */
+export function richDescriptionToPlainText(value: string | null | undefined) {
+  return parseRichDescription(value).map((block) => inlineText(block.children).trim()).join("\n\n")
+}

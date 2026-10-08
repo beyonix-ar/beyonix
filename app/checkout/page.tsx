@@ -119,6 +119,7 @@ import {
   getMercadoPagoFinancingCandidates,
 } from "@/lib/pricing/checkout-pricing"
 import { COMMERCIAL_UPDATE_NOTICE } from "@/lib/cart/cart-catalog-refresh"
+import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 import {
   getCartStockReservation,
   reserveCartStock,
@@ -3185,9 +3186,7 @@ export default function CheckoutPage() {
                                 {item.colorHex && (
                                   <span
                                     className="size-2.5 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
-                                    style={{
-                                      backgroundColor: item.colorHex,
-                                    }}
+                                    style={variantSwatchStyle(item.colorHex, item.secondaryColorHex)}
                                   />
                                 )}
                                 <span className="truncate text-xs capitalize text-white/60">

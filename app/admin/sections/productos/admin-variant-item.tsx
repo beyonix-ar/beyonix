@@ -5,6 +5,7 @@ import { ImageIcon } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { calculateAvailableStock } from "@/lib/inventory/sellable-stock"
+import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 
 import { StockReservationBreakdown } from "./product-stock-reservations"
 
@@ -20,6 +21,8 @@ interface AdminVariantItemProps {
   sku?: string | null
   hideSku?: boolean
   colorHex?: string | null
+  /** Segundo color de una variante bicolor (swatch 50/50). */
+  secondaryColorHex?: string | null
   colorLabel?: string
   accentColor?: string | null
   /** Stock físico. */
@@ -95,6 +98,7 @@ export function AdminVariantItem({
   sku,
   hideSku = false,
   colorHex,
+  secondaryColorHex,
   colorLabel,
   accentColor,
   stock,
@@ -178,7 +182,7 @@ export function AdminVariantItem({
             <dt className="text-xs font-bold text-white/46">Color</dt>
             <dd className="mt-1 flex min-w-0 items-center gap-2 text-sm font-black text-white/82">
               {colorHex ? (
-                <span className="size-4 shrink-0 rounded-full border border-white/25" style={{ backgroundColor: colorHex }} />
+                <span className="size-4 shrink-0 rounded-full border border-white/25" style={variantSwatchStyle(colorHex, secondaryColorHex)} />
               ) : null}
               <span className="truncate">{colorLabel || colorHex || "Sin color"}</span>
             </dd>
@@ -259,7 +263,7 @@ export function AdminVariantItem({
         {colorHex ? (
           <span
             className="size-3.5 shrink-0 rounded-full border border-white/25"
-            style={{ backgroundColor: colorHex }}
+            style={variantSwatchStyle(colorHex, secondaryColorHex)}
           />
         ) : null}
         <span className="truncate text-xs font-bold text-white/62" title={colorLabel || colorHex || "Sin color"}>

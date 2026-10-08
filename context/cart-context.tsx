@@ -48,6 +48,7 @@ export interface CartItem {
   conditionedStockId: string | null
   variantName: string | null
   colorHex: string | null
+  secondaryColorHex?: string | null
   unitPrice: number
   originalUnitPrice: number | null
   discountReason: string | null
@@ -170,6 +171,10 @@ function normalizeCartItem(item: unknown): CartItem | null {
       typeof rawItem.colorHex === "string"
         ? rawItem.colorHex
         : variant?.colorHex ?? null,
+    secondaryColorHex:
+      typeof rawItem.secondaryColorHex === "string"
+        ? rawItem.secondaryColorHex
+        : variant?.secondaryColorHex ?? null,
     unitPrice: Number.isFinite(storedUnitPrice)
       ? Math.max(storedUnitPrice, 0)
       : variant?.price ?? product.precio,
@@ -398,6 +403,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           conditionedStockId: variant?.conditionedStockId ?? null,
           variantName: variant?.name ?? null,
           colorHex: variant?.colorHex ?? null,
+          secondaryColorHex: variant?.secondaryColorHex ?? null,
           unitPrice: variant?.price ?? normalizedProduct.precio,
           originalUnitPrice: variant?.originalPrice ?? null,
           discountReason: variant?.reason ?? null,

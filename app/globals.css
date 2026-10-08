@@ -8896,18 +8896,6 @@ span.admin-claim-status-finalized,
   }
 }
 
-/* Par Dimensiones y peso + Contenido: 24:28, mismo ratio que tenían como
-   columnas de la fila de 4. */
-.product-editor-screen .product-editor-dimensions-content-pair {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-@container (min-width: 32rem) {
-  .product-editor-screen .product-editor-dimensions-content-pair {
-    grid-template-columns: 24fr 28fr;
-  }
-}
-
 /* Los 5 indicadores de Stock en grilla 3x2 (3 columnas, 5 cards -- la 2da
    fila queda con 2 y un hueco sin renderizar, no una 6ta card vacía).
    Container query sobre la propia celda (product-editor-cell), no sobre
@@ -17067,4 +17055,51 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface.dispatch-su
 }
 html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card {
   background: var(--bx-surface-card) !important;
+}
+
+/* Ayuda "(?)" de Admin: superficie opaca con los tokens del tema (Light/Dark). */
+.beyonix-admin-main .admin-help-tip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.beyonix-admin-main .admin-help-tip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--admin-text-muted);
+  border-radius: 9999px;
+  transition: color 150ms ease;
+}
+.beyonix-admin-main .admin-help-tip-trigger:hover,
+.beyonix-admin-main .admin-help-tip-trigger:focus-visible {
+  color: var(--admin-text);
+  outline: none;
+}
+.beyonix-admin-main .admin-help-tip-trigger:focus-visible {
+  box-shadow: 0 0 0 2px var(--admin-border-strong);
+}
+.beyonix-admin-main .admin-help-tip-popover {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 0.375rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(16rem, 80vw);
+  padding: 0.5rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.1rem;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  color: var(--admin-text);
+  background: var(--admin-surface-raised);
+  border: 1px solid var(--admin-border);
+  border-radius: 0.625rem;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }

@@ -55,6 +55,30 @@ import {
   normalizeLogisticsDecimalInput,
   PRODUCT_LOGISTICS_FIELDS,
 } from "@/lib/shipping/logistics-validation"
+import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
+import { RichDescriptionEditor } from "./rich-description-editor"
+
+/** Una sola fila: Peso | Largo | Ancho | Profundidad (como se lee una caja). */
+const LOGISTICS_FIELD_ORDER = ["peso_empaquetado_kg", "largo_paquete_cm", "ancho_paquete_cm", "alto_paquete_cm"] as const
+const LOGISTICS_FIELD_LABELS = {
+  peso_empaquetado_kg: "Peso",
+  largo_paquete_cm: "Largo",
+  ancho_paquete_cm: "Ancho",
+  alto_paquete_cm: "Profundidad",
+} as const
+const LOGISTICS_FIELD_PLACEHOLDERS = {
+  peso_empaquetado_kg: "Ej: 0,072 para 72 g",
+  largo_paquete_cm: "Requerido",
+  ancho_paquete_cm: "Requerido",
+  alto_paquete_cm: "Requerido",
+} as const
+
+/** Volumen de la caja del producto, calculado (nunca se pide a mano). */
+function logisticsVolumeCm3(length: string, width: string, height: string) {
+  const values = [length, width, height].map((value) => Number(value.replace(",", ".")))
+  if (values.some((value) => !Number.isFinite(value) || value <= 0)) return null
+  return Math.round(values[0] * values[1] * values[2] * 10) / 10
+}
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
@@ -101,6 +125,7 @@ export function ProductoForm({
       ]),
     ),
   )
+  const [ventaAleatoria, setVentaAleatoria] = useState(producto?.venta_aleatoria === true)
   const [previewProduct, setPreviewProduct] =
     useState<SupabaseProducto | null>(null)
   const [variantDistribution, setVariantDistribution] =
@@ -327,6 +352,7 @@ export function ProductoForm({
     pendingVariantStates,
   ])
   const busy = saving
+  const logisticsVolume = logisticsVolumeCm3(form.largo_paquete_cm, form.ancho_paquete_cm, form.alto_paquete_cm)
 
   const saveProduct = async () => {
     if (precioAnteriorBelowCurrent) {
@@ -449,6 +475,7 @@ export function ProductoForm({
       nombre: form.nombre.trim() || "Producto sin nombre",
       slug: form.slug.trim() || "producto-sin-nombre",
       descripcion: form.descripcion.trim() || null,
+      venta_aleatoria: ventaAleatoria,
       video_url: form.video_url.trim() || null,
       precio: safePrice,
       precio_anterior: safePreviousPrice,
@@ -679,26 +706,16 @@ export function ProductoForm({
           </div>
 
           {/*
-            Fila 2+3: bloque [Estado comercial+Stock] + Especificaciones
-            (izquierda) | bloque [Dimensiones+Contenido] + Variantes
+            Fila 2: bloque [Estado comercial+Stock] + Especificaciones
+            (izquierda) | Logística (Peso | Largo | Ancho | Profundidad)
             (derecha) -- ver .product-editor-commercial-catalog-row en
-            globals.css. Cada bloque es su propio flex-col independiente, NO
-            una fila de grid compartida entre las 4 tarjetas de arriba: con
-            un grid de 4 columnas en una sola fila (diseño anterior),
-            Especificaciones/Variantes heredaban la altura del más alto de
-            los 4 (Contenido, que tiene textarea de descripción) sin
-            importar si venían de la columna corta o la larga -- items-start
-            evita que las tarjetas se estiren ENTRE SÍ, pero no puede evitar
-            que el contenedor de la fila completa mida lo que mide su
-            integrante más alto. Separar en dos bloques verticales
-            independientes es la única forma de que Especificaciones
-            arranque justo debajo de Estado+Stock (más bajos) sin esperar a
-            Contenido. Cada bloque, al ser flex-col de ancho completo,
-            alinea sus bordes izquierdo/derecho automáticamente con el par
-            de tarjetas de arriba -- no hace falta ningún offset manual.
+            globals.css. Cada bloque es su propio flex-col independiente:
+            Especificaciones arranca justo debajo de Estado+Stock sin esperar
+            a la altura del bloque vecino.
+            Debajo, a ancho completo y en este orden: URL del video,
+            Variantes y Descripción (editor enriquecido).
             "Requisitos para activar" vive en el ícono del header (ver
-            ProductRequirementsPopover) -- misma lógica de
-            getProductActivationStatus, sólo cambió la presentación.
+            ProductRequirementsPopover).
           */}
           <div className="product-editor-commercial-catalog-row grid min-w-0 gap-2.5 items-start">
             <div className="product-editor-cell product-editor-commercial-catalog-block flex min-w-0 flex-col gap-2.5">
@@ -796,138 +813,142 @@ export function ProductoForm({
             </div>
 
             <div className="product-editor-cell product-editor-commercial-catalog-block flex min-w-0 flex-col gap-2.5">
-              <div className="product-editor-cell product-editor-dimensions-content-pair grid min-w-0 gap-2.5 items-start">
-                <div className="product-editor-cell product-editor-dimensions-cell">
-                  <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                    <div className="product-editor-panel-heading">
-                      <h2 className="text-base font-black text-white">
-                        Dimensiones y peso
-                      </h2>
-                      <p className="mt-0.5 text-xs leading-5 text-white">
-                        Obligatorios: Andreani los necesita para calcular el costo del paquete.
-                      </p>
-                    </div>
-                    <div className="product-editor-logistics-grid grid gap-1.5">
-                      {PRODUCT_LOGISTICS_FIELDS.map(({ key, unit }) => {
-                        const label = {
-                          peso_empaquetado_kg: "Peso",
-                          alto_paquete_cm: "Profundidad",
-                          ancho_paquete_cm: "Ancho",
-                          largo_paquete_cm: "Largo",
-                        }[key]
-                        const fieldError =
-                          logisticsFieldError?.field === key
-                            ? logisticsFieldError.message
-                            : undefined
-
-                        return (
-                          <AdminFormField
-                            key={key}
-                            label={`${label} *`}
-                            labelClassName={productFieldLabelClassName}
-                            error={fieldError}
-                          >
-                            <span className="relative block">
-                              <input
-                                id={key}
-                                type="text"
-                                inputMode="decimal"
-                                required
-                                value={form[key]}
-                                placeholder="Requerido"
-                                aria-label={`${label} en ${unit} (obligatorio)`}
-                                aria-required="true"
-                                aria-invalid={fieldError ? "true" : undefined}
-                                onChange={(event) =>
-                                  setField(
-                                    key,
-                                    normalizeLogisticsDecimalInput(event.target.value),
-                                  )
-                                }
-                                className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
-                              />
-                              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-white">
-                                {unit}
-                              </span>
-                            </span>
-                          </AdminFormField>
-                        )
-                      })}
-                    </div>
-                  </AdminCard>
-                </div>
-
-                <div className="product-editor-cell product-editor-content-cell">
-                  <AdminCard className="product-editor-panel space-y-2 p-2.5">
-                    <div className="product-editor-panel-heading">
-                      <h2 className="text-base font-black text-white">Contenido</h2>
-                    </div>
-                    <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
-                      <input
-                        id="video_url"
-                        type="url"
-                        value={form.video_url}
-                        placeholder="https://..."
-                        onChange={(event) => setField("video_url", event.target.value)}
-                        className={inputCls}
+              <div className="product-editor-cell product-editor-dimensions-cell">
+                <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
+                  <div className="product-editor-panel-heading">
+                    <h2 className="flex items-center gap-1.5 text-base font-black text-white">
+                      Logística
+                      <AdminHelpTip
+                        label="Logística del producto"
+                        text="Usá las medidas de la caja/envase del producto antes del embalaje final BEYONIX."
                       />
-                    </AdminFormField>
+                    </h2>
+                    <p className="mt-0.5 text-xs leading-5 text-white">
+                      Obligatorios: con estos datos BEYONIX estima el bulto y cotiza el envío.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 @min-[30rem]:grid-cols-4" data-logistics-row>
+                    {LOGISTICS_FIELD_ORDER.map((fieldKey) => {
+                      const { key, unit } = PRODUCT_LOGISTICS_FIELDS.find((field) => field.key === fieldKey)!
+                      const label = LOGISTICS_FIELD_LABELS[key]
+                      const fieldError =
+                        logisticsFieldError?.field === key
+                          ? logisticsFieldError.message
+                          : undefined
 
-                    {canPreviewVideo ? (
-                      <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
-                        <div className="relative aspect-video w-full">
-                          {videoSource.kind === "direct" ? (
-                            <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
-                          ) : (
-                            <iframe
-                              src={videoSource.embedUrl}
-                              title="Vista previa del video del producto"
-                              loading="lazy"
-                              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                              allowFullScreen
-                              referrerPolicy="strict-origin-when-cross-origin"
-                              className="size-full"
+                      return (
+                        <AdminFormField
+                          key={key}
+                          label={`${label} *`}
+                          labelClassName={productFieldLabelClassName}
+                          error={fieldError}
+                        >
+                          <span className="relative block">
+                            <input
+                              id={key}
+                              type="text"
+                              inputMode="decimal"
+                              required
+                              value={form[key]}
+                              placeholder={LOGISTICS_FIELD_PLACEHOLDERS[key]}
+                              aria-label={`${label} en ${unit} (obligatorio)`}
+                              aria-required="true"
+                              aria-invalid={fieldError ? "true" : undefined}
+                              onChange={(event) =>
+                                setField(
+                                  key,
+                                  normalizeLogisticsDecimalInput(event.target.value),
+                                )
+                              }
+                              className={`${inputCls} !pr-9 ${fieldError ? "!border-red-400/60" : ""}`}
                             />
-                          )}
-                        </div>
-                      </div>
-                    ) : form.video_url.trim() ? (
-                      <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
-                        La URL es HTTPS, pero no corresponde a un video compatible.
-                      </AdminInfoBlock>
-                    ) : null}
-
-                    <AdminFormField label="Descripción" labelClassName={productFieldLabelClassName}>
-                      <textarea
-                        id="descripcion"
-                        value={form.descripcion}
-                        placeholder="Describí el producto y, si agregaste un video, su contenido."
-                        onChange={(event) => setField("descripcion", event.target.value)}
-                        className={`${inputCls} h-24 min-h-24 w-full resize-y py-2 leading-5`}
-                      />
-                    </AdminFormField>
-                  </AdminCard>
-                </div>
-              </div>
-
-              <div className="product-editor-cell product-editor-variants-cell min-w-0">
-                <ProductVariantsEditor
-                  productoId={currentProductoId || undefined}
-                  productName={form.nombre}
-                  productActive={form.activo}
-                  primarySku={form.sku}
-                  videoUrl={form.video_url}
-                  onPrimarySkuChange={(value) => setField("sku", value)}
-                  fallbackImage={productFallbackImage}
-                  draftVariants={draftVariants}
-                  onDraftVariantsChange={setDraftVariants}
-                  persistedVariantStates={pendingVariantStates}
-                  onPersistedVariantStatesChange={setPendingVariantStates}
-                  onPersistedVariantsChange={handlePersistedVariantsChange}
-                  onDistributionChange={setVariantDistribution}
-                />
+                            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-black text-white">
+                              {unit}
+                            </span>
+                          </span>
+                        </AdminFormField>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs font-bold text-white/70" data-product-volume>
+                    Volumen: {logisticsVolume === null ? "se calcula al completar las medidas" : `${logisticsVolume.toLocaleString("es-AR")} cm³`}
+                  </p>
+                </AdminCard>
               </div>
             </div>
+          </div>
+
+          <div className="product-editor-cell product-editor-video-cell min-w-0">
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
+              <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
+                <input
+                  id="video_url"
+                  type="url"
+                  value={form.video_url}
+                  placeholder="https://..."
+                  onChange={(event) => setField("video_url", event.target.value)}
+                  className={inputCls}
+                />
+              </AdminFormField>
+
+              {canPreviewVideo ? (
+                <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
+                  <div className="relative aspect-video w-full">
+                    {videoSource.kind === "direct" ? (
+                      <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
+                    ) : (
+                      <iframe
+                        src={videoSource.embedUrl}
+                        title="Vista previa del video del producto"
+                        loading="lazy"
+                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        className="size-full"
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : form.video_url.trim() ? (
+                <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
+                  La URL es HTTPS, pero no corresponde a un video compatible.
+                </AdminInfoBlock>
+              ) : null}
+            </AdminCard>
+          </div>
+
+          <div className="product-editor-cell product-editor-variants-cell min-w-0">
+            <ProductVariantsEditor
+              productoId={currentProductoId || undefined}
+              productName={form.nombre}
+              productActive={form.activo}
+              primarySku={form.sku}
+              videoUrl={form.video_url}
+              onPrimarySkuChange={(value) => setField("sku", value)}
+              fallbackImage={productFallbackImage}
+              draftVariants={draftVariants}
+              onDraftVariantsChange={setDraftVariants}
+              persistedVariantStates={pendingVariantStates}
+              onPersistedVariantStatesChange={setPendingVariantStates}
+              onPersistedVariantsChange={handlePersistedVariantsChange}
+              onDistributionChange={setVariantDistribution}
+              ventaAleatoria={ventaAleatoria}
+              onVentaAleatoriaChange={setVentaAleatoria}
+            />
+          </div>
+
+          <div className="product-editor-cell product-editor-description-cell min-w-0">
+            <AdminCard className="product-editor-panel space-y-2 p-2.5">
+              <div className="product-editor-panel-heading">
+                <h2 className="text-base font-black text-white">Descripción</h2>
+              </div>
+              <RichDescriptionEditor
+                id="descripcion"
+                value={form.descripcion}
+                placeholder="Describí el producto y, si agregaste un video, su contenido."
+                onChange={(value) => setField("descripcion", value)}
+              />
+            </AdminCard>
           </div>
         </div>
 

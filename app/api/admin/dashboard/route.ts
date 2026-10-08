@@ -420,6 +420,7 @@ const FINANCIAL_ORDER_SELECT = `
   envio_proveedor,
   shipping_cost_real,
   shipping_cost_charged,
+  shipping_provider_quote_amount,
   andreani_costo,
   transfer_discount_amount,
   invoice_status,
@@ -1220,9 +1221,13 @@ export async function GET(request: Request) {
     (total, order) => total + Number(order.shipping_cost_charged ?? 0),
     0,
   )
+  // Costo de envío para BEYONIX = tarifa de Andreani cotizada (snapshot de
+  // la orden). shipping_cost_real ahora incluye el recargo logístico y el
+  // ajuste comercial: usarlo inflaría el costo. Órdenes previas al snapshot
+  // conservan el cálculo anterior.
   const webShippingCost = paidCandidateOrders.reduce(
     (total, order) =>
-      total + Number(order.shipping_cost_real ?? order.andreani_costo ?? 0),
+      total + Number(order.shipping_provider_quote_amount ?? order.shipping_cost_real ?? order.andreani_costo ?? 0),
     0,
   )
   const transferDiscounts = paidCandidateOrders.reduce(

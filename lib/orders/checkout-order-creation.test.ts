@@ -16,6 +16,7 @@ import {
   normalizeCheckoutOrderShipping,
   prepareCheckoutOrderCatalogRows,
   resolveCheckoutOrderShippingBranch,
+  resolveRandomFulfillmentItems,
   InsufficientStockError,
   InvalidCheckoutItemsError,
   MAX_CHECKOUT_ITEM_QUANTITY,
@@ -26,6 +27,28 @@ import {
 import { AndreaniError } from "../andreani/client.ts"
 import type { VerifiedAndreaniBranch } from "../andreani/checkout-quote.ts"
 import type { ConditionedCheckoutRow } from "./conditioned-checkout.ts"
+import type { NormalizedCheckoutShipping } from "../cart/checkout-shipping.ts"
+
+const TEST_ESTIMATE = {
+  version: "beyonix-packing-v1",
+  parcels: [{ lengthCm: 22, widthCm: 12, heightCm: 12, volumeCm3: 3_168, weightKg: 2.15 }],
+  productsWeightKg: 2,
+  productsVolumeCm3: 2_000,
+}
+
+/** Envío ya verificado, con recargo 0% (precio logístico = tarifa). */
+function verifiedShipping(type: "domicilio" | "sucursal", costReal: number, costCharged: number): NormalizedCheckoutShipping {
+  return {
+    provider: "andreani",
+    type,
+    costReal,
+    costCharged,
+    freeShippingApplied: false,
+    pricing: { providerAmount: costReal, markupPercent: 0, markupAmount: 0, roundingAmount: 0 },
+    benefitAmount: costReal - costCharged,
+    estimate: TEST_ESTIMATE,
+  }
+}
 
 const QUOTE_SECRET = "beyonix-checkout-order-creation-test-secret"
 const conditionedId = "123e4567-e89b-12d3-a456-426614174000"
@@ -488,13 +511,7 @@ test("una variante desactivada no se confunde con stock insuficiente", () => {
 
 test("los tres medios conservan la misma base y sus diferencias reales", () => {
   const customer = normalizeCheckoutOrderCustomer(validCustomer)
-  const shipping = getCheckoutOrderShippingFields({
-    provider: "andreani",
-    type: "domicilio",
-    costReal: 12_345.67,
-    costCharged: 10_000,
-    freeShippingApplied: false,
-  })
+  const shipping = getCheckoutOrderShippingFields(verifiedShipping("domicilio", 12_345.67, 10_000))
   const storeBenefit = {
     id: "benefit-1",
     code: "CLIENTE10",
@@ -710,13 +727,7 @@ test("en el Checkout, elegir 'En cuotas' por Mercado Pago SÍ recalcula el total
 })
 
 test("getCheckoutOrderShippingFields persiste la sucursal verificada; domicilio y sucursal sin sucursal quedan en null", () => {
-  const domicilio = getCheckoutOrderShippingFields({
-    provider: "andreani",
-    type: "domicilio",
-    costReal: 12_000,
-    costCharged: 10_000,
-    freeShippingApplied: false,
-  })
+  const domicilio = getCheckoutOrderShippingFields(verifiedShipping("domicilio", 12_000, 10_000))
   assert.equal(domicilio.andreani_sucursal_id, null)
   assert.equal(domicilio.andreani_sucursal_codigo, null)
   assert.equal(domicilio.andreani_sucursal_nombre, null)
@@ -735,13 +746,7 @@ test("getCheckoutOrderShippingFields persiste la sucursal verificada; domicilio 
     codigoPostal: "3000",
   }
   const sucursal = getCheckoutOrderShippingFields(
-    {
-      provider: "andreani",
-      type: "sucursal",
-      costReal: 11_000,
-      costCharged: 9_000,
-      freeShippingApplied: false,
-    },
+    verifiedShipping("sucursal", 11_000, 9_000),
     branch,
   )
   assert.equal(sucursal.andreani_sucursal_id, "10055")
@@ -876,7 +881,13 @@ test("el helper común mantiene la validación del envío firmado", () => {
   }
   const quoteToken = createCheckoutShippingQuoteToken(
     binding,
-    { type: "domicilio", price: 12_345.67, costCharged: 12_345.67 },
+    {
+      type: "domicilio",
+      price: 12_000,
+      costCharged: 12_000,
+      pricing: { providerAmount: 12_000, markupPercent: 0, markupAmount: 0, roundingAmount: 0 },
+      estimate: TEST_ESTIMATE,
+    },
   )
   try {
     const shipping = normalizeCheckoutOrderShipping({
@@ -895,10 +906,12 @@ test("el helper común mantiene la validación del envío firmado", () => {
         freeShippingMode: "off",
         logisticsBaseSubsidy: 0,
       },
+      markupPercent: 0,
     })
 
-    assert.equal(shipping.costReal, 12_345.67)
-    assert.equal(shipping.costCharged, 12_345.67)
+    assert.equal(shipping.costReal, 12_000)
+    assert.equal(shipping.costCharged, 12_000)
+    assert.equal(getCheckoutOrderShippingFields(shipping).shipping_provider_quote_amount, 12_000)
   } finally {
     if (previousSecret === undefined) {
       delete process.env.CHECKOUT_SHIPPING_QUOTE_SECRET
@@ -1143,4 +1156,64 @@ test("los 3 endpoints de checkout usan claimActiveStoreBenefit (nunca el viejo f
       `${path}: todavía usa las funciones viejas (SELECT + UPDATE tardío -- la carrera del cupón)`,
     )
   }
+})
+
+// ── Venta aleatoria ───────────────────────────────────────────────────────
+const randomProduct: CheckoutOrderProductRow = { id: 70, nombre: "Encendedor USB", precio: 9_000, stock: 9, activo: true, venta_aleatoria: true }
+const randomVariants: CheckoutOrderVariantRow[] = [
+  { id: 701, producto_id: 70, nombre: "NEGRO", color_hex: "#000000", stock: 4, activo: true, orden: 1 },
+  { id: 702, producto_id: 70, nombre: "ROJO", color_hex: "#EF4444", stock: 3, activo: true, orden: 2 },
+  { id: 703, producto_id: 70, nombre: "AZUL", color_hex: "#2563EB", stock: 2, activo: true, orden: 3 },
+]
+
+function reservationsAdmin(rows: Array<{ product_id: number; variant_id: number; quantity: number }>) {
+  const builder = {
+    select: () => builder, eq: () => builder, in: () => builder, is: () => builder, not: () => builder,
+    gt: () => Promise.resolve({ data: rows, error: null }),
+  }
+  return { from: () => builder } as never
+}
+
+test("aleatorio: el catálogo acepta el producto sin variante elegida y valida el stock total", () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 70, quantity: 2 }])
+  const prepared = prepareCheckoutOrderCatalogRows(items, [randomProduct], randomVariants, new Map())
+  assert.equal(items[0].variantId, null)
+  assert.equal(prepared.cartRows[0].quantity, 2)
+  // Un producto con varias variantes que NO es aleatorio sigue exigiendo elegir.
+  assert.throws(
+    () => prepareCheckoutOrderCatalogRows(normalizeCheckoutOrderItems([{ productId: 70, quantity: 1 }]), [{ ...randomProduct, venta_aleatoria: false }], randomVariants, new Map()),
+    /Elegí la variante exacta/,
+  )
+})
+
+test("aleatorio: 2 unidades → 2 renglones de 1 unidad con la variante física reservada", async () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 70, quantity: 2 }, { productId: 10, quantity: 1, variantId: 11 }])
+  const resolved = await resolveRandomFulfillmentItems(
+    reservationsAdmin([{ product_id: 70, variant_id: 702, quantity: 1 }, { product_id: 70, variant_id: 701, quantity: 1 }]),
+    items,
+    [randomProduct, { id: 10, nombre: "Común", precio: 1, stock: 1, activo: true }],
+    "sesion-checkout-1234",
+  )
+  assert.deepEqual(resolved, [
+    { productId: 70, quantity: 1, variantId: 701, conditionedStockId: null, randomFulfillment: true },
+    { productId: 70, quantity: 1, variantId: 702, conditionedStockId: null, randomFulfillment: true },
+    items[1],
+  ])
+  const payload = buildCheckoutOrderItemsPayload(9, resolved, [randomProduct], new Map())
+  assert.deepEqual(payload.slice(0, 2).map((row) => [row.variante_id, row.cantidad, row.random_fulfillment]), [[701, 1, true], [702, 1, true]])
+})
+
+test("aleatorio: sin reserva vigente o con otra cantidad, no se crea la orden", async () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 70, quantity: 2 }])
+  await assert.rejects(
+    resolveRandomFulfillmentItems(reservationsAdmin([{ product_id: 70, variant_id: 701, quantity: 1 }]), items, [randomProduct], "sesion-checkout-1234"),
+    new RegExp(STOCK_CHANGED_MESSAGE.slice(0, 20)),
+  )
+  await assert.rejects(resolveRandomFulfillmentItems(reservationsAdmin([]), items, [randomProduct], null), /reserva venció/)
+})
+
+test("legacy: sin productos aleatorios no consulta reservas ni cambia los ítems", async () => {
+  const items = normalizeCheckoutOrderItems([{ productId: 10, quantity: 2, variantId: 11 }])
+  const admin = { from: () => { throw new Error("no debe consultar") } } as never
+  assert.equal(await resolveRandomFulfillmentItems(admin, items, [{ id: 10, nombre: "Común", precio: 1, stock: 2, activo: true }], null), items)
 })

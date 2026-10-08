@@ -13,6 +13,7 @@ import {
   type StockStatus,
 } from "@/lib/cart/stock-status"
 import { getColorName } from "@/lib/products/variant-color"
+import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 import { getDiscountPercent } from "@/lib/products/product-variants"
 
 interface Props {
@@ -55,6 +56,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
     quantity,
     variantName,
     colorHex,
+    secondaryColorHex,
     unitPrice,
     originalUnitPrice,
     conditionedStockId,
@@ -63,7 +65,11 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const price = unitPrice
   const discountPercent = getDiscountPercent(price, originalUnitPrice)
   const hasVariantInfo = Boolean(variantName || (color && color !== "default"))
-  const colorName = hasVariantInfo ? getColorName(colorHex, variantName) : null
+  // Una bicolor se nombra por su variante ("Azul / Rosa"): la paleta sólo
+  // conoce el color principal.
+  const colorName = hasVariantInfo
+    ? secondaryColorHex && variantName ? variantName : getColorName(colorHex, variantName)
+    : null
   const hasColor = Boolean(colorHex)
   const [imageSrc, setImageSrc] = useState(image || "/placeholder.svg")
   const maxQuantity = getMaxPurchasableQuantity(product, color)
@@ -98,9 +104,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
             <div className="mt-1 flex items-center gap-1.5">
               {hasColor && (
                 <span
-                  style={{
-                    backgroundColor: colorHex ?? undefined,
-                  }}
+                  style={variantSwatchStyle(colorHex, secondaryColorHex)}
                   className="size-3 rounded-full border border-white/20"
                 />
               )}

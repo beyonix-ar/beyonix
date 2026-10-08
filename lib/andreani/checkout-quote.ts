@@ -16,7 +16,29 @@ import { canonicalizeCheckoutQuoteItems } from "../cart/checkout-shipping-items.
 import { getCheckoutOrderItemUnitPrice } from "../orders/conditioned-checkout.ts"
 import { calculateCartTotals } from "../cart/cart-totals.ts"
 import { calculateCustomerShippingCost, type ShippingBonusSettings } from "../store-config.ts"
-import { ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG } from "./shipment-limits.ts"
+import {
+  ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG,
+  ANDREANI_MAX_CHECKOUT_PACKAGES,
+  ANDREANI_PACKAGE_LIMITS,
+} from "./shipment-limits.ts"
+import {
+  estimatePackages,
+  PackageEstimateError,
+  type PackageEstimate,
+  type PackingUnit,
+} from "../shipping/package-estimator.ts"
+import {
+  buildShippingPriceBreakdown,
+  fromCents,
+  markupPercentToBasisPoints,
+  roundShippingToNearestTen,
+  splitAmountByWeights,
+} from "../shipping/shipping-pricing.ts"
+import {
+  getShippingQuoteSettings,
+  type ShippingQuoteSettings,
+} from "../shipping/shipping-quote-settings.ts"
+import type { CheckoutShippingQuoteOption } from "../cart/checkout-shipping.ts"
 
 import {
   AndreaniClient,
@@ -78,14 +100,48 @@ export interface LoadedCheckoutQuoteItem {
   discountPercent: number
 }
 
-export interface AggregatedAndreaniPackage {
+/** Un bulto tal como se informa a Andreani (cotización y creación). */
+export interface AndreaniParcelPackage {
   pesoKg: number
   volumenCm3: number
+  /** Parte del valor declarado del pedido que corresponde a este bulto. */
   valorDeclarado: number
-  altoCm?: number
-  anchoCm?: number
-  largoCm?: number
+  altoCm: number
+  anchoCm: number
+  largoCm: number
 }
+
+/**
+ * Bultos que se informan a Andreani: los ESTIMADOS por el embalador
+ * (dimensiones exteriores, volumen de la caja y peso con embalaje), nunca la
+ * suma de lados. Cada bulto viaja por separado: Andreani cotiza la suma de
+ * sus tarifas y la creación acepta un array de bultos.
+ */
+export interface AndreaniShipmentPackages {
+  parcels: AndreaniParcelPackage[]
+  /** Valor declarado total del pedido (suma de los bultos). */
+  valorDeclarado: number
+}
+
+export interface AggregatedAndreaniPackage extends AndreaniShipmentPackages {
+  estimate: PackageEstimate
+}
+
+/** Bultos para la consulta de tarifa (`bultos[i][...]`). */
+export function toAndreaniTariffPackages(parcels: readonly AndreaniParcelPackage[]): AndreaniTariffRequest["bultos"] {
+  return parcels.map((parcel) => ({
+    valorDeclarado: parcel.valorDeclarado,
+    volumen: parcel.volumenCm3,
+    kilos: parcel.pesoKg,
+    altoCm: parcel.altoCm,
+    anchoCm: parcel.anchoCm,
+    largoCm: parcel.largoCm,
+  }))
+}
+
+/** Opción cotizada con su desglose interno (no viaja al navegador en claro). */
+export type InternalAndreaniCheckoutQuoteOption = AndreaniCheckoutQuoteOption &
+  Pick<CheckoutShippingQuoteOption, "pricing" | "estimate">
 
 interface CheckoutQuoteConfig {
   environment: "QA" | "PROD"
@@ -121,6 +177,8 @@ interface CheckoutQuoteDependencies {
   getAndreaniCommercialSettings?: () => Promise<AndreaniCommercialSettings>
   /** Sólo para tests: evita depender de site_settings real en la base. */
   getShippingSettings?: () => Promise<ShippingBonusSettings>
+  /** Sólo para tests: recargo logístico sin depender de la base. */
+  getShippingQuoteSettings?: () => Promise<ShippingQuoteSettings>
 }
 
 interface TimedCacheEntry<T> {
@@ -130,7 +188,7 @@ interface TimedCacheEntry<T> {
 
 const pendingQuotes = new Map<
   string,
-  Promise<AndreaniCheckoutQuoteOption[]>
+  Promise<InternalAndreaniCheckoutQuoteOption[]>
 >()
 // Cache corto del RESULTADO de una cotización ya resuelta, para el caso de
 // pedir dos veces exactamente el mismo destino+carrito (ida y vuelta entre
@@ -144,7 +202,7 @@ const pendingQuotes = new Map<
 const RESOLVED_QUOTE_CACHE_TTL_MS = 60 * 1000
 const resolvedQuoteCache = new Map<
   string,
-  TimedCacheEntry<AndreaniCheckoutQuoteOption[]>
+  TimedCacheEntry<InternalAndreaniCheckoutQuoteOption[]>
 >()
 const localityCache = new Map<string, TimedCacheEntry<AndreaniLocality[]>>()
 const localityRequests = new Map<string, Promise<AndreaniLocality[]>>()
@@ -620,33 +678,19 @@ async function loadCheckoutItems(
   })
 }
 
-export function aggregateAndreaniPackage(
-  items: LoadedCheckoutQuoteItem[],
-): AggregatedAndreaniPackage {
-  let pesoKg = 0
-  let volumenCm3 = 0
-  let valorDeclarado = 0
-  let singleUnitDimensions:
-    | { altoCm: number; anchoCm: number; largoCm: number }
-    | undefined
-  const totalUnits = items.reduce((total, item) => total + item.quantity, 0)
-
+/** Peso y medidas por unidad de los ítems, resueltos producto → variante. */
+export function resolveCheckoutPackingUnits(items: LoadedCheckoutQuoteItem[]): PackingUnit[] {
   try {
-    for (const item of items) {
+    return items.map((item) => {
       const logistics = resolveProductLogistics(item.product, item.variant)
-      pesoKg += logistics.pesoKg * item.quantity
-      volumenCm3 +=
-        logistics.altoCm * logistics.anchoCm * logistics.largoCm * item.quantity
-      const discountFactor = Math.max(0, 1 - item.discountPercent / 100)
-      valorDeclarado += item.product.precio * discountFactor * item.quantity
-      if (totalUnits === 1) {
-        singleUnitDimensions = {
-          altoCm: logistics.altoCm,
-          anchoCm: logistics.anchoCm,
-          largoCm: logistics.largoCm,
-        }
+      return {
+        lengthCm: logistics.largoCm,
+        widthCm: logistics.anchoCm,
+        heightCm: logistics.altoCm,
+        weightKg: logistics.pesoKg,
+        quantity: item.quantity,
       }
-    }
+    })
   } catch (error) {
     if (
       error instanceof IncompleteProductLogisticsError ||
@@ -656,61 +700,96 @@ export function aggregateAndreaniPackage(
     }
     throw error
   }
+}
 
-  if (!items.length || pesoKg <= 0 || volumenCm3 <= 0 || valorDeclarado <= 0) {
+/** Valor declarado: mismo precio unitario que se persiste en orden_items. */
+export function declaredValueOf(items: LoadedCheckoutQuoteItem[]) {
+  const cents = items.reduce((total, item) => {
+    const discountFactor = Math.max(0, 1 - item.discountPercent / 100)
+    return total + Math.round(item.product.precio * discountFactor * 100) * item.quantity
+  }, 0)
+  return cents / 100
+}
+
+function totalProductsWeight(units: PackingUnit[]) {
+  return units.reduce((total, unit) => total + Math.round(unit.weightKg * 1000) * unit.quantity, 0) / 1000
+}
+
+// La tarifa tolera hasta 1000 kg por bulto, pero BEYONIX crea bultos B2C de
+// hasta 50 kg (misma constante que AndreaniClient.crearEnvio). Un carrito más
+// pesado se divide en varios bultos; sólo se rechaza si UNA unidad, embalada,
+// no entra en un bulto (nunca se cobra un envío que no se puede crear).
+function overweightError(productsWeightKg: number) {
+  return new AndreaniError(
+    "VALIDATION_ERROR",
+    `Un producto del carrito (${productsWeightKg} kg en total) supera, embalado, los ${ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG} kg que admite un bulto Andreani. Elegí otro medio de envío o escribinos para coordinarlo.`,
+  )
+}
+
+/**
+ * Estima los bultos con el embalador (ver lib/shipping/package-estimator.ts):
+ * hasta 50 kg cada uno, cotizados juntos en `/v1/tarifas` y creados como
+ * bultos separados de la misma orden.
+ */
+export function estimateAndreaniPackage(units: PackingUnit[], valorDeclarado: number): AggregatedAndreaniPackage {
+  let estimate: PackageEstimate
+  try {
+    estimate = estimatePackages(units, ANDREANI_PACKAGE_LIMITS)
+  } catch (error) {
+    if (error instanceof PackageEstimateError) {
+      if (error.code === "UNIT_TOO_HEAVY") throw overweightError(totalProductsWeight(units))
+      throw new AndreaniError("VALIDATION_ERROR", error.message)
+    }
+    throw error
+  }
+
+  // Varios bultos son válidos (cada uno hasta 50 kg); un pedido que necesita
+  // más bultos que los que se ofrecen en checkout se coordina aparte.
+  if (estimate.parcels.length > ANDREANI_MAX_CHECKOUT_PACKAGES) {
+    throw new AndreaniError(
+      "VALIDATION_ERROR",
+      `El carrito necesita ${estimate.parcels.length} bultos y supera el máximo de ${ANDREANI_MAX_CHECKOUT_PACKAGES} por envío Andreani. Escribinos para coordinar el envío.`,
+    )
+  }
+  if (!(valorDeclarado > 0)) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
       "El carrito no tiene datos suficientes para cotizar el envío.",
     )
   }
 
-  // BLOQUEANTE 3 (auditoría Andreani Parte 2/4): BEYONIX modela cada pedido
-  // como UN ÚNICO bulto consolidado -- el mismo peso total que se cotiza acá
-  // es el que después intenta crear un solo bulto B2C. La tarifa
-  // (/v1/tarifas, ver requestTariff en client.ts) tolera hasta 1000 kg y
-  // cotizaría igual un carrito que la creación real (B2C, ver crearEnvio)
-  // rechazaría después con "El bulto B2C no puede superar los 50 kg" --
-  // nunca se debe ofrecer/cobrar un envío Andreani que no se pueda crear
-  // después. Se corta ACÁ, antes de llamar a Andreani, con el mismo límite
-  // exacto que ya aplica la creación real (misma constante compartida).
-  if (pesoKg > ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG) {
+  const declaredValues = splitAmountByWeights(valorDeclarado, estimate.parcels.map((parcel) => parcel.productsWeightKg))
+  return {
+    parcels: estimate.parcels.map((parcel, index) => ({
+      pesoKg: parcel.weightKg,
+      volumenCm3: parcel.volumeCm3,
+      valorDeclarado: declaredValues[index],
+      largoCm: parcel.lengthCm,
+      anchoCm: parcel.widthCm,
+      altoCm: parcel.heightCm,
+    })),
+    valorDeclarado,
+    estimate,
+  }
+}
+
+export function aggregateAndreaniPackage(
+  items: LoadedCheckoutQuoteItem[],
+): AggregatedAndreaniPackage {
+  if (!items.length) {
     throw new AndreaniError(
       "VALIDATION_ERROR",
-      `El carrito pesa ${pesoKg} kg y supera el máximo de ${ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG} kg que admite un envío Andreani. Reducí la cantidad de productos o elegí otro medio de envío.`,
+      "El carrito no tiene datos suficientes para cotizar el envío.",
     )
   }
-
-  return {
-    pesoKg: Number(pesoKg.toFixed(3)),
-    volumenCm3: Number(volumenCm3.toFixed(3)),
-    valorDeclarado: Number(valorDeclarado.toFixed(2)),
-    ...singleUnitDimensions,
-  }
+  return estimateAndreaniPackage(resolveCheckoutPackingUnits(items), declaredValueOf(items))
 }
 
-/**
- * Regla comercial de BEYONIX para el costo de envío: se expresa siempre en
- * miles enteros, usando $300 como punto de corte para redondear al millar
- * superior (ej. $13.299 → $13.000, pero $13.300 → $14.000). Es la única
- * transformación que sufre la tarifa cruda de Andreani, y se aplica acá —
- * en el punto donde esa tarifa se convierte por primera vez en un número —
- * para que todo lo que consume `AndreaniCheckoutQuoteOption.price` aguas
- * abajo (token firmado, checkout, creación de la orden, Mercado Pago,
- * transferencia, saldo a favor) use exactamente el mismo importe ya
- * normalizado. Opera en centavos enteros para no depender de comparaciones
- * de punto flotante justo en el límite de $300.
- */
-export function roundShippingCostToNearestThousand(rawCost: number): number {
-  const cents = Math.round(rawCost * 100)
-  const baseCents = Math.floor(cents / 100_000) * 100_000
-  const remainderCents = cents - baseCents
-  const roundedCents =
-    remainderCents >= 30_000 ? baseCents + 100_000 : baseCents
+/** Redondeo de envíos a $10; vive en lib/shipping/shipping-pricing.ts. */
+export { roundShippingToNearestTen }
 
-  return roundedCents / 100
-}
-
-function readQuotePrice(response: AndreaniTariffResponse) {
+/** Tarifa de Andreani tal como la informa (con IVA), redondeada al centavo. */
+export function readAndreaniTariffAmount(response: AndreaniTariffResponse) {
   const price = Number(response?.tarifaConIva?.total)
   if (!Number.isFinite(price) || price <= 0) {
     throw new AndreaniError(
@@ -718,7 +797,7 @@ function readQuotePrice(response: AndreaniTariffResponse) {
       "Andreani devolvió una cotización sin un importe válido.",
     )
   }
-  return roundShippingCostToNearestThousand(price)
+  return Math.round(price * 100) / 100
 }
 
 export async function quoteAndreaniCheckout(
@@ -728,12 +807,16 @@ export async function quoteAndreaniCheckout(
   const getCommercialSettings =
     dependencies.getAndreaniCommercialSettings ??
     getAndreaniCommercialSettings
-  const commercialSettings = await getCommercialSettings().catch(
-    () => DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
-  )
+  // El recargo se lee sin caché y de forma estricta: una falla corta la
+  // cotización en vez de firmar un precio con un porcentaje supuesto.
+  const [commercialSettings, quoteSettings] = await Promise.all([
+    getCommercialSettings().catch(() => DEFAULT_ANDREANI_COMMERCIAL_SETTINGS),
+    (dependencies.getShippingQuoteSettings ?? getShippingQuoteSettings)(),
+  ])
   if (!commercialSettings.enabled) {
     throw new AndreaniError("PROVIDER_DISABLED", ANDREANI_PROVIDER_DISABLED_MESSAGE)
   }
+  const markupBasisPoints = markupPercentToBasisPoints(quoteSettings.logisticsMarkupPercent)
 
   const request = normalizeCheckoutQuoteRequest(rawRequest)
   const env = dependencies.env ?? process.env
@@ -742,9 +825,11 @@ export async function quoteAndreaniCheckout(
   // repetir la llamada real a Andreani), nunca la fuente de verdad del
   // precio -- por eso la clave puede canonicalizar el orden de los ítems
   // sin ningún riesgo: dos carritos con las mismas líneas en distinto orden
-  // son el mismo carrito y deben compartir cotización.
+  // son el mismo carrito y deben compartir cotización. Incluye el recargo:
+  // al cambiarlo en Admin no se reutiliza una cotización con el anterior.
   const key = JSON.stringify({
     config,
+    markupBasisPoints,
     ...request,
     items: canonicalizeCheckoutQuoteItems(request.items),
   })
@@ -901,19 +986,12 @@ export async function quoteAndreaniCheckout(
           contrato,
           cliente: config.cliente,
           sucursalOrigen: config.sucursalOrigen,
-          bultos: [
-            {
-              valorDeclarado: packageData.valorDeclarado,
-              volumen: packageData.volumenCm3,
-              kilos: packageData.pesoKg,
-              altoCm: packageData.altoCm,
-              anchoCm: packageData.anchoCm,
-              largoCm: packageData.largoCm,
-            },
-          ],
+          // Todos los bultos estimados en una sola consulta: Andreani
+          // devuelve la suma de la tarifa de cada uno.
+          bultos: toAndreaniTariffPackages(packageData.parcels),
         })
         mark(`tarifa_${type}`, tariffStart)
-        return { type, price: readQuotePrice(response) }
+        return { type, providerAmount: readAndreaniTariffAmount(response), packageData }
       } catch (error) {
         mark(`tarifa_${type}`, tariffStart)
         if (
@@ -933,16 +1011,39 @@ export async function quoteAndreaniCheckout(
     }
     const domicilioContrato = config.domicilioContrato
     const sucursalContrato = config.sucursalContrato
-    const withCostCharged = async (
-      quoted: { type: AndreaniCheckoutQuoteOption["type"]; price: number },
-    ) => ({
-      ...quoted,
-      costCharged: calculateCustomerShippingCost(
-        await productsTotalPromise,
-        quoted.price,
-        await shippingSettingsPromise,
-      ),
-    })
+    // tarifa Andreani → + recargo logístico → redondeo de envío a $10
+    // (= precio logístico) → bonificación/subsidio (= cobrado al cliente).
+    const withCostCharged = async (quoted: {
+      type: AndreaniCheckoutQuoteOption["type"]
+      providerAmount: number
+      packageData: AggregatedAndreaniPackage
+    }): Promise<InternalAndreaniCheckoutQuoteOption> => {
+      const breakdown = buildShippingPriceBreakdown(quoted.providerAmount, markupBasisPoints)
+      const price = fromCents(breakdown.logisticsCents)
+      const { estimate } = quoted.packageData
+      return {
+        type: quoted.type,
+        price,
+        costCharged: calculateCustomerShippingCost(
+          await productsTotalPromise,
+          price,
+          await shippingSettingsPromise,
+        ),
+        pricing: {
+          providerAmount: fromCents(breakdown.providerCents),
+          markupPercent: breakdown.markupBasisPoints / 100,
+          markupAmount: fromCents(breakdown.markupCents),
+          roundingAmount: fromCents(breakdown.roundingCents),
+        },
+        estimate: {
+          version: estimate.version,
+          parcels: estimate.parcels.map(({ lengthCm, widthCm, heightCm, volumeCm3, weightKg }) =>
+            ({ lengthCm, widthCm, heightCm, volumeCm3, weightKg })),
+          productsWeightKg: estimate.productsWeightKg,
+          productsVolumeCm3: estimate.productsVolumeCm3,
+        },
+      }
+    }
     const homeQuotePromise = domicilioContrato
       ? Promise.all([packagePromise, authenticationPromise]).then(
           ([packageData]) =>
@@ -993,7 +1094,7 @@ export async function quoteAndreaniCheckout(
       branchQuotePromise,
     ])
     const options = [homeQuote, branchQuote].filter(
-      (option): option is AndreaniCheckoutQuoteOption => option !== null,
+      (option): option is InternalAndreaniCheckoutQuoteOption => option !== null,
     )
     console.info("[cotizar-timing]", {
       totalMs: Math.round(performance.now() - t0),

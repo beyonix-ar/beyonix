@@ -63,7 +63,7 @@ type MemoryProduct = CatalogLookupProduct & { variants?: Omit<CatalogLookupVaria
 
 // Store en memoria con la misma semántica que los registros de identidad
 // (clave exacta normalizada) y contador de consultas por clave.
-function memoryStore(products: MemoryProduct[], costSkus: Record<number, string> = {}) {
+function memoryStore(products: MemoryProduct[], costSkus: Record<number, string> = {}, aliases: Record<string, CatalogCodeOwner> = {}) {
   const barcodes = new Map<string, CatalogCodeOwner>()
   const skus = new Map<string, CatalogCodeOwner>()
   const variants = new Map<number, CatalogLookupVariant>()
@@ -81,6 +81,7 @@ function memoryStore(products: MemoryProduct[], costSkus: Record<number, string>
   }
   const store: CatalogCodeStore = {
     async barcodeOwner(code) { calls.push(`barcode:${code}`); return barcodes.get(code) ?? null },
+    async aliasOwner(code) { calls.push(`alias:${code}`); return aliases[code] ?? null },
     async skuOwner(sku) { calls.push(`sku:${sku}`); return skus.get(sku) ?? null },
     async variant(id) { calls.push(`variant:${id}`); return variants.get(id) ?? null },
     async product(id) {
@@ -172,4 +173,25 @@ test("estados de despacho visibles", () => {
   assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 }, batchStatus: "closed" }), "batch_closed")
   assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 }, handedOver: true }), "handed_over")
   assert.deepEqual(Object.values(DISPATCH_STAGE_LABELS), ["Pendiente", "En armado", "Completo", "Bultos listos", "En lote", "Lote cerrado", "Entregado a Andreani"])
+})
+
+test("Compras: códigos equivalentes resuelven la variante física o piden elegirla si son del grupo", async () => {
+  const encendedor: MemoryProduct = {
+    id: 4, nombre: "Encendedor USB", activo: true, stock: 7, sku: "ENC", codigo_barra: null, venta_aleatoria: true, variants: [
+      { id: 41, nombre: "Negro", activo: true, stock: 4, sku: "ENC-NEG", color_hex: "#000000", codigo_barra: "7170972998100" },
+      { id: 42, nombre: "Rojo", activo: true, stock: 3, sku: "ENC-ROJ", color_hex: "#EF4444", codigo_barra: null },
+    ],
+  }
+  const { store } = memoryStore([encendedor], {}, {
+    "7791234567890": { productId: 4, variantId: 42 },
+    "BX-ENC-000123": { productId: 4, variantId: null },
+  })
+  const variantAlias = await findCatalogArticleByCode(store, "7791234567890")
+  assert.equal(variantAlias?.value, "v:4:42")
+  assert.equal(variantAlias?.matchedBy, "alias")
+  assert.equal(variantAlias?.product.venta_aleatoria, true, "informa el grupo comercial aleatorio")
+  const group = await findCatalogArticleByCode(store, "BX-ENC-000123")
+  assert.deepEqual([group?.requiresVariant, group?.value, group?.variant], [true, "", null])
+  // El código principal sigue ganando sobre cualquier alias.
+  assert.equal((await findCatalogArticleByCode(store, "7170972998100"))?.matchedBy, "barcode")
 })

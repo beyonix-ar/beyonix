@@ -4,6 +4,12 @@ import type {
 } from "@/lib/supabase/types"
 
 export const DEFAULT_VARIANT_VALUE = "default"
+/** Opción única de un producto con venta aleatoria (no se elige color). */
+export const RANDOM_VARIANT_VALUE = "random"
+export const RANDOM_VARIANT_LABEL = "Aleatorio según stock"
+export const RANDOM_VARIANT_TOOLTIP =
+  "Podés recibir cualquiera de las variantes disponibles. Todas poseen las mismas características y funcionamiento."
+export const RANDOM_GALLERY_NOTE = "Imágenes ilustrativas de colores disponibles."
 export const CONDITIONED_VARIANT_PREFIX = "conditioned:"
 export const FALLBACK_PRODUCT_IMAGE = "/placeholder.svg"
 
@@ -13,6 +19,8 @@ export interface ProductVariantOption {
   name: string
   value: string
   colorHex: string | null
+  /** Segundo color de una variante bicolor (swatch 50/50). */
+  secondaryColorHex: string | null
   stock: number
   images: string[]
   sku: string | null
@@ -21,6 +29,8 @@ export interface ProductVariantOption {
   discountPercent: number | null
   reason: string | null
   isConditioned: boolean
+  /** Opción "Aleatorio según stock": el pedido va sin variante elegida. */
+  isRandom: boolean
 }
 
 function normalizeImageUrls(images: readonly string[]) {
@@ -131,6 +141,7 @@ export function getProductVariantOptions(
         name: item.conditioned_name!.trim(),
         value: `${CONDITIONED_VARIANT_PREFIX}${item.id}`,
         colorHex: item.conditioned_color_hex,
+        secondaryColorHex: null,
         stock: item.quantity,
         images: conditionedImages.length ? conditionedImages : baseImages,
         sku: item.conditioned_sku?.trim() || null,
@@ -142,6 +153,7 @@ export function getProductVariantOptions(
         discountPercent: item.discount_percent,
         reason: item.reason,
         isConditioned: true,
+        isRandom: false,
       }
     })
 
@@ -153,6 +165,7 @@ export function getProductVariantOptions(
         name: "Default",
         value: DEFAULT_VARIANT_VALUE,
         colorHex: null,
+        secondaryColorHex: null,
         stock: product.stock,
         images: baseImages,
         sku: product.sku?.trim() || null,
@@ -161,6 +174,33 @@ export function getProductVariantOptions(
         discountPercent: product.descuento,
         reason: null,
         isConditioned: false,
+        isRandom: false,
+      },
+      ...conditionedVariants,
+    ]
+  }
+
+  // Venta aleatoria: una sola opción, sin selección falsa de color. El stock
+  // visible es la suma de las variantes físicas activas (cada una conserva el
+  // suyo); la galería muestra los colores disponibles como ilustración.
+  if (product.venta_aleatoria && variants.length > 1) {
+    return [
+      {
+        id: null,
+        conditionedStockId: null,
+        name: RANDOM_VARIANT_LABEL,
+        value: RANDOM_VARIANT_VALUE,
+        colorHex: null,
+        secondaryColorHex: null,
+        stock: variants.reduce((total, variant) => total + Math.max(0, variant.stock ?? 0), 0),
+        images: baseImages,
+        sku: product.sku?.trim() || null,
+        price: product.precio,
+        originalPrice: product.precio_anterior,
+        discountPercent: product.descuento,
+        reason: null,
+        isConditioned: false,
+        isRandom: true,
       },
       ...conditionedVariants,
     ]
@@ -182,6 +222,7 @@ export function getProductVariantOptions(
         name: variant.nombre,
         value: getVariantValue(variant),
         colorHex: variant.color_hex,
+        secondaryColorHex: variant.color_hex_secundario ?? null,
         stock: variant.stock ?? 0,
         images,
         sku: variant.sku?.trim() || null,
@@ -190,6 +231,7 @@ export function getProductVariantOptions(
         discountPercent: product.descuento,
         reason: null,
         isConditioned: false,
+        isRandom: false,
       }
     }),
     ...conditionedVariants,

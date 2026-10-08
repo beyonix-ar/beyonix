@@ -1048,7 +1048,8 @@ export function ProductosRow({
                       ].filter(Boolean).join(" · ")}
                       sku={variante.sku}
                       colorHex={variante.color_hex}
-                      colorLabel={getColorName(variante.color_hex, variante.nombre)}
+                      secondaryColorHex={variante.color_hex_secundario}
+                      colorLabel={variante.color_hex_secundario ? variante.nombre : getColorName(variante.color_hex, variante.nombre)}
                       accentColor={variante.color_hex}
                       stock={stock}
                       reservedStock={variante.reserved_stock ?? 0}

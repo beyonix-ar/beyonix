@@ -14,6 +14,8 @@ export type CatalogLookupProduct = {
   stock: number | null
   sku: string | null
   codigo_barra: string | null
+  /** Grupo comercial con venta aleatoria (el stock sigue siendo por variante). */
+  venta_aleatoria?: boolean
 }
 
 export type CatalogLookupVariant = {
@@ -29,23 +31,30 @@ export type CatalogLookupVariant = {
 
 export type CatalogCodeMatch = {
   value: string
-  matchedBy: "barcode" | "sku"
+  matchedBy: "barcode" | "sku" | "alias"
   product: CatalogLookupProduct
   variant: CatalogLookupVariant | null
+  /**
+   * El código identifica al grupo (p. ej. mismo EAN para todos los colores),
+   * no a una variante física: hay que elegir cuál ingresa. `value` vacío.
+   */
+  requiresVariant?: boolean
 }
 
 // Acceso puntual a la base: cada método resuelve una fila por clave única
 // (catalog_barcode_registry / catalog_sku_registry / PK), nunca el catálogo.
 export interface CatalogCodeStore {
   barcodeOwner(normalizedBarcode: string): Promise<CatalogCodeOwner | null>
+  /** Códigos de barra equivalentes (catalog_barcode_aliases). */
+  aliasOwner(normalizedBarcode: string): Promise<CatalogCodeOwner | null>
   skuOwner(normalizedSku: string): Promise<CatalogCodeOwner | null>
   variant(id: number): Promise<CatalogLookupVariant | null>
   product(id: number): Promise<(CatalogLookupProduct & { variantCount: number }) | null>
   latestProductCostSku(productId: number): Promise<string | null>
 }
 
-function productFields({ id, nombre, activo, stock, sku, codigo_barra }: CatalogLookupProduct): CatalogLookupProduct {
-  return { id, nombre, activo, stock, sku, codigo_barra }
+function productFields({ id, nombre, activo, stock, sku, codigo_barra, venta_aleatoria }: CatalogLookupProduct): CatalogLookupProduct {
+  return { id, nombre, activo, stock, sku, codigo_barra, ...(venta_aleatoria === true ? { venta_aleatoria: true } : {}) }
 }
 
 async function resolveOwner(
@@ -62,7 +71,11 @@ async function resolveOwner(
   if (owner.productId == null) return null
   const product = await store.product(owner.productId)
   // Un producto con variantes se compra siempre por variante: su código o SKU
-  // propio no identifica qué variante ingresa.
+  // propio no identifica qué variante ingresa. Un alias de grupo lo informa
+  // para que Compras pida elegir la variante física.
+  if (product && product.variantCount > 0 && matchedBy === "alias") {
+    return { value: "", matchedBy, product: productFields(product), variant: null, requiresVariant: true }
+  }
   if (!product || product.variantCount > 0) return null
   return {
     value: `p:${product.id}`,
@@ -84,6 +97,9 @@ export async function findCatalogArticleByCode(
   const barcodeOwner = await store.barcodeOwner(barcode)
   const byBarcode = barcodeOwner && await resolveOwner(store, barcodeOwner, "barcode")
   if (byBarcode) return byBarcode
+  const aliasOwner = await store.aliasOwner(barcode)
+  const byAlias = aliasOwner && await resolveOwner(store, aliasOwner, "alias")
+  if (byAlias) return byAlias
   const skuOwner = await store.skuOwner(barcode.toUpperCase())
   return skuOwner && resolveOwner(store, skuOwner, "sku")
 }
