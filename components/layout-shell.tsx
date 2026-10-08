@@ -9,10 +9,6 @@ import { Footer } from "@/components/footer"
 import { CookieConsentAlert } from "@/components/cookie-consent-alert"
 import { useClientPresence } from "@/hooks/use-client-presence"
 
-// Alto de la franja "BOTÓN DE ARREPENTIMIENTO" del header fijo (h-6): las
-// páginas ya compensan la barra principal con su propio padding superior.
-const SITE_HEADER_LEGAL_STRIP_OFFSET = "pt-6"
-
 function forceScrollTop() {
   window.scrollTo(0, 0)
   document.documentElement.scrollTop = 0
@@ -87,7 +83,7 @@ export function LayoutShell({
     return (
       <>
         <SiteHeader />
-        <div className={SITE_HEADER_LEGAL_STRIP_OFFSET}>{children}</div>
+        {children}
       </>
     )
   }
@@ -105,7 +101,7 @@ export function LayoutShell({
     <>
       <SiteHeader />
 
-      <div className={SITE_HEADER_LEGAL_STRIP_OFFSET}>{children}</div>
+      {children}
 
       <Footer />
 
