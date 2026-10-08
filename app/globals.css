@@ -3289,6 +3289,14 @@ html:not([data-account-theme="light"][data-account-scope]) .beyonix-login-input:
   padding-top: 0.55rem;
 }
 
+/* Mobile: el placeholder de Referencias ocupa hasta 3 líneas; sin este alto
+   quedaba cortado abajo. */
+@media (max-width: 639px) {
+  .beyonix-register-form .beyonix-login-textarea {
+    min-height: 5rem;
+  }
+}
+
 .beyonix-register-form label {
   margin-bottom: 0.25rem;
 }
@@ -12779,14 +12787,6 @@ html[data-account-theme="light"][data-account-scope] .beyonix-site-header-menu-b
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header-menu-button:hover {
   color: var(--account-text-primary) !important;
   background: var(--account-surface-hover) !important;
-}
-/* Fila "Apariencia" del menú mobile (toggle de tema): mismo motivo que el
-   botón de arriba, el label es texto claro fijo en el JSX. */
-html[data-account-theme="light"][data-account-scope] .beyonix-site-header-mobile-toggle-label {
-  color: var(--account-text-primary) !important;
-}
-html[data-account-theme="light"][data-account-scope] .beyonix-site-header-mobile-toggle-row {
-  border-color: var(--account-border-subtle) !important;
 }
 
 /* Menú de usuario (components/account-menu.tsx) */

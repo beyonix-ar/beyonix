@@ -224,15 +224,15 @@ export function ProductDetailsPanel({
 
   return (
     <aside className="beyonix-modal-shell flex min-w-0 flex-col bg-[#080D13] text-white md:self-stretch md:border-l md:border-white/7">
-      <div className="px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
+      <div className="px-5 pb-4 pt-6 max-sm:px-4 max-sm:pb-3 max-sm:pt-4 md:px-7 md:pb-5 md:pt-7">
         {product.categorias?.nombre && (
-          <span className="beyonix-category-pill mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
-            <Sparkles className="beyonix-category-pill-icon size-3.5 text-white" />
+          <span data-product-category className="beyonix-category-pill mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky max-sm:mb-2 max-sm:gap-1.5 max-sm:px-2.5 max-sm:py-1 max-sm:text-10px max-sm:tracking-[0.12em]">
+            <Sparkles className="beyonix-category-pill-icon size-3.5 text-white max-sm:size-3" />
             {product.categorias.nombre}
           </span>
         )}
 
-        <h2 className="beyonix-modal-title text-[28px] font-bold leading-tight text-white md:text-[34px]">
+        <h2 data-product-title className="beyonix-modal-title text-[28px] font-bold leading-tight text-white max-sm:text-[clamp(1.25rem,5.4vw,1.5rem)] max-sm:leading-snug md:text-[34px]">
           {product.nombre}
         </h2>
 
@@ -287,8 +287,8 @@ export function ProductDetailsPanel({
       </div>
 
       {(limitedFeatures.length > 0 || hasVariants || selectedOption?.isConditioned) && (
-      <div className="beyonix-modal-header border-t border-white/7 px-5 py-5 md:px-7">
-        <div className="space-y-7">
+      <div className="beyonix-modal-header border-t border-white/7 px-5 py-5 max-sm:px-4 max-sm:py-4 md:px-7">
+        <div className="space-y-7 max-sm:space-y-5">
           {limitedFeatures.length > 0 && (
             <section>
               <p className="mb-3 text-11px font-bold uppercase tracking-widest text-beyonix-sky">

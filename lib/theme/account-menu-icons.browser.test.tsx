@@ -113,7 +113,8 @@ type Icon = { label: string; stroke: string; fill: string; bg: string }
 
 async function openMenu(page: Page, width: number) {
   if (width > 1000) await page.getByRole("button", { name: "Abrir menú de usuario" }).click()
-  else await page.getByRole("button", { name: "Abrir menú" }).click()
+  // Mobile: la cuenta tiene su propio botón (el menú de tres puntos es sólo navegación).
+  else await page.getByRole("button", { name: "Abrir menú de cuenta" }).click()
   await page.waitForSelector(".beyonix-account-menu-icon")
 }
 

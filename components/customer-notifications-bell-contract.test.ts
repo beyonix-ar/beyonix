@@ -8,7 +8,8 @@ const css = read("../app/globals.css")
 
 test("campana del navbar: botón compartido del header, negra sobre blanco en Light y #0D1117 en Dark; tamaño sin cambios", () => {
   assert.match(bell, /<Bell className="size-4\.5" \/>/)
-  assert.match(bell, /className="beyonix-header-icon-button relative flex size-11 [^"]*rounded-full border/)
+  // Dentro de cn(...) (en el header mobile se oculta por debajo de lg).
+  assert.match(bell, /(className=|cn\(\s*)"beyonix-header-icon-button relative flex size-11 [^"]*rounded-full border/)
   // Sin colores en utilidades: los remapeos de Light por página no la alcanzan.
   assert.doesNotMatch(bell, /beyonix-header-icon-button[^"]*(bg-\[#|text-white|border-\[#)/)
   assert.match(

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import type { TouchEvent as ReactTouchEvent } from "react"
 
 import Image from "next/image"
 
@@ -11,6 +12,9 @@ import {
   getProductVideoSource,
   type ProductVideoSource,
 } from "@/lib/products/product-video"
+
+/** Distancia mínima (px) para que un deslizamiento horizontal cambie de imagen. */
+const SWIPE_THRESHOLD_PX = 40
 
 export function getStockBadge(stock: number) {
   if (stock <= 0) {
@@ -88,6 +92,7 @@ export function ProductDetailsGallery({
   const [thumbnailStart, setThumbnailStart] = useState(0)
   const [thumbnailWindowSize, setThumbnailWindowSize] = useState(5)
   const thumbnailCarouselRef = useRef<HTMLDivElement>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   const videoSource = getProductVideoSource(videoUrl)
   const playableVideo =
@@ -203,12 +208,42 @@ export function ProductDetailsGallery({
     onPrev()
   }
 
+  // Swipe (touch): izquierda = siguiente, derecha = anterior. Un toque sobre
+  // las flechas no se mueve, así que nunca dispara un swipe además del click.
+  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0]
+    touchStartRef.current =
+      event.touches.length === 1 && touch
+        ? { x: touch.clientX, y: touch.clientY }
+        : null
+  }
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = touchStartRef.current
+    touchStartRef.current = null
+    const touch = event.changedTouches[0]
+    if (!start || !touch || !hasThumbnailRow) return
+
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < SWIPE_THRESHOLD_PX || Math.abs(deltaX) <= Math.abs(deltaY)) return
+
+    if (deltaX < 0) handleNext()
+    else handlePrev()
+  }
+
   return (
-    <div className="beyonix-modal-shell flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-4 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-5">
-      <div className="relative flex min-h-290px flex-1 items-center justify-center sm:min-h-380px md:min-h-0">
+    <div className="beyonix-modal-shell flex min-h-0 flex-col overflow-hidden bg-[#080D13] px-3 pb-3 pt-3 sm:px-6 sm:pb-5 sm:pt-5">
+      <div className="relative flex min-h-0 flex-1 items-center justify-center sm:min-h-380px md:min-h-0">
         <div className="flex h-full min-h-0 w-full items-center justify-center">
           <div
-            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[0_22px_58px_rgba(0,0,0,0.3)] md:max-h-[660px]"
+            data-gallery-stage
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onTouchCancel={() => {
+              touchStartRef.current = null
+            }}
+            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] touch-pan-y items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[0_22px_58px_rgba(0,0,0,0.3)] max-sm:aspect-[5/4] md:max-h-[660px]"
           >
             {isVideoSelected && playableVideo ? (
               <ProductVideoPlayer
@@ -290,10 +325,21 @@ export function ProductDetailsGallery({
             )}
 
             <span
-              className={`absolute left-3 top-3 rounded-full border px-3.5 py-1.5 text-13px font-black tracking-wide ${stockBadge.className}`}
+              data-stock-badge
+              className={`absolute left-2 top-2 rounded-full border px-2.5 py-0.5 text-11px font-black tracking-wide sm:left-3 sm:top-3 sm:px-3.5 sm:py-1.5 sm:text-13px ${stockBadge.className}`}
             >
               {stockBadge.text}
             </span>
+
+            {/* Mobile: el indicador va sobre la imagen (sin fila propia). */}
+            {hasThumbnailRow && (
+              <span
+                data-gallery-index-mobile
+                className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-full bg-[#07121E]/82 px-2 py-0.5 text-11px font-bold tabular-nums tracking-wide text-white sm:hidden"
+              >
+                {safeIndex + 1} / {mediaCount}
+              </span>
+            )}
           </div>
         </div>
 
@@ -303,7 +349,7 @@ export function ProductDetailsGallery({
       </div>
 
       {hasThumbnailRow && (
-        <div className="flex h-34px shrink-0 items-end justify-center pt-2">
+        <div data-gallery-index className="hidden h-34px shrink-0 items-end justify-center pt-2 sm:flex">
           <span className="beyonix-modal-muted text-11px font-bold tabular-nums tracking-widest text-white/40">
             {safeIndex + 1} / {mediaCount}
           </span>
@@ -311,7 +357,7 @@ export function ProductDetailsGallery({
       )}
 
       {hasThumbnailRow && (
-        <div className="flex h-78px shrink-0 items-end justify-center pt-2 sm:h-86px">
+        <div data-gallery-thumbnails className="hidden h-78px shrink-0 items-end justify-center pt-2 sm:flex sm:h-86px">
           <div
             ref={thumbnailCarouselRef}
             className="flex w-full max-w-[560px] min-w-0 items-center justify-center gap-2"

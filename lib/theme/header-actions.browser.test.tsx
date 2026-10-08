@@ -244,7 +244,7 @@ for (const theme of ["light", "dark"] as const) {
 
 test("orden campana → luna en todos los headers que muestran ambos", () => {
   const sources: Record<string, string> = {
-    "components/site-header.tsx": "<AccountThemeToggle className=\"hidden lg:flex\" />",
+    "components/site-header.tsx": "<AccountThemeToggle />",
     "components/public-minimal-header.tsx": "<AccountThemeToggle />",
     "app/checkout/page.tsx": "<AccountThemeToggle />",
   }

@@ -89,6 +89,9 @@ export interface AccountMenuProps {
   // propia. Si no se pasa, el item no se muestra.
   onNotificationsClick?: () => void
   unreadNotificationsCount?: number
+  // Mobile: el disparador es sólo el avatar (sin nombre ni flecha) para que
+  // la barra entre en celulares angostos; el panel es el mismo.
+  compact?: boolean
 }
 
 export function AccountMenu({
@@ -97,6 +100,7 @@ export function AccountMenu({
   onOpenChange,
   onNotificationsClick,
   unreadNotificationsCount,
+  compact = false,
 }: AccountMenuProps) {
   const { user, isLoading, isInternal, logout } = useAuth()
   const customerCredit = useCustomerCredit()
@@ -132,10 +136,13 @@ export function AccountMenu({
     <div ref={ref} className={cn("relative", className)}>
       <button
         type="button"
-        aria-label="Abrir menú de usuario"
+        aria-label={compact ? "Abrir menú de cuenta" : "Abrir menú de usuario"}
+        aria-expanded={open}
+        data-account-menu-compact={compact || undefined}
         onClick={() => setOpen(!open)}
         className={cn(
-          "beyonix-account-menu-trigger flex h-11 max-w-300px cursor-pointer items-center gap-2.5 rounded-full bg-beyonix-blue/10 pl-1.5 pr-3.5 text-white hover:bg-beyonix-blue/18",
+          "beyonix-account-menu-trigger relative flex h-11 cursor-pointer items-center rounded-full bg-beyonix-blue/10 text-white hover:bg-beyonix-blue/18",
+          compact ? "w-11 justify-center" : "max-w-300px gap-2.5 pl-1.5 pr-3.5",
           beyonixHoverBorder,
           open && "border-beyonix-blue-light/70 ring-2 ring-beyonix-blue-light/18",
         )}
@@ -147,18 +154,29 @@ export function AccountMenu({
             <CircleUserRound className="size-5" />
           )}
         </span>
-        <span className="beyonix-account-menu-trigger-label whitespace-nowrap text-sm font-medium uppercase text-white/86">
-          {userLabel.toUpperCase()}
-        </span>
-        <ChevronDown
-          className={`beyonix-modal-muted-icon size-3 text-white/52 transition-transform duration-200 ${
-            open ? "rotate-180" : ""
-          }`}
-        />
+        {compact ? (
+          Boolean(unreadNotificationsCount) && (
+            <span
+              aria-hidden="true"
+              className="beyonix-notifications-badge pointer-events-none absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-[#0D1117] bg-red-600"
+            />
+          )
+        ) : (
+          <>
+            <span className="beyonix-account-menu-trigger-label whitespace-nowrap text-sm font-medium uppercase text-white/86">
+              {userLabel.toUpperCase()}
+            </span>
+            <ChevronDown
+              className={`beyonix-modal-muted-icon size-3 text-white/52 transition-transform duration-200 ${
+                open ? "rotate-180" : ""
+              }`}
+            />
+          </>
+        )}
       </button>
 
       {open && (
-        <div className="beyonix-account-menu-panel absolute right-0 z-50 mt-2 w-60 overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
+        <div className="beyonix-account-menu-panel absolute right-0 z-50 mt-2 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
           <Link
             href="/cuenta"
             onClick={() => setOpen(false)}

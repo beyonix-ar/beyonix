@@ -119,7 +119,7 @@ function Field({
     : type
 
   return (
-    <div>
+    <div className="min-w-0">
       <label htmlFor={name} className="mb-1.5 block text-xs font-semibold text-white/72">
         {label}
       </label>
@@ -1132,7 +1132,7 @@ function LoginContent() {
         >
           {mode === "register" && (
             <>
-              <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
+              <fieldset className="min-w-0 rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
                 <legend className="px-2 text-[11px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
                   01 · Datos de acceso
                 </legend>
@@ -1162,7 +1162,7 @@ function LoginContent() {
                 </div>
               </fieldset>
 
-              <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
+              <fieldset className="min-w-0 rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
                 <legend className="px-2 text-[12px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
                   Datos personales
                 </legend>
@@ -1186,13 +1186,13 @@ function LoginContent() {
                 </div>
               </fieldset>
 
-              <fieldset className="rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
+              <fieldset className="min-w-0 rounded-2xl border border-white/8 bg-black/18 p-3 sm:p-4">
                 <legend className="px-2 text-[12px] font-bold uppercase tracking-[0.16em] text-beyonix-sky">
                   Dirección de entrega
                 </legend>
                 <div className="space-y-2.5">
-                  <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-[minmax(9rem,2.2fr)_minmax(4rem,0.85fr)_minmax(3.5rem,0.65fr)_minmax(3.5rem,0.65fr)]">
-                    <div className="col-span-2 sm:col-span-1">
+                  <div className="grid grid-cols-[repeat(2,minmax(0,1fr))] gap-2.5 min-[360px]:grid-cols-[repeat(3,minmax(0,1fr))] sm:grid-cols-[minmax(9rem,2.2fr)_minmax(4rem,0.85fr)_minmax(3.5rem,0.65fr)_minmax(3.5rem,0.65fr)]">
+                    <div className="col-span-2 min-w-0 min-[360px]:col-span-3 sm:col-span-1">
                       <Field name="street" label="Calle*" type="text" value={street} onChange={setStreet} placeholder="San Martín" maxLength={FIELD_LIMITS.street} autoComplete="address-line1" />
                     </div>
                     <Field name="street-number" label="Número*" type="tel" value={streetNumber} onChange={(value) => setStreetNumber(onlyDigits(value, 8))} placeholder="1234" maxLength={8} inputMode="numeric" autoComplete="address-line2" />

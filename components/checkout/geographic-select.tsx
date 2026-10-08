@@ -306,7 +306,7 @@ export function GeographicSelect({
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => selectOption(option)}
                 className={cn(
-                  "flex h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-sm font-semibold transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beyonix-blue-light/35",
+                  "flex min-h-10 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm font-semibold leading-5 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-beyonix-blue-light/35",
                   selected
                     ? "bg-[#112A43] text-[#F8FAFC] shadow-[inset_0_0_0_1px_rgba(148,197,255,0.22)]"
                     : active
@@ -314,7 +314,7 @@ export function GeographicSelect({
                       : "text-white/72 hover:bg-beyonix-blue-light/10 hover:text-[#D7ECFF]",
                 )}
               >
-                <span className="min-w-0 truncate">{option.label}</span>
+                <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>
                 {selected && <Check className="size-3.5 shrink-0 text-beyonix-sky" />}
               </button>
             )
@@ -341,7 +341,7 @@ export function GeographicSelect({
         }}
         onKeyDown={handleTriggerKeyDown}
         className={cn(
-          "beyonix-checkout-input flex h-10 w-full min-w-0 items-center justify-between gap-3 rounded-lg border bg-[#10151C] px-3 text-left font-heading text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2",
+          "beyonix-checkout-input flex min-h-10 w-full min-w-0 items-center justify-between gap-3 rounded-lg border bg-[#10151C] px-3 py-1.5 text-left font-heading text-sm font-semibold leading-tight transition-all focus-visible:outline-none focus-visible:ring-2",
           open
             ? "border-beyonix-blue-light/65 text-[#D7ECFF] ring-2 ring-beyonix-blue-light/18"
             : "border-beyonix-blue-light/18 text-white hover:border-beyonix-blue-light/35",
@@ -352,7 +352,7 @@ export function GeographicSelect({
           locked && "cursor-default",
         )}
       >
-        <span className="min-w-0 truncate">
+        <span className="line-clamp-2 min-w-0 [overflow-wrap:anywhere]">
           {loading ? loadingLabel : selectedOption?.label ?? placeholder}
         </span>
         {locked && selectedOption ? (

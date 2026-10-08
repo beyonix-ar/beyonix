@@ -99,20 +99,20 @@ export function ProductPurchaseBox({
   const paymentLogos = usePaymentMethodLogos() ?? []
 
   return (
-    <div className="bg-transparent px-5 pb-5 pt-4 md:px-7 md:pb-6 md:pt-5">
-      <div className="mb-3 flex flex-wrap items-end gap-2.5">
-        <span className="beyonix-modal-title text-[28px] font-black leading-none tracking-tight text-white md:text-[32px]">
+    <div className="bg-transparent px-5 pb-5 pt-4 max-sm:px-4 max-sm:pb-4 max-sm:pt-3 md:px-7 md:pb-6 md:pt-5">
+      <div className="mb-3 flex flex-wrap items-end gap-2.5 max-sm:mb-2 max-sm:gap-2">
+        <span data-product-price className="beyonix-modal-title text-[28px] font-black leading-none tracking-tight text-white max-sm:text-[24px] md:text-[32px]">
           {formatPrice(price)}
         </span>
 
         {discount && (
-          <span className="beyonix-discount-badge rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-3 py-1.5 text-13px font-bold leading-none text-emerald-200">
+          <span data-product-discount className="beyonix-discount-badge rounded-lg border border-emerald-300/30 bg-emerald-400/16 px-3 py-1.5 text-13px font-bold leading-none text-emerald-200 max-sm:px-2 max-sm:py-1 max-sm:text-12px">
             -{discount}%
           </span>
         )}
 
         {originalPrice && originalPrice > price && (
-          <span className="beyonix-modal-body pb-0.5 text-15px leading-none text-white/62 line-through">
+          <span data-product-original-price className="beyonix-modal-body pb-0.5 text-15px leading-none text-white/62 line-through max-sm:text-13px">
             {formatPrice(originalPrice)}
           </span>
         )}

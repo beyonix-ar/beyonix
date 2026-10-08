@@ -40,6 +40,10 @@ interface CustomerNotificationsBellProps {
   // menú de usuario) muestre el mismo contador sin duplicar la carga de
   // datos -- este componente sigue siendo la única fuente de verdad.
   onUnreadCountChange?: (count: number) => void
+  // Header mobile: por debajo de lg la campana no ocupa lugar en la barra
+  // (se abre desde "Notificaciones" del menú de cuenta) y el panel queda
+  // fijo bajo el header en vez de anclado al botón.
+  hideTriggerBelowLg?: boolean
 }
 
 function getNotificationIcon(type: string) {
@@ -118,6 +122,7 @@ export function CustomerNotificationsBell({
   open,
   onOpenChange,
   onUnreadCountChange,
+  hideTriggerBelowLg = false,
 }: CustomerNotificationsBellProps) {
   const router = useRouter()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -338,7 +343,7 @@ export function CustomerNotificationsBell({
   return (
     <div
       ref={rootRef}
-      className="relative shrink-0"
+      className={cn("relative shrink-0", hideTriggerBelowLg && "max-lg:contents")}
       onMouseEnter={openPopover}
       onMouseLeave={scheduleClosePopover}
     >
@@ -349,7 +354,10 @@ export function CustomerNotificationsBell({
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         onFocus={openPopover}
-        className="beyonix-header-icon-button relative flex size-11 cursor-pointer items-center justify-center rounded-full border transition-all focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]"
+        className={cn(
+          "beyonix-header-icon-button relative flex size-11 cursor-pointer items-center justify-center rounded-full border transition-all focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-[var(--account-focus-ring)]",
+          hideTriggerBelowLg && "max-lg:hidden",
+        )}
       >
         <Bell className="size-4.5" />
 
@@ -362,7 +370,11 @@ export function CustomerNotificationsBell({
 
       {open && (
         <div
-          className="absolute right-0 top-[52px] z-100 w-80 max-w-[calc(100vw-2rem)] sm:w-96"
+          className={cn(
+            "absolute right-0 top-[52px] z-100 w-80 max-w-[calc(100vw-2rem)] sm:w-96",
+            hideTriggerBelowLg &&
+              "max-lg:fixed max-lg:left-4 max-lg:right-4 max-lg:top-[4.5rem] max-lg:w-auto sm:max-lg:left-auto sm:max-lg:w-96",
+          )}
           onMouseEnter={openPopover}
           onMouseLeave={scheduleClosePopover}
         >
