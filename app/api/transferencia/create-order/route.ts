@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 
 import {
   CheckoutShippingQuoteError,
@@ -394,12 +395,7 @@ export async function POST(request: Request) {
       .single()
 
     if (orderError || !order) {
-      console.error("TRANSFER_CREATE_ORDER_SUPABASE_ERROR", {
-        message: orderError?.message,
-        details: orderError?.details,
-        hint: orderError?.hint,
-        code: orderError?.code,
-      })
+      console.error("TRANSFER_CREATE_ORDER_SUPABASE_ERROR", safeErrorMetadata(orderError))
 
       if (claimedBenefitId) {
         await releaseStoreBenefitClaimSafely(admin, claimedBenefitId)
@@ -495,7 +491,7 @@ export async function POST(request: Request) {
       guest_token: order.usuario_id ? null : createGuestOrderAccessToken(order.id),
     })
   } catch (error) {
-    console.error("Error creando orden por transferencia", error)
+    console.error("TRANSFER_CREATE_ORDER_ERROR", safeErrorMetadata(error))
 
     if (creditDebitedOrderId) {
       try {
@@ -504,7 +500,7 @@ export async function POST(request: Request) {
           description: "Reintegro automático por error al registrar la compra",
         })
       } catch (reversalError) {
-        console.error("TRANSFER_CREDIT_AUTO_REVERSAL_ERROR", reversalError)
+        console.error("TRANSFER_CREDIT_AUTO_REVERSAL_ERROR", safeErrorMetadata(reversalError))
       }
     }
 
@@ -515,7 +511,7 @@ export async function POST(request: Request) {
           orderId: benefitLinkedOrderId,
         })
       } catch (restoreError) {
-        console.error("STORE_BENEFIT_RELEASE_FAILED", restoreError)
+        console.error("STORE_BENEFIT_RELEASE_FAILED", safeErrorMetadata(restoreError))
       }
     } else if (claimedBenefitId) {
       // Best-effort: si ya se vinculó a una orden real (used_order_id no es
@@ -573,10 +569,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No pudimos registrar el pedido por transferencia.",
+        error: stockConflict
+          ? STOCK_CHANGED_MESSAGE
+          : quoteConflict
+            ? "La cotización del envío cambió. Volvé a calcularla."
+            : branchConflict
+              ? "La sucursal seleccionada ya no está disponible."
+              : "No pudimos registrar el pedido por transferencia.",
       },
       { status: stockConflict || quoteConflict || branchConflict ? 409 : 500 },
     )
@@ -587,7 +586,7 @@ async function releaseStoreBenefitClaimSafely(admin: AdminClient, benefitId: str
   try {
     await releaseStoreBenefitClaim(admin, benefitId)
   } catch (releaseError) {
-    console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+    console.error("STORE_BENEFIT_RELEASE_FAILED", safeErrorMetadata(releaseError))
   }
 }
 

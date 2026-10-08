@@ -1,5 +1,6 @@
 import "server-only"
 
+import { safeErrorMetadata } from "../security/safe-error.ts"
 import type { createAdminClient } from "../supabase/admin.ts"
 import { normalizeForgotPasswordIdentifier } from "./forgot-password-identifier.ts"
 import { FORGOT_PASSWORD_GENERIC_MESSAGE } from "./forgot-password-messages.ts"
@@ -263,7 +264,7 @@ export async function requestPasswordRecovery({
       accountResolved,
       resetRequested: true,
       rateLimited: false,
-      providerErrorCode: error ? (error.code ?? error.message) : null,
+      providerErrorCode: error?.code ?? null,
       correlationId,
     })
 
@@ -274,8 +275,7 @@ export async function requestPasswordRecovery({
       console.error("FORGOT_PASSWORD_SEND_ERROR", {
         identifierKind: identifier.kind,
         correlationId,
-        code: error.code ?? null,
-        message: error.message,
+        error: safeErrorMetadata(error),
       })
     }
   } else {

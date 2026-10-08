@@ -20,6 +20,7 @@
  */
 
 import type { ArcaEnvironment } from "./environment.ts"
+import { safeErrorMetadata } from "../security/safe-error.ts"
 import type { AuthorizedVoucher, FecaeRequest, FecaeResult } from "./wsfe.ts"
 
 export const FACTURA_C_VOUCHER_TYPE = 11
@@ -171,7 +172,7 @@ async function fail(
     p_retry_after: retry ? `${invoiceRetryDelayMinutes(attempts)} minutes` : null,
     p_release_request: releaseRequest,
   })
-  console.error("ARCA_INVOICE_ATTEMPT_FAILED", { orderId: order.id, attempts, error, releaseRequest })
+  console.error("ARCA_INVOICE_ATTEMPT_FAILED", { orderId: order.id, attempts, releaseRequest })
   return { status: "failed", orderId: order.id, error, willRetry: retry }
 }
 
@@ -350,7 +351,7 @@ export async function processArcaInvoice(
     } catch (failError) {
       // Ni siquiera se pudo registrar: el lease vence y el próximo intento
       // reconcilia. Nunca se asume nada.
-      console.error("ARCA_INVOICE_FAIL_RECORD_ERROR", { orderId: order.id, message, failError })
+      console.error("ARCA_INVOICE_FAIL_RECORD_ERROR", { orderId: order.id, error: safeErrorMetadata(failError) })
       return { status: "failed", orderId: order.id, error: message, willRetry: true }
     }
   }

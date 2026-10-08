@@ -13,19 +13,16 @@ const SECURITY_HEADERS = [
     key: "Permissions-Policy",
     value: "camera=(), microphone=(), geolocation=(), payment=(self)",
   },
-  // Tercera fase de HSTS (24hs ya estable): sube de 24hs a 7 días, todavía
-  // sin includeSubDomains/preload -- esos dos siguen fuera de alcance a
-  // propósito, un max-age largo + includeSubDomains es mucho más difícil de
-  // revertir si HTTPS se interrumpe. Sólo en producción: no tiene efecto
-  // sobre http (`next dev`), pero se evita igual para no confundir
-  // verificaciones locales de headers.
+  // El dominio principal usa HTTPS en producción. No extender a subdominios
+  // ni solicitar preload sin verificar antes todos sus servicios.
   ...(process.env.NODE_ENV === "production"
-    ? [{ key: "Strict-Transport-Security", value: "max-age=604800" }]
+    ? [{ key: "Strict-Transport-Security", value: "max-age=31536000" }]
     : []),
 ]
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   async headers() {
     return [
       {

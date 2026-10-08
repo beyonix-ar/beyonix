@@ -6,6 +6,7 @@ import {
 } from "@/lib/customer-credit/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 
 export async function GET() {
   const supabase = await createClient()
@@ -37,13 +38,9 @@ export async function GET() {
       }
     )
   } catch (error) {
+    console.error("CUSTOMER_CREDIT_MOVEMENTS_ERROR", safeErrorMetadata(error))
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No pudimos cargar los movimientos de saldo.",
-      },
+      { error: "No pudimos cargar los movimientos de saldo." },
       { status: 500 }
     )
   }

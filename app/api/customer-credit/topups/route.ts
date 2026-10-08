@@ -47,24 +47,6 @@ export async function GET(request: Request) {
   const to = from + TOPUPS_PER_PAGE - 1
   const admin = createAdminClient()
 
-  // Una preferencia de Mercado Pago vence a los 30 minutos. Si el navegador
-  // se cerró y no pudo avisar el abandono, la cerramos al volver a consultar
-  // el historial para que no permanezca como pendiente indefinidamente.
-  const expiredCheckoutCutoff = new Date(
-    Date.now() - 45 * 60 * 1000,
-  ).toISOString()
-  await admin
-    .from("customer_credit_topups")
-    .update({
-      status: "cancelado",
-      mercadopago_status: "checkout_expired",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", user.id)
-    .eq("payment_method", "mercadopago")
-    .eq("status", "pendiente_pago")
-    .lt("created_at", expiredCheckoutCutoff)
-
   const { data, error, count } = await admin
     .from("customer_credit_topups")
     .select(TOPUP_SELECT, { count: "exact" })
@@ -74,7 +56,7 @@ export async function GET(request: Request) {
     .range(from, to)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: "No pudimos cargar el historial de saldo." }, { status: 500 })
   }
 
   const topups = await Promise.all(

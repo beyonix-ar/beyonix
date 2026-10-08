@@ -317,5 +317,5 @@ test("un payment aprobado sobre una orden YA CANCELADA no la confirma (P1 pago t
 
   // Cualquier error al persistir se revisa y se relanza -- nunca falla en
   // silencio (mismo patrón que approved_stock_conflict).
-  assert.match(guardBlock, /if \(lateUpdateError\)\s*\{[\s\S]{0,200}throw lateUpdateError/)
+  assert.match(guardBlock, /if \(lateUpdateError\)\s*\{[\s\S]{0,400}throw lateUpdateError/)
 })

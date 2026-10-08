@@ -3,24 +3,24 @@ import assert from "node:assert/strict"
 
 import { resolveCspMode } from "./csp-mode.ts"
 
-test("CSP_MODE ausente (undefined) cae en report-only", () => {
-  assert.equal(resolveCspMode(undefined), "report-only")
+test("producción aplica CSP aunque CSP_MODE esté ausente", () => {
+  assert.equal(resolveCspMode(undefined, "production"), "enforce")
 })
 
-test("CSP_MODE null cae en report-only", () => {
-  assert.equal(resolveCspMode(null), "report-only")
+test("desarrollo conserva Report-Only por defecto", () => {
+  assert.equal(resolveCspMode(null, "development"), "report-only")
 })
 
-test("CSP_MODE vacío cae en report-only", () => {
-  assert.equal(resolveCspMode(""), "report-only")
+test("CSP_MODE vacío usa el modo del entorno", () => {
+  assert.equal(resolveCspMode("", "production"), "enforce")
 })
 
-test("CSP_MODE sólo espacios cae en report-only", () => {
-  assert.equal(resolveCspMode("   "), "report-only")
+test("CSP_MODE sólo espacios usa el modo del entorno", () => {
+  assert.equal(resolveCspMode("   ", "production"), "enforce")
 })
 
 test("CSP_MODE=report-only se mantiene explícito", () => {
-  assert.equal(resolveCspMode("report-only"), "report-only")
+  assert.equal(resolveCspMode("report-only", "production"), "report-only")
 })
 
 test("CSP_MODE=enforce activa enforcing", () => {
@@ -32,13 +32,12 @@ test("CSP_MODE=enforce con espacios alrededor (típico de .env) sigue activando 
 })
 
 test("un typo de mayúsculas nunca activa enforcing por accidente", () => {
-  assert.equal(resolveCspMode("Enforce"), "report-only")
-  assert.equal(resolveCspMode("ENFORCE"), "report-only")
+  assert.equal(resolveCspMode("Enforce", "development"), "report-only")
+  assert.equal(resolveCspMode("ENFORCE", "development"), "report-only")
 })
 
-test("cualquier valor inválido (typo, boolean, etc.) cae en report-only", () => {
-  assert.equal(resolveCspMode("enforced"), "report-only")
-  assert.equal(resolveCspMode("true"), "report-only")
-  assert.equal(resolveCspMode("1"), "report-only")
-  assert.equal(resolveCspMode("Report-Only"), "report-only")
+test("un valor inválido usa el modo del entorno", () => {
+  assert.equal(resolveCspMode("enforced", "production"), "enforce")
+  assert.equal(resolveCspMode("true", "development"), "report-only")
+  assert.equal(resolveCspMode("Report-Only", "production"), "enforce")
 })

@@ -25,6 +25,7 @@ import {
 } from "@/lib/customer-store-benefits"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 import {
   TRANSFER_ALIAS,
   calculateTransferPaymentTotalAfterCustomerCredit,
@@ -381,7 +382,7 @@ export async function POST(request: Request) {
           createdBy: user.id,
         })
       } catch (reversalError) {
-        console.error("CUSTOMER_CREDIT_AUTO_REVERSAL_ERROR", reversalError)
+        console.error("CUSTOMER_CREDIT_AUTO_REVERSAL_ERROR", safeErrorMetadata(reversalError))
       }
     }
 
@@ -397,7 +398,7 @@ export async function POST(request: Request) {
           await releaseStoreBenefitClaim(admin, claimedBenefitId)
         }
       } catch (releaseError) {
-        console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+        console.error("STORE_BENEFIT_RELEASE_FAILED", safeErrorMetadata(releaseError))
       }
     }
 
@@ -405,7 +406,7 @@ export async function POST(request: Request) {
       await deleteIncompleteCheckoutOrder(admin, orderId)
     }
 
-    console.error("Error creando orden con saldo a favor", error)
+    console.error("CUSTOMER_CREDIT_CREATE_ORDER_ERROR", safeErrorMetadata(error))
 
     if (error instanceof InsufficientStockError) {
       return NextResponse.json(
@@ -446,13 +447,15 @@ export async function POST(request: Request) {
     const branchConflict =
       error instanceof AndreaniError && error.code === "VALIDATION_ERROR"
 
+    const message = stockConflict
+      ? STOCK_CHANGED_MESSAGE
+      : quoteConflict
+        ? "La cotización de envío cambió. Revisá el costo antes de continuar."
+        : branchConflict
+          ? "La sucursal elegida ya no está disponible. Elegí otra."
+          : "No pudimos registrar el pedido con saldo a favor."
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No pudimos registrar el pedido con saldo a favor.",
-      },
+      { error: message },
       { status: stockConflict || quoteConflict || branchConflict ? 409 : 500 }
     )
   }

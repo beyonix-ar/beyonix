@@ -100,7 +100,7 @@ export async function POST(
       // El pago, el stock y el pedido NO se tocan: queda "Facturación
       // pendiente" con el motivo visible y reintento automático.
       return NextResponse.json(
-        { error: result.error, willRetry: result.willRetry },
+        { error: "No se pudo completar la facturación. Revisá el estado antes de reintentar.", willRetry: result.willRetry },
         { status: 502 },
       )
   }

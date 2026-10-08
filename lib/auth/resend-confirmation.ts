@@ -1,5 +1,6 @@
 import "server-only"
 
+import { safeErrorMetadata } from "../security/safe-error.ts"
 import type { createAdminClient } from "../supabase/admin.ts"
 import {
   hashForRateLimit,
@@ -204,9 +205,8 @@ export async function requestConfirmationResend({
     // email real (sólo el prefijo del hash, para correlacionar en logs).
     console.error("RESEND_CONFIRMATION_SEND_ERROR", {
       correlationId: identifierHash.slice(0, 12),
-      code: error.code ?? null,
       status: error.status ?? null,
-      message: error.message,
+      error: safeErrorMetadata(error),
     })
   }
 

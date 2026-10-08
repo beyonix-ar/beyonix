@@ -884,12 +884,12 @@ function creditNoteEmissionFailureResponse(
     case "already_finalized":
       return NextResponse.json({ error: "La nota de crédito ya fue emitida." }, { status: 409 })
     case "released":
-      return NextResponse.json({ error: emission.error }, { status: 409 })
+      return NextResponse.json({ error: "La nota de crédito requiere revisión antes de reintentar." }, { status: 409 })
     case "failed":
-      console.error("Error al emitir Nota de Crédito C", { orderId, noteId, outcome: emission.outcome, error: emission.error })
+      console.error("ARCA_CREDIT_NOTE_EMISSION_FAILED", { orderId, noteId, outcome: emission.outcome })
       if (emission.outcome === "rejected") {
         return NextResponse.json(
-          { error: "No se pudo emitir la nota de crédito. Revisá la gestión antes de reintentar.", detail: emission.error },
+          { error: "No se pudo emitir la nota de crédito. Revisá la gestión antes de reintentar." },
           { status: 502 },
         )
       }

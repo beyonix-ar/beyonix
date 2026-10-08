@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 
 import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
@@ -217,7 +218,7 @@ async function handleWebhook(request: Request) {
             orderId,
             paymentId: payment.id,
             paymentStatus: payment.status,
-            message: reversalError.message,
+            error: safeErrorMetadata(reversalError),
           })
         } else if (reversalUpdated) {
           await appendOrderAuditEvent(supabase, {
@@ -340,7 +341,7 @@ async function handleWebhook(request: Request) {
         console.error("MERCADOPAGO_APPROVED_AFTER_CANCELLATION_PERSIST_ERROR", {
           orderId,
           paymentId: payment.id,
-          message: lateUpdateError.message,
+          error: safeErrorMetadata(lateUpdateError),
         })
         throw lateUpdateError
       }
@@ -481,7 +482,7 @@ async function handleWebhook(request: Request) {
         console.error("MERCADOPAGO_APPROVED_PAYMENT_STOCK_CONFLICT_PERSIST_ERROR", {
           orderId,
           paymentId: payment.id,
-          message: stockConflictUpdateError.message,
+          error: safeErrorMetadata(stockConflictUpdateError),
         })
         throw stockConflictUpdateError
       }
@@ -613,7 +614,7 @@ async function handleWebhook(request: Request) {
     return NextResponse.json({ ok: true })
   } catch (error) {
     if (replayClaim) releaseMercadoPagoWebhookDelivery(replayClaim)
-    console.error("Error procesando webhook de Mercado Pago", error)
+    console.error("MERCADOPAGO_WEBHOOK_ERROR", safeErrorMetadata(error))
     return NextResponse.json({ error: "Webhook error" }, { status: 500 })
   }
 }

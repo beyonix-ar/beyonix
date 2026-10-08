@@ -4,6 +4,7 @@ import { MercadoPagoConfig, Preference } from "mercadopago"
 import { NextResponse } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 import { CheckoutShippingQuoteError } from "@/lib/cart/checkout-shipping"
 import { AndreaniError } from "@/lib/andreani/client"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
@@ -725,7 +726,7 @@ export async function POST(request: Request) {
           description: "Reintegro automático por error al iniciar Mercado Pago",
         })
       } catch (reversalError) {
-        console.error("MERCADOPAGO_CREDIT_REVERSAL_ERROR", reversalError)
+        console.error("MERCADOPAGO_CREDIT_REVERSAL_ERROR", safeErrorMetadata(reversalError))
       }
     }
 
@@ -733,7 +734,7 @@ export async function POST(request: Request) {
       await deleteIncompleteCheckoutOrder(createAdminClient(), createdOrderId)
     }
 
-    console.error("Error creando preferencia de Mercado Pago", error)
+    console.error("MERCADOPAGO_CREATE_PREFERENCE_ERROR", safeErrorMetadata(error))
 
     if (error instanceof InsufficientStockError) {
       return NextResponse.json(
@@ -780,10 +781,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No pudimos iniciar el pago.",
+        error: stockConflict
+          ? STOCK_CHANGED_MESSAGE
+          : quoteConflict
+            ? "La cotización del envío cambió. Volvé a calcularla."
+            : branchConflict
+              ? "La sucursal seleccionada ya no está disponible."
+              : "No pudimos iniciar el pago.",
       },
       { status: stockConflict || quoteConflict || branchConflict ? 409 : 500 },
     )
@@ -794,7 +798,7 @@ async function releaseStoreBenefitClaimSafely(admin: AdminClient, benefitId: str
   try {
     await releaseStoreBenefitClaim(admin, benefitId)
   } catch (releaseError) {
-    console.error("STORE_BENEFIT_RELEASE_FAILED", releaseError)
+    console.error("STORE_BENEFIT_RELEASE_FAILED", safeErrorMetadata(releaseError))
   }
 }
 
@@ -1158,7 +1162,7 @@ async function createAndPersistMercadoPagoPreference({
     try {
       await expireMercadoPagoPreference(result.id, new Date())
     } catch (expirationError) {
-      console.error("MERCADOPAGO_PREFERENCE_EXPIRED_BEFORE_PERSIST", expirationError)
+      console.error("MERCADOPAGO_PREFERENCE_EXPIRED_BEFORE_PERSIST", safeErrorMetadata(expirationError))
     }
     throw new CheckoutReservationExpiredError()
   }
@@ -1182,7 +1186,7 @@ async function createAndPersistMercadoPagoPreference({
     try {
       await expireMercadoPagoPreference(result.id, new Date())
     } catch (expirationError) {
-      console.error("MERCADOPAGO_UNPERSISTED_PREFERENCE_EXPIRE_ERROR", expirationError)
+      console.error("MERCADOPAGO_UNPERSISTED_PREFERENCE_EXPIRE_ERROR", safeErrorMetadata(expirationError))
     }
     throw new Error(
       error?.message || "No se pudo guardar la preferencia de Mercado Pago.",

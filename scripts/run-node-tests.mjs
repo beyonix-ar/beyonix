@@ -71,6 +71,7 @@ const TEST_FILES = [
   "lib/auth/confirmar-email-ui-contract.test.ts",
   "lib/auth/reset-password-submit.test.ts",
   "lib/auth/login.test.ts",
+  "lib/auth/trusted-client-ip.test.ts",
   "lib/supabase/cookie-options.test.ts",
   "lib/auth/safe-redirect.test.ts",
   "lib/auth/username.test.ts",
@@ -84,6 +85,7 @@ const TEST_FILES = [
   "lib/orders/admin-order-cancellation.test.ts",
   "lib/orders/admin-cancel-order-previous-estado.test.ts",
   "lib/security/csp-mode.test.ts",
+  "lib/security/safe-error.test.ts",
   "lib/security/hsts-header.test.ts",
   "lib/security/systemd-cron-units.test.ts",
   "lib/canonical-domain.test.ts",
@@ -276,6 +278,8 @@ const TEST_FILES = [
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
 // --conditions=react-server (los hooks de cliente no existen en ese build).
 const TSX_TEST_FILES = [
+  "lib/security/csp-report.test.ts",
+  "lib/supabase/proxy-cookies.test.ts",
   "lib/admin/dispatch-realtime.test.tsx",
   "lib/admin/dispatch-armado.test.tsx",
   "app/admin/sections/pedidos/financial-resolution-wizard.test.tsx",
@@ -313,6 +317,7 @@ const DB_ROUTE_TEST_FILES = [
 
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
+  "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
   "lib/arca/fiscal-history-routes.test.ts",
   "lib/arca/invoice-pdf-environment.test.ts",

@@ -7,6 +7,7 @@ import {
 } from "@/lib/mercadopago/customer-credit-topups"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 
 interface ReconcilePayload {
   topupId?: string
@@ -60,13 +61,9 @@ export async function POST(request: Request) {
     const result = await processCustomerCreditTopupPayment(payment)
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
-    console.error("Error reconciliando una carga de Mercado Pago", error)
+    console.error("CUSTOMER_CREDIT_MP_RECONCILE_ERROR", safeErrorMetadata(error))
     return NextResponse.json(
-      {
-        error: error instanceof Error
-          ? error.message
-          : "No pudimos verificar el pago con Mercado Pago.",
-      },
+      { error: "No pudimos verificar el pago con Mercado Pago." },
       { status: 500 },
     )
   }

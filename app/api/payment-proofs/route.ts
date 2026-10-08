@@ -15,6 +15,7 @@ import {
 } from "@/lib/orders/transfer-verification-reasons"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 function normalizeStoredPath(path: string) {
@@ -268,15 +269,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ order: toClientSafeOrder(updatedOrder as SupabasePedido) })
   } catch (error) {
-    console.error("payment proof upload error", error)
+    console.error("PAYMENT_PROOF_UPLOAD_ERROR", safeErrorMetadata(error))
 
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No pudimos subir el comprobante.",
-      },
+      { error: "No pudimos subir el comprobante." },
       { status: 500 },
     )
   }

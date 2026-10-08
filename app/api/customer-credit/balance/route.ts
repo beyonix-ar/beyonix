@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { getCustomerCreditBalance } from "@/lib/customer-credit/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 
 export async function GET() {
   const supabase = await createClient()
@@ -30,13 +31,9 @@ export async function GET() {
       }
     )
   } catch (error) {
+    console.error("CUSTOMER_CREDIT_BALANCE_ERROR", safeErrorMetadata(error))
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "No pudimos cargar tu saldo a favor.",
-      },
+      { error: "No pudimos cargar tu saldo a favor." },
       { status: 500 }
     )
   }

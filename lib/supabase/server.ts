@@ -11,11 +11,18 @@ export async function createClient() {
     {
       cookieOptions: getSupabaseCookieOptions(),
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
+        getAll() {
+          return cookieStore.getAll()
         },
-        set() {},
-        remove() {},
+        setAll(cookiesToSet) {
+          try {
+            for (const { name, value, options } of cookiesToSet) {
+              cookieStore.set(name, value, options)
+            }
+          } catch {
+            // Server Components sólo leen cookies; el proxy persiste el refresh.
+          }
+        },
       },
     }
   )

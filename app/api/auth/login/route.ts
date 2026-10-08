@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { signInWithIdentifier } from "@/lib/auth/login"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 /**
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, session: result.session })
   } catch (error) {
-    console.error("LOGIN_ROUTE_ERROR", error)
+    console.error("LOGIN_ROUTE_ERROR", safeErrorMetadata(error))
     return NextResponse.json(
       { error: "No se pudo iniciar sesión. Intentá nuevamente." },
       { status: 500 },

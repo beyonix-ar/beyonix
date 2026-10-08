@@ -10,6 +10,7 @@ import { isInternalRole, isUserRole } from "@/lib/auth/roles"
 import { getCanonicalWwwRedirectUrl } from "@/lib/canonical-domain"
 import { resolveCspMode } from "@/lib/security/csp-mode"
 import { getSupabaseCookieOptions } from "@/lib/supabase/cookie-options"
+import { createProxyCookieAdapter } from "@/lib/supabase/proxy-cookies"
 
 const IS_DEV = process.env.NODE_ENV !== "production"
 
@@ -67,8 +68,9 @@ function buildContentSecurityPolicy(nonce: string) {
         "'self'",
         "data:",
         "blob:",
-        "https://*.tile.openstreetmap.org",
-        ...(supabaseHttp ? [supabaseHttp] : []),
+        // Las imágenes de productos, banners y avatares pueden ser URLs HTTPS
+        // configuradas por Admin, además de Supabase Storage y OSM.
+        "https:",
       ],
     ],
     ["font-src", ["'self'"]],
@@ -126,9 +128,8 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const nonce = generateNonce()
   const csp = buildContentSecurityPolicy(nonce)
-  // CSP_MODE=enforce (exacto) envía Content-Security-Policy; cualquier otro
-  // valor -- ausente, vacío, typo -- cae en report-only por fail-safe (ver
-  // lib/security/csp-mode.ts). Nunca se envían las dos cabeceras a la vez:
+  // En producción la CSP aplica por defecto; CSP_MODE=report-only permite
+  // volver temporalmente al diagnóstico. Nunca se envían ambas cabeceras:
   // es un único `set` condicionado al modo resuelto acá.
   const cspHeaderName =
     resolveCspMode(process.env.CSP_MODE) === "enforce"
@@ -144,10 +145,11 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce)
   requestHeaders.set(cspHeaderName.toLowerCase(), csp)
 
-  const response = NextResponse.next({
-    request: { headers: requestHeaders },
+  const authCookies = createProxyCookieAdapter(request, requestHeaders, () => {
+    const response = NextResponse.next({ request: { headers: requestHeaders } })
+    response.headers.set(cspHeaderName, csp)
+    return response
   })
-  response.headers.set(cspHeaderName, csp)
 
   const isAdminRoute = pathname.startsWith("/admin")
   const isAccountRoute = pathname.startsWith("/cuenta")
@@ -156,7 +158,7 @@ export async function proxy(request: NextRequest) {
   // sitio público no debe pagar ese round-trip a Supabase Auth sólo porque
   // el proxy ahora corre globalmente para poder emitir CSP/nonce.
   if (!isAdminRoute && !isAccountRoute) {
-    return response
+    return authCookies.getResponse()
   }
 
   const supabase = createServerClient(
@@ -164,13 +166,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookieOptions: getSupabaseCookieOptions(),
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
-        },
-        set() {},
-        remove() {},
-      },
+      cookies: authCookies.cookies,
     },
   )
 
@@ -184,11 +180,11 @@ export async function proxy(request: NextRequest) {
       "redirect",
       `${pathname}${request.nextUrl.search}`
     )
-    return NextResponse.redirect(loginUrl)
+    return authCookies.redirect(loginUrl)
   }
 
   if (!isAdminRoute) {
-    return response
+    return authCookies.getResponse()
   }
 
   const { data: profile } = await supabase
@@ -202,17 +198,17 @@ export async function proxy(request: NextRequest) {
     !isUserRole(profile.rol) ||
     !isInternalRole(profile.rol)
   ) {
-    return NextResponse.redirect(new URL("/", request.url))
+    return authCookies.redirect(new URL("/", request.url))
   }
 
   const routeKey = getAdminRouteKeyFromPathname(pathname)
   if (!canAccessAdminRoute(profile.rol, routeKey)) {
-    return NextResponse.redirect(
+    return authCookies.redirect(
       new URL(ADMIN_ROUTES.dashboard, request.url),
     )
   }
 
-  return response
+  return authCookies.getResponse()
 }
 
 export const config = {

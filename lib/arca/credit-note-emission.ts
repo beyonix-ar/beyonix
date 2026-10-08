@@ -21,6 +21,7 @@
  */
 
 import { parseArcaEnvironment, type ArcaEnvironment } from "./environment.ts"
+import { safeErrorMetadata } from "../security/safe-error.ts"
 import type { ArcaInvoiceGateway } from "./invoice-automation.ts"
 import { FACTURA_C_VOUCHER_TYPE, argentinaDate } from "./invoice-automation.ts"
 import type { AuthorizedVoucher } from "./wsfe.ts"
@@ -118,7 +119,7 @@ async function fail(
   outcome: "rejected" | "unknown" | "manual_review",
 ): Promise<CreditNoteArcaResult> {
   await rpc(admin, "fail_credit_note_arca_attempt", { p_note_id: noteId, p_error: error, p_outcome: outcome })
-  console.error("ARCA_CREDIT_NOTE_ATTEMPT_FAILED", { noteId, outcome, error })
+  console.error("ARCA_CREDIT_NOTE_ATTEMPT_FAILED", { noteId, outcome })
   return { status: "failed", outcome, error }
 }
 
@@ -346,7 +347,7 @@ export async function emitCreditNote(
     try {
       return await fail(admin, noteId, message, outcome)
     } catch (failError) {
-      console.error("ARCA_CREDIT_NOTE_FAIL_RECORD_ERROR", { noteId, message, failError })
+      console.error("ARCA_CREDIT_NOTE_FAIL_RECORD_ERROR", { noteId, error: safeErrorMetadata(failError) })
       return { status: "failed", outcome, error: message }
     }
   }
@@ -389,7 +390,7 @@ export async function reconcileCreditNote(
     try {
       return await fail(admin, noteId, message, "unknown")
     } catch (failError) {
-      console.error("ARCA_CREDIT_NOTE_FAIL_RECORD_ERROR", { noteId, message, failError })
+      console.error("ARCA_CREDIT_NOTE_FAIL_RECORD_ERROR", { noteId, error: safeErrorMetadata(failError) })
       return { status: "failed", outcome: "unknown", error: message }
     }
   }

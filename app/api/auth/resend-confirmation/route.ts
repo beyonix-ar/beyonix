@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { requestConfirmationResend } from "@/lib/auth/resend-confirmation"
+import { getTrustedClientIp } from "@/lib/auth/trusted-client-ip"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 import { createAdminClient } from "@/lib/supabase/admin"
-
-function getClientIp(request: Request) {
-  return (
-    request.headers.get("x-nf-client-connection-ip") ||
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-real-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    null
-  )
-}
 
 /**
  * Reenvío del correo de confirmación de cuenta. Toda la protección contra
@@ -30,7 +22,7 @@ export async function POST(request: Request) {
     const result = await requestConfirmationResend({
       admin: createAdminClient(),
       emailRaw: body?.email,
-      ip: getClientIp(request),
+      ip: getTrustedClientIp(request),
       siteUrl: resolveTrustedSiteUrl(request),
     })
 
@@ -40,7 +32,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, message: result.message })
   } catch (error) {
-    console.error("RESEND_CONFIRMATION_ROUTE_ERROR", error)
+    console.error("RESEND_CONFIRMATION_ROUTE_ERROR", safeErrorMetadata(error))
     return NextResponse.json(
       { error: "No pudimos procesar la solicitud. Intentá nuevamente." },
       { status: 500 },

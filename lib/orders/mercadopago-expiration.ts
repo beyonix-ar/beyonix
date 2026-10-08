@@ -5,6 +5,7 @@ import { restoreStoreBenefitFromSupersededOrder } from "../customer-store-benefi
 import { findMercadoPagoPaymentForOrder } from "../mercadopago/customer-credit-topups.ts"
 import { MERCADOPAGO_ABANDONED_ORDER_GRACE_HOURS } from "../mercadopago/checkout-attempt.ts"
 import { appendOrderAuditEvent } from "./order-audit.ts"
+import { safeErrorMetadata } from "../security/safe-error.ts"
 import type { createAdminClient } from "../supabase/admin.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -96,7 +97,7 @@ export async function expireAbandonedMercadoPagoOrders(
     } catch (reconciliationError) {
       console.warn("MERCADOPAGO_ABANDONED_ORDER_RECONCILIATION_ERROR", {
         orderId: order.id,
-        error: reconciliationError,
+        error: safeErrorMetadata(reconciliationError),
       })
       continue
     }

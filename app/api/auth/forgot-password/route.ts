@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server"
 
 import { requestPasswordRecovery } from "@/lib/auth/forgot-password"
+import { getTrustedClientIp } from "@/lib/auth/trusted-client-ip"
+import { safeErrorMetadata } from "@/lib/security/safe-error"
 import { resolveTrustedSiteUrl } from "@/lib/site-url"
 import { createAdminClient } from "@/lib/supabase/admin"
-
-function getClientIp(request: Request) {
-  return (
-    request.headers.get("x-nf-client-connection-ip") ||
-    request.headers.get("cf-connecting-ip") ||
-    request.headers.get("x-real-ip") ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    null
-  )
-}
 
 /**
  * "Olvidé mi contraseña", con username O email. Toda la resolución
@@ -30,7 +22,7 @@ export async function POST(request: Request) {
     const result = await requestPasswordRecovery({
       admin: createAdminClient(),
       identifierRaw: body?.identifier,
-      ip: getClientIp(request),
+      ip: getTrustedClientIp(request),
       siteUrl: resolveTrustedSiteUrl(request),
     })
 
@@ -40,7 +32,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, message: result.message })
   } catch (error) {
-    console.error("FORGOT_PASSWORD_ROUTE_ERROR", error)
+    console.error("FORGOT_PASSWORD_ROUTE_ERROR", safeErrorMetadata(error))
     return NextResponse.json(
       { error: "No pudimos procesar la solicitud. Intentá nuevamente." },
       { status: 500 },
