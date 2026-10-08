@@ -300,13 +300,23 @@ test("20b. términos: bloque destacado, marcado como obligatorio y justo encima 
   assert.match(terms, /data-accepted=\{termsAccepted \? "true" : "false"\}/)
   assert.match(terms, /className="checkout-terms /)
   assert.match(terms, /Obligatorio para continuar con el pago\./)
-  // Después de "¿Necesitás ayuda con tu pago?" y antes de las acciones.
-  assert.ok(checkout.indexOf("¿Necesitás ayuda con tu pago?") < start)
+  // Después del panel de medios de pago y antes de las acciones.
+  assert.ok(checkout.indexOf("<CheckoutPaymentMediaPanel") < start)
   assert.ok(start < checkout.indexOf('"checkout-actions flex'))
   // Sin rojo/ámbar: sólo tokens azules propios, definidos en ambos temas.
   assert.doesNotMatch(terms, /red-|amber-|danger/)
   assert.match(css, /\.checkout-page \.checkout-terms \{\n  border: 1px solid var\(--checkout-terms-border\);\n  background: var\(--checkout-terms-bg\);/)
   assert.equal((css.match(/--checkout-terms-bg:/g) ?? []).length, 2)
+})
+
+test("20c. el checkout ya no muestra «¿Necesitás ayuda con tu pago?» ni accesos a Instagram/Email", () => {
+  assert.doesNotMatch(checkout, /Necesitás ayuda con tu pago/)
+  assert.doesNotMatch(checkout, /checkout-help-link|instagram\.com|CHECKOUT_EMAIL_URL|<Instagram\b/)
+  assert.doesNotMatch(css, /checkout-help-link/)
+  // Sin hueco: entre el panel de medios y los términos sólo queda el aviso de Mercado Pago.
+  const between = checkout.slice(checkout.indexOf("<CheckoutPaymentMediaPanel"), checkout.indexOf("data-terms-acceptance"))
+  assert.doesNotMatch(between, /rounded-lg border border-beyonix-blue-light\/12 bg-\[#10151C\] p-4/)
+  assert.match(between, /Pago protegido por Mercado Pago/)
 })
 
 test("21-22. la aceptación sobrevive al cambio de modalidad y se resetea con una compra/sesión nueva", () => {

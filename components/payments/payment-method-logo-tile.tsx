@@ -1,3 +1,7 @@
+"use client"
+
+import { useState } from "react"
+
 import type { PublicPaymentMethodLogo } from "@/lib/payments/payment-method-logos"
 import { cn } from "@/lib/utils"
 
@@ -6,34 +10,62 @@ const TILE_SIZES = {
   md: "h-9 w-14 p-1.5",
 } as const
 
+/** Sin imagen usable: misma altura y superficie, ancho según el nombre. */
+const FALLBACK_SIZES = {
+  sm: "h-7 min-w-11 max-w-36 px-1.5 text-10px",
+  md: "h-9 min-w-14 max-w-40 px-2 text-11px",
+} as const
+
 /**
- * Tarjeta uniforme para cualquier logo (SVG o PNG): mismo tamaño, fondo
- * blanco y padding fijos; la imagen se ajusta con object-contain, nunca se
- * deforma ni se recorta.
+ * Tarjeta uniforme para cualquier logo (SVG, PNG, WEBP, JPG, de cualquier
+ * tamaño o proporción): caja exterior, fondo blanco y padding fijos; la
+ * imagen se ajusta con object-contain, nunca se deforma ni se recorta, así
+ * que el archivo original no cambia el alto del bloque. Si la imagen falta o
+ * no carga, muestra el nombre en la misma superficie (nunca imagen rota).
  */
 export function PaymentMethodLogoTile({
   name,
   imageUrl,
   size = "sm",
+  nameFallback = true,
   className,
 }: {
   name: string
   imageUrl: string
   size?: keyof typeof TILE_SIZES
+  /** false cuando el nombre ya se muestra al lado: si la imagen falla, no se duplica. */
+  nameFallback?: boolean
   className?: string
 }) {
+  // Se guarda la URL que falló (no un booleano): si cambia la imagen, se reintenta.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const showImage = imageUrl.trim().length > 0 && failedUrl !== imageUrl
+  if (!showImage && !nameFallback) return null
+
   return (
     <span
       data-payment-logo-tile
+      data-logo-fallback={showImage ? undefined : "true"}
       title={name}
       className={cn(
         "beyonix-payment-logo-tile inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-black/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.12)]",
-        TILE_SIZES[size],
+        showImage ? TILE_SIZES[size] : FALLBACK_SIZES[size],
         className,
       )}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element -- SVG/PNG públicos de Storage, tamaño fijo */}
-      <img src={imageUrl} alt={name} loading="lazy" decoding="async" className="block size-full object-contain" />
+      {showImage ? (
+        // eslint-disable-next-line @next/next/no-img-element -- logos públicos de Storage en caja fija
+        <img
+          src={imageUrl}
+          alt={name}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedUrl(imageUrl)}
+          className="block size-full object-contain"
+        />
+      ) : (
+        <span className="truncate font-bold leading-none text-[#14283d]">{name}</span>
+      )}
     </span>
   )
 }

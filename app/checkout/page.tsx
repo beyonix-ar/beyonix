@@ -28,7 +28,6 @@ import {
   CreditCard,
   Home,
   IdCard,
-  Instagram,
   Landmark,
   Loader2,
   Mail,
@@ -363,9 +362,6 @@ function CheckoutNotice({
  */
 const MERCADOPAGO_FINANCED_TOTAL_WARNING =
   "Mercado Pago puede mostrarte 1 pago o Dinero en cuenta: si los usás, se cobra este mismo total financiado. Para pagar el precio contado, volvé y elegí “Mercado Pago · 1 pago”."
-
-const CHECKOUT_EMAIL = "beyonix.ar@gmail.com"
-const CHECKOUT_EMAIL_URL = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CHECKOUT_EMAIL)}&su=${encodeURIComponent("Consulta sobre mi compra en BEYONIX")}`
 
 const initialCheckoutFormData = {
   nombre: "",
@@ -2972,6 +2968,7 @@ export default function CheckoutPage() {
                     <CheckoutPaymentMediaPanel
                       option={selectedPaymentOption}
                       installmentBrands={liveMaxCountBrands}
+                      transferDiscountPercent={siteSettings.pricing.transferDiscountPercent}
                     />
                   </div>
 
@@ -2981,43 +2978,6 @@ export default function CheckoutPage() {
                       Pago protegido por Mercado Pago
                     </p>
                   )}
-
-                  <div className="rounded-lg border border-beyonix-blue-light/12 bg-[#10151C] p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-white/45">
-                      ¿Necesitás ayuda con tu pago?
-                    </p>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <a
-                        href="https://instagram.com/beyonix.ar"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="checkout-help-link group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors duration-200 hover:border-beyonix-blue-light/40 hover:bg-white/[0.05]"
-                      >
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
-                          <Instagram className="size-4" />
-                        </span>
-                        <span>
-                          <span className="block text-sm font-semibold text-white">Instagram</span>
-                          <span className="block text-xs text-white/50 group-hover:text-white/75">Atención rápida</span>
-                        </span>
-                      </a>
-
-                      <a
-                        href={CHECKOUT_EMAIL_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="checkout-help-link group flex cursor-pointer items-center gap-3 rounded-lg border border-beyonix-blue-light/12 bg-[#0B1118] p-3 transition-colors duration-200 hover:border-beyonix-blue-light/40 hover:bg-white/[0.05]"
-                      >
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-light/20 bg-beyonix-blue/25 text-beyonix-sky">
-                          <Mail className="size-4" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-sm font-semibold text-white">Email</span>
-                          <span className="block truncate text-xs text-white/50 group-hover:text-white/75">Consultas administrativas</span>
-                        </span>
-                      </a>
-                    </div>
-                  </div>
 
                   {/* Obligatorio para las 3 opciones: sin aceptar, "Pagar"
                       queda deshabilitado (y el servidor exige el flag). Va

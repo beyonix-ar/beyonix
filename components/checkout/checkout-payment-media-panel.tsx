@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Check, Landmark, type LucideIcon } from "lucide-react"
+import { Check, CreditCard, Landmark, Wallet, type LucideIcon } from "lucide-react"
 
 import { PaymentMethodLogoTile } from "@/components/payments/payment-method-logo-tile"
 import {
@@ -120,35 +120,56 @@ function MediaBrand({ name, logo = null, confirmed = false }: { name: string; lo
 
   return (
     <li className="checkout-media-brand" data-media-brand={name} data-confirmed={confirmed || undefined} data-has-logo={logo ? "true" : undefined}>
-      {logo ? <PaymentMethodLogoTile name={logo.name} imageUrl={logo.imageUrl} /> : null}
+      {logo ? <PaymentMethodLogoTile name={logo.name} imageUrl={logo.imageUrl} nameFallback={false} /> : null}
       <span>{label}</span>
     </li>
   )
 }
+
+const PANEL_TITLES: Record<CheckoutPaymentOption, string> = {
+  transferencia: "Transferencia bancaria",
+  mercadopago_cash: "Mercado Pago · 1 pago",
+  mercadopago_installments: "Mercado Pago · Cuotas sin interés",
+}
+
 export function CheckoutPaymentMediaPanel({
   option,
   installmentBrands,
+  transferDiscountPercent,
 }: {
   option: CheckoutPaymentOption | null
   installmentBrands: readonly string[]
+  /** Descuento vigente de la tienda (siteSettings.pricing), el mismo que usa el total. */
+  transferDiscountPercent: number
 }) {
   const confirmedBrands = installmentBrands.filter((brand) => brand === "visa" || brand === "master")
   const logos = usePaymentMethodLogos() ?? []
   const cashLogoGroups = getCheckoutCashLogoGroups(logos)
+  const transferDiscount = Number.isFinite(transferDiscountPercent) && transferDiscountPercent > 0
+    ? transferDiscountPercent.toLocaleString("es-AR", { maximumFractionDigits: 2 })
+    : null
 
   return (
-    <aside className="checkout-payment-media" data-payment-media={option ?? "none"} aria-label="Pagá con">
+    <aside className="checkout-payment-media" data-payment-media={option ?? "none"} aria-label="Medios de pago">
       <div className="checkout-payment-media-heading">
         <p className="checkout-payment-media-kicker">Medios de pago</p>
-        <h3>Pagá con</h3>
+        {option ? <h3>{PANEL_TITLES[option]}</h3> : null}
       </div>
 
       {option === "transferencia" ? (
         <div className="checkout-payment-media-content" data-media-transfer>
-          <div className="checkout-payment-media-transfer-icon"><Landmark aria-hidden="true" className="size-5" /></div>
-          <p className="checkout-payment-media-title">Transferencia bancaria</p>
-          <p className="checkout-payment-media-muted">Los datos de la cuenta se muestran después de confirmar el pedido.</p>
-          <p className="checkout-payment-media-note">Podés transferir desde una cuenta bancaria o virtual.</p>
+          {transferDiscount ? (
+            <div className="checkout-payment-media-benefit" data-transfer-benefit>
+              <p className="checkout-payment-media-benefit-value">{transferDiscount}% DE DESCUENTO</p>
+              <p className="checkout-payment-media-benefit-text">
+                Pagando por transferencia tenés {transferDiscount}% OFF sobre los productos.
+              </p>
+            </div>
+          ) : null}
+          <ul className="checkout-payment-media-points">
+            <li><Landmark aria-hidden="true" className="size-4 shrink-0" />Los datos bancarios se muestran después de confirmar el pedido.</li>
+            <li><Wallet aria-hidden="true" className="size-4 shrink-0" />Podés transferir desde una cuenta bancaria o billetera virtual.</li>
+          </ul>
         </div>
       ) : option === "mercadopago_installments" ? (
         <div className="checkout-payment-media-content" data-media-installments>
@@ -162,7 +183,7 @@ export function CheckoutPaymentMediaPanel({
           ) : (
             <p className="checkout-payment-media-muted">Mercado Pago todavía no confirmó tarjetas para este total.</p>
           )}
-          <p className="checkout-payment-media-note">La cantidad disponible se elige en Mercado Pago.</p>
+          <p className="checkout-payment-media-note">La cantidad de cuotas se elige en Mercado Pago.</p>
         </div>
       ) : option === "mercadopago_cash" ? (
         <div className="checkout-payment-media-content" data-media-cash data-media-source={cashLogoGroups.length ? "mercadopago" : "reference"}>
@@ -174,7 +195,7 @@ export function CheckoutPaymentMediaPanel({
                 <ul className="checkout-payment-media-logos">
                   {group.logos.map((logo) => (
                     <li key={logo.key} data-media-logo={logo.providerMethodId ?? logo.key}>
-                      <PaymentMethodLogoTile name={logo.name} imageUrl={logo.imageUrl} />
+                      <PaymentMethodLogoTile name={logo.name} imageUrl={logo.imageUrl} size="md" />
                     </li>
                   ))}
                 </ul>
@@ -200,7 +221,15 @@ export function CheckoutPaymentMediaPanel({
           <p className="checkout-payment-media-muted">{MERCADOPAGO_CASH_MEDIA_DISCLAIMER}</p>
         </div>
       ) : (
-        <p className="checkout-payment-media-empty">Elegí una opción de pago para ver sus medios disponibles.</p>
+        <div className="checkout-payment-media-empty" data-media-empty>
+          <span className="checkout-payment-media-empty-icon"><CreditCard aria-hidden="true" className="size-5" /></span>
+          <p className="checkout-payment-media-empty-title">
+            Seleccioná un método de pago <span>y descubrí sus beneficios</span>
+          </p>
+          <p className="checkout-payment-media-empty-text">
+            Elegí una opción para ver los medios disponibles, descuentos y condiciones.
+          </p>
+        </div>
       )}
     </aside>
   )

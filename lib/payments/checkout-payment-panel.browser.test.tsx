@@ -24,6 +24,7 @@ function Fixture() {
   const [option, setOption] = useState("mercadopago_cash")
   const [policy, setPolicy] = useState("same")
   const [brands, setBrands] = useState(["visa", "master"])
+  const [discount, setDiscount] = useState(10)
   return h("div", { className: "checkout-page", "data-checkout-step": "3" },
     h("main", { className: "checkout-main-panel", style: { maxWidth: 760, margin: "24px auto", padding: 20 } },
       h("h2", { style: { marginBottom: 16 } }, "Método de pago"),
@@ -33,12 +34,14 @@ function Fixture() {
           h(CheckoutPaymentOptionCard, { option: "mercadopago_cash", checked: option === "mercadopago_cash", onSelect: setOption, icon: Wallet, title: "Mercado Pago · 1 pago", description: "Precio contado", amountLabel: "Total", amount: "$100.000" }),
           h(CheckoutPaymentOptionCard, { option: "mercadopago_installments", checked: option === "mercadopago_installments", onSelect: setOption, icon: CreditCard, title: "Mercado Pago · Cuotas sin interés", description: "Hasta 6 cuotas sin interés", amountLabel: "Total financiado", amount: policy === "same" ? "$100.000" : "$118.000" }),
         ),
-        h(CheckoutPaymentMediaPanel, { option, installmentBrands: brands }),
+        h(CheckoutPaymentMediaPanel, { option, installmentBrands: brands, transferDiscountPercent: discount }),
       ),
       h("div", { style: { marginTop: 16 } },
         h("button", { type: "button", "data-policy": "same", onClick: () => setPolicy("same") }, "Mismo precio que contado"),
         h("button", { type: "button", "data-policy": "cover", onClick: () => setPolicy("cover") }, "Cubrir costos de Mercado Pago"),
         h("button", { type: "button", "data-brands": "none", onClick: () => setBrands([]) }, "Sin marcas confirmadas"),
+        h("button", { type: "button", "data-option": "none", onClick: () => setOption(null) }, "Sin método elegido"),
+        h("button", { type: "button", "data-discount": "5", onClick: () => setDiscount(5) }, "Descuento 5%"),
       ),
       h(Strip),
     ),
@@ -85,17 +88,27 @@ function makePng(width: number, height: number) {
     chunk("IEND", Buffer.alloc(0)),
   ])
 }
+// Proporciones y tamaños opuestos: vertical chico, cuadrado y horizontal grande.
 const TALL_PNG = makePng(40, 120)
+const SQUARE_PNG = makePng(200, 200)
+const WIDE_PNG = makePng(1200, 600)
 
 const STORAGE = "https://storage.test/payment-method-logos"
 const CATALOG = {
   logos: [
     { key: "1", source: "mercadopago", providerMethodId: "visa", name: "Visa", paymentTypes: ["credit_card", "prepaid_card"], imageUrl: `${STORAGE}/visa.svg` },
     { key: "2", source: "mercadopago", providerMethodId: "naranja", name: "Naranja", paymentTypes: ["credit_card"], imageUrl: `${STORAGE}/naranja.png` },
+    { key: "5", source: "mercadopago", providerMethodId: "cabal", name: "Cabal", paymentTypes: ["credit_card"], imageUrl: `${STORAGE}/cabal-square.png` },
+    { key: "6", source: "mercadopago", providerMethodId: "amex", name: "American Express", paymentTypes: ["credit_card"], imageUrl: `${STORAGE}/amex-wide.png` },
     { key: "3", source: "mercadopago", providerMethodId: "debvisa", name: "Visa Débito", paymentTypes: ["debit_card"], imageUrl: `${STORAGE}/debvisa.svg` },
+    // Imagen que no carga (404): nunca imagen rota, se muestra el nombre.
+    { key: "7", source: "mercadopago", providerMethodId: "maestro", name: "Maestro", paymentTypes: ["debit_card"], imageUrl: `${STORAGE}/missing.png` },
     { key: "4", source: "manual", providerMethodId: null, name: "MODO", paymentTypes: [], imageUrl: `${STORAGE}/modo.png` },
   ],
 }
+// Con imagen que carga: en el panel (sólo Mercado Pago) y en la tira (incluye MODO manual).
+const CASH_IMAGE_COUNT = 5
+const STRIP_IMAGE_COUNT = 6
 
 let browser: Browser
 let css: string
@@ -130,9 +143,10 @@ async function open(theme: "light" | "dark", width: number, catalog: typeof CATA
       return catalog ? route.fulfill({ contentType: "application/json", body: JSON.stringify(catalog) }) : route.abort()
     }
     if (url.origin === "https://storage.test") {
-      return url.pathname.endsWith(".svg")
-        ? route.fulfill({ contentType: "image/svg+xml", body: WIDE_SVG })
-        : route.fulfill({ contentType: "image/png", body: TALL_PNG })
+      if (url.pathname.endsWith("/missing.png")) return route.fulfill({ status: 404, body: "" })
+      if (url.pathname.endsWith(".svg")) return route.fulfill({ contentType: "image/svg+xml", body: WIDE_SVG })
+      const body = url.pathname.endsWith("-square.png") ? SQUARE_PNG : url.pathname.endsWith("-wide.png") ? WIDE_PNG : TALL_PNG
+      return route.fulfill({ contentType: "image/png", body })
     }
     return route.abort()
   })
@@ -143,13 +157,13 @@ async function open(theme: "light" | "dark", width: number, catalog: typeof CATA
 }
 
 async function assertUniformTiles(page: Page, scope: string, expected: number) {
-  const tiles = page.locator(`${scope} [data-payment-logo-tile]`)
+  const tiles = page.locator(`${scope} [data-payment-logo-tile]:not([data-logo-fallback])`)
   assert.equal(await tiles.count(), expected, scope)
   // loading="lazy": se cargan al entrar en pantalla.
   await tiles.last().scrollIntoViewIfNeeded()
   await page.waitForFunction(
     (selector) => [...document.querySelectorAll(selector)].every((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
-    `${scope} [data-payment-logo-tile] img`,
+    `${scope} [data-payment-logo-tile]:not([data-logo-fallback]) img`,
     { timeout: 5_000 },
   )
   const measures = await tiles.evaluateAll((elements) => elements.map((element) => {
@@ -173,6 +187,44 @@ async function assertUniformTiles(page: Page, scope: string, expected: number) {
   }
 }
 
+/** Logo que no carga: el nombre en la misma superficie y altura, sin imagen rota. */
+async function assertNameFallback(page: Page, scope: string, name: string) {
+  const fallback = page.locator(`${scope} [data-payment-logo-tile][data-logo-fallback]`)
+  await fallback.first().scrollIntoViewIfNeeded()
+  await fallback.first().waitFor({ timeout: 5_000 })
+  assert.equal(await fallback.count(), 1, scope)
+  assert.equal((await fallback.innerText()).trim(), name)
+  assert.equal(await fallback.locator("img").count(), 0, "sin <img> roto")
+  const heights = await page.locator(`${scope} [data-payment-logo-tile]`).evaluateAll((elements) =>
+    elements.map((element) => Math.round(element.getBoundingClientRect().height)))
+  assert.equal(new Set(heights).size, 1, `misma altura con y sin imagen: ${heights}`)
+  const broken = await page.evaluate(() => [...document.querySelectorAll("[data-payment-media] img, [data-payment-logo-strip] img")]
+    .filter((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth === 0).length)
+  assert.equal(broken, 0, "ninguna imagen rota visible")
+}
+
+/** Contraste WCAG del texto contra el fondo del panel (>= 4.5:1, texto normal). */
+async function assertReadable(page: Page, selectors: string[]) {
+  // Como string: tsx renombra funciones con nombre (__name) y el navegador no lo tiene.
+  const ratios = (await page.evaluate(`(() => {
+    const luminance = (color) => {
+      const [r, g, b] = (color.match(/[\\d.]+/g) || []).slice(0, 3).map(Number).map((value) => {
+        const channel = value / 255
+        return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const panel = getComputedStyle(document.querySelector("[data-payment-media]")).backgroundColor
+    return ${JSON.stringify(selectors)}.map((selector) => {
+      const element = document.querySelector(selector)
+      if (!element) return { selector, ratio: 0 }
+      const [light, dark] = [luminance(getComputedStyle(element).color), luminance(panel)].sort((a, b) => b - a)
+      return { selector, ratio: Math.round(((light + 0.05) / (dark + 0.05)) * 10) / 10 }
+    })
+  })()`)) as { selector: string; ratio: number }[]
+  for (const { selector, ratio } of ratios) assert.ok(ratio >= 4.5, `${selector}: contraste ${ratio}`)
+}
+
 async function assertNoOverflow(page: Page, width: number) {
   const layout = await page.evaluate(() => {
     const cards = document.querySelector("[data-payment-options]")!.getBoundingClientRect()
@@ -180,12 +232,35 @@ async function assertNoOverflow(page: Page, width: number) {
     return { cards, panel, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth }
   })
   assert.equal(layout.overflow, false)
-  if (width === 1280) assert.ok(layout.panel.left > layout.cards.right - 2, "panel a la derecha")
+  if (width >= 1280) assert.ok(layout.panel.left > layout.cards.right - 2, "panel a la derecha")
   else assert.ok(layout.panel.top >= layout.cards.bottom - 2, "panel debajo")
 }
 
 for (const theme of ["light", "dark"] as const) {
-  for (const width of [1280, 768, 390]) {
+  for (const width of [1440, 1280, 1024, 768, 390]) {
+    test(`${theme} ${width}px: sin método elegido, el panel invita a elegir (no queda vacío)`, async () => {
+      const page = await open(theme, width, null)
+      try {
+        await page.locator('[data-option="none"]').click()
+        const empty = page.locator("[data-payment-media=none] [data-media-empty]")
+        await empty.waitFor()
+        assert.equal(await page.locator("[data-payment-media=none] h3").count(), 0, "sin el viejo «Pagá con»")
+        assert.match(await page.locator("[data-payment-media=none]").innerText(), /MEDIOS DE PAGO/i)
+        assert.match(await empty.innerText(), /Seleccioná un método de pago\s+y descubrí sus beneficios/)
+        assert.match(await empty.innerText(), /Elegí una opción para ver los medios disponibles, descuentos y condiciones\./)
+        // El contenido ocupa el panel (en desktop alto mínimo: centrado, sin cuadro vacío arriba).
+        const box = await page.evaluate(() => {
+          const panel = document.querySelector("[data-payment-media]")!.getBoundingClientRect()
+          const content = document.querySelector("[data-media-empty]")!.getBoundingClientRect()
+          return { gapBelow: panel.bottom - content.bottom, panelHeight: panel.height }
+        })
+        assert.ok(box.gapBelow < box.panelHeight / 2, JSON.stringify(box))
+        await assertReadable(page, [".checkout-payment-media-kicker", ".checkout-payment-media-empty-title", ".checkout-payment-media-empty-title span", ".checkout-payment-media-empty-text"])
+        if (process.env.CHECKOUT_PAYMENT_SHOTS) await page.screenshot({ path: `${process.env.CHECKOUT_PAYMENT_SHOTS}/checkout-empty-${theme}-${width}.png`, fullPage: true })
+        await assertNoOverflow(page, width)
+      } finally { await page.close() }
+    })
+
     test(`${theme} ${width}px: sin logos cargados, referencia en texto sin imágenes inventadas`, async () => {
       const page = await open(theme, width, null)
       try {
@@ -200,6 +275,19 @@ for (const theme of ["light", "dark"] as const) {
         await page.locator('[data-payment-option="transferencia"]').click()
         assert.equal(await page.locator("[data-media-transfer]").count(), 1)
         assert.match(await page.locator('[data-payment-option="transferencia"]').innerText(), /10% OFF[\s\S]*\$90\.000/)
+        // Beneficio con el descuento vigente (prop), no un número fijo.
+        const transfer = page.locator("[data-payment-media=transferencia]")
+        assert.match(await transfer.locator("h3").innerText(), /^Transferencia bancaria$/)
+        assert.equal((await transfer.locator(".checkout-payment-media-benefit-value").innerText()).trim(), "10% DE DESCUENTO")
+        assert.match(await transfer.innerText(), /Pagando por transferencia tenés 10% OFF sobre los productos\./)
+        assert.match(await transfer.innerText(), /Los datos bancarios se muestran después de confirmar el pedido\./)
+        assert.match(await transfer.innerText(), /Podés transferir desde una cuenta bancaria o billetera virtual\./)
+        await assertReadable(page, [".checkout-payment-media-benefit-value", ".checkout-payment-media-benefit-text", ".checkout-payment-media-points li"])
+        if (process.env.CHECKOUT_PAYMENT_SHOTS) await page.screenshot({ path: `${process.env.CHECKOUT_PAYMENT_SHOTS}/checkout-transfer-${theme}-${width}.png`, fullPage: true })
+        await page.locator('[data-discount="5"]').click()
+        assert.equal((await transfer.locator(".checkout-payment-media-benefit-value").innerText()).trim(), "5% DE DESCUENTO")
+        assert.match(await transfer.innerText(), /tenés 5% OFF sobre los productos/)
+        assert.doesNotMatch(await transfer.innerText(), /10%/)
         await page.locator('[data-payment-option="mercadopago_installments"]').click()
         assert.equal(await page.locator("[data-media-installments] [data-confirmed]").count(), 2)
         assert.equal(await page.locator("[data-media-installments] [data-has-logo]").count(), 0)
@@ -214,17 +302,21 @@ for (const theme of ["light", "dark"] as const) {
       } finally { await page.close() }
     })
 
-    test(`${theme} ${width}px: logos de Admin disponibles en MP, SVG y PNG en tarjetas uniformes`, async () => {
+    test(`${theme} ${width}px: logos de Admin de cualquier tamaño/proporción en tarjetas uniformes`, async () => {
       const page = await open(theme, width, CATALOG)
       try {
         await page.locator("[data-media-cash][data-media-source='mercadopago']").waitFor()
         const groups = await page.locator("[data-media-cash] [data-media-group]").evaluateAll((elements) =>
           elements.map((element) => [element.getAttribute("data-media-group"), [...element.querySelectorAll("[data-media-logo]")].map((item) => item.getAttribute("data-media-logo"))]))
-        assert.deepEqual(groups, [["credit", ["visa", "naranja"]], ["debit", ["debvisa"]]], "MODO (manual) nunca se presenta como medio de Mercado Pago")
-        await assertUniformTiles(page, "[data-media-cash]", 3)
+        assert.deepEqual(groups, [["credit", ["visa", "naranja", "cabal", "amex"]], ["debit", ["debvisa", "maestro"]]], "MODO (manual) nunca se presenta como medio de Mercado Pago")
+        // SVG ancho, PNG vertical 40x120, cuadrado 200x200 y horizontal 1200x600: misma caja.
+        await assertUniformTiles(page, "[data-media-cash]", CASH_IMAGE_COUNT)
+        await assertNameFallback(page, "[data-media-cash]", "Maestro")
+        await assertReadable(page, [".checkout-payment-media-kicker", ".checkout-payment-media-group h4", ".checkout-payment-media-note", ".checkout-payment-media-muted"])
 
         // Tira compacta (PDP): todos los visibles, incluido el manual habilitado.
-        await assertUniformTiles(page, "[data-payment-logo-strip]", 4)
+        await assertUniformTiles(page, "[data-payment-logo-strip]", STRIP_IMAGE_COUNT)
+        await assertNameFallback(page, "[data-payment-logo-strip]", "Maestro")
         const strip = await page.locator("[data-payment-logo-strip]").boundingBox()
         assert.ok(strip && strip.height <= 80, `tira compacta (${strip?.height}px)`)
 
