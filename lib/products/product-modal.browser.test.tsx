@@ -133,6 +133,9 @@ for (const width of [1440, 1280, 1024, 768, 390]) {
     if (width >= 768) {
       // Galería a la izquierda, compra a la derecha (misma fila).
       assert.ok(layout.galleryLeft < layout.panelLeft, "galería a la izquierda de la compra")
+      // La columna de compra acompaña todo el alto del sector superior: sin
+      // hueco ni corte del borde entre el panel y el inicio de la descripción.
+      assert.ok(Math.abs(layout.description.top - layout.panelBottom) <= 1, `panel ${layout.panelBottom} vs descripción ${layout.description.top}`)
     } else {
       // Mobile: apilado (la compra debajo de la galería).
       assert.ok(layout.panelTop >= layout.galleryBottom - 1, "en mobile la compra va debajo de la galería")

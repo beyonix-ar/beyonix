@@ -8868,12 +8868,17 @@ span.admin-claim-status-finalized,
    coincide con Estado+Stock, y el de Variantes con Dimensiones+Contenido,
    sin ningún offset manual. 48fr/52fr = 15+33 (Estado+Stock) / 24+28
    (Dimensiones+Contenido), mismas proporciones que tenían como columnas
-   de una sola fila. */
+   de una sola fila.
+   El bloque derecho apila Logística, URL del video, Variantes y Descripción.
+   Umbral 78rem: con 52fr la columna derecha mide >= 40rem, el mínimo que la
+   tarjeta de variante necesita para mostrar la fila completa (ver
+   .product-editor-variant-card). Por debajo, la fila se apila a ancho
+   completo en vez de dejar variantes sin color ni stock. */
 .product-editor-screen .product-editor-commercial-catalog-row {
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 64rem) {
+@container (min-width: 78rem) {
   .product-editor-screen .product-editor-commercial-catalog-row {
     grid-template-columns: 48fr 52fr;
   }

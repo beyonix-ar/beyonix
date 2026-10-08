@@ -707,13 +707,12 @@ export function ProductoForm({
 
           {/*
             Fila 2: bloque [Estado comercial+Stock] + Especificaciones
-            (izquierda) | Logística (Peso | Largo | Ancho | Profundidad)
+            (izquierda) | Logística (Peso | Largo | Ancho | Profundidad),
+            URL del video, Variantes y Descripción, uno debajo del otro
             (derecha) -- ver .product-editor-commercial-catalog-row en
             globals.css. Cada bloque es su propio flex-col independiente:
-            Especificaciones arranca justo debajo de Estado+Stock sin esperar
-            a la altura del bloque vecino.
-            Debajo, a ancho completo y en este orden: URL del video,
-            Variantes y Descripción (editor enriquecido).
+            ninguno espera a la altura del vecino, así la columna derecha no
+            deja un hueco junto a Estado+Stock+Especificaciones.
             "Requisitos para activar" vive en el ícono del header (ver
             ProductRequirementsPopover).
           */}
@@ -875,80 +874,80 @@ export function ProductoForm({
                   </p>
                 </AdminCard>
               </div>
-            </div>
-          </div>
 
-          <div className="product-editor-cell product-editor-video-cell min-w-0">
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
-                <input
-                  id="video_url"
-                  type="url"
-                  value={form.video_url}
-                  placeholder="https://..."
-                  onChange={(event) => setField("video_url", event.target.value)}
-                  className={inputCls}
-                />
-              </AdminFormField>
+              <div className="product-editor-cell product-editor-video-cell min-w-0">
+                <AdminCard className="product-editor-panel space-y-2 p-2.5">
+                  <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
+                    <input
+                      id="video_url"
+                      type="url"
+                      value={form.video_url}
+                      placeholder="https://..."
+                      onChange={(event) => setField("video_url", event.target.value)}
+                      className={inputCls}
+                    />
+                  </AdminFormField>
 
-              {canPreviewVideo ? (
-                <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
-                  <div className="relative aspect-video w-full">
-                    {videoSource.kind === "direct" ? (
-                      <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
-                    ) : (
-                      <iframe
-                        src={videoSource.embedUrl}
-                        title="Vista previa del video del producto"
-                        loading="lazy"
-                        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                        allowFullScreen
-                        referrerPolicy="strict-origin-when-cross-origin"
-                        className="size-full"
-                      />
-                    )}
-                  </div>
-                </div>
-              ) : form.video_url.trim() ? (
-                <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
-                  La URL es HTTPS, pero no corresponde a un video compatible.
-                </AdminInfoBlock>
-              ) : null}
-            </AdminCard>
-          </div>
-
-          <div className="product-editor-cell product-editor-variants-cell min-w-0">
-            <ProductVariantsEditor
-              productoId={currentProductoId || undefined}
-              productName={form.nombre}
-              productActive={form.activo}
-              primarySku={form.sku}
-              videoUrl={form.video_url}
-              onPrimarySkuChange={(value) => setField("sku", value)}
-              fallbackImage={productFallbackImage}
-              draftVariants={draftVariants}
-              onDraftVariantsChange={setDraftVariants}
-              persistedVariantStates={pendingVariantStates}
-              onPersistedVariantStatesChange={setPendingVariantStates}
-              onPersistedVariantsChange={handlePersistedVariantsChange}
-              onDistributionChange={setVariantDistribution}
-              ventaAleatoria={ventaAleatoria}
-              onVentaAleatoriaChange={setVentaAleatoria}
-            />
-          </div>
-
-          <div className="product-editor-cell product-editor-description-cell min-w-0">
-            <AdminCard className="product-editor-panel space-y-2 p-2.5">
-              <div className="product-editor-panel-heading">
-                <h2 className="text-base font-black text-white">Descripción</h2>
+                  {canPreviewVideo ? (
+                    <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
+                      <div className="relative aspect-video w-full">
+                        {videoSource.kind === "direct" ? (
+                          <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
+                        ) : (
+                          <iframe
+                            src={videoSource.embedUrl}
+                            title="Vista previa del video del producto"
+                            loading="lazy"
+                            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            referrerPolicy="strict-origin-when-cross-origin"
+                            className="size-full"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ) : form.video_url.trim() ? (
+                    <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
+                      La URL es HTTPS, pero no corresponde a un video compatible.
+                    </AdminInfoBlock>
+                  ) : null}
+                </AdminCard>
               </div>
-              <RichDescriptionEditor
-                id="descripcion"
-                value={form.descripcion}
-                placeholder="Describí el producto y, si agregaste un video, su contenido."
-                onChange={(value) => setField("descripcion", value)}
-              />
-            </AdminCard>
+
+              <div className="product-editor-cell product-editor-variants-cell min-w-0">
+                <ProductVariantsEditor
+                  productoId={currentProductoId || undefined}
+                  productName={form.nombre}
+                  productActive={form.activo}
+                  primarySku={form.sku}
+                  videoUrl={form.video_url}
+                  onPrimarySkuChange={(value) => setField("sku", value)}
+                  fallbackImage={productFallbackImage}
+                  draftVariants={draftVariants}
+                  onDraftVariantsChange={setDraftVariants}
+                  persistedVariantStates={pendingVariantStates}
+                  onPersistedVariantStatesChange={setPendingVariantStates}
+                  onPersistedVariantsChange={handlePersistedVariantsChange}
+                  onDistributionChange={setVariantDistribution}
+                  ventaAleatoria={ventaAleatoria}
+                  onVentaAleatoriaChange={setVentaAleatoria}
+                />
+              </div>
+
+              <div className="product-editor-cell product-editor-description-cell min-w-0">
+                <AdminCard className="product-editor-panel space-y-2 p-2.5">
+                  <div className="product-editor-panel-heading">
+                    <h2 className="text-base font-black text-white">Descripción</h2>
+                  </div>
+                  <RichDescriptionEditor
+                    id="descripcion"
+                    value={form.descripcion}
+                    placeholder="Describí el producto y, si agregaste un video, su contenido."
+                    onChange={(value) => setField("descripcion", value)}
+                  />
+                </AdminCard>
+              </div>
+            </div>
           </div>
         </div>
 

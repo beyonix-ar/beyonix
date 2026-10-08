@@ -223,7 +223,7 @@ export function ProductDetailsPanel({
   const isRandomSelected = selectedOption?.isRandom === true
 
   return (
-    <aside className="beyonix-modal-shell flex min-w-0 flex-col bg-[#080D13] text-white md:border-l md:border-white/7">
+    <aside className="beyonix-modal-shell flex min-w-0 flex-col bg-[#080D13] text-white md:self-stretch md:border-l md:border-white/7">
       <div className="px-5 pb-4 pt-6 md:px-7 md:pb-5 md:pt-7">
         {product.categorias?.nombre && (
           <span className="beyonix-category-pill mb-3 inline-flex items-center gap-2 rounded-full bg-beyonix-blue/16 px-3.5 py-1.5 text-11px font-bold uppercase tracking-widest text-beyonix-sky">
