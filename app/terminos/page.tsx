@@ -561,8 +561,8 @@ export default async function TerminosPage() {
                 <h3 className="font-bold text-white">¿Cómo se ejerce?</h3>
                 <p className="mt-2">
                   Permite revocar la aceptación de una compra online sin indicar motivo y sin penalidad.
-                  Se solicita desde el link &quot;BOTÓN DE ARREPENTIMIENTO&quot;, visible en el encabezado y
-                  en el pie de todas las páginas de la tienda, sin iniciar sesión ni registrarse. Dentro
+                  Se solicita desde el link &quot;BOTÓN DE ARREPENTIMIENTO&quot;, visible en el pie
+                  de las páginas de la tienda, sin iniciar sesión ni registrarse. Dentro
                   de las 24 horas siguientes, BEYONIX informa por el mismo medio el código de
                   identificación del trámite.
                 </p>

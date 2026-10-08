@@ -1,5 +1,6 @@
 import type { createAdminClient } from "@/lib/supabase/admin"
 import { compareParcelQuote } from "../shipping/shipping-pricing.ts"
+import { isReconciliationStatus, type ReconciliationStatus } from "./andreani-billing.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -62,23 +63,61 @@ export interface LogisticsSummary {
   parcelQuoteDifference: number
   parcelQuoteComparableOrders: number
   comparableProviderQuoted: number
+  /** Total facturado por Andreani (todos los movimientos) de los pedidos vendidos del período. */
   billedByAndreani: number
+  billedOutbound: number
+  billedReturnsAndExchanges: number
   billedOrders: number
+  /** Facturado (envío original) menos cotizado en checkout, en pedidos con ambos datos. */
+  billedDifferenceVsCheckout: number
+  billedDifferenceVsCheckoutOrders: number
+  billedDifferenceVsParcel: number
+  billedDifferenceVsParcelOrders: number
+  reconciledOrders: number
+  minorDifferenceOrders: number
+  majorDifferenceOrders: number
+  noReferenceOrders: number
+  pendingReconciliationOrders: number
+  /** Cargos facturados en el período que no se pudieron asociar a un pedido. */
+  unmatchedEntries: number
+  unmatchedAmount: number
+  thresholds: ReconciliationThresholds
+}
+
+/** Umbrales de conciliación definidos en la base (andreani_reconciliation_thresholds). */
+export interface ReconciliationThresholds {
+  reconciledAmount: number
+  majorAmount: number
+  majorPercent: number
 }
 
 const SUMMARY_FIELDS: Array<keyof LogisticsSummary> = [
   "ordersCreated", "ordersSent", "ordersDelivered", "ordersReturned", "parcels", "soldOrders",
   "snapshotOrders", "chargedToCustomers", "providerQuoted", "markupCollected", "roundingAdjustment",
   "benefitAbsorbed", "parcelQuoted", "parcelQuotedOrders", "parcelQuoteDifference",
-  "parcelQuoteComparableOrders", "comparableProviderQuoted", "billedByAndreani", "billedOrders",
+  "parcelQuoteComparableOrders", "comparableProviderQuoted", "billedByAndreani", "billedOutbound",
+  "billedReturnsAndExchanges", "billedOrders", "billedDifferenceVsCheckout", "billedDifferenceVsCheckoutOrders",
+  "billedDifferenceVsParcel", "billedDifferenceVsParcelOrders", "reconciledOrders", "minorDifferenceOrders",
+  "majorDifferenceOrders", "noReferenceOrders", "pendingReconciliationOrders", "unmatchedEntries", "unmatchedAmount",
 ]
+
+const finiteOr = (value: unknown, fallback: number) => {
+  const number = Number(value ?? fallback)
+  return Number.isFinite(number) ? number : fallback
+}
 
 export function normalizeLogisticsSummary(value: unknown): LogisticsSummary {
   const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {}
-  return Object.fromEntries(SUMMARY_FIELDS.map((field) => {
-    const number = Number(source[field] ?? 0)
-    return [field, Number.isFinite(number) ? number : 0]
-  })) as unknown as LogisticsSummary
+  const thresholds = source.thresholds && typeof source.thresholds === "object" ? (source.thresholds as Record<string, unknown>) : {}
+  const numbers = Object.fromEntries(SUMMARY_FIELDS.map((field) => [field, finiteOr(source[field], 0)])) as Omit<LogisticsSummary, "thresholds">
+  return {
+    ...numbers,
+    thresholds: {
+      reconciledAmount: finiteOr(thresholds.reconciledAmount, 0),
+      majorAmount: finiteOr(thresholds.majorAmount, 0),
+      majorPercent: finiteOr(thresholds.majorPercent, 0),
+    },
+  }
 }
 
 export async function loadLogisticsSummary(admin: AdminClient, range: LogisticsRange) {
@@ -86,8 +125,6 @@ export async function loadLogisticsSummary(admin: AdminClient, range: LogisticsR
   if (error) throw new Error("LOGISTICS_SUMMARY_FAILED")
   return normalizeLogisticsSummary(data)
 }
-
-export type ReconciliationStatus = "reconciled" | "pending"
 
 export interface LogisticsOrderRow {
   id: number
@@ -105,8 +142,26 @@ export interface LogisticsOrderRow {
   parcelQuote: number | null
   difference: number | null
   differencePercent: number | null
-  billed: number | null
+  /** Facturado por Andreani: envío original y total con devoluciones/cambios. Null = sin cargar. */
+  billedOutbound: number | null
+  billedTotal: number | null
+  billedEntries: number
+  /** Facturado (envío original) menos cada cotización guardada al conciliar. */
+  billedVsCheckout: number | null
+  billedVsParcel: number | null
   reconciliation: ReconciliationStatus
+  references: string | null
+}
+
+export interface OrderReconciliationRecord {
+  order_id: number
+  billed_outbound: number | string | null
+  billed_total: number | string | null
+  entries: number
+  difference_checkout: number | string | null
+  difference_parcel: number | string | null
+  status: string
+  references_list: string | null
 }
 
 interface OrderLogisticsRecord {
@@ -124,15 +179,13 @@ interface OrderLogisticsRecord {
   shipping_benefit_amount: number | string | null
   shipping_parcel_quote_status: string | null
   shipping_parcel_quote_amount: number | string | null
-  andreani_billed_amount: number | string | null
 }
 
 const amount = (value: number | string | null) => value === null || value === undefined ? null : Number(value)
 
-export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: number | null): LogisticsOrderRow {
+export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: number | null, billing: OrderReconciliationRecord | null = null): LogisticsOrderRow {
   const checkoutQuote = amount(record.shipping_provider_quote_amount)
   const parcelQuote = record.shipping_parcel_quote_status === "quoted" ? amount(record.shipping_parcel_quote_amount) : null
-  const billed = amount(record.andreani_billed_amount)
   const charged = amount(record.shipping_cost_charged)
   const logisticsPrice = amount(record.shipping_cost_real)
   const comparison = parcelQuote !== null && checkoutQuote !== null
@@ -154,12 +207,17 @@ export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: numbe
     parcelQuote,
     difference: comparison ? comparison.differenceCents / 100 : null,
     differencePercent: comparison?.differencePercent ?? null,
-    billed,
-    reconciliation: billed === null ? "pending" : "reconciled",
+    billedOutbound: amount(billing?.billed_outbound ?? null),
+    billedTotal: amount(billing?.billed_total ?? null),
+    billedEntries: Number(billing?.entries ?? 0),
+    billedVsCheckout: amount(billing?.difference_checkout ?? null),
+    billedVsParcel: amount(billing?.difference_parcel ?? null),
+    reconciliation: isReconciliationStatus(billing?.status) ? billing.status : "pending",
+    references: billing?.references_list ?? null,
   }
 }
 
-const ORDER_COLUMNS = "id,created_at,estado,andreani_estado,andreani_tracking,tracking_number,shipping_provider_quote_amount,shipping_markup_percent,shipping_markup_amount,shipping_cost_charged,shipping_cost_real,shipping_benefit_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount,andreani_billed_amount"
+const ORDER_COLUMNS = "id,created_at,estado,andreani_estado,andreani_tracking,tracking_number,shipping_provider_quote_amount,shipping_markup_percent,shipping_markup_amount,shipping_cost_charged,shipping_cost_real,shipping_benefit_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount"
 
 export async function loadLogisticsOrders(admin: AdminClient, range: LogisticsRange, page: number) {
   const offset = (page - 1) * LOGISTICS_PAGE_SIZE
@@ -175,15 +233,20 @@ export async function loadLogisticsOrders(admin: AdminClient, range: LogisticsRa
   const records = (data ?? []) as unknown as OrderLogisticsRecord[]
   const ids = records.map((record) => record.id)
   const parcelsByOrder = new Map<number, number>()
+  const billingByOrder = new Map<number, OrderReconciliationRecord>()
   if (ids.length) {
-    const packages = await admin.from("order_packages").select("order_id,parcel_count").in("order_id", ids)
-    if (packages.error) throw new Error("LOGISTICS_ORDERS_FAILED")
+    const [packages, reconciliation] = await Promise.all([
+      admin.from("order_packages").select("order_id,parcel_count").in("order_id", ids),
+      admin.rpc("andreani_order_reconciliation", { p_order_ids: ids }),
+    ])
+    if (packages.error || reconciliation.error) throw new Error("LOGISTICS_ORDERS_FAILED")
     for (const row of packages.data ?? []) {
       if (row.parcel_count) parcelsByOrder.set(Number(row.order_id), Number(row.parcel_count))
     }
+    for (const row of (reconciliation.data ?? []) as OrderReconciliationRecord[]) billingByOrder.set(Number(row.order_id), row)
   }
   return {
-    rows: records.map((record) => toLogisticsOrderRow(record, parcelsByOrder.get(record.id) ?? null)),
+    rows: records.map((record) => toLogisticsOrderRow(record, parcelsByOrder.get(record.id) ?? null, billingByOrder.get(record.id) ?? null)),
     total: count ?? records.length,
     pageSize: LOGISTICS_PAGE_SIZE,
   }

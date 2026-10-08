@@ -13,10 +13,7 @@ import {
 } from "lucide-react"
 
 import { BeyonixButton, BeyonixCard, BeyonixIconBox } from "@/components/beyonix-ui"
-import {
-  BEYONIX_EMAIL,
-  BEYONIX_WITHDRAWAL_PAGE_URL,
-} from "@/lib/legal-contact"
+import { BEYONIX_EMAIL } from "@/lib/legal-contact"
 import { TRANSPORT_CLAIM_WINDOW_HOURS } from "@/lib/order-claims"
 import { DEFAULT_PRODUCT_WARRANTY_MONTHS } from "@/lib/orders/warranty"
 
@@ -110,15 +107,6 @@ export default function DevolucionesPage() {
             un inconveniente con la entrega, una falla cubierta por garantía o un cambio voluntario.
           </p>
           <div className="mt-7 flex flex-col gap-2.5 sm:flex-row">
-            <BeyonixButton asChild size="lg">
-              <Link
-                href={BEYONIX_WITHDRAWAL_PAGE_URL}
-                aria-label="Solicitar la cancelación de una compra por derecho de arrepentimiento"
-              >
-                <RefreshCcw className="size-4" />
-                BOTÓN DE ARREPENTIMIENTO
-              </Link>
-            </BeyonixButton>
             <BeyonixButton asChild size="lg" variant="secondary">
               <Link href="/cuenta?tab=ordenes">
                 Ver mis compras

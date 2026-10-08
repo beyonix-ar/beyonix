@@ -21,16 +21,19 @@ test("WhatsApp flotante eliminado: sin componente, sin links wa.me y sin el núm
   }
 })
 
-test("Disposición 954/2025: 'BOTÓN DE ARREPENTIMIENTO' en el header de toda la tienda (primer acceso) y en el footer", () => {
+test("arrepentimiento: acceso único en el footer, sin franja superior ni espacio reservado", () => {
   const header = source("components/site-header.tsx")
-  assert.match(header, /href=\{BEYONIX_WITHDRAWAL_PAGE_URL\}[\s\S]{0,400}BOTÓN DE ARREPENTIMIENTO/)
-  // Fuera del menú mobile: visible sin abrir nada.
-  assert.ok(header.indexOf("BOTÓN DE ARREPENTIMIENTO") < header.indexOf("{mobileOpen && ("))
-  assert.match(source("components/footer.tsx"), /BOTÓN DE ARREPENTIMIENTO/)
-  // La franja suma altura al header fijo: el layout la compensa.
+  assert.doesNotMatch(header, /BOTÓN DE ARREPENTIMIENTO|beyonix-site-header-legal-strip|BEYONIX_WITHDRAWAL_PAGE_URL/)
+  assert.match(header, /<header[\s\S]*?<nav className="container mx-auto px-4 lg:px-8">/)
+  const footer = source("components/footer.tsx")
+  assert.equal(footer.match(/BOTÓN DE ARREPENTIMIENTO/g)?.length, 1)
+  assert.match(footer, /href=\{BEYONIX_WITHDRAWAL_PAGE_URL\}[\s\S]{0,300}BOTÓN DE ARREPENTIMIENTO/)
+  assert.match(source("lib/legal-contact.ts"), /BEYONIX_WITHDRAWAL_PAGE_URL = "\/arrepentimiento"/)
+  assert.match(source("app/arrepentimiento/page.tsx"), /export default function ArrepentimientoPage/)
+  assert.doesNotMatch(source("app/devoluciones/page.tsx"), /BOTÓN DE ARREPENTIMIENTO|BEYONIX_WITHDRAWAL_PAGE_URL/)
   const shell = source("components/layout-shell.tsx")
-  assert.match(shell, /SITE_HEADER_LEGAL_STRIP_OFFSET = "pt-6"/)
-  assert.equal(shell.match(/<div className=\{SITE_HEADER_LEGAL_STRIP_OFFSET\}>\{children\}<\/div>/g)?.length, 2)
+  assert.doesNotMatch(shell, /SITE_HEADER_LEGAL_STRIP_OFFSET|pt-6/)
+  assert.doesNotMatch(source("app/globals.css"), /beyonix-site-header-legal-(strip|link)/)
 })
 
 test("arrepentimiento: sin registración, email como acción principal (no exige cuenta de Google) y código en 24 h", () => {

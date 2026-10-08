@@ -7,7 +7,7 @@ import { CheckCircle2, PackageCheck, Printer, ScanLine, XCircle } from "lucide-r
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_STAGE_LABELS, orderCode, type DispatchShippingInfo, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { DISPATCH_STAGE_LABELS, orderCode, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
 import {
   EstimateVsReal,
@@ -20,13 +20,17 @@ import {
 } from "./parcel-measures"
 
 type ScanFeedback = { tone: "success" | "error"; message: string }
-type OrderResponse = OrderDispatchDetail & { scan?: { orderItemId: number; scanned: number; expected: number; duplicate: boolean } | null }
+type OrderResponse = OrderDispatchDetail & { scan?: DispatchScanResult | null }
+/** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
+type PendingVariant = { code: string; productName: string | null; candidates: DispatchVariantCandidate[] }
 
 const STAGE_TONE = { pending: "neutral", packing: "info", packed: "warning", parcels_ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
 
 // Motor único de armado: Despachos y la solapa "ARMAR PEDIDO" del pedido usan
 // este mismo panel contra las mismas RPC (scan_order_preparation_code y
-// set_order_package_parcels). El escaneo sólo valida identidad: no mueve stock.
+// set_order_package_parcels). El escaneo valida identidad; sólo en venta
+// aleatoria puede pasar la unidad a la variante física escaneada (la base
+// mueve el stock de forma atómica y conserva la variante reservada).
 const NO_SHIPPING_INFO: DispatchShippingInfo = { costsVisible: false, estimate: null, parcelQuote: null }
 const formatMeasure = (value: number | null | undefined, digits = 1) =>
   value == null ? "—" : new Intl.NumberFormat("es-AR", { maximumFractionDigits: digits }).format(value)
@@ -46,7 +50,9 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const [parcelInput, setParcelInput] = useState("")
   const [parcelDrafts, setParcelDrafts] = useState<ParcelDraft[]>([])
   const [reason, setReason] = useState("")
+  const [pendingVariant, setPendingVariant] = useState<PendingVariant | null>(null)
   const scanKey = useRef<string | null>(null)
+  const variantKey = useRef<{ variantId: number; key: string } | null>(null)
   const parcelsKey = useRef<string | null>(null)
   const resetKey = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -83,24 +89,31 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     finally { busyRef.current = false; setBusy(false) }
   }
 
-  function submitScan(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const code = scan.trim()
-    if (!code || busyRef.current) return
-    scanKey.current ??= crypto.randomUUID()
-    const requestKey = scanKey.current
+  // Un escaneo con variantId confirma la variante física de un código de
+  // grupo. Cada variante elegida usa su propia clave: un reintento de la
+  // misma elección es idempotente y elegir otra nunca choca con la anterior.
+  function sendScan(code: string, requestKey: string, variantId?: number) {
     busyRef.current = true
     setBusy(true)
     void (async () => {
       try {
-        const updated = await dispatchRequest<OrderResponse>(`/orders/${orderId}`, { action: "scan", code, requestKey })
+        const updated = await dispatchRequest<OrderResponse>(`/orders/${orderId}`, { action: "scan", code, requestKey, ...(variantId ? { variantId } : {}) })
         setDetail(updated)
-        const line = updated.lines.find((item) => item.order_item_id === updated.scan?.orderItemId)
-        setFeedback({ tone: "success", message: line ? `✓ ${line.name} · ${line.scanned_quantity} de ${line.expected_quantity}` : "✓ Producto verificado" })
+        const result = updated.scan
+        if (result?.requiresVariant) {
+          setPendingVariant({ code, productName: result.productName, candidates: result.candidates })
+          setFeedback(null)
+        } else {
+          const line = result ? updated.lines.find((item) => item.order_item_id === result.orderItemId) : undefined
+          const physical = line?.random?.dispatchedVariant ? ` · ${line.random.dispatchedVariant}` : ""
+          setFeedback({ tone: "success", message: line ? `✓ ${line.name}${physical} · ${line.scanned_quantity} de ${line.expected_quantity}` : "✓ Producto verificado" })
+          setPendingVariant(null); variantKey.current = null
+        }
         setScan(""); scanKey.current = null
       } catch (cause) {
         const retryable = cause instanceof DispatchRequestError && cause.retryable
-        if (!retryable) { scanKey.current = null; setScan("") }
+        if (!retryable) { scanKey.current = null; variantKey.current = null; setScan("") }
+        if (variantId && !retryable) setPendingVariant(null)
         setFeedback({ tone: "error", message: cause instanceof Error ? cause.message : "No se pudo verificar el código." })
       } finally {
         busyRef.current = false
@@ -108,6 +121,20 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
         inputRef.current?.focus()
       }
     })()
+  }
+
+  function submitScan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const code = scan.trim()
+    if (!code || busyRef.current) return
+    scanKey.current ??= crypto.randomUUID()
+    sendScan(code, scanKey.current)
+  }
+
+  function confirmVariant(variantId: number) {
+    if (!pendingVariant || busyRef.current) return
+    if (variantKey.current?.variantId !== variantId) variantKey.current = { variantId, key: crypto.randomUUID() }
+    sendScan(pendingVariant.code, variantKey.current.key, variantId)
   }
 
   if (loading && !detail) return <p role="status" className="text-sm text-white/70">Cargando armado…</p>
@@ -146,7 +173,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     <div className="space-y-2">{detail.lines.map((line) => {
       const complete = line.scanned_quantity === line.expected_quantity
       return <AdminCard key={line.order_item_id} className={`dispatch-card flex items-center justify-between gap-3 p-3 ${complete ? "border-emerald-500/40" : ""}`}>
-        <span className="min-w-0 text-sm font-bold text-white">{line.name}<span className="block text-xs font-normal text-white/60">{line.random ? "Escaneá cualquier variante del grupo con stock" : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ")}</span></span>
+        <span className="min-w-0 text-sm font-bold text-white">{line.name}<span className="block text-xs font-normal text-white/60">{line.random ? <>Reservado: {line.random.reservedVariant ?? "—"} · {line.random.dispatchedVariant ? <span className="font-bold text-emerald-300">Despachado: {line.random.dispatchedVariant}{line.random.manuallyConfirmed ? " (confirmado a mano)" : ""}</span> : "Escaneá la variante física que sale"}</> : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ")}</span></span>
         <span className={`shrink-0 text-right text-2xl font-black tabular-nums ${complete ? "text-emerald-300" : "text-white"}`} aria-label={`${line.scanned_quantity} escaneados de ${line.expected_quantity} requeridos`}>{line.scanned_quantity}<span className="text-base text-white/50"> / {line.expected_quantity}</span></span>
       </AdminCard>
     })}</div>
@@ -200,6 +227,13 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
       resetKey.current = null; setDialog(null); setReason(""); setFeedback(null)
     })}>Confirmar</AdminPrimaryButton></div>}>
       <AdminTextInput title="Motivo obligatorio" value={reason} onChange={setReason} placeholder="Ingresá el motivo (mínimo 10 caracteres)" />
+    </AdminModal>
+    <AdminModal open={pendingVariant !== null} compact title="¿Qué variante física estás despachando?" description={`Código reconocido: ${pendingVariant?.productName ?? "producto"}. El código no identifica el color: elegí el que tenés en la mano.`} onClose={() => { setPendingVariant(null); variantKey.current = null; inputRef.current?.focus() }} footer={<div className="flex justify-end"><AdminButton disabled={busy} onClick={() => { setPendingVariant(null); variantKey.current = null }}>Cancelar</AdminButton></div>}>
+      <div className="grid gap-2 sm:grid-cols-2">{pendingVariant?.candidates.map((candidate) => <AdminButton key={candidate.variantId} className="h-12 justify-start text-base" disabled={busy || !candidate.selectable} onClick={() => confirmVariant(candidate.variantId)}>
+        <span className="inline-flex size-4 shrink-0 rounded-full ring-1 ring-white/30" style={{ background: candidate.colorHexSecondary && candidate.colorHex ? `linear-gradient(135deg, ${candidate.colorHex} 50%, ${candidate.colorHexSecondary} 50%)` : candidate.colorHex ?? "transparent" }} aria-hidden="true" />
+        <span className="min-w-0 truncate">{candidate.name ?? `Variante #${candidate.variantId}`}</span>
+        {candidate.assigned ? <span className="ml-auto text-xs text-white/60">Asignada</span> : !candidate.selectable ? <span className="ml-auto text-xs text-amber-200">Sin stock libre</span> : null}
+      </AdminButton>)}</div>
     </AdminModal>
     <LabelPrintDialog open={dialog === "labels"} title="Etiquetas de bultos" description={`${code} · ${parcelLabels.length} ${parcelLabels.length === 1 ? "bulto" : "bultos"}`} labels={parcelLabels} onClose={() => setDialog(null)} />
   </div>

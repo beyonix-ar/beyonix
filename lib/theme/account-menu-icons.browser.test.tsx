@@ -20,7 +20,7 @@ const stubs: Plugin = {
   name: "account-menu-icons-stubs",
   setup(pluginBuild) {
     const modules: Record<string, string> = {
-      "@/context/auth-context": `export function useAuth() { return { user: { id: "u1", username: "Lucas", rol: "cliente" }, isLoading: false, isInternal: false, logout() {} } }`,
+      "@/context/auth-context": `export function useAuth() { return { user: window.__GUEST__ ? null : { id: "u1", username: "Lucas", rol: "cliente" }, isLoading: false, isInternal: false, logout() {} } }`,
       "@/context/customer-credit-context": `export function useCustomerCredit() { return { balance: 1500 } }`,
       "@/context/cart-context": `export function useCart() { return { cart: [], total: 0, openCart() {} } }`,
       "@/context/account-theme-context": `export function useAccountTheme() { return { theme: document.documentElement.getAttribute("data-account-theme"), toggleTheme() {} } }`,
@@ -57,11 +57,11 @@ import { SiteHeader } from "@/components/site-header"
 createRoot(document.getElementById("header-root")).render(h(SiteHeader))
 `
 
-const pageHtml = (theme: "dark" | "light", css: string, bundle: string) => `<!doctype html>
+const pageHtml = (theme: "dark" | "light", css: string, bundle: string, guest = false) => `<!doctype html>
 <html data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><style>${css}</style></head>
 <body class="antialiased"><div class="relative z-10"><div id="header-root" style="display:contents"></div>
 <main class="min-h-screen bg-beyonix-page pt-24"><section class="container mx-auto p-8"><h1>Contenido</h1></section></main></div>
-<script>window.process = { env: { NODE_ENV: "production" } }</script>
+<script>window.process = { env: { NODE_ENV: "production" } }; window.__GUEST__ = ${guest}</script>
 <script>${bundle}</script></body></html>`
 
 let browser: Browser
@@ -84,13 +84,13 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(theme: "dark" | "light", width: number): Promise<Page> {
+async function open(theme: "dark" | "light", width: number, guest = false): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: 1000 } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   await page.route("**/*", (route) =>
     route.request().url() === "http://menu.test/"
-      ? route.fulfill({ contentType: "text/html; charset=utf-8", body: pageHtml(theme, css, bundle) })
+      ? route.fulfill({ contentType: "text/html; charset=utf-8", body: pageHtml(theme, css, bundle, guest) })
       : route.abort(),
   )
   await page.goto("http://menu.test/")
@@ -156,44 +156,22 @@ test("A. contexto hostil (text-white/currentColor forzados a oscuro con !importa
   }
 })
 
-// Contraste del link sobre el header (traslúcido en oscuro: se compone sobre la página).
-const WITHDRAWAL_CONTRAST = `(() => {
-  const element = document.querySelector("header.beyonix-site-header .beyonix-site-header-legal-link")
-  const canvas = document.createElement("canvas")
-  canvas.width = canvas.height = 1
-  const context = canvas.getContext("2d", { willReadFrequently: true })
-  function rgba(value) { context.clearRect(0, 0, 1, 1); context.fillStyle = value; context.fillRect(0, 0, 1, 1); return [...context.getImageData(0, 0, 1, 1).data] }
-  const pageBg = rgba(getComputedStyle(document.querySelector("main")).backgroundColor)
-  const headerBg = rgba(getComputedStyle(element.closest("header")).backgroundColor)
-  const alpha = headerBg[3] / 255
-  const bg = [0, 1, 2].map((i) => headerBg[i] * alpha + pageBg[i] * (1 - alpha))
-  const fg = rgba(getComputedStyle(element).color)
-  function channel(value) { const v = value / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
-  function lum(c) { return 0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]) }
-  const a = lum(fg), b = lum(bg)
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-})()`
-
-// Disposición 954/2025: link "BOTÓN DE ARREPENTIMIENTO" a simple vista, en
-// lugar destacado y desde el primer acceso (sin abrir menús ni scrollear).
 for (const theme of ["light", "dark"] as const) {
-  for (const width of [1440, 390]) {
-    test(`B. ${theme} ${width}px: "BOTÓN DE ARREPENTIMIENTO" visible en el primer acceso, legible y sin pasos previos`, async () => {
-      const page = await open(theme, width)
-      try {
-        const link = page.locator("header.beyonix-site-header a", { hasText: "BOTÓN DE ARREPENTIMIENTO" })
-        assert.equal(await link.count(), 1)
-        assert.equal(await link.getAttribute("href"), "/arrepentimiento")
-        assert.equal(await link.isVisible(), true, "visible sin abrir el menú")
-        const box = await link.boundingBox()
-        assert.ok(box && box.y >= 0 && box.y + box.height <= 40 && box.x + box.width <= width, `arriba de todo, dentro de la pantalla: ${JSON.stringify(box)}`)
-        const contrast = (await page.evaluate(WITHDRAWAL_CONTRAST)) as number
-        assert.ok(contrast >= 4.5, `contraste AA (${contrast.toFixed(2)})`)
-        if (SHOTS) await page.screenshot({ path: `${SHOTS}/withdrawal-${theme}-${width}.png` })
-      } finally {
-        await page.close()
-      }
-    })
+  for (const width of [1440, 1280, 390]) {
+    for (const guest of [true, false]) {
+      test(`B. ${theme} ${width}px ${guest ? "invitado" : "logueado"}: navbar comienza arriba sin franja de arrepentimiento`, async () => {
+        const page = await open(theme, width, guest)
+        try {
+          const nav = await page.locator("header.beyonix-site-header > nav").boundingBox()
+          assert.equal(nav?.y, 0, "el navbar comienza en el borde superior")
+          assert.ok(nav && nav.height >= 56 && nav.height <= 80, `alto del navbar: ${nav?.height}`)
+          assert.equal(await page.locator("header.beyonix-site-header a", { hasText: "BOTÓN DE ARREPENTIMIENTO" }).count(), 0)
+          if (SHOTS) await page.screenshot({ path: `${SHOTS}/header-${theme}-${width}-${guest ? "guest" : "user"}.png` })
+        } finally {
+          await page.close()
+        }
+      })
+    }
   }
 }
 

@@ -48,8 +48,15 @@ function ToolbarButton({ label, onAction, children }: { label: string; onAction:
 
 /**
  * Editor de la descripción del producto. Enter = párrafo, Shift+Enter =
- * salto de línea. Lo pegado entra como texto plano y lo emitido pasa siempre
- * por la allowlist (sanitizeRichDescription): nunca se guarda marcado libre.
+ * salto de línea. Lo pegado (Word, Google Docs, web) pasa por la misma
+ * allowlist antes de entrar: sólo sobreviven negrita, cursiva, subrayado,
+ * títulos, párrafos y saltos. Lo emitido también pasa siempre por
+ * sanitizeRichDescription, y el servidor vuelve a sanear al guardar.
+ *
+ * Usa document.execCommand: está deprecado pero sigue soportado por todos los
+ * navegadores y no hay reemplazo nativo; migrar a un editor completo
+ * (TipTap/ProseMirror, Lexical) agrega una dependencia grande para cinco
+ * comandos. Ver docs/product-description.md.
  */
 export function RichDescriptionEditor({
   id,
@@ -142,7 +149,10 @@ export function RichDescriptionEditor({
         onBlur={emit}
         onPaste={(event) => {
           event.preventDefault()
-          document.execCommand("insertText", false, event.clipboardData.getData("text/plain"))
+          const html = sanitizeRichDescription(event.clipboardData.getData("text/html"))
+          if (html) document.execCommand("insertHTML", false, html)
+          else document.execCommand("insertText", false, event.clipboardData.getData("text/plain"))
+          emit()
         }}
         onDrop={(event) => event.preventDefault()}
         className="min-h-40 max-w-none px-3 py-2.5 text-sm leading-6 text-white outline-none empty:before:pointer-events-none empty:before:text-white/40 empty:before:content-[attr(data-placeholder)] [&_b]:font-black [&_font[size='2']]:text-[0.875em] [&_font[size='4']]:text-[1.15em] [&_font[size='5']]:text-[1.3em] [&_h2]:mt-2 [&_h2]:text-lg [&_h2]:font-black [&_h3]:mt-2 [&_h3]:text-base [&_h3]:font-black [&_p+p]:mt-2 [&_strong]:font-black [&_.rt-size-sm]:text-[0.875em] [&_.rt-size-lg]:text-[1.15em] [&_.rt-size-xl]:text-[1.3em]"

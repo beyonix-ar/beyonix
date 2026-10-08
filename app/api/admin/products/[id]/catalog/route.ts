@@ -1,5 +1,8 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
-import { sanitizeRichDescription } from "@/lib/products/rich-description"
+import {
+  normalizeProductDescriptionInput,
+  RichDescriptionInputError,
+} from "@/lib/products/rich-description"
 import {
   parseRequiredProductLogistics,
   ProductLogisticsValidationError,
@@ -91,8 +94,20 @@ export async function PATCH(
   const catalogInput = { ...(body.catalog as Record<string, unknown>) }
   // La descripción enriquecida se vuelve a sanear acá: el navegador no es
   // fuente de verdad del marcado permitido.
-  if (typeof catalogInput.descripcion === "string") {
-    catalogInput.descripcion = sanitizeRichDescription(catalogInput.descripcion) || null
+  if ("descripcion" in catalogInput) {
+    try {
+      catalogInput.descripcion = normalizeProductDescriptionInput(catalogInput.descripcion)
+    } catch (descriptionError) {
+      return Response.json(
+        {
+          error:
+            descriptionError instanceof RichDescriptionInputError
+              ? descriptionError.message
+              : "La descripción no es válida.",
+        },
+        { status: 400 },
+      )
+    }
   }
   const pricingMode = parsePricingMode(catalogInput.pricing_mode)
   const targetMarginPercent = parseTargetMarginPercent(catalogInput.target_margin_percent)

@@ -148,7 +148,29 @@ export async function signClaims(admin: Admin, claims: SupabaseOrderClaim[]) {
 /** Admin: reclamo con su logística completa (tramos y unidades). */
 export const ADMIN_CLAIM_SELECT = "*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*)"
 /** Cliente: sólo campos seguros de los tramos; nunca contrato, ambiente, costo, errores ni unidades. */
-export const CUSTOMER_CLAIM_SELECT = `*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS})`
+// Columnas explícitas (nunca `*`): quedan afuera IDs de admins
+// (first_reviewed_by, refund_completed_by, cancelled_by,
+// affected_items_updated_by, author_user_id, uploaded_by), banderas de
+// gestión interna (admin_needs_action, first_reviewed_at) y el stock interno
+// consultado al pedir un reemplazo (replacement_requested_stock).
+// Literal (no `.join`): supabase-js tipa el resultado a partir del string.
+const CUSTOMER_CLAIM_COLUMNS =
+  "id, order_id, user_id, claim_type, status, failure_type, description, started_at, " +
+  "admin_response, rejection_reason, resolution, closed_at, created_at, updated_at, " +
+  "offered_resolutions, customer_selected_resolution, last_customer_message_at, last_admin_response_at, " +
+  "replacement_product, replacement_extra_cost, replacement_payment_link, replacement_shipping_company, " +
+  "replacement_tracking, replacement_sent_at, coupon_code, coupon_created_at, " +
+  "replacement_original_product, replacement_original_order_item_id, replacement_original_variant, " +
+  "replacement_original_price, replacement_requested_product_id, replacement_requested_product, " +
+  "replacement_requested_variant_id, replacement_requested_variant, replacement_requested_quantity, " +
+  "replacement_requested_price, replacement_price_difference, replacement_change_reason, " +
+  "replacement_customer_selected_at, affected_items, affected_items_updated_at, " +
+  "refund_account_holder, refund_account_identifier, refund_bank, refund_amount_confirmed, " +
+  "refund_details_submitted_at, refund_completed_at, resolution_summary, logistics_legacy, " +
+  "cancelled_at, cancellation_reason"
+const CUSTOMER_CLAIM_FILE_COLUMNS = "id, claim_id, file_role, file_name, file_path, mime_type, file_size, created_at"
+const CUSTOMER_CLAIM_MESSAGE_COLUMNS = "id, claim_id, author_role, message, created_at, system_key"
+export const CUSTOMER_CLAIM_SELECT = `${CUSTOMER_CLAIM_COLUMNS}, order_claim_files(${CUSTOMER_CLAIM_FILE_COLUMNS}), order_claim_messages(${CUSTOMER_CLAIM_MESSAGE_COLUMNS}), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS})`
 
 export async function getClaimResult(admin: Admin, claimId: number, audience: "admin" | "customer" = "admin") {
   const { data, error } = audience === "admin"

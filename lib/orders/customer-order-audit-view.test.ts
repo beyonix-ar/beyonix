@@ -95,10 +95,14 @@ test("un evento sin metadata en absoluto no rompe (null/undefined)", () => {
   )
 })
 
-test("toCustomerSafeOrderAuditEvents mapea un array completo y tolera null/undefined", () => {
+test("toCustomerSafeOrderAuditEvents descarta eventos operativos y tolera null/undefined", () => {
   assert.deepEqual(toCustomerSafeOrderAuditEvents(null), [])
   assert.deepEqual(toCustomerSafeOrderAuditEvents(undefined), [])
-  assert.equal(toCustomerSafeOrderAuditEvents([INTERNAL_EVENT, INTERNAL_EVENT]).length, 2)
+  // Conciliación Andreani (y armado, bultos, envíos) nunca sale hacia el cliente.
+  assert.deepEqual(toCustomerSafeOrderAuditEvents([INTERNAL_EVENT, INTERNAL_EVENT]), [])
+  const cancellation = { ...INTERNAL_EVENT, action: "cancellation_requested" }
+  const visible = toCustomerSafeOrderAuditEvents([INTERNAL_EVENT, cancellation])
+  assert.deepEqual(visible.map((event) => event.action), ["cancellation_requested"])
 })
 
 // --- Wiring: las 3 rutas de cliente deben pasar por este sanitizador antes

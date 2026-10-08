@@ -688,30 +688,22 @@ export async function getFeaturedProductos() {
 // CRUD
 // ─────────────────────────────────────────────────────────────
 
-export async function createProducto(
-  payload: ProductoPayload
-) {
-  const catalogPayload = { ...payload }
-  delete catalogPayload.stock
-  const { data, error } = await supabase
-    .from("productos")
-    .insert(catalogPayload)
-    .select()
-    .single()
-
-  if (error) {
-    throw error
-  }
-
-  return data as SupabaseProducto
-}
-
 export async function createProductoCompleto({
   producto,
   imagenes = [],
   variantes = [],
   especificaciones = [],
 }: ProductoCompletoPayload) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
   const catalogProduct = { ...producto }
   delete catalogProduct.stock
   const catalogVariants = variantes.map((variant) => {
@@ -719,48 +711,36 @@ export async function createProductoCompleto({
     delete catalogVariant.stock
     return catalogVariant
   })
-  const rpcPayload = {
-    p_producto: catalogProduct,
-    p_imagenes: imagenes,
-    p_variantes: catalogVariants,
-    p_especificaciones: especificaciones,
-  }
-  const result = await supabase.rpc(
-    "create_producto_completo_v2",
-    rpcPayload,
-  )
-  const { data, error } = result
+  // El alta pasa por el servidor: ahí se vuelve a sanear la descripción
+  // enriquecida antes de llamar a create_producto_completo_v2.
+  const response = await fetch("/api/admin/products", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      producto: catalogProduct,
+      imagenes,
+      variantes: catalogVariants,
+      especificaciones,
+    }),
+    cache: "no-store",
+  })
+  const result = (await response.json().catch(() => null)) as
+    | { product?: SupabaseProducto; error?: string; code?: string }
+    | null
 
-  if (error) {
-    if (/create_producto_completo_v2|schema cache|PGRST202/i.test(error.message)) {
-      throw new Error(
-        "Falta aplicar la migración 20260730170000_inventory_integrity_and_variant_sales.sql.",
-      )
-    }
-    throw error
-  }
-
-  return data as SupabaseProducto
-}
-
-export async function updateProducto(
-  id: number,
-  payload: Partial<ProductoPayload>
-) {
-  const catalogPayload = { ...payload }
-  delete catalogPayload.stock
-  const { data, error } = await supabase
-    .from("productos")
-    .update(catalogPayload)
-    .eq("id", id)
-    .select()
-    .single()
-
-  if (error) {
-    throw error
+  if (!response.ok || !result?.product) {
+    // Se conserva el código Postgres para que el formulario traduzca
+    // duplicados de slug y límites de logística igual que antes.
+    throw Object.assign(
+      new Error(result?.error || "No se pudo crear el producto."),
+      result?.code ? { code: result.code } : {},
+    )
   }
 
-  return data as SupabaseProducto
+  return result.product
 }
 
 export async function updateProductoCatalog(

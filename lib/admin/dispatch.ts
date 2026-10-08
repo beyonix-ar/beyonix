@@ -3,7 +3,14 @@ import { compareParcelQuote } from "../shipping/shipping-pricing.ts"
 
 export type DispatchAdmin = ReturnType<typeof createAdminClient>
 export type DispatchPackage = { id: number; order_id: number; status: "preparing" | "prepared"; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count?: number | null; parcels_defined_at?: string | null }
-export type DispatchLine = { order_item_id: number; expected_sku: string | null; expected_barcode: string | null; expected_quantity: number; scanned_quantity: number; product_id: number; variant_id: number | null; conditioned_stock_id: string | null; name?: string; /** Venta aleatoria: el armado acepta cualquier variante elegible del grupo. */ random?: boolean }
+/** Venta aleatoria: variante reservada en el checkout y variante física registrada en el armado vigente. */
+export type DispatchRandomTrace = { reservedVariant: string | null; dispatchedVariant: string | null; manuallyConfirmed: boolean }
+export type DispatchLine = { order_item_id: number; expected_sku: string | null; expected_barcode: string | null; expected_quantity: number; scanned_quantity: number; product_id: number; variant_id: number | null; conditioned_stock_id: string | null; name?: string; /** Venta aleatoria: el armado acepta cualquier variante elegible del grupo. */ random?: DispatchRandomTrace }
+/** Código de grupo en un renglón aleatorio: el operador debe confirmar la variante física. */
+export type DispatchVariantCandidate = { variantId: number; name: string | null; colorHex: string | null; colorHexSecondary: string | null; assigned: boolean; selectable: boolean }
+export type DispatchScanResult =
+  | { requiresVariant: false; orderItemId: number; scanned: number; expected: number; status: string; duplicate: boolean }
+  | { requiresVariant: true; productId: number; productName: string | null; candidates: DispatchVariantCandidate[]; status: string }
 export type DispatchParcel = { id: number; parcel_index: number; parcel_count: number; barcode: string; attempt_number: number; scanned?: boolean; weight_kg?: number | null; length_cm?: number | null; width_cm?: number | null; height_cm?: number | null }
 export type DispatchEstimatedParcel = { lengthCm: number; widthCm: number; heightCm: number; volumeCm3: number; weightKg: number }
 /** Estimación usada en checkout (referencia del operador) y recotización con bultos reales (sólo Admin). */
@@ -92,6 +99,8 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_PACKAGE_NOT_PREPARED: "Este pedido todavía no está armado.",
     DISPATCH_SCAN_KEY_CONFLICT: "Este escaneo ya fue utilizado con otro código.",
     DISPATCH_SCAN_INVALID: "Escaneo inválido.",
+    DISPATCH_RANDOM_VARIANT_NO_STOCK: "No hay stock libre de esa variante: está reservada o vendida a otro pedido.",
+    DISPATCH_VARIANT_CONFIRMATION_MISMATCH: "El código escaneado corresponde a otra variante.",
     DISPATCH_BATCH_CLOSED: "El lote ya está cerrado.",
     DISPATCH_BATCH_EMPTY: "Seleccioná al menos un pedido completo.",
     DISPATCH_BATCH_NOT_CLOSED: "Cerrá el lote antes de confirmar la entrega.",
@@ -140,7 +149,7 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const [orderResult, packageResult, itemsResult, membershipResult, blocksResult] = await Promise.all([
     admin.from("ordenes").select(`${ORDER_COLUMNS},${ORDER_SHIPPING_COLUMNS}`).eq("id", orderId).maybeSingle(),
     admin.from("order_packages").select(PACKAGE_COLUMNS).eq("order_id", orderId).maybeSingle(),
-    admin.from("orden_items").select("id,producto_id,variante_id,conditioned_name,cantidad,random_fulfillment,productos(nombre),producto_variantes(nombre)").eq("orden_id", orderId).order("id"),
+    admin.from("orden_items").select("id,producto_id,variante_id,reserved_variant_id,conditioned_name,cantidad,random_fulfillment,productos(nombre),producto_variantes(nombre)").eq("orden_id", orderId).order("id"),
     admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").eq("order_id", orderId).is("removed_at", null).maybeSingle(),
     admin.from("dispatch_blocks").select("id,reason").eq("order_id", orderId).is("resolved_at", null),
   ])
@@ -149,35 +158,66 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   if (!orderResult.data) return null
   const pkg = packageResult.data as DispatchPackage | null
   const membership = membershipResult.data as DispatchMembership | null
-  const [linesResult, parcels, batchResult] = await Promise.all([
+  const randomItemRows = (itemsResult.data ?? []).filter((item) => item.random_fulfillment === true)
+  const [linesResult, parcels, batchResult, scansResult] = await Promise.all([
     pkg ? admin.from("order_preparation_lines").select("order_item_id,expected_sku,expected_barcode,expected_quantity,scanned_quantity,product_id,variant_id,conditioned_stock_id").eq("package_id", pkg.id).order("order_item_id") : Promise.resolve(null),
     pkg ? currentParcels(admin, [pkg]) : Promise.resolve(new Map<number, DispatchParcel[]>()),
     membership ? admin.from("dispatch_batches").select(BATCH_COLUMNS).eq("id", membership.batch_id).maybeSingle() : Promise.resolve(null),
+    pkg && randomItemRows.length ? admin.from("order_preparation_scans").select("order_item_id,physical_variant_id,variant_identification").eq("package_id", pkg.id).eq("attempt_number", pkg.attempt_number).order("id") : Promise.resolve(null),
   ])
   if (linesResult?.error) throw linesResult.error
   if (batchResult?.error) throw batchResult.error
+  if (scansResult?.error) throw scansResult.error
+  const randomTrace = await randomTraces(admin, randomItemRows, (scansResult?.data ?? []) as RandomScanRow[])
   const names = new Map<number, string>()
-  const randomItems = new Set<number>()
   for (const item of itemsResult.data ?? []) {
     const product = item.productos as unknown as { nombre?: string } | null
     const variant = item.producto_variantes as unknown as { nombre?: string } | null
-    const variantLabel = item.random_fulfillment === true
-      ? `Color aleatorio${variant?.nombre ? ` (asignado: ${variant.nombre})` : ""}`
-      : variant?.nombre
-    if (item.random_fulfillment === true) randomItems.add(item.id)
+    const variantLabel = item.random_fulfillment === true ? "Color aleatorio" : variant?.nombre
     names.set(item.id, [item.conditioned_name || product?.nombre || "Producto", variantLabel].filter(Boolean).join(" · "))
   }
-  const lines = ((linesResult?.data ?? []) as DispatchLine[]).map((line) => ({
-    ...line,
-    name: names.get(line.order_item_id) ?? "Producto",
-    ...(randomItems.has(line.order_item_id) ? { random: true } : {}),
-  }))
+  const lines = ((linesResult?.data ?? []) as DispatchLine[]).map((line) => {
+    const random = randomTrace.get(line.order_item_id)
+    return { ...line, name: names.get(line.order_item_id) ?? "Producto", ...(random ? { random } : {}) }
+  })
   const batch = (batchResult?.data ?? null) as DispatchBatch | null
   const { shipping_estimate: estimate, shipping_provider_quote_amount: checkoutQuote, shipping_parcel_quote_status: quoteStatus, shipping_parcel_quote_amount: quoteAmount, shipping_parcel_quote_request_key: quoteKey, ...orderFields } = orderResult.data as unknown as DispatchOrder & DispatchOrderShippingRow
   const order: DispatchOrder = orderFields
   const shipping = dispatchShippingInfo({ estimate, checkoutQuote, quoteStatus, quoteAmount, quoteKey, requestKey: (pkg as { parcels_request_key?: string | null } | null)?.parcels_request_key ?? null, includeCosts: Boolean(options.includeCosts) })
   const stage = dispatchStage({ package: pkg, batchStatus: batch?.status ?? null, handedOver: Boolean(order.andreani_handed_over_at) })
   return { order, package: pkg, lines, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, shipping, blocked: (blocksResult.data?.length ?? 0) > 0, blockReason: blocksResult.data?.[0] ? dispatchBlockReason(blocksResult.data[0].reason) : null }
+}
+
+type RandomScanRow = { order_item_id: number; physical_variant_id: number | null; variant_identification: string | null }
+
+/**
+ * Reservada vs despachada de cada renglón aleatorio. "Despachada" sale del
+ * escaneo del armado vigente (nunca de la reserva): sin escaneo queda null.
+ */
+async function randomTraces(admin: DispatchAdmin, items: Array<{ id: number; reserved_variant_id?: number | null }>, scans: RandomScanRow[]) {
+  const traces = new Map<number, DispatchRandomTrace>()
+  if (!items.length) return traces
+  const lastScan = new Map(scans.map((scan) => [scan.order_item_id, scan]))
+  const ids = [...new Set([
+    ...items.map((item) => item.reserved_variant_id),
+    ...scans.map((scan) => scan.physical_variant_id),
+  ].filter((id): id is number => typeof id === "number"))]
+  const variantNames = new Map<number, string>()
+  if (ids.length) {
+    const result = await admin.from("producto_variantes").select("id,nombre").in("id", ids)
+    if (result.error) throw result.error
+    for (const row of result.data ?? []) variantNames.set(Number(row.id), row.nombre ?? `Variante #${row.id}`)
+  }
+  const nameOf = (id: number | null | undefined) => (typeof id === "number" ? variantNames.get(id) ?? `Variante #${id}` : null)
+  for (const item of items) {
+    const scan = lastScan.get(item.id)
+    traces.set(item.id, {
+      reservedVariant: nameOf(item.reserved_variant_id),
+      dispatchedVariant: nameOf(scan?.physical_variant_id),
+      manuallyConfirmed: scan?.variant_identification === "group_confirmed",
+    })
+  }
+  return traces
 }
 
 type DispatchOrderShippingRow = {

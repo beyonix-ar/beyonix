@@ -73,8 +73,10 @@ const getErrorDetails = (
   err: unknown
 ): SupabaseLikeError => {
   if (err instanceof Error) {
+    const code = (err as Error & { code?: unknown }).code
     return {
       message: err.message,
+      code: typeof code === "string" ? code : undefined,
     }
   }
 

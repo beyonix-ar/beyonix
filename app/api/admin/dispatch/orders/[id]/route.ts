@@ -2,7 +2,7 @@ import { after } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { quoteOrderParcels } from "@/lib/andreani/parcel-quote"
-import { dispatchError, getOrderDispatch, isRequestKey, validId } from "@/lib/admin/dispatch"
+import { dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchScanResult } from "@/lib/admin/dispatch"
 import { parseParcelMeasures, ParcelMeasuresError } from "@/lib/shipping/parcel-measures"
 
 type Context = { params: Promise<{ id: string }> }
@@ -24,27 +24,28 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-type ScanResult = { orderItemId: number; scanned: number; expected: number; status: string; duplicate: boolean }
-
 export async function POST(request: Request, context: Context) {
   const id = validId((await context.params).id)
   if (!id) return Response.json({ error: "Pedido inválido." }, { status: 400 })
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
-  const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown } | null
+  const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown; variantId?: unknown } | null
   if (!body || !["start", "scan", "reset", "parcels"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
-  let scan: ScanResult | null = null
+  let scan: DispatchScanResult | null = null
   if (body.action === "start") {
     const result = await auth.admin.rpc("begin_order_preparation", { p_order_id: id, p_actor_id: auth.user.id })
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
   } else if (body.action === "scan") {
     const code = body.code?.trim() ?? ""
-    if (!code || code.length > 128 || !isRequestKey(body.requestKey)) return Response.json({ error: "Escaneo inválido." }, { status: 400 })
+    // variantId: confirmación explícita de la variante física después de un
+    // código de grupo en un renglón aleatorio (la base valida que corresponda).
+    const variantId = body.variantId == null ? null : Number(body.variantId)
+    if (!code || code.length > 128 || !isRequestKey(body.requestKey) || (variantId !== null && (!Number.isSafeInteger(variantId) || variantId <= 0))) return Response.json({ error: "Escaneo inválido." }, { status: 400 })
     // La línea se resuelve en la base, bajo el lock del armado: un reintento
     // con la misma clave devuelve el mismo resultado sin sumar otra unidad.
-    const result = await auth.admin.rpc("scan_order_preparation_code", { p_order_id: id, p_code: code, p_actor_id: auth.user.id, p_request_key: body.requestKey })
+    const result = await auth.admin.rpc("scan_order_preparation_code", { p_order_id: id, p_code: code, p_actor_id: auth.user.id, p_request_key: body.requestKey, p_variant_id: variantId })
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
-    scan = result.data as ScanResult
+    scan = result.data as DispatchScanResult
   } else if (body.action === "parcels") {
     if (!isRequestKey(body.requestKey)) return Response.json({ error: "Solicitud inválida." }, { status: 400 })
     let parcels: ReturnType<typeof parseParcelMeasures>

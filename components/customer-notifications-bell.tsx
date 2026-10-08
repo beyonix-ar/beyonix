@@ -198,8 +198,9 @@ export function CustomerNotificationsBell({
         {
           event: "*",
           schema: "public",
-          table: "ordenes",
-          filter: `usuario_id=eq.${userId}`,
+          // Aviso sin datos: el cliente no recibe filas de ordenes por Realtime.
+          table: "customer_order_signals",
+          filter: `user_id=eq.${userId}`,
         },
         () => {
           void loadNotifications()

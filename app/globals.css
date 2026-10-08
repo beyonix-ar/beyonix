@@ -12756,15 +12756,6 @@ html[data-account-theme="light"][data-account-scope] .beyonix-site-header-nav-li
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header-nav-link.text-white {
   color: var(--account-text-primary) !important;
 }
-html[data-account-theme="light"][data-account-scope] .beyonix-site-header-legal-strip {
-  border-color: var(--account-border-subtle) !important;
-}
-html[data-account-theme="light"][data-account-scope] .beyonix-site-header-legal-link {
-  color: var(--account-accent) !important;
-}
-html[data-account-theme="light"][data-account-scope] .beyonix-site-header-legal-link:hover {
-  color: var(--account-accent-hover) !important;
-}
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header-panel {
   background: var(--bx-surface-raised) !important;
   border-color: var(--account-border) !important;

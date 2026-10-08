@@ -44,8 +44,23 @@ export function toCustomerSafeOrderAuditEvent(
   }
 }
 
+/**
+ * Acciones que el cliente necesita (origen de una cancelación, ver
+ * lib/orders/order-cancellation-origin.ts). Los eventos operativos (armado,
+ * variantes, bultos, conciliación, envíos) nunca salen hacia el cliente.
+ */
+export const CUSTOMER_VISIBLE_AUDIT_ACTIONS = [
+  "cancellation_requested",
+  "cancellation_requested_refund_pending",
+  "order_cancelled_refund_pending",
+  "order_rejected_by_admin",
+  "order_status_changed",
+] as const
+
 export function toCustomerSafeOrderAuditEvents(
   events: SupabaseOrderAuditEvent[] | null | undefined,
 ): CustomerSafeOrderAuditEvent[] {
-  return (events ?? []).map(toCustomerSafeOrderAuditEvent)
+  return (events ?? [])
+    .filter((event) => (CUSTOMER_VISIBLE_AUDIT_ACTIONS as readonly string[]).includes(event.action))
+    .map(toCustomerSafeOrderAuditEvent)
 }

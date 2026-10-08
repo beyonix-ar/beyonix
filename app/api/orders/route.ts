@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
+import { toCustomerOrderDto } from "@/lib/orders/customer-order-dto"
 import { attachCustomerClaimReads } from "@/lib/orders/customer-claim-access"
 import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reservation-window"
 import type { CustomerOrderSummary } from "@/lib/supabase/types"
@@ -82,8 +83,7 @@ export async function GET() {
 
   const orders = withReservations
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .map((order) => ({
-      ...order,
+    .map((order) => toCustomerOrderDto(order, {
       order_claims: (order.order_claims ?? []).map((claim) => ({
         ...claim,
         customer_last_read_at: readByClaimId.get(claim.id) ?? null,

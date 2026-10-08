@@ -133,8 +133,10 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
         {
           event: "*",
           schema: "public",
-          table: "ordenes",
-          filter: `usuario_id=eq.${user.id}`,
+          // Aviso sin datos (id + fecha): Realtime manda la fila completa,
+          // y ordenes tiene datos internos que el cliente no debe recibir.
+          table: "customer_order_signals",
+          filter: `user_id=eq.${user.id}`,
         },
         refreshOrders,
       )

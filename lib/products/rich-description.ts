@@ -37,7 +37,7 @@ const DROPPED_WITH_CONTENT = new Set([
 const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "noscript", "iframe", "noframes", "plaintext"])
 const VOID_ELEMENTS = new Set(["br", "hr", "img", "input", "meta", "link", "wbr", "area", "base", "col", "embed", "source", "track", "param"])
 const BLOCK_ELEMENTS = new Set([
-  "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "blockquote",
+  "html", "body", "p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "blockquote",
   "section", "article", "header", "footer", "aside", "main", "nav", "pre", "table",
   "tr", "td", "th", "tbody", "thead", "dl", "dt", "dd", "figure", "figcaption", "hr",
 ])
@@ -127,6 +127,32 @@ function sizeFromAttributes(name: string, attrs: Record<string, string>): RichTe
   return null
 }
 
+type InlineFormat = "strong" | "em" | "u"
+
+// Word y Google Docs marcan negrita/cursiva/subrayado con estilos inline. Se
+// traducen a las etiquetas permitidas; el resto del estilo se descarta.
+function formatsFromStyle(style: string | undefined): InlineFormat[] {
+  if (!style) return []
+  const declarations = new Map<string, string>()
+  for (const declaration of style.split(";")) {
+    const separator = declaration.indexOf(":")
+    if (separator > 0) {
+      declarations.set(declaration.slice(0, separator).trim().toLowerCase(), declaration.slice(separator + 1).trim().toLowerCase())
+    }
+  }
+  const formats: InlineFormat[] = []
+  const weight = declarations.get("font-weight")
+  if (weight && (/^bold(er)?$/.test(weight) || Number(weight) >= 600)) formats.push("strong")
+  if (/^(italic|oblique)\b/.test(declarations.get("font-style") ?? "")) formats.push("em")
+  if (/\bunderline\b/.test(`${declarations.get("text-decoration") ?? ""} ${declarations.get("text-decoration-line") ?? ""}`)) formats.push("u")
+  return formats
+}
+
+// Google Docs envuelve todo lo copiado en <b style="font-weight:normal">.
+function isNormalWeight(style: string | undefined) {
+  return /font-weight\s*:\s*(normal|[1-5]00)\b/i.test(style ?? "")
+}
+
 function hasVisibleContent(nodes: RichInline[]): boolean {
   return nodes.some((node) =>
     node.type === "text" ? node.text.trim() !== "" : node.type !== "br" && hasVisibleContent(node.children),
@@ -164,14 +190,21 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
     }
     const children: RichInline[] = []
     for (const child of node.children) inlineInto(child, children)
-    if (node.name === "strong" || node.name === "b") sink.push({ type: "strong", children })
-    else if (node.name === "em" || node.name === "i") sink.push({ type: "em", children })
-    else if (node.name === "u") sink.push({ type: "u", children })
-    else {
-      const size = node.name === "span" || node.name === "font" ? sizeFromAttributes(node.name, node.attrs) : null
-      if (size) sink.push({ type: "size", size, children })
-      else sink.push(...children)
+    if (!hasVisibleContent(children)) {
+      // Un formato sin texto visible no aporta nada; los espacios y saltos
+      // que contenga se conservan sueltos.
+      sink.push(...children)
+      return
     }
+    const formats = formatsFromStyle(node.attrs.style)
+    if ((node.name === "strong" || node.name === "b") && !isNormalWeight(node.attrs.style)) formats.push("strong")
+    else if (node.name === "em" || node.name === "i") formats.push("em")
+    else if (node.name === "u") formats.push("u")
+    let wrapped = children
+    for (const format of [...new Set(formats)].reverse()) wrapped = [{ type: format, children: wrapped }]
+    const size = node.name === "span" || node.name === "font" ? sizeFromAttributes(node.name, node.attrs) : null
+    if (size) sink.push({ type: "size", size, children: wrapped })
+    else sink.push(...wrapped)
   }
 
   // Dentro de un inline, un bloque anidado se aplana a su texto (no se puede
@@ -260,6 +293,23 @@ function inlineText(nodes: RichInline[]): string {
   return nodes.map((node) =>
     node.type === "text" ? node.text : node.type === "br" ? "\n" : inlineText(node.children),
   ).join("")
+}
+
+export class RichDescriptionInputError extends Error {}
+
+/**
+ * Entrada de descripción para persistir (server-side, fuente definitiva):
+ * string → HTML canónico de la allowlist (o null si no hay texto visible);
+ * null/ausente → null. Cualquier otro tipo o un texto desmedido se rechaza en
+ * vez de truncarse en silencio.
+ */
+export function normalizeProductDescriptionInput(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== "string") throw new RichDescriptionInputError("La descripción no es válida.")
+  if (value.length > RICH_DESCRIPTION_MAX_LENGTH) {
+    throw new RichDescriptionInputError("La descripción es demasiado larga.")
+  }
+  return sanitizeRichDescription(value) || null
 }
 
 /** Texto plano (requisitos de activación, metadatos, búsqueda). */

@@ -230,12 +230,12 @@ export async function getCustomerNotifications(userId: string) {
     return notifications
   }
 
-  const { data: orders, error: ordersError } = await supabase
-    .from("ordenes")
-    .select(
-      "id, payment_method_id, payment_status, estado, financial_status, payment_proof_url, payment_proof_uploaded_at",
-    )
-    .in("id", orderProgressNotificationOrderIds)
+  // El cliente no lee ordenes directamente (datos internos de logística en la
+  // misma fila): una RPC devuelve sólo estos campos de sus propios pedidos.
+  const { data: orders, error: ordersError } = await supabase.rpc(
+    "customer_order_payment_progress",
+    { p_order_ids: orderProgressNotificationOrderIds.slice(0, 200) },
+  )
 
   if (ordersError) throw ordersError
 

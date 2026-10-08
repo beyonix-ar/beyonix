@@ -125,7 +125,9 @@ test("Mis compras no dispara un fetch de reclamos por pedido (elimina el N+1 de 
 test("la suscripción realtime de Mis compras está acotada al usuario autenticado", () => {
   const list = source("components/account/account-orders.tsx")
 
-  assert.match(list, /filter: `usuario_id=eq\.\$\{user\.id\}`/)
+  // Aviso sin datos (customer_order_signals): ordenes nunca llega por Realtime.
+  assert.match(list, /table: "customer_order_signals"/)
+  assert.match(list, /filter: `user_id=eq\.\$\{user\.id\}`/)
 })
 
 test("el detalle nunca consulta ordenes desde el navegador y usa un endpoint autenticado", () => {

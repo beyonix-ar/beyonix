@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 
 import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
+import { BILLED_HELP } from "@/lib/admin/andreani-billing"
 import type { LogisticsOrderRow, LogisticsSummary } from "@/lib/admin/logistics"
 import { supabase } from "@/lib/supabase/client"
 
@@ -36,8 +37,13 @@ export const LOGISTICS_HELP = {
   benefit: "Parte del envío cubierta por BEYONIX.",
   parcelQuoted: "Tarifa calculada usando las medidas reales del pedido armado.",
   difference: "Cotizado con bulto real menos tarifa de checkout, en pedidos con ambos datos.",
-  billed: "Importe realmente facturado por Andreani después de conciliación.",
-  reconciliation: "Conciliado sólo con factura o liquidación real de Andreani.",
+  billed: BILLED_HELP,
+  billedVsCheckout: "Facturado por el envío original menos la tarifa cotizada en checkout (snapshot al conciliar).",
+  billedVsParcel: "Facturado por el envío original menos la tarifa recotizada con los bultos reales (snapshot al conciliar).",
+  reconciliation: "Compara lo facturado por el envío original con la cotización con bultos reales (o la de checkout si no hay).",
+  reconciledOrders: "Pedidos cuyo facturado coincide con lo cotizado dentro del margen de redondeo.",
+  pendingReconciliation: "Pedidos vendidos sin facturación de Andreani registrada.",
+  majorDifference: "Pedidos con diferencia importante entre facturado y cotizado.",
 } as const
 
 async function authHeaders(): Promise<HeadersInit | null> {
@@ -47,12 +53,12 @@ async function authHeaders(): Promise<HeadersInit | null> {
 }
 
 /** Carga resumen (y opcionalmente pedidos) del período. `forbidden` = no es Admin. */
-export function useLogistics(from: string, to: string, options: { orders?: boolean; page?: number } = {}) {
+export function useLogistics(from: string, to: string, options: { orders?: boolean; page?: number; version?: number } = {}) {
   const [data, setData] = useState<LogisticsResponse | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
-  const { orders = false, page = 1 } = options
+  const { orders = false, page = 1, version = 0 } = options
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
@@ -73,11 +79,12 @@ export function useLogistics(from: string, to: string, options: { orders?: boole
     }
   }, [from, to, orders, page])
 
+  // version: recarga explícita después de conciliar o importar.
   useEffect(() => {
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
-  }, [load])
+  }, [load, version])
 
   return { data, error, loading, forbidden }
 }
@@ -139,7 +146,32 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false }: { summary
           label="Facturado Andreani"
           help={LOGISTICS_HELP.billed}
           value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}
-          detail={summary.billedOrders > 0 ? `${summary.billedOrders} pedidos conciliados` : "Sin fuente de facturación conectada"}
+          detail={summary.billedOrders > 0
+            ? `${summary.billedOrders} pedidos · devoluciones y cambios ${money(summary.billedReturnsAndExchanges)}`
+            : "Sin facturación cargada en el período"}
+        />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        <Metric
+          label="Diferencia vs checkout"
+          help={LOGISTICS_HELP.billedVsCheckout}
+          value={summary.billedDifferenceVsCheckoutOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsCheckout)) : "—"}
+          detail={`${summary.billedDifferenceVsCheckoutOrders} pedidos comparables`}
+        />
+        <Metric
+          label="Diferencia vs bulto real"
+          help={LOGISTICS_HELP.billedVsParcel}
+          value={summary.billedDifferenceVsParcelOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsParcel)) : "—"}
+          detail={`${summary.billedDifferenceVsParcelOrders} pedidos comparables`}
+        />
+        <Metric label="Pedidos conciliados" help={LOGISTICS_HELP.reconciledOrders} value={String(summary.reconciledOrders)} detail={`${summary.minorDifferenceOrders} con diferencia menor`} tone={summary.reconciledOrders ? "positive" : undefined} />
+        <Metric label="Pendientes de conciliar" help={LOGISTICS_HELP.pendingReconciliation} value={String(summary.pendingReconciliationOrders)} detail={summary.noReferenceOrders ? `${summary.noReferenceOrders} sin cotización de referencia` : undefined} />
+        <Metric
+          label="Diferencia importante"
+          help={`${LOGISTICS_HELP.majorDifference} Umbral: desde ${formatMoney(summary.thresholds.majorAmount)} o ${summary.thresholds.majorPercent}%; conciliado si la diferencia es menor a ${formatMoney(summary.thresholds.reconciledAmount)}.`}
+          value={String(summary.majorDifferenceOrders)}
+          detail={summary.unmatchedEntries ? `${summary.unmatchedEntries} cargos sin pedido asociado` : undefined}
+          tone={summary.majorDifferenceOrders ? "warning" : undefined}
         />
       </div>
     </div>
