@@ -55,6 +55,7 @@ const TEST_FILES = [
   "lib/orders/andreani-billing-db.test.ts",
   "lib/orders/customer-order-privacy.test.ts",
   "lib/orders/admin-role-policies-db.test.ts",
+  "lib/navigation/history-stack.test.ts",
   "lib/shipping/product-logistics-sql-contract.test.ts",
   "lib/shipping/logistics-validation.test.ts",
   "lib/store-config.test.ts",

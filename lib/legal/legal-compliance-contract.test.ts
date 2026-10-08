@@ -60,6 +60,13 @@ test("términos: normativa vigente, sin la resolución derogada como vigente ni 
   assert.match(terms, /CONSUMER_COMPLAINTS_URL/)
 })
 
+test("contacto: sin el bloque de Defensa del consumidor (la Ventanilla Federal sigue en Términos)", () => {
+  const contact = source("app/contacto/page.tsx")
+  assert.doesNotMatch(contact, /Defensa de las y los consumidores|Ventanilla Federal|CONSUMER_COMPLAINTS_URL/)
+  assert.match(source("app/terminos/page.tsx"), /CONSUMER_COMPLAINTS_URL/)
+  assert.ok(source("app/arrepentimiento/page.tsx").length > 0, "la página de arrepentimiento sigue existiendo")
+})
+
 test("privacidad: texto obligatorio de la Res. AAIP 14/2018 y derechos del titular", () => {
   const privacy = source("app/privacidad/page.tsx")
   assert.match(privacy, /AAIP_PERSONAL_DATA_NOTICE/)

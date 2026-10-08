@@ -41,8 +41,22 @@ export function SiteHeader() {
   const [unreadNotifications, setUnreadNotifications] = useState(0)
 
   const catRef = useRef<HTMLDivElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  // Un solo menú/panel del header abierto a la vez (cada apertura cierra los
+  // demás) y, mientras haya uno, la página de fondo no scrollea.
+  const anyOverlayOpen =
+    catOpen || userOpen || notificationsOpen || mobileOpen || mobileAccountOpen
 
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0)
+  // Ingreso/registro vuelven a la página donde estaba el cliente (p. ej. el
+  // producto), no siempre al inicio. getSafeRedirect valida el destino.
+  const authRedirect =
+    pathname && pathname !== "/" && !pathname.startsWith("/login")
+      ? `redirect=${encodeURIComponent(pathname)}`
+      : ""
+  const loginHref = authRedirect ? `/login?${authRedirect}` : "/login"
+  const registerHref = `/login?mode=register${authRedirect ? `&${authRedirect}` : ""}`
   const navLinkClass =
     "beyonix-site-header-nav-link relative -mx-2.5 inline-flex h-9 items-center justify-center rounded-md px-2.5 text-15px font-medium leading-none text-[#F8FAFC]/88 outline-none transition-colors duration-200 after:absolute after:bottom-1 after:left-1/2 after:h-px after:w-[calc(100%-1.25rem)] after:-translate-x-1/2 after:origin-center after:scale-x-0 after:bg-[rgba(125,204,255,0.72)] after:opacity-0 after:transition-all after:duration-300 after:ease-out hover:text-white hover:after:scale-x-100 hover:after:opacity-100 focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25"
   const navLinkActiveClass =
@@ -69,27 +83,63 @@ export function SiteHeader() {
     }
   }, [])
 
+  // Categorías (desktop): tap/click afuera o Escape cierran. Los listeners
+  // sólo existen mientras el desplegable está abierto.
   useEffect(() => {
-    function handleOutside(e: MouseEvent) {
+    if (!catOpen) return
+
+    function handleOutside(e: PointerEvent) {
       if (catRef.current && !catRef.current.contains(e.target as Node)) {
         setCatOpen(false)
       }
     }
-
-    document.addEventListener("mousedown", handleOutside)
-    return () => document.removeEventListener("mousedown", handleOutside)
-  }, [])
-
-  useEffect(() => {
-    function handleResize() {
-      if (window.innerWidth >= 1024) {
-        setMobileOpen(false)
-        setMobileAccountOpen(false)
-      }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setCatOpen(false)
     }
 
-    window.addEventListener("resize", handleResize)
-    return () => window.removeEventListener("resize", handleResize)
+    document.addEventListener("pointerdown", handleOutside)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("pointerdown", handleOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [catOpen])
+
+  // Menú general (mobile): tap afuera del header o Escape cierran; Escape
+  // devuelve el foco al botón del menú.
+  useEffect(() => {
+    if (!mobileOpen) return
+
+    function handleOutside(e: PointerEvent) {
+      if (headerRef.current?.contains(e.target as Node)) return
+      setMobileOpen(false)
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key !== "Escape") return
+      setMobileOpen(false)
+      menuButtonRef.current?.focus()
+    }
+
+    document.addEventListener("pointerdown", handleOutside)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("pointerdown", handleOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [mobileOpen])
+
+  // Al pasar a desktop se cierran los paneles mobile (un listener de
+  // breakpoint, no de cada resize).
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)")
+    function handleChange(e: MediaQueryListEvent) {
+      if (!e.matches) return
+      setMobileOpen(false)
+      setMobileAccountOpen(false)
+    }
+
+    desktop.addEventListener("change", handleChange)
+    return () => desktop.removeEventListener("change", handleChange)
   }, [])
 
   useEffect(() => {
@@ -99,14 +149,16 @@ export function SiteHeader() {
     }
   }, [user])
 
-  // Con el menú mobile abierto el único scroll es el del panel.
+  // Con cualquier menú/panel del header abierto el único scroll es el del
+  // panel; al cerrar, la página vuelve exactamente a donde estaba.
   useEffect(() => {
-    if (!mobileOpen) return
-    return lockDocumentScroll()
-  }, [mobileOpen])
+    if (!anyOverlayOpen) return
+    return lockDocumentScroll({ preventTouchScroll: true })
+  }, [anyOverlayOpen])
 
   return (
     <header
+      ref={headerRef}
       className={cn(
         "beyonix-site-header fixed top-0 left-0 right-0 z-50 border-b border-beyonix-blue-light/18 shadow-[0_8px_30px_rgba(0,0,0,0.38)]",
         // Abierto, barra y menú forman un panel sólido sobre la página.
@@ -142,6 +194,7 @@ export function SiteHeader() {
               <button
                 type="button"
                 aria-label="Abrir categorías"
+                aria-expanded={catOpen}
                 onClick={() => {
                   setCatOpen((v) => !v)
                   setNotificationsOpen(false)
@@ -274,8 +327,8 @@ export function SiteHeader() {
                 />
               ) : (
                 <div className="flex items-center gap-2">
-                  <BeyonixHeaderLoginLink href="/login" />
-                  <BeyonixHeaderRegisterLink href="/login?mode=register" />
+                  <BeyonixHeaderLoginLink href={loginHref} />
+                  <BeyonixHeaderRegisterLink href={registerHref} />
                 </div>
               )}
             </div>
@@ -334,6 +387,7 @@ export function SiteHeader() {
             )}
 
             <button
+              ref={menuButtonRef}
               type="button"
               onClick={() => {
                 setMobileOpen((v) => !v)
@@ -344,6 +398,7 @@ export function SiteHeader() {
               }}
               aria-label={mobileOpen ? "Cerrar menú" : "Abrir menú"}
               aria-expanded={mobileOpen}
+              aria-controls={mobileOpen ? "beyonix-mobile-menu" : undefined}
               className="beyonix-site-header-menu-button flex size-11 cursor-pointer items-center justify-center rounded-lg text-white/80 transition-colors hover:bg-white/8 hover:text-white lg:hidden"
             >
               {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -353,6 +408,7 @@ export function SiteHeader() {
 
         {mobileOpen && (
           <div
+            id="beyonix-mobile-menu"
             data-mobile-menu
             className="max-h-80vh space-y-1 overflow-y-auto overscroll-contain border-t border-white/6 py-3 lg:hidden"
           >
@@ -392,14 +448,14 @@ export function SiteHeader() {
                 ) : (
                   <div className="grid gap-2 px-2 py-3 sm:grid-cols-2">
                     <Link
-                      href="/login"
+                      href={loginHref}
                       onClick={() => setMobileOpen(false)}
                       className="beyonix-modal-body flex h-10 items-center justify-center rounded-lg border border-beyonix-blue-light/22 bg-white/4 text-sm font-semibold text-white/84 transition hover:border-beyonix-blue-light/45 hover:text-white"
                     >
                       Iniciar sesión
                     </Link>
                     <Link
-                      href="/login?mode=register"
+                      href={registerHref}
                       onClick={() => setMobileOpen(false)}
                       className="flex h-10 items-center justify-center rounded-lg border border-beyonix-blue-light/45 bg-beyonix-blue text-sm font-semibold text-white transition hover:border-beyonix-blue-light/75 hover:bg-beyonix-blue-hover"
                     >

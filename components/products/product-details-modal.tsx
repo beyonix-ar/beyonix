@@ -10,6 +10,7 @@ import { getVariantOptionByValue, RANDOM_GALLERY_NOTE } from "@/lib/products/pro
 import { ProductDescriptionSection } from "./product-description-section"
 import { ProductDetailsGallery } from "./product-details-gallery"
 import { ProductDetailsPanel } from "./product-details-panel"
+import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 
 interface ProductDetailsModalProps {
   open: boolean
@@ -81,19 +82,6 @@ export function ProductDetailsModal({
     }
 
     if (open) {
-      const scrollBarWidth =
-        window.innerWidth -
-        document.documentElement
-          .clientWidth
-
-      document.body.style.overflow =
-        "hidden"
-
-      document.body.style.paddingRight = `${scrollBarWidth}px`
-
-      document.documentElement.style.overflow =
-        "hidden"
-
       window.addEventListener(
         "keydown",
         handleKeyDown
@@ -101,19 +89,19 @@ export function ProductDetailsModal({
     }
 
     return () => {
-      document.body.style.overflow = ""
-      document.body.style.paddingRight =
-        ""
-
-      document.documentElement.style.overflow =
-        ""
-
       window.removeEventListener(
         "keydown",
         handleKeyDown
       )
     }
   }, [open, onClose])
+
+  // Bloqueo de scroll centralizado (anidable, robusto en iOS, conserva la
+  // posición). Depende sólo de `open`: un onClose nuevo no lo re-aplica.
+  useEffect(() => {
+    if (!open) return
+    return lockDocumentScroll({ preventTouchScroll: true })
+  }, [open])
 
   if (!mounted || !open || !product) {
     return null

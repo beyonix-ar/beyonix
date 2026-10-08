@@ -3,7 +3,6 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react"
 import type { InputHTMLAttributes } from "react"
-import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft,
@@ -28,6 +27,7 @@ import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
 import { PasswordRequirements } from "@/components/password-requirements"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { useAuth } from "@/context/auth-context"
+import { useBackNavigation } from "@/hooks/use-back-navigation"
 import { useTerritorialSelector } from "@/hooks/use-territorial-selector"
 import { FORGOT_PASSWORD_GENERIC_MESSAGE } from "@/lib/auth/forgot-password-messages"
 import { getSafeRedirect } from "@/lib/auth/safe-redirect"
@@ -224,6 +224,7 @@ function AuthTransitionScreen({ message }: { message: string }) {
 
 function LoginContent() {
   const router = useRouter()
+  const { back } = useBackNavigation()
   const searchParams = useSearchParams()
   const { login, register, user, isLoading } = useAuth()
 
@@ -844,14 +845,15 @@ function LoginContent() {
           <div className="flex h-16 items-center justify-between lg:h-18">
             <BeyonixLogoLink />
             <div className="flex items-center gap-2">
-              <Link
-                href="/"
-                className="group inline-flex h-10 items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 text-xs font-semibold text-white/62 transition hover:border-beyonix-blue-light/36 hover:bg-beyonix-blue/16 hover:text-white sm:text-sm"
+              <button
+                type="button"
+                onClick={() => back("/")}
+                className="group inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3.5 text-xs font-semibold text-white/62 transition hover:border-beyonix-blue-light/36 hover:bg-beyonix-blue/16 hover:text-white sm:text-sm"
               >
                 <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
                 <span className="hidden sm:inline">Volver a la tienda</span>
                 <span className="sm:hidden">Volver</span>
-              </Link>
+              </button>
               <AccountThemeToggle className="size-10" />
             </div>
           </div>

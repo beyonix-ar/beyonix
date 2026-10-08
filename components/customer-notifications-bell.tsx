@@ -229,7 +229,8 @@ export function CustomerNotificationsBell({
   useEffect(() => {
     if (!open) return
 
-    const handleOutside = (event: MouseEvent) => {
+    // pointerdown: mismo cierre con mouse, touch o lápiz.
+    const handleOutside = (event: PointerEvent) => {
       const target = event.target as Node
       if (rootRef.current?.contains(target)) return
       onOpenChange(false)
@@ -238,11 +239,11 @@ export function CustomerNotificationsBell({
       if (event.key === "Escape") onOpenChange(false)
     }
 
-    document.addEventListener("mousedown", handleOutside)
+    document.addEventListener("pointerdown", handleOutside)
     document.addEventListener("keydown", handleEscape)
 
     return () => {
-      document.removeEventListener("mousedown", handleOutside)
+      document.removeEventListener("pointerdown", handleOutside)
       document.removeEventListener("keydown", handleEscape)
     }
   }, [onOpenChange, open])

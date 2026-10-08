@@ -198,6 +198,7 @@ import { Footer } from "@/components/footer"
 import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
 import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { useSiteSettings } from "@/hooks/use-site-settings"
+import { useBackNavigation } from "@/hooks/use-back-navigation"
 import {
   invalidateInterestFreeInstallments,
   readInterestFreeBrands,
@@ -463,6 +464,7 @@ function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
 
 export default function CheckoutPage() {
   const router = useRouter()
+  const { back } = useBackNavigation()
   const {
     user,
     isLoading,
@@ -2288,9 +2290,7 @@ export default function CheckoutPage() {
             <button
               type="button"
               aria-label="Volver a la tienda"
-              onClick={() =>
-                router.push("/")
-              }
+              onClick={() => back("/productos")}
               className={cn("h-9 px-3 text-sm", checkoutSecondaryButtonClassName)}
             >
               <ArrowLeft className="size-4" />

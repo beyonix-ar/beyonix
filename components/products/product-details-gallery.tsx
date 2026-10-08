@@ -243,7 +243,7 @@ export function ProductDetailsGallery({
             onTouchCancel={() => {
               touchStartRef.current = null
             }}
-            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] touch-pan-y items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[0_22px_58px_rgba(0,0,0,0.3)] max-sm:aspect-[5/4] md:max-h-[660px]"
+            className="relative flex aspect-square h-auto w-full max-w-[min(100%,660px)] touch-pan-y items-center justify-center overflow-hidden rounded-2xl bg-white shadow-[0_22px_58px_rgba(0,0,0,0.3)] max-sm:aspect-[5/4] md:max-h-[min(660px,calc(100svh-7.5rem))]"
           >
             {isVideoSelected && playableVideo ? (
               <ProductVideoPlayer

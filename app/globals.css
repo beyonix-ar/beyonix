@@ -321,6 +321,9 @@
   --text-28px: 28px;
   --text-8px: 9px;
   --text-9px: 10px;
+  /* Display fluidos: ~40px en notebook 1366, ~48/60px en desktop grande. */
+  --text-5xl: clamp(2.25rem, calc(1.09vw + 1.75rem), 3rem);
+  --text-6xl: clamp(2.5rem, calc(2.23vw + 1.1rem), 3.75rem);
 
   --shadow-beyonix-color-selected: 0 0 10px rgba(74, 144, 184, 0.3);
   --shadow-beyonix-slider: 0 0 6px rgba(0, 174, 239, 0.22);
@@ -1170,6 +1173,15 @@ html[data-account-theme="light"][data-account-scope] .beyonix-home-bg {
   html {
     background: #000000;
     font-size: clamp(15px, calc(14px + 0.14vw), 17.25px);
+  }
+
+  /* Tienda en notebook/desktop: el rem también sigue el alto del viewport
+     (1366x768 al 100% ≈ 14px, 1920x1080 ≈ 16.2px, 2560x1440 = 17.25px).
+     Mobile/tablet portrait conservan la escala de arriba; Admin, la suya. */
+  @media (min-width: 1024px) {
+    html:not(:has(.beyonix-admin-shell, .admin-portal-scope)) {
+      font-size: clamp(14px, min(calc(14px + 0.14vw), calc(9px + 0.75vh)), 17.25px);
+    }
   }
 
   body {
@@ -12739,6 +12751,11 @@ html[data-account-theme="light"][data-account-scope] .beyonix-hero-trust-sub {
    igual en cualquier página fuera de /cuenta, o dentro de /cuenta en modo
    oscuro), esto sólo pisa el color/fondo cuando estamos realmente en claro
    Y en scope de cuenta. */
+/* Scroll lock (lib/admin/scroll-lock.ts): al ocultar la barra de scroll el
+   header fijo compensa el mismo ancho que el body; sin bloqueo vale 0. */
+.beyonix-site-header {
+  padding-right: var(--beyonix-scroll-lock-gap, 0px);
+}
 /* Barra de navegación y su menú desplegable: cromo del sitio (no un módulo
    de contenido) -> superficie elevada blanca, sobre la página. */
 html[data-account-theme="light"][data-account-scope] .beyonix-site-header {

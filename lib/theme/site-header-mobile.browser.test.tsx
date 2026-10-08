@@ -81,12 +81,12 @@ test.before(async () => {
 
 test.after(async () => { await browser?.close() })
 
-async function open(theme: "light" | "dark", width: number, auth: "guest" | "user"): Promise<Page> {
-  const page = await browser.newPage({ viewport: { width, height: 760 } })
+async function open(theme: "light" | "dark", width: number, auth: "guest" | "user", height = 760): Promise<Page> {
+  const page = await browser.newPage({ viewport: { width, height } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   await page.route("**/*", (route) => route.abort())
-  await page.setContent(`<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page" style="min-height:1400px"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__AUTH=${JSON.stringify(auth)}</script><script>${bundle}</script></body></html>`)
+  await page.setContent(`<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page" style="min-height:3000px"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__AUTH=${JSON.stringify(auth)}</script><script>${bundle}</script></body></html>`)
   try { await page.waitForSelector(".beyonix-site-header-actions", { timeout: 10_000 }) }
   catch (error) { await page.close(); throw new Error(`No renderizó: ${errors.join(" | ") || String(error)}`) }
   return page
@@ -202,6 +202,131 @@ for (const theme of ["light", "dark"] as const) {
       assert.equal(await page.locator('button[aria-label="Abrir menú"]').isVisible(), false)
       assert.equal(await page.locator('button[aria-label="Abrir menú de cuenta"]').isVisible(), false)
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/navbar-desktop-${theme}.png` })
+    } finally { await page.close() }
+  })
+}
+
+// ── Overlays del header: scroll lock, click afuera, Escape, foco y exclusión ──
+
+type LockState = { position: string; bodyTop: number; scrollY: number }
+const lockState = (page: Page) =>
+  page.evaluate(`({ position: document.body.style.position, bodyTop: Math.round(document.body.getBoundingClientRect().top), scrollY: Math.round(window.scrollY) })`) as Promise<LockState>
+
+async function scrollPageTo(page: Page, y: number) {
+  await page.evaluate(`window.scrollTo({ top: ${y}, behavior: "instant" })`)
+  assert.equal((await lockState(page)).scrollY, y)
+}
+
+/** Con el overlay abierto la rueda/scroll del fondo no mueve la página. */
+async function assertLocked(page: Page, y: number) {
+  const before = await lockState(page)
+  assert.equal(before.position, "fixed", "body bloqueado")
+  assert.equal(before.bodyTop, -y, "la página queda inmóvil donde estaba")
+  await page.mouse.move(10, 700)
+  await page.mouse.wheel(0, 600)
+  await page.waitForTimeout(120)
+  assert.equal((await lockState(page)).bodyTop, -y, "el scroll del fondo no la mueve")
+}
+
+async function assertRestored(page: Page, y: number) {
+  await page.waitForFunction(() => document.body.style.position === "")
+  const after = await lockState(page)
+  assert.equal(after.scrollY, y, "al cerrar, misma posición (sin saltar al inicio)")
+  await page.mouse.wheel(0, 200)
+  await page.waitForFunction((start) => window.scrollY > start, y)
+}
+
+for (const theme of ["light", "dark"] as const) {
+  test(`overlays ${theme} 390px: menú general bloquea el fondo, scrollea sólo el menú, cierra con tap afuera y con Escape`, async () => {
+    const page = await open(theme, 320, "guest", 360)
+    try {
+      await scrollPageTo(page, 400)
+      await page.locator('button[aria-label="Abrir menú"]').click()
+      const menu = page.locator("[data-mobile-menu]")
+      await menu.waitFor()
+      assert.equal(await page.locator('button[aria-label="Cerrar menú"]').getAttribute("aria-controls"), "beyonix-mobile-menu")
+      await assertLocked(page, 400)
+      // Sólo el menú scrollea (alto 360: el contenido no entra completo).
+      assert.ok(await menu.evaluate((element) => element.scrollHeight > element.clientHeight), "el menú tiene más contenido que el alto")
+      const box = (await menu.boundingBox())!
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.wheel(0, 300)
+      await page.waitForFunction(() => document.querySelector("[data-mobile-menu]")!.scrollTop > 0)
+      assert.equal((await lockState(page)).bodyTop, -400, "el fondo sigue quieto")
+      // Escape cierra y devuelve el foco al botón.
+      await page.keyboard.press("Escape")
+      await menu.waitFor({ state: "detached" })
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Abrir menú")
+      await assertRestored(page, 400)
+    } finally { await page.close() }
+
+    const tall = await open(theme, 390, "guest", 844)
+    try {
+      await scrollPageTo(tall, 300)
+      await tall.locator('button[aria-label="Abrir menú"]').click()
+      await tall.locator("[data-mobile-menu]").waitFor()
+      await tall.mouse.click(195, 780) // tap afuera (sobre la página)
+      await tall.locator("[data-mobile-menu]").waitFor({ state: "detached" })
+      await assertRestored(tall, 300)
+    } finally { await tall.close() }
+  })
+
+  test(`overlays ${theme} 390px logueado: cuenta y notificaciones bloquean el fondo; un solo panel a la vez`, async () => {
+    const page = await open(theme, 390, "user", 844)
+    try {
+      await scrollPageTo(page, 500)
+      const account = page.locator('button[aria-label="Abrir menú de cuenta"]')
+      const accountPanel = page.locator(".beyonix-account-menu-panel").filter({ visible: true })
+
+      // Cuenta → bloqueo; Escape cierra, foco al avatar y posición intacta.
+      await account.click()
+      await accountPanel.waitFor()
+      assert.ok(await account.getAttribute("aria-controls"))
+      await assertLocked(page, 500)
+      await page.keyboard.press("Escape")
+      await accountPanel.waitFor({ state: "detached" })
+      assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), "Abrir menú de cuenta")
+      await assertRestored(page, 500)
+      await scrollPageTo(page, 500)
+
+      // Exclusión: cuenta abierta → abrir menú general cierra la cuenta.
+      await account.click()
+      await accountPanel.waitFor()
+      await page.locator('button[aria-label="Abrir menú"]').click()
+      await page.locator("[data-mobile-menu]").waitFor()
+      assert.equal(await accountPanel.count(), 0, "cuenta cerrada")
+      // Menú abierto → abrir cuenta cierra el menú.
+      await account.click()
+      await accountPanel.waitFor()
+      assert.equal(await page.locator("[data-mobile-menu]").count(), 0, "menú cerrado")
+      await assertLocked(page, 500)
+
+      // Notificaciones (desde la cuenta) → cierra la cuenta y sigue bloqueado.
+      await accountPanel.getByRole("button", { name: "Abrir notificaciones" }).click()
+      await page.locator(".beyonix-notifications-panel").waitFor()
+      assert.equal(await accountPanel.count(), 0, "cuenta cerrada al abrir notificaciones")
+      await assertLocked(page, 500)
+      // Tap afuera cierra.
+      await page.mouse.click(195, 820)
+      await page.locator(".beyonix-notifications-panel").waitFor({ state: "detached" })
+      await assertRestored(page, 500)
+    } finally { await page.close() }
+  })
+
+  test(`overlays ${theme} 1366px: menú de usuario bloquea el fondo sin correr el header; click afuera cierra`, async () => {
+    const page = await open(theme, 1366, "user", 657)
+    try {
+      await scrollPageTo(page, 350)
+      const trigger = page.locator('button[aria-label="Abrir menú de usuario"]')
+      const before = (await trigger.boundingBox())!
+      await trigger.click()
+      await page.locator(".beyonix-account-menu-panel").filter({ visible: true }).waitFor()
+      await assertLocked(page, 350)
+      const after = (await trigger.boundingBox())!
+      assert.ok(Math.abs(after.x - before.x) <= 1, `el header no se corre al ocultar la barra de scroll (${before.x} → ${after.x})`)
+      await page.mouse.click(300, 500)
+      await page.locator(".beyonix-account-menu-panel").filter({ visible: true }).waitFor({ state: "detached" })
+      await assertRestored(page, 350)
     } finally { await page.close() }
   })
 }

@@ -14,6 +14,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 import { cn } from "@/lib/utils"
+import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 
 import { CartItemRow } from "./cart-item"
 
@@ -105,9 +106,6 @@ export function CartDrawer({
         "keydown",
         handleEscape
       )
-
-      document.body.style.overflow =
-        "hidden"
     }
 
     return () => {
@@ -115,11 +113,15 @@ export function CartDrawer({
         "keydown",
         handleEscape
       )
-
-      document.body.style.overflow =
-        ""
     }
   }, [isOpen, onClose])
+
+  // Bloqueo de scroll centralizado (anidable, robusto en iOS, conserva la
+  // posición al cerrar).
+  useEffect(() => {
+    if (!isOpen) return
+    return lockDocumentScroll({ preventTouchScroll: true })
+  }, [isOpen])
 
   if (!mounted || !isOpen) {
     return null

@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
 import Script from "next/script"
@@ -10,6 +11,7 @@ import { BrowserTabTitle } from "@/components/BrowserTabTitle"
 import { BeyonixShootingStarsBackground } from "@/components/backgrounds/beyonix-shooting-stars-background"
 import { LayoutShell } from "@/components/layout-shell"
 import { CartWrapper } from "@/components/cart/cart-wrapper"
+import { NavigationHistoryTracker } from "@/components/navigation-history-tracker"
 import "./globals.css"
 
 const montserrat = Montserrat({
@@ -124,6 +126,10 @@ export default async function RootLayout({
           }`}
         </Script>
         <BrowserTabTitle />
+        {/* Pila de navegación interna para los botones "Volver" (no toca el historial). */}
+        <Suspense fallback={null}>
+          <NavigationHistoryTracker />
+        </Suspense>
         <BeyonixShootingStarsBackground />
         <div className="relative z-10">
           <AccountThemeProvider>

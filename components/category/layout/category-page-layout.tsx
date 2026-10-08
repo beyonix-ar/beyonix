@@ -95,14 +95,14 @@ export function CategoryPageLayout({
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${image ? "" : "min-h-420px sm:min-h-[520px] lg:min-h-[600px]"}`}>
+        <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${image ? "" : "pt-8 sm:pt-10 lg:pt-12"}`}>
           {image ? (
             // El banner (1568 x 600) se ve completo con su proporción en
             // todos los anchos; el buscador y los beneficios van debajo.
             <img
               src={image}
               alt={title}
-              className="block h-auto w-full object-contain [aspect-ratio:auto_1568/600]"
+              className="block h-auto w-full object-contain [aspect-ratio:auto_1568/600] lg:max-h-[clamp(260px,48svh,600px)]"
             />
           ) : null}
 

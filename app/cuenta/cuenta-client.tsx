@@ -73,6 +73,7 @@ import { getCustomerTransferReservationState } from "@/lib/orders/transfer-reser
 import { TransferReservationNotice } from "@/components/account/transfer-reservation-notice"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
+import { useBackNavigation } from "@/hooks/use-back-navigation"
 
 type ProfileView =
   | "home"
@@ -514,6 +515,7 @@ function ProfilePanel({ initialView }: { initialView: ProfileView }) {
 export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
+  const { backTo } = useBackNavigation()
   const searchParams = useSearchParams()
   const authenticatedUserId = user?.id ?? ""
   const authenticatedUserEmail = user?.email ?? ""
@@ -659,7 +661,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   }
 
   if (!order || !hasCurrentOrder) {
-    return <main className="min-h-screen bg-[var(--account-background)] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] p-6 text-center"><p className="text-sm font-bold text-[var(--account-text-primary)]">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a Mis compras</button></div></main>
+    return <main className="min-h-screen bg-[var(--account-background)] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-[var(--account-border)] bg-[var(--account-surface-raised)] p-6 text-center"><p className="text-sm font-bold text-[var(--account-text-primary)]">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => backTo("/cuenta?tab=ordenes", (url) => url.startsWith("/cuenta?tab=ordenes"))} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a Mis compras</button></div></main>
   }
 
   const items = order.orden_items ?? []
@@ -778,7 +780,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
         <div className="relative z-20 mx-auto flex min-h-[calc(100vh-12rem)] max-w-[860px] flex-col justify-center">
           <button
             type="button"
-            onClick={() => router.push("/cuenta?tab=ordenes")}
+            onClick={() => backTo("/cuenta?tab=ordenes", (url) => url.startsWith("/cuenta?tab=ordenes"))}
             className="mb-3 inline-flex h-9 w-fit cursor-pointer items-center gap-2 rounded-lg border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-3.5 text-xs font-medium text-[var(--account-text-secondary)] shadow-sm shadow-black/20 transition-colors hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)]"
           >
             <ChevronLeft className="size-4" />
@@ -984,7 +986,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   return (
     <main className="customer-order-detail-page order-detail-solid-surface min-h-screen bg-[var(--account-background)] px-3 pb-10 pt-24 font-heading sm:px-5 lg:px-8">
       <div className="customer-order-detail-container mx-auto max-w-[1200px]">
-        <button type="button" onClick={() => router.push("/cuenta?tab=ordenes")} className="customer-order-detail-back inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-4 text-sm font-bold text-[var(--account-text-secondary)] transition-colors hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)]"><ChevronLeft className="size-4" />Volver a Mis compras</button>
+        <button type="button" onClick={() => backTo("/cuenta?tab=ordenes", (url) => url.startsWith("/cuenta?tab=ordenes"))} className="customer-order-detail-back inline-flex h-10 cursor-pointer items-center gap-2 rounded-full border border-[var(--account-border)] bg-[var(--account-surface-raised)] px-4 text-sm font-bold text-[var(--account-text-secondary)] transition-colors hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)]"><ChevronLeft className="size-4" />Volver a Mis compras</button>
 
         <header className="customer-order-detail-header mt-4 rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 shadow-[0_0_22px_rgba(17,42,67,0.16)] sm:p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1370,6 +1372,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 export function CompraAyudaClient({ orderId }: { orderId: number }) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
+  const { backTo } = useBackNavigation()
   const authenticatedUserId = user?.id ?? ""
   const authenticatedUserEmail = user?.email ?? ""
   const hasAuthenticatedUser = Boolean(authenticatedUserId || authenticatedUserEmail)
@@ -1472,7 +1475,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
           <AccountBackButton
             type="button"
             label="Volver a la compra"
-            onClick={() => router.push(`/cuenta/compras/${order.id}`)}
+            onClick={() => backTo(`/cuenta/compras/${order.id}`)}
             className="border-[var(--account-border)] bg-[var(--account-surface-raised)] text-[var(--account-text-secondary)] transition-all duration-200 hover:border-[var(--account-border-strong)] hover:bg-[var(--account-surface-hover)] hover:text-[var(--account-text-primary)] hover:[&_svg]:-translate-x-0.5 [&_svg]:transition-transform"
           />
 

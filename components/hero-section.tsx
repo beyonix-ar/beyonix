@@ -99,9 +99,9 @@ export function HeroSection({
 
   return (
     <section className="relative overflow-hidden pt-18 lg:pt-20">
-      <div className="container relative mx-auto grid min-h-[clamp(620px,78vh,840px)] items-center gap-[clamp(2.5rem,4vw,4.5rem)] py-[clamp(3.75rem,5.5vw,5.5rem)] lg:grid-cols-hero-premium">
+      <div className="container relative mx-auto grid min-h-[clamp(620px,78vh,840px)] items-center gap-[clamp(2.5rem,4vw,4.5rem)] py-[clamp(3.75rem,5.5vw,5.5rem)] lg:min-h-[clamp(480px,calc(100svh-5rem),840px)] lg:grid-cols-hero-premium lg:py-[clamp(2rem,min(5.5vw,6svh),5.5rem)]">
         <div className="max-w-3xl">
-          <h1 className="beyonix-modal-title mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold leading-1-1 tracking-tight text-white">
+          <h1 className="beyonix-modal-title mb-5 max-w-3xl text-[clamp(2.4rem,4.3vw,4.65rem)] font-bold lg:text-[clamp(2.4rem,calc(1.9vw+3.7svh),4.65rem)] leading-1-1 tracking-tight text-white">
             Tecnología para tu comodidad
           </h1>
 
@@ -185,7 +185,7 @@ export function HeroSection({
                 aria-label={`Ver ${featuredProduct.nombre}`}
                 className="group block w-full cursor-pointer rounded-2xl text-left outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/35"
               >
-                <div className="relative aspect-[1.08] overflow-hidden rounded-2xl border border-beyonix-blue-light/18 bg-[#f8fafc] p-5">
+                <div className="relative aspect-[1.08] overflow-hidden rounded-2xl lg:mx-auto lg:max-h-[clamp(240px,40svh,460px)] border border-beyonix-blue-light/18 bg-[#f8fafc] p-5">
                   <Image
                     fill
                     src={productImage}

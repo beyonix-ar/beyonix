@@ -11,7 +11,6 @@ import {
   BEYONIX_CUSTOMER_SERVICE_AREA,
   BEYONIX_EMAIL,
   BEYONIX_SUPPORT_HOURS_DETAIL,
-  CONSUMER_COMPLAINTS_URL,
 } from "@/lib/legal-contact"
 import { getSiteSettings } from "@/lib/site-settings"
 
@@ -174,20 +173,6 @@ export default async function ContactoPage() {
               momento.
             </p>
           </div>
-
-          <p className="beyonix-modal-muted mt-6 text-sm leading-6 text-white/58">
-            Defensa de las y los consumidores: además de nuestros canales, podés
-            iniciar un reclamo en la{" "}
-            <a
-              href={CONSUMER_COMPLAINTS_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-beyonix-cyan underline-offset-4 hover:underline"
-            >
-              Ventanilla Federal Única de Reclamos
-            </a>
-            .
-          </p>
         </div>
       </section>
     </main>

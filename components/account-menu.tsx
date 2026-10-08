@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
 import Link from "next/link"
 import {
   Bell,
@@ -108,6 +108,8 @@ export function AccountMenu({
   const isControlled = openProp !== undefined
   const open = isControlled ? openProp : internalOpen
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelId = useId()
 
   const setOpen = useCallback(
     (next: boolean) => {
@@ -117,16 +119,29 @@ export function AccountMenu({
     [isControlled, onOpenChange],
   )
 
+  // Sólo con el menú abierto: tap/click afuera (mouse, touch o lápiz) y
+  // Escape cierran; Escape devuelve el foco al botón.
   useEffect(() => {
-    function handleOutside(e: MouseEvent) {
+    if (!open) return
+
+    function handleOutside(e: PointerEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key !== "Escape") return
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
 
-    document.addEventListener("mousedown", handleOutside)
-    return () => document.removeEventListener("mousedown", handleOutside)
-  }, [setOpen])
+    document.addEventListener("pointerdown", handleOutside)
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("pointerdown", handleOutside)
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [open, setOpen])
 
   if (!user) return null
 
@@ -135,9 +150,11 @@ export function AccountMenu({
   return (
     <div ref={ref} className={cn("relative", className)}>
       <button
+        ref={triggerRef}
         type="button"
         aria-label={compact ? "Abrir menú de cuenta" : "Abrir menú de usuario"}
         aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
         data-account-menu-compact={compact || undefined}
         onClick={() => setOpen(!open)}
         className={cn(
@@ -176,7 +193,7 @@ export function AccountMenu({
       </button>
 
       {open && (
-        <div className="beyonix-account-menu-panel absolute right-0 z-50 mt-2 w-60 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
+        <div id={panelId} className="beyonix-account-menu-panel absolute right-0 z-50 mt-2 max-h-[calc(100dvh-5rem)] w-60 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-[rgba(148,197,255,0.18)] bg-[#080D14] shadow-[0_18px_45px_rgba(0,0,0,0.45)]">
           <Link
             href="/cuenta"
             onClick={() => setOpen(false)}
