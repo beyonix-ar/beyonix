@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
   BarChart3,
+  Barcode,
   BellRing,
   CalendarDays,
   CreditCard,
@@ -351,7 +352,14 @@ export function AdminClient({ children }: { children: ReactNode }) {
     if (isOperator) return operational
 
     return [
-      ...operational,
+      ...operational.slice(0, 2),
+      {
+        key: "etiquetas",
+        label: "Etiquetas",
+        description: "Generación e impresión de códigos",
+        icon: <Barcode className="size-4" />,
+      },
+      ...operational.slice(2),
       {
         key: "modificaciones",
     label: "Configuración",

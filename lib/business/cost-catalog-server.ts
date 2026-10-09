@@ -156,7 +156,9 @@ export async function loadCatalogProductsByIds(
   })
 }
 
-async function searchHits(admin: SupabaseClient, query: string) {
+// Coincidencias por nombre, SKU o código de barra (producto o variante); la
+// comparten Compras y Etiquetas.
+export async function searchCatalogHits(admin: SupabaseClient, query: string) {
   const pattern = catalogSearchPattern(query)
   const productHits = (column: string) =>
     collectAllRows<{ id: number; nombre: string | null }>((from, to) =>
@@ -206,7 +208,7 @@ export async function searchCostCatalog(
       hasMore: rows.length > limit,
     }
   }
-  const page = pageCatalogSearchHits(await searchHits(admin, query), offset, limit)
+  const page = pageCatalogSearchHits(await searchCatalogHits(admin, query), offset, limit)
   return {
     items: await withLatestCostSku(admin, await loadCatalogProductsByIds(admin, page.ids)),
     hasMore: page.hasMore,

@@ -3,6 +3,7 @@ import type { UserRole } from "@/lib/auth/roles"
 export const ADMIN_ROUTES = {
   dashboard: "/admin/dashboard",
   productos: "/admin/productos",
+  etiquetas: "/admin/etiquetas",
   compras: "/admin/compras",
   pedidos: "/admin/pedidos",
   despachos: "/admin/despachos",
@@ -26,6 +27,7 @@ export const ADMIN_ROUTE_KEYS = Object.keys(ADMIN_ROUTES) as AdminRouteKey[]
 const LEGACY_ADMIN_SECTION_KEYS: Record<string, AdminRouteKey> = {
   dashboard: "dashboard",
   productos: "productos",
+  etiquetas: "etiquetas",
   compras: "compras",
   pedidos: "pedidos",
   despachos: "despachos",

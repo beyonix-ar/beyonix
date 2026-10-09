@@ -49,7 +49,7 @@ import {
   type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
 
-import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
+import { AddToLabelQueueDialog } from "@/app/admin/components/add-to-label-queue-dialog"
 import { barcodeOrigin, barcodeOriginLabel } from "@/lib/barcodes/codes"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { getVariantActivationError } from "@/lib/products/product-activation"
@@ -1085,18 +1085,10 @@ export function ProductVariantsEditor({
   return (
     <div className="flex w-full min-w-0 flex-col gap-2.5">
       {stockAdjustmentModal}
-      <LabelPrintDialog
-        open={labelVariant != null}
-        title="Imprimir etiqueta"
-        description={labelVariant ? `${productName || labelVariant.nombre} · ${labelVariant.codigo_barra ?? ""}` : undefined}
-        allowCopies
-        labels={labelVariant?.codigo_barra ? [{
-          kind: "product",
-          code: labelVariant.codigo_barra.trim(),
-          name: productName || labelVariant.nombre,
-          variant: getColorName(labelVariant.color_hex, labelVariant.nombre),
-          sku: labelVariant.sku,
-        }] : []}
+      <AddToLabelQueueDialog
+        key={labelVariant?.id ?? "none"}
+        product={{ id: labelVariant?.producto_id ?? productoId ?? 0, name: productName || labelVariant?.nombre || "" }}
+        variant={labelVariant}
         onClose={() => setLabelVariant(null)}
       />
 
@@ -1586,8 +1578,8 @@ function VariantCard({
           {onPrintLabel && (
             <AdminSecondaryButton
               size="icon"
-              title={`Imprimir etiqueta de ${nombre}`}
-              aria-label={`Imprimir etiqueta de ${nombre}`}
+              title={`Agregar ${nombre} a impresión`}
+              aria-label={`Agregar ${nombre} a impresión`}
               onClick={onPrintLabel}
             >
               <Printer className="size-3.5 text-white" />
@@ -2027,7 +2019,7 @@ function VariantFields({
             {onPrintLabel && (
               <AdminSecondaryButton size="sm" onClick={onPrintLabel} disabled={disabled}>
                 <Printer className="size-3.5 text-white" />
-                Imprimir etiqueta
+                Agregar a impresión
               </AdminSecondaryButton>
             )}
           </div>

@@ -56,7 +56,7 @@ import {
   updateProductoVariante,
 } from "@/lib/supabase/queries/producto-variantes"
 import { barcodeOrigin, barcodeOriginLabel } from "@/lib/barcodes/codes"
-import { LabelPrintDialog } from "../../components/label-print-dialog"
+import { AddToLabelQueueDialog } from "../../components/add-to-label-queue-dialog"
 
 import {
   deleteConditionedStock,
@@ -1116,7 +1116,7 @@ export function ProductosRow({
                               variante.codigo_barra?.trim()
                                 ? {
                                     key: "imprimir-etiqueta",
-                                    label: "Imprimir etiqueta",
+                                    label: "Agregar a impresión",
                                     icon: <Printer className="size-3.5" />,
                                     onSelect: () => setLabelVariant(variante),
                                   }
@@ -1430,18 +1430,10 @@ export function ProductosRow({
         )}
 
       {stockAdjustmentModal}
-      <LabelPrintDialog
-        open={labelVariant != null}
-        title="Imprimir etiqueta"
-        description={labelVariant ? `${producto.nombre} · ${labelVariant.codigo_barra ?? ""}` : undefined}
-        allowCopies
-        labels={labelVariant?.codigo_barra ? [{
-          kind: "product",
-          code: labelVariant.codigo_barra.trim(),
-          name: producto.nombre,
-          variant: getColorName(labelVariant.color_hex, labelVariant.nombre),
-          sku: labelVariant.sku,
-        }] : []}
+      <AddToLabelQueueDialog
+        key={labelVariant?.id ?? "none"}
+        product={{ id: producto.id, name: producto.nombre, price: producto.precio, randomSale: producto.venta_aleatoria === true }}
+        variant={labelVariant}
         onClose={() => setLabelVariant(null)}
       />
 

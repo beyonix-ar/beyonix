@@ -16,13 +16,16 @@ async function fetchBarcodeSvgs(codes: string[]) {
   return payload.svgs
 }
 
-// Imprime desde un iframe aislado: la página del admin no cambia y el diálogo
-// de impresión recibe sólo la hoja de etiquetas.
 export async function printLabels(labels: readonly PrintableLabel[], format: LabelFormat = "a4") {
   if (!labels.length) throw new Error("No hay etiquetas para imprimir.")
   const svgs = await fetchBarcodeSvgs([...new Set(labels.map((label) => label.code))])
-  const html = buildLabelsDocument(labels, svgs, format)
-  await new Promise<void>((resolve, reject) => {
+  await printHtmlDocument(buildLabelsDocument(labels, svgs, format))
+}
+
+// Imprime desde un iframe aislado: la página del admin no cambia y el diálogo
+// de impresión recibe sólo la hoja de etiquetas.
+export function printHtmlDocument(html: string) {
+  return new Promise<void>((resolve, reject) => {
     const frame = document.createElement("iframe")
     frame.setAttribute("aria-hidden", "true")
     frame.tabIndex = -1
