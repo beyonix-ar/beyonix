@@ -443,58 +443,74 @@ export function ProductsPageLayout({
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        {/* Con banners: proporción 1920x520, con alto acotado al viewport (la imagen es object-contain, nunca se recorta). Sin banners cargados no se reserva un recuadro vacío: sólo buscador y beneficios. */}
-        <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${productsBanners.length ? "min-h-420px sm:min-h-[520px] lg:aspect-[1920/520] lg:max-h-[clamp(300px,52svh,520px)] lg:min-h-0" : "pt-8 sm:pt-10 lg:pt-12"}`}>
-          {productsBanners.map((banner, index) =>
-            banner.image_url ? (
-              <img
-                key={banner.id}
-                src={banner.image_url}
-                alt={banner.alt_text || "Banner de productos BEYONIX"}
-                className={`absolute inset-0 z-0 size-full object-contain object-center transition-opacity duration-700 ease-out ${
-                  index === activeBannerIndex ? "opacity-100" : "opacity-0"
-                }`}
-              />
-            ) : null
-          )}
-
-          {hasCarousel ? (
-            <>
-              <button
-                type="button"
-                aria-label="Banner anterior"
-                onClick={goToPreviousBanner}
-                className="absolute left-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                type="button"
-                aria-label="Banner siguiente"
-                onClick={goToNextBanner}
-                className="absolute right-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-              <div className="absolute bottom-5 left-0 right-0 z-20 flex justify-center gap-2">
-                {productsBanners.map((banner, index) => (
-                  <button
+        {/*
+          Banner general (arte 8000x2167 ≈ 3.69:1, con el texto a la
+          izquierda y espacio abajo para el buscador):
+          - desktop: la caja tiene la proporción del arte y la imagen la
+            cubre (object-cover); buscador y beneficios van encima, como
+            siempre, por debajo del 55% del alto (la franja libre del arte):
+            el alto mínimo lo garantiza y, si actúa, el recorte es desde la
+            derecha (object-left). Nunca bandas laterales.
+          - mobile/tablet: el arte va en su propio bloque (12:5 / 3:1), con
+            un recorte moderado desde la izquierda (donde está el texto), y
+            buscador + beneficios debajo, legibles.
+          Sin banners cargados no se reserva un recuadro vacío.
+        */}
+        <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${productsBanners.length ? "lg:aspect-[1920/520] lg:min-h-[24rem]" : "pt-8 sm:pt-10 lg:pt-12"}`}>
+          {productsBanners.length ? (
+            <div data-banner-media className="relative aspect-[12/5] w-full shrink-0 sm:aspect-[3/1] lg:absolute lg:inset-0 lg:aspect-auto">
+              {productsBanners.map((banner, index) =>
+                banner.image_url ? (
+                  <img
                     key={banner.id}
-                    type="button"
-                    aria-label={`Ver banner ${index + 1}`}
-                    onClick={() => setActiveBannerIndex(index)}
-                    className={`h-1.5 cursor-pointer rounded-full transition-all ${
-                      index === activeBannerIndex
-                        ? "w-8 bg-beyonix-sky"
-                        : "w-3 bg-white/24 hover:bg-white/45"
+                    src={banner.image_url}
+                    alt={banner.alt_text || "Banner de productos BEYONIX"}
+                    className={`absolute inset-0 z-0 size-full object-cover object-left transition-opacity duration-700 ease-out ${
+                      index === activeBannerIndex ? "opacity-100" : "opacity-0"
                     }`}
                   />
-                ))}
-              </div>
-            </>
+                ) : null
+              )}
+
+              {hasCarousel ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label="Banner anterior"
+                    onClick={goToPreviousBanner}
+                    className="absolute left-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Banner siguiente"
+                    onClick={goToNextBanner}
+                    className="absolute right-4 top-1/2 z-20 hidden size-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-[#03070D]/45 text-white/62 transition hover:border-beyonix-sky/35 hover:text-white sm:flex"
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                  <div className="absolute bottom-5 left-0 right-0 z-20 flex justify-center gap-2">
+                    {productsBanners.map((banner, index) => (
+                      <button
+                        key={banner.id}
+                        type="button"
+                        aria-label={`Ver banner ${index + 1}`}
+                        onClick={() => setActiveBannerIndex(index)}
+                        className={`h-1.5 cursor-pointer rounded-full transition-all ${
+                          index === activeBannerIndex
+                            ? "w-8 bg-beyonix-sky"
+                            : "w-3 bg-white/24 hover:bg-white/45"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : null}
+            </div>
           ) : null}
 
-          <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 sm:pb-10 lg:pb-12">
+          <div className={`relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 sm:pb-10 ${productsBanners.length ? "pt-5 sm:pt-6 lg:pb-5 lg:pt-0" : "lg:pb-12"}`}>
             <div className="global-search-wrapper flex w-full justify-center">
               <GlobalSearchBar
                 search={search}

@@ -97,13 +97,21 @@ export function CategoryPageLayout({
       <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
         <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${image ? "" : "pt-8 sm:pt-10 lg:pt-12"}`}>
           {image ? (
-            // El banner (1568 x 600) se ve completo con su proporción en
-            // todos los anchos; el buscador y los beneficios van debajo.
-            <img
-              src={image}
-              alt={title}
-              className="block h-auto w-full object-contain [aspect-ratio:auto_1568/600] lg:max-h-[clamp(260px,48svh,600px)]"
-            />
+            // Banner de categoría (arte ≈ 2.61:1, título a la izquierda). La
+            // caja ocupa todo el ancho y la imagen la cubre (object-cover),
+            // así nunca quedan bandas laterales:
+            // - mobile: 2:1, recorte moderado sesgado a la izquierda (título
+            //   completo y parte del gráfico);
+            // - tablet/desktop: la proporción del arte; en notebooks el alto se
+            //   acota al viewport y se recorta un poco arriba/abajo (centrado).
+            // El buscador y los beneficios van debajo.
+            <div data-banner-media className="relative aspect-[2/1] w-full overflow-hidden sm:aspect-[1568/600] lg:max-h-[clamp(280px,56svh,540px)]">
+              <img
+                src={image}
+                alt={title}
+                className="absolute inset-0 size-full object-cover object-[20%_center] sm:object-center"
+              />
+            </div>
           ) : null}
 
           <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 pt-5 sm:pb-10 sm:pt-6 lg:pb-12 lg:pt-8">
