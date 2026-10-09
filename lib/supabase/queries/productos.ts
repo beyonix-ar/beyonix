@@ -417,11 +417,18 @@ export async function getProductosPage({
 
   const normalizedSearch = search.trim().replace(/[%(),]/g, " ")
   if (normalizedSearch) {
-    const matchingVariants = await getAdminProductoVariantes({
-      skuSearch: normalizedSearch,
-    })
+    const [matchingVariants, aliasesResult] = await Promise.all([
+      getAdminProductoVariantes({ skuSearch: normalizedSearch }),
+      supabase.from("catalog_barcode_aliases")
+        .select("product_id")
+        .eq("normalized_barcode", normalizedSearch),
+    ])
+    if (aliasesResult.error) throw aliasesResult.error
     const variantProductIds = [
-      ...new Set(matchingVariants.map((item) => item.producto_id)),
+      ...new Set([
+        ...matchingVariants.map((item) => item.producto_id),
+        ...(aliasesResult.data ?? []).map((item) => item.product_id),
+      ]),
     ]
     const variantSearchClause = variantProductIds.length
       ? `,id.in.(${variantProductIds.join(",")})`

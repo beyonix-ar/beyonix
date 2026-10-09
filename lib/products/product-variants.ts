@@ -2,13 +2,14 @@ import type {
   SupabaseProducto,
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
+import { RANDOM_VARIANT_LABEL, getProductColorMode } from "./color-mode.ts"
 
+export { RANDOM_VARIANT_LABEL }
 export const DEFAULT_VARIANT_VALUE = "default"
 /** Opción única de un producto con venta aleatoria (no se elige color). */
 export const RANDOM_VARIANT_VALUE = "random"
-export const RANDOM_VARIANT_LABEL = "Aleatorio según stock"
 export const RANDOM_VARIANT_TOOLTIP =
-  "Podés recibir cualquiera de las variantes disponibles. Todas poseen las mismas características y funcionamiento."
+  "Podés recibir cualquiera de los colores/modelos disponibles. Todas las variantes poseen las mismas características y funcionamiento."
 export const RANDOM_GALLERY_NOTE = "Imágenes ilustrativas de colores disponibles."
 export const CONDITIONED_VARIANT_PREFIX = "conditioned:"
 export const FALLBACK_PRODUCT_IMAGE = "/placeholder.svg"
@@ -29,7 +30,7 @@ export interface ProductVariantOption {
   discountPercent: number | null
   reason: string | null
   isConditioned: boolean
-  /** Opción "Aleatorio según stock": el pedido va sin variante elegida. */
+  /** Opción aleatoria (cualquier modo): el cliente no elige color. Con variantes físicas el pedido va sin variante; en aleatorio simple lleva la única. */
   isRandom: boolean
 }
 
@@ -180,10 +181,39 @@ export function getProductVariantOptions(
     ]
   }
 
-  // Venta aleatoria: una sola opción, sin selección falsa de color. El stock
-  // visible es la suma de las variantes físicas activas (cada una conserva el
-  // suyo); la galería muestra los colores disponibles como ilustración.
-  if (product.venta_aleatoria && variants.length > 1) {
+  const colorMode = getProductColorMode(product)
+
+  // Aleatorio simple: un único artículo (su variante, con el stock total). El
+  // pedido lleva esa variante como cualquier producto de un color, así que
+  // reserva, checkout, armado y devolución usan el camino normal.
+  if (colorMode === "aleatorio_simple" && variants.length === 1) {
+    const [variant] = variants
+    return [
+      {
+        id: variant.id,
+        conditionedStockId: null,
+        name: RANDOM_VARIANT_LABEL,
+        value: getVariantValue(variant),
+        colorHex: null,
+        secondaryColorHex: null,
+        stock: variant.stock ?? 0,
+        images: baseImages,
+        sku: variant.sku?.trim() || product.sku?.trim() || null,
+        price: product.precio,
+        originalPrice: product.precio_anterior,
+        discountPercent: product.descuento,
+        reason: null,
+        isConditioned: false,
+        isRandom: true,
+      },
+      ...conditionedVariants,
+    ]
+  }
+
+  // Venta aleatoria con variantes: una sola opción, sin selección falsa de
+  // color. El stock visible es la suma de las variantes físicas activas (cada
+  // una conserva el suyo); la galería muestra los colores como ilustración.
+  if (colorMode === "aleatorio_variantes" && variants.length > 1) {
     return [
       {
         id: null,

@@ -80,6 +80,22 @@ const stand: LabelCatalogProduct = {
   aliases: [{ barcode: "SOPORTE-ALT", variantId: null }],
 }
 
+test("Etiquetas: aleatorio simple ofrece principal y aliases en un artículo único", () => {
+  const product: LabelCatalogProduct = {
+    id: 70, name: "Encendedor eléctrico con carga USB", active: true, sku: "ENCENUSB001",
+    barcode: "7170972998100", price: 15000, randomSale: false, colorMode: "aleatorio_simple",
+    variants: [{ id: 701, name: "ALEATORIO", active: true, stock: 12, sku: null, colorHex: "#8B5A2B", colorHexSecondary: null, barcode: null }],
+    aliases: [{ barcode: "7950000250666", variantId: null }, { barcode: "2025122709035", variantId: null }],
+  }
+  const { targets, groupAliases } = buildLabelTargets(product)
+  assert.equal(targets.length, 1)
+  assert.equal(targets[0].variantLabel, "ALEATORIO")
+  assert.equal(targets[0].variantId, 701)
+  assert.deepEqual(groupAliases, [])
+  assert.deepEqual(targets[0].options.slice(0, 3).map((option) => option.code),
+    ["7170972998100", "7950000250666", "2025122709035"])
+})
+
 function target(product: LabelCatalogProduct, variantId: number | null) {
   const found = buildLabelTargets(product).targets.find((item) => item.variantId === variantId)
   assert.ok(found)

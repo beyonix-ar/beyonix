@@ -90,6 +90,15 @@ export async function POST(
     )
   }
 
+  if (variantId != null) {
+    const product = await auth.admin.from("productos").select("modo_color").eq("id", productId).maybeSingle()
+    if (product.error) return Response.json({ error: "No se pudo validar el modo de venta por color." }, { status: 500 })
+    if (!product.data) return Response.json({ error: "El producto ya no existe." }, { status: 404 })
+    if (product.data.modo_color === "aleatorio_simple") {
+      return Response.json({ error: "En aleatorio sin seguimiento, el código debe vincularse al producto completo." }, { status: 409 })
+    }
+  }
+
   const { data, error } = await auth.admin
     .from("catalog_barcode_aliases")
     .insert({
@@ -108,6 +117,9 @@ export async function POST(
     }
     if (/CATALOG_ALIAS_VARIANT_MISMATCH/.test(error.message) || error.code === "23503") {
       return Response.json({ error: "La variante elegida no pertenece a este producto." }, { status: 400 })
+    }
+    if (/RANDOM_SIMPLE_ALIAS_PRODUCT_SCOPE/.test(error.message)) {
+      return Response.json({ error: "En aleatorio sin seguimiento, el código debe vincularse al producto completo." }, { status: 409 })
     }
     return Response.json(
       { error: isMissingTable(error.message) ? MISSING_MIGRATION : "No se pudo guardar el código equivalente." },

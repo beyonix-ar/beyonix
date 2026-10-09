@@ -17,7 +17,12 @@ export async function GET(request: Request) {
   try {
     const match = await findCatalogArticleByCode(createSupabaseCatalogCodeStore(auth.admin), code)
     return Response.json({ match }, { headers })
-  } catch {
-    return Response.json({ error: "No se pudo buscar el código." }, { status: 500, headers })
+  } catch (error) {
+    return Response.json(
+      { error: error instanceof Error && /CATALOG_CODE_AMBIGUOUS/.test(error.message)
+        ? "Este código está asociado a más de un artículo. Corregí el catálogo antes de escanearlo."
+        : "No se pudo buscar el código." },
+      { status: 500, headers },
+    )
   }
 }

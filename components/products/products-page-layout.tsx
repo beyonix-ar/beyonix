@@ -47,6 +47,7 @@ import {
 import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 import { SITE_SETTINGS } from "@/config/site-settings"
 import { BASE_COLOR_ORDER, variantBaseColors } from "@/lib/products/product-color-filters"
+import { getProductColorMode } from "@/lib/products/color-mode"
 
 interface StoreBanner {
   id: string
@@ -59,6 +60,9 @@ interface StoreBanner {
 // cada color, incluido el segundo de una bicolor). Un producto aleatorio se
 // filtra por los colores reales que puede recibir el cliente.
 function getProductBaseColors(product: SupabaseProducto) {
+  // Aleatorio simple: el color físico no se conoce ni se sigue; no se filtra
+  // por un hex técnico (nunca aparece como "Marrón").
+  if (getProductColorMode(product) === "aleatorio_simple") return []
   const colors = new Set<string>()
   const activeVariants = (product.producto_variantes ?? []).filter((variant) => variant.activo !== false)
   const sources = activeVariants.length

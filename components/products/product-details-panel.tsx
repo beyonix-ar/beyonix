@@ -66,6 +66,7 @@ import { ProductPurchaseBox } from "./product-purchase-box"
 import { ProductRatingSummary } from "./product-rating-summary"
 import { ProductReviewsDialog } from "./product-reviews-dialog"
 import { RandomVariantHint } from "./random-variant-hint"
+import { RANDOM_SWATCH_STYLE } from "@/lib/products/variant-swatch"
 import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
@@ -176,7 +177,7 @@ export function ProductDetailsPanel({
   const [previewedColor, setPreviewedColor] = useState<
     { name: string; value: string; colorHex?: string | null; image?: string | null } | null
   >(null)
-  // "Aleatorio según stock" es una frase, no un nombre de color: sin
+  // "Aleatorio según disponibilidad" es una frase, no un nombre de color: sin
   // mayúscula por palabra.
   const displayedColorName =
     !previewedColor && selectedOption?.isRandom
@@ -334,6 +335,14 @@ export function ProductDetailsPanel({
                 <span className="beyonix-modal-body text-white/55">
                   {isRandomSelected && !previewedColor ? "Color/modelo:" : "Color:"}
                 </span>
+                {isRandomSelected && !previewedColor && (
+                  <span
+                    data-random-swatch
+                    aria-hidden="true"
+                    style={RANDOM_SWATCH_STYLE}
+                    className="mx-0.5 inline-block size-4 shrink-0 rounded-full align-middle shadow-[0_0_0_1px_rgba(255,255,255,0.35)]"
+                  />
+                )}
                 <span className="beyonix-modal-title font-semibold text-white">
                   {displayedColorName}
                 </span>

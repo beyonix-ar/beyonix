@@ -1,5 +1,6 @@
 import { mergeCatalogProduct } from "../business/cost-catalog-search.ts"
 import type { BusinessCostCatalogProduct } from "../supabase/queries/business-costs.ts"
+import { getProductColorMode, type ProductColorMode } from "../products/color-mode.ts"
 
 // Máximo que acepta el lector de Compras; los códigos del catálogo se guardan
 // recortados a 64 y los SKU a 120.
@@ -16,6 +17,7 @@ export type CatalogLookupProduct = {
   codigo_barra: string | null
   /** Grupo comercial con venta aleatoria (el stock sigue siendo por variante). */
   venta_aleatoria?: boolean
+  modo_color?: ProductColorMode | null
 }
 
 export type CatalogLookupVariant = {
@@ -44,17 +46,23 @@ export type CatalogCodeMatch = {
 // Acceso puntual a la base: cada método resuelve una fila por clave única
 // (catalog_barcode_registry / catalog_sku_registry / PK), nunca el catálogo.
 export interface CatalogCodeStore {
+  /** Resolver transaccional compartido con el armado; detecta identidades ambiguas. */
+  codeTarget?(code: string): Promise<(CatalogCodeOwner & { matchedBy: CatalogCodeMatch["matchedBy"] }) | null>
   barcodeOwner(normalizedBarcode: string): Promise<CatalogCodeOwner | null>
   /** Códigos de barra equivalentes (catalog_barcode_aliases). */
   aliasOwner(normalizedBarcode: string): Promise<CatalogCodeOwner | null>
   skuOwner(normalizedSku: string): Promise<CatalogCodeOwner | null>
   variant(id: number): Promise<CatalogLookupVariant | null>
-  product(id: number): Promise<(CatalogLookupProduct & { variantCount: number }) | null>
+  product(id: number): Promise<(CatalogLookupProduct & { variantCount: number; soleVariantId?: number | null }) | null>
   latestProductCostSku(productId: number): Promise<string | null>
 }
 
-function productFields({ id, nombre, activo, stock, sku, codigo_barra, venta_aleatoria }: CatalogLookupProduct): CatalogLookupProduct {
-  return { id, nombre, activo, stock, sku, codigo_barra, ...(venta_aleatoria === true ? { venta_aleatoria: true } : {}) }
+function productFields({ id, nombre, activo, stock, sku, codigo_barra, venta_aleatoria, modo_color }: CatalogLookupProduct): CatalogLookupProduct {
+  return {
+    id, nombre, activo, stock, sku, codigo_barra,
+    ...(venta_aleatoria === true ? { venta_aleatoria: true } : {}),
+    ...(modo_color ? { modo_color } : {}),
+  }
 }
 
 async function resolveOwner(
@@ -70,13 +78,19 @@ async function resolveOwner(
   }
   if (owner.productId == null) return null
   const product = await store.product(owner.productId)
+  if (!product) return null
+  if (getProductColorMode(product) === "aleatorio_simple" && product.variantCount === 1 && product.soleVariantId != null) {
+    const variant = await store.variant(product.soleVariantId)
+    if (!variant || variant.producto_id !== product.id) return null
+    return { value: `v:${product.id}:${variant.id}`, matchedBy, product: productFields(product), variant }
+  }
   // Un producto con variantes se compra siempre por variante: su código o SKU
   // propio no identifica qué variante ingresa. Un alias de grupo lo informa
   // para que Compras pida elegir la variante física.
-  if (product && product.variantCount > 0 && matchedBy === "alias") {
+  if (product.variantCount > 0 && matchedBy === "alias") {
     return { value: "", matchedBy, product: productFields(product), variant: null, requiresVariant: true }
   }
-  if (!product || product.variantCount > 0) return null
+  if (product.variantCount > 0) return null
   return {
     value: `p:${product.id}`,
     matchedBy,
@@ -94,6 +108,10 @@ export async function findCatalogArticleByCode(
 ): Promise<CatalogCodeMatch | null> {
   const barcode = code.trim()
   if (!barcode || barcode.length > MAX_SCAN_CODE_LENGTH) return null
+  if (store.codeTarget) {
+    const target = await store.codeTarget(barcode)
+    return target && resolveOwner(store, target, target.matchedBy)
+  }
   const barcodeOwner = await store.barcodeOwner(barcode)
   const byBarcode = barcodeOwner && await resolveOwner(store, barcodeOwner, "barcode")
   if (byBarcode) return byBarcode

@@ -1,3 +1,5 @@
+import { RANDOM_COLOR_NAME, isRandomColorName } from "./color-mode.ts"
+
 export const COLOR_NAMES_BY_HEX: Record<string, string> = {
   "#000000": "NEGRO",
   "#18181B": "NEGRO MATE",
@@ -24,6 +26,9 @@ export function getColorName(
   colorHex: string | null | undefined,
   variantName?: string | null,
 ) {
+  // Variante única de un producto aleatorio simple: su hex es sólo técnico.
+  if (isRandomColorName(variantName)) return RANDOM_COLOR_NAME
+
   const normalizedHex = colorHex?.trim().toUpperCase() || ""
   const knownName = COLOR_NAMES_BY_HEX[normalizedHex]
   if (knownName) return knownName

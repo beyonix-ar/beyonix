@@ -119,6 +119,7 @@ import {
 } from "@/lib/pricing/checkout-pricing"
 import { COMMERCIAL_UPDATE_NOTICE } from "@/lib/cart/cart-catalog-refresh"
 import { variantSwatchStyle } from "@/lib/products/variant-swatch"
+import { isRandomColorName } from "@/lib/products/color-mode"
 import {
   getCartStockReservation,
   reserveCartStock,
@@ -3143,10 +3144,10 @@ export default function CheckoutPage() {
                           <div className="mt-1 flex min-w-0 flex-col items-start gap-0.5">
                             {(item.variantName || item.colorHex) && (
                               <div className="flex max-w-full items-center gap-1.5">
-                                {item.colorHex && (
+                                {(item.colorHex || isRandomColorName(item.variantName)) && (
                                   <span
                                     className="size-2.5 shrink-0 rounded-full border border-white/35 shadow-sm shadow-black"
-                                    style={variantSwatchStyle(item.colorHex, item.secondaryColorHex)}
+                                    style={variantSwatchStyle(item.colorHex, item.secondaryColorHex, item.variantName)}
                                   />
                                 )}
                                 <span className="truncate text-xs capitalize text-white/60">

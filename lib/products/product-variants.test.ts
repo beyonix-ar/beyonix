@@ -9,6 +9,18 @@ import {
 } from "./product-variants.ts"
 import type { SupabaseProducto } from "../supabase/types.ts"
 
+test("aleatorio simple vende el stock único sin ofrecer el color técnico", () => {
+  const base = product()
+  const options = getProductVariantOptions(product({
+    sku: "ENCENUSB001", modo_color: "aleatorio_simple", venta_aleatoria: false,
+    producto_variantes: [{ ...base.producto_variantes![0], nombre: "ALEATORIO", color_hex: "#8B5A2B", stock: 12 }],
+    conditioned_stock: [],
+  }))
+  assert.equal(options.length, 1)
+  assert.deepEqual({ id: options[0].id, name: options[0].name, stock: options[0].stock, colorHex: options[0].colorHex, isRandom: options[0].isRandom },
+    { id: 10, name: "Aleatorio según disponibilidad", stock: 12, colorHex: null, isRandom: true })
+})
+
 function product(
   overrides: Partial<SupabaseProducto> = {},
 ): SupabaseProducto {

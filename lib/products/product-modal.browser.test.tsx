@@ -147,7 +147,8 @@ for (const width of [1440, 1280, 1024, 768, 390]) {
 
 test("venta aleatoria en el modal: rótulo, ayuda y nota de imágenes; sin selector falso de color", () => {
   assert.match(markup, /Color\/modelo:/)
-  assert.match(markup, /Aleatorio según stock/)
+  assert.match(markup, /Aleatorio según disponibilidad/)
+  assert.match(markup, /data-random-swatch="true"/)
   assert.match(markup, /aria-label="Qué significa color\/modelo aleatorio"/)
   assert.match(markup, /Imágenes ilustrativas de colores disponibles\./)
   assert.doesNotMatch(markup, /Seleccionar color/)

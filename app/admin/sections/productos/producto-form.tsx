@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { getProductColorMode, type ProductColorMode } from "@/lib/products/color-mode"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -125,7 +126,7 @@ export function ProductoForm({
       ]),
     ),
   )
-  const [ventaAleatoria, setVentaAleatoria] = useState(producto?.venta_aleatoria === true)
+  const [colorMode, setColorMode] = useState<ProductColorMode>(() => getProductColorMode(producto ?? {}))
   const [previewProduct, setPreviewProduct] =
     useState<SupabaseProducto | null>(null)
   const [variantDistribution, setVariantDistribution] =
@@ -475,7 +476,8 @@ export function ProductoForm({
       nombre: form.nombre.trim() || "Producto sin nombre",
       slug: form.slug.trim() || "producto-sin-nombre",
       descripcion: form.descripcion.trim() || null,
-      venta_aleatoria: ventaAleatoria,
+      venta_aleatoria: colorMode === "aleatorio_variantes",
+      modo_color: colorMode,
       video_url: form.video_url.trim() || null,
       precio: safePrice,
       precio_anterior: safePreviousPrice,
@@ -929,8 +931,9 @@ export function ProductoForm({
                   onPersistedVariantStatesChange={setPendingVariantStates}
                   onPersistedVariantsChange={handlePersistedVariantsChange}
                   onDistributionChange={setVariantDistribution}
-                  ventaAleatoria={ventaAleatoria}
-                  onVentaAleatoriaChange={setVentaAleatoria}
+                  productBarcode={producto?.codigo_barra ?? null}
+                  colorMode={colorMode}
+                  onColorModeChange={setColorMode}
                 />
               </div>
 

@@ -182,7 +182,7 @@ export function AdminVariantItem({
             <dt className="text-xs font-bold text-white/46">Color</dt>
             <dd className="mt-1 flex min-w-0 items-center gap-2 text-sm font-black text-white/82">
               {colorHex ? (
-                <span className="size-4 shrink-0 rounded-full border border-white/25" style={variantSwatchStyle(colorHex, secondaryColorHex)} />
+                <span className="size-4 shrink-0 rounded-full border border-white/25" style={variantSwatchStyle(colorHex, secondaryColorHex, colorLabel)} />
               ) : null}
               <span className="truncate">{colorLabel || colorHex || "Sin color"}</span>
             </dd>
@@ -263,7 +263,7 @@ export function AdminVariantItem({
         {colorHex ? (
           <span
             className="size-3.5 shrink-0 rounded-full border border-white/25"
-            style={variantSwatchStyle(colorHex, secondaryColorHex)}
+            style={variantSwatchStyle(colorHex, secondaryColorHex, colorLabel)}
           />
         ) : null}
         <span className="truncate text-xs font-bold text-white/62" title={colorLabel || colorHex || "Sin color"}>

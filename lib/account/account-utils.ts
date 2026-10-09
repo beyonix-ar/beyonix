@@ -3,6 +3,7 @@ import { formatCuentaOrderDate } from "./account-formatters.ts"
 import { deriveOrderCancellationInfo } from "../orders/order-cancellation-origin.ts"
 import { isOrderPaymentConfirmed } from "../orders/order-payment-status.ts"
 import { validatePassword } from "../validation/account-fields.ts"
+import { isRandomColorName, RANDOM_VARIANT_LABEL } from "../products/color-mode.ts"
 
 export type OrderProgressTone = "done" | "current" | "pending" | "danger" | "warning"
 
@@ -215,13 +216,14 @@ export function getCuentaItemColor(item: NonNullable<SupabasePedido["orden_items
     color_nombre?: string | null
   }
 
-  return (
+  const color = (
     item.conditioned_name ||
     item.producto_variantes?.nombre ||
     itemColor.color_nombre ||
     itemColor.color ||
     "Sin color"
   )
+  return isRandomColorName(color) ? RANDOM_VARIANT_LABEL : color
 }
 
 type CuentaItemImageFields = {

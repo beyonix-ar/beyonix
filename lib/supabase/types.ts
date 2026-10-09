@@ -4,6 +4,7 @@ import type {
   ClaimUnitSource,
 } from "../orders/claim-shipment-view.ts"
 import type { AdminPendingFacts } from "../orders/admin-pending-actions.ts"
+import type { ProductColorMode } from "../products/color-mode.ts"
 
 // ─────────────────────────────────────────────────────────────
 // Categorías
@@ -107,6 +108,8 @@ export interface SupabaseProducto {
   id: number
   /** El cliente no elige color: BEYONIX cumple con una variante física con stock. */
   venta_aleatoria?: boolean | null
+  /** Venta por color (lib/products/color-mode.ts). Ausente = derivado de venta_aleatoria. */
+  modo_color?: ProductColorMode | null
 
   nombre: string
   slug: string

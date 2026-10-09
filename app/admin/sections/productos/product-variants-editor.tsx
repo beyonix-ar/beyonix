@@ -62,6 +62,7 @@ import {
 import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 import { useStockAdjustment } from "./use-stock-adjustment"
 import { ProductSalesOptions } from "./product-sales-options"
+import type { ProductColorMode } from "@/lib/products/color-mode"
 import {
   AdminDangerButton,
   AdminCard,
@@ -94,9 +95,10 @@ interface ProductVariantsEditorProps {
   persistedVariantStates?: Record<number, boolean>
   onPersistedVariantStatesChange?: (states: Record<number, boolean>) => void
   onDistributionChange?: (distribution: ProductVariantDistribution | null) => void
-  /** Venta con color/modelo aleatorio (sólo productos guardados). */
-  ventaAleatoria?: boolean
-  onVentaAleatoriaChange?: (value: boolean) => void
+  /** Venta por color (sólo productos guardados). */
+  productBarcode?: string | null
+  colorMode?: ProductColorMode
+  onColorModeChange?: (value: ProductColorMode) => void
 }
 
 const inputCls =
@@ -153,8 +155,9 @@ export function ProductVariantsEditor({
   persistedVariantStates = {},
   onPersistedVariantStatesChange,
   onDistributionChange,
-  ventaAleatoria = false,
-  onVentaAleatoriaChange,
+  productBarcode = null,
+  colorMode = "especifico",
+  onColorModeChange,
 }: ProductVariantsEditorProps) {
   const [variantes, setVariantes] =
     useState<SupabaseProductoVariante[]>([])
@@ -1004,7 +1007,7 @@ export function ProductVariantsEditor({
       secondaryColorHex={variante.color_hex_secundario ?? null}
       supportsSecondaryColor
       colorName={
-        variante.color_hex_secundario
+        variante.nombre === "ALEATORIO" ? "ALEATORIO" : variante.color_hex_secundario
           ? primaryColorName(variante.nombre)
           : getColorName(variante.color_hex, variante.nombre)
       }
@@ -1116,7 +1119,7 @@ export function ProductVariantsEditor({
       <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
         <div className="product-editor-panel-heading flex items-center justify-between gap-2">
           <h2 className="text-base font-black text-white">Variantes</h2>
-          {!showCreateForm && hasVariants && (
+          {!showCreateForm && hasVariants && colorMode !== "aleatorio_simple" && (
             <AdminPrimaryButton
               title="Agregar una nueva variante"
               aria-label="Agregar una variante"
@@ -1147,12 +1150,17 @@ export function ProductVariantsEditor({
               : draftVariants.map(renderDraftVariant)}
           </div>
         ) : null}
-        {productoId && onVentaAleatoriaChange && !loading && orderedVariantes.length > 0 && (
+        {productoId && onColorModeChange && !loading && orderedVariantes.length > 0 && (
           <ProductSalesOptions
             productId={productoId}
-            variants={orderedVariantes.map((variant) => ({ id: variant.id, nombre: variant.nombre }))}
-            ventaAleatoria={ventaAleatoria}
-            onVentaAleatoriaChange={onVentaAleatoriaChange}
+            variants={orderedVariantes.map((variant) => ({ id: variant.id, nombre: getColorName(variant.color_hex, variant.nombre), codigoBarra: variant.codigo_barra ?? null }))}
+            productBarcode={productBarcode}
+            colorMode={colorMode}
+            onColorModeChange={(mode) => {
+              onColorModeChange(mode)
+              // El nombre de la variante cambia en la base (ALEATORIO ↔ color).
+              void loadVariantes()
+            }}
           />
         )}
         {showCreateForm && (
@@ -1535,7 +1543,7 @@ function VariantCard({
         <div className="product-editor-variant-color hidden min-w-0 items-center gap-2">
           <span
             className="size-3.5 shrink-0 rounded-full border border-white/25"
-            style={variantSwatchStyle(normalizeHex(colorHex), secondaryColorHex)}
+            style={variantSwatchStyle(normalizeHex(colorHex), secondaryColorHex, nombre)}
           />
           <span className="truncate text-xs font-bold text-white">{secondaryColorHex ? nombre : colorName}</span>
         </div>
@@ -1616,7 +1624,7 @@ function VariantCard({
           <p className="mt-0.5 flex min-w-0 items-center gap-2 truncate text-sm font-black text-white" title={nombre}>
             <span
               className="size-3 shrink-0 rounded-full border border-white/25"
-              style={variantSwatchStyle(normalizeHex(colorHex), secondaryColorHex)}
+              style={variantSwatchStyle(normalizeHex(colorHex), secondaryColorHex, nombre)}
               aria-hidden="true"
             />
             <span className="truncate">{displayName}</span>

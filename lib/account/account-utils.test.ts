@@ -1,8 +1,16 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { getOrderPaymentTotalDisplay, isInvoiceAwaitingRetry, isInvoiceGenerating } from "./account-utils.ts"
+import { getCuentaItemColor, getOrderPaymentTotalDisplay, isInvoiceAwaitingRetry, isInvoiceGenerating } from "./account-utils.ts"
 import type { SupabasePedido } from "../supabase/types.ts"
+
+test("Mis compras muestra disponibilidad aleatoria sin exponer el color técnico", () => {
+  const item = {
+    id: 1, orden_id: 1, producto_id: 1, cantidad: 1, precio: 100,
+    producto_variantes: { nombre: "ALEATORIO" },
+  } as NonNullable<SupabasePedido["orden_items"]>[number]
+  assert.equal(getCuentaItemColor(item), "Aleatorio según disponibilidad")
+})
 
 function order(invoiceStatus: SupabasePedido["invoice_status"], paid = true): SupabasePedido {
   return {

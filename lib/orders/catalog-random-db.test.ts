@@ -66,6 +66,7 @@ async function setup() {
     insert into orden_items(id,orden_id,producto_id,variante_id,cantidad,random_fulfillment) values
       (1,1040,4,41,1,true),(2,1040,4,41,1,true),(3,1050,5,51,1,false);
   `)
+  await db.exec(read("supabase/migrations/20261010100000_random_simple_color_mode.sql"))
   return db
 }
 
@@ -331,6 +332,45 @@ test("venta aleatoria: se activa/desactiva bajo lock y exige al menos dos varian
     await assert.rejects(db.query("select set_product_random_fulfillment(999,false,$1)", [actor]), /ya no existe/)
     await db.query("select set_config('request.jwt.claim.role','authenticated',false)")
     await assert.rejects(db.query("select set_product_random_fulfillment(5,false,$1)", [actor]), /permisos/)
+  } finally { await db.close() }
+})
+
+test("encendedor aleatorio simple: principal y aliases identifican el mismo stock y satisfacen el armado", async () => {
+  const db = await setup()
+  try {
+    await db.exec(`
+      update productos set codigo_barra='7170972998101' where id=4;
+      insert into productos(id, sku, codigo_barra, nombre) values (6, 'ENCENUSB001', '7170972998100', 'Encendedor eléctrico con carga USB');
+      insert into producto_variantes(id, producto_id, sku, nombre, color_hex, stock) values (61, 6, 'ENCENUSB001-UNI', 'MARRÓN', '#8B5A2B', 12);
+      insert into catalog_sku_registry(normalized_sku, product_id) values ('ENCENUSB001', 6);
+      insert into test_inventory_base values (61, 12);
+    `)
+    await db.query("select set_product_color_mode(6,'aleatorio_simple',$1)", [actor])
+    await db.exec(`
+      insert into catalog_barcode_aliases(normalized_barcode,barcode,product_id) values
+        ('7950000250666','7950000250666',6),('2025122709035','2025122709035',6);
+      insert into ordenes(id) values (1061);
+      insert into orden_items(id,orden_id,producto_id,variante_id,cantidad) values (61,1061,6,61,3);
+    `)
+    for (const code of ["7170972998100", "7950000250666", "2025122709035", "ENCENUSB001"]) {
+      const target = (await db.query<{ product_id: number; variant_id: number }>("select * from catalog_code_target($1)", [code])).rows[0]
+      assert.ok(target, `No se resolvió ${code}`)
+      assert.deepEqual([Number(target.product_id), Number(target.variant_id)], [6, 61])
+    }
+    assert.equal((await db.query<{ nombre: string }>("select nombre from producto_variantes where id=61")).rows[0].nombre, "ALEATORIO")
+    assert.equal(await count(db, "select count(*)::int n from catalog_barcode_aliases where product_id=6"), 2)
+    await db.query("select begin_order_preparation($1,$2)", [1061, actor])
+    for (const [index, code] of ["7170972998100", "7950000250666", "2025122709035"].entries()) {
+      const result = (await scan(db, 1061, code)).rows[0].r
+      assert.equal(result.requiresVariant, false)
+      assert.equal(result.scanned, index + 1)
+      assert.equal(result.status, index === 2 ? "prepared" : "preparing")
+    }
+    assert.deepEqual(await variants(db, 1061), [61])
+    assert.equal((await db.query<{ stock: number }>("select stock from producto_variantes where id=61")).rows[0].stock, 9)
+    await assert.rejects(db.exec("insert into producto_variantes(id,producto_id,nombre) values (62,6,'AZUL')"), /RANDOM_SIMPLE_SINGLE_VARIANT/)
+    await db.query("select set_product_color_mode(6,'especifico',$1)", [actor])
+    assert.notEqual((await db.query<{ nombre: string }>("select nombre from producto_variantes where id=61")).rows[0].nombre, "ALEATORIO")
   } finally { await db.close() }
 })
 

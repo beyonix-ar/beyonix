@@ -10,6 +10,7 @@ export type FakeProduct = {
   stock?: number | null
   sku?: string | null
   codigo_barra?: string | null
+  modo_color?: "especifico" | "aleatorio_simple" | "aleatorio_variantes"
 }
 export type FakeVariant = {
   id: number
@@ -121,10 +122,12 @@ export function createFakeCostCatalogDb(data: FakeDbData) {
     private to = Number.POSITIVE_INFINITY
     private single = false
     private head = false
+    private withCount = false
     private table: string
-    constructor(table: string, head: boolean) {
+    constructor(table: string, head: boolean, withCount = false) {
       this.table = table
       this.head = head
+      this.withCount = withCount
     }
     eq(column: string, value: unknown) { this.filters.push((row) => row[column] === value); return this }
     neq(column: string, value: unknown) { this.filters.push((row) => row[column] !== value); return this }
@@ -168,7 +171,7 @@ export function createFakeCostCatalogDb(data: FakeDbData) {
         if (page.length > 1) return { data: null, error: { message: "multiple rows" }, count: null }
         return { data: page[0] ?? null, error: null, count: null }
       }
-      return { data: page, error: null, count: null }
+      return { data: page, error: null, count: this.withCount ? rows.length : null }
     }
     then<TResult>(resolve: (value: { data: unknown; error: { message: string } | null; count: number | null }) => TResult) {
       return Promise.resolve(this.run()).then(resolve)
@@ -177,10 +180,35 @@ export function createFakeCostCatalogDb(data: FakeDbData) {
 
   return {
     requests,
+    async rpc(name: string, args: { p_code: string }) {
+      if (name !== "catalog_code_target") throw new Error(`RPC no simulada: ${name}`)
+      requests.push(name)
+      const code = args.p_code.trim()
+      const rawMatches: Array<Row & { matched_by: string }> = [
+        ...tables.catalog_barcode_registry().filter((row) => row.normalized_barcode === code)
+          .map((row) => ({ ...row, matched_by: "barcode" })),
+        ...tables.catalog_barcode_aliases().filter((row) => row.normalized_barcode === code)
+          .map((row) => ({ ...row, matched_by: "alias" })),
+        ...tables.catalog_sku_registry().filter((row) => row.normalized_sku === code.toUpperCase())
+          .map((row) => ({ ...row, matched_by: "sku" })),
+      ]
+      const matches = rawMatches.map((row) => {
+        const productId = row.product_id ?? variant(row.variant_id)?.producto_id ?? null
+        const productRow = product(productId)
+        const soleVariant = productRow?.modo_color === "aleatorio_simple"
+          ? data.producto_variantes.find((item) => item.producto_id === productId)?.id ?? null
+          : null
+        return { product_id: productId, variant_id: row.variant_id ?? soleVariant, matched_by: row.matched_by }
+      }).filter((row) => row.product_id != null)
+      if (new Set(matches.map((row) => `${row.product_id}:${row.variant_id ?? ""}`)).size > 1) {
+        return { data: null, error: { message: "CATALOG_CODE_AMBIGUOUS" } }
+      }
+      return { data: matches.slice(0, 1), error: null }
+    },
     from(table: string) {
       if (!tables[table]) throw new Error(`Tabla no simulada: ${table}`)
       return {
-        select: (_fields: string, options: { head?: boolean } = {}) => new Query(table, options.head === true),
+        select: (_fields: string, options: { head?: boolean; count?: "exact" } = {}) => new Query(table, options.head === true, options.count === "exact"),
       }
     },
   }

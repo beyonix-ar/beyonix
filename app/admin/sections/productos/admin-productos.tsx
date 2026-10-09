@@ -12,6 +12,7 @@ import { useProductColors } from "@/hooks/use-product-colors"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useProductos } from "@/hooks/use-productos"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
+import { getProductColorMode } from "@/lib/products/color-mode"
 import {
   getProductoById,
   getProductosPage,
@@ -103,6 +104,7 @@ function mergeProductColors(
   )
 
   for (const product of products) {
+    if (getProductColorMode(product) === "aleatorio_simple") continue
     for (const variant of product.producto_variantes ?? []) {
       const label = variant.nombre?.trim()
       const hex = variant.color_hex?.trim()

@@ -1,5 +1,6 @@
 import { BEYONIX_PRODUCT_CODE, isPrintableBarcode } from "../barcodes/codes.ts"
 import { getColorName } from "../products/variant-color.ts"
+import { getProductColorMode, type ProductColorMode } from "../products/color-mode.ts"
 import { classifyBarcode, type BarcodeClassification } from "./symbology.ts"
 
 // Datos de catálogo que devuelve /api/admin/labels/catalog (siempre server-side).
@@ -28,6 +29,7 @@ export interface LabelCatalogProduct {
   barcode: string | null
   price: number | null
   randomSale: boolean
+  colorMode?: ProductColorMode | null
   variants: LabelCatalogVariant[]
   aliases: LabelCatalogAlias[]
 }
@@ -102,6 +104,31 @@ function internalCodeFor(productId: number, variantId: number | null, codes: rea
 // (`groupAliases`) y no se ofrecen para imprimir.
 export function buildLabelTargets(product: LabelCatalogProduct): { targets: LabelTarget[]; groupAliases: string[] } {
   const groupAliases = product.aliases.filter((alias) => alias.variantId == null).map((alias) => alias.barcode.trim())
+  if (getProductColorMode({ modo_color: product.colorMode, venta_aleatoria: product.randomSale }) === "aleatorio_simple" && product.variants.length === 1) {
+    const variant = product.variants[0]
+    const options = collectOptions(product.barcode ?? variant.barcode, [
+      ...(product.barcode && variant.barcode ? [variant.barcode] : []),
+      ...groupAliases,
+      ...product.aliases.filter((alias) => alias.variantId === variant.id).map((alias) => alias.barcode),
+    ], product.sku ?? variant.sku)
+    return {
+      groupAliases: [],
+      targets: [{
+        productId: product.id,
+        variantId: variant.id,
+        productName: product.name,
+        variantLabel: "ALEATORIO",
+        colorHex: null,
+        colorHexSecondary: null,
+        sku: product.sku?.trim() || variant.sku?.trim() || null,
+        price: product.price,
+        active: product.active && variant.active,
+        randomSale: false,
+        options,
+        internalCode: internalCodeFor(product.id, variant.id, options.map((option) => option.code)),
+      }],
+    }
+  }
   if (!product.variants.length) {
     const options = collectOptions(product.barcode, groupAliases, product.sku)
     return {

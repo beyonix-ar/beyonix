@@ -140,7 +140,7 @@ export function ColorSelector({
           >
             <span
               style={{
-                ...variantSwatchStyle(color.colorHex, color.secondaryColorHex),
+                ...variantSwatchStyle(color.colorHex, color.secondaryColorHex, color.name),
                 boxShadow:
                   "inset 0 0 0 1.5px rgba(255,255,255,0.2)",
               }}

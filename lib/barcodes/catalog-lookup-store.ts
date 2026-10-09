@@ -22,6 +22,17 @@ function check<T>({ data, error }: { data: T; error: { message: string } | null 
 // producto/variante): no depende del tamaño del catálogo ni del límite de filas.
 export function createSupabaseCatalogCodeStore(admin: SupabaseClient): CatalogCodeStore {
   return {
+    async codeTarget(code) {
+      const result = await admin.rpc("catalog_code_target", { p_code: code })
+      if (result.error) throw new Error(result.error.message)
+      const row = Array.isArray(result.data) ? result.data[0] : result.data
+      if (!row) return null
+      const matchedBy = row.matched_by
+      if (matchedBy !== "barcode" && matchedBy !== "alias" && matchedBy !== "sku") {
+        throw new Error("El código tiene una resolución inválida en el catálogo.")
+      }
+      return { productId: toId(row.product_id), variantId: toId(row.variant_id), matchedBy }
+    },
     async barcodeOwner(normalizedBarcode) {
       return owner(check(await admin
         .from("catalog_barcode_registry")
@@ -67,13 +78,14 @@ export function createSupabaseCatalogCodeStore(admin: SupabaseClient): CatalogCo
       const [productResult, variantsResult] = await Promise.all([
         admin
           .from("productos")
-          .select("id, nombre, activo, stock, sku, codigo_barra, venta_aleatoria")
+          .select("id, nombre, activo, stock, sku, codigo_barra, venta_aleatoria, modo_color")
           .eq("id", id)
           .maybeSingle(),
         admin
           .from("producto_variantes")
-          .select("id", { count: "exact", head: true })
-          .eq("producto_id", id),
+          .select("id", { count: "exact" })
+          .eq("producto_id", id)
+          .limit(2),
       ])
       const row = check(productResult)
       check(variantsResult)
@@ -87,7 +99,9 @@ export function createSupabaseCatalogCodeStore(admin: SupabaseClient): CatalogCo
         sku: toText(row.sku),
         codigo_barra: toText(row.codigo_barra),
         venta_aleatoria: row.venta_aleatoria === true,
+        modo_color: row.modo_color,
         variantCount: variantsResult.count ?? 0,
+        soleVariantId: variantsResult.count === 1 ? toId(variantsResult.data?.[0]?.id) : null,
       }
     },
     // Mismo respaldo que el catálogo de Compras para productos legacy sin SKU.

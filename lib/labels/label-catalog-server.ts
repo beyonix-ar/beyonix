@@ -7,7 +7,7 @@ import type { LabelCatalogProduct } from "./catalog.ts"
 export const MAX_LABEL_CATALOG_IDS = 100
 
 const PRODUCT_FIELDS =
-  "id, nombre, activo, sku, codigo_barra, precio, venta_aleatoria, producto_variantes(id, nombre, activo, stock, sku, color_hex, color_hex_secundario, codigo_barra, orden), catalog_barcode_aliases(barcode, variant_id)"
+  "id, nombre, activo, sku, codigo_barra, precio, venta_aleatoria, modo_color, producto_variantes(id, nombre, activo, stock, sku, color_hex, color_hex_secundario, codigo_barra, orden), catalog_barcode_aliases(barcode, variant_id)"
 
 type VariantRow = {
   id: number
@@ -29,6 +29,7 @@ type ProductRow = {
   codigo_barra: string | null
   precio: number | string | null
   venta_aleatoria: boolean | null
+  modo_color: "especifico" | "aleatorio_simple" | "aleatorio_variantes" | null
   producto_variantes: VariantRow[] | null
   catalog_barcode_aliases: { barcode: string | null; variant_id: number | null }[] | null
 }
@@ -48,6 +49,7 @@ function toLabelProduct(row: ProductRow): LabelCatalogProduct {
     barcode: toText(row.codigo_barra),
     price: price != null && Number.isFinite(price) && price > 0 ? price : null,
     randomSale: row.venta_aleatoria === true,
+    colorMode: row.modo_color,
     variants: [...(row.producto_variantes ?? [])]
       .sort((left, right) => (left.orden ?? 0) - (right.orden ?? 0) || left.id - right.id)
       .map((variant) => ({

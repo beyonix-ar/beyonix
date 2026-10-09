@@ -89,7 +89,7 @@ function memoryStore(products: MemoryProduct[], costSkus: Record<number, string>
       const product = byId.get(id)
       if (!product) return null
       const { variants: productVariants, ...fields } = product
-      return { ...fields, variantCount: productVariants?.length ?? 0 }
+      return { ...fields, variantCount: productVariants?.length ?? 0, soleVariantId: productVariants?.length === 1 ? productVariants[0].id : null }
     },
     async latestProductCostSku(id) { calls.push(`cost-sku:${id}`); return costSkus[id] ?? null },
   }
@@ -194,4 +194,22 @@ test("Compras: códigos equivalentes resuelven la variante física o piden elegi
   assert.deepEqual([group?.requiresVariant, group?.value, group?.variant], [true, "", null])
   // El código principal sigue ganando sobre cualquier alias.
   assert.equal((await findCatalogArticleByCode(store, "7170972998100"))?.matchedBy, "barcode")
+})
+
+test("Compras: los tres códigos del encendedor aleatorio simple resuelven su artículo único", async () => {
+  const encendedor: MemoryProduct = {
+    id: 70, nombre: "Encendedor eléctrico con carga USB", activo: true, stock: 12,
+    sku: "ENCENUSB001", codigo_barra: "7170972998100", modo_color: "aleatorio_simple",
+    variants: [{ id: 701, nombre: "ALEATORIO", activo: true, stock: 12, sku: null, color_hex: "#8B5A2B", codigo_barra: null }],
+  }
+  const { store } = memoryStore([encendedor], {}, {
+    "7950000250666": { productId: 70, variantId: null },
+    "2025122709035": { productId: 70, variantId: null },
+  })
+  for (const code of ["7170972998100", "7950000250666", "2025122709035", "ENCENUSB001"]) {
+    const match = await findCatalogArticleByCode(store, code)
+    assert.equal(match?.value, "v:70:701")
+    assert.equal(match?.requiresVariant, undefined)
+    assert.equal(match?.variant?.stock, 12)
+  }
 })

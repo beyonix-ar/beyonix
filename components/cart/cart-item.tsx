@@ -14,6 +14,7 @@ import {
 } from "@/lib/cart/stock-status"
 import { getColorName } from "@/lib/products/variant-color"
 import { variantSwatchStyle } from "@/lib/products/variant-swatch"
+import { isRandomColorName } from "@/lib/products/color-mode"
 import { getDiscountPercent } from "@/lib/products/product-variants"
 
 interface Props {
@@ -70,7 +71,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
   const colorName = hasVariantInfo
     ? secondaryColorHex && variantName ? variantName : getColorName(colorHex, variantName)
     : null
-  const hasColor = Boolean(colorHex)
+  const hasColor = Boolean(colorHex) || isRandomColorName(variantName)
   const [imageSrc, setImageSrc] = useState(image || "/placeholder.svg")
   const maxQuantity = getMaxPurchasableQuantity(product, color)
   const isMaxQuantity = quantity >= maxQuantity
@@ -104,7 +105,7 @@ export function CartItemRow({ item, onUpdateQuantity, onRemove }: Props) {
             <div className="mt-1 flex items-center gap-1.5">
               {hasColor && (
                 <span
-                  style={variantSwatchStyle(colorHex, secondaryColorHex)}
+                  style={variantSwatchStyle(colorHex, secondaryColorHex, variantName)}
                   className="size-3 rounded-full border border-white/20"
                 />
               )}

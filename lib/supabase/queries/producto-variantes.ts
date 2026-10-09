@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 import type { BarcodeAlias } from "@/lib/barcodes/barcode-aliases"
+import type { ProductColorMode } from "@/lib/products/color-mode"
 
 import type {
   SupabaseProductoVariante,
@@ -401,12 +402,11 @@ export async function reorderProductoVariantes(
   return result.variants
 }
 
-export async function setProductoVentaAleatoria(productId: number, ventaAleatoria: boolean) {
-  const result = await variantRequest<{ ventaAleatoria: boolean }>(
+export async function setProductoColorMode(productId: number, colorMode: ProductColorMode) {
+  return variantRequest<{ colorMode: ProductColorMode; ventaAleatoria: boolean }>(
     `/api/admin/products/${productId}/fulfillment`,
-    { method: "PATCH", body: JSON.stringify({ ventaAleatoria }) },
+    { method: "PATCH", body: JSON.stringify({ colorMode }) },
   )
-  return result.ventaAleatoria
 }
 
 export async function listBarcodeAliases(productId: number) {
