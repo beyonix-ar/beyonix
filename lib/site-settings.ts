@@ -6,7 +6,7 @@ import {
   type ShippingBonusSettings,
 } from "./store-config.ts"
 import { SITE_SETTINGS } from "../config/site-settings.ts"
-import type { InstallmentsFinancingConfig } from "./products/installments.ts"
+import type { InstallmentCount, InstallmentsFinancingConfig } from "./products/installments.ts"
 import {
   DEFAULT_INTEREST_FREE_POLICY,
   normalizeInterestFreePolicy,
@@ -113,12 +113,15 @@ export type InstallmentsFinancingSettings = InstallmentsFinancingConfig
 export interface StoredInstallmentsFinancingSettings extends InstallmentsFinancingConfig {
   mode: MercadoPagoCostsMode
   interestFreePolicy: InterestFreePolicy
+  /** Confirmación administrativa explícita; los ceros anteriores no acreditan costo cero. */
+  confirmedManualCosts?: { base: boolean; iva: boolean; surchargeByCount: Record<InstallmentCount, boolean> }
 }
 
 /** Vista sólo para Admin: nunca viaja en `SiteSettings` (que es pública). */
 export interface MercadoPagoCostsOverview extends ResolvedInstallmentsFinancing {
   mode: MercadoPagoCostsMode
   manual: InstallmentsFinancingConfig
+  confirmedManualCosts: NonNullable<StoredInstallmentsFinancingSettings["confirmedManualCosts"]>
   observed: MercadoPagoObservedCosts | null
   interestFreePolicy: InterestFreePolicy
   /** Sincronización con Mercado Pago: última referencia exitosa (estimada) y último intento. */
@@ -310,6 +313,26 @@ export function normalizeStoredInstallmentsFinancingSettings(
     ...normalizeInstallmentsFinancingSettings(source),
     mode: normalizeMercadoPagoCostsMode(source.mode),
     interestFreePolicy: normalizeInterestFreePolicy(source.interestFreePolicy),
+    confirmedManualCosts: normalizeConfirmedManualCosts(source),
+  }
+}
+
+function normalizeConfirmedManualCosts(source: Record<string, unknown>) {
+  const confirmed = source.confirmedManualCosts && typeof source.confirmedManualCosts === "object"
+    ? source.confirmedManualCosts as Record<string, unknown> : {}
+  const surcharge = confirmed.surchargeByCount && typeof confirmed.surchargeByCount === "object"
+    ? confirmed.surchargeByCount as Record<string, unknown> : {}
+  const rawSurcharge = source.surchargePercentByCount && typeof source.surchargePercentByCount === "object"
+    ? source.surchargePercentByCount as Record<string, unknown> : {}
+  const known = (flag: unknown, raw: unknown) => flag === true || (flag !== false && typeof raw === "number" && raw > 0)
+  return {
+    base: known(confirmed.base, source.baseProcessingPercent),
+    iva: known(confirmed.iva, source.ivaPercent),
+    surchargeByCount: {
+      2: known(surcharge["2"], rawSurcharge["2"]),
+      3: known(surcharge["3"], rawSurcharge["3"]),
+      6: known(surcharge["6"], rawSurcharge["6"]),
+    },
   }
 }
 
@@ -646,10 +669,11 @@ export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOve
   ])
   if (error || policyResult.error) throw new SiteSettingsUnavailableError()
   const stored = normalizeStoredInstallmentsFinancingSettings(data?.value)
-  const { mode, interestFreePolicy, ...manual } = stored
+  const { mode, interestFreePolicy, confirmedManualCosts, ...manual } = stored
   return {
     mode,
     manual,
+    confirmedManualCosts: confirmedManualCosts ?? { base: false, iva: false, surchargeByCount: { 2: false, 3: false, 6: false } },
     observed,
     interestFreePolicy,
     interestFreeStatus,

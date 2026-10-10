@@ -104,20 +104,29 @@ interface Draft {
   surcharge: Record<InstallmentCount, string>
   interestFreeEnabled: boolean
   financedPricePolicy: FinancedPricePolicy
+  confirmed: NonNullable<StoredInstallmentsFinancingSettings["confirmedManualCosts"]>
+  savedManual: InstallmentsFinancingConfig
 }
 
 function toDraft(overview: MercadoPagoCostsOverview | null): Draft {
   const manual = overview?.manual ?? DEFAULT_INSTALLMENTS_FINANCING_SETTINGS
   const policy = overview?.interestFreePolicy ?? DEFAULT_INTEREST_FREE_POLICY
+  const confirmed = overview?.confirmedManualCosts ?? {
+    base: manual.baseProcessingPercent > 0,
+    iva: manual.ivaPercent > 0,
+    surchargeByCount: { 2: manual.surchargePercentByCount[2] > 0, 3: manual.surchargePercentByCount[3] > 0, 6: manual.surchargePercentByCount[6] > 0 },
+  }
   return {
     financedPricePolicy: overview?.financedPricePolicy ?? DEFAULT_FINANCED_PRICE_POLICY,
+    confirmed,
+    savedManual: manual,
     mode: overview?.mode ?? "manual",
-    base: String(manual.baseProcessingPercent),
-    iva: String(manual.ivaPercent),
+    base: confirmed.base ? String(manual.baseProcessingPercent) : "",
+    iva: confirmed.iva ? String(manual.ivaPercent) : "",
     surcharge: {
-      2: String(manual.surchargePercentByCount[2]),
-      3: String(manual.surchargePercentByCount[3]),
-      6: String(manual.surchargePercentByCount[6]),
+      2: confirmed.surchargeByCount[2] ? String(manual.surchargePercentByCount[2]) : "",
+      3: confirmed.surchargeByCount[3] ? String(manual.surchargePercentByCount[3]) : "",
+      6: confirmed.surchargeByCount[6] ? String(manual.surchargePercentByCount[6]) : "",
     },
     interestFreeEnabled: policy.enabled,
   }
@@ -126,12 +135,13 @@ function toDraft(overview: MercadoPagoCostsOverview | null): Draft {
 function toStored(draft: Draft): StoredInstallmentsFinancingSettings {
   return {
     mode: draft.mode,
-    baseProcessingPercent: parsePercentage(draft.base),
-    ivaPercent: parsePercentage(draft.iva),
+    confirmedManualCosts: draft.confirmed,
+    baseProcessingPercent: draft.confirmed.base ? parsePercentage(draft.base) : draft.savedManual.baseProcessingPercent,
+    ivaPercent: draft.confirmed.iva ? parsePercentage(draft.iva) : draft.savedManual.ivaPercent,
     surchargePercentByCount: {
-      2: parsePercentage(draft.surcharge[2]),
-      3: parsePercentage(draft.surcharge[3]),
-      6: parsePercentage(draft.surcharge[6]),
+      2: draft.confirmed.surchargeByCount[2] ? parsePercentage(draft.surcharge[2]) : draft.savedManual.surchargePercentByCount[2],
+      3: draft.confirmed.surchargeByCount[3] ? parsePercentage(draft.surcharge[3]) : draft.savedManual.surchargePercentByCount[3],
+      6: draft.confirmed.surchargeByCount[6] ? parsePercentage(draft.surcharge[6]) : draft.savedManual.surchargePercentByCount[6],
     },
     interestFreePolicy: { enabled: draft.interestFreeEnabled },
   }
@@ -142,6 +152,9 @@ function sameStored(a: StoredInstallmentsFinancingSettings, b: StoredInstallment
     a.mode === b.mode &&
     a.baseProcessingPercent === b.baseProcessingPercent &&
     a.ivaPercent === b.ivaPercent &&
+    a.confirmedManualCosts?.base === b.confirmedManualCosts?.base &&
+    a.confirmedManualCosts?.iva === b.confirmedManualCosts?.iva &&
+    INSTALLMENT_COUNTS.every((count) => a.confirmedManualCosts?.surchargeByCount[count] === b.confirmedManualCosts?.surchargeByCount[count]) &&
     INSTALLMENT_COUNTS.every((count) => a.surchargePercentByCount[count] === b.surchargePercentByCount[count]) &&
     a.interestFreePolicy.enabled === b.interestFreePolicy.enabled
   )
@@ -207,11 +220,11 @@ function ModeOption({
   )
 }
 
-function SourcePill({ source, mode }: { source: MercadoPagoCostSource; mode: MercadoPagoCostsMode }) {
+function SourcePill({ source, mode, confirmed = true }: { source: MercadoPagoCostSource; mode: MercadoPagoCostsMode; confirmed?: boolean }) {
   const observed = source === "observed"
   return (
     <ConfigChip tone={observed ? "success" : mode === "manual" ? "warning" : "neutral"}>
-      {observed ? "Observado" : mode === "manual" ? "Manual" : "Respaldo"}
+      {observed ? "Observado" : !confirmed ? "Sin dato" : mode === "manual" ? "Manual" : "Respaldo"}
     </ConfigChip>
   )
 }
@@ -276,11 +289,13 @@ interface CostRowProps {
   /** Desglose base + financiación + IVA (1 pago y cuotas; el IVA no lleva). */
   breakdown?: { base: number; financing: number | null; ivaPercent: number }
   effectiveValue: number
+  confirmed: boolean
   source: MercadoPagoCostSource
   mode: MercadoPagoCostsMode
   observation: MercadoPagoCostObservation | null
   observationUnavailableText: string
   ivaPercent: number
+  ivaConfirmed: boolean
   showInput: boolean
   manualValue: string
   manualLabel: string
@@ -299,18 +314,20 @@ function CostRow({
   valueLabel,
   breakdown,
   effectiveValue,
+  confirmed,
   source,
   mode,
   observation,
   observationUnavailableText,
   ivaPercent,
+  ivaConfirmed,
   showInput,
   manualValue,
   manualLabel,
   disabled,
   onManualChange,
 }: CostRowProps) {
-  const observedValue = observation ? withoutIva(observation.percentWithIva, ivaPercent) : null
+  const observedValue = observation ? ivaConfirmed ? withoutIva(observation.percentWithIva, ivaPercent) : observation.percentWithIva : null
   return (
     <li
       data-cost-row={label}
@@ -330,19 +347,22 @@ function CostRow({
           </ConfigChip>
         ) : null}
       </div>
-      <CostCell label={available === false ? `${valueLabel} (guardado)` : `${valueLabel} en uso`}>
-        <span data-cost-effective>{formatPercent(effectiveValue)}</span>
-        <SourcePill source={source} mode={mode} />
+      <CostCell label={source !== "observed" && !confirmed ? `${valueLabel} sin verificar` : available === false ? `${valueLabel} (guardado)` : `${valueLabel} en uso`}>
+        <span data-cost-effective>{source === "observed" && !ivaConfirmed && observation
+          ? `${formatPercent(observation.percentWithIva)} con IVA; neto sin verificar`
+          : source === "observed" || confirmed ? formatPercent(effectiveValue) : "Sin configurar"}</span>
+        <SourcePill source={source} mode={mode} confirmed={confirmed} />
       </CostCell>
       <CostCell label={breakdown ? `${valueLabel} observado` : "Observado"}>
         {observation && observedValue !== null ? (
           <span title={`${formatPercent(observation.percentWithIva, 3)} con IVA · ${describeObservation(observation)}`}>
             {formatPercent(observedValue)}
+            {!ivaConfirmed ? <span className="ml-1 text-12px font-semibold text-white/62">con IVA; desglose pendiente</span> : null}
             <span className="ml-1.5 whitespace-nowrap text-12px font-semibold text-white/62">{formatDateTime(observation.observedAt)}</span>
           </span>
         ) : (
           <span className="text-12px font-semibold text-white/62" title={observationUnavailableText}>
-            —
+            No disponible
           </span>
         )}
       </CostCell>
@@ -361,7 +381,7 @@ function CostRow({
           />
         </div>
       ) : null}
-      {breakdown ? <CostBreakdown {...breakdown} /> : null}
+      {breakdown && (confirmed || source === "observed") ? <CostBreakdown {...breakdown} /> : null}
     </li>
   )
 }
@@ -492,6 +512,10 @@ export function FinancingPanel({
   const publicMessage = getInterestFreeMessage(overview?.interestFreeOffer)
   const resolved = resolveInstallmentsFinancing(stored, draft.mode, observed)
   const effective: InstallmentsFinancingConfig = resolved.effective
+  const baseKnown = resolved.sources.base === "observed" || draft.confirmed.base
+  const formatObserved = (percentWithIva: number) => draft.confirmed.iva
+    ? formatPercent(withoutIva(percentWithIva, effective.ivaPercent))
+    : `${formatPercent(percentWithIva)} con IVA`
   const inputsDisabled = disabled || saving
   const manual = draft.mode === "manual"
   // En Automático los costos se leen; el respaldo manual se edita a pedido.
@@ -501,7 +525,7 @@ export function FinancingPanel({
   const visibleHistory = showAllHistory ? history : history.slice(0, HISTORY_PREVIEW)
 
   const setSurcharge = (count: InstallmentCount, value: string) =>
-    setDraft((current) => ({ ...current, surcharge: { ...current.surcharge, [count]: value } }))
+    setDraft((current) => ({ ...current, surcharge: { ...current.surcharge, [count]: value }, confirmed: { ...current.confirmed, surchargeByCount: { ...current.confirmed.surchargeByCount, [count]: value.trim() !== "" } } }))
 
   const mercadoPagoStatus: { tone: ConfigTone; value: string; state: string } = !enabled
     ? { tone: "neutral", value: "En pausa", state: "paused" }
@@ -770,6 +794,11 @@ export function FinancingPanel({
             )
           }
         >
+          {!draft.confirmed.iva || !baseKnown || INSTALLMENT_COUNTS.some((count) => resolved.sources.surchargeByCount[count] !== "observed" && !draft.confirmed.surchargeByCount[count]) ? (
+            <p role="status" data-costs-unverified className="admin-config-status mb-2 px-2.5 py-1.5 text-12px font-semibold text-white/85" data-tone="warning">
+              Hay costos sin verificar. Los valores anteriores siguen guardados para el cálculo vigente; no representan una tarifa confirmada de Mercado Pago. Revisá y guardá cada respaldo antes de tomar decisiones comerciales.
+            </p>
+          ) : null}
           <ul className="admin-config-list" data-cost-list>
             {costRows.map((row) => {
               const isBase = row.key === "base"
@@ -781,12 +810,13 @@ export function FinancingPanel({
                   label={row.label}
                   available={isBase || reference === null ? null : reference.minimumAmountByCount[count] !== null}
                   valueLabel={isBase ? "Costo base MP" : "Financiación"}
-                  breakdown={{
+                  breakdown={baseKnown && draft.confirmed.iva && (isBase || source === "observed" || draft.confirmed.surchargeByCount[count]) ? {
                     base: effective.baseProcessingPercent,
                     financing: isBase ? null : effective.surchargePercentByCount[count],
                     ivaPercent: effective.ivaPercent,
-                  }}
+                  } : undefined}
                   effectiveValue={isBase ? effective.baseProcessingPercent : effective.surchargePercentByCount[count]}
+                  confirmed={isBase ? draft.confirmed.base : draft.confirmed.surchargeByCount[count]}
                   source={source}
                   mode={draft.mode}
                   observation={isBase ? observed?.base ?? null : observed?.surchargeByCount[count] ?? null}
@@ -794,12 +824,13 @@ export function FinancingPanel({
                     isBase ? "Sin pagos con crédito en 1 pago todavía" : "Sin pagos con crédito en estas cuotas sin interés todavía"
                   }
                   ivaPercent={effective.ivaPercent}
+                  ivaConfirmed={draft.confirmed.iva}
                   showInput={showInputs}
                   manualValue={isBase ? draft.base : draft.surcharge[count]}
                   manualLabel={manualLabel}
                   disabled={inputsDisabled}
                   onManualChange={(value) =>
-                    isBase ? setDraft((current) => ({ ...current, base: value })) : setSurcharge(count, value)
+                    isBase ? setDraft((current) => ({ ...current, base: value, confirmed: { ...current.confirmed, base: value.trim() !== "" } })) : setSurcharge(count, value)
                   }
                 />
               )
@@ -809,16 +840,18 @@ export function FinancingPanel({
               available={null}
               valueLabel="IVA"
               effectiveValue={effective.ivaPercent}
+              confirmed={draft.confirmed.iva}
               source="manual"
               mode="manual"
               observation={null}
               observationUnavailableText="Mercado Pago no lo informa por separado: siempre se usa este valor."
               ivaPercent={effective.ivaPercent}
+              ivaConfirmed={draft.confirmed.iva}
               showInput={showInputs}
               manualValue={draft.iva}
               manualLabel={manualLabel}
               disabled={inputsDisabled}
-              onManualChange={(value) => setDraft((current) => ({ ...current, iva: value }))}
+              onManualChange={(value) => setDraft((current) => ({ ...current, iva: value, confirmed: { ...current.confirmed, iva: value.trim() !== "" } }))}
             />
           </ul>
           {observed ? (
@@ -830,7 +863,7 @@ export function FinancingPanel({
                   const label = PAYMENT_TYPE_LABELS[type]
                   const name = `${label[0].toUpperCase()}${label.slice(1)}`
                   return observation
-                    ? `${name} ${formatPercent(withoutIva(observation.percentWithIva, effective.ivaPercent))}`
+                    ? `${name} ${formatObserved(observation.percentWithIva)}`
                     : `${name} sin datos`
                 })
                 .join(" · ")}
@@ -853,8 +886,8 @@ export function FinancingPanel({
                     </p>
                     <p className="text-sm font-bold text-white/85">
                       {event.previousPercentWithIva === null
-                        ? formatPercent(withoutIva(event.percentWithIva, effective.ivaPercent))
-                        : `${formatPercent(withoutIva(event.previousPercentWithIva, effective.ivaPercent))} → ${formatPercent(withoutIva(event.percentWithIva, effective.ivaPercent))}`}
+                        ? formatObserved(event.percentWithIva)
+                        : `${formatObserved(event.previousPercentWithIva)} → ${formatObserved(event.percentWithIva)}`}
                     </p>
                     <p className="text-12px leading-4 text-white/62">
                       Detectado en pago real · {historyStatusText(event)} · BX-{1000 + event.orderId}

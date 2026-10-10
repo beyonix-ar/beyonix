@@ -455,21 +455,20 @@ export function ProductsPageLayout({
             siempre, por debajo del 55% del alto (la franja libre del arte):
             el alto mínimo lo garantiza y, si actúa, el recorte es desde la
             derecha (object-left). Nunca bandas laterales.
-          - mobile/tablet: el arte va en su propio bloque (12:5 / 3:1), con
-            un recorte moderado desde la izquierda (donde está el texto), y
-            buscador + beneficios debajo, legibles.
+          - mobile/tablet: el arte completo se ajusta dentro de su bloque
+            sin deformarse ni recortarse; buscador + beneficios quedan debajo.
           Sin banners cargados no se reserva un recuadro vacío.
         */}
         <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${productsBanners.length ? "lg:aspect-[1920/520] lg:min-h-[24rem]" : "pt-8 sm:pt-10 lg:pt-12"}`}>
           {productsBanners.length ? (
-            <div data-banner-media className="relative aspect-[12/5] w-full shrink-0 sm:aspect-[3/1] lg:absolute lg:inset-0 lg:aspect-auto">
+            <div data-banner-media className="relative aspect-[8000/2167] w-full shrink-0 lg:absolute lg:inset-0 lg:aspect-auto">
               {productsBanners.map((banner, index) =>
                 banner.image_url ? (
                   <img
                     key={banner.id}
                     src={banner.image_url}
                     alt={banner.alt_text || "Banner de productos BEYONIX"}
-                    className={`absolute inset-0 z-0 size-full object-cover object-left transition-opacity duration-700 ease-out ${
+                    className={`absolute inset-0 z-0 size-full object-contain object-center transition-opacity duration-700 ease-out lg:object-cover lg:object-left ${
                       index === activeBannerIndex ? "opacity-100" : "opacity-0"
                     }`}
                   />

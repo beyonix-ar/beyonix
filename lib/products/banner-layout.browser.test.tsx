@@ -148,6 +148,22 @@ for (const theme of ["dark", "light"] as const) {
         assert.ok(Math.abs(m.media - m.banner) <= 3, "la caja de la imagen ocupa todo el ancho del banner")
         assert.ok(m.crop <= 0.25, `recorte moderado (${Math.round(m.crop * 100)}%)`)
         if (width >= 1024) assert.ok(m.height <= Math.max(0.6 * height, 290), `alto razonable en desktop (${Math.round(m.height)}px)`)
+        const continuity = await page.evaluate(() => {
+          const banner = document.querySelector(".beyonix-hero-banner")!
+          const backdrop = banner.querySelector("img[aria-hidden='true']")!
+          const benefits = banner.querySelector(".beyonix-benefit-item")!.parentElement!
+          const bannerBox = banner.getBoundingClientRect()
+          const backdropBox = backdrop.getBoundingClientRect()
+          return {
+            backgroundCoversBanner: Math.abs(backdropBox.height - bannerBox.height) <= 2,
+            benefitsInsideBanner: benefits.getBoundingClientRect().bottom <= bannerBox.bottom,
+            labels: [...benefits.children].map((item) => item.textContent?.trim()),
+          }
+        })
+        assert.ok(continuity.backgroundCoversBanner, "el fondo cubre toda la sección")
+        assert.ok(continuity.benefitsInsideBanner, "los beneficios quedan dentro del fondo")
+        assert.ok(continuity.labels.includes("Pagos seguros"))
+        assert.ok(continuity.labels.includes("Garantía de 6 meses"))
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/category-banner-${theme}-${width}x${height}.png` })
       } finally { await page.close() }
     })

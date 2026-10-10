@@ -7,8 +7,8 @@ import { DEFAULT_PRODUCT_WARRANTY_MONTHS } from "@/lib/orders/warranty-policy"
 // garantía legal y atención por los canales oficiales.
 const STORE_BENEFITS = [
   { label: "Envíos a todo el país", icon: Truck },
-  { label: "Pagos con Mercado Pago", icon: CreditCard },
-  { label: `Garantía legal de ${DEFAULT_PRODUCT_WARRANTY_MONTHS} meses`, icon: ShieldCheck },
+  { label: "Pagos seguros", icon: CreditCard },
+  { label: `Garantía de ${DEFAULT_PRODUCT_WARRANTY_MONTHS} meses`, icon: ShieldCheck },
   { label: "Atención personalizada", icon: Headphones },
 ]
 

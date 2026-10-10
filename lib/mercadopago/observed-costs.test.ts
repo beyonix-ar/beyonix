@@ -161,17 +161,29 @@ test("modo guardado: sin modo o inválido = manual (compatibilidad con la config
   assert.equal(normalizeMercadoPagoCostsMode("automatic"), "automatic")
   // Sin política guardada: cuotas sin interés activas (sin mínimos propios: manda Mercado Pago).
   const DEFAULT_POLICY = { enabled: true }
-  assert.deepEqual(normalizeStoredInstallmentsFinancingSettings(MANUAL), { ...MANUAL, mode: "manual", interestFreePolicy: DEFAULT_POLICY })
+  const confirmedManualCosts = { base: true, iva: true, surchargeByCount: { 2: true, 3: true, 6: true } }
+  assert.deepEqual(normalizeStoredInstallmentsFinancingSettings(MANUAL), { ...MANUAL, mode: "manual", interestFreePolicy: DEFAULT_POLICY, confirmedManualCosts })
 
   const [change] = normalizeSiteSettingsPatch({ installmentsFinancing: { ...MANUAL, mode: "automatic" } })
   assert.equal(change.key, "installments_financing")
-  assert.deepEqual(change.value, { ...MANUAL, mode: "automatic", interestFreePolicy: DEFAULT_POLICY })
+  assert.deepEqual(change.value, { ...MANUAL, mode: "automatic", interestFreePolicy: DEFAULT_POLICY, confirmedManualCosts })
 
   const [withPolicy] = normalizeSiteSettingsPatch({
     installmentsFinancing: { ...MANUAL, mode: "automatic", interestFreePolicy: { enabled: false, minimumAmountByCount: { 3: "50000", 6: -1 } } },
   })
   // Un mínimo propio enviado (formato anterior) se descarta: sólo queda ON/OFF.
   assert.deepEqual((withPolicy.value as { interestFreePolicy: unknown }).interestFreePolicy, { enabled: false })
+})
+
+test("cero heredado no se presenta como respaldo confirmado; cero explícito sí", () => {
+  const zeros = { baseProcessingPercent: 0, ivaPercent: 0, surchargePercentByCount: { 2: 0, 3: 0, 6: 0 } }
+  const legacy = normalizeStoredInstallmentsFinancingSettings(zeros)
+  assert.deepEqual(legacy.confirmedManualCosts, { base: false, iva: false, surchargeByCount: { 2: false, 3: false, 6: false } })
+  assert.equal(normalizeStoredInstallmentsFinancingSettings({ ...zeros, ivaPercent: null }).confirmedManualCosts?.iva, false)
+  const explicit = normalizeStoredInstallmentsFinancingSettings({ ...zeros, confirmedManualCosts: { base: true, iva: true, surchargeByCount: { 2: true, 3: false, 6: false } } })
+  assert.equal(explicit.confirmedManualCosts?.base, true)
+  assert.equal(explicit.confirmedManualCosts?.surchargeByCount[2], true)
+  assert.equal(explicit.confirmedManualCosts?.surchargeByCount[3], false)
 })
 
 function readSource(path: string) {

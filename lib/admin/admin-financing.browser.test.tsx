@@ -37,6 +37,30 @@ const OFFER = {
     { count: 6, minimumAmount: 67_000, brands: ["visa"] },
   ],
 }
+const CONFIRMED_MANUAL_COSTS = { base: true, iva: true, surchargeByCount: { 2: true, 3: true, 6: true } }
+
+test("Admin distingue costo ausente de respaldo cero confirmado", async () => {
+  const zeros = { baseProcessingPercent: 0, ivaPercent: 0, surchargePercentByCount: { 2: 0, 3: 0, 6: 0 } }
+  const unconfirmed = { base: false, iva: false, surchargeByCount: { 2: false, 3: false, 6: false } }
+  const base = costsOverview("automatic", null)
+  for (const [label, confirmedManualCosts] of [["sin dato", unconfirmed], ["cero explícito", CONFIRMED_MANUAL_COSTS]] as const) {
+    const page = await open("light", { ...base, manual: zeros, effective: zeros, confirmedManualCosts })
+    try {
+      const row = costRow(page, "1 pago")
+      if (label === "sin dato") {
+        await row.locator("[data-cost-effective]").getByText("Sin configurar").waitFor()
+        assert.equal(await sourceChip(row, "Sin dato").count(), 1)
+        assert.equal(await row.locator("[data-cost-breakdown]").count(), 0)
+        await page.locator("[data-costs-unverified]").waitFor()
+      } else {
+        await row.locator("[data-cost-effective]").getByText("0%").waitFor()
+        assert.equal(await sourceChip(row, "Respaldo").count(), 1)
+      }
+    } finally {
+      await page.close()
+    }
+  }
+})
 // Respuesta real de la cuenta hoy: sólo 2 cuotas sin interés.
 const TWO_ONLY_REFERENCE = {
   checkedAt: "2026-10-01T12:00:00.000Z",
@@ -215,6 +239,7 @@ for (const theme of ["light", "dark"] as const) {
       const [patch] = (await page.evaluate("window.__patches")) as Array<{ installmentsFinancing: Record<string, unknown> }>
       assert.deepEqual(patch.installmentsFinancing, {
         ...MANUAL,
+        confirmedManualCosts: CONFIRMED_MANUAL_COSTS,
         surchargePercentByCount: { ...MANUAL.surchargePercentByCount, 6: 19.5 },
         mode: "automatic",
         interestFreePolicy: { enabled: true },
@@ -253,7 +278,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: /Guardar cambios/ }).click()
       await page.getByText(/Guardado\./).waitFor()
       assert.deepEqual(await page.evaluate("window.__patches"), [
-        { installmentsFinancing: { ...MANUAL, mode: "manual", interestFreePolicy: { enabled: true } } },
+        { installmentsFinancing: { ...MANUAL, confirmedManualCosts: CONFIRMED_MANUAL_COSTS, mode: "manual", interestFreePolicy: { enabled: true } } },
       ])
       await page.getByText("Sin cambios").waitFor()
 
