@@ -33,7 +33,7 @@ test("allowlist: título, subtítulo, negrita, cursiva, subrayado y tamaños", (
   )
   assert.equal(
     sanitizeRichDescription('<p><span class="rt-size-lg">grande</span> <font size="2">chico</font> <span style="font-size: x-large">xl</span></p>'),
-    '<p><span class="rt-size-lg">grande</span> <span class="rt-size-sm">chico</span> <span class="rt-size-xl">xl</span></p>',
+    '<p><span class="rt-size-18">grande</span> <span class="rt-size-14">chico</span> <span class="rt-size-20">xl</span></p>',
   )
   // Un tamaño fuera de los niveles discretos no se conserva.
   assert.equal(sanitizeRichDescription('<p><span style="font-size: 93px">x</span></p>'), "<p>x</p>")
@@ -45,6 +45,24 @@ test("Enter = párrafo, Shift+Enter = <br> (salida del editor)", () => {
     "<p>uno<br>dos</p><p>tres</p><p>cuatro</p>",
   )
   assert.equal(sanitizeRichDescription("<p><br></p><p>   </p>"), "")
+})
+
+test("listas, alineación y tamaños permitidos sobreviven al guardado y recarga", async () => {
+  const html = '<h2 class="rt-align-center"><span class="rt-size-32">Título</span></h2><p><span class="rt-size-16">Párrafo <strong>importante</strong></span></p><ul><li>Uno</li><li><em>Dos</em></li></ul><ol class="rt-align-right"><li>Tres</li></ol>'
+  assert.equal(sanitizeRichDescription(html), html)
+  assert.equal(sanitizeRichDescription('<p><span class="rt-size-173">x</span><span style="font-size:173px">y</span></p>'), "<p>xy</p>")
+  const { PGlite } = await import("@electric-sql/pglite")
+  const db = new PGlite()
+  try {
+    await db.exec("create table public.productos (id bigint primary key, descripcion text); create role anon; create role authenticated;")
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009110000_product_description_guard.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009120000_product_description_editor_formats.sql"), "utf8"))
+    await db.query("insert into productos values (1, $1)", [normalizeProductDescriptionInput(html)])
+    const saved = (await db.query<{ descripcion: string }>("select descripcion from productos where id = 1")).rows[0].descripcion
+    assert.equal(sanitizeRichDescription(saved), html)
+  } finally {
+    await db.close()
+  }
 })
 
 test("XSS: script, iframe, style, on*, javascript: y atributos se eliminan", () => {
@@ -73,10 +91,10 @@ test("entidades: se decodifican y se vuelven a escapar", () => {
   assert.equal(sanitizeRichDescription('<p class="x" data-a="1">texto</p>'), "<p>texto</p>")
 })
 
-test("bloques anidados se aplanan sin perder texto", () => {
+test("bloques anidados conservan listas sin perder texto", () => {
   assert.equal(
     sanitizeRichDescription("<div><p>uno</p><ul><li>a</li><li>b</li></ul></div>"),
-    "<p>uno</p><p>a</p><p>b</p>",
+    "<p>uno</p><ul><li>a</li><li>b</li></ul>",
   )
   assert.equal(sanitizeRichDescription("<h1>Grande</h1><h4>Chico</h4>"), "<h2>Grande</h2><h3>Chico</h3>")
 })
@@ -112,7 +130,7 @@ test("XSS: vectores adicionales nunca producen marcado ejecutable", () => {
   ]
   for (const attack of attacks) {
     const clean = sanitizeRichDescription(attack)
-    assert.match(clean, /^<p>(<strong>|<span class="rt-size-lg">)?ok(<\/strong>|<\/span>)?<\/p>$/, attack)
+    assert.match(clean, /^<p>(<strong>|<span class="rt-size-18">)?ok(<\/strong>|<\/span>)?<\/p>$/, attack)
     assert.doesNotMatch(clean, /on[a-z]+=|javascript:|data:|<script|<iframe|<object|<embed|<img|<svg|<math|<form|style=/i, attack)
   }
   // Etiqueta partida: el resto queda como texto escapado, nunca como etiqueta.
@@ -175,6 +193,7 @@ test("guard en base: acepta exactamente la forma canónica del sanitizer y recha
     // Un producto legacy con texto no canónico existe antes de la guarda.
     await db.exec("insert into productos values (1, 'Legacy a > b')")
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009110000_product_description_guard.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009120000_product_description_editor_formats.sql"), "utf8"))
     const samples = [
       "Texto plano < 5 cm & más",
       "<h1>T</h1><p><b>x</b> <i>y</i> <u>z</u><br><font size=5>grande</font></p>",

@@ -51,7 +51,7 @@ export function ProductDescriptionSection({
         <>
           <div
             ref={contentRef}
-            className={`beyonix-modal-body min-w-0 break-words text-15px font-normal leading-7 text-white/80 ${
+            className={`beyonix-modal-body min-w-0 break-words text-base font-normal leading-7 text-white/80 ${
               isExpanded ? "" : "max-h-[8.75rem] overflow-hidden"
             }`}
           >

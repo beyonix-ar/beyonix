@@ -1,5 +1,5 @@
-// Descripción enriquecida de producto. Allowlist estricta: p, br, strong/b,
-// em/i, u, h2, h3 y un span con tamaño discreto (sm/lg/xl). Todo lo demás se
+// Descripción enriquecida de producto. Allowlist estricta: bloques, listas,
+// strong/em/u y spans con tamaño discreto. Todo lo demás se
 // descarta (script, iframe, style, atributos on*, javascript:, estilos...).
 // El texto plano legacy (sin etiquetas) sigue funcionando: párrafos por línea
 // en blanco y saltos simples como <br>.
@@ -8,8 +8,9 @@
 // elementos React (sin innerHTML), así que incluso un valor persistido sin
 // sanitizar no puede inyectar marcado.
 
-export const RICH_TEXT_SIZES = ["sm", "lg", "xl"] as const
+export const RICH_TEXT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40] as const
 export type RichTextSize = (typeof RICH_TEXT_SIZES)[number]
+export type RichAlignment = "left" | "center" | "right"
 
 export type RichInline =
   | { type: "text"; text: string }
@@ -18,7 +19,10 @@ export type RichInline =
   | { type: "size"; size: RichTextSize; children: RichInline[] }
 
 export type RichBlockType = "p" | "h2" | "h3"
-export type RichBlock = { type: RichBlockType; children: RichInline[] }
+export type RichBlock =
+  | { type: RichBlockType; children: RichInline[]; align?: RichAlignment }
+  | { type: "ul"; items: RichInline[][]; align?: RichAlignment }
+  | { type: "ol"; items: RichInline[][]; align?: RichAlignment }
 
 /** Tope defensivo: una descripción real nunca se acerca a esto. */
 export const RICH_DESCRIPTION_MAX_LENGTH = 50_000
@@ -111,20 +115,35 @@ function parseHtml(input: string): HtmlNode[] {
 }
 
 function sizeFromAttributes(name: string, attrs: Record<string, string>): RichTextSize | null {
-  const classSize = /(?:^|\s)rt-size-(sm|lg|xl)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
-  if (classSize) return classSize as RichTextSize
+  const classSize = /(?:^|\s)rt-size-(12|14|16|18|20|22|24|28|32|36|40)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
+  if (classSize) return Number(classSize) as RichTextSize
+  const legacy = /(?:^|\s)rt-size-(sm|lg|xl)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
+  if (legacy) return { sm: 14, lg: 18, xl: 20 }[legacy as "sm" | "lg" | "xl"] as RichTextSize
+  if (name === "font") {
+    const face = /^rt-size-(12|14|16|18|20|22|24|28|32|36|40)$/.exec(attrs.face ?? "")?.[1]
+    if (face) return Number(face) as RichTextSize
+  }
   if (name === "font" && attrs.size) {
     const size = Number(attrs.size)
-    if (size <= 2) return "sm"
-    if (size === 4) return "lg"
-    if (size >= 5) return "xl"
+    if (size <= 2) return 14
+    if (size === 4) return 18
+    if (size >= 5) return 20
     return null
   }
   const cssSize = /font-size\s*:\s*([a-z-]+)/i.exec(attrs.style ?? "")?.[1]?.toLowerCase()
-  if (cssSize === "x-small" || cssSize === "small") return "sm"
-  if (cssSize === "large") return "lg"
-  if (cssSize === "x-large" || cssSize === "xx-large" || cssSize === "xxx-large") return "xl"
+  if (cssSize === "x-small" || cssSize === "small") return 14
+  if (cssSize === "large") return 18
+  if (cssSize === "x-large" || cssSize === "xx-large" || cssSize === "xxx-large") return 20
   return null
+}
+
+function alignmentFromAttributes(attrs: Record<string, string>): RichAlignment | undefined {
+  const canonical = /(?:^|\s)rt-align-(left|center|right)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
+  if (canonical) return canonical as RichAlignment
+  const align = attrs.align?.toLowerCase()
+  if (align === "left" || align === "center" || align === "right") return align
+  const style = /(?:^|;)\s*text-align\s*:\s*(left|center|right)\s*(?:;|$)/i.exec(attrs.style ?? "")?.[1]
+  return style?.toLowerCase() as RichAlignment | undefined
 }
 
 type InlineFormat = "strong" | "em" | "u"
@@ -168,74 +187,78 @@ function blockTypeFor(name: string): RichBlockType {
 function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
   const blocks: RichBlock[] = []
   let pending: RichInline[] = []
-  const flush = (type: RichBlockType = "p") => {
-    if (hasVisibleContent(pending)) blocks.push({ type, children: pending })
+  const flush = () => {
+    if (hasVisibleContent(pending)) blocks.push({ type: "p", children: trimBreaks(pending) })
     pending = []
   }
-
-  const inline = (node: HtmlNode, sink: RichInline[]) => {
-    if (node.kind === "text") {
-      if (node.text) sink.push({ type: "text", text: node.text })
-      return
-    }
-    if (DROPPED_WITH_CONTENT.has(node.name)) return
-    if (BLOCK_ELEMENTS.has(node.name)) {
-      // Un bloque anidado en contenido inline corta el párrafo actual.
-      block(node)
-      return
-    }
-    if (node.name === "br") {
-      sink.push({ type: "br" })
-      return
-    }
-    const children: RichInline[] = []
-    for (const child of node.children) inlineInto(child, children)
-    if (!hasVisibleContent(children)) {
-      // Un formato sin texto visible no aporta nada; los espacios y saltos
-      // que contenga se conservan sueltos.
-      sink.push(...children)
-      return
-    }
+  const inline = (node: HtmlNode): RichInline[] => {
+    if (node.kind === "text") return node.text ? [{ type: "text", text: node.text }] : []
+    if (DROPPED_WITH_CONTENT.has(node.name)) return []
+    if (node.name === "br") return [{ type: "br" }]
+    const children = node.children.flatMap((child) => {
+      if (child.kind === "element" && BLOCK_ELEMENTS.has(child.name)) {
+        return [{ type: "br" } as RichInline, ...child.children.flatMap(inline)]
+      }
+      return inline(child)
+    })
+    if (!hasVisibleContent(children)) return children
     const formats = formatsFromStyle(node.attrs.style)
     if ((node.name === "strong" || node.name === "b") && !isNormalWeight(node.attrs.style)) formats.push("strong")
     else if (node.name === "em" || node.name === "i") formats.push("em")
     else if (node.name === "u") formats.push("u")
-    let wrapped = children
+    let wrapped: RichInline[] = children
     for (const format of [...new Set(formats)].reverse()) wrapped = [{ type: format, children: wrapped }]
     const size = node.name === "span" || node.name === "font" ? sizeFromAttributes(node.name, node.attrs) : null
-    if (size) sink.push({ type: "size", size, children: wrapped })
-    else sink.push(...wrapped)
+    return size ? [{ type: "size", size, children: wrapped }] : wrapped
   }
-
-  // Dentro de un inline, un bloque anidado se aplana a su texto (no se puede
-  // cortar un <strong> en dos párrafos sin reconstruir la jerarquía).
-  const inlineInto = (node: HtmlNode, sink: RichInline[]) => {
-    if (node.kind === "element" && BLOCK_ELEMENTS.has(node.name) && !DROPPED_WITH_CONTENT.has(node.name)) {
-      if (sink.length && sink[sink.length - 1].type !== "br") sink.push({ type: "br" })
-      for (const child of node.children) inlineInto(child, sink)
+  const walk = (node: HtmlNode) => {
+    if (node.kind === "text") { pending.push(...inline(node)); return }
+    if (DROPPED_WITH_CONTENT.has(node.name)) return
+    if (node.name === "ul" || node.name === "ol") {
+      flush()
+      const items = node.children
+        .filter((child): child is Extract<HtmlNode, { kind: "element" }> => child.kind === "element" && child.name === "li")
+        .map((item) => trimBreaks(item.children.flatMap(inline)))
+      if (items.length) blocks.push({ type: node.name, items, align: alignmentFromAttributes(node.attrs) })
       return
     }
-    inline(node, sink)
-  }
-
-  const block = (node: Extract<HtmlNode, { kind: "element" }>) => {
-    flush()
-    if (node.name === "hr") return
-    const type = blockTypeFor(node.name)
-    for (const child of node.children) {
-      if (child.kind === "element" && BLOCK_ELEMENTS.has(child.name)) {
-        flush(type)
-        block(child)
+    if (node.name === "p" || /^h[1-6]$/.test(node.name) || node.name === "li") {
+      flush()
+      const type = blockTypeFor(node.name)
+      const align = alignmentFromAttributes(node.attrs)
+      const nestedBlocks = node.children.some((child) => child.kind === "element" && BLOCK_ELEMENTS.has(child.name) && child.name !== "br")
+      if (nestedBlocks) {
+        let part: RichInline[] = []
+        const pushPart = () => {
+          if (hasVisibleContent(part)) blocks.push({ type, children: trimBreaks(part), align })
+          part = []
+        }
+        for (const child of node.children) {
+          if (child.kind === "element" && BLOCK_ELEMENTS.has(child.name) && child.name !== "br") {
+            pushPart()
+            walk(child)
+          } else part.push(...inline(child))
+        }
+        pushPart()
       } else {
-        inline(child, pending)
+        blocks.push({ type, children: trimBreaks(node.children.flatMap(inline)), align })
       }
+      return
     }
-    flush(type)
+    if (BLOCK_ELEMENTS.has(node.name)) {
+      flush()
+      for (const child of node.children) walk(child)
+      flush()
+      return
+    }
+    pending.push(...inline(node))
   }
-
-  for (const node of nodes) inline(node, pending)
+  for (const node of nodes) walk(node)
   flush()
-  return blocks.map((entry) => ({ ...entry, children: trimBreaks(entry.children) }))
+  const visible = blocks.some((block) => block.type === "ul" || block.type === "ol"
+    ? block.items.some(hasVisibleContent)
+    : hasVisibleContent(block.children))
+  return visible ? blocks : []
 }
 
 function trimBreaks(nodes: RichInline[]) {
@@ -285,7 +308,13 @@ function serializeInline(nodes: RichInline[]): string {
 /** HTML canónico y seguro para persistir ("" si no hay texto visible). */
 export function sanitizeRichDescription(value: string | null | undefined) {
   return parseRichDescription(value)
-    .map((block) => `<${block.type}>${serializeInline(block.children)}</${block.type}>`)
+    .map((block) => {
+      const align = block.align && block.align !== "left" ? ` class="rt-align-${block.align}"` : ""
+      if (block.type === "ul" || block.type === "ol") {
+        return `<${block.type}${align}>${block.items.map((item) => `<li>${serializeInline(item)}</li>`).join("")}</${block.type}>`
+      }
+      return `<${block.type}${align}>${serializeInline(block.children)}</${block.type}>`
+    })
     .join("")
 }
 
@@ -314,5 +343,7 @@ export function normalizeProductDescriptionInput(value: unknown): string | null 
 
 /** Texto plano (requisitos de activación, metadatos, búsqueda). */
 export function richDescriptionToPlainText(value: string | null | undefined) {
-  return parseRichDescription(value).map((block) => inlineText(block.children).trim()).join("\n\n")
+  return parseRichDescription(value).map((block) => block.type === "ul" || block.type === "ol"
+    ? block.items.map((item) => inlineText(item).trim()).join("\n")
+    : inlineText(block.children).trim()).join("\n\n")
 }

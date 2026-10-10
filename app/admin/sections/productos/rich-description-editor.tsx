@@ -1,162 +1,194 @@
 "use client"
 
-import { useEffect, useRef, type ReactNode } from "react"
-import { Bold, Heading2, Heading3, Italic, Underline } from "lucide-react"
-
-import { sanitizeRichDescription } from "@/lib/products/rich-description"
-
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, List, ListOrdered, Redo2, Underline, Undo2 } from "lucide-react"
+import { RICH_TEXT_SIZES, sanitizeRichDescription, type RichTextSize } from "@/lib/products/rich-description"
 import { AdminSecondaryButton } from "../../components/admin-controls"
 
-// Niveles discretos de tamaño (execCommand fontSize 2..5 ↔ sm/base/lg/xl).
-const SIZE_LEVELS = [2, 3, 4, 5] as const
-const CLASS_TO_LEVEL: Record<string, number> = { "rt-size-sm": 2, "rt-size-lg": 4, "rt-size-xl": 5 }
+type Block = "p" | "h2" | "h3"
+type ToolbarState = { block: Block; size: RichTextSize | null; bold: boolean; italic: boolean; underline: boolean; list: "ul" | "ol" | null; align: "left" | "center" | "right" }
+const INITIAL: ToolbarState = { block: "p", size: 16, bold: false, italic: false, underline: false, list: null, align: "left" }
 
-function currentSizeLevel(root: HTMLElement) {
-  let node = window.getSelection()?.anchorNode ?? null
-  while (node && node !== root) {
-    if (node instanceof HTMLElement) {
-      if (node.tagName === "FONT" && node.getAttribute("size")) return Number(node.getAttribute("size"))
-      const sized = [...node.classList].find((name) => name in CLASS_TO_LEVEL)
-      if (sized) return CLASS_TO_LEVEL[sized]
-    }
-    node = node.parentNode
+function inside(editor: HTMLElement, node: Node | null) {
+  return Boolean(node && (node === editor || editor.contains(node)))
+}
+
+function sizeAt(node: Node | null, editor: HTMLElement): RichTextSize {
+  for (let current = node; current && current !== editor; current = current.parentNode) {
+    if (!(current instanceof HTMLElement)) continue
+    const face = current.tagName === "FONT" ? current.getAttribute("face") : null
+    const found = /^rt-size-(\d+)$/.exec(face ?? "")?.[1]
+      ?? [...current.classList].map((name) => /^rt-size-(\d+)$/.exec(name)?.[1]).find(Boolean)
+    if (found && RICH_TEXT_SIZES.includes(Number(found) as RichTextSize)) return Number(found) as RichTextSize
+    if (current.tagName === "H2") return 24
+    if (current.tagName === "H3") return 18
   }
-  return 3
+  return 16
 }
 
-function selectionInside(root: HTMLElement) {
-  const anchor = window.getSelection()?.anchorNode
-  return Boolean(anchor && root.contains(anchor))
+function selectedSize(editor: HTMLElement, range: Range): RichTextSize | null {
+  if (range.collapsed) {
+    const pending = /^rt-size-(\d+)$/.exec(String(document.queryCommandValue("fontName") || ""))?.[1]
+    if (pending && RICH_TEXT_SIZES.includes(Number(pending) as RichTextSize)) return Number(pending) as RichTextSize
+    return sizeAt(range.startContainer, editor)
+  }
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+  const sizes = new Set<RichTextSize>()
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    if (node.textContent?.length && range.intersectsNode(node)) sizes.add(sizeAt(node, editor))
+    if (sizes.size > 1) return null
+  }
+  return sizes.values().next().value ?? 16
 }
 
-function ToolbarButton({ label, onAction, children }: { label: string; onAction: () => void; children: ReactNode }) {
-  return (
-    <AdminSecondaryButton
-      size="sm"
-      title={label}
-      aria-label={label}
-      // Sin preventDefault en mousedown el editor perdería la selección
-      // antes del click (que también llega por teclado).
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onAction}
-      className="min-w-8 px-2 text-xs font-black"
-    >
-      {children}
-    </AdminSecondaryButton>
-  )
+function currentState(editor: HTMLElement, range: Range): ToolbarState {
+  let blockElement: HTMLElement | null = null
+  for (let node: Node | null = range.startContainer; node && node !== editor; node = node.parentNode) {
+    if (node instanceof HTMLElement && /^(P|H2|H3|LI|UL|OL|DIV)$/.test(node.tagName)) { blockElement = node; break }
+  }
+  const list = blockElement?.closest("ul, ol")
+  const aligned = blockElement?.closest("[class*='rt-align-'], [align], [style*='text-align']") ?? blockElement
+  const align = aligned instanceof HTMLElement
+    ? aligned.classList.contains("rt-align-center") || aligned.style.textAlign === "center" || aligned.getAttribute("align") === "center" ? "center"
+      : aligned.classList.contains("rt-align-right") || aligned.style.textAlign === "right" || aligned.getAttribute("align") === "right" ? "right" : "left"
+    : "left"
+  const tag = blockElement?.tagName.toLowerCase()
+  return { block: tag === "h2" || tag === "h3" ? tag : "p", size: selectedSize(editor, range),
+    bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"),
+    underline: document.queryCommandState("underline"),
+    list: list?.tagName === "UL" ? "ul" : list?.tagName === "OL" ? "ol" : null, align }
 }
 
-/**
- * Editor de la descripción del producto. Enter = párrafo, Shift+Enter =
- * salto de línea. Lo pegado (Word, Google Docs, web) pasa por la misma
- * allowlist antes de entrar: sólo sobreviven negrita, cursiva, subrayado,
- * títulos, párrafos y saltos. Lo emitido también pasa siempre por
- * sanitizeRichDescription, y el servidor vuelve a sanear al guardar.
- *
- * Usa document.execCommand: está deprecado pero sigue soportado por todos los
- * navegadores y no hay reemplazo nativo; migrar a un editor completo
- * (TipTap/ProseMirror, Lexical) agrega una dependencia grande para cinco
- * comandos. Ver docs/product-description.md.
- */
-export function RichDescriptionEditor({
-  id,
-  value,
-  onChange,
-  placeholder,
-}: {
-  id?: string
-  value: string
-  onChange: (value: string) => void
-  placeholder?: string
+function Button({ label, active, action, children }: { label: string; active?: boolean; action: () => void; children: ReactNode }) {
+  return <AdminSecondaryButton type="button" size="sm" title={label} aria-label={label} aria-pressed={active}
+    onMouseDown={(event) => event.preventDefault()} onClick={action}
+    className={`min-w-8 px-2 text-xs font-black ${active ? "border-sky-400/60 bg-sky-400/15 text-sky-100" : ""}`}>{children}</AdminSecondaryButton>
+}
+
+/** El navegador mantiene el historial de edición; cliente y servidor sanean el HTML. */
+export function RichDescriptionEditor({ id, value, onChange, placeholder }: {
+  id?: string; value: string; onChange: (value: string) => void; placeholder?: string
 }) {
   const editorRef = useRef<HTMLDivElement>(null)
-  const lastEmittedRef = useRef<string | null>(null)
+  const rangeRef = useRef<Range | null>(null)
+  const lastRef = useRef<string | null>(null)
+  const [state, setState] = useState<ToolbarState>(INITIAL)
 
-  // Sólo se reescribe el DOM cuando el valor cambia desde afuera (carga o
-  // reinicio del formulario); lo que tipea el admin no se re-renderiza.
   useEffect(() => {
     const editor = editorRef.current
-    if (!editor || value === lastEmittedRef.current) return
+    if (!editor || value === lastRef.current) return
     editor.innerHTML = sanitizeRichDescription(value)
-    lastEmittedRef.current = value
+    lastRef.current = value
   }, [value])
+
+  const updateState = useCallback(() => {
+    const editor = editorRef.current
+    const selection = window.getSelection()
+    if (!editor || !selection?.rangeCount || !inside(editor, selection.anchorNode) || !inside(editor, selection.focusNode)) return
+    const range = selection.getRangeAt(0)
+    rangeRef.current = range.cloneRange()
+    setState(currentState(editor, range))
+  }, [])
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", updateState)
+    return () => document.removeEventListener("selectionchange", updateState)
+  }, [updateState])
 
   const emit = () => {
     const editor = editorRef.current
     if (!editor) return
     const html = sanitizeRichDescription(editor.innerHTML)
-    if (html === lastEmittedRef.current) return
-    lastEmittedRef.current = html
-    onChange(html)
+    if (html !== lastRef.current) { lastRef.current = html; onChange(html) }
+    updateState()
   }
-
-  const run = (command: string, argument?: string) => {
+  const restore = () => {
     const editor = editorRef.current
-    if (!editor) return
-    if (!selectionInside(editor)) editor.focus()
+    if (!editor) return false
+    editor.focus()
+    const range = rangeRef.current
+    if (range && inside(editor, range.startContainer) && inside(editor, range.endContainer)) {
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+    }
+    return true
+  }
+  const run = (command: string, argument?: string) => {
+    if (!restore()) return
+    const pendingSize = rangeRef.current?.collapsed && state.size !== null && state.size !== 16 ? state.size : null
     document.execCommand("styleWithCSS", false, "false")
     document.execCommand(command, false, argument)
+    if (pendingSize && (command === "bold" || command === "italic" || command === "underline")) {
+      document.execCommand("fontName", false, `rt-size-${pendingSize}`)
+    }
+    emit()
+  }
+  const setSize = (size: RichTextSize) => run("fontName", `rt-size-${size}`)
+  const step = (direction: 1 | -1) => {
+    const index = RICH_TEXT_SIZES.indexOf(state.size ?? 16)
+    setSize(RICH_TEXT_SIZES[Math.max(0, Math.min(RICH_TEXT_SIZES.length - 1, index + direction))])
+  }
+  const clear = () => {
+    if (!restore()) return
+    document.execCommand("removeFormat")
+    document.execCommand("formatBlock", false, "p")
+    document.execCommand("justifyLeft")
     emit()
   }
 
-  const toggleBlock = (tag: "h2" | "h3") => {
-    const current = String(document.queryCommandValue("formatBlock") || "").toLowerCase()
-    run("formatBlock", current === tag ? "<p>" : `<${tag}>`)
-  }
-
-  const stepSize = (direction: 1 | -1) => {
-    const editor = editorRef.current
-    if (!editor) return
-    const index = SIZE_LEVELS.indexOf(currentSizeLevel(editor) as (typeof SIZE_LEVELS)[number])
-    const next = SIZE_LEVELS[Math.min(SIZE_LEVELS.length - 1, Math.max(0, (index < 0 ? 1 : index) + direction))]
-    run("fontSize", String(next))
-  }
-
-  return (
-    <div className="product-rich-description-editor min-w-0 overflow-hidden rounded-xl border border-white/10">
-      <div role="toolbar" aria-label="Formato de la descripción" className="flex flex-wrap items-center gap-1.5 border-b border-white/8 p-1.5">
-        <ToolbarButton label="Título" onAction={() => toggleBlock("h2")}>
-          <Heading2 className="size-4" aria-hidden="true" />
-        </ToolbarButton>
-        <ToolbarButton label="Subtítulo" onAction={() => toggleBlock("h3")}>
-          <Heading3 className="size-4" aria-hidden="true" />
-        </ToolbarButton>
-        <span className="mx-0.5 h-5 w-px bg-white/10" aria-hidden="true" />
-        <ToolbarButton label="Negrita" onAction={() => run("bold")}>
-          <Bold className="size-4" aria-hidden="true" />
-        </ToolbarButton>
-        <ToolbarButton label="Subrayado" onAction={() => run("underline")}>
-          <Underline className="size-4" aria-hidden="true" />
-        </ToolbarButton>
-        <ToolbarButton label="Cursiva" onAction={() => run("italic")}>
-          <Italic className="size-4" aria-hidden="true" />
-        </ToolbarButton>
-        <span className="mx-0.5 h-5 w-px bg-white/10" aria-hidden="true" />
-        <ToolbarButton label="Achicar texto" onAction={() => stepSize(-1)}>A-</ToolbarButton>
-        <ToolbarButton label="Agrandar texto" onAction={() => stepSize(1)}>A+</ToolbarButton>
-      </div>
-      <div
-        id={id}
-        ref={editorRef}
-        role="textbox"
-        aria-multiline="true"
-        aria-label="Descripción del producto"
-        contentEditable
-        suppressContentEditableWarning
-        data-placeholder={placeholder}
-        onFocus={() => document.execCommand("defaultParagraphSeparator", false, "p")}
-        onInput={emit}
-        onBlur={emit}
-        onPaste={(event) => {
-          event.preventDefault()
-          const html = sanitizeRichDescription(event.clipboardData.getData("text/html"))
-          if (html) document.execCommand("insertHTML", false, html)
-          else document.execCommand("insertText", false, event.clipboardData.getData("text/plain"))
-          emit()
-        }}
-        onDrop={(event) => event.preventDefault()}
-        className="min-h-40 max-w-none px-3 py-2.5 text-sm leading-6 text-white outline-none empty:before:pointer-events-none empty:before:text-white/40 empty:before:content-[attr(data-placeholder)] [&_b]:font-black [&_font[size='2']]:text-[0.875em] [&_font[size='4']]:text-[1.15em] [&_font[size='5']]:text-[1.3em] [&_h2]:mt-2 [&_h2]:text-lg [&_h2]:font-black [&_h3]:mt-2 [&_h3]:text-base [&_h3]:font-black [&_p+p]:mt-2 [&_strong]:font-black [&_.rt-size-sm]:text-[0.875em] [&_.rt-size-lg]:text-[1.15em] [&_.rt-size-xl]:text-[1.3em]"
-      />
+  return <div className="product-rich-description-editor min-w-0 overflow-hidden rounded-xl border border-white/10">
+    <div role="toolbar" aria-label="Formato de la descripción" className="flex flex-wrap items-center gap-1 border-b border-white/10 p-1.5">
+      <select aria-label="Tipo de bloque" title="Tipo de bloque" value={state.block} onPointerDown={updateState}
+        onChange={(event) => run("formatBlock", event.target.value)}
+        className="h-8 min-w-24 rounded-md border border-white/15 bg-slate-900 px-1.5 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        <option value="p">Párrafo</option><option value="h2">Título</option><option value="h3">Subtítulo</option>
+      </select>
+      <select aria-label="Tamaño de letra" title="Tamaño de letra" value={state.size ?? "mixed"} onPointerDown={updateState}
+        onChange={(event) => setSize(Number(event.target.value) as RichTextSize)}
+        className="h-8 w-16 rounded-md border border-white/15 bg-slate-900 px-1 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        <option value="mixed" disabled>—</option>
+        {RICH_TEXT_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+      </select>
+      <Button label="Achicar texto" action={() => step(-1)}>A−</Button>
+      <Button label="Agrandar texto" action={() => step(1)}>A+</Button>
+      <span className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
+      <Button label="Negrita" active={state.bold} action={() => run("bold")}><Bold className="size-4" /></Button>
+      <Button label="Subrayado" active={state.underline} action={() => run("underline")}><Underline className="size-4" /></Button>
+      <Button label="Cursiva" active={state.italic} action={() => run("italic")}><Italic className="size-4" /></Button>
+      <span className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
+      <Button label="Lista con viñetas" active={state.list === "ul"} action={() => run("insertUnorderedList")}><List className="size-4" /></Button>
+      <Button label="Lista numerada" active={state.list === "ol"} action={() => run("insertOrderedList")}><ListOrdered className="size-4" /></Button>
+      <span className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
+      <Button label="Alinear a la izquierda" active={state.align === "left"} action={() => run("justifyLeft")}><AlignLeft className="size-4" /></Button>
+      <Button label="Centrar" active={state.align === "center"} action={() => run("justifyCenter")}><AlignCenter className="size-4" /></Button>
+      <Button label="Alinear a la derecha" active={state.align === "right"} action={() => run("justifyRight")}><AlignRight className="size-4" /></Button>
+      <span className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
+      <Button label="Deshacer" action={() => run("undo")}><Undo2 className="size-4" /></Button>
+      <Button label="Rehacer" action={() => run("redo")}><Redo2 className="size-4" /></Button>
+      <Button label="Limpiar formato" action={clear}>Limpiar</Button>
     </div>
-  )
+    <div id={id} ref={editorRef} role="textbox" aria-multiline="true" aria-label="Descripción del producto"
+      contentEditable suppressContentEditableWarning data-rich-editor data-placeholder={placeholder}
+      onFocus={() => { document.execCommand("defaultParagraphSeparator", false, "p"); updateState() }}
+      onInput={emit} onBlur={emit} onKeyUp={updateState} onMouseUp={updateState}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault()
+          document.execCommand(event.shiftKey ? "insertLineBreak" : "insertParagraph")
+          emit()
+        }
+      }}
+      onPaste={(event) => {
+        event.preventDefault()
+        const html = sanitizeRichDescription(event.clipboardData.getData("text/html"))
+        if (html) document.execCommand("insertHTML", false, html)
+        else document.execCommand("insertText", false, event.clipboardData.getData("text/plain"))
+        emit()
+      }}
+      onDrop={(event) => event.preventDefault()}
+      className="box-border min-h-40 max-h-[32rem] overflow-y-auto break-words px-3 py-2.5 text-base leading-7 text-white outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+    />
+  </div>
 }

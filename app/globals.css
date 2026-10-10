@@ -17173,3 +17173,36 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card 
   border-radius: 0.625rem;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
 }
+/* Tamaños y alineación controlados de la descripción de productos. */
+.product-rich-description-editor [data-rich-editor]:empty::before {
+  content: attr(data-placeholder);
+  color: rgb(255 255 255 / 0.4);
+  pointer-events: none;
+}
+.product-rich-description-editor [data-rich-editor] {
+  box-sizing: border-box;
+}
+.product-rich-description-editor [data-rich-editor] p + p,
+.product-rich-description-editor [data-rich-editor] p + ul,
+.product-rich-description-editor [data-rich-editor] p + ol { margin-top: .5rem; }
+.product-rich-description-editor [data-rich-editor] h2 { margin-top: .5rem; font-size: 1.5rem; font-weight: 800; }
+.product-rich-description-editor [data-rich-editor] h3 { margin-top: .5rem; font-size: 1.125rem; font-weight: 700; }
+.product-rich-description-editor [data-rich-editor] ul { list-style: disc; padding-left: 1.5rem; }
+.product-rich-description-editor [data-rich-editor] ol { list-style: decimal; padding-left: 1.5rem; }
+.product-rich-description-editor [data-rich-editor] strong,
+.product-rich-description-editor [data-rich-editor] b { font-weight: 700; }
+.product-rich-description-editor [data-rich-editor] .rt-align-center,
+.product-rich-description-editor [data-rich-editor] [style*="text-align: center"] { text-align: center; }
+.product-rich-description-editor [data-rich-editor] .rt-align-right,
+.product-rich-description-editor [data-rich-editor] [style*="text-align: right"] { text-align: right; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-12, font[face="rt-size-12"]) { font-size: 12px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-14, font[face="rt-size-14"]) { font-size: 14px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-16, font[face="rt-size-16"]) { font-size: 16px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-18, font[face="rt-size-18"]) { font-size: 18px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-20, font[face="rt-size-20"]) { font-size: 20px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-22, font[face="rt-size-22"]) { font-size: 22px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-24, font[face="rt-size-24"]) { font-size: 24px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-28, font[face="rt-size-28"]) { font-size: 28px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-32, font[face="rt-size-32"]) { font-size: 32px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-36, font[face="rt-size-36"]) { font-size: 36px; }
+.product-rich-description-editor [data-rich-editor] :is(.rt-size-40, font[face="rt-size-40"]) { font-size: 40px; }
