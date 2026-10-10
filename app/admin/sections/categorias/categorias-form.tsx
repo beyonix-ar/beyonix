@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { ArrowLeft, ImageIcon, Loader2, Star, Trash2 } from "lucide-react"
 
 import type { SupabaseCategoria } from "@/lib/supabase/types"
+import { CATALOG_BANNER_HELP } from "@/lib/products/catalog-banner-spec"
 
 import {
   createCategoria,
@@ -300,10 +301,8 @@ export function CategoriaForm({
               <p className="text-11px font-semibold uppercase tracking-widest text-beyonix-cyan">
                 Imagen
               </p>
-              <p className="mt-1 text-xs font-medium text-white/42">
-                Formato horizontal para la portada de la categoría.
-                Tamaño exacto del banner: 1568 x 600 px.
-              </p>
+              <p className="mt-1 text-xs font-medium text-white/42">{CATALOG_BANNER_HELP}</p>
+              <p className="mt-1 text-xs font-medium text-white/42">Usá esta medida para obtener el mejor resultado en desktop, notebook, tablet y celular.</p>
             </div>
 
             {previewImage && (

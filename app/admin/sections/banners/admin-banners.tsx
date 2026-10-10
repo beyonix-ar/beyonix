@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 
 import { supabase } from "@/lib/supabase/client"
+import { CATALOG_BANNER_HELP } from "@/lib/products/catalog-banner-spec"
 import {
   adminPageClassName,
   AdminBadge,
@@ -40,7 +41,6 @@ interface AdminBanner {
 
 const PRODUCTS_PLACEMENT = "products"
 const DEFAULT_ALT_TEXT = "Banner de productos BEYONIX"
-const BANNER_SIZE_HELP = "1920 × 520 px"
 const STORAGE_BUCKET = "site-banners"
 
 function getCleanFileName(fileName: string) {
@@ -386,9 +386,8 @@ export function AdminBanners({ embedded = false }: { embedded?: boolean } = {}) 
                   </span>
                 </span>
               </button>
-              <p className="mt-1.5 text-12px text-white/40">
-                Recomendado {BANNER_SIZE_HELP} · también podés pegar una URL:
-              </p>
+              <p className="mt-1.5 text-12px text-white/40">{CATALOG_BANNER_HELP}</p>
+              <p className="text-12px text-white/40">Usá esta medida para obtener el mejor resultado en desktop, notebook, tablet y celular. También podés pegar una URL:</p>
               <AdminTextInput
                 title="Imagen URL"
                 ariaLabel="URL de imagen"

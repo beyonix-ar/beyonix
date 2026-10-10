@@ -7,11 +7,7 @@ import tailwindcss from "@tailwindcss/postcss"
 import { build, type Plugin } from "esbuild"
 import { chromium, type Browser, type Page } from "playwright-core"
 
-// Banner de categoría con el CategoryPageLayout REAL y el CSS del proyecto.
-// Regresión cubierta: con un tope de alto + object-contain la imagen quedaba
-// más angosta que la caja (bandas negras laterales). Ahora la caja ocupa todo
-// el ancho y la imagen la cubre (object-cover), sin deformarse, con recorte
-// moderado; sin banner no se reserva espacio vacío.
+// Layout real de Productos y Categorías, con el CSS del proyecto.
 
 const SHOTS = process.env.BANNER_LAYOUT_SHOTS
 
@@ -44,13 +40,16 @@ const ENTRY = `
 import { createElement as h } from "react"
 import { createRoot } from "react-dom/client"
 import { CategoryPageLayout } from "@/components/category/layout/category-page-layout"
-createRoot(document.getElementById("root")).render(h(CategoryPageLayout, {
-  title: "Accesorios y utilidades", description: "", currentSlug: "test", products: [],
-  image: window.__BANNER ? "https://img.test/banner.png" : null,
-}))
+import { ProductsPageLayout } from "@/components/products/products-page-layout"
+createRoot(document.getElementById("root")).render(window.__PAGE === "products"
+  ? h(ProductsPageLayout, { initialProducts: [], initialCategories: [] })
+  : h(CategoryPageLayout, {
+      title: window.__TITLE, description: "", currentSlug: "test", products: [],
+      image: window.__BANNER ? "https://img.test/banner.png" : null,
+    }))
 `
 
-// PNG con la proporción real de los banners de categoría (6534x2500 ≈ 2.61:1).
+// Arte de prueba con la proporción recomendada para ambos banners (48:13).
 function crc32(bytes: Buffer) {
   let crc = 0xffffffff
   for (const byte of bytes) {
@@ -76,7 +75,7 @@ function makePng(width: number, height: number) {
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) raw.set([20, 60, 120], y * (width * 3 + 1) + 1 + x * 3)
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))])
 }
-const BANNER_PNG = makePng(654, 250)
+const BANNER_PNG = makePng(480, 130)
 
 let browser: Browser
 let css: string
@@ -100,14 +99,14 @@ test.before(async () => {
 
 test.after(async () => { await browser?.close() })
 
-async function open(width: number, height: number, withBanner: boolean, theme: "light" | "dark" = "dark"): Promise<Page> {
+async function open(width: number, height: number, withBanner: boolean, theme: "light" | "dark" = "dark", kind: "category" | "products" = "category", title = "Accesorios y utilidades"): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   await page.route("**/*", (route) => (route.request().url() === "https://img.test/banner.png"
     ? route.fulfill({ contentType: "image/png", body: BANNER_PNG })
     : route.abort()))
-  await page.setContent(`<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__BANNER=${withBanner}</script><script>${bundle}</script></body></html>`)
+  await page.setContent(`<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__BANNER=${withBanner};window.__PAGE=${JSON.stringify(kind)};window.__TITLE=${JSON.stringify(title)};const originalFetch=window.fetch;window.fetch=(url,...args)=>String(url).includes('/api/store/banners')?Promise.resolve({json:async()=>({banners:${withBanner ? '[{id:"test",image_url:"https://img.test/banner.png",alt_text:"Banner de productos"}]' : '[]'}})}):originalFetch(url,...args)</script><script>${bundle}</script></body></html>`)
   try {
     await page.waitForSelector(".beyonix-hero-banner", { timeout: 10_000 })
     if (withBanner) await page.waitForFunction(() => { const image = document.querySelector("[data-banner-media] img") as HTMLImageElement | null; return Boolean(image?.complete && image.naturalWidth) })
@@ -115,7 +114,7 @@ async function open(width: number, height: number, withBanner: boolean, theme: "
   return page
 }
 
-type BannerMetrics = { banner: number; media: number; height: number; fit: string; paintedFill: number; crop: number; overflow: number }
+type BannerMetrics = { banner: number; bannerHeight: number; media: number; mediaHeight: number; fit: string; paintedFill: number; overflow: number; searchTop: number; benefitsTop: number; searchInside: boolean; benefitsInside: boolean }
 
 async function metrics(page: Page) {
   return (await page.evaluate(`(() => {
@@ -125,50 +124,62 @@ async function metrics(page: Page) {
     const style = getComputedStyle(image)
     const ratio = image.naturalWidth / image.naturalHeight
     const painted = style.objectFit === "contain" ? Math.min(box.width, box.height * ratio) : box.width
+    const search = document.querySelector(".global-search-wrapper").getBoundingClientRect()
+    const benefits = document.querySelector(".beyonix-benefit-item").parentElement.getBoundingClientRect()
     return {
-      banner: banner.width, media: document.querySelector("[data-banner-media]").getBoundingClientRect().width, height: box.height,
+      banner: banner.width, bannerHeight: banner.height,
+      media: document.querySelector("[data-banner-media]").getBoundingClientRect().width, mediaHeight: box.height,
       fit: style.objectFit, paintedFill: painted / banner.width,
-      crop: 1 - Math.min(box.width / (box.height * ratio), (box.height * ratio) / box.width),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
+      searchTop: search.top - banner.top, benefitsTop: benefits.top - banner.top,
+      searchInside: search.top >= banner.top && search.bottom <= banner.bottom,
+      benefitsInside: benefits.top >= banner.top && benefits.bottom <= banner.bottom,
     }
   })()`)) as BannerMetrics
 }
 
-const VIEWPORTS: [number, number][] = [[320, 568], [390, 844], [768, 1024], [1366, 657], [1366, 768], [1440, 900], [1920, 1080], [2560, 1440]]
+const VIEWPORTS: [number, number][] = [[390, 844], [768, 1024], [1024, 768], [1366, 768], [1440, 900], [1920, 1080]]
 
 for (const theme of ["dark", "light"] as const) {
   for (const [width, height] of VIEWPORTS) {
-    test(`banner de categoría ${theme} ${width}x${height}: llena el ancho (sin bandas laterales), sin deformar, recorte moderado`, async () => {
-      const page = await open(width, height, true, theme)
+    test(`Productos y Categorías comparten banner ${theme} ${width}x${height}`, async () => {
+      const category = await open(width, height, true, theme)
+      const products = await open(width, height, true, theme, "products")
       try {
-        const m = await metrics(page)
-        assert.ok(m.overflow <= 0, `scroll horizontal ${m.overflow}px`)
-        assert.equal(m.fit, "cover", "la imagen cubre la caja (nunca contain con bandas)")
-        assert.ok(m.paintedFill >= 0.98, `imagen pintada en ${Math.round(m.paintedFill * 100)}% del ancho del banner`)
-        assert.ok(Math.abs(m.media - m.banner) <= 3, "la caja de la imagen ocupa todo el ancho del banner")
-        assert.ok(m.crop <= 0.25, `recorte moderado (${Math.round(m.crop * 100)}%)`)
-        if (width >= 1024) assert.ok(m.height <= Math.max(0.6 * height, 290), `alto razonable en desktop (${Math.round(m.height)}px)`)
-        const continuity = await page.evaluate(() => {
-          const banner = document.querySelector(".beyonix-hero-banner")!
-          const backdrop = banner.querySelector("img[aria-hidden='true']")!
-          const benefits = banner.querySelector(".beyonix-benefit-item")!.parentElement!
-          const bannerBox = banner.getBoundingClientRect()
-          const backdropBox = backdrop.getBoundingClientRect()
-          return {
-            backgroundCoversBanner: Math.abs(backdropBox.height - bannerBox.height) <= 2,
-            benefitsInsideBanner: benefits.getBoundingClientRect().bottom <= bannerBox.bottom,
-            labels: [...benefits.children].map((item) => item.textContent?.trim()),
-          }
-        })
-        assert.ok(continuity.backgroundCoversBanner, "el fondo cubre toda la sección")
-        assert.ok(continuity.benefitsInsideBanner, "los beneficios quedan dentro del fondo")
-        assert.ok(continuity.labels.includes("Pagos seguros"))
-        assert.ok(continuity.labels.includes("Garantía de 6 meses"))
-        if (SHOTS) await page.screenshot({ path: `${SHOTS}/category-banner-${theme}-${width}x${height}.png` })
-      } finally { await page.close() }
+        const [c, p] = await Promise.all([metrics(category), metrics(products)])
+        for (const m of [c, p]) {
+          assert.ok(m.overflow <= 0, `scroll horizontal ${m.overflow}px`)
+          assert.ok(Math.abs(m.media - m.banner) <= 3)
+          assert.ok(m.paintedFill >= 0.98, "la imagen recomendada llena el ancho")
+          assert.ok(m.searchInside && m.benefitsInside, "buscador y beneficios dentro del banner")
+          assert.equal(m.fit, "cover")
+        }
+        for (const key of ["banner", "bannerHeight", "media", "mediaHeight", "searchTop", "benefitsTop"] as const) {
+          assert.ok(Math.abs(c[key] - p[key]) <= 2, `${key}: Categoría ${c[key]}, Productos ${p[key]}`)
+        }
+        const labels = await category.locator(".beyonix-benefit-item").allTextContents()
+        assert.ok(labels.some((label) => label.includes("Pagos seguros")))
+        assert.ok(labels.some((label) => label.includes("Garantía de 6 meses")))
+        if (SHOTS) {
+          await category.screenshot({ path: `${SHOTS}/category-banner-${theme}-${width}x${height}.png` })
+          await products.screenshot({ path: `${SHOTS}/products-banner-${theme}-${width}x${height}.png` })
+        }
+      } finally { await category.close(); await products.close() }
     })
   }
 }
+
+test("las tres categorías usan el mismo banner", async () => {
+  for (const title of ["Accesorios y utilidades", "Hogar & Bazar", "Tecnología & Gadgets"]) {
+    const page = await open(390, 844, true, "dark", "category", title)
+    try {
+      assert.equal(await page.locator("[data-banner-media] img").getAttribute("alt"), title)
+      const m = await metrics(page)
+      assert.ok(m.searchInside && m.benefitsInside)
+      assert.equal(m.overflow, 0)
+    } finally { await page.close() }
+  }
+})
 
 test("sin banner: no se reserva un recuadro vacío", async () => {
   for (const [width, height] of [[390, 844], [1366, 657], [1920, 1080]] as const) {

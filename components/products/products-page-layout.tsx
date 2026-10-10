@@ -1,6 +1,6 @@
 "use client"
 
-import { StoreBenefits } from "@/components/products/store-benefits"
+import { CATALOG_HERO_IMAGE_CLASS, CatalogHeroBanner } from "@/components/products/catalog-hero-banner"
 import {
   Suspense,
   useEffect,
@@ -446,29 +446,17 @@ export function ProductsPageLayout({
       </Suspense>
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
-      <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        {/*
-          Banner general (arte 8000x2167 ≈ 3.69:1, con el texto a la
-          izquierda y espacio abajo para el buscador):
-          - desktop: la caja tiene la proporción del arte y la imagen la
-            cubre (object-cover); buscador y beneficios van encima, como
-            siempre, por debajo del 55% del alto (la franja libre del arte):
-            el alto mínimo lo garantiza y, si actúa, el recorte es desde la
-            derecha (object-left). Nunca bandas laterales.
-          - mobile/tablet: el arte completo se ajusta dentro de su bloque
-            sin deformarse ni recortarse; buscador + beneficios quedan debajo.
-          Sin banners cargados no se reserva un recuadro vacío.
-        */}
-        <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${productsBanners.length ? "lg:aspect-[1920/520] lg:min-h-[24rem]" : "pt-8 sm:pt-10 lg:pt-12"}`}>
-          {productsBanners.length ? (
-            <div data-banner-media className="relative aspect-[8000/2167] w-full shrink-0 lg:absolute lg:inset-0 lg:aspect-auto">
+      <CatalogHeroBanner
+        hasMedia={productsBanners.length > 0}
+        media={
+          <>
               {productsBanners.map((banner, index) =>
                 banner.image_url ? (
                   <img
                     key={banner.id}
                     src={banner.image_url}
                     alt={banner.alt_text || "Banner de productos BEYONIX"}
-                    className={`absolute inset-0 z-0 size-full object-contain object-center transition-opacity duration-700 ease-out lg:object-cover lg:object-left ${
+                    className={`${CATALOG_HERO_IMAGE_CLASS} transition-opacity duration-700 ease-out ${
                       index === activeBannerIndex ? "opacity-100" : "opacity-0"
                     }`}
                   />
@@ -510,12 +498,10 @@ export function ProductsPageLayout({
                   </div>
                 </>
               ) : null}
-            </div>
-          ) : null}
-
-          <div className={`relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 sm:pb-10 ${productsBanners.length ? "pt-5 sm:pt-6 lg:pb-5 lg:pt-0" : "lg:pb-12"}`}>
-            <div className="global-search-wrapper flex w-full justify-center">
-              <GlobalSearchBar
+          </>
+        }
+        search={
+          <GlobalSearchBar
                 search={search}
                 className="max-w-3xl lg:max-w-4xl"
                 surfaceClassName="!border-beyonix-blue-light/38 !bg-[#0A1420]/88 !shadow-[0_0_18px_rgba(30,140,255,0.08),inset_0_1px_0_rgba(255,255,255,0.07)] hover:!border-beyonix-sky/46 focus-within:!border-beyonix-sky/58 focus-within:!shadow-[0_0_18px_rgba(30,140,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
@@ -526,13 +512,9 @@ export function ProductsPageLayout({
                   id: String(product.id),
                   nombre: product.nombre,
                 }))}
-              />
-            </div>
-
-            <StoreBenefits />
-          </div>
-        </div>
-      </div>
+          />
+        }
+      />
 
       <section className="container relative z-20 mx-auto px-4 lg:px-8">
         <div className="beyonix-products-shell mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] p-3 pb-10 sm:p-4 lg:grid-cols-products-layout lg:p-5 lg:pb-12">

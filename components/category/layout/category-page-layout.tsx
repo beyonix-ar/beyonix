@@ -1,7 +1,6 @@
 "use client"
 
-import Image from "next/image"
-import { StoreBenefits } from "@/components/products/store-benefits"
+import { CATALOG_HERO_IMAGE_CLASS, CatalogHeroBanner } from "@/components/products/catalog-hero-banner"
 import { useCart } from "@/context/cart-context"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import { ProductDetailsModal } from "../../products/product-details-modal"
@@ -95,27 +94,17 @@ export function CategoryPageLayout({
     <main className="relative min-h-screen overflow-visible bg-black text-white">
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
-      <div className="category-hero container relative z-20 mx-auto px-4 pb-8 pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-        <div className={`beyonix-hero-banner relative mx-auto flex w-full max-w-[var(--beyonix-content-max)] flex-col justify-end overflow-hidden rounded-xl border border-beyonix-blue-light/30 bg-[#03070D] text-center shadow-[0_0_42px_rgba(30,140,255,0.1),0_26px_70px_rgba(0,0,0,0.42)] ${image ? "" : "pt-8 sm:pt-10 lg:pt-12"}`}>
-          {image ? (
-            <>
-              {/* La misma imagen continúa bajo el buscador y los beneficios; la
-                  altura del fondo sigue la altura real de toda la sección. */}
-              <Image src={image} alt="" aria-hidden="true" fill unoptimized className="pointer-events-none absolute inset-0 size-full object-cover object-right sm:object-center" />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-[#03070D]/20 to-[#03070D]/75" />
-              <div data-banner-media className="relative aspect-[2/1] w-full overflow-hidden sm:aspect-[1568/600] lg:max-h-[clamp(280px,56svh,540px)]">
-                <img
-                  src={image}
-                  alt={title}
-                  className="absolute inset-0 size-full object-cover object-[20%_center] [mask-image:linear-gradient(to_bottom,black_75%,transparent_100%)] sm:object-center"
-                />
-              </div>
-            </>
-          ) : null}
-
-          <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-8 pt-5 sm:pb-10 sm:pt-6 lg:pb-12 lg:pt-8">
-            <div className="global-search-wrapper flex w-full justify-center">
-              <GlobalSearchBar
+      <CatalogHeroBanner
+        hasMedia={Boolean(image)}
+        media={image ? (
+          <img
+            src={image}
+            alt={title}
+            className={CATALOG_HERO_IMAGE_CLASS}
+          />
+        ) : null}
+        search={
+          <GlobalSearchBar
                 search={search}
                 className="max-w-3xl lg:max-w-4xl"
                 surfaceClassName="!border-beyonix-blue-light/38 !bg-[#0A1420]/88 !shadow-[0_0_18px_rgba(30,140,255,0.08),inset_0_1px_0_rgba(255,255,255,0.07)] hover:!border-beyonix-sky/46 focus-within:!border-beyonix-sky/58 focus-within:!shadow-[0_0_18px_rgba(30,140,255,0.12),inset_0_1px_0_rgba(255,255,255,0.08)]"
@@ -126,13 +115,9 @@ export function CategoryPageLayout({
                   nombre: nextProduct.nombre,
                 }))}
                 onSearchChange={setSearch}
-              />
-            </div>
-
-            <StoreBenefits />
-          </div>
-        </div>
-      </div>
+          />
+        }
+      />
 
       <section className="container relative z-20 mx-auto px-4 lg:px-8">
         <div className="beyonix-products-shell mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] p-3 pb-10 sm:p-4 lg:grid-cols-products-layout lg:p-5 lg:pb-12">
