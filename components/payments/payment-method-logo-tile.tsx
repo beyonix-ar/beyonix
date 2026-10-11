@@ -6,8 +6,8 @@ import type { PublicPaymentMethodLogo } from "@/lib/payments/payment-method-logo
 import { cn } from "@/lib/utils"
 
 const TILE_SIZES = {
-  sm: "h-7 w-11 p-1",
-  md: "h-9 w-14 p-1.5",
+  sm: "h-7 w-11 p-0.5 sm:w-12",
+  md: "h-9 w-14 p-1 sm:w-15",
 } as const
 
 /** Sin imagen usable: misma altura y superficie, ancho según el nombre. */

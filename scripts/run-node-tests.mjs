@@ -43,6 +43,7 @@ const TEST_FILES = [
   "lib/products/product-variants.test.ts",
   "lib/products/variant-color.test.ts",
   "lib/products/product-color-filters.test.ts",
+  "lib/products/catalog-filters.test.ts",
   "lib/products/variant-swatch.test.ts",
   "lib/products/rich-description.test.ts",
   "lib/products/force-delete-sql-contract.test.ts",

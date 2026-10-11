@@ -74,9 +74,10 @@ test("privacidad: texto obligatorio de la Res. AAIP 14/2018 y derechos del titul
   assert.match(source("lib/legal-contact.ts"), /LA AGENCIA DE ACCESO A LA INFORMACIÓN PÚBLICA, en su carácter de Órgano de Control de la Ley N° 25\.326/)
 })
 
-test("garantía: siempre 'garantía legal' (sin garantía propia o extendida) con el plazo de la política", () => {
-  for (const file of ["components/products/product-purchase-box.tsx", "components/claims/customer-claim-experience.tsx", "lib/order-claims.ts"]) {
-    assert.doesNotMatch(source(file), /Garantía BEYONIX|Garantía de 6 meses/, file)
+test("compra muestra el plazo breve y la política legal conserva su denominación", () => {
+  assert.match(source("components/products/product-purchase-box.tsx"), /Garantía de \{DEFAULT_PRODUCT_WARRANTY_MONTHS\} meses/)
+  for (const file of ["components/claims/customer-claim-experience.tsx", "lib/order-claims.ts"]) {
+    assert.doesNotMatch(source(file), /Garantía BEYONIX/, file)
+    assert.match(source(file), /Garantía legal/, file)
   }
-  assert.match(source("components/products/product-purchase-box.tsx"), /Garantía legal de \{DEFAULT_PRODUCT_WARRANTY_MONTHS\} meses/)
 })

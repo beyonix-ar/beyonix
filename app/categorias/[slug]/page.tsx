@@ -6,7 +6,7 @@ import {
   getCategoriaBySlug,
 } from "@/lib/supabase/queries/productos"
 import {
-  getProductosByCategoriaId,
+  getStoreCategorias,
   getStoreProductos,
 } from "@/lib/supabase/queries/store"
 
@@ -35,13 +35,11 @@ export default async function Page({
   }
 
   const [
-    categoryProducts,
     allProducts,
+    categories,
   ] = await Promise.all([
-    getProductosByCategoriaId(
-      categoria.id
-    ),
     getStoreProductos(),
+    getStoreCategorias(),
   ])
 
   return (
@@ -52,8 +50,8 @@ export default async function Page({
       }
       image={categoria.imagen || null}
       currentSlug={categoria.slug}
-      products={categoryProducts}
-      priceRangeProducts={allProducts}
+      products={allProducts}
+      categories={categories}
     />
   )
 }

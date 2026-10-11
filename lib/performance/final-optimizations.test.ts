@@ -34,8 +34,12 @@ test("el catálogo server-first usa el rango real y evita recargar categorías",
   assert.deepEqual(range, { min: 25_000, max: 80_000, step: 1_000 })
 
   const layout = source("components/products/products-page-layout.tsx")
-  assert.match(layout, /useState\(initialPriceRange\.min\)/)
-  assert.match(layout, /useState\(initialPriceRange\.max\)/)
+  const filters = source("components/products/use-catalog-filters.ts")
+  assert.match(layout, /useState<SupabaseProducto\[]>\(initialProducts\)/)
+  assert.match(layout, /useCatalogFilters\(products, undefined, initialSearch\)/)
+  assert.match(filters, /getProductPriceRange\(products\)/)
+  assert.match(filters, /minPrice: priceRange\.min/)
+  assert.match(filters, /maxPrice: priceRange\.max/)
   assert.match(
     layout,
     /initialCategories\.length\s*\? Promise\.resolve\(initialCategories\)\s*:\s*getStoreCategorias\(\)/,

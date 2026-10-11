@@ -142,7 +142,7 @@ export function ProductPurchaseBox({
       <div className="beyonix-modal-muted mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-12px font-medium text-white/45">
         <span className="inline-flex items-center gap-1 whitespace-nowrap">
           <ShieldCheck className="beyonix-modal-muted-icon size-3.5 shrink-0 text-white/45" />
-          Garantía legal de {DEFAULT_PRODUCT_WARRANTY_MONTHS} meses
+          Garantía de {DEFAULT_PRODUCT_WARRANTY_MONTHS} meses
         </span>
         <span aria-hidden="true">·</span>
         <span className="inline-flex items-center gap-1 whitespace-nowrap">

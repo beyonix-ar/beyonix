@@ -35,6 +35,7 @@ interface ProductsFiltersSidebarProps {
   minPriceLimit: number
   maxPriceLimit: number
   priceStep: number
+  onClearAll: () => void
 }
 
 export function ProductsFiltersSidebar({
@@ -63,6 +64,7 @@ export function ProductsFiltersSidebar({
   minPriceLimit,
   maxPriceLimit,
   priceStep,
+  onClearAll,
 }: ProductsFiltersSidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -155,6 +157,12 @@ export function ProductsFiltersSidebar({
           />
         </div>
         )}
+
+        <div className="pt-4">
+          <button type="button" onClick={onClearAll} className="text-xs font-medium text-beyonix-sky hover:text-white">
+            Limpiar filtros
+          </button>
+        </div>
 
       </div>
     </aside>

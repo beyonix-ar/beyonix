@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import postcss from "postcss"
 import tailwindcss from "@tailwindcss/postcss"
 import { chromium, type Browser } from "playwright-core"
+import { build } from "esbuild"
 
 import { ProductDetailsModalCard } from "@/components/products/product-details-modal"
 import type { SupabaseProducto } from "@/lib/supabase/types"
@@ -18,10 +19,17 @@ import type { SupabaseProducto } from "@/lib/supabase/types"
 
 let browser: Browser
 let css: string
+let tooltipBundle: string
 
 test.before(async () => {
   css = (await postcss([tailwindcss({ base: process.cwd() })])
     .process(readFileSync("app/globals.css", "utf8"), { from: "app/globals.css" })).css
+  tooltipBundle = (await build({
+    stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { RandomVariantHint } from "./components/products/random-variant-hint.tsx"; createRoot(document.getElementById("root")).render(<RandomVariantHint />);`,
+      resolveDir: process.cwd(), sourcefile: "random-hint-browser-entry.tsx", loader: "tsx" },
+    bundle: true, platform: "browser", format: "iife", write: false,
+    alias: { "@": process.cwd() }, jsx: "automatic",
+  })).outputFiles[0].text
   browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chrome", headless: true })
 })
 
@@ -145,16 +153,36 @@ for (const width of [1440, 1280, 1024, 768, 390]) {
   })
 }
 
-test("venta aleatoria en el modal: rótulo, ayuda y nota de imágenes; sin selector falso de color", () => {
+test("venta aleatoria en el modal: rótulo y ayuda, sin leyenda bajo miniaturas ni selector falso", () => {
   assert.match(markup, /Color\/modelo:/)
   assert.match(markup, /Aleatorio según disponibilidad/)
   assert.match(markup, /data-random-swatch="true"/)
   assert.match(markup, /aria-label="Qué significa color\/modelo aleatorio"/)
-  assert.match(markup, /Imágenes ilustrativas de colores disponibles\./)
+  assert.doesNotMatch(markup, /Imágenes ilustrativas de colores disponibles\./)
+  assert.doesNotMatch(readFileSync("components/products/product-page-layout.tsx", "utf8"), /RANDOM_GALLERY_NOTE/)
   assert.doesNotMatch(markup, /Seleccionar color/)
   // La descripción enriquecida se renderiza como elementos (sin innerHTML).
   assert.match(markup, /<strong[^>]*>Sin gas ni piedras<\/strong>/)
   assert.doesNotMatch(markup, /&lt;p&gt;|&lt;strong&gt;/)
+})
+
+test("ayuda de variantes aleatorias: hover y tap muestran la aclaración, segundo tap la cierra", async () => {
+  for (const hasTouch of [false, true]) {
+    const page = await browser.newPage({ viewport: { width: hasTouch ? 390 : 1440, height: 800 }, hasTouch })
+    try {
+      await page.setContent(`<style>${css}</style><div id="root" style="margin:80px"></div>`)
+      await page.addScriptTag({ content: tooltipBundle })
+      const button = page.getByRole("button", { name: "Qué significa color/modelo aleatorio" })
+      await button.waitFor()
+      if (hasTouch) await button.tap()
+      else await button.hover()
+      assert.equal(await page.getByRole("tooltip").textContent(), "Las imágenes muestran variantes posibles. El color/modelo enviado depende del stock disponible.")
+      if (hasTouch) {
+        await button.tap()
+        assert.equal(await page.getByRole("tooltip").count(), 0)
+      }
+    } finally { await page.close() }
+  }
 })
 
 test("\"Ver más / Ver menos\" ocupa todo el ancho de la descripción", () => {

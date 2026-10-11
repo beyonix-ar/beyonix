@@ -11,12 +11,27 @@
 export const RICH_TEXT_SIZES = [12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40] as const
 export type RichTextSize = (typeof RICH_TEXT_SIZES)[number]
 export type RichAlignment = "left" | "center" | "right"
+export const RICH_TEXT_FONTS = ["arial", "calibri", "verdana", "comic-sans"] as const
+export type RichTextFont = (typeof RICH_TEXT_FONTS)[number]
+export const RICH_TEXT_COLORS = [
+  { id: "black", label: "Negro", hex: "#000000" },
+  { id: "white", label: "Blanco", hex: "#ffffff" },
+  { id: "gray", label: "Gris", hex: "#64748b" },
+  { id: "beyonix-blue", label: "Azul BEYONIX", hex: "#1e4d7b" },
+  { id: "sky", label: "Celeste", hex: "#8cc8f2" },
+  { id: "green", label: "Verde", hex: "#34d399" },
+  { id: "red", label: "Rojo", hex: "#ef4444" },
+  { id: "amber", label: "Ámbar", hex: "#f59e0b" },
+] as const
+export type RichTextColor = (typeof RICH_TEXT_COLORS)[number]["id"]
 
 export type RichInline =
   | { type: "text"; text: string }
   | { type: "br" }
   | { type: "strong" | "em" | "u"; children: RichInline[] }
   | { type: "size"; size: RichTextSize; children: RichInline[] }
+  | { type: "font"; font: RichTextFont; children: RichInline[] }
+  | { type: "color"; color: RichTextColor; children: RichInline[] }
 
 export type RichBlockType = "p" | "h2" | "h3"
 export type RichBlock =
@@ -137,6 +152,30 @@ function sizeFromAttributes(name: string, attrs: Record<string, string>): RichTe
   return null
 }
 
+function fontFromAttributes(name: string, attrs: Record<string, string>): RichTextFont | null {
+  const canonical = /(?:^|\s)rt-font-(arial|calibri|verdana|comic-sans)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
+  if (canonical) return canonical as RichTextFont
+  const raw = (name === "font" ? attrs.face : undefined)
+    ?? /(?:^|;)\s*font-family\s*:\s*([^;]+)/i.exec(attrs.style ?? "")?.[1]
+  const family = raw?.split(",")[0]?.trim().replace(/^["']|["']$/g, "").toLowerCase()
+  return family === "arial" || family === "calibri" || family === "verdana"
+    ? family : family === "comic sans ms" ? "comic-sans" : null
+}
+
+function colorFromAttributes(name: string, attrs: Record<string, string>): RichTextColor | null {
+  const canonical = /(?:^|\s)rt-color-(black|white|gray|beyonix-blue|sky|green|red|amber)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
+  if (canonical) return canonical as RichTextColor
+  const raw = ((name === "font" ? attrs.color : undefined)
+    ?? /(?:^|;)\s*color\s*:\s*([^;]+)/i.exec(attrs.style ?? "")?.[1])?.trim().toLowerCase()
+  if (!raw) return null
+  const normalized = raw.replace(/\s+/g, "")
+  const match = RICH_TEXT_COLORS.find(({ hex }) => {
+    const rgb = hex.match(/[a-f0-9]{2}/g)?.map((part) => Number.parseInt(part, 16)).join(",")
+    return normalized === hex || normalized === `rgb(${rgb})`
+  })
+  return match?.id ?? null
+}
+
 function alignmentFromAttributes(attrs: Record<string, string>): RichAlignment | undefined {
   const canonical = /(?:^|\s)rt-align-(left|center|right)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
   if (canonical) return canonical as RichAlignment
@@ -208,8 +247,15 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
     else if (node.name === "u") formats.push("u")
     let wrapped: RichInline[] = children
     for (const format of [...new Set(formats)].reverse()) wrapped = [{ type: format, children: wrapped }]
-    const size = node.name === "span" || node.name === "font" ? sizeFromAttributes(node.name, node.attrs) : null
-    return size ? [{ type: "size", size, children: wrapped }] : wrapped
+    if (node.name === "span" || node.name === "font") {
+      const size = sizeFromAttributes(node.name, node.attrs)
+      const font = fontFromAttributes(node.name, node.attrs)
+      const color = colorFromAttributes(node.name, node.attrs)
+      if (size) wrapped = [{ type: "size", size, children: wrapped }]
+      if (font) wrapped = [{ type: "font", font, children: wrapped }]
+      if (color) wrapped = [{ type: "color", color, children: wrapped }]
+    }
+    return wrapped
   }
   const walk = (node: HtmlNode) => {
     if (node.kind === "text") { pending.push(...inline(node)); return }
@@ -300,6 +346,8 @@ function serializeInline(nodes: RichInline[]): string {
       case "text": return escapeHtml(node.text)
       case "br": return "<br>"
       case "size": return `<span class="rt-size-${node.size}">${serializeInline(node.children)}</span>`
+      case "font": return `<span class="rt-font-${node.font}">${serializeInline(node.children)}</span>`
+      case "color": return `<span class="rt-color-${node.color}">${serializeInline(node.children)}</span>`
       default: return `<${node.type}>${serializeInline(node.children)}</${node.type}>`
     }
   }).join("")

@@ -2,10 +2,10 @@
 
 import { CATALOG_HERO_IMAGE_CLASS, CatalogHeroBanner } from "@/components/products/catalog-hero-banner"
 import { useCart } from "@/context/cart-context"
-import type { SupabaseProducto } from "@/lib/supabase/types"
+import type { SupabaseCategoria, SupabaseProducto } from "@/lib/supabase/types"
 import { ProductDetailsModal } from "../../products/product-details-modal"
 import { GlobalSearchBar } from "@/components/global-search-bar"
-import { useCategoryProducts } from "../hooks/use-category-products"
+import { useCatalogFilters } from "@/components/products/use-catalog-filters"
 import { useProductDetails } from "../use-product-details"
 import { ProductsGrid } from "@/components/products/products-grid"
 import { ProductsFiltersSidebar } from "@/components/products/products-filters-sidebar"
@@ -19,14 +19,15 @@ interface CategoryPageLayoutProps {
   image?: string | null
   currentSlug: string
   products: SupabaseProducto[]
-  priceRangeProducts?: SupabaseProducto[]
+  categories: SupabaseCategoria[]
 }
 
 export function CategoryPageLayout({
   title,
   image,
+  currentSlug,
   products,
-  priceRangeProducts,
+  categories,
 }: CategoryPageLayoutProps) {
   const {
     addToCart,
@@ -51,8 +52,14 @@ export function CategoryPageLayout({
     maxPrice,
     setMaxPrice,
     priceRange,
+    selectedCategories,
+    setSelectedCategories,
+    selectedColors,
+    setSelectedColors,
+    availableColors,
     filteredProducts,
-  } = useCategoryProducts(products, priceRangeProducts)
+    clearAll,
+  } = useCatalogFilters(products, currentSlug)
 
   const {
     isOpen,
@@ -123,9 +130,13 @@ export function CategoryPageLayout({
         <div className="beyonix-products-shell mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] p-3 pb-10 sm:p-4 lg:grid-cols-products-layout lg:p-5 lg:pb-12">
           <div className="w-full lg:w-260px">
             <ProductsFiltersSidebar
-              categories={[]}
-              selectedCategories={[]}
-              setSelectedCategories={() => {}}
+              onClearAll={clearAll}
+              categories={categories}
+              selectedCategories={selectedCategories}
+              setSelectedCategories={setSelectedCategories}
+              selectedColors={selectedColors}
+              setSelectedColors={setSelectedColors}
+              availableColors={availableColors}
               onlyOffers={onlyOffers}
               setOnlyOffers={setOnlyOffers}
               onlyBestSellers={onlyBestSellers}
@@ -140,7 +151,7 @@ export function CategoryPageLayout({
               showFeaturedFilter={SITE_SETTINGS.filters.showFeaturedFilter}
               showOfferFilter={SITE_SETTINGS.filters.showOfferFilter}
               showPriceFilter={SITE_SETTINGS.filters.showPriceFilter}
-              showCategoryFilter={false}
+              showCategoryFilter={SITE_SETTINGS.filters.showCategoryFilter}
             />
           </div>
 

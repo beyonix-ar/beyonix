@@ -8,7 +8,6 @@ import {
   getDefaultVariantValue,
   getProductImagesByVariant,
   getVariantOptionByValue,
-  RANDOM_GALLERY_NOTE,
 } from "@/lib/products/product-variants"
 import {
   getImageUrlFromMediaIndex,
@@ -69,7 +68,6 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
           productName={producto.nombre}
           selectedStock={selectedStock}
           videoUrl={producto.video_url}
-          note={selectedVariant?.isRandom ? RANDOM_GALLERY_NOTE : null}
           onNext={nextImage}
           onPrev={prevImage}
           onSelectImage={setSelectedImage}

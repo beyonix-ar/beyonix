@@ -17176,12 +17176,27 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card 
 /* Tamaños y alineación controlados de la descripción de productos. */
 .product-rich-description-editor [data-rich-editor]:empty::before {
   content: attr(data-placeholder);
-  color: rgb(255 255 255 / 0.4);
+  color: var(--admin-text-muted);
   pointer-events: none;
 }
 .product-rich-description-editor [data-rich-editor] {
   box-sizing: border-box;
+  color: var(--admin-text);
+  font-family: var(--font-body);
 }
+.product-rich-description { font-family: var(--font-body); }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-font-arial { font-family: Arial, sans-serif; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-font-calibri { font-family: Calibri, Carlito, Arial, sans-serif; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-font-verdana { font-family: Verdana, sans-serif; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-font-comic-sans { font-family: "Comic Sans MS", cursive; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-black { color: #000000; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-white { color: #ffffff; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-gray { color: #64748b; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-beyonix-blue { color: #1e4d7b; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-sky { color: #8cc8f2; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-green { color: #34d399; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-red { color: #ef4444; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-color-amber { color: #f59e0b; }
 .product-rich-description-editor [data-rich-editor] p + p,
 .product-rich-description-editor [data-rich-editor] p + ul,
 .product-rich-description-editor [data-rich-editor] p + ol { margin-top: .5rem; }

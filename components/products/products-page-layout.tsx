@@ -4,15 +4,14 @@ import { CATALOG_HERO_IMAGE_CLASS, CatalogHeroBanner } from "@/components/produc
 import {
   Suspense,
   useEffect,
-  useMemo,
   useState,
 } from "react"
+import { useSearchParams } from "next/navigation"
 import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
 
-import { useSearchParams } from "next/navigation"
 
 import type {
   SupabaseCategoria,
@@ -39,15 +38,10 @@ import { ProductsGrid } from "./products-grid"
 import { ProductsToolbar } from "./products-toolbar"
 import {
   getDefaultVariantOption,
-  getProductVariantOptions,
 } from "@/lib/products/product-variants"
-import {
-  getProductPriceRange,
-} from "@/lib/products/price-range"
 import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 import { SITE_SETTINGS } from "@/config/site-settings"
-import { BASE_COLOR_ORDER, variantBaseColors } from "@/lib/products/product-color-filters"
-import { getProductColorMode } from "@/lib/products/color-mode"
+import { useCatalogFilters } from "./use-catalog-filters"
 
 interface StoreBanner {
   id: string
@@ -56,40 +50,10 @@ interface StoreBanner {
   sort_order?: number | null
 }
 
-// Colores base de un producto: de sus variantes físicas activas (nombre y
-// cada color, incluido el segundo de una bicolor). Un producto aleatorio se
-// filtra por los colores reales que puede recibir el cliente.
-function getProductBaseColors(product: SupabaseProducto) {
-  // Aleatorio simple: el color físico no se conoce ni se sigue; no se filtra
-  // por un hex técnico (nunca aparece como "Marrón").
-  if (getProductColorMode(product) === "aleatorio_simple") return []
-  const colors = new Set<string>()
-  const activeVariants = (product.producto_variantes ?? []).filter((variant) => variant.activo !== false)
-  const sources = activeVariants.length
-    ? activeVariants.map((variant) => ({ name: variant.nombre, colorHex: variant.color_hex, secondaryColorHex: variant.color_hex_secundario ?? null }))
-    : getProductVariantOptions(product).map((option) => ({ name: option.name, colorHex: option.colorHex, secondaryColorHex: option.secondaryColorHex }))
-  for (const variant of sources) {
-    variantBaseColors(variant, product.nombre).forEach((color) => colors.add(color))
-  }
-  return [...colors]
-}
-
-// useSearchParams() obliga a Next.js a mostrar el fallback de Suspense
-// durante el render estático/ISR si envuelve todo el árbol. Se aísla acá,
-// en una hoja sin salida visual, para que el resto de la página (grilla
-// de productos con contenido real) se sirva desde el servidor sin
-// depender de esto.
-function SearchParamSync({
-  onChange,
-}: {
-  onChange: (value: string) => void
-}) {
+function SearchParamSync({ onChange }: { onChange: (search: string) => void }) {
   const searchParams = useSearchParams()
-
-  useEffect(() => {
-    onChange(searchParams.get("search") || "")
-  }, [searchParams, onChange])
-
+  const search = searchParams.get("search") ?? ""
+  useEffect(() => onChange(search), [search, onChange])
   return null
 }
 
@@ -104,61 +68,19 @@ export function ProductsPageLayout({
   initialCategories = [],
   initialSearch = "",
 }: ProductsPageLayoutProps) {
-  const initialPriceRange = getProductPriceRange(initialProducts)
-  const [products, setProducts] =
-    useState<
-      SupabaseProducto[]
-    >(initialProducts)
-
-  const [categories, setCategories] =
-    useState<SupabaseCategoria[]>(initialCategories)
-
-  const [search, setSearch] =
-    useState(initialSearch)
-
-  const [productsBanners, setProductsBanners] =
-    useState<StoreBanner[]>([])
-
-  const [
-    activeBannerIndex,
-    setActiveBannerIndex,
-  ] = useState(0)
-
-  const [sortBy, setSortBy] =
-    useState("relevance")
-
-  const [
-    selectedCategories,
-    setSelectedCategories,
-  ] = useState<string[]>([])
-
-  const [
-    selectedColors,
-    setSelectedColors,
-  ] = useState<string[]>([])
-
-  const [onlyOffers, setOnlyOffers] =
-    useState(false)
-
-  const [
-    onlyBestSellers,
-    setOnlyBestSellers,
-  ] = useState(false)
-
-  const [minPrice, setMinPrice] =
-    useState(initialPriceRange.min)
-
-  const [maxPrice, setMaxPrice] =
-    useState(initialPriceRange.max)
-
-  const priceRange = useMemo(
-    () =>
-      getProductPriceRange(
-        products
-      ),
-    [products]
-  )
-
+  const [products, setProducts] = useState<SupabaseProducto[]>(initialProducts)
+  const [categories, setCategories] = useState<SupabaseCategoria[]>(initialCategories)
+  const [productsBanners, setProductsBanners] = useState<StoreBanner[]>([])
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0)
+  const {
+    search, setSearch, sortBy, setSortBy,
+    selectedCategories, setSelectedCategories,
+    selectedColors, setSelectedColors,
+    onlyOffers, setOnlyOffers,
+    onlyBestSellers, setOnlyBestSellers,
+    minPrice, setMinPrice, maxPrice, setMaxPrice,
+    priceRange, availableColors, filteredProducts, clearAll, restoreSearch,
+  } = useCatalogFilters(products, undefined, initialSearch)
   const {
     addToCart,
     removeFromCart,
@@ -201,19 +123,8 @@ export function ProductsPageLayout({
             : getStoreCategorias(),
         ])
 
-        const nextPriceRange =
-          getProductPriceRange(
-            productsData
-          )
-
         setProducts(productsData)
         setCategories(categoriesData)
-        setMinPrice(
-          nextPriceRange.min
-        )
-        setMaxPrice(
-          nextPriceRange.max
-        )
       } catch (error) {
         console.error(error)
       }
@@ -268,126 +179,6 @@ export function ProductsPageLayout({
     return () => window.clearInterval(timer)
   }, [productsBanners.length])
 
-  useEffect(() => {
-    const activeSlugs = new Set(
-      categories.map((category) => category.slug)
-    )
-
-    setSelectedCategories((current) =>
-      current.filter((slug) => activeSlugs.has(slug))
-    )
-  }, [categories])
-
-  const availableColors =
-    useMemo(() => {
-      const colors = new Set<string>()
-
-      products.forEach((product) => {
-        getProductBaseColors(product).forEach((color) =>
-          colors.add(color)
-        )
-      })
-
-      return BASE_COLOR_ORDER.filter((color) => colors.has(color))
-    }, [products])
-
-  // ─────────────────────────────────────
-  // Filters
-  // ─────────────────────────────────────
-
-  const filteredProducts =
-    useMemo(() => {
-      return products
-        .filter((product) => {
-          const matchCategory =
-            !SITE_SETTINGS.filters.showCategoryFilter ||
-            !selectedCategories.length ||
-            selectedCategories.includes(
-              product.categorias
-                ?.slug || ""
-            )
-
-          const matchOffers =
-            !SITE_SETTINGS.filters.showOfferFilter ||
-            !onlyOffers ||
-            !!product.precio_anterior
-
-          const matchBestSellers =
-            !SITE_SETTINGS.filters.showFeaturedFilter ||
-            !onlyBestSellers ||
-            product.destacado
-
-
-          const matchPrice =
-            !SITE_SETTINGS.filters.showPriceFilter ||
-            product.precio >=
-              minPrice &&
-            product.precio <=
-              maxPrice
-
-          const productBaseColors =
-            selectedColors.length > 0
-              ? getProductBaseColors(product)
-              : []
-
-          const matchColor =
-            !selectedColors.length ||
-            selectedColors.some((color) =>
-              productBaseColors.includes(color)
-            )
-
-          const matchSearch =
-            product.nombre
-              .toLowerCase()
-              .includes(
-                search.toLowerCase()
-              )
-
-          return (
-            matchCategory &&
-            matchOffers &&
-            matchBestSellers &&
-            matchPrice &&
-            matchColor &&
-            matchSearch
-          )
-        })
-        .sort((a, b) => {
-          if (
-            sortBy ===
-            "price-asc"
-          ) {
-            return (
-              a.precio -
-              b.precio
-            )
-          }
-
-          if (
-            sortBy ===
-            "price-desc"
-          ) {
-            return (
-              b.precio -
-              a.precio
-            )
-          }
-
-          return 0
-        })
-    }, [
-      products,
-      selectedCategories,
-      onlyOffers,
-      onlyBestSellers,
-      minPrice,
-      maxPrice,
-      selectedColors,
-      search,
-      sortBy,
-    ])
-
-  // ─────────────────────────────────────
   // Cart helpers
   // ─────────────────────────────────────
 
@@ -441,9 +232,7 @@ export function ProductsPageLayout({
 
   return (
     <main className="relative min-h-screen overflow-visible bg-black text-white">
-      <Suspense fallback={null}>
-        <SearchParamSync onChange={setSearch} />
-      </Suspense>
+      <Suspense fallback={null}><SearchParamSync onChange={restoreSearch} /></Suspense>
       <div className="pointer-events-none absolute inset-0 z-0 h-full w-full beyonix-store-page-bg" />
 
       <CatalogHeroBanner
@@ -520,6 +309,7 @@ export function ProductsPageLayout({
         <div className="beyonix-products-shell mx-auto grid max-w-[var(--beyonix-content-max)] grid-cols-1 gap-[clamp(1rem,1.4vw,1.5rem)] p-3 pb-10 sm:p-4 lg:grid-cols-products-layout lg:p-5 lg:pb-12">
           <div className="w-full lg:w-260px">
             <ProductsFiltersSidebar
+              onClearAll={clearAll}
               categories={categories}
               selectedCategories={
                 selectedCategories

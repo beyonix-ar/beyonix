@@ -22,10 +22,16 @@ const stubs: Plugin = {
         const query = { select() { return query }, eq() { return query }, in() { return query }, order() { return query }, then(resolve) { return Promise.resolve({ data: [], error: null }).then(resolve) } }
         export const supabase = { from: () => query, auth: { getSession: async () => ({ data: { session: null } }) }, channel: () => channel, removeChannel: async () => "ok" }
         export async function getSafeSupabaseSession() { return null }`,
+      "@/lib/supabase/queries/store": `
+        export async function getStoreProductos() { return window.__TEST_PRODUCTS || [] }
+        export async function getStoreCategorias() { return window.__TEST_CATEGORIES || [] }`,
+      "@/components/products/shared/shared-product-card": `
+        import { createElement } from "react"
+        export default function SharedProductCard({ product }) { return createElement("article", { "data-product-id": product.id }, product.nombre) }`,
       "next/navigation": `
         export function useRouter() { return { push() {}, replace() {}, prefetch() {} } }
         export function usePathname() { return "/categorias/test" }
-        export function useSearchParams() { return new URLSearchParams() }`,
+        export function useSearchParams() { return new URLSearchParams(window.location.search) }`,
       "next/link": `import { createElement, forwardRef } from "react"; export default forwardRef(function Link({ href, prefetch, ...props }, ref) { return createElement("a", { ...props, href: String(href), ref }) })`,
       "next/image": `import { createElement } from "react"; export default function Image({ src, alt, fill, priority, sizes, ...props }) { return createElement("img", { ...props, src: String(src), alt }) }`,
     }
@@ -42,9 +48,9 @@ import { createRoot } from "react-dom/client"
 import { CategoryPageLayout } from "@/components/category/layout/category-page-layout"
 import { ProductsPageLayout } from "@/components/products/products-page-layout"
 createRoot(document.getElementById("root")).render(window.__PAGE === "products"
-  ? h(ProductsPageLayout, { initialProducts: [], initialCategories: [] })
+  ? h(ProductsPageLayout, { initialProducts: window.__TEST_PRODUCTS || [], initialCategories: window.__TEST_CATEGORIES || [] })
   : h(CategoryPageLayout, {
-      title: window.__TITLE, description: "", currentSlug: "test", products: [],
+      title: window.__TITLE, description: "", currentSlug: window.__SLUG || "test", products: window.__TEST_PRODUCTS || [], categories: window.__TEST_CATEGORIES || [],
       image: window.__BANNER ? "https://img.test/banner.png" : null,
     }))
 `
@@ -99,14 +105,20 @@ test.before(async () => {
 
 test.after(async () => { await browser?.close() })
 
-async function open(width: number, height: number, withBanner: boolean, theme: "light" | "dark" = "dark", kind: "category" | "products" = "category", title = "Accesorios y utilidades"): Promise<Page> {
+async function open(width: number, height: number, withBanner: boolean, theme: "light" | "dark" = "dark", kind: "category" | "products" = "category", title = "Accesorios y utilidades", fixture?: { products: unknown[]; categories: unknown[]; slug: string; url?: string }): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   await page.route("**/*", (route) => (route.request().url() === "https://img.test/banner.png"
     ? route.fulfill({ contentType: "image/png", body: BANNER_PNG })
     : route.abort()))
-  await page.setContent(`<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__BANNER=${withBanner};window.__PAGE=${JSON.stringify(kind)};window.__TITLE=${JSON.stringify(title)};const originalFetch=window.fetch;window.fetch=(url,...args)=>String(url).includes('/api/store/banners')?Promise.resolve({json:async()=>({banners:${withBanner ? '[{id:"test",image_url:"https://img.test/banner.png",alt_text:"Banner de productos"}]' : '[]'}})}):originalFetch(url,...args)</script><script>${bundle}</script></body></html>`)
+  const markup = `<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__BANNER=${withBanner};window.__PAGE=${JSON.stringify(kind)};window.__TITLE=${JSON.stringify(title)};window.__TEST_PRODUCTS=${JSON.stringify(fixture?.products ?? [])};window.__TEST_CATEGORIES=${JSON.stringify(fixture?.categories ?? [])};window.__SLUG=${JSON.stringify(fixture?.slug ?? "test")};const originalFetch=window.fetch;window.fetch=(url,...args)=>String(url).includes('/api/store/banners')?Promise.resolve({json:async()=>({banners:${withBanner ? '[{id:"test",image_url:"https://img.test/banner.png",alt_text:"Banner de productos"}]' : '[]'}})}):originalFetch(url,...args)</script><script>${bundle}</script></body></html>`
+  if (fixture?.url) {
+    await page.route("https://catalog.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }))
+    await page.goto(fixture.url)
+  } else {
+    await page.setContent(markup)
+  }
   try {
     await page.waitForSelector(".beyonix-hero-banner", { timeout: 10_000 })
     if (withBanner) await page.waitForFunction(() => { const image = document.querySelector("[data-banner-media] img") as HTMLImageElement | null; return Boolean(image?.complete && image.naturalWidth) })
@@ -194,4 +206,72 @@ test("sin banner: no se reserva un recuadro vacío", async () => {
       assert.ok(layout.gapAboveSearch <= 90, `${width}: el buscador arranca arriba, sólo con el padding normal (${Math.round(layout.gapAboveSearch)}px)`)
     } finally { await page.close() }
   }
+})
+
+const filterFixture = {
+  slug: "tecnologia",
+  categories: [
+    { id: 1, slug: "tecnologia", nombre: "Tecnología & Gadgets" },
+    { id: 2, slug: "hogar", nombre: "Hogar & Bazar" },
+    { id: 3, slug: "accesorios", nombre: "Accesorios y utilidades" },
+  ],
+  products: [
+    { id: 1, nombre: "Lámpara negra", slug: "lampara", precio: 100, precio_anterior: null, destacado: false, modo_color: "especifico", categorias: { slug: "tecnologia" }, producto_variantes: [{ id: 11, nombre: "NEGRO", color_hex: "#000000", activo: true, orden: 0, stock: 2, imagenes: [] }] },
+    { id: 2, nombre: "Vaso bicolor", slug: "vaso", precio: 200, precio_anterior: 250, destacado: false, modo_color: "especifico", categorias: { slug: "hogar" }, producto_variantes: [{ id: 21, nombre: "AZUL / ROSA", color_hex: "#2563EB", color_hex_secundario: "#EC4899", activo: true, orden: 0, stock: 2, imagenes: [] }] },
+    { id: 3, nombre: "Encendedor aleatorio", slug: "encendedor", precio: 300, precio_anterior: null, destacado: false, modo_color: "aleatorio_variantes", categorias: { slug: "accesorios" }, producto_variantes: [{ id: 31, nombre: "ROJO", color_hex: "#EF4444", activo: true, orden: 0, stock: 2, imagenes: [] }, { id: 32, nombre: "NEGRO", color_hex: "#000000", activo: true, orden: 1, stock: 2, imagenes: [] }] },
+  ],
+}
+
+for (const width of [390, 768, 1024, 1366, 1440, 1920]) {
+  test(`filtros completos y sin desborde en Productos y Categorías a ${width}px`, async () => {
+    for (const kind of ["products", "category"] as const) {
+      const page = await open(width, 900, false, "dark", kind, "Tecnología & Gadgets", filterFixture)
+      try {
+        if (width < 1024) await page.getByRole("button", { name: "Mostrar u ocultar filtros" }).click()
+        assert.equal(await page.getByText("Categorías", { exact: true }).count(), 1)
+        assert.equal(await page.getByText("Colores", { exact: true }).count(), 1)
+        assert.equal(await page.getByRole("button", { name: "Filtrar por Multicolor" }).count(), 1)
+        assert.equal(await page.getByRole("button", { name: "Filtrar por Aleatorio" }).count(), 1)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0)
+        if (kind === "category") {
+          assert.equal(await page.getByRole("checkbox", { name: "Tecnología & Gadgets" }).isChecked(), true)
+          await page.getByRole("checkbox", { name: "Hogar & Bazar" }).check()
+          assert.equal(await page.locator("[data-product-id]").count(), 2)
+          await page.getByRole("button", { name: "Filtrar por Multicolor" }).click()
+          assert.deepEqual(await page.locator("[data-product-id]").evaluateAll((items) => items.map((item) => item.getAttribute("data-product-id"))), ["2"])
+          await page.getByRole("button", { name: "Limpiar filtros" }).click()
+          assert.equal(await page.locator("[data-product-id]").count(), 3)
+        }
+      } finally { await page.close() }
+    }
+  })
+}
+
+test("URL de Categorías conserva filtros al recargar, volver y avanzar", async () => {
+  const page = await open(1440, 900, false, "dark", "category", "Tecnología & Gadgets", {
+    ...filterFixture, url: "https://catalog.test/categorias/tecnologia?color=multicolor",
+  })
+  try {
+    assert.equal(await page.locator("[data-product-id]").count(), 0)
+    await page.getByRole("checkbox", { name: "Hogar & Bazar" }).evaluate((node: HTMLInputElement) => node.click())
+    await page.waitForFunction(() => document.querySelectorAll("[data-product-id]").length === 1)
+    assert.equal(await page.locator("[data-product-id]").count(), 1)
+    assert.ok(page.url().includes("category=hogar"))
+    await page.reload()
+    await page.waitForFunction(() => document.querySelectorAll("[data-product-id]").length === 1)
+    assert.equal(await page.locator("[data-product-id]").count(), 1)
+    await page.goBack()
+    const backState = await page.evaluate(() => ({ url: location.href, count: document.querySelectorAll("[data-product-id]").length, checks: [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].map((input) => input.checked) }))
+    assert.equal(backState.count, 0, JSON.stringify(backState))
+    assert.equal(await page.locator("[data-product-id]").count(), 0)
+    await page.goForward()
+    await page.waitForFunction(() => document.querySelectorAll("[data-product-id]").length === 1)
+    assert.equal(await page.locator("[data-product-id]").count(), 1)
+    await page.getByRole("button", { name: "Limpiar filtros" }).evaluate((node: HTMLButtonElement) => node.click())
+    await page.waitForFunction(() => document.querySelectorAll("[data-product-id]").length === 3)
+    assert.equal(await page.locator("[data-product-id]").count(), 3)
+    await page.reload()
+    await page.waitForFunction(() => document.querySelectorAll("[data-product-id]").length === 3)
+    assert.equal(await page.locator("[data-product-id]").count(), 3)
+  } finally { await page.close() }
 })

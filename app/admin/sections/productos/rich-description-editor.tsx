@@ -2,12 +2,56 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, List, ListOrdered, Redo2, Underline, Undo2 } from "lucide-react"
-import { RICH_TEXT_SIZES, sanitizeRichDescription, type RichTextSize } from "@/lib/products/rich-description"
+import { RICH_TEXT_COLORS, RICH_TEXT_SIZES, sanitizeRichDescription, type RichTextColor, type RichTextFont, type RichTextSize } from "@/lib/products/rich-description"
 import { AdminSecondaryButton } from "../../components/admin-controls"
 
 type Block = "p" | "h2" | "h3"
-type ToolbarState = { block: Block; size: RichTextSize | null; bold: boolean; italic: boolean; underline: boolean; list: "ul" | "ol" | null; align: "left" | "center" | "right" }
-const INITIAL: ToolbarState = { block: "p", size: 16, bold: false, italic: false, underline: false, list: null, align: "left" }
+type ToolbarState = { block: Block; size: RichTextSize | null; font: RichTextFont | "default" | null; color: RichTextColor | "auto" | null; bold: boolean; italic: boolean; underline: boolean; list: "ul" | "ol" | null; align: "left" | "center" | "right" }
+const INITIAL: ToolbarState = { block: "p", size: 16, font: "default", color: "auto", bold: false, italic: false, underline: false, list: null, align: "left" }
+
+const FONT_NAMES: Record<RichTextFont, string> = {
+  arial: "Arial", calibri: "Calibri", verdana: "Verdana", "comic-sans": "Comic Sans MS",
+}
+
+function fontAt(node: Node | null, editor: HTMLElement): RichTextFont | "default" {
+  for (let current = node; current && current !== editor; current = current.parentNode) {
+    if (!(current instanceof HTMLElement)) continue
+    const classes = [...current.classList].join(" ")
+    const canonical = /(?:^|\s)rt-font-(arial|calibri|verdana|comic-sans)(?:\s|$)/.exec(classes)?.[1]
+    if (canonical) return canonical as RichTextFont
+    const family = (current.tagName === "FONT" ? current.getAttribute("face") : current.style.fontFamily)
+      ?.split(",")[0]?.trim().replace(/^["']|["']$/g, "").toLowerCase()
+    if (family === "arial" || family === "calibri" || family === "verdana") return family
+    if (family === "comic sans ms") return "comic-sans"
+  }
+  return "default"
+}
+
+function colorAt(node: Node | null, editor: HTMLElement): RichTextColor | "auto" {
+  for (let current = node; current && current !== editor; current = current.parentNode) {
+    if (!(current instanceof HTMLElement)) continue
+    const canonical = /(?:^|\s)rt-color-(black|white|gray|beyonix-blue|sky|green|red|amber)(?:\s|$)/.exec([...current.classList].join(" "))?.[1]
+    if (canonical) return canonical as RichTextColor
+    const color = (current.tagName === "FONT" ? current.getAttribute("color") : current.style.color)?.toLowerCase().replace(/\s+/g, "")
+    const match = RICH_TEXT_COLORS.find(({ hex }) => {
+      const rgb = hex.match(/[a-f0-9]{2}/g)?.map((part) => Number.parseInt(part, 16)).join(",")
+      return color === hex || color === `rgb(${rgb})`
+    })
+    if (match) return match.id
+  }
+  return "auto"
+}
+
+function selectedFormat<T>(editor: HTMLElement, range: Range, at: (node: Node, editor: HTMLElement) => T, fallback: T): T | null {
+  if (range.collapsed) return at(range.startContainer, editor)
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT)
+  const values = new Set<T>()
+  while (walker.nextNode()) {
+    if (walker.currentNode.textContent?.length && range.intersectsNode(walker.currentNode)) values.add(at(walker.currentNode, editor))
+    if (values.size > 1) return null
+  }
+  return values.values().next().value ?? fallback
+}
 
 function inside(editor: HTMLElement, node: Node | null) {
   return Boolean(node && (node === editor || editor.contains(node)))
@@ -55,6 +99,7 @@ function currentState(editor: HTMLElement, range: Range): ToolbarState {
     : "left"
   const tag = blockElement?.tagName.toLowerCase()
   return { block: tag === "h2" || tag === "h3" ? tag : "p", size: selectedSize(editor, range),
+    font: selectedFormat(editor, range, fontAt, "default"), color: selectedFormat(editor, range, colorAt, "auto"),
     bold: document.queryCommandState("bold"), italic: document.queryCommandState("italic"),
     underline: document.queryCommandState("underline"),
     list: list?.tagName === "UL" ? "ul" : list?.tagName === "OL" ? "ol" : null, align }
@@ -126,6 +171,8 @@ export function RichDescriptionEditor({ id, value, onChange, placeholder }: {
     emit()
   }
   const setSize = (size: RichTextSize) => run("fontName", `rt-size-${size}`)
+  const setFont = (font: RichTextFont | "default") => run("fontName", font === "default" ? "Montserrat" : FONT_NAMES[font])
+  const setColor = (color: RichTextColor | "auto") => run("foreColor", color === "auto" ? "inherit" : RICH_TEXT_COLORS.find((item) => item.id === color)!.hex)
   const step = (direction: 1 | -1) => {
     const index = RICH_TEXT_SIZES.indexOf(state.size ?? 16)
     setSize(RICH_TEXT_SIZES[Math.max(0, Math.min(RICH_TEXT_SIZES.length - 1, index + direction))])
@@ -150,6 +197,19 @@ export function RichDescriptionEditor({ id, value, onChange, placeholder }: {
         className="h-8 w-16 rounded-md border border-white/15 bg-slate-900 px-1 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
         <option value="mixed" disabled>—</option>
         {RICH_TEXT_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
+      </select>
+      <select aria-label="Tipografía" title="Tipografía" value={state.font ?? "mixed"} onPointerDown={updateState}
+        onChange={(event) => setFont(event.target.value as RichTextFont | "default")}
+        className="h-8 w-32 rounded-md border border-white/15 bg-slate-900 px-1.5 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        <option value="mixed" disabled>—</option>
+        <option value="default">Montserrat</option><option value="arial">Arial</option><option value="calibri">Calibri</option>
+        <option value="verdana">Verdana</option><option value="comic-sans">Comic Sans MS</option>
+      </select>
+      <select aria-label="Color de texto" title="Color de texto" value={state.color ?? "mixed"} onPointerDown={updateState}
+        onChange={(event) => setColor(event.target.value as RichTextColor | "auto")}
+        className="h-8 w-36 rounded-md border border-white/15 bg-slate-900 px-1.5 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        <option value="mixed" disabled>—</option><option value="auto">Automático</option>
+        {RICH_TEXT_COLORS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
       </select>
       <Button label="Achicar texto" action={() => step(-1)}>A−</Button>
       <Button label="Agrandar texto" action={() => step(1)}>A+</Button>
@@ -188,7 +248,7 @@ export function RichDescriptionEditor({ id, value, onChange, placeholder }: {
         emit()
       }}
       onDrop={(event) => event.preventDefault()}
-      className="box-border min-h-40 max-h-[32rem] overflow-y-auto break-words px-3 py-2.5 text-base leading-7 text-white outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
+      className="box-border min-h-40 max-h-[32rem] overflow-y-auto break-words px-3 py-2.5 text-base leading-7 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-400"
     />
   </div>
 }

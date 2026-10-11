@@ -9,8 +9,7 @@ export const DEFAULT_VARIANT_VALUE = "default"
 /** Opción única de un producto con venta aleatoria (no se elige color). */
 export const RANDOM_VARIANT_VALUE = "random"
 export const RANDOM_VARIANT_TOOLTIP =
-  "Podés recibir cualquiera de los colores/modelos disponibles. Todas las variantes poseen las mismas características y funcionamiento."
-export const RANDOM_GALLERY_NOTE = "Imágenes ilustrativas de colores disponibles."
+  "Las imágenes muestran variantes posibles. El color/modelo enviado depende del stock disponible."
 export const CONDITIONED_VARIANT_PREFIX = "conditioned:"
 export const FALLBACK_PRODUCT_IMAGE = "/placeholder.svg"
 

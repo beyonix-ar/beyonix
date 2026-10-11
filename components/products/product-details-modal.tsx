@@ -5,7 +5,7 @@ import { createPortal } from "react-dom"
 import { X } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
-import { getVariantOptionByValue, RANDOM_GALLERY_NOTE } from "@/lib/products/product-variants"
+import { getVariantOptionByValue } from "@/lib/products/product-variants"
 
 import { ProductDescriptionSection } from "./product-description-section"
 import { ProductDetailsGallery } from "./product-details-gallery"
@@ -179,7 +179,6 @@ export function ProductDetailsModalCard({
         productName={product.nombre}
         selectedStock={selectedStock}
         videoUrl={product.video_url}
-        note={selectedVariant?.isRandom ? RANDOM_GALLERY_NOTE : null}
         onNext={onNext}
         onPrev={onPrev}
         onSelectImage={onSelectImage}

@@ -157,6 +157,7 @@ async function open(theme: "light" | "dark", width: number, catalog: typeof CATA
 }
 
 async function assertUniformTiles(page: Page, scope: string, expected: number) {
+  await page.locator(`${scope} [data-logo-fallback]`).waitFor({ timeout: 5_000 })
   const tiles = page.locator(`${scope} [data-payment-logo-tile]:not([data-logo-fallback])`)
   assert.equal(await tiles.count(), expected, scope)
   // loading="lazy": se cargan al entrar en pantalla.
@@ -172,6 +173,10 @@ async function assertUniformTiles(page: Page, scope: string, expected: number) {
     return {
       width: Math.round(box.width),
       height: Math.round(box.height),
+      imageWidth: Math.round(image.getBoundingClientRect().width),
+      imageHeight: Math.round(image.getBoundingClientRect().height),
+      rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+      viewportWidth: window.innerWidth,
       fit: getComputedStyle(image).objectFit,
       loaded: image.complete && image.naturalWidth > 0,
       background: getComputedStyle(element).backgroundColor,
@@ -180,6 +185,16 @@ async function assertUniformTiles(page: Page, scope: string, expected: number) {
   }))
   assert.equal(new Set(measures.map((measure) => `${measure.width}x${measure.height}`)).size, 1, `mismo tamaño: ${JSON.stringify(measures)}`)
   for (const measure of measures) {
+    const md = scope === "[data-media-cash]"
+    const root = measure.rootFontSize
+    const expectedWidth = (md ? (measure.viewportWidth < 640 ? 3.5 : 3.75) : (measure.viewportWidth < 640 ? 2.75 : 3)) * root
+    const expectedHeight = (md ? 2.25 : 1.75) * root
+    const expectedImageWidth = expectedWidth - 2 - 2 * (md ? 0.25 : 0.125) * root
+    const expectedImageHeight = expectedHeight - 2 - 2 * (md ? 0.25 : 0.125) * root
+    assert.ok(Math.abs(measure.width - expectedWidth) <= 1, `ancho del tile: ${JSON.stringify(measure)}`)
+    assert.ok(Math.abs(measure.height - expectedHeight) <= 1, `altura compacta: ${JSON.stringify(measure)}`)
+    assert.ok(Math.abs(measure.imageWidth - expectedImageWidth) <= 1, `ancho útil del logo: ${JSON.stringify(measure)}`)
+    assert.ok(Math.abs(measure.imageHeight - expectedImageHeight) <= 1, `alto útil del logo: ${JSON.stringify(measure)}`)
     assert.equal(measure.fit, "contain", "nunca se deforma ni se recorta")
     assert.equal(measure.loaded, true, "SVG y PNG cargan")
     assert.equal(measure.background, "rgb(255, 255, 255)")
@@ -237,7 +252,7 @@ async function assertNoOverflow(page: Page, width: number) {
 }
 
 for (const theme of ["light", "dark"] as const) {
-  for (const width of [1440, 1280, 1024, 768, 390]) {
+  for (const width of [1920, 1440, 1280, 1024, 768, 390]) {
     test(`${theme} ${width}px: sin método elegido, el panel invita a elegir (no queda vacío)`, async () => {
       const page = await open(theme, width, null)
       try {

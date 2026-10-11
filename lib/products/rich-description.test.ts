@@ -6,6 +6,7 @@ import test from "node:test"
 import {
   normalizeProductDescriptionInput,
   parseRichDescription,
+  RICH_TEXT_COLORS,
   RICH_DESCRIPTION_MAX_LENGTH,
   RichDescriptionInputError,
   richDescriptionToPlainText,
@@ -56,13 +57,46 @@ test("listas, alineación y tamaños permitidos sobreviven al guardado y recarga
   try {
     await db.exec("create table public.productos (id bigint primary key, descripcion text); create role anon; create role authenticated;")
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009110000_product_description_guard.sql"), "utf8"))
-    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009120000_product_description_editor_formats.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261010113000_product_description_editor_formats.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261011120000_product_description_font_color_formats.sql"), "utf8"))
     await db.query("insert into productos values (1, $1)", [normalizeProductDescriptionInput(html)])
     const saved = (await db.query<{ descripcion: string }>("select descripcion from productos where id = 1")).rows[0].descripcion
     assert.equal(sanitizeRichDescription(saved), html)
   } finally {
     await db.close()
   }
+})
+
+test("fuentes y colores permitidos: HTML canónico estable, defaults sin color fijo", () => {
+  const html = '<p>Montserrat <span class="rt-font-arial">Arial</span> <span class="rt-font-calibri">Calibri</span> <span class="rt-font-verdana">Verdana</span> <span class="rt-font-comic-sans">Comic</span></p>'
+  assert.equal(sanitizeRichDescription(html), html)
+  for (const { id, hex } of RICH_TEXT_COLORS) {
+    const canonical = `<p><span class="rt-color-${id}">Texto</span></p>`
+    assert.equal(sanitizeRichDescription(canonical), canonical)
+    assert.equal(sanitizeRichDescription(`<p><font color="${hex}">Texto</font></p>`), canonical)
+  }
+  assert.equal(sanitizeRichDescription("<p>Automático</p>"), "<p>Automático</p>")
+  assert.equal(sanitizeRichDescription('<p><font face="Montserrat" color="inherit">Automático</font></p>'), "<p>Automático</p>")
+  assert.equal(sanitizeRichDescription('<p><span style="font-family: Papyrus; color: #123456">No permitido</span></p>'), "<p>No permitido</p>")
+  assert.equal(sanitizeRichDescription('<p><span class="rt-font-script rt-color-purple" onclick="bad()">No permitido</span></p>'), "<p>No permitido</p>")
+  assert.equal(sanitizeRichDescription('<p><font face="Comic Sans MS" color="rgb(239, 68, 68)">Rojo</font></p>'), '<p><span class="rt-color-red"><span class="rt-font-comic-sans">Rojo</span></span></p>')
+})
+
+test("base acepta fuentes/colores canónicos y rechaza clases o estilos no permitidos", async () => {
+  const { PGlite } = await import("@electric-sql/pglite")
+  const db = new PGlite()
+  try {
+    await db.exec("create table public.productos (id bigint primary key, descripcion text); create role anon; create role authenticated;")
+    for (const name of ["20261009110000_product_description_guard.sql", "20261010113000_product_description_editor_formats.sql", "20261011120000_product_description_font_color_formats.sql"]) {
+      await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", name), "utf8"))
+    }
+    const valid = '<p><span class="rt-color-sky"><span class="rt-font-calibri">Color</span></span></p>'
+    await db.query("insert into productos values (1, $1)", [valid])
+    assert.equal((await db.query<{ descripcion: string }>("select descripcion from productos where id = 1")).rows[0].descripcion, valid)
+    for (const invalid of ['<p><span class="rt-color-purple">x</span></p>', '<p><span style="color:red">x</span></p>', '<p><span class="rt-font-papyrus">x</span></p>']) {
+      await assert.rejects(db.query("insert into productos values (2, $1)", [invalid]), /PRODUCT_DESCRIPTION_UNSAFE/)
+    }
+  } finally { await db.close() }
 })
 
 test("XSS: script, iframe, style, on*, javascript: y atributos se eliminan", () => {
@@ -141,16 +175,18 @@ test("XSS: vectores adicionales nunca producen marcado ejecutable", () => {
   assert.equal(sanitizeRichDescription("<<p>>x"), "<p>&lt;</p><p>&gt;x</p>")
 })
 
-test("pegado desde Word: se reduce a formato permitido sin clases, estilos ni basura", () => {
+test("pegado desde Word: conserva sólo tipografía permitida y descarta otros estilos", () => {
   const word = `<html xmlns:o="urn:schemas-microsoft-com:office:office"><head><meta charset="utf-8"><style>p.MsoNormal{margin:0}</style></head>
 <body><!--StartFragment--><p class="MsoNormal" style="margin:0cm;font-family:Calibri"><b><span style="font-size:14.0pt;color:#C00000" lang="ES-AR">Garantía</span></b><o:p></o:p></p>
 <p class="MsoNormal"><span style="font-family:Arial;mso-bidi-font-weight:bold" data-x="1">Incluye <i>cable</i> y <u>caja</u>.</span><o:p>&nbsp;</o:p></p><!--EndFragment--></body></html>`
-  assert.equal(sanitizeRichDescription(word), "<p><strong>Garantía</strong></p><p>Incluye <em>cable</em> y <u>caja</u>. </p>")
+  assert.equal(sanitizeRichDescription(word), '<p><strong>Garantía</strong></p><p><span class="rt-font-arial">Incluye <em>cable</em> y <u>caja</u>.</span> </p>')
 })
 
 test("pegado desde Google Docs: el <b> envolvente de Docs no pone todo en negrita", () => {
   const docs = `<meta charset="utf-8"><b style="font-weight:normal;" id="docs-internal-guid-1234"><p dir="ltr" style="line-height:1.38;margin-top:0pt"><span style="font-size:11pt;font-family:Arial;color:#000000;font-weight:700;font-style:normal;">Batería</span><span style="font-size:11pt;font-family:Arial;color:#000000;font-weight:400;font-style:italic;"> de litio</span><span style="font-weight:400;text-decoration:underline;"> recargable</span></p></b>`
-  assert.equal(sanitizeRichDescription(docs), "<p><strong>Batería</strong><em> de litio</em><u> recargable</u></p>")
+  assert.match(sanitizeRichDescription(docs), /rt-font-arial/)
+  assert.match(sanitizeRichDescription(docs), /rt-color-black/)
+  assert.doesNotMatch(sanitizeRichDescription(docs), /style=|font-weight|line-height/)
 })
 
 test("pegado desde web: links, imágenes, colores y data-* desaparecen; el texto queda", () => {
@@ -193,7 +229,8 @@ test("guard en base: acepta exactamente la forma canónica del sanitizer y recha
     // Un producto legacy con texto no canónico existe antes de la guarda.
     await db.exec("insert into productos values (1, 'Legacy a > b')")
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009110000_product_description_guard.sql"), "utf8"))
-    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009120000_product_description_editor_formats.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261010113000_product_description_editor_formats.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261011120000_product_description_font_color_formats.sql"), "utf8"))
     const samples = [
       "Texto plano < 5 cm & más",
       "<h1>T</h1><p><b>x</b> <i>y</i> <u>z</u><br><font size=5>grande</font></p>",

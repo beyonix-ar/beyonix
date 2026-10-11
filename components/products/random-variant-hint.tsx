@@ -1,6 +1,6 @@
 "use client"
 
-import { useId, useState } from "react"
+import { useId, useRef, useState } from "react"
 import { CircleHelp } from "lucide-react"
 
 import { RANDOM_VARIANT_TOOLTIP } from "@/lib/products/product-variants"
@@ -9,20 +9,26 @@ import { RANDOM_VARIANT_TOOLTIP } from "@/lib/products/product-variants"
 export function RandomVariantHint() {
   const id = useId()
   const [open, setOpen] = useState(false)
+  const touchWasOpen = useRef(false)
+  const touchClick = useRef(false)
 
   return (
     <span
       className="relative inline-flex align-middle"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onPointerEnter={(event) => { if (event.pointerType === "mouse") setOpen(true) }}
+      onPointerLeave={(event) => { if (event.pointerType === "mouse") setOpen(false) }}
     >
       <button
         type="button"
         aria-label="Qué significa color/modelo aleatorio"
         aria-describedby={open ? id : undefined}
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        onFocus={() => setOpen(true)}
+        onPointerDown={(event) => {
+          touchClick.current = event.pointerType === "touch"
+          if (touchClick.current) touchWasOpen.current = open
+        }}
+        onClick={() => setOpen(touchClick.current ? !touchWasOpen.current : true)}
+        onFocus={(event) => { if (event.currentTarget.matches(":focus-visible")) setOpen(true) }}
         onBlur={() => setOpen(false)}
         onKeyDown={(event) => {
           if (event.key === "Escape") setOpen(false)
