@@ -58,10 +58,55 @@ for (const width of [1920, 1600, 1440, 1366, 1280, 1024, 768, 390]) {
   test(`editor de producto se adapta a ${width}px sin perder controles`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 900 } })
     try {
-      await page.setContent(`<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>*{box-sizing:border-box}body{margin:0;background:#07111b}#root{width:calc(100% - 220px);margin-left:220px}@media(max-width:1100px){#root{width:100%;margin-left:0}}</style></head><body><div class="beyonix-admin-shell"><main class="beyonix-admin-main"><div id="root"></div></main></div><script>${bundle}</script></body></html>`)
+      await page.setContent(`<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div class="beyonix-admin-shell min-h-screen text-white lg:flex"><div class="hidden lg:block"><aside class="beyonix-admin-sidebar"></aside></div><main class="beyonix-admin-main min-w-0 flex-1"><div id="root"></div></main></div><script>${bundle}</script></body></html>`)
       await page.getByRole("textbox", { name: "Nombre del producto" }).waitFor()
-      const columns = await page.locator(".product-editor-workspace").evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length)
-      assert.equal(columns, width >= 1024 ? 2 : 1)
+      const layout = await page.locator(".product-editor-workspace").evaluate((node) => {
+        const workspace = node.getBoundingClientRect()
+        const screen = document.querySelector(".product-editor-screen")!.getBoundingClientRect()
+        const columns = Array.from(node.querySelectorAll(":scope > .product-editor-column"), (column) => column.getBoundingClientRect())
+        const stockGrid = document.querySelector(".product-editor-stock-grid")!
+        const logistics = document.querySelector("[data-logistics-row]")!
+        const labels = Array.from(logistics.querySelectorAll(".product-editor-field-label"), (label) => {
+          const rect = label.getBoundingClientRect()
+          return { width: rect.width, height: rect.height, lineHeight: parseFloat(getComputedStyle(label).lineHeight) }
+        })
+        const fieldWidths = Array.from(logistics.querySelectorAll("input"), (input) => input.getBoundingClientRect().width)
+        const logisticsCard = document.querySelector(".product-editor-dimensions-cell .product-editor-panel")!.getBoundingClientRect()
+        const videoWidth = document.querySelector("#video_url")!.getBoundingClientRect().width
+        const categoryWidth = document.querySelector(".product-editor-dimensions-cell .admin-control-select")!.getBoundingClientRect().width
+        return {
+          screenWidth: screen.width,
+          workspaceWidth: workspace.width,
+          workspaceRight: workspace.right,
+          columnWidths: columns.map((column) => column.width),
+          columnTops: columns.map((column) => column.top),
+          stockColumns: getComputedStyle(stockGrid).gridTemplateColumns.split(" ").length,
+          logisticsColumns: getComputedStyle(logistics).gridTemplateColumns.split(" ").length,
+          labels,
+          fieldWidths,
+          logisticsCardWidth: logisticsCard.width,
+          videoWidth,
+          categoryWidth,
+        }
+      })
+      assert.equal(layout.columnWidths.length, 2)
+      assert.ok(layout.workspaceWidth >= layout.screenWidth * 0.9, `el editor pierde ancho útil a ${width}px`)
+      if (width >= 1024) {
+        assert.ok(layout.columnWidths.every((columnWidth) => columnWidth > layout.workspaceWidth * 0.35), `columna colapsada a ${width}px: ${layout.columnWidths}`)
+        assert.ok(Math.abs(layout.columnTops[0] - layout.columnTops[1]) < 1, `columnas apiladas a ${width}px`)
+        assert.ok(layout.stockColumns >= 2, `stock sin grilla a ${width}px`)
+      } else {
+        assert.ok(layout.columnTops[1] > layout.columnTops[0], `columnas no apiladas a ${width}px`)
+      }
+      assert.ok(layout.logisticsColumns >= 2, `logística comprimida a ${width}px`)
+      assert.ok(layout.labels.every((label) => label.width >= 60), `labels comprimidos a ${width}px`)
+      assert.ok(layout.labels.every((label) => label.height <= label.lineHeight * 1.5), `labels partidos a ${width}px`)
+      assert.ok(layout.fieldWidths.every((fieldWidth) => fieldWidth >= 60), `inputs comprimidos a ${width}px`)
+      assert.ok(layout.categoryWidth > layout.logisticsCardWidth * 0.8, `categoría angosta a ${width}px`)
+      assert.ok(layout.videoWidth > layout.logisticsCardWidth * 0.8, `video angosto a ${width}px`)
+      assert.ok(layout.workspaceRight <= width + 1, `editor desborda a ${width}px`)
+      assert.ok(await page.locator(".product-editor-specifications-cell").isVisible())
+      assert.ok(await page.locator(".product-editor-description-cell").isVisible())
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow a ${width}px`)
       assert.equal(await page.getByRole("button", { name: "Categoría" }).count(), 1)
       for (const name of ["Nombre del producto", "Peso en kg (obligatorio)", "Largo en cm (obligatorio)", "Ancho en cm (obligatorio)", "Profundidad en cm (obligatorio)", "URL del video"]) {

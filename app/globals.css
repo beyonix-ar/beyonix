@@ -8791,18 +8791,21 @@ span.admin-claim-status-finalized,
   min-width: 0;
 }
 
-/* Dos columnas independientes para edición de productos. El contenedor mide el
-   ancho disponible después del sidebar y apila las cards cuando hace falta. */
+/* La grilla ocupa todo el área útil del Admin. El breakpoint se evalúa contra
+   el viewport: medir 58rem sobre el formulario descontaba sidebar y padding,
+   y apilaba las cards incluso en pantallas de escritorio de 1024px. */
 .product-editor-screen .product-editor-form {
-  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
 }
 
 .product-editor-screen .product-editor-workspace {
   display: grid;
+  width: 100%;
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container (min-width: 58rem) {
+@media (min-width: 1024px) {
   .product-editor-screen .product-editor-workspace {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
