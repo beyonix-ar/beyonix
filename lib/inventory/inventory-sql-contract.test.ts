@@ -46,6 +46,9 @@ const productActivationRequirements = source(
 const atomicCommercialSave = source(
   "supabase/migrations/20260808220000_atomic_product_variant_commercial_save.sql",
 )
+const independentProductVariantState = source(
+  "supabase/migrations/20261012120000_independent_product_variant_state.sql",
+)
 const productCatalogRoute = source(
   "app/api/admin/products/[id]/catalog/route.ts",
 )
@@ -241,21 +244,16 @@ test("las reglas de activación viven en una migración posterior e independient
   )
 })
 
-test("desactivar el producto apaga variantes sin borrar su configuración", () => {
+test("la migración nueva deja independientes los estados del producto y sus variantes", () => {
   assert.match(catalogWorkflow, /drop trigger if exists deactivate_product_variants_trigger/i)
   assert.match(productActivationRequirements, /set_product_commercial_state_atomic\s*\(/i)
-  assert.match(productActivationRequirements, /sync_product_variant_commercial_state/i)
-  assert.match(
-    productActivationRequirements,
-    /update public\.producto_variantes variants\s+set activo = false/i,
-  )
-  const synchronizationFunction = productActivationRequirements.match(
-    /create or replace function public\.sync_product_variant_commercial_state[\s\S]*?\n\$\$;/i,
-  )?.[0] ?? ""
-  assert.doesNotMatch(
-    synchronizationFunction,
-    /imagenes\s*=|sku\s*=|stock\s*=|orden\s*=/i,
-  )
+  assert.match(independentProductVariantState, /drop trigger if exists sync_product_variant_commercial_state/i)
+  assert.match(independentProductVariantState, /alter table public\.productos alter column activo set default false/i)
+  assert.doesNotMatch(independentProductVariantState, /update public\.productos\s+set activo/i)
+  assert.doesNotMatch(independentProductVariantState, /set activo = true/i)
+  assert.doesNotMatch(independentProductVariantState, /set activo = false/i)
+  assert.doesNotMatch(independentProductVariantState, /No podés activar.*producto.*inactivo/i)
+  assert.match(independentProductVariantState, /products\.activo = true/i)
 })
 
 test("producto y variantes reutilizan validaciones comerciales de base de datos", () => {
@@ -263,7 +261,7 @@ test("producto y variantes reutilizan validaciones comerciales de base de datos"
   assert.match(productActivationRequirements, /product_variant_activation_error\s*\(/i)
   assert.match(productActivationRequirements, /assert_product_can_activate\s*\(/i)
   assert.match(productActivationRequirements, /assert_product_variant_can_activate\s*\(/i)
-  assert.match(productActivationRequirements, /No podés activar esta variante porque el producto está inactivo\./i)
+  assert.match(independentProductVariantState, /assert_product_variant_can_activate\s*\(/i)
   assert.match(productActivationRequirements, /Completá la descripción\./i)
   assert.match(productActivationRequirements, /Completá peso, profundidad, ancho y largo\./i)
   assert.match(productActivationRequirements, /'La variante principal'/i)
@@ -297,7 +295,8 @@ test("producto y variantes se confirman mediante una única RPC comercial", () =
     atomicCommercialSave,
     /update public\.producto_variantes variants\s+set activo = requested\.active/i,
   )
-  assert.match(atomicCommercialSave, /Activá al menos una variante\./i)
+  assert.match(independentProductVariantState, /update_product_commercial_configuration_atomic/i)
+  assert.doesNotMatch(independentProductVariantState, /Activá al menos una variante\./i)
   assert.match(
     atomicCommercialSave,
     /Los estados deben incluir exactamente todas las variantes del producto\./i,

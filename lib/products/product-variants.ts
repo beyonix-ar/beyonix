@@ -158,6 +158,8 @@ export function getProductVariantOptions(
     })
 
   if (!variants.length) {
+    // Una variante inactiva no debe convertirse en la opción genérica del producto.
+    if (product.producto_variantes?.length) return []
     return [
       {
         id: null,

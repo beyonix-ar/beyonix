@@ -33,6 +33,7 @@ const TEST_FILES = [
   "components/cart/sellable-stock-ui-contract.test.ts",
   "lib/products/admin-product-visuals.test.ts",
   "lib/products/product-activation.test.ts",
+  "lib/products/product-variant-state-db.test.ts",
   "lib/products/installments.test.ts",
   "lib/pricing/product-pricing.test.ts",
   "lib/pricing/financed-pricing.test.ts",

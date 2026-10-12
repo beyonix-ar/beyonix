@@ -45,7 +45,6 @@ export interface ProductActivationRequirement {
     | "specifications"
     | "logistics"
     | "primaryVariant"
-    | "activeVariants"
   label: string
   complete: boolean
 }
@@ -157,11 +156,6 @@ export function getProductActivationStatus(
       label: "Variante principal",
       complete: primaryVariantError == null,
     },
-    {
-      key: "activeVariants",
-      label: "Variante activa",
-      complete: activeVariants.length > 0 && activeVariantError == null,
-    },
   ]
 
   const firstError = !input.title.trim()
@@ -178,10 +172,7 @@ export function getProductActivationStatus(
               ? "Agregá al menos una especificación activa."
               : !logisticsComplete
                 ? "Completá peso, profundidad, ancho y largo."
-                : primaryVariantError ??
-                  (activeVariants.length === 0
-                    ? "Activá al menos una variante."
-                    : activeVariantError)
+                : primaryVariantError ?? activeVariantError
 
   return {
     ready: firstError == null,

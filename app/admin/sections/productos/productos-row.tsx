@@ -581,11 +581,6 @@ export function ProductosRow({
   ) => {
     const nextActive = variante.activo === false
 
-    if (nextActive && !producto.activo) {
-      setVariantError("No podés activar esta variante porque el producto está inactivo.")
-      return
-    }
-
     try {
       setSavingVariantId(variante.id)
       setVariantError("")
@@ -1031,7 +1026,7 @@ export function ProductosRow({
                 const stock = variante.stock ?? 0
                 const isPrincipal = index === 0
                 const editing = editingVariantId === variante.id
-                const commerciallyActive = producto.activo && variante.activo !== false
+                const commerciallyActive = variante.activo !== false
 
                 if (!editing) {
                   return (

@@ -115,9 +115,8 @@ const VARIANT_COMMERCIAL_STATE_LABELS: Record<VariantCommercialState, string> = 
 
 const getVariantCommercialState = (
   variantActive: boolean,
-  productActive: boolean,
 ): VariantCommercialState => {
-  return variantActive && productActive ? "active" : "inactive"
+  return variantActive ? "active" : "inactive"
 }
 
 const normalizeHex = (value: string) => {
@@ -806,13 +805,6 @@ export function ProductVariantsEditor({
     const currentActive =
       persistedVariantStates[variant.id] ?? variant.activo !== false
     const nextActive = !currentActive
-    if (nextActive && !productActive) {
-      setSuccessMessage("")
-      setError(
-        "No podés activar esta variante mientras el producto esté configurado como inactivo.",
-      )
-      return
-    }
     if (nextActive) {
       const activationError = getVariantActivationError({
         id: variant.id,
@@ -1014,7 +1006,6 @@ export function ProductVariantsEditor({
       barcode={variante.codigo_barra}
       stock={variante.stock ?? 0}
       active={desiredActive}
-      parentActive={productActive}
       statePending={desiredActive !== (variante.activo !== false)}
       images={variante.imagenes ?? []}
       videoUrl={videoUrl}
@@ -1051,7 +1042,6 @@ export function ProductVariantsEditor({
       barcode={null}
       stock={0}
       active
-      parentActive={productActive}
       draftImages={variant.imagenes}
       videoUrl={videoUrl}
       fallbackImage={fallbackImage}
@@ -1344,7 +1334,6 @@ interface VariantCardProps {
   barcode?: string | null
   stock: number
   active: boolean
-  parentActive?: boolean
   statePending?: boolean
   images?: string[]
   draftImages?: File[]
@@ -1380,7 +1369,6 @@ function VariantCard({
   barcode,
   stock,
   active,
-  parentActive = true,
   statePending = false,
   images = [],
   draftImages = [],
@@ -1449,13 +1437,11 @@ function VariantCard({
   const hasOwnImages = ownImageCount > 0
   const hasVideo = Boolean(videoUrl.trim())
   const canAddImages = ownImageCount < MAX_VARIANT_IMAGES
-  const commercialState = getVariantCommercialState(active, parentActive)
+  const commercialState = getVariantCommercialState(active)
   const commerciallyActive = commercialState === "active"
-  const stateTooltip = !parentActive
-    ? "No podés activar esta variante mientras el producto esté configurado como inactivo."
-    : statePending
-      ? "El cambio de estado se aplicará al guardar el producto."
-      : `${commerciallyActive ? "Desactivar" : "Activar"} variante ${nombre}`
+  const stateTooltip = statePending
+    ? "El cambio de estado se aplicará al guardar el producto."
+    : `${commerciallyActive ? "Desactivar" : "Activar"} variante ${nombre}`
   const stateTextClassName =
     commercialState === "active"
       ? "text-emerald-300"

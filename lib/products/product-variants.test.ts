@@ -118,6 +118,14 @@ test("las variantes inactivas no aparecen disponibles para vender", () => {
   assert.equal(options.some((option) => option.isConditioned), true)
 })
 
+test("un producto activo con todas sus variantes inactivas no ofrece una opción genérica", () => {
+  const source = product({ conditioned_stock: [] })
+  source.producto_variantes!.forEach((variant) => {
+    variant.activo = false
+  })
+  assert.deepEqual(getProductVariantOptions(source), [])
+})
+
 test("un producto sin variantes conserva su opción normal y su descuento", () => {
   const source = product({
     sku: "BASE-1",

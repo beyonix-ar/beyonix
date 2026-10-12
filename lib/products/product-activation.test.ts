@@ -104,13 +104,10 @@ test("una variante activa debe estar completa", () => {
   assert.equal(getVariantActivationError(variant), null)
 })
 
-test("un producto activo requiere al menos una variante marcada como activa", () => {
+test("un producto completo puede estar activo con todas sus variantes inactivas", () => {
   const withoutActiveVariants = completeProduct({
     variants: [{ ...completeProduct().variants[0]!, active: false }],
   })
 
-  assert.equal(
-    getProductActivationStatus(withoutActiveVariants).firstError,
-    "Activá al menos una variante.",
-  )
+  assert.equal(getProductActivationStatus(withoutActiveVariants).ready, true)
 })
