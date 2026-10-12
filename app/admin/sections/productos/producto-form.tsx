@@ -510,7 +510,7 @@ export function ProductoForm({
   return (
     <div className={`${adminPageClassName} product-editor-screen !space-y-2.5 !p-2.5 sm:!p-3 lg:!p-4`}>
       <header className="product-editor-header flex min-w-0 flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="product-editor-heading flex min-w-0 flex-1 items-center gap-3">
           <AdminSecondaryButton
             size="icon"
             title="Volver a productos"
@@ -531,7 +531,7 @@ export function ProductoForm({
                 value={form.nombre}
                 placeholder="Producto sin nombre"
                 onChange={(event) => handleNombreChange(event.target.value)}
-                className="product-editor-title-input min-w-0 max-w-full flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-xl font-black text-white outline-none transition-colors hover:border-white/20 focus:border-beyonix-sky focus:ring-2 focus:ring-beyonix-sky/25 sm:text-2xl"
+                className="product-editor-title-input min-w-0 w-full flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-xl font-black text-white outline-none transition-colors hover:border-white/20 focus:border-beyonix-sky focus:ring-2 focus:ring-beyonix-sky/25 sm:text-2xl"
               />
               <Pencil aria-hidden="true" className="size-3.5 shrink-0 text-white/45 group-focus-within:text-beyonix-sky" />
             </div>
@@ -627,12 +627,12 @@ export function ProductoForm({
                     <StockSummaryItem label="Stock físico" value={variantDistribution?.physicalStock} />
                     <StockSummaryItem label="Stock normal" value={variantDistribution?.normalStock} tone="success" />
                     <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
+                    <StockSummaryItem label="Disponible para vender" value={variantDistribution?.availableStock} tone="success" />
                     <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} tone="danger" />
                     <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
                     {/* Reservas temporales de checkout (no son ventas):
                         disponible = vendible - reservado. */}
                     <StockSummaryItem label="Reservado (checkout)" value={variantDistribution?.reservedStock} tone="success" />
-                    <StockSummaryItem label="Disponible para vender" value={variantDistribution?.availableStock} tone="success" />
                   </div>
                 </div>
               </ProductPriceCard>

@@ -145,35 +145,37 @@ export function ProductSalesOptions({
           Venta por color
           <AdminHelpTip label="Venta por color" text="Color específico: el cliente elige. Aleatorio sin seguimiento: un único artículo con stock total y varios códigos. Aleatorio con variantes: el cliente no elige, pero cada color físico tiene su stock y su código." />
         </legend>
-        {PRODUCT_COLOR_MODES.map((mode) => {
-          const blocker = mode === colorMode ? null : colorModeBlocker(mode, variants.length)
-          const checked = mode === colorMode
-          return (
-            <label
-              key={mode}
-              data-color-mode-option={mode}
-              className={`admin-toggle flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 ${checked ? "admin-toggle-on" : ""} ${blocker ? "cursor-not-allowed opacity-60" : ""}`}
-            >
-              <input
-                type="radio"
-                name={radioName}
-                value={mode}
-                checked={checked}
-                disabled={Boolean(blocker) || savingMode !== null}
-                onChange={() => void changeMode(mode)}
-                className="mt-0.5 size-4 shrink-0 accent-blue-500"
-              />
-              <span className="min-w-0">
-                <span className="flex items-center gap-2 text-sm font-black text-white">
-                  {mode !== "especifico" && <span aria-hidden="true" style={RANDOM_SWATCH_STYLE} className="inline-block size-3.5 shrink-0 rounded-full" />}
-                  {COLOR_MODE_LABELS[mode]}
-                  {savingMode === mode && <Loader2 className="size-3.5 animate-spin text-white" />}
+        <div className="product-editor-color-options" data-color-mode-options>
+          {PRODUCT_COLOR_MODES.map((mode) => {
+            const blocker = mode === colorMode ? null : colorModeBlocker(mode, variants.length)
+            const checked = mode === colorMode
+            return (
+              <label
+                key={mode}
+                data-color-mode-option={mode}
+                className={`admin-toggle flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 ${checked ? "admin-toggle-on" : ""} ${blocker ? "cursor-not-allowed opacity-60" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name={radioName}
+                  value={mode}
+                  checked={checked}
+                  disabled={Boolean(blocker) || savingMode !== null}
+                  onChange={() => void changeMode(mode)}
+                  className="mt-0.5 size-4 shrink-0 accent-blue-500"
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-sm font-black text-white">
+                    {mode !== "especifico" && <span aria-hidden="true" style={RANDOM_SWATCH_STYLE} className="inline-block size-3.5 shrink-0 rounded-full" />}
+                    {COLOR_MODE_LABELS[mode]}
+                    {savingMode === mode && <Loader2 className="size-3.5 animate-spin text-white" />}
+                  </span>
+                  <span className="block text-10px font-medium leading-4 text-white/60">{blocker ?? COLOR_MODE_HELP[mode]}</span>
                 </span>
-                <span className="block text-10px font-medium leading-4 text-white/60">{blocker ?? COLOR_MODE_HELP[mode]}</span>
-              </span>
-            </label>
-          )
-        })}
+              </label>
+            )
+          })}
+        </div>
       </fieldset>
 
       <div className="space-y-2">

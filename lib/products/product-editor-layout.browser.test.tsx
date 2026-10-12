@@ -65,6 +65,10 @@ for (const width of [1920, 1600, 1440, 1366, 1280, 1024, 768, 390]) {
         const screen = document.querySelector(".product-editor-screen")!.getBoundingClientRect()
         const columns = Array.from(node.querySelectorAll(":scope > .product-editor-column"), (column) => column.getBoundingClientRect())
         const stockGrid = document.querySelector(".product-editor-stock-grid")!
+        const stockMetrics = Array.from(stockGrid.querySelectorAll(".product-editor-metric"), (metric) => {
+          const rect = metric.getBoundingClientRect()
+          return { label: metric.textContent?.trim() ?? "", top: rect.top, width: rect.width, height: rect.height }
+        })
         const logistics = document.querySelector("[data-logistics-row]")!
         const labels = Array.from(logistics.querySelectorAll(".product-editor-field-label"), (label) => {
           const rect = label.getBoundingClientRect()
@@ -81,6 +85,7 @@ for (const width of [1920, 1600, 1440, 1366, 1280, 1024, 768, 390]) {
           columnWidths: columns.map((column) => column.width),
           columnTops: columns.map((column) => column.top),
           stockColumns: getComputedStyle(stockGrid).gridTemplateColumns.split(" ").length,
+          stockMetrics,
           logisticsColumns: getComputedStyle(logistics).gridTemplateColumns.split(" ").length,
           labels,
           fieldWidths,
@@ -94,9 +99,19 @@ for (const width of [1920, 1600, 1440, 1366, 1280, 1024, 768, 390]) {
       if (width >= 1024) {
         assert.ok(layout.columnWidths.every((columnWidth) => columnWidth > layout.workspaceWidth * 0.35), `columna colapsada a ${width}px: ${layout.columnWidths}`)
         assert.ok(Math.abs(layout.columnTops[0] - layout.columnTops[1]) < 1, `columnas apiladas a ${width}px`)
-        assert.ok(layout.stockColumns >= 2, `stock sin grilla a ${width}px`)
       } else {
         assert.ok(layout.columnTops[1] > layout.columnTops[0], `columnas no apiladas a ${width}px`)
+      }
+      assert.equal(layout.stockColumns, width >= 1280 || width === 768 ? 4 : 2, `columnas de stock a ${width}px`)
+      assert.deepEqual(layout.stockMetrics.map((metric) => metric.label.split(":")[0]), [
+        "Stock físico", "Stock normal", "Stock con descuento", "Disponible para vender",
+        "Fallado / no vendible", "Pendiente de revisión", "Reservado (checkout)",
+      ])
+      assert.ok(layout.stockMetrics.every((metric) => Math.abs(metric.width - layout.stockMetrics[0].width) < 1 && Math.abs(metric.height - layout.stockMetrics[0].height) < 1), `cards de stock desiguales a ${width}px`)
+      if (layout.stockColumns === 4) {
+        assert.ok(layout.stockMetrics.slice(0, 4).every((metric) => Math.abs(metric.top - layout.stockMetrics[0].top) < 1), `primera fila de stock incorrecta a ${width}px`)
+        assert.ok(layout.stockMetrics.slice(4).every((metric) => Math.abs(metric.top - layout.stockMetrics[4].top) < 1), `segunda fila de stock incorrecta a ${width}px`)
+        assert.ok(layout.stockMetrics[4].top > layout.stockMetrics[0].top, `stock sin segunda fila a ${width}px`)
       }
       assert.ok(layout.logisticsColumns >= 2, `logística comprimida a ${width}px`)
       assert.ok(layout.labels.every((label) => label.width >= 60), `labels comprimidos a ${width}px`)
@@ -121,6 +136,71 @@ for (const width of [1920, 1600, 1440, 1366, 1280, 1024, 768, 390]) {
       assert.equal(await page.getByText("Precio y stock").count(), 1)
       assert.equal(await page.getByText("Logística", { exact: true }).count(), 1)
       assert.equal(await page.getByText("Descripción", { exact: true }).count(), 1)
+    } finally { await page.close() }
+  })
+}
+
+for (const width of [1440, 1280, 1024, 390]) {
+  test(`título largo y controles de precio conservan su orden a ${width}px`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    try {
+      await page.setContent(`<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div class="beyonix-admin-shell min-h-screen text-white lg:flex"><div class="hidden lg:block"><aside class="beyonix-admin-sidebar"></aside></div><main class="beyonix-admin-main min-w-0 flex-1"><div id="root"></div></main></div><script>${bundle}</script></body></html>`)
+      const title = page.getByRole("textbox", { name: "Nombre del producto" })
+      await title.fill("APOYABRAZOS DE ESCRITORIO ERGONÓMICO 360°")
+      const geometry = await page.locator(".product-editor-screen").evaluate((screen) => {
+        const input = screen.querySelector<HTMLInputElement>(".product-editor-title-input")!
+        const titleRect = input.getBoundingClientRect()
+        const headingRect = screen.querySelector(".product-editor-heading")!.getBoundingClientRect()
+        const actionsRect = screen.querySelector(".product-editor-window-actions")!.getBoundingClientRect()
+        const pencilRect = input.nextElementSibling!.getBoundingClientRect()
+        const fields = Array.from(screen.querySelectorAll(".product-editor-price-fields label"), (field) => field.getBoundingClientRect())
+        const priceActions = screen.querySelector(".product-editor-price-actions")!.getBoundingClientRect()
+        const buttons = Array.from(screen.querySelectorAll(".product-editor-price-actions button"), (button) => button.getBoundingClientRect())
+        const ctx = document.createElement("canvas").getContext("2d")!
+        const inputStyle = getComputedStyle(input)
+        ctx.font = inputStyle.font
+        return {
+          titleWidth: titleRect.width,
+          textWidth: ctx.measureText(input.value).width,
+          titlePadding: parseFloat(inputStyle.paddingLeft) + parseFloat(inputStyle.paddingRight),
+          headingWidth: headingRect.width,
+          headingTop: headingRect.top,
+          headingBottom: headingRect.bottom,
+          actionsTop: actionsRect.top,
+          actionsBottom: actionsRect.bottom,
+          pencilAfterTitle: pencilRect.left >= titleRect.right - 1,
+          fieldLefts: fields.map((field) => field.left),
+          fieldBottoms: fields.map((field) => field.bottom),
+          priceActionsBottom: priceActions.bottom,
+          buttonLefts: buttons.map((button) => button.left),
+        }
+      })
+      assert.ok(geometry.titleWidth > geometry.headingWidth * (width >= 1024 ? 0.7 : 0.6), `título angosto a ${width}px`)
+      assert.ok(geometry.pencilAfterTitle, `lápiz fuera de posición a ${width}px`)
+      if (width >= 1024) {
+        assert.ok(geometry.actionsTop >= geometry.headingTop && geometry.actionsBottom <= geometry.headingBottom, `acciones fuera del header a ${width}px`)
+      }
+      if (width >= 1280) {
+        assert.ok(geometry.titleWidth >= geometry.textWidth + geometry.titlePadding, `nombre truncado a ${width}px: ${geometry.titleWidth} < ${geometry.textWidth + geometry.titlePadding}`)
+      }
+      assert.ok(geometry.fieldLefts[0] < geometry.fieldLefts[1], `precio actual y anterior invertidos a ${width}px`)
+      assert.ok(geometry.fieldLefts[1] < geometry.buttonLefts[0], `acciones del precio antes de los campos a ${width}px`)
+      assert.ok(geometry.buttonLefts[0] < geometry.buttonLefts[1] && geometry.buttonLefts[1] < geometry.buttonLefts[2], `orden $ / % / ojo incorrecto a ${width}px`)
+      assert.ok(Math.abs(geometry.fieldBottoms[1] - geometry.priceActionsBottom) < 2, `controles del precio desalineados a ${width}px`)
+      await page.getByRole("button", { name: "Ganancia por porcentaje" }).click()
+      const marginLayout = await page.locator(".product-editor-price-row").evaluate((row) => {
+        const rowRect = row.getBoundingClientRect()
+        const fieldsRect = row.querySelector(".product-editor-price-fields")!.getBoundingClientRect()
+        const actionsRect = row.querySelector(".product-editor-price-actions")!.getBoundingClientRect()
+        return { rowRight: rowRect.right, fieldsRight: fieldsRect.right, actionsRight: actionsRect.right, fieldsTop: fieldsRect.top, actionsTop: actionsRect.top }
+      })
+      assert.equal(await page.getByRole("button", { name: "Ganancia por porcentaje" }).getAttribute("aria-pressed"), "true")
+      assert.ok(marginLayout.fieldsRight <= marginLayout.rowRight + 1 && marginLayout.actionsRight <= marginLayout.rowRight + 1, `modo porcentaje desborda a ${width}px`)
+      assert.ok(marginLayout.actionsTop >= marginLayout.fieldsTop, `controles del modo porcentaje encima del precio a ${width}px`)
+      const profitabilityTrigger = page.getByRole("button", { name: "Ver rentabilidad estimada" })
+      await profitabilityTrigger.focus()
+      await profitabilityTrigger.press("Enter")
+      await page.getByRole("dialog", { name: "Rentabilidad estimada" }).waitFor({ state: "visible", timeout: 3000 })
     } finally { await page.close() }
   })
 }

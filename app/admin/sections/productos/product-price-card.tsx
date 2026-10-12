@@ -106,56 +106,15 @@ export function ProductPriceCard({
 
   return (
     <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-      {/* El encabezado y los campos comparten la misma grilla para mantener
-          el selector alineado sobre Precio anterior. */}
-      <div className="product-editor-panel-heading product-editor-price-grid grid min-w-0 items-center gap-x-2.5">
-        <div className="col-span-2 min-w-0">
-          <h2 className="text-base font-black text-white">Precio y stock</h2>
-          <p className="mt-0.5 text-10px leading-4 text-white/65">Gestioná el precio del producto y su stock en tiempo real.</p>
-        </div>
-        <div className="flex items-center justify-end gap-1.5">
-          <div
-            role="group"
-            aria-label="Forma de cálculo del precio"
-            className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.02] p-0.5"
-          >
-            <button
-              type="button"
-              title="Precio manual"
-              aria-label="Precio manual"
-              aria-pressed={isManual}
-              onClick={() => onPricingModeChange("manual")}
-              className={`product-editor-pricing-mode inline-flex size-7 cursor-pointer items-center justify-center rounded-md border transition-all duration-150 ${
-                isManual ? "product-editor-pricing-mode-active" : ""
-              }`}
-            >
-              <DollarSign className="product-editor-pricing-mode-icon size-3.5 text-white" />
-            </button>
-            <button
-              type="button"
-              title="Ganancia por porcentaje"
-              aria-label="Ganancia por porcentaje"
-              aria-pressed={!isManual}
-              onClick={() => onPricingModeChange("target_margin")}
-              className={`product-editor-pricing-mode inline-flex size-7 cursor-pointer items-center justify-center rounded-md border transition-all duration-150 ${
-                !isManual ? "product-editor-pricing-mode-active" : ""
-              }`}
-            >
-              <Percent className="product-editor-pricing-mode-icon size-3.5 text-white" />
-            </button>
-          </div>
-          <ProfitabilityPopover
-            simulation={profitabilitySimulation}
-            priceFormatter={priceFormatter}
-          />
-        </div>
+      <div className="product-editor-panel-heading min-w-0">
+        <h2 className="text-base font-black text-white">Precio y stock</h2>
+        <p className="mt-0.5 text-10px leading-4 text-white/65">Gestioná el precio del producto y su stock en tiempo real.</p>
       </div>
 
-      <div className="product-editor-price-grid grid min-w-0 gap-x-2.5 gap-y-1.5">
+      <div className={`product-editor-price-row min-w-0 ${isManual ? "" : "product-editor-price-row-margin"}`}>
+        <div className={`product-editor-price-fields grid min-w-0 gap-x-2.5 gap-y-1.5 ${isManual ? "" : "product-editor-price-fields-margin"}`}>
         {isManual ? (
           <>
-            <div aria-hidden="true" />
-
             <AdminFormField
               label="Precio actual"
               labelClassName={fieldLabelClassName}
@@ -275,6 +234,43 @@ export function ProductPriceCard({
             </AdminFormField>
           </>
         )}
+        </div>
+        <div className="product-editor-price-actions flex shrink-0 items-center justify-end gap-1.5">
+          <div
+            role="group"
+            aria-label="Forma de cálculo del precio"
+            className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.02] p-0.5"
+          >
+            <button
+              type="button"
+              title="Precio manual"
+              aria-label="Precio manual"
+              aria-pressed={isManual}
+              onClick={() => onPricingModeChange("manual")}
+              className={`product-editor-pricing-mode inline-flex size-7 cursor-pointer items-center justify-center rounded-md border transition-all duration-150 ${
+                isManual ? "product-editor-pricing-mode-active" : ""
+              }`}
+            >
+              <DollarSign className="product-editor-pricing-mode-icon size-3.5 text-white" />
+            </button>
+            <button
+              type="button"
+              title="Ganancia por porcentaje"
+              aria-label="Ganancia por porcentaje"
+              aria-pressed={!isManual}
+              onClick={() => onPricingModeChange("target_margin")}
+              className={`product-editor-pricing-mode inline-flex size-7 cursor-pointer items-center justify-center rounded-md border transition-all duration-150 ${
+                !isManual ? "product-editor-pricing-mode-active" : ""
+              }`}
+            >
+              <Percent className="product-editor-pricing-mode-icon size-3.5 text-white" />
+            </button>
+          </div>
+          <ProfitabilityPopover
+            simulation={profitabilitySimulation}
+            priceFormatter={priceFormatter}
+          />
+        </div>
       </div>
 
       {knownUnitCost === undefined && (
