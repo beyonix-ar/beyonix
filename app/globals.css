@@ -8946,8 +8946,21 @@ html[data-admin-theme="light"] .product-editor-screen .product-rich-select:hover
   }
 }
 
-.product-editor-screen .product-editor-color-options > label {
+.product-editor-screen .product-editor-color-options > [data-color-mode-option] {
   min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .beyonix-admin-main .product-editor-screen .product-editor-color-options .admin-help-tip-popover {
+    position: fixed;
+    top: auto;
+    right: 1rem;
+    bottom: 1rem;
+    left: 1rem;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
 }
 
 .product-editor-screen .product-editor-header {

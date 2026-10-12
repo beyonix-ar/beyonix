@@ -163,7 +163,7 @@ export function ProfitabilityPopover({
             aria-label="Rentabilidad estimada"
             onPointerEnter={handleMouseEnter}
             onPointerLeave={handleMouseLeave}
-            className="admin-portal-scope fixed z-100 rounded-2xl border border-[rgba(92,159,215,0.28)] bg-[#07111b] p-3 shadow-[0_22px_52px_rgba(0,0,0,0.52)]"
+            className="admin-portal-scope fixed z-100 rounded-2xl border border-[rgba(80,220,160,0.55)] bg-[#1B1E22] p-3 shadow-[0_22px_52px_rgba(0,0,0,0.58)]"
             style={{ left: position.left, top: position.top, width: position.width }}
           >
             <p className="mb-2 text-10px font-black uppercase tracking-widest text-white">

@@ -201,6 +201,19 @@ for (const width of [1440, 1280, 1024, 390]) {
       await profitabilityTrigger.focus()
       await profitabilityTrigger.press("Enter")
       await page.getByRole("dialog", { name: "Rentabilidad estimada" }).waitFor({ state: "visible", timeout: 3000 })
+      const profitStyle = await page.getByRole("dialog", { name: "Rentabilidad estimada" }).evaluate((dialog) => {
+        const style = getComputedStyle(dialog)
+        return { background: style.backgroundColor, border: style.borderColor, shadow: style.boxShadow }
+      })
+      assert.equal(profitStyle.background, "rgb(27, 30, 34)")
+      assert.equal(profitStyle.border, "rgba(80, 220, 160, 0.55)")
+      assert.notEqual(profitStyle.shadow, "none")
+      await page.evaluate(() => { document.documentElement.dataset.adminTheme = "light" })
+      const lightProfitStyle = await page.getByRole("dialog", { name: "Rentabilidad estimada" }).evaluate((dialog) => {
+        const style = getComputedStyle(dialog)
+        return { background: style.backgroundColor, border: style.borderColor, shadow: style.boxShadow }
+      })
+      assert.deepEqual(lightProfitStyle, profitStyle)
     } finally { await page.close() }
   })
 }

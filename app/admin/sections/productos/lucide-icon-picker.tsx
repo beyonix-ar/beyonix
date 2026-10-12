@@ -142,6 +142,7 @@ import {
   PackageCheck,
   Paintbrush,
   Palette,
+  Pencil,
   PanelTop,
   Paperclip,
   PenTool,
@@ -156,12 +157,19 @@ import {
   Recycle,
   RefreshCcw,
   Repeat,
+  RotateCcw,
   Router,
   Scan,
   Scissors,
   Settings,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import {
+  loadSpecIconAliases,
+  resetSpecIconAlias,
+  saveSpecIconAlias,
+  type SpecIconAliases,
+} from "@/lib/supabase/queries/spec-icon-aliases"
 
 interface IconOption {
   name: string
@@ -434,7 +442,7 @@ const additionalIconOptions: Array<IconOption & { name: IconName }> = [
   { name: "Settings", label: "Configuración", keywords: ["ajustable","personalización"] },
 ]
 
-const iconOptions: Array<IconOption & { name: IconName }> = [
+const baseIconOptions: Array<IconOption & { name: IconName }> = [
   {
     name: "Laptop",
     label: "Notebook",
@@ -613,6 +621,66 @@ const iconOptions: Array<IconOption & { name: IconName }> = [
   ...additionalIconOptions,
 ]
 
+// Conceptos de búsqueda útiles con los mismos SVG ya incluidos en el picker.
+// La especificación continúa guardando únicamente el nombre técnico Lucide.
+const conceptIconOptions: Array<IconOption & { name: IconName }> = [
+  { name: "Package", label: "Capacidad", keywords: ["almacenamiento", "volumen"] },
+  { name: "ShieldCheck", label: "Seguridad", keywords: ["protección", "seguro"] },
+  { name: "Shield", label: "Protección", keywords: ["seguridad", "resguardo"] },
+  { name: "Hammer", label: "Durabilidad", keywords: ["resistencia", "vida útil"] },
+  { name: "Zap", label: "Potencia", keywords: ["energía", "watts"] },
+  { name: "PlugZap", label: "Voltaje", keywords: ["voltios", "electricidad"] },
+  { name: "BatteryFull", label: "Autonomía", keywords: ["duración", "batería"] },
+  { name: "Dumbbell", label: "Resistencia", keywords: ["fuerza", "solidez"] },
+  { name: "CupSoda", label: "Volumen", keywords: ["capacidad", "litros"] },
+  { name: "Weight", label: "Peso", keywords: ["kilogramos", "gramos"] },
+  { name: "Layers3", label: "Material", keywords: ["composición", "fabricación"] },
+  { name: "Thermometer", label: "Temperatura", keywords: ["grados", "térmico"] },
+  { name: "Droplets", label: "Impermeable", keywords: ["agua", "protección"] },
+  { name: "Move3d", label: "Flexible", keywords: ["movilidad", "adaptable"] },
+  { name: "Settings", label: "Ajustable", keywords: ["regulable", "adaptable"] },
+  { name: "Repeat", label: "Plegable", keywords: ["compacto", "doble"] },
+  { name: "Backpack", label: "Portátil", keywords: ["viaje", "transportable"] },
+  { name: "Package", label: "Compacto", keywords: ["pequeño", "portátil"] },
+  { name: "Gauge", label: "Rendimiento", keywords: ["desempeño", "velocidad"] },
+  { name: "Rocket", label: "Velocidad", keywords: ["rápido", "rendimiento"] },
+  { name: "Network", label: "Conectividad", keywords: ["red", "conexión"] },
+  { name: "BadgeCheck", label: "Garantía", keywords: ["calidad", "respaldo"] },
+  { name: "Award", label: "Calidad", keywords: ["certificación", "garantía"] },
+  { name: "Archive", label: "Organización", keywords: ["orden", "almacenamiento"] },
+  { name: "Armchair", label: "Ergonomía", keywords: ["comodidad", "postura"] },
+  { name: "AudioLines", label: "Audio", keywords: ["sonido", "música"] },
+  { name: "Projector", label: "Video", keywords: ["imagen", "pantalla"] },
+  { name: "Camera", label: "Cámara", keywords: ["fotografía", "video"] },
+  { name: "Battery", label: "Batería", keywords: ["energía", "carga"] },
+  { name: "Usb", label: "USB", keywords: ["conector", "puerto"] },
+  { name: "Cable", label: "USB-C", keywords: ["tipo c", "carga"] },
+  { name: "Bluetooth", label: "Bluetooth", keywords: ["inalámbrico", "conexión"] },
+  { name: "Wifi", label: "Wi-Fi", keywords: ["internet", "inalámbrico"] },
+  { name: "Car", label: "Auto", keywords: ["vehículo", "automóvil"] },
+  { name: "Home", label: "Hogar", keywords: ["casa", "doméstico"] },
+  { name: "CookingPot", label: "Cocina", keywords: ["gastronomía", "alimentos"] },
+  { name: "BriefcaseBusiness", label: "Oficina", keywords: ["trabajo", "escritorio"] },
+  { name: "Mountain", label: "Camping", keywords: ["aire libre", "aventura"] },
+  { name: "Plane", label: "Viaje", keywords: ["equipaje", "transporte"] },
+  { name: "Drill", label: "Herramientas", keywords: ["taller", "bricolaje"] },
+  { name: "Gamepad2", label: "Gaming", keywords: ["videojuegos", "juegos"] },
+  { name: "Dumbbell", label: "Fitness", keywords: ["entrenamiento", "ejercicio"] },
+  { name: "Coffee", label: "Mate", keywords: ["infusión", "bebida"] },
+  { name: "GlassWater", label: "Botella", keywords: ["agua", "recipiente"] },
+  { name: "Thermometer", label: "Termo", keywords: ["temperatura", "bebida"] },
+]
+
+const iconOptions = [...baseIconOptions, ...conceptIconOptions,
+  ...baseIconOptions.flatMap((option) => option.keywords.slice(0, 2).map((keyword) => ({
+    ...option,
+    label: `${keyword.charAt(0).toLocaleUpperCase("es-AR")}${keyword.slice(1)} · ${option.label}`,
+  }))),
+].map((option) => ({
+  ...option,
+  id: `${option.name}:${normalize(option.label).replace(/[^a-z0-9]+/g, "-")}`,
+})).filter((option, index, options) => options.findIndex((candidate) => candidate.id === option.id) === index)
+
 const legacyFriendlyNames: Record<string, string> = {
   BatteryFull: "Batería completa",
   Clock: "Duración",
@@ -668,11 +736,21 @@ export function LucideIconPicker({
   const [open, setOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [position, setPosition] = useState({ left: 0, top: 0, width: MIN_POPOVER_WIDTH })
+  const [aliases, setAliases] = useState<SpecIconAliases>({})
+  const [editingOptionId, setEditingOptionId] = useState<string | null>(null)
+  const [draftLabel, setDraftLabel] = useState("")
+  const [savingAlias, setSavingAlias] = useState(false)
+  const [aliasError, setAliasError] = useState("")
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const SelectedIcon = value ? getLucideIcon(value) : Search
-  const selectedLabel = value ? getFriendlyIconName(value) : "Elegir ícono"
+  const selectedOption = iconOptions.find((option) => option.id === selectedOptionId && option.name === value)
+    ?? iconOptions.find((option) => option.name === value)
+  const selectedLabel = value
+    ? selectedOption ? aliases[selectedOption.id] ?? selectedOption.label : getFriendlyIconName(value)
+    : "Elegir ícono"
 
   const filteredOptions = useMemo(() => {
     const query = normalize(search.trim())
@@ -683,12 +761,59 @@ export function LucideIconPicker({
 
     return iconOptions.filter((option) => {
       const haystack = normalize(
-        [option.name, option.label, ...option.keywords].join(" ")
+        [option.name, option.label, aliases[option.id] ?? "", ...option.keywords].join(" ")
       )
 
       return haystack.includes(query)
     })
-  }, [search])
+  }, [search, aliases])
+
+  useEffect(() => {
+    let active = true
+    loadSpecIconAliases()
+      .then((loaded) => { if (active) setAliases(loaded) })
+      .catch(() => { if (active) setAliasError("No se pudieron cargar los nombres personalizados.") })
+    return () => { active = false }
+  }, [])
+
+  const saveAlias = async () => {
+    if (!editingOptionId || savingAlias) return
+    const label = draftLabel.trim()
+    if (!label) {
+      setAliasError("Escribí un nombre visible.")
+      return
+    }
+    setSavingAlias(true)
+    setAliasError("")
+    try {
+      await saveSpecIconAlias(editingOptionId, label)
+      setAliases((current) => ({ ...current, [editingOptionId]: label }))
+      setEditingOptionId(null)
+    } catch {
+      setAliasError("No se pudo guardar el nombre visible.")
+    } finally {
+      setSavingAlias(false)
+    }
+  }
+
+  const resetAlias = async () => {
+    if (!editingOptionId || savingAlias) return
+    setSavingAlias(true)
+    setAliasError("")
+    try {
+      await resetSpecIconAlias(editingOptionId)
+      setAliases((current) => {
+        const next = { ...current }
+        delete next[editingOptionId]
+        return next
+      })
+      setEditingOptionId(null)
+    } catch {
+      setAliasError("No se pudo restablecer el nombre.")
+    } finally {
+      setSavingAlias(false)
+    }
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -834,32 +959,74 @@ export function LucideIconPicker({
               </button>
             </div>
 
+            {aliasError && <p role="alert" className="text-xs text-red-300">{aliasError}</p>}
+
             <div className="grid max-h-[340px] gap-2 overflow-y-auto pr-1 custom-scrollbar">
               {filteredOptions.map((option) => {
                 const Icon = getLucideIcon(option.name)
-                const selected = value === option.name
+                const displayLabel = aliases[option.id] ?? option.label
+                const selected = value === option.name && selectedOption?.id === option.id
 
                 return (
-                  <button
-                    key={option.name}
-                    type="button"
-                    aria-label={`Elegir ícono ${option.label}`}
-                    title={option.label}
-                    onClick={() => {
-                      onChange(option.name)
-                      setOpen(false)
-                    }}
-                    className={`admin-icon-picker-option flex min-h-12 cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors ${
-                      selected ? "admin-icon-picker-option-selected" : ""
-                    }`}
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-[#444444] text-white">
-                      <Icon className="size-4.5 text-white" />
-                    </span>
-                    <span className="min-w-0 truncate text-sm font-semibold leading-tight text-white">
-                      {option.label}
-                    </span>
-                  </button>
+                  <div key={option.id} className="min-w-0">
+                    <div className="flex min-w-0 items-stretch gap-1">
+                      <button
+                        type="button"
+                        aria-label={`Elegir ícono ${displayLabel}`}
+                        title={displayLabel}
+                        onClick={() => {
+                          setSelectedOptionId(option.id)
+                          onChange(option.name)
+                          setOpen(false)
+                        }}
+                        className={`admin-icon-picker-option flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-1 text-left transition-colors ${
+                          selected ? "admin-icon-picker-option-selected" : ""
+                        }`}
+                      >
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/12 bg-[#444444] text-white">
+                          <Icon className="size-4.5 text-white" />
+                        </span>
+                        <span className="min-w-0 truncate text-sm font-semibold leading-tight text-white">{displayLabel}</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Editar nombre de ${displayLabel}`}
+                        title={`Editar nombre de ${displayLabel}`}
+                        onClick={() => {
+                          setEditingOptionId(option.id)
+                          setDraftLabel(displayLabel)
+                          setAliasError("")
+                        }}
+                        className="admin-icon-picker-edit flex min-w-11 items-center justify-center rounded-xl border border-white/14 bg-[#0c1219] text-white/75 hover:border-white/40 hover:text-white"
+                      >
+                        <Pencil className="size-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                    {editingOptionId === option.id && (
+                      <div className="mt-1 space-y-2 rounded-xl border border-white/14 bg-[#171c22] p-2">
+                        <label className="block text-xs font-semibold text-white" htmlFor={`alias-${option.id}`}>Nombre visible</label>
+                        <input
+                          id={`alias-${option.id}`}
+                          autoFocus
+                          type="text"
+                          maxLength={80}
+                          value={draftLabel}
+                          onChange={(event) => setDraftLabel(event.target.value)}
+                          onKeyDown={(event) => { if (event.key === "Enter") void saveAlias() }}
+                          className="h-9 w-full rounded-lg border border-white/25 bg-[#0c1219] px-2 text-sm text-white outline-none focus:border-emerald-400"
+                        />
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          {aliases[option.id] && (
+                            <button type="button" disabled={savingAlias} onClick={() => void resetAlias()} className="mr-auto inline-flex items-center gap-1 text-xs text-white/75 hover:text-white">
+                              <RotateCcw className="size-3.5" /> Restablecer nombre
+                            </button>
+                          )}
+                          <button type="button" disabled={savingAlias} onClick={() => setEditingOptionId(null)} className="rounded-lg px-2 py-1 text-xs text-white/75 hover:text-white">Cancelar</button>
+                          <button type="button" disabled={savingAlias} onClick={() => void saveAlias()} className="rounded-lg border border-emerald-400/50 bg-emerald-500/20 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-500/30">Guardar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>

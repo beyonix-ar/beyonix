@@ -5,13 +5,11 @@ import { Loader2, Plus, Trash2 } from "lucide-react"
 
 import type { BarcodeAlias } from "@/lib/barcodes/barcode-aliases"
 import {
-  COLOR_MODE_HELP,
   COLOR_MODE_LABELS,
   PRODUCT_COLOR_MODES,
   colorModeBlocker,
   type ProductColorMode,
 } from "@/lib/products/color-mode"
-import { RANDOM_SWATCH_STYLE } from "@/lib/products/variant-swatch"
 import {
   addBarcodeAlias,
   listBarcodeAliases,
@@ -29,6 +27,11 @@ import {
 import { AdminHelpTip } from "../../components/admin-help-tip"
 
 const PRODUCT_SCOPE = "product"
+const COLOR_MODE_TOOLTIP: Record<ProductColorMode, string> = {
+  especifico: "El cliente elige el color y cada variante tiene su propio stock.",
+  aleatorio_simple: "El cliente recibe cualquier color/modelo disponible. El stock y los códigos se gestionan como un único artículo.",
+  aleatorio_variantes: "Necesita al menos dos variantes físicas.",
+}
 
 interface ProductSalesOptionsProps {
   productId: number
@@ -150,29 +153,27 @@ export function ProductSalesOptions({
             const blocker = mode === colorMode ? null : colorModeBlocker(mode, variants.length)
             const checked = mode === colorMode
             return (
-              <label
+              <div
                 key={mode}
                 data-color-mode-option={mode}
-                className={`admin-toggle flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 ${checked ? "admin-toggle-on" : ""} ${blocker ? "cursor-not-allowed opacity-60" : ""}`}
+                className={`admin-toggle flex min-h-10 min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1 ${checked ? "admin-toggle-on" : ""} ${blocker ? "opacity-60" : ""}`}
               >
-                <input
-                  type="radio"
-                  name={radioName}
-                  value={mode}
-                  checked={checked}
-                  disabled={Boolean(blocker) || savingMode !== null}
-                  onChange={() => void changeMode(mode)}
-                  className="mt-0.5 size-4 shrink-0 accent-blue-500"
-                />
-                <span className="min-w-0">
-                  <span className="flex items-center gap-2 text-sm font-black text-white">
-                    {mode !== "especifico" && <span aria-hidden="true" style={RANDOM_SWATCH_STYLE} className="inline-block size-3.5 shrink-0 rounded-full" />}
-                    {COLOR_MODE_LABELS[mode]}
-                    {savingMode === mode && <Loader2 className="size-3.5 animate-spin text-white" />}
-                  </span>
-                  <span className="block text-10px font-medium leading-4 text-white/60">{blocker ?? COLOR_MODE_HELP[mode]}</span>
-                </span>
-              </label>
+                <label className={`flex min-w-0 flex-1 items-center gap-1.5 ${blocker ? "cursor-not-allowed" : "cursor-pointer"}`} title={COLOR_MODE_LABELS[mode]}>
+                  <input
+                    type="radio"
+                    name={radioName}
+                    value={mode}
+                    checked={checked}
+                    disabled={Boolean(blocker) || savingMode !== null}
+                    title={blocker ?? undefined}
+                    onChange={() => void changeMode(mode)}
+                    className="size-4 shrink-0 accent-blue-500"
+                  />
+                  <span className="min-w-0 truncate text-xs font-black text-white">{COLOR_MODE_LABELS[mode]}</span>
+                  {savingMode === mode && <Loader2 className="size-3.5 shrink-0 animate-spin text-white" />}
+                </label>
+                <AdminHelpTip label={COLOR_MODE_LABELS[mode]} text={COLOR_MODE_TOOLTIP[mode]} />
+              </div>
             )
           })}
         </div>

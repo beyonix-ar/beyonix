@@ -89,6 +89,7 @@ for (const width of [1920, 1440, 1366, 1280, 1024, 768, 390]) {
             right: cardRect.right,
             top: cardRect.top,
             width: cardRect.width,
+            height: cardRect.height,
             background: getComputedStyle(card).backgroundColor,
             selected: card.classList.contains("admin-toggle-on"),
           }
@@ -99,6 +100,7 @@ for (const width of [1920, 1440, 1366, 1280, 1024, 768, 390]) {
       assert.equal(layout.columns, width >= 1280 || width === 768 ? 3 : 2, `columnas de venta por color a ${width}px`)
       assert.ok(layout.cards[1].left - layout.cards[0].right >= 4, `sin gap entre tarjetas a ${width}px`)
       assert.ok(layout.cards.every((card) => Math.abs(card.width - layout.cards[0].width) < 1), `tarjetas de ancho distinto a ${width}px`)
+      assert.ok(layout.cards.every((card) => Math.abs(card.height - layout.cards[0].height) < 1 && card.height <= 48), `tarjetas demasiado altas a ${width}px`)
       if (layout.columns === 3) {
         assert.ok(layout.cards.every((card) => Math.abs(card.top - layout.cards[0].top) < 1), `tarjetas fuera de una fila a ${width}px`)
         assert.ok(layout.cards[0].width < layout.gridWidth * 0.4, `tarjeta seleccionada ocupa toda la fila a ${width}px`)
@@ -112,3 +114,32 @@ for (const width of [1920, 1440, 1366, 1280, 1024, 768, 390]) {
     } finally { await page.close() }
   })
 }
+
+test("venta por color: descripciones sólo en ayuda y popover accesible en móvil", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, hasTouch: true })
+  try {
+    await page.setContent(`<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><main class="beyonix-admin-main"><div class="product-editor-screen"><div class="product-editor-cell" style="width:520px"><div id="root"></div></div></div></main><script>window.variantCount=2</script><script>${bundle}</script></body></html>`)
+    const expected = [
+      ["Color específico", "El cliente elige el color y cada variante tiene su propio stock."],
+      ["Aleatorio — sin seguimiento de color", "El cliente recibe cualquier color/modelo disponible. El stock y los códigos se gestionan como un único artículo."],
+      ["Aleatorio — con variantes físicas", "Necesita al menos dos variantes físicas."],
+    ] as const
+    for (const [label, description] of expected) {
+      const card = page.locator("[data-color-mode-option]").filter({ has: page.getByRole("button", { name: `Ayuda: ${label}` }) })
+      assert.equal(await card.getByText(description, { exact: true }).count(), 0)
+      await card.getByRole("button", { name: `Ayuda: ${label}` }).hover()
+      assert.equal(await card.getByRole("tooltip").innerText(), description)
+      await card.getByRole("button", { name: `Ayuda: ${label}` }).press("Escape")
+    }
+    await page.setViewportSize({ width: 390, height: 900 })
+    await page.locator(".product-editor-cell").evaluate((cell: HTMLElement) => { cell.style.width = "100%" })
+    const help = page.getByRole("button", { name: "Ayuda: Color específico" })
+    await help.tap()
+    assert.equal(await page.getByRole("tooltip").innerText(), expected[0][1])
+    const tooltipBounds = await page.getByRole("tooltip").evaluate((tooltip) => {
+      const rect = tooltip.getBoundingClientRect()
+      return { left: rect.left, right: rect.right, bottom: rect.bottom }
+    })
+    assert.ok(tooltipBounds.left >= 0 && tooltipBounds.right <= 390 && tooltipBounds.bottom <= 900, JSON.stringify(tooltipBounds))
+  } finally { await page.close() }
+})
