@@ -1,11 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { TouchEvent as ReactTouchEvent } from "react"
+import { createPortal } from "react-dom"
 
 import Image from "next/image"
 
-import { ChevronLeft, ChevronRight, Play } from "lucide-react"
+import { ChevronLeft, ChevronRight, Play, X } from "lucide-react"
+import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 
 import { LOW_STOCK_THRESHOLD } from "@/lib/cart/stock-status"
 import {
@@ -90,6 +92,9 @@ export function ProductDetailsGallery({
   const [thumbnailWindowSize, setThumbnailWindowSize] = useState(5)
   const thumbnailCarouselRef = useRef<HTMLDivElement>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const imageButtonRef = useRef<HTMLButtonElement>(null)
+  const lightboxCloseRef = useRef<HTMLButtonElement>(null)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const videoSource = getProductVideoSource(videoUrl)
   const playableVideo =
@@ -150,6 +155,41 @@ export function ProductDetailsGallery({
   const stockBadge = getStockBadge(selectedStock)
 
   const hasThumbnailRow = mediaCount > 1
+  const lightboxImageIndex = currentMedia?.type === "image" ? currentMedia.imageIndex : null
+  const hasPlayableVideo = Boolean(playableVideo)
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false)
+    imageButtonRef.current?.focus()
+  }, [])
+  const selectLightboxImage = useCallback((direction: -1 | 1) => {
+    if (images.length < 2 || lightboxImageIndex === null) return
+    const nextImageIndex = (lightboxImageIndex + direction + images.length) % images.length
+    onSelectImage(nextImageIndex === 0 ? 0 : nextImageIndex + (hasPlayableVideo ? 1 : 0))
+  }, [hasPlayableVideo, images.length, lightboxImageIndex, onSelectImage])
+
+  useEffect(() => {
+    if (!lightboxOpen) return
+    lightboxCloseRef.current?.focus()
+    return lockDocumentScroll({ preventTouchScroll: true })
+  }, [lightboxOpen])
+
+  useEffect(() => {
+    if (!lightboxOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        closeLightbox()
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault()
+        selectLightboxImage(event.key === "ArrowLeft" ? -1 : 1)
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => {
+      window.removeEventListener("keydown", onKeyDown)
+    }
+  }, [lightboxOpen, closeLightbox, selectLightboxImage])
 
   useEffect(() => {
     // El contenedor de miniaturas solo existe en el DOM cuando hay más de un
@@ -249,25 +289,31 @@ export function ProductDetailsGallery({
                 onLoaded={() => markMediaLoaded(currentMediaKey)}
               />
             ) : (
-              <Image
-                src={safeCurrentImage}
-                alt={`${productName} imagen ${
-                  currentMedia?.type === "image"
-                    ? currentMedia.imageIndex + 1
-                    : safeIndex + 1
-                }`}
-                width={2000}
-                height={2000}
-                priority
-                onLoad={() => {
-                  markMediaLoaded(currentMediaKey)
-                }}
-                className={`h-full w-full object-contain p-1.5 transition-opacity duration-300 sm:p-2 ${
-                  isLoaded
-                    ? "opacity-100"
-                    : "opacity-0"
-                }`}
-              />
+              <button
+                ref={imageButtonRef}
+                type="button"
+                aria-label={`Ampliar imagen de ${productName}`}
+                onClick={() => setLightboxOpen(true)}
+                className="size-full cursor-pointer"
+              >
+                <Image
+                  src={safeCurrentImage}
+                  alt={`${productName} imagen ${
+                    currentMedia?.type === "image"
+                      ? currentMedia.imageIndex + 1
+                      : safeIndex + 1
+                  }`}
+                  width={2000}
+                  height={2000}
+                  priority
+                  onLoad={() => {
+                    markMediaLoaded(currentMediaKey)
+                  }}
+                  className={`h-full w-full object-contain p-1.5 transition-opacity duration-300 sm:p-2 ${
+                    isLoaded ? "opacity-100" : "opacity-0"
+                  }`}
+                />
+              </button>
             )}
 
             {/* Precarga en segundo plano del resto de la galería: una vez
@@ -431,6 +477,59 @@ export function ProductDetailsGallery({
         </div>
       )}
 
+      {lightboxOpen && currentMedia?.type === "image" && createPortal(
+        <div
+          data-product-image-lightbox
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Imagen ampliada de ${productName}`}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-3 sm:p-6"
+        >
+          <button
+            type="button"
+            aria-label="Cerrar imagen ampliada"
+            onClick={closeLightbox}
+            className="absolute inset-0"
+          />
+          <div className="relative h-[min(88dvh,1000px)] w-[min(94vw,1400px)]">
+            <Image
+              src={safeCurrentImage}
+              alt={`${productName} imagen ampliada ${currentMedia.imageIndex + 1}`}
+              fill
+              sizes="94vw"
+              className="object-contain"
+            />
+            <button
+              ref={lightboxCloseRef}
+              type="button"
+              aria-label="Cerrar visor de imagen"
+              onClick={closeLightbox}
+              className="absolute right-2 top-2 z-10 flex size-11 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <X className="size-6" />
+            </button>
+            {images.length > 1 && <>
+              <button
+                type="button"
+                aria-label="Imagen ampliada anterior"
+                onClick={() => selectLightboxImage(-1)}
+                className="absolute left-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                <ChevronLeft className="size-6" />
+              </button>
+              <button
+                type="button"
+                aria-label="Imagen ampliada siguiente"
+                onClick={() => selectLightboxImage(1)}
+                className="absolute right-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                <ChevronRight className="size-6" />
+              </button>
+            </>}
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

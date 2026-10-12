@@ -25,9 +25,11 @@ test.before(async () => {
         import { RichDescriptionEditor } from "./app/admin/sections/productos/rich-description-editor.tsx";
         function App() {
           const [value, setValue] = useState("");
+          const [editorKey, setEditorKey] = useState(0);
           window.descriptionValue = value;
           window.setDescription = setValue;
-          return <RichDescriptionEditor value={value} onChange={setValue} placeholder="Escribí una descripción" />;
+          window.remountEditor = () => setEditorKey((current) => current + 1);
+          return <RichDescriptionEditor key={editorKey} value={value} onChange={setValue} placeholder="Escribí una descripción" />;
         }
         createRoot(document.getElementById("root")).render(<App />);
       `,
@@ -116,6 +118,27 @@ test("Enter crea párrafo, Shift+Enter crea salto en el mismo párrafo", async (
     await page.keyboard.press("Shift+Enter")
     await page.keyboard.type("Tres")
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<p>Uno</p><p>Dos<br>Tres</p>")
+  } finally { await page.close() }
+})
+
+test("reabrir una descripción conserva la línea vacía entre título y párrafo", async () => {
+  const page = await pageWithEditor()
+  try {
+    const editor = page.getByRole("textbox", { name: "Descripción del producto" })
+    await editor.click()
+    await page.keyboard.type("TÍTULO")
+    await page.keyboard.press("Enter")
+    await page.keyboard.press("Enter")
+    await page.keyboard.type("Párrafo")
+    const saved = await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue)
+    assert.equal(saved, "<p>TÍTULO</p><p><br></p><p>Párrafo</p>")
+    await page.evaluate(() => (window as unknown as { remountEditor: () => void }).remountEditor())
+    await page.waitForFunction((html) => document.querySelector("[data-rich-editor]")?.innerHTML === html, saved)
+    const gap = await page.evaluate(() => {
+      const paragraphs = document.querySelectorAll("[data-rich-editor] p")
+      return paragraphs[2].getBoundingClientRect().top - paragraphs[0].getBoundingClientRect().bottom
+    })
+    assert.ok(gap >= 25, `se perdió la separación visual: ${gap}px`)
   } finally { await page.close() }
 })
 

@@ -76,7 +76,7 @@ export function ProductDetailsModal({
     const handleKeyDown = (
       event: KeyboardEvent
     ) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !document.querySelector("[data-product-image-lightbox]")) {
         onClose()
       }
     }

@@ -17230,6 +17230,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card 
 .product-rich-description-editor [data-rich-editor] p + p,
 .product-rich-description-editor [data-rich-editor] p + ul,
 .product-rich-description-editor [data-rich-editor] p + ol { margin-top: .5rem; }
+.product-rich-description-editor [data-rich-editor] p:empty { min-height: 1.75rem; }
 .product-rich-description-editor [data-rich-editor] h2 { margin-top: .5rem; font-size: 1.5rem; font-weight: 800; }
 .product-rich-description-editor [data-rich-editor] h3 { margin-top: .5rem; font-size: 1.125rem; font-weight: 700; }
 .product-rich-description-editor [data-rich-editor] ul { list-style: disc; padding-left: 1.5rem; }

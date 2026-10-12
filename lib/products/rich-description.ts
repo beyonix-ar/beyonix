@@ -287,7 +287,8 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
         }
         pushPart()
       } else {
-        blocks.push({ type, children: trimBreaks(node.children.flatMap(inline)), align })
+        const children = node.children.flatMap(inline)
+        blocks.push({ type, children: type === "p" ? children : trimBreaks(children), align })
       }
       return
     }
@@ -361,7 +362,9 @@ export function sanitizeRichDescription(value: string | null | undefined) {
       if (block.type === "ul" || block.type === "ol") {
         return `<${block.type}${align}>${block.items.map((item) => `<li>${serializeInline(item)}</li>`).join("")}</${block.type}>`
       }
-      return `<${block.type}${align}>${serializeInline(block.children)}</${block.type}>`
+      // Un párrafo vacío entre bloques representa un Enter adicional. El <br>
+      // mantiene su altura y cursor al volver a cargarlo en contentEditable.
+      return `<${block.type}${align}>${block.type === "p" && block.children.length === 0 ? "<br>" : serializeInline(block.children)}</${block.type}>`
     })
     .join("")
 }

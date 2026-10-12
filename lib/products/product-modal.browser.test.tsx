@@ -20,6 +20,7 @@ import type { SupabaseProducto } from "@/lib/supabase/types"
 let browser: Browser
 let css: string
 let tooltipBundle: string
+let galleryBundle: string
 
 test.before(async () => {
   css = (await postcss([tailwindcss({ base: process.cwd() })])
@@ -30,11 +31,70 @@ test.before(async () => {
     bundle: true, platform: "browser", format: "iife", write: false,
     alias: { "@": process.cwd() }, jsx: "automatic",
   })).outputFiles[0].text
+  galleryBundle = (await build({
+    stdin: { contents: `
+      import React, { useState } from "react";
+      import { createRoot } from "react-dom/client";
+      import { ProductDetailsGallery } from "./components/products/product-details-gallery.tsx";
+      function App() {
+        const [selectedImage, setSelectedImage] = useState(0);
+        window.selectedGalleryImage = selectedImage;
+        return <ProductDetailsGallery images={["/placeholder.svg", "/placeholder-2.svg"]} videoUrl="https://example.com/product.mp4" selectedImage={selectedImage} productName="Producto" selectedStock={5} onNext={() => setSelectedImage((index) => (index + 1) % 3)} onPrev={() => setSelectedImage((index) => (index + 2) % 3)} onSelectImage={setSelectedImage} />;
+      }
+      createRoot(document.getElementById("root")).render(<App />);
+    `, resolveDir: process.cwd(), sourcefile: "product-gallery-browser-entry.tsx", loader: "tsx" },
+    bundle: true, platform: "browser", format: "iife", write: false,
+    alias: { "@": process.cwd() }, jsx: "automatic",
+    define: { "process.env.NODE_ENV": '"production"' },
+  })).outputFiles[0].text
   browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chrome", headless: true })
 })
 
 test.after(async () => {
   await browser?.close()
+})
+
+for (const width of [390, 1440]) test(`la imagen principal abre visor a ${width}px y salta el video al navegar`, async () => {
+  const page = await browser.newPage({ viewport: { width, height: 844 }, hasTouch: width === 390 })
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.message))
+  try {
+    await page.setContent(`<html lang="es"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body style="margin:0;background:#000"><div id="root"></div></body></html>`)
+    await page.addScriptTag({ content: 'window.process = { env: { NODE_ENV: "production" } };' })
+    await page.addScriptTag({ content: galleryBundle })
+    await page.getByRole("button", { name: "Ampliar imagen de Producto" }).waitFor({ timeout: 5000 }).catch(() => {
+      assert.fail(`La galería no montó: ${errors.join(" | ")}`)
+    })
+    const openButton = page.getByRole("button", { name: "Ampliar imagen de Producto" })
+    assert.equal(await openButton.evaluate((button) => getComputedStyle(button).cursor), "pointer")
+    if (width === 390) await openButton.tap()
+    else await openButton.click()
+    const dialog = page.getByRole("dialog", { name: "Imagen ampliada de Producto" })
+    await dialog.waitFor()
+    assert.equal(await dialog.locator("img").count(), 1)
+    const imageArea = await dialog.locator("div.relative").boundingBox()
+    assert.ok(imageArea && imageArea.width > (width === 390 ? 300 : 1000), "el visor usa el ancho disponible")
+    const enlargedImage = dialog.locator("img")
+    if (width === 390) await enlargedImage.tap()
+    else await enlargedImage.click()
+    assert.equal(await dialog.count(), 1, "click/tap en la imagen no cierra el visor")
+    await dialog.getByRole("button", { name: "Imagen ampliada siguiente" }).click()
+    assert.equal(await dialog.count(), 1, "la flecha sólo cambia la imagen")
+    assert.equal(await page.evaluate(() => (window as unknown as { selectedGalleryImage: number }).selectedGalleryImage), 2)
+    const backdrop = dialog.getByRole("button", { name: "Cerrar imagen ampliada" })
+    if (width === 390) await backdrop.tap({ position: { x: 4, y: 4 } })
+    else await backdrop.click({ position: { x: 4, y: 4 } })
+    assert.equal(await dialog.count(), 0, "click/tap en el backdrop cierra el visor")
+    if (width === 390) await openButton.tap()
+    else await openButton.click()
+    await dialog.getByRole("button", { name: "Cerrar visor de imagen" }).click()
+    assert.equal(await dialog.count(), 0, "la X cierra sólo por su acción propia")
+    if (width === 390) await openButton.tap()
+    else await openButton.click()
+    await page.keyboard.press("Escape")
+    assert.equal(await dialog.count(), 0)
+    assert.equal(await page.getByRole("button", { name: "Ampliar imagen de Producto" }).count(), 1)
+  } finally { await page.close() }
 })
 
 const LONG_DESCRIPTION = [

@@ -48,8 +48,16 @@ test("Enter = párrafo, Shift+Enter = <br> (salida del editor)", () => {
   assert.equal(sanitizeRichDescription("<p><br></p><p>   </p>"), "")
 })
 
+test("los párrafos vacíos entre bloques sobreviven al guardado y la recarga", () => {
+  const html = "<h2>TÍTULO</h2><p><br></p><p>Párrafo</p><p><br></p><h3>CARACTERÍSTICAS</h3><p>✅ una<br>✅ dos</p>"
+  assert.equal(sanitizeRichDescription(html), html)
+  assert.equal(sanitizeRichDescription(sanitizeRichDescription(html)), html)
+  assert.equal(sanitizeRichDescription("<p>Antes</p><p></p><p>Después</p>"), "<p>Antes</p><p><br></p><p>Después</p>")
+  assert.equal(sanitizeRichDescription("<p><br>Antes<br></p>"), "<p><br>Antes<br></p>")
+})
+
 test("listas, alineación y tamaños permitidos sobreviven al guardado y recarga", async () => {
-  const html = '<h2 class="rt-align-center"><span class="rt-size-32">Título</span></h2><p><span class="rt-size-16">Párrafo <strong>importante</strong></span></p><ul><li>Uno</li><li><em>Dos</em></li></ul><ol class="rt-align-right"><li>Tres</li></ol>'
+  const html = '<h2 class="rt-align-center"><span class="rt-size-32">Título</span></h2><p><br></p><p><span class="rt-size-16">Párrafo <strong>importante</strong></span></p><ul><li>Uno</li><li><em>Dos</em></li></ul><ol class="rt-align-right"><li>Tres</li></ol>'
   assert.equal(sanitizeRichDescription(html), html)
   assert.equal(sanitizeRichDescription('<p><span class="rt-size-173">x</span><span style="font-size:173px">y</span></p>'), "<p>xy</p>")
   const { PGlite } = await import("@electric-sql/pglite")
