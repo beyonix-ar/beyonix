@@ -47,8 +47,8 @@ export function CategoryCard({
         )}
 
       </div>
-      <div className="flex items-center justify-between gap-4 p-5">
-        <p className="line-clamp-2 min-w-0 text-sm leading-5 text-white/62">
+      <div className="flex items-center justify-between gap-4 bg-[#0A0A0A] p-5">
+        <p className="line-clamp-2 min-w-0 text-sm leading-5 text-white">
           {categoria.descripcion || fallbackDescription}
         </p>
 

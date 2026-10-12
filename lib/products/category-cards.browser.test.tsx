@@ -93,3 +93,35 @@ for (const width of [390, 430, 768, 1366, 1440, 1920]) {
     } finally { await page.close() }
   })
 }
+
+for (const width of [390, 1440]) {
+  test(`la franja y la flecha mantienen los mismos colores en Light y Dark a ${width}px`, async () => {
+    const colorsByTheme = []
+    for (const theme of ["light", "dark"]) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      try {
+        await page.setContent(`<!doctype html><html lang="es" data-account-theme="${theme}" data-account-scope><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="bg-beyonix-page"><div id="root"></div><script>window.process={env:{NODE_ENV:"production"}};window.__CATEGORIES=${JSON.stringify(categories)}</script><script>${bundle}</script></body></html>`)
+        await page.waitForSelector("a:has(img) p")
+        const colors = await page.locator("a:has(img)").evaluateAll((cards) => cards.map((card) => {
+          const footer = card.lastElementChild as HTMLElement
+          const description = footer.querySelector("p") as HTMLElement
+          const arrow = footer.querySelector("span") as HTMLElement
+          return {
+            background: getComputedStyle(footer).backgroundColor,
+            description: getComputedStyle(description).color,
+            arrowBackground: getComputedStyle(arrow).backgroundColor,
+            arrowColor: getComputedStyle(arrow).color,
+          }
+        }))
+        assert.equal(colors.length, categories.length)
+        for (const color of colors) {
+          assert.equal(color.background, "rgb(10, 10, 10)")
+          assert.equal(color.description, "rgb(255, 255, 255)")
+          assert.equal(color.arrowColor, "rgb(140, 200, 242)")
+        }
+        colorsByTheme.push(colors)
+      } finally { await page.close() }
+    }
+    assert.deepEqual(colorsByTheme[0], colorsByTheme[1])
+  })
+}
