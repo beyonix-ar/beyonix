@@ -70,10 +70,10 @@ const product = {
 } as unknown as SupabaseProducto
 
 const noop = () => {}
-function renderModal(item: SupabaseProducto = product) {
+function renderModal(item: SupabaseProducto = product, imageCount = 3) {
   return renderToStaticMarkup(createElement(ProductDetailsModalCard, {
   product: item,
-  images: ["/placeholder.svg", "/placeholder.svg", "/placeholder.svg"],
+  images: Array.from({ length: imageCount }, (_, index) => `/placeholder-${index}.svg`),
   selectedImage: 0,
   selectedColor: "random",
   onClose: noop,
@@ -100,6 +100,9 @@ type Layout = {
   galleryBackground: string
   stageWidth: number
   stageHeight: number
+  stageBottom: number
+  thumbnailsTop: number | null
+  thumbnailCount: number
   panelBottom: number
   galleryLeft: number
   panelLeft: number
@@ -107,8 +110,8 @@ type Layout = {
   descriptionClamped: boolean
 }
 
-async function measure(width: number, html = markup, withInstallments = false): Promise<Layout> {
-  const page = await browser.newPage({ viewport: { width, height: 900 } })
+async function measure(width: number, html = markup, withInstallments = false, height = 900): Promise<Layout> {
+  const page = await browser.newPage({ viewport: { width, height } })
   try {
     await page.route("**/*", (route) => route.abort())
     await page.setContent(`<!doctype html>
@@ -130,6 +133,7 @@ async function measure(width: number, html = markup, withInstallments = false): 
       const [gallery, panel] = card.children[1] && card.children[2] ? [card.children[1], card.children[2]] : [null, null]
       const description = document.querySelector("[data-product-description]")
       const stage = document.querySelector("[data-gallery-stage]")
+      const thumbnails = document.querySelector("[data-gallery-thumbnails]")
       const content = description.querySelector("div")
       const rect = (element) => element.getBoundingClientRect()
       return {
@@ -143,6 +147,9 @@ async function measure(width: number, html = markup, withInstallments = false): 
         galleryBackground: getComputedStyle(gallery).backgroundColor,
         stageWidth: rect(stage).width,
         stageHeight: rect(stage).height,
+        stageBottom: rect(stage).bottom,
+        thumbnailsTop: thumbnails ? rect(thumbnails).top : null,
+        thumbnailCount: thumbnails?.querySelectorAll("[data-media-index]").length ?? 0,
         panelBottom: rect(panel).bottom,
         galleryLeft: rect(gallery).left,
         panelLeft: rect(panel).left,
@@ -220,6 +227,93 @@ for (const [scenario, html, withInstallments] of [
     })
   }
 }
+
+// Perfiles tomados de los cuatro productos del catálogo: nombre, primeras
+// ocho características visibles y cantidad de imágenes de su variante.
+const catalogProfiles = [
+  {
+    name: "SOPORTE DE ALUMINIO NOTEBOOK/TABLET CON HUB USB 3.0", images: 5, installments: true,
+    features: [
+      "Compatible con notebooks de distintos tamaños.",
+      "Fabricado en aluminio resistente, liviano y duradero.",
+      "Estructura firme diseñada para brindar mayor estabilidad.",
+      "Conexión USB para ampliar la conectividad de tus dispositivos.",
+      "Permite conectar varios dispositivos USB desde un mismo punto.",
+      "Tecnología USB 3.0 para transferencias de hasta 5 Gbps, según compatibilidad.",
+      "Incluye cable USB para conectar el hub a tu notebook.",
+      "Funciona mediante conexión USB, sin fuente externa para uso habitual.",
+    ],
+  },
+  {
+    name: "ENCENDEDOR ELECTRICO CON CARGA USB", images: 3, installments: true,
+    features: [
+      "Cuerpo liviano, resistente y duradero", "Recarga práctica mediante cable USB",
+      "Incluye cable para recargarlo fácilmente", "Compatible con cargadores, PC y power bank",
+      "Uso inalámbrico sin necesidad de enchufe", "Reutilizable, sin necesidad de gas descartable",
+      "Producto revisado antes del despacho", "Encendido eléctrico rápido mediante resistencia",
+    ],
+  },
+  {
+    name: "TRIPODE INTELIGENTE CON SEGUIMIENTO FACIAL 360º", images: 4, installments: true,
+    features: [
+      "Firme y estable", "Cable USB incluido", "Su carga es mediante conexión USB",
+      "Uso inalámbrico con batería integrada", "Conexión Bluetooth para control remoto",
+      "Ideal para fotos y videos", "Giro completo de 360°", "Sigue automáticamente tus movimientos",
+    ],
+  },
+  {
+    name: "AURICULAR INALAMBRICO LEGATUS", images: 2, installments: false,
+    features: [
+      "Diseño cómodo y acolchado", "Conexión inalámbrica", "Incluye cable de carga",
+      "Permite realizar llamadas", "Ajuste desde el auricular", "Uso sin cables",
+      "Recargable por USB", "Sonido envolvente y claro",
+    ],
+  },
+] as const
+
+for (const [width, height] of [[1920, 1080], [1440, 900], [1366, 768]] as const) {
+  test(`quick view de cuatro perfiles reales a ${width}×${height}: altura uniforme e imagen intacta`, async () => {
+    const heights: number[] = []
+    for (const profile of catalogProfiles) {
+      const item = {
+        ...product,
+        nombre: profile.name,
+        venta_aleatoria: false,
+        producto_variantes: [],
+        producto_especificaciones: profile.features.map((texto, index) => ({
+          id: index + 1, producto_id: product.id, icono: "CircleHelp", texto,
+          orden: index + 1, activo: true, created_at: "2026-01-01T00:00:00Z",
+        })),
+      } as SupabaseProducto
+      const layout = await measure(width, renderModal(item, profile.images), profile.installments, height)
+      heights.push(layout.galleryHeight)
+      assert.equal(layout.thumbnailCount, profile.images, `${profile.name}: miniaturas`)
+      assert.ok(Math.abs(layout.stageWidth - layout.stageHeight) <= 1, `${profile.name}: imagen cuadrada`)
+      assert.ok(layout.stageWidth >= 500 && layout.stageWidth <= 600, `${profile.name}: imagen proporcionada`)
+      assert.ok(layout.thumbnailsTop !== null && layout.thumbnailsTop - layout.stageBottom <= 80, `${profile.name}: miniaturas próximas`)
+      assert.ok(Math.abs(layout.galleryBottom - layout.panelBottom) <= 1, `${profile.name}: columnas alineadas`)
+      assert.ok(Math.abs(layout.galleryBottom - layout.description.top) <= 1, `${profile.name}: descripción inmediata`)
+    }
+    assert.ok(Math.max(...heights) - Math.min(...heights) <= 75, `alturas: ${heights.join(", ")}`)
+  })
+}
+
+test("quick view mobile de cuatro perfiles: galería natural y panel apilado", async () => {
+  for (const profile of catalogProfiles) {
+    const item = {
+      ...product,
+      nombre: profile.name,
+      producto_especificaciones: profile.features.map((texto, index) => ({
+        id: index + 1, producto_id: product.id, icono: "CircleHelp", texto,
+        orden: index + 1, activo: true, created_at: "2026-01-01T00:00:00Z",
+      })),
+    } as SupabaseProducto
+    const layout = await measure(390, renderModal(item, profile.images), profile.installments, 844)
+    assert.ok(layout.galleryHeight < 390, `${profile.name}: sin alto artificial`)
+    assert.ok(Math.abs(layout.galleryBottom - layout.panelTop) <= 1, `${profile.name}: apilado`)
+    assert.ok(layout.description.top >= layout.panelBottom - 1, `${profile.name}: descripción debajo`)
+  }
+})
 
 test("venta aleatoria en el modal: rótulo y ayuda, sin leyenda bajo miniaturas ni selector falso", () => {
   assert.match(markup, /Color\/modelo:/)
