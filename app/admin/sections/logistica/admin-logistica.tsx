@@ -1,11 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { FileUp } from "lucide-react"
+import { ChevronDown, FileUp, PackageSearch } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 
 import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
-import { AdminButton, AdminPageHeader } from "@/app/admin/components/admin-controls"
+import { AdminButton, AdminEmptyState, AdminPageHeader, AdminSection } from "@/app/admin/components/admin-controls"
 import type { LogisticsOrderRow } from "@/lib/admin/logistics"
 import { BILLED_HELP } from "@/lib/admin/andreani-billing"
 import {
@@ -37,43 +37,47 @@ const COLUMNS: Array<{ label: string; help?: string }> = [
   { label: "Tracking" },
   { label: "Estado" },
   { label: "Bultos" },
-  { label: "Tarifa checkout", help: LOGISTICS_HELP.providerQuoted },
-  { label: "Recargo %", help: LOGISTICS_HELP.markupPercent },
-  { label: "Extra cobrado", help: LOGISTICS_HELP.markup },
-  { label: "Beneficio", help: LOGISTICS_HELP.benefit },
   { label: "Cobrado cliente", help: LOGISTICS_HELP.charged },
-  { label: "Cotizado con bulto real", help: LOGISTICS_HELP.parcelQuoted },
-  { label: "Diferencia", help: LOGISTICS_HELP.difference },
   { label: "Facturado Andreani", help: BILLED_HELP },
-  { label: "Dif. vs checkout", help: LOGISTICS_HELP.billedVsCheckout },
-  { label: "Dif. vs armado", help: LOGISTICS_HELP.billedVsParcel },
+  { label: "Diferencia", help: LOGISTICS_HELP.difference },
   { label: "Estado conciliación", help: LOGISTICS_HELP.reconciliation },
-  { label: "Referencia" },
-  { label: "Acción" },
+  { label: "Detalle y acción" },
 ]
 
-function Row({ row, onReconcile }: { row: LogisticsOrderRow; onReconcile: (row: LogisticsOrderRow) => void }) {
+const DETAILS: Array<{ label: string; help?: string; value: (row: LogisticsOrderRow) => string }> = [
+  { label: "Tarifa checkout", help: LOGISTICS_HELP.providerQuoted, value: (row) => money(row.checkoutQuote) },
+  { label: "Recargo %", help: LOGISTICS_HELP.markupPercent, value: (row) => row.markupPercent === null ? "—" : `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(row.markupPercent)}%` },
+  { label: "Extra cobrado", help: LOGISTICS_HELP.markup, value: (row) => money(row.markupAmount) },
+  { label: "Beneficio", help: LOGISTICS_HELP.benefit, value: (row) => money(row.benefit) },
+  { label: "Cotizado con bulto real", help: LOGISTICS_HELP.parcelQuoted, value: (row) => money(row.parcelQuote) },
+  { label: "Dif. vs checkout", help: LOGISTICS_HELP.billedVsCheckout, value: (row) => signedOrDash(row.billedVsCheckout) },
+  { label: "Dif. vs armado", help: LOGISTICS_HELP.billedVsParcel, value: (row) => signedOrDash(row.billedVsParcel) },
+]
+
+export function LogisticsOrderTableRow({ row, onReconcile }: { row: LogisticsOrderRow; onReconcile: (row: LogisticsOrderRow) => void }) {
+  const [expanded, setExpanded] = useState(false)
+  const detailId = `logistics-order-detail-${row.id}`
   return (
-    <tr className="border-t border-white/8 text-sm text-white/85">
-      <td className="whitespace-nowrap px-3 py-2 font-black text-white">{row.code}</td>
-      <td className="whitespace-nowrap px-3 py-2">{formatDate(row.createdAt)}</td>
-      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">{row.tracking ?? "—"}</td>
-      <td className="whitespace-nowrap px-3 py-2">{row.status}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{row.parcels ?? "—"}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{money(row.checkoutQuote)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{row.markupPercent === null ? "—" : `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(row.markupPercent)}%`}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{money(row.markupAmount)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{money(row.benefit)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{money(row.chargedToCustomer)}</td>
-      <td className="px-3 py-2 text-right tabular-nums">{money(row.parcelQuote)}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{row.difference === null ? "—" : <>{formatSignedMoney(row.difference)}{row.differencePercent === null ? null : <span className="block text-xs text-white/60">{formatSignedPercent(row.differencePercent)}</span>}</>}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{row.billedOutbound === null && row.billedTotal === null ? <span className="text-white/55">Pendiente</span> : <>{money(row.billedOutbound)}{row.billedTotal !== null && row.billedTotal !== row.billedOutbound ? <span className="block text-xs text-white/60">Total {formatMoney(row.billedTotal)}</span> : null}</>}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{signedOrDash(row.billedVsCheckout)}</td>
-      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{signedOrDash(row.billedVsParcel)}</td>
-      <td className="whitespace-nowrap px-3 py-2"><ReconciliationBadge status={row.reconciliation} /></td>
-      <td className="max-w-[180px] truncate px-3 py-2 font-mono text-xs" title={row.references ?? undefined}>{row.references ?? "—"}</td>
-      <td className="whitespace-nowrap px-3 py-2"><AdminButton size="sm" onClick={() => onReconcile(row)}>Conciliar</AdminButton></td>
-    </tr>
+    <>
+      <tr className="border-t border-white/8 text-sm text-white/85 hover:bg-white/[0.03]">
+        <td className="whitespace-nowrap px-3 py-3 font-black text-white">{row.code}</td>
+        <td className="whitespace-nowrap px-3 py-3 text-white/65">{formatDate(row.createdAt)}</td>
+        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">{row.tracking ?? "—"}</td>
+        <td className="whitespace-nowrap px-3 py-3">{row.status}</td>
+        <td className="px-3 py-3 text-right tabular-nums">{row.parcels ?? "—"}</td>
+        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{money(row.chargedToCustomer)}</td>
+        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{row.billedOutbound === null && row.billedTotal === null ? <span className="text-white/55">Pendiente</span> : <>{money(row.billedOutbound)}{row.billedTotal !== null && row.billedTotal !== row.billedOutbound ? <span className="block text-xs text-white/60">Total {formatMoney(row.billedTotal)}</span> : null}</>}</td>
+        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{row.difference === null ? "—" : <>{formatSignedMoney(row.difference)}{row.differencePercent === null ? null : <span className="block text-xs text-white/60">{formatSignedPercent(row.differencePercent)}</span>}</>}</td>
+        <td className="whitespace-nowrap px-3 py-3"><ReconciliationBadge status={row.reconciliation} /></td>
+        <td className="whitespace-nowrap px-3 py-3"><button type="button" aria-expanded={expanded} aria-controls={expanded ? detailId : undefined} onClick={() => setExpanded((value) => !value)} className="inline-flex items-center gap-1 text-xs font-bold text-beyonix-cyan hover:text-white">{expanded ? "Ocultar detalle" : "Ver detalle"}<ChevronDown className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} /></button></td>
+      </tr>
+      {expanded ? <tr className="border-t border-white/8 bg-[rgba(8,20,35,0.84)]"><td colSpan={COLUMNS.length} className="p-4 sm:p-5"><div id={detailId} className="space-y-4">
+        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">{DETAILS.map((item) => <div key={item.label} className="min-w-0"><p className="flex items-center gap-1 text-10px font-black uppercase tracking-wider text-white/50">{item.label}{item.help ? <AdminHelpTip label={item.label} text={item.help} /> : null}</p><p className="mt-1 text-sm font-bold tabular-nums text-white">{item.value(row)}</p></div>)}
+          <div className="min-w-0"><p className="text-10px font-black uppercase tracking-wider text-white/50">Referencia</p><p className="mt-1 break-all font-mono text-xs text-white/85">{row.references ?? "—"}</p></div>
+        </div>
+        <AdminButton size="sm" onClick={() => onReconcile(row)}>Conciliar pedido</AdminButton>
+      </div></td></tr> : null}
+    </>
   )
 }
 
@@ -95,22 +99,22 @@ export function AdminLogistica() {
   const pages = orders ? Math.max(1, Math.ceil(orders.total / orders.pageSize)) : 1
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 lg:p-8">
-      <AdminPageHeader title="Logística" description="Envíos Andreani: cotizado en checkout, recargo logístico, bultos reales y conciliación." />
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <AdminPageHeader title="Logística" description="Seguimiento de envíos Andreani, costos y conciliación en el período seleccionado." />
       {forbidden ? <p role="alert" className="text-sm font-bold text-red-300">Sólo Admin puede ver la logística.</p> : null}
-      <div className="flex flex-wrap items-end justify-between gap-2">
+      <div className="flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-beyonix-blue-light/16 bg-[rgba(3,7,13,0.72)] p-4 sm:p-5">
         <LogisticsRangeFilter from={range.from} to={range.to} onChange={(next) => { setRange(next); setPage(1) }} />
         {!forbidden ? <AdminButton icon={<FileUp className="size-4" />} onClick={() => setImporting(true)}>Importar facturación (CSV)</AdminButton> : null}
       </div>
       {error ? <p role="alert" className="text-sm font-bold text-red-300">{error}</p> : null}
-      {data ? <LogisticsSummaryGrid summary={data.summary} /> : loading ? <p role="status" className="text-sm text-white/60">Cargando logística…</p> : null}
+      {data ? <LogisticsSummaryGrid summary={data.summary} page /> : loading ? <p role="status" className="text-sm text-white/60">Cargando logística…</p> : null}
       {!forbidden ? <UnmatchedBillingList from={range.from} to={range.to} version={version} onChanged={refresh} /> : null}
       {orders ? (
-        <section className="admin-logistics-table-card overflow-hidden rounded-2xl border border-beyonix-blue-light/16 bg-[rgba(3,7,13,0.72)]">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1500px] border-collapse text-left">
+        <AdminSection title="Pedidos Andreani" eyebrow="04 · Detalle" description="Seguimiento por pedido. Abrí el detalle para ver importes técnicos y conciliar." className="admin-logistics-table-card">
+          {orders.rows.length ? <div className="overflow-x-auto rounded-xl border border-white/8">
+            <table className="w-full min-w-[1120px] border-collapse text-left">
               <thead>
-                <tr className="text-10px font-black uppercase tracking-widest text-white/55">
+                <tr className="bg-white/[0.04] text-10px font-black uppercase tracking-widest text-white/60">
                   {COLUMNS.map((column) => (
                     <th key={column.label} scope="col" className="whitespace-nowrap px-3 py-2.5">
                       <span className="inline-flex items-center gap-1">{column.label}{column.help ? <AdminHelpTip label={column.label} text={column.help} /> : null}</span>
@@ -119,20 +123,18 @@ export function AdminLogistica() {
                 </tr>
               </thead>
               <tbody>
-                {orders.rows.length
-                  ? orders.rows.map((row) => <Row key={row.id} row={row} onReconcile={setReconciling} />)
-                  : <tr><td colSpan={COLUMNS.length} className="px-3 py-6 text-center text-sm text-white/60">No hay pedidos Andreani en el período.</td></tr>}
+                {orders.rows.map((row) => <LogisticsOrderTableRow key={row.id} row={row} onReconcile={setReconciling} />)}
               </tbody>
             </table>
-          </div>
-          <div className="flex items-center justify-between gap-2 border-t border-white/8 px-3 py-2 text-xs text-white/60">
+          </div> : <AdminEmptyState icon={<PackageSearch className="size-6" />} title="No hay pedidos Andreani en el período seleccionado" description="Probá cambiar el rango de fechas o importar la facturación para conciliar datos." />}
+          {orders.rows.length ? <div className="flex items-center justify-between gap-2 pt-4 text-xs text-white/60">
             <span>{orders.total} pedidos · página {page} de {pages}</span>
             <span className="flex gap-2">
               <AdminButton size="sm" disabled={page <= 1 || loading} onClick={() => setPage((current) => current - 1)}>Anterior</AdminButton>
               <AdminButton size="sm" disabled={page >= pages || loading} onClick={() => setPage((current) => current + 1)}>Siguiente</AdminButton>
             </span>
-          </div>
-        </section>
+          </div> : null}
+        </AdminSection>
       ) : null}
       <ReconcileOrderModal row={reconciling} onClose={() => setReconciling(null)} onSaved={refresh} />
       <BillingImportModal open={importing} onClose={() => setImporting(false)} onImported={refresh} />

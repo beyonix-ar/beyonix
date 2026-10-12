@@ -1,9 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { Boxes, CircleDollarSign, ClipboardCheck } from "lucide-react"
 
 import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
+import { AdminBadge, AdminSection } from "@/app/admin/components/admin-controls"
 import { BILLED_HELP } from "@/lib/admin/andreani-billing"
 import type { LogisticsOrderRow, LogisticsSummary } from "@/lib/admin/logistics"
 import { supabase } from "@/lib/supabase/client"
@@ -95,85 +97,102 @@ export function currentMonthRange(now = new Date()) {
   return { from: `${today.slice(0, 8)}01`, to: today }
 }
 
-function Metric({ label, help, value, detail, tone }: {
+function Metric({ label, help, value, detail, tone, page = false, primary = false, badge }: {
   label: string
   help: string
   value: string
   detail?: string
-  tone?: "warning" | "positive"
+  tone?: "warning" | "positive" | "danger"
+  page?: boolean
+  primary?: boolean
+  badge?: string
 }) {
+  const valueTone = tone === "danger" ? "text-red-300" : tone === "warning" ? "text-amber-200" : tone === "positive" ? "text-emerald-300" : "text-white"
   return (
-    <div className="admin-logistics-metric min-w-0 rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-3 py-2.5" data-logistics-metric={label}>
-      <p className="flex items-center gap-1 text-10px font-black uppercase tracking-widest text-white/50">
-        {label}
-        <AdminHelpTip label={label} text={help} />
-      </p>
-      <p className={`mt-1 truncate text-base font-black tabular-nums ${tone === "warning" ? "text-amber-200" : tone === "positive" ? "text-emerald-300" : "text-white"}`}>{value}</p>
-      {detail ? <p className="mt-1 truncate text-11px font-semibold text-white/45">{detail}</p> : null}
+    <div className={`admin-logistics-metric min-w-0 rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] ${page ? "flex min-h-28 flex-col justify-between gap-3 p-4 sm:p-5" : "px-3 py-2.5"}`} data-logistics-metric={label}>
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <p className={`flex min-w-0 items-start gap-1 font-black uppercase tracking-wider text-white/60 ${page ? "text-11px leading-4" : "text-10px"}`}>
+          <span>{label}</span>
+          <AdminHelpTip label={label} text={help} />
+        </p>
+        {page && badge ? <AdminBadge tone={tone === "danger" ? "danger" : tone === "warning" ? "warning" : tone === "positive" ? "success" : "neutral"} className="shrink-0">{badge}</AdminBadge> : null}
+      </div>
+      <div>
+        <p className={`font-black tabular-nums ${valueTone} ${page ? primary ? "text-3xl leading-none" : "break-words text-xl leading-tight" : "mt-1 truncate text-base"}`}>{value}</p>
+        {detail ? <p className={`${page ? "mt-2 text-xs leading-5 text-white/55" : "mt-1 truncate text-11px font-semibold text-white/45"}`}>{detail}</p> : null}
+      </div>
     </div>
   )
 }
 
-export function LogisticsSummaryGrid({ summary, hideAmounts = false }: { summary: LogisticsSummary; hideAmounts?: boolean }) {
+export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = false }: { summary: LogisticsSummary; hideAmounts?: boolean; page?: boolean }) {
   const money = (value: number) => hideAmounts ? "••••••" : formatMoney(value)
   const differencePercent = summary.comparableProviderQuoted > 0
     ? (summary.parcelQuoteDifference / summary.comparableProviderQuoted) * 100
     : null
   const legacyOrders = summary.soldOrders - summary.snapshotOrders
+  const operational = [
+    <Metric key="created" page={page} primary={page} label="Pedidos Andreani creados" help={LOGISTICS_HELP.ordersCreated} value={String(summary.ordersCreated)} />,
+    <Metric key="sent" page={page} primary={page} label="Pedidos enviados" help={LOGISTICS_HELP.ordersSent} value={String(summary.ordersSent)} />,
+    <Metric key="delivered" page={page} primary={page} label="Entregados" help={LOGISTICS_HELP.ordersDelivered} value={String(summary.ordersDelivered)} />,
+    <Metric key="returned" page={page} primary={page} label="Devoluciones / cambios" help={LOGISTICS_HELP.ordersReturned} value={String(summary.ordersReturned)} />,
+    <Metric key="parcels" page={page} primary={page} label="Bultos totales" help={LOGISTICS_HELP.parcels} value={String(summary.parcels)} />,
+  ]
+  const economics = [
+    <Metric key="charged" page={page} label="Cobrado al cliente por envíos" help={LOGISTICS_HELP.charged} value={money(summary.chargedToCustomers)} detail={`${summary.soldOrders} pedidos vendidos`} />,
+    <Metric key="quoted" page={page} label="Tarifa Andreani checkout" help={LOGISTICS_HELP.providerQuoted} value={money(summary.providerQuoted)} detail={legacyOrders > 0 ? `${legacyOrders} pedidos anteriores sin desglose` : "Con el bulto estimado"} />,
+    <Metric key="markup" page={page} label="Costo extra cobrado" help={LOGISTICS_HELP.markup} value={money(summary.markupCollected)} detail="Suma de cada recargo aplicado" tone="positive" />,
+    <Metric key="benefit" page={page} label="Beneficio cubierto por BEYONIX" help={LOGISTICS_HELP.benefit} value={money(summary.benefitAbsorbed)} detail="Bonificaciones de envío" />,
+    <Metric key="parcel" page={page} label="Cotizado con bultos reales" help={LOGISTICS_HELP.parcelQuoted} value={money(summary.parcelQuoted)} detail={`${summary.parcelQuotedOrders} pedidos recotizados`} />,
+    <Metric key="billed" page={page} label="Facturado Andreani" help={LOGISTICS_HELP.billed} value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}
+      detail={summary.billedOrders > 0 ? `${summary.billedOrders} pedidos · devoluciones y cambios ${money(summary.billedReturnsAndExchanges)}` : "Sin facturación cargada en el período"}
+      badge={summary.billedOrders > 0 ? "Con registros" : "Sin facturación"} />,
+  ]
+  const differences = [
+    <Metric key="checkout-parcel" page={page} label="Diferencia checkout vs armado" help={LOGISTICS_HELP.difference}
+      value={hideAmounts ? "••••••" : formatSignedMoney(summary.parcelQuoteDifference)}
+      detail={differencePercent === null ? "Sin pedidos comparables" : `${formatSignedPercent(differencePercent)} · ${summary.parcelQuoteComparableOrders} pedidos`}
+      tone={differencePercent !== null && Math.abs(differencePercent) >= 10 ? "warning" : undefined} />,
+    <Metric key="billed-checkout" page={page} label="Diferencia vs checkout" help={LOGISTICS_HELP.billedVsCheckout}
+      value={summary.billedDifferenceVsCheckoutOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsCheckout)) : "—"}
+      detail={`${summary.billedDifferenceVsCheckoutOrders} pedidos comparables`} />,
+    <Metric key="billed-parcel" page={page} label="Diferencia vs bulto real" help={LOGISTICS_HELP.billedVsParcel}
+      value={summary.billedDifferenceVsParcelOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsParcel)) : "—"}
+      detail={`${summary.billedDifferenceVsParcelOrders} pedidos comparables`} />,
+  ]
+  const reconciliation = [
+    <Metric key="reconciled" page={page} label="Pedidos conciliados" help={LOGISTICS_HELP.reconciledOrders} value={String(summary.reconciledOrders)} detail={`${summary.minorDifferenceOrders} con diferencia menor`} tone={summary.reconciledOrders ? "positive" : undefined} badge="Controlados" />,
+    <Metric key="pending" page={page} label="Pendientes de conciliar" help={LOGISTICS_HELP.pendingReconciliation} value={String(summary.pendingReconciliationOrders)} detail={summary.noReferenceOrders ? `${summary.noReferenceOrders} sin cotización de referencia` : undefined} tone={summary.pendingReconciliationOrders ? "warning" : page ? "positive" : undefined} badge={summary.pendingReconciliationOrders ? "Revisar" : "Al día"} />,
+    <Metric key="major" page={page} label="Diferencia importante"
+      help={`${LOGISTICS_HELP.majorDifference} Umbral: desde ${formatMoney(summary.thresholds.majorAmount)} o ${summary.thresholds.majorPercent}%; conciliado si la diferencia es menor a ${formatMoney(summary.thresholds.reconciledAmount)}.`}
+      value={String(summary.majorDifferenceOrders)} detail={summary.unmatchedEntries ? `${summary.unmatchedEntries} cargos sin pedido asociado` : undefined}
+      tone={summary.majorDifferenceOrders ? "danger" : page ? "positive" : undefined} badge={summary.majorDifferenceOrders ? "Atención" : "Sin alertas"} />,
+  ]
+
+  if (!page) {
+    return (
+      <div className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-5">{operational}</div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{economics}{differences[0]}</div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">{differences.slice(1)}{reconciliation}</div>
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-5">
-        <Metric label="Pedidos Andreani creados" help={LOGISTICS_HELP.ordersCreated} value={String(summary.ordersCreated)} />
-        <Metric label="Pedidos enviados" help={LOGISTICS_HELP.ordersSent} value={String(summary.ordersSent)} />
-        <Metric label="Entregados" help={LOGISTICS_HELP.ordersDelivered} value={String(summary.ordersDelivered)} />
-        <Metric label="Devoluciones / cambios" help={LOGISTICS_HELP.ordersReturned} value={String(summary.ordersReturned)} />
-        <Metric label="Bultos totales" help={LOGISTICS_HELP.parcels} value={String(summary.parcels)} />
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Cobrado al cliente por envíos" help={LOGISTICS_HELP.charged} value={money(summary.chargedToCustomers)} detail={`${summary.soldOrders} pedidos vendidos`} />
-        <Metric label="Tarifa Andreani checkout" help={LOGISTICS_HELP.providerQuoted} value={money(summary.providerQuoted)} detail={legacyOrders > 0 ? `${legacyOrders} pedidos anteriores sin desglose` : "Con el bulto estimado"} />
-        <Metric label="Costo extra cobrado" help={LOGISTICS_HELP.markup} value={money(summary.markupCollected)} detail="Suma de cada recargo aplicado" tone="positive" />
-        <Metric label="Beneficio cubierto por BEYONIX" help={LOGISTICS_HELP.benefit} value={money(summary.benefitAbsorbed)} detail="Bonificaciones de envío" />
-        <Metric label="Cotizado con bultos reales" help={LOGISTICS_HELP.parcelQuoted} value={money(summary.parcelQuoted)} detail={`${summary.parcelQuotedOrders} pedidos recotizados`} />
-        <Metric
-          label="Diferencia checkout vs armado"
-          help={LOGISTICS_HELP.difference}
-          value={hideAmounts ? "••••••" : formatSignedMoney(summary.parcelQuoteDifference)}
-          detail={differencePercent === null ? "Sin pedidos comparables" : `${formatSignedPercent(differencePercent)} · ${summary.parcelQuoteComparableOrders} pedidos`}
-          tone={differencePercent !== null && Math.abs(differencePercent) >= 10 ? "warning" : undefined}
-        />
-        <Metric
-          label="Facturado Andreani"
-          help={LOGISTICS_HELP.billed}
-          value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}
-          detail={summary.billedOrders > 0
-            ? `${summary.billedOrders} pedidos · devoluciones y cambios ${money(summary.billedReturnsAndExchanges)}`
-            : "Sin facturación cargada en el período"}
-        />
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric
-          label="Diferencia vs checkout"
-          help={LOGISTICS_HELP.billedVsCheckout}
-          value={summary.billedDifferenceVsCheckoutOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsCheckout)) : "—"}
-          detail={`${summary.billedDifferenceVsCheckoutOrders} pedidos comparables`}
-        />
-        <Metric
-          label="Diferencia vs bulto real"
-          help={LOGISTICS_HELP.billedVsParcel}
-          value={summary.billedDifferenceVsParcelOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsParcel)) : "—"}
-          detail={`${summary.billedDifferenceVsParcelOrders} pedidos comparables`}
-        />
-        <Metric label="Pedidos conciliados" help={LOGISTICS_HELP.reconciledOrders} value={String(summary.reconciledOrders)} detail={`${summary.minorDifferenceOrders} con diferencia menor`} tone={summary.reconciledOrders ? "positive" : undefined} />
-        <Metric label="Pendientes de conciliar" help={LOGISTICS_HELP.pendingReconciliation} value={String(summary.pendingReconciliationOrders)} detail={summary.noReferenceOrders ? `${summary.noReferenceOrders} sin cotización de referencia` : undefined} />
-        <Metric
-          label="Diferencia importante"
-          help={`${LOGISTICS_HELP.majorDifference} Umbral: desde ${formatMoney(summary.thresholds.majorAmount)} o ${summary.thresholds.majorPercent}%; conciliado si la diferencia es menor a ${formatMoney(summary.thresholds.reconciledAmount)}.`}
-          value={String(summary.majorDifferenceOrders)}
-          detail={summary.unmatchedEntries ? `${summary.unmatchedEntries} cargos sin pedido asociado` : undefined}
-          tone={summary.majorDifferenceOrders ? "warning" : undefined}
-        />
-      </div>
+    <div className="space-y-6">
+      <AdminSection icon={<Boxes className="size-5" />} eyebrow="01 · Operación" title="Resumen operativo" description="Volumen de pedidos, entregas y bultos del período." data-logistics-section="operational">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{operational}</div>
+      </AdminSection>
+      <AdminSection icon={<CircleDollarSign className="size-5" />} eyebrow="02 · Importes" title="Costos y cobros" description="Importes cobrados al cliente, cotizaciones y facturación de Andreani." data-logistics-section="economics">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{economics}</div>
+      </AdminSection>
+      <AdminSection icon={<ClipboardCheck className="size-5" />} eyebrow="03 · Control" title="Conciliación y diferencias" description="Compará cotizaciones con importes facturados e identificá lo que requiere revisión." data-logistics-section="reconciliation">
+        <p className="mb-3 text-11px font-black uppercase tracking-widest text-white/45">Comparaciones de importes</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{differences}</div>
+        <p className="mb-3 mt-6 text-11px font-black uppercase tracking-widest text-white/45">Estado de los pedidos</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{reconciliation}</div>
+      </AdminSection>
     </div>
   )
 }
