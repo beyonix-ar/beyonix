@@ -70,8 +70,9 @@ const product = {
 } as unknown as SupabaseProducto
 
 const noop = () => {}
-const markup = renderToStaticMarkup(createElement(ProductDetailsModalCard, {
-  product,
+function renderModal(item: SupabaseProducto = product) {
+  return renderToStaticMarkup(createElement(ProductDetailsModalCard, {
+  product: item,
   images: ["/placeholder.svg", "/placeholder.svg", "/placeholder.svg"],
   selectedImage: 0,
   selectedColor: "random",
@@ -84,7 +85,9 @@ const markup = renderToStaticMarkup(createElement(ProductDetailsModalCard, {
   onDecreaseCart: noop,
   onRemoveFromCart: noop,
   onViewCart: noop,
-}))
+  }))
+}
+const markup = renderModal()
 
 type Layout = {
   pageOverflow: number
@@ -92,6 +95,11 @@ type Layout = {
   cardWidth: number
   description: { left: number; right: number; top: number; width: number }
   galleryBottom: number
+  galleryTop: number
+  galleryHeight: number
+  galleryBackground: string
+  stageWidth: number
+  stageHeight: number
   panelBottom: number
   galleryLeft: number
   panelLeft: number
@@ -99,17 +107,29 @@ type Layout = {
   descriptionClamped: boolean
 }
 
-async function measure(width: number): Promise<Layout> {
+async function measure(width: number, html = markup, withInstallments = false): Promise<Layout> {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
   try {
     await page.route("**/*", (route) => route.abort())
     await page.setContent(`<!doctype html>
 <html lang="es"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>
-<body style="margin:0;background:#000"><div class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-5">${markup}</div></body></html>`)
+<body style="margin:0;background:#000"><div class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-5">${html}</div></body></html>`)
+    if (withInstallments) {
+      // El test de layout añade la línea que muestra la configuración global
+      // de cuotas; su contenido no interviene en el cálculo de la grid.
+      await page.evaluate(() => {
+        const purchase = document.querySelector("[data-product-price]")?.parentElement?.parentElement
+        const line = document.createElement("p")
+        line.textContent = "Hasta 12 cuotas sin interés"
+        line.setAttribute("data-interest-free-global", "")
+        purchase?.append(line)
+      })
+    }
     return (await page.evaluate(`(() => {
       const card = document.querySelector(".beyonix-modal-shell.custom-scrollbar")
       const [gallery, panel] = card.children[1] && card.children[2] ? [card.children[1], card.children[2]] : [null, null]
       const description = document.querySelector("[data-product-description]")
+      const stage = document.querySelector("[data-gallery-stage]")
       const content = description.querySelector("div")
       const rect = (element) => element.getBoundingClientRect()
       return {
@@ -118,6 +138,11 @@ async function measure(width: number): Promise<Layout> {
         cardWidth: rect(card).width,
         description: { left: rect(description).left - rect(card).left, right: rect(card).right - rect(description).right, top: rect(description).top, width: rect(description).width },
         galleryBottom: rect(gallery).bottom,
+        galleryTop: rect(gallery).top,
+        galleryHeight: rect(gallery).height,
+        galleryBackground: getComputedStyle(gallery).backgroundColor,
+        stageWidth: rect(stage).width,
+        stageHeight: rect(stage).height,
         panelBottom: rect(panel).bottom,
         galleryLeft: rect(gallery).left,
         panelLeft: rect(panel).left,
@@ -130,7 +155,7 @@ async function measure(width: number): Promise<Layout> {
   }
 }
 
-for (const width of [1440, 1280, 1024, 768, 390]) {
+for (const width of [1920, 1440, 1366, 1024, 768, 390]) {
   test(`modal de producto a ${width}px: sin scroll horizontal y descripción a todo el ancho debajo`, async () => {
     const layout = await measure(width)
     assert.ok(layout.pageOverflow <= 0, `scroll horizontal de página: ${layout.pageOverflow}px`)
@@ -151,6 +176,49 @@ for (const width of [1440, 1280, 1024, 768, 390]) {
     // Una descripción larga arranca recortada (el toggle "Ver más" la expande).
     assert.equal(layout.descriptionClamped, true)
   })
+}
+
+const shortDetails = renderModal({
+  ...product,
+  nombre: "Trípode",
+  categorias: null,
+  venta_aleatoria: false,
+  producto_especificaciones: [],
+  producto_variantes: [],
+} as SupabaseProducto)
+
+const tallDetails = renderModal({
+  ...product,
+  nombre: "Soporte de aluminio ajustable para escritorio y dispositivos",
+  producto_especificaciones: Array.from({ length: 8 }, (_, index) => ({
+    id: index + 1, producto_id: 7, icono: "Ruler",
+    texto: `Característica ${index + 1} con detalles adicionales del soporte de aluminio`,
+    orden: index + 1, activo: true,
+  })),
+} as SupabaseProducto)
+
+for (const [scenario, html, withInstallments] of [
+  ["galería alta y detalles cortos, sin cuotas", shortDetails, false],
+  ["galería corta y detalles altos, sin cuotas", tallDetails, false],
+  ["galería corta y detalles altos, con cuotas", tallDetails, true],
+] as const) {
+  for (const width of [1920, 1440, 1366, 1024, 768, 390]) {
+    test(`${scenario} a ${width}px: columnas y descripción contiguas`, async () => {
+      const layout = await measure(width, html, withInstallments)
+      assert.ok(layout.pageOverflow <= 0 && layout.cardOverflow <= 0, "sin scroll horizontal")
+      assert.ok(Math.abs(layout.description.left) <= 2 && Math.abs(layout.description.right) <= 2, "descripción full width")
+      assert.equal(layout.galleryBackground, "rgb(8, 13, 19)", "la superficie de la galería cubre su columna")
+      if (width >= 768) {
+        assert.ok(Math.abs(layout.galleryBottom - layout.panelBottom) <= 1, `columnas: ${JSON.stringify(layout)}`)
+        assert.ok(Math.abs(layout.description.top - layout.galleryBottom) <= 1, "descripción inmediatamente debajo")
+        assert.ok(Math.abs(layout.stageWidth - layout.stageHeight) <= 1, "imagen cuadrada sin estirar")
+      } else {
+        assert.ok(layout.panelTop >= layout.galleryBottom - 1, "mobile apilado")
+        assert.ok(layout.galleryHeight < 390, "mobile sin altura artificial")
+        assert.ok(layout.description.top >= layout.panelBottom - 1, "descripción debajo del panel")
+      }
+    })
+  }
 }
 
 test("venta aleatoria en el modal: rótulo y ayuda, sin leyenda bajo miniaturas ni selector falso", () => {

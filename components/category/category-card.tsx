@@ -33,30 +33,28 @@ export function CategoryCard({
       aria-label={categoria.nombre}
       className="group cursor-pointer overflow-hidden rounded-2xl border border-white/8 bg-beyonix-surface shadow-xl shadow-black/20 transition-all duration-300 hover:-translate-y-1 hover:border-beyonix-blue-light/35 hover:shadow-black/45"
     >
-      {/* Misma proporción que el banner cargado en Admin (1568 x 600): cubre sin franjas ni recortes. */}
-      <div className="relative aspect-[1568/600] overflow-hidden bg-beyonix-surface-3">
+      <div className="relative aspect-[48/13] overflow-hidden bg-[#06182B]">
         {categoria.imagen ? (
           <Image
             fill
             src={categoria.imagen}
             alt={categoria.nombre}
             sizes="(min-width: 1280px) 33vw, (min-width: 768px) 50vw, 100vw"
-            className="object-cover object-center"
+            className="object-contain object-center"
           />
         ) : (
           <CategoryFallback />
         )}
 
-        <div className="absolute inset-0 bg-linear-to-t from-black/86 via-black/20 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-5">
-          <p className="line-clamp-2 min-w-0 text-sm leading-5 text-white/62">
-            {categoria.descripcion || fallbackDescription}
-          </p>
+      </div>
+      <div className="flex items-center justify-between gap-4 p-5">
+        <p className="line-clamp-2 min-w-0 text-sm leading-5 text-white/62">
+          {categoria.descripcion || fallbackDescription}
+        </p>
 
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/14 bg-black/45 text-[#8CC8F2] transition-all group-hover:border-beyonix-blue-light/45 group-hover:bg-beyonix-blue/60">
-            <ArrowUpRight className="size-4" />
-          </span>
-        </div>
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full border border-white/14 bg-black/45 text-[#8CC8F2] transition-all group-hover:border-beyonix-blue-light/45 group-hover:bg-beyonix-blue/60">
+          <ArrowUpRight className="size-4" />
+        </span>
       </div>
     </Link>
   )

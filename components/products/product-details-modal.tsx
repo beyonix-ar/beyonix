@@ -163,7 +163,7 @@ export function ProductDetailsModalCard({
   const selectedStock = selectedVariant?.stock ?? product.stock
 
   return (
-    <div className="beyonix-modal-shell custom-scrollbar relative z-10 max-h-[calc(100vh-40px)] w-[min(1320px,calc(100vw-32px))] overflow-x-hidden overflow-y-auto rounded-3xl border border-beyonix-blue-light/20 bg-[#080D13] shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_40px_rgba(30,140,255,0.055)] md:grid md:grid-cols-[minmax(0,58fr)_minmax(0,42fr)] md:items-start">
+    <div className="beyonix-modal-shell custom-scrollbar relative z-10 max-h-[calc(100vh-40px)] w-[min(1320px,calc(100vw-32px))] overflow-x-hidden overflow-y-auto rounded-3xl border border-beyonix-blue-light/20 bg-[#080D13] shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_40px_rgba(30,140,255,0.055)] md:grid md:grid-cols-[minmax(0,58fr)_minmax(0,42fr)] md:items-stretch">
       <button
         type="button"
         aria-label="Cerrar detalle del producto"
