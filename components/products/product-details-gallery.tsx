@@ -491,7 +491,7 @@ export function ProductDetailsGallery({
             onClick={closeLightbox}
             className="absolute inset-0"
           />
-          <div className="relative h-[min(88dvh,1000px)] w-[min(94vw,1400px)]">
+          <div className="relative aspect-square w-[min(94vw,88dvh,1000px)] overflow-hidden rounded-[5px] bg-white shadow-[0_24px_70px_rgba(0,0,0,0.45)]">
             <Image
               src={safeCurrentImage}
               alt={`${productName} imagen ampliada ${currentMedia.imageIndex + 1}`}
@@ -504,7 +504,7 @@ export function ProductDetailsGallery({
               type="button"
               aria-label="Cerrar visor de imagen"
               onClick={closeLightbox}
-              className="absolute right-2 top-2 z-10 flex size-11 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="absolute right-2 top-2 z-10 flex size-11 cursor-pointer items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               <X className="size-6" />
             </button>
@@ -513,7 +513,7 @@ export function ProductDetailsGallery({
                 type="button"
                 aria-label="Imagen ampliada anterior"
                 onClick={() => selectLightboxImage(-1)}
-                className="absolute left-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="absolute left-2 top-1/2 z-10 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <ChevronLeft className="size-6" />
               </button>
@@ -521,7 +521,7 @@ export function ProductDetailsGallery({
                 type="button"
                 aria-label="Imagen ampliada siguiente"
                 onClick={() => selectLightboxImage(1)}
-                className="absolute right-2 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                className="absolute right-2 top-1/2 z-10 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-white/30 bg-black/75 text-white hover:bg-black focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 <ChevronRight className="size-6" />
               </button>

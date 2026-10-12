@@ -73,7 +73,30 @@ for (const width of [390, 1440]) test(`la imagen principal abre visor a ${width}
     await dialog.waitFor()
     assert.equal(await dialog.locator("img").count(), 1)
     const imageArea = await dialog.locator("div.relative").boundingBox()
-    assert.ok(imageArea && imageArea.width > (width === 390 ? 300 : 1000), "el visor usa el ancho disponible")
+    assert.ok(imageArea && imageArea.width > (width === 390 ? 300 : 650), "el visor conserva una imagen grande")
+    const frameLayout = await dialog.evaluate((element) => {
+      const frame = element.querySelector("div.relative")!
+      const frameRect = frame.getBoundingClientRect()
+      const controlNames = ["Cerrar visor de imagen", "Imagen ampliada anterior", "Imagen ampliada siguiente"]
+      return {
+        frame: { left: frameRect.left, right: frameRect.right, top: frameRect.top, bottom: frameRect.bottom },
+        radius: getComputedStyle(frame).borderTopLeftRadius,
+        controls: controlNames.map((name) => {
+          const button = element.querySelector(`button[aria-label="${name}"]`)!
+          const rect = button.getBoundingClientRect()
+          return { name, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, cursor: getComputedStyle(button).cursor }
+        }),
+      }
+    })
+    assert.equal(frameLayout.radius, "5px")
+    for (const control of frameLayout.controls) {
+      assert.equal(control.cursor, "pointer", `${control.name} muestra cursor pointer`)
+      assert.ok(control.left >= frameLayout.frame.left && control.right <= frameLayout.frame.right, `${control.name} queda dentro del frame`)
+      assert.ok(control.top >= frameLayout.frame.top && control.bottom <= frameLayout.frame.bottom, `${control.name} queda dentro del frame`)
+      if (control.name !== "Cerrar visor de imagen") {
+        assert.ok(Math.abs((control.top + control.bottom - frameLayout.frame.top - frameLayout.frame.bottom) / 2) < 1, `${control.name} queda centrada verticalmente`)
+      }
+    }
     const enlargedImage = dialog.locator("img")
     if (width === 390) await enlargedImage.tap()
     else await enlargedImage.click()
