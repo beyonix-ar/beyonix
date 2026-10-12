@@ -1490,7 +1490,7 @@ function VariantCard({
     return (
       <article
         data-variant-drop-key={dropKey}
-        className="product-editor-variant-card grid min-w-0 justify-start grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-2.5 rounded-xl border border-white/10 bg-[#0c1219] p-2.5"
+        className="product-editor-variant-card product-editor-variant-summary grid min-w-0 items-center gap-x-2 gap-y-1.5 rounded-xl border border-white/10 bg-[#0c1219] p-2"
       >
         {/*
           Columna del handle de arrastre: sólo existe cuando hay más de una

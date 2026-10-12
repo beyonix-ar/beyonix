@@ -456,9 +456,7 @@ export function ProductSpecificationsEditor({
     <section className="product-editor-panel product-editor-specifications min-w-0 overflow-visible rounded-xl border p-2.5">
       <div className="product-editor-panel-heading mb-2">
         <h2 className="text-base font-black text-white">Especificaciones</h2>
-        <p className="mt-0.5 text-10px leading-4 text-white">
-          Características visibles en la tienda.
-        </p>
+        <p className="mt-0.5 text-10px leading-4 text-white">Agregá características visibles en la tienda.</p>
       </div>
 
       <div className="min-w-0 space-y-2">
@@ -471,7 +469,7 @@ export function ProductSpecificationsEditor({
             </h3>
           </div>
 
-          <div className="product-editor-spec-form-grid grid min-w-0 gap-2">
+          <div className="product-editor-spec-form-grid grid min-w-0 items-end gap-2">
             <div className="min-w-0">
               <p className="mb-1 text-10px font-black uppercase tracking-wide text-white">
                 Ícono
@@ -486,33 +484,11 @@ export function ProductSpecificationsEditor({
               <input
                 type="text"
                 value={texto}
-                placeholder="Ej.: Construcción reforzada"
+                placeholder="Ej: Construcción reforzada"
                 onChange={(event) => setTexto(event.target.value)}
                 className={inputCls}
               />
             </label>
-          </div>
-
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-2">
-            <AdminSecondaryButton
-              size="sm"
-              aria-label={
-                activo ? "Desactivar especificación" : "Activar especificación"
-              }
-              onClick={() => setActivo((current) => !current)}
-              aria-pressed={activo}
-              className={`admin-toggle min-w-0 shrink-0 justify-start px-2.5 ${activo ? "admin-toggle-on" : ""}`}
-            >
-              {activo ? (
-                <ToggleRight aria-hidden="true" className="admin-toggle-icon size-4" />
-              ) : (
-                <ToggleLeft aria-hidden="true" className="admin-toggle-icon size-4" />
-              )}
-              <span className="text-xs text-white">
-                {activo ? "Activa" : "Inactiva"}
-              </span>
-            </AdminSecondaryButton>
-
             <div className="flex min-w-0 shrink-0 items-center gap-1.5">
               <AdminPrimaryButton
                 size="sm"
@@ -523,7 +499,7 @@ export function ProductSpecificationsEditor({
                 }
                 onClick={saveSpecification}
                 disabled={saving}
-                className="shrink-0 px-2.5"
+                className="product-editor-spec-add-button shrink-0 px-2.5"
               >
                 {saving ? (
                   <Loader2 className="size-4 animate-spin" />
@@ -560,9 +536,6 @@ export function ProductSpecificationsEditor({
               <h3 className="text-xs font-black text-white">
                 Características cargadas
               </h3>
-              <p className="mt-0.5 text-10px leading-4 text-white">
-                Arrastrá para reordenar.
-              </p>
             </div>
             <span className="inline-flex shrink-0 rounded-md border border-white/12 bg-black/20 px-2 py-0.5 text-10px font-black text-white">
               {visibleCount}
@@ -574,7 +547,7 @@ export function ProductSpecificationsEditor({
               <Loader2 className="size-5 animate-spin" />
             </div>
           ) : (
-            <div className="product-editor-scroll-panel max-h-[22rem] space-y-1.5 overflow-y-auto pr-1">
+            <div className="product-editor-scroll-panel max-h-[16.5rem] space-y-1.5 overflow-y-auto pr-1" data-specification-list>
               {productoId ? (
                 visibleSpecifications.length ? (
                   visibleSpecifications.map((specification, index) => (
@@ -741,7 +714,7 @@ function SpecificationRow({
         onDrop()
       }}
       onDragEnd={onDragEnd}
-      className={`product-editor-spec-row rounded-lg border px-2 py-1.5 transition-colors ${
+      className={`product-editor-spec-row min-h-14 rounded-lg border px-2 py-1 transition-colors ${
         draggedKey === dragKey
           ? "product-editor-spec-row-active border-white/35"
           : "border-white/8 hover:border-white/18 hover:bg-white/[0.03]"
@@ -770,7 +743,7 @@ function SpecificationRow({
           >
             {texto}
           </p>
-          <p className="mt-0.5 text-10px text-white">Orden {orden}</p>
+          <p className="text-10px text-white">Orden {orden}</p>
         </div>
 
         <div className="flex shrink-0 flex-nowrap items-center gap-1.5">

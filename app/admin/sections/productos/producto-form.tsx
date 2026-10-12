@@ -2,15 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { getProductColorMode, type ProductColorMode } from "@/lib/products/color-mode"
-import Link from "next/link"
 import {
   ArrowLeft,
   Eye,
   Loader2,
+  Pencil,
   Play,
   Save,
-  ToggleLeft,
-  ToggleRight,
+  Star,
   X,
 } from "lucide-react"
 
@@ -49,8 +48,6 @@ import {
 import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
-import { getTransferPrice } from "@/lib/pricing/financed-pricing"
-import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
   normalizeLogisticsDecimalInput,
@@ -191,12 +188,6 @@ export function ProductoForm({
     (category) => String(category.id) === form.categoria_id,
   )?.nombre
   const currentPrice = Number(form.precio)
-  const cashPricePreview =
-    Number.isFinite(currentPrice) && currentPrice > 0 ? currentPrice : null
-  const transferPricePreview =
-    cashPricePreview != null
-      ? getTransferPrice(cashPricePreview, pricing.transferDiscountPercent)
-      : null
   const targetMarginPercentValue = form.targetMarginPercent
     ? Number(form.targetMarginPercent)
     : null
@@ -518,7 +509,7 @@ export function ProductoForm({
 
   return (
     <div className={`${adminPageClassName} product-editor-screen !space-y-2.5 !p-2.5 sm:!p-3 lg:!p-4`}>
-      <header className="product-editor-header flex min-w-0 items-center justify-between gap-3">
+      <header className="product-editor-header flex min-w-0 flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <AdminSecondaryButton
             size="icon"
@@ -528,13 +519,22 @@ export function ProductoForm({
           >
             <ArrowLeft className="size-4 text-white" />
           </AdminSecondaryButton>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-10px font-bold text-white sm:text-xs">
               {producto ? "Editar producto" : "Crear producto"}
             </p>
-            <h1 className="truncate text-xl font-black text-white sm:text-2xl">
-              {form.nombre.trim() || "Producto sin nombre"}
-            </h1>
+            <div className="group relative flex min-w-0 items-center gap-2">
+              <input
+                id="nombre"
+                type="text"
+                aria-label="Nombre del producto"
+                value={form.nombre}
+                placeholder="Producto sin nombre"
+                onChange={(event) => handleNombreChange(event.target.value)}
+                className="product-editor-title-input min-w-0 max-w-full flex-1 rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-xl font-black text-white outline-none transition-colors hover:border-white/20 focus:border-beyonix-sky focus:ring-2 focus:ring-beyonix-sky/25 sm:text-2xl"
+              />
+              <Pencil aria-hidden="true" className="size-3.5 shrink-0 text-white/45 group-focus-within:text-beyonix-sky" />
+            </div>
             {productSubtitle.length > 0 && (
               <p className="mt-0.5 truncate text-10px text-white sm:text-xs">
                 {productSubtitle.join(" · ")}
@@ -544,6 +544,16 @@ export function ProductoForm({
         </div>
 
         <div className="product-editor-window-actions flex shrink-0 items-center gap-1.5">
+          <AdminSecondaryButton
+            size="icon"
+            title={form.destacado ? "Quitar destacado" : "Destacar producto"}
+            aria-label="Destacado"
+            aria-pressed={form.destacado}
+            onClick={() => setField("destacado", !form.destacado)}
+            disabled={busy}
+          >
+            <Star className={`size-4 ${form.destacado ? "fill-amber-300 text-amber-300" : "text-white/65"}`} />
+          </AdminSecondaryButton>
           <AdminSecondaryButton
             size="icon"
             title="Vista previa"
@@ -586,71 +596,8 @@ export function ProductoForm({
         }}
         className="product-editor-form min-w-0 space-y-2.5"
       >
-        <div className="product-editor-workspace min-w-0 gap-2.5">
-          {/*
-            Fila 1: Información del producto (identidad) + Precio (modo $/%,
-            inputs compactos de ancho fijo, rentabilidad bajo demanda vía
-            Eye) + Precios de venta (contado y transferencia; la financiación
-            es global y vive en Admin → Financiación, nunca en el producto). Proporciones
-            ~27/25/48 por container query sobre el ancho real del workspace
-            (ver .product-editor-row-top en globals.css); 1 columna por
-            debajo del umbral.
-          */}
-          <div className="product-editor-row-top grid min-w-0 gap-2.5 items-start">
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 id="product-information-title" className="text-base font-black text-white">
-                    Información del producto
-                  </h2>
-                </div>
-
-                <div className="grid min-w-0 gap-x-2.5 gap-y-1.5 sm:grid-cols-2">
-                  <AdminFormField
-                    label="Nombre del producto"
-                    labelClassName={productFieldLabelClassName}
-                    className="sm:col-span-2"
-                  >
-                    <input
-                      id="nombre"
-                      type="text"
-                      value={form.nombre}
-                      placeholder="Ej.: Apoyabrazos de escritorio"
-                      onChange={(event) => handleNombreChange(event.target.value)}
-                      className={inputCls}
-                    />
-                  </AdminFormField>
-
-                  {!hasAnyVariants && (
-                    <AdminFormField
-                      label="SKU"
-                      labelClassName={productFieldLabelClassName}
-                      className="sm:col-span-2"
-                    >
-                      <input
-                        id="sku"
-                        type="text"
-                        maxLength={120}
-                        value={form.sku}
-                        placeholder="Ej.: AP-001"
-                        onChange={(event) => setField("sku", event.target.value.toUpperCase())}
-                        className={inputCls}
-                      />
-                    </AdminFormField>
-                  )}
-
-                  <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName} className="sm:col-span-2">
-                    <AdminSelect title="Categoría" value={form.categoria_id} onChange={(value) => setField("categoria_id", value)}>
-                      <option value="">Sin categoría</option>
-                      {categorias.map((category) => (
-                        <option key={category.id} value={category.id}>{category.nombre}</option>
-                      ))}
-                    </AdminSelect>
-                  </AdminFormField>
-                </div>
-              </AdminCard>
-            </div>
-
+        <div className="product-editor-workspace grid min-w-0 items-start gap-3">
+          <div className="product-editor-column flex min-w-0 flex-col gap-3">
             <div className="product-editor-cell">
               <ProductPriceCard
                 pricingMode={form.pricingMode}
@@ -670,152 +617,28 @@ export function ProductoForm({
                 realVariantCosts={realVariantCosts}
                 missingVariantCosts={missingVariantCosts}
                 priceRecalculation={priceRecalculation}
-              />
-            </div>
-
-            <div className="product-editor-cell">
-              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                <div className="product-editor-panel-heading">
-                  <h2 className="text-base font-black text-white">Precios de venta</h2>
-                </div>
-                {cashPricePreview != null && (
-                  <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-white/8 bg-white/[0.02] p-2">
-                    <div>
-                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Contado</p>
-                      <p className="text-sm font-black text-white">
-                        {productPriceFormatter.format(cashPricePreview)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-9px font-bold uppercase tracking-widest text-white/50">Transferencia</p>
-                      <p className="text-sm font-black text-white">
-                        {transferPricePreview != null
-                          ? productPriceFormatter.format(transferPricePreview)
-                          : "—"}
-                      </p>
-                    </div>
+              >
+                <div className="border-t border-white/10 pt-2">
+                  <h3 className="mb-2 text-xs font-black text-white">Stock</h3>
+                  <div
+                    aria-label="Resumen del inventario"
+                    className="product-editor-stock-grid grid gap-1.5"
+                  >
+                    <StockSummaryItem label="Stock físico" value={variantDistribution?.physicalStock} />
+                    <StockSummaryItem label="Stock normal" value={variantDistribution?.normalStock} tone="success" />
+                    <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
+                    <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} tone="danger" />
+                    <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
+                    {/* Reservas temporales de checkout (no son ventas):
+                        disponible = vendible - reservado. */}
+                    <StockSummaryItem label="Reservado (checkout)" value={variantDistribution?.reservedStock} tone="success" />
+                    <StockSummaryItem label="Disponible para vender" value={variantDistribution?.availableStock} tone="success" />
                   </div>
-                )}
-                <p data-product-financing-global className="text-xs font-medium leading-5 text-white/80">
-                  Las cuotas sin interés no se configuran por producto: dependen del total de la compra y de lo
-                  que confirma Mercado Pago.{" "}
-                  <Link href={ADMIN_ROUTES.financiacion} className="font-bold text-beyonix-sky underline-offset-2 hover:underline">
-                    Gestionar en Financiación
-                  </Link>
-                </p>
-              </AdminCard>
-            </div>
-          </div>
-
-          {/*
-            Fila 2: bloque [Estado comercial+Stock] + Especificaciones
-            (izquierda) | Logística (Peso | Largo | Ancho | Profundidad),
-            URL del video, Variantes y Descripción, uno debajo del otro
-            (derecha) -- ver .product-editor-commercial-catalog-row en
-            globals.css. Cada bloque es su propio flex-col independiente:
-            ninguno espera a la altura del vecino, así la columna derecha no
-            deja un hueco junto a Estado+Stock+Especificaciones.
-            "Requisitos para activar" vive en el ícono del header (ver
-            ProductRequirementsPopover).
-          */}
-          <div className="product-editor-commercial-catalog-row grid min-w-0 gap-2.5 items-start">
-            <div className="product-editor-cell product-editor-commercial-catalog-block flex min-w-0 flex-col gap-2.5">
-              <div className="product-editor-cell product-editor-status-stock-pair grid min-w-0 gap-2.5 items-start">
-                <div className="product-editor-cell product-editor-status-cell">
-                  <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                    <div className="product-editor-panel-heading">
-                      <h2 className="text-base font-black text-white">Estado comercial</h2>
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-2">
-                      {[
-                        {
-                          key: "activo" as const,
-                          label: "Estado",
-                          value: form.activo ? "Activo" : "Inactivo",
-                          active: form.activo,
-                        },
-                        {
-                          key: "destacado" as const,
-                          label: "Destacado",
-                          value: form.destacado ? "Sí" : "No",
-                          active: form.destacado,
-                        },
-                      ].map((toggle) => (
-                        <div
-                          key={toggle.key}
-                          className="flex min-w-0 items-center justify-between gap-2"
-                        >
-                          <span className="text-sm font-black text-white">{toggle.label}</span>
-                          <button
-                            type="button"
-                            aria-pressed={toggle.active}
-                            aria-label={`${toggle.label}: ${toggle.value}`}
-                            onClick={() => {
-                              if (toggle.key === "activo" && toggle.active) {
-                                setPendingVariantStates(
-                                  Object.fromEntries(
-                                    persistedVariants.map((variant) => [
-                                      variant.id,
-                                      false,
-                                    ]),
-                                  ),
-                                )
-                              }
-
-                              setField(toggle.key, !toggle.active)
-                            }}
-                            className={`admin-toggle inline-flex min-w-12 shrink-0 cursor-pointer items-center justify-center rounded-lg px-2 ${toggle.active ? "admin-toggle-on" : ""}`}
-                          >
-                            {toggle.active ? (
-                              <ToggleRight aria-hidden="true" className="admin-toggle-icon product-editor-status-toggle-icon-active size-6 shrink-0" />
-                            ) : (
-                              <ToggleLeft aria-hidden="true" className="admin-toggle-icon product-editor-status-toggle-icon-inactive size-6 shrink-0" />
-                            )}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </AdminCard>
                 </div>
-
-                <div className="product-editor-cell product-editor-stock-cell">
-                  <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-                    <div className="product-editor-panel-heading">
-                      <h2 id="product-variants-title" className="text-base font-black text-white">
-                        Stock
-                      </h2>
-                    </div>
-                    <div
-                      aria-label="Resumen del inventario"
-                      className="product-editor-stock-grid grid gap-1.5"
-                    >
-                      <StockSummaryItem label="Stock físico" value={variantDistribution?.physicalStock} />
-                      <StockSummaryItem label="Stock normal" value={variantDistribution?.normalStock} tone="success" />
-                      <StockSummaryItem label="Stock con descuento" value={variantDistribution?.discountedStock} />
-                      <StockSummaryItem label="Fallado / no vendible" value={variantDistribution?.nonSellableStock} tone="danger" />
-                      <StockSummaryItem label="Pendiente de revisión" value={variantDistribution?.pendingReviewStock} />
-                      {/* Reservas temporales de checkout (no son ventas):
-                          disponible = vendible - reservado. */}
-                      <StockSummaryItem label="Reservado (checkout)" value={variantDistribution?.reservedStock} tone="success" />
-                      <StockSummaryItem label="Disponible para vender" value={variantDistribution?.availableStock} tone="success" />
-                    </div>
-                  </AdminCard>
-                </div>
-              </div>
-
-              <div className="product-editor-cell product-editor-specifications-cell">
-                <ProductSpecificationsEditor
-                  productoId={currentProductoId || undefined}
-                  draftSpecifications={draftSpecifications}
-                  onDraftSpecificationsChange={setDraftSpecifications}
-                  onPersistedSpecificationsChange={setPersistedSpecifications}
-                />
-              </div>
+              </ProductPriceCard>
             </div>
-
-            <div className="product-editor-cell product-editor-commercial-catalog-block flex min-w-0 flex-col gap-2.5">
-              <div className="product-editor-cell product-editor-dimensions-cell">
-                <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
+            <div className="product-editor-cell product-editor-dimensions-cell">
+              <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
                   <div className="product-editor-panel-heading">
                     <h2 className="flex items-center gap-1.5 text-base font-black text-white">
                       Logística
@@ -825,9 +648,34 @@ export function ProductoForm({
                       />
                     </h2>
                     <p className="mt-0.5 text-xs leading-5 text-white">
-                      Obligatorios: con estos datos BEYONIX estima el bulto y cotiza el envío.
+                      Configurá categoría, medidas, peso y contenido multimedia.
                     </p>
                   </div>
+                  {!hasAnyVariants && (
+                    <AdminFormField
+                      label="SKU"
+                      labelClassName={productFieldLabelClassName}
+                      className="sm:col-span-2"
+                    >
+                      <input
+                        id="sku"
+                        type="text"
+                        maxLength={120}
+                        value={form.sku}
+                        placeholder="Ej.: AP-001"
+                        onChange={(event) => setField("sku", event.target.value.toUpperCase())}
+                        className={inputCls}
+                      />
+                    </AdminFormField>
+                  )}
+                  <AdminFormField label="Categoría" labelClassName={productFieldLabelClassName} className="sm:col-span-2">
+                    <AdminSelect title="Categoría" value={form.categoria_id} onChange={(value) => setField("categoria_id", value)}>
+                      <option value="">Sin categoría</option>
+                      {categorias.map((category) => (
+                        <option key={category.id} value={category.id}>{category.nombre}</option>
+                      ))}
+                    </AdminSelect>
+                  </AdminFormField>
                   <div className="grid grid-cols-2 gap-1.5 @min-[30rem]:grid-cols-4" data-logistics-row>
                     {LOGISTICS_FIELD_ORDER.map((fieldKey) => {
                       const { key, unit } = PRODUCT_LOGISTICS_FIELDS.find((field) => field.key === fieldKey)!
@@ -874,50 +722,46 @@ export function ProductoForm({
                   <p className="text-xs font-bold text-white/70" data-product-volume>
                     Volumen: {logisticsVolume === null ? "se calcula al completar las medidas" : `${logisticsVolume.toLocaleString("es-AR")} cm³`}
                   </p>
-                </AdminCard>
-              </div>
+                  <div className="product-editor-video-cell min-w-0 border-t border-white/10 pt-2">
+                    <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
+                      <input
+                        id="video_url"
+                        type="url"
+                        value={form.video_url}
+                        placeholder="https://..."
+                        onChange={(event) => setField("video_url", event.target.value)}
+                        className={inputCls}
+                      />
+                    </AdminFormField>
 
-              <div className="product-editor-cell product-editor-video-cell min-w-0">
-                <AdminCard className="product-editor-panel space-y-2 p-2.5">
-                  <AdminFormField label="URL del video" labelClassName={productFieldLabelClassName}>
-                    <input
-                      id="video_url"
-                      type="url"
-                      value={form.video_url}
-                      placeholder="https://..."
-                      onChange={(event) => setField("video_url", event.target.value)}
-                      className={inputCls}
-                    />
-                  </AdminFormField>
-
-                  {canPreviewVideo ? (
-                    <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
-                      <div className="relative aspect-video w-full">
-                        {videoSource.kind === "direct" ? (
-                          <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
-                        ) : (
-                          <iframe
-                            src={videoSource.embedUrl}
-                            title="Vista previa del video del producto"
-                            loading="lazy"
-                            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                            allowFullScreen
-                            referrerPolicy="strict-origin-when-cross-origin"
-                            className="size-full"
-                          />
-                        )}
+                    {canPreviewVideo ? (
+                      <div className="overflow-hidden rounded-xl border border-white/8 bg-black">
+                        <div className="relative aspect-video w-full">
+                          {videoSource.kind === "direct" ? (
+                            <video controls preload="metadata" src={videoSource.videoUrl} className="size-full bg-black object-contain" />
+                          ) : (
+                            <iframe
+                              src={videoSource.embedUrl}
+                              title="Vista previa del video del producto"
+                              loading="lazy"
+                              allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                              allowFullScreen
+                              referrerPolicy="strict-origin-when-cross-origin"
+                              className="size-full"
+                            />
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ) : form.video_url.trim() ? (
-                    <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
-                      La URL es HTTPS, pero no corresponde a un video compatible.
-                    </AdminInfoBlock>
-                  ) : null}
-                </AdminCard>
-              </div>
-
-              <div className="product-editor-cell product-editor-variants-cell min-w-0">
-                <ProductVariantsEditor
+                    ) : form.video_url.trim() ? (
+                      <AdminInfoBlock tone="neutral" icon={<Play className="size-4 text-white" />}>
+                        La URL es HTTPS, pero no corresponde a un video compatible.
+                      </AdminInfoBlock>
+                    ) : null}
+                  </div>
+              </AdminCard>
+            </div>
+            <div className="product-editor-cell product-editor-variants-cell min-w-0">
+              <ProductVariantsEditor
                   productoId={currentProductoId || undefined}
                   productName={form.nombre}
                   productActive={form.activo}
@@ -934,11 +778,21 @@ export function ProductoForm({
                   productBarcode={producto?.codigo_barra ?? null}
                   colorMode={colorMode}
                   onColorModeChange={setColorMode}
-                />
-              </div>
+              />
+            </div>
 
-              <div className="product-editor-cell product-editor-description-cell min-w-0">
-                <AdminCard className="product-editor-panel space-y-2 p-2.5">
+          </div>
+          <div className="product-editor-column flex min-w-0 flex-col gap-3">
+            <div className="product-editor-cell product-editor-specifications-cell">
+              <ProductSpecificationsEditor
+                  productoId={currentProductoId || undefined}
+                  draftSpecifications={draftSpecifications}
+                  onDraftSpecificationsChange={setDraftSpecifications}
+                  onPersistedSpecificationsChange={setPersistedSpecifications}
+              />
+            </div>
+            <div className="product-editor-cell product-editor-description-cell min-w-0">
+              <AdminCard className="product-editor-panel space-y-2 p-2.5">
                   <div className="product-editor-panel-heading">
                     <h2 className="text-base font-black text-white">Descripción</h2>
                   </div>
@@ -948,8 +802,7 @@ export function ProductoForm({
                     placeholder="Describí el producto y, si agregaste un video, su contenido."
                     onChange={(value) => setField("descripcion", value)}
                   />
-                </AdminCard>
-              </div>
+              </AdminCard>
             </div>
           </div>
         </div>

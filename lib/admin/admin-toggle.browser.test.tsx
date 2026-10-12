@@ -32,7 +32,7 @@ test.after(async () => {
 const toggleIcon = (active: boolean) =>
   createElement(active ? ToggleRight : ToggleLeft, { "aria-hidden": "true", className: "admin-toggle-icon size-4 shrink-0" })
 
-// Mismo patrón que los toggles reales del editor (Estado, especificaciones).
+// Mismo patrón que los toggles reales de variantes y especificaciones.
 function adminToggle(label: string, active: boolean, detail: string) {
   return createElement(
     AdminSecondaryButton,
@@ -47,7 +47,7 @@ function adminToggle(label: string, active: boolean, detail: string) {
   )
 }
 
-const financingCard = renderToStaticMarkup(
+const toggleCard = renderToStaticMarkup(
   createElement(
     "div",
     { id: "card", className: "product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5" },
@@ -77,8 +77,7 @@ type ToggleMeasure = {
 
 type Layout = { rootFontSize: number; cardLeft: number; cardRight: number; toggles: ToggleMeasure[] }
 
-// workspaceRem: ancho real del área de trabajo del editor. 76rem es el umbral
-// de 3 columnas (tarjeta más angosta en desktop); 60rem = 1 columna.
+// workspaceRem: ancho real del área de trabajo del editor.
 async function render(theme: "light" | "dark", workspaceRem: number) {
   const page = await browser.newPage({ viewport: { width: Math.ceil(workspaceRem * 16) + 40, height: 600 } })
   try {
@@ -88,11 +87,10 @@ async function render(theme: "light" | "dark", workspaceRem: number) {
 <html data-admin-theme="${theme}"><head><style>${css}</style></head>
 <body style="margin:0;background:${background}">
 <div class="beyonix-admin-shell"><main class="beyonix-admin-main"><div class="product-editor-screen">
-<div class="product-editor-workspace min-w-0 gap-2.5" style="width:${workspaceRem}rem">
-<div class="product-editor-row-top grid min-w-0 gap-2.5 items-start">
-<div class="product-editor-cell"><div class="p-2.5">Información del producto</div></div>
-<div class="product-editor-cell"><div class="p-2.5">Precio</div></div>
-<div class="product-editor-cell" style="background:${background}">${financingCard}</div>
+<div class="product-editor-form" style="width:${workspaceRem}rem">
+<div class="product-editor-workspace grid min-w-0 gap-3">
+<div class="product-editor-column"><div class="product-editor-cell" style="background:${background}">${toggleCard}</div></div>
+<div class="product-editor-column"><div class="product-editor-cell">Descripción</div></div>
 </div></div></div></main></div></body></html>`)
     const layout = (await page.evaluate(`(() => {
       const canvas = document.createElement("canvas")
@@ -183,16 +181,19 @@ for (const theme of ["dark", "light"] as const) {
   })
 }
 
-test("producto-form: sin toggles de cuotas por producto; todos los toggles on/off usan el patrón único", () => {
+test("producto-form: acciones y paneles reubicados conservan sus controles", () => {
   const read = (path: string) => readFileSync(path, "utf8")
   const form = read("app/admin/sections/productos/producto-form.tsx")
   const specs = read("app/admin/sections/productos/product-specifications-editor.tsx")
   const conditioned = read("app/admin/sections/productos/productos-row.tsx")
   // La financiación es global (Admin → Financiación): ni cuotas ni "Mismo precio" por producto.
   assert.doesNotMatch(form, /product-editor-financing|Mismo precio en contado y cuotas|cuotas2|cuotasSinRecargo/)
-  assert.match(form, /data-product-financing-global/)
-  assert.match(form, /admin-toggle inline-flex min-w-12/, "Estado / Destacado")
-  assert.equal(specs.match(/className=\{`admin-toggle /g)?.length, 2, "especificación: botón y acción")
+  assert.doesNotMatch(form, /data-product-financing-global|Información del producto|Precios de venta|Estado comercial/)
+  assert.match(form, /aria-label="Nombre del producto"/)
+  assert.match(form, /aria-label="Destacado"/)
+  assert.match(form, /aria-label="Resumen del inventario"/)
+  assert.equal(specs.match(/className=\{`admin-toggle /g)?.length, 1, "especificación: acción de visibilidad en cada fila")
+  assert.doesNotMatch(specs, /Arrastrá para reordenar|\{activo \? "Activa"/)
   assert.match(conditioned, /admin-toggle flex w-full/, "stock condicionado")
   assert.match(conditioned, /admin-toggle-track/)
   for (const source of [form, specs]) {

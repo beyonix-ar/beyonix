@@ -133,14 +133,14 @@ export function ProductSalesOptions({
   ]
 
   return (
-    <section className="product-editor-sales-options space-y-3 border-t border-white/8 pt-2.5" aria-label="Opciones de venta">
+    <section className="product-editor-sales-options space-y-2.5 border-t border-white/8 pt-2" aria-label="Opciones de venta">
       {error && (
         <AdminInfoBlock role="alert" tone="danger">
           {error}
         </AdminInfoBlock>
       )}
 
-      <fieldset className="space-y-1.5" data-color-mode={colorMode}>
+      <fieldset className="space-y-1" data-color-mode={colorMode}>
         <legend className="mb-1.5 flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-white">
           Venta por color
           <AdminHelpTip label="Venta por color" text="Color específico: el cliente elige. Aleatorio sin seguimiento: un único artículo con stock total y varios códigos. Aleatorio con variantes: el cliente no elige, pero cada color físico tiene su stock y su código." />
@@ -152,7 +152,7 @@ export function ProductSalesOptions({
             <label
               key={mode}
               data-color-mode-option={mode}
-              className={`admin-toggle flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 ${checked ? "admin-toggle-on" : ""} ${blocker ? "cursor-not-allowed opacity-60" : ""}`}
+              className={`admin-toggle flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-1.5 ${checked ? "admin-toggle-on" : ""} ${blocker ? "cursor-not-allowed opacity-60" : ""}`}
             >
               <input
                 type="radio"
@@ -169,7 +169,7 @@ export function ProductSalesOptions({
                   {COLOR_MODE_LABELS[mode]}
                   {savingMode === mode && <Loader2 className="size-3.5 animate-spin text-white" />}
                 </span>
-                <span className="mt-0.5 block text-xs font-semibold leading-4 text-white/60">{blocker ?? COLOR_MODE_HELP[mode]}</span>
+                <span className="block text-10px font-medium leading-4 text-white/60">{blocker ?? COLOR_MODE_HELP[mode]}</span>
               </span>
             </label>
           )
@@ -206,9 +206,9 @@ export function ProductSalesOptions({
           {aliases === null ? (
             <p className="text-xs text-white/60">Cargando…</p>
           ) : aliases.length ? (
-            <ul className="space-y-1.5" data-barcode-linked>
+            <ul className="space-y-1" data-barcode-linked>
               {aliases.map((alias) => (
-                <li key={alias.barcode} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-white/8 px-2.5 py-1.5">
+                <li key={alias.barcode} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-white/8 px-2 py-1">
                   <span className="min-w-0">
                     <span className="block truncate font-mono text-sm font-bold text-white">{alias.barcode}</span>
                     <span className="block truncate text-xs text-white/60">{aliasScopeLabel(alias)}</span>

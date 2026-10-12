@@ -153,7 +153,7 @@ test("bloque actual, lista, alineación, deshacer y limpiar formato", async () =
   } finally { await page.close() }
 })
 
-test("cursiva, subrayado, A+/A− y limpiar formato", async () => {
+test("cursiva, subrayado, tamaño por select y limpiar formato", async () => {
   const page = await pageWithEditor("<p>Texto para editar</p>")
   try {
     await selectText(page, "para")
@@ -161,9 +161,11 @@ test("cursiva, subrayado, A+/A− y limpiar formato", async () => {
     await selectText(page, "editar")
     await page.getByRole("button", { name: "Subrayado" }).click()
     await selectText(page, "para")
-    await page.getByRole("button", { name: "Agrandar texto" }).click()
+    assert.equal(await page.getByRole("button", { name: "Agrandar texto" }).count(), 0)
+    assert.equal(await page.getByRole("button", { name: "Achicar texto" }).count(), 0)
+    await page.getByRole("combobox", { name: "Tamaño de letra" }).selectOption("18")
     assert.equal(await page.getByRole("combobox", { name: "Tamaño de letra" }).inputValue(), "18")
-    await page.getByRole("button", { name: "Achicar texto" }).click()
+    await page.getByRole("combobox", { name: "Tamaño de letra" }).selectOption("16")
     assert.equal(await page.getByRole("combobox", { name: "Tamaño de letra" }).inputValue(), "16")
     await selectText(page, "Texto para editar")
     await page.getByRole("button", { name: "Limpiar formato" }).click()

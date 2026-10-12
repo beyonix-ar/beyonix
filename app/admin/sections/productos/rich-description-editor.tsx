@@ -173,10 +173,6 @@ export function RichDescriptionEditor({ id, value, onChange, placeholder }: {
   const setSize = (size: RichTextSize) => run("fontName", `rt-size-${size}`)
   const setFont = (font: RichTextFont | "default") => run("fontName", font === "default" ? "Montserrat" : FONT_NAMES[font])
   const setColor = (color: RichTextColor | "auto") => run("foreColor", color === "auto" ? "inherit" : RICH_TEXT_COLORS.find((item) => item.id === color)!.hex)
-  const step = (direction: 1 | -1) => {
-    const index = RICH_TEXT_SIZES.indexOf(state.size ?? 16)
-    setSize(RICH_TEXT_SIZES[Math.max(0, Math.min(RICH_TEXT_SIZES.length - 1, index + direction))])
-  }
   const clear = () => {
     if (!restore()) return
     document.execCommand("removeFormat")
@@ -189,30 +185,28 @@ export function RichDescriptionEditor({ id, value, onChange, placeholder }: {
     <div role="toolbar" aria-label="Formato de la descripción" className="flex flex-wrap items-center gap-1 border-b border-white/10 p-1.5">
       <select aria-label="Tipo de bloque" title="Tipo de bloque" value={state.block} onPointerDown={updateState}
         onChange={(event) => run("formatBlock", event.target.value)}
-        className="h-8 min-w-24 rounded-md border border-white/15 bg-slate-900 px-1.5 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        className="product-rich-select min-w-24">
         <option value="p">Párrafo</option><option value="h2">Título</option><option value="h3">Subtítulo</option>
       </select>
       <select aria-label="Tamaño de letra" title="Tamaño de letra" value={state.size ?? "mixed"} onPointerDown={updateState}
         onChange={(event) => setSize(Number(event.target.value) as RichTextSize)}
-        className="h-8 w-16 rounded-md border border-white/15 bg-slate-900 px-1 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        className="product-rich-select w-18">
         <option value="mixed" disabled>—</option>
         {RICH_TEXT_SIZES.map((size) => <option key={size} value={size}>{size}</option>)}
       </select>
       <select aria-label="Tipografía" title="Tipografía" value={state.font ?? "mixed"} onPointerDown={updateState}
         onChange={(event) => setFont(event.target.value as RichTextFont | "default")}
-        className="h-8 w-32 rounded-md border border-white/15 bg-slate-900 px-1.5 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        className="product-rich-select w-32">
         <option value="mixed" disabled>—</option>
         <option value="default">Montserrat</option><option value="arial">Arial</option><option value="calibri">Calibri</option>
         <option value="verdana">Verdana</option><option value="comic-sans">Comic Sans MS</option>
       </select>
       <select aria-label="Color de texto" title="Color de texto" value={state.color ?? "mixed"} onPointerDown={updateState}
         onChange={(event) => setColor(event.target.value as RichTextColor | "auto")}
-        className="h-8 w-36 rounded-md border border-white/15 bg-slate-900 px-1.5 text-xs font-semibold text-white outline-none focus-visible:ring-2 focus-visible:ring-sky-400">
+        className="product-rich-select w-36">
         <option value="mixed" disabled>—</option><option value="auto">Automático</option>
         {RICH_TEXT_COLORS.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
       </select>
-      <Button label="Achicar texto" action={() => step(-1)}>A−</Button>
-      <Button label="Agrandar texto" action={() => step(1)}>A+</Button>
       <span className="mx-0.5 h-5 w-px bg-white/15" aria-hidden="true" />
       <Button label="Negrita" active={state.bold} action={() => run("bold")}><Bold className="size-4" /></Button>
       <Button label="Subrayado" active={state.underline} action={() => run("underline")}><Underline className="size-4" /></Button>

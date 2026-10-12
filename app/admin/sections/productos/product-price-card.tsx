@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import { DollarSign, Percent } from "lucide-react"
 
 import type {
@@ -17,11 +18,7 @@ import { ProfitabilityPopover } from "./product-profitability-popover"
 
 const inputCls = `${adminControlClassName} text-base`
 
-// whitespace-nowrap es crítico acá: si "Ganancia neta" hace wrap a 2 líneas
-// (label más larga que las otras dos, "Precio calculado"/"Precio anterior"),
-// su input queda más abajo que los otros dos y rompe la alineación
-// horizontal de la fila -- ver Ganancia neta más abajo, único campo cuyo
-// wrapper no fuerza el mismo ancho que su contenido.
+// Mantiene las etiquetas alineadas con sus inputs en la misma fila.
 const fieldLabelClassName =
   "product-editor-field-label whitespace-nowrap text-xs normal-case tracking-normal text-white"
 
@@ -44,12 +41,11 @@ function clampDigitsOnly(rawValue: string, maxDigits: number): string {
 
 // Los inputs con prefijo "$" recortan el padding derecho heredado (que sólo
 // tiene sentido cuando hay un ícono a la derecha) para no desperdiciar
-// espacio. El ancho de cada campo ya no lo fija esta clase -- lo fijan las
-// columnas de .product-editor-price-grid (8rem, alcanza justo para
-// "$9.999.999": 7 dígitos + separadores de miles).
+// espacio. El ancho de cada campo lo fija .product-editor-price-grid.
 const priceInputTightPaddingClassName = "!pr-2"
 
 interface ProductPriceCardProps {
+  children?: ReactNode
   pricingMode: "manual" | "target_margin"
   onPricingModeChange: (mode: "manual" | "target_margin") => void
   precio: string
@@ -72,7 +68,7 @@ interface ProductPriceCardProps {
 }
 
 /**
- * Card "Precio": modo manual ($) vs margen objetivo (%) por selector
+ * Card "Precio y stock": modo manual ($) vs margen objetivo (%) por selector
  * segmentado compacto, con la rentabilidad estimada disponible bajo demanda
  * en el ícono de ojo (ProfitabilityPopover) en vez de ocupar layout fijo.
  * Ningún cálculo vive acá -- todo llega ya resuelto desde producto-form.tsx
@@ -80,6 +76,7 @@ interface ProductPriceCardProps {
  * anterior).
  */
 export function ProductPriceCard({
+  children,
   pricingMode,
   onPricingModeChange,
   precio,
@@ -109,22 +106,13 @@ export function ProductPriceCard({
 
   return (
     <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
-      {/*
-        Título + botones $/%/Eye y la fila de campos comparten la MISMA
-        grilla de 3 columnas de ancho fijo (7rem/8rem/8rem, ver
-        .product-editor-price-grid en globals.css) en dos contenedores grid
-        separados (no uno solo) para conservar product-editor-panel-heading
-        (línea divisoria + tipografía del título, igual que el resto de las
-        cards) -- dos grids con idéntico grid-template-columns alinean sus
-        columnas igual que uno solo. El grupo de botones cae en la columna 3,
-        así que queda siempre sobre "Precio anterior" en vez de flotar
-        contra el borde de la card. Anchos fijos (no flex-1/fr): la card
-        entera se dimensiona por este contenido -- no puede haber wrap.
-      */}
+      {/* El encabezado y los campos comparten la misma grilla para mantener
+          el selector alineado sobre Precio anterior. */}
       <div className="product-editor-panel-heading product-editor-price-grid grid min-w-0 items-center gap-x-2.5">
-        <h2 className="col-span-2 text-base font-black text-white">
-          Precio
-        </h2>
+        <div className="col-span-2 min-w-0">
+          <h2 className="text-base font-black text-white">Precio y stock</h2>
+          <p className="mt-0.5 text-10px leading-4 text-white/65">Gestioná el precio del producto y su stock en tiempo real.</p>
+        </div>
         <div className="flex items-center justify-end gap-1.5">
           <div
             role="group"
@@ -356,6 +344,7 @@ export function ProductPriceCard({
           </p>
         </div>
       )}
+      {children}
     </AdminCard>
   )
 }
