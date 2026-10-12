@@ -107,6 +107,21 @@ async function selectText(page: Page, text: string) {
   }, text)
 }
 
+async function chooseToolbarOption(page: Page, label: string, option: string) {
+  await page.getByRole("button", { name: label, exact: true }).click()
+  await page.getByRole("listbox", { name: label }).getByRole("option", { name: option, exact: true }).click()
+}
+
+async function placeCursor(page: Page, text: string) {
+  await selectText(page, text)
+  await page.evaluate(() => window.getSelection()?.collapseToStart())
+  await page.waitForTimeout(30)
+}
+
+async function pressed(page: Page, label: string) {
+  return page.getByRole("button", { name: label, exact: true }).getAttribute("aria-pressed")
+}
+
 test("Enter crea párrafo, Shift+Enter crea salto en el mismo párrafo", async () => {
   const page = await pageWithEditor()
   try {
@@ -149,18 +164,179 @@ test("selección parcial, toolbar y tamaño mixto", async () => {
     await page.getByRole("button", { name: "Negrita" }).click()
     assert.match(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), /Encendedor <strong>eléctrico<\/strong> recargable USB/)
     await selectText(page, "recargable USB")
-    await page.getByRole("combobox", { name: "Tamaño de letra" }).selectOption("24")
+    await chooseToolbarOption(page, "Tamaño de letra", "24")
     assert.match(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), /<span class="rt-size-24">recargable USB<\/span>/)
     await selectText(page, "eléctrico recargable")
-    assert.equal(await page.getByRole("combobox", { name: "Tamaño de letra" }).inputValue(), "mixed")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /—/)
   } finally { await page.close() }
 })
+
+test("quitar negrita a un fragmento conserva los vecinos", async () => {
+  const page = await pageWithEditor("<p><strong>Uno Dos Tres</strong></p>")
+  try {
+    await selectText(page, "Dos")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    const snapshot = await page.evaluate(() => ({
+      html: document.querySelector("[data-rich-editor]")?.innerHTML,
+      value: (window as unknown as { descriptionValue: string }).descriptionValue,
+    }))
+    assert.match(snapshot.value, /<strong>Uno <\/strong>Dos<strong> Tres<\/strong>/, JSON.stringify(snapshot))
+  } finally { await page.close() }
+})
+
+test("quitar negrita dentro de un título se conserva en la tienda", async () => {
+  const page = await pageWithEditor("<h2>Uno <strong>Dos</strong> Tres</h2>")
+  try {
+    await selectText(page, "Dos")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    const snapshot = await page.evaluate(() => ({
+      html: document.querySelector("[data-rich-editor]")?.innerHTML,
+      value: (window as unknown as { descriptionValue: string }).descriptionValue,
+    }))
+    assert.match(snapshot.value, /<span class="rt-weight-normal">Dos<\/span>/, JSON.stringify(snapshot))
+    await page.evaluate(() => (window as unknown as { remountEditor: () => void }).remountEditor())
+    await page.waitForFunction((html) => document.querySelector("[data-rich-editor]")?.innerHTML === html, snapshot.value)
+    await placeCursor(page, "Dos")
+    assert.equal(await pressed(page, "Negrita"), "false")
+    const markup = renderToStaticMarkup(createElement("div", { className: "product-rich-description" },
+      createElement(RichDescription, { blocks: parseRichDescription(snapshot.value) })))
+    await page.addStyleTag({ content: css })
+    const weights = await page.evaluate((html) => {
+      document.body.insertAdjacentHTML("beforeend", html)
+      const title = document.querySelector<HTMLElement>(".product-rich-description h3")!
+      const normal = title.querySelector<HTMLElement>(".rt-weight-normal")!
+      return { title: getComputedStyle(title).fontWeight, normal: getComputedStyle(normal).fontWeight }
+    }, markup)
+    assert.equal(weights.normal, "400")
+    assert.ok(Number(weights.title) >= 600, JSON.stringify(weights))
+  } finally { await page.close() }
+})
+
+test("cursor sincroniza negrita, subrayado, cursiva, listas, alineación y los cuatro menús", async () => {
+  const html = '<p><strong>Negrita</strong> normal <u>Subrayado</u> <em>Cursiva</em></p>' +
+    '<ul><li>Lista</li></ul><ol><li>Numerada</li></ol>' +
+    '<p class="rt-align-center">Centrado</p><p class="rt-align-right">Derecha</p>' +
+    '<h3><span class="rt-size-18"><span class="rt-font-arial"><span class="rt-color-green">Subtítulo</span></span></span></h3>'
+  const page = await pageWithEditor(html)
+  try {
+    await placeCursor(page, "Negrita")
+    assert.equal(await pressed(page, "Negrita"), "true")
+    await placeCursor(page, "normal")
+    assert.equal(await pressed(page, "Negrita"), "false")
+    assert.equal(await pressed(page, "Subrayado"), "false")
+    assert.equal(await pressed(page, "Cursiva"), "false")
+    await placeCursor(page, "Subrayado")
+    assert.equal(await pressed(page, "Subrayado"), "true")
+    await placeCursor(page, "Cursiva")
+    assert.equal(await pressed(page, "Cursiva"), "true")
+    await placeCursor(page, "Lista")
+    assert.equal(await pressed(page, "Lista con viñetas"), "true")
+    await placeCursor(page, "Numerada")
+    assert.equal(await pressed(page, "Lista numerada"), "true")
+    await placeCursor(page, "Centrado")
+    assert.equal(await pressed(page, "Centrar"), "true")
+    await placeCursor(page, "Derecha")
+    assert.equal(await pressed(page, "Alinear a la derecha"), "true")
+    await placeCursor(page, "Subtítulo")
+    for (const [label, selected] of [["Tipo de bloque", "Subtítulo"], ["Tamaño de letra", "18"], ["Tipografía", "Arial"], ["Color de texto", "Verde"]]) {
+      assert.match(await page.getByRole("button", { name: label }).textContent() ?? "", new RegExp(selected), label)
+    }
+    await placeCursor(page, "normal")
+    assert.match(await page.getByRole("button", { name: "Tipografía" }).textContent() ?? "", /Montserrat/)
+    assert.match(await page.getByRole("button", { name: "Color de texto" }).textContent() ?? "", /Automático/)
+  } finally { await page.close() }
+})
+
+test("A negrita, B normal, C subrayado y D cursiva sobreviven guardado y reapertura", async () => {
+  const page = await pageWithEditor("<p><strong>A B</strong> C D</p>")
+  try {
+    await selectText(page, "B")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    await selectText(page, "C")
+    await page.getByRole("button", { name: "Subrayado" }).click()
+    await selectText(page, "D")
+    await page.getByRole("button", { name: "Cursiva" }).click()
+    const saved = await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue)
+    assert.match(saved, /<strong>A <\/strong>B/)
+    assert.match(saved, /<u>C<\/u>/)
+    assert.match(saved, /<em>D<\/em>/)
+    await page.evaluate(() => (window as unknown as { remountEditor: () => void }).remountEditor())
+    await page.waitForFunction((html) => document.querySelector("[data-rich-editor]")?.innerHTML === html, saved)
+    const markup = renderToStaticMarkup(createElement("div", { className: "product-rich-description" },
+      createElement(RichDescription, { blocks: parseRichDescription(saved) })))
+    await page.addStyleTag({ content: css })
+    const styles = await page.evaluate((html) => {
+      document.body.insertAdjacentHTML("beforeend", html)
+      const paragraph = document.querySelector<HTMLElement>(".product-rich-description p")!
+      return { bold: getComputedStyle(paragraph.querySelector("strong")!).fontWeight,
+        normal: getComputedStyle(paragraph).fontWeight,
+        underline: getComputedStyle(paragraph.querySelector("u")!).textDecorationLine,
+        italic: getComputedStyle(paragraph.querySelector("em")!).fontStyle }
+    }, markup)
+    assert.ok(Number(styles.bold) >= 600, JSON.stringify(styles))
+    assert.equal(styles.normal, "400")
+    assert.match(styles.underline, /underline/)
+    assert.equal(styles.italic, "italic")
+  } finally { await page.close() }
+})
+
+for (const [width, theme] of [[1440, "dark"], [1366, "light"], [390, "dark"]] as const) {
+  test(`menús del toolbar BEYONIX en ${width}px (${theme})`, async () => {
+    const page = await pageWithEditor("<p>Texto</p>")
+    try {
+      await page.setViewportSize({ width, height: 900 })
+      await page.addStyleTag({ content: css })
+      await page.evaluate((mode) => {
+        document.documentElement.dataset.adminTheme = mode
+        document.body.classList.add("beyonix-admin-shell")
+        document.getElementById("root")!.classList.add("beyonix-admin-main", "product-editor-screen")
+      }, theme)
+      assert.equal(await page.locator('.product-rich-description-editor [role="toolbar"] select').count(), 0)
+      for (const label of ["Tipo de bloque", "Tamaño de letra", "Tipografía", "Color de texto"]) {
+        await page.getByRole("button", { name: label }).click()
+        const menu = page.getByRole("listbox", { name: label })
+        const appearance = await menu.evaluate((element) => {
+          const style = getComputedStyle(element)
+          const selected = element.querySelector('[role="option"][aria-selected="true"]')
+          return { background: style.backgroundColor, radius: style.borderRadius,
+            width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height,
+            right: element.getBoundingClientRect().right, selected: Boolean(selected) }
+        })
+        assert.notEqual(appearance.background, "rgba(0, 0, 0, 0)")
+        assert.ok(Number.parseFloat(appearance.radius) >= 8, JSON.stringify(appearance))
+        assert.ok(appearance.width <= 180 && appearance.height <= 304, JSON.stringify(appearance))
+        assert.ok(appearance.right <= width, JSON.stringify(appearance))
+        assert.equal(appearance.selected, true)
+        await page.getByRole("button", { name: label }).click()
+      }
+    } finally { await page.close() }
+  })
+}
+
+for (const theme of ["dark", "light"] as const) {
+  test(`negrita activa se distingue visualmente de inactiva en ${theme}`, async () => {
+    const page = await pageWithEditor("<p><strong>Negrita</strong> normal</p>")
+    try {
+      await page.addStyleTag({ content: css })
+      await page.evaluate((mode) => {
+        document.documentElement.dataset.adminTheme = mode
+        document.body.classList.add("beyonix-admin-shell")
+        document.getElementById("root")!.classList.add("beyonix-admin-main", "product-editor-screen")
+      }, theme)
+      await placeCursor(page, "Negrita")
+      const active = await page.getByRole("button", { name: "Negrita" }).evaluate((button) => getComputedStyle(button).backgroundColor)
+      await placeCursor(page, "normal")
+      const inactive = await page.getByRole("button", { name: "Negrita" }).evaluate((button) => getComputedStyle(button).backgroundColor)
+      assert.notEqual(active, inactive)
+    } finally { await page.close() }
+  })
+}
 
 test("bloque actual, lista, alineación, deshacer y limpiar formato", async () => {
   const page = await pageWithEditor("<p>Uno</p>")
   try {
     await selectText(page, "Uno")
-    await page.getByRole("combobox", { name: "Tipo de bloque" }).selectOption("h2")
+    await chooseToolbarOption(page, "Tipo de bloque", "Título")
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<h2>Uno</h2>")
     await page.getByRole("button", { name: "Centrar" }).click()
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), '<h2 class="rt-align-center">Uno</h2>')
@@ -169,7 +345,7 @@ test("bloque actual, lista, alineación, deshacer y limpiar formato", async () =
     await page.getByRole("button", { name: "Rehacer" }).click()
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), '<h2 class="rt-align-center">Uno</h2>')
     await page.getByRole("button", { name: "Deshacer" }).click()
-    await page.getByRole("combobox", { name: "Tipo de bloque" }).selectOption("p")
+    await chooseToolbarOption(page, "Tipo de bloque", "Párrafo")
     await page.getByRole("button", { name: "Lista con viñetas" }).click()
     const afterList = await page.evaluate(() => ({ value: (window as unknown as { descriptionValue: string }).descriptionValue, dom: document.querySelector("[data-rich-editor]")?.innerHTML, selection: window.getSelection()?.toString() }))
     assert.match(afterList.value, /<ul><li>Uno<\/li><\/ul>/, JSON.stringify(afterList))
@@ -186,10 +362,10 @@ test("cursiva, subrayado, tamaño por select y limpiar formato", async () => {
     await selectText(page, "para")
     assert.equal(await page.getByRole("button", { name: "Agrandar texto" }).count(), 0)
     assert.equal(await page.getByRole("button", { name: "Achicar texto" }).count(), 0)
-    await page.getByRole("combobox", { name: "Tamaño de letra" }).selectOption("18")
-    assert.equal(await page.getByRole("combobox", { name: "Tamaño de letra" }).inputValue(), "18")
-    await page.getByRole("combobox", { name: "Tamaño de letra" }).selectOption("16")
-    assert.equal(await page.getByRole("combobox", { name: "Tamaño de letra" }).inputValue(), "16")
+    await chooseToolbarOption(page, "Tamaño de letra", "18")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /18/)
+    await chooseToolbarOption(page, "Tamaño de letra", "16")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /16/)
     await selectText(page, "Texto para editar")
     await page.getByRole("button", { name: "Limpiar formato" }).click()
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<p>Texto para editar</p>")
@@ -272,8 +448,8 @@ test("tamaño y negrita con cursor vacío quedan activos para texto nuevo", asyn
     const editor = page.getByRole("textbox", { name: "Descripción del producto" })
     await editor.click()
     await page.keyboard.press("End")
-    await page.getByRole("combobox", { name: "Tamaño de letra" }).selectOption("24")
-    assert.equal(await page.getByRole("combobox", { name: "Tamaño de letra" }).inputValue(), "24")
+    await chooseToolbarOption(page, "Tamaño de letra", "24")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /24/)
     await page.getByRole("button", { name: "Negrita" }).click()
     assert.equal(await page.getByRole("button", { name: "Negrita" }).getAttribute("aria-pressed"), "true")
     await page.keyboard.type("nuevo")
@@ -291,26 +467,28 @@ test("selector de tipografía y color aplica sólo las opciones elegidas y permi
       document.body.classList.add("beyonix-admin-shell")
       document.getElementById("root")!.classList.add("beyonix-admin-main")
     })
-    const font = page.getByRole("combobox", { name: "Tipografía" })
-    const color = page.getByRole("combobox", { name: "Color de texto" })
-    assert.deepEqual(await font.locator("option").allTextContents(), ["—", "Montserrat", "Arial", "Calibri", "Verdana", "Comic Sans MS"])
-    assert.deepEqual(await color.locator("option").allTextContents(), ["—", "Automático", "Negro", "Blanco", "Gris", "Azul BEYONIX", "Celeste", "Verde", "Rojo", "Ámbar"])
-    for (const [value, expected] of [["arial", "rt-font-arial"], ["calibri", "rt-font-calibri"], ["verdana", "rt-font-verdana"], ["comic-sans", "rt-font-comic-sans"]] as const) {
+    await page.getByRole("button", { name: "Tipografía" }).click()
+    assert.deepEqual(await page.getByRole("listbox", { name: "Tipografía" }).getByRole("option").allTextContents(), ["—", "Montserrat", "Arial", "Calibri", "Verdana", "Comic Sans MS"])
+    await page.getByRole("button", { name: "Tipografía" }).click()
+    await page.getByRole("button", { name: "Color de texto" }).click()
+    assert.deepEqual(await page.getByRole("listbox", { name: "Color de texto" }).getByRole("option").allTextContents(), ["—", "Automático", "Negro", "Blanco", "Gris", "Azul BEYONIX", "Celeste", "Verde", "Rojo", "Ámbar"])
+    await page.getByRole("button", { name: "Color de texto" }).click()
+    for (const [label, expected] of [["Arial", "rt-font-arial"], ["Calibri", "rt-font-calibri"], ["Verdana", "rt-font-verdana"], ["Comic Sans MS", "rt-font-comic-sans"]] as const) {
       await selectText(page, "Texto editable")
-      await font.selectOption(value)
-      assert.match(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), new RegExp(expected), value)
+      await chooseToolbarOption(page, "Tipografía", label)
+      assert.match(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), new RegExp(expected), label)
     }
-    for (const id of ["black", "white", "gray", "beyonix-blue", "sky", "green", "red", "amber"]) {
+    for (const [id, label] of [["black", "Negro"], ["white", "Blanco"], ["gray", "Gris"], ["beyonix-blue", "Azul BEYONIX"], ["sky", "Celeste"], ["green", "Verde"], ["red", "Rojo"], ["amber", "Ámbar"]] as const) {
       await selectText(page, "Texto editable")
-      await color.selectOption(id)
+      await chooseToolbarOption(page, "Color de texto", label)
       const snapshot = await page.evaluate(() => ({ value: (window as unknown as { descriptionValue: string }).descriptionValue, dom: document.querySelector("[data-rich-editor]")?.innerHTML }))
       assert.match(snapshot.value, new RegExp(`rt-color-${id}`), `${id}: ${JSON.stringify(snapshot)}`)
     }
     await selectText(page, "Texto editable")
-    await color.selectOption("auto")
+    await chooseToolbarOption(page, "Color de texto", "Automático")
     assert.doesNotMatch(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), /rt-color-/)
     await selectText(page, "Texto editable")
-    await font.selectOption("default")
+    await chooseToolbarOption(page, "Tipografía", "Montserrat")
     assert.doesNotMatch(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), /rt-font-/)
   } finally { await page.close() }
 })
@@ -353,10 +531,10 @@ test("Negro manual en Light se guarda explícito y Automático vuelve a heredar"
       document.getElementById("root")!.classList.add("beyonix-admin-main")
     })
     await selectText(page, "Texto negro")
-    await page.getByRole("combobox", { name: "Color de texto" }).selectOption("black")
+    await chooseToolbarOption(page, "Color de texto", "Negro")
     assert.match(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), /rt-color-black/)
     await selectText(page, "Texto negro")
-    await page.getByRole("combobox", { name: "Color de texto" }).selectOption("auto")
+    await chooseToolbarOption(page, "Color de texto", "Automático")
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<p>Texto negro</p>")
   } finally { await page.close() }
 })

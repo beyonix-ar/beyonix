@@ -29,6 +29,7 @@ export type RichInline =
   | { type: "text"; text: string }
   | { type: "br" }
   | { type: "strong" | "em" | "u"; children: RichInline[] }
+  | { type: "weight-normal"; children: RichInline[] }
   | { type: "size"; size: RichTextSize; children: RichInline[] }
   | { type: "font"; font: RichTextFont; children: RichInline[] }
   | { type: "color"; color: RichTextColor; children: RichInline[] }
@@ -247,6 +248,10 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
     else if (node.name === "u") formats.push("u")
     let wrapped: RichInline[] = children
     for (const format of [...new Set(formats)].reverse()) wrapped = [{ type: format, children: wrapped }]
+    if (/font-weight\s*:\s*(normal|[1-5]00)\b/i.test(node.attrs.style ?? "") ||
+      /(?:^|\s)rt-weight-normal(?:\s|$)/.test(node.attrs.class ?? "")) {
+      wrapped = [{ type: "weight-normal", children: wrapped }]
+    }
     if (node.name === "span" || node.name === "font") {
       const size = sizeFromAttributes(node.name, node.attrs)
       const font = fontFromAttributes(node.name, node.attrs)
@@ -346,6 +351,7 @@ function serializeInline(nodes: RichInline[]): string {
     switch (node.type) {
       case "text": return escapeHtml(node.text)
       case "br": return "<br>"
+      case "weight-normal": return `<span class="rt-weight-normal">${serializeInline(node.children)}</span>`
       case "size": return `<span class="rt-size-${node.size}">${serializeInline(node.children)}</span>`
       case "font": return `<span class="rt-font-${node.font}">${serializeInline(node.children)}</span>`
       case "color": return `<span class="rt-color-${node.color}">${serializeInline(node.children)}</span>`

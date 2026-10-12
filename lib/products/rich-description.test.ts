@@ -67,12 +67,30 @@ test("listas, alineación y tamaños permitidos sobreviven al guardado y recarga
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009110000_product_description_guard.sql"), "utf8"))
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261010113000_product_description_editor_formats.sql"), "utf8"))
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261011120000_product_description_font_color_formats.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261012230000_product_description_normal_weight.sql"), "utf8"))
     await db.query("insert into productos values (1, $1)", [normalizeProductDescriptionInput(html)])
     const saved = (await db.query<{ descripcion: string }>("select descripcion from productos where id = 1")).rows[0].descripcion
     assert.equal(sanitizeRichDescription(saved), html)
   } finally {
     await db.close()
   }
+})
+
+test("peso normal dentro de un título persiste sin permitir estilos arbitrarios", async () => {
+  const html = '<h2>Uno <span class="rt-weight-normal">Dos</span> Tres</h2>'
+  assert.equal(sanitizeRichDescription('<h2>Uno <span style="font-weight: normal">Dos</span> Tres</h2>'), html)
+  assert.equal(sanitizeRichDescription(html), html)
+  const { PGlite } = await import("@electric-sql/pglite")
+  const db = new PGlite()
+  try {
+    await db.exec("create table public.productos (id bigint primary key, descripcion text); create role anon; create role authenticated;")
+    for (const name of ["20261009110000_product_description_guard.sql", "20261010113000_product_description_editor_formats.sql", "20261011120000_product_description_font_color_formats.sql", "20261012230000_product_description_normal_weight.sql"]) {
+      await db.exec(readFileSync(join(process.cwd(), "supabase/migrations", name), "utf8"))
+    }
+    await db.query("insert into productos values (1, $1)", [normalizeProductDescriptionInput(html)])
+    assert.equal((await db.query<{ descripcion: string }>("select descripcion from productos where id = 1")).rows[0].descripcion, html)
+    await assert.rejects(db.query("insert into productos values (2, $1)", ['<h2><span style="font-weight:normal">No</span></h2>']), /PRODUCT_DESCRIPTION_UNSAFE/)
+  } finally { await db.close() }
 })
 
 test("fuentes y colores permitidos: HTML canónico estable, defaults sin color fijo", () => {
@@ -239,6 +257,7 @@ test("guard en base: acepta exactamente la forma canónica del sanitizer y recha
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009110000_product_description_guard.sql"), "utf8"))
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261010113000_product_description_editor_formats.sql"), "utf8"))
     await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261011120000_product_description_font_color_formats.sql"), "utf8"))
+    await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261012230000_product_description_normal_weight.sql"), "utf8"))
     const samples = [
       "Texto plano < 5 cm & más",
       "<h1>T</h1><p><b>x</b> <i>y</i> <u>z</u><br><font size=5>grande</font></p>",

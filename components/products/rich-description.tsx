@@ -22,6 +22,7 @@ function renderInline(nodes: RichInline[]): ReactNode {
     switch (node.type) {
       case "text": return <Fragment key={index}>{node.text}</Fragment>
       case "br": return <br key={index} />
+      case "weight-normal": return <span key={index} className="rt-weight-normal">{renderInline(node.children)}</span>
       case "strong": return <strong key={index} className="font-bold">{renderInline(node.children)}</strong>
       case "em": return <em key={index}>{renderInline(node.children)}</em>
       case "u": return <u key={index}>{renderInline(node.children)}</u>

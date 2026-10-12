@@ -8881,6 +8881,29 @@ span.admin-claim-status-finalized,
   background: #142131;
 }
 
+.product-rich-select-menu {
+  --admin-border: rgba(92, 159, 215, 0.35);
+  --admin-text: #f8fafc;
+  --admin-radius: 0.75rem;
+}
+
+html[data-admin-theme="light"] .product-rich-select-menu {
+  --admin-border: #9aabc0;
+  --admin-text: #0f172a;
+}
+
+.product-rich-description-editor [role="toolbar"] button[aria-pressed="true"] {
+  border-color: #8cc8f2 !important;
+  background: #173955 !important;
+  color: #f8fafc !important;
+}
+
+html[data-admin-theme="light"] .product-rich-description-editor [role="toolbar"] button[aria-pressed="true"] {
+  border-color: #1e4d7b !important;
+  background: #dcecf9 !important;
+  color: #112a43 !important;
+}
+
 .product-editor-screen .product-rich-select:focus-visible {
   border-color: #8cc8f2;
   box-shadow: 0 0 0 2px rgba(140, 200, 242, 0.28);
@@ -17237,6 +17260,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card 
 .product-rich-description-editor [data-rich-editor] ol { list-style: decimal; padding-left: 1.5rem; }
 .product-rich-description-editor [data-rich-editor] strong,
 .product-rich-description-editor [data-rich-editor] b { font-weight: 700; }
+:is(.product-rich-description-editor [data-rich-editor], .product-rich-description) .rt-weight-normal { font-weight: 400; }
 .product-rich-description-editor [data-rich-editor] .rt-align-center,
 .product-rich-description-editor [data-rich-editor] [style*="text-align: center"] { text-align: center; }
 .product-rich-description-editor [data-rich-editor] .rt-align-right,

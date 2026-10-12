@@ -260,7 +260,7 @@ test("descripción mantiene cuatro selects uniformes y no muestra A− ni A+", a
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   try {
     await page.setContent(`<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><style>${css}</style></head><body><div id="root"></div><script>${bundle}</script></body></html>`)
-    await page.getByRole("combobox", { name: "Tamaño de letra" }).waitFor()
+    await page.getByRole("button", { name: "Tamaño de letra" }).waitFor()
     const styles = await page.locator(".product-rich-select").evaluateAll((selects) => selects.map((select) => {
       const style = getComputedStyle(select)
       return [style.height, style.borderRadius, style.borderColor, style.backgroundColor, style.paddingLeft, style.fontSize]
