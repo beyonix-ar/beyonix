@@ -265,7 +265,7 @@ test("descripción mantiene cuatro selects uniformes y no muestra A− ni A+", a
       const style = getComputedStyle(select)
       return [style.height, style.borderRadius, style.borderColor, style.backgroundColor, style.paddingLeft, style.fontSize]
     }))
-    assert.equal(styles.length, 4)
+    assert.equal(styles.length, 3)
     assert.ok(styles.every((style) => JSON.stringify(style) === JSON.stringify(styles[0])))
     assert.equal(await page.getByRole("button", { name: "Achicar texto" }).count(), 0)
     assert.equal(await page.getByRole("button", { name: "Agrandar texto" }).count(), 0)

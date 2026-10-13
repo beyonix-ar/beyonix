@@ -216,7 +216,7 @@ test("cursor sincroniza negrita, subrayado, cursiva, listas, alineación y los c
   const html = '<p><strong>Negrita</strong> normal <u>Subrayado</u> <em>Cursiva</em></p>' +
     '<ul><li>Lista</li></ul><ol><li>Numerada</li></ol>' +
     '<p class="rt-align-center">Centrado</p><p class="rt-align-right">Derecha</p>' +
-    '<h3><span class="rt-size-18"><span class="rt-font-arial"><span class="rt-color-green">Subtítulo</span></span></span></h3>'
+    '<h3><span class="rt-color-green"><span class="rt-font-arial"><span class="rt-size-18">Subtítulo</span></span></span></h3>'
   const page = await pageWithEditor(html)
   try {
     await placeCursor(page, "Negrita")
@@ -238,7 +238,7 @@ test("cursor sincroniza negrita, subrayado, cursiva, listas, alineación y los c
     await placeCursor(page, "Derecha")
     assert.equal(await pressed(page, "Alinear a la derecha"), "true")
     await placeCursor(page, "Subtítulo")
-    for (const [label, selected] of [["Tipo de bloque", "Subtítulo"], ["Tamaño de letra", "18"], ["Tipografía", "Arial"], ["Color de texto", "Verde"]]) {
+    for (const [label, selected] of [["Tamaño de letra", "18"], ["Tipografía", "Arial"], ["Color de texto", "Verde"]]) {
       assert.match(await page.getByRole("button", { name: label }).textContent() ?? "", new RegExp(selected), label)
     }
     await placeCursor(page, "normal")
@@ -292,7 +292,7 @@ for (const [width, theme] of [[1440, "dark"], [1366, "light"], [390, "dark"]] as
         document.getElementById("root")!.classList.add("beyonix-admin-main", "product-editor-screen")
       }, theme)
       assert.equal(await page.locator('.product-rich-description-editor [role="toolbar"] select').count(), 0)
-      for (const label of ["Tipo de bloque", "Tamaño de letra", "Tipografía", "Color de texto"]) {
+      for (const label of ["Tamaño de letra", "Tipografía", "Color de texto"]) {
         await page.getByRole("button", { name: label }).click()
         const menu = page.getByRole("listbox", { name: label })
         const appearance = await menu.evaluate((element) => {
@@ -332,12 +332,11 @@ for (const theme of ["dark", "light"] as const) {
   })
 }
 
-test("bloque actual, lista, alineación, deshacer y limpiar formato", async () => {
-  const page = await pageWithEditor("<p>Uno</p>")
+test("título legacy se conserva; alineación, deshacer/rehacer, limpiar y lista", async () => {
+  const page = await pageWithEditor("<h2>Uno</h2>")
   try {
+    assert.equal(await page.getByRole("button", { name: "Tipo de bloque" }).count(), 0)
     await selectText(page, "Uno")
-    await chooseToolbarOption(page, "Tipo de bloque", "Título")
-    assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<h2>Uno</h2>")
     await page.getByRole("button", { name: "Centrar" }).click()
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), '<h2 class="rt-align-center">Uno</h2>')
     await page.getByRole("button", { name: "Deshacer" }).click()
@@ -345,7 +344,9 @@ test("bloque actual, lista, alineación, deshacer y limpiar formato", async () =
     await page.getByRole("button", { name: "Rehacer" }).click()
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), '<h2 class="rt-align-center">Uno</h2>')
     await page.getByRole("button", { name: "Deshacer" }).click()
-    await chooseToolbarOption(page, "Tipo de bloque", "Párrafo")
+    await selectText(page, "Uno")
+    await page.getByRole("button", { name: "Limpiar formato" }).click()
+    assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<p>Uno</p>")
     await page.getByRole("button", { name: "Lista con viñetas" }).click()
     const afterList = await page.evaluate(() => ({ value: (window as unknown as { descriptionValue: string }).descriptionValue, dom: document.querySelector("[data-rich-editor]")?.innerHTML, selection: window.getSelection()?.toString() }))
     assert.match(afterList.value, /<ul><li>Uno<\/li><\/ul>/, JSON.stringify(afterList))
@@ -406,7 +407,7 @@ test("pegado hostil se sanea y vacío no guarda placeholder", async () => {
       data.setData("text/html", '<p style="color:red" onclick="evil()"><font face="Arial"><strong>Seguro</strong></font><img src=x onerror=evil()><script>evil()</script></p>')
       target.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }))
     })
-    assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), '<p><span class="rt-font-arial"><strong>Seguro</strong></span></p>')
+    assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "<p>Seguro</p>")
     await page.keyboard.press("ControlOrMeta+A")
     await page.keyboard.press("Backspace")
     assert.equal(await page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue), "")
@@ -568,3 +569,291 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080]] as const)
     })
   }
 }
+
+const descriptionValue = (page: Page) => page.evaluate(() => (window as unknown as { descriptionValue: string }).descriptionValue)
+const editorHtml = (page: Page) => page.evaluate(() => document.querySelector("[data-rich-editor]")!.innerHTML)
+
+async function paste(page: Page, html: string, plain = "") {
+  await page.evaluate(([htmlData, plainData]) => {
+    const target = document.querySelector("[data-rich-editor]")!
+    const data = new DataTransfer()
+    if (htmlData) data.setData("text/html", htmlData)
+    data.setData("text/plain", plainData)
+    target.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }))
+  }, [html, plain] as const)
+}
+
+/** DOM no canónico (estilos anidados contradictorios) como el que dejaban ediciones previas. */
+async function injectEditorHtml(page: Page, html: string) {
+  await page.evaluate((markup) => { document.querySelector("[data-rich-editor]")!.innerHTML = markup }, html)
+}
+
+async function remount(page: Page, saved: string) {
+  await page.evaluate(() => (window as unknown as { remountEditor: () => void }).remountEditor())
+  await page.waitForFunction((html) => document.querySelector("[data-rich-editor]")?.innerHTML === html, saved)
+}
+
+async function storeStyles(page: Page, saved: string, needles: string[]) {
+  const markup = renderToStaticMarkup(createElement("div", { className: "product-rich-description" },
+    createElement(RichDescription, { blocks: parseRichDescription(saved) })))
+  return page.evaluate(([html, texts]) => {
+    // next/font define esta variable en producción.
+    document.documentElement.style.setProperty("--font-montserrat", "Montserrat")
+    document.querySelector("#store-preview")?.remove()
+    document.body.insertAdjacentHTML("beforeend", `<div id="store-preview">${html}</div>`)
+    const root = document.getElementById("store-preview")!
+    return texts.map((text) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      while (walker.nextNode()) {
+        if (walker.currentNode.textContent?.includes(text)) {
+          const style = getComputedStyle(walker.currentNode.parentElement!)
+          return { text, font: style.fontFamily, size: style.fontSize, weight: style.fontWeight, decoration: style.textDecorationLine }
+        }
+      }
+      throw new Error("Texto no encontrado en tienda: " + text)
+    })
+  }, [markup, needles] as const)
+}
+
+test("selector Párrafo/Título/Subtítulo eliminado; toolbar en orden Tamaño, Fuente, Color, B, U, I", async () => {
+  const page = await pageWithEditor("<p>Texto</p>")
+  try {
+    assert.equal(await page.getByRole("button", { name: "Tipo de bloque" }).count(), 0)
+    const labels = await page.locator('[role="toolbar"] button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? button.getAttribute("title")))
+    assert.deepEqual(labels.slice(0, 6), ["Tamaño de letra", "Tipografía", "Color de texto", "Negrita", "Subrayado", "Cursiva"])
+    assert.deepEqual(labels.slice(-3), ["Deshacer", "Rehacer", "Limpiar formato"])
+  } finally { await page.close() }
+})
+
+test("pegado limpio: Times New Roman, tamaño, color, fondo y clases externas no entran; texto, párrafos y listas sí", async () => {
+  const page = await pageWithEditor()
+  try {
+    await page.getByRole("textbox", { name: "Descripción del producto" }).click()
+    await paste(page,
+      '<html><head><style>p{font-family:"Times New Roman"}</style></head><body><!--StartFragment-->' +
+      '<p class="externa" style="font-family:\'Times New Roman\';font-size:18px;color:red;background:yellow">' +
+      '<span style="font-family:Arial;font-size:24px;color:#ef4444;font-weight:700">Encendedor</span> <font face="Verdana" color="#34d399">eléctrico</font>\n   USB</p>' +
+      '<p>Segunda<br>línea <b>¡ñandú!</b> <i>ü</i> <u>sí</u></p><ul><li>Uno</li><li>Dos</li></ul><!--EndFragment--></body></html>',
+      "texto plano ignorado")
+    assert.equal(await descriptionValue(page), "<p>Encendedor eléctrico USB</p><p>Segunda</p><p>línea ¡ñandú! ü sí</p><p>• Uno</p><p>• Dos</p>")
+    const dom = await editorHtml(page)
+    assert.doesNotMatch(dom, /style=|class=|<font|<b>|<strong|<span|<em|<u>/, dom)
+  } finally { await page.close() }
+})
+
+test("pegado de texto plano conserva saltos razonables y toma el formato del cursor", async () => {
+  const page = await pageWithEditor('<p><span class="rt-font-verdana"><span class="rt-size-20">Inicio</span></span></p>')
+  try {
+    await page.getByRole("textbox", { name: "Descripción del producto" }).focus()
+    await page.evaluate(() => {
+      const text = document.querySelector("[data-rich-editor] span span")!.firstChild!
+      const range = document.createRange()
+      range.setStart(text, 6)
+      range.collapse(true)
+      window.getSelection()!.removeAllRanges()
+      window.getSelection()!.addRange(range)
+    })
+    await paste(page, "", " pegado\r\nWhatsApp\n\n\n\nfin")
+    const value = await descriptionValue(page)
+    assert.equal(value, '<p><span class="rt-font-verdana"><span class="rt-size-20">Inicio pegado</span></span></p>' +
+      '<p><span class="rt-font-verdana"><span class="rt-size-20">WhatsApp</span></span></p><p><br></p>' +
+      '<p><span class="rt-font-verdana"><span class="rt-size-20">fin</span></span></p>', value)
+  } finally { await page.close() }
+})
+
+test("fuente: todo el rango mixto pasa a la elegida y reemplaza spans anidados contradictorios", async () => {
+  const page = await pageWithEditor("<p>x</p>")
+  try {
+    await injectEditorHtml(page, '<p><span class="rt-font-verdana">Uno <span style="font-family: Calibri">Dos</span></span> <font face="Comic Sans MS">Tres</font> Cuatro</p>')
+    await selectText(page, "Uno Dos Tres")
+    assert.match(await page.getByRole("button", { name: "Tipografía" }).textContent() ?? "", /—/)
+    await chooseToolbarOption(page, "Tipografía", "Montserrat")
+    assert.equal(await descriptionValue(page), "<p>Uno Dos Tres Cuatro</p>")
+    await selectText(page, "Dos Tres")
+    await chooseToolbarOption(page, "Tipografía", "Arial")
+    assert.equal(await descriptionValue(page), '<p>Uno <span class="rt-font-arial">Dos Tres</span> Cuatro</p>')
+    await selectText(page, "Uno Dos")
+    await chooseToolbarOption(page, "Tipografía", "Verdana")
+    assert.equal(await descriptionValue(page), '<p><span class="rt-font-verdana">Uno Dos</span><span class="rt-font-arial"> Tres</span> Cuatro</p>')
+    await selectText(page, "Uno Dos Tres Cuatro")
+    await chooseToolbarOption(page, "Tipografía", "Calibri")
+    assert.equal(await descriptionValue(page), '<p><span class="rt-font-calibri">Uno Dos Tres Cuatro</span></p>')
+    assert.equal(await editorHtml(page), '<p><span class="rt-font-calibri">Uno Dos Tres Cuatro</span></p>')
+    assert.match(await page.getByRole("button", { name: "Tipografía" }).textContent() ?? "", /Calibri/)
+  } finally { await page.close() }
+})
+
+test("tamaño: reemplaza el tamaño previo en todo el rango y persiste al reabrir", async () => {
+  const page = await pageWithEditor("<p>x</p>")
+  try {
+    await injectEditorHtml(page, '<p><span class="rt-size-24">Uno <span style="font-size: 12px">Dos</span></span> Tres</p>')
+    await selectText(page, "Uno Dos Tres")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /—/)
+    await chooseToolbarOption(page, "Tamaño de letra", "18")
+    assert.equal(await descriptionValue(page), '<p><span class="rt-size-18">Uno Dos Tres</span></p>')
+    await selectText(page, "Dos")
+    await chooseToolbarOption(page, "Tamaño de letra", "32")
+    const saved = await descriptionValue(page)
+    assert.equal(saved, '<p><span class="rt-size-18">Uno </span><span class="rt-size-32">Dos</span><span class="rt-size-18"> Tres</span></p>')
+    await remount(page, saved)
+    await placeCursor(page, "Dos")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /32/)
+    await page.addStyleTag({ content: css })
+    const sizes = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-rich-editor] span")].map((span) => getComputedStyle(span).fontSize))
+    assert.deepEqual(sizes, ["18px", "32px", "18px"])
+  } finally { await page.close() }
+})
+
+test("A Montserrat 18 negrita, B Arial 16, C Verdana 20 subrayado: idéntico en admin, reapertura y tienda", async () => {
+  const page = await pageWithEditor("<p>Texto A</p><p>Texto B</p><p>Texto C</p>")
+  try {
+    await page.addStyleTag({ content: css })
+    await selectText(page, "Texto A")
+    await chooseToolbarOption(page, "Tipografía", "Montserrat")
+    await chooseToolbarOption(page, "Tamaño de letra", "18")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    await selectText(page, "Texto B")
+    await chooseToolbarOption(page, "Tipografía", "Arial")
+    await chooseToolbarOption(page, "Tamaño de letra", "16")
+    await selectText(page, "Texto C")
+    await chooseToolbarOption(page, "Tipografía", "Verdana")
+    await chooseToolbarOption(page, "Tamaño de letra", "20")
+    await page.getByRole("button", { name: "Subrayado" }).click()
+    const saved = await descriptionValue(page)
+    assert.equal(saved, '<p><span class="rt-size-18"><strong>Texto A</strong></span></p>' +
+      '<p><span class="rt-font-arial"><span class="rt-size-16">Texto B</span></span></p>' +
+      '<p><span class="rt-font-verdana"><span class="rt-size-20"><u>Texto C</u></span></span></p>')
+    await remount(page, saved)
+    for (const [text, font, size, bold, underline] of [["Texto A", "Montserrat", "18", "true", "false"], ["Texto B", "Arial", "16", "false", "false"], ["Texto C", "Verdana", "20", "false", "true"]] as const) {
+      await placeCursor(page, text.slice(-1))
+      assert.match(await page.getByRole("button", { name: "Tipografía" }).textContent() ?? "", new RegExp(font), text)
+      assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", new RegExp(size), text)
+      assert.equal(await pressed(page, "Negrita"), bold, text)
+      assert.equal(await pressed(page, "Subrayado"), underline, text)
+    }
+    const store = await storeStyles(page, saved, ["Texto A", "Texto B", "Texto C"])
+    assert.match(store[0].font, /Montserrat/, JSON.stringify(store))
+    assert.equal(store[0].size, "18px")
+    assert.ok(Number(store[0].weight) >= 600, JSON.stringify(store[0]))
+    assert.match(store[1].font, /^Arial/)
+    assert.equal(store[1].size, "16px")
+    assert.equal(store[1].weight, "400")
+    assert.match(store[2].font, /^Verdana/)
+    assert.equal(store[2].size, "20px")
+    assert.match(store[2].decoration, /underline/)
+  } finally { await page.close() }
+})
+
+test("caso crítico: pegar externo, Montserrat 18, negrita on/off, guardar, reabrir y tienda", async () => {
+  const page = await pageWithEditor()
+  try {
+    await page.addStyleTag({ content: css })
+    await page.getByRole("textbox", { name: "Descripción del producto" }).click()
+    await paste(page, '<div style="font-family:Times New Roman;font-size:18px;color:red"><p><b>Batería de litio recargable</b></p><p style="font-family:Arial">Incluye cable USB</p></div>')
+    assert.equal(await descriptionValue(page), "<p>Batería de litio recargable</p><p>Incluye cable USB</p>")
+    await selectText(page, "litio recargable")
+    await chooseToolbarOption(page, "Tipografía", "Montserrat")
+    await chooseToolbarOption(page, "Tamaño de letra", "18")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    assert.equal(await pressed(page, "Negrita"), "true")
+    await selectText(page, "Incluye cable USB")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    await selectText(page, "cable")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    assert.equal(await pressed(page, "Negrita"), "false")
+    await selectText(page, "recargable")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    const saved = await descriptionValue(page)
+    assert.equal(saved, '<p>Batería de <span class="rt-size-18"><strong>litio </strong>recargable</span></p>' +
+      "<p><strong>Incluye </strong>cable<strong> USB</strong></p>")
+    await remount(page, saved)
+    await placeCursor(page, "litio")
+    assert.equal(await pressed(page, "Negrita"), "true")
+    assert.match(await page.getByRole("button", { name: "Tamaño de letra" }).textContent() ?? "", /18/)
+    assert.match(await page.getByRole("button", { name: "Tipografía" }).textContent() ?? "", /Montserrat/)
+    const store = await storeStyles(page, saved, ["Batería", "litio", "recargable", "Incluye", "cable"])
+    for (const item of store) assert.match(item.font, /Montserrat/, JSON.stringify(item))
+    assert.notEqual(store[0].size, "18px")
+    assert.equal(store[1].size, "18px")
+    assert.ok(Number(store[1].weight) >= 600, JSON.stringify(store[1]))
+    assert.equal(store[2].weight, "400")
+    assert.ok(Number(store[3].weight) >= 600, JSON.stringify(store[3]))
+    assert.equal(store[4].weight, "400")
+  } finally { await page.close() }
+})
+
+test("cursiva y subrayado on/off; Enter y párrafos vacíos siguen funcionando", async () => {
+  const page = await pageWithEditor("<p>Uno Dos</p>")
+  try {
+    await selectText(page, "Dos")
+    await page.getByRole("button", { name: "Cursiva" }).click()
+    await page.getByRole("button", { name: "Subrayado" }).click()
+    assert.equal(await descriptionValue(page), "<p>Uno <em><u>Dos</u></em></p>")
+    assert.equal(await pressed(page, "Cursiva"), "true")
+    assert.equal(await pressed(page, "Subrayado"), "true")
+    await page.getByRole("button", { name: "Cursiva" }).click()
+    assert.equal(await descriptionValue(page), "<p>Uno <u>Dos</u></p>")
+    await page.getByRole("button", { name: "Subrayado" }).click()
+    assert.equal(await descriptionValue(page), "<p>Uno Dos</p>")
+    await page.keyboard.press("End")
+    await page.keyboard.press("Enter")
+    await page.keyboard.press("Enter")
+    await page.keyboard.type("Tres")
+    assert.equal(await descriptionValue(page), "<p>Uno Dos</p><p><br></p><p>Tres</p>")
+  } finally { await page.close() }
+})
+
+const hasCaretMark = (page: Page) => page.evaluate(() => document.querySelector("[data-rich-editor]")!.innerHTML.includes("​"))
+
+test("formato sin selección: la marca invisible desaparece al escribir y nunca pide pulsaciones extra", async () => {
+  const page = await pageWithEditor("<p>Inicio</p>")
+  try {
+    await page.getByRole("textbox", { name: "Descripción del producto" }).click()
+    await page.keyboard.press("End")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    await chooseToolbarOption(page, "Tamaño de letra", "20")
+    assert.equal(await pressed(page, "Negrita"), "true")
+    await page.keyboard.type("XY")
+    assert.equal(await hasCaretMark(page), false)
+    assert.equal(await descriptionValue(page), '<p>Inicio<span class="rt-size-20"><strong>XY</strong></span></p>')
+    await page.keyboard.press("ArrowLeft")
+    await page.keyboard.type("-")
+    assert.equal(await descriptionValue(page), '<p>Inicio<span class="rt-size-20"><strong>X-Y</strong></span></p>')
+    await page.keyboard.press("End")
+    await page.keyboard.press("Backspace")
+    assert.equal(await descriptionValue(page), '<p>Inicio<span class="rt-size-20"><strong>X-</strong></span></p>')
+    await page.getByRole("button", { name: "Deshacer" }).click()
+    assert.equal(await descriptionValue(page), '<p>Inicio<span class="rt-size-20"><strong>X-Y</strong></span></p>')
+    await page.getByRole("button", { name: "Rehacer" }).click()
+    assert.equal(await descriptionValue(page), '<p>Inicio<span class="rt-size-20"><strong>X-</strong></span></p>')
+  } finally { await page.close() }
+})
+
+test("formato pendiente descartado: Backspace, flechas y clic actúan sobre el texto real", async () => {
+  const page = await pageWithEditor("<p>Inicio</p>")
+  try {
+    await page.getByRole("textbox", { name: "Descripción del producto" }).click()
+    await page.keyboard.press("End")
+    await page.getByRole("button", { name: "Cursiva" }).click()
+    assert.equal(await pressed(page, "Cursiva"), "true")
+    await page.keyboard.press("Backspace")
+    assert.equal(await hasCaretMark(page), false)
+    assert.equal(await descriptionValue(page), "<p>Inici</p>")
+    await page.getByRole("button", { name: "Subrayado" }).click()
+    await page.keyboard.press("ArrowLeft")
+    assert.equal(await hasCaretMark(page), false)
+    assert.equal(await pressed(page, "Subrayado"), "false")
+    await page.keyboard.type("Z")
+    assert.equal(await descriptionValue(page), "<p>InicZi</p>")
+    await page.keyboard.press("End")
+    await page.getByRole("button", { name: "Negrita" }).click()
+    await page.evaluate(() => {
+      const range = document.createRange()
+      range.setStart(document.querySelector("[data-rich-editor] p")!.firstChild!, 1)
+      window.getSelection()!.removeAllRanges()
+      window.getSelection()!.addRange(range)
+    })
+    await page.waitForFunction(() => !document.querySelector("[data-rich-editor]")!.innerHTML.includes("​"))
+    assert.equal(await editorHtml(page), "<p>InicZi</p>")
+  } finally { await page.close() }
+})

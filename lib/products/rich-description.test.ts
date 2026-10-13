@@ -10,8 +10,34 @@ import {
   RICH_DESCRIPTION_MAX_LENGTH,
   RichDescriptionInputError,
   richDescriptionToPlainText,
+  richPasteToPlainText,
   sanitizeRichDescription,
 } from "./rich-description.ts"
+
+test("pegado: Times New Roman, font-size, color, fondo y clases externas se descartan; texto y saltos quedan", () => {
+  const html = '<html><head><style>p{font-family:"Times New Roman"}</style></head><body><!--StartFragment-->' +
+    '<p class="x" style="font-family:\'Times New Roman\';font-size:18px;color:red;background:yellow"><span style="font-family:Arial;font-size:24px;color:#ef4444">Hola</span>\n  mundo</p>' +
+    '<p>Línea<br>ñandú <b>¡sí!</b></p><p>&nbsp;</p><p></p><p>&nbsp;</p><p>Fin</p><ul><li>Uno</li><li><i>Dos</i></li></ul><ol><li>Tres</li></ol><!--EndFragment--></body></html>'
+  assert.equal(richPasteToPlainText(html, "ignorado"), "Hola mundo\nLínea\nñandú ¡sí!\n\nFin\n• Uno\n• Dos\n1. Tres")
+  assert.equal(richPasteToPlainText("", "\r\n\r\n uno\r\ndos\n\n\n\ntres\n\n"), " uno\ndos\n\ntres")
+  assert.equal(richPasteToPlainText("<table><tr><td>celda</td></tr></table>", "celda"), "celda")
+  assert.equal(richPasteToPlainText("<p><script>alert(1)</script></p>", ""), "")
+})
+
+test("formato normalizado: estilos del mismo tipo anidados se resuelven al más interno", () => {
+  assert.equal(sanitizeRichDescription('<p><span class="rt-font-arial"><span class="rt-font-verdana">x</span> y</span></p>'),
+    '<p><span class="rt-font-verdana">x</span><span class="rt-font-arial"> y</span></p>')
+  assert.equal(sanitizeRichDescription('<p><span class="rt-size-24">a <span class="rt-size-18">b</span></span><span class="rt-size-24"> c</span></p>'),
+    '<p><span class="rt-size-24">a </span><span class="rt-size-18">b</span><span class="rt-size-24"> c</span></p>')
+  assert.equal(sanitizeRichDescription('<p><strong>a </strong><strong>b</strong></p>'), "<p><strong>a b</strong></p>")
+  assert.equal(sanitizeRichDescription('<p><strong>a <span style="font-weight:400">b</span></strong></p>'), "<p><strong>a </strong>b</p>")
+  assert.equal(sanitizeRichDescription('<p><span class="rt-size-18"><span class="rt-color-red">x</span></span></p>'),
+    '<p><span class="rt-color-red"><span class="rt-size-18">x</span></span></p>')
+  // Tamaño en píxeles (lo genera el navegador al editar) sólo si es un nivel permitido.
+  assert.equal(sanitizeRichDescription('<p><span style="font-size: 20px">a</span><span style="font-size: 19px">b</span></p>'), '<p><span class="rt-size-20">a</span>b</p>')
+  // La marca de cursor del editor nunca se persiste.
+  assert.equal(sanitizeRichDescription("<p>a​<strong>​</strong>b</p>"), "<p>ab</p>")
+})
 
 test("texto plano legacy: párrafos por línea en blanco y saltos simples", () => {
   assert.equal(

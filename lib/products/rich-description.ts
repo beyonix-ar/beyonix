@@ -133,6 +133,9 @@ function parseHtml(input: string): HtmlNode[] {
 function sizeFromAttributes(name: string, attrs: Record<string, string>): RichTextSize | null {
   const classSize = /(?:^|\s)rt-size-(12|14|16|18|20|22|24|28|32|36|40)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
   if (classSize) return Number(classSize) as RichTextSize
+  // El navegador puede reescribir un tamaño discreto como píxeles inline.
+  const pixels = /(?:^|;)\s*font-size\s*:\s*(\d+)px\s*(?:;|$)/i.exec(attrs.style ?? "")?.[1]
+  if (pixels && RICH_TEXT_SIZES.includes(Number(pixels) as RichTextSize)) return Number(pixels) as RichTextSize
   const legacy = /(?:^|\s)rt-size-(sm|lg|xl)(?:\s|$)/.exec(attrs.class ?? "")?.[1]
   if (legacy) return { sm: 14, lg: 18, xl: 20 }[legacy as "sm" | "lg" | "xl"] as RichTextSize
   if (name === "font") {
@@ -186,36 +189,115 @@ function alignmentFromAttributes(attrs: Record<string, string>): RichAlignment |
   return style?.toLowerCase() as RichAlignment | undefined
 }
 
-type InlineFormat = "strong" | "em" | "u"
+/**
+ * Formato efectivo de un tramo de texto. El editor y el sanitizer lo resuelven
+ * igual: el elemento más interno gana, así que nunca quedan estilos del mismo
+ * tipo anidados y contradictorios.
+ */
+export type RichMarks = {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  size?: RichTextSize
+  font?: RichTextFont
+  color?: RichTextColor
+}
+export type RichRun =
+  | { type: "text"; text: string; marks: RichMarks }
+  | { type: "br"; marks: RichMarks }
 
-// Word y Google Docs marcan negrita/cursiva/subrayado con estilos inline. Se
-// traducen a las etiquetas permitidas; el resto del estilo se descarta.
-function formatsFromStyle(style: string | undefined): InlineFormat[] {
-  if (!style) return []
+const ZERO_WIDTH_SPACE = /​/g
+
+function styleDeclarations(style: string | undefined) {
   const declarations = new Map<string, string>()
-  for (const declaration of style.split(";")) {
+  for (const declaration of (style ?? "").split(";")) {
     const separator = declaration.indexOf(":")
     if (separator > 0) {
       declarations.set(declaration.slice(0, separator).trim().toLowerCase(), declaration.slice(separator + 1).trim().toLowerCase())
     }
   }
-  const formats: InlineFormat[] = []
+  return declarations
+}
+
+/**
+ * Formato que aporta un elemento. Word y Google Docs marcan negrita, cursiva y
+ * subrayado con estilos inline: se traducen a marcas permitidas y el resto del
+ * estilo se descarta. Google Docs envuelve lo copiado en <b style="font-weight:normal">.
+ */
+export function richMarksFromElement(name: string, attrs: Record<string, string>): RichMarks {
+  const marks: RichMarks = {}
+  const declarations = styleDeclarations(attrs.style)
   const weight = declarations.get("font-weight")
-  if (weight && (/^bold(er)?$/.test(weight) || Number(weight) >= 600)) formats.push("strong")
-  if (/^(italic|oblique)\b/.test(declarations.get("font-style") ?? "")) formats.push("em")
-  if (/\bunderline\b/.test(`${declarations.get("text-decoration") ?? ""} ${declarations.get("text-decoration-line") ?? ""}`)) formats.push("u")
-  return formats
+  const styleNormal = /^(normal|[1-5]00)\b/.test(weight ?? "")
+  if (styleNormal || /(?:^|\s)rt-weight-normal(?:\s|$)/.test(attrs.class ?? "")) marks.bold = false
+  if ((weight && (/^bold(er)?$/.test(weight) || Number(weight) >= 600)) || ((name === "strong" || name === "b") && !styleNormal)) {
+    marks.bold = true
+  }
+  const fontStyle = declarations.get("font-style") ?? ""
+  if (name === "em" || name === "i" || /^(italic|oblique)\b/.test(fontStyle)) marks.italic = true
+  else if (fontStyle === "normal") marks.italic = false
+  const decoration = `${declarations.get("text-decoration") ?? ""} ${declarations.get("text-decoration-line") ?? ""}`
+  if (name === "u" || /\bunderline\b/.test(decoration)) marks.underline = true
+  else if (/\bnone\b/.test(decoration)) marks.underline = false
+  if (name === "span" || name === "font") {
+    const size = sizeFromAttributes(name, attrs)
+    const font = fontFromAttributes(name, attrs)
+    const color = colorFromAttributes(name, attrs)
+    if (size) marks.size = size
+    if (font) marks.font = font
+    if (color) marks.color = color
+  }
+  return marks
 }
 
-// Google Docs envuelve todo lo copiado en <b style="font-weight:normal">.
-function isNormalWeight(style: string | undefined) {
-  return /font-weight\s*:\s*(normal|[1-5]00)\b/i.test(style ?? "")
+function hasVisibleRuns(runs: RichRun[]) {
+  return runs.some((run) => run.type === "text" && run.text.trim() !== "")
 }
 
-function hasVisibleContent(nodes: RichInline[]): boolean {
-  return nodes.some((node) =>
-    node.type === "text" ? node.text.trim() !== "" : node.type !== "br" && hasVisibleContent(node.children),
-  )
+type Wrapper = { key: string; wrap: (children: RichInline[]) => RichInline }
+// Orden fijo de afuera hacia adentro: el HTML resultante es predecible.
+const LAYERS: ((marks: RichMarks, boldContext: boolean) => Wrapper | null)[] = [
+  ({ color }) => color ? { key: color, wrap: (children) => ({ type: "color", color, children }) } : null,
+  ({ font }) => font ? { key: font, wrap: (children) => ({ type: "font", font, children }) } : null,
+  ({ size }) => size ? { key: String(size), wrap: (children) => ({ type: "size", size, children }) } : null,
+  ({ bold }, boldContext) => bold === false && boldContext ? { key: "normal", wrap: (children) => ({ type: "weight-normal", children }) } : null,
+  ({ bold }) => bold ? { key: "strong", wrap: (children) => ({ type: "strong", children }) } : null,
+  ({ italic }) => italic ? { key: "em", wrap: (children) => ({ type: "em", children }) } : null,
+  ({ underline }) => underline ? { key: "u", wrap: (children) => ({ type: "u", children }) } : null,
+]
+
+/**
+ * Tramos con formato → árbol canónico: tramos contiguos con el mismo formato
+ * comparten un único wrapper por tipo. `boldContext` indica que el bloque ya es
+ * negrita (títulos), único caso donde "sin negrita" necesita marcado propio.
+ */
+export function richRunsToInline(runs: RichRun[], boldContext = false): RichInline[] {
+  const formatted = runs.some((run) => run.type === "text")
+  const build = (group: RichRun[], layer: number): RichInline[] => {
+    const out: RichInline[] = []
+    if (layer === LAYERS.length) {
+      for (const run of group) {
+        const last = out[out.length - 1]
+        if (run.type === "br") out.push({ type: "br" })
+        else if (last?.type === "text") out[out.length - 1] = { type: "text", text: last.text + run.text }
+        else out.push({ type: "text", text: run.text })
+      }
+      return out
+    }
+    const wrapperOf = (run: RichRun) => formatted ? LAYERS[layer](run.marks, boldContext) : null
+    let index = 0
+    while (index < group.length) {
+      const wrapper = wrapperOf(group[index])
+      let end = index + 1
+      while (end < group.length && wrapperOf(group[end])?.key === wrapper?.key) end += 1
+      const inner = build(group.slice(index, end), layer + 1)
+      if (wrapper) out.push(wrapper.wrap(inner))
+      else out.push(...inner)
+      index = end
+    }
+    return out
+  }
+  return build(runs, 0)
 }
 
 function blockTypeFor(name: string): RichBlockType {
@@ -224,43 +306,33 @@ function blockTypeFor(name: string): RichBlockType {
   return "p"
 }
 
+type DraftBlock =
+  | { type: RichBlockType; runs: RichRun[]; align?: RichAlignment }
+  | { type: "ul" | "ol"; items: RichRun[][]; align?: RichAlignment }
+
 function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
-  const blocks: RichBlock[] = []
-  let pending: RichInline[] = []
+  const blocks: DraftBlock[] = []
+  let pending: RichRun[] = []
   const flush = () => {
-    if (hasVisibleContent(pending)) blocks.push({ type: "p", children: trimBreaks(pending) })
+    if (hasVisibleRuns(pending)) blocks.push({ type: "p", runs: trimBreaks(pending) })
     pending = []
   }
-  const inline = (node: HtmlNode): RichInline[] => {
-    if (node.kind === "text") return node.text ? [{ type: "text", text: node.text }] : []
+  const inline = (node: HtmlNode, marks: RichMarks = {}): RichRun[] => {
+    if (node.kind === "text") {
+      const text = node.text.replace(ZERO_WIDTH_SPACE, "")
+      return text ? [{ type: "text", text, marks }] : []
+    }
     if (DROPPED_WITH_CONTENT.has(node.name)) return []
-    if (node.name === "br") return [{ type: "br" }]
-    const children = node.children.flatMap((child) => {
+    if (node.name === "br") return [{ type: "br", marks }]
+    const own = { ...marks, ...richMarksFromElement(node.name, node.attrs) }
+    const children = node.children.flatMap((child): RichRun[] => {
       if (child.kind === "element" && BLOCK_ELEMENTS.has(child.name)) {
-        return [{ type: "br" } as RichInline, ...child.children.flatMap(inline)]
+        return [{ type: "br", marks: own }, ...child.children.flatMap((grandchild) => inline(grandchild, own))]
       }
-      return inline(child)
+      return inline(child, own)
     })
-    if (!hasVisibleContent(children)) return children
-    const formats = formatsFromStyle(node.attrs.style)
-    if ((node.name === "strong" || node.name === "b") && !isNormalWeight(node.attrs.style)) formats.push("strong")
-    else if (node.name === "em" || node.name === "i") formats.push("em")
-    else if (node.name === "u") formats.push("u")
-    let wrapped: RichInline[] = children
-    for (const format of [...new Set(formats)].reverse()) wrapped = [{ type: format, children: wrapped }]
-    if (/font-weight\s*:\s*(normal|[1-5]00)\b/i.test(node.attrs.style ?? "") ||
-      /(?:^|\s)rt-weight-normal(?:\s|$)/.test(node.attrs.class ?? "")) {
-      wrapped = [{ type: "weight-normal", children: wrapped }]
-    }
-    if (node.name === "span" || node.name === "font") {
-      const size = sizeFromAttributes(node.name, node.attrs)
-      const font = fontFromAttributes(node.name, node.attrs)
-      const color = colorFromAttributes(node.name, node.attrs)
-      if (size) wrapped = [{ type: "size", size, children: wrapped }]
-      if (font) wrapped = [{ type: "font", font, children: wrapped }]
-      if (color) wrapped = [{ type: "color", color, children: wrapped }]
-    }
-    return wrapped
+    // Un formato sobre texto invisible no aporta nada: se descarta.
+    return hasVisibleRuns(children) ? children : children.map((run) => ({ ...run, marks }))
   }
   const walk = (node: HtmlNode) => {
     if (node.kind === "text") { pending.push(...inline(node)); return }
@@ -269,7 +341,7 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
       flush()
       const items = node.children
         .filter((child): child is Extract<HtmlNode, { kind: "element" }> => child.kind === "element" && child.name === "li")
-        .map((item) => trimBreaks(item.children.flatMap(inline)))
+        .map((item) => trimBreaks(item.children.flatMap((child) => inline(child))))
       if (items.length) blocks.push({ type: node.name, items, align: alignmentFromAttributes(node.attrs) })
       return
     }
@@ -279,9 +351,9 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
       const align = alignmentFromAttributes(node.attrs)
       const nestedBlocks = node.children.some((child) => child.kind === "element" && BLOCK_ELEMENTS.has(child.name) && child.name !== "br")
       if (nestedBlocks) {
-        let part: RichInline[] = []
+        let part: RichRun[] = []
         const pushPart = () => {
-          if (hasVisibleContent(part)) blocks.push({ type, children: trimBreaks(part), align })
+          if (hasVisibleRuns(part)) blocks.push({ type, runs: trimBreaks(part), align })
           part = []
         }
         for (const child of node.children) {
@@ -292,8 +364,8 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
         }
         pushPart()
       } else {
-        const children = node.children.flatMap(inline)
-        blocks.push({ type, children: type === "p" ? children : trimBreaks(children), align })
+        const runs = node.children.flatMap((child) => inline(child))
+        blocks.push({ type, runs: type === "p" ? runs : trimBreaks(runs), align })
       }
       return
     }
@@ -307,13 +379,16 @@ function htmlToBlocks(nodes: HtmlNode[]): RichBlock[] {
   }
   for (const node of nodes) walk(node)
   flush()
-  const visible = blocks.some((block) => block.type === "ul" || block.type === "ol"
-    ? block.items.some(hasVisibleContent)
-    : hasVisibleContent(block.children))
-  return visible ? blocks : []
+  const visible = blocks.some((block) => "items" in block
+    ? block.items.some(hasVisibleRuns)
+    : hasVisibleRuns(block.runs))
+  if (!visible) return []
+  return blocks.map((block): RichBlock => "items" in block
+    ? { type: block.type, items: block.items.map((item) => richRunsToInline(item)), align: block.align }
+    : { type: block.type, children: richRunsToInline(block.runs, block.type !== "p"), align: block.align })
 }
 
-function trimBreaks(nodes: RichInline[]) {
+function trimBreaks<T extends { type: string }>(nodes: T[]) {
   let start = 0
   let end = nodes.length
   while (start < end && nodes[start].type === "br") start += 1
@@ -346,16 +421,16 @@ function escapeHtml(text: string) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 }
 
-function serializeInline(nodes: RichInline[]): string {
+export function serializeRichInline(nodes: RichInline[]): string {
   return nodes.map((node) => {
     switch (node.type) {
       case "text": return escapeHtml(node.text)
       case "br": return "<br>"
-      case "weight-normal": return `<span class="rt-weight-normal">${serializeInline(node.children)}</span>`
-      case "size": return `<span class="rt-size-${node.size}">${serializeInline(node.children)}</span>`
-      case "font": return `<span class="rt-font-${node.font}">${serializeInline(node.children)}</span>`
-      case "color": return `<span class="rt-color-${node.color}">${serializeInline(node.children)}</span>`
-      default: return `<${node.type}>${serializeInline(node.children)}</${node.type}>`
+      case "weight-normal": return `<span class="rt-weight-normal">${serializeRichInline(node.children)}</span>`
+      case "size": return `<span class="rt-size-${node.size}">${serializeRichInline(node.children)}</span>`
+      case "font": return `<span class="rt-font-${node.font}">${serializeRichInline(node.children)}</span>`
+      case "color": return `<span class="rt-color-${node.color}">${serializeRichInline(node.children)}</span>`
+      default: return `<${node.type}>${serializeRichInline(node.children)}</${node.type}>`
     }
   }).join("")
 }
@@ -366,11 +441,11 @@ export function sanitizeRichDescription(value: string | null | undefined) {
     .map((block) => {
       const align = block.align && block.align !== "left" ? ` class="rt-align-${block.align}"` : ""
       if (block.type === "ul" || block.type === "ol") {
-        return `<${block.type}${align}>${block.items.map((item) => `<li>${serializeInline(item)}</li>`).join("")}</${block.type}>`
+        return `<${block.type}${align}>${block.items.map((item) => `<li>${serializeRichInline(item)}</li>`).join("")}</${block.type}>`
       }
       // Un párrafo vacío entre bloques representa un Enter adicional. El <br>
       // mantiene su altura y cursor al volver a cargarlo en contentEditable.
-      return `<${block.type}${align}>${block.type === "p" && block.children.length === 0 ? "<br>" : serializeInline(block.children)}</${block.type}>`
+      return `<${block.type}${align}>${block.type === "p" && block.children.length === 0 ? "<br>" : serializeRichInline(block.children)}</${block.type}>`
     })
     .join("")
 }
@@ -403,4 +478,31 @@ export function richDescriptionToPlainText(value: string | null | undefined) {
   return parseRichDescription(value).map((block) => block.type === "ul" || block.type === "ol"
     ? block.items.map((item) => inlineText(item).trim()).join("\n")
     : inlineText(block.children).trim()).join("\n\n")
+}
+
+/** Tope del HTML de portapapeles: Word agrega hojas de estilo enormes antes del texto. */
+const PASTE_HTML_MAX_LENGTH = 2_000_000
+
+function pastedInlineText(nodes: RichInline[]): string {
+  return nodes.map((node) => node.type === "text"
+    ? node.text.replace(/[ \t\r\n\f]+/g, " ")
+    : node.type === "br" ? "\n" : pastedInlineText(node.children)).join("")
+}
+
+/**
+ * Contenido del portapapeles → texto sin ningún formato externo (fuente,
+ * tamaño, peso, color, fondo, clases). Conserva párrafos, saltos y listas
+ * simples como líneas; el editor lo inserta con el formato del cursor.
+ */
+export function richPasteToPlainText(html: string, plain: string) {
+  const source = html.slice(0, PASTE_HTML_MAX_LENGTH)
+  const blocks = HTML_HINT.test(source) ? htmlToBlocks(parseHtml(source)) : []
+  // En HTML el espacio alrededor de bloques y saltos no es visible: se recorta.
+  const text = blocks.length
+    ? blocks.flatMap((block) => block.type === "ul" || block.type === "ol"
+      ? block.items.map((item, index) => `${block.type === "ul" ? "•" : `${index + 1}.`} ${pastedInlineText(item).trim()}`)
+      : [pastedInlineText(block.children)]).join("\n").split("\n").map((line) => line.trim()).join("\n")
+    : plain.replace(/\r\n?/g, "\n").replace(ZERO_WIDTH_SPACE, "")
+  // Como máximo una línea vacía seguida; sin líneas vacías al principio o al final.
+  return text.replace(/\n(?:[ \t]*\n){2,}/g, "\n\n").replace(/^(?:[ \t]*\n)+|(?:\n[ \t]*)+$/g, "")
 }

@@ -19,13 +19,32 @@ la descripción, por lo que los datos legacy no se reescriben.
 
 ## Editor
 
-El editor conserva el historial nativo del navegador. Usa `execCommand`
-para formato, listas, alineación, inserción y undo/redo: sigue soportado en
-los navegadores objetivo, aunque está obsoleto. Los botones evitan robar el
-foco y los selectores restauran un `Range` guardado dentro del editor.
-El tamaño se aplica con un marcador temporal `fontName`; al emitir el valor
-se transforma en la clase permitida. Enter inserta un párrafo y Shift+Enter
-inserta `br`. El HTML pegado se sanea antes de entrar al editor.
+El toolbar no tiene selector Párrafo/Título/Subtítulo: la jerarquía se maneja
+con tamaño, fuente, color, negrita y alineación. Los `h2`/`h3` ya guardados se
+siguen leyendo y renderizando; "Limpiar" los convierte en párrafo.
+
+Fuente, tamaño, color, negrita, cursiva y subrayado no usan `execCommand`: el
+editor aplana cada tramo de texto a su formato efectivo (`RichMarks`, el
+elemento más interno gana), aplica la elección del usuario al rango y reescribe
+el HTML canónico (`richRunsToInline`, orden fijo color › fuente › tamaño ›
+peso › cursiva › subrayado). Así nunca quedan spans del mismo tipo anidados ni
+estilos viejos ganando por especificidad. El sanitizer usa el mismo modelo.
+Sin selección, el formato se aplica a una marca invisible (U+200B) en el
+cursor que el texto nuevo hereda. La marca vive sólo mientras el formato está
+pendiente: se quita al escribir (o al terminar una composición IME), antes de
+Backspace/Delete/flechas/Inicio/Fin y cuando el cursor se va a otro lugar, así
+que nunca cuesta una pulsación extra; el sanitizer igual la descarta al guardar.
+Al elegir tamaño, fuente o color en un menú, el foco vuelve al texto.
+Como el DOM se reescribe, deshacer/rehacer (botones, Ctrl+Z/Y, menú del
+navegador) usa un historial propio: escribir seguido o borrar seguido es un
+paso; mover el cursor, alternar escribir/borrar o aplicar formato abre otro.
+Listas, alineación y Enter siguen con `execCommand`. Enter inserta un párrafo
+y Shift+Enter inserta `br`.
+
+Pegar inserta sólo texto (`richPasteToPlainText`): nunca entran fuente,
+tamaño, peso, color, fondo ni clases externas. Se conservan párrafos, saltos
+y listas simples como líneas con `•`/`1.`; el texto toma el formato del cursor.
+Sin fuente explícita, editor y tienda heredan Montserrat (`--font-body`).
 
 La prueba de navegador `lib/products/rich-description-editor.browser.test.tsx`
 cubre edición, selección parcial y tamaños, mientras que
