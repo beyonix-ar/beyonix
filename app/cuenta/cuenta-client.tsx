@@ -60,6 +60,7 @@ import {
 import {
   getClientOrderStatusBadge,
   getCuentaItemColor,
+  getCustomerRefundSummary,
   getCuentaItemImage,
   getOrderPaymentTotalDisplay,
   isInvoiceAvailable,
@@ -116,6 +117,9 @@ function isOrderDetailDelivered(order: SupabasePedido) {
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
   return status === "entregado" || Boolean(order.delivered_at) || andreaniStatus.includes("entregado")
 }
+
+/** Mínimo entre relecturas del detalle al volver a la pestaña. */
+const ORDER_DETAIL_REFRESH_MIN_MS = 5_000
 
 function isOrderDetailInvoiced(order: SupabasePedido) {
   return (
@@ -582,7 +586,23 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     }
 
     void loadOrder()
-    return () => { active = false }
+    // El estado del pedido cambia fuera de esta pestaña (pago, cancelación,
+    // reintegro): al volver a la pestaña se relee para no mostrar un estado
+    // viejo (p. ej. "Esperando confirmación del pago" de un pedido ya
+    // cancelado y reintegrado).
+    let lastLoadAt = Date.now()
+    const reloadWhenVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastLoadAt < ORDER_DETAIL_REFRESH_MIN_MS) return
+      lastLoadAt = Date.now()
+      void loadOrder()
+    }
+    document.addEventListener("visibilitychange", reloadWhenVisible)
+    window.addEventListener("focus", reloadWhenVisible)
+    return () => {
+      active = false
+      document.removeEventListener("visibilitychange", reloadWhenVisible)
+      window.removeEventListener("focus", reloadWhenVisible)
+    }
   }, [authenticatedUserEmail, authenticatedUserId, hasAuthenticatedUser, isLoading, orderId, router])
 
   const handleProofUploaded = (updatedOrder: SupabasePedido) => {
@@ -746,10 +766,15 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
       (total, item) => total + Number(item.cantidad ?? 0),
       0,
     )
-    const financialStatus = order.financial_status ?? ""
-    const refundPending = ["cancellation_requested", "refund_pending"].includes(financialStatus)
-    const refunded = order.financial_status === "refunded"
-    const refundFlow = refundPending || refunded
+    // Misma fuente de verdad que Admin (lib/orders/order-cancellation-refund-state).
+    const refundSummary = getCustomerRefundSummary(order)
+    const refundPending = refundSummary?.state === "refund_in_progress"
+    const refunded = refundSummary?.state === "refunded"
+    const refundFlow = refundSummary !== null
+    const creditNotePending =
+      !creditNoteAvailable &&
+      isOrderDetailInvoiced(order) &&
+      ["pending", "processing"].includes(order.credit_note_status ?? "")
     const cancellationDate = order.cancellation_requested_at || order.cancelled_at
     const orderDispatched = isOrderDetailDispatched(order)
     const refundProofAvailable = Boolean(order.refund_proof_url)
@@ -762,9 +787,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const cancellationInfo = deriveOrderCancellationInfo(order.order_audit_events, order)
     const rejectedByAdmin = cancellationInfo.rejectedByAdmin
     const refundStatusLabel = refunded
-      ? "Cancelado · dinero reintegrado"
+      ? "Cancelado · Reintegro realizado"
       : refundPending
-        ? "Cancelado · reintegro pendiente"
+        ? "Cancelado · Reintegro en proceso"
         : rejectedByAdmin
           ? "Pedido rechazado"
           : "Pedido cancelado"
@@ -872,23 +897,69 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                   </div>
                 </section>
 
+                <div className="customer-order-detail-timeline">
+                  <OrderProgressTimeline order={order} />
+                </div>
+
                 {creditNoteSection}
 
-                {refundFlow && (
-                  <section className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.16)]">
+                {creditNotePending && (
+                  <section
+                    className="customer-credit-note-surface rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3"
+                    aria-label="Nota de crédito pendiente"
+                  >
+                    <p className="text-10px font-medium uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">Comprobante fiscal</p>
+                    <p className="mt-0.5 text-sm font-medium text-[var(--account-text-primary)]">Nota de crédito pendiente de emisión</p>
+                    <p className="mt-1 text-xs text-[var(--account-text-secondary)]">Vas a poder verla y descargarla desde acá cuando esté emitida.</p>
+                  </section>
+                )}
+
+                {refundFlow && refundSummary && (
+                  <section className="rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.16)]" aria-label="Reintegro">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="text-10px font-medium uppercase tracking-[0.18em] text-[var(--account-accent-soft)]">
                           Reintegro
                         </p>
                         <p className="mt-0.5 text-sm font-medium text-[var(--account-text-primary)]">
-                          {refunded ? "Dinero reintegrado" : "Gestión de reintegro pendiente"}
+                          {refunded ? "Reintegro realizado" : "Reintegro en proceso"}
                         </p>
                       </div>
                       <p className="text-xs font-normal text-[var(--account-text-secondary)]">
                         {cancellationDate ? formatOrderCardDate(cancellationDate) : "Solicitud recibida"}
                       </p>
                     </div>
+
+                    <dl className="mt-3 grid gap-2 text-left sm:grid-cols-2" data-refund-summary="">
+                      <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2">
+                        <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Estado</dt>
+                        <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{refundSummary.statusLabel}</dd>
+                      </div>
+                      {refundSummary.amount !== null && (
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Importe</dt>
+                          <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{formatCuentaPrice(refundSummary.amount)}</dd>
+                        </div>
+                      )}
+                      {refundSummary.methodLabel && (
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Medio</dt>
+                          <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{refundSummary.methodLabel}</dd>
+                        </div>
+                      )}
+                      {refundSummary.requestedAt && (
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Solicitado</dt>
+                          <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{formatOrderCardDate(refundSummary.requestedAt)}</dd>
+                        </div>
+                      )}
+                      {refundSummary.completedAt && (
+                        <div className="rounded-lg border border-[var(--account-border-subtle)] bg-[var(--account-surface)] px-3 py-2">
+                          <dt className="text-9px font-medium uppercase tracking-[0.18em] text-[var(--account-text-muted)]">Realizado</dt>
+                          <dd className="mt-1 text-sm font-medium text-[var(--account-text-primary)]">{formatOrderCardDate(refundSummary.completedAt)}</dd>
+                        </div>
+                      )}
+                    </dl>
 
                     {refundProofAvailable && (
                       <div className="mt-2 flex flex-wrap gap-2">

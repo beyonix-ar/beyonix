@@ -10,7 +10,7 @@ import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reserv
 import type { CustomerOrderSummary } from "@/lib/supabase/types"
 
 const ORDER_LIST_SELECT =
-  "id, created_at, total, estado, payment_status, payment_method_id, financial_status, delivered_at, payment_proof_url, payment_proof_uploaded_at, shipping_type, tracking_number, tracking_url, andreani_tracking, andreani_estado, cancellation_requested_by, orden_items(id, orden_id, producto_id, cantidad, conditioned_images, productos(nombre, imagen_principal, imagenes_producto(url)), producto_variantes(imagenes)), order_claims(id, status, failure_type, created_at, order_claim_messages(id, author_role, created_at)), order_audit_events(action, actor_type, previous_status, new_status, metadata, created_at)"
+  "id, created_at, total, estado, payment_status, payment_method_id, financial_status, paid_at, delivered_at, payment_proof_url, payment_proof_uploaded_at, shipping_type, tracking_number, tracking_url, andreani_tracking, andreani_estado, cancellation_requested_by, orden_items(id, orden_id, producto_id, cantidad, conditioned_images, productos(nombre, imagen_principal, imagenes_producto(url)), producto_variantes(imagenes)), order_claims(id, status, failure_type, created_at, order_claim_messages(id, author_role, created_at)), order_audit_events(action, actor_type, previous_status, new_status, metadata, created_at)"
 
 function escapeIlikeValue(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`)

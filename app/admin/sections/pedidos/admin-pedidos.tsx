@@ -92,6 +92,7 @@ import {
   isAdminOrderVisible,
 } from "@/lib/orders/admin-order-visibility"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { getOrderCancellationRefundState } from "@/lib/orders/order-cancellation-refund-state"
 import {
   ARCA_TEST_VOUCHER_LABEL,
   ARCA_TEST_VOUCHER_NOTICE,
@@ -830,10 +831,10 @@ type RecommendedAction = {
  * vistazo.
  */
 function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresentation {
-  if (pedido.estado === "cancelado" && isRefundedOrder(pedido)) {
-    return ADMIN_EXECUTIVE_STATUS.cancelled_refunded
-  }
-  if (pedido.estado === "cancelado" && isRefundPaymentAttentionOrder(pedido)) {
+  // Misma fuente de verdad que ve el cliente (Mis compras / detalle).
+  const cancellationRefundState = getOrderCancellationRefundState(pedido)
+  if (cancellationRefundState === "refunded") return ADMIN_EXECUTIVE_STATUS.cancelled_refunded
+  if (cancellationRefundState === "refund_in_progress") {
     return ADMIN_EXECUTIVE_STATUS.cancelled_refund_pending
   }
   if (isRefundedOrder(pedido)) return ADMIN_EXECUTIVE_STATUS.refunded
@@ -7232,7 +7233,9 @@ export function AdminPedidos({
       const matchesStatus =
         statusFilter === "todos" ||
         getDisplayedOrderStatus(pedido) === statusFilter ||
-        pedido.estado === statusFilter
+        pedido.estado === statusFilter ||
+        // Un cancelado también aparece en "Reintegro pendiente"/"Reintegrados".
+        pedido.financial_status === statusFilter
       const matchesAttention =
         attentionFilter === "all" ||
         orderMatchesNotificationTone(

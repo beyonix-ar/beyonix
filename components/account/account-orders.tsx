@@ -33,6 +33,10 @@ import {
   type CustomerOrderDetailView,
 } from "@/lib/account/account-utils"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import {
+  getOrderCancellationRefundState,
+  ORDER_CANCELLATION_REFUND_LABELS,
+} from "@/lib/orders/order-cancellation-refund-state"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { supabase } from "@/lib/supabase/client"
@@ -235,8 +239,12 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             // signifique que ya se está preparando nada.
             const paymentConfirmed = isOrderPaymentConfirmed(order)
             const paymentTotalDisplay = getOrderPaymentTotalDisplay(order)
+            // Misma fuente de verdad que el detalle y Admin.
+            const cancellationState = getOrderCancellationRefundState(order)
             const shippingLabel =
-              order.financial_status === "refunded"
+              cancellationState === "refunded" || cancellationState === "refund_in_progress"
+                ? ORDER_CANCELLATION_REFUND_LABELS[cancellationState].customer
+                : order.financial_status === "refunded"
                 ? "Dinero reintegrado"
                 : order.financial_status === "refund_pending"
                   ? "Reintegro pendiente"
@@ -256,7 +264,11 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             // null => se muestra la línea de seguimiento en vivo (número + copiar)
             // en vez de este texto genérico.
             const shippingDetail: string | null =
-              order.financial_status === "refunded"
+              cancellationState === "refunded"
+                ? "Pedido cancelado · el dinero ya fue reintegrado"
+                : cancellationState === "refund_in_progress"
+                  ? "Pedido cancelado · BEYONIX está gestionando la devolución"
+                : order.financial_status === "refunded"
                 ? "Cancelado - dinero reintegrado"
                 : order.financial_status === "refund_pending"
                   ? "BEYONIX está gestionando la devolución"

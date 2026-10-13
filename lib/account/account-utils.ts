@@ -2,6 +2,11 @@ import type { SupabaseOrderAuditEvent, SupabasePedido } from "../supabase/types.
 import { formatCuentaOrderDate } from "./account-formatters.ts"
 import { deriveOrderCancellationInfo } from "../orders/order-cancellation-origin.ts"
 import { isOrderPaymentConfirmed } from "../orders/order-payment-status.ts"
+import {
+  getOrderCancellationRefundState,
+  ORDER_CANCELLATION_REFUND_LABELS,
+  type OrderCancellationRefundState,
+} from "../orders/order-cancellation-refund-state.ts"
 import { validatePassword } from "../validation/account-fields.ts"
 import { isRandomColorName, RANDOM_VARIANT_LABEL } from "../products/color-mode.ts"
 
@@ -253,11 +258,29 @@ type PaymentProgressFields = Pick<
   | "payment_method_id"
   | "payment_proof_url"
   | "payment_proof_uploaded_at"
+  | "paid_at"
 >
 
 export function getPaymentProgressLabel(order: PaymentProgressFields) {
   const paymentStatus = order.payment_status ?? ""
   const financialStatus = order.financial_status ?? ""
+
+  // Transferencia real recibida con el pedido ya cancelado: no se aplicó a
+  // ninguna compra y la revisa el equipo (nunca "cancelado" a secas).
+  if (paymentStatus === "approved_after_cancellation") {
+    return "Pago recibido tras cancelar (en revisión)"
+  }
+
+  if (paymentStatus === "vencido_falta_comprobante") {
+    return "Cancelado por falta de pago"
+  }
+
+  // Pedido cancelado: estado final (misma fuente de verdad que Admin). Nunca
+  // vuelve a "Esperando confirmación del pago".
+  const cancellationState = getOrderCancellationRefundState(order)
+  if (cancellationState) {
+    return ORDER_CANCELLATION_REFUND_LABELS[cancellationState].customer
+  }
 
   if (financialStatus === "refund_pending") {
     return "Reintegro pendiente"
@@ -269,20 +292,6 @@ export function getPaymentProgressLabel(order: PaymentProgressFields) {
 
   if (financialStatus === "refunded") {
     return "Dinero reintegrado"
-  }
-
-  if (paymentStatus === "vencido_falta_comprobante") {
-    return "Cancelado por falta de pago"
-  }
-
-  // Transferencia real recibida con el pedido ya cancelado: no se aplicó a
-  // ninguna compra y la revisa el equipo (nunca "cancelado" a secas).
-  if (paymentStatus === "approved_after_cancellation") {
-    return "Pago recibido tras cancelar (en revisión)"
-  }
-
-  if ((order.estado ?? "").toLowerCase() === "cancelado") {
-    return "Pedido cancelado"
   }
 
   if (order.payment_method_id === "customer_credit") {
@@ -334,7 +343,6 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
   const estado = order.estado.toLowerCase()
   const paymentStatus = order.payment_status ?? ""
   const financialStatus = order.financial_status ?? ""
-  const isCanceled = estado === "cancelado"
   const refundPending = financialStatus === "refund_pending"
   const refunded = financialStatus === "refunded"
   const isRejected = paymentStatus === "rechazado"
@@ -349,6 +357,11 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
   const isDelivered = estado === "entregado"
   const hasShippingIncident = Boolean(SHIPPING_INCIDENT_LABELS[estado])
   const isInTransit = estado === "en_camino" || hasShippingIncident || isDelivered || isAndreaniOrderInTransit(order)
+
+  const cancellationState = getOrderCancellationRefundState(order)
+  if (cancellationState) {
+    return getCancelledOrderProgressSteps(order, cancellationState)
+  }
 
   if (refundPending || refunded) {
     return [
@@ -379,21 +392,6 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
             : "El reintegro fue registrado."
           : "BEYONIX está gestionando la devolución.",
         tone: refunded ? "done" : "warning",
-      },
-    ]
-  }
-
-  if (isCanceled) {
-    return [
-      {
-        label: "Pedido registrado",
-        detail: formatCuentaOrderDate(order.created_at),
-        tone: "done",
-      },
-      {
-        label: "Pedido cancelado",
-        detail: "La compra fue cancelada.",
-        tone: "pending",
       },
     ]
   }
@@ -452,6 +450,87 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
       tone: isDelivered ? "done" : "pending",
     },
   ]
+}
+
+/**
+ * Timeline final de un pedido cancelado: termina en la cancelación (y el
+ * reintegro si hubo cobro). Los pasos de envío no aplican y no se muestran
+ * como pendientes.
+ */
+function getCancelledOrderProgressSteps(
+  order: SupabasePedido,
+  state: OrderCancellationRefundState,
+): OrderProgressStep[] {
+  const rejectedByAdmin = deriveOrderCancellationInfo(order.order_audit_events, {
+    cancellation_requested_by: order.cancellation_requested_by,
+  }).rejectedByAdmin
+  const cancelledAt = order.cancelled_at || order.cancellation_requested_at
+  const steps: OrderProgressStep[] = [
+    { label: "Pedido registrado", detail: formatCuentaOrderDate(order.created_at), tone: "done" },
+  ]
+  // Un pago recibido después de cancelar no fue un paso previo de la compra.
+  if (state !== "cancelled" && order.payment_status !== "approved_after_cancellation") {
+    steps.push({
+      label: "Pago confirmado",
+      detail: order.paid_at ? formatCuentaOrderDate(order.paid_at) : "El pago fue confirmado.",
+      tone: "done",
+    })
+  }
+  steps.push({
+    label: rejectedByAdmin ? "Pedido rechazado" : "Pedido cancelado",
+    detail: cancelledAt ? formatCuentaOrderDate(cancelledAt) : "La compra fue cancelada.",
+    tone: rejectedByAdmin ? "danger" : "done",
+  })
+  if (state === "refund_in_progress") {
+    steps.push({ label: "Reintegro en proceso", detail: "BEYONIX está gestionando la devolución.", tone: "warning" })
+  } else if (state === "refunded") {
+    steps.push({
+      label: "Reintegro realizado",
+      detail: order.refunded_at ? formatCuentaOrderDate(order.refunded_at) : "El reintegro fue registrado.",
+      tone: "done",
+    })
+  }
+  return steps
+}
+
+export interface CustomerRefundSummary {
+  state: Exclude<OrderCancellationRefundState, "cancelled">
+  statusLabel: "En proceso" | "Realizado"
+  /** Importe devuelto (o a devolver); null si el pedido no lo informa. */
+  amount: number | null
+  /** Medio del reintegro tal como quedó registrado; null si todavía no se definió. */
+  methodLabel: string | null
+  requestedAt: string | null
+  completedAt: string | null
+}
+
+function getRefundMethodLabel(refundMethod: string | null | undefined) {
+  const method = (refundMethod ?? "").trim()
+  if (!method) return null
+  const normalized = method.toLowerCase()
+  if (normalized.includes("mercado")) return "Mercado Pago"
+  if (normalized.includes("saldo")) return "Saldo BEYONIX"
+  if (normalized.includes("transfer") || normalized.includes("manual")) return "Transferencia bancaria"
+  return method
+}
+
+/**
+ * Datos del reintegro visibles para el cliente (sólo columnas del DTO del
+ * cliente; nunca identificadores internos de Mercado Pago). null si el
+ * pedido no tiene un reintegro (cancelado sin cobro o no cancelado).
+ */
+export function getCustomerRefundSummary(order: SupabasePedido): CustomerRefundSummary | null {
+  const state = getOrderCancellationRefundState(order)
+  if (state !== "refund_in_progress" && state !== "refunded") return null
+  const amount = order.refund_amount ?? order.external_amount_due
+  return {
+    state,
+    statusLabel: state === "refunded" ? "Realizado" : "En proceso",
+    amount: amount === null || amount === undefined ? null : Number(amount),
+    methodLabel: getRefundMethodLabel(order.refund_method),
+    requestedAt: order.refund_pending_at || order.cancellation_requested_at || order.cancelled_at || null,
+    completedAt: state === "refunded" ? order.refunded_at ?? null : null,
+  }
 }
 
 export function normalizeTrackingUrl(value?: string | null) {

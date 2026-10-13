@@ -206,6 +206,8 @@ const TEST_FILES = [
   "lib/orders/checkout-order-schema-contract.test.ts",
   "lib/orders/admin-order-visibility.test.ts",
   "lib/orders/admin-new-order-notification.test.ts",
+  "lib/orders/admin-order-visibility-db.test.ts",
+  "lib/orders/order-cancellation-refund-state.test.ts",
   "lib/orders/admin-pending-actions.test.ts",
   "lib/orders/admin-order-status-presentation.test.ts",
   "lib/orders/admin-order-pill-styles.test.ts",

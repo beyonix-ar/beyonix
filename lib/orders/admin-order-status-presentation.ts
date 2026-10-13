@@ -8,6 +8,8 @@
  *   pendiente o incidencia leve, azul en curso, neutro terminal).
  */
 
+import { ORDER_CANCELLATION_REFUND_LABELS } from "./order-cancellation-refund-state.ts"
+
 export type AdminOrderStatusTone = "danger" | "success" | "warning" | "info" | "neutral"
 
 export interface AdminOrderStatusPresentation {
@@ -101,8 +103,8 @@ export type AdminExecutiveStatusKey =
 
 /** Estados ejecutivos que no salen del `estado` crudo del pedido. */
 export const ADMIN_EXECUTIVE_STATUS: Record<AdminExecutiveStatusKey, AdminOrderStatusPresentation> = {
-  cancelled_refunded: { label: "Cancelado · Reintegrado", tone: "danger" },
-  cancelled_refund_pending: { label: "Cancelado · Reintegro pendiente", tone: "danger" },
+  cancelled_refunded: { label: ORDER_CANCELLATION_REFUND_LABELS.refunded.admin, tone: "danger" },
+  cancelled_refund_pending: { label: ORDER_CANCELLATION_REFUND_LABELS.refund_in_progress.admin, tone: "danger" },
   refunded: { label: "Reintegrado", tone: "neutral" },
   refund_pending: { label: "Reintegro pendiente", tone: "danger" },
   cancellation_requested: { label: "Cancelación solicitada", tone: "danger" },
