@@ -110,7 +110,7 @@ export async function POST(request: Request, context: Context) {
     }
     const result = await executeFinancialResolution(auth.admin, id, auth.user.id,
       request.headers.get("authorization") ?? "", body.action === "resolve" ? body.choice ?? null : null, body.action === "retry")
-    return NextResponse.json({ status: result.status, resolution: { id: result.id, type: result.choice, amount: result.amount },
+    return NextResponse.json({ status: result.status, resolution: { id: result.id, type: result.choice, amount: result.amount, detail: result.last_error ?? null },
       message: result.status === "requires_action" ? "Actualización pendiente. Reintentá cuando corresponda." : null },
       { status: result.status === "requires_action" ? 202 : 200 })
   } catch (error) {

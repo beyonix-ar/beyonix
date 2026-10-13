@@ -16,8 +16,18 @@ const baseView: FinancialResolutionView = {
 const pedido = { id: 31, order_credit_notes: [] } as unknown as SupabasePedido
 
 type Call = { method: string; body: BodyInit | null | undefined }
+type Responder = (call: Call) => Promise<Response> | Response
 
-async function setup() {
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
+const completedResponse = () => Response.json({ status: "completed",
+  resolution: { id: "r1", type: "mercadopago_refund", amount: 25_000, detail: null } })
+
+async function setup(responder: Responder = () => Response.json({ status: "completed" })) {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://financial-wizard.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "financial-wizard-key"
   // Igual que dispatch-realtime: el cliente se crea antes de exponer window.
@@ -27,22 +37,38 @@ async function setup() {
     HTMLElement: dom.window.HTMLElement, Node: dom.window.Node, IS_REACT_ACT_ENVIRONMENT: true })
   Object.defineProperty(supabase.auth, "getSession", { configurable: true, value: async () => ({ data: { session: { access_token: "t" } }, error: null }) })
   const calls: Call[] = []
+  const state = { responder }
   globalThis.fetch = (async (_url: string, init?: RequestInit) => {
-    calls.push({ method: init?.method ?? "GET", body: init?.body })
-    return Response.json({ status: "completed" })
+    const call = { method: init?.method ?? "GET", body: init?.body }
+    calls.push(call)
+    return state.responder(call)
   }) as typeof fetch
   // react-dom detecta soporte de eventos al cargarse: debe importarse con el DOM ya expuesto.
   const { createRoot } = await import("react-dom/client")
-  const { FinancialResolutionWizard } = await import("./financial-resolution-wizard")
+  const { FinancialResolutionWizard, useFinancialResolutionView } = await import("./financial-resolution-wizard")
   const root: Root = createRoot(dom.window.document.getElementById("root")!)
-  const events = { changed: 0, billing: 0, attention: 0, download: [] as string[] }
+  const events = { changed: 0, billing: 0, attention: 0, download: [] as string[], resolved: [] as Array<{ status: string }> }
+  const props = (order: SupabasePedido) => ({
+    pedido: order, orderNumber: "BX-1031", customerName: "Begoña Núñez", reason: "Arrepentimiento",
+    onOpenBilling: () => { events.billing++ }, onOpenAttention: () => { events.attention++ },
+    onDownloadCreditNote: (id: string) => { events.download.push(id) },
+  })
   const render = async (view: FinancialResolutionView, order: SupabasePedido = pedido) => {
     await act(async () => {
-      root.render(<FinancialResolutionWizard pedido={order} view={view} orderNumber="BX-1031" customerName="Begoña Núñez"
-        reason="Arrepentimiento" onChanged={() => { events.changed++ }} onOpenBilling={() => { events.billing++ }}
-        onOpenAttention={() => { events.attention++ }} onDownloadCreditNote={(id) => { events.download.push(id) }} />)
+      root.render(<FinancialResolutionWizard {...props(order)} view={view} onChanged={() => { events.changed++ }}
+        onResolved={(resolution) => { events.resolved.push(resolution) }} />)
     })
   }
+  // Mismo cableado que RefundManagementPanel: hook real + wizard.
+  function Panel() {
+    const financial = useFinancialResolutionView(pedido.id, true, "rev")
+    if (!financial.view) return <p>Cargando</p>
+    return <FinancialResolutionWizard {...props(pedido)} view={financial.view}
+      onChanged={() => { events.changed++; financial.reload() }} onResolved={financial.applyResolution} />
+  }
+  const renderPanel = async () => { await act(async () => { root.render(<Panel />) }) }
+  const unmountView = async () => { await act(async () => { root.render(<p>Otro pedido</p>) }) }
+  const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) }) }
   const doc = dom.window.document
   const buttons = () => [...doc.querySelectorAll("button")]
   const button = (text: string | RegExp) => {
@@ -58,8 +84,136 @@ async function setup() {
     supabase.realtime.disconnect()
     dom.window.close()
   }
-  return { doc, calls, events, render, click, button, buttons, cleanup }
+  const toReview = async () => {
+    await click("Continuar")
+    await click(/^Reembolsar al medio de pago original/)
+    await click("Continuar")
+    await click("Confirmar resolución")
+  }
+  const text = () => doc.body.textContent ?? ""
+  const hasButton = (label: string) => buttons().some((item) => item.textContent?.trim() === label)
+  return { doc, calls, events, state, render, renderPanel, unmountView, flush, click, button, buttons, hasButton, text, toReview, cleanup }
 }
+
+const posts = (calls: Call[]) => calls.filter((call) => call.method === "POST")
+
+test("doble click: el primer click dispara 1 request; el segundo inmediato no dispara otro", async () => {
+  const pending = deferred<Response>()
+  const ui = await setup(() => pending.promise)
+  try {
+    await ui.render(baseView)
+    await ui.toReview()
+    const confirm = ui.button("Confirmar")
+    // Mismo tick, antes de que React re-renderice el botón deshabilitado.
+    await act(async () => { confirm.click(); confirm.click() })
+    assert.equal(posts(ui.calls).length, 1)
+    // Mientras procesa: bloqueado, sin cancelar ni otra confirmación.
+    assert.equal(ui.button("Confirmando...").disabled, true)
+    assert.equal(ui.button("Cancelar").disabled, true)
+    await act(async () => { ui.button("Confirmando...").click() })
+    assert.equal(posts(ui.calls).length, 1)
+    await act(async () => { pending.resolve(completedResponse()) })
+    assert.deepEqual(ui.events.resolved.map((item) => item.status), ["completed"])
+    assert.equal(posts(ui.calls).length, 1)
+  } finally { await ui.cleanup() }
+})
+
+test("éxito: Completado inmediato con la respuesta del POST; el refetch viejo no revive el botón", async () => {
+  const slowGet = deferred<Response>()
+  let gets = 0
+  const ui = await setup((call) => {
+    if (call.method === "POST") return completedResponse()
+    gets++
+    // 1ª lectura: wizard. 2ª (post-éxito): lenta y vieja, todavía sin resolución.
+    return gets === 1 ? Response.json(baseView) : slowGet.promise
+  })
+  try {
+    await ui.renderPanel()
+    await ui.flush()
+    await ui.toReview()
+    await ui.click("Confirmar")
+    // Sin esperar la relectura: el resultado ya está en pantalla.
+    assert.match(ui.text(), /Completado ✅/)
+    assert.equal(ui.hasButton("Confirmar resolución"), false)
+    assert.equal(gets, 2, "una sola relectura en segundo plano")
+    await act(async () => { slowGet.resolve(Response.json(baseView)) })
+    await ui.flush()
+    assert.match(ui.text(), /Completado ✅/, "la lectura vieja no revive el wizard")
+    assert.equal(ui.hasButton("Confirmar resolución"), false)
+    assert.equal(posts(ui.calls).length, 1)
+  } finally { await ui.cleanup() }
+})
+
+test("backend en proceso: muestra Procesando y no ofrece confirmar; completado oculta toda acción", async () => {
+  const ui = await setup(() => Response.json(baseView))
+  try {
+    const resolved = (status: string) => ({ ...baseView, mode: "resolution" as const, financialOptions: [],
+      resolution: { id: "r1", type: "mercadopago_refund" as const, status, amount: 25_000, detail: null } })
+    await ui.render(resolved("processing"))
+    assert.match(ui.text(), /Procesando reintegro…/)
+    assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), ["Actualizar"])
+    await ui.render(resolved("completed"))
+    assert.match(ui.text(), /Completado ✅/)
+    assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), [], "operación completada: nada para reintentar ni confirmar")
+  } finally { await ui.cleanup() }
+})
+
+test("salir y volver a entrar con la confirmación en vuelo: bloqueado, sin una segunda confirmación", async () => {
+  const pending = deferred<Response>()
+  const ui = await setup(() => pending.promise)
+  try {
+    await ui.render(baseView)
+    await ui.toReview()
+    await ui.click("Confirmar")
+    await ui.unmountView()
+    await ui.render(baseView)
+    assert.match(ui.text(), /Confirmando resolución…/)
+    assert.equal(ui.hasButton("Continuar"), false)
+    assert.equal(ui.hasButton("Confirmar resolución"), false)
+    assert.equal(ui.hasButton("Volver"), false)
+    const changedBefore = ui.events.changed
+    await act(async () => { pending.resolve(completedResponse()) })
+    await ui.flush()
+    assert.ok(ui.events.changed > changedBefore, "al terminar, relee el pedido")
+    assert.match(ui.text(), /Confirmando resolución…/, "sigue bloqueado hasta que llega la vista nueva")
+    await ui.render({ ...baseView, mode: "resolution", financialOptions: [],
+      resolution: { id: "r1", type: "mercadopago_refund", status: "completed", amount: 25_000, detail: null } })
+    assert.match(ui.text(), /Completado ✅/)
+    assert.equal(posts(ui.calls).length, 1)
+  } finally { await ui.cleanup() }
+})
+
+test("error: libera para reintentar (el backend es idempotente) y relee por si llegó a registrarse", async () => {
+  let fail = true
+  const ui = await setup(() => fail
+    ? Response.json({ error: "No se pudo continuar. Revisá el pedido e intentá nuevamente." }, { status: 409 })
+    : completedResponse())
+  try {
+    await ui.render(baseView)
+    await ui.toReview()
+    await ui.click("Confirmar")
+    assert.match(ui.doc.querySelector("[role='alert']")?.textContent ?? "", /No se pudo continuar/)
+    assert.equal(ui.events.changed, 1, "relee aunque falle")
+    assert.equal(ui.button("Confirmar resolución").disabled, false)
+    fail = false
+    await ui.click("Confirmar resolución")
+    await ui.click("Confirmar")
+    assert.equal(posts(ui.calls).length, 2)
+    assert.deepEqual(ui.events.resolved.map((item) => item.status), ["completed"])
+  } finally { await ui.cleanup() }
+})
+
+test("éxito sin resolución legible: queda bloqueado hasta la relectura (nunca reaparece Confirmar)", async () => {
+  const ui = await setup()
+  try {
+    await ui.render(baseView)
+    await ui.toReview()
+    await ui.click("Confirmar")
+    assert.equal(ui.events.resolved.length, 0)
+    assert.match(ui.text(), /Confirmando resolución…/)
+    assert.equal(ui.hasButton("Confirmar resolución"), false)
+  } finally { await ui.cleanup() }
+})
 
 test("H. saldo BEYONIX: tres pasos, un único paso visible y una sola confirmación", async () => {
   const ui = await setup()

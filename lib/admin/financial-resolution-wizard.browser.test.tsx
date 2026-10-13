@@ -46,7 +46,7 @@ window.__mount = (name) => {
   if (name === "legacy") { document.getElementById("root").innerHTML = LEGACY; return }
   createRoot(document.getElementById("root")).render(createElement(FinancialResolutionWizard, {
     pedido: { id: 31, order_credit_notes: [] }, view: views[name], orderNumber: "BX-1031", customerName: "Begoña Núñez",
-    reason: "Arrepentimiento del cliente", onChanged() {}, onOpenBilling() {}, onOpenAttention() {}, onDownloadCreditNote() {},
+    reason: "Arrepentimiento del cliente", onChanged() {}, onResolved() {}, onOpenBilling() {}, onOpenAttention() {}, onDownloadCreditNote() {},
   }))
 }
 `

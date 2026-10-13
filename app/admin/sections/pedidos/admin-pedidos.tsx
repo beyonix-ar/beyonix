@@ -2100,6 +2100,7 @@ function RefundManagementPanel({
           void refreshOrder()
           notifyOrderNotificationsChanged()
         }}
+        onResolved={financial.applyResolution}
         onOpenBilling={onOpenBilling}
         onOpenAttention={onOpenAttention}
         onDownloadCreditNote={onDownloadCreditNote}

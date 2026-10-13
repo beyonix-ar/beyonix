@@ -2,9 +2,9 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { deriveFinancialReturnContext, getFinancialResolutionMode, resolveOrderFinancialOptions, type FinancialOption, type FinancialResolutionFacts } from "./financial-resolution.ts"
 import {
-  buildFinancialResolvePayload, canContinueFinancialWizard, FINANCIAL_CHOICE_COPY, getFinancialHumanState,
-  getFinancialMoneyOptions, getFinancialReceptionLabel, getFinancialWizardSteps, initialFinancialWizardState,
-  reduceFinancialWizard, type FinancialResolutionView, type FinancialWizardAction, type FinancialWizardState,
+  applyFinancialResolution, buildFinancialResolvePayload, canContinueFinancialWizard, FINANCIAL_CHOICE_COPY, getFinancialHumanState,
+  getFinancialMoneyOptions, getFinancialReceptionLabel, getFinancialWizardSteps, getResolutionFromResponse, initialFinancialWizardState,
+  mergeFinancialResolutionView, reduceFinancialWizard, type FinancialResolutionView, type FinancialWizardAction, type FinancialWizardState,
 } from "./financial-resolution-wizard.ts"
 
 const option = (type: FinancialOption["type"]): FinancialOption => ({ type, label: FINANCIAL_CHOICE_COPY[type].label, requiresConfirmation: true })
@@ -140,4 +140,37 @@ test("salida sin devolución registrada y modo avanzado", () => {
   assert.equal(getFinancialResolutionMode({ financialStatus: "refunded", hasResolution: false, options: [], receptionOptions: [] }), "none")
   assert.equal(getFinancialResolutionMode({ financialStatus: "refunded", hasResolution: true, options: [], receptionOptions: [] }), "resolution")
   assert.equal(getFinancialResolutionMode({ financialStatus: "refund_pending", hasResolution: false, options: [], receptionOptions: [option("beyonix_credit")] }), "wizard")
+})
+
+test("respuesta del POST: sólo una resolución completa y válida se aplica sin releer", () => {
+  assert.deepEqual(getResolutionFromResponse({ status: "completed", resolution: { id: "r1", type: "mercadopago_refund", amount: 25_000, detail: null } }),
+    { id: "r1", type: "mercadopago_refund", status: "completed", amount: 25_000, detail: null })
+  assert.equal(getResolutionFromResponse({ status: "requires_action", resolution: { id: "r1", type: "beyonix_credit", amount: "25000", detail: "Fiscal" } })?.detail, "Fiscal")
+  // complete_manual responde el estado humano: se relee en vez de adivinar.
+  assert.equal(getResolutionFromResponse({ status: "Completado" }), null)
+  assert.equal(getResolutionFromResponse({ status: "completed" }), null)
+  assert.equal(getResolutionFromResponse({ status: "completed", resolution: { id: "", type: "mercadopago_refund", amount: 1 } }), null)
+  assert.equal(getResolutionFromResponse({ status: "completed", resolution: { id: "r1", type: "otro", amount: 1 } }), null)
+  assert.equal(getResolutionFromResponse({ status: "completed", resolution: { id: "r1", type: "mercadopago_refund", amount: 0 } }), null)
+  assert.equal(getResolutionFromResponse(null), null)
+})
+
+test("aplicar la resolución: modo resultado, sin opciones para confirmar otra", () => {
+  const applied = applyFinancialResolution(baseView, { id: "r1", type: "mercadopago_refund", status: "completed", amount: 25_000, detail: null })
+  assert.equal(applied.mode, "resolution")
+  assert.equal(applied.status, "Completado")
+  assert.deepEqual(applied.financialOptions, [])
+  assert.deepEqual(applied.receptionOptions, [])
+  assert.equal(getFinancialHumanState(applied), "Completado")
+})
+
+test("merge monótono: una relectura vieja no revive el wizard ni saca de Completado", () => {
+  const completed = applyFinancialResolution(baseView, { id: "r1", type: "mercadopago_refund", status: "completed", amount: 25_000, detail: null })
+  const processing = applyFinancialResolution(baseView, { id: "r1", type: "mercadopago_refund", status: "processing", amount: 25_000, detail: null })
+  assert.equal(mergeFinancialResolutionView(completed, baseView), completed, "sin resolución no pisa una confirmada")
+  assert.equal(mergeFinancialResolutionView(completed, null), completed, "falla de lectura")
+  assert.equal(mergeFinancialResolutionView(completed, processing), completed, "Completado es final")
+  assert.equal(mergeFinancialResolutionView(processing, completed), completed, "avanza a Completado")
+  assert.equal(mergeFinancialResolutionView(null, baseView), baseView)
+  assert.equal(mergeFinancialResolutionView(baseView, completed), completed)
 })

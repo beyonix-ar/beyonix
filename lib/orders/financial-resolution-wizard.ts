@@ -4,6 +4,7 @@ import type {
   FinancialChoice, FinancialHumanStatus, FinancialOption, FinancialProductOutcome,
   FinancialReceptionState, FinancialResolutionMode,
 } from "./financial-resolution.ts"
+import { financialHumanStatus } from "./financial-resolution.ts"
 
 export type FinancialResolutionView = {
   mode: FinancialResolutionMode
@@ -153,4 +154,40 @@ export function getFinancialHumanState(view: FinancialResolutionView): Financial
   }
   if (view.mode === "advanced" || (view.mode === "wizard" && view.financialOptions.length > 0)) return "Requiere acción"
   return "Pendiente"
+}
+
+type FinancialResolution = NonNullable<FinancialResolutionView["resolution"]>
+const FINANCIAL_CHOICES: readonly FinancialChoice[] = ["beyonix_credit", "mercadopago_refund", "manual_refund"]
+const RESOLUTION_STATUSES = ["reserved", "processing", "manual_pending", "requires_action", "completed"]
+
+/**
+ * Resolución que devolvió el POST resolve/retry. Sólo se acepta una respuesta
+ * completa y válida; ante cualquier duda la UI espera la relectura del GET.
+ */
+export function getResolutionFromResponse(data: unknown): FinancialResolution | null {
+  if (!data || typeof data !== "object") return null
+  const { status, resolution } = data as { status?: unknown; resolution?: unknown }
+  if (typeof status !== "string" || !RESOLUTION_STATUSES.includes(status) || !resolution || typeof resolution !== "object") return null
+  const { id, type, amount, detail } = resolution as { id?: unknown; type?: unknown; amount?: unknown; detail?: unknown }
+  if (typeof id !== "string" || !id || !FINANCIAL_CHOICES.includes(type as FinancialChoice)) return null
+  const value = Number(amount)
+  if (!Number.isFinite(value) || value <= 0) return null
+  return { id, type: type as FinancialChoice, status, amount: value, detail: typeof detail === "string" ? detail : null }
+}
+
+/** Vista con la resolución ya confirmada por el backend (sin opciones para elegir otra). */
+export function applyFinancialResolution(view: FinancialResolutionView, resolution: FinancialResolution): FinancialResolutionView {
+  return { ...view, mode: "resolution", status: financialHumanStatus(resolution.status), financialOptions: [], receptionOptions: [], resolution }
+}
+
+/**
+ * Una resolución nunca vuelve atrás: existe una por pedido (order_id único) y
+ * "completed" es final. Una lectura vieja o en carrera no puede revivir el
+ * wizard ni sacar de "Completado" lo que el backend ya confirmó.
+ */
+export function mergeFinancialResolutionView(known: FinancialResolutionView | null, fetched: FinancialResolutionView | null) {
+  if (!known?.resolution) return fetched
+  if (!fetched?.resolution || fetched.resolution.id !== known.resolution.id) return known
+  if (known.resolution.status === "completed" && fetched.resolution.status !== "completed") return known
+  return fetched
 }
