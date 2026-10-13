@@ -49,7 +49,7 @@ test("se usa en los 3 flujos de checkout que quedaban sin ninguna navegación (s
 
 test("login y checkout (que ya tenían su propio \"volver\") sólo reciben el toggle agregado, no un segundo header duplicado", () => {
   const loginSource = source("app/login/page.tsx")
-  const checkoutSource = source("app/checkout/page.tsx")
+  const checkoutSource = source("components/checkout/checkout-header.tsx")
 
   assert.match(loginSource, /<AccountThemeToggle/)
   assert.match(checkoutSource, /<AccountThemeToggle/)

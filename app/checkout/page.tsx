@@ -21,7 +21,6 @@ import {
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowLeft,
   Check,
   ChevronDown,
   Clock3,
@@ -60,9 +59,9 @@ import {
 import {
   Label,
 } from "@/components/ui/label"
-import { AccountMenu } from "@/components/account-menu"
-import { AccountThemeToggle } from "@/components/account/account-theme-toggle"
-import { BeyonixButton, BeyonixHeaderLoginLink, BeyonixHeaderRegisterLink } from "@/components/beyonix-ui"
+import { BeyonixButton } from "@/components/beyonix-ui"
+import { CheckoutHeader } from "@/components/checkout/checkout-header"
+import { checkoutSecondaryButtonClassName } from "@/components/checkout/checkout-button-styles"
 import { GeographicSelect } from "@/components/checkout/geographic-select"
 import { PublicMinimalHeader } from "@/components/public-minimal-header"
 import { ArgentinaPhoneInput } from "@/components/phone/argentina-phone-input"
@@ -196,10 +195,7 @@ import {
 } from "@/lib/utils"
 import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
 import { Footer } from "@/components/footer"
-import { AdminNotificationsBell } from "@/components/admin-notifications-bell"
-import { useOrderNotifications } from "@/hooks/use-order-notifications"
 import { useSiteSettings } from "@/hooks/use-site-settings"
-import { useBackNavigation } from "@/hooks/use-back-navigation"
 import {
   invalidateInterestFreeInstallments,
   readInterestFreeBrands,
@@ -318,9 +314,6 @@ const checkoutManualToggleClassName =
 
 const checkoutPrimaryButtonClassName =
   "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/42 bg-beyonix-blue font-black text-white shadow-[0_0_14px_rgba(47,111,163,0.16)] transition-all duration-200 hover:border-beyonix-blue-light/70 hover:bg-[#183B5E] hover:shadow-[0_0_18px_rgba(47,111,163,0.22)]"
-
-const checkoutSecondaryButtonClassName =
-  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-beyonix-blue-light/24 bg-[#10151C] font-bold text-white/78 transition-all duration-200 hover:border-beyonix-blue-light/55 hover:bg-[#112A43]/42 hover:text-white"
 
 const checkoutDisabledButtonClassName =
   "cursor-not-allowed border-white/10 bg-[#111820] text-white/45 shadow-none hover:border-white/10 hover:bg-[#111820] hover:text-white/45"
@@ -465,13 +458,10 @@ function isValidCheckoutForm(data: typeof initialCheckoutFormData) {
 
 export default function CheckoutPage() {
   const router = useRouter()
-  const { back } = useBackNavigation()
   const {
     user,
     isLoading,
-    isInternal,
   } = useAuth()
-  const adminNotifications = useOrderNotifications(isInternal)
   const {
     cart: items,
     cartSessionId,
@@ -2285,65 +2275,7 @@ export default function CheckoutPage() {
   return (
     <>
       <main className="checkout-page min-h-screen bg-[#05070A] font-heading text-white">
-      <header className="checkout-header sticky top-0 z-50 border-b border-beyonix-blue-light/14 bg-[#05070A]/95 backdrop-blur">
-        <div className="container mx-auto px-4 lg:px-8">
-          <div className="flex items-center justify-between h-16 lg:h-20">
-            <button
-              type="button"
-              aria-label="Volver a la tienda"
-              onClick={() => back("/productos")}
-              className={cn("h-9 px-3 text-sm", checkoutSecondaryButtonClassName)}
-            >
-              <ArrowLeft className="size-4" />
-
-              <span className="text-sm font-medium">
-                Volver
-              </span>
-            </button>
-
-            <Link
-              href="/"
-              aria-label="Ir al inicio de BEYONIX"
-              title="Ir al inicio de BEYONIX"
-              className="cursor-pointer font-heading text-26px font-bold tracking-tight text-foreground transition-colors duration-150 hover:text-[#2F6FA3] lg:text-28px"
-            >
-              BEYONIX
-            </Link>
-
-            <div className="relative flex min-w-20 items-center justify-end gap-2">
-              {isInternal && (
-                <AdminNotificationsBell
-                  variant="storefront"
-                  count={adminNotifications.notificationCount}
-                  tone={adminNotifications.notificationTone}
-                  groups={adminNotifications.notificationGroups}
-                  notifications={adminNotifications.notifications}
-                  loading={adminNotifications.loading}
-                  error={adminNotifications.error}
-                  onRetry={adminNotifications.reloadNotificationCount}
-                />
-              )}
-              <AccountThemeToggle />
-              {isLoading ? (
-                <div
-                  aria-hidden="true"
-                  className="hidden h-11 w-36 items-center gap-2 rounded-full border border-white/8 bg-white/5 px-3 sm:flex"
-                >
-                  <span className="size-7 shrink-0 animate-pulse rounded-full bg-white/10" />
-                  <span className="h-2.5 w-16 animate-pulse rounded-full bg-white/10" />
-                </div>
-              ) : user ? (
-                <AccountMenu />
-              ) : (
-                <div className="hidden items-center gap-2 sm:flex">
-                  <BeyonixHeaderLoginLink href="/login?redirect=/checkout" />
-                  <BeyonixHeaderRegisterLink href="/login?mode=register&redirect=/checkout" />
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+      <CheckoutHeader />
 
       <div className="beyonix-checkout-container py-5 lg:py-7">
         <div className="mx-auto max-w-none">

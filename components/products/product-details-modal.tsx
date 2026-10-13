@@ -12,6 +12,13 @@ import { ProductDetailsGallery } from "./product-details-gallery"
 import { ProductDetailsPanel } from "./product-details-panel"
 import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 
+// Mobile: aire arriba/abajo respetando el safe-area (notch) y la tarjeta
+// limitada al alto real del overlay (max-h-full). Con 100vh, en mobile la
+// tarjeta medía más que el viewport visible y, centrada, quedaba pegada o
+// cortada contra el borde superior. Desde sm se conserva el py-5 original.
+export const PRODUCT_MODAL_OVERLAY_CLASS =
+  "fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-5 backdrop-blur-sm max-sm:pb-[calc(env(safe-area-inset-bottom,0px)+16px)] max-sm:pt-[calc(env(safe-area-inset-top,0px)+16px)]"
+
 interface ProductDetailsModalProps {
   open: boolean
 
@@ -108,7 +115,7 @@ export function ProductDetailsModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-5 backdrop-blur-sm">
+    <div className={PRODUCT_MODAL_OVERLAY_CLASS}>
       <button
         type="button"
         aria-label="Cerrar modal"
@@ -163,7 +170,7 @@ export function ProductDetailsModalCard({
   const selectedStock = selectedVariant?.stock ?? product.stock
 
   return (
-    <div className="beyonix-modal-shell custom-scrollbar relative z-10 max-h-[calc(100vh-40px)] w-[min(1320px,calc(100vw-32px))] overflow-x-hidden overflow-y-auto rounded-3xl border border-beyonix-blue-light/20 bg-[#080D13] shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_40px_rgba(30,140,255,0.055)] md:grid md:grid-cols-[minmax(0,45fr)_minmax(0,55fr)] md:items-stretch">
+    <div className="beyonix-modal-shell custom-scrollbar relative z-10 max-h-[calc(100vh-40px)] max-sm:max-h-full w-[min(1320px,calc(100vw-32px))] overflow-x-hidden overflow-y-auto rounded-3xl border border-beyonix-blue-light/20 bg-[#080D13] shadow-[0_28px_90px_rgba(0,0,0,0.72),0_0_40px_rgba(30,140,255,0.055)] md:grid md:grid-cols-[minmax(0,45fr)_minmax(0,55fr)] md:items-stretch">
       <button
         type="button"
         aria-label="Cerrar detalle del producto"

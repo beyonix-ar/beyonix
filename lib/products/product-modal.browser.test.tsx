@@ -8,7 +8,7 @@ import tailwindcss from "@tailwindcss/postcss"
 import { chromium, type Browser } from "playwright-core"
 import { build } from "esbuild"
 
-import { ProductDetailsModalCard } from "@/components/products/product-details-modal"
+import { PRODUCT_MODAL_OVERLAY_CLASS, ProductDetailsModalCard } from "@/components/products/product-details-modal"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
 // Modal de producto real (galería + compra + descripción a todo el ancho) con
@@ -16,6 +16,8 @@ import type { SupabaseProducto } from "@/lib/supabase/types"
 // 1024, tablet y 390 px: nunca scroll horizontal, la descripción ocupa el
 // ancho completo debajo de galería y compra, y la venta aleatoria se rotula
 // sin selección falsa de color.
+
+const SHOTS = process.env.PRODUCT_MODAL_SHOTS
 
 let browser: Browser
 let css: string
@@ -199,7 +201,7 @@ async function measure(width: number, html = markup, withInstallments = false, h
     await page.route("**/*", (route) => route.abort())
     await page.setContent(`<!doctype html>
 <html lang="es"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>
-<body style="margin:0;background:#000"><div class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 px-4 py-5">${html}</div></body></html>`)
+<body style="margin:0;background:#000"><div class="${PRODUCT_MODAL_OVERLAY_CLASS}">${html}</div></body></html>`)
     if (withInstallments) {
       // El test de layout añade la línea que muestra la configuración global
       // de cuotas; su contenido no interviene en el cálculo de la grid.
@@ -397,6 +399,51 @@ test("quick view mobile de cuatro perfiles: galería natural y panel apilado", a
     assert.ok(layout.description.top >= layout.panelBottom - 1, `${profile.name}: descripción debajo`)
   }
 })
+
+test("overlay del modal: separación superior mobile con safe-area; desktop conserva py-5", () => {
+  assert.match(PRODUCT_MODAL_OVERLAY_CLASS, /max-sm:pt-\[calc\(env\(safe-area-inset-top,0px\)\+16px\)\]/)
+  assert.match(PRODUCT_MODAL_OVERLAY_CLASS, /max-sm:pb-\[calc\(env\(safe-area-inset-bottom,0px\)\+16px\)\]/)
+  assert.match(PRODUCT_MODAL_OVERLAY_CLASS, /\bpy-5\b/)
+  // La utilidad realmente se genera en el CSS compilado (no sólo en el source).
+  assert.match(css, /padding-top:\s*calc\(env\(safe-area-inset-top,\s*0px\)\s*\+\s*16px\)/)
+})
+
+for (const [width, height] of [[320, 568], [360, 640], [390, 844], [768, 1024], [1366, 768]] as const) {
+  test(`modal de producto a ${width}×${height}: aire superior, X accesible y sin scroll horizontal`, async () => {
+    const page = await browser.newPage({ viewport: { width, height } })
+    try {
+      await page.route("**/*", (route) => route.abort())
+      await page.setContent(`<!doctype html>
+<html lang="es"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>
+<body style="margin:0;background:#000"><div class="${PRODUCT_MODAL_OVERLAY_CLASS}">${markup}</div></body></html>`)
+      const data = (await page.evaluate(`(() => {
+        const card = document.querySelector(".beyonix-modal-shell.custom-scrollbar")
+        const close = card.querySelector("button[aria-label='Cerrar detalle del producto']")
+        const badge = card.querySelector("[data-stock-badge]")
+        const r = (el) => { const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right } }
+        const hit = (el) => { const b = el.getBoundingClientRect(); return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.closest("button") === el }
+        return { overlayPaddingTop: getComputedStyle(card.parentElement).paddingTop, overlayPaddingBottom: getComputedStyle(card.parentElement).paddingBottom, card: r(card), close: r(close), badge: r(badge),
+          closeHit: hit(close), pageOverflow: document.documentElement.scrollWidth - window.innerWidth, cardOverflow: card.scrollWidth - card.clientWidth }
+      })()`)) as {
+        overlayPaddingTop: string; overlayPaddingBottom: string; closeHit: boolean; pageOverflow: number; cardOverflow: number
+        card: { top: number; bottom: number; left: number; right: number }
+        close: { top: number; bottom: number; left: number; right: number }
+        badge: { top: number; bottom: number; left: number; right: number }
+      }
+      // Mobile: 16px + safe-area (0 en headless). Desde sm, el py-5 original
+      // (escala de spacing del proyecto) sin cambios.
+      if (width < 640) assert.equal(data.overlayPaddingTop, "16px")
+      else assert.equal(data.overlayPaddingTop, data.overlayPaddingBottom, "desktop conserva py-5 simétrico")
+      assert.ok(data.card.top >= 16 - 0.5, `la tarjeta respira arriba: top ${data.card.top}`)
+      assert.ok(data.card.bottom <= height - 16 + 0.5, `la tarjeta no excede el alto visible: bottom ${data.card.bottom}`)
+      assert.ok(data.close.top >= data.card.top && data.close.right <= width, "X dentro de la tarjeta y la pantalla")
+      assert.ok(data.closeHit, "la X es clickeable (nada la tapa)")
+      assert.ok(data.badge.top > data.card.top, "badge debajo del borde superior de la tarjeta")
+      assert.ok(data.pageOverflow <= 0 && data.cardOverflow <= 0, "sin scroll horizontal")
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/modal-${width}.png` })
+    } finally { await page.close() }
+  })
+}
 
 test("venta aleatoria en el modal: rótulo y ayuda, sin leyenda bajo miniaturas ni selector falso", () => {
   assert.match(markup, /Color\/modelo:/)
