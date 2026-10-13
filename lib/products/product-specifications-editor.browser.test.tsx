@@ -56,7 +56,7 @@ test.before(async () => {
 
 test.after(async () => { await browser?.close() })
 
-test("especificaciones: texto libre, +300 entradas de íconos, edición, borrado y scroll desde la quinta", async () => {
+test("especificaciones: texto libre, catálogo de íconos único, edición, borrado y scroll desde la quinta", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   try {
     await page.route("http://localhost/**", (route) => route.fulfill({
@@ -71,7 +71,12 @@ test("especificaciones: texto libre, +300 entradas de íconos, edición, borrado
     assert.equal(await page.getByText("Activa", { exact: true }).count(), 0)
     assert.equal(await page.getByText("Arrastrá para reordenar.").count(), 0)
     await page.getByRole("button", { name: "Abrir buscador de iconos" }).click()
-    assert.ok(await page.locator('[aria-label^="Elegir ícono "]').count() >= 300)
+    const entries = await page.locator('[aria-label^="Elegir ícono "]').evaluateAll((buttons) => buttons.map((button) => ({
+      label: button.getAttribute("aria-label"), icon: button.getAttribute("data-icon-name"),
+    })))
+    assert.ok(entries.length >= 100, `catálogo de ${entries.length} entradas`)
+    assert.equal(new Set(entries.map((entry) => entry.icon)).size, entries.length, "iconName repetido en el selector")
+    assert.equal(new Set(entries.map((entry) => entry.label?.toLocaleLowerCase("es-AR"))).size, entries.length, "nombre repetido en el selector")
     await page.getByRole("button", { name: "Elegir ícono Notebook", exact: true }).click()
     for (let index = 1; index <= 5; index++) {
       await input.fill(`Característica ${index}`)
@@ -105,7 +110,12 @@ test("especificaciones: texto libre, +300 entradas de íconos, edición, borrado
   } finally { await page.close() }
 })
 
-test("picker: alias persistido, buscable y restablecible sin cambiar iconName", async () => {
+type AliasWindow = {
+  specIconAliases?: Record<string, string>
+  currentSpecifications: Array<{ icono: string; texto: string; orden: number; activo: boolean }>
+}
+
+test("alias: renombrar reemplaza el nombre en Admin, persiste por iconName y nunca toca la característica", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   try {
     await page.route("http://localhost/**", (route) => route.fulfill({
@@ -113,37 +123,88 @@ test("picker: alias persistido, buscable y restablecible sin cambiar iconName", 
       body: `<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><style>${css}</style></head><body><div class="product-editor-screen"><div id="root"></div></div><script>${bundle}</script></body></html>`,
     }))
     await page.goto("http://localhost/spec-alias-fixture")
-    await page.getByRole("button", { name: "Abrir buscador de iconos" }).click()
-    const count = await page.locator('[aria-label^="Elegir ícono "]').count()
-    assert.ok(count >= 300, `catálogo de ${count} entradas`)
-    await page.getByRole("button", { name: "Editar nombre de Notebook", exact: true }).click()
-    await page.getByRole("textbox", { name: "Nombre visible" }).fill("Capacidad")
-    await page.getByRole("button", { name: "Guardar", exact: true }).click()
-    await page.getByRole("button", { name: "Elegir ícono Capacidad", exact: true }).first().waitFor()
-    assert.ok(await page.evaluate(() => Object.values((window as unknown as { specIconAliases: Record<string, string> }).specIconAliases).includes("Capacidad")))
+    const trigger = page.getByRole("button", { name: "Abrir buscador de iconos" })
+    const characteristic = page.getByRole("textbox", { name: "Característica" })
+    const specifications = () => page.evaluate(() => (window as unknown as AliasWindow).currentSpecifications)
+    const aliases = () => page.evaluate(() => (window as unknown as AliasWindow).specIconAliases ?? {})
 
-    const persisted = await page.evaluate(() => (window as unknown as { specIconAliases: Record<string, string> }).specIconAliases)
-    await page.addInitScript((aliases) => { (window as unknown as { specIconAliases: Record<string, string> }).specIconAliases = aliases }, persisted)
-    await page.reload()
-    await page.getByRole("button", { name: "Abrir buscador de iconos" }).click()
-    await page.getByRole("button", { name: "Elegir ícono Capacidad", exact: true }).first().waitFor()
-
-    const search = page.getByRole("searchbox", { name: "Buscar ícono" })
-    await search.fill("capacidad")
-    assert.ok(await page.getByRole("button", { name: "Elegir ícono Capacidad", exact: true }).count() >= 1)
-    await search.fill("notebook")
-    assert.ok(await page.getByRole("button", { name: "Elegir ícono Capacidad", exact: true }).count() >= 1)
-    await search.fill("laptop")
-    await page.getByRole("button", { name: "Elegir ícono Capacidad", exact: true }).first().click()
-    await page.getByRole("textbox", { name: "Característica" }).fill("Construcción reforzada")
+    // Especificación existente con el nombre base del ícono.
+    await trigger.click()
+    await page.getByRole("button", { name: "Elegir ícono Seguridad", exact: true }).click()
+    await characteristic.fill("Soporte metálico firme y duradero")
     await page.getByRole("button", { name: "Agregar especificación" }).click()
-    assert.equal(await page.evaluate(() => (window as unknown as { currentSpecifications: Array<{ icono: string }> }).currentSpecifications[0]?.icono), "Laptop")
+    const before = await specifications()
+    assert.deepEqual(before.map(({ icono, texto }) => ({ icono, texto })), [{ icono: "ShieldCheck", texto: "Soporte metálico firme y duradero" }])
 
-    await page.getByRole("button", { name: "Abrir buscador de iconos" }).click()
-    await page.getByRole("searchbox", { name: "Buscar ícono" }).fill("laptop")
-    await page.getByRole("button", { name: "Editar nombre de Capacidad", exact: true }).first().click()
+    // Renombrar: el nombre nuevo reemplaza al viejo en todo el Admin, al instante.
+    await trigger.click()
+    await page.getByRole("button", { name: "Editar nombre de Seguridad", exact: true }).click()
+    await page.getByRole("textbox", { name: "Nombre visible" }).fill("Protección premium")
+    await page.getByRole("button", { name: "Guardar", exact: true }).click()
+    await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).waitFor()
+    assert.equal(await page.getByRole("button", { name: "Elegir ícono Seguridad", exact: true }).count(), 0)
+    assert.equal(await page.locator('[aria-label^="Elegir ícono "]').filter({ hasText: /Seguridad/ }).count(), 0)
+    assert.deepEqual(await aliases(), { ShieldCheck: "Protección premium" })
+    assert.deepEqual(await specifications(), before, "renombrar no cambia iconName, texto, orden ni estado")
+    const row = page.locator(".product-editor-spec-row").first()
+    assert.match((await row.textContent() ?? ""), /Protección premium/)
+    assert.match((await row.textContent() ?? ""), /Soporte metálico firme y duradero/)
+    assert.doesNotMatch((await row.textContent() ?? ""), /Seguridad/)
+
+    // Cerrar y reabrir conserva el nombre nuevo.
+    await page.getByRole("button", { name: "Cerrar buscador de iconos" }).click()
+    await trigger.click()
+    await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).waitFor()
+
+    // Búsqueda por alias, nombre base e iconName; siempre se ve el alias.
+    const search = page.getByRole("searchbox", { name: "Buscar ícono" })
+    for (const query of ["premium", "seguridad", "shieldcheck"]) {
+      await search.fill(query)
+      assert.equal(await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).count(), 1, query)
+    }
+
+    // Nueva especificación: el label del selector no se copia a la característica.
+    await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).click()
+    assert.equal(await page.locator("[data-icon-picker-label]").innerText(), "Protección premium")
+    assert.equal(await characteristic.inputValue(), "")
+    await characteristic.fill("Fijación por abrazadera, sin perforaciones")
+    await page.getByRole("button", { name: "Agregar especificación" }).click()
+    assert.deepEqual((await specifications()).map(({ icono, texto }) => ({ icono, texto })), [
+      { icono: "ShieldCheck", texto: "Soporte metálico firme y duradero" },
+      { icono: "ShieldCheck", texto: "Fijación por abrazadera, sin perforaciones" },
+    ])
+
+    // Nombres únicos: no se puede usar el nombre de otro ícono (normalizado).
+    await trigger.click()
+    await page.getByRole("searchbox", { name: "Buscar ícono" }).fill("")
+    await page.getByRole("button", { name: "Editar nombre de Protección", exact: true }).click()
+    await page.getByRole("textbox", { name: "Nombre visible" }).fill("  PROTECCION   premium ")
+    await page.getByRole("button", { name: "Guardar", exact: true }).click()
+    assert.match(await page.getByRole("alert").innerText(), /Ya existe un ícono llamado "Protección premium"/)
+    assert.deepEqual(await aliases(), { ShieldCheck: "Protección premium" })
+    await page.getByRole("button", { name: "Cancelar", exact: true }).click()
+    await page.getByRole("button", { name: "Cerrar buscador de iconos" }).click()
+
+    // Recargar: el alias vuelve desde la persistencia (clave por iconName).
+    const persisted = await aliases()
+    await page.addInitScript((saved) => { (window as unknown as AliasWindow).specIconAliases = saved }, persisted)
+    await page.reload()
+    await trigger.click()
+    await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).waitFor()
+    assert.equal(await page.getByRole("button", { name: "Elegir ícono Seguridad", exact: true }).count(), 0)
+    await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).click()
+    assert.equal(await page.locator("[data-icon-picker-label]").innerText(), "Protección premium")
+    await characteristic.fill("Texto propio")
+    await page.getByRole("button", { name: "Agregar especificación" }).click()
+
+    // Restablecer: vuelve al nombre base sólo en el selector; la característica no cambia.
+    await trigger.click()
+    await page.getByRole("button", { name: "Editar nombre de Protección premium", exact: true }).click()
     await page.getByRole("button", { name: "Restablecer nombre" }).click()
-    await page.getByRole("button", { name: "Elegir ícono Notebook", exact: true }).waitFor()
-    assert.equal(await page.evaluate(() => Object.keys((window as unknown as { specIconAliases: Record<string, string> }).specIconAliases).length), 0)
+    await page.getByRole("button", { name: "Elegir ícono Seguridad", exact: true }).waitFor()
+    assert.equal(await page.getByRole("button", { name: "Elegir ícono Protección premium", exact: true }).count(), 0)
+    assert.deepEqual(await aliases(), {})
+    assert.deepEqual((await specifications()).map(({ icono, texto }) => ({ icono, texto })), [{ icono: "ShieldCheck", texto: "Texto propio" }])
+    assert.match((await page.locator(".product-editor-spec-row").first().textContent()) ?? "", /Seguridad[\s\S]*Texto propio/)
   } finally { await page.close() }
 })

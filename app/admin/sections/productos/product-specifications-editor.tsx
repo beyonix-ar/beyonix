@@ -32,12 +32,17 @@ import {
   updateProductoEspecificacionesOrden,
 } from "@/lib/supabase/queries/producto-especificaciones"
 
+import { LucideIconPicker } from "./lucide-icon-picker"
 import {
-  getFriendlyIconName,
-  getLucideIcon,
-  isAllowedLucideIcon,
-  LucideIconPicker,
-} from "./lucide-icon-picker"
+  getSpecIcon,
+  getSpecIconDisplayLabel,
+  isAllowedSpecIcon,
+} from "@/lib/products/spec-icons"
+import {
+  loadSpecIconAliases,
+  type SpecIconAliases,
+} from "@/lib/supabase/queries/spec-icon-aliases"
+import { CircleHelp } from "lucide-react"
 import {
   adminControlClassName,
   AdminDangerButton,
@@ -127,6 +132,19 @@ export function ProductSpecificationsEditor({
   const [loading, setLoading] = useState(Boolean(productoId))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
+  const [iconAliases, setIconAliases] = useState<SpecIconAliases>({})
+  const [aliasesError, setAliasesError] = useState("")
+
+  useEffect(() => {
+    let active = true
+    loadSpecIconAliases()
+      .then((loaded) => { if (active) setIconAliases(loaded) })
+      .catch((err) => {
+        console.error("No se pudieron cargar los nombres de íconos.", err)
+        if (active) setAliasesError("No se pudieron cargar los nombres personalizados de los íconos.")
+      })
+    return () => { active = false }
+  }, [])
 
   const loadSpecifications = useCallback(async () => {
     if (!productoId) {
@@ -198,7 +216,7 @@ export function ProductSpecificationsEditor({
       return
     }
 
-    if (!isAllowedLucideIcon(cleanIcon)) {
+    if (!isAllowedSpecIcon(cleanIcon)) {
       setError("El ícono elegido no está permitido.")
       return
     }
@@ -474,7 +492,12 @@ export function ProductSpecificationsEditor({
               <p className="mb-1 text-10px font-black uppercase tracking-wide text-white">
                 Ícono
               </p>
-              <LucideIconPicker value={icono} onChange={setIcono} />
+              <LucideIconPicker
+                value={icono}
+                onChange={setIcono}
+                aliases={iconAliases}
+                onAliasesChange={(next) => { setIconAliases(next); setAliasesError("") }}
+              />
             </div>
 
             <label className="min-w-0">
@@ -484,7 +507,7 @@ export function ProductSpecificationsEditor({
               <input
                 type="text"
                 value={texto}
-                placeholder="Ej: Construcción reforzada"
+                placeholder="Ej: Fijación por abrazadera, sin perforaciones"
                 onChange={(event) => setTexto(event.target.value)}
                 className={inputCls}
               />
@@ -523,9 +546,9 @@ export function ProductSpecificationsEditor({
             </div>
           </div>
 
-          {error && (
+          {(error || aliasesError) && (
             <div className="mt-3">
-              <AdminInfoBlock tone="danger">{error}</AdminInfoBlock>
+              <AdminInfoBlock tone="danger">{error || aliasesError}</AdminInfoBlock>
             </div>
           )}
         </div>
@@ -554,6 +577,7 @@ export function ProductSpecificationsEditor({
                     <SpecificationRow
                       key={specification.id}
                       icono={specification.icono}
+                      iconLabel={getSpecIconDisplayLabel(specification.icono, iconAliases)}
                       texto={specification.texto}
                       orden={specification.orden}
                       activo={specification.activo}
@@ -599,6 +623,7 @@ export function ProductSpecificationsEditor({
                   <SpecificationRow
                     key={specification.tempId}
                     icono={specification.icono}
+                    iconLabel={getSpecIconDisplayLabel(specification.icono, iconAliases)}
                     texto={specification.texto}
                     orden={specification.orden}
                     activo={specification.activo}
@@ -670,6 +695,8 @@ function EmptySpecifications() {
 
 interface SpecificationRowProps {
   icono: string
+  /** Nombre del ícono sólo para Admin; la tienda muestra únicamente `texto`. */
+  iconLabel: string
   texto: string
   orden: number
   activo: boolean
@@ -685,6 +712,7 @@ interface SpecificationRowProps {
 
 function SpecificationRow({
   icono,
+  iconLabel,
   texto,
   orden,
   activo,
@@ -697,7 +725,7 @@ function SpecificationRow({
   onRemove,
   onToggle,
 }: SpecificationRowProps) {
-  const Icon = getLucideIcon(icono)
+  const Icon = getSpecIcon(icono) ?? CircleHelp
 
   return (
     <div
@@ -735,7 +763,7 @@ function SpecificationRow({
 
         <div className="min-w-0 flex-1">
           <p className="truncate text-10px font-black uppercase tracking-wide text-white">
-            {getFriendlyIconName(icono)}
+            {iconLabel}
           </p>
           <p
             className="mt-0.5 truncate text-xs font-medium leading-4 text-white"

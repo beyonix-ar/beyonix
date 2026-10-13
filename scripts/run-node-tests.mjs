@@ -311,6 +311,7 @@ const TSX_TEST_FILES = [
   "app/admin/sections/facturacion/fiscal-history-panel.test.tsx",
   "lib/orders/admin-claim-wizard.test.ts",
   "lib/cart/shipping-bonus-copy.test.tsx",
+  "lib/products/spec-icons.test.tsx",
 ]
 
 // PostgreSQL embebido con conexiones concurrentes: correrlo fuera del batch

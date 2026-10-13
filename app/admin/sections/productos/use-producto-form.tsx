@@ -21,7 +21,7 @@ import type {
 import {
   saveDraftProductoEspecificaciones,
 } from "@/lib/supabase/queries/producto-especificaciones"
-import { isAllowedLucideIcon } from "./lucide-icon-picker"
+import { isAllowedSpecIcon } from "@/lib/products/spec-icons"
 
 import {
   uploadProductoDraftImages,
@@ -535,7 +535,7 @@ export function useProductoForm({
       draftSpecifications.some(
         (specification) =>
           !specification.icono.trim() ||
-          !isAllowedLucideIcon(
+          !isAllowedSpecIcon(
             specification.icono.trim()
           ) ||
           !specification.texto.trim() ||

@@ -1,40 +1,48 @@
 import { supabase } from "@/lib/supabase/client"
+import {
+  resolveSpecIconAliasRows,
+  SPEC_ICON_ALIAS_KEY_PREFIX as KEY_PREFIX,
+  SPEC_ICON_LEGACY_ALIAS_KEY_PREFIX as LEGACY_KEY_PREFIX,
+  type SpecIconAliases,
+} from "@/lib/products/spec-icons"
 
-const KEY_PREFIX = "product_spec_icon_alias_v1:"
-
-export type SpecIconAliases = Record<string, string>
+// Nombre visible (sólo Admin) de cada ícono de especificaciones, por iconName,
+// en `site_settings`. Las claves v1 (por entrada sintética) se leen como
+// respaldo y se borran al guardar o restablecer ese ícono.
+export type { SpecIconAliases }
 
 export async function loadSpecIconAliases(): Promise<SpecIconAliases> {
   const { data, error } = await supabase
     .from("site_settings")
-    .select("key,value")
-    .like("key", `${KEY_PREFIX}%`)
+    .select("key,value,updated_at")
+    .or(`key.like.${KEY_PREFIX}%,key.like.${LEGACY_KEY_PREFIX}%`)
 
   if (error) throw error
-
-  return Object.fromEntries((data ?? []).flatMap(({ key, value }) => {
-    const label = value && typeof value === "object" && !Array.isArray(value)
-      ? value.label
-      : null
-    return typeof label === "string" && label.trim()
-      ? [[key.slice(KEY_PREFIX.length), label.trim()]]
-      : []
-  }))
+  return resolveSpecIconAliasRows(data ?? [])
 }
 
-export async function saveSpecIconAlias(optionId: string, label: string) {
+async function deleteLegacyAliases(iconName: string) {
+  const { error } = await supabase.from("site_settings")
+    .delete()
+    .like("key", `${LEGACY_KEY_PREFIX}${iconName}:%`)
+  if (error) throw error
+}
+
+export async function saveSpecIconAlias(iconName: string, label: string) {
   const { error } = await supabase.from("site_settings").upsert({
-    key: `${KEY_PREFIX}${optionId}`,
+    key: `${KEY_PREFIX}${iconName}`,
     value: { label },
-    description: "Nombre visible de un ícono de especificaciones",
+    description: "Nombre visible en Admin de un ícono de especificaciones (no se muestra en la tienda)",
     updated_at: new Date().toISOString(),
   }, { onConflict: "key" })
   if (error) throw error
+  await deleteLegacyAliases(iconName)
 }
 
-export async function resetSpecIconAlias(optionId: string) {
+export async function resetSpecIconAlias(iconName: string) {
   const { error } = await supabase.from("site_settings")
     .delete()
-    .eq("key", `${KEY_PREFIX}${optionId}`)
+    .eq("key", `${KEY_PREFIX}${iconName}`)
   if (error) throw error
+  await deleteLegacyAliases(iconName)
 }

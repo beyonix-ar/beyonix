@@ -2,62 +2,9 @@
 
 import { useState } from "react"
 
-import {
-  Armchair,
-  AudioLines,
-  BadgeCheck,
-  Battery,
-  BatteryCharging,
-  BatteryFull,
-  Bluetooth,
-  Cable,
-  Camera,
-  Car,
-  CircleHelp,
-  Clock,
-  Coffee,
-  CookingPot,
-  CupSoda,
-  Ear,
-  Flame,
-  Gamepad2,
-  Gauge,
-  Hammer,
-  Hand,
-  HardDrive,
-  Headphones,
-  Home,
-  Laptop,
-  Layers3,
-  Lock,
-  Mic,
-  Monitor,
-  MonitorUp,
-  Music,
-  Network,
-  Package,
-  PanelsTopLeft,
-  Plug,
-  PlugZap,
-  Rocket,
-  Rotate3d,
-  Ruler,
-  ScanFace,
-  Shield,
-  ShieldCheck,
-  Smile,
-  Smartphone,
-  Sparkles,
-  Star,
-  Thermometer,
-  Truck,
-  Usb,
-  Volume2,
-  Weight,
-  Wifi,
-  Zap,
-} from "lucide-react"
-import type { LucideIcon } from "lucide-react"
+import { CircleHelp, Sparkles } from "lucide-react"
+
+import { getSpecIcon } from "@/lib/products/spec-icons"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 
@@ -102,61 +49,6 @@ interface ProductDetailsPanelProps {
   isInCart?: boolean
   cartQuantity?: number
   selectedStock: number
-}
-
-const iconMap: Record<string, LucideIcon> = {
-  Armchair,
-  AudioLines,
-  BadgeCheck,
-  Battery,
-  BatteryCharging,
-  BatteryFull,
-  Bluetooth,
-  Cable,
-  Camera,
-  Car,
-  Clock,
-  Coffee,
-  CookingPot,
-  CupSoda,
-  Ear,
-  Flame,
-  Gamepad2,
-  Gauge,
-  Hammer,
-  Hand,
-  HardDrive,
-  Headphones,
-  Home,
-  Laptop,
-  Layers3,
-  Lock,
-  Mic,
-  Monitor,
-  MonitorUp,
-  Music,
-  Network,
-  Package,
-  PanelsTopLeft,
-  Plug,
-  PlugZap,
-  Rocket,
-  Rotate3d,
-  Ruler,
-  ScanFace,
-  Shield,
-  ShieldCheck,
-  Smile,
-  Smartphone,
-  Sparkles,
-  Star,
-  Thermometer,
-  Truck,
-  Usb,
-  Volume2,
-  Weight,
-  Wifi,
-  Zap,
 }
 
 export function ProductDetailsPanel({
@@ -204,7 +96,7 @@ export function ProductDetailsPanel({
         return a.id - b.id
       }) ?? []
   const visibleFeatures = productSpecifications.map((specification) => ({
-    icon: iconMap[specification.icono] ?? CircleHelp,
+    icon: getSpecIcon(specification.icono) ?? CircleHelp,
     text: specification.texto,
   }))
   const limitedFeatures = visibleFeatures.slice(0, 8)
