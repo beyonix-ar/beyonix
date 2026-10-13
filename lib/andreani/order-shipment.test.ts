@@ -771,10 +771,10 @@ test("crea el envío, consolida un único bulto y persiste la referencia", async
   assert.equal(result.tracking, "360000101651699")
   assert.equal(capturedEnvs[0]?.ANDREANI_ENV, "QA")
   assert.equal(capturedInputs[0]?.items.length, 1)
-  // Sin armado todavía: bulto estimado por el embalador (peso con embalaje).
-  assert.equal(capturedInputs[0]?.items[0].producto.peso_empaquetado_kg, 5.3)
-  assert.equal(capturedInputs[0]?.items[0].producto.largo_paquete_cm, 16)
-  assert.equal(capturedInputs[0]?.items[0].bulto?.volumenCm, 16 * 16 * 16)
+  // Sin armado todavía: bulto estimado con peso y medidas del producto tal cual.
+  assert.equal(capturedInputs[0]?.items[0].producto.peso_empaquetado_kg, 5)
+  assert.equal(capturedInputs[0]?.items[0].producto.largo_paquete_cm, 14)
+  assert.equal(capturedInputs[0]?.items[0].bulto?.volumenCm, 14 * 14 * 14)
   assert.equal(capturedInputs[0]?.items[0].bulto?.valorDeclaradoConImpuestos, 25_000)
   assert.deepEqual(capturedInputs[0]?.items[0].bulto?.referencias, [
     { meta: "idCliente", contenido: "42" },
@@ -1705,5 +1705,5 @@ test("armado legacy sin medidas: se mantiene la estimación (no inventa medidas)
       return officialOrderResponse
     },
   })
-  assert.equal(captured[0].items[0].producto.peso_empaquetado_kg, 4.25)
+  assert.equal(captured[0].items[0].producto.peso_empaquetado_kg, 4)
 })

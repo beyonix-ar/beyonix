@@ -112,9 +112,10 @@ export interface AndreaniParcelPackage {
 }
 
 /**
- * Bultos que se informan a Andreani: los ESTIMADOS por el embalador
- * (dimensiones exteriores, volumen de la caja y peso con embalaje), nunca la
- * suma de lados. Cada bulto viaja por separado: Andreani cotiza la suma de
+ * Bultos que se informan a Andreani: los ESTIMADOS por el embalador a partir
+ * del peso y las medidas de cada producto, que ya son los de la unidad lista
+ * para despacho (se usan tal cual; 1 unidad = exactamente sus valores), nunca
+ * la suma de lados. Cada bulto viaja por separado: Andreani cotiza la suma de
  * sus tarifas y la creación acepta un array de bultos.
  */
 export interface AndreaniShipmentPackages {

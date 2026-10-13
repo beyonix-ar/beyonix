@@ -1,48 +1,47 @@
 /**
- * Estimador de embalaje de BEYONIX: convierte unidades de producto (medidas y
- * peso del envase de fábrica) en uno o más BULTOS estimados para cotizar.
+ * Estimador de bultos de BEYONIX para COTIZAR (checkout, y envíos o reclamos
+ * sin medidas reales del armado). Convierte unidades de producto en uno o más
+ * bultos estimados.
  *
- * Nunca suma lados: el peso sí se suma, pero las dimensiones exteriores salen
- * de acomodar las unidades en una caja compacta que contenga su volumen. Es
- * una heurística determinista y conservadora, no un bin packing 3D exacto.
- * Trabaja en enteros (gramos, cm, cm³) para dar siempre el mismo resultado.
+ * Regla: el peso y las medidas cargados en el producto (Admin → Logística) son
+ * los de la UNIDAD LISTA PARA DESPACHO, con el margen de embalaje que el
+ * operador decidió incluir. Se usan TAL CUAL: este estimador nunca agrega
+ * relleno por lado, peso de caja ni porcentajes de embalaje por unidad (antes
+ * lo hacía y duplicaba el margen ya cargado a mano).
  *
- * Márgenes (calibrables con las medidas reales que se cargan al armar; ver
- * order_package_parcels.actual_* y ordenes.shipping_estimate):
- * - PACKING_PADDING_PER_SIDE_CM: burbuja/bolsa alrededor del contenido.
- * - MIXED_PACKING_VOLUME_FACTOR: huecos al acomodar productos de formas
- *   distintas (las unidades idénticas se acomodan en grilla, sin este factor).
- * - Peso de embalaje: bolsa + burbuja + eventual caja, proporcional y con tope.
+ * - 1 unidad: el bulto es exactamente la unidad (mismo peso y medidas).
+ * - Varias unidades iguales: se acomodan en grilla con la forma más compacta;
+ *   peso = suma, medidas = la grilla (nunca suma de lados).
+ * - Productos distintos en un mismo bulto: caja compacta que contiene la suma
+ *   de volúmenes + MIXED_PACKING_VOLUME_FACTOR (huecos inevitables al combinar
+ *   formas distintas; es un factor de COMBINACIÓN, no de embalaje por unidad).
+ * - Se divide en varios bultos sólo por el peso máximo por bulto.
+ *
+ * El armado real del pedido (medidas del bulto final cargadas por el operador)
+ * no pasa por acá: crea el envío con esas medidas reales.
  */
 
-export const PACKAGE_ESTIMATOR_VERSION = "beyonix-packing-v1"
+export const PACKAGE_ESTIMATOR_VERSION = "beyonix-packing-v2"
 
-/** 1 cm por lado = +2 cm en cada dimensión exterior. */
-export const PACKING_PADDING_PER_SIDE_CM = 1
 /** +15% de volumen al combinar productos distintos (huecos de acomodado). */
 export const MIXED_PACKING_VOLUME_FACTOR = 1.15
-/** Bolsa ecommerce / precinto. */
-export const PACKAGING_BASE_WEIGHT_G = 50
-/** Burbuja, relleno o caja: 5% del peso de los productos. */
-export const PACKAGING_WEIGHT_RATIO = 0.05
-/** Tope del peso de embalaje (una caja corrugada grande ronda 1,5 kg). */
-export const PACKAGING_MAX_WEIGHT_G = 1_500
 
 /**
- * Unidades: el Admin carga peso en kg y medidas en cm (con coma o punto); el
- * estimador trabaja en gramos y cm enteros para no acumular errores de float.
+ * Unidades: el Admin carga peso en kg y medidas en cm (con coma o punto). El
+ * peso se suma en gramos enteros para no acumular errores de float.
  * Ej.: un encendedor de 0,072 kg son 72 g.
  */
 export const kilogramsToGrams = (kilograms: number) => Math.round(kilograms * 1000)
 export const gramsToKilograms = (grams: number) => grams / 1000
 
 export interface PackageLimits {
-  /** Peso máximo por bulto, embalaje incluido. */
+  /** Peso máximo por bulto. */
   maxWeightKg: number
   /** Lado máximo por bulto. */
   maxSideCm: number
 }
 
+/** Unidad lista para despacho: medidas y peso finales, ya con su embalaje. */
 export interface PackingUnit {
   lengthCm: number
   widthCm: number
@@ -58,7 +57,7 @@ export interface EstimatedParcel {
   /** Lado menor. */
   heightCm: number
   volumeCm3: number
-  /** Productos + embalaje estimado. */
+  /** Peso del bulto: suma de las unidades (sin agregados). */
   weightKg: number
   productsWeightKg: number
   productsVolumeCm3: number
@@ -91,13 +90,16 @@ export class PackageEstimateError extends Error {
 }
 
 interface NormalizedUnit {
-  /** Lados ordenados de mayor a menor, en cm enteros (hacia arriba). */
+  /** Lados ordenados de mayor a menor, tal como se cargaron (cm). */
   dims: [number, number, number]
   weightG: number
   quantity: number
 }
 
 const MAX_UNITS = 5_000
+
+/** Medidas y volúmenes a 2 decimales: evita restos de float (3 × 0,1 = 0,30000000000000004). */
+const toHundredths = (value: number) => Math.round(value * 100) / 100
 
 function normalizeUnits(units: readonly PackingUnit[]): NormalizedUnit[] {
   const normalized: NormalizedUnit[] = []
@@ -114,7 +116,7 @@ function normalizeUnits(units: readonly PackingUnit[]): NormalizedUnit[] {
       )
     }
     const dims = [unit.lengthCm, unit.widthCm, unit.heightCm]
-      .map((value) => Math.ceil(value - 1e-9))
+      .map(toHundredths)
       .sort((left, right) => right - left) as [number, number, number]
     normalized.push({ dims, weightG: kilogramsToGrams(unit.weightKg), quantity: unit.quantity })
   }
@@ -126,21 +128,14 @@ function normalizeUnits(units: readonly PackingUnit[]): NormalizedUnit[] {
   return normalized
 }
 
-export function packagingWeightGrams(productsWeightG: number) {
-  return Math.min(
-    PACKAGING_MAX_WEIGHT_G,
-    PACKAGING_BASE_WEIGHT_G + Math.round(productsWeightG * PACKAGING_WEIGHT_RATIO),
-  )
-}
-
-const volumeOf = (dims: readonly number[]) => dims[0] * dims[1] * dims[2]
+const volumeOf = (dims: readonly number[]) => toHundredths(dims[0] * dims[1] * dims[2])
 const surfaceOf = ([a, b, c]: readonly number[]) => 2 * (a * b + a * c + b * c)
 const sortDesc = (dims: number[]) => dims.sort((left, right) => right - left) as [number, number, number]
 
 /**
  * Unidades idénticas: grilla Nx × Ny × Nz con la forma más compacta (menor
  * superficie exterior; desempata el lado mayor y luego el volumen). 15 cajas
- * pequeñas nunca terminan en una fila de 15.
+ * pequeñas nunca terminan en una fila de 15. Con 1 unidad, la propia unidad.
  */
 export function bestGridArrangement(dims: readonly [number, number, number], quantity: number) {
   let best: { dims: [number, number, number]; counts: [number, number, number] } | null = null
@@ -149,7 +144,7 @@ export function bestGridArrangement(dims: readonly [number, number, number], qua
     const maxNy = Math.ceil(quantity / nx)
     for (let ny = 1; ny <= maxNy; ny += 1) {
       const nz = Math.ceil(quantity / (nx * ny))
-      const box = sortDesc([nx * dims[0], ny * dims[1], nz * dims[2]])
+      const box = sortDesc([nx * dims[0], ny * dims[1], nz * dims[2]].map(toHundredths))
       const score: [number, number, number] = [surfaceOf(box), box[0], volumeOf(box)]
       if (
         !bestScore ||
@@ -170,7 +165,7 @@ export function bestGridArrangement(dims: readonly [number, number, number], qua
  * lado puede ser menor que el de cualquier unidad) y crece de forma compacta
  * hasta contener el volumen requerido: primero en altura, luego altura y
  * ancho a la par y, si hace falta, como un cubo. Nunca genera un lado largo
- * artificial.
+ * artificial. Los lados que crecen se redondean hacia arriba al cm.
  */
 export function compactBoxForVolume(minDims: readonly [number, number, number], requiredVolume: number): [number, number, number] {
   const [a, b, c] = minDims
@@ -188,53 +183,38 @@ export function compactBoxForVolume(minDims: readonly [number, number, number], 
 
 function estimateParcel(units: readonly NormalizedUnit[], limits: PackageLimits): EstimatedParcel {
   const productsWeightG = units.reduce((sum, unit) => sum + unit.weightG * unit.quantity, 0)
-  const productsVolume = units.reduce((sum, unit) => sum + volumeOf(unit.dims) * unit.quantity, 0)
+  const productsVolume = toHundredths(units.reduce((sum, unit) => sum + volumeOf(unit.dims) * unit.quantity, 0))
   const totalUnits = units.reduce((sum, unit) => sum + unit.quantity, 0)
   const distinctShapes = new Set(units.map((unit) => unit.dims.join("x")))
 
-  let content: [number, number, number]
+  let box: [number, number, number]
   if (distinctShapes.size === 1) {
-    content = bestGridArrangement(units[0].dims, totalUnits).dims
+    box = bestGridArrangement(units[0].dims, totalUnits).dims
   } else {
     const minDims: [number, number, number] = [
       Math.max(...units.map((unit) => unit.dims[0])),
       Math.max(...units.map((unit) => unit.dims[1])),
       Math.max(...units.map((unit) => unit.dims[2])),
     ]
-    content = compactBoxForVolume(minDims, Math.ceil(productsVolume * MIXED_PACKING_VOLUME_FACTOR))
+    box = compactBoxForVolume(minDims, Math.ceil(productsVolume * MIXED_PACKING_VOLUME_FACTOR))
   }
 
-  const padding = PACKING_PADDING_PER_SIDE_CM * 2
-  const box = sortDesc(content.map((side) => side + padding))
   if (box[0] > limits.maxSideCm) {
     throw new PackageEstimateError(
       "UNIT_TOO_LARGE",
       `El paquete estimado mide ${box[0]} cm y supera el máximo de ${limits.maxSideCm} cm por lado.`,
     )
   }
-  const weightG = productsWeightG + packagingWeightGrams(productsWeightG)
   return {
     lengthCm: box[0],
     widthCm: box[1],
     heightCm: box[2],
     volumeCm3: volumeOf(box),
-    weightKg: gramsToKilograms(weightG),
+    weightKg: gramsToKilograms(productsWeightG),
     productsWeightKg: gramsToKilograms(productsWeightG),
     productsVolumeCm3: productsVolume,
     units: totalUnits,
   }
-}
-
-/** Mayor peso de productos que entra en un bulto sin superar el máximo con embalaje. */
-function maxProductsWeightGrams(maxWeightG: number) {
-  let low = 0
-  let high = maxWeightG
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2)
-    if (middle + packagingWeightGrams(middle) <= maxWeightG) low = middle
-    else high = middle - 1
-  }
-  return low
 }
 
 /**
@@ -244,14 +224,13 @@ function maxProductsWeightGrams(maxWeightG: number) {
  */
 export function estimatePackages(units: readonly PackingUnit[], limits: PackageLimits): PackageEstimate {
   const normalized = normalizeUnits(units)
-  const maxWeightG = kilogramsToGrams(limits.maxWeightKg)
-  const capacityG = maxProductsWeightGrams(maxWeightG)
+  const capacityG = kilogramsToGrams(limits.maxWeightKg)
 
   for (const unit of normalized) {
     if (unit.weightG > capacityG) {
       throw new PackageEstimateError(
         "UNIT_TOO_HEAVY",
-        `Un producto pesa ${gramsToKilograms(unit.weightG)} kg y, embalado, supera el máximo de ${limits.maxWeightKg} kg por bulto.`,
+        `Un producto pesa ${gramsToKilograms(unit.weightG)} kg y supera el máximo de ${limits.maxWeightKg} kg por bulto.`,
       )
     }
   }
@@ -283,8 +262,8 @@ export function estimatePackages(units: readonly PackingUnit[], limits: PackageL
     version: PACKAGE_ESTIMATOR_VERSION,
     parcels,
     productsWeightKg: gramsToKilograms(productsWeightG),
-    productsVolumeCm3: parcels.reduce((sum, parcel) => sum + parcel.productsVolumeCm3, 0),
+    productsVolumeCm3: toHundredths(parcels.reduce((sum, parcel) => sum + parcel.productsVolumeCm3, 0)),
     totalWeightKg: gramsToKilograms(parcels.reduce((sum, parcel) => sum + kilogramsToGrams(parcel.weightKg), 0)),
-    totalVolumeCm3: parcels.reduce((sum, parcel) => sum + parcel.volumeCm3, 0),
+    totalVolumeCm3: toHundredths(parcels.reduce((sum, parcel) => sum + parcel.volumeCm3, 0)),
   }
 }

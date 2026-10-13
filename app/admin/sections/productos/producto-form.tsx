@@ -644,11 +644,11 @@ export function ProductoForm({
                       Logística
                       <AdminHelpTip
                         label="Logística del producto"
-                        text="Usá las medidas de la caja/envase del producto antes del embalaje final BEYONIX."
+                        text="Cargá peso y medidas finales de la unidad lista para despacho, incluyendo el margen de embalaje que quieras considerar. Se usan tal cual para cotizar el envío: BEYONIX no les suma ningún margen."
                       />
                     </h2>
                     <p className="mt-0.5 text-xs leading-5 text-white">
-                      Configurá categoría, medidas, peso y contenido multimedia.
+                      Configurá categoría, medidas, peso y contenido multimedia. Peso y medidas: listos para despacho.
                     </p>
                   </div>
                   {!hasAnyVariants && (

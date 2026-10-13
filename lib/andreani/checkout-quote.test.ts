@@ -215,15 +215,16 @@ test("agrega peso, volumen y valor declarado de todas las unidades", () => {
   ])
 
   // Peso y volumen de productos se suman; las dimensiones NO: salen del
-  // embalador (3 cajas de 30×20×10 → caja compacta + protección).
+  // embalador (3 unidades listas para despacho de 30×20×10 → grilla compacta,
+  // sin margen extra: el producto ya trae el suyo).
   assert.equal(result.estimate.productsWeightKg, 4)
   assert.equal(result.estimate.productsVolumeCm3, 18_000)
   assert.equal(result.valorDeclarado, 49_000)
   assert.equal(result.parcels.length, 1)
   const [parcel] = result.parcels
-  assert.equal(parcel.pesoKg, 4.25)
-  assert.deepEqual([parcel.largoCm, parcel.anchoCm, parcel.altoCm], [32, 32, 22])
-  assert.equal(parcel.volumenCm3, 32 * 32 * 22)
+  assert.equal(parcel.pesoKg, 4)
+  assert.deepEqual([parcel.largoCm, parcel.anchoCm, parcel.altoCm], [30, 30, 20])
+  assert.equal(parcel.volumenCm3, 30 * 30 * 20)
   assert.equal(parcel.valorDeclarado, 49_000)
   assert.ok(parcel.largoCm < 30 * 3, "nunca suma lados")
 })
@@ -264,19 +265,22 @@ test("una variante hereda y sobrescribe campos mediante el resolvedor central", 
   assert.equal(result.estimate.productsWeightKg, 2.5)
   assert.equal(result.estimate.productsVolumeCm3, 6_000)
   assert.equal(result.valorDeclarado, 20_000)
-  assert.deepEqual([result.parcels[0].largoCm, result.parcels[0].anchoCm, result.parcels[0].altoCm], [32, 22, 12])
-  assert.equal(result.parcels[0].pesoKg, 2.675)
+  assert.deepEqual([result.parcels[0].largoCm, result.parcels[0].anchoCm, result.parcels[0].altoCm], [30, 20, 10])
+  assert.equal(result.parcels[0].pesoKg, 2.5)
 })
 
-test("BLOQUEANTE 3: un carrito que embalado queda en 50 kg o menos se agrega sin bloquear", () => {
+test("BLOQUEANTE 3: un producto de hasta 50 kg (ya listo para despacho) entra en un bulto sin bloquear", () => {
   const result = aggregateAndreaniPackage([
     { product: { ...completeProduct, peso_empaquetado_kg: 48.5 }, variant: null, quantity: 1, discountPercent: 0 },
   ])
-  assert.equal(result.parcels[0].pesoKg, 50)
-  // Un producto de 50 kg exactos, con su embalaje, ya no entra en un bulto B2C.
+  assert.equal(result.parcels[0].pesoKg, 48.5)
+  assert.equal(aggregateAndreaniPackage([
+    { product: { ...completeProduct, peso_empaquetado_kg: 50 }, variant: null, quantity: 1, discountPercent: 0 },
+  ]).parcels[0].pesoKg, 50)
+  // Más de 50 kg por unidad no entra en un bulto B2C.
   assert.throws(
     () => aggregateAndreaniPackage([
-      { product: { ...completeProduct, peso_empaquetado_kg: 50 }, variant: null, quantity: 1, discountPercent: 0 },
+      { product: { ...completeProduct, peso_empaquetado_kg: 50.01 }, variant: null, quantity: 1, discountPercent: 0 },
     ]),
     (error: unknown) => error instanceof AndreaniError && /50 kg/.test(error.message),
   )
@@ -441,8 +445,9 @@ test("la cotización usa el paquete agregado, normalizando espacios de la locali
     },
   )
 
-  assert.equal(receivedWeight, 2.15)
-  assert.equal(receivedVolume, 32 * 22 * 22)
+  // 2 unidades listas para despacho de 30×20×10 y 1 kg: suma exacta, sin margen.
+  assert.equal(receivedWeight, 2)
+  assert.equal(receivedVolume, 30 * 20 * 20)
   assert.deepEqual(publicOptions(options), [{ type: "domicilio", price: 13_500, costCharged: 13_500 }])
 })
 
@@ -573,14 +578,92 @@ test("el checkout usa catálogos públicos y tarifas en PROD sin depender de cre
   assert.equal(tariffUrl.searchParams.get("cliente"), "CLIENTE-PROD")
   assert.equal(tariffUrl.searchParams.get("sucursalOrigen"), "RAC")
   assert.equal(tariffUrl.searchParams.get("cpDestino"), "3013")
-  // Peso con embalaje y caja estimada (10×10×10 + 1 cm de protección por lado).
-  assert.equal(tariffUrl.searchParams.get("bultos[0][kilos]"), "10.55")
-  assert.equal(tariffUrl.searchParams.get("bultos[0][largoCm]"), "12")
-  assert.equal(tariffUrl.searchParams.get("bultos[0][anchoCm]"), "12")
-  assert.equal(tariffUrl.searchParams.get("bultos[0][altoCm]"), "12")
-  assert.equal(tariffUrl.searchParams.get("bultos[0][volumen]"), "1728")
+  // Peso y medidas del producto tal cual (ya listos para despacho).
+  assert.equal(tariffUrl.searchParams.get("bultos[0][kilos]"), "10")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][largoCm]"), "10")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][anchoCm]"), "10")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][altoCm]"), "10")
+  assert.equal(tariffUrl.searchParams.get("bultos[0][volumen]"), "1000")
   assert.equal(tariffUrl.searchParams.get("bultos[0][valorDeclarado]"), "50000")
   assert.deepEqual(publicOptions(options), [{ type: "domicilio", price: 22_360, costCharged: 22_360 }])
+})
+
+test("caso real auditado: 1 apoyabrazos (0,65 kg, 28×16×14) viaja a /v1/tarifas exactamente así; contrato, CP, valor declarado, redondeo, recargo y bonificación sin cambios", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  const tariffUrls: URL[] = []
+  const quote = (markupPercent: number, productPrice: number) => quoteAndreaniCheckout(
+    { cpDestino: "2000", localidad: "Rosario", provincia: "Santa Fe", items: [{ productId: 7, quantity: 1 }] },
+    {
+      env: {
+        NODE_ENV: "test",
+        ANDREANI_ENV: "qa",
+        ANDREANI_TARIFF_ENV: "PROD",
+        ANDREANI_PROD_API_URL: "https://apis.andreani.com",
+        ANDREANI_PROD_USERNAME: "usuario-prod-prueba",
+        ANDREANI_PROD_PASSWORD: "clave-prod-prueba",
+        ANDREANI_PROD_CLIENT: "0012011683",
+        ANDREANI_PROD_HOME_CONTRACT: "400042104",
+        ANDREANI_PROD_ORIGIN_BRANCH: "RAC",
+      },
+      isDestinationCached: () => true,
+      getShippingQuoteSettings: async () => ({ logisticsMarkupPercent: markupPercent }),
+      getShippingSettings: async () => ({
+        freeShippingMode: "full", shippingBonusMax: 20_000, defaultShippingCost: 15_000,
+        logisticsBaseSubsidy: 0, freeShippingMinAmount: 100_000,
+      }),
+      loadItems: async () => [{
+        product: {
+          id: 7, nombre: "APOYABRAZOS DE ESCRITORIO ERGONOMICO 360º", precio: productPrice,
+          peso_empaquetado_kg: 0.65, largo_paquete_cm: 28, ancho_paquete_cm: 16, alto_paquete_cm: 14,
+        },
+        variant: null, quantity: 1, discountPercent: 0,
+      }],
+      clientOptions: {
+        fetch: async (input) => {
+          const url = new URL(String(input))
+          if (url.pathname === "/login") return Response.json({ token: "token-prod-prueba" })
+          tariffUrls.push(url)
+          // Respuesta real de Andreani PROD (2026-10-13) para estos valores.
+          return Response.json({
+            pesoAforado: "2196.00",
+            tarifaSinIva: { seguroDistribucion: "480.00", distribucion: "10865.05", total: "11345.05" },
+            tarifaConIva: { seguroDistribucion: "580.80", distribucion: "13146.71", total: "13727.51" },
+          })
+        },
+      },
+    },
+  )
+
+  const [home] = await quote(0, 24_000)
+  const tariffUrl = tariffUrls[0]
+  assert.equal(tariffUrl.pathname, "/v1/tarifas")
+  assert.deepEqual(Object.fromEntries(tariffUrl.searchParams), {
+    cpDestino: "2000",
+    contrato: "400042104",
+    cliente: "0012011683",
+    sucursalOrigen: "RAC",
+    "bultos[0][volumen]": "6272",
+    "bultos[0][valorDeclarado]": "24000",
+    "bultos[0][kilos]": "0.65",
+    "bultos[0][altoCm]": "14",
+    "bultos[0][largoCm]": "28",
+    "bultos[0][anchoCm]": "16",
+  })
+  // Redondeo a $10 sin recargo ni bonificación (subtotal < mínimo de envío gratis).
+  assert.equal(home.price, 13_730)
+  assert.equal(home.costCharged, 13_730)
+  assert.deepEqual(home.pricing, { providerAmount: 13_727.51, markupPercent: 0, markupAmount: 0, roundingAmount: 2.49 })
+  assert.deepEqual(home.estimate.parcels, [{ lengthCm: 28, widthCm: 16, heightCm: 14, volumeCm3: 6_272, weightKg: 0.65 }])
+
+  // El recargo del Admin y la bonificación siguen aplicándose igual que antes.
+  resetAndreaniCheckoutQuoteStateForTests()
+  const [withMarkup] = await quote(10, 24_000)
+  assert.equal(withMarkup.price, 15_100)
+  assert.equal(withMarkup.pricing.markupAmount, 1_372.75)
+  resetAndreaniCheckoutQuoteStateForTests()
+  const [withBonus] = await quote(0, 120_000)
+  assert.equal(withBonus.price, 13_730)
+  assert.equal(withBonus.costCharged, 0)
 })
 
 test("reutiliza localidades estables para el mismo código postal", async () => {
