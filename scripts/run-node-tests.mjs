@@ -306,6 +306,7 @@ const TSX_TEST_FILES = [
   "components/claims/claim-reply-draft.test.tsx",
   "components/claims/return-inventory-refresh.test.tsx",
   "components/claims/use-claim-wizard-scroll.test.tsx",
+  "hooks/use-scroll-on-step-change.test.tsx",
   "components/checkout/transfer-flow-validation.test.tsx",
   "app/admin/sections/facturacion/admin-facturacion-arca.test.tsx",
   "app/admin/sections/facturacion/fiscal-history-panel.test.tsx",

@@ -196,6 +196,7 @@ import {
 import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
 import { Footer } from "@/components/footer"
 import { useSiteSettings } from "@/hooks/use-site-settings"
+import { useScrollOnStepChange } from "@/hooks/use-scroll-on-step-change"
 import {
   invalidateInterestFreeInstallments,
   readInterestFreeBrands,
@@ -550,6 +551,8 @@ export default function CheckoutPage() {
     useState<number | null>(null)
   const [currentStep, setCurrentStep] =
     useState<CheckoutStep>(1)
+  const checkoutTopRef = useRef<HTMLDivElement>(null)
+  useScrollOnStepChange(currentStep, checkoutTopRef)
   const [stockReservation, setStockReservation] = useState<{
     expiresAt: string
     serverNow: string
@@ -2279,7 +2282,13 @@ export default function CheckoutPage() {
 
       <div className="beyonix-checkout-container py-5 lg:py-7">
         <div className="mx-auto max-w-none">
-          <div className="checkout-heading-row mb-4 flex items-end justify-between gap-4">
+          {/* Destino del scroll al cambiar de paso; scroll-mt deja libre el
+              header sticky (h-16 / lg:h-20) más un respiro. */}
+          <div
+            ref={checkoutTopRef}
+            data-checkout-top
+            className="checkout-heading-row mb-4 flex scroll-mt-20 items-end justify-between gap-4 lg:scroll-mt-24"
+          >
             <div>
               <p className="text-10px font-semibold uppercase tracking-[0.2em] text-beyonix-cyan/75">
                 Compra segura
