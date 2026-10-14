@@ -31,6 +31,7 @@ test("ML real: componente → helper → API, primera revisión, corrección, 40
   const fetchMock = mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input)
     if (path === "/api/admin/mercadolibre-sales") return Response.json({ rows: [{ id: "sale-1", product_id: 1, product_name: "Ñandú", quantity: 3, sku: "ML-1", sale_date: "2026-09-20", raw_data: { parsed: { status: "Devolución" } }, return_review: storedReview, costing: { costable_units: 3, unit_cost: 100 } }], catalog: [] })
+    if (path === "/api/admin/mercadolibre-sales/import/batches") return Response.json({ batches: [] })
     if (path === "/api/admin/mercadolibre-sales/sale-1/return-review") {
       requests++
       return POST(new Request(`http://localhost${path}`, init), { params: Promise.resolve({ id: "sale-1" }) })

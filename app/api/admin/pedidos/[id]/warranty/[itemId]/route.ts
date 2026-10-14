@@ -1,21 +1,13 @@
 import { NextResponse } from "next/server"
 
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
-import { canChangeDeliveredAt } from "@/lib/orders/delivery-date-authorization"
+import { canChangeDeliveredAt, parseArgentinaDateInput } from "@/lib/orders/delivery-date-authorization"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import {
   DEFAULT_PRODUCT_WARRANTY_MONTHS,
   getWarrantyExpiration,
   normalizeWarrantyStatus,
 } from "@/lib/orders/warranty"
-
-function parseDateInput(value: unknown) {
-  if (value === null || value === "") return null
-  if (typeof value !== "string") return undefined
-
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
-}
 
 export async function PATCH(
   request: Request,
@@ -41,9 +33,9 @@ export async function PATCH(
     forceShortWarranty?: unknown
   }
 
-  const deliveredAt = parseDateInput(body.delivered_at)
-  const warrantyStartedAt = parseDateInput(body.warranty_started_at)
-  const warrantyExpiresAt = parseDateInput(body.warranty_expires_at)
+  const deliveredAt = parseArgentinaDateInput(body.delivered_at)
+  const warrantyStartedAt = parseArgentinaDateInput(body.warranty_started_at)
+  const warrantyExpiresAt = parseArgentinaDateInput(body.warranty_expires_at, true)
   const warrantyStatus = normalizeWarrantyStatus(body.warranty_status)
   const warrantyMonths =
     body.warranty_months === undefined || body.warranty_months === null

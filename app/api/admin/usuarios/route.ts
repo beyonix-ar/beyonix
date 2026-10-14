@@ -4,6 +4,7 @@ import {
   isUserRole,
   type UserRole,
 } from "@/lib/auth/roles"
+import { databaseErrorResponse } from "@/lib/admin/database-error-response"
 
 const MANAGE_ROLES: UserRole[] = ["admin", "super_admin"]
 
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudieron cargar los usuarios.")
   }
 
   return Response.json({ users: data ?? [] })

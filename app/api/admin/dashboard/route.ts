@@ -30,6 +30,7 @@ import {
   type OrderRevenueReversal,
 } from "@/lib/business/dashboard-financials"
 import {
+  getMercadoLibreCommercialAmounts,
   getMercadoLibreCostableUnits,
   getMercadoLibreCostMapping,
   getMercadoLibreRefundAmount,
@@ -1554,15 +1555,15 @@ export async function GET(request: Request) {
           orderId: String(order.id),
         })),
         ...mlRows.map((row) => {
-          const quantity = Number(row.quantity ?? 0)
-          const grossAmount = Number(row.gross_amount ?? 0)
-          const netAmount = Number(row.net_amount ?? grossAmount)
+          const { grossAmount, quantity } = getMercadoLibreCommercialAmounts(row)
+          const reportedGross = Number(row.gross_amount ?? 0)
+          const netAmount = Number(row.net_amount ?? reportedGross)
           const feeAmount = Number(row.fee_amount ?? 0)
           const shippingAmount = Number(row.shipping_amount ?? 0)
           const marketplaceResult =
             row.net_amount != null
               ? netAmount
-              : grossAmount - feeAmount - shippingAmount
+              : reportedGross - feeAmount - shippingAmount
           const costAmount =
             marketplaceMerchandiseCosts.get(String(row.id)) ?? null
           const profitAmount =

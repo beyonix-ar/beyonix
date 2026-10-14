@@ -17,6 +17,11 @@ export function isMercadoLibreReturn(row: { raw_data?: unknown }) {
   const parsed = raw.parsed ?? {}
   const status = text(parsed.status).toLocaleLowerCase("es")
 
+  // Una venta cancelada también trae "Anulaciones y reembolsos" negativo, pero
+  // el producto nunca salió: no hay devolución física que revisar y su stock
+  // ya no se descontó (inventory_ml_stock_units devuelve 0).
+  if (status.includes("cancel") || status.includes("anulad")) return false
+
   return (
     status.includes("devol") ||
     status.includes("reembolso") ||

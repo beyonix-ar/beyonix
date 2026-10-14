@@ -218,9 +218,14 @@ export function getCancellationPanelViewModel(
       steps.push({
         key: "credit_note",
         label: "Nota de crédito",
+        // Un pedido ya reintegrado no tiene NC por eso: si la NC era
+        // obligatoria y no se autorizó (p. ej. reintegro anterior a la
+        // factura), el paso sigue requiriendo atención.
         status:
-          isFinished || hasAnyAuthorizedNote
+          hasAnyAuthorizedNote || (isFinished && !order.credit_note_required)
             ? "done"
+            : isFinished
+              ? "attention"
             : nextAction.state === "wait_credit_note"
               ? "processing"
               : nextAction.reason === "invoice_missing"

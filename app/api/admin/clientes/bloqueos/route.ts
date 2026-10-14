@@ -6,6 +6,7 @@ import {
 import type { createAdminClient } from "@/lib/supabase/admin"
 
 import { requireAdmin } from "../_auth"
+import { databaseErrorResponse } from "@/lib/admin/database-error-response"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -99,7 +100,7 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudo actualizar el bloqueo del cliente. Intentá de nuevo.")
   }
 
   return Response.json({ blockedIdentifiers: data ?? [] })
@@ -164,7 +165,7 @@ export async function POST(request: Request) {
     )
 
     if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
+      return databaseErrorResponse(error, "No se pudo actualizar el bloqueo del cliente. Intentá de nuevo.")
     }
   }
 
@@ -194,7 +195,7 @@ export async function DELETE(request: Request) {
       .in("id", ids)
 
     if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
+      return databaseErrorResponse(error, "No se pudo actualizar el bloqueo del cliente. Intentá de nuevo.")
     }
   }
 
@@ -206,7 +207,7 @@ export async function DELETE(request: Request) {
         .eq("source_profile_id", sourceProfileId)
 
       if (deleteError) {
-        return Response.json({ error: deleteError.message }, { status: 500 })
+        return databaseErrorResponse(deleteError, "No se pudo actualizar el bloqueo del cliente. Intentá de nuevo.")
       }
     }
 
@@ -220,7 +221,7 @@ export async function DELETE(request: Request) {
       .eq("id", sourceProfileId)
 
     if (profileError) {
-      return Response.json({ error: profileError.message }, { status: 500 })
+      return databaseErrorResponse(profileError, "No se pudo actualizar el bloqueo del cliente. Intentá de nuevo.")
     }
 
     return Response.json({ ok: true })
@@ -236,7 +237,7 @@ export async function DELETE(request: Request) {
     .eq("id", id)
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudo actualizar el bloqueo del cliente. Intentá de nuevo.")
   }
 
   return Response.json({ ok: true })

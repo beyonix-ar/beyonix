@@ -3,6 +3,7 @@ import type {
   SupabaseCustomerNotificationCampaign,
   SupabaseCustomerNotificationCampaignType,
 } from "@/lib/supabase/types"
+import { databaseErrorResponse } from "@/lib/admin/database-error-response"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
 
@@ -183,7 +184,7 @@ export async function GET(request: Request) {
     .limit(80)
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudieron cargar o actualizar las notificaciones.")
   }
 
   return Response.json({ campaigns: data ?? [] })
@@ -250,7 +251,7 @@ export async function POST(request: Request) {
     .single()
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudieron cargar o actualizar las notificaciones.")
   }
 
   let publishedCount = 0
@@ -350,7 +351,7 @@ export async function PATCH(request: Request) {
       .single()
 
     if (error) {
-      return Response.json({ error: error.message }, { status: 500 })
+      return databaseErrorResponse(error, "No se pudieron cargar o actualizar las notificaciones.")
     }
 
     let publishedCount = 0
@@ -434,7 +435,7 @@ export async function PATCH(request: Request) {
     .single()
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudieron cargar o actualizar las notificaciones.")
   }
 
   let publishedCount = 0
@@ -503,7 +504,7 @@ export async function DELETE(request: Request) {
     .eq("id", id)
 
   if (error) {
-    return Response.json({ error: error.message }, { status: 500 })
+    return databaseErrorResponse(error, "No se pudieron cargar o actualizar las notificaciones.")
   }
 
   await writeAudit(auth, "DELETE", id, before.data, null)

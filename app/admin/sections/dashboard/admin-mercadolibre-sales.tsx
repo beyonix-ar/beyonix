@@ -23,17 +23,13 @@ import {
   RotateCcw,
   Trash2,
   Truck,
-  Upload,
-  X,
 } from "lucide-react"
 
 import {
   MERCADOLIBRE_FIELD_KEYS,
-  parseMercadoLibreSalesReport,
   summarizeMercadoLibreRows,
   type MercadoLibreFieldMap,
   type MercadoLibreImportRow,
-  type ParsedMercadoLibreReport,
 } from "@/lib/mercadolibre/sales-report"
 import {
   getMercadoLibrePendingReturnUnits,
@@ -46,7 +42,6 @@ import {
   deleteAllMercadoLibreSales,
   deleteMercadoLibreSale,
   getMercadoLibreSales,
-  importMercadoLibreSales,
   saveMercadoLibreCostMapping,
   saveMercadoLibreReturnReview,
   type MercadoLibreCostCatalogProduct,
@@ -59,6 +54,7 @@ import {
   AdminSecondaryButton,
   AdminSelect,
 } from "../../components/admin-controls"
+import { MercadoLibreImportPanel } from "./mercadolibre-import-panel"
 
 function number(value: unknown) {
   const parsed = Number(
@@ -331,15 +327,11 @@ function ReturnQuantityStepper({
 export function AdminMercadoLibreSales() {
   const searchParams = useSearchParams()
   const notificationSaleId = searchParams.get("mlSale")
-  const inputRef = useRef<HTMLInputElement>(null)
   const openedNotificationSaleId = useRef<string | null>(null)
   const [sales, setSales] = useState<StoredMercadoLibreSale[]>([])
   const [catalog, setCatalog] = useState<MercadoLibreCostCatalogProduct[]>([])
-  const [preview, setPreview] = useState<ParsedMercadoLibreReport | null>(null)
-  const [fileName, setFileName] = useState("")
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [reading, setReading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [savingMappingKey, setSavingMappingKey] = useState<string | null>(null)
@@ -621,57 +613,10 @@ export function AdminMercadoLibreSales() {
     }
   }
 
-  const handleFile = async (file: File) => {
-    setReading(true)
-    setError("")
-    setSuccess("")
-    setPreview(null)
-    setFileName(file.name)
-    try {
-      setPreview(parseMercadoLibreSalesReport(await file.arrayBuffer()))
-    } catch (readError) {
-      setError(
-        readError instanceof Error
-          ? readError.message
-          : "No se pudo leer el reporte de Mercado Libre.",
-      )
-    } finally {
-      setReading(false)
-      if (inputRef.current) inputRef.current.value = ""
-    }
-  }
-
-  const confirmImport = async () => {
-    if (!preview) return
-    setImporting(true)
-    setError("")
-    setSuccess("")
-    try {
-      const response = await importMercadoLibreSales(preview.rows, fileName)
-      const inserted = number(response?.inserted)
-      const updated = number(response?.updated)
-      const unchanged = number(response?.unchanged)
-      const duplicateRows = number(response?.duplicateRows)
-      const linked = number(response?.linked)
-      setSuccess(
-        `${preview.rows.length} movimientos comprobados: ${inserted} nuevos, ` +
-          `${updated} actualizados y ${unchanged} sin cambios` +
-          `${duplicateRows ? `; ${duplicateRows} filas repetidas ignoradas` : ""}` +
-          `${linked ? `; ${linked} vinculados al inventario` : ""}.`,
-      )
-      setPreview(null)
-      setFileName("")
-      await load()
-    } catch (importError) {
-      setError(
-        importError instanceof Error
-          ? importError.message
-          : "No se pudo importar el reporte.",
-      )
-    } finally {
-      setImporting(false)
-    }
-  }
+  const reloadAfterImport = useCallback(async () => {
+    await load()
+    notifyAdminNotificationsChanged()
+  }, [load])
 
   const remove = async (row: StoredMercadoLibreSale) => {
     setDeletingId(row.id)
@@ -825,35 +770,10 @@ export function AdminMercadoLibreSales() {
               )}
             </div>
             <p className="mt-1 text-sm leading-5 text-white/55">
-              Importá el Excel “Ventas AR” y conciliá ventas, cargos, envíos,
-              devoluciones y reclamos. Sólo las unidades efectivas vinculadas
-              a un producto descuentan stock.
+              Ventas, cargos, envíos, devoluciones y reclamos importados desde
+              el reporte de Mercado Libre. Sólo las unidades efectivas
+              vinculadas a un producto descuentan stock.
             </p>
-          </div>
-          <div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".xlsx"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void handleFile(file)
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={reading || importing}
-              className="inline-flex h-11 cursor-pointer items-center justify-center gap-2 rounded-xl border border-beyonix-sky/32 bg-beyonix-blue/35 px-5 text-sm font-black text-white transition hover:border-beyonix-sky/65 hover:bg-beyonix-blue/60 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {reading ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <FileSpreadsheet className="size-4 text-beyonix-sky" />
-              )}
-              Cargar Excel de Mercado Libre
-            </button>
           </div>
         </div>
 
@@ -1005,98 +925,11 @@ export function AdminMercadoLibreSales() {
         </p>
       )}
 
-      {preview && (
-        <section className="rounded-2xl border border-beyonix-sky/28 bg-[#071018] p-3.5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-11px font-black uppercase tracking-widest text-beyonix-cyan">
-                Previsualización
-              </p>
-              <h3 className="mt-1 text-lg font-black text-white">{fileName}</h3>
-              <p className="mt-1 text-xs text-white/48">
-                Hoja “{preview.sheetName}” · {preview.rows.length} movimientos ·{" "}
-                {preview.summary.units} unidades
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setPreview(null)
-                  setFileName("")
-                }}
-                className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-white/10 px-4 text-xs font-black text-white/60 transition hover:border-white/25 hover:text-white"
-              >
-                <X className="size-3.5" />
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmImport()}
-                disabled={importing}
-                className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/14 px-4 text-xs font-black text-emerald-200 transition hover:bg-emerald-400/24 disabled:opacity-50"
-              >
-                {importing ? (
-                  <RefreshCw className="size-3.5 animate-spin" />
-                ) : (
-                  <Upload className="size-3.5" />
-                )}
-                Confirmar importación
-              </button>
-            </div>
-          </div>
-
-          <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/7 px-3 py-2 text-center text-xs font-bold text-amber-100">
-            Esta previsualización todavía no modifica el inventario. Presioná
-            “Confirmar importación” para registrar y descontar las ventas
-            vinculadas.
-          </p>
-
-          {preview.warnings.length > 0 && (
-            <div className="mt-3 space-y-1 rounded-xl border border-amber-400/20 bg-amber-400/8 px-3 py-2 text-xs text-amber-100">
-              {preview.warnings.map((warning) => (
-                <p key={warning}>{warning}</p>
-              ))}
-            </div>
-          )}
-
-          <div className="sales-ledger-scrollbar mt-4 overflow-x-auto rounded-2xl border border-white/8">
-            <table className="min-w-[1250px] w-full text-center text-xs">
-              <thead className="bg-beyonix-blue/18 text-9px font-black uppercase tracking-widest text-white/42">
-                <tr>
-                  {["Venta", "Fecha", "Estado", "Producto", "Unidades", "Ingreso productos", "Cargos", "Envío descontado", "Reembolsos", "Total"].map((label) => (
-                    <th key={label} className="px-3 py-3">{label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.rows.slice(0, 25).map((row, index) => {
-                  const fields = row.raw_data.parsed
-                  return (
-                    <tr key={`${row.operation_id}-${row.sku}-${index}`} className="border-t border-white/6 text-white/65">
-                      <td className="px-3 py-3 font-bold text-white">{row.operation_id}</td>
-                      <td className="px-3 py-3">{text(fields.sale_date_text)}</td>
-                      <td className="max-w-56 px-3 py-3"><span className="block truncate" title={text(fields.status)}>{text(fields.status)}</span></td>
-                      <td className="max-w-72 px-3 py-3"><span className="block truncate" title={row.product_name}>{row.product_name}</span></td>
-                      <td className="px-3 py-3">{row.quantity}</td>
-                      <td className="px-3 py-3 tabular-nums">{formatPrice(row.gross_amount)}</td>
-                      <td className="px-3 py-3 tabular-nums text-amber-200">{formatPrice(Math.abs(row.fee_amount))}</td>
-                      <td className="px-3 py-3 tabular-nums text-amber-200">{formatPrice(Math.abs(number(fields.shipping_cost) + number(fields.declared_shipping_cost)))}</td>
-                      <td className="px-3 py-3 tabular-nums text-red-300">{formatPrice(Math.abs(number(fields.cancellations_refunds)))}</td>
-                      <td className={`px-3 py-3 font-black tabular-nums ${row.net_amount >= 0 ? "text-emerald-300" : "text-red-300"}`}>{formatPrice(row.net_amount)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-          {preview.rows.length > 25 && (
-            <p className="mt-2 text-center text-11px text-white/35">
-              Se muestran 25 filas de {preview.rows.length}. Todas serán importadas.
-            </p>
-          )}
-        </section>
-      )}
+      <MercadoLibreImportPanel
+        disabled={deletingAll}
+        onBusyChange={setImporting}
+        onImported={reloadAfterImport}
+      />
 
       <section className="rounded-2xl border border-beyonix-blue-light/18 bg-[#071018] p-3.5">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

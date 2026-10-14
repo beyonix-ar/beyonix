@@ -1,6 +1,7 @@
 import { getClientBlockIdentifiers } from "@/lib/clients/client-blocking"
 
 import { requireAdmin } from "../_auth"
+import { databaseErrorResponse } from "@/lib/admin/database-error-response"
 
 export async function PATCH(
   request: Request,
@@ -62,7 +63,7 @@ export async function PATCH(
     .eq("id", id)
 
   if (updateError) {
-    return Response.json({ error: updateError.message }, { status: 500 })
+    return databaseErrorResponse(updateError, "No se pudo actualizar el cliente. Intentá de nuevo.")
   }
 
   if (body.blocked !== undefined) {

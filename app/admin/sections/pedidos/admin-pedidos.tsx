@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
 import { getPendingRefundNotes } from "@/lib/order-claims"
+import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
 import { OrderReplacements } from "./order-replacements"
+import { LegacyCreditNotePanel } from "./legacy-credit-note-panel"
+import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
 import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
 import { FinancialResolutionWizard, useFinancialResolutionView } from "./financial-resolution-wizard"
@@ -858,6 +861,8 @@ function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresen
 const RECOMMENDED_ACTION_DESCRIPTIONS: Record<AdminPendingOrderActionKind, string> = {
   payment_review: "El cliente subió un comprobante y falta confirmar o rechazar el pago.",
   payment_conflict: "Hay un pago cobrado que no se pudo confirmar.",
+  payment_incident: "Mercado Pago informó un reintegro o contracargo que no inició BEYONIX.",
+  legacy_credit_note: "El pedido se reintegró antes de facturarse y falta la nota de crédito.",
   cancellation_request: "El cliente pidió cancelar la compra.",
   refund: "Elegí cómo devolver el dinero.",
   refund_manual: "Registrá el reintegro realizado por fuera del sistema.",
@@ -4724,9 +4729,9 @@ function PedidoDetailModal({
   }
 
   const handleWarrantyEdit = async (item: SupabasePedidoItem) => {
-    const currentDeliveredAt = pedido.delivered_at?.slice(0, 10) ?? ""
-    const currentStartedAt = item.warranty_started_at?.slice(0, 10) ?? ""
-    const currentExpiresAt = item.warranty_expires_at?.slice(0, 10) ?? ""
+    const currentDeliveredAt = pedido.delivered_at ? argentinaDateKey(pedido.delivered_at) : ""
+    const currentStartedAt = item.warranty_started_at ? argentinaDateKey(item.warranty_started_at) : ""
+    const currentExpiresAt = item.warranty_expires_at ? argentinaDateKey(item.warranty_expires_at) : ""
     const currentMonths = String(item.warranty_months ?? 6)
     const currentStatus = item.warranty_status ?? "pending_delivery"
 
@@ -4988,6 +4993,10 @@ function PedidoDetailModal({
               financialBreakdown={financialBreakdown}
               onGoToView={showDetailView}
             />
+          )}
+
+          {activeView === "pago" && capabilities.canManageFinancials && (
+            <PaymentIncidentsPanel pedido={pedido} onUpdated={onRefundUpdated} />
           )}
 
           {activeView === "pago" && capabilities.canManageFinancials && (() => {
@@ -5299,6 +5308,10 @@ function PedidoDetailModal({
               onDownloadCreditNote={handleDownloadCreditNote}
               onBillingUpdated={onRefundUpdated}
             />
+          )}
+
+          {activeView === "cancelacion" && capabilities.canManageFinancials && (
+            <LegacyCreditNotePanel pedido={pedido} onUpdated={onRefundUpdated} />
           )}
 
           {activeView === "cancelacion" && capabilities.canManageFinancials && (

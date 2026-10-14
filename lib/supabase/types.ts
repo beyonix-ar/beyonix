@@ -571,6 +571,13 @@ export interface SupabaseOrderAuditEvent {
   new_status?: string | null
   metadata?: Record<string, unknown> | null
   created_at: string
+  /** Sólo incidentes de pago: resolución registrada aparte (el evento no se modifica). */
+  audit_resolution?: {
+    resolution: string
+    note: string | null
+    resolved_at: string | null
+    resolved_by_email: string | null
+  } | null
 }
 
 export interface SupabaseCustomerNotification {

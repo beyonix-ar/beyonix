@@ -17,11 +17,15 @@ import {
   type CancellationNextActionOrder,
 } from "./cancellation-next-action.ts"
 import { claimNeedsAdminAttention } from "./claim-attention.ts"
+import { getLegacyCreditNoteState } from "./legacy-credit-note.ts"
 import { isOrderPaymentConfirmed } from "./order-payment-status.ts"
+import { getOpenPaymentIncidents, type PaymentIncidentAuditEvent } from "./payment-incidents.ts"
 
 export type AdminPendingOrderActionKind =
   | "payment_review"
   | "payment_conflict"
+  | "payment_incident"
+  | "legacy_credit_note"
   | "cancellation_request"
   | "refund"
   | "refund_manual"
@@ -93,6 +97,10 @@ export interface AdminPendingActionsOrder extends CancellationNextActionOrder {
     last_admin_response_at?: string | null
   }> | null
   admin_pending_facts?: AdminPendingFacts | null
+  refunded_at?: string | null
+  invoice_number?: number | string | null
+  invoice_point?: number | string | null
+  order_audit_events?: PaymentIncidentAuditEvent[] | null
 }
 
 export interface AdminOrderWork {
@@ -138,6 +146,8 @@ const CANCELLATION_FLOW_FINANCIAL_STATUSES = new Set([
 export const ADMIN_PENDING_ACTION_LABELS: Record<AdminPendingOrderActionKind, string> = {
   payment_review: "Revisar pago",
   payment_conflict: "Resolver pago",
+  payment_incident: "Revisar incidente de pago",
+  legacy_credit_note: "Emitir nota de crédito",
   cancellation_request: "Resolver cancelación",
   refund: "Resolver reintegro",
   refund_manual: "Registrar reintegro",
@@ -154,6 +164,8 @@ export const ADMIN_PENDING_ACTION_LABELS: Record<AdminPendingOrderActionKind, st
 const ACTION_PRIORITY: Record<AdminPendingOrderActionKind, AdminPendingActionPriority> = {
   payment_review: 2,
   payment_conflict: 1,
+  payment_incident: 1,
+  legacy_credit_note: 1,
   cancellation_request: 1,
   refund: 1,
   refund_manual: 1,
@@ -316,6 +328,11 @@ export function getAdminOrderWork(order: AdminPendingActionsOrder): AdminOrderWo
   // ── Pago ──
   if (needsTransferPaymentReview(order)) add("payment_review", orderHref(order, "pago"))
   if (hasUnresolvedPaymentConflict(order)) add("payment_conflict", orderHref(order, "pago"))
+  // Reintegro externo o contracargo sin resolver (los marcados como falso
+  // positivo o resueltos siguen en el historial, pero ya no son tarea).
+  if (getOpenPaymentIncidents(order.order_audit_events).length) add("payment_incident", orderHref(order, "pago"))
+  // NC obligatoria de un caso heredado (reintegro anterior a la factura).
+  if (getLegacyCreditNoteState(order) === "pending") add("legacy_credit_note", orderHref(order, "cancelacion"))
 
   // ── Cancelación / reintegro ──
   if (order.financial_status === "cancellation_requested") {

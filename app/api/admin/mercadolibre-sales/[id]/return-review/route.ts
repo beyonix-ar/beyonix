@@ -113,7 +113,7 @@ export async function POST(
 
   const { data: currentSale, error: currentSaleError } = await auth.admin
     .from("mercadolibre_sales")
-    .select("id, sku, product_id")
+    .select("id, sku, product_id, raw_data")
     .eq("id", id)
     .maybeSingle()
 
@@ -127,6 +127,18 @@ export async function POST(
     return Response.json(
       { error: "La venta de Mercado Libre ya no existe." },
       { status: 404 },
+    )
+  }
+
+  // Una venta cancelada nunca descontó stock: registrar un reingreso físico
+  // sumaría unidades que nunca salieron.
+  const saleStatus = String(
+    (currentSale.raw_data as { parsed?: { status?: unknown } } | null)?.parsed?.status ?? "",
+  ).toLocaleLowerCase("es")
+  if (saleStatus.includes("cancel") || saleStatus.includes("anulad")) {
+    return Response.json(
+      { error: "Esta venta fue cancelada antes del envío: no hay devolución física para revisar." },
+      { status: 409 },
     )
   }
 

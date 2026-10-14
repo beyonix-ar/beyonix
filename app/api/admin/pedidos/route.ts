@@ -2,6 +2,7 @@ import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
 import type { AdminPendingFacts } from "@/lib/orders/admin-pending-actions"
 import { loadAdminPendingFacts } from "@/lib/orders/admin-pending-facts-server"
+import { getPaymentIncidents, isPaymentIncidentAction } from "@/lib/orders/payment-incidents"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -11,6 +12,7 @@ import type {
   SupabaseProducto,
   SupabaseProductoVariante,
 } from "@/lib/supabase/types"
+import { databaseErrorResponse } from "@/lib/admin/database-error-response"
 
 function stripClaimBucket(path: string) {
   return path.startsWith(`${ORDER_CLAIM_BUCKET}/`)
@@ -122,7 +124,7 @@ export async function GET(request: Request) {
   const { data: orderRows, error: ordersError, count } = await ordersQuery
 
   if (ordersError) {
-    return Response.json({ error: ordersError.message }, { status: 500 })
+    return databaseErrorResponse(ordersError, "No se pudieron cargar los pedidos. Intentá de nuevo.")
   }
 
   const pedidos = (orderRows ?? []) as unknown as SupabasePedido[]
@@ -224,7 +226,7 @@ export async function GET(request: Request) {
     )
 
   if (itemsError) {
-    return Response.json({ error: itemsError.message }, { status: 500 })
+    return databaseErrorResponse(itemsError, "No se pudieron cargar los pedidos. Intentá de nuevo.")
   }
 
   const items = (itemRows ?? []) as SupabasePedidoItem[]
@@ -429,9 +431,41 @@ export async function GET(request: Request) {
     refundProofsByOrder.set(proof.order_id, currentProofs)
   }
 
-  for (const event of (auditEventsResult.data ?? []) as SupabaseOrderAuditEvent[]) {
+  // Incidentes de pago (reintegro externo / contracargo): su resolución vive
+  // aparte y el evento original no se toca. Sin resolución = alerta activa.
+  const auditEvents = (auditEventsResult.data ?? []) as SupabaseOrderAuditEvent[]
+  const incidentIds = getPaymentIncidents(auditEvents).map((event) => Number(event.id))
+  const resolutionsById = new Map<number, NonNullable<SupabaseOrderAuditEvent["audit_resolution"]>>()
+  if (incidentIds.length) {
+    const { data: resolutions, error: resolutionsError } = await auth.admin
+      .from("order_audit_incident_resolutions")
+      .select("audit_event_id, resolution, note, resolved_at, resolved_by")
+      .in("audit_event_id", incidentIds)
+    if (resolutionsError) {
+      return databaseErrorResponse(resolutionsError, "No se pudieron cargar las resoluciones de incidentes de pago.")
+    }
+    const resolverIds = [...new Set((resolutions ?? []).map((row) => row.resolved_by).filter(Boolean))]
+    const { data: resolvers } = resolverIds.length
+      ? await auth.admin.from("profiles").select("id, email").in("id", resolverIds)
+      : { data: [] as Array<{ id: string; email: string | null }> }
+    const emails = new Map((resolvers ?? []).map((profile) => [profile.id, profile.email]))
+    for (const row of resolutions ?? []) {
+      resolutionsById.set(Number(row.audit_event_id), {
+        resolution: row.resolution,
+        note: row.note,
+        resolved_at: row.resolved_at,
+        resolved_by_email: emails.get(row.resolved_by) ?? null,
+      })
+    }
+  }
+
+  for (const event of auditEvents) {
     const currentEvents = auditEventsByOrder.get(event.order_id) ?? []
-    currentEvents.push(event)
+    currentEvents.push(
+      isPaymentIncidentAction(event.action)
+        ? { ...event, audit_resolution: resolutionsById.get(Number(event.id)) ?? null }
+        : event,
+    )
     auditEventsByOrder.set(event.order_id, currentEvents)
   }
 

@@ -188,3 +188,17 @@ export function summarizeMercadoLibreCosting(
     profit: hasKnownCost ? coveredRevenue - merchandiseCost : null,
   }
 }
+
+/**
+ * Importe y unidades de una línea ML para el análisis comercial del
+ * Dashboard. Igual que una venta web descuenta sus notas de crédito, una
+ * venta ML descuenta "Anulaciones y reembolsos": una cancelación total queda
+ * en 0 y no cuenta como operación. Las unidades son las efectivas según ML
+ * (sin canceladas ni devueltas).
+ */
+export function getMercadoLibreCommercialAmounts(row: Record<string, unknown>) {
+  return {
+    grossAmount: Math.max(0, number(row.gross_amount) - getMercadoLibreRefundAmount(row)),
+    quantity: getMercadoLibreCostableUnits(row),
+  }
+}

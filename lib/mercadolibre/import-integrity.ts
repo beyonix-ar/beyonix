@@ -13,8 +13,14 @@ export interface MercadoLibreIdentityRow {
   raw_data?: Record<string, unknown>
 }
 
+// Misma normalización que public.mercadolibre_sale_source_key (v2): espacios
+// repetidos o mayúsculas distintas entre dos reportes no crean otra venta.
 function normalized(value: unknown) {
-  return String(value ?? "").trim().toLocaleLowerCase("es")
+  return String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("es")
+}
+
+function normalizedListing(value: unknown) {
+  return normalized(value).replace(/[^\p{L}\p{N}]/gu, "")
 }
 
 function objectValue(value: unknown) {
@@ -31,7 +37,7 @@ function normalizedDate(value: unknown) {
 export function getMercadoLibreIdentityParts(row: MercadoLibreIdentityRow) {
   const parsed = objectValue(objectValue(row.raw_data).parsed)
   const operationId = normalized(row.operation_id)
-  const listingId = normalized(parsed.listing_id)
+  const listingId = normalizedListing(parsed.listing_id)
   const variantName = normalized(parsed.variant)
   const sku = normalized(row.sku)
   const productName = normalized(row.product_name)

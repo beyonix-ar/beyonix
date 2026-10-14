@@ -11,21 +11,14 @@ import {
   getMercadoLibreSaleIdentity,
   validateMercadoLibreImportBatch,
 } from "@/lib/mercadolibre/import-integrity"
+import {
+  describeMercadoLibreImportError,
+  isMissingImportMigration,
+  validateMercadoLibreServerRows,
+  type MercadoLibreServerRow,
+} from "@/lib/mercadolibre/import-validation"
 
-interface MercadoLibreSaleInput {
-  sale_date?: string | null
-  operation_id?: string | null
-  order_id?: string | null
-  product_name?: string | null
-  sku?: string | null
-  quantity?: number | null
-  gross_amount?: number | null
-  fee_amount?: number | null
-  shipping_amount?: number | null
-  net_amount?: number | null
-  source_file_name?: string | null
-  raw_data?: Record<string, unknown>
-}
+type ImportPayloadRow = MercadoLibreServerRow & { product_id?: number; unit_cost?: number }
 
 interface ExistingCostMappingRow {
   id: string
@@ -38,6 +31,8 @@ interface ExistingCostMappingRow {
   unit_cost: number | null
   raw_data: Record<string, unknown> | null
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function toNumber(value: unknown) {
   const number = Number(value)
@@ -84,92 +79,51 @@ function getExistingCostMapping(row: ExistingCostMappingRow) {
   }
 }
 
-function normalizeSale(row: MercadoLibreSaleInput, importedBy: string) {
-  return {
-    sale_date: row.sale_date || null,
-    operation_id: row.operation_id || null,
-    order_id: row.order_id || null,
-    product_name: row.product_name?.trim() || "Venta MercadoLibre",
-    sku: row.sku || null,
-    quantity: Math.max(1, Math.trunc(toNumber(row.quantity) ?? 1)),
-    unit_cost: 0,
-    gross_amount: toNumber(row.gross_amount) ?? 0,
-    fee_amount: toNumber(row.fee_amount),
-    shipping_amount: toNumber(row.shipping_amount),
-    net_amount: toNumber(row.net_amount),
-    source_file_name: row.source_file_name || null,
-    imported_by: importedBy,
-    raw_data: row.raw_data ?? {},
-  }
-}
+const QUERY_ERROR = "No se pudieron consultar las ventas existentes. No se guardó ningún cambio de este bloque."
 
+/**
+ * Importa un bloque (≤ 500 filas) de un lote ya creado. Cada bloque es
+ * atómico: o se guardan todas sus filas o ninguna. Las filas se revalidan
+ * acá; el análisis del navegador nunca se toma como válido por sí solo.
+ */
 export async function POST(request: Request) {
   const auth = await requireInternalUser(request, ["admin", "super_admin"])
   if ("error" in auth) return auth.error
 
-  const body = (await request.json()) as {
-    rows?: MercadoLibreSaleInput[]
-    sourceFileName?: string
-  }
-  const rows = body.rows ?? []
-
-  if (!rows.length) {
-    return Response.json(
-      { error: "No hay ventas para importar." },
-      { status: 400 }
-    )
-  }
-
-  const normalizedRows = rows.map((row) =>
-    normalizeSale(
-      {
-        ...row,
-        source_file_name: row.source_file_name || body.sourceFileName || null,
-      },
-      auth.user.id
-    )
-  )
-  let integrityResult: ReturnType<typeof validateMercadoLibreImportBatch>
+  let body: { rows?: unknown; batchId?: unknown }
   try {
-    integrityResult = validateMercadoLibreImportBatch(normalizedRows)
+    body = (await request.json()) as typeof body
+  } catch {
+    return Response.json({ error: "El envío de ventas llegó incompleto. Volvé a intentarlo." }, { status: 400 })
+  }
+
+  const batchId = typeof body.batchId === "string" ? body.batchId : ""
+  if (!UUID_PATTERN.test(batchId)) {
+    return Response.json({ error: "Falta la importación a la que pertenecen estas ventas. Volvé a analizar el archivo." }, { status: 400 })
+  }
+
+  const validation = validateMercadoLibreServerRows(body.rows)
+  if (!validation.ok) return Response.json({ error: validation.error }, { status: 400 })
+
+  let integrityResult: ReturnType<typeof validateMercadoLibreImportBatch<MercadoLibreServerRow>>
+  try {
+    integrityResult = validateMercadoLibreImportBatch(validation.rows)
   } catch (error) {
     return Response.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "El archivo contiene ventas inconsistentes.",
-      },
+      { error: error instanceof Error ? error.message : "El archivo contiene ventas inconsistentes." },
       { status: 400 },
     )
   }
-  let payload = integrityResult.rows
+  let payload: ImportPayloadRow[] = integrityResult.rows
 
   const preservedMappings = new Map<
     string,
     NonNullable<ReturnType<typeof getExistingCostMapping>>
   >()
   const skus = Array.from(
-    new Set(
-      payload
-        .map((row) => row.sku)
-        .filter((value): value is string => Boolean(value)),
-    ),
+    new Set(payload.map((row) => row.sku).filter((value): value is string => Boolean(value))),
   )
-  const operationIds = Array.from(
-    new Set(
-      payload
-        .map((row) => row.operation_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  )
-  const orderIds = Array.from(
-    new Set(
-      payload
-        .map((row) => row.order_id)
-        .filter((value): value is string => Boolean(value)),
-    ),
-  )
+  const operationIds = Array.from(new Set(payload.map((row) => row.operation_id)))
   const mappingMatches: ExistingCostMappingRow[] = []
 
   for (let index = 0; index < operationIds.length; index += 400) {
@@ -177,31 +131,18 @@ export async function POST(request: Request) {
       .from("mercadolibre_sales")
       .select("id, sale_date, operation_id, order_id, sku, product_name, product_id, unit_cost, raw_data")
       .in("operation_id", operationIds.slice(index, index + 400))
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    mappingMatches.push(
-      ...((data ?? []) as unknown as ExistingCostMappingRow[]),
-    )
-  }
-  for (let index = 0; index < orderIds.length; index += 400) {
-    const { data, error } = await auth.admin
-      .from("mercadolibre_sales")
-      .select("id, sale_date, operation_id, order_id, sku, product_name, product_id, unit_cost, raw_data")
-      .is("operation_id", null)
-      .in("order_id", orderIds.slice(index, index + 400))
-    if (error) return Response.json({ error: error.message }, { status: 500 })
-    mappingMatches.push(
-      ...((data ?? []) as unknown as ExistingCostMappingRow[]),
-    )
+    if (error) {
+      console.error("ML_IMPORT_LOOKUP_ERROR", error.message)
+      return Response.json({ error: QUERY_ERROR }, { status: 500 })
+    }
+    mappingMatches.push(...((data ?? []) as unknown as ExistingCostMappingRow[]))
   }
 
   mappingMatches.forEach((row) => {
     const mapping = getExistingCostMapping(row)
     if (mapping) {
       preservedMappings.set(
-        getMercadoLibreSaleIdentity({
-          ...row,
-          raw_data: row.raw_data ?? undefined,
-        }),
+        getMercadoLibreSaleIdentity({ ...row, raw_data: row.raw_data ?? undefined }),
         mapping,
       )
     }
@@ -215,7 +156,8 @@ export async function POST(request: Request) {
     .from("productos")
     .select("id, sku, producto_variantes(id, sku)")
   if (catalogError) {
-    return Response.json({ error: catalogError.message }, { status: 500 })
+    console.error("ML_IMPORT_CATALOG_ERROR", catalogError.message)
+    return Response.json({ error: "No se pudo leer el catálogo para vincular SKU. No se guardó ningún cambio de este bloque." }, { status: 500 })
   }
 
   const catalogTargetsBySku = buildUniqueCatalogTargetsBySku(
@@ -242,9 +184,7 @@ export async function POST(request: Request) {
   payload = payload.map((row) => {
     const key = mappingKey(row.sku, row.product_name)
     const automaticMapping = automaticMappings.get(key)
-    const preservedMapping = preservedMappings.get(
-      getMercadoLibreSaleIdentity(row),
-    )
+    const preservedMapping = preservedMappings.get(getMercadoLibreSaleIdentity(row))
     // Una operación ya contabilizada conserva su imputación histórica para no
     // mover stock entre el pool genérico y una variante al reimportar. Sólo
     // las operaciones nuevas usan la identidad SKU vigente del catálogo.
@@ -270,50 +210,36 @@ export async function POST(request: Request) {
   })
 
   const { data: importResult, error: importError } = await auth.admin.rpc(
-    "import_mercadolibre_sales_idempotent",
+    "import_mercadolibre_sales_batch",
     {
+      p_batch_id: batchId,
       p_rows: payload,
       p_imported_by: auth.user.id,
-      p_source_file_name: body.sourceFileName || null,
     },
   )
 
   if (importError) {
-    const missingMigration =
-      /import_mercadolibre_sales_idempotent|source_key|schema cache/i.test(
-        importError.message,
-      )
+    console.error("ML_IMPORT_RPC_ERROR", importError.message)
+    const missingMigration = isMissingImportMigration(importError.message)
     return Response.json(
       {
-        error: missingMigration
-          ? "Falta aplicar la migración 20260801090000_idempotent_mercadolibre_import.sql."
-          : importError.message,
+        error: describeMercadoLibreImportError(
+          importError.message,
+          "No se pudo guardar este bloque de ventas. No se guardó ningún cambio de este bloque.",
+        ),
       },
-      { status: missingMigration ? 503 : 400 },
+      { status: missingMigration ? 503 : 409 },
     )
   }
 
-  const result = (
-    importResult && typeof importResult === "object"
-      ? importResult
-      : {}
-  ) as Record<string, unknown>
-  const inserted = Number(result.inserted ?? 0)
-  const updated = Number(result.updated ?? 0)
-  const unchanged = Number(result.unchanged ?? 0)
-  const duplicateRows =
-    integrityResult.duplicateRows + Number(result.duplicate_rows ?? 0)
+  const result = (importResult && typeof importResult === "object" ? importResult : {}) as Record<string, unknown>
 
   return Response.json({
     received: payload.length,
-    inserted,
-    updated,
-    unchanged,
-    duplicateRows,
-    invalidRows: 0,
-    errors: [],
-    linked: payload.filter(
-      (row) => "product_id" in row && row.product_id != null,
-    ).length,
+    inserted: Number(result.inserted ?? 0),
+    updated: Number(result.updated ?? 0),
+    unchanged: Number(result.unchanged ?? 0),
+    duplicateRows: integrityResult.duplicateRows + Number(result.duplicate_rows ?? 0),
+    linked: payload.filter((row) => row.product_id != null).length,
   })
 }

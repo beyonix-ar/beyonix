@@ -128,7 +128,12 @@ test("6. Mercado Pago needs_reconciliation -- muestra revisión, paso en 'attent
 
 // 7. refunded -> proceso finalizado
 test("7. refunded -- proceso finalizado, sin acción, todos los pasos en done", () => {
-  const model = getCancellationPanelViewModel(order({ financial_status: "refunded" }))
+  // Al autorizarse la NC, credit_note_required vuelve a false (pedido real #4).
+  const model = getCancellationPanelViewModel(order({
+    financial_status: "refunded",
+    credit_note_required: false,
+    order_credit_notes: [{ status: "authorized", destination: "external_refund", settlement_status: "completado", total_amount: 30000 }],
+  }))
   assert.equal(model.state, "completed")
   assert.equal(model.isFinished, true)
   assert.equal(model.primaryAction, null)
@@ -391,4 +396,25 @@ test("20. customer_credit_restored_amount=0 se respeta como valor real (no se co
     } as Partial<CancellationNextActionOrder> & { customer_credit_restored_amount: number }),
   )
   assert.equal(model.amounts.balanceRestored, 0)
+})
+
+// Caso real (pedido #2, 13/10/2026): reintegrado por Mercado Pago antes de
+// que existiera la factura; la factura se emitió después y la NC obligatoria
+// nunca se emitió. El panel no puede mostrar la NC como hecha.
+test("reintegrado con NC obligatoria sin emitir: el paso de NC queda en atención, no hecho", () => {
+  const pending = getCancellationPanelViewModel(order({
+    financial_status: "refunded",
+    payment_method_id: "mercadopago",
+    credit_note_required: true,
+    order_credit_notes: [],
+  }))
+  assert.equal(pending.steps.find((step) => step.key === "credit_note")?.status, "attention")
+
+  const issued = getCancellationPanelViewModel(order({
+    financial_status: "refunded",
+    payment_method_id: "mercadopago",
+    credit_note_required: false,
+    order_credit_notes: [{ status: "authorized", destination: "external_refund", settlement_status: "pendiente", total_amount: 1000 }],
+  }))
+  assert.equal(issued.steps.find((step) => step.key === "credit_note")?.status, "done")
 })

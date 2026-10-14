@@ -12,6 +12,7 @@ const read = (path: string) => readFileSync(join(root, path), "utf8").replace(/\
 const route = read("app/api/admin/orders/[id]/credit-note/route.ts")
 const finalization = read("lib/orders/credit-note-finalization.ts")
 const reconcile = read("app/api/admin/credit-notes/[noteId]/reconcile/route.ts")
+const emissionResponse = read("lib/orders/credit-note-emission-response.ts")
 
 test("emisión: reserva -> servicio idempotente -> finalización reanudable; nunca FECAESolicitar directo", () => {
   assert.doesNotMatch(route, /fecaeSolicitar|feCompUltimoAutorizado|feCompConsultar/)
@@ -23,7 +24,22 @@ test("emisión: reserva -> servicio idempotente -> finalización reanudable; nun
   assert.ok(reservation < emission && emission < finalize)
   assert.match(route, /conditioned_discount_percent:\s*stockDestination === "stock_observaciones" \? conditionedDiscountPercent : null/)
   assert.match(route, /usá “Conciliar con ARCA” para completar la gestión sin emitir otra nota/)
-  assert.match(route, /reconciliation_required: true/)
+  // La respuesta de emisión fallida se comparte con la NC de casos heredados.
+  assert.match(route, /creditNoteEmissionFailureResponse\(emission, orderId, noteId\)/)
+  assert.match(emissionResponse, /reconciliation_required: true/)
+})
+
+test("NC de caso heredado: misma reserva canónica, emisión idempotente y finalización; sin mover dinero", () => {
+  const legacy = read("app/api/admin/orders/[id]/legacy-credit-note/route.ts")
+  assert.doesNotMatch(legacy, /fecaeSolicitar|feCompUltimoAutorizado|feCompConsultar|refundMercadoPago|creditCustomer/)
+  const pointCheck = legacy.indexOf("configuration = requireArcaConfiguration()")
+  const reservation = legacy.indexOf('.rpc("begin_partial_credit_note"')
+  const emission = legacy.indexOf("await emitCreditNote(auth.admin, {")
+  const finalize = legacy.indexOf("await finalizeCreditNote(auth.admin, { noteId, actorId: auth.user.id })")
+  assert.ok(pointCheck > 0 && pointCheck < reservation && reservation < emission && emission < finalize)
+  assert.match(legacy, /p_destination: "none"/)
+  assert.match(legacy, /p_expected_note_ids: expectedNoteIds/)
+  assert.match(legacy, /creditNoteEmissionFailureResponse\(emission, orderId, noteId\)/)
 })
 
 test("finalización: stock, saldo y resumen idempotentes; auditoría sólo la primera vez; sin mover dinero externo", () => {

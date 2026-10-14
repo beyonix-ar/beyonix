@@ -20,6 +20,11 @@ import {
 import { reconcileMercadoPagoOrderRefund } from "@/lib/mercadopago/order-refund"
 import { parseMercadoPagoExternalReference } from "@/lib/mercadopago/order-reference"
 import {
+  classifyMercadoPagoRefundOrigin,
+  type BeyonixConfirmedRefund,
+  type MercadoPagoRefundedPayment,
+} from "@/lib/mercadopago/refund-origin"
+import {
   claimMercadoPagoWebhookDelivery,
   releaseMercadoPagoWebhookDelivery,
 } from "@/lib/mercadopago/webhook-replay"
@@ -279,8 +284,42 @@ async function handleWebhook(request: Request) {
               .limit(1)
               .maybeSingle()
 
+            // El webhook suele llegar después de que nuestro POST ya quedó
+            // confirmado: un refund propio confirmado para este pago no es
+            // externo. Sólo se audita como externo si MP informa un refund
+            // que BEYONIX no registró (o más dinero del que confirmó).
+            const { data: confirmedAttempts, error: confirmedAttemptsError } = pendingAttempt
+              ? { data: [], error: null }
+              : await supabase
+                  .from("mercadopago_order_refunds")
+                  .select("mp_refund_id, amount")
+                  .eq("order_id", orderId)
+                  .eq("payment_id", String(payment.id))
+                  .eq("status", "confirmed")
+            // Si no se pudo verificar, se audita igual: nunca se silencia un
+            // posible refund externo (payment_status ya quedó persistido y un
+            // reintento de MP no volvería a entrar a este bloque).
+            if (confirmedAttemptsError) {
+              console.error("MERCADOPAGO_REFUND_ORIGIN_LOOKUP_ERROR", {
+                orderId,
+                paymentId: payment.id,
+                error: safeErrorMetadata(confirmedAttemptsError),
+              })
+            }
+            const refundOrigin = confirmedAttemptsError
+              ? "external"
+              : classifyMercadoPagoRefundOrigin(
+                  payment as MercadoPagoRefundedPayment,
+                  (confirmedAttempts ?? []) as BeyonixConfirmedRefund[],
+                )
+
             if (pendingAttempt) {
               await reconcileMercadoPagoOrderRefund(supabase, { orderId })
+            } else if (refundOrigin === "beyonix") {
+              console.log("MERCADOPAGO_REFUND_NOTIFICATION_MATCHES_BEYONIX_REFUND", {
+                orderId,
+                paymentId: payment.id,
+              })
             } else {
               await appendOrderAuditEvent(supabase, {
                 orderId,
@@ -291,6 +330,7 @@ async function handleWebhook(request: Request) {
                 metadata: {
                   paymentId: payment.id,
                   reason: "refund_not_initiated_by_beyonix",
+                  originVerified: !confirmedAttemptsError,
                 },
               })
             }
