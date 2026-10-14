@@ -254,6 +254,7 @@ const TEST_FILES = [
   "lib/orders/claim-polling.test.ts",
   "lib/orders/claim-replacement-flow.test.ts",
   "lib/business/commercial-circuit-consistency.test.ts",
+  "lib/business/dashboard-financials.test.ts",
   "lib/business/product-costs.test.ts",
   "lib/business/standalone-cost-items.test.ts",
   "lib/business/purchase-cost-audit.test.ts",

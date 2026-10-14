@@ -115,7 +115,7 @@ export function InvoiceViewerModal({
         className="absolute inset-0 cursor-pointer"
       />
 
-      <div className="beyonix-modal-shell relative z-10 flex h-[min(88vh,900px)] w-[min(920px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-beyonix-blue-500/40 bg-[#0B1118] shadow-[0_28px_90px_rgba(0,0,0,0.72)]">
+      <div role="dialog" aria-modal="true" aria-label={title} className="beyonix-modal-shell relative z-10 flex h-[min(88vh,900px)] w-[min(920px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-beyonix-blue-500/40 bg-[#0B1118] shadow-[0_28px_90px_rgba(0,0,0,0.72)]">
         <div className="beyonix-modal-header flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-4 py-3">
           <h2 className="beyonix-modal-title truncate text-sm font-bold text-white">{title}</h2>
           <div className="flex shrink-0 items-center gap-2">

@@ -7,8 +7,10 @@ import {
   calculatePendingRefundAdjustment,
   calculateTrueProfit,
   calculateWebNetSales,
+  getCustomerCreditRestoredOutsideCreditNotes,
   getOrderRevenueReversal,
   getProductExpenseEconomicCost,
+  isDashboardPaidSale,
 } from "./dashboard-financials.ts"
 import { getMercadoLibreCostableUnits } from "../mercadolibre/sale-costing.ts"
 import {
@@ -175,4 +177,49 @@ test("O. el subsidio logístico usa costo real y no vuelve a restar el envío ma
     pendingReturnAdjustment: 0,
     mercadoPagoFees: 0,
   }), 25_000)
+})
+
+test("venta cobrada = hubo pago confirmado, aunque después se cancele o reintegre", () => {
+  // BX-1002 real: MP pagado, cancelado y reintegrado (payment_status=refunded).
+  assert.equal(isDashboardPaidSale({ estado: "cancelado", payment_status: "refunded", financial_status: "refunded", paid_at: "2026-10-13T22:30:30Z" }), true)
+  // Transferencia confirmada y luego cancelada con reintegro pendiente.
+  assert.equal(isDashboardPaidSale({ estado: "cancelado", payment_status: "confirmado", financial_status: "refund_pending" }), true)
+  assert.equal(isDashboardPaidSale({ estado: "pagado", payment_status: "confirmado" }), true)
+  assert.equal(isDashboardPaidSale({ estado: "entregado" }), true)
+  // Nunca pagado (checkout abandonado / cancelado sin pago): no es venta.
+  assert.equal(isDashboardPaidSale({ estado: "pendiente", payment_status: "preference_created", financial_status: "pending_payment" }), false)
+  assert.equal(isDashboardPaidSale({ estado: "cancelado", payment_status: "checkout_superseded", financial_status: "cancelled" }), false)
+  // Dinero real que no fue venta (pago tardío / conflicto): se resuelve aparte.
+  assert.equal(isDashboardPaidSale({ estado: "cancelado", payment_status: "approved_after_cancellation", paid_at: "2026-10-13T22:30:30Z" }), false)
+  assert.equal(isDashboardPaidSale({ estado: "pendiente", payment_status: "approved_stock_conflict", paid_at: "2026-10-13T22:30:30Z" }), false)
+})
+
+test("reversión de una venta combinada: el saldo que ya devolvió la NC no se cuenta dos veces", () => {
+  // $70.000 MP + $30.000 saldo, NC por $100.000 (incluye los $30.000 de saldo).
+  const outside = getCustomerCreditRestoredOutsideCreditNotes(30_000, 30_000)
+  assert.equal(outside, 0)
+  const reversal = getOrderRevenueReversal(
+    { original_total: 100_000, total: 100_000, customer_credit_restored_amount: outside, financial_status: "refunded", invoice_status: "authorized" },
+    100_000,
+  )
+  assert.deepEqual(reversal, { status: "completed", amount: 100_000 })
+  // NC parcial ($33.333,33 con $10.000 de saldo): no se suma otra vez ese saldo.
+  const partial = getOrderRevenueReversal(
+    { original_total: 100_000, customer_credit_restored_amount: getCustomerCreditRestoredOutsideCreditNotes(10_000, 10_000) },
+    33_333.33,
+  )
+  assert.equal(partial.amount, 33_333.33)
+  // Saldo restituido fuera de una NC (venta sin factura, legacy): sí suma.
+  assert.equal(getCustomerCreditRestoredOutsideCreditNotes(20_000, 0), 20_000)
+})
+
+test("el dashboard sólo pide columnas reales de ordenes y lee el saldo de sus movimientos", async () => {
+  const { readFileSync } = await import("node:fs")
+  const route = readFileSync("app/api/admin/dashboard/route.ts", "utf8")
+  const financialSelect = route.match(/const FINANCIAL_ORDER_SELECT = `([\s\S]*?)`/)?.[1] ?? ""
+  // Columna inexistente: hacía fallar en silencio toda la lectura financiera.
+  assert.doesNotMatch(financialSelect, /customer_credit_restored_amount/)
+  assert.match(route, /\.in\("movement_type", \["debit", "reversal"\]\)/)
+  assert.match(route, /creditRestorationsScan\.complete &&/)
+  assert.match(route, /return isDashboardPaidSale\(order\)/)
 })

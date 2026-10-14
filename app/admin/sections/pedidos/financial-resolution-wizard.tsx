@@ -11,6 +11,7 @@ import {
   type FinancialResolutionView, type FinancialWizardAction, type FinancialWizardState,
 } from "@/lib/orders/financial-resolution-wizard"
 import type { SupabasePedido } from "@/lib/supabase/types"
+import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import { AdminButton, AdminModal, AdminTextarea, AdminTextInput } from "../../components/admin-controls"
 import { formatPrice } from "../productos/helpers"
 
@@ -391,6 +392,17 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
   const [reference, setReference] = useState("")
   const [observation, setObservation] = useState("")
   const [file, setFile] = useState<File | null>(null)
+  const [creditNotePreview, setCreditNotePreview] = useState<{ noteId: string; token: string } | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const openCreditNotePreview = async (noteId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      setPreviewError("Iniciá sesión nuevamente para ver la nota de crédito.")
+      return
+    }
+    setPreviewError(null)
+    setCreditNotePreview({ noteId, token: session.access_token })
+  }
   const creditNote = [...(pedido.order_credit_notes ?? [])]
     .filter((note) => note.status === "authorized" && note.cae && note.destination !== "none")
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
@@ -474,14 +486,26 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
       {creditNote && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-bold text-[var(--admin-text)]">Nota de crédito emitida ✅</p>
-          <div className="flex gap-2">
-            <AdminButton size="sm" variant="ghost" icon={<Eye className="size-3.5" />} onClick={onOpenBilling}>Ver</AdminButton>
+          <div className="flex flex-wrap gap-2">
+            <AdminButton size="sm" variant="ghost" icon={<Eye className="size-3.5" />} onClick={() => void openCreditNotePreview(creditNote.id)}>Ver nota de crédito</AdminButton>
             <AdminButton size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={() => onDownloadCreditNote(creditNote.id)}>Descargar</AdminButton>
+            <AdminButton size="sm" variant="ghost" onClick={onOpenBilling}>Ir a facturación</AdminButton>
           </div>
         </div>
       )}
+      {creditNotePreview && (
+        // Mismo visor y endpoint que Facturación: sin navegar fuera de la resolución.
+        <InvoiceViewerModal
+          title="Nota de crédito"
+          orderId={pedido.id}
+          requestUrl={`/api/admin/orders/${pedido.id}/invoice/pdf?type=credit_note&note=${encodeURIComponent(creditNotePreview.noteId)}`}
+          bearerToken={creditNotePreview.token}
+          documentLabel="nota de crédito"
+          onClose={() => setCreditNotePreview(null)}
+        />
+      )}
 
-      {error && <p role="alert" className="admin-financial-wizard-error">{error}</p>}
+      {(error || previewError) && <p role="alert" className="admin-financial-wizard-error">{error || previewError}</p>}
 
       <AdminModal compact open={registering} title="Registrar reintegro realizado" description={`Importe: ${formatPrice(resolution.amount)}`}
         onClose={() => { if (!saving) setRegistering(false) }}

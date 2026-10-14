@@ -305,10 +305,17 @@ test("I. NC emitida se muestra como resultado, sin acciones fiscales manuales", 
     const text = ui.doc.body.textContent ?? ""
     assert.match(text, /Completado ✅.*Nota de crédito emitida ✅/)
     assert.doesNotMatch(text, /Emitir|Conciliar|Reintentar acreditación|CAE/)
-    await ui.click("Ver")
+    // "Ver nota de crédito" abre el visor existente ahí mismo (sin navegar a Facturación).
+    await ui.click("Ver nota de crédito")
+    await ui.flush()
+    assert.ok(ui.doc.querySelector("[role='dialog']"), "abre el visor")
+    assert.ok(ui.calls.some((call) => call.method === "GET"), "pide el PDF de la NC")
+    assert.equal(ui.events.billing, 0)
     await ui.click("Descargar")
-    assert.equal(ui.events.billing, 1)
     assert.deepEqual(ui.events.download, ["nc-1"])
+    // Navegar a Facturación queda como acción secundaria.
+    await ui.click("Ir a facturación")
+    assert.equal(ui.events.billing, 1)
   } finally { await ui.cleanup() }
 })
 

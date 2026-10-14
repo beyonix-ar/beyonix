@@ -5,6 +5,55 @@
  * real sin aislar la lógica de agregación de las llamadas a Supabase.
  */
 
+import { isOrderPaymentConfirmed } from "../orders/order-payment-status.ts"
+
+const DASHBOARD_DISPATCHED_OR_PAID_STATES = new Set([
+  "pagado", "approved", "enviado", "en_camino", "visita_fallida", "en_sucursal",
+  "retiro_pendiente", "retiro_vencido", "en_devolucion", "devuelto_beyonix", "entregado",
+])
+
+/** Dinero real que nunca llegó a ser una venta (requiere resolución manual aparte). */
+const NON_SALE_PAYMENT_STATUSES = new Set([
+  "approved_after_cancellation",
+  "approved_stock_conflict",
+  "approved_amount_mismatch",
+  "approved_currency_mismatch",
+  "auto_verified_stock_conflict",
+])
+
+export interface DashboardSaleOrder {
+  estado?: string | null
+  payment_status?: string | null
+  financial_status?: string | null
+  paid_at?: string | null
+  payment_confirmed_amount?: number | null
+}
+
+/**
+ * ¿La orden fue una venta cobrada? Misma regla que isOrderPaymentConfirmed
+ * (fuente única de "hubo pago confirmado"), no el `estado` actual: una venta
+ * cobrada y luego cancelada sigue siendo venta bruta (su reversión se descuenta
+ * aparte). Antes dependía de estado/payment_status='approved': una
+ * transferencia cancelada nunca contaba y una venta MP desaparecía de ventas y
+ * de reintegros apenas el webhook del reintegro la pasaba a 'refunded'.
+ */
+export function isDashboardPaidSale(order: DashboardSaleOrder): boolean {
+  if (NON_SALE_PAYMENT_STATUSES.has(order.payment_status ?? "")) return false
+  return DASHBOARD_DISPATCHED_OR_PAID_STATES.has(order.estado ?? "") || isOrderPaymentConfirmed(order)
+}
+
+/**
+ * Saldo a favor restituido FUERA de una NC (legacy). Desde 20261014130000 la
+ * NC ya incluye la parte pagada con saldo (customer_credit_amount): sumar
+ * además esa restitución contaría dos veces la misma reversión.
+ */
+export function getCustomerCreditRestoredOutsideCreditNotes(
+  restoredTotal: number,
+  creditNoteShares: number,
+): number {
+  return Math.max(0, financialAmount(restoredTotal) - financialAmount(creditNoteShares))
+}
+
 export interface MercadoPagoPaymentSnapshot {
   transaction_amount?: number | null
   fee_details?: Array<{ type?: string | null; amount?: number | null }> | null

@@ -3213,7 +3213,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .bx-surfac
 }
 
 main[class*="bg-"],
-section[class*="bg-"]:not(.checkout-form-panel):not(.customer-claim-solid-form-panel):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section)),
+section[class*="bg-"]:not(.checkout-form-panel):not(.customer-claim-solid-form-panel):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section):not(.customer-cancellation-success-card)),
 footer[class*="bg-"],
 body > div.relative.z-10 main,
 body > div.relative.z-10 section:not(.checkout-form-panel):not(.customer-claim-followup-shell):not(.customer-claim-solid-form-panel):not(.customer-cancellation-success-card):where(:not(.customer-cancelled-order-surface):not(.customer-credit-note-surface):not(.customer-cancelled-order-surface section)),

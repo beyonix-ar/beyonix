@@ -23,8 +23,10 @@ import {
   calculatePendingRefundAdjustment,
   calculateTrueProfit,
   calculateWebNetSales,
+  getCustomerCreditRestoredOutsideCreditNotes,
   getOrderRevenueReversal,
   getProductExpenseEconomicCost,
+  isDashboardPaidSale,
   type OrderRevenueReversal,
 } from "@/lib/business/dashboard-financials"
 import {
@@ -40,18 +42,6 @@ import type {
 } from "@/lib/supabase/types"
 import { isAdminOrderVisible } from "@/lib/orders/admin-order-visibility"
 
-const DISPATCHED_STATES = [
-  "enviado",
-  "en_camino",
-  "visita_fallida",
-  "en_sucursal",
-  "retiro_pendiente",
-  "retiro_vencido",
-  "en_devolucion",
-  "devuelto_beyonix",
-  "entregado",
-] as const
-const PAID_STATES = new Set(["pagado", ...DISPATCHED_STATES, "approved"])
 const PAYMENT_REVIEW_STATES = new Set(["pendiente_comprobante", "en_revision"])
 const DASHBOARD_SERVER_CACHE_MS = 60_000
 const dashboardServerCache = new Map<
@@ -92,8 +82,10 @@ interface SystemStatusItem {
   detail: string
 }
 
+// Venta cobrada = hubo pago confirmado (aunque después se cancele): la
+// reversión se descuenta aparte (getOrderRevenueReversal).
 function isPaidOrder(order: SupabasePedido) {
-  return PAID_STATES.has(order.estado) || order.payment_status === "approved"
+  return isDashboardPaidSale(order)
 }
 
 interface DashboardFinancialSummary {
@@ -147,6 +139,12 @@ interface DashboardFinancialSummary {
   warnings: string[]
 }
 
+interface CreditRestorationRow {
+  order_id: number
+  amount: number | string
+  movement_type: "debit" | "reversal"
+}
+
 interface ProductCostRow extends StandaloneCostRow {
   variant_id: number | null
 }
@@ -173,6 +171,8 @@ interface AuthorizedCreditNoteRow {
   order_id: number
   total_amount: number | string
   manual_amount: number | string
+  /** Parte del saldo usado que restituye la NC (incluida en total_amount). */
+  customer_credit_amount?: number | string | null
   authorized_at: string | null
   order_credit_note_items?: Array<{
     order_item_id: number
@@ -361,6 +361,8 @@ const ORDER_SELECT = `
   payment_proof_file_name,
   payment_proof_uploaded_at,
   paid_at,
+  payment_confirmed_amount,
+  financial_status,
   admin_visible_at,
   tracking_number,
   tracking_url,
@@ -404,7 +406,6 @@ const FINANCIAL_ORDER_SELECT = `
   total,
   original_total,
   credit_balance_used,
-  customer_credit_restored_amount,
   external_amount_due,
   payment_status,
   payment_method_id,
@@ -798,7 +799,7 @@ export async function GET(request: Request) {
             auth.admin
               .from("order_credit_notes")
               .select(
-                "id, order_id, total_amount, manual_amount, authorized_at, order_credit_note_items(order_item_id, quantity, total_amount)",
+                "id, order_id, total_amount, manual_amount, customer_credit_amount, authorized_at, order_credit_note_items(order_item_id, quantity, total_amount)",
               )
               .eq("status", "authorized")
               .order("created_at", { ascending: true })
@@ -808,6 +809,23 @@ export async function GET(request: Request) {
           rows: [] as AuthorizedCreditNoteRow[],
           complete: true,
         }),
+    // Saldo a favor por pedido desde los movimientos reales: 'debit' = saldo
+    // aplicado al comprar, 'reversal' = saldo restituido. ordenes no guarda
+    // estos datos de forma estable (credit_balance_used se descuenta al
+    // restituir).
+    sensitive
+      ? fetchAllDashboardRows<CreditRestorationRow>(
+          "saldo_por_pedido",
+          (from, to) =>
+            auth.admin
+              .from("customer_credit_movements")
+              .select("order_id, amount, movement_type")
+              .in("movement_type", ["debit", "reversal"])
+              .not("order_id", "is", null)
+              .order("created_at", { ascending: true })
+              .range(from, to),
+        )
+      : Promise.resolve({ rows: [] as CreditRestorationRow[], complete: true }),
   ])
 
   const [
@@ -848,6 +866,7 @@ export async function GET(request: Request) {
       expensesScan,
       mlReturnReviewScan,
       authorizedCreditNotesScan,
+      creditRestorationsScan,
     ],
   ] = await Promise.all([primaryDataPromise, financialDataPromise])
 
@@ -886,6 +905,7 @@ export async function GET(request: Request) {
     paidOrderIds.has(note.order_id),
   )
   const authorizedCreditByOrder = new Map<number, number>()
+  const creditNoteCreditShareByOrder = new Map<number, number>()
   const authorizedCreditByItem = new Map<number, number>()
   const creditedQuantityByItem = new Map<number, number>()
   for (const note of authorizedCreditNotes) {
@@ -893,6 +913,11 @@ export async function GET(request: Request) {
       note.order_id,
       (authorizedCreditByOrder.get(note.order_id) ?? 0) +
         Number(note.total_amount ?? 0),
+    )
+    creditNoteCreditShareByOrder.set(
+      note.order_id,
+      (creditNoteCreditShareByOrder.get(note.order_id) ?? 0) +
+        Number(note.customer_credit_amount ?? 0),
     )
     for (const item of note.order_credit_note_items ?? []) {
       authorizedCreditByItem.set(
@@ -920,11 +945,28 @@ export async function GET(request: Request) {
   // toda la orden -- si no, una orden cancelada con reintegro pendiente que
   // además tuviera ítems con recepción física registrada se descontaría dos
   // veces por caminos distintos.
+  const restoredCreditByOrder = new Map<number, number>()
+  const appliedCreditByOrder = new Map<number, number>()
+  for (const movement of creditRestorationsScan.rows) {
+    const orderId = Number(movement.order_id)
+    const target = movement.movement_type === "debit" ? appliedCreditByOrder : restoredCreditByOrder
+    target.set(orderId, (target.get(orderId) ?? 0) + Math.abs(Number(movement.amount ?? 0)))
+  }
   const orderRevenueReversalById = new Map<number, OrderRevenueReversal>()
   for (const order of paidCandidateOrders) {
     orderRevenueReversalById.set(
       order.id,
-      getOrderRevenueReversal(order, authorizedCreditByOrder.get(order.id) ?? 0),
+      getOrderRevenueReversal(
+        {
+          ...order,
+          // Sólo el saldo restituido fuera de una NC: la NC ya lo incluye.
+          customer_credit_restored_amount: getCustomerCreditRestoredOutsideCreditNotes(
+            restoredCreditByOrder.get(order.id) ?? 0,
+            creditNoteCreditShareByOrder.get(order.id) ?? 0,
+          ),
+        },
+        authorizedCreditByOrder.get(order.id) ?? 0,
+      ),
     )
   }
   const mlReturnReviewBySaleId = new Map<string, MercadoLibrePhysicalReview>()
@@ -1213,8 +1255,11 @@ export async function GET(request: Request) {
       ),
     0,
   )
+  // Saldo aplicado en la compra (movimiento 'debit'), no credit_balance_used:
+  // ese campo baja a 0 cuando el saldo se restituye.
   const customerCreditUsed = paidCandidateOrders.reduce(
-    (total, order) => total + Number(order.credit_balance_used ?? 0),
+    (total, order) =>
+      total + (appliedCreditByOrder.get(order.id) ?? Number(order.credit_balance_used ?? 0)),
     0,
   )
   const shippingCharged = paidCandidateOrders.reduce(
@@ -1310,6 +1355,7 @@ export async function GET(request: Request) {
     financialOrdersScan.complete &&
     orderItemsScan.complete &&
     authorizedCreditNotesScan.complete &&
+    creditRestorationsScan.complete &&
     marketplaceScan.complete &&
     mlReturnReviewScan.complete &&
     externalSalesScan.complete &&

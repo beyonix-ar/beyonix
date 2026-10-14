@@ -1519,21 +1519,39 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
     (order.estado ?? "").toLowerCase() === "cancelado"
   ) {
     return (
-      <main className="flex min-h-screen items-start justify-center bg-[var(--account-background)] px-4 pt-32 font-heading sm:pt-36">
+      <main className="flex min-h-screen items-start justify-center bg-[var(--account-background)] px-4 pt-28 font-heading sm:pt-36">
         <section
-          className="customer-cancellation-success-card relative z-20 w-full max-w-md rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-5 py-6 text-center shadow-[0_18px_50px_rgba(0,0,0,0.4)]"
+          role="status"
+          aria-labelledby="customer-cancellation-title"
+          className="customer-cancellation-success-card relative isolate z-20 w-full max-w-md rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-5 py-6 text-center shadow-[0_18px_50px_rgba(0,0,0,0.4)] sm:px-7"
         >
-          <CheckCircle2 className="mx-auto size-8 text-[var(--account-success)]" />
-          <h1 className="mt-3 text-base font-medium text-[var(--account-text-primary)]">
-            Compra cancelada correctamente.
+          <span className="mx-auto flex size-12 items-center justify-center rounded-full border border-[var(--account-success-border)] bg-[var(--account-success-bg)]">
+            <CheckCircle2 className="size-6 text-[var(--account-success)]" aria-hidden="true" />
+          </span>
+          <h1 id="customer-cancellation-title" className="mt-3 text-lg font-bold text-[var(--account-text-primary)]">
+            Compra cancelada
           </h1>
-          <button
-            type="button"
-            onClick={() => router.push("/")}
-            className="mt-5 inline-flex h-9 cursor-pointer items-center justify-center rounded-lg border border-[var(--account-success-border)] bg-[var(--account-success-bg)] px-4 text-xs font-normal text-[var(--account-success-text)] transition-colors hover:border-[var(--account-success)]"
-          >
-            Volver al inicio
-          </button>
+          <p className="mx-auto mt-1.5 max-w-xs text-sm leading-5 text-[var(--account-text-secondary)]">
+            {isOrderPaymentConfirmed(order)
+              ? `Registramos la cancelación del pedido #${formatPublicOrderId(order.id)}. Vas a ver el estado del reintegro en el detalle de tu compra.`
+              : `Registramos la cancelación del pedido #${formatPublicOrderId(order.id)}. No se realizó ningún cobro.`}
+          </p>
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <button
+              type="button"
+              onClick={() => router.push(`/cuenta/compras/${order.id}`)}
+              className={cn(beyonixHoverBorder, "inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-sm font-bold text-white hover:bg-beyonix-blue-500")}
+            >
+              Ver mi pedido
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="inline-flex h-10 cursor-pointer items-center justify-center rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] px-4 text-sm font-medium text-[var(--account-text-secondary)] transition-colors hover:border-[var(--account-border-strong)] hover:text-[var(--account-text-primary)]"
+            >
+              Volver al inicio
+            </button>
+          </div>
         </section>
       </main>
     )
