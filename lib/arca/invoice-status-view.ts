@@ -38,8 +38,15 @@ function formatRetry(value: string | null | undefined) {
   return `${parts.day}/${parts.month} a las ${parts.hour}:${parts.minute}`
 }
 
+/**
+ * `automatic`: el worker de ARCA realmente va a tomar esta venta (control
+ * automático activo y venta dentro de su cola -- isOrderInAutoInvoicingQueue).
+ * Sin ese dato nunca se promete una emisión automática: con el automático
+ * apagado la venta quedaría "pendiente" para siempre sin que nadie lo sepa.
+ */
 export function getInvoiceFiscalStatusView(
   order: InvoiceFiscalStatusOrder,
+  automatic = false,
 ): InvoiceFiscalStatusView | null {
   if (order.invoice_cae || order.invoice_status === "authorized") return null
 
@@ -59,9 +66,11 @@ export function getInvoiceFiscalStatusView(
       state: "error",
       title: "Pago confirmado · Facturación con error",
       description: [
-        retry
+        retry && automatic
           ? `Se reintenta automáticamente desde el ${retry}.`
-          : "No se reintenta automáticamente: requiere revisión.",
+          : retry
+            ? "La facturación automática está desactivada: reintentá la emisión desde acá."
+            : "No se reintenta automáticamente: requiere revisión.",
         reconciling
           ? "Hay un pedido de CAE sin confirmar: el próximo intento verifica en ARCA antes de pedir otro número."
           : null,
@@ -74,7 +83,9 @@ export function getInvoiceFiscalStatusView(
     return {
       state: "pending",
       title: "Pago confirmado · Facturación pendiente",
-      description: "La Factura C se emite automáticamente. También podés emitirla ahora.",
+      description: automatic
+        ? "La Factura C se emite automáticamente. También podés emitirla ahora."
+        : "La facturación automática está desactivada (Admin → Facturación) o esta venta quedó fuera de su corte: emití la Factura C desde acá.",
       detail: null,
     }
   }

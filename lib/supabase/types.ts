@@ -523,7 +523,12 @@ export interface SupabaseOrderCreditNote {
   settlement_date?: string | null
   items_amount: number
   manual_amount: number
+  /** Importe fiscal de la NC (≤ lo facturado). */
   total_amount: number
+  /** Dinero externo que mueve la NC; null = NC previa a 20261014130000 (todo el total). */
+  external_amount?: number | null
+  /** Saldo a favor usado en la compra que restituye esta NC. */
+  customer_credit_amount?: number | null
   invoice_point: number
   invoice_number: number
   voucher_point?: number | null

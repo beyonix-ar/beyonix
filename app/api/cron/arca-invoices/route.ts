@@ -52,7 +52,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "Control automático ARCA no disponible." }, { status: 503 })
   }
   if (!arcaAutoInvoicingView(control as ArcaAutoInvoicingControl, getArcaConfigurationStatus()).enabled) {
-    return NextResponse.json({ ok: true, skipped: "Facturación automática no activada en Admin." })
+    // Nunca en silencio: ventas pagadas esperando Factura C con el automático
+    // apagado quedan pendientes hasta que Admin las emita o active el control.
+    const { count: pendingInvoices, error: pendingError } = await admin
+      .from("ordenes")
+      .select("id", { count: "exact", head: true })
+      .in("invoice_status", ["pending", "error"])
+      .is("invoice_cae", null)
+    if (!pendingError && pendingInvoices) {
+      console.warn("ARCA_AUTO_INVOICING_DISABLED_WITH_PENDING", { pendingInvoices })
+    }
+    return NextResponse.json({
+      ok: true,
+      skipped: "Facturación automática no activada en Admin.",
+      pendingInvoices: pendingError ? null : pendingInvoices ?? 0,
+    })
   }
 
   const summary = await processArcaInvoiceQueue(admin, {

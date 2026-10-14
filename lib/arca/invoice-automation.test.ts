@@ -142,7 +142,7 @@ test("F. ARCA caída: el pedido sigue pagado, queda 'facturación pendiente' con
     assert.equal(order.invoice_status, "error")
     assert.match(String(order.invoice_error), /HTTP 503/)
     assert.equal(order.invoice_requested_number, null, "falló antes de pedir CAE: no hay nada que reconciliar")
-    const view = getInvoiceFiscalStatusView(order as never)
+    const view = getInvoiceFiscalStatusView(order as never, true)
     assert.equal(view?.state, "error")
     assert.match(view?.title ?? "", /Pago confirmado · Facturación con error/)
     assert.match(view?.description ?? "", /Se reintenta automáticamente/)

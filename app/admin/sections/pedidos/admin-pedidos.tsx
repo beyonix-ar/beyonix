@@ -2695,7 +2695,8 @@ function CreditDestinationOption({
  * estado de pago: el pedido sigue confirmado aunque ARCA falle.
  */
 function InvoiceFiscalStatus({ pedido }: { pedido: SupabasePedido }) {
-  const view = getInvoiceFiscalStatusView(pedido)
+  // Mismo dato que el cron: sólo es automática si el worker la va a tomar.
+  const view = getInvoiceFiscalStatusView(pedido, pedido.admin_pending_facts?.invoiceAutomatic === true)
   if (!view) return null
 
   return (

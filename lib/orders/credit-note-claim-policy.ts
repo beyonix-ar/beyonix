@@ -20,6 +20,12 @@ interface CreditNoteClaimPolicyInput {
   orderUserId?: string | null
   claim: CreditNoteClaimPolicyClaim | null
   selectedItems: Array<{ order_item_id: number; quantity: number }>
+  /**
+   * El pedido se canceló directamente desde Admin (admin_cancel_order,
+   * auditado): no existe reclamo del cliente. Misma evidencia que exige la
+   * base (order_has_admin_direct_cancellation).
+   */
+  adminDirectCancellation?: boolean
 }
 
 export function isAdministrativeCreditNoteOperation(operationType: string) {
@@ -49,6 +55,7 @@ export function getCreditNoteClaimPolicyError({
   orderUserId,
   claim,
   selectedItems,
+  adminDirectCancellation = false,
 }: CreditNoteClaimPolicyInput): string | null {
   if (isAdministrativeCreditNoteOperation(operationType)) {
     if (actorRole !== "super_admin") {
@@ -64,6 +71,9 @@ export function getCreditNoteClaimPolicyError({
   }
 
   if (!claim) {
+    // La venta se facturó después de una cancelación hecha por Admin: la NC
+    // de esa cancelación se autoriza con la auditoría, no con un reclamo.
+    if (operationType === "cancelacion_antes_despacho" && adminDirectCancellation) return null
     return "Esta gestión requiere un reclamo del cliente para el pedido."
   }
   if (claim.order_id !== orderId) {

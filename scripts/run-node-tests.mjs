@@ -167,6 +167,11 @@ const TEST_FILES = [
   "lib/cart/checkout-reservation-locked.test.ts",
   "lib/arca/arca-invoicing-sql.test.ts",
   "lib/arca/invoice-automation.test.ts",
+  "lib/arca/payment-to-invoice-chain.test.ts",
+  "lib/arca/invoice-obligation-survives-cancellation.test.ts",
+  "lib/mercadopago/refund-requires-invoice.test.ts",
+  "lib/customer-credit/credit-reversal-after-credit-note.test.ts",
+  "lib/orders/combined-payment-credit-note.test.ts",
   "lib/arca/arca-invoicing-contract.test.ts",
   "lib/arca/credit-note-emission.test.ts",
   "lib/arca/credit-note-hardening-contract.test.ts",
@@ -331,6 +336,7 @@ const DB_TEST_FILES = [
   "lib/arca/fiscal-history-sql.test.mjs",
   "lib/arca/invoice-item-snapshots-sql.test.mjs",
   "lib/orders/claim-logistics-method-race.test.mjs",
+  "lib/customer-credit/credit-reversal-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y

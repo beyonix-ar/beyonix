@@ -45,6 +45,10 @@ type CreditNoteRow = {
   items_amount: number | string
   manual_amount: number | string
   total_amount: number | string
+  /** Dinero externo de la NC (NULL = NC previa a 20261014130000: todo el total). */
+  external_amount?: number | string | null
+  /** Saldo usado en la compra que restituye la base al autorizarse (no se acredita acá). */
+  customer_credit_amount?: number | string | null
   invoice_point: number
   invoice_number: number
   voucher_point: number
@@ -86,6 +90,9 @@ export async function finalizeCreditNote(
   }
   const orderId = Number(note.order_id)
   const totalAmount = roundCreditMoney(Number(note.total_amount))
+  // Importe fiscal ≠ dinero: a saldo se acredita sólo la parte externa. El
+  // saldo usado en la compra lo restituye la base al autorizarse la NC.
+  const externalAmount = roundCreditMoney(Number(note.external_amount ?? note.total_amount))
   const authorizedAt = note.authorized_at
   const issueDateIso = String(authorizedAt).slice(0, 10)
 
@@ -226,11 +233,11 @@ export async function finalizeCreditNote(
       ["cancellation_requested", "refund_pending", "refunded"].includes(order.financial_status ?? ""))
 
   // Única por comprobante (punto + número): un reintento nunca acredita dos veces.
-  const customerCreditMovement = note.destination === "customer_balance"
+  const customerCreditMovement = note.destination === "customer_balance" && externalAmount > 0
     ? await creditCustomerForOrderCreditNote(admin, {
         userId: order.usuario_id,
         orderId,
-        amount: totalAmount,
+        amount: externalAmount,
         creditNoteNumber: note.voucher_number,
         creditNotePoint: note.voucher_point,
         creditNoteCae: note.cae,

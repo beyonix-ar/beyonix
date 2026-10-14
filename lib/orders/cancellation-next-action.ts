@@ -13,6 +13,8 @@
  * pedido.
  */
 
+import { hasPendingInvoiceObligation } from "./fiscal-sequencing.ts"
+
 export type CancellationNextActionState =
   | "none"
   | "emit_credit_note"
@@ -28,6 +30,8 @@ export interface CancellationNextActionCreditNote {
   destination?: string | null
   settlement_status?: string | null
   total_amount?: number | string | null
+  /** Dinero externo de la NC (null = NC previa: todo el total). */
+  external_amount?: number | string | null
 }
 
 export interface CancellationNextActionMercadoPagoRefund {
@@ -45,6 +49,7 @@ export interface CancellationNextActionOrder {
   payment_proof_url?: string | null
   invoice_status?: string | null
   invoice_cae?: string | null
+  invoice_queued_at?: string | null
   credit_note_required?: boolean | null
   order_credit_notes?: CancellationNextActionCreditNote[] | null
   mercadopago_order_refunds?: CancellationNextActionMercadoPagoRefund[] | null
@@ -171,6 +176,13 @@ export function getCancellationNextAction(
   const mpRefund = latestMercadoPagoRefund(order)
   if (mpRefund?.status === "needs_reconciliation") {
     return { state: "reconcile_mp_refund", urgent: true }
+  }
+
+  // Pago confirmado → Factura C → NC C → dinero. Con la factura todavía
+  // pendiente ningún camino devuelve dinero (la base lo bloquea con
+  // INVOICE_REQUIRED_BEFORE_REFUND): primero se emite la factura.
+  if (hasPendingInvoiceObligation(order)) {
+    return { state: "blocked", urgent: true, reason: "invoice_missing" }
   }
 
   const pendingExternalRefundNotes = notes.filter(

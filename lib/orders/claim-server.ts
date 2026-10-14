@@ -36,6 +36,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_RESOLUTION_LOCKED: [409, "La resolución económica ya está en proceso y no puede reemplazarse."],
   CLAIM_CREDIT_PENDING: [409, "Primero debe autorizarse la nota de crédito y acreditarse el saldo."],
   CLAIM_REFUND_PENDING: [409, "Primero registrá el reintegro y su comprobante en la gestión de reintegros del pedido."],
+  INVOICE_REQUIRED_BEFORE_REFUND: [409, "La venta todavía no tiene su Factura C. Emitila desde Facturación y luego la nota de crédito: recién después se registra el reintegro."],
   CLAIM_INVALID: [400, "Revisá los datos de la solicitud."],
   INVALID_REFUND_DETAILS: [400, "La referencia o la observación son demasiado largas. Acortalas e intentá de nuevo."],
   MERCADOPAGO_REQUIRES_REAL_REFUND: [409, "Este pedido se pagó con Mercado Pago: reintegralo desde el botón de Mercado Pago, no con un comprobante manual."],

@@ -556,6 +556,17 @@ export async function POST(
       { status: 500 },
     )
   }
+  // Sólo hace falta sin reclamo: la base vuelve a exigirlo al reservar la NC.
+  const { data: adminDirectCancellation, error: cancellationError } =
+    !claimId && operationType === "cancelacion_antes_despacho"
+      ? await auth.admin.rpc("order_has_admin_direct_cancellation", { p_order_id: orderId })
+      : { data: false, error: null }
+  if (cancellationError) {
+    return NextResponse.json(
+      { error: "No se pudo validar la cancelación del pedido." },
+      { status: 500 },
+    )
+  }
   const claimPolicyError = getCreditNoteClaimPolicyError({
     operationType,
     actorRole: auth.profile.rol,
@@ -563,6 +574,7 @@ export async function POST(
     orderUserId: order.usuario_id,
     claim: selectedClaim,
     selectedItems,
+    adminDirectCancellation: adminDirectCancellation === true,
   })
   if (claimPolicyError) {
     return NextResponse.json({ error: claimPolicyError }, { status: 409 })

@@ -43,6 +43,30 @@ export async function applyAutoActivation(db: PGlite) {
   await db.exec(read(AUTO_ACTIVATION_MIGRATION))
 }
 
+export const INVOICE_OBLIGATION_MIGRATION = "supabase/migrations/20261014100000_invoice_obligation_survives_cancellation.sql"
+
+export async function applyInvoiceObligation(db: PGlite) {
+  await db.exec(read(INVOICE_OBLIGATION_MIGRATION))
+}
+
+/**
+ * Activa el automático como en producción: requiere una Factura C de
+ * producción emitida a mano (número 1 del punto de venta) antes del control.
+ */
+export async function enableAutoInvoicing(db: PGlite, pointOfSale: number, actor = "00000000-0000-4000-8000-000000000001") {
+  const manual = await insertOrder(db)
+  await confirmOrder(db, manual)
+  await db.query(`update ordenes set invoice_status='authorized', invoice_arca_environment='production',
+    invoice_cae='CAE-MANUAL', invoice_point=$2, invoice_number=1 where id=$1`, [manual, pointOfSale])
+  await db.query(`insert into order_audit_events (order_id, actor_type, action, metadata)
+    values ($1,'system','arca_invoice_attempt_started','{"manual": true}'::jsonb)`, [manual])
+  await db.query("select * from set_arca_auto_invoicing(true, $1)", [actor])
+  // PGlite trunca now() al segundo (el cutoff usa clock_timestamp con ms): la
+  // venta posterior se confirma al segundo siguiente, como en la base real.
+  await new Promise((resolve) => setTimeout(resolve, 1_100))
+  return manual
+}
+
 export type OrderSeed = {
   estado?: string
   payment_status?: string | null
@@ -129,6 +153,8 @@ export class FakeArca implements ArcaInvoiceGateway {
   requests = 0
   next: NextBehavior[] = []
   down = false
+  /** Se ejecuta mientras ARCA "procesa" FECAESolicitar (para intercalar otra operación). */
+  beforeRequest: (() => Promise<void>) | null = null
   readonly pointOfSale: number
   /** Cada instancia es UN ambiente ARCA con su propia numeración. */
   readonly environment: ArcaEnvironment
@@ -166,6 +192,9 @@ export class FakeArca implements ArcaInvoiceGateway {
 
   async requestCae(request: FecaeRequest): Promise<FecaeResult> {
     this.requests += 1
+    const interleaved = this.beforeRequest
+    this.beforeRequest = null
+    if (interleaved) await interleaved()
     const behavior = this.next.shift() ?? "ok"
     if (this.down || behavior === "down") {
       throw new FakeArcaError("WSFEv1 rechazó FECAESolicitar: HTTP 503.", false)

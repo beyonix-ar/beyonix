@@ -37,6 +37,12 @@ create table public.ordenes (
   invoice_created_at timestamptz
 );
 
+-- Tipos que declara begin_partial_credit_note (20261014100000 la redefine):
+-- sólo para que la migración se pueda aplicar; las NC se prueban con su
+-- propio fixture (lib/orders/fixtures/claim-schema.sql).
+create table public.orden_items (id bigint primary key, orden_id bigint, cantidad integer);
+create table public.order_claims (id bigint primary key, order_id bigint);
+
 -- Sólo lo que toca la migración de ambientes (20260927120000); las NC se
 -- prueban con su propio fixture.
 create table public.order_credit_notes (

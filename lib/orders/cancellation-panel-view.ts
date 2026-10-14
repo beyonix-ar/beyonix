@@ -150,6 +150,7 @@ export function getCancellationPanelViewModel(
       destination?: string | null
       settlement_status?: string | null
       total_amount?: number | string | null
+      external_amount?: number | string | null
     }> | null
   },
 ): CancellationPanelViewModel {
@@ -180,7 +181,8 @@ export function getCancellationPanelViewModel(
           note.destination === "external_refund" &&
           note.settlement_status !== "completado",
       )
-      .reduce((sum, note) => sum + Number(note.total_amount ?? 0), 0),
+      // Dinero a reintegrar = parte externa de la NC (no su total fiscal).
+      .reduce((sum, note) => sum + Number(note.external_amount ?? note.total_amount ?? 0), 0),
   )
   const mpRefund = getLatestMercadoPagoRefund(order)
 

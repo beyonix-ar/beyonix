@@ -41,7 +41,13 @@ test("un solo camino de emisión: Admin y worker usan el mismo servicio; nadie l
     "lib/arca/invoice-automation.ts",
     "lib/arca/wsfe-invoice-gateway.ts",
     "lib/arca/wsfe.ts",
+    // Resolución financiera: Factura C antes de la NC y del reintegro, con el
+    // mismo servicio y el mismo camino manual que el botón de Admin.
+    "lib/orders/financial-resolution-server.ts",
   ])
+  const resolution = read("lib/orders/financial-resolution-server.ts")
+  assert.match(resolution, /processArcaInvoice\(admin, \{[\s\S]*orderId,\s*manual: true,/)
+  assert.doesNotMatch(resolution, /fecaeSolicitar|claim_arca_invoice/)
   // Ninguna pantalla (cliente o Admin) dispara la facturación por su cuenta.
   assert.ok(offenders.every((path) => !/^(components|context|hooks)\//.test(path) && !/\.tsx$/.test(path)))
 })
@@ -82,14 +88,23 @@ test("Admin: estado fiscal separado del pago (pendiente / facturando / error con
   assert.equal(getInvoiceFiscalStatusView({ invoice_status: "authorized", invoice_cae: "1" }), null)
   assert.equal(getInvoiceFiscalStatusView({ invoice_status: "pending" })?.title, "Pago confirmado · Facturación pendiente")
   assert.equal(getInvoiceFiscalStatusView({ invoice_status: "processing" })?.state, "processing")
-  const error = getInvoiceFiscalStatusView({
+  const errorOrder = {
     invoice_status: "error",
     invoice_error: "WSFEv1 rechazó FECAESolicitar: HTTP 503.",
     invoice_next_attempt_at: "2026-09-27T18:10:00.000Z",
     invoice_requested_number: 12,
-  })
+  }
+  const error = getInvoiceFiscalStatusView(errorOrder, true)
   assert.equal(error?.state, "error")
   assert.match(error?.description ?? "", /Se reintenta automáticamente desde el 27\/09 a las 15:10\./)
+  // Con el automático apagado nunca promete un reintento automático.
+  const errorOff = getInvoiceFiscalStatusView(errorOrder, false)
+  assert.doesNotMatch(errorOff?.description ?? "", /Se reintenta automáticamente/)
+  assert.match(errorOff?.description ?? "", /facturación automática está desactivada/)
+  assert.match(errorOff?.description ?? "", /verifica en ARCA antes de pedir otro número/)
+  assert.match(getInvoiceFiscalStatusView({ invoice_status: "pending" }, true)?.description ?? "", /se emite automáticamente/)
+  assert.doesNotMatch(getInvoiceFiscalStatusView({ invoice_status: "pending" }, false)?.description ?? "", /se emite automáticamente/)
+  assert.match(getInvoiceFiscalStatusView({ invoice_status: "pending" })?.description ?? "", /facturación automática está desactivada/)
   assert.match(error?.description ?? "", /verifica en ARCA antes de pedir otro número/)
   assert.equal(error?.detail, "WSFEv1 rechazó FECAESolicitar: HTTP 503.")
   const manual = getInvoiceFiscalStatusView({ invoice_status: "error", invoice_next_attempt_at: null })
@@ -98,6 +113,12 @@ test("Admin: estado fiscal separado del pago (pendiente / facturando / error con
 
   const admin = read("app/admin/sections/pedidos/admin-pedidos.tsx")
   assert.match(admin, /<InvoiceFiscalStatus pedido=\{pedido\} \/>/)
+  // El texto usa el mismo dato que el cron (control real + cola), no una suposición.
+  assert.match(admin, /getInvoiceFiscalStatusView\(pedido, pedido\.admin_pending_facts\?\.invoiceAutomatic === true\)/)
+  // El cron apagado nunca es silencioso: informa ventas pagadas sin Factura C.
+  const cron = read("app/api/cron/arca-invoices/route.ts")
+  assert.match(cron, /ARCA_AUTO_INVOICING_DISABLED_WITH_PENDING/)
+  assert.match(cron, /pendingInvoices/)
   assert.match(admin, /pedido\.invoice_status === "error"\s*\?\s*"Reintentar facturación"/)
 })
 
