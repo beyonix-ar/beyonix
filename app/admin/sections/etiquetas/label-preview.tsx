@@ -6,22 +6,23 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { AdminBadge, AdminButton, AdminModal } from "@/app/admin/components/admin-controls"
 import type { LabelDrawing } from "@/lib/labels/drawing"
 import { MM_TO_PT } from "@/lib/labels/drawing"
-import { slotPosition, type LabelPlan } from "@/lib/labels/layout"
+import { slotPosition, thermalSlotX, type LabelPlan } from "@/lib/labels/layout"
 import type { LabelQueueItem } from "@/lib/labels/queue"
 import type { LabelSettings } from "@/lib/labels/settings"
 import { SYMBOLOGY_LABELS } from "@/lib/labels/symbology"
 
 import { LabelGraphic } from "./label-graphic"
 
-export const ROLL_PAGE_SIZE = 12
-const ROLL_MARGIN_MM = 4
+/** Filas del rollo por página de la vista previa. */
+export const ROLL_PAGE_SIZE = 10
+const DIMENSION_FONT = "Arial, Helvetica, sans-serif"
 
 export function formatNumber(value: number, decimals = 1) {
   return value.toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: decimals })
 }
 
 export function previewPageCount(plan: LabelPlan) {
-  return plan.mode === "thermal" ? Math.max(1, Math.ceil(plan.totalLabels / ROLL_PAGE_SIZE)) : Math.max(1, plan.pages.length)
+  return plan.mode === "thermal" ? Math.max(1, Math.ceil(plan.pages.length / ROLL_PAGE_SIZE)) : Math.max(1, plan.pages.length)
 }
 
 function SlotButton({ label, onSelect, children }: { label: string; onSelect: () => void; children: React.ReactNode }) {
@@ -30,7 +31,7 @@ function SlotButton({ label, onSelect, children }: { label: string; onSelect: ()
       role="button"
       tabIndex={0}
       aria-label={label}
-      className="cursor-zoom-in outline-none [&:focus-visible>rect:last-child]:stroke-sky-500"
+      className="cursor-zoom-in outline-none [&:focus-visible>rect:last-child]:stroke-sky-500 [&:hover>rect:last-child]:stroke-sky-400"
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -40,6 +41,19 @@ function SlotButton({ label, onSelect, children }: { label: string; onSelect: ()
       }}
     >
       {children}
+    </g>
+  )
+}
+
+// Cota horizontal (línea con topes y medida centrada), en mm.
+function Dimension({ x, y, width, text, size }: { x: number; y: number; width: number; text: string; size: number }) {
+  const tick = size * 0.45
+  return (
+    <g stroke="#0284c7" strokeWidth={size * 0.07} fill="none">
+      <line x1={x} y1={y} x2={x + width} y2={y} />
+      <line x1={x} y1={y - tick} x2={x} y2={y + tick} />
+      <line x1={x + width} y1={y - tick} x2={x + width} y2={y + tick} />
+      <text x={x + width / 2} y={y - size * 0.35} fontSize={size} fill="#0369a1" stroke="none" textAnchor="middle" fontWeight={700} fontFamily={DIMENSION_FONT}>{text}</text>
     </g>
   )
 }
@@ -61,21 +75,59 @@ export function LabelSheetPreview({ plan, drawings, labels, settings, page, onSe
 
   if (plan.mode === "thermal") {
     const rotate = settings.thermal.rotate
-    const first = page * ROLL_PAGE_SIZE
-    const indexes = Array.from({ length: Math.max(0, Math.min(ROLL_PAGE_SIZE, plan.totalLabels - first)) }, (_, offset) => first + offset)
-    const pitch = settings.heightMm + settings.thermal.gapMm
-    const width = settings.widthMm + ROLL_MARGIN_MM * 2
-    const height = Math.max(1, indexes.length) * pitch - settings.thermal.gapMm + ROLL_MARGIN_MM * 2
+    const columns = plan.grid.columns
+    const rowWidth = plan.grid.pageWidthMm
+    const firstRow = page * ROLL_PAGE_SIZE
+    const rows = plan.pages.slice(firstRow, firstRow + ROLL_PAGE_SIZE)
+    const gap = settings.thermal.gapMm
+    const pitch = settings.heightMm + gap
+    const text = Math.max(2.4, Math.min(5, rowWidth / 26))
+    const gutter = text * 2.6
+    const top = text * (columns > 1 ? 5.6 : 3)
+    const rollHeight = Math.max(1, rows.length) * pitch + gap
+    const width = rowWidth + gutter * 2
+    const height = top + rollHeight + text
     return (
-      <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto block h-auto max-h-[70vh] w-full max-w-sm" role="img" aria-label={`Vista previa del rollo: ${plan.totalLabels} etiquetas`}>
-        <rect width={width} height={height} fill="#e4e4e7" rx={1.5} />
-        {indexes.map((index, offset) => {
-          const y = ROLL_MARGIN_MM + offset * pitch
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="mx-auto block h-auto max-h-[70vh] w-full max-w-md"
+        role="img"
+        aria-label={`Vista previa del rollo: ${plan.totalLabels} etiquetas en ${plan.pages.length} ${plan.pages.length === 1 ? "fila" : "filas"} de ${columns}`}
+      >
+        <Dimension x={gutter} y={text * 1.6} width={rowWidth} text={`${formatNumber(rowWidth)} mm`} size={text} />
+        {columns > 1 && Array.from({ length: columns }, (_, column) => (
+          <Dimension key={column} x={gutter + thermalSlotX(settings, column)} y={text * 4.4} width={settings.widthMm} text={formatNumber(settings.widthMm)} size={text * 0.8} />
+        ))}
+        <rect x={gutter} y={top} width={rowWidth} height={rollHeight} fill="#f3eee4" stroke="#d6cfc0" strokeWidth={0.25} />
+        {rows.map((sheet, offset) => {
+          const y = top + gap + offset * pitch
+          const free = columns - sheet.slots.length
           return (
-            <SlotButton key={index} label={describe(index)} onSelect={() => onSelect(index)}>
-              <LabelGraphic drawing={drawings[index]} xMm={ROLL_MARGIN_MM} yMm={y} rotate={rotate} />
-              <rect x={ROLL_MARGIN_MM} y={y} width={settings.widthMm} height={settings.heightMm} rx={0.8} fill="none" stroke="#a1a1aa" strokeWidth={0.2} />
-            </SlotButton>
+            <g key={firstRow + offset}>
+              <text x={gutter / 2} y={y + settings.heightMm / 2 + text * 0.3} fontSize={text * 0.8} fill="#71717a" textAnchor="middle" fontWeight={700} fontFamily={DIMENSION_FONT}>
+                {firstRow + offset + 1}
+              </text>
+              {sheet.slots.map((slot) => (
+                <SlotButton key={slot.index} label={describe(slot.index)} onSelect={() => onSelect(slot.index)}>
+                  <LabelGraphic drawing={drawings[slot.index]} xMm={gutter + slot.xMm} yMm={y} rotate={rotate} />
+                  <rect x={gutter + slot.xMm} y={y} width={settings.widthMm} height={settings.heightMm} rx={0.8} fill="none" stroke="#a1a1aa" strokeWidth={0.2} />
+                </SlotButton>
+              ))}
+              {Array.from({ length: free }, (_, index) => (
+                <rect
+                  key={`free-${index}`}
+                  x={gutter + thermalSlotX(settings, sheet.slots.length + index)}
+                  y={y}
+                  width={settings.widthMm}
+                  height={settings.heightMm}
+                  rx={0.8}
+                  fill="#fafafa"
+                  stroke="#a1a1aa"
+                  strokeWidth={0.25}
+                  strokeDasharray="1 1"
+                />
+              ))}
+            </g>
           )
         })}
       </svg>
@@ -87,7 +139,7 @@ export function LabelSheetPreview({ plan, drawings, labels, settings, page, onSe
   const used = sheet?.slots.length ?? 0
   const free = page === plan.pages.length - 1 || !plan.pages.length ? plan.grid.perPage - used : 0
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto block h-auto w-full shadow-lg shadow-black/30" role="img" aria-label={`Vista previa de la hoja ${page + 1}: ${used} etiquetas`}>
+    <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto block h-auto w-full shadow-xl shadow-black/30" role="img" aria-label={`Vista previa de la hoja ${page + 1}: ${used} etiquetas`}>
       <rect width={width} height={height} fill="#fff" />
       <rect
         x={settings.a4.marginSideMm}
@@ -114,12 +166,35 @@ export function LabelSheetPreview({ plan, drawings, labels, settings, page, onSe
   )
 }
 
+// Referencias de la vista previa (los colores son los del dibujo, fijos).
+export function PreviewLegend({ mode }: { mode: LabelPlan["mode"] }) {
+  const items = [
+    { id: "label", fill: "#ffffff", stroke: "#a1a1aa", dashed: false, label: "Etiqueta (tocala para ampliar)" },
+    { id: "free", fill: "#f4f4f5", stroke: "#a1a1aa", dashed: true, label: "Lugar libre" },
+    mode === "a4"
+      ? { id: "area", fill: "none", stroke: "#38bdf8", dashed: true, label: "Dentro de los márgenes" }
+      : { id: "liner", fill: "#f3eee4", stroke: "#d6cfc0", dashed: false, label: "Papel soporte" },
+  ]
+  return (
+    <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-11px font-bold text-white/60">
+      {items.map((item) => (
+        <li key={item.id} className="inline-flex items-center gap-1.5">
+          <svg width={16} height={10} viewBox="0 0 16 10" aria-hidden="true">
+            <rect x={0.5} y={0.5} width={15} height={9} rx={1.5} fill={item.fill} stroke={item.stroke} strokeDasharray={item.dashed ? "2 1.5" : undefined} />
+          </svg>
+          {item.label}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export function PreviewPager({ page, count, onChange, unit }: { page: number; count: number; onChange: (page: number) => void; unit: string }) {
   if (count <= 1) return null
   return (
     <div className="flex items-center justify-center gap-2 text-xs font-bold text-white/70">
       <AdminButton size="sm" aria-label="Anterior" disabled={page <= 0} onClick={() => onChange(page - 1)}><ChevronLeft className="size-4" /></AdminButton>
-      <span>{unit} {page + 1} de {count}</span>
+      <span className="min-w-24 text-center tabular-nums">{unit} {page + 1} de {count}</span>
       <AdminButton size="sm" aria-label="Siguiente" disabled={page >= count - 1} onClick={() => onChange(page + 1)}><ChevronRight className="size-4" /></AdminButton>
     </div>
   )

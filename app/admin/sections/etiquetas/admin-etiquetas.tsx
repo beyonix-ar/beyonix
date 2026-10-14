@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { Download, Eye, FileCode2, Printer, TriangleAlert } from "lucide-react"
+import { Download, FileCode2, Printer } from "lucide-react"
 
 import {
   AdminButton,
@@ -9,7 +9,7 @@ import {
   AdminModal,
   AdminPageHeader,
   AdminPrimaryButton,
-  AdminSection,
+  adminCardClassName,
   adminPageClassName,
 } from "@/app/admin/components/admin-controls"
 import { printHtmlDocument } from "@/lib/barcodes/print-labels"
@@ -26,7 +26,7 @@ import {
 } from "@/lib/labels/client"
 import type { BarcodePattern } from "@/lib/labels/drawing"
 import { defaultBatchName, toBatchItems, type LabelBatchOutput, type LabelBatchSummary, type LabelPreset } from "@/lib/labels/history"
-import { layoutNotices } from "@/lib/labels/layout"
+import { layoutNotices, type LabelPlan } from "@/lib/labels/layout"
 import { labelQueueStore, labelSettingsStore } from "@/lib/labels/local-store"
 import { addToQueue, createQueueItem, expandQueue, findTarget, queueLabelCount, reconcileQueue, type LabelQueueItem } from "@/lib/labels/queue"
 import { buildPrintDocument, prepareBatch } from "@/lib/labels/render"
@@ -34,10 +34,12 @@ import { MAX_BATCH_LABELS, normalizeLabelSettings, type LabelSettings } from "@/
 import { buildZpl, zplUnavailableReason } from "@/lib/labels/zpl"
 import { cn } from "@/lib/utils"
 
+import { LabelOutputPanel, describeOutput, type PrintBlocker } from "./label-output-panel"
+import { LabelSheetPreview, LabelZoomModal, PreviewLegend, PreviewPager, previewPageCount } from "./label-preview"
 import { LabelQueuePanel } from "./label-queue-panel"
 import { LabelSearchPanel } from "./label-search-panel"
-import { LabelSettingsPanel } from "./label-settings-panel"
-import { LabelSheetPreview, LabelZoomModal, PreviewPager, formatNumber, previewPageCount } from "./label-preview"
+import { LabelSettingsPanel, describeFormat } from "./label-settings-panel"
+import { LABEL_STEP_IDS, LabelStepsBar, plural, type LabelStepStatus } from "./label-ui"
 
 const PREFERENCE_SAVE_DELAY_MS = 1200
 
@@ -58,13 +60,25 @@ function fileStamp() {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="min-w-0">
-      <p className="text-10px font-black uppercase tracking-widest text-white/50">{label}</p>
-      <p className="text-xl font-black text-white">{value}</p>
-    </div>
-  )
+// Dónde cae cada artículo de la cola dentro de la tanda (las copias de un
+// artículo siempre quedan consecutivas).
+function queuePlacements(labels: readonly LabelQueueItem[], plan: LabelPlan) {
+  const placements = new Map<string, string>()
+  if (plan.error || !plan.grid.perPage) return placements
+  const ranges = new Map<string, { first: number; last: number }>()
+  labels.forEach((item, index) => {
+    const range = ranges.get(item.key)
+    if (range) range.last = index
+    else ranges.set(item.key, { first: index, last: index })
+  })
+  const unit = plan.mode === "a4" ? ["hoja", "hojas"] : ["fila", "filas"]
+  ranges.forEach(({ first, last }, key) => {
+    const from = Math.floor(first / plan.grid.perPage) + 1
+    const to = Math.floor(last / plan.grid.perPage) + 1
+    const labelsText = first === last ? `Etiqueta ${first + 1}` : `Etiquetas ${first + 1}–${last + 1}`
+    placements.set(key, `${labelsText} · ${from === to ? `${unit[0]} ${from}` : `${unit[1]} ${from}–${to}`}`)
+  })
+  return placements
 }
 
 export function AdminEtiquetas() {
@@ -193,17 +207,20 @@ export function AdminEtiquetas() {
   }, [drawings])
   const notices = layoutNotices(settings)
   const zplReason = zplUnavailableReason(settings)
-  const printBlocker = !total
-    ? "La cola está vacía."
+  const printBlocker: PrintBlocker | null = !total
+    ? { text: "La cola está vacía.", pending: false }
     : plan.overLimit
-      ? `La tanda supera las ${MAX_BATCH_LABELS} etiquetas. Dividila en tandas más chicas.`
+      ? { text: `La tanda supera las ${MAX_BATCH_LABELS} etiquetas. Dividila en tandas más chicas.`, pending: false }
       : plan.error
-        ? plan.error
+        ? { text: plan.error, pending: false }
         : blockedCodes.length
-          ? `No se pudo generar el código ${blockedCodes.join(", ")}. Quitalo de la cola.`
+          ? { text: `No se pudo generar el código ${blockedCodes.join(", ")}. Quitalo de la cola.`, pending: false }
           : loadingPatterns
-            ? "Generando códigos de barras…"
+            ? { text: "Generando códigos de barras…", pending: true }
             : null
+  const queuedCopies = useMemo(() => new Map(queue.map((item) => [item.key, item.copies])), [queue])
+  const placements = useMemo(() => queuePlacements(labels, plan), [labels, plan])
+  const issues = queue.filter((item) => item.issue || patternErrors[item.code]).length
 
   const addTarget = useCallback((target: LabelTarget, code: string, copies: number) => {
     const item = createQueueItem(target, code, copies)
@@ -290,37 +307,49 @@ export function AdminEtiquetas() {
     setPresets((current) => current.filter((item) => item.id !== preset.id))
   }
 
+
   const zoomItem = zoomIndex != null ? labels[zoomIndex] ?? null : null
   const zoomDrawing = zoomIndex != null ? drawings[zoomIndex] ?? null : null
-  const sample = drawings[0]
+  const outputDisabled = Boolean(printBlocker) || busy !== null
+  const outputSummary = total ? `${plural(total, "etiqueta")} · ${describeOutput(plan)}` : "La cola está vacía"
 
-  const preview = (large: boolean) => (
-    <div className="space-y-3">
-      {total > 0 ? (
-        <div className={cn("bg-zinc-300/70 p-3 sm:p-4", large && "max-h-[75vh] overflow-auto")}>
-          <div className={large ? "mx-auto max-w-3xl" : "mx-auto max-w-md"}>
-            <LabelSheetPreview plan={plan} drawings={drawings} labels={labels} settings={settings} page={currentPage} onSelect={setZoomIndex} />
-          </div>
-        </div>
-      ) : (
-        <p className="py-10 text-center text-sm text-white/55">La vista previa aparece cuando agregás etiquetas a la cola.</p>
-      )}
-      <PreviewPager page={currentPage} count={pageCount} unit={plan.mode === "thermal" ? "Tramo" : "Hoja"} onChange={setPage} />
-      {total > 0 && <p className="text-center text-11px text-white/50">Tocá una etiqueta para ampliarla y ver sus medidas.</p>}
-    </div>
-  )
+  const steps: LabelStepStatus[] = [
+    {
+      id: LABEL_STEP_IDS.search,
+      title: "Buscar y agregar",
+      status: queue.length ? "Podés seguir sumando artículos" : "Buscá o escaneá un producto",
+      state: queue.length ? "done" : "current",
+    },
+    {
+      id: LABEL_STEP_IDS.queue,
+      title: "Revisar la cola",
+      status: issues ? `${plural(issues, "artículo")} con aviso` : queue.length ? `${plural(queue.length, "artículo")} · ${plural(total, "etiqueta")}` : "Vacía",
+      state: issues ? "blocked" : total ? "done" : "idle",
+    },
+    {
+      id: LABEL_STEP_IDS.format,
+      title: "Elegir formato",
+      status: describeFormat(settings),
+      state: plan.error ? "blocked" : total ? "done" : "idle",
+    },
+    {
+      id: LABEL_STEP_IDS.output,
+      title: "Revisar e imprimir",
+      status: !total ? "Esperando etiquetas" : printBlocker ? printBlocker.text : `Listo · ${describeOutput(plan)}`,
+      state: !total ? "idle" : printBlocker && !printBlocker.pending ? "blocked" : "current",
+    },
+  ]
 
-  const actions = (
-    <div className="flex flex-wrap gap-2">
-      <AdminButton icon={<Eye className="size-4" />} disabled={!total} onClick={() => setPreviewOpen(true)}>Vista previa</AdminButton>
-      <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={Boolean(printBlocker) || busy !== null} onClick={() => void runOutput("print")}>
+  const outputActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={outputDisabled} onClick={() => void runOutput("print")}>
         {busy === "print" ? "Preparando…" : "Imprimir"}
       </AdminPrimaryButton>
-      <AdminButton icon={<Download className="size-4" />} disabled={Boolean(printBlocker) || busy !== null} onClick={() => void runOutput("pdf")}>
+      <AdminButton icon={<Download className="size-4" />} disabled={outputDisabled} onClick={() => void runOutput("pdf")}>
         {busy === "pdf" ? "Generando…" : "Descargar PDF"}
       </AdminButton>
       {settings.mode === "thermal" && (
-        <AdminButton icon={<FileCode2 className="size-4" />} title={zplReason ?? "ZPL para Zebra / Honeywell (beta, sin prueba en impresora física)"} disabled={Boolean(printBlocker) || Boolean(zplReason) || busy !== null} onClick={() => void runOutput("zpl")}>
+        <AdminButton icon={<FileCode2 className="size-4" />} title={zplReason ?? "ZPL para Zebra / Honeywell (beta, sin prueba en impresora física)"} disabled={outputDisabled || Boolean(zplReason)} onClick={() => void runOutput("zpl")}>
           {busy === "zpl" ? "Generando…" : "Exportar ZPL"}
         </AdminButton>
       )}
@@ -329,7 +358,13 @@ export function AdminEtiquetas() {
 
   return (
     <div className={cn(adminPageClassName, "mx-auto w-full max-w-1600px")}>
-      <AdminPageHeader eyebrow="Productos" title="Etiquetas" description="Generación e impresión de códigos" actions={actions} />
+      <AdminPageHeader
+        eyebrow="Productos"
+        title="Etiquetas"
+        description="Armá una tanda de etiquetas con código de barras para hoja A4 o impresora térmica: buscá, revisá la cola, elegí el formato e imprimí."
+      />
+
+      <LabelStepsBar steps={steps} />
 
       {message && (
         <AdminInfoBlock role={message.tone === "danger" ? "alert" : "status"} tone={message.tone}>
@@ -337,15 +372,17 @@ export function AdminEtiquetas() {
         </AdminInfoBlock>
       )}
 
-      {/* xl: buscar + cola apilados | vista previa. 2xl: buscar · cola · vista previa. */}
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] 2xl:grid-cols-[minmax(0,2fr)_minmax(0,1.25fr)]">
+      {/* xl: (1 buscar + 2 cola) | (3 formato + 4 vista previa). 2xl: buscar · cola · formato y vista previa. */}
+      <div className="grid items-start gap-5 xl:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)]">
         <div className="grid min-w-0 items-start gap-5 2xl:grid-cols-2">
-          <LabelSearchPanel maxCopies={settings.maxCopiesPerItem} onAdd={addTarget} onProducts={mergeProducts} />
+          <LabelSearchPanel maxCopies={settings.maxCopiesPerItem} queuedCopies={queuedCopies} onAdd={addTarget} onProducts={mergeProducts} />
           <LabelQueuePanel
             queue={queue}
             products={products}
             maxCopies={settings.maxCopiesPerItem}
+            order={settings.order}
             patternErrors={patternErrors}
+            placements={placements}
             batches={batches}
             historyAvailable={configLoaded && !storageUnavailable}
             onRepeat={(entry) => void repeatBatch(entry)}
@@ -353,39 +390,6 @@ export function AdminEtiquetas() {
           />
         </div>
         <div className="min-w-0 space-y-5">
-          <AdminSection compact icon={<Eye className="size-4" />} title="Vista previa" description={`Etiqueta ${formatNumber(plan.designWidthMm)} × ${formatNumber(plan.designHeightMm)} mm${sample?.barcode ? ` · código ${formatNumber(sample.barcode.box.widthMm)} × ${formatNumber(sample.barcode.box.heightMm)} mm` : ""} · margen ${formatNumber(settings.paddingMm)} mm`}>
-            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="Etiquetas" value={total} />
-              {plan.mode === "a4" ? (
-                <>
-                  <Stat label="Por hoja" value={plan.grid.perPage ? `${plan.grid.perPage} (${plan.grid.columns}×${plan.grid.rows})` : "—"} />
-                  <Stat label="Hojas" value={plan.pages.length} />
-                  <Stat label="Espacios libres" value={plan.freeSlots} />
-                </>
-              ) : (
-                <>
-                  <Stat label="Por página" value={1} />
-                  <Stat label="Largo de rollo" value={plan.rollLengthMm ? `${formatNumber(plan.rollLengthMm / 10)} cm` : "—"} />
-                  <Stat label="DPI" value={settings.dpi} />
-                </>
-              )}
-            </div>
-            {(warnings.length > 0 || notices.length > 0 || printBlocker) && (
-              <div className="mb-4 space-y-2">
-                {printBlocker && total > 0 && <AdminInfoBlock tone={loadingPatterns && !blockedCodes.length && !plan.overLimit && !plan.error ? "info" : "danger"}>{printBlocker}</AdminInfoBlock>}
-                {warnings.map((warning) => (
-                  <AdminInfoBlock key={warning} tone="warning" icon={<TriangleAlert className="size-4" aria-hidden="true" />}>{warning}</AdminInfoBlock>
-                ))}
-                {notices.map((notice) => <AdminInfoBlock key={notice.message} tone={notice.tone}>{notice.message}</AdminInfoBlock>)}
-              </div>
-            )}
-            {preview(false)}
-            {plan.mode === "a4" && total > 0 && (
-              <p className="mt-3 text-xs text-white/55">
-                Papel sin usar: {plan.unusedPercent} %. Al imprimir elegí escala 100 % (“Tamaño real”), sin “Ajustar a la página”.
-              </p>
-            )}
-          </AdminSection>
           <LabelSettingsPanel
             settings={settings}
             onChange={updateSettings}
@@ -395,11 +399,50 @@ export function AdminEtiquetas() {
             onSavePreset={savePreset}
             onDeletePreset={removePreset}
           />
+          <LabelOutputPanel
+            plan={plan}
+            drawings={drawings}
+            labels={labels}
+            settings={settings}
+            total={total}
+            page={currentPage}
+            pageCount={pageCount}
+            blocker={printBlocker}
+            warnings={warnings}
+            notices={notices}
+            onPage={setPage}
+            onZoom={setZoomIndex}
+            onExpand={() => setPreviewOpen(true)}
+          />
         </div>
       </div>
 
-      <AdminModal open={previewOpen} wide title="Vista previa" description={`${total} etiquetas · ${plan.mode === "a4" ? `${plan.pages.length} ${plan.pages.length === 1 ? "hoja" : "hojas"} A4` : "impresora térmica"}`} onClose={() => setPreviewOpen(false)} footer={<div className="flex justify-end">{actions}</div>}>
-        {preview(true)}
+      {/* Paso final siempre a mano: resumen de la tanda + salidas. */}
+      <div className={cn(adminCardClassName, "admin-label-print-dock sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 px-4 py-3")} role="region" aria-label="Imprimir o descargar">
+        <div className="min-w-0">
+          <p className="text-sm font-black text-white">{outputSummary}</p>
+          <p className="truncate text-xs text-white/55">{total ? (printBlocker ? printBlocker.text : describeFormat(settings)) : "Agregá artículos para habilitar la impresión."}</p>
+        </div>
+        {outputActions}
+      </div>
+
+      <AdminModal
+        open={previewOpen}
+        wide
+        title="Vista previa"
+        description={`${outputSummary} · ${describeFormat(settings)}`}
+        onClose={() => setPreviewOpen(false)}
+        footer={<div className="flex justify-end">{outputActions}</div>}
+      >
+        <div className="space-y-3">
+          <div className="max-h-[72vh] overflow-auto rounded-xl bg-zinc-300/70 p-3 sm:p-5">
+            <div className="mx-auto max-w-3xl">
+              <LabelSheetPreview plan={plan} drawings={drawings} labels={labels} settings={settings} page={currentPage} onSelect={setZoomIndex} />
+            </div>
+          </div>
+          <PreviewPager page={currentPage} count={pageCount} unit={plan.mode === "thermal" ? "Tramo" : "Hoja"} onChange={setPage} />
+          <PreviewLegend mode={plan.mode} />
+        </div>
       </AdminModal>
       <LabelZoomModal key={zoomIndex ?? "none"} item={zoomItem} drawing={zoomDrawing} settings={settings} onClose={() => setZoomIndex(null)} />
     </div>

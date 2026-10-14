@@ -46,9 +46,9 @@ export async function buildLabelsPdf(batch: PreparedBatch, settings: LabelSettin
         })
       }
       // Sistema local de la etiqueta (y hacia arriba, origen abajo a la
-      // izquierda). Girada: 90° horario dentro de la página física.
+      // izquierda). Girada: 90° horario dentro de su casillero físico.
       const transform = rotate
-        ? concatTransformationMatrix(0, -1, 1, 0, 0, pt(sheet.heightMm))
+        ? concatTransformationMatrix(0, -1, 1, 0, pt(slot.xMm), pt(sheet.heightMm - slot.yMm))
         : concatTransformationMatrix(1, 0, 0, 1, pt(slot.xMm), pt(sheet.heightMm - slot.yMm - drawing.heightMm))
       page.pushOperators(pushGraphicsState(), transform)
       for (const bar of drawing.bars) {

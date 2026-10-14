@@ -1,4 +1,4 @@
-import { A4_MM, MAX_BATCH_LABELS, type LabelSettings } from "./settings.ts"
+import { A4_MM, MAX_BATCH_LABELS, THERMAL_PRINT_WIDTH_MM, type LabelSettings } from "./settings.ts"
 
 export interface LabelSlot {
   /** Índice de la etiqueta dentro de la tanda expandida. */
@@ -32,8 +32,10 @@ export interface LabelPlan {
   freeSlots: number
   /** Porcentaje del papel usado que queda sin etiqueta (0–100). */
   unusedPercent: number
-  /** Térmica: largo de rollo consumido (etiquetas + gaps). */
+  /** Térmica: largo de rollo consumido (filas + gaps). */
   rollLengthMm: number | null
+  /** Térmica: filas del rollo que se imprimen (cada fila = una página). */
+  rollRows: number | null
   overLimit: boolean
   error: string | null
 }
@@ -65,6 +67,28 @@ export function thermalDesignSize(settings: LabelSettings) {
 
 const round1 = (value: number) => Math.round(value * 10) / 10
 
+/** Ancho total de una fila del rollo: bordes + columnas + separaciones. */
+export function thermalRowWidth(settings: LabelSettings) {
+  const { columns, columnGapMm, sideMarginMm } = settings.thermal
+  return round1(2 * sideMarginMm + columns * settings.widthMm + (columns - 1) * columnGapMm)
+}
+
+/** Posición (mm) de la columna `column` dentro de una fila del rollo. */
+export function thermalSlotX(settings: LabelSettings, column: number) {
+  return round1(settings.thermal.sideMarginMm + column * (settings.widthMm + settings.thermal.columnGapMm))
+}
+
+// Una "etiqueta" térmica muy apaisada (p. ej. 100 × 20 mm) suele ser en
+// realidad un rollo de varias columnas. Sugiere dividirla conservando el ancho
+// total del rollo; null si no parece el caso.
+export function suggestThermalColumns(settings: LabelSettings) {
+  if (settings.mode !== "thermal" || settings.thermal.columns !== 1 || settings.thermal.rotate) return null
+  if (settings.widthMm < 70 || settings.widthMm < settings.heightMm * 3.5) return null
+  const columns = 2
+  const widthMm = round1((settings.widthMm - (columns - 1) * settings.thermal.columnGapMm) / columns)
+  return widthMm >= 20 ? { columns, widthMm } : null
+}
+
 /** Posición (mm) del casillero `offset` de una hoja A4, fila por fila. */
 export function slotPosition(settings: LabelSettings, grid: SheetGrid, offset: number) {
   const column = offset % grid.columns
@@ -76,27 +100,36 @@ export function slotPosition(settings: LabelSettings, grid: SheetGrid, offset: n
 }
 
 // Las etiquetas se acomodan corridas en el orden de la tanda: nunca una hoja
-// por producto. A4 llena fila por fila; térmica, una etiqueta por página.
+// por producto. A4 llena fila por fila; térmica, una fila del rollo por página
+// (1 etiqueta, o 2+ si el rollo trae varias columnas).
 export function planLabels(settings: LabelSettings, totalLabels: number): LabelPlan {
   const total = Math.max(0, Math.floor(totalLabels))
   const overLimit = total > MAX_BATCH_LABELS
   if (settings.mode === "thermal") {
     const design = thermalDesignSize(settings)
-    const pages = Array.from({ length: total }, (_, index): LabelPage => ({
-      widthMm: settings.widthMm,
-      heightMm: settings.heightMm,
-      slots: [{ index, xMm: 0, yMm: 0 }],
-    }))
+    const columns = settings.thermal.columns
+    const rowWidth = thermalRowWidth(settings)
+    const rows = Math.ceil(total / columns)
+    const pages = Array.from({ length: rows }, (_, row): LabelPage => {
+      const first = row * columns
+      return {
+        widthMm: rowWidth,
+        heightMm: settings.heightMm,
+        slots: Array.from({ length: Math.min(columns, total - first) }, (_, column) => ({ index: first + column, xMm: thermalSlotX(settings, column), yMm: 0 })),
+      }
+    })
+    const paperArea = rows * rowWidth * settings.heightMm
     return {
       mode: "thermal",
       designWidthMm: design.widthMm,
       designHeightMm: design.heightMm,
-      grid: { pageWidthMm: settings.widthMm, pageHeightMm: settings.heightMm, columns: 1, rows: 1, perPage: 1 },
+      grid: { pageWidthMm: rowWidth, pageHeightMm: settings.heightMm, columns, rows: 1, perPage: columns },
       totalLabels: total,
       pages,
-      freeSlots: 0,
-      unusedPercent: 0,
-      rollLengthMm: total ? round1(total * settings.heightMm + Math.max(0, total - 1) * settings.thermal.gapMm) : 0,
+      freeSlots: rows * columns - total,
+      unusedPercent: paperArea ? Math.round((1 - (total * settings.widthMm * settings.heightMm) / paperArea) * 100) : 0,
+      rollLengthMm: rows ? round1(rows * settings.heightMm + (rows - 1) * settings.thermal.gapMm) : 0,
+      rollRows: rows,
       overLimit,
       error: null,
     }
@@ -109,6 +142,7 @@ export function planLabels(settings: LabelSettings, totalLabels: number): LabelP
     grid,
     totalLabels: total,
     rollLengthMm: null,
+    rollRows: null,
     overLimit,
   }
   if (!grid.perPage) {
@@ -144,6 +178,9 @@ export function layoutNotices(settings: LabelSettings): LayoutNotice[] {
   const notices: LayoutNotice[] = []
   if (settings.mode === "a4" && (settings.a4.marginTopMm < 5 || settings.a4.marginSideMm < 4)) {
     notices.push({ tone: "warning", message: "Muchas impresoras domésticas no imprimen a menos de 4–5 mm del borde: las etiquetas del contorno pueden salir cortadas." })
+  }
+  if (settings.mode === "thermal" && thermalRowWidth(settings) > THERMAL_PRINT_WIDTH_MM) {
+    notices.push({ tone: "warning", message: `La fila del rollo mide ${String(thermalRowWidth(settings)).replace(".", ",")} mm: supera el ancho de impresión habitual de una térmica de 4" (104–108 mm). Revisá el ancho de cada etiqueta y la cantidad por fila.` })
   }
   if (settings.mode === "thermal" && settings.dpi === 600) {
     notices.push({ tone: "info", message: "Las impresoras térmicas suelen ser de 203 o 300 dpi. Elegí la densidad real para que las barras caigan en puntos enteros." })

@@ -41,6 +41,12 @@ export interface LabelSettings {
     gapMm: number
     /** Gira la etiqueta 90° para rollos que alimentan de costado. */
     rotate: boolean
+    /** Etiquetas por fila del rollo (rollos de 2 o más columnas, p. ej. 10 × 2 cm = 2 de 5 × 2). */
+    columns: number
+    /** Separación entre columnas de una misma fila. */
+    columnGapMm: number
+    /** Borde del papel soporte a cada lado de la fila. */
+    sideMarginMm: number
   }
 }
 
@@ -48,6 +54,8 @@ export const MAX_BATCH_LABELS = 500
 export const MAX_COPIES_LIMIT = 500
 
 export const A4_MM = { width: 210, height: 297 } as const
+/** Ancho de impresión habitual de una térmica de 4" (cabezal de 104–108 mm). */
+export const THERMAL_PRINT_WIDTH_MM = 108
 
 export const LABEL_LIMITS = {
   widthMm: { min: 20, max: 120 },
@@ -58,6 +66,9 @@ export const LABEL_LIMITS = {
   gapXMm: { min: 0, max: 20 },
   gapYMm: { min: 0, max: 20 },
   thermalGapMm: { min: 0, max: 20 },
+  thermalColumns: { min: 1, max: 4 },
+  thermalColumnGapMm: { min: 0, max: 10 },
+  thermalSideMarginMm: { min: 0, max: 10 },
   maxCopiesPerItem: { min: 1, max: MAX_COPIES_LIMIT },
 } as const
 
@@ -83,7 +94,7 @@ export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
   content: DEFAULT_LABEL_CONTENT,
   maxCopiesPerItem: 100,
   a4: { orientation: "portrait", marginTopMm: 8, marginSideMm: 6, gapXMm: 2, gapYMm: 2, cutMarks: true },
-  thermal: { gapMm: 3, rotate: false },
+  thermal: { gapMm: 3, rotate: false, columns: 1, columnGapMm: 2, sideMarginMm: 0 },
 }
 
 export interface LabelSizePreset {
@@ -100,6 +111,33 @@ export const LABEL_SIZE_PRESETS: readonly LabelSizePreset[] = [
   { id: "strip", name: "Tira", widthMm: 80, heightMm: 20 },
   { id: "large", name: "Grande", widthMm: 80, heightMm: 30 },
 ]
+
+export const THERMAL_COLUMN_OPTIONS: readonly number[] = [1, 2, 3, 4]
+
+export interface ThermalRollPreset {
+  id: string
+  name: string
+  description: string
+  widthMm: number
+  heightMm: number
+  columns: number
+  columnGapMm: number
+}
+
+// Rollos con varias etiquetas por fila: el ancho es el de CADA etiqueta, no el
+// del rollo. "10 × 2 cm" son dos etiquetas de 4,9 × 2 cm con 2 mm entre ambas.
+export const THERMAL_ROLL_PRESETS: readonly ThermalRollPreset[] = [
+  { id: "double-10x2", name: "Rollo doble 10 × 2 cm", description: "2 etiquetas de 49 × 20 mm por fila", widthMm: 49, heightMm: 20, columns: 2, columnGapMm: 2 },
+  { id: "double-10x2.5", name: "Rollo doble 10 × 2,5 cm", description: "2 etiquetas de 49 × 25 mm por fila", widthMm: 49, heightMm: 25, columns: 2, columnGapMm: 2 },
+]
+
+export function matchRollPreset(settings: Pick<LabelSettings, "widthMm" | "heightMm" | "thermal">) {
+  return THERMAL_ROLL_PRESETS.find((preset) =>
+    preset.widthMm === settings.widthMm &&
+    preset.heightMm === settings.heightMm &&
+    preset.columns === settings.thermal.columns &&
+    preset.columnGapMm === settings.thermal.columnGapMm) ?? null
+}
 
 export function matchSizePreset(settings: Pick<LabelSettings, "widthMm" | "heightMm">) {
   return LABEL_SIZE_PRESETS.find((preset) => preset.widthMm === settings.widthMm && preset.heightMm === settings.heightMm) ?? null
@@ -161,6 +199,9 @@ export function normalizeLabelSettings(input: unknown): LabelSettings {
     thermal: {
       gapMm: clampMm(thermal.gapMm, LABEL_LIMITS.thermalGapMm, defaults.thermal.gapMm),
       rotate: bool(thermal.rotate, defaults.thermal.rotate),
+      columns: Math.round(clampMm(thermal.columns, LABEL_LIMITS.thermalColumns, defaults.thermal.columns)),
+      columnGapMm: clampMm(thermal.columnGapMm, LABEL_LIMITS.thermalColumnGapMm, defaults.thermal.columnGapMm),
+      sideMarginMm: clampMm(thermal.sideMarginMm, LABEL_LIMITS.thermalSideMarginMm, defaults.thermal.sideMarginMm),
     },
   }
 }

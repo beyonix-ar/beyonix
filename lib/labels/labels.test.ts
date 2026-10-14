@@ -6,7 +6,7 @@ import { buildLabelTargets, type LabelCatalogProduct } from "./catalog.ts"
 import { autoShortName, buildLabelDrawing, barcodeModuleWidth, sanitizeLabelText, wrapText, type BarcodePattern } from "./drawing.ts"
 import { encodeBarcodePattern } from "./encode.ts"
 import { defaultBatchName, parseBatchItems, parsePresetPayload, toBatchItems } from "./history.ts"
-import { computeA4Grid, layoutNotices, planLabels } from "./layout.ts"
+import { computeA4Grid, layoutNotices, planLabels, suggestThermalColumns, thermalRowWidth } from "./layout.ts"
 import { buildLabelsPdf } from "./pdf.ts"
 import {
   addToQueue,
@@ -26,7 +26,7 @@ import {
   type LabelQueueItem,
 } from "./queue.ts"
 import { buildPrintDocument, labelSvgMarkup, prepareBatch } from "./render.ts"
-import { DEFAULT_LABEL_SETTINGS, MAX_BATCH_LABELS, matchSizePreset, measureError, normalizeLabelSettings, type LabelSettings } from "./settings.ts"
+import { DEFAULT_LABEL_SETTINGS, MAX_BATCH_LABELS, THERMAL_ROLL_PRESETS, matchRollPreset, matchSizePreset, measureError, normalizeLabelSettings, type LabelSettings } from "./settings.ts"
 import { classifyBarcode, gtinCheckDigit, isValidGtin } from "./symbology.ts"
 import { buildZpl, zplUnavailableReason } from "./zpl.ts"
 
@@ -284,14 +284,81 @@ test("layout A4: columnas, filas, hojas y espacio libre (40×20, 50×25, 80×20,
 })
 
 test("layout térmica: una etiqueta por página, rollo y giro", () => {
-  const thermal = settings({ mode: "thermal", widthMm: 40, heightMm: 20, dpi: 203, thermal: { gapMm: 3, rotate: false } })
+  const thermal = settings({ mode: "thermal", widthMm: 40, heightMm: 20, dpi: 203, thermal: { ...DEFAULT_LABEL_SETTINGS.thermal, gapMm: 3, rotate: false } })
   const plan = planLabels(thermal, 14)
   assert.equal(plan.pages.length, 14)
   assert.deepEqual([plan.pages[0].widthMm, plan.pages[0].heightMm], [40, 20])
   assert.equal(plan.rollLengthMm, 14 * 20 + 13 * 3)
-  const rotated = planLabels(settings({ mode: "thermal", widthMm: 30, heightMm: 60, thermal: { gapMm: 2, rotate: true } }), 1)
+  const rotated = planLabels(settings({ mode: "thermal", widthMm: 30, heightMm: 60, thermal: { ...DEFAULT_LABEL_SETTINGS.thermal, gapMm: 2, rotate: true } }), 1)
   assert.deepEqual([rotated.designWidthMm, rotated.designHeightMm], [60, 30], "girada: se diseña apaisada")
   assert.deepEqual([rotated.pages[0].widthMm, rotated.pages[0].heightMm], [30, 60], "la página es la etiqueta física")
+})
+
+const thermalBase = DEFAULT_LABEL_SETTINGS.thermal
+const doubleRoll = (patch: Partial<LabelSettings["thermal"]> = {}) =>
+  settings({ mode: "thermal", widthMm: 49, heightMm: 20, dpi: 203, thermal: { ...thermalBase, columns: 2, columnGapMm: 2, ...patch } })
+
+test("térmica 10 × 2 cm: dos etiquetas de 49 × 20 por fila, no una etiqueta larga", () => {
+  const config = doubleRoll()
+  assert.equal(thermalRowWidth(config), 100, "49 + 2 + 49 = rollo de 100 mm")
+  const plan = planLabels(config, 5)
+  assert.equal(plan.pages.length, 3, "5 etiquetas = 3 filas")
+  assert.deepEqual([plan.grid.columns, plan.grid.perPage], [2, 2])
+  assert.deepEqual([plan.pages[0].widthMm, plan.pages[0].heightMm], [100, 20], "cada página es una fila completa del rollo")
+  assert.deepEqual(plan.pages[0].slots.map((slot) => [slot.index, slot.xMm, slot.yMm]), [[0, 0, 0], [1, 51, 0]])
+  assert.deepEqual(plan.pages[2].slots.map((slot) => slot.index), [4], "la última fila queda con un lugar libre")
+  assert.equal(plan.freeSlots, 1)
+  assert.equal(plan.rollRows, 3)
+  assert.equal(plan.rollLengthMm, 3 * 20 + 2 * 3)
+  assert.equal(plan.designWidthMm, 49, "cada etiqueta se diseña con su ancho propio")
+
+  const margins = planLabels(doubleRoll({ sideMarginMm: 1.5, columnGapMm: 3 }), 2)
+  assert.equal(margins.pages[0].widthMm, 104)
+  assert.deepEqual(margins.pages[0].slots.map((slot) => slot.xMm), [1.5, 53.5])
+  assert.equal(planLabels(doubleRoll({ columns: 3 }), 7).pages.length, 3)
+
+  assert.equal(matchRollPreset(config)?.id, "double-10x2")
+  assert.ok(THERMAL_ROLL_PRESETS.every((preset) => preset.columns * preset.widthMm + (preset.columns - 1) * preset.columnGapMm === 100))
+  // Sugerencia: "100 × 20" cargado como una sola etiqueta → 2 columnas, mismo rollo.
+  const wide = settings({ mode: "thermal", widthMm: 100, heightMm: 20, thermal: { ...thermalBase } })
+  assert.deepEqual(suggestThermalColumns(wide), { columns: 2, widthMm: 49 })
+  assert.equal(suggestThermalColumns(settings({ mode: "thermal", widthMm: 50, heightMm: 25 })), null)
+  assert.equal(suggestThermalColumns(config), null, "ya está en 2 columnas")
+  assert.equal(suggestThermalColumns(settings({ widthMm: 100, heightMm: 20 })), null, "en A4 no aplica")
+  assert.ok(layoutNotices(doubleRoll({ columns: 3 })).some((notice) => /supera el ancho/.test(notice.message)), "3 × 49 mm no entra en un cabezal de 4\"")
+
+  const normalized = normalizeLabelSettings({ mode: "thermal", thermal: { columns: 9, columnGapMm: -1, sideMarginMm: "2,5" } })
+  assert.deepEqual([normalized.thermal.columns, normalized.thermal.columnGapMm, normalized.thermal.sideMarginMm], [4, 0, 2.5])
+  assert.equal(normalizeLabelSettings({ thermal: { ...DEFAULT_LABEL_SETTINGS.thermal, gapMm: 3, rotate: false } }).thermal.columns, 1, "configuraciones guardadas antes de las columnas = 1 por fila")
+})
+
+test("térmica 10 × 2 cm: impresión, PDF y ZPL ubican cada columna", async () => {
+  const queue = [item(lighter, 101, 3), item(stand, null, 2)]
+  const config = doubleRoll()
+  const batch = prepareBatch(expandQueue(queue, "manual"), patterns, config)
+  const html = buildPrintDocument(batch, config)
+  assert.match(html, /@page \{ size: 100mm 20mm; margin: 0; \}/)
+  assert.equal(html.match(/class="page"/g)?.length, 3)
+  assert.match(html, /left:51mm;top:0mm/)
+
+  const pdf = await PDFDocument.load(await buildLabelsPdf(batch, config))
+  assert.equal(pdf.getPageCount(), 3)
+  const size = pdf.getPage(0).getSize()
+  assert.ok(Math.abs(size.width - (100 * 72) / 25.4) < 0.01 && Math.abs(size.height - (20 * 72) / 25.4) < 0.01)
+  await buildLabelsPdf(prepareBatch(expandQueue(queue, "manual"), patterns, doubleRoll({ rotate: true })), doubleRoll({ rotate: true }))
+
+  const zpl = buildZpl(batch, config)
+  // Filas: [MAR, MAR] [MAR, SOP] [SOP]: ninguna repetida → 3 formatos.
+  assert.equal(zpl.match(/\^XA/g)?.length, 3)
+  assert.match(zpl, /\^PW799\n\^LL160/, "ancho del rollo completo a 203 dpi")
+  const firstRow = zpl.split("^XZ")[0]
+  const secondBarcode = batch.drawings[1].barcode
+  assert.ok(secondBarcode)
+  assert.equal(firstRow.match(/\^BEN/g)?.length, 2, "dos códigos en la primera fila")
+  assert.ok(firstRow.includes(`^FO${Math.round((51 + secondBarcode.box.xMm) * 203 / 25.4)},`), "la segunda columna se corre 51 mm")
+  const paired = buildZpl(prepareBatch(expandQueue([item(lighter, 101, 4)], "manual"), patterns, config), config)
+  assert.equal(paired.match(/\^XA/g)?.length, 1)
+  assert.match(paired, /\^PQ2,0,1,N/, "filas idénticas se agrupan")
 })
 
 test("configuración: límites, valores absurdos y presets", () => {
@@ -418,7 +485,7 @@ test("ZPL: comandos nativos con módulo en puntos y copias agrupadas", () => {
   assert.match(zpl, /\^BCN,\d+,N,N,N,A\^FH_\^FDBX-SOP-000030\^FS/)
   assert.match(zpl, /\^BY2,2,\d+/)
   assert.match(zplUnavailableReason(settings()) ?? "", /Térmica/)
-  assert.match(zplUnavailableReason(settings({ mode: "thermal", thermal: { gapMm: 2, rotate: true } })) ?? "", /giradas/)
+  assert.match(zplUnavailableReason(settings({ mode: "thermal", thermal: { ...DEFAULT_LABEL_SETTINGS.thermal, gapMm: 2, rotate: true } })) ?? "", /giradas/)
 })
 
 test("historial y presets: validación server-side", () => {
