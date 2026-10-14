@@ -113,6 +113,7 @@ test("armado: variantId se valida y llega a la RPC; el operador puede armar", as
   const params = { params: Promise.resolve({ id: "40" }) }
   const key = "50000000-0000-4000-8000-000000000001"
   await withRoutes("operador", async (calls, responders) => {
+    responders.set("/rest/v1/ordenes", () => Response.json({ estado: "pagado", cancelled_at: null, financial_status: "paid" }))
     responders.set("/rest/v1/rpc/scan_order_preparation_code", () => Response.json({ requiresVariant: true, productId: 4, productName: "Encendedor", candidates: [], status: "preparing" }))
     for (const variantId of [0, -1, 1.5, "abc"]) {
       assert.equal((await POST(request("POST", { action: "scan", code: "ENC", requestKey: key, variantId }), params)).status, 400, String(variantId))
@@ -120,6 +121,18 @@ test("armado: variantId se valida y llega a la RPC; el operador puede armar", as
     await POST(request("POST", { action: "scan", code: "ENC", requestKey: key, variantId: 43 }), params)
     const rpc = calls.find((call) => call.path === "/rest/v1/rpc/scan_order_preparation_code")!
     assert.deepEqual([rpc.body?.p_variant_id, rpc.body?.p_code, rpc.authorization], [43, "ENC", "Bearer test-service"])
+  })
+})
+
+test("estado logístico: un pedido cancelado no puede volver a pagado ni despacharse", async () => {
+  const { PATCH } = await import("../../app/api/admin/pedidos/[id]/status/route")
+  await withRoutes("super_admin", async (calls, responders) => {
+    responders.set("/rest/v1/ordenes", () => Response.json({ id: 40, estado: "cancelado", financial_status: "refund_pending" }))
+    const params = { params: Promise.resolve({ id: "40" }) }
+    for (const estado of ["pagado", "enviado"]) {
+      assert.equal((await PATCH(request("PATCH", { estado }), params)).status, 409)
+    }
+    assert.ok(calls.every((call) => call.path !== "/rest/v1/ordenes" || call.body === null), "no actualiza el pedido")
   })
 })
 

@@ -2086,9 +2086,18 @@ function RefundManagementPanel({
     return <AdminSkeleton rows={3} />
   }
 
+  if (pedido.admin_pending_facts?.cancellationAutomatic && pedido.financial_status === "refund_pending") {
+    return <section className="admin-order-data-panel rounded-xl border border-white/8 p-3" aria-label="Cancelación automática">
+      <h3>Cancelación automática en proceso</h3>
+      <p>{pedido.invoice_status === "authorized" ? "Factura C emitida automáticamente." : "Factura C pendiente / procesando."}</p>
+      <p>{pedido.credit_note_required ? "Nota de Crédito C pendiente / procesando." : "Nota de Crédito C autorizada."}</p>
+      <p>Reintegro pendiente / procesando.</p>
+    </section>
+  }
+
   // Resolución guiada (Etapa 6): sólo cuando la API de Etapa 5 ofrece un
   // camino o ya existe una resolución. El resto sigue en el flujo existente.
-  if (financial.view && (financial.view.mode === "wizard" || financial.view.mode === "resolution")) {
+  if (!pedido.admin_pending_facts?.cancellationAutomatic && financial.view && (financial.view.mode === "wizard" || financial.view.mode === "resolution")) {
     return (
       <FinancialResolutionWizard
         pedido={pedido}
@@ -2736,6 +2745,7 @@ function BillingManagementPanel({
   onBillingUpdated: (order: SupabasePedido) => void
 }) {
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
+  const automaticCancellation = pedido.admin_pending_facts?.cancellationAutomatic === true && pedido.financial_status === "refund_pending"
   const testInvoice = invoiceIssued && !isFiscalArcaVoucher(pedido.invoice_arca_environment)
   const creditNoteNeeded = needsCreditNoteReminder(pedido)
   const arcaConfiguration = useArcaConfigurationStatus()
@@ -2796,6 +2806,8 @@ function BillingManagementPanel({
     () => pedido.order_credit_notes ?? [],
     [pedido.order_credit_notes],
   )
+  const automaticNoteManaged = creditNotes.some((note) => note.created_by === null &&
+    note.operation_type === "cancelacion_antes_despacho" && note.status !== "error")
   const authorizedCreditNotes = useMemo(
     () => creditNotes.filter((note) => note.status === "authorized"),
     [creditNotes],
@@ -3444,6 +3456,8 @@ function BillingManagementPanel({
             )}
             {invoiceDownloading ? "Preparando..." : "Descargar factura"}
           </button>
+        ) : pedido.invoice_status === "processing" || pedido.admin_pending_facts?.invoiceAutomatic || automaticCancellation ? (
+          <span className="admin-order-billing-header-action">Factura C pendiente / procesando automáticamente</span>
         ) : (
           <button
             type="button"
@@ -3507,7 +3521,7 @@ function BillingManagementPanel({
             <CheckCircle2 className="size-4" />
             <p>
               <strong>Nota de crédito emitida{authorizedCreditNotes.length > 1 ? "s" : ""}</strong>
-              <span>Comprobante{authorizedCreditNotes.length > 1 ? "s" : ""} autorizado{authorizedCreditNotes.length > 1 ? "s" : ""} por ARCA</span>
+              <span>{automaticNoteManaged ? "Emitida automáticamente y autorizada por ARCA" : `Comprobante${authorizedCreditNotes.length > 1 ? "s" : ""} autorizado${authorizedCreditNotes.length > 1 ? "s" : ""} por ARCA`}</span>
             </p>
           </div>
           <div className="admin-credit-note-history-list">
@@ -3552,7 +3566,12 @@ function BillingManagementPanel({
         <InvoiceFiscalStatus pedido={pedido} />
       )}
 
-      {invoiceIssued && (
+      {automaticCancellation && (
+        <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
+          {creditNoteIssued ? "Nota de Crédito C emitida automáticamente. Reintegro en proceso." : "Nota de Crédito C pendiente / procesando automáticamente. El reintegro sigue a su autorización."}
+        </p>
+      )}
+      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && (
         <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3">
           <header className="admin-credit-note-header">
             <div className="admin-credit-note-title">
@@ -6630,7 +6649,9 @@ function AdminOrderCancelRejectModal({
           <div className="admin-cancel-reject-modal__alert p-3 text-xs font-semibold leading-5">
             {isReject
               ? "Este pedido todavía no tiene un pago confirmado: al rechazarlo no se genera ningún reintegro ni Nota de Crédito, porque no hubo cobro. El stock reservado se libera y el cliente será notificado del rechazo."
-              : "Este pedido ya tiene el pago confirmado: al cancelarlo va a quedar con reintegro pendiente. Esto NO dispara un reembolso automático de Mercado Pago ni emite una Nota de Crédito -- esas acciones siguen siendo manuales, desde sus propios botones en Cancelación y Facturación."}
+              : request.pedido.admin_pending_facts?.invoiceAutomatic
+                ? "Este pedido tiene el pago confirmado. Al cancelarlo, la Factura C, la Nota de Crédito C y el reintegro se procesarán automáticamente, en ese orden."
+                : "Este pedido tiene el pago confirmado. Al cancelarlo, quedará con reintegro pendiente y se mostrará la intervención necesaria según el estado fiscal."}
           </div>
 
           {error && (

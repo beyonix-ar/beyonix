@@ -34,7 +34,15 @@ async function setup() {
   await db.exec(`
     alter table ordenes add column invoice_queued_at timestamptz, add column original_total numeric,
       add column credit_balance_movement_id uuid, add column payment_composition jsonb not null default '{}',
-      add column payment_method_id text;
+      add column payment_method_id text, add column payment_id text,
+      add column andreani_handed_over_at timestamptz;
+    alter table order_credit_notes add column created_at timestamptz default now(),
+      add column finalized_at timestamptz;
+    create table mercadopago_order_refunds(id uuid primary key default gen_random_uuid(), order_id bigint,
+      payment_id text, amount numeric, status text, idempotency_key text, requested_by uuid not null,
+      created_at timestamptz default now(), attempt_count integer default 1, mp_refund_id text);
+    create table arca_auto_invoicing_control(id boolean primary key, enabled boolean, cutoff_at timestamptz);
+    insert into arca_auto_invoicing_control values(true,true,now()-interval '1 day');
     alter table order_refund_proofs add column observation text, add column bank_reference text, add column refund_date date;
     alter table customer_credit_movements add column user_id uuid, add column amount numeric(12,2), add column description text,
       add column source_id text, add column created_by uuid, add column related_movement_id uuid, add column source_key text unique,
@@ -49,6 +57,7 @@ async function setup() {
   await db.exec(block(refundPolicy, "create or replace function public.commit_order_refund_proof("))
   await db.exec(read("supabase/migrations/20261014120000_customer_credit_reversal_after_credit_note.sql"))
   await db.exec(read("supabase/migrations/20261014130000_credit_note_fiscal_vs_money_split.sql"))
+  await db.exec(read("supabase/migrations/20261014140000_automatic_cancellation_fiscal_refund.sql"))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   await db.query("select set_config('request.jwt.claims', $1, false)", [JSON.stringify({ role: "service_role" })])
   await db.query("insert into auth.users values($1,'a@example.test',now()),($2,'c@example.test',now())", [admin, customer])
@@ -198,5 +207,118 @@ test("7. error de ARCA: sin NC autorizada no se mueve dinero ni saldo", async ()
     await db.query("select * from reverse_customer_credit_for_order(7,'Cancelación',$1)", [admin])
     assert.equal(await restorations(db, 7), 0)
     assert.equal(Number((await db.query<{ n: number }>("select count(*)::int n from order_refund_proofs where order_id=7")).rows[0].n), 0)
+  } finally { await db.close() }
+})
+
+test("8. worker: reserva fiscal sin Admin sólo para cancelación facturada y sin despacho", async () => {
+  const db = await setup()
+  try {
+    await cancelledInvoicedSale(db, 8, 70000, "mercadopago")
+    const reserve = (id: number) => db.query<Note>(
+      `select id,total_amount,external_amount,customer_credit_amount from begin_partial_credit_note(
+        $1::bigint,null,'external_refund','Cancelación automática',0,100000,100000,1,$1::bigint,
+        null::uuid,'[]','cancelacion_antes_despacho')`, [id])
+    const note = (await reserve(8)).rows[0]
+    assert.deepEqual(split(note), [100000, 70000, 30000])
+    await assert.rejects(reserve(8), /CREDIT_NOTE_PROCESSING_IN_PROGRESS/)
+    await cancelledInvoicedSale(db, 9, 70000, "mercadopago")
+    await assert.rejects(db.query("update ordenes set andreani_envio_id='ENVIO' where id=9"), /CANCELLED_ORDER_LOGISTICS_FORBIDDEN/)
+    await db.exec("alter table ordenes disable trigger ordenes_guard_cancelled_logistics")
+    await db.query("update ordenes set andreani_envio_id='ENVIO' where id=9")
+    await db.exec("alter table ordenes enable trigger ordenes_guard_cancelled_logistics")
+    await assert.rejects(reserve(9), /AUTO_CREDIT_NOTE_NOT_ELIGIBLE/)
+  } finally { await db.close() }
+})
+
+test("9. worker: claim con lease, cutoff y reintento; MP sólo después de NC finalizada", async () => {
+  const db = await setup()
+  try {
+    await cancelledInvoicedSale(db, 10, 70000, "mercadopago")
+    await db.query("update ordenes set payment_id='90010' where id=10")
+    const claim = () => db.query<{ id: number }>("select id from claim_auto_cancellation('5 minutes')")
+    assert.equal((await claim()).rows[0].id, 10)
+    assert.equal((await claim()).rows.length, 0, "otro worker no toma el mismo pedido")
+    await db.query("select release_auto_cancellation(10, interval '0 seconds', null)")
+    assert.equal((await claim()).rows[0].id, 10, "un fallo libera el pedido para reintento")
+    await assert.rejects(db.query("select * from begin_mercadopago_order_refund(10,null::uuid)"), /AUTO_REFUND_NOT_ELIGIBLE/)
+    const note = await reserveNote(db, 10, 100000)
+    await authorize(db, note.id)
+    await db.query("update order_credit_notes set finalized_at=now() where id=$1", [note.id])
+    await db.query("update ordenes set credit_note_required=false where id=10")
+    const first = (await db.query<{ amount: string; should_call_mp: boolean }>(
+      "select amount,should_call_mp from begin_mercadopago_order_refund(10,null::uuid)" )).rows[0]
+    assert.equal(Number(first.amount), 70000)
+    assert.equal(first.should_call_mp, true)
+    const retry = (await db.query<{ should_call_mp: boolean }>(
+      "select should_call_mp from begin_mercadopago_order_refund(10,null::uuid)" )).rows[0]
+    assert.equal(retry.should_call_mp, false)
+    assert.equal((await db.query<{ n: number }>("select count(*)::int n from mercadopago_order_refunds where order_id=10")).rows[0].n, 1)
+    await db.query("select release_auto_cancellation(10, null, null)")
+    assert.equal((await claim()).rows.length, 0, "un caso terminal no ocupa la cola")
+  } finally { await db.close() }
+})
+
+test("10. sólo saldo: la cancelación termina al autorizar y finalizar la NC, sin reintegro externo", async () => {
+  const db = await setup()
+  try {
+    await cancelledInvoicedSale(db, 11, 0, "transferencia")
+    const note = await reserveNote(db, 11, 100000)
+    assert.deepEqual(split(note), [100000, 0, 100000])
+    await authorize(db, note.id)
+    await db.query("update order_credit_notes set finalized_at=now() where id=$1", [note.id])
+    await db.query("update ordenes set credit_note_required=false where id=11")
+    const first = (await db.query<{ completed: boolean }>("select complete_zero_external_cancellation(11) completed")).rows[0]
+    const retry = (await db.query<{ completed: boolean }>("select complete_zero_external_cancellation(11) completed")).rows[0]
+    assert.equal(first.completed, true)
+    assert.equal(retry.completed, false)
+    assert.equal(await restoredCredit(db, 11), 100000)
+    assert.equal((await db.query<{ status: string }>("select financial_status status from ordenes where id=11")).rows[0].status, "refunded")
+  } finally { await db.close() }
+})
+
+test("11. rechazo ARCA sin CAE libera la reserva y permite reintento sin duplicar saldo", async () => {
+  const db = await setup()
+  try {
+    await cancelledInvoicedSale(db, 12, 70000, "mercadopago")
+    const reserve = () => db.query<Note>(
+      `select id,total_amount,external_amount,customer_credit_amount from begin_partial_credit_note(
+        12::bigint,null,'external_refund','Cancelación automática',0,100000,100000,1,12::bigint,
+        null::uuid,'[]','cancelacion_antes_despacho')`)
+    const first = (await reserve()).rows[0]
+    await db.query("update order_credit_notes set status='error' where id=$1", [first.id])
+    assert.equal(await restorations(db, 12), 0)
+    const second = (await reserve()).rows[0]
+    assert.notEqual(second.id, first.id)
+    assert.deepEqual(split(second), [100000, 70000, 30000])
+    await authorize(db, second.id)
+    assert.equal(await restoredCredit(db, 12), 30000)
+    assert.equal(await restorations(db, 12), 1)
+  } finally { await db.close() }
+})
+
+test("12. pedido cancelado: la base impide reactivarlo o agregar tracking y envío", async () => {
+  const db = await setup()
+  try {
+    await cancelledInvoicedSale(db, 13, 70000, "mercadopago")
+    await assert.rejects(db.query("update ordenes set estado='pagado' where id=13"), /CANCELLED_ORDER_LOGISTICS_FORBIDDEN/)
+    await assert.rejects(db.query("update ordenes set tracking_number='TRK' where id=13"), /CANCELLED_ORDER_LOGISTICS_FORBIDDEN/)
+    await assert.rejects(db.query("update ordenes set andreani_envio_id='ENVIO' where id=13"), /CANCELLED_ORDER_LOGISTICS_FORBIDDEN/)
+    assert.equal((await db.query<{ estado: string }>("select estado from ordenes where id=13")).rows[0].estado, "cancelado")
+  } finally { await db.close() }
+})
+
+test("13. reclamo de cancelación total: NC automática incluye ítems aunque affected_items esté vacío", async () => {
+  const db = await setup()
+  try {
+    await cancelledInvoicedSale(db, 14, 70000, "mercadopago")
+    await db.query("insert into orden_items(id,orden_id,cantidad) values(141,14,1)")
+    const claim = (await db.query<{ id: number }>(`insert into order_claims(order_id,user_id,claim_type,failure_type,description,status)
+      values(14,$1,'transporte_48hs','cancelar_compra','Cancelación solicitada','reintegro_pendiente') returning id`, [customer])).rows[0]
+    const items = JSON.stringify([{ order_item_id: 141, quantity: 1, unit_amount: 100000, total_amount: 100000, product_name: "Artículo" }])
+    const note = (await db.query<Note>(`select id,total_amount,external_amount,customer_credit_amount from begin_partial_credit_note(
+      14::bigint,$1::bigint,'external_refund','Cancelación automática',100000,0,100000,1,14::bigint,
+      null::uuid,$2::jsonb,'cancelacion_antes_despacho')`, [claim.id, items])).rows[0]
+    assert.deepEqual(split(note), [100000, 70000, 30000])
+    assert.equal((await db.query<{ n: number }>("select count(*)::int n from order_credit_note_items where credit_note_id=$1", [note.id])).rows[0].n, 1)
   } finally { await db.close() }
 })

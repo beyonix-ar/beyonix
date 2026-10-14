@@ -185,7 +185,8 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const order: DispatchOrder = orderFields
   const shipping = dispatchShippingInfo({ estimate, checkoutQuote, quoteStatus, quoteAmount, quoteKey, requestKey: (pkg as { parcels_request_key?: string | null } | null)?.parcels_request_key ?? null, includeCosts: Boolean(options.includeCosts) })
   const stage = dispatchStage({ package: pkg, batchStatus: batch?.status ?? null, handedOver: Boolean(order.andreani_handed_over_at) })
-  return { order, package: pkg, lines, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, shipping, blocked: (blocksResult.data?.length ?? 0) > 0, blockReason: blocksResult.data?.[0] ? dispatchBlockReason(blocksResult.data[0].reason) : null }
+  const cancelled = order.estado === "cancelado" || order.cancelled_at != null || ["cancellation_requested", "refund_pending", "refunded"].includes(order.financial_status ?? "")
+  return { order, package: pkg, lines, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits: (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0), membership, batch, shipping, blocked: cancelled || (blocksResult.data?.length ?? 0) > 0, blockReason: cancelled ? "Pedido cancelado — no requiere preparación" : blocksResult.data?.[0] ? dispatchBlockReason(blocksResult.data[0].reason) : null }
 }
 
 type RandomScanRow = { order_item_id: number; physical_variant_id: number | null; variant_identification: string | null }

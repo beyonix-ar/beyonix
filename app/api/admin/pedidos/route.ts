@@ -66,6 +66,7 @@ export async function GET(request: Request) {
     "refund_pending_at",
     "invoice_next_attempt_at",
     "invoice_queued_at",
+    "auto_cancellation_next_attempt_at",
     "invoice_number",
     "invoice_arca_environment",
     "shipping_provider",

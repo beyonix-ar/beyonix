@@ -1,0 +1,11 @@
+[Unit]
+Description=Procesa cancelaciones fiscales y reintegros cada minuto
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+AccuracySec=10s
+Persistent=true
+Unit=beyonix-automatic-cancellations.service
+
+[Install]
+WantedBy=timers.target

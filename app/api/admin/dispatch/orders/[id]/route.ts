@@ -31,6 +31,12 @@ export async function POST(request: Request, context: Context) {
   if ("error" in auth) return auth.error
   const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown; variantId?: unknown } | null
   if (!body || !["start", "scan", "reset", "parcels"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
+  const { data: order, error: orderError } = await auth.admin.from("ordenes")
+    .select("estado,cancelled_at,financial_status").eq("id", id).maybeSingle()
+  if (orderError || !order) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
+  if (order.estado === "cancelado" || order.cancelled_at || ["cancellation_requested", "refund_pending", "refunded"].includes(order.financial_status ?? "")) {
+    return Response.json({ error: "Pedido cancelado — no requiere preparación." }, { status: 409 })
+  }
   let scan: DispatchScanResult | null = null
   if (body.action === "start") {
     const result = await auth.admin.rpc("begin_order_preparation", { p_order_id: id, p_actor_id: auth.user.id })

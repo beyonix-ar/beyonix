@@ -159,6 +159,12 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const validParcels = Number.isInteger(parcelValue) && parcelValue >= 1 && parcelValue <= 50
   const parcelsReading = validParcels ? readParcelDrafts(parcelDrafts) : null
 
+  if (detail.order.estado === "cancelado" || detail.order.cancelled_at || ["cancellation_requested", "refund_pending", "refunded"].includes(detail.order.financial_status ?? "")) {
+    return <div role="status" className="rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-sm font-semibold text-white">
+      Pedido cancelado — no requiere preparación
+    </div>
+  }
+
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-3">
       <AdminBadge tone={STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>

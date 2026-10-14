@@ -10,9 +10,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
  * lib/auth/cron-auth.ts) -- falla cerrado si no está configurado, igual que
  * /api/cron/expire-transfer-orders y /api/cron/andreani-sync-tracking.
  *
- * Todavía sin programar (ni Vercel cron ni systemd timer) a propósito: el
- * endpoint queda listo, protegido, para que se decida el mecanismo de
- * scheduling por separado.
+ * La unidad deploy/systemd/beyonix-reconcile-mercadopago-refunds.timer
+ * recupera intentos de resultado incierto sin repetir un POST a ciegas.
  */
 export async function GET(request: Request) {
   if (

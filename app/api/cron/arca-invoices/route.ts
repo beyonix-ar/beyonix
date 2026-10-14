@@ -72,6 +72,8 @@ export async function GET(request: Request) {
   const summary = await processArcaInvoiceQueue(admin, {
     gateway: createWsfeInvoiceGateway(configuration),
     pointOfSale: configuration.pointOfSale,
+    limit: 50,
+    deadlineMs: 45_000,
   })
 
   return NextResponse.json({ ok: true, authorized: summary.authorized, failed: summary.failed })

@@ -60,9 +60,14 @@ test("systemd ARCA usa loopback, secreto privado, flock y timeout; Vercel no lo 
   assert.match(service, /TimeoutStartSec=190/)
   assert.match(service, /http:\/\/127\.0\.0\.1:3000\/api\/cron\/arca-invoices/)
   assert.doesNotMatch(service, /\$\{CRON_SECRET\}|-H\s+["']?Authorization/)
-  assert.match(timer, /OnCalendar=\*-\*-\* \*:0\/5:00/)
+  assert.match(timer, /OnCalendar=\*-\*-\* \*:\*:00/)
   assert.match(timer, /Persistent=true/)
   assert.ok(vercel.crons.every((cron) => cron.path !== "/api/cron/arca-invoices"))
+  const cancellationService = read("deploy/systemd/beyonix-automatic-cancellations.service")
+  const cancellationTimer = read("deploy/systemd/beyonix-automatic-cancellations.timer")
+  assert.match(cancellationService, /\/api\/cron\/automatic-cancellations/)
+  assert.match(cancellationTimer, /OnCalendar=\*-\*-\* \*:\*:00/)
+  assert.ok(vercel.crons.every((cron) => cron.path !== "/api/cron/automatic-cancellations"))
 })
 
 test("cola automática: misma regla que el claim automático de claim_arca_invoice", () => {
@@ -91,4 +96,16 @@ test("cola automática: misma regla que el claim automático de claim_arca_invoi
   const migration = read("supabase/migrations/20261003120000_arca_auto_invoicing_activation.sql")
   assert.match(migration, /o\.invoice_status in \('pending', 'error'\) and o\.invoice_next_attempt_at <= v_now/)
   assert.match(migration, /and o\.invoice_queued_at > v_cutoff\s+and o\.invoice_cae is null\s+and o\.invoice_number is null/)
+})
+
+test("cancelaciones: secreto y doble control antes del worker; claim durable con cutoff y SKIP LOCKED", () => {
+  const route = read("app/api/cron/automatic-cancellations/route.ts")
+  const migration = read("supabase/migrations/20261014140000_automatic_cancellation_fiscal_refund.sql")
+  assert.match(route, /isCronRequestAuthorized\(request\.headers\.get\("authorization"\), process\.env\.CRON_SECRET\)/)
+  assert.ok(route.indexOf("ARCA_AUTO_INVOICING_ENABLED") < route.indexOf("runAutomaticCancellationBatch(admin"))
+  assert.ok(route.indexOf("arcaAutoInvoicingView") < route.indexOf("runAutomaticCancellationBatch(admin"))
+  assert.match(migration, /o\.invoice_queued_at > c\.cutoff_at/)
+  assert.match(migration, /for update of o skip locked/i)
+  assert.match(migration, /AUTO_REFUND_NOT_ELIGIBLE/)
+  assert.match(migration, /AUTO_CREDIT_NOTE_NOT_ELIGIBLE/)
 })

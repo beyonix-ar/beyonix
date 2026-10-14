@@ -32,6 +32,23 @@ async function submit(dom: JSDOM, form: HTMLFormElement) {
 
 const button = (dom: JSDOM, text: string) => [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes(text))
 
+test("ARMAR PEDIDO: cancelado muestra el bloqueo y no permite iniciar armado", async () => {
+  const { dom, root } = await setup("https://beyonix.test/admin/pedidos/2?tab=armado")
+  const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
+  globalThis.fetch = async () => Response.json({
+    order: { id: 2, estado: "cancelado", financial_status: "refunded", cancelled_at: "2026-10-13T00:00:00Z" },
+    package: null, lines: [], parcels: [], stage: "pending", itemCount: 0, expectedUnits: 0,
+    membership: null, batch: null, blocked: true, blockReason: "Pedido cancelado — no requiere preparación",
+    shipping: { costsVisible: false, estimate: null, parcelQuote: null },
+  })
+  try {
+    await act(async () => { root.render(<OrderPreparationPanel orderId={2} />) })
+    await settle()
+    assert.match(dom.window.document.body.textContent ?? "", /Pedido cancelado — no requiere preparación/)
+    assert.equal(button(dom, "INICIAR ARMADO"), undefined)
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
 test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente y bultos editables", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/pedidos/31?tab=armado")
   const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")

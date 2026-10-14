@@ -297,6 +297,12 @@ test("A. procesos automáticos: 0 acciones humanas, informados aparte", () => {
   assert.deepEqual(getAdminOrderWork(refundRunning), { actions: [], automatic: ["Reintegro en proceso"] })
   const ncAtArca = { ...cancelledPaidTransfer, order_credit_notes: [{ status: "processing", destination: "external_refund" }] }
   assert.deepEqual(getAdminOrderWork(ncAtArca), { actions: [], automatic: ["Nota de crédito en proceso"] })
+  const autoCancellation = { ...cancelledPaidTransfer, admin_pending_facts: facts({
+    cancellationAutomatic: true,
+    financial: { mode: "wizard" as const, resolutionStatus: null, hasOptions: true },
+  }) }
+  assert.deepEqual(getAdminOrderWork(autoCancellation).actions, [], "el wizard no cuenta como tarea humana durante la cola automática")
+  assert.deepEqual(getAdminOrderWork({ ...autoCancellation, admin_pending_facts: facts({ cancellationAutomatic: false }) }).actions.map((action) => action.kind), ["refund"])
 })
 
 test("B. reclamo: 1 'Resolver reclamo' hacia Atención al cliente", () => {

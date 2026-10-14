@@ -68,6 +68,7 @@ export interface AdminPendingFacts {
    * trata como tarea humana para no ocultar trabajo.
    */
   invoiceAutomatic?: boolean
+  cancellationAutomatic?: boolean
 }
 
 export interface AdminPendingActionsOrder extends CancellationNextActionOrder {
@@ -220,6 +221,10 @@ function addFinancialWork(
   automatic: Set<string>,
 ) {
   const cancellation = orderHref(order, "cancelacion")
+  if (order.admin_pending_facts?.cancellationAutomatic && order.financial_status === "refund_pending") {
+    automatic.add(!isInvoiced(order) ? "Factura automática pendiente" : order.credit_note_required ? "Nota de crédito automática pendiente" : "Reintegro automático en proceso")
+    return
+  }
   const financial = order.admin_pending_facts?.financial
   if (financial && financial.mode !== "none") {
     if (financial.mode === "resolution") {

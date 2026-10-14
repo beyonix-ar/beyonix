@@ -321,7 +321,7 @@ done
 
 # Facturación automática ARCA (preparada, todavía apagada)
 
-El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada 5 minutos);
+El scheduler de ARCA en producción es `beyonix-arca-invoices.timer` (cada minuto);
 su entrada se retiró de `vercel.json`. El servicio usa loopback, `flock -n`, timeout
 y el archivo privado de curl `/etc/beyonix/curl-verify-transfer-orders.conf` descrito
 arriba. El secreto no va en argumentos ni en estos archivos del repositorio.
@@ -333,7 +333,8 @@ arriba. El secreto no va en argumentos ni en estos archivos del repositorio.
    existentes ni emite comprobantes.
 2. Con `ARCA_AUTO_INVOICING_ENABLED=false`, emitir **una** Factura C real desde Admin
    → Facturación. Comprobar CAE y PDF, y verificarla en ARCA.
-3. Instalar los archivos `beyonix-arca-invoices.service` y `.timer` en
+3. Instalar los archivos `beyonix-arca-invoices.service` y `.timer`, y
+   `beyonix-automatic-cancellations.service` y `.timer` en
    `/etc/systemd/system/`, ejecutar `sudo systemctl daemon-reload` y
    `sudo systemctl enable --now beyonix-arca-invoices.timer`. El servicio corre
    como root para leer el archivo curl privado (600, root:root), con directorio `/`.
@@ -343,9 +344,12 @@ arriba. El secreto no va en argumentos ni en estos archivos del repositorio.
    sudo test -r /etc/beyonix/curl-verify-transfer-orders.conf
    sudo cp deploy/systemd/beyonix-arca-invoices.service /etc/systemd/system/
    sudo cp deploy/systemd/beyonix-arca-invoices.timer /etc/systemd/system/
+   sudo cp deploy/systemd/beyonix-automatic-cancellations.service /etc/systemd/system/
+   sudo cp deploy/systemd/beyonix-automatic-cancellations.timer /etc/systemd/system/
    sudo systemctl daemon-reload
    sudo systemctl enable --now beyonix-arca-invoices.timer
-   systemctl list-timers | grep beyonix-arca-invoices
+   sudo systemctl enable --now beyonix-automatic-cancellations.timer
+   systemctl list-timers | grep -E 'beyonix-(arca-invoices|automatic-cancellations)'
    ```
 4. Poner `ARCA_AUTO_INVOICING_ENABLED=true` en el entorno de PM2 y reiniciar la app.
    El runner todavía queda bloqueado por el control persistente apagado.
@@ -356,6 +360,13 @@ arriba. El secreto no va en argumentos ni en estos archivos del repositorio.
 Al desactivar desde Admin, las nuevas tomas se detienen. Una reactivación crea un
 cutoff nuevo; no recupera automáticamente pedidos del período apagado. El control
 requiere una Factura C de producción emitida manualmente antes de permitir activar.
+
+El worker de cancelaciones requiere también la migración
+`20261014140000_automatic_cancellation_fiscal_refund.sql`. Toma sólo pedidos
+cancelados, facturados y posteriores al mismo corte, emite la NC y recién
+después ejecuta el reintegro MP o cierra la restauración del saldo. Una
+transferencia bancaria externa exige confirmar el pago saliente por el flujo
+de comprobantes; no se marca como reintegrada sin esa prueba.
 
 Para comprobar el timer sin emitir: primero verificar que el control Admin y el
 flag de PM2 siguen apagados; luego consultar `systemctl list-timers | grep

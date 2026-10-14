@@ -65,6 +65,24 @@ test("saldo a favor 100%: se factura igual que cualquier venta confirmada", asyn
   }
 })
 
+test("pago combinado MP o transferencia: el worker factura el total fiscal una sola vez", async () => {
+  const db = await setupInvoicingDb()
+  const arca = new FakeArca(POINT)
+  try {
+    await db.exec("alter table ordenes add column credit_balance_used numeric default 0, add column payment_confirmed_amount numeric")
+    const mp = await insertOrder(db, { payment_method_id: "mercadopago", total: 1000 })
+    const transfer = await insertOrder(db, { payment_method_id: "transferencia", total: 1000 })
+    for (const id of [mp, transfer]) {
+      await db.query("update ordenes set credit_balance_used=300,payment_confirmed_amount=700 where id=$1", [id])
+      await confirmOrder(db, id, "confirmado")
+    }
+    const client = rpcClient(db)
+    assert.equal((await processArcaInvoiceQueue(client, options(arca))).authorized, 2)
+    assert.equal((await processArcaInvoiceQueue(client, options(arca))).authorized, 0)
+    assert.deepEqual([...arca.vouchers.values()].map((voucher) => voucher.total), [1000, 1000])
+  } finally { await db.close() }
+})
+
 test("B. ARCA autoriza pero la respuesta se pierde -> el reintento reconcilia y NO pide otro número", async () => {
   const db = await setupInvoicingDb()
   const arca = new FakeArca(POINT)

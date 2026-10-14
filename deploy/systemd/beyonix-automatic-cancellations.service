@@ -1,0 +1,14 @@
+[Unit]
+Description=BEYONIX - NC y reintegros de cancelaciones anteriores al despacho
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/
+TimeoutStartSec=190
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-automatic-cancellations.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 180 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/automatic-cancellations

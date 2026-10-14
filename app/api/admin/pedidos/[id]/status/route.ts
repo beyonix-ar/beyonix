@@ -159,6 +159,10 @@ export async function PATCH(
     )
   }
 
+  if (currentOrder.estado === "cancelado" || ["cancelled", "refund_pending", "refunded"].includes(currentOrder.financial_status ?? "")) {
+    return NextResponse.json({ error: "Pedido cancelado — no puede avanzar en logística." }, { status: 409 })
+  }
+
   if (
     (estado === "pagado" || DISPATCHED_ORDER_STATUSES.includes(estado)) &&
     !isOrderPaymentConfirmed(currentOrder)

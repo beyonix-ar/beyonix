@@ -132,7 +132,7 @@ function sanitizeErrorForLog(error: unknown) {
  */
 export async function refundMercadoPagoOrderPayment(
   admin: AdminClient,
-  params: { orderId: number; adminId: string },
+  params: { orderId: number; adminId: string | null },
   deps: RefundDependencies = {},
 ): Promise<MercadoPagoOrderRefundResult> {
   const getPayment = deps.getPayment ?? getMercadoPagoPayment

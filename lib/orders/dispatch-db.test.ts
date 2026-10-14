@@ -59,6 +59,17 @@ async function loadOrder(db: PGlite, batchId: number, orderId: number) {
   for (const code of await parcelCodes(db, orderId)) await scanParcel(db, batchId, code)
 }
 
+test("un pedido cancelado no inicia armado ni entra en un despacho", async () => {
+  const db = await setup()
+  try {
+    await db.exec("update ordenes set estado='cancelado',cancelled_at=now(),financial_status='refunded' where id=1031")
+    await assert.rejects(db.query("select begin_order_preparation($1,$2)", [1031, actor]), /DISPATCH_ORDER_BLOCKED/)
+    assert.equal((await db.query<{ n: number }>("select count(*)::int n from order_packages where order_id=1031")).rows[0].n, 0)
+    const batch = await newBatch(db)
+    await assert.rejects(db.query("select add_order_to_dispatch_batch($1,$2,$3)", [batch.id, 1031, actor]), /DISPATCH_/)
+  } finally { await db.close() }
+})
+
 async function newBatch(db: PGlite) {
   return (await db.query<{ id: number; code: string }>("select (create_dispatch_batch($1,$2)).*", [actor, key()])).rows[0]
 }
