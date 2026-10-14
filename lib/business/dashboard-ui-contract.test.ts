@@ -27,8 +27,23 @@ test("R. el error inicial del dashboard reemplaza el skeleton y permite reintent
 })
 
 test("S. commercialSales navega al pedido web exacto", () => {
-  const source = read("app/admin/sections/dashboard/admin-dashboard.tsx")
+  const source = read("app/admin/sections/dashboard/dashboard-commercial.tsx")
   assert.match(source, /sale\.channel === "BEYONIX Web" && sale\.orderId/)
   assert.match(source, /router\.push\(`\/admin\/pedidos\/\$\{encodeURIComponent\(sale\.orderId!\)\}`\)/)
   assert.match(source, />\s*Ver pedido\s*</)
+})
+
+test("T. la logística Andreani vive solo en su pantalla, no en el dashboard", () => {
+  const dashboard = read("app/admin/sections/dashboard/admin-dashboard.tsx")
+  const logistics = read("app/admin/sections/logistica/admin-logistica.tsx")
+  assert.doesNotMatch(dashboard, /Logistics|LOGÍSTICA ANDREANI|logistica\//)
+  assert.match(logistics, /<LogisticsSummaryGrid summary=\{data\.summary\}/)
+})
+
+test("U. el análisis comercial separa período filtrado de acumulado histórico", () => {
+  const source = read("app/admin/sections/dashboard/dashboard-commercial.tsx")
+  assert.match(source, /countSaleOperations\(periodSales\)/)
+  assert.match(source, /getComparisonPeriod\(preset, range\)/)
+  assert.match(source, /No responde a los filtros de arriba/)
+  assert.match(source, /<SalesEvolutionChart sales=\{dimensionSales\} range=\{range\}/)
 })

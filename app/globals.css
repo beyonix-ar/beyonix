@@ -394,10 +394,6 @@
   grid-template-columns: minmax(260px, 0.95fr) minmax(124px, 0.38fr) minmax(150px, 0.46fr) minmax(166px, 0.5fr) minmax(124px, 0.38fr) minmax(124px, 0.38fr) minmax(146px, 0.45fr) minmax(146px, 0.45fr);
 }
 
-@utility grid-cols-admin-commercial-filters {
-  grid-template-columns: repeat(7, minmax(150px, 1fr));
-}
-
 @utility grid-cols-admin-client-note {
   grid-template-columns: minmax(0, 1fr) 132px;
 }
@@ -11899,20 +11895,6 @@ html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .h
 html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#123B33\] {
   background-color: rgba(16, 185, 129, 0.12) !important;
 }
-/* Slider "ventana temporal" del Dashboard (admin-dashboard.tsx): riel y
-   grips de arrastre en hex puntual, fuera del sistema bg-white/N. */
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#070b10\] {
-  background-color: #e6eaf0 !important;
-}
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#141b23\] {
-  background-color: #ffffff !important;
-}
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .hover\:bg-\[\#202a35\]:hover {
-  background-color: #f1f4f8 !important;
-}
-html[data-admin-theme="light"] :is(.beyonix-admin-shell, .admin-portal-scope) .bg-\[\#273341\] {
-  background-color: #dbe7f5 !important;
-}
 /* --- text-white/N: NO preserva la opacidad literal de dark -- un 15-40% de
    blanco sobre negro se lee perfectamente porque el ojo es más tolerante al
    texto claro-sobre-oscuro que al oscuro-sobre-claro; la misma fracción de
@@ -17276,3 +17258,387 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card 
 .product-rich-description-editor [data-rich-editor] .rt-size-32 { font-size: 32px; }
 .product-rich-description-editor [data-rich-editor] .rt-size-36 { font-size: 36px; }
 .product-rich-description-editor [data-rich-editor] .rt-size-40 { font-size: 40px; }
+
+/* Dashboard: tokens del gráfico de ventas y superficies con tono propio.
+   Las clases admin-dash-* no usan utilidades rounded/border a propósito:
+   los catch-all de superficies del Admin pisarían el tono de atención.
+   Paleta de canales validada (CVD y contraste) sobre #07111b y #ffffff. */
+.admin-dashboard-page {
+  --sales-chart-total: #38bdf8;
+  --sales-chart-web: #3987e5;
+  --sales-chart-ml: #d95926;
+  --sales-chart-external: #199e70;
+  --sales-chart-surface: #07111b;
+  --sales-chart-grid: rgba(248, 250, 252, 0.07);
+  --sales-chart-baseline: rgba(248, 250, 252, 0.24);
+  --sales-chart-crosshair: rgba(248, 250, 252, 0.38);
+  --sales-chart-axis: rgba(248, 250, 252, 0.58);
+  --dash-attention: #fcd34d;
+  --dash-attention-bg: rgba(251, 191, 36, 0.07);
+  --dash-attention-border: rgba(251, 191, 36, 0.36);
+  --dash-ok: #6ee7b7;
+  --dash-ok-bg: rgba(16, 185, 129, 0.1);
+  --dash-alert: #fca5a5;
+  --dash-alert-bg: rgba(248, 113, 113, 0.07);
+  --dash-alert-border: rgba(248, 113, 113, 0.4);
+}
+
+html[data-admin-theme="light"] .admin-dashboard-page {
+  --sales-chart-total: #0284c7;
+  --sales-chart-web: #2a78d6;
+  --sales-chart-ml: #eb6834;
+  --sales-chart-external: #1baf7a;
+  --sales-chart-surface: #ffffff;
+  --sales-chart-grid: rgba(15, 23, 42, 0.07);
+  --sales-chart-baseline: rgba(15, 23, 42, 0.28);
+  --sales-chart-crosshair: rgba(15, 23, 42, 0.32);
+  --sales-chart-axis: rgba(15, 23, 42, 0.72);
+  --dash-attention: #b45309;
+  --dash-attention-bg: #fffbeb;
+  --dash-attention-border: rgba(217, 119, 6, 0.45);
+  --dash-ok: #047857;
+  --dash-ok-bg: #ecfdf5;
+  --dash-alert: #b91c1c;
+  --dash-alert-bg: #fef2f2;
+  --dash-alert-border: rgba(220, 38, 38, 0.38);
+}
+
+.admin-dashboard-page :is(
+  .admin-dash-action-cta,
+  .admin-dash-control-value,
+  .admin-dash-segmented-option,
+  .admin-dash-chip-button,
+  .admin-dash-legend-item
+):focus-visible,
+.admin-sales-chart svg:focus-visible {
+  outline: 2px solid var(--admin-border-strong);
+  outline-offset: 2px;
+}
+
+.admin-dash-action {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--admin-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft);
+}
+
+.admin-dash-action[data-state="attention"] {
+  background:
+    linear-gradient(var(--dash-attention-bg), var(--dash-attention-bg)),
+    var(--admin-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--dash-attention-border);
+}
+
+.admin-dash-action-icon {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: var(--admin-text-muted);
+  background: var(--admin-control);
+}
+
+.admin-dash-action[data-state="attention"] .admin-dash-action-icon {
+  color: var(--dash-attention);
+}
+
+.admin-dash-action-value {
+  font-size: 1.75rem;
+  font-weight: 900;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--admin-text-muted);
+}
+
+.admin-dash-action[data-state="attention"] .admin-dash-action-value {
+  color: var(--dash-attention);
+}
+
+.admin-dash-action-cta,
+.admin-dash-chip-button,
+.admin-dash-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9px;
+  font-weight: 900;
+  color: var(--admin-text-soft);
+  background: var(--admin-control);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft);
+  cursor: pointer;
+  transition: color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.admin-dash-action-cta {
+  align-self: flex-start;
+  height: 28px;
+  margin-top: 8px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.admin-dash-action[data-state="attention"] .admin-dash-action-cta {
+  color: var(--admin-text);
+  box-shadow: inset 0 0 0 1px var(--dash-attention-border);
+}
+
+.admin-dash-chip-button {
+  height: 32px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.admin-dash-legend-item {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-dash-action-cta:hover,
+.admin-dash-chip-button:hover:not(:disabled),
+.admin-dash-legend-item:hover:not(:disabled) {
+  color: var(--admin-text);
+  box-shadow: inset 0 0 0 1px var(--admin-border-strong);
+}
+
+.admin-dash-chip-button[aria-pressed="true"] {
+  color: var(--admin-text);
+  box-shadow: inset 0 0 0 1px var(--admin-border-strong);
+}
+
+.admin-dash-chip-button:disabled,
+.admin-dash-legend-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.admin-dash-legend-item[data-muted="true"] {
+  opacity: 0.45;
+}
+
+.admin-dash-legend-item[data-muted="true"] .admin-dash-legend-key {
+  opacity: 0.4;
+}
+
+.admin-dash-legend-key {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}
+
+.admin-dash-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--admin-control);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft);
+}
+
+.admin-dash-segmented-option {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--admin-text-soft);
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.admin-dash-segmented-option:hover:not(:disabled) {
+  color: var(--admin-text);
+}
+
+.admin-dash-segmented-option[aria-pressed="true"] {
+  color: #ffffff;
+  background: var(--admin-brand);
+  box-shadow: inset 0 0 0 1px rgba(140, 200, 242, 0.32);
+}
+
+.admin-dash-segmented-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.admin-dash-control {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 12px;
+  background: var(--admin-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft);
+}
+
+.admin-dash-control[data-state="alert"] {
+  background:
+    linear-gradient(var(--dash-alert-bg), var(--dash-alert-bg)),
+    var(--admin-surface-raised);
+  box-shadow: inset 0 0 0 1px var(--dash-alert-border);
+}
+
+.admin-dash-control-value {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--dash-ok);
+  background: var(--dash-ok-bg);
+  cursor: pointer;
+}
+
+.admin-dash-control[data-state="alert"] .admin-dash-control-value {
+  color: var(--dash-alert);
+  background: var(--dash-alert-bg);
+  box-shadow: inset 0 0 0 1px var(--dash-alert-border);
+}
+
+.admin-dash-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--admin-text-soft);
+}
+
+.admin-dash-delta[data-direction="up"] {
+  color: var(--dash-ok);
+}
+
+.admin-dash-delta[data-direction="down"] {
+  color: var(--dash-alert);
+}
+
+.admin-dash-note {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--admin-text-soft);
+  background: var(--admin-control);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft);
+}
+
+.admin-dash-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25rem;
+  color: var(--admin-text);
+  background: var(--dash-attention-bg);
+  box-shadow: inset 0 0 0 1px var(--dash-attention-border);
+}
+
+.admin-dash-warning svg {
+  color: var(--dash-attention);
+}
+
+.admin-dash-metric-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+}
+
+.admin-dash-bar-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--sales-chart-grid);
+}
+
+.admin-dash-bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 999px;
+  background: var(--sales-chart-total);
+}
+
+.admin-dash-empty {
+  border-radius: 12px;
+  background: var(--admin-control);
+}
+
+.admin-sales-chart-axis {
+  fill: var(--sales-chart-axis);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-sales-chart-tooltip {
+  position: absolute;
+  z-index: 5;
+  min-width: 190px;
+  max-width: min(270px, calc(100% - 8px));
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--admin-text);
+  background: var(--admin-surface-raised);
+  box-shadow:
+    0 0 0 1px var(--admin-border),
+    0 14px 30px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.admin-sales-chart-tooltip-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--admin-text-soft);
+}
+
+.admin-sales-chart-tooltip-title::first-letter {
+  text-transform: uppercase;
+}
+
+.admin-sales-chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.admin-sales-chart-tooltip-value {
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--admin-text);
+}
+
+.admin-sales-chart-tooltip-label {
+  color: var(--admin-text-soft);
+}
+
+.admin-sales-chart-tooltip-total {
+  margin-top: 4px;
+  padding-top: 4px;
+  padding-left: 22px;
+  border-top: 1px solid var(--admin-border-soft);
+}
