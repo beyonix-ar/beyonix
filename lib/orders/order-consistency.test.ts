@@ -172,7 +172,7 @@ test("6/7 · campana: un incidente abierto suma +1 con 'Revisar'; resuelto o fal
 
   // La NC faltante también es una alerta accionable que lleva a Cancelación.
   const alerts = buildOrderAlertNotifications(bx1002)
-  assert.deepEqual(alerts.map((alert) => [alert.eventKey, alert.actionUrl, alert.kind]), [
+  assert.deepEqual(alerts.map((alert: ReturnType<typeof buildOrderAlertNotifications>[number]) => [alert.eventKey, alert.actionUrl, alert.kind]), [
     ["legacy_credit_note:2", "/admin/pedidos/2?tab=cancelacion", "action"],
   ])
   assert.equal(buildOrderAlertNotifications({ ...bx1002, order_credit_notes: [{ status: "authorized", total_amount: 1000 }] }).length, 0)
