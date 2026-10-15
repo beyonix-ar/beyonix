@@ -289,6 +289,7 @@ const TEST_FILES = [
   "lib/mercadopago/refund-closure-sql.test.ts",
   "lib/arca/fiscal-obligation-guards-sql.test.ts",
   "lib/orders/financial-closure-matrix.test.ts",
+  "lib/orders/automatic-cancellation-state.test.ts",
   "components/account/profile-sections-password-contract.test.ts",
   "components/account/register-password-requirements-contract.test.ts",
   "components/claims/mercadopago-refund-action.test.ts",
@@ -350,6 +351,7 @@ const DB_TEST_FILES = [
   "lib/orders/claim-logistics-method-race.test.mjs",
   "lib/customer-credit/credit-reversal-concurrency.test.mjs",
   "lib/mercadopago/refund-closure-concurrency.test.mjs",
+  "lib/orders/automatic-cancellation-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
@@ -363,6 +365,7 @@ const SERVER_TSX_TEST_FILES = [
   "lib/labels/labels-routes.test.ts",
   "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
+  "lib/orders/automatic-cancellation-worker.test.ts",
   "lib/arca/fiscal-history-routes.test.ts",
   "lib/arca/invoice-pdf-environment.test.ts",
   "lib/arca/invoice-pdf-data.test.ts",

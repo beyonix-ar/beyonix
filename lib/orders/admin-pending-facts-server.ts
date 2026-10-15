@@ -8,12 +8,13 @@ import {
   type ArcaAutoInvoicingOrder,
 } from "@/lib/arca/auto-invoicing-control"
 import { getArcaConfigurationStatus } from "@/lib/arca/configuration"
+import { getAutomaticCancellationStatus, type AutomaticCancellationOrder } from "./automatic-cancellation-state"
 import { getEffectiveFinancialResolutionStatus } from "./financial-resolution"
 import { loadFinancialResolution } from "./financial-resolution-server"
 import type { AdminPendingFacts } from "./admin-pending-actions"
 
 type Admin = ReturnType<typeof createAdminClient>
-type FactsOrder = ArcaAutoInvoicingOrder & { id: number; financial_status?: string | null; cancelled_at?: string | null; auto_cancellation_next_attempt_at?: string | null }
+type FactsOrder = ArcaAutoInvoicingOrder & AutomaticCancellationOrder & { id: number; financial_status?: string | null; cancelled_at?: string | null }
 
 const FINANCIAL_CONCURRENCY = 5
 
@@ -52,8 +53,10 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
   const blocked = new Set((blocksResult.data ?? []).map((row) => row.order_id as number))
   const resolutions = new Map((resolutionsResult.data ?? []).map((row) => [row.order_id as number, row.status as string]))
 
+  const now = Date.now()
   for (const order of orders) {
     const membership = memberships.get(order.id)
+    const automaticCancellation = getAutomaticCancellationStatus(order, autoInvoicing, now)
     facts.set(order.id, {
       financial: null,
       dispatch: {
@@ -64,9 +67,10 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
         blocked: blocked.has(order.id) || (!!membership && order.cancelled_at != null),
       },
       invoiceAutomatic: autoInvoicing ? isOrderInAutoInvoicingQueue(autoInvoicing, order) : false,
-      cancellationAutomatic: Boolean(autoInvoicing?.enabled && autoInvoicing.cutoffAt && order.invoice_queued_at &&
-        new Date(order.invoice_queued_at).getTime() > new Date(autoInvoicing.cutoffAt).getTime() &&
-        order.auto_cancellation_next_attempt_at !== "infinity"),
+      cancellationAutomatic: automaticCancellation?.state === "processing",
+      cancellationAutomaticIssue: automaticCancellation?.state === "requires_action"
+        ? { reason: automaticCancellation.reason, error: automaticCancellation.error }
+        : null,
     })
   }
 

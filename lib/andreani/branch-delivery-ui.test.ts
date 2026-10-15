@@ -86,5 +86,9 @@ test("el detalle del cliente (/api/orders/[id]) expone los campos de sucursal ne
   assert.doesNotMatch(select, /andreani_sucursal_id/)
   assert.doesNotMatch(select, /andreani_sucursal_codigo/)
   assert.doesNotMatch(select, /andreani_contrato/)
-  assert.doesNotMatch(select, /andreani_envio_id/)
+  // andreani_envio_id se lee sólo para calcular la visibilidad (6cb5820); el
+  // allowlist del DTO lo saca antes de responder al cliente.
+  const dto = source("lib/orders/customer-order-dto.ts")
+  const fields = dto.slice(dto.indexOf("export const CUSTOMER_ORDER_FIELDS"), dto.indexOf("] as const"))
+  assert.doesNotMatch(fields, /andreani_envio_id|andreani_sucursal_id|andreani_contrato/)
 })

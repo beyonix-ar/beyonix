@@ -108,4 +108,27 @@ test("cancelaciones: secreto y doble control antes del worker; claim durable con
   assert.match(migration, /for update of o skip locked/i)
   assert.match(migration, /AUTO_REFUND_NOT_ELIGIBLE/)
   assert.match(migration, /AUTO_CREDIT_NOTE_NOT_ELIGIBLE/)
+  // 20261015190000: la cancelación posterior al corte también entra (la antigüedad de la compra no bloquea).
+  const recovery = read("supabase/migrations/20261015190000_automatic_cancellation_recovery.sql")
+  assert.match(recovery, /greatest\(o\.invoice_queued_at, o\.cancellation_requested_at, o\.cancelled_at, o\.refund_pending_at\) > c\.cutoff_at/)
+  assert.match(recovery, /for update of o skip locked/i)
+  assert.match(recovery, /o\.auto_cancellation_claimed_until <= clock_timestamp\(\)/, "un lease vencido se retoma")
+})
+
+test("BX-1005: el timer que SÍ corre (arca-invoices, cada minuto) ejecuta el worker de cancelaciones", () => {
+  // En producción claim_auto_cancellation nunca se llamó (pg_stat_statements:
+  // 0 llamadas RPC) mientras claim_arca_invoice suma miles: la unidad
+  // beyonix-automatic-cancellations no estaba instalada. El worker ya no
+  // depende de ella.
+  const route = read("app/api/cron/arca-invoices/route.ts")
+  const queue = route.indexOf("processArcaInvoiceQueue(admin")
+  const cancellations = route.indexOf("runAutomaticCancellationBatch(admin, gateway, configuration.pointOfSale)")
+  assert.ok(queue > 0 && cancellations > queue, "después de facturar: una cancelación previa a la factura sigue en la misma corrida")
+  for (const gate of ["isCronRequestAuthorized", "ARCA_AUTO_INVOICING_ENABLED", "requireArcaConfiguration()", "arcaAutoInvoicingView"]) {
+    assert.ok(route.indexOf(gate) > 0 && route.indexOf(gate) < cancellations, `${gate} antes del worker`)
+  }
+  // Un error de la cola de cancelaciones no queda silencioso: el timer falla (503).
+  assert.match(route.slice(cancellations), /AUTO_CANCELLATION_BATCH_ERROR[\s\S]*status: 503/)
+  const service = read("deploy/systemd/beyonix-arca-invoices.service")
+  assert.match(service, /--max-time 180/, "facturas (45 s) + cancelaciones (45 s) entran en el timeout")
 })

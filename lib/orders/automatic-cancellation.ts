@@ -25,6 +25,18 @@ type Note = {
 }
 type Result = { status: "completed" | "pending" | "manual"; reason?: string }
 
+/** Efectos externos (ARCA, finalización, Mercado Pago). Los tests los reemplazan por simulaciones. */
+export type AutomaticCancellationDependencies = {
+  emitCreditNote: typeof emitCreditNote
+  finalizeCreditNote: (admin: Admin, params: Parameters<typeof finalizeCreditNote>[1]) => Promise<unknown>
+  refundMercadoPagoOrderPayment: typeof refundMercadoPagoOrderPayment
+  reconcileMercadoPagoOrderRefund: typeof reconcileMercadoPagoOrderRefund
+}
+
+const defaultDependencies: AutomaticCancellationDependencies = {
+  emitCreditNote, finalizeCreditNote, refundMercadoPagoOrderPayment, reconcileMercadoPagoOrderRefund,
+}
+
 const orderColumns = "id,estado,financial_status,payment_method_id,payment_confirmed_amount,credit_balance_used,total,shipping_cost_charged,invoice_status,invoice_cae,invoice_point,invoice_number,invoice_created_at,invoice_arca_environment,invoice_queued_at,credit_note_required,andreani_handed_over_at,andreani_envio_id,tracking_number,andreani_tracking,auto_cancellation_attempts"
 const noteColumns = "id,status,destination,cae,finalized_at,external_amount,total_amount,voucher_number,created_by,operation_type"
 
@@ -104,6 +116,7 @@ async function setCancellationNoteMetadata(admin: Admin, order: Order, noteId: s
 
 export async function processAutomaticCancellation(
   admin: Admin, orderId: number, gateway: ArcaInvoiceGateway, pointOfSale: number,
+  deps: AutomaticCancellationDependencies = defaultDependencies,
 ): Promise<Result> {
   const order = await loadOrder(admin, orderId)
   if (order.financial_status === "refunded") return { status: "completed" }
@@ -137,7 +150,7 @@ export async function processAutomaticCancellation(
   }
   if (note.status === "processing") {
     await setCancellationNoteMetadata(admin, order, note.id)
-    const result = await emitCreditNote(admin, {
+    const result = await deps.emitCreditNote(admin, {
       noteId: note.id, gateway, pointOfSale,
       associatedInvoice: { environment, pointOfSale: Number(order.invoice_point),
         voucherNumber: Number(order.invoice_number), voucherDate: arcaDate(order.invoice_created_at) },
@@ -147,7 +160,7 @@ export async function processAutomaticCancellation(
       : { status: "pending", reason: result.outcome === "rejected" ? "ARCA_CREDIT_NOTE_RETRY" : "ARCA_CREDIT_NOTE_RECONCILIATION" }
     if (result.status !== "authorized") return { status: "pending", reason: "CREDIT_NOTE_PROCESSING" }
   }
-  await finalizeCreditNote(admin, { noteId: note.id, actorId: null })
+  await deps.finalizeCreditNote(admin, { noteId: note.id, actorId: null })
   const refreshed = (await loadNotes(admin, orderId)).find((item) => item.id === note.id)
   if (!refreshed || refreshed.status !== "authorized" || !refreshed.finalized_at) {
     return { status: "pending", reason: "CREDIT_NOTE_FINALIZATION_PENDING" }
@@ -157,10 +170,10 @@ export async function processAutomaticCancellation(
       .select("status").eq("order_id", orderId).order("created_at", { ascending: false }).limit(1)
     if (refundError) throw new Error(refundError.message)
     if (["processing", "needs_reconciliation"].includes(refunds?.[0]?.status ?? "")) {
-      const result = await reconcileMercadoPagoOrderRefund(admin, { orderId })
+      const result = await deps.reconcileMercadoPagoOrderRefund(admin, { orderId })
       return result.kind === "confirmed" ? { status: "completed" } : { status: "pending", reason: "MP_RECONCILIATION" }
     }
-    const result = await refundMercadoPagoOrderPayment(admin, { orderId, adminId: null })
+    const result = await deps.refundMercadoPagoOrderPayment(admin, { orderId, adminId: null })
     if (["confirmed", "already_confirmed"].includes(result.kind)) return { status: "completed" }
     if (["in_progress", "unknown"].includes(result.kind)) return { status: "pending", reason: "MP_RECONCILIATION" }
     if (result.kind === "rejected" && order.auto_cancellation_attempts < 6) {
@@ -178,9 +191,12 @@ export async function processAutomaticCancellation(
   return { status: "manual", reason: "BANK_TRANSFER_REFUND_REQUIRED" }
 }
 
+export const AUTO_CANCELLATION_MAX_ATTEMPTS = 12
+
 export async function runAutomaticCancellationBatch(
   admin: Admin, gateway: ArcaInvoiceGateway, pointOfSale: number,
-  { limit = 50, deadlineMs = 45_000 }: { limit?: number; deadlineMs?: number } = {},
+  { limit = 50, deadlineMs = 45_000, deps = defaultDependencies }:
+    { limit?: number; deadlineMs?: number; deps?: AutomaticCancellationDependencies } = {},
 ) {
   const deadline = Date.now() + deadlineMs
   const summary = { checked: 0, completed: 0, pending: 0, manual: 0, errors: 0 }
@@ -192,7 +208,7 @@ export async function runAutomaticCancellationBatch(
     summary.checked += 1
     let status: Result = { status: "pending", reason: "RETRY" }
     try {
-      status = await processAutomaticCancellation(admin, claimed.id, gateway, pointOfSale)
+      status = await processAutomaticCancellation(admin, claimed.id, gateway, pointOfSale, deps)
       summary[status.status] += 1
     } catch (cause) {
       summary.errors += 1
@@ -201,10 +217,13 @@ export async function runAutomaticCancellationBatch(
     }
     const attempts = Math.max(1, Number(claimed.auto_cancellation_attempts ?? 1))
     const retryMinutes = Math.min(60, 2 ** Math.min(attempts, 6))
+    // Un fallo que se repite (~7 h de backoff) no queda "procesando" para
+    // siempre: pasa a Admin ("Requiere acción") con el último motivo.
+    const exhausted = status.status === "pending" && attempts >= AUTO_CANCELLATION_MAX_ATTEMPTS
     const { error: releaseError } = await admin.rpc("release_auto_cancellation", {
       p_order_id: claimed.id,
-      p_delay: status.status === "pending" ? `${retryMinutes} minutes` : null,
-      p_error: status.reason ?? null,
+      p_delay: status.status === "pending" && !exhausted ? `${retryMinutes} minutes` : null,
+      p_error: exhausted ? `RETRIES_EXHAUSTED: ${status.reason ?? "RETRY"}` : status.reason ?? null,
     })
     if (releaseError) throw new Error(releaseError.message)
   }

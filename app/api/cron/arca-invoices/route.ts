@@ -6,6 +6,7 @@ import { getArcaConfigurationStatus, requireArcaConfiguration, type ArcaConfigur
 import { ArcaConfigurationError } from "@/lib/arca/environment"
 import { processArcaInvoiceQueue } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
+import { runAutomaticCancellationBatch } from "@/lib/orders/automatic-cancellation"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
@@ -14,6 +15,7 @@ export const runtime = "nodejs"
  * Worker de facturación automática: emite Factura C para las ventas que la
  * base encoló como facturables (pago confirmado + stock consumido). Idempotente
  * y serializado: correrlo dos veces a la vez nunca duplica un comprobante.
+ * Después procesa las cancelaciones facturadas (NC C y reintegro).
  *
  * Kill switch: sólo emite con ARCA_AUTO_INVOICING_ENABLED=true. Mientras esté
  * apagado, las ventas quedan en "Facturación pendiente" (nada se pierde) y
@@ -69,12 +71,28 @@ export async function GET(request: Request) {
     })
   }
 
+  const gateway = createWsfeInvoiceGateway(configuration)
   const summary = await processArcaInvoiceQueue(admin, {
-    gateway: createWsfeInvoiceGateway(configuration),
+    gateway,
     pointOfSale: configuration.pointOfSale,
     limit: 50,
     deadlineMs: 45_000,
   })
 
-  return NextResponse.json({ ok: true, authorized: summary.authorized, failed: summary.failed })
+  // Cancelaciones facturadas: NC C → reintegro, en la misma corrida y después
+  // de facturar (una cancelación previa a la factura sigue sola apenas llega
+  // el CAE). No depende de instalar otro timer: el de cancelaciones nunca se
+  // instaló en producción y BX-1005 quedó sin NC. Ese timer puede convivir:
+  // claim con lease + SKIP LOCKED, nunca dos workers sobre el mismo pedido.
+  try {
+    const cancellations = await runAutomaticCancellationBatch(admin, gateway, configuration.pointOfSale)
+    return NextResponse.json({ ok: true, authorized: summary.authorized, failed: summary.failed, cancellations })
+  } catch (cause) {
+    console.error("AUTO_CANCELLATION_BATCH_ERROR", { message: cause instanceof Error ? cause.message : "UNEXPECTED_ERROR" })
+    // 503: el timer queda en "failed" y se ve en journalctl; las facturas ya emitidas quedan firmes.
+    return NextResponse.json({
+      ok: false, authorized: summary.authorized, failed: summary.failed,
+      error: "No se pudo procesar la cola de cancelaciones.",
+    }, { status: 503 })
+  }
 }

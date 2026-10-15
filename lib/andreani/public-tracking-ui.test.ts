@@ -108,14 +108,16 @@ test("detalle del pedido: 'Gestión del pedido' quedó compacta en una fila (nú
 })
 
 test("Mis compras y el detalle nunca exponen andreani_envio_id ni el contrato en la UI del cliente", () => {
-  for (const path of [
-    "../../components/account/account-orders.tsx",
-    "../../app/api/orders/route.ts",
-  ]) {
-    const source = readSource(path)
-    assert.doesNotMatch(source, /andreani_envio_id/)
-    assert.doesNotMatch(source, /andreani_contrato/)
-  }
+  const ui = readSource("../../components/account/account-orders.tsx")
+  assert.doesNotMatch(ui, /andreani_envio_id/)
+  assert.doesNotMatch(ui, /andreani_contrato/)
+  // La ruta lee andreani_envio_id sólo para la visibilidad (6cb5820) y responde con el DTO.
+  const route = readSource("../../app/api/orders/route.ts")
+  assert.doesNotMatch(route, /andreani_contrato/)
+  assert.match(route, /toCustomerOrderDto|CUSTOMER_ORDER_FIELDS|customer-order-dto/)
+  const dto = readSource("../../lib/orders/customer-order-dto.ts")
+  const fields = dto.slice(dto.indexOf("export const CUSTOMER_ORDER_FIELDS"), dto.indexOf("] as const"))
+  assert.doesNotMatch(fields, /andreani_envio_id|andreani_contrato/)
 })
 
 test("ningún archivo de UI de tracking hardcodea el número de tracking de la prueba real", () => {

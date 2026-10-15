@@ -361,6 +361,14 @@ Al desactivar desde Admin, las nuevas tomas se detienen. Una reactivación crea 
 cutoff nuevo; no recupera automáticamente pedidos del período apagado. El control
 requiere una Factura C de producción emitida manualmente antes de permitir activar.
 
+**Desde 2026-10-15 el worker de cancelaciones corre dentro de
+`beyonix-arca-invoices.timer`** (`/api/cron/arca-invoices`, después de la cola de
+facturas). `beyonix-automatic-cancellations.timer` nunca se instaló en producción y
+BX-1005 quedó con la NC pendiente; ya no hace falta instalarlo. Si se instala, puede
+convivir: el claim usa lease + `SKIP LOCKED`. Requiere aplicar antes
+`20261015190000_automatic_cancellation_recovery.sql` (sin ella, la reserva de la NC del
+worker falla con `CREDIT_NOTE_ACTOR_FORBIDDEN` y el pedido queda en "Requiere acción").
+
 El worker de cancelaciones requiere también la migración
 `20261014140000_automatic_cancellation_fiscal_refund.sql`. Toma sólo pedidos
 cancelados, facturados y posteriores al mismo corte, emite la NC y recién

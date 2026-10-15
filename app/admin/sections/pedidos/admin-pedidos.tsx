@@ -2109,6 +2109,8 @@ function RefundManagementPanel({
   // camino o ya existe una resolución. El resto sigue en el flujo existente.
   if (!pedido.admin_pending_facts?.cancellationAutomatic && financial.view && (financial.view.mode === "wizard" || financial.view.mode === "resolution")) {
     return (
+      <>
+      <AutomaticCancellationIssueNotice pedido={pedido} />
       <FinancialResolutionWizard
         pedido={pedido}
         view={financial.view}
@@ -2125,6 +2127,7 @@ function RefundManagementPanel({
         onOpenAttention={onOpenAttention}
         onDownloadCreditNote={onDownloadCreditNote}
       />
+      </>
     )
   }
 
@@ -2293,6 +2296,7 @@ function RefundManagementPanel({
 
   return (
     <section className="admin-order-cancellation-panel rounded-xl border p-3">
+      <AutomaticCancellationIssueNotice pedido={pedido} />
       <div className="admin-order-cancellation-header border-b pb-3">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`admin-order-cancellation-main-icon ${model.isFinished && !model.creditNotePending ? "is-success" : ""}`}>
@@ -2713,6 +2717,19 @@ function CreditDestinationOption({
  * Estado fiscal de una venta pagada que todavía no tiene CAE. Separado del
  * estado de pago: el pedido sigue confirmado aunque ARCA falle.
  */
+/** Cancelación automática trabada o derivada a Admin: nunca un "procesando" eterno. */
+function AutomaticCancellationIssueNotice({ pedido }: { pedido: SupabasePedido }) {
+  const issue = pedido.admin_pending_facts?.cancellationAutomaticIssue
+  if (!issue || pedido.financial_status !== "refund_pending") return null
+  return (
+    <p role="status" data-testid="automatic-cancellation-issue" className="admin-order-billing-pending-note mb-3 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
+      {issue.reason === "stalled"
+        ? "Requiere acción: la cancelación automática no avanzó a tiempo (Nota de Crédito C y reintegro). Podés resolverla desde acá."
+        : `Requiere acción: la cancelación automática se detuvo${issue.error ? ` (${issue.error})` : ""}. Continuá desde acá.`}
+    </p>
+  )
+}
+
 function InvoiceFiscalStatus({ pedido }: { pedido: SupabasePedido }) {
   // Mismo dato que el cron: sólo es automática si el worker la va a tomar.
   const view = getInvoiceFiscalStatusView(pedido, pedido.admin_pending_facts?.invoiceAutomatic === true)
@@ -3582,6 +3599,7 @@ function BillingManagementPanel({
           {creditNoteIssued ? "Nota de Crédito C emitida automáticamente. Reintegro en proceso." : "Nota de Crédito C pendiente / procesando automáticamente. El reintegro sigue a su autorización."}
         </p>
       )}
+      {invoiceIssued && <AutomaticCancellationIssueNotice pedido={pedido} />}
       {invoiceIssued && creditNoteView.emitAction === "legacy" && (
         <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200" data-testid="legacy-credit-note-pointer">
           El dinero de esta venta ya se reintegró. La nota de crédito pendiente se emite desde la pestaña Cancelación.

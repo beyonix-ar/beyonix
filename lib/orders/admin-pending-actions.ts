@@ -72,7 +72,10 @@ export interface AdminPendingFacts {
    * trata como tarea humana para no ocultar trabajo.
    */
   invoiceAutomatic?: boolean
+  /** El worker de cancelaciones tiene actividad real (lease o próximo intento vigente). */
   cancellationAutomatic?: boolean
+  /** Cancelación automática trabada o derivada a Admin: vuelve el flujo manual. */
+  cancellationAutomaticIssue?: { reason: "stalled" | "manual"; error: string | null } | null
 }
 
 export interface AdminPendingActionsOrder extends CancellationNextActionOrder {
