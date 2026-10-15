@@ -17161,6 +17161,31 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface.dispatch-su
 html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card {
   background: var(--bx-surface-card) !important;
 }
+.dispatch-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+.dispatch-progress-bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #38bdf8;
+  transition: width 200ms ease;
+}
+.dispatch-progress-bar[data-complete="true"] {
+  background: #34d399;
+}
+html[data-admin-theme="light"] .dispatch-progress-track {
+  background: rgba(15, 23, 42, 0.08);
+}
+html[data-admin-theme="light"] .dispatch-progress-bar {
+  background: #0284c7;
+}
+html[data-admin-theme="light"] .dispatch-progress-bar[data-complete="true"] {
+  background: #059669;
+}
 
 /* Ayuda "(?)" de Admin: superficie opaca con los tokens del tema (Light/Dark). */
 .beyonix-admin-main .admin-help-tip {

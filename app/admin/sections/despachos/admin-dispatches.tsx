@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import Link from "next/link"
-import { CheckCircle2, PackageCheck, Printer, RotateCcw, ScanLine, Truck, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Layers, PackageCheck, PackageOpen, Printer, RotateCcw, ScanLine, Truck, XCircle } from "lucide-react"
 
 import {
   AdminBadge, AdminButton, AdminCard, AdminEmptyState, AdminModal,
@@ -15,7 +15,7 @@ import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { DISPATCH_STAGE_LABELS, dispatchStage, orderCode, parseOrderCode, type BatchDispatchDetail, type DispatchBatch, type DispatchMembership, type DispatchOrder, type DispatchPackage } from "@/lib/admin/dispatch"
 import { DispatchLabel } from "./dispatch-label"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
-import { OrderPreparationPanel } from "./order-preparation-panel"
+import { DISPATCH_STAGE_TONE, OrderPreparationPanel } from "./order-preparation-panel"
 
 type Tab = "armado" | "ready" | "open" | "closed" | "handed_over"
 type OrderCard = DispatchOrder & { package: DispatchPackage | null; membership: DispatchMembership | null; blocked?: boolean; blockReason?: string | null }
@@ -241,16 +241,44 @@ export function AdminDispatches({ initialBatchId, initialOrderId }: { initialBat
   const nextInQueue = queueIndex >= 0 ? queue[queueIndex + 1] : undefined
   const closeOrder = () => { setOrderId(null); setQueue([]); void refresh() }
 
+  // Contadores sólo de las colas operativas: el board trae hasta 100 lotes,
+  // así que cerrados/entregados no tendrían un total confiable.
+  const openBatchCount = (board?.batches ?? []).filter((item) => item.status === "open").length
+  const tabCounts: Partial<Record<Tab, number>> = board ? { armado: armadoOrders.length, ready: readyOrders.length, open: openBatchCount } : {}
+  const metrics: { label: string; value: number; icon: ReactNode; tone: "neutral" | "info" | "success" | "warning"; status?: string }[] = [
+    { label: "En armado", value: armadoOrders.length, icon: <PackageOpen className="size-4" />, tone: "info" },
+    { label: "Bultos listos", value: readyOrders.length, icon: <PackageCheck className="size-4" />, tone: "success" },
+    { label: "Lotes abiertos", value: openBatchCount, icon: <Layers className="size-4" />, tone: "info" },
+    { label: "Requieren revisión", value: reviewCount, icon: <AlertTriangle className="size-4" />, tone: reviewCount > 0 ? "warning" : "neutral", status: `Lotes · ${reviewCount} requiere revisión` },
+  ]
+
   return <div className={`${adminPageClassName} mx-auto max-w-7xl`}>
-    <AdminPageHeader eyebrow="Operación" title="Despachos" description="Armá pedidos, definí bultos, creá lotes de envío y confirmá la entrega física." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className="size-4" />}>Actualizar</AdminButton>} />
-    <nav aria-label="Estados de despacho" className="flex flex-wrap gap-2">
-      {TABS.map((item) => <AdminButton key={item.key} size="sm" variant={tab === item.key ? "primary" : "secondary"} aria-current={tab === item.key ? "page" : undefined} onClick={() => { setTab(item.key); setOrderId(null); setQueue([]); setBatch(null); setScanFeedback(null); setError("") }}>{item.label}</AdminButton>)}
+    <AdminPageHeader className="sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Armá pedidos, definí bultos, creá lotes de envío y confirmá la entrega física." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
+    <div className="space-y-3">
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      {metrics.map((metric) => <AdminCard key={metric.label} role={metric.status ? "status" : undefined} aria-label={metric.status} className="dispatch-card flex items-center gap-3 p-3">
+        <span className={`admin-ds-badge admin-ds-tone-${metric.tone} flex size-9 shrink-0 items-center justify-center p-0`} aria-hidden="true">{metric.icon}</span>
+        <span className="min-w-0">
+          <span className="block truncate text-10px font-black uppercase tracking-widest text-white/60">{metric.label}</span>
+          <span className="block text-xl font-black leading-tight tabular-nums text-white">{board ? metric.value : "—"}</span>
+        </span>
+      </AdminCard>)}
+    </div>
+    <nav aria-label="Estados de despacho" className="admin-ds-card admin-ds-surface bx-surface bx-surface-section dispatch-surface flex gap-1 overflow-x-auto p-1">
+      {TABS.map((item) => {
+        const active = tab === item.key
+        const count = tabCounts[item.key]
+        return <button key={item.key} type="button" aria-current={active ? "page" : undefined} onClick={() => { setTab(item.key); setOrderId(null); setQueue([]); setBatch(null); setScanFeedback(null); setError("") }} className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition-colors ${active ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-[0_0_14px_rgba(17,42,67,0.32)]" : "border-transparent text-white/60 hover:bg-white/5 hover:text-white"}`}>
+          {item.label}
+          {count !== undefined && <span className={`min-w-5 rounded-md px-1.5 py-0.5 text-center text-10px tabular-nums ${active ? "bg-white/15 text-white" : "bg-white/8 text-white/70"}`}>{count}</span>}
+        </button>
+      })}
     </nav>
-    <p role="status" className="text-sm font-bold text-white">Lotes · {reviewCount} requiere revisión</p>
-    {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
+    </div>
+    {error &&<div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
     {loading && <p role="status" className="text-sm text-white/70">Cargando…</p>}
 
-    {orderId ? <AdminSection compact className="dispatch-surface" title={orderCode(orderId)} eyebrow={queue.length > 1 ? `Armado · ${queueIndex + 1} de ${queue.length}` : "Armado"} actions={<AdminButton size="sm" onClick={closeOrder}>Volver</AdminButton>}>
+    {orderId ? <AdminSection compact className="dispatch-surface max-w-4xl" title={orderCode(orderId)} eyebrow={queue.length > 1 ? `Armado · ${queueIndex + 1} de ${queue.length}` : "Armado"} actions={<AdminButton size="sm" onClick={closeOrder}>Volver</AdminButton>}>
       <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder} footer={nextInQueue ? <AdminPrimaryButton className="h-12" onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminPrimaryButton> : null} />
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={batch.batch.code} eyebrow="Lote de envío" actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
       <div className="flex flex-wrap items-center gap-3"><AdminBadge tone={batch.batch.status === "handed_over" ? "success" : batch.blockedCount ? "warning" : "info"}>{batch.blockedCount ? "Requiere revisión" : batch.batch.status === "open" ? "Abierto" : batch.batch.status === "closed" ? "Lote cerrado" : "Entregado a Andreani"}</AdminBadge><span className="text-sm font-bold text-white">Pedidos: {batch.items.length} / Bultos: {batchParcels}</span><span className="text-sm text-white/70">{batch.batch.status === "open" ? `Escaneados: ${batch.scannedParcelCount ?? 0}/${batchParcels} · ` : ""}{batch.blockedCount} bloqueados {batch.blockedCount === 0 ? "✅" : ""}</span></div>
@@ -288,15 +316,18 @@ export function AdminDispatches({ initialBatchId, initialOrderId }: { initialBat
           const stage = dispatchStage({ package: item.package, batchStatus: null })
           const checked = tab === "ready" ? selected.has(item.id) : armadoSelected.has(item.id)
           const disabled = tab === "ready" && Boolean(item.blocked)
-          return <AdminCard key={item.id} interactive className={`dispatch-card flex items-center justify-between gap-2 ${item.blocked ? "border-red-500/40" : ""}`}>
+          return <AdminCard key={item.id} interactive className={`dispatch-card flex items-center justify-between gap-3 p-3 ${item.blocked ? "border-red-500/40" : checked ? "border-beyonix-sky/45" : ""}`}>
             <label className={`flex min-w-0 flex-1 items-center gap-3 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
               <input type="checkbox" className="size-5 shrink-0" aria-label={`Seleccionar ${orderCode(item.id)}`} checked={checked && !disabled} disabled={disabled} onChange={() => tab === "ready" ? toggleSelected(item.id) : setArmadoSelected((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next })} />
-              <span className="min-w-0"><span className="block font-black text-white">{orderCode(item.id)}</span><span className="block text-xs text-white/60">{item.blocked ? `Bloqueado · ${item.blockReason ?? "Revisión requerida"}` : `${DISPATCH_STAGE_LABELS[stage]}${item.package?.parcel_count ? ` · ${item.package.parcel_count} ${item.package.parcel_count === 1 ? "bulto" : "bultos"}` : ""}`}</span></span>
+              <span className="min-w-0">
+                <span className="flex flex-wrap items-center gap-2"><span className="font-black tabular-nums text-white">{orderCode(item.id)}</span><AdminBadge tone={item.blocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{item.blocked ? "Bloqueado" : DISPATCH_STAGE_LABELS[stage]}</AdminBadge></span>
+                {Boolean(item.blocked || item.package?.parcel_count) && <span className="mt-1 block truncate text-xs text-white/60">{item.blocked ? item.blockReason ?? "Revisión requerida" : `${item.package?.parcel_count} ${item.package?.parcel_count === 1 ? "bulto" : "bultos"}`}</span>}
+              </span>
             </label>
-            <AdminButton size="sm" onClick={() => startArmado([item.id])}>{tab === "armado" ? "Armar" : "Ver"}</AdminButton>
+            <AdminButton size="sm" variant={tab === "armado" ? "primary" : "secondary"} onClick={() => startArmado([item.id])}>{tab === "armado" ? "Armar" : "Ver"}</AdminButton>
           </AdminCard>
         })}</div> : <AdminEmptyState title="No hay pedidos en esta vista" description={tab === "armado" ? "Los pedidos pagos aparecerán acá para armarlos." : "Los pedidos con armado completo y bultos definidos aparecerán acá."} />
-      })() : <>{shownBatches.length ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{shownBatches.map((item) => <AdminCard key={item.id} interactive className="dispatch-card flex items-center justify-between gap-2"><div><p className="font-black text-white">{item.code}</p><p className="text-xs text-white/60">Pedidos: {item.orderCount} / Bultos: {item.packageCount} · {item.blockedCount} bloqueados</p></div><AdminButton size="sm" onClick={() => void openBatch(item.id)}>Abrir</AdminButton></AdminCard>)}</div> : <AdminEmptyState title="No hay lotes en esta vista" description="Creá un lote desde Bultos listos." />}</>}
+      })() : <>{shownBatches.length ? <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{shownBatches.map((item) => <AdminCard key={item.id} interactive className={`dispatch-card flex items-center justify-between gap-3 p-3 ${item.blockedCount > 0 && item.status !== "handed_over" ? "border-amber-500/40" : ""}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-black text-white">{item.code}</p>{item.blockedCount > 0 && item.status !== "handed_over" ? <AdminBadge tone="warning">Requiere revisión</AdminBadge> : <AdminBadge tone={item.status === "handed_over" ? "success" : "info"}>{item.status === "open" ? "Abierto" : item.status === "closed" ? "Cerrado" : "Entregado"}</AdminBadge>}</div><p className="mt-1 text-xs text-white/60">Pedidos: {item.orderCount} / Bultos: {item.packageCount} · {item.blockedCount} bloqueados</p></div><AdminButton size="sm" onClick={() => void openBatch(item.id)}>Abrir</AdminButton></AdminCard>)}</div> : <AdminEmptyState title="No hay lotes en esta vista" description="Creá un lote desde Bultos listos." />}</>}
     </AdminSection>}
 
     <AdminModal open={dialog === "remove" || dialog === "close" || dialog === "handover"} title={dialog === "remove" ? "Retirar pedido del lote" : dialog === "close" ? "CERRAR LOTE" : "Confirmar entrega a Andreani"} description={dialog === "handover" ? `¿Confirmás que entregaste físicamente ${batch?.batch.code} a Andreani? Pedidos: ${batch?.items.length ?? 0} / Bultos: ${batchParcels}.` : dialog === "close" ? `${batch?.batch.code} · Pedidos: ${batch?.items.length ?? 0} / Bultos: ${batchParcels}. Se vuelve a validar pago, factura, envío y bloqueos de cada pedido.` : "Esta acción quedará registrada."} onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2"><AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || ((dialog === "handover" || dialog === "close") && (liveUpdating || Boolean(error) || Boolean(batch?.blockedCount))) || (dialog === "remove" && reason.trim().length < 10)} onClick={() => void run(async () => {

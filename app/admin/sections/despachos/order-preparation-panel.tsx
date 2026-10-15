@@ -24,7 +24,7 @@ type OrderResponse = OrderDispatchDetail & { scan?: DispatchScanResult | null }
 /** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
 type PendingVariant = { code: string; productName: string | null; candidates: DispatchVariantCandidate[] }
 
-const STAGE_TONE = { pending: "neutral", packing: "info", packed: "warning", parcels_ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
+export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", packed: "success", parcels_ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
 
 // Motor único de armado: Despachos y la solapa "ARMAR PEDIDO" del pedido usan
 // este mismo panel contra las mismas RPC (scan_order_preparation_code y
@@ -165,11 +165,22 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     </div>
   }
 
+  const progress = detail.expectedUnits > 0 ? Math.min(100, Math.floor((units / detail.expectedUnits) * 100)) : 0
+
   return <div className="space-y-4">
-    <div className="flex flex-wrap items-center gap-3">
-      <AdminBadge tone={STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
-      <span className="text-sm text-white/70">{detail.itemCount} productos · {units} de {detail.expectedUnits} unidades{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "bulto" : "bultos"}` : ""}</span>
-    </div>
+    <AdminCard className="dispatch-card p-3 sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <AdminBadge tone={detail.blocked ? "danger" : DISPATCH_STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
+        <span className="text-xs font-bold text-white/60">{detail.itemCount} {detail.itemCount === 1 ? "producto" : "productos"}{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "bulto" : "bultos"}` : ""}</span>
+      </div>
+      <div className="mt-3 flex items-baseline justify-between gap-3">
+        <span className="text-sm text-white/70"><span className="text-lg font-black tabular-nums text-white">{units}</span> de <span className="font-bold tabular-nums text-white">{detail.expectedUnits}</span> unidades</span>
+        <span className="text-xs font-black tabular-nums text-white/60">{progress}%</span>
+      </div>
+      <div className="dispatch-progress-track mt-2" role="progressbar" aria-label="Unidades verificadas" aria-valuemin={0} aria-valuemax={detail.expectedUnits} aria-valuenow={units}>
+        <span className="dispatch-progress-bar" data-complete={progress === 100 ? "true" : undefined} style={{ width: `${progress}%` }} />
+      </div>
+    </AdminCard>
     {detail.blocked && <div role="alert" className="rounded-xl border border-red-500/50 bg-red-950 p-3 text-sm text-white">
       <p className="font-black">{inBatch ? "RETIRAR DEL DESPACHO" : "Pedido bloqueado"} · {detail.blockReason ?? "Revisión requerida"}</p>
       {inBatch && detail.parcels.length > 0 && <p className="mt-1 text-xs">Separá {detail.parcels.length === 1 ? "el bulto" : `los ${detail.parcels.length} bultos`}: {detail.parcels.map((parcel) => parcel.barcode).join(", ")}. No se entrega a Andreani ni se reintegra automáticamente.</p>}
