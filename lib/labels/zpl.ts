@@ -20,6 +20,7 @@ export function zplUnavailableReason(settings: LabelSettings) {
 export function buildZpl(batch: PreparedBatch, settings: LabelSettings) {
   const reason = zplUnavailableReason(settings)
   if (reason) throw new Error(reason)
+  if (batch.plan.error) throw new Error(batch.plan.error)
   const dotsPerMm = settings.dpi / 25.4
   const dots = (mm: number) => Math.max(0, Math.round(mm * dotsPerMm))
   const rows = batch.plan.pages.map((page) => {

@@ -8,15 +8,6 @@ export type LabelDpi = 203 | 300 | 600
 export type LabelTypography = "compacta" | "normal" | "grande"
 export type LabelPrintOrder = "manual" | "product" | "variant"
 
-export interface LabelContentOptions {
-  name: boolean
-  variant: boolean
-  sku: boolean
-  barcodeText: boolean
-  price: boolean
-  internalCode: boolean
-}
-
 export interface LabelSettings {
   mode: LabelOutputMode
   widthMm: number
@@ -26,7 +17,6 @@ export interface LabelSettings {
   dpi: LabelDpi
   typography: LabelTypography
   order: LabelPrintOrder
-  content: LabelContentOptions
   /** Tope de copias por fila de la cola. */
   maxCopiesPerItem: number
   a4: {
@@ -41,7 +31,7 @@ export interface LabelSettings {
     gapMm: number
     /** Gira la etiqueta 90° para rollos que alimentan de costado. */
     rotate: boolean
-    /** Etiquetas por fila del rollo (rollos de 2 o más columnas, p. ej. 10 × 2 cm = 2 de 5 × 2). */
+    /** Etiquetas por fila del rollo (rollos de 2 o más columnas, p. ej. 80 × 20 = 2 de 39 × 20). */
     columns: number
     /** Separación entre columnas de una misma fila. */
     columnGapMm: number
@@ -73,15 +63,9 @@ export const LABEL_LIMITS = {
 } as const
 
 export const LABEL_DPI_OPTIONS: readonly LabelDpi[] = [203, 300, 600]
-
-export const DEFAULT_LABEL_CONTENT: LabelContentOptions = {
-  name: true,
-  variant: true,
-  sku: false,
-  barcodeText: true,
-  price: false,
-  internalCode: false,
-}
+export const THERMAL_COLUMN_OPTIONS: readonly number[] = [1, 2, 3, 4]
+/** Ancho máximo absoluto de una fila del rollo: más que esto no se puede imprimir. */
+export const MAX_ROLL_WIDTH_MM = 120
 
 export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
   mode: "a4",
@@ -91,28 +75,10 @@ export const DEFAULT_LABEL_SETTINGS: LabelSettings = {
   dpi: 600,
   typography: "normal",
   order: "manual",
-  content: DEFAULT_LABEL_CONTENT,
   maxCopiesPerItem: 100,
   a4: { orientation: "portrait", marginTopMm: 8, marginSideMm: 6, gapXMm: 2, gapYMm: 2, cutMarks: true },
   thermal: { gapMm: 3, rotate: false, columns: 1, columnGapMm: 2, sideMarginMm: 0 },
 }
-
-export interface LabelSizePreset {
-  id: string
-  name: string
-  widthMm: number
-  heightMm: number
-}
-
-// Tamaños de partida; el usuario siempre puede escribir otro (Personalizada).
-export const LABEL_SIZE_PRESETS: readonly LabelSizePreset[] = [
-  { id: "small", name: "Pequeña", widthMm: 40, heightMm: 20 },
-  { id: "standard", name: "Estándar", widthMm: 50, heightMm: 25 },
-  { id: "strip", name: "Tira", widthMm: 80, heightMm: 20 },
-  { id: "large", name: "Grande", widthMm: 80, heightMm: 30 },
-]
-
-export const THERMAL_COLUMN_OPTIONS: readonly number[] = [1, 2, 3, 4]
 
 export interface ThermalRollPreset {
   id: string
@@ -139,8 +105,54 @@ export function matchRollPreset(settings: Pick<LabelSettings, "widthMm" | "heigh
     preset.columnGapMm === settings.thermal.columnGapMm) ?? null
 }
 
-export function matchSizePreset(settings: Pick<LabelSettings, "widthMm" | "heightMm">) {
-  return LABEL_SIZE_PRESETS.find((preset) => preset.widthMm === settings.widthMm && preset.heightMm === settings.heightMm) ?? null
+export interface LabelFormatPreset {
+  id: string
+  name: string
+  mode: LabelOutputMode
+  /** Medida de cada etiqueta. */
+  widthMm: number
+  heightMm: number
+  /** Sólo térmica: etiquetas por fila del rollo y separación entre ellas. */
+  columns: number
+  columnGapMm: number
+  recommended?: boolean
+}
+
+// Formatos de partida; siempre se puede escribir otra medida (Personalizado).
+// En A4 las columnas salen de la hoja; en rollo, del propio rollo.
+export const LABEL_FORMAT_PRESETS: readonly LabelFormatPreset[] = [
+  { id: "roll-80x20-2", name: "Rollo 80 × 20", mode: "thermal", widthMm: 39, heightMm: 20, columns: 2, columnGapMm: 2, recommended: true },
+  { id: "roll-40x20", name: "Rollo 40 × 20", mode: "thermal", widthMm: 40, heightMm: 20, columns: 1, columnGapMm: 2 },
+  { id: "roll-50x25", name: "Rollo 50 × 25", mode: "thermal", widthMm: 50, heightMm: 25, columns: 1, columnGapMm: 2 },
+  ...THERMAL_ROLL_PRESETS.map((preset) => ({ id: preset.id, name: `Rollo ${preset.columns * preset.widthMm + (preset.columns - 1) * preset.columnGapMm} × ${preset.heightMm}`, mode: "thermal" as const, widthMm: preset.widthMm, heightMm: preset.heightMm, columns: preset.columns, columnGapMm: preset.columnGapMm })),
+  { id: "a4-40x20", name: "A4 · 40 × 20", mode: "a4", widthMm: 40, heightMm: 20, columns: 1, columnGapMm: 2 },
+  { id: "a4-50x25", name: "A4 · 50 × 25", mode: "a4", widthMm: 50, heightMm: 25, columns: 1, columnGapMm: 2 },
+  { id: "a4-80x30", name: "A4 · 80 × 30", mode: "a4", widthMm: 80, heightMm: 30, columns: 1, columnGapMm: 2 },
+]
+
+export function matchFormatPreset(settings: Pick<LabelSettings, "mode" | "widthMm" | "heightMm" | "thermal">) {
+  return LABEL_FORMAT_PRESETS.find((preset) =>
+    preset.mode === settings.mode &&
+    preset.widthMm === settings.widthMm &&
+    preset.heightMm === settings.heightMm &&
+    (preset.mode === "a4" || (preset.columns === settings.thermal.columns && settings.thermal.sideMarginMm === 0 && (preset.columns === 1 || preset.columnGapMm === settings.thermal.columnGapMm))),
+  ) ?? null
+}
+
+/** DPI coherente al cambiar de salida: A4 = 600; térmica nunca 600. */
+export function dpiForMode(mode: LabelOutputMode, current: LabelDpi): LabelDpi {
+  return mode === "a4" ? 600 : current === 600 ? 203 : current
+}
+
+export function applyFormatPreset(settings: LabelSettings, preset: LabelFormatPreset): LabelSettings {
+  return {
+    ...settings,
+    mode: preset.mode,
+    widthMm: preset.widthMm,
+    heightMm: preset.heightMm,
+    dpi: dpiForMode(preset.mode, settings.dpi),
+    thermal: preset.mode === "thermal" ? { ...settings.thermal, columns: preset.columns, columnGapMm: preset.columnGapMm, sideMarginMm: 0 } : settings.thermal,
+  }
 }
 
 type Limit = { min: number; max: number }
@@ -167,7 +179,6 @@ function bool(value: unknown, fallback: boolean) {
 export function normalizeLabelSettings(input: unknown): LabelSettings {
   const source = isRecord(input) ? input : {}
   const defaults = DEFAULT_LABEL_SETTINGS
-  const content = isRecord(source.content) ? source.content : {}
   const a4 = isRecord(source.a4) ? source.a4 : {}
   const thermal = isRecord(source.thermal) ? source.thermal : {}
   const maxCopies = clampMm(source.maxCopiesPerItem, LABEL_LIMITS.maxCopiesPerItem, defaults.maxCopiesPerItem)
@@ -179,14 +190,6 @@ export function normalizeLabelSettings(input: unknown): LabelSettings {
     dpi: pick(source.dpi, LABEL_DPI_OPTIONS, defaults.dpi),
     typography: pick(source.typography, ["compacta", "normal", "grande"] as const, defaults.typography),
     order: pick(source.order, ["manual", "product", "variant"] as const, defaults.order),
-    content: {
-      name: bool(content.name, defaults.content.name),
-      variant: bool(content.variant, defaults.content.variant),
-      sku: bool(content.sku, defaults.content.sku),
-      barcodeText: bool(content.barcodeText, defaults.content.barcodeText),
-      price: bool(content.price, defaults.content.price),
-      internalCode: bool(content.internalCode, defaults.content.internalCode),
-    },
     maxCopiesPerItem: Math.round(maxCopies),
     a4: {
       orientation: pick(a4.orientation, ["portrait", "landscape"] as const, defaults.a4.orientation),
@@ -199,6 +202,7 @@ export function normalizeLabelSettings(input: unknown): LabelSettings {
     thermal: {
       gapMm: clampMm(thermal.gapMm, LABEL_LIMITS.thermalGapMm, defaults.thermal.gapMm),
       rotate: bool(thermal.rotate, defaults.thermal.rotate),
+      // Configuraciones guardadas antes de las columnas eran de 1 columna.
       columns: Math.round(clampMm(thermal.columns, LABEL_LIMITS.thermalColumns, defaults.thermal.columns)),
       columnGapMm: clampMm(thermal.columnGapMm, LABEL_LIMITS.thermalColumnGapMm, defaults.thermal.columnGapMm),
       sideMarginMm: clampMm(thermal.sideMarginMm, LABEL_LIMITS.thermalSideMarginMm, defaults.thermal.sideMarginMm),

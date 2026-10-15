@@ -1,17 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { Download, FileCode2, Printer } from "lucide-react"
+import { Check } from "lucide-react"
 
-import {
-  AdminButton,
-  AdminInfoBlock,
-  AdminModal,
-  AdminPageHeader,
-  AdminPrimaryButton,
-  adminCardClassName,
-  adminPageClassName,
-} from "@/app/admin/components/admin-controls"
+import { AdminInfoBlock, AdminPageHeader, adminPageClassName } from "@/app/admin/components/admin-controls"
 import { printHtmlDocument } from "@/lib/barcodes/print-labels"
 import type { LabelCatalogProduct, LabelTarget } from "@/lib/labels/catalog"
 import {
@@ -34,14 +26,16 @@ import { MAX_BATCH_LABELS, normalizeLabelSettings, type LabelSettings } from "@/
 import { buildZpl, zplUnavailableReason } from "@/lib/labels/zpl"
 import { cn } from "@/lib/utils"
 
-import { LabelOutputPanel, describeOutput, type PrintBlocker } from "./label-output-panel"
-import { LabelSheetPreview, LabelZoomModal, PreviewLegend, PreviewPager, previewPageCount } from "./label-preview"
+import { LabelFormatSample } from "./label-format-sample"
+import { LabelZoomModal, previewPageCount } from "./label-preview"
+import { LabelPrintStep, type PrintStatus } from "./label-print-step"
 import { LabelQueuePanel } from "./label-queue-panel"
 import { LabelSearchPanel } from "./label-search-panel"
-import { LabelSettingsPanel, describeFormat } from "./label-settings-panel"
-import { LABEL_STEP_IDS, LabelStepsBar, plural, type LabelStepStatus } from "./label-ui"
+import { LabelSettingsPanel, formatName } from "./label-settings-panel"
 
 const PREFERENCE_SAVE_DELAY_MS = 1200
+
+type Step = 1 | 2 | 3
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -60,8 +54,10 @@ function fileStamp() {
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
 }
 
-// Dónde cae cada artículo de la cola dentro de la tanda (las copias de un
-// artículo siempre quedan consecutivas).
+const plural = (count: number, one: string, many: string) => `${count.toLocaleString("es-AR")} ${count === 1 ? one : many}`
+
+// Dónde cae cada artículo de la tanda (las copias de un artículo siempre
+// quedan consecutivas): "Etiquetas 1–5 · fila 1–3".
 function queuePlacements(labels: readonly LabelQueueItem[], plan: LabelPlan) {
   const placements = new Map<string, string>()
   if (plan.error || !plan.grid.perPage) return placements
@@ -81,9 +77,36 @@ function queuePlacements(labels: readonly LabelQueueItem[], plan: LabelPlan) {
   return placements
 }
 
+function Stepper({ step, onStep, items }: { step: Step; onStep: (step: Step) => void; items: { id: Step; title: string; summary: string; done: boolean }[] }) {
+  return (
+    <nav aria-label="Pasos para imprimir etiquetas">
+      <ol className="admin-label-steps grid gap-2 sm:grid-cols-3">
+        {items.map((item) => {
+          const state = item.id === step ? "current" : item.done ? "done" : "todo"
+          return (
+            <li key={item.id}>
+              <button type="button" className="admin-label-step flex w-full items-center gap-3 px-3 py-2.5 text-left" data-state={state} aria-current={item.id === step ? "step" : undefined} onClick={() => onStep(item.id)}>
+                <span className="admin-label-step-number flex size-7 shrink-0 items-center justify-center text-xs font-black" aria-hidden="true">
+                  {state === "done" ? <Check className="size-3.5" /> : item.id}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-black text-white">{item.title}</span>
+                  <span className="block truncate text-xs text-white/62" data-step-summary>{item.summary}</span>
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
+  )
+}
+
 export function AdminEtiquetas() {
   const queue = useSyncExternalStore(labelQueueStore.subscribe, labelQueueStore.get, labelQueueStore.getServer)
   const settings = useSyncExternalStore(labelSettingsStore.subscribe, labelSettingsStore.get, labelSettingsStore.getServer)
+  const [step, setStep] = useState<Step>(1)
+  const [formatReviewed, setFormatReviewed] = useState(false)
   const [products, setProducts] = useState<ReadonlyMap<number, LabelCatalogProduct>>(new Map())
   const [patterns, setPatterns] = useState<ReadonlyMap<string, BarcodePattern>>(new Map())
   const [patternErrors, setPatternErrors] = useState<Record<string, string>>({})
@@ -94,7 +117,6 @@ export function AdminEtiquetas() {
   const [preferenceError, setPreferenceError] = useState("")
   const [page, setPage] = useState(0)
   const [zoomIndex, setZoomIndex] = useState<number | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
   const [busy, setBusy] = useState<LabelBatchOutput | null>(null)
   const [message, setMessage] = useState<{ tone: "success" | "danger" | "info"; text: string } | null>(null)
   const settingsTouched = useRef(false)
@@ -116,6 +138,12 @@ export function AdminEtiquetas() {
     })
   }, [])
 
+  const goTo = useCallback((next: Step) => {
+    if (next > 2) setFormatReviewed(true)
+    setStep(next)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }, [])
+
   // Presets, preferencia guardada e historial: una sola consulta.
   useEffect(() => {
     let current = true
@@ -127,14 +155,14 @@ export function AdminEtiquetas() {
         setStorageUnavailable(config.storageUnavailable)
         if (config.preference && !settingsTouched.current) labelSettingsStore.set(config.preference)
       })
-      .catch(() => current && setPreferenceError("No se pudo cargar la configuración guardada; se usa la de este navegador."))
+      .catch(() => current && setPreferenceError("No se pudo cargar el formato guardado; se usa el de este navegador."))
       .finally(() => current && setConfigLoaded(true))
     return () => { current = false }
   }, [])
 
-  // Toda fila que llega a la cola sin validar (guardada en el navegador o
+  // Toda fila que llega a la tanda sin validar (guardada en el navegador o
   // agregada desde Productos, incluso en otra pestaña) se revalida contra el
-  // catálogo actual: nombre, color, SKU, precio y que el código siga siendo suyo.
+  // catálogo actual: nombre, color, SKU y que el código siga siendo suyo.
   useEffect(() => {
     const pending = queue.filter((item) => !validatedKeys.current.has(item.key))
     if (!pending.length) return
@@ -153,22 +181,22 @@ export function AdminEtiquetas() {
       })
       .catch(() => {
         keys.forEach((key) => validatedKeys.current.delete(key))
-        setMessage({ tone: "danger", text: "No se pudo revalidar la cola con el catálogo. Revisá la conexión antes de imprimir." })
+        setMessage({ tone: "danger", text: "No se pudo revalidar la tanda con el catálogo. Revisá la conexión antes de imprimir." })
       })
   }, [queue, products, mergeProducts])
 
-  // Recordar la configuración (debounce) sólo cuando la cambia el usuario.
+  // Recordar el formato (debounce) sólo cuando lo cambia el usuario.
   useEffect(() => {
     if (!settingsTouched.current || !configLoaded || storageUnavailable) return
     const timer = window.setTimeout(() => {
       saveLabelPreference(settings)
         .then(() => setPreferenceError(""))
-        .catch(() => setPreferenceError("No se pudo guardar la configuración en tu cuenta; queda recordada en este navegador."))
+        .catch(() => setPreferenceError("No se pudo guardar el formato en tu cuenta; queda recordado en este navegador."))
     }, PREFERENCE_SAVE_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [settings, configLoaded, storageUnavailable])
 
-  // Patrones de barras de los códigos de la cola que todavía no se tienen.
+  // Patrones de barras de los códigos de la tanda que todavía no se tienen.
   const queueCodes = useMemo(() => [...new Set(queue.filter((item) => !item.issue).map((item) => item.code))].sort(), [queue])
   const missingCodes = useMemo(() => queueCodes.filter((code) => !patterns.has(code) && !patternErrors[code]), [queueCodes, patterns, patternErrors])
   const missingKey = missingCodes.join("\n")
@@ -201,38 +229,36 @@ export function AdminEtiquetas() {
   const loadingPatterns = missingCodes.length > 0
   const blockedCodes = queueCodes.filter((code) => patternErrors[code])
   const warnings = useMemo(() => {
-    const unique = new Map<string, string>()
-    drawings.forEach((drawing) => drawing.warnings.forEach((warning) => unique.set(warning.message, warning.message)))
-    return [...unique.values()]
+    const unique = new Set<string>()
+    drawings.forEach((drawing) => drawing.warnings.forEach((warning) => unique.add(warning.message)))
+    return [...unique]
   }, [drawings])
   const notices = layoutNotices(settings)
-  const zplReason = zplUnavailableReason(settings)
-  const printBlocker: PrintBlocker | null = !total
-    ? { text: "La cola está vacía.", pending: false }
-    : plan.overLimit
-      ? { text: `La tanda supera las ${MAX_BATCH_LABELS} etiquetas. Dividila en tandas más chicas.`, pending: false }
-      : plan.error
-        ? { text: plan.error, pending: false }
-        : blockedCodes.length
-          ? { text: `No se pudo generar el código ${blockedCodes.join(", ")}. Quitalo de la cola.`, pending: false }
-          : loadingPatterns
-            ? { text: "Generando códigos de barras…", pending: true }
-            : null
-  const queuedCopies = useMemo(() => new Map(queue.map((item) => [item.key, item.copies])), [queue])
   const placements = useMemo(() => queuePlacements(labels, plan), [labels, plan])
-  const issues = queue.filter((item) => item.issue || patternErrors[item.code]).length
+  const zplReason = zplUnavailableReason(settings)
+  const status: PrintStatus = !total
+    ? { tone: "blocked", text: "Agregá productos a la tanda." }
+    : plan.overLimit
+      ? { tone: "blocked", text: `La tanda supera las ${MAX_BATCH_LABELS} etiquetas. Dividila en tandas más chicas.` }
+      : plan.error
+        ? { tone: "blocked", text: plan.error }
+        : blockedCodes.length
+          ? { tone: "blocked", text: `No se pudo generar el código ${blockedCodes.join(", ")}. Quitalo de la tanda.` }
+          : loadingPatterns
+            ? { tone: "loading", text: "Generando códigos de barras…" }
+            : { tone: "ready", text: `Lista para imprimir: ${plural(plan.pages.length, plan.mode === "thermal" ? "fila" : "hoja", plan.mode === "thermal" ? "filas" : "hojas")}.` }
 
   const addTarget = useCallback((target: LabelTarget, code: string, copies: number) => {
     const item = createQueueItem(target, code, copies)
-    if (!item) return
+    if (!item) return null
     const max = labelSettingsStore.get().maxCopiesPerItem
     const outcome = addToQueue(labelQueueStore.get(), item, max)
     validatedKeys.current.add(item.key)
     labelQueueStore.set(outcome.queue)
-    const name = [target.productName, target.variantLabel].filter(Boolean).join(" · ")
-    setMessage(outcome.rejected
-      ? { tone: "danger", text: "La cola llegó al máximo de artículos. Imprimí o vaciá antes de seguir." }
-      : { tone: "success", text: `${outcome.merged ? "Sumado" : "Agregado"}: ${name} ×${copies}${outcome.clamped ? ` (tope de ${max} por artículo)` : ""}.` })
+    // El alta se ve en la propia fila; sólo se avisa lo que no se pudo hacer.
+    if (outcome.rejected) setMessage({ tone: "danger", text: "La tanda llegó al máximo de artículos. Imprimí o vaciá antes de seguir." })
+    else if (outcome.clamped) setMessage({ tone: "info", text: `Tope de ${max} etiquetas por artículo (se cambia en Formato → Ajustes avanzados).` })
+    return outcome
   }, [])
 
   async function repeatBatch(entry: LabelBatchSummary) {
@@ -252,7 +278,7 @@ export function AdminEtiquetas() {
       }
       labelQueueStore.set(next)
       const skipped = entry.items.length - added
-      setMessage({ tone: skipped ? "info" : "success", text: `Tanda "${entry.name}" agregada a la cola${skipped ? `; ${skipped} ${skipped === 1 ? "artículo ya no existe o cambió de código" : "artículos ya no existen o cambiaron de código"}` : ""}.` })
+      setMessage({ tone: skipped ? "info" : "success", text: `Tanda "${entry.name}" agregada${skipped ? `; ${skipped} ${skipped === 1 ? "artículo ya no existe o cambió de código" : "artículos ya no existen o cambiaron de código"}` : ""}.` })
     } catch {
       setMessage({ tone: "danger", text: "No se pudo cargar la tanda." })
     }
@@ -267,7 +293,7 @@ export function AdminEtiquetas() {
   }
 
   async function runOutput(output: LabelBatchOutput) {
-    if (busy || printBlocker) return
+    if (busy || status.tone !== "ready") return
     setBusy(output)
     setMessage(null)
     try {
@@ -307,64 +333,22 @@ export function AdminEtiquetas() {
     setPresets((current) => current.filter((item) => item.id !== preset.id))
   }
 
-
   const zoomItem = zoomIndex != null ? labels[zoomIndex] ?? null : null
   const zoomDrawing = zoomIndex != null ? drawings[zoomIndex] ?? null : null
-  const outputDisabled = Boolean(printBlocker) || busy !== null
-  const outputSummary = total ? `${plural(total, "etiqueta")} · ${describeOutput(plan)}` : "La cola está vacía"
-
-  const steps: LabelStepStatus[] = [
-    {
-      id: LABEL_STEP_IDS.search,
-      title: "Buscar y agregar",
-      status: queue.length ? "Podés seguir sumando artículos" : "Buscá o escaneá un producto",
-      state: queue.length ? "done" : "current",
-    },
-    {
-      id: LABEL_STEP_IDS.queue,
-      title: "Revisar la cola",
-      status: issues ? `${plural(issues, "artículo")} con aviso` : queue.length ? `${plural(queue.length, "artículo")} · ${plural(total, "etiqueta")}` : "Vacía",
-      state: issues ? "blocked" : total ? "done" : "idle",
-    },
-    {
-      id: LABEL_STEP_IDS.format,
-      title: "Elegir formato",
-      status: describeFormat(settings),
-      state: plan.error ? "blocked" : total ? "done" : "idle",
-    },
-    {
-      id: LABEL_STEP_IDS.output,
-      title: "Revisar e imprimir",
-      status: !total ? "Esperando etiquetas" : printBlocker ? printBlocker.text : `Listo · ${describeOutput(plan)}`,
-      state: !total ? "idle" : printBlocker && !printBlocker.pending ? "blocked" : "current",
-    },
-  ]
-
-  const outputActions = (
-    <div className="flex flex-wrap items-center gap-2">
-      <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={outputDisabled} onClick={() => void runOutput("print")}>
-        {busy === "print" ? "Preparando…" : "Imprimir"}
-      </AdminPrimaryButton>
-      <AdminButton icon={<Download className="size-4" />} disabled={outputDisabled} onClick={() => void runOutput("pdf")}>
-        {busy === "pdf" ? "Generando…" : "Descargar PDF"}
-      </AdminButton>
-      {settings.mode === "thermal" && (
-        <AdminButton icon={<FileCode2 className="size-4" />} title={zplReason ?? "ZPL para Zebra / Honeywell (beta, sin prueba en impresora física)"} disabled={outputDisabled || Boolean(zplReason)} onClick={() => void runOutput("zpl")}>
-          {busy === "zpl" ? "Generando…" : "Exportar ZPL"}
-        </AdminButton>
-      )}
-    </div>
-  )
 
   return (
-    <div className={cn(adminPageClassName, "mx-auto w-full max-w-1600px")}>
-      <AdminPageHeader
-        eyebrow="Productos"
-        title="Etiquetas"
-        description="Armá una tanda de etiquetas con código de barras para hoja A4 o impresora térmica: buscá, revisá la cola, elegí el formato e imprimí."
-      />
+    <div className={cn(adminPageClassName, "admin-labels-page mx-auto w-full max-w-1400px")}>
+      <AdminPageHeader eyebrow="Productos" title="Etiquetas" description="Armá la tanda, elegí el formato e imprimí." />
 
-      <LabelStepsBar steps={steps} />
+      <Stepper
+        step={step}
+        onStep={goTo}
+        items={[
+          { id: 1, title: "Productos", summary: total ? `${plural(total, "etiqueta", "etiquetas")} · ${plural(queue.length, "artículo", "artículos")}` : "Elegí qué imprimir", done: total > 0 },
+          { id: 2, title: "Formato", summary: formatName(settings), done: formatReviewed },
+          { id: 3, title: "Vista previa e impresión", summary: status.tone === "ready" ? "Lista para imprimir" : status.text, done: false },
+        ]}
+      />
 
       {message && (
         <AdminInfoBlock role={message.tone === "danger" ? "alert" : "status"} tone={message.tone}>
@@ -372,11 +356,11 @@ export function AdminEtiquetas() {
         </AdminInfoBlock>
       )}
 
-      {/* xl: (1 buscar + 2 cola) | (3 formato + 4 vista previa). 2xl: buscar · cola · formato y vista previa. */}
-      <div className="grid items-start gap-5 xl:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)]">
-        <div className="grid min-w-0 items-start gap-5 2xl:grid-cols-2">
-          <LabelSearchPanel maxCopies={settings.maxCopiesPerItem} queuedCopies={queuedCopies} onAdd={addTarget} onProducts={mergeProducts} />
+      {step === 1 && (
+        <div className="grid items-start gap-5 *:min-w-0 lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)]">
+          <LabelSearchPanel queue={queue} maxCopies={settings.maxCopiesPerItem} onAdd={addTarget} update={updateQueue} onProducts={mergeProducts} />
           <LabelQueuePanel
+            className="lg:sticky lg:top-4"
             queue={queue}
             products={products}
             maxCopies={settings.maxCopiesPerItem}
@@ -386,10 +370,14 @@ export function AdminEtiquetas() {
             batches={batches}
             historyAvailable={configLoaded && !storageUnavailable}
             onRepeat={(entry) => void repeatBatch(entry)}
+            onContinue={() => goTo(2)}
             update={updateQueue}
           />
         </div>
-        <div className="min-w-0 space-y-5">
+      )}
+
+      {step === 2 && (
+        <div className="grid items-start gap-5 *:min-w-0 lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)]">
           <LabelSettingsPanel
             settings={settings}
             onChange={updateSettings}
@@ -399,51 +387,28 @@ export function AdminEtiquetas() {
             onSavePreset={savePreset}
             onDeletePreset={removePreset}
           />
-          <LabelOutputPanel
-            plan={plan}
-            drawings={drawings}
-            labels={labels}
-            settings={settings}
-            total={total}
-            page={currentPage}
-            pageCount={pageCount}
-            blocker={printBlocker}
-            warnings={warnings}
-            notices={notices}
-            onPage={setPage}
-            onZoom={setZoomIndex}
-            onExpand={() => setPreviewOpen(true)}
-          />
+          <LabelFormatSample settings={settings} drawing={drawings[0]} onBack={() => goTo(1)} onContinue={() => goTo(3)} />
         </div>
-      </div>
+      )}
 
-      {/* Paso final siempre a mano: resumen de la tanda + salidas. */}
-      <div className={cn(adminCardClassName, "admin-label-print-dock sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 px-4 py-3")} role="region" aria-label="Imprimir o descargar">
-        <div className="min-w-0">
-          <p className="text-sm font-black text-white">{outputSummary}</p>
-          <p className="truncate text-xs text-white/55">{total ? (printBlocker ? printBlocker.text : describeFormat(settings)) : "Agregá artículos para habilitar la impresión."}</p>
-        </div>
-        {outputActions}
-      </div>
+      {step === 3 && (
+        <LabelPrintStep
+          plan={plan}
+          drawings={drawings}
+          labels={labels}
+          settings={settings}
+          page={currentPage}
+          onPage={setPage}
+          onZoom={setZoomIndex}
+          status={status}
+          warnings={warnings}
+          notices={notices}
+          busy={busy}
+          zplReason={zplReason}
+          onOutput={(output) => void runOutput(output)}
+        />
+      )}
 
-      <AdminModal
-        open={previewOpen}
-        wide
-        title="Vista previa"
-        description={`${outputSummary} · ${describeFormat(settings)}`}
-        onClose={() => setPreviewOpen(false)}
-        footer={<div className="flex justify-end">{outputActions}</div>}
-      >
-        <div className="space-y-3">
-          <div className="max-h-[72vh] overflow-auto rounded-xl bg-zinc-300/70 p-3 sm:p-5">
-            <div className="mx-auto max-w-3xl">
-              <LabelSheetPreview plan={plan} drawings={drawings} labels={labels} settings={settings} page={currentPage} onSelect={setZoomIndex} />
-            </div>
-          </div>
-          <PreviewPager page={currentPage} count={pageCount} unit={plan.mode === "thermal" ? "Tramo" : "Hoja"} onChange={setPage} />
-          <PreviewLegend mode={plan.mode} />
-        </div>
-      </AdminModal>
       <LabelZoomModal key={zoomIndex ?? "none"} item={zoomItem} drawing={zoomDrawing} settings={settings} onClose={() => setZoomIndex(null)} />
     </div>
   )

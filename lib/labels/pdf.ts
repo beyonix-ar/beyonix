@@ -16,7 +16,7 @@ const CUT_GRAY = rgb(0.72, 0.72, 0.72)
 const pt = (mm: number) => mm * MM_TO_PT
 
 // PDF vectorial: barras como rectángulos y texto Helvetica real (nada
-// rasterizado). Página = A4 o la etiqueta física en térmica, a escala 1:1.
+// rasterizado). Página = A4 o una fila del rollo en térmica, a escala 1:1.
 export async function buildLabelsPdf(batch: PreparedBatch, settings: LabelSettings) {
   const { plan, drawings } = batch
   if (plan.error) throw new Error(plan.error)

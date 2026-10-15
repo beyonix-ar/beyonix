@@ -11,8 +11,6 @@ export function labelContentFor(item: LabelQueueItem): LabelContent {
     variant: item.variantLabel,
     sku: item.sku,
     code: item.code,
-    price: item.price,
-    internalCode: item.internalCode,
   }
 }
 

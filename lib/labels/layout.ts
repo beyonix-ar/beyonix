@@ -1,4 +1,4 @@
-import { A4_MM, MAX_BATCH_LABELS, THERMAL_PRINT_WIDTH_MM, type LabelSettings } from "./settings.ts"
+import { A4_MM, MAX_BATCH_LABELS, MAX_ROLL_WIDTH_MM, THERMAL_PRINT_WIDTH_MM, type LabelSettings } from "./settings.ts"
 
 export interface LabelSlot {
   /** Índice de la etiqueta dentro de la tanda expandida. */
@@ -131,7 +131,7 @@ export function planLabels(settings: LabelSettings, totalLabels: number): LabelP
       rollLengthMm: rows ? round1(rows * settings.heightMm + (rows - 1) * settings.thermal.gapMm) : 0,
       rollRows: rows,
       overLimit,
-      error: null,
+      error: rowWidth > MAX_ROLL_WIDTH_MM ? `La fila del rollo mide ${String(rowWidth).replace(".", ",")} mm: supera los ${MAX_ROLL_WIDTH_MM} mm. Reducí el ancho o las columnas.` : null,
     }
   }
   const grid = computeA4Grid(settings)
