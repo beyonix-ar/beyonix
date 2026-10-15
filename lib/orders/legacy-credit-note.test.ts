@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
-import { buildLegacyCreditNoteAmounts, getLegacyCreditNoteState } from "./legacy-credit-note.ts"
+import { allocateEffectiveOrderItemAmounts } from "./credit-note-calculations.ts"
+import { buildLegacyCreditNoteAmounts, buildLegacyCreditNoteItems, getLegacyCreditNoteState } from "./legacy-credit-note.ts"
 
 // Caso real: pedido #2 (13/10/2026) -- cancelado por Admin, reintegrado por
 // Mercado Pago antes de la factura 1-8, NC obligatoria nunca emitida.
@@ -39,6 +40,37 @@ test("importes: la NC anula exactamente el total facturado", () => {
   assert.equal(buildLegacyCreditNoteAmounts(0, []), null)
 })
 
+test("detalle moderno y heredado: conserva nombres reales y todos los campos obligatorios", () => {
+  const orderItem = { id: 2, producto_id: 1, variante_id: 1, conditioned_name: null, cantidad: 1, precio: 1000 }
+  const allocations = allocateEffectiveOrderItemAmounts({ total: 1000, shipping_cost_charged: 0 }, [orderItem])
+  const products = new Map([[1, "ENCENDEDOR ELECTRICO CON CARGA USB"]])
+  const variants = new Map([[1, "ALEATORIO"]])
+  const expected = [{ order_item_id: 2, quantity: 1, unit_amount: 1000, total_amount: 1000,
+    product_name: "ENCENDEDOR ELECTRICO CON CARGA USB", variant_name: "ALEATORIO" }]
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem], allocations,
+    [{ order_item_id: 2, product_name: expected[0].product_name, variant_name: "ALEATORIO" }], products, variants), { items: expected })
+  // BX-1002: el ítem no tiene nombre moderno; el snapshot de la factura sí.
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem], allocations,
+    [{ order_item_id: 2, product_name: expected[0].product_name, variant_name: "ALEATORIO" }], new Map(), new Map()), { items: expected })
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem], allocations, [], products, variants), { items: expected },
+    "el catálogo real permite recuperar un snapshot ausente")
+  assert.deepEqual(buildLegacyCreditNoteItems([{ ...orderItem, conditioned_name: "Equipo reacondicionado" }], allocations, [], new Map(), new Map()),
+    { items: [{ ...expected[0], product_name: "Equipo reacondicionado", variant_name: null }] },
+    "un nombre histórico del ítem también es recuperable")
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem], allocations,
+    [{ order_item_id: 2, product_name: "Producto #1", variant_name: "ALEATORIO" }], products, variants), { items: expected },
+  "un marcador fiscal cede ante el catálogo real")
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem], allocations,
+    [{ order_item_id: 2, product_name: "Producto #1", variant_name: null }], new Map(), new Map()),
+  { error: { code: "ITEM_NAME_MISSING", orderItemId: 2 } }, "un marcador de backfill no es un nombre real")
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem], allocations, [], new Map(), new Map()),
+    { error: { code: "ITEM_NAME_MISSING", orderItemId: 2 } })
+  assert.deepEqual(buildLegacyCreditNoteItems([{ ...orderItem, cantidad: 0 }], allocations, [], products, variants),
+    { error: { code: "ITEM_DATA_INVALID", orderItemId: 2 } }, "no omite líneas inválidas en silencio")
+  assert.deepEqual(buildLegacyCreditNoteItems([orderItem, { ...orderItem, id: 3, cantidad: 0 }], allocations, [], products, variants),
+    { error: { code: "ITEM_DATA_INVALID", orderItemId: 3 } }, "no omite un segundo ítem inválido")
+})
+
 test("SQL real: la NC heredada es sólo fiscal, no mueve dinero y no se emite dos veces", async () => {
   const migration = readFileSync("supabase/migrations/20261014140000_automatic_cancellation_fiscal_refund.sql", "utf8").replace(/\r\n/g, "\n")
   const block = (source: string, start: string) => {
@@ -59,6 +91,10 @@ test("SQL real: la NC heredada es sólo fiscal, no mueve dinero y no se emite do
     ]) await db.exec(readFileSync(path, "utf8"))
     await db.exec(`alter table order_credit_notes add column if not exists external_amount numeric(12,2);
       alter table order_credit_notes add column if not exists customer_credit_amount numeric(12,2) not null default 0;
+      alter table order_credit_note_items alter column product_name set not null;
+      alter table order_credit_note_items alter column quantity set not null;
+      alter table order_credit_note_items alter column unit_amount set not null;
+      alter table order_credit_note_items alter column total_amount set not null;
       alter table ordenes add column if not exists credit_balance_used numeric(12,2) not null default 0;
       alter table ordenes add column if not exists invoice_queued_at timestamptz;
       alter table ordenes add column if not exists andreani_handed_over_at timestamptz;
@@ -74,12 +110,20 @@ test("SQL real: la NC heredada es sólo fiscal, no mueve dinero y no se emite do
     await db.query("insert into profiles(id,email,rol) values($1,'a@example.test','admin'),($2,'c@example.test','cliente')", [admin, customer])
     await db.query(`insert into ordenes(id,usuario_id,estado,total,invoice_status,invoice_cae,invoice_number,invoice_point,
       payment_confirmed_amount,external_amount_due,financial_status) values (2,$1,'cancelado',1000,'authorized','CAE',8,1,1000,1000,'refunded')`, [customer])
+    await db.query("insert into orden_items(id,orden_id,cantidad) values (2,2,1)")
     await db.query(`insert into order_audit_events(order_id,actor_type,action,metadata)
       values (2,'admin','order_cancelled_refund_pending','{"source":"admin_direct_cancellation"}'::jsonb)`)
 
+    const creditItems = buildLegacyCreditNoteItems(
+      [{ id: 2, producto_id: 1, variante_id: 1, conditioned_name: null, cantidad: 1, precio: 1000 }],
+      allocateEffectiveOrderItemAmounts({ total: 1000, shipping_cost_charged: 0 }, [{ id: 2, cantidad: 1, precio: 1000 }]),
+      [{ order_item_id: 2, product_name: "ENCENDEDOR ELECTRICO CON CARGA USB", variant_name: "ALEATORIO" }],
+      new Map(), new Map(),
+    )
+    assert.ok(creditItems.items)
     const reserve = (destination: string, expected: string[]) => db.query<{ id: string; external_amount: string | null; customer_credit_amount: string }>(
-      `select id, external_amount, customer_credit_amount from begin_partial_credit_note(2::bigint,null,$1,'Caso heredado',0,1000::numeric,1000::numeric,1,8::bigint,$2::uuid,'[]','cancelacion_antes_despacho',$3::uuid[])`,
-      [destination, admin, expected],
+      `select id, external_amount, customer_credit_amount from begin_partial_credit_note(2::bigint,null,$1,'Caso heredado',1000::numeric,0::numeric,1000::numeric,1,8::bigint,$2::uuid,$4::jsonb,'cancelacion_antes_despacho',$3::uuid[])`,
+      [destination, admin, expected, JSON.stringify(creditItems.items)],
     )
     // Un pedido ya reintegrado nunca recibe una NC que mueva dinero.
     await assert.rejects(reserve("external_refund", []), /ORDER_ALREADY_REFUNDED/)
@@ -89,9 +133,20 @@ test("SQL real: la NC heredada es sólo fiscal, no mueve dinero y no se emite do
     assert.ok(note.id)
     assert.equal(Number(note.external_amount ?? 0), 0, "sin dinero externo")
     assert.equal(Number(note.customer_credit_amount), 0)
+    assert.deepEqual((await db.query<{ product_name: string; variant_name: string; quantity: number }>(
+      "select product_name, variant_name, quantity from order_credit_note_items where credit_note_id=$1", [note.id],
+    )).rows, [{ product_name: "ENCENDEDOR ELECTRICO CON CARGA USB", variant_name: "ALEATORIO", quantity: 1 }])
     // Doble click / dos pestañas: el segundo intento no reserva otra.
     await assert.rejects(reserve("none", []), /CREDIT_NOTE_SNAPSHOT_CONFLICT|CREDIT_NOTE_PROCESSING_IN_PROGRESS/)
     await assert.rejects(reserve("none", [note.id]), /CREDIT_NOTE_PROCESSING_IN_PROGRESS/)
+    assert.equal(Number((await db.query<{ count: string }>("select count(*) from order_credit_notes where order_id=2")).rows[0].count), 1)
+    assert.equal(Number((await db.query<{ count: string }>("select count(*) from order_credit_note_items where order_item_id=2")).rows[0].count), 1)
+    assert.deepEqual((await db.query<{ financial_status: string; payment_status: string | null }>(
+      "select financial_status, payment_status from ordenes where id=2",
+    )).rows, [{ financial_status: "refunded", payment_status: null }])
+    assert.deepEqual((await db.query<{ return_restocked_quantity: number | null; return_written_off_quantity: number | null }>(
+      "select return_restocked_quantity, return_written_off_quantity from orden_items where id=2",
+    )).rows, [{ return_restocked_quantity: null, return_written_off_quantity: null }])
     // Ya autorizada: la factura quedó cubierta, nunca una segunda NC.
     await db.query("update order_credit_notes set status='authorized' where id=$1", [note.id])
     await assert.rejects(reserve("none", [note.id]), /CREDIT_NOTE_EXCEEDS_INVOICE/)

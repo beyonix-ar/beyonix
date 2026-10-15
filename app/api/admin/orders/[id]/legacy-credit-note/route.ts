@@ -15,6 +15,7 @@ import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
 import {
   LEGACY_CREDIT_NOTE_REASON,
   buildLegacyCreditNoteAmounts,
+  buildLegacyCreditNoteItems,
   getLegacyCreditNoteState,
 } from "@/lib/orders/legacy-credit-note"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
@@ -70,7 +71,7 @@ export async function POST(
       .select("id, total, estado, financial_status, credit_note_required, refunded_at, shipping_cost_charged, invoice_status, invoice_cae, invoice_number, invoice_point, invoice_created_at, invoice_arca_environment")
       .eq("id", orderId)
       .maybeSingle(),
-    auth.admin.from("orden_items").select("id, cantidad, precio").eq("orden_id", orderId),
+    auth.admin.from("orden_items").select("id, producto_id, variante_id, conditioned_name, cantidad, precio").eq("orden_id", orderId),
     auth.admin.from("order_credit_notes").select("id, status").eq("order_id", orderId),
   ])
   if (orderResult.error || itemsResult.error || notesResult.error) {
@@ -109,19 +110,44 @@ export async function POST(
 
   const items = itemsResult.data ?? []
   const allocations = allocateEffectiveOrderItemAmounts(order, items)
+  const productIds = [...new Set(items.map((item) => Number(item.producto_id)).filter((id) => Number.isSafeInteger(id) && id > 0))]
+  const variantIds = [...new Set(items.map((item) => Number(item.variante_id)).filter((id) => Number.isSafeInteger(id) && id > 0))]
+  const [snapshotsResult, productsResult, variantsResult] = await Promise.all([
+    auth.admin.from("arca_invoice_item_snapshots").select("order_item_id, product_name, variant_name").eq("order_id", orderId),
+    productIds.length
+      ? auth.admin.from("productos").select("id, nombre").in("id", productIds)
+      : Promise.resolve({ data: [], error: null }),
+    variantIds.length
+      ? auth.admin.from("producto_variantes").select("id, nombre").in("id", variantIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (snapshotsResult.error || productsResult.error || variantsResult.error) {
+    const detail = snapshotsResult.error?.message ?? productsResult.error?.message ?? variantsResult.error?.message ?? null
+    await auditLegacyFailure(auth.admin, orderId, auth.user.id, order.financial_status, "reservation", "ITEM_SOURCE_UNAVAILABLE", detail, null)
+    return NextResponse.json({ error: "No se pudo verificar el detalle histórico del pedido." }, { status: 500 })
+  }
+  const creditItemsResult = buildLegacyCreditNoteItems(
+    items,
+    allocations,
+    snapshotsResult.data ?? [],
+    new Map((productsResult.data ?? []).map((product) => [Number(product.id), product.nombre])),
+    new Map((variantsResult.data ?? []).map((variant) => [Number(variant.id), variant.nombre])),
+  )
+  if (creditItemsResult.error) {
+    const { code, orderItemId } = creditItemsResult.error
+    await auditLegacyFailure(auth.admin, orderId, auth.user.id, order.financial_status, "reservation", code, `order_item_id=${orderItemId}`, null)
+    return NextResponse.json({ error: code === "ITEM_NAME_MISSING"
+      ? `El artículo ${orderItemId} no tiene un nombre real recuperable para la nota de crédito. Requiere revisión manual.`
+      : `El artículo ${orderItemId} tiene datos incompletos o inválidos para la nota de crédito. Requiere revisión manual.` }, { status: 409 })
+  }
   const amounts = buildLegacyCreditNoteAmounts(
     Number(order.total),
     allocations.map((allocation) => allocation.effectiveLineAmount),
   )
   if (!amounts) {
+    await auditLegacyFailure(auth.admin, orderId, auth.user.id, order.financial_status, "reservation", "INVALID_AMOUNTS", null, null)
     return NextResponse.json({ error: "No se pudo calcular el importe de la nota de crédito. Requiere revisión manual." }, { status: 409 })
   }
-  const creditItems = allocations.map((allocation) => ({
-    order_item_id: allocation.orderItemId,
-    quantity: allocation.soldQuantity,
-    unit_amount: allocation.effectiveUnitAmount,
-    total_amount: allocation.effectiveLineAmount,
-  }))
   const expectedNoteIds = notes
     .filter((note) => note.status === "processing" || note.status === "authorized")
     .map((note) => note.id)
@@ -138,7 +164,7 @@ export async function POST(
       p_invoice_point: Number(order.invoice_point),
       p_invoice_number: Number(order.invoice_number),
       p_created_by: auth.user.id,
-      p_items: creditItems,
+      p_items: creditItemsResult.items,
       p_operation_type: "cancelacion_antes_despacho",
       p_expected_note_ids: expectedNoteIds,
     })

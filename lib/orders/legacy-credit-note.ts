@@ -9,7 +9,7 @@
  * acreditar saldo ni disparar otro reintegro, porque el dinero ya volvió.
  */
 
-import { roundCreditMoney } from "./credit-note-calculations.ts"
+import { roundCreditMoney, type CreditNoteItemAllocation } from "./credit-note-calculations.ts"
 
 export interface LegacyCreditNoteOrder {
   estado?: string | null
@@ -52,8 +52,79 @@ export function buildLegacyCreditNoteAmounts(invoiceTotal: number, effectiveItem
   const total = roundCreditMoney(invoiceTotal)
   const itemsAmount = roundCreditMoney(effectiveItemAmounts.reduce((sum, amount) => sum + amount, 0))
   const manualAmount = roundCreditMoney(total - itemsAmount)
-  if (total <= 0 || manualAmount < 0) return null
+  if (!Number.isFinite(total) || !Number.isFinite(itemsAmount) || !Number.isFinite(manualAmount) || total <= 0 || manualAmount < 0) return null
   return { itemsAmount, manualAmount, totalAmount: total }
+}
+
+type LegacyOrderItem = {
+  id: number
+  producto_id: number | null
+  variante_id: number | null
+  conditioned_name: string | null
+  cantidad: number
+  precio: number
+}
+
+type LegacyInvoiceItemSnapshot = {
+  order_item_id: number
+  product_name: string | null
+  variant_name: string | null
+}
+
+const placeholderName = /^(?:Producto(?: #\d+| eliminado)?|Artículo(?: #\d+)?|Sin nombre)$/i
+
+function realName(value: string | null | undefined) {
+  const name = value?.trim()
+  return name && !placeholderName.test(name) ? name : null
+}
+
+/** Valida todo el detalle obligatorio antes de crear una reserva fiscal. */
+export function buildLegacyCreditNoteItems(
+  items: LegacyOrderItem[],
+  allocations: CreditNoteItemAllocation[],
+  snapshots: LegacyInvoiceItemSnapshot[],
+  productNames: Map<number, string>,
+  variantNames: Map<number, string>,
+):
+  | { items: Array<{ order_item_id: number; quantity: number; unit_amount: number; total_amount: number; product_name: string; variant_name: string | null }>; error?: never }
+  | { items?: never; error: { code: "ITEM_DATA_INVALID" | "ITEM_NAME_MISSING"; orderItemId: number } } {
+  const allocationsById = new Map(allocations.map((allocation) => [allocation.orderItemId, allocation]))
+  const snapshotsById = new Map(snapshots.map((snapshot) => [Number(snapshot.order_item_id), snapshot]))
+  if (allocations.length !== items.length || allocationsById.size !== items.length) {
+    const missing = items.find((item) => !allocationsById.has(Number(item.id)))
+    return { error: { code: "ITEM_DATA_INVALID", orderItemId: Number(missing?.id ?? items[0]?.id ?? 0) } }
+  }
+
+  const creditItems = [] as Array<{ order_item_id: number; quantity: number; unit_amount: number; total_amount: number; product_name: string; variant_name: string | null }>
+  for (const item of items) {
+    const id = Number(item.id)
+    const allocation = allocationsById.get(id)
+    if (
+      !Number.isSafeInteger(id) || id <= 0 || !allocation ||
+      item.cantidad == null || item.precio == null ||
+      !Number.isInteger(Number(item.cantidad)) || Number(item.cantidad) !== allocation.soldQuantity ||
+      !Number.isInteger(allocation.soldQuantity) || allocation.soldQuantity <= 0 || allocation.soldQuantity > 2147483647 ||
+      !Number.isFinite(Number(item.precio)) || Number(item.precio) < 0 ||
+      !Number.isFinite(allocation.effectiveUnitAmount) || allocation.effectiveUnitAmount < 0 || allocation.effectiveUnitAmount >= 100000000 ||
+      !Number.isFinite(allocation.effectiveLineAmount) || allocation.effectiveLineAmount < 0 || allocation.effectiveLineAmount >= 10000000000
+    ) return { error: { code: "ITEM_DATA_INVALID", orderItemId: id } }
+
+    const snapshot = snapshotsById.get(id)
+    const productName = realName(snapshot?.product_name) ?? realName(productNames.get(Number(item.producto_id))) ??
+      realName(item.conditioned_name)
+    if (!productName) return { error: { code: "ITEM_NAME_MISSING", orderItemId: id } }
+    const variantName = realName(snapshot?.variant_name) ?? realName(item.conditioned_name) ??
+      realName(variantNames.get(Number(item.variante_id)))
+    creditItems.push({
+      order_item_id: id,
+      quantity: allocation.soldQuantity,
+      unit_amount: allocation.effectiveUnitAmount,
+      total_amount: allocation.effectiveLineAmount,
+      product_name: productName.slice(0, 240),
+      variant_name: variantName && variantName !== productName ? variantName.slice(0, 240) : null,
+    })
+  }
+  return { items: creditItems }
 }
 
 export const LEGACY_CREDIT_NOTE_REASON =
