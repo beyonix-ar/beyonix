@@ -61,6 +61,12 @@ const ADMIN_INCOMING_PAYMENT_STYLE = {
   label: "text-emerald-200/80",
   dot: "bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.75)]",
 } as const
+const ADMIN_DISPATCH_STYLE = {
+  card: "border-beyonix-blue-light/35 bg-beyonix-blue/18 hover:border-beyonix-sky/55 hover:bg-beyonix-blue/26",
+  icon: "border-beyonix-blue-light/40 bg-beyonix-blue/28 text-beyonix-sky",
+  label: "text-beyonix-sky",
+  dot: "bg-beyonix-sky shadow-[0_0_10px_rgba(140,200,242,0.72)]",
+} as const
 
 function getNotificationIcon(type: AdminNotificationType) {
   if (type === "order") return ShoppingCart
@@ -199,7 +205,8 @@ export function AdminNotificationsPopover({
               const Icon = getNotificationIcon(notification.type)
               const mercadoLibreReturn =
                 notification.type === "mercadolibre_return"
-              const sensitive = isAdminSensitiveNotification(notification)
+              const preparingDispatch = !isStorefront && notification.type === "shipping" && notification.title === "Preparar despacho"
+              const sensitive = !preparingDispatch && isAdminSensitiveNotification(notification)
               const incomingPayment = notification.eventKey.startsWith("balance-topup:")
               const typeLabel =
                 notification.type === "claim" &&
@@ -223,6 +230,8 @@ export function AdminNotificationsPopover({
                             : STOREFRONT_CARD_STYLE
                       : mercadoLibreReturn
                         ? ADMIN_ATTENTION_WARNING.card
+                        : preparingDispatch
+                          ? ADMIN_DISPATCH_STYLE.card
                         : sensitive
                           ? ADMIN_SENSITIVE_DANGER.card
                           : incomingPayment
@@ -243,6 +252,8 @@ export function AdminNotificationsPopover({
                               : STOREFRONT_ICON_STYLE
                         : mercadoLibreReturn
                           ? ADMIN_ATTENTION_WARNING.icon
+                          : preparingDispatch
+                            ? ADMIN_DISPATCH_STYLE.icon
                           : sensitive
                             ? ADMIN_SENSITIVE_DANGER.icon
                             : incomingPayment
@@ -268,6 +279,8 @@ export function AdminNotificationsPopover({
                                   : "beyonix-header-notif-muted"
                             : mercadoLibreReturn
                               ? ADMIN_ATTENTION_WARNING.label
+                              : preparingDispatch
+                                ? ADMIN_DISPATCH_STYLE.label
                               : sensitive
                                 ? ADMIN_SENSITIVE_DANGER.label
                                 : incomingPayment
@@ -291,6 +304,8 @@ export function AdminNotificationsPopover({
                                     : STOREFRONT_DOT_STYLE
                               : mercadoLibreReturn
                                 ? ADMIN_ATTENTION_WARNING.dot
+                                : preparingDispatch
+                                  ? ADMIN_DISPATCH_STYLE.dot
                                 : sensitive
                                   ? ADMIN_SENSITIVE_DANGER.dot
                                   : incomingPayment
