@@ -14,6 +14,7 @@ import { creditNoteEmissionFailureResponse } from "@/lib/orders/credit-note-emis
 import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
 import {
   LEGACY_CREDIT_NOTE_REASON,
+  LEGACY_CREDIT_NOTE_REJECTED_ACTION,
   buildLegacyCreditNoteAmounts,
   getLegacyCreditNoteState,
 } from "@/lib/orders/legacy-credit-note"
@@ -71,7 +72,7 @@ export async function POST(
       .eq("id", orderId)
       .maybeSingle(),
     auth.admin.from("orden_items").select("id, cantidad, precio").eq("orden_id", orderId),
-    auth.admin.from("order_credit_notes").select("id, status").eq("order_id", orderId),
+    auth.admin.from("order_credit_notes").select("id, status, total_amount").eq("order_id", orderId),
   ])
   if (orderResult.error || itemsResult.error || notesResult.error) {
     console.error("LEGACY_CREDIT_NOTE_LOAD_ERROR", {
@@ -83,10 +84,31 @@ export async function POST(
   const order = orderResult.data
   if (!order) return NextResponse.json({ error: "Orden no encontrada." }, { status: 404 })
 
+  // Todo rechazo previo a la reserva queda auditado: así el panel muestra por
+  // qué falta la NC y un intento fallido nunca desaparece sin rastro.
+  const reject = async (code: string, message: string, status: number, response?: Response) => {
+    await appendOrderAuditEvent(auth.admin, {
+      orderId,
+      actorType: "admin",
+      actorId: auth.user.id,
+      action: LEGACY_CREDIT_NOTE_REJECTED_ACTION,
+      previousStatus: order.financial_status,
+      newStatus: order.financial_status,
+      metadata: { code, message },
+    })
+    return response ?? NextResponse.json({ error: message, code }, { status })
+  }
+
   const notes = notesResult.data ?? []
   const state = getLegacyCreditNoteState({ ...order, order_credit_notes: notes })
   if (state === "processing") {
     return NextResponse.json({ error: "La nota de crédito ya se está emitiendo. Esperá a que termine." }, { status: 409 })
+  }
+  if (state === "manual_review") {
+    return NextResponse.json(
+      { error: "Las notas de crédito autorizadas no cubren el total facturado. Requiere revisión manual: no se emite otra nota automáticamente." },
+      { status: 409 },
+    )
   }
   if (state !== "pending") {
     return NextResponse.json({ error: "Este pedido no tiene una nota de crédito heredada pendiente." }, { status: 409 })
@@ -96,14 +118,17 @@ export async function POST(
   try {
     configuration = requireArcaConfiguration()
   } catch (error) {
-    if (error instanceof ArcaConfigurationError) return arcaConfigurationErrorResponse(error)
+    if (error instanceof ArcaConfigurationError) {
+      return reject("ARCA_CONFIGURATION", "La configuración de ARCA está incompleta en este entorno.", 503, arcaConfigurationErrorResponse(error))
+    }
     throw error
   }
   const invoiceEnvironment = parseArcaEnvironment(order.invoice_arca_environment)
   if (invoiceEnvironment !== configuration.environment) {
-    return NextResponse.json(
-      { error: "La factura de este pedido pertenece a otro ambiente de ARCA. No se puede emitir la nota de crédito desde este ambiente." },
-      { status: 409 },
+    return reject(
+      "ARCA_ENVIRONMENT_MISMATCH",
+      `La factura de este pedido pertenece a otro ambiente de ARCA (${order.invoice_arca_environment ?? "sin dato"}). No se puede emitir la nota de crédito desde este ambiente.`,
+      409,
     )
   }
 
@@ -114,7 +139,7 @@ export async function POST(
     allocations.map((allocation) => allocation.effectiveLineAmount),
   )
   if (!amounts) {
-    return NextResponse.json({ error: "No se pudo calcular el importe de la nota de crédito. Requiere revisión manual." }, { status: 409 })
+    return reject("AMOUNT_UNAVAILABLE", "No se pudo calcular el importe de la nota de crédito. Requiere revisión manual.", 409)
   }
   const creditItems = allocations.map((allocation) => ({
     order_item_id: allocation.orderItemId,
@@ -147,7 +172,11 @@ export async function POST(
     const message = reservationFailure?.message ?? ""
     console.error("LEGACY_CREDIT_NOTE_RESERVATION_ERROR", { orderId, message })
     const known = Object.entries(RESERVATION_ERRORS).find(([code]) => message.includes(code))
-    return NextResponse.json({ error: known?.[1] ?? "No se pudo reservar la emisión de la nota de crédito." }, { status: 409 })
+    return reject(
+      known?.[0] ?? "RESERVATION_FAILED",
+      known?.[1] ?? "No se pudo reservar la emisión de la nota de crédito.",
+      409,
+    )
   }
 
   const noteId = String((reservedNote as { id: string }).id)

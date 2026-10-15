@@ -2,7 +2,8 @@ import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
 import type { AdminPendingFacts } from "@/lib/orders/admin-pending-actions"
 import { loadAdminPendingFacts } from "@/lib/orders/admin-pending-facts-server"
-import { getPaymentIncidents, isPaymentIncidentAction } from "@/lib/orders/payment-incidents"
+import { parseAdminArchiveFilter } from "@/lib/orders/order-visibility"
+import { getPaymentIncidents, isPaymentIncidentAction, PAYMENT_INCIDENT_ACTIONS } from "@/lib/orders/payment-incidents"
 import type {
   SupabasePedido,
   SupabasePedidoItem,
@@ -33,6 +34,10 @@ export async function GET(request: Request) {
   const search = (url.searchParams.get("search") ?? "").trim()
   if (!Number.isFinite(requestedLimit) || !Number.isFinite(requestedOffset) || !Number.isSafeInteger(orderId) || orderId < 0) return Response.json({ error: "Los filtros del pedido no son válidos." }, { status: 400 })
   if (search.length > 160) return Response.json({ error: "La búsqueda es demasiado larga." }, { status: 400 })
+  // Listado operativo: sin archivados. La búsqueda, el detalle por id y la
+  // campana no filtran archivados (nunca se pierde un pedido ni una alerta).
+  const archiveFilter = parseAdminArchiveFilter(url.searchParams.get("archive"))
+  if (!archiveFilter) return Response.json({ error: "El filtro de archivados no es válido." }, { status: 400 })
   let searchTotal: number | null = null
   let searchIds: number[] | null = null
   const limit = Math.min(100, Math.max(10, Math.floor(requestedLimit)))
@@ -70,6 +75,8 @@ export async function GET(request: Request) {
     "invoice_queued_at",
     "auto_cancellation_next_attempt_at",
     "invoice_number",
+    "invoice_point",
+    "refunded_at",
     "invoice_arca_environment",
     "shipping_provider",
     "envio_proveedor",
@@ -101,8 +108,10 @@ export async function GET(request: Request) {
   } else if (searchIds) {
     ordersQuery = ordersQuery.in("id", searchIds).order("admin_visible_at", { ascending: false }).order("id", { ascending: false })
   } else {
+    ordersQuery = ordersQuery.not("admin_visible_at", "is", null)
+    if (archiveFilter === "active") ordersQuery = ordersQuery.is("archived_at", null)
+    else if (archiveFilter === "archived") ordersQuery = ordersQuery.not("archived_at", "is", null)
     ordersQuery = ordersQuery
-      .not("admin_visible_at", "is", null)
       .order("admin_visible_at", { ascending: false })
       .range(offset, offset + limit - 1)
   }
@@ -143,7 +152,7 @@ export async function GET(request: Request) {
 
   if (notificationView) {
     const orderIds = pedidos.map((pedido) => pedido.id)
-    const [claimsResult, creditNotesResult, mpRefundsResult, pendingFacts] = await Promise.all([
+    const [claimsResult, creditNotesResult, mpRefundsResult, incidentEventsResult, pendingFacts] = await Promise.all([
       auth.admin
         .from("order_claims")
         .select("*, order_claim_messages(*)")
@@ -162,6 +171,13 @@ export async function GET(request: Request) {
         .select("id, order_id, status, amount, error_code, created_at, completed_at")
         .in("order_id", orderIds)
         .order("created_at", { ascending: false }),
+      // Sólo incidentes de pago (la campana no necesita el historial completo).
+      auth.admin
+        .from("order_audit_events")
+        .select("id, order_id, action, created_at, metadata")
+        .in("order_id", orderIds)
+        .in("action", [...PAYMENT_INCIDENT_ACTIONS])
+        .order("created_at", { ascending: true }),
       pendingFactsPromise,
     ])
 
@@ -173,6 +189,33 @@ export async function GET(request: Request) {
     }
     if (mpRefundsResult.error) {
       return Response.json({ error: mpRefundsResult.error.message }, { status: 500 })
+    }
+    if (incidentEventsResult.error) {
+      return databaseErrorResponse(incidentEventsResult.error, "No se pudieron cargar los incidentes de pago.")
+    }
+    const incidentEvents = (incidentEventsResult.data ?? []) as SupabaseOrderAuditEvent[]
+    const resolvedIncidentIds = new Set<number>()
+    if (incidentEvents.length) {
+      const { data: resolutions, error: resolutionsError } = await auth.admin
+        .from("order_audit_incident_resolutions")
+        .select("audit_event_id")
+        .in("audit_event_id", incidentEvents.map((event) => Number(event.id)))
+      if (resolutionsError) {
+        return databaseErrorResponse(resolutionsError, "No se pudieron cargar las resoluciones de incidentes de pago.")
+      }
+      for (const row of resolutions ?? []) resolvedIncidentIds.add(Number(row.audit_event_id))
+    }
+    const incidentsByOrder = new Map<number, SupabaseOrderAuditEvent[]>()
+    for (const event of incidentEvents) {
+      const current = incidentsByOrder.get(event.order_id) ?? []
+      // La campana sólo distingue abierto/resuelto: el detalle de la resolución vive en el pedido.
+      current.push({
+        ...event,
+        audit_resolution: resolvedIncidentIds.has(Number(event.id))
+          ? { resolution: "resolved", note: null, resolved_at: null, resolved_by_email: null }
+          : null,
+      })
+      incidentsByOrder.set(event.order_id, current)
     }
 
     const claimsByOrder = new Map<number, typeof claimsResult.data>()
@@ -203,7 +246,7 @@ export async function GET(request: Request) {
         mercadopago_order_refunds: mpRefundsByOrder.get(pedido.id) ?? [],
         orden_items: [],
         order_refund_proofs: [],
-        order_audit_events: [],
+        order_audit_events: incidentsByOrder.get(pedido.id) ?? [],
         admin_pending_facts: pendingFacts.get(pedido.id) ?? null,
       })),
       total: pedidos.length,

@@ -15,6 +15,11 @@ import {
   type CancellationNextActionOrder,
   type CancellationNextActionState,
 } from "./cancellation-next-action.ts"
+import {
+  getCreditNoteObligation,
+  isCreditNoteObligationPending,
+  type CreditNoteObligation,
+} from "./credit-note-obligation.ts"
 
 export type CancellationPanelStepStatus = "done" | "pending" | "processing" | "attention"
 
@@ -73,6 +78,10 @@ export interface CancellationPanelViewModel {
   isCancellationFlow: boolean
   state: CancellationNextActionState
   isFinished: boolean
+  /** Obligación fiscal de NC (misma fuente que el panel de NC heredada y la campana). */
+  creditNote: CreditNoteObligation
+  /** Reintegro terminado pero la NC obligatoria sigue sin cubrir: nunca se muestra como "Completado". */
+  creditNotePendingAfterRefund: boolean
   badgeTone: "success" | "warning" | "danger" | "info"
   paymentMethod: CancellationPaymentMethodKind
   amounts: CancellationPanelAmounts
@@ -173,6 +182,9 @@ export function getCancellationPanelViewModel(
   const flowNeedsCreditNote =
     Boolean(order.credit_note_required) || notes.length > 0
   const hasAnyAuthorizedNote = notes.some((note) => note.status === "authorized")
+  const creditNote = getCreditNoteObligation(order)
+  const creditNoteOutstanding =
+    isCreditNoteObligationPending(creditNote) || creditNote.status === "processing"
   const pendingExternalRefundAmount = roundMoney(
     notes
       .filter(
@@ -212,20 +224,21 @@ export function getCancellationPanelViewModel(
 
   const steps: CancellationPanelStep[] = []
   const isFinished = nextAction.state === "completed"
+  const creditNotePendingAfterRefund = isFinished && creditNoteOutstanding
 
   if (isCancellationFlow && nextAction.state !== "none") {
     if (flowNeedsCreditNote) {
       steps.push({
         key: "credit_note",
-        label: "Nota de crédito",
+        label: creditNotePendingAfterRefund ? "Nota de crédito pendiente" : "Nota de crédito",
         // Un pedido ya reintegrado no tiene NC por eso: si la NC era
-        // obligatoria y no se autorizó (p. ej. reintegro anterior a la
-        // factura), el paso sigue requiriendo atención.
+        // obligatoria y no se autorizó por el total facturado (p. ej.
+        // reintegro anterior a la factura), el paso sigue requiriendo atención.
         status:
-          hasAnyAuthorizedNote || (isFinished && !order.credit_note_required)
-            ? "done"
-            : isFinished
-              ? "attention"
+          creditNotePendingAfterRefund
+            ? creditNote.status === "processing" ? "processing" : "attention"
+            : hasAnyAuthorizedNote || creditNote.status === "covered" || (isFinished && !order.credit_note_required)
+              ? "done"
             : nextAction.state === "wait_credit_note"
               ? "processing"
               : nextAction.reason === "invoice_missing"
@@ -285,6 +298,12 @@ export function getCancellationPanelViewModel(
   const helperText =
     paymentAfterCancellation && !isFinished
       ? "Llegó una transferencia después de que el pedido se canceló. No confirmes la venta: devolvé el dinero al cliente y cargá acá el comprobante del reintegro."
+      : creditNotePendingAfterRefund
+        ? creditNote.status === "processing"
+          ? "El reintegro quedó registrado. La nota de crédito de la factura se está emitiendo en ARCA."
+          : creditNote.status === "insufficient"
+            ? "El reintegro quedó registrado, pero las notas de crédito autorizadas no cubren el total facturado. Requiere revisión manual: no se emite otra nota automáticamente."
+            : "El reintegro quedó registrado, pero falta la nota de crédito obligatoria de la factura."
       : copy?.description ??
         (nextAction.state === "completed"
           ? "El reintegro quedó registrado. No hay más acciones pendientes para esta cancelación."
@@ -305,7 +324,9 @@ export function getCancellationPanelViewModel(
     isCancellationFlow,
     state: nextAction.state,
     isFinished,
-    badgeTone: badgeToneForState(nextAction.state),
+    creditNote,
+    creditNotePendingAfterRefund,
+    badgeTone: creditNotePendingAfterRefund ? "warning" : badgeToneForState(nextAction.state),
     paymentMethod,
     amounts: {
       orderTotal,

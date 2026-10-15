@@ -10,6 +10,7 @@ import {
   type PaymentIncidentAction,
   type PaymentIncidentResolution,
 } from "@/lib/orders/payment-incidents"
+import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderAuditEvent, SupabasePedido } from "@/lib/supabase/types"
 import { AdminButton, AdminModal, AdminSecondaryButton, AdminTextarea } from "../../components/admin-controls"
@@ -77,6 +78,8 @@ export function PaymentIncidentsPanel({
       } as SupabasePedido)
       setResolving(null)
       setNote("")
+      // La alerta de la campana baja en el acto (el incidente queda en el historial).
+      notifyAdminNotificationsChanged()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo registrar la resolución.")
     } finally {

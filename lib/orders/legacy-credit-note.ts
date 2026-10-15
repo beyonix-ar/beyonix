@@ -10,8 +10,10 @@
  */
 
 import { roundCreditMoney } from "./credit-note-calculations.ts"
+import { getCreditNoteObligation } from "./credit-note-obligation.ts"
 
 export interface LegacyCreditNoteOrder {
+  total?: number | string | null
   estado?: string | null
   financial_status?: string | null
   credit_note_required?: boolean | null
@@ -20,10 +22,15 @@ export interface LegacyCreditNoteOrder {
   invoice_number?: number | string | null
   invoice_point?: number | string | null
   refunded_at?: string | null
-  order_credit_notes?: Array<{ status?: string | null }> | null
+  order_credit_notes?: Array<{ status?: string | null; total_amount?: number | string | null }> | null
 }
 
-export type LegacyCreditNoteState = "none" | "pending" | "processing"
+/**
+ * pending: no existe ninguna NC autorizada → se ofrece emitirla.
+ * manual_review: hay NC autorizadas por menos del total facturado → nunca se
+ * ofrece otra emisión automática (evita duplicar importe fiscal).
+ */
+export type LegacyCreditNoteState = "none" | "pending" | "processing" | "manual_review"
 
 export function getLegacyCreditNoteState(order: LegacyCreditNoteOrder): LegacyCreditNoteState {
   const isLegacyCase =
@@ -37,10 +44,39 @@ export function getLegacyCreditNoteState(order: LegacyCreditNoteOrder): LegacyCr
     Boolean(order.invoice_point)
   if (!isLegacyCase) return "none"
 
-  const notes = order.order_credit_notes ?? []
-  if (notes.some((note) => note.status === "authorized")) return "none"
-  if (notes.some((note) => note.status === "processing")) return "processing"
-  return "pending"
+  switch (getCreditNoteObligation(order).status) {
+    case "processing":
+      return "processing"
+    case "missing":
+      return "pending"
+    case "insufficient":
+      return "manual_review"
+    default:
+      return "none"
+  }
+}
+
+export const LEGACY_CREDIT_NOTE_REJECTED_ACTION = "legacy_credit_note_rejected"
+
+/**
+ * Último intento de emisión rechazado ANTES de reservar la NC (configuración,
+ * ambiente, reserva). Sólo se informa si es posterior a cualquier intento
+ * reservado: un pedido que luego avanzó no muestra un rechazo viejo.
+ */
+export function getLastLegacyCreditNoteRejection(
+  events: ReadonlyArray<{ action?: string | null; created_at?: string | null; metadata?: unknown }> | null | undefined,
+): { at: string | null; message: string } | null {
+  let latest: { at: string | null; message: string } | null = null
+  for (const event of events ?? []) {
+    if (event.action === "legacy_credit_note_requested") latest = null
+    if (event.action !== LEGACY_CREDIT_NOTE_REJECTED_ACTION) continue
+    const metadata = event.metadata && typeof event.metadata === "object" ? (event.metadata as Record<string, unknown>) : {}
+    latest = {
+      at: event.created_at ?? null,
+      message: typeof metadata.message === "string" && metadata.message ? metadata.message : "Motivo no registrado.",
+    }
+  }
+  return latest
 }
 
 /**

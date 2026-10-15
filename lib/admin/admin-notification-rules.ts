@@ -22,6 +22,11 @@ import {
   type AdminPendingOrderAction,
   type AdminPendingOrderActionKind,
 } from "../orders/admin-pending-actions.ts"
+import {
+  getOpenPaymentIncidents,
+  PAYMENT_INCIDENT_LABELS,
+  type PaymentIncidentAction,
+} from "../orders/payment-incidents.ts"
 
 export type AdminNotificationType =
   | "order"
@@ -167,6 +172,74 @@ export function buildOrderWorkNotifications(
         String(order.invoice_created_at || order.paid_at || order.created_at),
         "Pedido facturado y listo para preparar.", now))
     }
+  }
+  return notifications
+}
+
+/** Acciones del pedido que no son cancelación/factura/envío y requieren a una persona. */
+const ORDER_ALERT_COPY: Partial<Record<AdminPendingOrderActionKind, { type: AdminNotificationType; body: string }>> = {
+  legacy_credit_note: { type: "invoice", body: "La factura sigue sin su nota de crédito obligatoria." },
+  payment_conflict: { type: "payment", body: "Pago cobrado que no se pudo confirmar: revisalo o reintegralo." },
+  dispatch_blocked: { type: "shipping", body: "Pedido cancelado que sigue dentro de una tanda de despacho." },
+  return: { type: "claim", body: "Devolución pendiente de revisión." },
+}
+
+/**
+ * Alertas que requieren acción y no tienen builder propio. Una por tipo de
+ * acción y pedido (eventKey estable): refrescar o releer no las duplica, y
+ * desaparecen solas cuando la acción deja de existir.
+ */
+export function buildOrderAlertNotifications(
+  order: CancellationNotificationOrder,
+  now: number = Date.now(),
+): AdminNotification[] {
+  const notifications: AdminNotification[] = []
+  for (const action of getAdminPendingOrderActions(order)) {
+    const copy = ORDER_ALERT_COPY[action.kind]
+    if (!copy) continue
+    const eventAt = String(order.refund_pending_at || order.cancelled_at || order.paid_at || order.created_at)
+    const notification = actionNotification(order, action, copy.type, eventAt, action.label === "Revisar nota de crédito"
+      ? "Las notas de crédito autorizadas no cubren la factura: requiere revisión manual."
+      : copy.body, now)
+    const eventKey = `${action.kind}:${order.id}`
+    notifications.push({ ...notification, id: eventKey, eventKey })
+  }
+  return notifications
+}
+
+/**
+ * Un incidente de pago abierto (reintegro externo / contracargo) = una alerta.
+ * El eventKey es el del evento de auditoría; si por datos históricos hay dos
+ * eventos iguales (mismo tipo y mismo pago) se muestra uno solo. Al marcarlo
+ * falso positivo o resuelto deja de estar abierto y la alerta desaparece; el
+ * evento queda en el historial del pedido.
+ */
+export function buildPaymentIncidentNotifications(order: CancellationNotificationOrder): AdminNotification[] {
+  const seen = new Set<string>()
+  const notifications: AdminNotification[] = []
+  for (const incident of getOpenPaymentIncidents(order.order_audit_events)) {
+    const paymentId = incident.metadata?.paymentId
+    const dedupeKey = `${incident.action}:${paymentId == null ? `event:${incident.id}` : String(paymentId)}`
+    if (seen.has(dedupeKey)) continue
+    seen.add(dedupeKey)
+    const eventKey = `payment_incident:${incident.id}`
+    const label = PAYMENT_INCIDENT_LABELS[incident.action as PaymentIncidentAction]
+    notifications.push({
+      id: eventKey,
+      type: "payment",
+      eventKey,
+      eventAt: String(incident.created_at || order.created_at),
+      title: label,
+      body: `${formatOrderId(order.id)} — ${incident.action === "mp_chargeback_detected"
+        ? "El cliente desconoció el pago: revisá el contracargo."
+        : "Mercado Pago informa un reintegro que BEYONIX no registró."}`,
+      actionLabel: "Revisar",
+      actionUrl: `${ADMIN_ROUTES.pedidos}/${order.id}?tab=pago`,
+      orderId: order.id,
+      isRead: false,
+      priority: "attention",
+      kind: "action",
+    })
   }
   return notifications
 }

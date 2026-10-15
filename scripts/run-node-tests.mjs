@@ -285,6 +285,7 @@ const TEST_FILES = [
   "lib/mercadopago/refund-origin.test.ts",
   "lib/orders/legacy-credit-note.test.ts",
   "lib/orders/payment-incidents.test.ts",
+  "lib/orders/order-consistency.test.ts",
   "lib/orders/credit-note-mp-settlement.test.ts",
   "components/account/profile-sections-password-contract.test.ts",
   "components/account/register-password-requirements-contract.test.ts",

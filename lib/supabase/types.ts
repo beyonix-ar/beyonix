@@ -290,6 +290,11 @@ export interface SupabasePedido {
   mercadopago_preference_claimed_at?: string | null
   mercadopago_preference_generation?: number
   admin_visible_at?: string | null
+  /** Pedido de prueba archivado: fuera del listado operativo, nunca borrado. */
+  archived_at?: string | null
+  archived_by?: string | null
+  archive_reason?: string | null
+  customer_hidden_at?: string | null
   transfer_alias?: string | null
   transfer_discount_percent?: number | null
   transfer_discount_amount?: number | null

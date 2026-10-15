@@ -6,6 +6,7 @@ import { getPendingRefundNotes } from "@/lib/order-claims"
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
 import { OrderReplacements } from "./order-replacements"
 import { LegacyCreditNotePanel } from "./legacy-credit-note-panel"
+import { OrderArchivePanel } from "./order-archive-panel"
 import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
 import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
@@ -172,6 +173,8 @@ type StatusFilter =
   | "cancelado"
   | "refund_pending"
   | "refunded"
+  /** Pedidos archivados (pruebas): no aparecen en ningún otro filtro del listado. */
+  | "archivados"
   | "rechazado"
 type AndreaniAction = "crear-envio" | "tracking"
 type AndreaniLabelAction = "view" | "download" | "print"
@@ -1227,7 +1230,7 @@ function EstadoBadge({ pedido }: { pedido: SupabasePedido }) {
 
   return (
     <span className={`admin-order-semantic-badge admin-order-semantic-badge--${tone}`}>
-      {label}
+      {pedido.archived_at ? `${label} · Archivado` : label}
     </span>
   )
 }
@@ -2290,15 +2293,17 @@ function RefundManagementPanel({
     <section className="admin-order-cancellation-panel rounded-xl border p-3">
       <div className="admin-order-cancellation-header border-b pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`admin-order-cancellation-main-icon ${model.isFinished ? "is-success" : ""}`}>
-            {model.isFinished ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
+          <span className={`admin-order-cancellation-main-icon ${model.isFinished && !model.creditNotePendingAfterRefund ? "is-success" : ""}`}>
+            {model.isFinished && !model.creditNotePendingAfterRefund ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
           </span>
           <div className="min-w-0">
             <p className="text-11px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
               Cancelación / reintegro
             </p>
             <h3 className="mt-1 text-base font-black text-[var(--admin-text)]">
-              {model.isFinished
+              {model.creditNotePendingAfterRefund
+                ? "Reintegro completo · nota de crédito pendiente"
+                : model.isFinished
                 ? "Proceso finalizado"
                 : model.primaryAction?.label ?? "Sin acciones pendientes"}
             </h3>
@@ -2356,7 +2361,7 @@ function RefundManagementPanel({
       </div>
 
       {/* Paso a paso -- oculto si todavía no hay pago confirmado o si ya terminó */}
-      {model.steps.length > 0 && !model.isFinished && (
+      {model.steps.length > 0 && (!model.isFinished || model.creditNotePendingAfterRefund) && (
         <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
           <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
             {model.currentStepIndex !== null
@@ -2595,10 +2600,17 @@ function RefundManagementPanel({
         )[0]
         return (
           <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
-            <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-success-text)]">
-              <CheckCircle2 className="size-4" />
-              Proceso finalizado
-            </p>
+            {model.creditNotePendingAfterRefund ? (
+              <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-warning-text)]">
+                <AlertTriangle className="size-4" />
+                Reintegro finalizado · nota de crédito pendiente
+              </p>
+            ) : (
+              <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-success-text)]">
+                <CheckCircle2 className="size-4" />
+                Proceso finalizado
+              </p>
+            )}
             <ul className="mt-2 flex flex-col gap-1 text-xs font-semibold text-[var(--admin-text-soft)]">
               <li>Pedido cancelado</li>
               {pedido.credit_note_number && (
@@ -5324,6 +5336,10 @@ function PedidoDetailModal({
             />
           )}
 
+          {activeView === "historial" && isSuperAdmin && (
+            <OrderArchivePanel pedido={pedido} onUpdated={onRefundUpdated} />
+          )}
+
           {["atencion", "envio", "historial"].includes(activeView) && (
             <OrderReplacements
               pedido={pedido}
@@ -6920,6 +6936,7 @@ export function AdminPedidos({
   const [search, setSearch] = useState("")
   const [serverSearch, setServerSearch] = useState("")
   useEffect(() => { const timer = setTimeout(() => setServerSearch(search.trim()), 350); return () => clearTimeout(timer) }, [search])
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const {
     pedidos,
     total,
@@ -6929,8 +6946,11 @@ export function AdminPedidos({
     error,
     updatePedidoEstado,
     reloadPedidos,
-  } = usePedidos({ orderId: initialOrderId, search: serverSearch })
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
+  } = usePedidos({
+    orderId: initialOrderId,
+    search: serverSearch,
+    archive: statusFilter === "archivados" ? "archived" : "active",
+  })
   const [attentionFilter, setAttentionFilter] =
     useState<AdminNotificationTone | "all">(() => {
       const value = searchParams.get("attention")
@@ -7265,7 +7285,11 @@ export function AdminPedidos({
         searchableText.includes(normalizedSearch),
         compactSearch.length > 0 && searchableText.replace(/[#\s-]/g, "").includes(compactSearch),
       ].some(Boolean)
+      // El servidor ya separa archivados (filtro "Archivados") de operativos
+      // (el resto); la búsqueda devuelve ambos, así que acá se respeta igual.
       const matchesStatus =
+        statusFilter === "archivados" ? Boolean(pedido.archived_at) :
+        Boolean(pedido.archived_at) && serverSearch.length === 0 ? false :
         statusFilter === "todos" ||
         getDisplayedOrderStatus(pedido) === statusFilter ||
         pedido.estado === statusFilter ||
@@ -7980,6 +8004,7 @@ export function AdminPedidos({
                 <option value="refund_pending">Reintegro pendiente</option>
                 <option value="refunded">Reintegrados</option>
                 <option value="rechazado">Comprobantes rechazados</option>
+                <option value="archivados">Archivados</option>
               </AdminSelect>
             </div>
           </AdminFiltersBar>

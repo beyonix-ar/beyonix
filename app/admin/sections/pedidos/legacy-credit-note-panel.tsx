@@ -3,7 +3,13 @@
 import { useRef, useState } from "react"
 import { AlertTriangle, FileText, RefreshCw } from "lucide-react"
 
-import { getLegacyCreditNoteState, type LegacyCreditNoteOrder } from "@/lib/orders/legacy-credit-note"
+import { notifyAdminNotificationsChanged } from "@/lib/admin/admin-notifications"
+import { getCreditNoteObligation, type CreditNoteObligationOrder } from "@/lib/orders/credit-note-obligation"
+import {
+  getLastLegacyCreditNoteRejection,
+  getLegacyCreditNoteState,
+  type LegacyCreditNoteOrder,
+} from "@/lib/orders/legacy-credit-note"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { AdminButton, AdminModal, AdminSecondaryButton } from "../../components/admin-controls"
@@ -27,6 +33,8 @@ export function LegacyCreditNotePanel({
   const inFlight = useRef(false)
   const state = getLegacyCreditNoteState(pedido as LegacyCreditNoteOrder)
   if (state === "none") return null
+  const obligation = getCreditNoteObligation(pedido as CreditNoteObligationOrder)
+  const lastRejection = getLastLegacyCreditNoteRejection(pedido.order_audit_events)
 
   const emit = async () => {
     if (inFlight.current) return
@@ -45,6 +53,7 @@ export function LegacyCreditNotePanel({
       setConfirming(false)
       setMessage({ ok: true, text: "Nota de crédito emitida y asociada a la factura." })
       onUpdated(data.order)
+      notifyAdminNotificationsChanged()
     } catch (error) {
       setConfirming(false)
       setMessage({ ok: false, text: error instanceof Error ? error.message : "No se pudo emitir la nota de crédito." })
@@ -60,15 +69,31 @@ export function LegacyCreditNotePanel({
         <div className="flex min-w-0 items-start gap-3">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-400" aria-hidden="true" />
           <div className="min-w-0">
-            <h3 className="text-sm font-black text-[var(--admin-text)]">Nota de crédito pendiente — caso heredado</h3>
-            <p className="mt-1 text-sm leading-6 text-[var(--admin-text-soft)]">
-              El reintegro se hizo antes de emitirse la factura {pedido.invoice_point}-{pedido.invoice_number}, y la nota de
-              crédito obligatoria nunca se generó. Emitirla anula la factura en ARCA; no devuelve dinero ni acredita saldo
-              porque el cliente ya recibió el reintegro.
-            </p>
+            <h3 className="text-sm font-black text-[var(--admin-text)]">
+              {state === "manual_review" ? "Nota de crédito parcial — requiere revisión" : "Nota de crédito pendiente — caso heredado"}
+            </h3>
+            {state === "manual_review" ? (
+              <p className="mt-1 text-sm leading-6 text-[var(--admin-text-soft)]">
+                Las notas de crédito autorizadas suman {formatPrice(obligation.authorizedTotal)} y la factura{" "}
+                {pedido.invoice_point}-{pedido.invoice_number} es por {formatPrice(obligation.invoicedTotal)}. Falta cubrir{" "}
+                {formatPrice(obligation.missingAmount)}. No se emite otra nota automáticamente para no duplicar importes
+                fiscales: revisalo en Facturación.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm leading-6 text-[var(--admin-text-soft)]">
+                El reintegro se hizo antes de emitirse la factura {pedido.invoice_point}-{pedido.invoice_number}, y la nota de
+                crédito obligatoria nunca se generó. Emitirla anula la factura en ARCA; no devuelve dinero ni acredita saldo
+                porque el cliente ya recibió el reintegro.
+              </p>
+            )}
+            {state === "pending" && lastRejection && (
+              <p className="mt-1 text-xs font-semibold text-[var(--admin-warning-text)]" data-testid="legacy-credit-note-last-rejection">
+                Último intento rechazado{lastRejection.at ? ` (${new Date(lastRejection.at).toLocaleString("es-AR")})` : ""}: {lastRejection.message}
+              </p>
+            )}
           </div>
         </div>
-        {state === "pending" ? (
+        {state === "manual_review" ? null : state === "pending" ? (
           <AdminButton
             variant="primary"
             className="shrink-0"

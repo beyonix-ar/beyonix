@@ -332,7 +332,10 @@ export function getAdminOrderWork(order: AdminPendingActionsOrder): AdminOrderWo
   // positivo o resueltos siguen en el historial, pero ya no son tarea).
   if (getOpenPaymentIncidents(order.order_audit_events).length) add("payment_incident", orderHref(order, "pago"))
   // NC obligatoria de un caso heredado (reintegro anterior a la factura).
-  if (getLegacyCreditNoteState(order) === "pending") add("legacy_credit_note", orderHref(order, "cancelacion"))
+  // NC parcial que no cubre la factura: revisión manual, nunca otra emisión automática.
+  const legacyCreditNote = getLegacyCreditNoteState(order)
+  if (legacyCreditNote === "pending") add("legacy_credit_note", orderHref(order, "cancelacion"))
+  else if (legacyCreditNote === "manual_review") add("legacy_credit_note", orderHref(order, "cancelacion"), "Revisar nota de crédito")
 
   // ── Cancelación / reintegro ──
   if (order.financial_status === "cancellation_requested") {
