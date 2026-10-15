@@ -20,6 +20,12 @@ function formatDateTime(value?: string | null) {
 }
 
 type Mode = "archive" | "restore"
+type ArchivedOrder = SupabasePedido & {
+  archived_at?: string | null
+  archived_by?: string | null
+  archive_reason?: string | null
+  customer_hidden_at?: string | null
+}
 
 /**
  * "Archivar pedido de prueba" (sólo super_admin). No borra nada: el pedido
@@ -30,8 +36,8 @@ export function OrderArchivePanel({
   pedido,
   onUpdated,
 }: {
-  pedido: SupabasePedido
-  onUpdated: (order: SupabasePedido) => void
+  pedido: ArchivedOrder
+  onUpdated: (order: ArchivedOrder) => void
 }) {
   const [mode, setMode] = useState<Mode | null>(null)
   const [reason, setReason] = useState("")

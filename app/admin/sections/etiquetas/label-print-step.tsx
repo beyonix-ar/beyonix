@@ -11,7 +11,7 @@ import type { LabelQueueItem } from "@/lib/labels/queue"
 import type { LabelSettings } from "@/lib/labels/settings"
 
 import { LabelSheetPreview, PreviewLegend, PreviewPager, formatNumber, previewPageCount } from "./label-preview"
-import { formatLayoutSummary, formatName } from "./label-settings-panel"
+import { describeFormat } from "./label-settings-panel"
 
 export interface PrintStatus {
   tone: "ready" | "loading" | "blocked"
@@ -53,7 +53,7 @@ export function LabelPrintStep({ plan, drawings, labels, settings, page, onPage,
 
   return (
     <div className="grid items-start gap-5 *:min-w-0 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,1fr)]">
-      <AdminSection compact icon={<Eye className="size-4" />} title="Vista previa" description={thermal && settings.thermal.columns === 1 ? formatName(settings) : `${formatName(settings)} · ${formatLayoutSummary(settings)}`}>
+      <AdminSection compact icon={<Eye className="size-4" />} title="Vista previa" description={describeFormat(settings)}>
         {total > 0 ? (
           <div className="space-y-3">
             <div className="admin-label-stage p-3 sm:p-5">

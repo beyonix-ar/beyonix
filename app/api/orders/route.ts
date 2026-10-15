@@ -7,10 +7,11 @@ import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audi
 import { toCustomerOrderDto } from "@/lib/orders/customer-order-dto"
 import { attachCustomerClaimReads } from "@/lib/orders/customer-claim-access"
 import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reservation-window"
+import { isCustomerOrderVisible } from "@/lib/orders/order-visibility"
 import type { CustomerOrderSummary } from "@/lib/supabase/types"
 
 const ORDER_LIST_SELECT =
-  "id, created_at, total, estado, payment_status, payment_method_id, financial_status, paid_at, delivered_at, payment_proof_url, payment_proof_uploaded_at, shipping_type, tracking_number, tracking_url, andreani_tracking, andreani_estado, cancellation_requested_by, orden_items(id, orden_id, producto_id, cantidad, conditioned_images, productos(nombre, imagen_principal, imagenes_producto(url)), producto_variantes(imagenes)), order_claims(id, status, failure_type, created_at, order_claim_messages(id, author_role, created_at)), order_audit_events(action, actor_type, previous_status, new_status, metadata, created_at)"
+  "id, created_at, total, estado, payment_status, payment_method_id, financial_status, admin_visible_at, paid_at, payment_confirmed_at, payment_confirmed_amount, payment_proof_uploaded_at, invoice_status, invoice_cae, refund_pending_at, refunded_at, credit_balance_used, credit_note_cae, tracking_number, andreani_envio_id, customer_hidden_at, delivered_at, payment_proof_url, shipping_type, tracking_url, andreani_tracking, andreani_estado, cancellation_requested_by, orden_items(id, orden_id, producto_id, cantidad, conditioned_images, productos(nombre, imagen_principal, imagenes_producto(url)), producto_variantes(imagenes)), order_claims(id, status, failure_type, created_at, order_claim_messages(id, author_role, created_at)), order_audit_events(action, actor_type, previous_status, new_status, metadata, created_at)"
 
 function escapeIlikeValue(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`)
@@ -60,6 +61,7 @@ export async function GET() {
     ...((byUserId.data ?? []) as unknown as CustomerOrderSummary[]),
     ...((byEmail.data ?? []) as unknown as CustomerOrderSummary[]),
   ]) {
+    if (!isCustomerOrderVisible(order)) continue
     merged.set(order.id, order)
   }
 

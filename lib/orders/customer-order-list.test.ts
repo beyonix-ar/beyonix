@@ -48,7 +48,7 @@ test("el endpoint de listado exige sesión y filtra por usuario, nunca trae la t
   assert.match(route, /\.ilike\("cliente_email", escapeIlikeValue\(normalizedEmail\)\)/)
 })
 
-test("el select del listado es explícito (sin '*') y no expone campos internos de Andreani/MP", () => {
+test("el select del listado es explícito y sólo pide campos internos necesarios para visibilidad", () => {
   const route = source("app/api/orders/route.ts")
   const selectMatch = route.match(/const ORDER_LIST_SELECT =\s*\n?\s*"([^"]+)"/)
   assert.ok(selectMatch, "no se encontró ORDER_LIST_SELECT")
@@ -56,16 +56,17 @@ test("el select del listado es explícito (sin '*') y no expone campos internos 
 
   assert.doesNotMatch(select, /(^|[\s,(])\*/)
   for (const forbidden of [
-    "andreani_envio_id",
     "andreani_contrato",
     "andreani_creation_claim_token",
     "mercadopago_preference_claim_token",
     "mercadopago_checkout_fingerprint",
     "refund_internal_note",
-    "admin_visible_at",
     "checkout_idempotency_key",
   ]) {
     assert.doesNotMatch(select, new RegExp(forbidden))
+  }
+  for (const visibilityField of ["admin_visible_at", "andreani_envio_id", "customer_hidden_at"]) {
+    assert.match(select, new RegExp(`\\b${visibilityField}\\b`))
   }
 })
 
@@ -148,7 +149,7 @@ test("el fallback legado del detalle sólo alcanza órdenes sin usuario_id", () 
   assert.match(route, /\.ilike\("cliente_email", escapeIlikeValue\(normalizedEmail\)\)/)
 })
 
-test("el detalle devuelve un select explícito sin identificadores internos de creación Andreani", () => {
+test("el detalle selecciona el rastro Andreani para visibilidad sin identificadores de creación", () => {
   const route = source("app/api/orders/[id]/route.ts")
   const selectMatch = route.match(
     /const CUSTOMER_ORDER_DETAIL_SELECT =\s*\n?\s*"([^"]+)"/,
@@ -157,7 +158,8 @@ test("el detalle devuelve un select explícito sin identificadores internos de c
   const select = selectMatch![1]
 
   assert.doesNotMatch(select, /(^|[\s,(])\*/)
-  assert.doesNotMatch(select, /andreani_envio_id/)
+  assert.match(select, /andreani_envio_id/)
+  assert.match(select, /customer_hidden_at/)
   assert.doesNotMatch(select, /andreani_creation_/)
   assert.doesNotMatch(select, /checkout_idempotency_key/)
 })

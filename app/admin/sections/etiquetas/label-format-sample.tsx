@@ -3,16 +3,16 @@
 import { ChevronLeft, ChevronRight, ScanEye } from "lucide-react"
 
 import { AdminButton, AdminPrimaryButton, AdminSection } from "@/app/admin/components/admin-controls"
-import { buildLabelDrawing, type LabelDrawing } from "@/lib/labels/drawing"
+import { buildLabelDrawing, type LabelContent, type LabelDrawing } from "@/lib/labels/drawing"
 import { thermalDesignSize } from "@/lib/labels/layout"
-import type { LabelSettings } from "@/lib/labels/settings"
+import { matchRollPreset, matchSizePreset, type LabelSettings } from "@/lib/labels/settings"
 
 import { LabelFormatDiagram } from "./label-format-diagram"
 import { LabelGraphic } from "./label-graphic"
 import { formatNumber } from "./label-preview"
-import { formatLayoutSummary, formatName } from "./label-settings-panel"
+import { describeFormat } from "./label-settings-panel"
 
-const SAMPLE = { name: "NOMBRE PRODUCTO", variant: "NEGRO", sku: "AP01", code: "7790001000019" }
+const SAMPLE: LabelContent = { name: "NOMBRE PRODUCTO", variant: "NEGRO", sku: "AP01", code: "7790001000019", price: null, internalCode: null }
 
 // Columna derecha del paso 2: cómo sale una etiqueta (la primera de la tanda o
 // un ejemplo) y el esquema del formato elegido, actualizados en vivo.
@@ -27,6 +27,9 @@ export function LabelFormatSample({ settings, drawing, onBack, onContinue }: {
   const rotate = settings.mode === "thermal" && settings.thermal.rotate
   const width = rotate ? shown.heightMm : shown.widthMm
   const height = rotate ? shown.widthMm : shown.heightMm
+  const formatName = settings.mode === "thermal"
+    ? matchRollPreset(settings)?.name ?? "Rollo térmico"
+    : matchSizePreset(settings)?.name ?? "Personalizada"
   return (
     <AdminSection compact icon={<ScanEye className="size-4" />} title="Así queda" description={drawing ? "Primera etiqueta de tu tanda." : "Ejemplo: agregá productos para ver los tuyos."} className="lg:sticky lg:top-4">
       <div className="admin-label-stage flex items-center justify-center p-5">
@@ -39,8 +42,8 @@ export function LabelFormatSample({ settings, drawing, onBack, onContinue }: {
           <LabelFormatDiagram settings={settings} className="max-h-24 w-full" />
         </span>
         <div className="min-w-0">
-          <p className="text-sm font-black text-white" data-format-name>{formatName(settings)}</p>
-          <p className="text-xs text-white/62" data-format-layout>{formatLayoutSummary(settings)}</p>
+          <p className="text-sm font-black text-white" data-format-name>{formatName}</p>
+          <p className="text-xs text-white/62" data-format-layout>{describeFormat(settings)}</p>
           {drawing?.warnings[0] && <p className="mt-1 text-xs text-amber-300">{drawing.warnings[0].message}</p>}
         </div>
       </div>

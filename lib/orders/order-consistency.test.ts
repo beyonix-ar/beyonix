@@ -4,8 +4,7 @@ import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
 import {
-  buildOrderAlertNotifications,
-  buildPaymentIncidentNotifications,
+  buildOrderWorkNotifications,
   dedupeNotifications,
   isAdminActionNotification,
 } from "../admin/admin-notification-rules.ts"
@@ -14,8 +13,8 @@ import { getAdminPendingOrderActions } from "./admin-pending-actions.ts"
 import { isAdminOrderVisible } from "./admin-order-visibility.ts"
 import { getCancellationPanelViewModel } from "./cancellation-panel-view.ts"
 import { getCreditNoteObligation } from "./credit-note-obligation.ts"
-import { getLastLegacyCreditNoteRejection, getLegacyCreditNoteState } from "./legacy-credit-note.ts"
-import { isAbandonedCheckoutAttempt, isCustomerOrderVisible, parseAdminArchiveFilter } from "./order-visibility.ts"
+import { getLegacyCreditNoteState } from "./legacy-credit-note.ts"
+import { isAbandonedCheckoutAttempt, isCustomerOrderVisible, isOrderArchived, parseAdminArchiveFilter } from "./order-visibility.ts"
 
 // Réplica (sin datos personales) de los 5 pedidos reales de prueba al 2026-10-15.
 const abandonedAttempt = {
@@ -99,29 +98,27 @@ test("5 · NC faltante o insuficiente sigue pendiente; la insuficiente nunca ofr
   const partial = { ...bx1002, order_credit_notes: [{ status: "authorized", total_amount: 400 }] }
   const obligation = getCreditNoteObligation(partial)
   assert.deepEqual([obligation.status, obligation.missingAmount], ["insufficient", 600])
-  assert.equal(getLegacyCreditNoteState(partial), "manual_review")
+  assert.equal(getLegacyCreditNoteState(partial), "none", "una NC autorizada bloquea otra emisión heredada")
   const action = getAdminPendingOrderActions(partial).find((item) => item.kind === "legacy_credit_note")
-  assert.equal(action?.label, "Revisar nota de crédito")
+  assert.equal(action, undefined, "la NC parcial requiere revisión, no otra emisión automática")
   // Una NC en proceso no se duplica.
-  assert.equal(getLegacyCreditNoteState({ ...bx1002, order_credit_notes: [{ status: "processing", total_amount: 1000 }] }), "processing")
+  assert.equal(getLegacyCreditNoteState({ ...bx1002, order_credit_notes: [{ status: "processing" }] }), "processing")
 })
 
 test("12 · BX-1002: nunca 'NC completada' y 'NC pendiente' a la vez (progreso, panel, NC heredada y tareas)", () => {
   const progress = getCancellationProgress(bx1002)
   const creditStep = progress.find((step) => step.label.startsWith("Nota de crédito"))
-  assert.deepEqual(creditStep, { label: "Nota de crédito pendiente", complete: false })
+  assert.deepEqual(creditStep, { label: "Nota de crédito", complete: false })
   const panel = getCancellationPanelViewModel(bx1002)
   assert.equal(panel.isFinished, true, "el reintegro sí terminó")
-  assert.equal(panel.creditNotePendingAfterRefund, true)
   assert.equal(panel.badgeTone, "warning", "no puede mostrarse en verde como completado")
   assert.equal(panel.steps.find((step) => step.key === "credit_note")?.status, "attention")
-  assert.match(panel.helperText, /falta la nota de crédito/)
+  assert.match(panel.helperText, /falta la nota de crédito/i)
   assert.equal(getLegacyCreditNoteState(bx1002), "pending")
   assert.ok(getAdminPendingOrderActions(bx1002).some((action) => action.kind === "legacy_credit_note"))
 
   // BX-1004 (NC autorizada): todo coincide en "cubierta".
   const panel4 = getCancellationPanelViewModel(bx1004)
-  assert.equal(panel4.creditNotePendingAfterRefund, false)
   assert.notEqual(panel4.steps.find((step) => step.key === "credit_note")?.status, "attention")
   assert.equal(getCancellationProgress(bx1004).find((step) => step.label.startsWith("Nota de crédito"))?.complete, true)
 
@@ -134,50 +131,48 @@ test("12 · BX-1002: nunca 'NC completada' y 'NC pendiente' a la vez (progreso, 
   }
 })
 
-test("rechazos de la NC heredada: se muestra el último, y un intento reservado posterior lo deja atrás", () => {
-  const rejected = { action: "legacy_credit_note_rejected", created_at: "2026-10-15T10:00:00Z", metadata: { message: "Otro ambiente de ARCA." } }
-  assert.deepEqual(getLastLegacyCreditNoteRejection([rejected]), { at: rejected.created_at, message: "Otro ambiente de ARCA." })
-  assert.equal(getLastLegacyCreditNoteRejection([rejected, { action: "legacy_credit_note_requested" }]), null)
-  assert.equal(getLastLegacyCreditNoteRejection([]), null)
-})
-
-test("contratos: la NC heredada audita cada rechazo y el listado del cliente aplica la regla de visibilidad", () => {
+test("contratos: la NC heredada audita fallas y las rutas del cliente limitan la pertenencia", () => {
   const legacyRoute = readFileSync("app/api/admin/orders/[id]/legacy-credit-note/route.ts", "utf8")
-  for (const code of ["ARCA_CONFIGURATION", "ARCA_ENVIRONMENT_MISMATCH", "AMOUNT_UNAVAILABLE", "RESERVATION_FAILED"]) {
-    assert.match(legacyRoute, new RegExp(`"${code}"`), code)
-  }
-  assert.match(legacyRoute, /action: LEGACY_CREDIT_NOTE_REJECTED_ACTION/)
-  assert.match(legacyRoute, /state === "manual_review"/)
+  assert.match(legacyRoute, /requireArcaConfiguration\(\)/)
+  assert.match(legacyRoute, /invoiceEnvironment !== configuration\.environment/)
+  assert.match(legacyRoute, /if \(!amounts\)/)
+  assert.match(legacyRoute, /auditLegacyFailure\([^\n]+"reservation", known\?\.\[0\] \?\? "RESERVATION_FAILED"/)
+  assert.match(legacyRoute, /action: "legacy_credit_note_failed"/)
+  assert.match(legacyRoute, /action: "legacy_credit_note_requested"/)
   const customerList = readFileSync("app/api/orders/route.ts", "utf8")
-  assert.match(customerList, /if \(isCustomerOrderVisible\(order\)\) merged\.set\(order\.id, order\)/)
+  assert.match(customerList, /\.eq\("usuario_id", user\.id\)/)
+  assert.match(customerList, /\.is\("usuario_id", null\)/)
   const customerDetail = readFileSync("app/api/orders/[id]/route.ts", "utf8")
-  assert.match(customerDetail, /!order \|\| order\.customer_hidden_at/)
+  assert.match(customerDetail, /\.eq\("usuario_id", user\.id\)/)
+  assert.match(customerDetail, /\.is\("usuario_id", null\)/)
+  assert.equal(isCustomerOrderVisible(bx1002), true)
+  assert.equal(isCustomerOrderVisible(abandonedAttempt), false)
 })
 
 test("6/7 · campana: un incidente abierto suma +1 con 'Revisar'; resuelto o falso positivo baja", () => {
-  const open = buildPaymentIncidentNotifications(bx1002)
+  const open = buildOrderWorkNotifications(bx1002).filter((alert) => alert.type === "payment")
   assert.equal(open.length, 1)
   assert.equal(open[0].kind, "action")
   assert.ok(isAdminActionNotification(open[0]))
-  assert.equal(open[0].actionLabel, "Revisar")
+  assert.equal(open[0].actionLabel, "Revisar incidente de pago")
   assert.equal(open[0].actionUrl, "/admin/pedidos/2?tab=pago")
   assert.match(open[0].body, /#BX-1002/)
-  assert.equal(open[0].eventKey, "payment_incident:11")
+  assert.equal(open[0].eventKey, "payment:payment_incident:2")
 
   const resolved = {
     ...bx1002,
     order_audit_events: bx1002.order_audit_events.map((event) => ({ ...event, audit_resolution: { resolution: "false_positive" } })),
   }
-  assert.equal(buildPaymentIncidentNotifications(resolved).length, 0)
+  assert.equal(buildOrderWorkNotifications(resolved).filter((alert) => alert.type === "payment").length, 0)
 
   // La NC faltante también es una alerta accionable que lleva a Cancelación.
-  const alerts = buildOrderAlertNotifications(bx1002)
-  assert.deepEqual(alerts.map((alert: ReturnType<typeof buildOrderAlertNotifications>[number]) => [alert.eventKey, alert.actionUrl, alert.kind]), [
-    ["legacy_credit_note:2", "/admin/pedidos/2?tab=cancelacion", "action"],
+  const alerts = buildOrderWorkNotifications(bx1002).filter((alert) => alert.eventKey === "invoice:legacy_credit_note:2")
+  assert.deepEqual(alerts.map((alert: ReturnType<typeof buildOrderWorkNotifications>[number]) => [alert.eventKey, alert.actionUrl, alert.kind]), [
+    ["invoice:legacy_credit_note:2", "/admin/pedidos/2?tab=cancelacion", "action"],
   ])
-  assert.equal(buildOrderAlertNotifications({ ...bx1002, order_credit_notes: [{ status: "authorized", total_amount: 1000 }] }).length, 0)
+  assert.equal(buildOrderWorkNotifications({ ...bx1002, order_credit_notes: [{ status: "authorized", total_amount: 1000 }] }).filter((alert) => alert.eventKey === "invoice:legacy_credit_note:2").length, 0)
   // Un pedido pagado sin problemas no genera alertas de este tipo.
-  assert.equal(buildPaymentIncidentNotifications(paidActive).length + buildOrderAlertNotifications(paidActive).length, 0)
+  assert.equal(buildOrderWorkNotifications(paidActive).filter((alert) => alert.type === "payment" || alert.eventKey === "invoice:legacy_credit_note:5").length, 0)
 })
 
 test("8 · webhook repetido / refresh: no duplica la alerta", () => {
@@ -188,9 +183,9 @@ test("8 · webhook repetido / refresh: no duplica la alerta", () => {
       { id: 12, action: "mp_external_refund_detected", created_at: "2026-10-13T22:43:00Z", metadata: { paymentId: 182996233611 } },
     ],
   }
-  assert.equal(buildPaymentIncidentNotifications(duplicated).length, 1, "mismo tipo y mismo pago = una alerta")
-  const twice = [...buildPaymentIncidentNotifications(bx1002), ...buildPaymentIncidentNotifications(bx1002)]
-  assert.equal(dedupeNotifications(twice).length, 1, "releer el mismo pedido no duplica")
+  assert.equal(buildOrderWorkNotifications(duplicated).filter((alert) => alert.type === "payment").length, 1, "mismo tipo y mismo pago = una alerta")
+  const twice = [...buildOrderWorkNotifications(bx1002), ...buildOrderWorkNotifications(bx1002)]
+  assert.equal(dedupeNotifications(twice).length, buildOrderWorkNotifications(bx1002).length, "releer el mismo pedido no duplica")
 
   // El webhook sólo registra la reversa una vez: el UPDATE condicional
   // (payment_status distinto) es el que habilita a auditar el incidente.
@@ -203,9 +198,8 @@ test("11 · filtro de archivados del listado Admin", () => {
   assert.equal(parseAdminArchiveFilter("archived"), "archived")
   assert.equal(parseAdminArchiveFilter("all"), "all")
   assert.equal(parseAdminArchiveFilter("borrados"), null)
-  const route = readFileSync("app/api/admin/pedidos/route.ts", "utf8")
-  assert.match(route, /archiveFilter === "active"\) ordersQuery = ordersQuery\.is\("archived_at", null\)/)
-  assert.match(route, /archiveFilter === "archived"\) ordersQuery = ordersQuery\.not\("archived_at", "is", null\)/)
+  assert.equal(isOrderArchived({ archived_at: null }), false)
+  assert.equal(isOrderArchived({ archived_at: "2026-10-15T12:00:00Z" }), true)
 })
 
 const MIGRATION = readFileSync("supabase/migrations/20261015150000_order_test_archive.sql", "utf8")

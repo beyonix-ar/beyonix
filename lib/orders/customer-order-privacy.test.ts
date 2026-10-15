@@ -43,7 +43,9 @@ test("las rutas de pedidos del cliente seleccionan columnas explícitas y pasan 
     const select = source.match(/const (?:ORDER_LIST_SELECT|CUSTOMER_ORDER_DETAIL_SELECT) =\s*"([^"]+)"/)?.[1]
     assert.ok(select, `${path}: select explícito`)
     const columns = select.split(/[\s,()]+/).filter(Boolean)
-    assert.deepEqual(columns.filter((column) => forbidden.includes(column)), [], path)
+    assert.deepEqual(columns.filter((column) => forbidden.includes(column) && column !== "andreani_envio_id"), [], path)
+    assert.ok(columns.includes("andreani_envio_id"), `${path}: rastro necesario para visibilidad`)
+    assert.ok(!(CUSTOMER_ORDER_FIELDS as readonly string[]).includes("andreani_envio_id"), "el DTO no devuelve el identificador Andreani")
     assert.doesNotMatch(select, /\*/, `${path}: sin select *`)
     assert.match(source, /toCustomerOrderDto\(/, path)
   }
