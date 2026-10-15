@@ -37,6 +37,7 @@ const TEST_FILES = [
   "lib/products/admin-product-visuals.test.ts",
   "lib/products/product-activation.test.ts",
   "lib/products/product-variant-state-db.test.ts",
+  "lib/products/variant-parent-integrity-db.test.ts",
   "lib/products/installments.test.ts",
   "lib/pricing/product-pricing.test.ts",
   "lib/pricing/financed-pricing.test.ts",
@@ -356,6 +357,7 @@ const DB_ROUTE_TEST_FILES = [
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
   "lib/labels/labels-routes.test.ts",
+  "lib/products/variant-parent-integrity-routes.test.ts",
   "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
   "lib/arca/fiscal-history-routes.test.ts",

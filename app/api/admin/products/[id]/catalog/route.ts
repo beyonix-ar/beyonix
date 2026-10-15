@@ -36,8 +36,17 @@ export async function PATCH(
 
   const productId = parseProductId((await context.params).id)
   const body = (await request.json().catch(() => null)) as
-    | { catalog?: unknown; primarySku?: unknown; variantStates?: unknown }
+    | { catalog?: unknown; primarySku?: unknown; variantStates?: unknown; expectedRevision?: unknown }
     | null
+  // Revisión de la ficha que cargó el editor: si cambió en el medio (otra
+  // pestaña, otro usuario, una fusión o un evento comercial) se rechaza el
+  // guardado en vez de pisar esos cambios con datos viejos.
+  const expectedRevision =
+    typeof body?.expectedRevision === "number" &&
+    Number.isSafeInteger(body.expectedRevision) &&
+    body.expectedRevision >= 0
+      ? body.expectedRevision
+      : null
   const variantStates = Array.isArray(body?.variantStates)
     ? body.variantStates
     : null
@@ -62,6 +71,7 @@ export async function PATCH(
     typeof body.catalog !== "object" ||
     Array.isArray(body.catalog) ||
     (body.primarySku != null && typeof body.primarySku !== "string") ||
+    (body.expectedRevision != null && expectedRevision == null) ||
     !validVariantStates ||
     new Set(variantIds).size !== variantIds.length
   ) {
@@ -115,6 +125,17 @@ export async function PATCH(
   delete catalogInput.target_margin_percent
   // La financiación ya no es una propiedad del producto (Admin → Financiación):
   // las columnas legacy de cuotas nunca se escriben desde acá.
+  // El bloqueo de una promoción activa (precio original + evento dueño) lo
+  // administra exclusivamente el evento: el editor nunca lo escribe, y una
+  // clave ausente conserva el valor actual (update_product_catalog_atomic).
+  for (const promoField of [
+    "promo_event_id",
+    "promo_original_precio",
+    "promo_original_precio_anterior",
+    "promo_original_descuento",
+  ]) {
+    delete catalogInput[promoField]
+  }
   for (const legacyField of [
     "cuotas_2_habilitadas",
     "cuotas_3_habilitadas",
@@ -176,18 +197,40 @@ export async function PATCH(
   // objetivo y `product_pricing` en manual (o al revés). Mientras la
   // migración nueva no esté aplicada se cae al camino anterior de dos
   // escrituras -- es el comportamiento que ya existía, no una regresión.
-  let { data, error } = await auth.admin.rpc(
-    "update_product_commercial_configuration_with_pricing_atomic",
-    {
-      p_product_id: productId,
-      p_catalog: { ...catalogInput, ...logistics },
-      p_primary_sku: body.primarySku ?? null,
-      p_variant_states: variantStates,
-      p_actor_id: auth.user.id,
-      p_pricing_mode: pricingMode,
-      p_target_margin_percent: resolvedTargetMarginPercent,
-    },
-  )
+  const pricingArgs = {
+    p_product_id: productId,
+    p_catalog: { ...catalogInput, ...logistics },
+    p_primary_sku: body.primarySku ?? null,
+    p_variant_states: variantStates,
+    p_actor_id: auth.user.id,
+    p_pricing_mode: pricingMode,
+    p_target_margin_percent: resolvedTargetMarginPercent,
+  }
+  let { data, error } = expectedRevision == null
+    ? await auth.admin.rpc("update_product_commercial_configuration_with_pricing_atomic", pricingArgs)
+    : await auth.admin.rpc("update_product_commercial_configuration_checked", {
+        ...pricingArgs,
+        p_expected_revision: expectedRevision,
+      })
+  if (error && expectedRevision != null && error.code === "40001") {
+    return Response.json(
+      { error: error.message, code: "product_revision_conflict" },
+      { status: 409 },
+    )
+  }
+  if (
+    error &&
+    expectedRevision != null &&
+    /update_product_commercial_configuration_checked|PGRST202|42883/i.test(
+      `${error.code ?? ""} ${error.message}`,
+    )
+  ) {
+    // Migración 20261015130000 todavía sin aplicar: se guarda como antes.
+    ;({ data, error } = await auth.admin.rpc(
+      "update_product_commercial_configuration_with_pricing_atomic",
+      pricingArgs,
+    ))
+  }
   let pricingPersistedAtomically = true
 
   if (

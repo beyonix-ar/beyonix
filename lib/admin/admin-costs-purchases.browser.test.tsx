@@ -54,9 +54,20 @@ const db = createFakeCostCatalogDb({
   ],
 })
 window.__requests = []
-window.fetch = async (input) => {
+window.__posts = []
+window.__postStatuses = []
+window.fetch = async (input, init) => {
   const url = new URL(String(input), "http://admin.test")
   window.__requests.push(url.pathname + url.search)
+  if (url.pathname === "/api/admin/costs" && init && init.method === "POST") {
+    const headers = new Headers(init.headers)
+    window.__posts.push({ key: headers.get("Idempotency-Key"), body: JSON.parse(init.body) })
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    const status = window.__postStatuses.shift() ?? 201
+    return status >= 400
+      ? Response.json({ error: "Tiempo de espera agotado." }, { status })
+      : Response.json({ item: { id: "nueva" }, productId: 9001, variantId: 99001, replayed: false }, { status })
+  }
   if (url.pathname === "/api/admin/costs") {
     const costRows = (await db.from("product_cost_entries").select("*").order("purchase_date", { ascending: false }).range(0, 999)).data.map(withPurchaseBarcode)
     return Response.json({
@@ -105,6 +116,14 @@ async function open(): Promise<{ page: Page; errors: string[] }> {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
+  // http://admin.test no es contexto seguro: el admin real (HTTPS) sí tiene
+  // crypto.randomUUID, con el que se generan las claves idempotentes.
+  await page.addInitScript({
+    content: `if (typeof crypto.randomUUID !== "function") {
+      Object.defineProperty(crypto, "randomUUID", { value: () => "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (d) =>
+        (Number(d) ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(d) / 4)))).toString(16)) })
+    }`,
+  })
   await page.route("**/*", (route) =>
     route.request().url() === "http://admin.test/"
       ? route.fulfill({ contentType: "text/html; charset=utf-8", body: adminPageHtml("dark", css, bundle) })
@@ -248,6 +267,47 @@ test("pendientes y código BEYONIX pendiente: se calculan en la base y el texto 
     await pendingBox.locator("button", { hasText: "Cancelar" }).click()
     assert.equal(await page.getByText("Se generará al guardar").count(), 0)
     assert.equal(await page.getByPlaceholder("Escaneá el código del fabricante").count(), 1)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("artículo nuevo: variante + compra en UNA request; doble click y reintento tras timeout no duplican", async () => {
+  const { page, errors } = await open()
+  try {
+    assert.match(await scan(page, "7790000009999"), /Código no reconocido/)
+    await page.getByRole("button", { name: "Crear artículo con este código" }).click()
+    await page.getByPlaceholder("Por ej: Auricular").fill("AURICULAR NUEVO")
+    await page.getByLabel("Elegir color").fill("#eca2a2")
+    await page.getByLabel("Nombre del color").fill("Rosa")
+    await page.getByPlaceholder("Por ej: Aur-01").fill("aurnew01")
+    await field(page, "Cantidad comprada").locator("input").fill("2")
+    await field(page, "Costo unitario").locator("input").fill("8852")
+    await field(page, "Flete").locator("input").fill("0")
+
+    // Primer intento: doble click y el servidor no responde a tiempo.
+    await page.evaluate(() => { (window as unknown as { __postStatuses: number[] }).__postStatuses = [504, 201] })
+    await page.getByRole("button", { name: "Guardar", exact: true }).dblclick()
+    await page.getByText("Tiempo de espera agotado.").waitFor()
+    const posts = () => page.evaluate(() => (window as unknown as { __posts: { key: string; body: Record<string, unknown> }[] }).__posts)
+    assert.equal((await posts()).length, 1, "doble click = una sola request")
+
+    // Reintento: misma clave, el servidor devuelve la operación una sola vez.
+    await page.getByRole("button", { name: "Guardar", exact: true }).click()
+    await page.getByText("Compra guardada correctamente.").waitFor()
+    const sent = await posts()
+    assert.equal(sent.length, 2)
+    assert.equal(sent[1].key, sent[0].key, "el reintento reutiliza la clave idempotente")
+    const newVariant = sent[0].body.newVariant as Record<string, unknown>
+    assert.deepEqual(
+      [newVariant.productId, newVariant.productName, newVariant.colorHex, newVariant.colorName, newVariant.sku, newVariant.barcode],
+      [null, "AURICULAR NUEVO", "#ECA2A2", "ROSA", "AURNEW01", "7790000009999"],
+    )
+    assert.equal(sent[0].body.unitCost, "8852")
+    assert.equal(sent[0].body.productId, null, "la variante y el producto los resuelve la transacción")
+    const requests = await page.evaluate(() => (window as unknown as { __requests: string[] }).__requests)
+    assert.equal(requests.filter((path) => path.startsWith("/api/admin/costs/new-article")).length, 0, "sin alta previa sin compra")
     assert.deepEqual(errors, [])
   } finally {
     await page.close()

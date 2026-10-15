@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useId,
   useMemo,
   useRef,
@@ -42,6 +43,10 @@ import {
   type ProductCostEntry,
   updateBusinessCost,
 } from "@/lib/supabase/queries/business-costs"
+import {
+  PURCHASE_PRODUCT_QUERY_PARAM,
+  purchaseProductFromSearch,
+} from "@/lib/products/variant-creation-rule"
 import {
   uniqueAutocompleteValues,
   withoutTrailingProductColor,
@@ -1164,6 +1169,27 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     })
   }
 
+  // "Ir a Compras" desde Productos (?producto=<id>): abre el ingreso con ese
+  // producto elegido para registrar la compra de la variante nueva. Corre una
+  // sola vez y limpia el parámetro para que recargar no lo repita.
+  const preselectedPurchaseHandled = useRef(false)
+  const openPreselectedPurchase = useEffectEvent((productId: number) => {
+    setMode("product")
+    void startPurchaseForCatalogTarget(`p:${productId}`, "").then(() => {
+      setMessage("Elegí el color y el SKU de la variante nueva y completá la compra: la variante se crea al registrar este ingreso.")
+    })
+  })
+  useEffect(() => {
+    if (preselectedPurchaseHandled.current || loading || !data) return
+    preselectedPurchaseHandled.current = true
+    const productId = purchaseProductFromSearch(window.location.search)
+    if (!productId) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete(PURCHASE_PRODUCT_QUERY_PARAM)
+    window.history.replaceState(window.history.state, "", url)
+    openPreselectedPurchase(productId)
+  }, [loading, data])
+
   const persistedArticleBarcode = (() => {
     const [kind, productKey, variantKey] = article.split(":")
     const product = data?.catalog.find(
@@ -1233,13 +1259,25 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       setError("Elegí un color con el selector para poder ponerle nombre.")
       return
     }
+    // Color nuevo (artículo nuevo o color nuevo de un producto): la variante
+    // nace con esta compra, en una sola operación del servidor.
+    const createsVariant =
+      Boolean(newArticleColorHex) && (isNewArticle || (Boolean(productId) && !variantId))
+    if (createsVariant && editingProductId) {
+      setError("Una variante nueva se crea registrando una compra nueva, no editando una existente.")
+      return
+    }
+    if (createsVariant && !productSku.trim()) {
+      setError("Completá el SKU de la variante nueva.")
+      return
+    }
 
     try {
       setSaving(true)
       setError("")
       setMessage("")
 
-      if (showsCatalogArticleFields) {
+      if (showsCatalogArticleFields && !createsVariant) {
         const articlePayload = {
           productId: isNewArticle ? null : productId,
           variantId: isNewArticle ? null : variantId,
@@ -1271,8 +1309,21 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       const payload = {
         kind: "product",
         id: editingProductId,
-        productId,
-        variantId,
+        productId: createsVariant ? null : productId,
+        variantId: createsVariant ? null : variantId,
+        ...(createsVariant
+          ? {
+              newVariant: {
+                productId: isNewArticle ? null : productId,
+                productName: isNewArticle ? newArticleName : null,
+                colorHex: newArticleColorHex,
+                colorName: newArticleColorNameValue || null,
+                sku: productSku,
+                barcode: generateArticleBarcode ? null : newArticleBarcodeValue || null,
+                generateBarcode: generateArticleBarcode,
+              },
+            }
+          : {}),
         articleName,
         sku: productSku,
         purchaseDate,
@@ -1605,7 +1656,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                   </Field>
                 </>
               )}
-              <Field label={article === "custom" ? "SKU" : "SKU (opcional)"}>
+              <Field label={article === "custom" || (article.startsWith("p:") && newArticleColor) ? "SKU" : "SKU (opcional)"}>
                 <input
                   value={productSku}
                   onChange={(event) => setProductSku(event.target.value.toUpperCase())}

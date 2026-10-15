@@ -154,6 +154,8 @@ export interface SupabaseProducto {
   alto_paquete_cm?: number | null
   ancho_paquete_cm?: number | null
   largo_paquete_cm?: number | null
+  /** Sube cada vez que cambia la ficha comercial (control de lost updates). */
+  catalog_revision?: number
 
   created_at: string
 

@@ -5,6 +5,9 @@ import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
+const NEW_VARIANT_WITH_PURCHASE_MESSAGE =
+  "La variante nueva se crea junto con su compra: completá cantidad y costo y guardá la compra."
+
 // La variante es la fuente de verdad del código: Compras sólo completa un
 // código faltante (escaneado o BEYONIX generado) y nunca pisa uno existente.
 async function assignVariantBarcode(
@@ -76,7 +79,6 @@ export async function POST(request: Request) {
     | Record<string, unknown>
     | null
 
-  const sku = optionalText(body?.sku, 120)
   const barcode = optionalText(body?.barcode, 64)
   const generateBarcode = body?.generateBarcode === true
   const colorHex = body?.colorHex ? validColor(body.colorHex) : null
@@ -107,36 +109,16 @@ export async function POST(request: Request) {
     )
   }
 
-  let productId = existingProductId
-  if (!productId) {
-    const name = requiredText(body?.name, 240)
-    if (!name) {
-      return Response.json(
-        { error: "El artículo debe tener un nombre." },
-        { status: 400 },
-      )
-    }
-    const productResult = await auth.admin.rpc("ensure_cost_catalog_product", {
-      p_name: name,
-      p_sku: sku,
-    })
-    if (productResult.error) {
-      const missingMigration =
-        /ensure_cost_catalog_product|schema cache|PGRST202/i.test(
-          productResult.error.message,
-        )
-      return Response.json(
-        {
-          error: missingMigration
-            ? "Falta aplicar la migración 20260808120000_atomic_product_catalog_workflow.sql."
-            : productResult.error.message,
-        },
-        { status: missingMigration ? 503 : 409 },
-      )
-    }
-    productId = Number(productResult.data)
+  // Artículos y variantes nuevos nacen SÓLO junto con su compra
+  // (POST /api/admin/costs con newVariant, una sola transacción). Este
+  // endpoint ya no crea nada: sólo completa datos de lo que ya existe.
+  if (!existingProductId) {
+    return Response.json(
+      { error: NEW_VARIANT_WITH_PURCHASE_MESSAGE },
+      { status: 409 },
+    )
   }
-
+  const productId = existingProductId
   // Editando una variante que ya existe: solo actualiza su color/nombre/
   // código de barra, nunca mueve stock (eso lo maneja la compra en sí).
   if (existingVariantId) {
@@ -199,61 +181,10 @@ export async function POST(request: Request) {
     return Response.json({ productId, variantId: null }, { status: 200 })
   }
 
-  // Se pidió un color pero el producto todavía no tiene ninguna variante:
-  // crea una nueva, sin stock (lo aporta la compra que se guarda después,
-  // que ya viene con su propio movimiento tagueado a esta variante).
-  const variantResult = await auth.admin.rpc(
-    "create_product_variant_with_allocation_v2",
-    {
-      p_product_id: productId,
-      p_name: colorName ?? deriveVariantNameFromColor(colorHex),
-      p_sku: sku,
-      p_color_hex: colorHex,
-      p_images: [],
-      p_quantity: 0,
-      p_actor_id: auth.user.id,
-      p_peso_empaquetado_kg: null,
-      p_alto_paquete_cm: null,
-      p_ancho_paquete_cm: null,
-      p_largo_paquete_cm: null,
-    },
+  // Un color nuevo de un producto existente es una variante nueva: se crea
+  // únicamente junto con su compra.
+  return Response.json(
+    { error: NEW_VARIANT_WITH_PURCHASE_MESSAGE },
+    { status: 409 },
   )
-  if (variantResult.error) {
-    const missingMigration =
-      /create_product_variant_with_allocation_v2|schema cache|PGRST202/i.test(
-        variantResult.error.message,
-      )
-    return Response.json(
-      {
-        error: missingMigration
-          ? "Falta aplicar la migración 20260801102000_product_shipping_data.sql."
-          : variantResult.error.message,
-      },
-      { status: missingMigration ? 503 : 409 },
-    )
-  }
-  const variant = Array.isArray(variantResult.data)
-    ? variantResult.data[0]
-    : variantResult.data
-  if (!variant) {
-    return Response.json(
-      { error: "La variante se creó sin una respuesta verificable." },
-      { status: 500 },
-    )
-  }
-  const variantId = Number(variant.id)
-
-  const barcodeError = await assignVariantBarcode(
-    auth.admin,
-    productId,
-    variantId,
-    barcode,
-    generateBarcode,
-    auth.user.id,
-  )
-  if (barcodeError) {
-    return Response.json({ error: barcodeError }, { status: 409 })
-  }
-
-  return Response.json({ productId, variantId }, { status: 201 })
 }
