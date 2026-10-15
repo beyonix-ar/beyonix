@@ -39,6 +39,7 @@ import {
 } from "@/lib/supabase/queries/producto-imagenes"
 
 import {
+  createProductoVariantWithAllocation,
   deleteProductoVariante,
   generateProductoVarianteBarcode,
   getProductVariantDistribution,
@@ -48,14 +49,7 @@ import {
   type ProductVariantDistribution,
 } from "@/lib/supabase/queries/producto-variantes"
 
-import Link from "next/link"
-
 import { AddToLabelQueueDialog } from "@/app/admin/components/add-to-label-queue-dialog"
-import {
-  VARIANT_CREATION_RULE_MESSAGE,
-  VARIANT_REMOVAL_RULE_TEXT,
-  purchaseUrlForProduct,
-} from "@/lib/products/variant-creation-rule"
 import { barcodeOrigin, barcodeOriginLabel } from "@/lib/barcodes/codes"
 import { TransparencyAwareImage } from "@/components/transparency-aware-image"
 import { getVariantActivationError } from "@/lib/products/product-activation"
@@ -193,8 +187,8 @@ export function ProductVariantsEditor({
   const [variantsLoaded, setVariantsLoaded] =
     useState(!productoId)
 
-  // El alta de borrador es local: no hay escritura en curso.
-  const saving = false
+  const [saving, setSaving] =
+    useState(false)
 
   const [formOpen, setFormOpen] =
     useState(false)
@@ -220,11 +214,6 @@ export function ProductVariantsEditor({
     () => new Set(),
   )
   const formPanelRef = useRef<HTMLElement>(null)
-  // Sólo la última recarga aplica su respuesta: una respuesta vieja nunca
-  // pisa el estado que dejó una mutación posterior.
-  const loadSequenceRef = useRef(0)
-  // Un doble click no dispara dos bajas de la misma variante.
-  const deleteInFlightRef = useRef(false)
 
   const [error, setError] =
     useState("")
@@ -240,13 +229,8 @@ export function ProductVariantsEditor({
   const hasVariants = productoId
     ? orderedVariantes.length > 0
     : draftVariants.length > 0
-  // Un producto guardado nunca crea variantes acá: una variante física nueva
-  // nace de una compra (Admin → Compras). Sólo el borrador de un producto
-  // nuevo arma sus variantes antes del primer guardado.
-  const canCreateVariantsHere = !productoId
   const showCreateForm =
-    canCreateVariantsHere &&
-    (formOpen || (!loading && variantsLoaded && !hasVariants))
+    formOpen || (!loading && variantsLoaded && !hasVariants)
   const primaryVariantId = orderedVariantes[0]?.id
 
   const loadVariantes =
@@ -257,8 +241,6 @@ export function ProductVariantsEditor({
         return
       }
 
-      const sequence = ++loadSequenceRef.current
-      const isLatest = () => sequence === loadSequenceRef.current
       try {
         setLoading(true)
         setVariantsLoaded(false)
@@ -268,7 +250,6 @@ export function ProductVariantsEditor({
           getProductoVariantes(productoId),
           getProductVariantDistribution(productoId),
         ])
-        if (!isLatest()) return
         const catalogVariantIds = new Set(
           data.map((variant) => Number(variant.id)),
         )
@@ -292,7 +273,6 @@ export function ProductVariantsEditor({
         setVariantsLoaded(true)
         setDistribution(stockDistribution)
       } catch (err) {
-        if (!isLatest()) return
         setVariantsLoaded(false)
         setError(
           err instanceof Error
@@ -300,7 +280,7 @@ export function ProductVariantsEditor({
             : "No se pudieron cargar las variantes."
         )
       } finally {
-        if (isLatest()) setLoading(false)
+        setLoading(false)
       }
     }, [productoId])
 
@@ -352,20 +332,15 @@ export function ProductVariantsEditor({
     resetFields()
   }
 
-  // Sólo arma variantes del borrador de un producto nuevo (se guardan junto
-  // con el producto). Un producto guardado suma variantes desde Compras.
-  const addVariant = () => {
+  const addVariant = async () => {
     setError("")
     setSuccessMessage("")
-    if (productoId) {
-      setError(VARIANT_CREATION_RULE_MESSAGE)
-      return
-    }
     const normalizedColor = normalizeHex(colorHex)
     const cleanName = colorName.trim().toUpperCase() || deriveVariantNameFromColor(normalizedColor)
 
+    let logistics
     try {
-      parseOptionalProductLogistics(shippingValues)
+      logistics = parseOptionalProductLogistics(shippingValues)
     } catch (validationError) {
       setError(
         validationError instanceof ProductLogisticsValidationError
@@ -381,48 +356,98 @@ export function ProductVariantsEditor({
       color_hex: normalizedColor,
     }
 
-    onDraftVariantsChange?.([
-      ...draftVariants,
-      {
-        ...nextVariant,
-        sku: nextVariant.sku ?? "",
-        tempId:
-          crypto.randomUUID(),
-        imagenes:
-          variantImages,
-        ...shippingValues,
-      },
-    ])
-    if (!draftVariants.length) onPrimarySkuChange?.(nextVariant.sku ?? "")
+    if (!productoId) {
+      onDraftVariantsChange?.([
+        ...draftVariants,
+        {
+          ...nextVariant,
+          sku: nextVariant.sku ?? "",
+          tempId:
+            crypto.randomUUID(),
+          imagenes:
+            variantImages,
+          ...shippingValues,
+        },
+      ])
+      if (!draftVariants.length) onPrimarySkuChange?.(nextVariant.sku ?? "")
 
-    resetFields()
-    setSuccessMessage("Variante agregada al borrador.")
+      resetFields()
+      setSuccessMessage("Variante agregada al borrador.")
+      return
+    }
+
+    try {
+      setSaving(true)
+
+      const urls =
+        variantImages.length
+          ? await uploadProductoVariantImages(
+              productoId,
+              variantImages,
+            )
+          : []
+
+      let created: SupabaseProductoVariante
+      try {
+        created = await createProductoVariantWithAllocation(
+          productoId,
+          {
+            name: nextVariant.nombre,
+            sku: nextVariant.sku,
+            color: nextVariant.color_hex,
+            // El stock nunca se asigna al crear la variante: llega
+            // exclusivamente por una compra tagueada a esta variante, o por
+            // un ajuste manual explícito.
+            quantity: 0,
+            images: urls,
+            ...logistics,
+          },
+        )
+        if (barcode.trim()) {
+          created = await updateProductoVariante(productoId, created.id, {
+            codigo_barra: barcode.trim(),
+          })
+        }
+      } catch (createError) {
+        for (const url of urls) {
+          try {
+            await deleteProductoImageByUrl(url)
+          } catch (cleanupError) {
+            console.error(
+              "No se pudo limpiar una imagen de la variante:",
+              cleanupError,
+            )
+          }
+        }
+        throw createError
+      }
+
+      const nextVariantes = [...variantes, created]
+      setVariantes(nextVariantes)
+      if (!variantes.length) onPrimarySkuChange?.(created.sku ?? "")
+      resetFields()
+      await loadVariantes()
+      setSuccessMessage("Variante creada correctamente.")
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo guardar la variante."
+      )
+    } finally {
+      setSaving(false)
+    }
   }
+
   const removePersistedVariant =
     async (id: number) => {
-      if (!productoId || deleteInFlightRef.current) return false
+      if (!productoId) return false
 
-      deleteInFlightRef.current = true
       try {
         setDeleting(true)
         setError("")
         setSuccessMessage("")
-        const removal = await deleteProductoVariante(productoId, id)
-
-        if (removal.mode === "archived") {
-          // Tiene historial: no se borró, quedó inactiva.
-          setVariantes((current) =>
-            current.map((variante) =>
-              variante.id === id
-                ? (removal.variant ?? { ...variante, activo: false })
-                : variante,
-            ),
-          )
-          onPersistedVariantStatesChange?.({ ...persistedVariantStates, [id]: false })
-          await loadVariantes()
-          setSuccessMessage(removal.message)
-          return true
-        }
+        await deleteProductoVariante(productoId, id)
 
         const nextVariantes =
           variantes.filter(
@@ -444,7 +469,7 @@ export function ProductVariantsEditor({
           onPrimarySkuChange?.(nextPrimary?.sku ?? "")
         }
         await loadVariantes()
-        setSuccessMessage(removal.message)
+        setSuccessMessage("Variante eliminada correctamente.")
         return true
       } catch (err) {
         console.error(err)
@@ -455,7 +480,6 @@ export function ProductVariantsEditor({
         )
         return false
       } finally {
-        deleteInFlightRef.current = false
         setDeleting(false)
       }
     }
@@ -1085,7 +1109,7 @@ export function ProductVariantsEditor({
       <AdminCard className="product-editor-panel min-w-0 space-y-2 p-2.5">
         <div className="product-editor-panel-heading flex items-center justify-between gap-2">
           <h2 className="text-base font-black text-white">Variantes</h2>
-          {canCreateVariantsHere && !showCreateForm && hasVariants && colorMode !== "aleatorio_simple" && (
+          {!showCreateForm && hasVariants && colorMode !== "aleatorio_simple" && (
             <AdminPrimaryButton
               title="Agregar una nueva variante"
               aria-label="Agregar una variante"
@@ -1116,23 +1140,6 @@ export function ProductVariantsEditor({
               : draftVariants.map(renderDraftVariant)}
           </div>
         ) : null}
-        {productoId && !loading && (
-          <div
-            className="product-editor-variant-purchase-rule flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/15 px-3 py-2"
-            data-variant-creation-rule
-          >
-            <p className="min-w-0 text-xs font-semibold leading-5 text-white">
-              {VARIANT_CREATION_RULE_MESSAGE}
-            </p>
-            <Link
-              href={purchaseUrlForProduct(productoId)}
-              className="admin-ds-button admin-ds-button-secondary inline-flex min-h-8 shrink-0 items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-black"
-            >
-              <Plus className="size-3.5" />
-              Ir a Compras
-            </Link>
-          </div>
-        )}
         {productoId && onColorModeChange && !loading && orderedVariantes.length > 0 && (
           <ProductSalesOptions
             productId={productoId}
@@ -1270,7 +1277,7 @@ export function ProductVariantsEditor({
           </p>
           <p className="mt-2 text-xs leading-5 text-white">
             {pendingDelete?.kind === "persisted"
-              ? VARIANT_REMOVAL_RULE_TEXT
+              ? "Si tiene compras, ventas o movimientos asociados, el sistema impedirá eliminarla para proteger el inventario."
               : "Esta variante todavía no fue guardada y se quitará del formulario."}
           </p>
         </div>

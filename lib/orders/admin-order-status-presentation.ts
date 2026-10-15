@@ -89,6 +89,7 @@ export function getAdminDispatchStatus(
 
 export type AdminExecutiveStatusKey =
   | "cancelled_refunded"
+  | "cancelled_refunded_credit_note_pending"
   | "cancelled_refund_pending"
   | "refunded"
   | "refund_pending"
@@ -104,6 +105,8 @@ export type AdminExecutiveStatusKey =
 /** Estados ejecutivos que no salen del `estado` crudo del pedido. */
 export const ADMIN_EXECUTIVE_STATUS: Record<AdminExecutiveStatusKey, AdminOrderStatusPresentation> = {
   cancelled_refunded: { label: ORDER_CANCELLATION_REFUND_LABELS.refunded.admin, tone: "danger" },
+  // Caso heredado: el dinero volvió pero falta la NC que anula la factura.
+  cancelled_refunded_credit_note_pending: { label: "Reintegro realizado · Nota de crédito pendiente", tone: "warning" },
   cancelled_refund_pending: { label: ORDER_CANCELLATION_REFUND_LABELS.refund_in_progress.admin, tone: "danger" },
   refunded: { label: "Reintegrado", tone: "neutral" },
   refund_pending: { label: "Reintegro pendiente", tone: "danger" },

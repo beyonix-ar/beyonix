@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Download, ExternalLink, FileText, LoaderCircle } from "lucide-react"
 
@@ -103,8 +103,17 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
     ? selected.size === 1 ? "factura seleccionada" : "facturas seleccionadas"
     : selected.size === 1 ? "nota de crédito seleccionada" : "notas de crédito seleccionadas"
 
+  // Un filtro con texto pasa a "todos los períodos" JUNTO con el filtro, en
+  // el mismo render: una sola consulta por búsqueda (antes el período cambiaba
+  // al tipear y disparaba una consulta sin filtro, y otra a los 300 ms).
+  const widenPeriodOnApply = useRef(false)
   useEffect(() => {
-    const timer = window.setTimeout(() => { setAppliedFilters(filters); setPage(1) }, 300)
+    const timer = window.setTimeout(() => {
+      setAppliedFilters(filters)
+      setPage(1)
+      if (widenPeriodOnApply.current) setPeriod("all")
+      widenPeriodOnApply.current = false
+    }, 300)
     return () => window.clearTimeout(timer)
   }, [filters])
 
@@ -146,9 +155,13 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
 
   const changeFilter = (name: keyof Filters, value: string) => {
     setFilters((current) => ({ ...current, [name]: value }))
-    if (value.trim()) setPeriod("all")
+    if (value.trim()) widenPeriodOnApply.current = true
   }
-  const clearDateRange = () => setFilters((current) => current.from || current.to ? { ...current, from: "", to: "" } : current)
+  // Elegir mes/año a mano manda sobre el "todos los períodos" pendiente de una búsqueda.
+  const clearDateRange = () => {
+    widenPeriodOnApply.current = false
+    setFilters((current) => current.from || current.to ? { ...current, from: "", to: "" } : current)
+  }
   const groups = groupedByDay(items)
   const visibleIds = items.map((item) => item.id)
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
@@ -239,6 +252,7 @@ export function FiscalHistoryPanel({ kind }: { kind: FiscalKind }) {
             <AdminSecondaryButton key={value} size="sm" aria-pressed={period === value} onClick={() => {
               if (value === "month") { const currentDay = argentinaToday(); setYear(Number(currentDay.slice(0, 4))); setMonth(Number(currentDay.slice(5, 7))) }
               if (value !== "all") clearDateRange()
+              widenPeriodOnApply.current = false
               setPeriod(value); setPage(1)
             }}>{value === "today" ? "Hoy" : value === "month" ? "Este mes" : "Historial"}</AdminSecondaryButton>
           ))}

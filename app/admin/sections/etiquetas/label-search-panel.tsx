@@ -1,45 +1,57 @@
 "use client"
 
 import { useEffect, useEffectEvent, useRef, useState } from "react"
-import { Barcode, ListPlus, ScanLine, Search } from "lucide-react"
+import { Barcode, CheckCircle2, Info, LoaderCircle, PackageSearch, Plus, ScanLine, Search } from "lucide-react"
 
-import { AdminButton, AdminSection, AdminTextInput } from "@/app/admin/components/admin-controls"
-import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
+import {
+  AdminBadge,
+  AdminButton,
+  AdminGhostButton,
+  AdminPrimaryButton,
+  AdminSelect,
+  AdminTextInput,
+} from "@/app/admin/components/admin-controls"
 import { MAX_CATALOG_SEARCH_LENGTH } from "@/lib/business/cost-catalog-search"
-import { buildLabelTargets, type LabelCatalogProduct, type LabelTarget } from "@/lib/labels/catalog"
+import {
+  LABEL_CODE_SOURCE_LABELS,
+  buildLabelTargets,
+  type LabelCatalogProduct,
+  type LabelTarget,
+} from "@/lib/labels/catalog"
 import { generateBeyonixVariantCode, loadLabelProducts, searchLabelCatalog } from "@/lib/labels/client"
-import { removeFromQueue, setQueueCopies, type LabelQueueItem, type QueueAddResult } from "@/lib/labels/queue"
+import { queueItemKey } from "@/lib/labels/queue"
+import { cn } from "@/lib/utils"
 
-import { LabelQuantity } from "./label-quantity"
 import { LabelSwatch } from "./label-swatch"
+import { LABEL_STEP_IDS, LabelStepSection, QuantityStepper, plural } from "./label-ui"
 
 const SEARCH_DEBOUNCE_MS = 300
 
-export type AddTargetHandler = (target: LabelTarget, code: string, copies: number) => QueueAddResult | null
-export type QueueUpdate = (change: (queue: LabelQueueItem[]) => LabelQueueItem[]) => void
+export type AddTargetHandler = (target: LabelTarget, code: string, copies: number) => void
 
-/** "NEGRO · AP01": color (o variante) y SKU, lo mismo que sale impreso en la línea 2. */
-export function targetDetail(variantLabel: string | null, sku: string | null) {
-  return [variantLabel, sku].filter(Boolean).join(" · ")
+function Meta({ label, children, mono = false }: { label: string; children: React.ReactNode; mono?: boolean }) {
+  return (
+    <span className="inline-flex min-w-0 items-baseline gap-1">
+      <span className="text-10px font-black uppercase text-white/45">{label}</span>
+      <span className={cn("truncate font-bold text-white/85", mono && "font-mono")}>{children}</span>
+    </span>
+  )
 }
 
-function findQueued(queue: readonly LabelQueueItem[], target: LabelTarget) {
-  return queue.find((item) => !item.issue && item.productId === target.productId && item.variantId === target.variantId) ?? null
-}
-
-function TargetRow({ target, queued, maxCopies, onAdd, update, onGenerated }: {
+function TargetRow({ target, maxCopies, queuedCopies, onAdd, onGenerated }: {
   target: LabelTarget
-  queued: LabelQueueItem | null
   maxCopies: number
+  queuedCopies: ReadonlyMap<string, number>
   onAdd: AddTargetHandler
-  update: QueueUpdate
   onGenerated: (productId: number) => Promise<void>
 }) {
+  const [code, setCode] = useState(target.options[0]?.code ?? "")
+  const [copies, setCopies] = useState(1)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState("")
-  const option = target.options[0]
-  const detail = targetDetail(target.variantLabel, target.sku) || "Sin color ni SKU"
-  const label = [target.productName, target.variantLabel].filter(Boolean).join(" ")
+  const selected = target.options.find((option) => option.code === code) ?? target.options[0]
+  const name = target.variantLabel ?? target.productName
+  const inQueue = selected ? queuedCopies.get(queueItemKey(target.productId, target.variantId, selected.code)) ?? 0 : 0
 
   async function generate() {
     if (!target.variantId || generating) return
@@ -56,82 +68,127 @@ function TargetRow({ target, queued, maxCopies, onAdd, update, onGenerated }: {
   }
 
   return (
-    <li className="admin-label-row" data-selected={queued ? "true" : "false"}>
-      <div className="flex min-h-11 items-center gap-3 px-3 py-1.5">
-        <LabelSwatch colorHex={target.colorHex} colorHexSecondary={target.colorHexSecondary} />
-        <p className="min-w-0 flex-1 truncate text-sm font-bold text-white" title={option ? `Código ${option.code}` : undefined}>
-          {detail}
-          {!target.active && <span className="ml-2 text-11px font-bold text-amber-300">Inactivo</span>}
-        </p>
-        {option ? (
-          <LabelQuantity
-            value={queued?.copies ?? 0}
-            max={maxCopies}
-            label={label}
-            onChange={(copies) => (queued ? update((queue) => setQueueCopies(queue, queued.key, copies, maxCopies)) : onAdd(target, option.code, copies))}
-            onRemove={() => queued && update((queue) => removeFromQueue(queue, queued.key))}
-          />
-        ) : target.variantId ? (
-          <AdminButton size="sm" className="shrink-0" icon={<Barcode className="size-3.5" />} disabled={generating} onClick={() => void generate()}>
-            {generating ? "Generando…" : "Generar código"}
-          </AdminButton>
+    <li className={cn("py-3 first:pt-0 last:pb-0", !target.active && "opacity-80")}>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+        <div className="flex min-w-48 flex-1 items-start gap-2.5">
+          <span className="mt-0.5 flex"><LabelSwatch colorHex={target.colorHex} colorHexSecondary={target.colorHexSecondary} /></span>
+          <div className="min-w-0 flex-1">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-black text-white">
+              <span className="min-w-0 truncate">{target.variantLabel ?? "Artículo único"}</span>
+              {!target.active && <AdminBadge tone="warning" className="px-1.5 py-0.5">Inactiva</AdminBadge>}
+              {inQueue > 0 && (
+                <span className="inline-flex items-center gap-1 text-11px font-black text-emerald-300">
+                  <CheckCircle2 className="size-3.5" aria-hidden="true" />En cola ×{inQueue}
+                </span>
+              )}
+            </p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <Meta label="SKU">{target.sku ?? "—"}</Meta>
+              {selected && target.options.length === 1 && <Meta label="Código" mono>{selected.code}</Meta>}
+              {selected && (
+                <span className="inline-flex items-center gap-1.5">
+                  <AdminBadge tone={selected.classification.kind === "code128" ? "neutral" : "info"} className="px-1.5 py-0.5">{selected.classification.label}</AdminBadge>
+                  <span className="text-11px text-white/50">{LABEL_CODE_SOURCE_LABELS[selected.source]}</span>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        {selected ? (
+          <div className="flex flex-wrap items-center gap-2 max-sm:w-full max-sm:justify-end">
+            {target.options.length > 1 && (
+              <AdminSelect
+                title="Código a imprimir"
+                ariaLabel={`Código a imprimir de ${name}`}
+                value={selected.code}
+                compact
+                wrapperClassName="w-48 max-w-full"
+                onChange={setCode}
+              >
+                {target.options.map((option) => (
+                  <option key={option.code} value={option.code}>{`${option.code} · ${LABEL_CODE_SOURCE_LABELS[option.source]}`}</option>
+                ))}
+              </AdminSelect>
+            )}
+            <QuantityStepper value={copies} max={maxCopies} name={name} size="sm" onChange={setCopies} />
+            <AdminPrimaryButton
+              size="sm"
+              icon={<Plus className="size-3.5" />}
+              aria-label={`Agregar ${name} a la cola`}
+              onClick={() => { onAdd(target, selected.code, copies); setCopies(1) }}
+            >
+              Agregar
+            </AdminPrimaryButton>
+          </div>
         ) : (
-          <span className="shrink-0 text-xs font-bold text-white/55">Sin código</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-amber-300">Sin código imprimible</span>
+            {target.variantId ? (
+              <AdminButton size="sm" icon={<Barcode className="size-3.5" />} disabled={generating} onClick={() => void generate()}>
+                {generating ? "Generando…" : "Generar código BEYONIX"}
+              </AdminButton>
+            ) : (
+              <span className="text-xs text-white/50">Cargá un código o SKU en el producto.</span>
+            )}
+          </div>
         )}
       </div>
-      {!option && !target.variantId && <p className="px-3 pb-2 pl-10 text-xs text-white/55">Cargá un código de barras o SKU en el producto para poder imprimirlo.</p>}
-      {option?.classification.notice && <p className="px-3 pb-2 pl-10 text-xs text-amber-300">{option.classification.notice}</p>}
-      {error && <p role="alert" className="px-3 pb-2 pl-10 text-xs font-bold text-red-300">{error}</p>}
+      {selected?.classification.notice && <p className="mt-1.5 pl-6.5 text-xs text-amber-300">{selected.classification.notice}</p>}
+      {error && <p role="alert" className="mt-1.5 pl-6.5 text-xs font-bold text-red-300">{error}</p>}
     </li>
   )
 }
 
-function ProductResult({ product, queue, maxCopies, onAdd, update, onGenerated }: {
+function ProductResult({ product, maxCopies, queuedCopies, onAdd, onGenerated }: {
   product: LabelCatalogProduct
-  queue: readonly LabelQueueItem[]
   maxCopies: number
+  queuedCopies: ReadonlyMap<string, number>
   onAdd: AddTargetHandler
-  update: QueueUpdate
   onGenerated: (productId: number) => Promise<void>
 }) {
-  const { targets } = buildLabelTargets(product)
-  const missing = targets.filter((target) => target.options.length > 0 && !findQueued(queue, target))
+  const { targets, groupAliases } = buildLabelTargets(product)
+  const printable = targets.filter((target) => target.options.length > 0)
+  const notes = [
+    product.randomSale ? "Venta aleatoria: cada variante física lleva su propio código, así se sabe qué color se entregó." : null,
+    groupAliases.length ? `Código de grupo ${groupAliases.join(", ")}: no identifica el color, no se imprime.` : null,
+  ].filter((note): note is string => Boolean(note))
   return (
-    <li className="admin-label-product">
-      <div className="flex items-center justify-between gap-2 px-3 pb-1 pt-2.5">
-        <p className="min-w-0 truncate text-xs font-black uppercase tracking-wide text-white" title={product.name}>
-          {product.name}
-          {!product.active && <span className="ml-2 normal-case tracking-normal text-amber-300">Inactivo</span>}
-        </p>
-        {targets.length > 1 && missing.length > 0 && (
-          <button type="button" className="admin-label-link shrink-0 text-xs font-bold" onClick={() => missing.forEach((target) => onAdd(target, target.options[0].code, 1))}>
-            <ListPlus className="size-3.5" aria-hidden="true" />
-            Agregar {missing.length === targets.length ? "todas" : "las que faltan"}
-          </button>
+    <li className="rounded-xl border border-white/10 bg-white/3 p-3 sm:p-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-black leading-5 text-white">{product.name}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {!product.active && <AdminBadge tone="warning">Producto inactivo</AdminBadge>}
+            {product.randomSale && <AdminBadge tone="info">Venta aleatoria</AdminBadge>}
+            <span className="text-11px font-bold text-white/50">
+              {product.variants.length ? plural(product.variants.length, "variante") : "Sin variantes"}
+            </span>
+          </div>
+        </div>
+        {printable.length > 1 && (
+          <AdminGhostButton size="sm" icon={<Plus className="size-3.5" />} onClick={() => printable.forEach((target) => onAdd(target, target.options[0].code, 1))}>
+            Agregar todas ×1
+          </AdminGhostButton>
         )}
       </div>
-      <ul>
+      {notes.map((note) => (
+        <p key={note} className="mt-2 flex items-start gap-1.5 text-xs leading-5 text-white/55">
+          <Info className="mt-0.5 size-3.5 shrink-0 text-beyonix-cyan" aria-hidden="true" />{note}
+        </p>
+      ))}
+      <ul className="mt-3 divide-y divide-white/8 border-t border-white/8 pt-3">
         {targets.map((target) => (
-          <TargetRow
-            key={`${target.variantId ?? 0}:${target.options.map((option) => option.code).join("|")}`}
-            target={target}
-            queued={findQueued(queue, target)}
-            maxCopies={maxCopies}
-            onAdd={onAdd}
-            update={update}
-            onGenerated={onGenerated}
-          />
+          <TargetRow key={`${target.variantId ?? 0}:${target.options.map((option) => option.code).join("|")}`} target={target} maxCopies={maxCopies} queuedCopies={queuedCopies} onAdd={onAdd} onGenerated={onGenerated} />
         ))}
       </ul>
     </li>
   )
 }
 
-export function LabelSearchPanel({ queue, maxCopies, onAdd, update, onProducts, className }: {
-  queue: readonly LabelQueueItem[]
+export function LabelSearchPanel({ maxCopies, queuedCopies, onAdd, onProducts, className }: {
   maxCopies: number
+  queuedCopies: ReadonlyMap<string, number>
   onAdd: AddTargetHandler
-  update: QueueUpdate
   onProducts: (products: LabelCatalogProduct[]) => void
   className?: string
 }) {
@@ -163,7 +220,7 @@ export function LabelSearchPanel({ queue, maxCopies, onAdd, update, onProducts, 
         })
         setHasMore(page.hasMore)
         reportProducts(page.items)
-        // Lector de códigos: Enter con un código exacto lo suma directo.
+        // Lector de códigos: Enter con un código exacto lo agrega directo.
         const scanned = pendingScan.current
         if (scanned && scanned === query.trim()) {
           pendingScan.current = null
@@ -172,16 +229,16 @@ export function LabelSearchPanel({ queue, maxCopies, onAdd, update, onProducts, 
             return option ? [{ target, code: option.code }] : []
           }))
           if (matches.length === 1) {
-            const outcome = addScanned(matches[0].target, matches[0].code)
+            addScanned(matches[0].target, matches[0].code)
             setQuery("")
-            setNotice(outcome?.rejected ? "La tanda llegó al máximo de artículos." : `Escaneado: ${[matches[0].target.productName, matches[0].target.variantLabel].filter(Boolean).join(" · ")} +1.`)
+            setNotice(`Escaneado: ${matches[0].code} agregado ×1.`)
           } else {
             setNotice(matches.length ? "El código coincide con más de un artículo: elegilo de la lista." : "No hay un artículo con ese código exacto.")
           }
         }
       } catch {
         if (!current) return
-        setError("No se pudieron cargar los productos. Revisá la conexión y volvé a buscar.")
+        setError("No se pudieron cargar los artículos.")
         if (offset === 0) { setResults([]); setHasMore(false) }
       } finally {
         if (current) setLoading(false)
@@ -201,55 +258,68 @@ export function LabelSearchPanel({ queue, maxCopies, onAdd, update, onProducts, 
     onProducts([product])
   }
 
+  const trimmed = query.trim()
   return (
-    <AdminSection compact icon={<Search className="size-4" />} title="Buscar productos" description="Por nombre, SKU o código de barras." className={className}>
+    <LabelStepSection
+      id={LABEL_STEP_IDS.search}
+      step={1}
+      title="Buscar productos"
+      description="Elegí la variante, el código y cuántas etiquetas necesitás."
+      className={className}
+    >
       <form
         className="space-y-2"
         onSubmit={(event) => {
           event.preventDefault()
-          const value = query.trim()
-          if (!value) return
-          pendingScan.current = value
+          if (!trimmed) return
+          pendingScan.current = trimmed
           setOffset(0)
           setNotice("")
           setSearchNonce((current) => current + 1)
         }}
       >
-        <div className="flex items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <AdminTextInput
-              title="Buscar"
-              ariaLabel="Buscar productos"
-              placeholder="Nombre, SKU o código de barras…"
-              icon={<Search className="size-4" />}
-              value={query}
-              maxLength={MAX_CATALOG_SEARCH_LENGTH}
-              onChange={(value) => { setQuery(value); setOffset(0); setNotice("") }}
-            />
-          </div>
-          <AdminHelpTip label="Lector de códigos" text="Con un lector: escaneá y el lector envía Enter. Si el código es de un solo artículo, se suma 1 etiqueta y podés seguir escaneando." />
-        </div>
-        {notice && <p role="status" className="flex items-center gap-1.5 text-xs font-bold text-white/70"><ScanLine className="size-3.5" />{notice}</p>}
+        <AdminTextInput
+          title="Buscar"
+          ariaLabel="Buscar productos y variantes"
+          placeholder="Nombre, SKU, color o código de barras…"
+          icon={<Search className="size-4" />}
+          value={query}
+          maxLength={MAX_CATALOG_SEARCH_LENGTH}
+          className="h-12 text-base"
+          onChange={(value) => { setQuery(value); setOffset(0); setNotice("") }}
+        />
+        <p className="flex items-start gap-1.5 text-11px leading-4 text-white/50">
+          <ScanLine className="mt-px size-3.5 shrink-0 text-beyonix-cyan" aria-hidden="true" />
+          ¿Tenés lector? Escaneá el código: si identifica un solo artículo se suma ×1 a la cola y podés seguir escaneando.
+        </p>
+        {notice && <p role="status" className="text-xs font-bold text-white/80">{notice}</p>}
       </form>
-      <div className="mt-3">
+
+      <div className="mt-4 flex items-center justify-between gap-2 text-11px font-black uppercase tracking-widest text-white/50">
+        <span>{trimmed ? "Resultados" : "Catálogo"}{results.length > 0 && ` · ${plural(results.length, "producto")}`}</span>
+        {loading && <span className="inline-flex items-center gap-1.5 normal-case tracking-normal"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />Buscando…</span>}
+      </div>
+
+      <div className="mt-2">
         {error && <p role="alert" className="text-sm font-bold text-red-300">{error}</p>}
         {!error && !loading && results.length === 0 && (
-          <p className="py-8 text-center text-sm text-white/55">{query.trim() ? "Sin resultados para esa búsqueda." : "No hay productos cargados."}</p>
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <PackageSearch className="size-8 text-white/30" aria-hidden="true" />
+            <p className="text-sm font-black text-white">{trimmed ? "Sin resultados" : "No hay productos cargados"}</p>
+            {trimmed && <p className="max-w-xs text-xs text-white/55">Probá con otra palabra, el SKU o el código de barras completo.</p>}
+          </div>
         )}
-        {results.length > 0 && (
-          <ul className="admin-label-results" aria-busy={loading}>
-            {results.map((product) => (
-              <ProductResult key={product.id} product={product} queue={queue} maxCopies={maxCopies} onAdd={onAdd} update={update} onGenerated={refreshProduct} />
-            ))}
-          </ul>
-        )}
-        {loading && <p className="py-3 text-center text-xs font-bold text-white/55">Buscando…</p>}
+        <ul className="space-y-2.5">
+          {results.map((product) => (
+            <ProductResult key={product.id} product={product} maxCopies={maxCopies} queuedCopies={queuedCopies} onAdd={onAdd} onGenerated={refreshProduct} />
+          ))}
+        </ul>
         {hasMore && !loading && (
           <div className="mt-3 flex justify-center">
             <AdminButton size="sm" onClick={() => setOffset(results.length)}>Ver más productos</AdminButton>
           </div>
         )}
       </div>
-    </AdminSection>
+    </LabelStepSection>
   )
 }

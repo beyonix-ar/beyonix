@@ -16,7 +16,7 @@ export const CUSTOMER_ORDER_FIELDS = [
   "payment_proof_url", "payment_proof_file_name", "payment_proof_uploaded_at", "financial_status",
   "cancellation_requested_at", "cancellation_requested_by",
   "refund_pending_at", "refund_proof_url", "refund_amount", "refund_method", "refund_observation", "refunded_at",
-  "credit_note_status", "credit_note_number", "credit_note_point", "credit_note_cae", "credit_note_cae_due",
+  "credit_note_required", "credit_note_status", "credit_note_number", "credit_note_point", "credit_note_cae", "credit_note_cae_due",
   "credit_note_created_at", "credit_note_amount",
   "paid_at", "tracking_number", "tracking_url", "envio_proveedor", "andreani_estado", "andreani_tracking",
   "andreani_sucursal_nombre", "andreani_sucursal_direccion", "andreani_sucursal_localidad",

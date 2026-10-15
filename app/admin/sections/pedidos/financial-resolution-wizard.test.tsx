@@ -319,19 +319,29 @@ test("I. NC emitida se muestra como resultado, sin acciones fiscales manuales", 
   } finally { await ui.cleanup() }
 })
 
-test("G. reintegro manual pendiente: registrar con datos opcionales", async () => {
+test("G. reintegro manual pendiente: exige el comprobante; referencia y observación opcionales", async () => {
   const ui = await setup()
   try {
     await ui.render({ ...baseView, mode: "resolution", financialOptions: [],
       resolution: { id: "r1", type: "manual_refund", status: "manual_pending", amount: 25_000, detail: null } })
     assert.match(ui.doc.body.textContent ?? "", /Reintegro pendiente: \$\s?25\.000/)
     await ui.click("Registrar reintegro realizado")
+    // Sin comprobante del pago saliente no se puede cerrar el reintegro.
+    assert.equal(ui.button("Confirmar reintegro").disabled, true)
+    await ui.click("Confirmar reintegro")
+    assert.equal(ui.calls.length, 0)
+    const input = ui.doc.querySelector("input[type='file']") as HTMLInputElement
+    const file = new ui.doc.defaultView!.File(["%PDF-1.4"], "transferencia.pdf", { type: "application/pdf" })
+    Object.defineProperty(input, "files", { configurable: true, value: [file] })
+    await act(async () => { input.dispatchEvent(new ui.doc.defaultView!.Event("change", { bubbles: true })) })
     await ui.click("Confirmar reintegro")
     assert.equal(ui.calls.length, 1)
     const form = ui.calls[0].body as FormData
     assert.equal(form.get("action"), "complete_manual")
     assert.equal(form.get("confirmed"), "true")
-    assert.equal(form.get("file"), null)
+    // (FormData de Node con el File de JSDOM: sólo se verifica que viaje el archivo.)
+    assert.ok(form.has("file"), "el comprobante viaja en el formulario")
+    assert.equal(form.get("reference"), null, "la referencia sigue siendo opcional")
     await ui.render({ ...baseView, mode: "resolution", financialOptions: [],
       resolution: { id: "r1", type: "manual_refund", status: "completed", amount: 25_000, detail: null } })
     assert.match(ui.doc.body.textContent ?? "", /Reintegro completado ✅/)

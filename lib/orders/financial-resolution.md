@@ -11,8 +11,9 @@ consultarla.
 - `retry` para la única actualización pendiente; consulta el estado fiscal o
   externo antes de continuar.
 - `complete_manual` después de que el administrador hizo la transferencia.
-  `reference` y `observation` son opcionales. Puede enviarse un comprobante
-  opcional mediante `multipart/form-data` (`file`, JPG/PNG/PDF, hasta 5 MB).
+  El comprobante del pago saliente es obligatorio (`multipart/form-data`,
+  `file`, JPG/PNG/PDF, hasta 5 MB; la RPC responde `FINANCIAL_PROOF_REQUIRED`
+  sin él). `reference` y `observation` son opcionales.
 
 Etapa 6 (wizard del Admin) consume la misma API. `GET` agrega `mode`
 (`wizard | resolution | advanced | none`), `product`, `reception`,

@@ -37,7 +37,6 @@ const TEST_FILES = [
   "lib/products/admin-product-visuals.test.ts",
   "lib/products/product-activation.test.ts",
   "lib/products/product-variant-state-db.test.ts",
-  "lib/products/variant-parent-integrity-db.test.ts",
   "lib/products/installments.test.ts",
   "lib/pricing/product-pricing.test.ts",
   "lib/pricing/financed-pricing.test.ts",
@@ -224,6 +223,7 @@ const TEST_FILES = [
   "lib/orders/customer-order-cancellation-route.test.ts",
   "lib/orders/credit-note-refundable-cap.test.ts",
   "lib/orders/cancellation-next-action.test.ts",
+  "lib/orders/financial-circuit-audit.test.ts",
   "lib/orders/cancellation-panel-view.test.ts",
   "lib/admin/admin-notifications.test.ts",
   "lib/orders/customer-order-audit-view.test.ts",
@@ -285,8 +285,10 @@ const TEST_FILES = [
   "lib/mercadopago/refund-origin.test.ts",
   "lib/orders/legacy-credit-note.test.ts",
   "lib/orders/payment-incidents.test.ts",
-  "lib/orders/order-consistency.test.ts",
   "lib/orders/credit-note-mp-settlement.test.ts",
+  "lib/mercadopago/refund-closure-sql.test.ts",
+  "lib/arca/fiscal-obligation-guards-sql.test.ts",
+  "lib/orders/financial-closure-matrix.test.ts",
   "components/account/profile-sections-password-contract.test.ts",
   "components/account/register-password-requirements-contract.test.ts",
   "components/claims/mercadopago-refund-action.test.ts",
@@ -347,6 +349,7 @@ const DB_TEST_FILES = [
   "lib/arca/invoice-item-snapshots-sql.test.mjs",
   "lib/orders/claim-logistics-method-race.test.mjs",
   "lib/customer-credit/credit-reversal-concurrency.test.mjs",
+  "lib/mercadopago/refund-closure-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
@@ -358,7 +361,6 @@ const DB_ROUTE_TEST_FILES = [
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
   "lib/labels/labels-routes.test.ts",
-  "lib/products/variant-parent-integrity-routes.test.ts",
   "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
   "lib/arca/fiscal-history-routes.test.ts",

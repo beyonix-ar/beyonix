@@ -575,10 +575,8 @@ export function AdminProductos() {
         <p className="text-center text-xs leading-5 text-white/52">
           Vas a mover todas las variantes, compras, ventas y devoluciones de{" "}
           <span className="font-black text-white">{pendingMerge?.nombre}</span>{" "}
-          hacia otro producto, y este va a eliminarse. Se conserva la ficha del
-          producto elegido; lo que tenga vacío (precio, descripción,
-          especificaciones, categoría, logística, fotos) se completa con los
-          datos de este producto, así que ninguna ficha cargada se pierde.
+          hacia otro producto, y este va a eliminarse. Precio, fotos y
+          descripción del producto elegido son los que van a quedar.
         </p>
 
         <div className="mt-3">

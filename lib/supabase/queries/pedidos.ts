@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
 import { AdminRequestError } from "@/lib/admin/request-error"
-import type { AdminArchiveFilter } from "@/lib/orders/order-visibility"
 
 import type {
   SupabasePedido,
@@ -12,15 +11,12 @@ export async function getPedidos({
   offset = 0,
   orderId,
   search = "",
-  archive = "active",
 }: {
   notificationView?: boolean
   limit?: number
   offset?: number
   orderId?: number
   search?: string
-  /** Sólo aplica al listado paginado (sin búsqueda ni id). */
-  archive?: AdminArchiveFilter
 } = {}) {
   const {
     data: { session },
@@ -39,7 +35,6 @@ export async function getPedidos({
   } else {
     params.set("limit", String(limit))
     params.set("offset", String(offset))
-    if (archive !== "active") params.set("archive", archive)
   }
 
   const response = await fetch(

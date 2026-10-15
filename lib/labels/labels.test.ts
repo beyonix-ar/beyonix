@@ -26,7 +26,7 @@ import {
   type LabelQueueItem,
 } from "./queue.ts"
 import { buildPrintDocument, labelSvgMarkup, prepareBatch } from "./render.ts"
-import { DEFAULT_LABEL_SETTINGS, LABEL_FORMAT_PRESETS, MAX_BATCH_LABELS, THERMAL_ROLL_PRESETS, applyFormatPreset, matchFormatPreset, matchRollPreset, measureError, normalizeLabelSettings, type LabelSettings } from "./settings.ts"
+import { DEFAULT_LABEL_SETTINGS, MAX_BATCH_LABELS, THERMAL_ROLL_PRESETS, matchRollPreset, matchSizePreset, measureError, normalizeLabelSettings, type LabelSettings } from "./settings.ts"
 import { classifyBarcode, gtinCheckDigit, isValidGtin } from "./symbology.ts"
 import { buildZpl, zplUnavailableReason } from "./zpl.ts"
 
@@ -361,51 +361,26 @@ test("térmica 10 × 2 cm: impresión, PDF y ZPL ubican cada columna", async () 
   assert.match(paired, /\^PQ2,0,1,N/, "filas idénticas se agrupan")
 })
 
-test("layout térmica: rollo 80 × 20 de 2 columnas", () => {
-  const preset = LABEL_FORMAT_PRESETS.find((item) => item.id === "roll-80x20-2")
-  assert.ok(preset)
-  const roll = applyFormatPreset(settings(), preset)
-  assert.equal(roll.mode, "thermal")
-  assert.equal(roll.dpi, 203, "A4 → térmica deja 600 dpi")
-  assert.equal(thermalRowWidth(roll), 80, "2 × 39 + 2 mm = 80 mm")
-  assert.equal(matchFormatPreset(roll)?.id, "roll-80x20-2")
-  assert.equal(matchFormatPreset({ ...roll, thermal: { ...roll.thermal, columnGapMm: 0 } }), null, "otra separación = personalizado")
-  assert.equal(matchFormatPreset({ ...roll, thermal: { ...roll.thermal, sideMarginMm: 1 } }), null, "con borde lateral ya no es 80 mm")
-  assert.equal(thermalRowWidth(applyFormatPreset({ ...roll, thermal: { ...roll.thermal, sideMarginMm: 3 } }, preset)), 80, "el preset vuelve el borde a 0")
-  const plan = planLabels(roll, 5)
-  assert.equal(plan.pages.length, 3, "5 etiquetas → 3 filas")
-  assert.equal(plan.grid.perPage, 2)
-  assert.equal(plan.freeSlots, 1)
-  assert.deepEqual([plan.pages[0].widthMm, plan.pages[0].heightMm], [80, 20])
-  assert.deepEqual(plan.pages[0].slots.map((slot) => [slot.index, slot.xMm]), [[0, 0], [1, 41]])
-  assert.deepEqual(plan.pages[2].slots.map((slot) => slot.index), [4])
-  assert.equal(plan.rollLengthMm, 3 * 20 + 2 * 3)
-  assert.match(planLabels({ ...roll, widthMm: 60, thermal: { ...roll.thermal, columns: 3 } }, 1).error ?? "", /supera/)
-  // Preferencias guardadas antes de las columnas: siguen en 1 columna.
-  assert.equal(normalizeLabelSettings({ mode: "thermal", thermal: { gapMm: 3, rotate: false } }).thermal.columns, 1)
-})
-
 test("configuración: límites, valores absurdos y presets", () => {
-  const normalized = normalizeLabelSettings({ widthMm: 0, heightMm: -5, paddingMm: "abc", dpi: 999, mode: "laser", content: { price: true }, a4: { gapXMm: 500 }, thermal: { columns: 7, columnGapMm: 99 } })
+  const normalized = normalizeLabelSettings({ widthMm: 0, heightMm: -5, paddingMm: "abc", dpi: 999, mode: "laser", content: { price: true }, a4: { gapXMm: 500 } })
   assert.equal(normalized.widthMm, 20)
   assert.equal(normalized.heightMm, 10)
   assert.equal(normalized.paddingMm, DEFAULT_LABEL_SETTINGS.paddingMm)
   assert.equal(normalized.dpi, DEFAULT_LABEL_SETTINGS.dpi)
   assert.equal(normalized.mode, "a4")
-  assert.equal("content" in normalized, false, "el contenido impreso es fijo: se descarta lo guardado")
+  assert.equal(normalized.content.price, true)
+  assert.equal(normalized.content.name, true)
   assert.equal(normalized.a4.gapXMm, 20)
-  assert.equal(normalized.thermal.columns, 4, "columnas acotadas a 1–4")
-  assert.equal(normalized.thermal.columnGapMm, 10)
   assert.equal(normalizeLabelSettings({ widthMm: "50,25" }).widthMm, 50.3)
   assert.equal(measureError("0", { min: 20, max: 120 }, "Ancho"), "Ancho: entre 20 mm y 120 mm.")
   assert.equal(measureError("", { min: 20, max: 120 }, "Ancho"), "Ancho: ingresá un número.")
   assert.equal(measureError("40", { min: 20, max: 120 }, "Ancho"), null)
-  assert.equal(matchFormatPreset(settings({ widthMm: 50, heightMm: 25 }))?.id, "a4-50x25")
-  assert.equal(matchFormatPreset(settings({ widthMm: 51, heightMm: 25 })), null)
+  assert.equal(matchSizePreset({ widthMm: 50, heightMm: 25 })?.name, "Estándar")
+  assert.equal(matchSizePreset({ widthMm: 51, heightMm: 25 }), null)
 })
 
 test("preview: medidas reales, zona silenciosa, módulo en puntos enteros y contenido visible", () => {
-  const content = { name: autoShortName(lighter.name), variant: "MARRÓN", sku: "ENC-MAR", code: EAN_A }
+  const content = { name: autoShortName(lighter.name), variant: "MARRÓN", sku: "ENC-MAR", code: EAN_A, price: 12999, internalCode: "#10-101" }
   assert.equal(content.name, "ENCENDEDOR USB RECARGABLE", "nombre corto sin aclaraciones")
   const pattern = patterns.get(EAN_A) ?? null
   const small = buildLabelDrawing(content, pattern, settings({ widthMm: 40, heightMm: 20, dpi: 300 }))
@@ -421,8 +396,7 @@ test("preview: medidas reales, zona silenciosa, módulo en puntos enteros y cont
   // Barras sin deformar: cada barra es un múltiplo entero del módulo.
   for (const bar of small.bars) assert.ok(Math.abs(bar.widthMm / small.barcode.moduleMm - Math.round(bar.widthMm / small.barcode.moduleMm)) < 0.02)
   // Texto: dentro del margen, legible y en el orden esperado.
-  assert.deepEqual(small.texts.map((text) => text.role), ["name", "detail", "code"], "formato fijo: nombre, color · SKU y número")
-  assert.equal(small.texts[1].text, "MARRÓN · ENC-MAR")
+  assert.deepEqual(small.texts.map((text) => text.role), ["name", "variant", "code"], "por defecto: nombre, variante y número")
   for (const text of small.texts) {
     assert.ok(text.sizeMm >= 1.8, "tamaño mínimo legible")
     assert.ok(text.baselineMm <= 20 - small.paddingMm + 0.01)
@@ -435,15 +409,19 @@ test("preview: medidas reales, zona silenciosa, módulo en puntos enteros y cont
   assert.ok(larger.barcode && larger.barcode.box.heightMm > small.barcode.box.heightMm)
   assert.ok(larger.barcode.moduleMm >= small.barcode.moduleMm)
 
-  // Sin color ni SKU la línea 2 no se imprime; sólo uno de los dos, sin separador.
-  assert.deepEqual(buildLabelDrawing({ ...content, variant: null, sku: null }, pattern, settings()).texts.map((text) => text.role), ["name", "code"])
-  assert.equal(buildLabelDrawing({ ...content, variant: null }, pattern, settings()).texts[1].text, "ENC-MAR")
+  // Contenido visible configurable.
+  const withAll = buildLabelDrawing(content, pattern, settings({ widthMm: 80, heightMm: 30, content: { name: true, variant: true, sku: true, barcodeText: true, price: true, internalCode: true } }))
+  assert.deepEqual(withAll.texts.map((text) => text.role), ["name", "variant", "price", "meta", "code"])
+  assert.match(withAll.texts.find((text) => text.role === "price")?.text ?? "", /12\.999/)
+  assert.equal(withAll.texts.find((text) => text.role === "meta")?.text, "SKU ENC-MAR · #10-101")
+  const barsOnly = buildLabelDrawing(content, pattern, settings({ content: { name: false, variant: false, sku: false, barcodeText: false, price: false, internalCode: false } }))
+  assert.equal(barsOnly.texts.length, 0)
 
   // Etiqueta demasiado chica: se advierte, no se bloquea ni se comprime.
   const tiny = buildLabelDrawing(content, pattern, settings({ widthMm: 20, heightMm: 10, dpi: 203 }))
   assert.ok(tiny.warnings.some((warning) => ["small-module", "no-fit", "thin-dots"].includes(warning.code)))
   assert.ok(tiny.bars.length > 0)
-  const crowded = buildLabelDrawing(content, pattern, settings({ widthMm: 40, heightMm: 10 }))
+  const crowded = buildLabelDrawing(content, pattern, settings({ widthMm: 40, heightMm: 12, content: { name: true, variant: true, sku: true, barcodeText: true, price: true, internalCode: true } }))
   assert.ok(crowded.warnings.some((warning) => warning.code === "omitted-text"))
 })
 
@@ -473,7 +451,7 @@ test("SVG y documento de impresión: medidas físicas en mm, sólo etiquetas", (
   assert.match(html, /@page \{ size: 210mm 297mm; margin: 0; \}/)
   assert.equal(html.match(/class="label/g)?.length, 14)
   assert.doesNotMatch(html, /<button|<nav|admin/i, "sólo etiquetas")
-  const rotated = labelSvgMarkup(buildLabelDrawing({ name: "X", variant: null, sku: null, code: EAN_A }, patterns.get(EAN_A) ?? null, config, { widthMm: 60, heightMm: 30 }), true)
+  const rotated = labelSvgMarkup(buildLabelDrawing({ name: "X", variant: null, sku: null, code: EAN_A, price: null, internalCode: null }, patterns.get(EAN_A) ?? null, config, { widthMm: 60, heightMm: 30 }), true)
   assert.match(rotated, /width="30mm" height="60mm"/)
   assert.match(rotated, /translate\(30 0\) rotate\(90\)/)
 })
@@ -508,30 +486,6 @@ test("ZPL: comandos nativos con módulo en puntos y copias agrupadas", () => {
   assert.match(zpl, /\^BY2,2,\d+/)
   assert.match(zplUnavailableReason(settings()) ?? "", /Térmica/)
   assert.match(zplUnavailableReason(settings({ mode: "thermal", thermal: { ...DEFAULT_LABEL_SETTINGS.thermal, gapMm: 2, rotate: true } })) ?? "", /giradas/)
-
-  // Rollo de 2 columnas: una fila = un formato de 80 mm con dos etiquetas.
-  const preset = LABEL_FORMAT_PRESETS.find((entry) => entry.id === "roll-80x20-2")
-  assert.ok(preset)
-  const roll = applyFormatPreset(settings(), preset)
-  const twoUp = buildZpl(prepareBatch(expandQueue([item(lighter, 101, 4), item(stand, null, 1)], "manual"), patterns, roll), roll)
-  assert.equal(twoUp.match(/\^XA/g)?.length, 2, "2 filas iguales agrupadas + 1 fila final")
-  assert.match(twoUp, /\^PW639\n\^LL160/, "80 × 20 mm a 203 dpi")
-  assert.match(twoUp, /\^PQ2,0,1,N/)
-  assert.equal(twoUp.split("^XZ")[0].match(/\^BEN/g)?.length, 2, "dos códigos por fila")
-})
-
-test("PDF y documento de impresión: rollo de 2 columnas", async () => {
-  const preset = LABEL_FORMAT_PRESETS.find((entry) => entry.id === "roll-80x20-2")
-  assert.ok(preset)
-  const roll = applyFormatPreset(settings(), preset)
-  const batch = prepareBatch(expandQueue([item(lighter, 101, 3)], "manual"), patterns, roll)
-  const pdf = await PDFDocument.load(await buildLabelsPdf(batch, roll))
-  assert.equal(pdf.getPageCount(), 2)
-  const size = pdf.getPage(0).getSize()
-  assert.ok(Math.abs(size.width - (80 * 72) / 25.4) < 0.01 && Math.abs(size.height - (20 * 72) / 25.4) < 0.01, "página = fila de 80 × 20 mm")
-  const html = buildPrintDocument(batch, roll)
-  assert.match(html, /@page \{ size: 80mm 20mm; margin: 0; \}/)
-  assert.match(html, /left:41mm;top:0mm/, "segunda columna a 39 + 2 mm")
 })
 
 test("historial y presets: validación server-side", () => {

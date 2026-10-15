@@ -26,9 +26,7 @@ import { isClaimVisibleForMode } from "@/lib/orders/claim-visibility"
 import {
   buildCancellationNotification,
   buildClaimNotification,
-  buildOrderAlertNotifications,
   buildOrderWorkNotifications,
-  buildPaymentIncidentNotifications,
   claimNeedsAdminAttention,
   dedupeNotifications,
   formatOrderId,
@@ -798,10 +796,6 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
       // Factura y despacho: sólo cuando requieren a una persona (misma fuente
       // que el contador del pedido). La facturación automática no avisa.
       notifications.push(...buildOrderWorkNotifications(order))
-      // Incidentes de pago abiertos y NC/pago/despacho/devolución que esperan
-      // a una persona (misma fuente que el contador del pedido).
-      notifications.push(...buildPaymentIncidentNotifications(order))
-      notifications.push(...buildOrderAlertNotifications(order))
 
       const cancellationNotification = buildCancellationNotification(order)
       if (cancellationNotification) notifications.push(cancellationNotification)

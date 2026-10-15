@@ -512,7 +512,7 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
         footer={(
           <div className="flex justify-end gap-2">
             <AdminButton size="sm" variant="ghost" disabled={saving} onClick={() => setRegistering(false)}>Cancelar</AdminButton>
-            <AdminButton size="sm" variant="primary" disabled={saving} onClick={() => void completeManual()}
+            <AdminButton size="sm" variant="primary" disabled={saving || !file} onClick={() => void completeManual()}
               icon={saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}>
               Confirmar reintegro
             </AdminButton>
@@ -522,8 +522,8 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
           <AdminTextInput title="Referencia (opcional)" placeholder="Referencia (opcional)" value={reference} maxLength={120} onChange={setReference} />
           <AdminTextarea title="Observación (opcional)" placeholder="Observación (opcional)" value={observation} maxLength={600} className="min-h-20" onChange={setObservation} />
           <label className="grid gap-1.5 text-xs font-semibold">
-            <span>Comprobante (opcional)</span>
-            <input type="file" accept={PROOF_ACCEPT} onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+            <span>Comprobante del reintegro (obligatorio)</span>
+            <input type="file" accept={PROOF_ACCEPT} required onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
           </label>
         </div>
       </AdminModal>

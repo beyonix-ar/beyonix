@@ -114,6 +114,26 @@ function needsRefundAction(order: CancellationNextActionOrder): boolean {
   return order.estado === "cancelado" && isPaymentConfirmedForRefund(order)
 }
 
+/**
+ * Sin intento, uno rechazado, o uno que la conciliación devolvió a
+ * "requested" (MP confirmó que nunca lo recibió): se puede (re)intentar con la
+ * misma clave de idempotencia. Un intento en curso o confirmado, nunca.
+ */
+function canStartMercadoPagoRefund(refund: CancellationNextActionMercadoPagoRefund | null) {
+  return !refund || refund.status === "failed" || refund.status === "requested"
+}
+
+const toCents = (value: number | string | null | undefined) => Math.round(Number(value ?? 0) * 100)
+
+/** La parte externa de las NC pendientes cubre todo lo cobrado por el medio externo. */
+function coversConfirmedPayment(
+  order: CancellationNextActionOrder,
+  notes: CancellationNextActionCreditNote[],
+): boolean {
+  const pending = notes.reduce((sum, note) => sum + toCents(note.external_amount ?? note.total_amount), 0)
+  return pending > 0 && pending === toCents(order.payment_confirmed_amount)
+}
+
 function isOrderInvoiced(order: CancellationNextActionOrder): boolean {
   return order.invoice_status === "authorized" && Boolean(order.invoice_cae)
 }
@@ -192,6 +212,15 @@ export function getCancellationNextAction(
       note.settlement_status !== "completado",
   )
   if (pendingExternalRefundNotes.length > 0) {
+    // Mercado Pago devuelve el total por su refund real (el comprobante
+    // manual lo rechaza: MERCADOPAGO_REQUIRES_REAL_REFUND). Al confirmarse,
+    // la base liquida la NC. Sólo una NC parcial se reintegra a mano.
+    if (order.payment_method_id === "mercadopago" && coversConfirmedPayment(order, pendingExternalRefundNotes)) {
+      if (canStartMercadoPagoRefund(mpRefund)) {
+        return { state: "execute_mp_refund", urgent: true }
+      }
+      return { state: "none", urgent: false }
+    }
     return { state: "register_external_refund", urgent: true }
   }
 
@@ -222,7 +251,7 @@ export function getCancellationNextAction(
     // (REFUNDABLE_EXTERNAL_AMOUNT) cuando no hay ninguna NC que mueva dinero
     // y credit_note_required es false, sin exigir una NC autorizada.
     if (order.payment_method_id === "mercadopago") {
-      if (!mpRefund || mpRefund.status === "failed") {
+      if (canStartMercadoPagoRefund(mpRefund)) {
         return { state: "execute_mp_refund", urgent: true }
       }
       return { state: "none", urgent: false }
@@ -239,7 +268,7 @@ export function getCancellationNextAction(
   // sólo que con el destino equivocado para esto). El remanente, si es
   // Mercado Pago, igual puede reintegrarse directo.
   if (order.payment_method_id === "mercadopago") {
-    if (!mpRefund || mpRefund.status === "failed") {
+    if (canStartMercadoPagoRefund(mpRefund)) {
       return { state: "execute_mp_refund", urgent: true }
     }
     return { state: "none", urgent: false }
@@ -317,7 +346,7 @@ export function getCancellationNextActionCopy(
       return {
         title: "Registrar reintegro",
         description:
-          "La nota de crédito ya fue autorizada. Sólo falta cargar el comprobante de la devolución.",
+          "Reintegro por transferencia pendiente: BEYONIX no devuelve dinero por banco. Hacé la transferencia al cliente y cargá el comprobante del pago.",
         tab: "cancelacion",
       }
     case "execute_mp_refund":

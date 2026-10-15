@@ -168,11 +168,15 @@ export async function createMercadoPagoRefund(
  * Si `refundId` es null (nunca llegamos a recibir un id), consulta la lista
  * completa de refunds del payment para ver si Mercado Pago ya tiene alguno
  * registrado de todos modos (POST aceptado pero la respuesta nunca llegó).
+ * Con `expectedAmount`, sólo un refund por ese importe es el nuestro: un
+ * refund por otro importe (p. ej. uno parcial hecho a mano en el panel de MP)
+ * nunca confirma este intento y queda para revisión.
  */
 export async function getMercadoPagoRefundStatus(
   paymentId: string,
   refundId: string | null,
   fetchImpl: typeof fetch = fetch,
+  expectedAmount?: number | null,
 ): Promise<
   | { kind: "found"; refund: MercadoPagoRefund }
   | { kind: "not_found" }
@@ -217,11 +221,19 @@ export async function getMercadoPagoRefundStatus(
     return { kind: "unknown", reason: "respuesta de reconciliación sin JSON válido" }
   }
 
-  const candidate = refundId ? payload : Array.isArray(payload) ? payload[0] : null
+  const listed = !refundId && Array.isArray(payload) ? (payload as Array<Partial<MercadoPagoRefund> | null>) : null
+  const expectedCents = expectedAmount == null ? null : Math.round(Number(expectedAmount) * 100)
+  const candidate = refundId
+    ? payload
+    : listed && expectedCents !== null
+      ? listed.find((item) => Math.round(Number(item?.amount) * 100) === expectedCents) ?? null
+      : listed?.[0] ?? null
   const refund = candidate as Partial<MercadoPagoRefund> | null
   if (!refund || typeof refund.id !== "number" || typeof refund.payment_id !== "number") {
-    return refundId
-      ? { kind: "unknown", reason: "respuesta de reconciliación sin id de refund válido" }
+    if (refundId) return { kind: "unknown", reason: "respuesta de reconciliación sin id de refund válido" }
+    // Hay refunds en MP, pero ninguno por el importe de este intento.
+    return listed?.length
+      ? { kind: "unknown", reason: "Mercado Pago informa un reintegro por otro importe; requiere revisión" }
       : { kind: "not_found" }
   }
 

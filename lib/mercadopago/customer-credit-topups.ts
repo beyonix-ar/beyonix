@@ -26,6 +26,8 @@ export interface MercadoPagoPayment {
   date_approved?: string | null
   transaction_amount?: number | null
   transaction_amount_refunded?: number | null
+  /** Refunds que Mercado Pago registró para el pago (totales o parciales). */
+  refunds?: Array<{ id?: number | string | null; amount?: number | null; status?: string | null }> | null
   currency_id?: string | null
   live_mode?: boolean
   metadata?: Record<string, unknown> | null

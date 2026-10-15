@@ -484,53 +484,34 @@ export async function DELETE(
     return Response.json({ error: "Esta operación requiere consultar el impacto actual y escribir la confirmación desde el diálogo de eliminación." }, { status: 409 })
   }
 
-  // Borrar o archivar en una sola transacción: con historial (stock, compras,
-  // ventas, movimientos, reservas, despachos o códigos) la variante se
-  // archiva; sólo una variante sin ninguna actividad se elimina.
-  const { data, error } = await auth.admin.rpc(
-    "delete_or_archive_product_variant",
-    {
-      p_product_id: productId,
-      p_variant_id: variantId,
-      p_actor_id: auth.user.id,
-    },
-  )
+  const { data: deleted, error: deleteError } = await auth.admin
+    .from("producto_variantes")
+    .delete()
+    .eq("id", variantId)
+    .eq("producto_id", productId)
+    .select("id")
+    .maybeSingle()
 
-  if (error) {
-    const missingMigration =
-      /delete_or_archive_product_variant|schema cache|PGRST202/i.test(error.message)
-    const notFound = /ya no existe/i.test(error.message)
+  if (deleteError) {
+    const isReferenced = deleteError.code === "23503"
+    const protectedInventory = /unidades vinculadas|movimientos históricos/i.test(
+      deleteError.message,
+    )
     return Response.json(
       {
-        error: missingMigration
-          ? "Falta aplicar la migración 20261015130000_variant_parent_integrity.sql."
-          : error.message || "No se pudo eliminar la variante.",
+        error: isReferenced
+          ? "La variante tiene movimientos asociados y no puede eliminarse."
+          : deleteError.message || "No se pudo eliminar la variante.",
       },
-      { status: missingMigration ? 503 : notFound ? 404 : 409 },
+      { status: isReferenced || protectedInventory ? 409 : 500 },
     )
   }
-
-  const result = (Array.isArray(data) ? data[0] : data) as
-    | { mode?: unknown; reasons?: unknown; variant?: unknown }
-    | null
-  const mode = result?.mode === "archived" ? "archived" : result?.mode === "deleted" ? "deleted" : null
-  if (!mode) {
+  if (!deleted) {
     return Response.json(
-      { error: "La variante se procesó sin una respuesta verificable." },
-      { status: 500 },
+      { error: "La variante ya no existe." },
+      { status: 404 },
     )
   }
-  const reasons = Array.isArray(result?.reasons)
-    ? result.reasons.filter((reason): reason is string => typeof reason === "string")
-    : []
 
-  return Response.json({
-    mode,
-    reasons,
-    variant: result?.variant ?? null,
-    message:
-      mode === "deleted"
-        ? "Variante eliminada: no tenía compras, ventas, stock ni movimientos."
-        : `La variante se archivó (quedó inactiva) para conservar su historial: ${reasons.join(", ")}.`,
-  })
+  return Response.json({ deleted: true })
 }

@@ -153,5 +153,7 @@ test("factura → cancelación → NC: el circuito que permite cancelar una vent
   assert.match(worker, /credit_note_required = case when v_cancellation_flow then true else credit_note_required end/)
   // La resolución financiera emite la NC sólo si corresponde (nunca sin factura).
   const resolution = read("lib/orders/financial-resolution-server.ts")
-  assert.match(resolution, /if \(!context\.order\.credit_note_required && context\.notes\.length === 0\) return/)
+  // Venta facturada: la NC se exige haya o no flag (nunca dinero sin NC).
+  assert.match(resolution, /const creditNoteRequired = Boolean\(context\.order\.credit_note_required\) \|\| isInvoicedSale\(context\.order\)/)
+  assert.match(resolution, /if \(!creditNoteRequired && context\.notes\.length === 0\) return/)
 })

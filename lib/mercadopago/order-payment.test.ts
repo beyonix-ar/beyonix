@@ -190,9 +190,10 @@ test("un reintegro/contracargo notificado DESPUÉS de confirmado no se descarta 
   // así que nunca puede faltar el chequeo de pertenencia contra el
   // payment_id ya persistido -- sin él, un contracargo de un pago distinto
   // que comparta external_reference podría marcar el pedido equivocado.
+  assert.match(webhook, /const samePayment = orderRow\.payment_id === String\(payment\.id\)/)
   assert.match(
     webhook,
-    /POST_CONFIRMATION_REVERSAL_STATUSES\.has\(payment\.status\)\s*&&\s*\n\s*orderRow\.payment_id === String\(payment\.id\)/,
+    /samePayment &&\s*\n\s*POST_CONFIRMATION_REVERSAL_STATUSES\.has\(payment\.status\)/,
   )
   // Idempotente: un mismo reverso notificado dos veces no debe volver a
   // auditar ni a "actualizar" nada la segunda vez.

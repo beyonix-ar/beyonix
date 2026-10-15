@@ -11,12 +11,12 @@ import { processArcaInvoice, type ArcaInvoiceResult } from "@/lib/arca/invoice-a
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
 import { ensureSaleInvoiced, hasPendingInvoiceObligation } from "./fiscal-sequencing"
 import {
-  deriveFinancialReturnContext, financialHumanStatus, getFinancialResolutionMode, resolveOrderFinancialOptions,
+  deriveFinancialReturnContext, financialHumanStatus, getEffectiveFinancialResolutionStatus, getFinancialResolutionMode, resolveOrderFinancialOptions,
   type FinancialChoice, type FinancialResolutionFacts,
 } from "./financial-resolution"
 
 type Admin = ReturnType<typeof createAdminClient>
-type Resolution = { id: string; order_id: number; choice: FinancialChoice; amount: number; status: string; lease_key: string | null; note_id: string | null; last_error: string | null }
+type Resolution = { id: string; order_id: number; choice: FinancialChoice; amount: number; status: string; lease_key: string | null; lease_until: string | null; updated_at: string | null; note_id: string | null; last_error: string | null }
 type Order = { id: number; usuario_id: string | null; financial_status: string | null; payment_method_id: string | null; payment_status: string | null; paid_at: string | null; payment_id: string | null; payment_confirmed_amount: number | null; external_amount_due: number | null; invoice_status: string | null; invoice_cae: string | null; credit_note_required: boolean | null; andreani_handed_over_at: string | null; tracking_number: string | null; andreani_tracking: string | null; andreani_envio_id: string | null; estado: string | null; mercadopago_reference: string | null; mercadopago_reference_assigned_at: string | null; credit_balance_used: number | null; original_total: number | null; total: number | null; shipping_cost_charged: number | null; invoice_queued_at: string | null }
 
 const orderColumns = "id,usuario_id,financial_status,payment_method_id,payment_status,paid_at,payment_id,payment_confirmed_amount,external_amount_due,invoice_status,invoice_cae,invoice_queued_at,credit_note_required,andreani_handed_over_at,tracking_number,andreani_tracking,andreani_envio_id,estado,mercadopago_reference,mercadopago_reference_assigned_at,credit_balance_used,original_total,total,shipping_cost_charged"
@@ -118,7 +118,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
     : resolveOrderFinancialOptions({ ...facts, receptionPending: false, inspectionPending: false })
   return { order, claims, notes, refunds, resolution, amount, preparedAt, options, receptionOptions, returnContext, adminDirectCancellation,
     mode: getFinancialResolutionMode({ financialStatus: order.financial_status, hasResolution: !!resolution, options, receptionOptions }),
-    status: financialHumanStatus(resolution?.status ?? null), requiresReturn: !!order.andreani_handed_over_at }
+    status: financialHumanStatus(resolution ? getEffectiveFinancialResolutionStatus(resolution) : null), requiresReturn: !!order.andreani_handed_over_at }
 }
 
 async function updateResolution(admin: Admin, resolution: Resolution, status: "requires_action" | "manual_pending" | "completed", actorId: string, error: string | null = null) {
@@ -134,8 +134,12 @@ async function updateResolution(admin: Admin, resolution: Resolution, status: "r
   return data as Resolution
 }
 
+/** Venta con Factura C autorizada: el dinero vuelve sólo con NC, haya o no flag. */
+const isInvoicedSale = (order: Order) => Boolean(order.invoice_cae) || order.invoice_status === "authorized"
+
 async function ensureCreditNote(admin: Admin, context: NonNullable<Awaited<ReturnType<typeof loadFinancialResolution>>>, resolution: Resolution, actorId: string, authorization: string) {
-  if (!context.order.credit_note_required && context.notes.length === 0) return
+  const creditNoteRequired = Boolean(context.order.credit_note_required) || isInvoicedSale(context.order)
+  if (!creditNoteRequired && context.notes.length === 0) return
   const destination = resolution.choice === "beyonix_credit" ? "customer_balance" : "external_refund"
   const relevant = context.notes.filter((note) => note.destination === destination)
   const authorized = relevant.filter((note) => note.status === "authorized" && note.cae && note.settlement_status !== "completado")
@@ -159,7 +163,7 @@ async function ensureCreditNote(admin: Admin, context: NonNullable<Awaited<Retur
   if (relevant.some((note) => note.status === "error")) {
     fail("La nota de crédito anterior requiere revisión fiscal. No se emitió otra.")
   }
-  if (!context.order.credit_note_required) return
+  if (!creditNoteRequired) return
   const claim = context.claims.find((item) => item.failure_type === "cancelar_compra" && ["aprobado", "reintegro_pendiente"].includes(item.status))
   // Cancelación directa de Admin: no hay reclamo; la auditoría la autoriza (también en la base).
   if (!claim && !context.adminDirectCancellation) throw new Error("La nota de crédito requiere una cancelación aprobada. Revisá el reclamo.")
@@ -236,6 +240,9 @@ export async function executeFinancialResolution(
     if (afterNote.notes.some((note) => note.destination === "customer_balance" && note.status === "authorized")) {
       return updateResolution(admin, claimed, "completed", actorId)
     }
+    // Acreditación directa sólo para ventas sin factura: con Factura C el
+    // saldo vuelve únicamente por la NC (customer_balance) de arriba.
+    if (isInvoicedSale(afterNote.order)) fail("La venta está facturada: el saldo vuelve sólo con la nota de crédito. Reintentá la actualización.")
     await createCustomerCreditMovement(admin, { userId: afterNote.order.usuario_id, movementType: "credit", amount: claimed.amount,
       description: `Saldo por resolución del pedido BX-${1000 + orderId}`, sourceType: "admin_adjustment", sourceId: claimed.id,
       orderId, createdBy: actorId, sourceKey: `financial-resolution:${claimed.id}`, metadata: { financial_resolution_id: claimed.id } })

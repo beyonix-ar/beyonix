@@ -12,6 +12,7 @@ interface ClaimedRefundRow {
   order_id: number
   payment_id: string
   mp_refund_id: string | null
+  amount: number | string
 }
 
 export interface MercadoPagoRefundReconciliationBatchResult {
@@ -69,7 +70,7 @@ export async function runMercadoPagoRefundReconciliationBatch(
     try {
       const result = await reconcileRefundAttempt(
         admin,
-        { id: row.id, payment_id: row.payment_id, mp_refund_id: row.mp_refund_id },
+        { id: row.id, payment_id: row.payment_id, mp_refund_id: row.mp_refund_id, amount: row.amount },
         { getRefundStatus: dependencies.getRefundStatus },
       )
       if (result.kind === "confirmed") confirmed += 1

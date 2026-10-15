@@ -152,7 +152,8 @@ test("detalle del cliente cancelado: timeline final, bloque de reintegro, NC rea
   for (const field of ["Estado", "Importe", "Medio", "Solicitado", "Realizado"]) assert.match(cancelledBranch, new RegExp(`>${field}</dt>`))
   // NC: el comprobante existente (sólo autorizado) o el pendiente real; nunca inventada.
   assert.match(cancelledBranch, /\{creditNoteSection\}/)
-  assert.match(cancelledBranch, /\["pending", "processing"\]\.includes\(order\.credit_note_status/)
+  // Misma fuente que Admin (credit-note-state): incluye el caso heredado.
+  assert.match(cancelledBranch, /\["required", "legacy_required", "processing"\]\.includes\(getCreditNoteState\(\{ \.\.\.order, order_credit_notes: undefined \}\)\.state\)/)
   assert.match(cancelledBranch, /Nota de crédito pendiente de emisión/)
   assert.match(client, /order\.credit_note_status === "authorized" &&/)
   // Una pestaña abierta antes del pago/cancelación se actualiza al volver.

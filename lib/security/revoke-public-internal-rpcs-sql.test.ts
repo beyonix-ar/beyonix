@@ -60,14 +60,6 @@ test("la migración no falla si alguna función no existe (entornos parciales)",
 })
 
 test("la app sólo usa ensure_cost_catalog_product con el cliente service_role", () => {
-  // El artículo nuevo de Compras nace junto con su compra: la API llama con
-  // el cliente service_role a create_variant_and_purchase, que es la única
-  // que usa ensure_cost_catalog_product (dentro de la misma transacción).
-  const purchases = source("../../app/api/admin/costs/route.ts")
-  assert.match(purchases, /auth\.admin\.rpc\(\s*"create_variant_and_purchase"/)
-  const newArticle = source("../../app/api/admin/costs/new-article/route.ts")
-  assert.doesNotMatch(newArticle, /ensure_cost_catalog_product/, "new-article ya no crea productos")
-  const atomic = source("../../supabase/migrations/20261015130000_variant_parent_integrity.sql")
-  assert.match(atomic, /public\.ensure_cost_catalog_product\(p_product_name, v_sku\)/)
-  assert.match(atomic, /revoke all on function public\.create_variant_and_purchase\([\s\S]*?\) from public, anon, authenticated;/)
+  const route = source("../../app/api/admin/costs/new-article/route.ts")
+  assert.match(route, /auth\.admin\.rpc\("ensure_cost_catalog_product"/)
 })

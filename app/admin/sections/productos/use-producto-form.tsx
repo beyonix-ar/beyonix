@@ -4,7 +4,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react"
 
@@ -210,15 +209,6 @@ export function useProductoForm({
     useState<number | null>(
       producto?.id ?? null
     )
-
-  // Revisión de la ficha comercial que se cargó en el editor. El servidor
-  // rechaza el guardado si cambió en el medio (otra pestaña, otro usuario,
-  // una fusión o un evento comercial): nunca se pisa con datos viejos.
-  const catalogRevisionRef = useRef<number | null>(
-    typeof producto?.catalog_revision === "number" ? producto.catalog_revision : null,
-  )
-  // Un doble click no dispara dos guardados.
-  const submittingRef = useRef(false)
 
   const [form, setForm] = useState<ProductoFormState>({
     nombre: (producto?.nombre ?? "").toUpperCase(),
@@ -428,6 +418,17 @@ export function useProductoForm({
           ? Number(form.targetMarginPercent)
           : null,
 
+      promo_event_id:
+        null,
+
+      promo_original_precio:
+        null,
+
+      promo_original_precio_anterior:
+        null,
+
+      promo_original_descuento:
+        null,
 
       categoria_id:
         form.categoria_id
@@ -453,7 +454,6 @@ export function useProductoForm({
     variantStates = {},
     onDraftSaved,
   }: SubmitOptions = {}) => {
-    if (submittingRef.current) return
     setError("")
     setSuccess("")
     setLogisticsFieldError(null)
@@ -569,23 +569,17 @@ export function useProductoForm({
     }
 
     try {
-      submittingRef.current = true
       setSaving(true)
 
       const nextPayload = { ...payload, ...logistics }
-      const rememberRevision = (saved: SupabaseProducto) => {
-        catalogRevisionRef.current =
-          typeof saved.catalog_revision === "number" ? saved.catalog_revision : null
-      }
 
       if (producto) {
-        rememberRevision(await updateProductoCatalog(
+        await updateProductoCatalog(
           producto.id,
           nextPayload,
           primarySku.trim() || null,
           variantStates,
-          catalogRevisionRef.current,
-        ))
+        )
 
         setSuccess(
           "Producto actualizado correctamente."
@@ -596,13 +590,12 @@ export function useProductoForm({
       }
 
       if (savedId) {
-        rememberRevision(await updateProductoCatalog(
+        await updateProductoCatalog(
           savedId,
           nextPayload,
           primarySku.trim() || null,
           variantStates,
-          catalogRevisionRef.current,
-        ))
+        )
 
         if (draftSpecifications.length) {
           await saveDraftProductoEspecificaciones(
@@ -696,8 +689,6 @@ export function useProductoForm({
           })
 
         setSavedId(created.id)
-        catalogRevisionRef.current =
-          typeof created.catalog_revision === "number" ? created.catalog_revision : null
         onDraftSaved?.()
         setSuccess(
           "Producto creado correctamente."
@@ -732,7 +723,6 @@ export function useProductoForm({
 
       setError(message)
     } finally {
-      submittingRef.current = false
       setSaving(false)
     }
   }

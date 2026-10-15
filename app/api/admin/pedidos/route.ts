@@ -1,8 +1,8 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
+import type { createAdminClient } from "@/lib/supabase/admin"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
 import type { AdminPendingFacts } from "@/lib/orders/admin-pending-actions"
 import { loadAdminPendingFacts } from "@/lib/orders/admin-pending-facts-server"
-import { parseAdminArchiveFilter } from "@/lib/orders/order-visibility"
 import { getPaymentIncidents, isPaymentIncidentAction, PAYMENT_INCIDENT_ACTIONS } from "@/lib/orders/payment-incidents"
 import type {
   SupabasePedido,
@@ -34,10 +34,6 @@ export async function GET(request: Request) {
   const search = (url.searchParams.get("search") ?? "").trim()
   if (!Number.isFinite(requestedLimit) || !Number.isFinite(requestedOffset) || !Number.isSafeInteger(orderId) || orderId < 0) return Response.json({ error: "Los filtros del pedido no son válidos." }, { status: 400 })
   if (search.length > 160) return Response.json({ error: "La búsqueda es demasiado larga." }, { status: 400 })
-  // Listado operativo: sin archivados. La búsqueda, el detalle por id y la
-  // campana no filtran archivados (nunca se pierde un pedido ni una alerta).
-  const archiveFilter = parseAdminArchiveFilter(url.searchParams.get("archive"))
-  if (!archiveFilter) return Response.json({ error: "El filtro de archivados no es válido." }, { status: 400 })
   let searchTotal: number | null = null
   let searchIds: number[] | null = null
   const limit = Math.min(100, Math.max(10, Math.floor(requestedLimit)))
@@ -75,8 +71,6 @@ export async function GET(request: Request) {
     "invoice_queued_at",
     "auto_cancellation_next_attempt_at",
     "invoice_number",
-    "invoice_point",
-    "refunded_at",
     "invoice_arca_environment",
     "shipping_provider",
     "envio_proveedor",
@@ -108,10 +102,8 @@ export async function GET(request: Request) {
   } else if (searchIds) {
     ordersQuery = ordersQuery.in("id", searchIds).order("admin_visible_at", { ascending: false }).order("id", { ascending: false })
   } else {
-    ordersQuery = ordersQuery.not("admin_visible_at", "is", null)
-    if (archiveFilter === "active") ordersQuery = ordersQuery.is("archived_at", null)
-    else if (archiveFilter === "archived") ordersQuery = ordersQuery.not("archived_at", "is", null)
     ordersQuery = ordersQuery
+      .not("admin_visible_at", "is", null)
       .order("admin_visible_at", { ascending: false })
       .range(offset, offset + limit - 1)
   }
@@ -152,7 +144,7 @@ export async function GET(request: Request) {
 
   if (notificationView) {
     const orderIds = pedidos.map((pedido) => pedido.id)
-    const [claimsResult, creditNotesResult, mpRefundsResult, incidentEventsResult, pendingFacts] = await Promise.all([
+    const [claimsResult, creditNotesResult, mpRefundsResult, pendingFacts] = await Promise.all([
       auth.admin
         .from("order_claims")
         .select("*, order_claim_messages(*)")
@@ -162,7 +154,7 @@ export async function GET(request: Request) {
       // siguiente paso -- nunca datos fiscales/comerciales completos de la NC.
       auth.admin
         .from("order_credit_notes")
-        .select("order_id, status, destination, settlement_status, total_amount")
+        .select("order_id, status, destination, settlement_status, total_amount, external_amount")
         .in("order_id", orderIds),
       // Mismas columnas que ya expone el listado completo (nunca payment_id
       // ni idempotency_key de Mercado Pago).
@@ -171,15 +163,25 @@ export async function GET(request: Request) {
         .select("id, order_id, status, amount, error_code, created_at, completed_at")
         .in("order_id", orderIds)
         .order("created_at", { ascending: false }),
-      // Sólo incidentes de pago (la campana no necesita el historial completo).
-      auth.admin
-        .from("order_audit_events")
-        .select("id, order_id, action, created_at, metadata")
-        .in("order_id", orderIds)
-        .in("action", [...PAYMENT_INCIDENT_ACTIONS])
-        .order("created_at", { ascending: true }),
       pendingFactsPromise,
     ])
+    // Sólo los incidentes de pago (con su resolución): la campana cuenta los
+    // abiertos y deja de contarlos apenas se resuelven.
+    const { data: incidentRows, error: incidentsError } = await auth.admin
+      .from("order_audit_events")
+      .select("*")
+      .in("order_id", orderIds)
+      .in("action", [...PAYMENT_INCIDENT_ACTIONS])
+      .order("created_at", { ascending: true })
+    if (incidentsError) {
+      return databaseErrorResponse(incidentsError, "No se pudieron cargar los incidentes de pago.")
+    }
+    const incidents = await attachIncidentResolutions(auth.admin, (incidentRows ?? []) as SupabaseOrderAuditEvent[])
+    if ("error" in incidents) return incidents.error
+    const incidentsByOrder = new Map<number, SupabaseOrderAuditEvent[]>()
+    for (const event of incidents.events) {
+      incidentsByOrder.set(event.order_id, [...(incidentsByOrder.get(event.order_id) ?? []), event])
+    }
 
     if (claimsResult.error) {
       return Response.json({ error: claimsResult.error.message }, { status: 500 })
@@ -189,33 +191,6 @@ export async function GET(request: Request) {
     }
     if (mpRefundsResult.error) {
       return Response.json({ error: mpRefundsResult.error.message }, { status: 500 })
-    }
-    if (incidentEventsResult.error) {
-      return databaseErrorResponse(incidentEventsResult.error, "No se pudieron cargar los incidentes de pago.")
-    }
-    const incidentEvents = (incidentEventsResult.data ?? []) as SupabaseOrderAuditEvent[]
-    const resolvedIncidentIds = new Set<number>()
-    if (incidentEvents.length) {
-      const { data: resolutions, error: resolutionsError } = await auth.admin
-        .from("order_audit_incident_resolutions")
-        .select("audit_event_id")
-        .in("audit_event_id", incidentEvents.map((event) => Number(event.id)))
-      if (resolutionsError) {
-        return databaseErrorResponse(resolutionsError, "No se pudieron cargar las resoluciones de incidentes de pago.")
-      }
-      for (const row of resolutions ?? []) resolvedIncidentIds.add(Number(row.audit_event_id))
-    }
-    const incidentsByOrder = new Map<number, SupabaseOrderAuditEvent[]>()
-    for (const event of incidentEvents) {
-      const current = incidentsByOrder.get(event.order_id) ?? []
-      // La campana sólo distingue abierto/resuelto: el detalle de la resolución vive en el pedido.
-      current.push({
-        ...event,
-        audit_resolution: resolvedIncidentIds.has(Number(event.id))
-          ? { resolution: "resolved", note: null, resolved_at: null, resolved_by_email: null }
-          : null,
-      })
-      incidentsByOrder.set(event.order_id, current)
     }
 
     const claimsByOrder = new Map<number, typeof claimsResult.data>()
@@ -476,39 +451,11 @@ export async function GET(request: Request) {
 
   // Incidentes de pago (reintegro externo / contracargo): su resolución vive
   // aparte y el evento original no se toca. Sin resolución = alerta activa.
-  const auditEvents = (auditEventsResult.data ?? []) as SupabaseOrderAuditEvent[]
-  const incidentIds = getPaymentIncidents(auditEvents).map((event) => Number(event.id))
-  const resolutionsById = new Map<number, NonNullable<SupabaseOrderAuditEvent["audit_resolution"]>>()
-  if (incidentIds.length) {
-    const { data: resolutions, error: resolutionsError } = await auth.admin
-      .from("order_audit_incident_resolutions")
-      .select("audit_event_id, resolution, note, resolved_at, resolved_by")
-      .in("audit_event_id", incidentIds)
-    if (resolutionsError) {
-      return databaseErrorResponse(resolutionsError, "No se pudieron cargar las resoluciones de incidentes de pago.")
-    }
-    const resolverIds = [...new Set((resolutions ?? []).map((row) => row.resolved_by).filter(Boolean))]
-    const { data: resolvers } = resolverIds.length
-      ? await auth.admin.from("profiles").select("id, email").in("id", resolverIds)
-      : { data: [] as Array<{ id: string; email: string | null }> }
-    const emails = new Map((resolvers ?? []).map((profile) => [profile.id, profile.email]))
-    for (const row of resolutions ?? []) {
-      resolutionsById.set(Number(row.audit_event_id), {
-        resolution: row.resolution,
-        note: row.note,
-        resolved_at: row.resolved_at,
-        resolved_by_email: emails.get(row.resolved_by) ?? null,
-      })
-    }
-  }
-
-  for (const event of auditEvents) {
+  const resolvedEvents = await attachIncidentResolutions(auth.admin, (auditEventsResult.data ?? []) as SupabaseOrderAuditEvent[])
+  if ("error" in resolvedEvents) return resolvedEvents.error
+  for (const event of resolvedEvents.events) {
     const currentEvents = auditEventsByOrder.get(event.order_id) ?? []
-    currentEvents.push(
-      isPaymentIncidentAction(event.action)
-        ? { ...event, audit_resolution: resolutionsById.get(Number(event.id)) ?? null }
-        : event,
-    )
+    currentEvents.push(event)
     auditEventsByOrder.set(event.order_id, currentEvents)
   }
 
@@ -585,4 +532,40 @@ export async function GET(request: Request) {
     })),
     total: searchTotal ?? count ?? pedidos.length,
   })
+}
+
+/** Agrega a cada incidente de pago su resolución (null = alerta abierta). */
+async function attachIncidentResolutions(
+  admin: ReturnType<typeof createAdminClient>,
+  events: SupabaseOrderAuditEvent[],
+): Promise<{ events: SupabaseOrderAuditEvent[] } | { error: Response }> {
+  const incidentIds = getPaymentIncidents(events).map((event) => Number(event.id))
+  const resolutionsById = new Map<number, NonNullable<SupabaseOrderAuditEvent["audit_resolution"]>>()
+  if (incidentIds.length) {
+    const { data: resolutions, error: resolutionsError } = await admin
+      .from("order_audit_incident_resolutions")
+      .select("audit_event_id, resolution, note, resolved_at, resolved_by")
+      .in("audit_event_id", incidentIds)
+    if (resolutionsError) {
+      return { error: databaseErrorResponse(resolutionsError, "No se pudieron cargar las resoluciones de incidentes de pago.") }
+    }
+    const resolverIds = [...new Set((resolutions ?? []).map((row) => row.resolved_by).filter(Boolean))]
+    const { data: resolvers } = resolverIds.length
+      ? await admin.from("profiles").select("id, email").in("id", resolverIds)
+      : { data: [] as Array<{ id: string; email: string | null }> }
+    const emails = new Map((resolvers ?? []).map((profile) => [profile.id, profile.email]))
+    for (const row of resolutions ?? []) {
+      resolutionsById.set(Number(row.audit_event_id), {
+        resolution: row.resolution,
+        note: row.note,
+        resolved_at: row.resolved_at,
+        resolved_by_email: emails.get(row.resolved_by) ?? null,
+      })
+    }
+  }
+  return {
+    events: events.map((event) => isPaymentIncidentAction(event.action)
+      ? { ...event, audit_resolution: resolutionsById.get(Number(event.id)) ?? null }
+      : event),
+  }
 }

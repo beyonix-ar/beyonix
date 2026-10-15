@@ -6,7 +6,6 @@ import { getPendingRefundNotes } from "@/lib/order-claims"
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
 import { OrderReplacements } from "./order-replacements"
 import { LegacyCreditNotePanel } from "./legacy-credit-note-panel"
-import { OrderArchivePanel } from "./order-archive-panel"
 import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
 import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
@@ -124,6 +123,7 @@ import {
   type AdminOrderStatusPresentation,
 } from "@/lib/orders/admin-order-status-presentation"
 import { getCancellationPanelViewModel } from "@/lib/orders/cancellation-panel-view"
+import { getCreditNoteState } from "@/lib/orders/credit-note-state"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
 import {
   ADMIN_ORDER_CANCELLATION_OTHER_REASON,
@@ -173,8 +173,6 @@ type StatusFilter =
   | "cancelado"
   | "refund_pending"
   | "refunded"
-  /** Pedidos archivados (pruebas): no aparecen en ningún otro filtro del listado. */
-  | "archivados"
   | "rechazado"
 type AndreaniAction = "crear-envio" | "tracking"
 type AndreaniLabelAction = "view" | "download" | "print"
@@ -839,7 +837,11 @@ type RecommendedAction = {
 function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresentation {
   // Misma fuente de verdad que ve el cliente (Mis compras / detalle).
   const cancellationRefundState = getOrderCancellationRefundState(pedido)
-  if (cancellationRefundState === "refunded") return ADMIN_EXECUTIVE_STATUS.cancelled_refunded
+  if (cancellationRefundState === "refunded") {
+    return getCreditNoteState(pedido).requiresAction
+      ? ADMIN_EXECUTIVE_STATUS.cancelled_refunded_credit_note_pending
+      : ADMIN_EXECUTIVE_STATUS.cancelled_refunded
+  }
   if (cancellationRefundState === "refund_in_progress") {
     return ADMIN_EXECUTIVE_STATUS.cancelled_refund_pending
   }
@@ -1230,7 +1232,7 @@ function EstadoBadge({ pedido }: { pedido: SupabasePedido }) {
 
   return (
     <span className={`admin-order-semantic-badge admin-order-semantic-badge--${tone}`}>
-      {pedido.archived_at ? `${label} · Archivado` : label}
+      {label}
     </span>
   )
 }
@@ -2098,7 +2100,7 @@ function RefundManagementPanel({
     return <section className="admin-order-data-panel rounded-xl border border-white/8 p-3" aria-label="Cancelación automática">
       <h3>Cancelación automática en proceso</h3>
       <p>{pedido.invoice_status === "authorized" ? "Factura C emitida automáticamente." : "Factura C pendiente / procesando."}</p>
-      <p>{pedido.credit_note_required ? "Nota de Crédito C pendiente / procesando." : "Nota de Crédito C autorizada."}</p>
+      <p>{getCreditNoteState(pedido).authorized ? "Nota de Crédito C autorizada." : "Nota de Crédito C pendiente / procesando."}</p>
       <p>Reintegro pendiente / procesando.</p>
     </section>
   }
@@ -2293,18 +2295,16 @@ function RefundManagementPanel({
     <section className="admin-order-cancellation-panel rounded-xl border p-3">
       <div className="admin-order-cancellation-header border-b pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`admin-order-cancellation-main-icon ${model.isFinished && !model.creditNotePendingAfterRefund ? "is-success" : ""}`}>
-            {model.isFinished && !model.creditNotePendingAfterRefund ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
+          <span className={`admin-order-cancellation-main-icon ${model.isFinished && !model.creditNotePending ? "is-success" : ""}`}>
+            {model.isFinished && !model.creditNotePending ? <CheckCircle2 className="size-6" /> : <AlertTriangle className="size-6" />}
           </span>
           <div className="min-w-0">
             <p className="text-11px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">
               Cancelación / reintegro
             </p>
             <h3 className="mt-1 text-base font-black text-[var(--admin-text)]">
-              {model.creditNotePendingAfterRefund
-                ? "Reintegro completo · nota de crédito pendiente"
-                : model.isFinished
-                ? "Proceso finalizado"
+              {model.isFinished
+                ? model.creditNotePending ? "Reintegro realizado · Nota de crédito pendiente" : "Proceso finalizado"
                 : model.primaryAction?.label ?? "Sin acciones pendientes"}
             </h3>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--admin-text-soft)]">
@@ -2361,7 +2361,7 @@ function RefundManagementPanel({
       </div>
 
       {/* Paso a paso -- oculto si todavía no hay pago confirmado o si ya terminó */}
-      {model.steps.length > 0 && (!model.isFinished || model.creditNotePendingAfterRefund) && (
+      {model.steps.length > 0 && !model.isFinished && (
         <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
           <p className="text-10px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">
             {model.currentStepIndex !== null
@@ -2600,17 +2600,10 @@ function RefundManagementPanel({
         )[0]
         return (
           <section className="admin-order-cancellation-action-panel mt-3 rounded-xl border p-3">
-            {model.creditNotePendingAfterRefund ? (
-              <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-warning-text)]">
-                <AlertTriangle className="size-4" />
-                Reintegro finalizado · nota de crédito pendiente
-              </p>
-            ) : (
-              <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-success-text)]">
-                <CheckCircle2 className="size-4" />
-                Proceso finalizado
-              </p>
-            )}
+            <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-success-text)]">
+              <CheckCircle2 className="size-4" />
+              Proceso finalizado
+            </p>
             <ul className="mt-2 flex flex-col gap-1 text-xs font-semibold text-[var(--admin-text-soft)]">
               <li>Pedido cancelado</li>
               {pedido.credit_note_number && (
@@ -2764,7 +2757,8 @@ function BillingManagementPanel({
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
   const automaticCancellation = pedido.admin_pending_facts?.cancellationAutomatic === true && pedido.financial_status === "refund_pending"
   const testInvoice = invoiceIssued && !isFiscalArcaVoucher(pedido.invoice_arca_environment)
-  const creditNoteNeeded = needsCreditNoteReminder(pedido)
+  // Estado único de la NC: el mismo que ven Cancelación, progreso y campana.
+  const creditNoteView = getCreditNoteState(pedido)
   const arcaConfiguration = useArcaConfigurationStatus()
   const invoiceIssueBlockReason = getArcaIssueBlockReason(arcaConfiguration.status, arcaConfiguration.loadError)
   const [creditSaving, setCreditSaving] = useState(false)
@@ -3454,7 +3448,7 @@ function BillingManagementPanel({
           </div>
           {invoiceIssued && (
             <p className="admin-order-bl-subtitle">
-              Pedido {formatPublicOrderId(pedido.id)} · Total {formatPrice(Number(pedido.total ?? 0))} · Nota de crédito: {creditNoteIssued ? "emitida" : creditNoteProcessing ? "en proceso" : pedido.credit_note_status === "error" ? "con error" : creditNoteNeeded ? "pendiente" : "no requerida"}
+              Pedido {formatPublicOrderId(pedido.id)} · Total {formatPrice(Number(pedido.total ?? 0))} · Nota de crédito: {creditSaving ? "en proceso" : creditNoteView.label.toLowerCase()}
             </p>
           )}
         </div>
@@ -3588,7 +3582,12 @@ function BillingManagementPanel({
           {creditNoteIssued ? "Nota de Crédito C emitida automáticamente. Reintegro en proceso." : "Nota de Crédito C pendiente / procesando automáticamente. El reintegro sigue a su autorización."}
         </p>
       )}
-      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && (
+      {invoiceIssued && creditNoteView.emitAction === "legacy" && (
+        <p className="admin-order-billing-pending-note mt-4 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200" data-testid="legacy-credit-note-pointer">
+          El dinero de esta venta ya se reintegró. La nota de crédito pendiente se emite desde la pestaña Cancelación.
+        </p>
+      )}
+      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && creditNoteView.emitAction !== "legacy" && (
         <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3">
           <header className="admin-credit-note-header">
             <div className="admin-credit-note-title">
@@ -5336,10 +5335,6 @@ function PedidoDetailModal({
             />
           )}
 
-          {activeView === "historial" && isSuperAdmin && (
-            <OrderArchivePanel pedido={pedido} onUpdated={onRefundUpdated} />
-          )}
-
           {["atencion", "envio", "historial"].includes(activeView) && (
             <OrderReplacements
               pedido={pedido}
@@ -6936,7 +6931,6 @@ export function AdminPedidos({
   const [search, setSearch] = useState("")
   const [serverSearch, setServerSearch] = useState("")
   useEffect(() => { const timer = setTimeout(() => setServerSearch(search.trim()), 350); return () => clearTimeout(timer) }, [search])
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const {
     pedidos,
     total,
@@ -6946,11 +6940,8 @@ export function AdminPedidos({
     error,
     updatePedidoEstado,
     reloadPedidos,
-  } = usePedidos({
-    orderId: initialOrderId,
-    search: serverSearch,
-    archive: statusFilter === "archivados" ? "archived" : "active",
-  })
+  } = usePedidos({ orderId: initialOrderId, search: serverSearch })
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("todos")
   const [attentionFilter, setAttentionFilter] =
     useState<AdminNotificationTone | "all">(() => {
       const value = searchParams.get("attention")
@@ -7285,11 +7276,7 @@ export function AdminPedidos({
         searchableText.includes(normalizedSearch),
         compactSearch.length > 0 && searchableText.replace(/[#\s-]/g, "").includes(compactSearch),
       ].some(Boolean)
-      // El servidor ya separa archivados (filtro "Archivados") de operativos
-      // (el resto); la búsqueda devuelve ambos, así que acá se respeta igual.
       const matchesStatus =
-        statusFilter === "archivados" ? Boolean(pedido.archived_at) :
-        Boolean(pedido.archived_at) && serverSearch.length === 0 ? false :
         statusFilter === "todos" ||
         getDisplayedOrderStatus(pedido) === statusFilter ||
         pedido.estado === statusFilter ||
@@ -8004,7 +7991,6 @@ export function AdminPedidos({
                 <option value="refund_pending">Reintegro pendiente</option>
                 <option value="refunded">Reintegrados</option>
                 <option value="rechazado">Comprobantes rechazados</option>
-                <option value="archivados">Archivados</option>
               </AdminSelect>
             </div>
           </AdminFiltersBar>

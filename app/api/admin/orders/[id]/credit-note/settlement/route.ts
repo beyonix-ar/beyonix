@@ -54,10 +54,14 @@ export async function POST(
   }
 
   try {
-    const movement = await creditCustomerForOrderCreditNote(auth.admin, {
+    // Mismo importe que finalizeCreditNote: el dinero externo de la NC. En un
+    // pago combinado la parte de saldo ya la restauró la propia NC (y sin
+    // dinero externo no hay nada que acreditar).
+    const creditAmount = Number(note.external_amount ?? note.total_amount)
+    const movement = creditAmount <= 0 ? null : await creditCustomerForOrderCreditNote(auth.admin, {
       userId: order.usuario_id,
       orderId,
-      amount: Number(note.total_amount),
+      amount: creditAmount,
       creditNoteNumber: Number(note.voucher_number),
       creditNotePoint: Number(note.voucher_point),
       creditNoteCae: note.cae,

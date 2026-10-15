@@ -257,6 +257,14 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ balance, movements })
   } catch (error) {
+    // El saldo usado en una venta facturada (o por facturar) sólo vuelve con
+    // la nota de crédito de la cancelación: la base rechaza la reversa manual.
+    if (error instanceof Error && error.message.includes("CREDIT_NOTE_REQUIRED_BEFORE_REFUND")) {
+      return NextResponse.json(
+        { error: "Este saldo pertenece a una venta con factura: vuelve automáticamente con la nota de crédito de la cancelación, no con una reversa manual." },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       {
         error:

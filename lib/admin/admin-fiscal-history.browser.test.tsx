@@ -88,6 +88,10 @@ test("respuestas viejas de filtro, mes, año y página no pisan la última consu
     assert.equal(await control(), 4)
     await settle(3, "40", 31)
     await page.locator('[data-fiscal-row="40"]').waitFor()
+    // Una búsqueda es UNA consulta: el período y el filtro se aplican juntos al
+    // vencer el debounce (antes el período disparaba otra consulta al tipear).
+    await page.waitForTimeout(600)
+    assert.equal(await control(), 4, "sin consulta extra después del debounce")
     await settle(0, "10", 1, true)
     await settle(1, "20", 1)
     await settle(2, "30", 1)

@@ -182,6 +182,54 @@ export async function getAdminProductoVariantes(options: {
   return result.variants
 }
 
+export async function createProductoVariantWithAllocation(
+  productId: number,
+  payload: {
+    name: string
+    sku: string | null
+    color: string
+    quantity: number
+    images: string[]
+    peso_empaquetado_kg: number | null
+    alto_paquete_cm: number | null
+    ancho_paquete_cm: number | null
+    largo_paquete_cm: number | null
+  },
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new Error(
+      "La sesión administrativa venció. Volvé a iniciar sesión.",
+    )
+  }
+
+  const response = await fetch(`/api/admin/products/${productId}/variants`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  })
+  const result = (await response.json().catch(() => null)) as
+    | {
+        variant?: SupabaseProductoVariante
+        error?: string
+      }
+    | null
+
+  if (!response.ok || !result?.variant) {
+    throw new Error(
+      result?.error || "No se pudo crear y distribuir la variante.",
+    )
+  }
+
+  return result.variant
+}
+
 export async function updateProductoVariantWithAllocation(
   productId: number,
   variantId: number,
@@ -326,32 +374,18 @@ export async function adjustProductoVarianteStock(
   return result.variant
 }
 
-export interface ProductoVarianteRemoval {
-  /** deleted = no tenía actividad y se borró; archived = tiene historial y quedó inactiva. */
-  mode: "deleted" | "archived"
-  reasons: string[]
-  message: string
-  /** Estado persistido de la variante archivada (null si se borró). */
-  variant: SupabaseProductoVariante | null
-}
-
 export async function deleteProductoVariante(
   productId: number,
   id: number,
   options: { force?: boolean } = {},
-): Promise<ProductoVarianteRemoval> {
+) {
   const query = options.force ? "?force=true" : ""
-  const result = await variantRequest<Partial<ProductoVarianteRemoval>>(
+  await variantRequest<{ deleted: boolean }>(
     `/api/admin/products/${productId}/variants/${id}${query}`,
     { method: "DELETE" },
   )
 
-  return {
-    mode: result.mode === "archived" ? "archived" : "deleted",
-    reasons: Array.isArray(result.reasons) ? result.reasons : [],
-    message: typeof result.message === "string" ? result.message : "Variante eliminada correctamente.",
-    variant: result.mode === "archived" && result.variant ? result.variant : null,
-  }
+  return true
 }
 
 export async function reorderProductoVariantes(

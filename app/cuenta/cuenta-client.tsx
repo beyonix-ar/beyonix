@@ -75,6 +75,7 @@ import { TransferReservationNotice } from "@/components/account/transfer-reserva
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 import { useBackNavigation } from "@/hooks/use-back-navigation"
+import { getCreditNoteState } from "@/lib/orders/credit-note-state"
 
 type ProfileView =
   | "home"
@@ -771,10 +772,12 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     const refundPending = refundSummary?.state === "refund_in_progress"
     const refunded = refundSummary?.state === "refunded"
     const refundFlow = refundSummary !== null
+    // Misma fuente de verdad que Admin (lib/orders/credit-note-state): incluye
+    // el caso heredado (reintegrado antes de la factura, NC todavía pendiente).
     const creditNotePending =
       !creditNoteAvailable &&
       isOrderDetailInvoiced(order) &&
-      ["pending", "processing"].includes(order.credit_note_status ?? "")
+      ["required", "legacy_required", "processing"].includes(getCreditNoteState({ ...order, order_credit_notes: undefined }).state)
     const cancellationDate = order.cancellation_requested_at || order.cancelled_at
     const orderDispatched = isOrderDetailDispatched(order)
     const refundProofAvailable = Boolean(order.refund_proof_url)

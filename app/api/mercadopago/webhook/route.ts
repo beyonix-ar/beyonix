@@ -17,13 +17,12 @@ import {
   MercadoPagoInventoryConflictError,
   processApprovedMercadoPagoOrderPayment,
 } from "@/lib/mercadopago/order-payment"
-import { reconcileMercadoPagoOrderRefund } from "@/lib/mercadopago/order-refund"
 import { parseMercadoPagoExternalReference } from "@/lib/mercadopago/order-reference"
 import {
-  classifyMercadoPagoRefundOrigin,
-  type BeyonixConfirmedRefund,
-  type MercadoPagoRefundedPayment,
-} from "@/lib/mercadopago/refund-origin"
+  auditMercadoPagoRefundsForOrder,
+  recordMercadoPagoChargebackIncident,
+} from "@/lib/mercadopago/refund-incidents"
+import { hasMercadoPagoRefundSignal } from "@/lib/mercadopago/refund-origin"
 import {
   claimMercadoPagoWebhookDelivery,
   releaseMercadoPagoWebhookDelivery,
@@ -204,9 +203,10 @@ async function handleWebhook(request: Request) {
       // siga marcado como pagado. Nunca se toca stock/saldo/envío acá (eso
       // requiere criterio humano, igual que approved_stock_conflict) -- sólo
       // se deja visible y auditado para resolución manual.
+      const samePayment = orderRow.payment_id === String(payment.id)
       if (
+        samePayment &&
         POST_CONFIRMATION_REVERSAL_STATUSES.has(payment.status) &&
-        orderRow.payment_id === String(payment.id) &&
         orderRow.payment_status !== payment.status
       ) {
         const { data: reversalUpdated, error: reversalError } = await supabase
@@ -242,99 +242,27 @@ async function handleWebhook(request: Request) {
               reason: "post_confirmation_reversal_notified_by_provider",
             },
           })
-          console.error("MERCADOPAGO_POST_CONFIRMATION_REVERSAL", {
+        }
+      }
+
+      if (samePayment && payment.status === "charged_back") {
+        // Un contracargo es siempre un incidente adversarial -- nunca se
+        // reconcilia como si fuera un refund cooperativo iniciado por
+        // BEYONIX, y nunca toca financial_status automáticamente. Una sola
+        // alerta por pago aunque el webhook se repita.
+        await recordMercadoPagoChargebackIncident(supabase, orderId, String(payment.id))
+      } else if (samePayment && hasMercadoPagoRefundSignal(payment)) {
+        // Reintegros (totales o PARCIALES: un parcial deja el pago en
+        // "approved"). Se comparan los refunds que informa MP contra los que
+        // registró BEYONIX; sólo lo desconocido se alerta, por su importe y
+        // una sola vez. Un intento propio en curso se concilia primero (GET).
+        const audit = await auditMercadoPagoRefundsForOrder(supabase, { orderId, payment })
+        if (audit.unknown.length) {
+          console.error("MERCADOPAGO_EXTERNAL_REFUND_DETECTED", {
             orderId,
             paymentId: payment.id,
-            paymentStatus: payment.status,
+            refunds: audit.unknown.map((refund) => ({ key: refund.key, amount: refund.amount })),
           })
-
-          // FASE 2: integra con mercadopago_order_refunds -- nunca inventa
-          // una operación. Sin debilitar nada de arriba (firma/replay/
-          // reconsulta/ARS/monto/ownership ya se validaron antes de llegar
-          // acá): esto sólo decide qué hacer con una notificación de
-          // reversa ya autenticada y ya persistida.
-          if (payment.status === "charged_back") {
-            // Un contracargo es siempre un incidente adversarial -- nunca se
-            // reconcilia como si fuera un refund cooperativo iniciado por
-            // BEYONIX, y nunca toca financial_status automáticamente.
-            await appendOrderAuditEvent(supabase, {
-              orderId,
-              actorType: "system",
-              action: "mp_chargeback_detected",
-              previousStatus: orderRow.financial_status ?? "payment_confirmed",
-              newStatus: orderRow.financial_status ?? "payment_confirmed",
-              metadata: {
-                paymentId: payment.id,
-                reason: "chargeback_requires_manual_resolution",
-              },
-            })
-          } else {
-            // payment.status === "refunded": si hay un intento nuestro en
-            // curso, esta notificación es la señal para reconciliarlo (GET,
-            // nunca un nuevo POST) -- reconcileMercadoPagoOrderRefund ya
-            // cierra el claim automáticamente si confirma. Si NO hay ningún
-            // intento nuestro, es un refund externo (hecho a mano en el
-            // dashboard de Mercado Pago, fuera de BEYONIX) -- se audita como
-            // incidente visible, sin inventar ni completar ninguna operación.
-            const { data: pendingAttempt } = await supabase
-              .from("mercadopago_order_refunds")
-              .select("id")
-              .eq("order_id", orderId)
-              .in("status", ["processing", "needs_reconciliation"])
-              .limit(1)
-              .maybeSingle()
-
-            // El webhook suele llegar después de que nuestro POST ya quedó
-            // confirmado: un refund propio confirmado para este pago no es
-            // externo. Sólo se audita como externo si MP informa un refund
-            // que BEYONIX no registró (o más dinero del que confirmó).
-            const { data: confirmedAttempts, error: confirmedAttemptsError } = pendingAttempt
-              ? { data: [], error: null }
-              : await supabase
-                  .from("mercadopago_order_refunds")
-                  .select("mp_refund_id, amount")
-                  .eq("order_id", orderId)
-                  .eq("payment_id", String(payment.id))
-                  .eq("status", "confirmed")
-            // Si no se pudo verificar, se audita igual: nunca se silencia un
-            // posible refund externo (payment_status ya quedó persistido y un
-            // reintento de MP no volvería a entrar a este bloque).
-            if (confirmedAttemptsError) {
-              console.error("MERCADOPAGO_REFUND_ORIGIN_LOOKUP_ERROR", {
-                orderId,
-                paymentId: payment.id,
-                error: safeErrorMetadata(confirmedAttemptsError),
-              })
-            }
-            const refundOrigin = confirmedAttemptsError
-              ? "external"
-              : classifyMercadoPagoRefundOrigin(
-                  payment as MercadoPagoRefundedPayment,
-                  (confirmedAttempts ?? []) as BeyonixConfirmedRefund[],
-                )
-
-            if (pendingAttempt) {
-              await reconcileMercadoPagoOrderRefund(supabase, { orderId })
-            } else if (refundOrigin === "beyonix") {
-              console.log("MERCADOPAGO_REFUND_NOTIFICATION_MATCHES_BEYONIX_REFUND", {
-                orderId,
-                paymentId: payment.id,
-              })
-            } else {
-              await appendOrderAuditEvent(supabase, {
-                orderId,
-                actorType: "system",
-                action: "mp_external_refund_detected",
-                previousStatus: orderRow.financial_status ?? "payment_confirmed",
-                newStatus: orderRow.financial_status ?? "payment_confirmed",
-                metadata: {
-                  paymentId: payment.id,
-                  reason: "refund_not_initiated_by_beyonix",
-                  originVerified: !confirmedAttemptsError,
-                },
-              })
-            }
-          }
         }
       }
 

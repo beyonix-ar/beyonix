@@ -19,7 +19,6 @@ import {
 import { supabase } from "@/lib/supabase/client"
 import { describeAdminLoadError } from "@/lib/admin/request-error"
 import { shareUnchanged } from "@/lib/admin/structural-sharing"
-import type { AdminArchiveFilter } from "@/lib/orders/order-visibility"
 
 const REALTIME_PEDIDOS_TABLES = [
   "ordenes",
@@ -49,11 +48,7 @@ function dedupePedidos(pedidos: SupabasePedido[]) {
 // Hook
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function usePedidos({
-  orderId,
-  search = "",
-  archive = "active",
-}: { orderId?: number; search?: string; archive?: AdminArchiveFilter } = {}) {
+export function usePedidos({ orderId, search = "" }: { orderId?: number; search?: string } = {}) {
   const requestIdRef = useRef(0)
   const channelNameRef = useRef(
     `admin-pedidos-live-${Math.random().toString(36).slice(2)}`,
@@ -79,7 +74,7 @@ export function usePedidos({
       try {
         if (!silent) setLoading(true)
 
-        const pages = await Promise.all(Array.from({ length: orderId ? 1 : Math.ceil(visibleLimit / 50) }, (_, page) => getPedidos({ limit: 50, offset: page * 50, orderId, search, archive })))
+        const pages = await Promise.all(Array.from({ length: orderId ? 1 : Math.ceil(visibleLimit / 50) }, (_, page) => getPedidos({ limit: 50, offset: page * 50, orderId, search })))
         const data = { pedidos: pages.flatMap((page) => page.pedidos), total: pages[0].total }
 
         if (requestId !== requestIdRef.current) return
@@ -101,9 +96,9 @@ export function usePedidos({
       } finally {
         if (requestId === requestIdRef.current) setLoading(false)
       }
-    }, [orderId, search, archive, visibleLimit])
+    }, [orderId, search, visibleLimit])
 
-  useEffect(() => { setVisibleLimit(orderId ? 1 : 50) }, [orderId, search, archive])
+  useEffect(() => { setVisibleLimit(orderId ? 1 : 50) }, [orderId, search])
 
   // ───────────────────────────────────────────────────────────────────────────
   // First load

@@ -15,11 +15,7 @@ import {
   type CancellationNextActionOrder,
   type CancellationNextActionState,
 } from "./cancellation-next-action.ts"
-import {
-  getCreditNoteObligation,
-  isCreditNoteObligationPending,
-  type CreditNoteObligation,
-} from "./credit-note-obligation.ts"
+import { getCreditNoteState, type CreditNoteStateOrder } from "./credit-note-state.ts"
 
 export type CancellationPanelStepStatus = "done" | "pending" | "processing" | "attention"
 
@@ -78,10 +74,11 @@ export interface CancellationPanelViewModel {
   isCancellationFlow: boolean
   state: CancellationNextActionState
   isFinished: boolean
-  /** Obligación fiscal de NC (misma fuente que el panel de NC heredada y la campana). */
-  creditNote: CreditNoteObligation
-  /** Reintegro terminado pero la NC obligatoria sigue sin cubrir: nunca se muestra como "Completado". */
-  creditNotePendingAfterRefund: boolean
+  /**
+   * El dinero ya volvió pero la NC obligatoria sigue sin autorizar (caso
+   * heredado: reintegro anterior a la factura). El proceso no está cerrado.
+   */
+  creditNotePending: boolean
   badgeTone: "success" | "warning" | "danger" | "info"
   paymentMethod: CancellationPaymentMethodKind
   amounts: CancellationPanelAmounts
@@ -142,7 +139,7 @@ function badgeToneForState(state: CancellationNextActionState): CancellationPane
 }
 
 export function getCancellationPanelViewModel(
-  order: CancellationNextActionOrder & {
+  order: CancellationNextActionOrder & CreditNoteStateOrder & {
     total?: number | string | null
     external_amount_due?: number | string | null
     /**
@@ -181,10 +178,8 @@ export function getCancellationPanelViewModel(
   const notes = order.order_credit_notes ?? []
   const flowNeedsCreditNote =
     Boolean(order.credit_note_required) || notes.length > 0
-  const hasAnyAuthorizedNote = notes.some((note) => note.status === "authorized")
-  const creditNote = getCreditNoteObligation(order)
-  const creditNoteOutstanding =
-    isCreditNoteObligationPending(creditNote) || creditNote.status === "processing"
+  // Estado único de la NC (mismo helper que Facturación, progreso y campana).
+  const creditNote = getCreditNoteState(order)
   const pendingExternalRefundAmount = roundMoney(
     notes
       .filter(
@@ -224,24 +219,23 @@ export function getCancellationPanelViewModel(
 
   const steps: CancellationPanelStep[] = []
   const isFinished = nextAction.state === "completed"
-  const creditNotePendingAfterRefund = isFinished && creditNoteOutstanding
+  // El dinero ya volvió pero la NC obligatoria no está autorizada (caso heredado).
+  const creditNotePending = isFinished && !creditNote.authorized && creditNote.state !== "not_required"
 
   if (isCancellationFlow && nextAction.state !== "none") {
     if (flowNeedsCreditNote) {
       steps.push({
         key: "credit_note",
-        label: creditNotePendingAfterRefund ? "Nota de crédito pendiente" : "Nota de crédito",
+        label: "Nota de crédito",
         // Un pedido ya reintegrado no tiene NC por eso: si la NC era
-        // obligatoria y no se autorizó por el total facturado (p. ej.
-        // reintegro anterior a la factura), el paso sigue requiriendo atención.
+        // obligatoria y no se autorizó (p. ej. reintegro anterior a la
+        // factura), el paso sigue requiriendo atención.
         status:
-          creditNotePendingAfterRefund
-            ? creditNote.status === "processing" ? "processing" : "attention"
-            : hasAnyAuthorizedNote || creditNote.status === "covered" || (isFinished && !order.credit_note_required)
-              ? "done"
-            : nextAction.state === "wait_credit_note"
+          creditNote.authorized || (isFinished && creditNote.state === "not_required")
+            ? "done"
+            : creditNote.state === "processing"
               ? "processing"
-              : nextAction.reason === "invoice_missing"
+              : isFinished || creditNote.state === "error" || nextAction.reason === "invoice_missing"
                 ? "attention"
                 : "pending",
       })
@@ -298,12 +292,10 @@ export function getCancellationPanelViewModel(
   const helperText =
     paymentAfterCancellation && !isFinished
       ? "Llegó una transferencia después de que el pedido se canceló. No confirmes la venta: devolvé el dinero al cliente y cargá acá el comprobante del reintegro."
-      : creditNotePendingAfterRefund
-        ? creditNote.status === "processing"
-          ? "El reintegro quedó registrado. La nota de crédito de la factura se está emitiendo en ARCA."
-          : creditNote.status === "insufficient"
-            ? "El reintegro quedó registrado, pero las notas de crédito autorizadas no cubren el total facturado. Requiere revisión manual: no se emite otra nota automáticamente."
-            : "El reintegro quedó registrado, pero falta la nota de crédito obligatoria de la factura."
+      : creditNotePending
+        ? creditNote.state === "processing"
+          ? "El dinero ya se reintegró. La nota de crédito que anula la factura está en proceso en ARCA."
+          : "El dinero ya se reintegró. Falta la nota de crédito que anula la factura: emitila desde \"Nota de crédito pendiente\", abajo."
       : copy?.description ??
         (nextAction.state === "completed"
           ? "El reintegro quedó registrado. No hay más acciones pendientes para esta cancelación."
@@ -324,9 +316,8 @@ export function getCancellationPanelViewModel(
     isCancellationFlow,
     state: nextAction.state,
     isFinished,
-    creditNote,
-    creditNotePendingAfterRefund,
-    badgeTone: creditNotePendingAfterRefund ? "warning" : badgeToneForState(nextAction.state),
+    creditNotePending,
+    badgeTone: creditNotePending ? "warning" : badgeToneForState(nextAction.state),
     paymentMethod,
     amounts: {
       orderTotal,

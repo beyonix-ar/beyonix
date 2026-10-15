@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import { executeFinancialResolution, loadFinancialResolution } from "@/lib/orders/financial-resolution-server"
-import type { FinancialChoice } from "@/lib/orders/financial-resolution"
+import { FINANCIAL_INTERRUPTED_DETAIL, getEffectiveFinancialResolutionStatus, type FinancialChoice } from "@/lib/orders/financial-resolution"
 import { prepareClaimUploads } from "@/lib/orders/claim-server"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { PAYMENT_PROOF_BUCKET, getPaymentProofValidationError, sanitizePaymentProofFileName } from "@/lib/payments/transfer"
@@ -21,14 +21,16 @@ export async function GET(request: Request, context: Context) {
   try {
     const result = await loadFinancialResolution(auth.admin, id)
     if (!result) return NextResponse.json({ error: "Pedido no encontrado." }, { status: 404 })
+    const resolutionStatus = result.resolution ? getEffectiveFinancialResolutionStatus(result.resolution) : null
+    const interrupted = !!result.resolution && resolutionStatus !== result.resolution.status
     return NextResponse.json({ financialOptions: result.options, status: result.status, amount: result.amount,
       requiresReturn: result.requiresReturn, mode: result.mode, product: result.returnContext.product,
       reception: result.returnContext.reception, receptionOptions: result.receptionOptions,
       notice: result.requiresReturn || result.returnContext.reception === "unavailable"
         ? "El pedido ya salió de BEYONIX. La resolución requiere devolución y recepción del producto." : null,
       resolution: result.resolution && { id: result.resolution.id,
-        type: result.resolution.choice, status: result.resolution.status, amount: result.resolution.amount,
-        detail: result.resolution.last_error } })
+        type: result.resolution.choice, status: resolutionStatus, amount: result.resolution.amount,
+        detail: result.resolution.last_error ?? (interrupted ? FINANCIAL_INTERRUPTED_DETAIL : null) } })
   } catch {
     return NextResponse.json({ error: "No se pudieron consultar las opciones financieras." }, { status: 500 })
   }
@@ -57,28 +59,26 @@ export async function POST(request: Request, context: Context) {
       if (!current?.resolution || current.resolution.choice !== "manual_refund") return NextResponse.json({ error: "No hay un reintegro manual pendiente." }, { status: 409 })
       if (current.resolution.status === "completed") return NextResponse.json({ status: "Completado" })
       if (current.resolution.status !== "manual_pending") return NextResponse.json({ error: "El reintegro aún no está listo." }, { status: 409 })
-      let proof: { path: string; name: string; type: string; size: number } | null = null
-      if (file) {
-        const validationError = getPaymentProofValidationError(file)
-        if (validationError) return NextResponse.json({ error: validationError }, { status: 400 })
-        const [upload] = await prepareClaimUploads([file])
-        const path = `${id}/${crypto.randomUUID()}/${sanitizePaymentProofFileName(file.name)}`
-        const { error: uploadError } = await auth.admin.storage.from(PAYMENT_PROOF_BUCKET).upload(path, upload.bytes,
-          { contentType: upload.type, upsert: false })
-        if (uploadError) throw new Error("No se pudo adjuntar el comprobante.")
-        proof = { path, name: upload.name, type: upload.type, size: upload.size }
-      }
+      // BEYONIX no devuelve dinero por banco: el reintegro sólo se cierra con
+      // el comprobante del pago saliente (la RPC lo vuelve a exigir).
+      if (!file) return NextResponse.json({ error: "Adjuntá el comprobante del reintegro realizado." }, { status: 400 })
+      const validationError = getPaymentProofValidationError(file)
+      if (validationError) return NextResponse.json({ error: validationError }, { status: 400 })
+      const [upload] = await prepareClaimUploads([file])
+      const path = `${id}/${crypto.randomUUID()}/${sanitizePaymentProofFileName(file.name)}`
+      const { error: uploadError } = await auth.admin.storage.from(PAYMENT_PROOF_BUCKET).upload(path, upload.bytes,
+        { contentType: upload.type, upsert: false })
+      if (uploadError) throw new Error("No se pudo adjuntar el comprobante.")
+      const proof = { path, name: upload.name, type: upload.type, size: upload.size }
       const { data, error } = await auth.admin.rpc("complete_manual_order_financial_refund", { p_resolution_id: current.resolution.id,
         p_actor_id: auth.user.id, p_reference: body.reference?.trim() || null, p_observation: body.observation?.trim() || null,
         p_proof: proof })
-      if (proof) {
-        const { data: stored, error: lookupError } = await auth.admin.from("order_refund_proofs")
-          .select("file_path").eq("financial_resolution_id", current.resolution.id).maybeSingle()
-        // Un timeout puede ocurrir después del commit: sólo se limpia si la DB
-        // confirmó que este archivo no quedó asociado al reintegro.
-        if (!lookupError && stored?.file_path !== `${PAYMENT_PROOF_BUCKET}/${proof.path}`) {
-          await auth.admin.storage.from(PAYMENT_PROOF_BUCKET).remove([proof.path])
-        }
+      const { data: stored, error: lookupError } = await auth.admin.from("order_refund_proofs")
+        .select("file_path").eq("financial_resolution_id", current.resolution.id).maybeSingle()
+      // Un timeout puede ocurrir después del commit: sólo se limpia si la DB
+      // confirmó que este archivo no quedó asociado al reintegro.
+      if (!lookupError && stored?.file_path !== `${PAYMENT_PROOF_BUCKET}/${proof.path}`) {
+        await auth.admin.storage.from(PAYMENT_PROOF_BUCKET).remove([proof.path])
       }
       if (error) throw new Error(error.message)
       return NextResponse.json({ status: "Completado", resolution: data })

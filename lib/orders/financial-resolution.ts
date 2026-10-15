@@ -109,6 +109,32 @@ export function getFinancialResolutionMode(input: {
   return input.financialStatus === "refund_pending" ? "advanced" : "none"
 }
 
+/** Una reserva sin lease más vieja que esto quedó cortada entre reservar y ejecutar. */
+export const FINANCIAL_STALE_RESERVATION_MS = 5 * 60_000
+
+/**
+ * Estado real de la resolución para mostrar y decidir la acción: un intento
+ * "en proceso" cuyo lease venció (request cortado, timeout) no avanza solo y
+ * claim_order_financial_resolution ya acepta retomarlo, así que requiere que
+ * el Admin reintente. Nunca cambia la fila: sólo cómo se lee.
+ */
+export function getEffectiveFinancialResolutionStatus(
+  resolution: { status: string; lease_until?: string | null; updated_at?: string | null },
+  now = Date.now(),
+): string {
+  if (resolution.status === "processing") {
+    const leaseUntil = resolution.lease_until ? Date.parse(resolution.lease_until) : Number.NaN
+    return Number.isFinite(leaseUntil) && leaseUntil > now ? "processing" : "requires_action"
+  }
+  if (resolution.status === "reserved") {
+    const updatedAt = resolution.updated_at ? Date.parse(resolution.updated_at) : Number.NaN
+    return Number.isFinite(updatedAt) && now - updatedAt < FINANCIAL_STALE_RESERVATION_MS ? "reserved" : "requires_action"
+  }
+  return resolution.status
+}
+
+export const FINANCIAL_INTERRUPTED_DETAIL = "La operación anterior se interrumpió antes de terminar. Reintentá la actualización."
+
 export function financialHumanStatus(status: string | null): FinancialHumanStatus {
   if (status === "completed") return "Completado"
   if (status === "processing" || status === "reserved") return "En proceso"

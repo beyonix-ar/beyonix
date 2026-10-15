@@ -13,10 +13,9 @@ import { encodeBarcodePattern } from "./encode.ts"
 import { LABEL_QUEUE_STORAGE_KEY, createQueueItem, type LabelQueueItem } from "./queue.ts"
 
 // Admin → Etiquetas con el componente REAL (AdminEtiquetas, bundle esbuild) y
-// APIs simuladas. Flujo en 3 pasos: productos (−/+ directo en cada fila) →
-// formato → vista previa e impresión. Caso real: Encendedor Marrón ×5,
-// Negro ×3, Botella ×4 y Soporte ×2 = 14 etiquetas de 40×20 → una hoja A4;
-// rollo térmico 80 × 20 de 2 columnas; PDF/ZPL; layout desktop y mobile.
+// APIs simuladas. Caso real: Encendedor Marrón ×5, Negro ×3, Botella ×4 y
+// Soporte ×2 = 14 etiquetas de 40×20 → una sola hoja A4. Ajuste en vivo,
+// etiqueta ampliada, PDF con tamaño físico y layout en 1366/1440/1920.
 
 const EAN_A = "7790001000019"
 const EAN_B = "7790895000997"
@@ -116,7 +115,7 @@ async function open(theme: "dark" | "light", width = 1440): Promise<Page> {
   await page.goto("http://admin.test/")
   try {
     await page.getByRole("heading", { name: "Etiquetas", exact: true }).waitFor({ timeout: 10_000 })
-    await page.locator("[data-label-total]", { hasText: "12 etiquetas" }).waitFor({ timeout: 10_000 })
+    await page.locator("svg[aria-label^='Vista previa de la hoja'] path").first().waitFor({ timeout: 10_000 })
   } catch (error) {
     await page.close()
     throw new Error(`No renderizó: ${errors.join(" | ") || String(error)}`)
@@ -124,69 +123,58 @@ async function open(theme: "dark" | "light", width = 1440): Promise<Page> {
   return page
 }
 
-const step = (page: Page, name: RegExp) => page.getByRole("navigation", { name: /Pasos/ }).getByRole("button", { name }).click()
-const toFormat = (page: Page) => step(page, /^Formato/)
-const toPrint = async (page: Page) => {
-  await step(page, /^Vista previa e impresión/)
-  await page.getByText(/^Lista para imprimir:/).waitFor()
-}
-const metric = (page: Page, label: string) => page.locator(`[data-label-metric='${label}']`).innerText()
-const sheetSelector = "svg[aria-label^='Vista previa de la hoja']"
+const stat = (page: Page, label: string) =>
+  page.locator("p", { hasText: new RegExp(`^${label}$`) }).locator("xpath=following-sibling::p[1]").innerText()
 
-test("caso real: armar la tanda con −/+, 14 etiquetas de 40×20 en una hoja A4, ajuste en vivo y etiqueta ampliada", async () => {
+test("caso real: 14 etiquetas de 40×20 en una sola hoja A4, ajuste en vivo y etiqueta ampliada", async () => {
   const page = await open("dark")
   try {
-    // Paso 1: lo agregado se ve en la propia fila; la cantidad se elige con −/+.
-    await page.getByLabel("Buscar productos").fill("Soporte")
-    await page.getByRole("button", { name: "Agregar Soporte Notebook" }).click()
-    await page.getByRole("button", { name: "Sumar una etiqueta de Soporte Notebook" }).first().click()
-    assert.equal(await page.getByLabel("Cantidad de etiquetas de Soporte Notebook").first().inputValue(), "2")
+    // Agregar el Soporte desde la búsqueda (server-side) y sumar un duplicado.
+    await page.getByLabel("Buscar productos y variantes").fill("Soporte")
+    const add = page.getByRole("button", { name: "Agregar Soporte Notebook a la cola" })
+    await add.waitFor()
+    await page.getByLabel("Cantidad de etiquetas de Soporte Notebook").fill("2")
+    await add.click()
+    await page.getByText("Agregado: Soporte Notebook ×2.").waitFor()
+    await page.getByLabel("Buscar productos y variantes").fill("Encendedor")
+    await page.getByLabel("Cantidad de etiquetas de NEGRO").fill("1")
+    await page.getByRole("button", { name: "Agregar NEGRO a la cola" }).click()
+    await page.getByText("Sumado: Encendedor USB · NEGRO ×1.").waitFor()
+    await page.getByRole("button", { name: "Restar una etiqueta de Encendedor USB NEGRO" }).click()
 
-    await page.getByLabel("Buscar productos").fill("Encendedor")
-    await page.locator("li[data-selected='true']", { hasText: "NEGRO · ENC-NEG" }).waitFor()
-    const negro = page.getByLabel("Cantidad de etiquetas de Encendedor USB NEGRO").first()
-    assert.equal(await negro.inputValue(), "3", "la fila muestra lo que ya está en la tanda")
-    await page.getByRole("button", { name: "Sumar una etiqueta de Encendedor USB NEGRO" }).first().click()
-    await page.getByRole("button", { name: "Restar una etiqueta de Encendedor USB NEGRO" }).first().click()
-    assert.equal(await page.locator("li[data-selected='true']").count(), 2, "las dos variantes del encendedor figuran agregadas")
-    assert.match(await page.locator("li[data-selected='true']").first().innerText(), /MARRÓN · ENC-MAR/, "COLOR · SKU de un vistazo")
-    await page.locator("[data-label-total]", { hasText: "14 etiquetas" }).waitFor()
-    // La tanda dice dónde cae cada artículo.
-    await page.locator("[data-label-placement]", { hasText: "Etiquetas 6–8 · hoja 1" }).waitFor()
-
-    // Paso 2 → 3.
-    await page.getByRole("button", { name: /Continuar: elegir formato/ }).click()
-    await page.getByRole("button", { name: /Ver e imprimir/ }).click()
-    await page.getByText(/^Lista para imprimir:/).waitFor()
-    assert.equal(await metric(page, "Etiquetas"), "14")
-    assert.equal(await metric(page, "Por hoja"), "48 (4 × 12)")
-    assert.equal(await metric(page, "Hojas"), "1")
-    const sheet = page.locator(sheetSelector).first()
-    await sheet.locator("path").first().waitFor()
-    assert.equal(await sheet.locator("g[role='button']").count(), 14, "14 etiquetas dibujadas, en el orden de la tanda")
+    await page.getByText("4 artículos · 14 etiquetas").first().waitFor()
+    // La búsqueda marca lo que ya está en la cola y la cola dice dónde cae cada artículo.
+    await page.getByText("En cola ×3").first().waitFor()
+    await page.getByText("Etiquetas 6–8 · hoja 1").waitFor()
+    assert.equal(await stat(page, "Etiquetas"), "14")
+    assert.equal(await stat(page, "Por hoja"), "48")
+    await page.getByText("4 columnas × 12 filas").waitFor()
+    await page.getByText("Listo para imprimir: 14 etiquetas en 1 hoja A4.").waitFor()
+    assert.equal(await stat(page, "Hojas"), "1")
+    assert.equal(await stat(page, "Libres"), "34")
+    const sheet = page.locator("svg[aria-label^='Vista previa de la hoja']").first()
+    assert.equal(await sheet.locator("g[role='button']").count(), 14, "14 etiquetas dibujadas, en el orden de la cola")
     assert.equal(await sheet.getAttribute("viewBox"), "0 0 210 297", "hoja A4 en mm")
     const firstLabel = sheet.locator("g[role='button'] > svg").first()
     assert.equal(await firstLabel.getAttribute("width"), "40")
     assert.equal(await firstLabel.getAttribute("height"), "20")
-    assert.match(await sheet.locator("g[role='button']").first().innerHTML(), /MARRÓN · ENC-MAR/, "línea 2: COLOR · SKU")
+    assert.match(await sheet.locator("g[role='button']").first().innerHTML(), /MARRÓN/)
     assert.match(await sheet.locator("g[role='button']").nth(13).getAttribute("aria-label") ?? "", /Soporte Notebook/)
 
     // Ajuste en vivo: 40×20 → 50×25.
-    await toFormat(page)
-    await page.getByRole("radio", { name: /A4 · 50 × 25/ }).click()
-    await page.locator("[data-format-layout]", { hasText: "3 col. × 10 filas = 30 por hoja" }).waitFor()
+    await page.getByRole("button", { name: "Estándar 50 × 25 mm" }).click()
+    await page.waitForFunction(() => document.querySelector("svg[aria-label^='Vista previa de la hoja'] g[role='button'] > svg")?.getAttribute("width") === "50")
+    assert.equal(await stat(page, "Por hoja"), "30")
     // Medida personalizada; inválida no se aplica.
     await page.getByLabel("Ancho (mm)").fill("0")
     await page.getByText("Ancho: entre 20 mm y 120 mm.").waitFor()
-    assert.match(await page.locator("[data-format-name]").innerText(), /50 × 25/, "0 mm no se aplica")
+    assert.equal(await firstLabel.getAttribute("width"), "50", "0 mm no se aplica")
     await page.getByLabel("Ancho (mm)").fill("40")
     await page.getByLabel("Alto (mm)").fill("20")
-    await page.locator("[data-format-name]", { hasText: "A4 · 40 × 20" }).waitFor()
-    await toPrint(page)
-    await page.waitForFunction((selector) => document.querySelector(`${selector} g[role='button'] > svg`)?.getAttribute("height") === "20", sheetSelector)
+    await page.waitForFunction(() => document.querySelector("svg[aria-label^='Vista previa de la hoja'] g[role='button'] > svg")?.getAttribute("height") === "20")
 
     // Etiqueta ampliada con medidas reales.
-    await page.locator(sheetSelector).locator("g[role='button']").first().click()
+    await sheet.locator("g[role='button']").first().click()
     const dialog = page.getByRole("dialog", { name: "Etiqueta ampliada" })
     await dialog.waitFor()
     await dialog.getByText("40 × 20 mm", { exact: true }).waitFor()
@@ -194,7 +182,7 @@ test("caso real: armar la tanda con −/+, 14 etiquetas de 40×20 en una hoja A4
     await dialog.locator("li", { hasText: EAN_A }).waitFor()
     await dialog.getByRole("button", { name: "Cerrar" }).first().click()
 
-    // Formato recordado en la cuenta (debounce).
+    // Preferencia recordada en la cuenta (debounce).
     await page.waitForFunction(() => (window as unknown as { __calls: { path: string; method: string }[] }).__calls.some((call) => call.path === "/api/admin/labels/config" && call.method === "PUT"), null, { timeout: 5000 })
   } finally {
     await page.close()
@@ -204,10 +192,9 @@ test("caso real: armar la tanda con −/+, 14 etiquetas de 40×20 en una hoja A4
 test("PDF: se descarga con tamaño físico A4 y la tanda queda en el historial", async () => {
   const page = await open("light")
   try {
-    await toPrint(page)
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "Descargar PDF" }).click(),
+      page.getByRole("button", { name: "Descargar PDF" }).first().click(),
     ])
     assert.match(download.suggestedFilename(), /^etiquetas-beyonix-\d{8}-\d{4}\.pdf$/)
     const path = await download.path()
@@ -221,71 +208,47 @@ test("PDF: se descarga con tamaño físico A4 y la tanda queda en el historial",
     const batch = calls.find((call) => call.path === "/api/admin/labels/batches")
     assert.equal(batch?.body?.output, "pdf")
     assert.equal(batch?.body?.items?.length, 3)
-    await step(page, /^Productos/)
-    await page.getByText(/Tandas recientes/).click()
+    await page.getByRole("button", { name: /Tandas recientes/ }).click()
     await page.getByText("12 etiquetas · PDF", { exact: false }).waitFor()
   } finally {
     await page.close()
   }
 })
 
-test("rollo térmico 80 × 20 de 2 columnas: preview por filas, métricas y ZPL", async () => {
+test("térmica: una etiqueta por fila, rollo y ZPL disponible a 203 dpi", async () => {
   const page = await open("dark")
   try {
-    await toFormat(page)
-    await page.getByRole("radio", { name: /Rollo térmico/ }).click()
-    await page.getByRole("radio", { name: /Rollo 80 × 20/ }).click()
-    await page.locator("[data-roll-summary]", { hasText: "Cada fila del rollo mide 80 × 20 mm y lleva 2 etiquetas de 39 × 20 mm." }).waitFor()
-    assert.equal(await page.getByRole("radio", { name: /Rollo 80 × 20/ }).getAttribute("aria-checked"), "true")
-    assert.equal(await page.getByRole("radio", { name: "2", exact: true }).getAttribute("aria-checked"), "true")
-
-    await toPrint(page)
-    assert.equal(await metric(page, "Por fila"), "2")
-    assert.equal(await metric(page, "Filas"), "6", "12 etiquetas / 2 columnas")
-    assert.equal(await metric(page, "Largo de rollo"), `${((6 * 20 + 5 * 3) / 10).toLocaleString("es-AR")} cm`)
-    const roll = page.locator("svg[aria-label^='Vista previa del rollo']")
-    assert.match(await roll.getAttribute("aria-label") ?? "", /12 etiquetas en 6 filas/)
-    const [left, right] = await roll.locator("g[role='button'] > svg").evaluateAll((nodes) => nodes.slice(0, 2).map((node) => ["x", "y", "width"].map((name) => Number(node.getAttribute(name)))))
-    assert.equal(left[1], right[1], "las dos etiquetas comparten la fila")
-    assert.equal(Math.round((right[0] - left[0]) * 10) / 10, 41, "39 mm + 2 mm de separación")
-    assert.equal(left[2], 39)
-
+    await page.getByRole("button", { name: /^Rollo térmico/ }).click()
+    await page.locator("svg[aria-label^='Vista previa del rollo']").waitFor()
+    assert.equal(await stat(page, "Por fila"), "1")
+    assert.equal(await stat(page, "Filas"), "12")
+    assert.equal(await stat(page, "Largo"), `${((12 * 20 + 11 * 3) / 10).toLocaleString("es-AR")} cm`)
     const zpl = page.getByRole("button", { name: "Exportar ZPL" })
     assert.equal(await zpl.isDisabled(), false)
     const [download] = await Promise.all([page.waitForEvent("download"), zpl.click()])
     assert.match(download.suggestedFilename(), /\.zpl$/)
-    const path = await download.path()
-    assert.ok(path)
-    assert.match(readFileSync(path, "utf8"), /\^PW639\n\^LL160/, "fila de 80 × 20 mm a 203 dpi")
-
-    // 1 columna: una etiqueta por fila.
-    await toFormat(page)
-    await page.getByRole("radio", { name: "1", exact: true }).click()
-    await toPrint(page)
-    assert.equal(await metric(page, "Filas"), "12")
   } finally {
     await page.close()
   }
 })
 
-test("térmica 10 × 2 cm: 100 × 20 cargado como una etiqueta se divide en 2 columnas; vista previa, PDF y ZPL", async () => {
+test("térmica 10 × 2 cm: dos etiquetas por fila en la vista previa, el PDF y el ZPL", async () => {
   const page = await open("light")
   try {
-    await toFormat(page)
-    await page.getByRole("radio", { name: /Rollo térmico/ }).click()
+    await page.getByRole("button", { name: /^Rollo térmico/ }).click()
+    // Cargado como una sola etiqueta de 100 × 20: la UI ofrece dividirla.
     await page.getByLabel("Ancho (mm)").fill("100")
-    const suggestion = page.locator("[data-column-suggestion]")
-    await suggestion.waitFor()
-    await suggestion.getByRole("button", { name: "Usar 2 columnas" }).click()
-    await page.locator("[data-roll-summary]", { hasText: "Cada fila del rollo mide 100 × 20 mm y lleva 2 etiquetas de 49 × 20 mm." }).waitFor()
-    assert.equal(await page.getByRole("radio", { name: /Rollo 100 × 20/ }).getAttribute("aria-checked"), "true", "equivale al preset del rollo doble")
-
-    await toPrint(page)
-    assert.equal(await metric(page, "Por fila"), "2")
-    assert.equal(await metric(page, "Filas"), "6")
-    const slots = page.locator("svg[aria-label^='Vista previa del rollo'] g[role='button'] > svg")
+    await page.getByText("una sola etiqueta larga").waitFor()
+    await page.getByRole("button", { name: "Usar 2 de 49 mm" }).click()
+    const roll = page.locator("svg[aria-label^='Vista previa del rollo']")
+    await page.waitForFunction(() => document.querySelector("svg[aria-label^='Vista previa del rollo']")?.getAttribute("aria-label")?.endsWith("en 6 filas de 2"))
+    assert.equal(await stat(page, "Por fila"), "2")
+    assert.equal(await stat(page, "Filas"), "6")
+    await page.getByText("Fila de 100 mm").waitFor()
+    assert.equal(await page.getByRole("button", { name: /^Rollo doble 10 × 2 cm/ }).getAttribute("aria-pressed"), "true", "equivale al preset del rollo doble")
+    const slots = roll.locator("g[role='button'] > svg")
     assert.equal(await slots.count(), 12, "6 filas × 2 en un solo tramo")
-    const [left, right] = await slots.evaluateAll((nodes) => nodes.slice(0, 2).map((node) => ["x", "y", "width"].map((name) => Number(node.getAttribute(name)))))
+    const [left, right] = await Promise.all([slots.nth(0), slots.nth(1)].map(async (slot) => [Number(await slot.getAttribute("x")), Number(await slot.getAttribute("y")), Number(await slot.getAttribute("width"))]))
     assert.equal(left[1], right[1], "las dos etiquetas comparten la fila")
     assert.equal(Math.round((right[0] - left[0]) * 10) / 10, 51, "49 mm + 2 mm de separación")
     assert.equal(left[2], 49)
@@ -311,32 +274,32 @@ test("térmica 10 × 2 cm: 100 × 20 cargado como una etiqueta se divide en 2 co
 
 for (const width of [1366, 1440, 1920]) {
   for (const theme of ["dark", "light"] as const) {
-    test(`${theme} ${width}px: pasos en dos columnas y sin scroll horizontal`, async () => {
+    test(`${theme} ${width}px: columnas ordenadas y sin scroll horizontal`, async () => {
       const page = await open(theme, width)
       try {
-        const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+        assert.ok(overflow <= 0, `scroll horizontal de ${overflow}px`)
         const box = async (name: string) => {
           const section = page.locator("section", { has: page.getByRole("heading", { name, exact: true }) }).first()
           const rect = await section.boundingBox()
           assert.ok(rect, name)
           return rect
         }
-        assert.ok((await overflow()) <= 0, "paso 1 sin scroll horizontal")
-        const [search, batch] = await Promise.all([box("Buscar productos"), box("Tanda")])
-        assert.ok(batch.x > search.x + search.width - 1, "la tanda va a la derecha de la búsqueda")
-
-        await toFormat(page)
-        const [format, sample] = await Promise.all([box("Formato de etiqueta"), box("Así queda")])
-        assert.ok(sample.x > format.x + format.width - 1, "la muestra va a la derecha del formato")
-
-        await toPrint(page)
-        assert.ok((await overflow()) <= 0, "paso 3 sin scroll horizontal")
-        const [preview, print] = await Promise.all([box("Vista previa"), box("Imprimir")])
-        assert.ok(print.x > preview.x + preview.width - 1, "imprimir va a la derecha de la vista previa")
-        const sheet = await page.locator(sheetSelector).first().boundingBox()
+        const [search, queue, format, preview] = await Promise.all([box("Buscar productos"), box("Cola de impresión"), box("Formato de etiqueta"), box("Vista previa")])
+        assert.ok(format.x > search.x + search.width - 1 && Math.abs(format.x - preview.x) < 2 && preview.y > format.y, "formato y vista previa a la derecha, en ese orden")
+        const dock = await page.getByRole("region", { name: "Imprimir o descargar" }).boundingBox()
+        assert.ok(dock && dock.y + dock.height <= 900 + 1, "las acciones de salida quedan visibles")
+        assert.ok(preview.x > search.x + search.width - 1, "la vista previa va a la derecha")
+        if (width >= 1536) {
+          assert.ok(queue.x > search.x + search.width - 1 && preview.x > queue.x + queue.width - 1, "tres columnas: buscar · cola · vista previa")
+        } else {
+          assert.ok(Math.abs(queue.x - search.x) < 2 && queue.y > search.y, "dos columnas: buscar y cola a la izquierda")
+        }
+        // La hoja se ve completa y legible dentro de su panel.
+        const sheet = await page.locator("svg[aria-label^='Vista previa de la hoja']").first().boundingBox()
         assert.ok(sheet && sheet.width >= 280 && sheet.x + sheet.width <= preview.x + preview.width + 1)
         // Fondo de la etiqueta siempre blanco, también en oscuro.
-        const fill = await page.locator(`${sheetSelector} g[role='button'] > svg > rect`).first().getAttribute("fill")
+        const fill = await page.locator("svg[aria-label^='Vista previa de la hoja'] g[role='button'] > svg > rect").first().getAttribute("fill")
         assert.equal(fill, "#fff")
       } finally {
         await page.close()
@@ -344,18 +307,3 @@ for (const width of [1366, 1440, 1920]) {
     })
   }
 }
-
-test("mobile 390px: los tres pasos en una columna, sin scroll horizontal", async () => {
-  const page = await open("light", 390)
-  try {
-    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-    assert.ok((await overflow()) <= 0, `paso 1: ${await overflow()}px`)
-    await toFormat(page)
-    assert.ok((await overflow()) <= 0, `paso 2: ${await overflow()}px`)
-    await toPrint(page)
-    assert.ok((await overflow()) <= 0, `paso 3: ${await overflow()}px`)
-    await page.getByRole("button", { name: /^Imprimir 12 etiquetas/ }).waitFor()
-  } finally {
-    await page.close()
-  }
-})

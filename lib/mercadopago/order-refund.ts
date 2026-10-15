@@ -52,6 +52,7 @@ interface RefundDependencies {
   getRefundStatus?: (
     paymentId: string,
     refundId: string | null,
+    expectedAmount?: number | null,
   ) => ReturnType<typeof getMercadoPagoRefundStatus>
   getOrderReference?: (orderId: number) => Promise<MercadoPagoOrderReferenceFields | null>
 }
@@ -122,6 +123,30 @@ function sanitizeErrorForLog(error: unknown) {
 }
 
 /**
+ * Persiste el resultado de un intento. Un fallo acá nunca se silencia: el
+ * intento queda en su estado anterior (processing/needs_reconciliation) y la
+ * conciliación lo retoma por GET, sin otro POST a Mercado Pago.
+ */
+async function persistRefundResult(
+  admin: AdminClient,
+  rpc: "record_mercadopago_order_refund_result" | "reconcile_mercadopago_order_refund",
+  args: { p_refund_id: string; p_outcome: string; p_mp_refund_id?: string; p_error_code?: string | null; p_error_message?: string },
+) {
+  const { error } = await admin.rpc(rpc, args)
+  if (error) {
+    console.error("MERCADOPAGO_REFUND_RESULT_PERSIST_ERROR", {
+      refundAttemptId: args.p_refund_id,
+      outcome: args.p_outcome,
+      message: error.message,
+    })
+  }
+  return !error
+}
+
+const defaultGetRefundStatus = (paymentId: string, refundId: string | null, expectedAmount?: number | null) =>
+  getMercadoPagoRefundStatus(paymentId, refundId, fetch, expectedAmount)
+
+/**
  * Orquesta un refund total contra Mercado Pago para un pedido ya aprobado
  * para reembolso (financial_status='refund_pending', ver
  * approve_order_claim_cancellation). El monto SIEMPRE es el que
@@ -170,7 +195,7 @@ export async function refundMercadoPagoOrderPayment(
       getOrderReference(params.orderId),
     ])
   } catch (error) {
-    await admin.rpc("record_mercadopago_order_refund_result", {
+    await persistRefundResult(admin, "record_mercadopago_order_refund_result", {
       p_refund_id: attempt.refund_id,
       p_outcome: "needs_reconciliation",
       p_error_code: "PAYMENT_LOOKUP_FAILED",
@@ -180,7 +205,7 @@ export async function refundMercadoPagoOrderPayment(
   }
 
   if (!order) {
-    await admin.rpc("record_mercadopago_order_refund_result", {
+    await persistRefundResult(admin, "record_mercadopago_order_refund_result", {
       p_refund_id: attempt.refund_id,
       p_outcome: "failed",
       p_error_code: "ORDER_NOT_FOUND",
@@ -195,7 +220,7 @@ export async function refundMercadoPagoOrderPayment(
     expectedAmount: attempt.amount,
   })
   if (validationError) {
-    await admin.rpc("record_mercadopago_order_refund_result", {
+    await persistRefundResult(admin, "record_mercadopago_order_refund_result", {
       p_refund_id: attempt.refund_id,
       p_outcome: "failed",
       p_error_code: validationError,
@@ -207,11 +232,14 @@ export async function refundMercadoPagoOrderPayment(
   const outcome = await createRefund(attempt.payment_id, attempt.idempotency_key)
 
   if (outcome.kind === "confirmed") {
-    await admin.rpc("record_mercadopago_order_refund_result", {
+    const persisted = await persistRefundResult(admin, "record_mercadopago_order_refund_result", {
       p_refund_id: attempt.refund_id,
       p_outcome: "confirmed",
       p_mp_refund_id: String(outcome.refund.id),
     })
+    // MP devolvió el dinero pero BEYONIX no pudo registrarlo: no se informa
+    // como cerrado; la conciliación lo confirma sin repetir el POST.
+    if (!persisted) return { kind: "unknown", reason: "REFUND_RESULT_NOT_PERSISTED" }
     return {
       kind: "confirmed",
       mpRefundId: String(outcome.refund.id),
@@ -220,7 +248,7 @@ export async function refundMercadoPagoOrderPayment(
   }
 
   if (outcome.kind === "rejected") {
-    await admin.rpc("record_mercadopago_order_refund_result", {
+    await persistRefundResult(admin, "record_mercadopago_order_refund_result", {
       p_refund_id: attempt.refund_id,
       p_outcome: "failed",
       p_error_code: outcome.code,
@@ -232,7 +260,7 @@ export async function refundMercadoPagoOrderPayment(
   // outcome.kind === "unknown": timeout, 5xx o respuesta ilegible. El POST
   // pudo o no haber llegado a procesarse en Mercado Pago -- NUNCA se asume
   // ninguna de las dos cosas. Queda en needs_reconciliation.
-  await admin.rpc("record_mercadopago_order_refund_result", {
+  await persistRefundResult(admin, "record_mercadopago_order_refund_result", {
     p_refund_id: attempt.refund_id,
     p_outcome: "needs_reconciliation",
     p_error_code: "MP_RESPONSE_UNKNOWN",
@@ -250,18 +278,20 @@ export async function refundMercadoPagoOrderPayment(
  */
 export async function reconcileRefundAttempt(
   admin: AdminClient,
-  refundRow: { id: string; payment_id: string; mp_refund_id: string | null },
+  refundRow: { id: string; payment_id: string; mp_refund_id: string | null; amount?: number | string | null },
   deps: RefundDependencies = {},
 ): Promise<MercadoPagoOrderReconciliationResult> {
-  const getRefundStatus = deps.getRefundStatus ?? getMercadoPagoRefundStatus
-  const remoteStatus = await getRefundStatus(refundRow.payment_id, refundRow.mp_refund_id)
+  const getRefundStatus = deps.getRefundStatus ?? defaultGetRefundStatus
+  const expectedAmount = refundRow.amount == null ? null : Number(refundRow.amount)
+  const remoteStatus = await getRefundStatus(refundRow.payment_id, refundRow.mp_refund_id, expectedAmount)
 
   if (remoteStatus.kind === "found") {
-    await admin.rpc("reconcile_mercadopago_order_refund", {
+    const persisted = await persistRefundResult(admin, "reconcile_mercadopago_order_refund", {
       p_refund_id: refundRow.id,
       p_outcome: "confirmed",
       p_mp_refund_id: String(remoteStatus.refund.id),
     })
+    if (!persisted) return { kind: "unknown", reason: "REFUND_RESULT_NOT_PERSISTED" }
     return {
       kind: "confirmed",
       mpRefundId: String(remoteStatus.refund.id),
@@ -273,7 +303,7 @@ export async function reconcileRefundAttempt(
     // Mercado Pago no tiene ningún refund registrado para este payment: el
     // POST original nunca se procesó. Seguro reintentarlo -- vuelve a
     // 'requested' con la MISMA idempotency_key, nunca una nueva.
-    await admin.rpc("reconcile_mercadopago_order_refund", {
+    await persistRefundResult(admin, "reconcile_mercadopago_order_refund", {
       p_refund_id: refundRow.id,
       p_outcome: "requested",
     })
@@ -284,7 +314,7 @@ export async function reconcileRefundAttempt(
   // (needs_reconciliation) para un próximo intento de reconciliación. Nunca
   // se marca 'failed' por esto -- sólo un rechazo autoritativo de Mercado
   // Pago (POST 'rejected') es un fallo definitivo.
-  await admin.rpc("reconcile_mercadopago_order_refund", {
+  await persistRefundResult(admin, "reconcile_mercadopago_order_refund", {
     p_refund_id: refundRow.id,
     p_outcome: "needs_reconciliation",
     p_error_code: "RECONCILIATION_INCONCLUSIVE",
@@ -305,7 +335,7 @@ export async function reconcileMercadoPagoOrderRefund(
 ): Promise<MercadoPagoOrderReconciliationResult> {
   const { data: pending, error: pendingError } = await admin
     .from("mercadopago_order_refunds")
-    .select("id, payment_id, mp_refund_id, status")
+    .select("id, payment_id, mp_refund_id, amount, status")
     .eq("order_id", params.orderId)
     .in("status", ["processing", "needs_reconciliation"])
     .order("created_at", { ascending: false })

@@ -13,12 +13,13 @@ export interface BarcodePattern {
   bars: number[]
 }
 
-// Formato impreso fijo: NOMBRE / COLOR · SKU / barras / número legible.
 export interface LabelContent {
   name: string
   variant: string | null
   sku: string | null
   code: string
+  price: number | null
+  internalCode: string | null
 }
 
 export interface LabelRect { xMm: number; yMm: number; widthMm: number; heightMm: number }
@@ -31,7 +32,7 @@ export interface LabelText {
   baselineMm: number
   sizeMm: number
   bold: boolean
-  role: "name" | "detail" | "code"
+  role: "name" | "variant" | "meta" | "price" | "code"
 }
 
 export type LabelWarningCode = "small-module" | "thin-dots" | "no-fit" | "short-bars" | "omitted-text"
@@ -127,6 +128,11 @@ export function autoShortName(name: string) {
   return (head.length >= 3 ? head : clean || name.trim()).toLocaleUpperCase("es")
 }
 
+const priceFormatter = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })
+
+export function formatLabelPrice(price: number) {
+  return priceFormatter.format(price)
+}
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 const round3 = (value: number) => Math.round(value * 1000) / 1000
@@ -166,14 +172,20 @@ export function buildLabelDrawing(
   const innerHeight = heightMm - 2 * padding
   const scale = TYPOGRAPHY_SCALE[settings.typography]
   const warnings: LabelWarning[] = []
+  const show = settings.content
 
-  const detail = [content.variant?.trim(), content.sku?.trim()].filter((part): part is string => Boolean(part)).join(" · ")
+  const metaParts = [
+    show.sku && content.sku ? `SKU ${content.sku}` : null,
+    show.internalCode && content.internalCode && content.internalCode !== content.code ? content.internalCode : null,
+  ].filter((part): part is string => Boolean(part))
   const candidates: (TextBlock | null)[] = [
-    content.name.trim() ? { role: "name", text: sanitizeLabelText(content.name), bold: true, baseSize: clamp(innerHeight * 0.14 * scale, MIN_FONT_MM, 4.4), maxLines: innerHeight >= 26 ? 2 : 1, priority: 1, label: "nombre" } : null,
-    detail ? { role: "detail", text: sanitizeLabelText(detail), bold: false, baseSize: clamp(innerHeight * 0.12 * scale, MIN_FONT_MM, 3.4), maxLines: 1, priority: 2, label: "color · SKU" } : null,
+    show.name && content.name.trim() ? { role: "name", text: sanitizeLabelText(content.name), bold: true, baseSize: clamp(innerHeight * 0.14 * scale, MIN_FONT_MM, 4.4), maxLines: innerHeight >= 26 ? 2 : 1, priority: 1, label: "nombre" } : null,
+    show.variant && content.variant?.trim() ? { role: "variant", text: sanitizeLabelText(content.variant), bold: false, baseSize: clamp(innerHeight * 0.12 * scale, MIN_FONT_MM, 3.4), maxLines: 1, priority: 2, label: "variante" } : null,
+    show.price && content.price != null ? { role: "price", text: sanitizeLabelText(formatLabelPrice(content.price)), bold: true, baseSize: clamp(innerHeight * 0.15 * scale, MIN_FONT_MM, 5), maxLines: 1, priority: 3, label: "precio" } : null,
+    metaParts.length ? { role: "meta", text: sanitizeLabelText(metaParts.join(" · ")), bold: false, baseSize: clamp(innerHeight * 0.11 * scale, MIN_FONT_MM, 3), maxLines: 1, priority: 4, label: "SKU / código interno" } : null,
   ]
   let blocks = candidates.filter((block): block is TextBlock => block !== null)
-  const codeText = sanitizeLabelText(content.code) || null
+  const codeText = show.barcodeText ? sanitizeLabelText(content.code) : null
   const codeBase = clamp(innerHeight * 0.12 * scale, MIN_FONT_MM, 3.6)
 
   // Ancho del código: define el tope de altura de barras y los avisos.

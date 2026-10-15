@@ -8,6 +8,7 @@ import {
   type ArcaAutoInvoicingOrder,
 } from "@/lib/arca/auto-invoicing-control"
 import { getArcaConfigurationStatus } from "@/lib/arca/configuration"
+import { getEffectiveFinancialResolutionStatus } from "./financial-resolution"
 import { loadFinancialResolution } from "./financial-resolution-server"
 import type { AdminPendingFacts } from "./admin-pending-actions"
 
@@ -83,7 +84,7 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
         if (!result) return
         current.financial = {
           mode: result.mode,
-          resolutionStatus: result.resolution?.status ?? null,
+          resolutionStatus: result.resolution ? getEffectiveFinancialResolutionStatus(result.resolution) : null,
           hasOptions: result.options.length > 0,
         }
       } catch {

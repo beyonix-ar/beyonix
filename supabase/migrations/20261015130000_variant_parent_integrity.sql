@@ -1,3 +1,6 @@
+-- Reconstruida el 2026-10-15 desde supabase_migrations.schema_migrations.statements:
+-- ya estaba aplicada en el proyecto remoto sin su archivo en el repo.
+
 -- Integridad entre variantes y producto padre (incidente LEGATUS, 15/10/2026).
 --
 -- 1. productos.catalog_revision: contador que sube cada vez que cambia la
@@ -60,6 +63,7 @@ end;
 $$;
 
 drop trigger if exists bump_product_catalog_revision on public.productos;
+
 create trigger bump_product_catalog_revision
 before update on public.productos
 for each row execute function public.bump_product_catalog_revision();
@@ -120,6 +124,7 @@ $$;
 revoke all on function public.update_product_commercial_configuration_checked(
   bigint, jsonb, text, jsonb, uuid, text, numeric, bigint
 ) from public, anon, authenticated;
+
 grant execute on function public.update_product_commercial_configuration_checked(
   bigint, jsonb, text, jsonb, uuid, text, numeric, bigint
 ) to service_role;
@@ -369,6 +374,7 @@ $$;
 
 revoke all on function public.merge_catalog_products(bigint, bigint, uuid)
   from public, anon, authenticated;
+
 grant execute on function public.merge_catalog_products(bigint, bigint, uuid)
   to service_role;
 
@@ -476,6 +482,7 @@ $$;
 
 revoke all on function public.product_variant_history_reasons(bigint)
   from public, anon, authenticated;
+
 grant execute on function public.product_variant_history_reasons(bigint)
   to service_role;
 
@@ -544,6 +551,7 @@ $$;
 
 revoke all on function public.delete_or_archive_product_variant(bigint, bigint, uuid)
   from public, anon, authenticated;
+
 grant execute on function public.delete_or_archive_product_variant(bigint, bigint, uuid)
   to service_role;
 
@@ -599,6 +607,7 @@ $$;
 revoke all on function public.create_product_variant_for_purchase(
   bigint, text, text, text, text, boolean, uuid
 ) from public, anon, authenticated;
+
 grant execute on function public.create_product_variant_for_purchase(
   bigint, text, text, text, text, boolean, uuid
 ) to service_role;
@@ -790,9 +799,11 @@ $$;
 revoke all on function public.create_variant_and_purchase(
   bigint, text, jsonb, jsonb, uuid, text
 ) from public, anon, authenticated;
+
 grant execute on function public.create_variant_and_purchase(
   bigint, text, jsonb, jsonb, uuid, text
 ) to service_role;
+
 -- 6. Guardado de ficha sin borrar promociones activas --------------------------
 
 -- Misma función que 20260929100000_product_installments_without_surcharge.sql
@@ -954,5 +965,6 @@ $$;
 
 revoke all on function public.update_product_catalog_atomic(bigint, jsonb, text, uuid)
   from public, anon, authenticated;
+
 grant execute on function public.update_product_catalog_atomic(bigint, jsonb, text, uuid)
   to service_role;

@@ -1,3 +1,6 @@
+-- Reconstruida el 2026-10-15 desde supabase_migrations.schema_migrations.statements:
+-- ya estaba aplicada en el proyecto remoto sin su archivo en el repo.
+
 -- Archivo de pedidos de prueba y protección de pedidos con rastro fiscal.
 --
 -- Archivar NO borra: el pedido sale de las vistas operativas del Admin (y,
@@ -29,6 +32,7 @@ end $$;
 create index if not exists ordenes_archived_at_idx on public.ordenes (archived_at) where archived_at is not null;
 
 comment on column public.ordenes.archived_at is 'Pedido archivado (fuera de las vistas operativas del Admin). Nunca implica borrado.';
+
 comment on column public.ordenes.customer_hidden_at is 'Pedido de prueba oculto también en la cuenta del cliente. Sólo con archived_at.';
 
 -- Rastro que impide ELIMINAR un pedido (nunca se borra dinero ni fiscalidad).
@@ -114,6 +118,7 @@ end;
 $$;
 
 drop trigger if exists guard_order_delete on public.ordenes;
+
 create trigger guard_order_delete
   before delete on public.ordenes
   for each row execute function public.guard_order_delete();
@@ -203,6 +208,7 @@ end;
 $$;
 
 drop trigger if exists guard_order_archive_columns on public.ordenes;
+
 create trigger guard_order_archive_columns
   before update on public.ordenes
   for each row execute function public.guard_order_archive_columns();
@@ -319,12 +325,21 @@ end;
 $$;
 
 revoke all on function public.order_delete_blockers_for_row(jsonb) from public, anon, authenticated;
+
 revoke all on function public.order_delete_blockers(bigint) from public, anon, authenticated;
+
 revoke all on function public.order_archive_blockers(bigint) from public, anon, authenticated;
+
 revoke all on function public.guard_order_delete() from public, anon, authenticated;
+
 revoke all on function public.archive_order_admin(bigint, uuid, text, boolean) from public, anon, authenticated;
+
 revoke all on function public.unarchive_order_admin(bigint, uuid, text) from public, anon, authenticated;
+
 grant execute on function public.order_delete_blockers(bigint) to service_role;
+
 grant execute on function public.order_archive_blockers(bigint) to service_role;
+
 grant execute on function public.archive_order_admin(bigint, uuid, text, boolean) to service_role;
+
 grant execute on function public.unarchive_order_admin(bigint, uuid, text) to service_role;

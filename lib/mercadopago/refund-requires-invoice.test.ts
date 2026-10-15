@@ -23,6 +23,10 @@ async function setup() {
   await db.exec(`alter table public.ordenes add column invoice_queued_at timestamptz,
     add column invoice_status text, add column invoice_cae text`)
   await db.exec(read("supabase/migrations/20261014110000_refund_requires_invoice_first.sql"))
+  // Guard vigente (20261015160000): además de la factura, la NC antes del dinero.
+  const audit = read("supabase/migrations/20261015160000_financial_circuit_audit_fixes.sql")
+  await db.exec(audit.slice(audit.indexOf("create or replace function public.guard_refund_requires_invoice()"),
+    audit.indexOf("-- 4. Refund MP incompatible")))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   await db.query("insert into auth.users(id) values($1),($2)", [admin, customer])
   await db.query("insert into public.profiles(id,rol) values($1,'admin'),($2,'cliente')", [admin, customer])
@@ -46,15 +50,20 @@ async function insertOrder(db: PGlite, id: number, method: "mercadopago" | "tran
 const beginMpRefund = (db: PGlite, id: number) =>
   db.query<{ should_call_mp: boolean; status: string }>("select * from begin_mercadopago_order_refund($1, $2)", [id, admin])
 
-async function commitProof(db: PGlite, id: number) {
+async function commitProof(db: PGlite, id: number, expectedNoteIds?: string[]) {
   const path = `proof-${id}-${randomUUID()}.jpg`
   const operationId = randomUUID()
   await db.query(`insert into order_claim_operations (id, actor_id, order_id, request_key, status, file_paths, bucket_id)
     values ($1, $2, $3, $4, 'uploading', $5, 'payment-proofs')`, [operationId, admin, id, randomUUID(), [path]])
   await db.query("insert into storage.objects (bucket_id, name) values ('payment-proofs', $1)", [path])
   return db.query("select * from commit_order_refund_proof($1, $2, $3::jsonb)",
-    [operationId, admin, JSON.stringify({ path, name: "c.jpg", type: "image/jpeg", size: 1024 })])
+    [operationId, admin, JSON.stringify({ path, name: "c.jpg", type: "image/jpeg", size: 1024,
+      ...(expectedNoteIds ? { expected_note_ids: expectedNoteIds } : {}) })])
 }
+
+const authorizeCreditNote = async (db: PGlite, id: number, amount = 30000) =>
+  (await db.query<{ id: string }>(`insert into order_credit_notes (order_id, status, destination, cae, total_amount)
+    values ($1, 'authorized', 'external_refund', 'CAE-NC', $2) returning id`, [id, amount])).rows[0].id
 
 const count = async (db: PGlite, table: string, id: number) =>
   Number((await db.query<{ n: number }>(`select count(*)::int n from ${table} where order_id=$1`, [id])).rows[0].n)
@@ -81,12 +90,19 @@ test("2. pagado y facturado: exige la NC antes del dinero; con la NC emitida el 
     await insertOrder(db, 1, "mercadopago", "invoiced")
     await db.query("update ordenes set credit_note_required=true where id=1")
     await assert.rejects(beginMpRefund(db, 1), /CREDIT_NOTE_REQUIRED/)
-    // NC emitida (el flujo de NC deja credit_note_required=false).
+    // El flag solo no alcanza: sin NC autorizada la base no deja mover dinero.
     await db.query("update ordenes set credit_note_required=false where id=1")
+    await assert.rejects(beginMpRefund(db, 1), /CREDIT_NOTE_REQUIRED_BEFORE_REFUND/)
+    assert.equal(await count(db, "mercadopago_order_refunds", 1), 0)
+    await authorizeCreditNote(db, 1)
     assert.equal((await beginMpRefund(db, 1)).rows[0].should_call_mp, true)
 
+    // Transferencia facturada sin NC: el comprobante manual tampoco cierra.
     await insertOrder(db, 2, "transferencia", "invoiced")
-    const committed = await commitProof(db, 2)
+    await assert.rejects(commitProof(db, 2), /CREDIT_NOTE_REQUIRED_BEFORE_REFUND/)
+    assert.equal(await financial(db, 2), "refund_pending", "sin NC no queda reintegrado")
+    const noteId = await authorizeCreditNote(db, 2)
+    const committed = await commitProof(db, 2, [noteId])
     assert.equal(committed.rows.length, 1)
     assert.equal(await financial(db, 2), "refunded")
   } finally { await db.close() }
@@ -117,6 +133,7 @@ test("4/5. ARCA falla: la obligación sigue y nada se mueve; al emitirse la fact
     await db.query("update ordenes set invoice_status='authorized', invoice_cae='CAE-2', credit_note_required=true where id=1")
     await assert.rejects(beginMpRefund(db, 1), /CREDIT_NOTE_REQUIRED/)
     await db.query("update ordenes set credit_note_required=false where id=1")
+    await authorizeCreditNote(db, 1)
     assert.equal((await beginMpRefund(db, 1)).rows[0].should_call_mp, true)
     // Reintento del mismo reintegro: no hay un segundo intento ni un segundo POST.
     const retry = (await beginMpRefund(db, 1)).rows[0]
@@ -150,4 +167,7 @@ test("todos los caminos que devuelven dinero pasan por los puntos protegidos", (
   const migration = read("supabase/migrations/20261014110000_refund_requires_invoice_first.sql")
   assert.match(migration, /before insert or update of status on public\.mercadopago_order_refunds/)
   assert.match(migration, /before insert on public\.order_refund_proofs/)
+  const guard = read("supabase/migrations/20261015160000_financial_circuit_audit_fixes.sql")
+  assert.match(guard, /raise exception 'CREDIT_NOTE_REQUIRED_BEFORE_REFUND'/)
+  assert.match(claimServer, /CREDIT_NOTE_REQUIRED_BEFORE_REFUND: \[409,/)
 })
