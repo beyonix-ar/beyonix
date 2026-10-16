@@ -52,14 +52,14 @@ export function estimatedParcelDrafts(estimate: DispatchShippingInfo["estimate"]
 
 /** Medidas listas para enviar, o el primer error a mostrar. */
 export function readParcelDrafts(drafts: ParcelDraft[]): { parcels: ParcelMeasures[] } | { error: string } {
-  if (drafts.length < 1 || drafts.length > MAX_PARCELS) return { error: `Indicá entre 1 y ${MAX_PARCELS} bultos.` }
+  if (drafts.length < 1 || drafts.length > MAX_PARCELS) return { error: `Indicá entre 1 y ${MAX_PARCELS} paquetes.` }
   const parcels: ParcelMeasures[] = []
   for (const [index, draft] of drafts.entries()) {
     const values = {} as ParcelMeasures
     for (const field of PARCEL_MEASURE_FIELDS) {
       const value = parseMeasureText(draft[field.key])
       if (value === null || value <= 0 || value > field.max) {
-        return { error: `Bulto ${index + 1}: completá ${field.label.toLowerCase()} (mayor que 0 y hasta ${field.max} ${field.unit}).` }
+        return { error: `Paquete ${index + 1}: completá ${field.label.toLowerCase()} (mayor que 0 y hasta ${field.max} ${field.unit}).` }
       }
       values[field.key] = value
     }
@@ -70,13 +70,13 @@ export function readParcelDrafts(drafts: ParcelDraft[]): { parcels: ParcelMeasur
 
 type ParcelSize = { lengthCm: number; widthCm: number; heightCm: number; weightKg: number }
 
-/** "1 bulto · 35 × 25 × 18 cm · 2,2 kg" o, con varios, una línea por bulto. */
+/** "1 paquete · 35 × 25 × 18 cm · 2,2 kg" o, con varios, una línea por paquete. */
 function sizeSummary(parcels: ParcelSize[]) {
   if (!parcels.length) return null
   const line = (parcel: ParcelSize) =>
     `${decimal(parcel.lengthCm)} × ${decimal(parcel.widthCm)} × ${decimal(parcel.heightCm)} cm · ${decimal(parcel.weightKg, 3)} kg`
-  if (parcels.length === 1) return [`1 bulto · ${line(parcels[0])}`]
-  return [`${parcels.length} bultos`, ...parcels.map((parcel, index) => `Bulto ${index + 1}: ${line(parcel)}`)]
+  if (parcels.length === 1) return [`1 paquete · ${line(parcels[0])}`]
+  return [`${parcels.length} paquetes`, ...parcels.map((parcel, index) => `Paquete ${index + 1}: ${line(parcel)}`)]
 }
 
 export function estimateSummary(estimate: DispatchShippingInfo["estimate"]) {
@@ -129,7 +129,7 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5 text-11px font-black uppercase tracking-widest text-white/60">
               Estimación utilizada en checkout
-              <AdminHelpTip label="Estimación de checkout" text="Bulto que BEYONIX calculó para cotizar el envío. Es sólo una referencia: cargá las medidas reales." />
+              <AdminHelpTip label="Estimación de checkout" text="Paquete que BEYONIX calculó para cotizar el envío. Es sólo una referencia: cargá las medidas reales." />
             </p>
             <button type="button" disabled={disabled || !canCopy} onClick={() => {
               const next = estimatedParcelDrafts(estimate, drafts.length)
@@ -138,7 +138,7 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
           </div>
           <ul className="mt-1 space-y-0.5 font-bold text-white">{summary.map((line, index) => <li key={index}>{line}</li>)}</ul>
           {copied && canCopy && <p role="status" className="mt-1 text-xs font-bold text-emerald-300">Medidas copiadas ✓ · podés editarlas.</p>}
-          {!canCopy && <p className="mt-1 text-xs text-amber-200">La cantidad de bultos no coincide con la estimación; cargá las medidas reales de cada uno.</p>}
+          {!canCopy && <p className="mt-1 text-xs text-amber-200">La cantidad de paquetes no coincide con la estimación; cargá las medidas reales de cada uno.</p>}
         </div>
       ) : null}
       <p className="text-11px font-black uppercase tracking-widest text-white/60">Medidas reales</p>
@@ -146,7 +146,7 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
         const weight = parseMeasureText(draft.weightKg)
         return (
           <fieldset key={index} className="rounded-xl border border-white/12 bg-white/[0.025] p-3" data-parcel-measures={index + 1}>
-            <legend className="px-1 text-sm font-black text-white">BULTO {index + 1}</legend>
+            <legend className="px-1 text-sm font-black text-white">PAQUETE {index + 1}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {PARCEL_MEASURE_FIELDS.map((field) => (
                 <label key={field.key} className="block min-w-0 text-xs font-bold text-white/70">
@@ -157,7 +157,7 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
                       autoComplete="off"
                       required
                       disabled={disabled}
-                      aria-label={`Bulto ${index + 1}: ${field.label} en ${field.unit}`}
+                      aria-label={`Paquete ${index + 1}: ${field.label} en ${field.unit}`}
                       value={draft[field.key]}
                       onChange={(event) => {
                         const value = event.target.value.replace(/[^\d,.]/g, "").slice(0, 9)
@@ -172,7 +172,7 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
               ))}
             </div>
             {weight !== null && weight > ANDREANI_B2C_MAX_WEIGHT_KG ? (
-              <p className="mt-2 text-xs font-bold text-amber-200">Andreani admite hasta {ANDREANI_B2C_MAX_WEIGHT_KG} kg por bulto en envíos B2C.</p>
+              <p className="mt-2 text-xs font-bold text-amber-200">Andreani admite hasta {ANDREANI_B2C_MAX_WEIGHT_KG} kg por paquete en envíos B2C.</p>
             ) : null}
           </fieldset>
         )
@@ -186,10 +186,10 @@ export function ParcelQuoteNotice({ shipping }: { shipping: DispatchShippingInfo
   const quote = shipping.parcelQuote
   if (!shipping.costsVisible) return null
   if (!quote?.current) {
-    return <p className="mt-2 text-xs text-white/60" data-parcel-quote="pending">Cotización con bulto real: pendiente.</p>
+    return <p className="mt-2 text-xs text-white/60" data-parcel-quote="pending">Cotización con paquete real: pendiente.</p>
   }
   if (quote.status === "failed" || quote.amount === null) {
-    return <p className="mt-2 text-xs font-bold text-amber-200" data-parcel-quote="failed">No se pudo cotizar con el bulto real. Se puede generar el envío igual.</p>
+    return <p className="mt-2 text-xs font-bold text-amber-200" data-parcel-quote="failed">No se pudo cotizar con el paquete real. Se puede generar el envío igual.</p>
   }
   const difference = quote.differenceAmount
   const signed = difference === null ? null : `${difference >= 0 ? "+" : "−"}${money(Math.abs(difference))}`
@@ -199,14 +199,14 @@ export function ParcelQuoteNotice({ shipping }: { shipping: DispatchShippingInfo
       <div role="alert" className="mt-3 rounded-xl border border-amber-400/45 bg-amber-950 p-3 text-sm text-white" data-parcel-quote="alert">
         <p className="flex items-center gap-1.5 font-black"><AlertTriangle className="size-4" /> El costo estimado de Andreani cambió {decimal(Math.abs(quote.differencePercent ?? 0), 1)}%.</p>
         <p className="mt-1">Checkout: {money(quote.checkoutAmount)}</p>
-        <p>Bulto real: {money(quote.amount)}</p>
+        <p>Paquete real: {money(quote.amount)}</p>
         <p className="mt-1 font-bold">Revisar antes de generar envío.</p>
       </div>
     )
   }
   return (
     <p className="mt-2 text-xs text-white/70" data-parcel-quote="quoted">
-      Cotizado con bulto real: <strong className="text-white">{money(quote.amount)}</strong>
+      Cotizado con paquete real: <strong className="text-white">{money(quote.amount)}</strong>
       {quote.checkoutAmount !== null ? <> · tarifa checkout {money(quote.checkoutAmount)}{signed ? ` · ${signed}${percent}` : ""}</> : null}
     </p>
   )

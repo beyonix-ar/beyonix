@@ -49,6 +49,21 @@ export function orderIdFromDispatchCode(value: string) {
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
+// Un lector USB "tipea" el código entero en pocos milisegundos; una persona no.
+const SCANNER_MIN_KEYS = 4
+const SCANNER_MAX_KEY_INTERVAL_MS = 50
+
+/**
+ * Cómo llegó un código al campo de lectura. Sólo se registra para auditoría:
+ * todos los métodos terminan en la misma validación del servidor.
+ */
+export function typedInputMethod(input: { pasted: boolean; keyTimes: readonly number[] }): "scanner" | "manual_code" {
+  if (input.pasted || input.keyTimes.length < SCANNER_MIN_KEYS) return "manual_code"
+  const intervals = input.keyTimes.slice(1).map((time, index) => time - input.keyTimes[index]).sort((left, right) => left - right)
+  const median = intervals[Math.floor(intervals.length / 2)]
+  return median <= SCANNER_MAX_KEY_INTERVAL_MS ? "scanner" : "manual_code"
+}
+
 /** Porcentaje de avance sin pasar 100 ni mostrar 100 antes de completar. */
 export function progressPercent(done: number, total: number) {
   if (total <= 0) return 0

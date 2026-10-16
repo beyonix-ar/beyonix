@@ -12,6 +12,7 @@ import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchProgress } from "./dispatch-progress"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
+import { PhysicalIdentification } from "./physical-identification"
 import {
   EstimateVsReal,
   initialParcelDrafts,
@@ -28,7 +29,7 @@ type OrderResponse = OrderDispatchDetail & { scan?: DispatchScanResult | null }
 /** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
 type PendingVariant = { code: string; productName: string | null; candidates: DispatchVariantCandidate[] }
 
-export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", packed: "success", parcels_ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
+export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", identify: "warning", measures: "info", parcels_ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
 
 // Motor único de armado: Despachos y la solapa "ARMAR PEDIDO" del pedido usan
 // este mismo panel contra las mismas RPC (scan_order_preparation_code y
@@ -50,7 +51,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const [error, setError] = useState("")
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
   const [scan, setScan] = useState("")
-  const [dialog, setDialog] = useState<"parcels" | "reset" | "labels" | "prepared-label" | null>(null)
+  const [dialog, setDialog] = useState<"parcels" | "reset" | "labels" | null>(null)
   const [parcelInput, setParcelInput] = useState("")
   const [parcelDrafts, setParcelDrafts] = useState<ParcelDraft[]>([])
   const [reason, setReason] = useState("")
@@ -162,7 +163,6 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const code = orderCode(detail.order.id)
   const shippingInfo = detail.shipping ?? NO_SHIPPING_INFO
   const parcelLabels = detail.parcels.map((parcel) => ({ kind: "parcel" as const, code: parcel.barcode, orderCode: code, index: parcel.parcel_index, count: parcel.parcel_count }))
-  const preparedLabels = detail.preparedCode ? [{ kind: "prepared" as const, code: detail.preparedCode, orderCode: code, units: detail.expectedUnits, parcelCount }] : []
   const openParcels = () => {
     parcelsKey.current = null
     const count = parcelCount ?? (shippingInfo.estimate?.parcels.length || 1)
@@ -180,7 +180,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     </div>
   }
 
-  // Factura o etiqueta pendientes no frenan el pickeo: sólo el ingreso al lote.
+  // Factura o etiqueta pendientes no frenan el pickeo: sólo el ingreso al Bulto general.
   const packingBlocked = detail.packingBlocked
   const pendingBeforeDispatch = detail.pendingBeforeDispatch
   const startPacking = () => void run(async () => { setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "start" })) })
@@ -188,17 +188,17 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   return <div className="dispatch-picking space-y-4">
     <AdminCard className="dispatch-card dispatch-picking-overview p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0"><span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">Pedido en preparación</span><h3 className="text-xl font-black tabular-nums text-white sm:text-2xl">{code}</h3></div>
+        <div className="min-w-0"><span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">{prepared ? "Pedido preparado" : "Pedido en preparación"}</span><h3 className="text-xl font-black tabular-nums text-white sm:text-2xl">{code}</h3></div>
         <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
       </div>
       <DispatchProgress className="mt-3" done={units} total={detail.expectedUnits} unit="unidades" />
-      <p className="mt-2 text-xs font-bold text-white/60">{detail.itemCount} {detail.itemCount === 1 ? "producto" : "productos"} · {detail.expectedUnits} {detail.expectedUnits === 1 ? "unidad" : "unidades"}{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "bulto" : "bultos"}` : ""}</p>
+      <p className="mt-2 text-xs font-bold text-white/60">{detail.itemCount} {detail.itemCount === 1 ? "producto" : "productos"} · {detail.expectedUnits} {detail.expectedUnits === 1 ? "unidad" : "unidades"}{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "paquete de envío" : "paquetes de envío"}` : ""}</p>
     </AdminCard>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start">
       <div className="order-last min-w-0 space-y-3 lg:order-first">
         {packingBlocked && <div role="alert" className="rounded-xl border border-red-500/50 bg-red-950 p-3 text-sm text-white">
           <p className="font-black">{inBatch ? "RETIRAR DEL DESPACHO" : "Pedido bloqueado"} · {detail.blockReason ?? "Revisión requerida"}</p>
-          {inBatch && detail.parcels.length > 0 && <p className="mt-1 text-xs">Separá {detail.parcels.length === 1 ? "el bulto" : `los ${detail.parcels.length} bultos`}: {detail.parcels.map((parcel) => parcel.barcode).join(", ")}. No se entrega a Andreani ni se reintegra automáticamente.</p>}
+          {inBatch && detail.parcels.length > 0 && <p className="mt-1 text-xs">Separá {detail.parcels.length === 1 ? "el paquete de envío" : `los ${detail.parcels.length} paquetes de envío`}: {detail.parcels.map((parcel) => parcel.barcode).join(", ")}. No se entrega a Andreani ni se reintegra automáticamente.</p>}
         </div>}
         {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
 
@@ -219,7 +219,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
           </li>
         })}</ul>
         {!packingBlocked && pendingBeforeDispatch.length > 0 && <p role="status" className="flex items-start gap-2 rounded-xl border border-sky-500/30 bg-sky-950/30 px-3 py-2.5 text-xs font-bold text-sky-100">
-          <Info className="mt-0.5 size-4 shrink-0" />{pendingBeforeDispatch.join(" · ")}: podés preparar el pedido igual; se completa antes de entrar al lote.
+          <Info className="mt-0.5 size-4 shrink-0" />{pendingBeforeDispatch.join(" · ")}: podés preparar el pedido igual; se completa antes de entrar al Bulto general.
         </p>}
       </div>
 
@@ -240,56 +240,57 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
           : <>
           {/* La última lectura (la que completó el pedido) sigue a la vista. */}
           {feedback && <LastScan feedback={feedback} />}
-          {!parcelCount ? <div className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
-            <p className="font-black text-white">✓ Todas las unidades verificadas</p>
-            <p className="mt-1 text-sm text-white/70">{code} · {detail.expectedUnits} unidades</p>
-            <AdminPrimaryButton className="mt-3 h-12 w-full text-base" disabled={busy || packingBlocked} onClick={openParcels}>FINALIZAR ARMADO</AdminPrimaryButton>
+          {/* Orden operativo: pedido preparado → identificación BX-PREP → paquete de envío (medidas). */}
+          <div className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
+            <p className="font-black text-white">✓ Pedido preparado</p>
+            <p className="mt-1 text-sm text-white/70">Todas las unidades verificadas · {code} · {detail.expectedUnits} unidades</p>
           </div>
-          : <div className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
-            <p className="font-black text-white"><PackageCheck className="mr-1 inline size-5" /> Armado completo · {parcelCount} {parcelCount === 1 ? "bulto" : "bultos"}</p>
-            <ul className="mt-2 space-y-1 text-sm text-white/80">{detail.parcels.map((parcel) => <li key={parcel.id}><span className="font-mono">{parcel.barcode} · Bulto {parcel.parcel_index}/{parcel.parcel_count}</span>{parcel.weight_kg != null ? <span className="block text-xs text-white/65">{formatMeasure(parcel.length_cm)} × {formatMeasure(parcel.width_cm)} × {formatMeasure(parcel.height_cm)} cm · {formatMeasure(parcel.weight_kg, 3)} kg</span> : <span className="block text-xs text-amber-200">Medidas no cargadas</span>}</li>)}</ul>
+          {detail.preparedCode && pkg && <PhysicalIdentification orderId={orderId} orderCode={code} preparedCode={detail.preparedCode}
+            method={pkg.identification_method ?? null} identifiedAt={pkg.identified_at ?? null} units={detail.expectedUnits} parcelCount={parcelCount}
+            disabled={packingBlocked} onUpdated={setDetail} />}
+          {!parcelCount ? <section aria-label="Paquete de envío" className="rounded-xl border border-white/12 bg-black/20 p-4">
+            <p className="font-black text-white">Paquete de envío</p>
+            <p className="mt-1 text-sm text-white/70">Cargá cuántos paquetes salen y sus medidas reales para Andreani.</p>
+            <AdminPrimaryButton className="mt-3 h-12 w-full text-base" disabled={busy || packingBlocked || !pkg?.identification_method} onClick={openParcels}>CARGAR MEDIDAS DEL PAQUETE</AdminPrimaryButton>
+            {!pkg?.identification_method && <p className="mt-2 text-xs text-amber-200">Primero identificá el pedido con su BX-PREP.</p>}
+          </section>
+          : <section aria-label="Paquete de envío" className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
+            <p className="font-black text-white"><PackageCheck className="mr-1 inline size-5" /> Paquete de envío · {parcelCount} {parcelCount === 1 ? "paquete" : "paquetes"}</p>
+            <ul className="mt-2 space-y-1 text-sm text-white/80">{detail.parcels.map((parcel) => <li key={parcel.id}><span className="font-mono">{parcel.barcode} · Paquete {parcel.parcel_index}/{parcel.parcel_count}</span>{parcel.weight_kg != null ? <span className="block text-xs text-white/65">{formatMeasure(parcel.length_cm)} × {formatMeasure(parcel.width_cm)} × {formatMeasure(parcel.height_cm)} cm · {formatMeasure(parcel.weight_kg, 3)} kg</span> : <span className="block text-xs text-amber-200">Medidas no cargadas</span>}</li>)}</ul>
             <EstimateVsReal estimate={shippingInfo.estimate} parcels={detail.parcels} />
             <ParcelQuoteNotice shipping={shippingInfo} />
             <div className="mt-3 flex flex-wrap gap-2">
-              <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={!parcelLabels.length} onClick={() => setDialog("labels")}>Imprimir etiquetas de bultos</AdminPrimaryButton>
-              {detail.stage === "parcels_ready" || detail.stage === "in_batch" ? <AdminButton disabled={busy} onClick={openParcels}>Cambiar bultos</AdminButton> : null}
+              <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={!parcelLabels.length} onClick={() => setDialog("labels")}>Imprimir etiquetas de paquetes</AdminPrimaryButton>
+              {detail.stage === "identify" || detail.stage === "parcels_ready" || detail.stage === "in_batch" ? <AdminButton disabled={busy} onClick={openParcels}>Cambiar medidas del paquete</AdminButton> : null}
               {onDone && <AdminButton onClick={onDone}>Listo</AdminButton>}
             </div>
-          </div>}
+          </section>}
           </>}
-
-        {detail.preparedCode && <AdminCard className="dispatch-card flex items-center justify-between gap-3 p-3">
-          <span className="min-w-0">
-            <span className="block text-10px font-black uppercase tracking-widest text-white/55">Código del pedido preparado</span>
-            <span className="block truncate font-mono text-base font-black text-white">{detail.preparedCode}</span>
-          </span>
-          <AdminButton size="sm" icon={<Printer className="size-4" />} onClick={() => setDialog("prepared-label")}>Imprimir</AdminButton>
-        </AdminCard>}
       </div>
     </div>
 
-    {detail.batch && <Link href={`/admin/despachos?batch=${detail.batch.id}`} className="inline-block text-sm font-bold text-beyonix-cyan underline">Abrir lote {detail.batch.code}</Link>}
+    {detail.batch && <Link href={`/admin/despachos?batch=${detail.batch.id}`} className="inline-block text-sm font-bold text-beyonix-cyan underline">Abrir Bulto general {detail.batch.code}</Link>}
     {pkg && !inBatch && !detail.order.andreani_handed_over_at && <details className="text-sm text-white/70"><summary className="cursor-pointer">Opciones</summary><AdminButton className="mt-2" size="sm" variant="ghost" onClick={() => { resetKey.current = null; setReason(""); setDialog("reset") }}>Reiniciar armado</AdminButton></details>}
     {footer}
 
-    <AdminModal open={dialog === "parcels"} title="FINALIZAR ARMADO" description="¿Cuántos bultos tiene este pedido?" onClose={() => setDialog(null)} footer={<div className="flex flex-wrap items-center justify-end gap-2">{parcelsReading && "error" in parcelsReading ? <span className="mr-auto text-xs font-bold text-amber-200">{parcelsReading.error}</span> : null}<AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || !parcelsReading || "error" in parcelsReading} onClick={() => void run(async () => {
+    <AdminModal open={dialog === "parcels"} title="MEDIDAS DEL PAQUETE" description="¿Cuántos paquetes de envío salen con este pedido?" onClose={() => setDialog(null)} footer={<div className="flex flex-wrap items-center justify-end gap-2">{parcelsReading && "error" in parcelsReading ? <span className="mr-auto text-xs font-bold text-amber-200">{parcelsReading.error}</span> : null}<AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || !parcelsReading || "error" in parcelsReading} onClick={() => void run(async () => {
       if (!parcelsReading || "error" in parcelsReading) return
       parcelsKey.current ??= crypto.randomUUID()
       setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "parcels", parcels: parcelsReading.parcels, requestKey: parcelsKey.current }))
       parcelsKey.current = null
       setDialog("labels")
-    })}>Confirmar bultos</AdminPrimaryButton></div>}>
-      <AdminTextInput title="Cantidad de bultos" placeholder="Ej.: 2" inputMode="numeric" value={parcelInput} onChange={(value) => {
+    })}>Confirmar paquetes</AdminPrimaryButton></div>}>
+      <AdminTextInput title="Cantidad de paquetes" placeholder="Ej.: 2" inputMode="numeric" value={parcelInput} onChange={(value) => {
         const next = value.replace(/\D/g, "").slice(0, 2)
         setParcelInput(next)
         const count = Number(next)
         if (Number.isInteger(count) && count >= 1 && count <= 50) setParcelDrafts((current) => resizeParcelDrafts(current, count))
         parcelsKey.current = null
       }} className="h-14 text-2xl font-black" />
-      <p className="mt-2 text-xs text-white/60">Contá las cajas o paquetes que salen. Cada bulto lleva su propia etiqueta {code} y necesita su peso y medidas reales.</p>
+      <p className="mt-2 text-xs text-white/60">Contá las cajas o paquetes que salen. Cada paquete de envío lleva su propia etiqueta {code} y necesita su peso y medidas reales.</p>
       {validParcels ? <ParcelMeasuresEditor drafts={parcelDrafts} disabled={busy} estimate={shippingInfo.estimate} onChange={(drafts) => { setParcelDrafts(drafts); parcelsKey.current = null }} /> : null}
     </AdminModal>
-    <AdminModal open={dialog === "reset"} compact title="Reiniciar armado" description="Se vuelven a escanear todas las unidades. Las etiquetas de bultos anteriores quedan anuladas." onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2"><AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || reason.trim().length < 10} onClick={() => void run(async () => {
+    <AdminModal open={dialog === "reset"} compact title="Reiniciar armado" description="Se vuelven a escanear todas las unidades. Las etiquetas de paquetes anteriores quedan anuladas." onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2"><AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || reason.trim().length < 10} onClick={() => void run(async () => {
       resetKey.current ??= crypto.randomUUID()
       setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "reset", reason, requestKey: resetKey.current }))
       resetKey.current = null; setDialog(null); setReason(""); setFeedback(null)
@@ -303,8 +304,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
         {candidate.assigned ? <span className="ml-auto text-xs text-white/60">Asignada</span> : !candidate.selectable ? <span className="ml-auto text-xs text-amber-200">Sin stock libre</span> : null}
       </AdminButton>)}</div>
     </AdminModal>
-    <LabelPrintDialog open={dialog === "labels"} title="Etiquetas de bultos" description={`${code} · ${parcelLabels.length} ${parcelLabels.length === 1 ? "bulto" : "bultos"}`} labels={parcelLabels} onClose={() => setDialog(null)} />
-    <LabelPrintDialog open={dialog === "prepared-label"} title="Código del pedido preparado" description={`${code} · ${detail.preparedCode ?? ""}`} labels={preparedLabels} onClose={() => setDialog(null)} />
+    <LabelPrintDialog open={dialog === "labels"} title="Etiquetas de paquetes de envío" description={`${code} · ${parcelLabels.length} ${parcelLabels.length === 1 ? "paquete" : "paquetes"}`} labels={parcelLabels} onClose={() => setDialog(null)} />
   </div>
 }
 

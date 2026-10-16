@@ -36,7 +36,7 @@ const COLUMNS: Array<{ label: string; help?: string }> = [
   { label: "Fecha" },
   { label: "Tracking" },
   { label: "Estado" },
-  { label: "Bultos" },
+  { label: "Paquetes de envío" },
   { label: "Cobrado cliente", help: LOGISTICS_HELP.charged },
   { label: "Facturado Andreani", help: BILLED_HELP },
   { label: "Diferencia", help: LOGISTICS_HELP.difference },
@@ -49,7 +49,7 @@ const DETAILS: Array<{ label: string; help?: string; value: (row: LogisticsOrder
   { label: "Recargo %", help: LOGISTICS_HELP.markupPercent, value: (row) => row.markupPercent === null ? "—" : `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(row.markupPercent)}%` },
   { label: "Extra cobrado", help: LOGISTICS_HELP.markup, value: (row) => money(row.markupAmount) },
   { label: "Beneficio", help: LOGISTICS_HELP.benefit, value: (row) => money(row.benefit) },
-  { label: "Cotizado con bulto real", help: LOGISTICS_HELP.parcelQuoted, value: (row) => money(row.parcelQuote) },
+  { label: "Cotizado con paquetes de envío medidos", help: LOGISTICS_HELP.parcelQuoted, value: (row) => money(row.parcelQuote) },
   { label: "Dif. vs checkout", help: LOGISTICS_HELP.billedVsCheckout, value: (row) => signedOrDash(row.billedVsCheckout) },
   { label: "Dif. vs armado", help: LOGISTICS_HELP.billedVsParcel, value: (row) => signedOrDash(row.billedVsParcel) },
 ]

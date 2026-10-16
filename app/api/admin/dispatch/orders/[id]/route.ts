@@ -29,8 +29,8 @@ export async function POST(request: Request, context: Context) {
   if (!id) return Response.json({ error: "Pedido inválido." }, { status: 400 })
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
-  const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown; variantId?: unknown } | null
-  if (!body || !["start", "scan", "reset", "parcels"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
+  const body = await request.json().catch(() => null) as { action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown; variantId?: unknown; method?: string } | null
+  if (!body || !["start", "scan", "reset", "parcels", "identify"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
   const { data: order, error: orderError } = await auth.admin.from("ordenes")
     .select("estado,cancelled_at,financial_status").eq("id", id).maybeSingle()
   if (orderError || !order) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
@@ -53,6 +53,13 @@ export async function POST(request: Request, context: Context) {
     const result = await auth.admin.rpc("scan_order_preparation_code", { p_order_id: id, p_code: code, p_actor_id: auth.user.id, p_request_key: body.requestKey, p_variant_id: variantId })
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
     scan = result.data as DispatchScanResult
+  } else if (body.action === "identify") {
+    // Identificación física del pedido preparado: etiqueta BX-PREP colocada o
+    // código escrito a mano. La base valida que sea el BX-PREP vigente.
+    const code = body.code?.trim() ?? ""
+    if ((body.method !== "printed" && body.method !== "manual") || !code || code.length > 64 || !isRequestKey(body.requestKey)) return Response.json({ error: "Identificación inválida." }, { status: 400 })
+    const result = await auth.admin.rpc("confirm_order_physical_identification", { p_order_id: id, p_code: code, p_method: body.method, p_actor_id: auth.user.id, p_request_key: body.requestKey })
+    if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
   } else if (body.action === "parcels") {
     if (!isRequestKey(body.requestKey)) return Response.json({ error: "Solicitud inválida." }, { status: 400 })
     let parcels: ReturnType<typeof parseParcelMeasures>

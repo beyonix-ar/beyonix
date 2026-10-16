@@ -1,9 +1,11 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { blocksPacking, dispatchBlockReason, dispatchHold, HOLD_COLUMNS, ORDER_COLUMNS, type DispatchOrder } from "@/lib/admin/dispatch"
 
-type PackageRow = { id: number; order_id: number; status: string; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count: number | null; parcels_defined_at: string | null }
+type PackageRow = { id: number; order_id: number; status: string; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count: number | null; parcels_defined_at: string | null; identification_method: string | null }
+type MembershipRow = { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null; verified_at: string | null; verification_round: number | null }
 type HoldRow = { id: number; order_id: number; attempt_number: number; batch_id: number | null; units: number; picked_units: number; prepared: boolean; items: unknown; detected_at: string }
-const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at"
+const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,identification_method"
+const MEMBERSHIP_COLUMNS = "id,batch_id,order_id,package_id,added_at,removed_at,verified_at,verification_round"
 const PAGE = 1000
 const CHUNK = 100
 // Estados en los que el pedido ya salió por fuera de Despachos (circuito anterior).
@@ -28,7 +30,7 @@ export async function GET(request: Request) {
     if ((page.data?.length ?? 0) < PAGE) break
   }
   const [batchesResult, holdsResult] = await Promise.all([
-    auth.admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by").order("id", { ascending: false }).limit(100),
+    auth.admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round").order("id", { ascending: false }).limit(100),
     auth.admin.from("order_cancellation_holds").select(HOLD_COLUMNS).is("resolved_at", null).order("detected_at"),
   ])
   if (batchesResult.error || holdsResult.error) return fail("No se pudieron cargar los despachos.")
@@ -54,19 +56,19 @@ export async function GET(request: Request) {
     if (lines.error) return fail("No se pudo cargar el progreso del armado.")
     for (const line of lines.data ?? []) scannedByPackage.set(line.package_id, (scannedByPackage.get(line.package_id) ?? 0) + Number(line.scanned_quantity))
   }
-  const memberships: { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null }[] = []
+  const memberships: MembershipRow[] = []
   // PostgREST limita el tamaño de respuesta: recorrer todas las filas activas
   // mantiene exactos los contadores incluso cuando hay más de 500 pedidos.
   const batchIds = batches.map((batch) => batch.id)
   if (batchIds.length) for (let offset = 0; ; offset += PAGE) {
-    const page = await auth.admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").is("removed_at", null).in("batch_id", batchIds).order("id").range(offset, offset + PAGE - 1)
+    const page = await auth.admin.from("dispatch_batch_items").select(MEMBERSHIP_COLUMNS).is("removed_at", null).in("batch_id", batchIds).order("id").range(offset, offset + PAGE - 1)
     if (page.error) return fail("No se pudieron cargar los lotes.")
     memberships.push(...(page.data ?? []))
     if ((page.data?.length ?? 0) < PAGE) break
   }
   const seen = new Set(memberships.map((item) => item.id))
   for (const ids of chunks(orderIds)) {
-    const memberOrders = await auth.admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").is("removed_at", null).in("order_id", ids)
+    const memberOrders = await auth.admin.from("dispatch_batch_items").select(MEMBERSHIP_COLUMNS).is("removed_at", null).in("order_id", ids)
     if (memberOrders.error) return fail("No se pudieron cargar los pedidos en lote.")
     for (const item of memberOrders.data ?? []) if (!seen.has(item.id)) { seen.add(item.id); memberships.push(item) }
   }
@@ -105,7 +107,7 @@ export async function GET(request: Request) {
     for (const block of blocksResult.data ?? []) if (!blockedReasons.has(block.order_id)) { blockedReasons.set(block.order_id, dispatchBlockReason(block.reason)); blockedAt.set(block.order_id, block.created_at) }
     for (const order of memberOrdersResult.data ?? []) if (order.cancelled_at && !order.andreani_handed_over_at) blockedIds.add(order.id)
   }
-  for (const hold of holdRows) { blockedReasons.set(hold.order_id, "Pedido cancelado dentro del lote"); blockedAt.set(hold.order_id, hold.detected_at) }
+  for (const hold of holdRows) { blockedReasons.set(hold.order_id, "Pedido cancelado dentro del Bulto general"); blockedAt.set(hold.order_id, hold.detected_at) }
   const batchById = new Map(batches.map((batch) => [batch.id, batch]))
   const holds = holdRows.map((row) => dispatchHold(row, row.batch_id ? batchById.get(row.batch_id)?.code ?? null : null))
   const orders = activeOrders.filter((order) => (order.shipping_provider || order.envio_proveedor || "").toLowerCase() === "andreani" && !OUT_OF_DISPATCH.includes(order.estado)).map((order) => {
@@ -117,10 +119,11 @@ export async function GET(request: Request) {
   })
   const batchCards = batches.map((batch) => {
     const items = memberships.filter((item) => item.batch_id === batch.id)
-    return { ...batch, orderCount: items.length, packageCount: items.reduce((sum, item) => sum + (packageById.get(item.package_id)?.parcel_count ?? 0), 0), blockedCount: items.filter((item) => blockedIds.has(item.order_id)).length,
+    const round = batch.verification_round ?? 1
+    return { ...batch, orderCount: items.length, verifiedCount: items.filter((item) => item.verified_at && item.verification_round === round).length, packageCount: items.reduce((sum, item) => sum + (packageById.get(item.package_id)?.parcel_count ?? 0), 0), blockedCount: items.filter((item) => blockedIds.has(item.order_id)).length,
       blockedOrders: items.filter((item) => blockedIds.has(item.order_id)).map((item) => ({ orderId: item.order_id, reason: blockedReasons.get(item.order_id) ?? "Revisión requerida", createdAt: blockedAt.get(item.order_id) ?? batch.created_at })) }
   })
-  // Alertas: lotes con bloqueados (revisar), lotes cerrados pendientes de entrega
+  // Alertas: Bultos generales con bloqueados (revisar), cerrados pendientes de entrega
   // y cancelaciones armadas que esperan el retiro físico.
   return Response.json(alertsOnly ? { batches: batchCards.filter((batch) => batch.blockedCount > 0 || batch.status === "closed"), holds } : { orders, batches: batchCards, holds }, { headers: { "Cache-Control": "no-store" } })
 }

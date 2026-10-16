@@ -1044,7 +1044,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     const code = scanCode.trim()
     if (!code || scanning || !data) return
     if (isReservedProductBarcode(code)) {
-      setScanResult({ found: false, message: "Ese código es de un bulto o lote de envío, no de un artículo." })
+      setScanResult({ found: false, message: "Ese código es de un paquete de envío o Bulto general, no de un artículo." })
       return
     }
     setScanning(true)

@@ -877,7 +877,7 @@ const RECOMMENDED_ACTION_DESCRIPTIONS: Record<AdminPendingOrderActionKind, strin
   invoice: "La factura no se emite automáticamente.",
   claim: "Hay una gestión del cliente que requiere respuesta.",
   return: "Revisá el producto devuelto y definí su destino.",
-  dispatch_blocked: "El pedido está en un lote de envío y no puede despacharse.",
+  dispatch_blocked: "El pedido está en un Bulto general y no puede despacharse.",
   dispatch_physical_return: "Requiere resolución física: se canceló con el pickeo ya iniciado. Resolvelo en Despachos; el reintegro (incluido el saldo a favor) será manual.",
   dispatch_prepare: "El pedido está facturado y listo para preparar.",
   shipping: "El pedido está facturado y listo para enviar.",

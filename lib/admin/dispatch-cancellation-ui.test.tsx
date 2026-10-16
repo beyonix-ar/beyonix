@@ -55,7 +55,7 @@ test("filtro 1/2: alerta, confirmación del retiro, escaneo y stock liberado una
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
     assert.match(text(), /Pedido BX-1006 cancelado/)
-    assert.match(text(), /Este pedido ya fue preparado físicamente y está dentro del lote DSP-20261016-001/)
+    assert.match(text(), /Este pedido ya fue preparado físicamente y está dentro del Bulto general DSP-20261016-001/)
     const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear pedido cancelado"]')!
     assert.equal(input().disabled, true, "sin confirmar el retiro no se puede escanear")
     const confirm = [...dom.window.document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((item) => item.closest("label")?.textContent?.includes("Confirmo que retiré físicamente"))!
@@ -66,7 +66,7 @@ test("filtro 1/2: alerta, confirmación del retiro, escaneo y stock liberado una
     await type(dom, input(), "BX-PREP-1006"); await submit(dom, input())
     assert.match(text(), /BX-1006 retirado del despacho/)
     assert.match(text(), /Stock liberado: 3 unidades/)
-    assert.match(text(), /Quitado del lote DSP-20261016-001/)
+    assert.match(text(), /Quitado del Bulto general DSP-20261016-001/)
     assert.match(text(), /Reintegro manual requerido: nada vuelve automáticamente \(tampoco el saldo a favor\)/, "el escaneo no habilita reintegro automático")
     assert.deepEqual(posts.map((post) => [post.code, post.orderId]), [["BAR-A-RED", 6], ["BX-PREP-1006", 6]])
     assert.notEqual(posts[0].requestKey, posts[1].requestKey, "un código nuevo usa una clave nueva")
@@ -98,12 +98,12 @@ test("pickeo parcial: requiere resolución física, pide devolver lo pickeado e 
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("salida a Andreani: sólo con la etiqueta de ESTE lote y una confirmación", async () => {
+test("entrega a Andreani: sólo con el DSP de ESTE Bulto general y una confirmación", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=9")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const batch = { id: 9, code: "DSP-20261016-001", status: "closed", created_at: "2026-10-16T09:00:00Z", closed_at: "2026-10-16T11:00:00Z", prepared_at: "2026-10-16T11:00:00Z", handed_over_at: null as string | null, handed_over_by: null }
   const handovers: Json[] = []
-  const detail = (): Json => ({ batch, blockedCount: 0, operatorName: null, parcelCount: 1, scannedParcelCount: 1, items: [{ id: 1, batch_id: 9, order_id: 31, package_id: 7, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false, parcelCount: 1, scannedParcels: 1, parcels: [] }] })
+  const detail = (): Json => ({ batch, blockedCount: 0, cancelledCount: 0, expectedCount: 1, verifiedCount: 1, missingCount: 0, requiresRevalidation: false, operatorName: null, parcelCount: 1, items: [{ id: 1, batch_id: 9, order_id: 31, package_id: 7, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false, preparedCode: "BX-PREP-1031", verified: true, verifiedAt: batch.created_at, verificationMethod: "camera", parcelCount: 1, parcels: [] }] })
   globalThis.fetch = async (input, init) => {
     const path = String(input)
     if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
@@ -120,16 +120,16 @@ test("salida a Andreani: sólo con la etiqueta de ESTE lote y una confirmación"
     await act(async () => { root.render(<AdminDispatches initialBatchId="9" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Lote cerrado no es lo mismo que entregado/)
-    const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear etiqueta del lote"]')!
+    assert.match(text(), /Cerrado no es lo mismo que entregado/)
+    const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]')!
     await type(dom, input(), "DSP-20261015-007"); await submit(dom, input())
-    assert.match(text(), /Ese código no corresponde a este lote/)
+    assert.match(text(), /Ese código no corresponde a este Bulto general/)
     assert.equal(handovers.length, 0, "un código equivocado no envía nada")
     await type(dom, input(), "dsp-20261016-001"); await submit(dom, input())
-    assert.match(text(), /¿Confirmás que el lote salió físicamente hacia Andreani\?/)
-    await act(async () => { button(dom, "Confirmar salida")!.click() })
+    assert.match(text(), /¿Confirmás que el Bulto general salió físicamente hacia Andreani\?/)
+    await act(async () => { button(dom, "Confirmar entrega")!.click() })
     await settle(150)
     assert.deepEqual(handovers, [{ action: "handover", code: "DSP-20261016-001" }])
-    assert.match(text(), /Lote entregado a Andreani/)
+    assert.match(text(), /Bulto general entregado a Andreani/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })

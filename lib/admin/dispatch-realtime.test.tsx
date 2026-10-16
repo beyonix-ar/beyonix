@@ -60,11 +60,14 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
   let blocked = false
   let removed = false
   const batch = { id: 1, code: "DSP-20261005-001", status: "closed", created_at: "2026-10-05T12:00:00Z", closed_at: "2026-10-05T13:00:00Z", prepared_at: "2026-10-05T13:00:00Z", handed_over_at: null, handed_over_by: null }
-  const member = { id: 9, batch_id: 1, order_id: 31, package_id: 7, added_at: "2026-10-05T12:00:00Z", removed_at: null, blocked: false, blockReason: null as string | null }
+  const member = { id: 9, batch_id: 1, order_id: 31, package_id: 7, added_at: "2026-10-05T12:00:00Z", removed_at: null, blocked: false, blockReason: null as string | null, cancellationHold: false, preparedCode: "BX-PREP-1031", verified: true, verifiedAt: "2026-10-05T12:30:00Z", verificationMethod: "scanner", parcelCount: 1, parcels: [] }
   globalThis.fetch = async (input) => {
     const path = String(input)
     if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
-    if (path.endsWith("/batches/1")) return Response.json({ batch, items: removed ? [] : [{ ...member, blocked, blockReason: blocked ? "Cancelación solicitada" : null }], blockedCount: blocked && !removed ? 1 : 0, operatorName: null })
+    if (path.endsWith("/batches/1")) {
+      const items = removed ? [] : [{ ...member, blocked, blockReason: blocked ? "Cancelación solicitada" : null }]
+      return Response.json({ batch, items, blockedCount: blocked && !removed ? 1 : 0, cancelledCount: 0, expectedCount: items.length, verifiedCount: items.length, missingCount: 0, requiresRevalidation: false, parcelCount: items.length, operatorName: null })
+    }
     return Response.json({ orders: [], batches: [{ ...batch, orderCount: removed ? 0 : 1, packageCount: removed ? 0 : 1, blockedCount: blocked && !removed ? 1 : 0 }] })
   }
   const root = createRoot(dom.window.document.getElementById("root")!)
@@ -72,8 +75,8 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="1" />) })
     await settle()
-    // La salida a Andreani se confirma escaneando la etiqueta del lote.
-    const handover = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear etiqueta del lote"]')
+    // La salida a Andreani se confirma con el DSP del Bulto general.
+    const handover = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]')
     assert.equal(handover()?.disabled, false)
     blocked = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })

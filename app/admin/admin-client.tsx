@@ -344,7 +344,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ? `${dispatchAlerts.reviewCount} requiere revisión`
           : dispatchAlerts.handoverCount
             ? `${dispatchAlerts.handoverCount} lista${dispatchAlerts.handoverCount === 1 ? "" : "s"} para entregar`
-            : "Armado y lotes de envío",
+            : "Preparación y Bultos generales",
         icon: <PackageCheck className="size-4" />,
         notificationCount: dispatchAlerts.holdCount + dispatchAlerts.reviewCount + dispatchAlerts.handoverCount,
         notificationTone: "shipping",
@@ -377,7 +377,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
       {
         key: "logistica",
         label: "Logística",
-        description: "Costos de envío y bultos reales",
+        description: "Costos de envío y paquetes medidos",
         icon: <Truck className="size-4" />,
       },
       {

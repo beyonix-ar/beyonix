@@ -2,7 +2,16 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { preparedOrderCode } from "./dispatch.ts"
-import { createCameraGate, normalizeScannedCode, orderIdFromDispatchCode, progressPercent } from "./dispatch-scan.ts"
+import { createCameraGate, normalizeScannedCode, orderIdFromDispatchCode, progressPercent, typedInputMethod } from "./dispatch-scan.ts"
+
+test("método de lectura: lector USB (ráfaga), tipeo humano o pegado; todos van al mismo envío", () => {
+  const burst = [0, 8, 15, 24, 31, 40, 47, 55, 63, 70, 78, 86]
+  assert.equal(typedInputMethod({ pasted: false, keyTimes: burst }), "scanner")
+  assert.equal(typedInputMethod({ pasted: false, keyTimes: [0, 180, 420, 610, 900, 1150] }), "manual_code", "tipeo humano")
+  assert.equal(typedInputMethod({ pasted: true, keyTimes: burst }), "manual_code", "copiar/pegar")
+  assert.equal(typedInputMethod({ pasted: false, keyTimes: [] }), "manual_code", "valor sin teclas (autocompletar)")
+  assert.equal(typedInputMethod({ pasted: false, keyTimes: [0, 5, 10] }), "manual_code", "muy pocas teclas")
+})
 
 test("lector: el código llega sin Enter, tabulaciones ni espacios alrededor", () => {
   assert.equal(normalizeScannedCode("  BX-PKG-2031-01\r\n"), "BX-PKG-2031-01")

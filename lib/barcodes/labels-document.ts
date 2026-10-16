@@ -1,4 +1,4 @@
-// Documento HTML imprimible de etiquetas (producto, bulto, lote). Sin
+// Documento HTML imprimible de etiquetas (producto, paquete de envío, Bulto general). Sin
 // dependencias del navegador para poder testearlo: el SVG Code 128 lo genera el
 // servidor (lib/barcodes/render.ts) y llega ya validado.
 
@@ -46,9 +46,9 @@ function labelBody(label: PrintableLabel, svg: string) {
       <div class="barcode">${svg}</div>`
   }
   return `<div class="brand">BEYONIX</div>
-    <div class="title">LOTE DE ENVÍO</div>
+    <div class="title">BULTO GENERAL</div>
     ${barcode}
-    <div class="big">Pedidos: ${label.orderCount} / Bultos: ${label.parcelCount}</div>
+    <div class="big">Pedidos: ${label.orderCount} / Paquetes: ${label.parcelCount}</div>
     ${label.date ? `<div class="meta">${escapeHtml(label.date)}</div>` : ""}`
 }
 

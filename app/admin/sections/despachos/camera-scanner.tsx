@@ -47,7 +47,8 @@ export function CameraScanner({ open, title, hint, continuous = false, paused = 
   /** Mientras se procesa la lectura anterior no se toma otra. */
   paused?: boolean
   feedback?: CameraFeedback
-  onDetected: (code: string) => void
+  /** source: lectura de la cámara o código ingresado a mano en el visor. */
+  onDetected: (code: string, source: "camera" | "manual") => void
   onClose: () => void
   /** Motor de lectura (nativo o ZXing). Se inyecta sólo en tests. */
   createReader?: () => Promise<BarcodeReader>
@@ -95,7 +96,7 @@ export function CameraScanner({ open, title, hint, continuous = false, paused = 
         if (!pausedRef.current && video.readyState >= 2) {
           const code = gate(normalizeScannedCode((await reader.detect(video)) ?? ""))
           if (code && !cancelled) {
-            onDetectedRef.current(code)
+            onDetectedRef.current(code, "camera")
             if (!continuous) return
           }
         }
@@ -124,7 +125,7 @@ export function CameraScanner({ open, title, hint, continuous = false, paused = 
     const code = normalizeScannedCode(manual)
     if (!code) return
     setManual("")
-    onDetected(code)
+    onDetected(code, "manual")
   }
 
   const fallback = state.kind !== "starting" && state.kind !== "scanning"

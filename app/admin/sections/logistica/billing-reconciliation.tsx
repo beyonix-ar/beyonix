@@ -142,7 +142,7 @@ export function ReconcileOrderModal({ row, onClose, onSaved }: { row: LogisticsO
           ["Pedido", row.code],
           ["Tracking", row.tracking ?? "—"],
           ["Cotizado checkout", money(row.checkoutQuote)],
-          ["Cotizado con bulto real", money(row.parcelQuote)],
+          ["Cotizado con paquetes de envío medidos", money(row.parcelQuote)],
           ["Facturado Andreani", entries && entries.length ? formatMoney(total) : "Pendiente"],
         ].map(([label, value]) => (
           <div key={label} className="min-w-0 rounded-xl border border-white/10 px-3 py-2">

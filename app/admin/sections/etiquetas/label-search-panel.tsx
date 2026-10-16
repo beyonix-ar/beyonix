@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useEffectEvent, useRef, useState } from "react"
-import { Barcode, CheckCircle2, Info, LoaderCircle, PackageSearch, Plus, ScanLine, Search } from "lucide-react"
+import { Barcode, Camera, CheckCircle2, Info, LoaderCircle, PackageSearch, Plus, ScanLine, Search } from "lucide-react"
 
 import {
   AdminBadge,
@@ -11,6 +11,8 @@ import {
   AdminSelect,
   AdminTextInput,
 } from "@/app/admin/components/admin-controls"
+import { CameraScanner } from "@/app/admin/sections/despachos/camera-scanner"
+import { normalizeScannedCode } from "@/lib/admin/dispatch-scan"
 import { MAX_CATALOG_SEARCH_LENGTH } from "@/lib/business/cost-catalog-search"
 import {
   LABEL_CODE_SOURCE_LABELS,
@@ -200,6 +202,7 @@ export function LabelSearchPanel({ maxCopies, queuedCopies, onAdd, onProducts, c
   const [error, setError] = useState("")
   const [notice, setNotice] = useState("")
   const [searchNonce, setSearchNonce] = useState(0)
+  const [cameraOpen, setCameraOpen] = useState(false)
   const pendingScan = useRef<string | null>(null)
   const reportProducts = useEffectEvent((products: LabelCatalogProduct[]) => onProducts(products))
   const addScanned = useEffectEvent((target: LabelTarget, code: string) => onAdd(target, code, 1))
@@ -258,6 +261,18 @@ export function LabelSearchPanel({ maxCopies, queuedCopies, onAdd, onProducts, c
     onProducts([product])
   }
 
+  // Lector (Enter), cámara y código ingresado en el visor: mismo camino.
+  // Cada lectura exacta suma ×1; la cantidad se edita después en la cola.
+  function submitCode(raw: string) {
+    const code = normalizeScannedCode(raw)
+    if (!code) return
+    pendingScan.current = code
+    setQuery(code)
+    setOffset(0)
+    setNotice("")
+    setSearchNonce((current) => current + 1)
+  }
+
   const trimmed = query.trim()
   return (
     <LabelStepSection
@@ -271,11 +286,7 @@ export function LabelSearchPanel({ maxCopies, queuedCopies, onAdd, onProducts, c
         className="space-y-2"
         onSubmit={(event) => {
           event.preventDefault()
-          if (!trimmed) return
-          pendingScan.current = trimmed
-          setOffset(0)
-          setNotice("")
-          setSearchNonce((current) => current + 1)
+          submitCode(trimmed)
         }}
       >
         <AdminTextInput
@@ -288,12 +299,16 @@ export function LabelSearchPanel({ maxCopies, queuedCopies, onAdd, onProducts, c
           className="h-12 text-base"
           onChange={(value) => { setQuery(value); setOffset(0); setNotice("") }}
         />
+        <AdminButton className="h-11 w-full" icon={<Camera className="size-4" />} onClick={() => setCameraOpen(true)}>Escanear con cámara</AdminButton>
         <p className="flex items-start gap-1.5 text-11px leading-4 text-white/50">
           <ScanLine className="mt-px size-3.5 shrink-0 text-beyonix-cyan" aria-hidden="true" />
-          ¿Tenés lector? Escaneá el código: si identifica un solo artículo se suma ×1 a la cola y podés seguir escaneando.
+          Lector o cámara: si el código identifica un solo artículo se suma ×1 a la cola; escanearlo de nuevo suma otra. Después podés cambiar la cantidad.
         </p>
         {notice && <p role="status" className="text-xs font-bold text-white/80">{notice}</p>}
       </form>
+      <CameraScanner open={cameraOpen} continuous paused={loading} title="Etiquetas" hint="Encuadrá el código de barras del artículo"
+        feedback={notice ? { tone: notice.startsWith("Escaneado") ? "success" : "warning", message: notice } : null}
+        onDetected={(code) => submitCode(code)} onClose={() => setCameraOpen(false)} />
 
       <div className="mt-4 flex items-center justify-between gap-2 text-11px font-black uppercase tracking-widest text-white/50">
         <span>{trimmed ? "Resultados" : "Catálogo"}{results.length > 0 && ` · ${plural(results.length, "producto")}`}</span>

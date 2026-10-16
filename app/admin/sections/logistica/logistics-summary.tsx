@@ -31,18 +31,18 @@ export const LOGISTICS_HELP = {
   ordersSent: "Pedidos entregados a Andreani o ya en camino.",
   ordersDelivered: "Pedidos que Andreani informó como entregados.",
   ordersReturned: "Pedidos con devolución, cambio o reclamo.",
-  parcels: "Bultos reales definidos al finalizar el armado.",
+  parcels: "Paquetes de envío medidos definidos al finalizar el armado.",
   charged: "Importe de envío que efectivamente pagó el cliente.",
   providerQuoted: "Tarifa informada por Andreani al cotizar el envío.",
   markupPercent: "Porcentaje BEYONIX vigente cuando se creó el pedido.",
   markup: "Importe adicional generado por el recargo logístico.",
   benefit: "Parte del envío cubierta por BEYONIX.",
   parcelQuoted: "Tarifa calculada usando las medidas reales del pedido armado.",
-  difference: "Cotizado con bulto real menos tarifa de checkout, en pedidos con ambos datos.",
+  difference: "Cotizado con paquetes de envío medidos menos tarifa de checkout, en pedidos con ambos datos.",
   billed: BILLED_HELP,
   billedVsCheckout: "Facturado por el envío original menos la tarifa cotizada en checkout (snapshot al conciliar).",
-  billedVsParcel: "Facturado por el envío original menos la tarifa recotizada con los bultos reales (snapshot al conciliar).",
-  reconciliation: "Compara lo facturado por el envío original con la cotización con bultos reales (o la de checkout si no hay).",
+  billedVsParcel: "Facturado por el envío original menos la tarifa recotizada con los paquetes de envío medidos (snapshot al conciliar).",
+  reconciliation: "Compara lo facturado por el envío original con la cotización con paquetes de envío medidos (o la de checkout si no hay).",
   reconciledOrders: "Pedidos cuyo facturado coincide con lo cotizado dentro del margen de redondeo.",
   pendingReconciliation: "Pedidos vendidos sin facturación de Andreani registrada.",
   majorDifference: "Pedidos con diferencia importante entre facturado y cotizado.",
@@ -136,14 +136,14 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
     <Metric key="sent" page={page} primary={page} label="Pedidos enviados" help={LOGISTICS_HELP.ordersSent} value={String(summary.ordersSent)} />,
     <Metric key="delivered" page={page} primary={page} label="Entregados" help={LOGISTICS_HELP.ordersDelivered} value={String(summary.ordersDelivered)} />,
     <Metric key="returned" page={page} primary={page} label="Devoluciones / cambios" help={LOGISTICS_HELP.ordersReturned} value={String(summary.ordersReturned)} />,
-    <Metric key="parcels" page={page} primary={page} label="Bultos totales" help={LOGISTICS_HELP.parcels} value={String(summary.parcels)} />,
+    <Metric key="parcels" page={page} primary={page} label="Paquetes de envío totales" help={LOGISTICS_HELP.parcels} value={String(summary.parcels)} />,
   ]
   const economics = [
     <Metric key="charged" page={page} label="Cobrado al cliente por envíos" help={LOGISTICS_HELP.charged} value={money(summary.chargedToCustomers)} detail={`${summary.soldOrders} pedidos vendidos`} />,
-    <Metric key="quoted" page={page} label="Tarifa Andreani checkout" help={LOGISTICS_HELP.providerQuoted} value={money(summary.providerQuoted)} detail={legacyOrders > 0 ? `${legacyOrders} pedidos anteriores sin desglose` : "Con el bulto estimado"} />,
+    <Metric key="quoted" page={page} label="Tarifa Andreani checkout" help={LOGISTICS_HELP.providerQuoted} value={money(summary.providerQuoted)} detail={legacyOrders > 0 ? `${legacyOrders} pedidos anteriores sin desglose` : "Con el paquete estimado"} />,
     <Metric key="markup" page={page} label="Costo extra cobrado" help={LOGISTICS_HELP.markup} value={money(summary.markupCollected)} detail="Suma de cada recargo aplicado" tone="positive" />,
     <Metric key="benefit" page={page} label="Beneficio cubierto por BEYONIX" help={LOGISTICS_HELP.benefit} value={money(summary.benefitAbsorbed)} detail="Bonificaciones de envío" />,
-    <Metric key="parcel" page={page} label="Cotizado con bultos reales" help={LOGISTICS_HELP.parcelQuoted} value={money(summary.parcelQuoted)} detail={`${summary.parcelQuotedOrders} pedidos recotizados`} />,
+    <Metric key="parcel" page={page} label="Cotizado con paquetes de envío medidos" help={LOGISTICS_HELP.parcelQuoted} value={money(summary.parcelQuoted)} detail={`${summary.parcelQuotedOrders} pedidos recotizados`} />,
     <Metric key="billed" page={page} label="Facturado Andreani" help={LOGISTICS_HELP.billed} value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}
       detail={summary.billedOrders > 0 ? `${summary.billedOrders} pedidos · devoluciones y cambios ${money(summary.billedReturnsAndExchanges)}` : "Sin facturación cargada en el período"}
       badge={summary.billedOrders > 0 ? "Con registros" : "Sin facturación"} />,
@@ -156,7 +156,7 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
     <Metric key="billed-checkout" page={page} label="Diferencia vs checkout" help={LOGISTICS_HELP.billedVsCheckout}
       value={summary.billedDifferenceVsCheckoutOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsCheckout)) : "—"}
       detail={`${summary.billedDifferenceVsCheckoutOrders} pedidos comparables`} />,
-    <Metric key="billed-parcel" page={page} label="Diferencia vs bulto real" help={LOGISTICS_HELP.billedVsParcel}
+    <Metric key="billed-parcel" page={page} label="Diferencia vs paquetes de envío medidos" help={LOGISTICS_HELP.billedVsParcel}
       value={summary.billedDifferenceVsParcelOrders ? (hideAmounts ? "••••••" : formatSignedMoney(summary.billedDifferenceVsParcel)) : "—"}
       detail={`${summary.billedDifferenceVsParcelOrders} pedidos comparables`} />,
   ]

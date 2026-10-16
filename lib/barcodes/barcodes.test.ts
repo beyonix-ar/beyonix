@@ -57,8 +57,8 @@ test("etiquetas: N copias, A4 o térmica, texto escapado y lote con totales", ()
   assert.match(prepared, /<section class="label prepared"><div class="internal-title">Pedido BX-1050<\/div>\s*<div class="barcode"><svg><\/svg><\/div><\/section>/)
   assert.doesNotMatch(prepared, /PEDIDO PREPARADO|3 unidades|2 bultos|BX-PREP-1050<\/div>/)
   const lot = buildLabelsDocument([{ kind: "batch", code: "DSP-20261007-001", orderCount: 4, parcelCount: 7 }], svgs, "a4")
-  assert.match(lot, /LOTE DE ENVÍO/)
-  assert.match(lot, /Pedidos: 4 \/ Bultos: 7/)
+  assert.match(lot, /BULTO GENERAL/)
+  assert.match(lot, /Pedidos: 4 \/ Paquetes: 7/)
   assert.throws(() => buildLabelsDocument([{ kind: "product", code: "OTRO", name: "X" }], svgs, "a4"), /Falta el código/)
 })
 
@@ -170,12 +170,14 @@ test("Compras: el artículo escaneado fuera del catálogo cargado se incorpora s
 test("estados de despacho visibles", () => {
   assert.equal(dispatchStage({ package: null }), "pending")
   assert.equal(dispatchStage({ package: { status: "preparing", parcel_count: null } }), "packing")
-  assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: null } }), "packed")
-  assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 } }), "parcels_ready")
+  assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: null } }), "identify")
+  assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: null, identification_method: "manual" } }), "measures")
+  assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 } }), "identify")
+  assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2, identification_method: "printed" } }), "parcels_ready")
   assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 }, batchStatus: "open" }), "in_batch")
   assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 }, batchStatus: "closed" }), "batch_closed")
   assert.equal(dispatchStage({ package: { status: "prepared", parcel_count: 2 }, handedOver: true }), "handed_over")
-  assert.deepEqual(Object.values(DISPATCH_STAGE_LABELS), ["Pendiente", "En preparación", "Pedido preparado", "Bultos listos", "Dentro de lote", "Lote cerrado", "Entregado a Andreani"])
+  assert.deepEqual(Object.values(DISPATCH_STAGE_LABELS), ["Pendiente", "En preparación", "Pedido preparado · Falta identificación", "Faltan medidas del paquete", "Listo para Bulto general", "En Bulto general", "Bulto general cerrado", "Entregado a Andreani"])
 })
 
 test("Compras: códigos equivalentes resuelven la variante física o piden elegirla si son del grupo", async () => {

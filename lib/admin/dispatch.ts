@@ -2,7 +2,9 @@ import type { createAdminClient } from "@/lib/supabase/admin"
 import { compareParcelQuote } from "../shipping/shipping-pricing.ts"
 
 export type DispatchAdmin = ReturnType<typeof createAdminClient>
-export type DispatchPackage = { id: number; order_id: number; status: "preparing" | "prepared"; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count?: number | null; parcels_defined_at?: string | null }
+/** Identificación física del pedido preparado: etiqueta BX-PREP impresa y colocada, o código escrito a mano. */
+export type DispatchIdentificationMethod = "printed" | "manual"
+export type DispatchPackage = { id: number; order_id: number; status: "preparing" | "prepared"; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count?: number | null; parcels_defined_at?: string | null; identification_method?: DispatchIdentificationMethod | null; identified_at?: string | null }
 /** Venta aleatoria: variante reservada en el checkout y variante física registrada en el armado vigente. */
 export type DispatchRandomTrace = { reservedVariant: string | null; dispatchedVariant: string | null; manuallyConfirmed: boolean }
 export type DispatchLine = { order_item_id: number; expected_sku: string | null; expected_barcode: string | null; expected_quantity: number; scanned_quantity: number; product_id: number; variant_id: number | null; conditioned_stock_id: string | null; name?: string; /** Venta aleatoria: el armado acepta cualquier variante elegible del grupo. */ random?: DispatchRandomTrace }
@@ -20,11 +22,27 @@ export type DispatchShippingInfo = {
   estimate: { parcels: DispatchEstimatedParcel[] } | null
   parcelQuote: { status: "quoted" | "failed"; current: boolean; amount: number | null; checkoutAmount: number | null; differenceAmount: number | null; differencePercent: number | null; alert: boolean } | null
 }
-export type DispatchBatch = { id: number; code: string; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; prepared_at?: string | null; handed_over_at: string | null; handed_over_by: string | null }
+/** Bulto general = dispatch_batches (código DSP). */
+export type DispatchBatch = { id: number; code: string; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; prepared_at?: string | null; handed_over_at: string | null; handed_over_by: string | null; verification_round?: number; verification_required?: boolean }
 export type DispatchMembership = { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null }
+/** Cómo se verificó un pedido dentro del Bulto general (mismo backend para todos). */
+export type DispatchVerificationMethod = "scanner" | "camera" | "manual_code" | "manual_selection" | "legacy_parcels"
+/** Lectura de un código: lector USB, cámara o tipeo/pegado. */
+export type DispatchScanMethod = "scanner" | "camera" | "manual_code"
+export const DISPATCH_VERIFICATION_METHOD_LABELS: Record<DispatchVerificationMethod, string> = {
+  scanner: "Lector", camera: "Cámara", manual_code: "Código ingresado", manual_selection: "Confirmación manual", legacy_parcels: "Histórico · paquetes BX-PKG escaneados",
+}
+export type DispatchVerificationResult = { orderId: number; code: string; method: DispatchVerificationMethod; duplicate: boolean; expected: number; verified: number }
 export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; cliente_nombre: string | null }
-export type DispatchStage = "pending" | "packing" | "packed" | "parcels_ready" | "in_batch" | "batch_closed" | "handed_over"
-export type DispatchBatchItem = DispatchMembership & { blocked: boolean; blockReason: string | null; parcelCount: number | null; scannedParcels: number; parcels: DispatchParcel[]; cancellationHold: boolean }
+/** Orden operativo: pickeo → pedido preparado → identificación BX-PREP → paquete de envío (medidas) → Bulto general → DSP. */
+export type DispatchStage = "pending" | "packing" | "identify" | "measures" | "parcels_ready" | "in_batch" | "batch_closed" | "handed_over"
+/** Pedido esperado dentro del Bulto general: verificado sólo con su BX-PREP (o confirmación manual explícita). */
+export type DispatchBatchItem = DispatchMembership & {
+  blocked: boolean; blockReason: string | null; cancellationHold: boolean
+  preparedCode: string; verified: boolean; verifiedAt: string | null; verificationMethod: DispatchVerificationMethod | null
+  /** Paquetes de envío BX-PKG (medidas Andreani): sólo informativos acá. */
+  parcelCount: number | null; parcels: DispatchParcel[]
+}
 
 export const orderCode = (id: number) => `BX-${1000 + id}`
 
@@ -77,21 +95,27 @@ export function dispatchHold(row: HoldRow, batchCode: string | null): DispatchHo
 export const DISPATCH_STAGE_LABELS: Record<DispatchStage, string> = {
   pending: "Pendiente",
   packing: "En preparación",
-  packed: "Pedido preparado",
-  parcels_ready: "Bultos listos",
-  in_batch: "Dentro de lote",
-  batch_closed: "Lote cerrado",
+  identify: "Pedido preparado · Falta identificación",
+  measures: "Faltan medidas del paquete",
+  parcels_ready: "Listo para Bulto general",
+  in_batch: "En Bulto general",
+  batch_closed: "Bulto general cerrado",
   handed_over: "Entregado a Andreani",
 }
 
-export function dispatchStage(input: { package: Pick<DispatchPackage, "status" | "parcel_count"> | null; batchStatus?: DispatchBatch["status"] | null; handedOver?: boolean }): DispatchStage {
+export function dispatchStage(input: { package: Pick<DispatchPackage, "status" | "parcel_count" | "identification_method"> | null; batchStatus?: DispatchBatch["status"] | null; handedOver?: boolean }): DispatchStage {
   if (input.handedOver || input.batchStatus === "handed_over") return "handed_over"
   if (input.batchStatus === "closed") return "batch_closed"
   if (input.batchStatus === "open") return "in_batch"
   if (!input.package) return "pending"
   if (input.package.status === "preparing") return "packing"
-  return input.package.parcel_count ? "parcels_ready" : "packed"
+  if (!input.package.identification_method) return "identify"
+  return input.package.parcel_count ? "parcels_ready" : "measures"
 }
+
+/** Listo para el Bulto general: preparado, identificado (BX-PREP) y con paquete de envío medido (Andreani). */
+export const readyForGeneralBundle = (pkg: Pick<DispatchPackage, "status" | "parcel_count" | "identification_method"> | null) =>
+  Boolean(pkg && pkg.status === "prepared" && pkg.parcel_count && pkg.identification_method)
 
 /**
  * Pendientes que NO frenan el armado (misma excepción que begin/scan en la
@@ -139,17 +163,17 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_WRONG_ITEM: "Este producto no pertenece al pedido.",
     DISPATCH_WRONG_SKU_OR_VARIANT: "Este producto no pertenece al pedido.",
     DISPATCH_CODE_UNKNOWN: "Código no reconocido.",
-    DISPATCH_CODE_NOT_PRODUCT: "Ese código es de un bulto o lote, no de un producto.",
-    DISPATCH_CODE_IS_PRODUCT: "Ese código es de un producto. Escaneá la etiqueta del bulto.",
-    DISPATCH_CODE_IS_BATCH: "Ese código es de un lote. Escaneá la etiqueta del bulto.",
-    DISPATCH_PARCEL_UNKNOWN: "Bulto no reconocido.",
-    DISPATCH_PARCEL_STALE: "Etiqueta de bulto anterior. Reimprimí las etiquetas del pedido.",
-    DISPATCH_PARCEL_OTHER_BATCH: "Este bulto pertenece a otro lote.",
-    DISPATCH_PARCEL_COUNT_INVALID: "Indicá entre 1 y 50 bultos.",
-    DISPATCH_PARCEL_MEASURES_INVALID: "Completá peso (hasta 1000 kg) y medidas (hasta 500 cm) mayores que 0 en cada bulto.",
-    DISPATCH_PARCELS_PENDING: "Finalizá el armado indicando los bultos.",
-    DISPATCH_PARCELS_MISSING: "Faltan escanear bultos del pedido.",
-    DISPATCH_PARCELS_LOCKED: "Los bultos ya se escanearon en un lote. Retiralo y reiniciá el armado para cambiarlos.",
+    DISPATCH_CODE_NOT_PRODUCT: "Ese código es de un paquete de envío o de un Bulto general, no de un producto.",
+    DISPATCH_CODE_IS_PRODUCT: "Ese código es de un producto, no del pedido preparado (BX-PREP).",
+    DISPATCH_CODE_IS_BATCH: "Ese código es de un Bulto general (DSP).",
+    DISPATCH_PARCEL_UNKNOWN: "Paquete de envío no reconocido.",
+    DISPATCH_PARCEL_STALE: "Etiqueta anterior del pedido. Reimprimí las etiquetas vigentes.",
+    DISPATCH_PARCEL_OTHER_BATCH: "Este paquete pertenece a otro Bulto general.",
+    DISPATCH_PARCEL_COUNT_INVALID: "Indicá entre 1 y 50 paquetes.",
+    DISPATCH_PARCEL_MEASURES_INVALID: "Completá peso (hasta 1000 kg) y medidas (hasta 500 cm) mayores que 0 en cada paquete.",
+    DISPATCH_PARCELS_PENDING: "Faltan las medidas del paquete de envío.",
+    DISPATCH_PARCELS_MISSING: "Faltan escanear paquetes del pedido.",
+    DISPATCH_PARCELS_LOCKED: "Los paquetes ya se escanearon en un Bulto general. Retiralo y reiniciá el armado para cambiarlos.",
     DISPATCH_QUANTITY_EXCEEDED: "Cantidad requerida ya completada.",
     DISPATCH_ALREADY_PREPARED: "El armado de este pedido ya está completo.",
     DISPATCH_PREPARATION_NOT_STARTED: "Iniciá el armado primero.",
@@ -158,38 +182,48 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_SCAN_INVALID: "Escaneo inválido.",
     DISPATCH_RANDOM_VARIANT_NO_STOCK: "No hay stock libre de esa variante: está reservada o vendida a otro pedido.",
     DISPATCH_VARIANT_CONFIRMATION_MISMATCH: "El código escaneado corresponde a otra variante.",
-    DISPATCH_BATCH_CLOSED: "El lote ya está cerrado.",
+    DISPATCH_BATCH_CLOSED: "El Bulto general ya está cerrado.",
     DISPATCH_BATCH_EMPTY: "Seleccioná al menos un pedido completo.",
-    DISPATCH_BATCH_NOT_CLOSED: "Cerrá el lote antes de confirmar la entrega.",
-    DISPATCH_ALREADY_HANDED_OVER: "El lote ya fue entregado.",
-    DISPATCH_RESET_REQUIRES_REMOVAL: "Retirá el pedido del lote para reiniciar su armado.",
+    DISPATCH_BATCH_NOT_CLOSED: "Cerrá el Bulto general antes de confirmar la entrega.",
+    DISPATCH_ALREADY_HANDED_OVER: "El Bulto general ya fue entregado.",
+    DISPATCH_RESET_REQUIRES_REMOVAL: "Retirá el pedido del Bulto general para reiniciar su armado.",
+    DISPATCH_IDENTIFICATION_PENDING: "Falta la identificación física del pedido preparado (etiqueta BX-PREP o código escrito).",
+    DISPATCH_IDENTIFICATION_IMMUTABLE: "La identificación física ya estaba registrada.",
+    DISPATCH_PREP_STALE: "Código BX-PREP anterior. Usá el código vigente del pedido preparado.",
+    DISPATCH_PREP_OTHER_BATCH: "Este pedido pertenece a otro Bulto general.",
+    DISPATCH_VERIFY_PARCEL_CODE: "Ese es un paquete de envío (BX-PKG). Escaneá el BX-PREP del pedido.",
+    DISPATCH_VERIFY_LABEL_REQUIRED: "Ese es el número de pedido. Escaneá o ingresá su BX-PREP, o confirmalo desde la lista.",
+    DISPATCH_VERIFY_NOT_EXPECTED: "Este pedido no está en este Bulto general.",
+    DISPATCH_ORDERS_UNVERIFIED: "Faltan verificar pedidos del Bulto general.",
+    DISPATCH_VERIFICATION_INVALID: "No se pudo registrar la verificación.",
     DISPATCH_REASON_REQUIRED: "Ingresá un motivo de al menos 10 caracteres.",
     DISPATCH_RESET_REASON_REQUIRED: "Ingresá un motivo de al menos 10 caracteres.",
     DISPATCH_ITEM_IDENTITY_MISSING: "Un artículo no tiene SKU ni código de barras. Revisá el catálogo.",
     DISPATCH_ORDER_EMPTY: "Este pedido no tiene artículos para armar.",
     DISPATCH_ORDER_NOT_FOUND: "No se encontró el pedido.",
-    DISPATCH_BATCH_NOT_FOUND: "No se encontró el lote.",
+    DISPATCH_BATCH_NOT_FOUND: "No se encontró el Bulto general.",
     DISPATCH_FORBIDDEN: "No tenés permisos para operar despachos.",
     DISPATCH_PHYSICAL_RESOLUTION_REQUIRED: "Primero escaneá el pedido cancelado en Despachos para confirmar el retiro físico.",
     DISPATCH_CANCELLATION_HOLD_ACTIVE: "El pedido está cancelado y armado: resolvé el retiro físico antes de rearmarlo.",
     DISPATCH_RESOLUTION_NOT_REQUIRED: "Este pedido no tiene una cancelación pendiente de retiro físico.",
     DISPATCH_RESOLUTION_WRONG_ORDER: "Ese código es de otro pedido.",
-    DISPATCH_RESOLUTION_CODE_IS_PRODUCT: "Ese código es de un producto. Escaneá el código del pedido preparado o la etiqueta de un bulto.",
-    DISPATCH_RESOLUTION_LABEL_REQUIRED: "Este pedido ya estaba armado: escaneá su etiqueta (BX-PREP o un bulto), no el número de pedido.",
-    DISPATCH_HANDOVER_CODE_MISMATCH: "Ese código no corresponde a este lote. Escaneá la etiqueta del lote que estás entregando.",
+    DISPATCH_RESOLUTION_CODE_IS_PRODUCT: "Ese código es de un producto. Escaneá el BX-PREP del pedido o la etiqueta de un paquete de envío.",
+    DISPATCH_RESOLUTION_LABEL_REQUIRED: "Este pedido ya estaba armado: escaneá su etiqueta (BX-PREP o un paquete de envío), no el número de pedido.",
+    DISPATCH_HANDOVER_CODE_MISMATCH: "Ese código no corresponde a este Bulto general. Escaneá o ingresá su DSP.",
   }
   const code = Object.keys(messages).sort((left, right) => right.length - left.length).find((key) => error.message.includes(key))
-  let message = code ? messages[code] : error.message.includes("dispatch_batch_items_active_order_unique") ? "Este pedido ya pertenece a otro lote." : fallback
-  if (code === "DISPATCH_PARCEL_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este bulto pertenece al lote ${error.details}.`
+  let message = code ? messages[code] : error.message.includes("dispatch_batch_items_active_order_unique") ? "Este pedido ya pertenece a otro Bulto general." : fallback
+  if (code === "DISPATCH_PARCEL_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este paquete pertenece al Bulto general ${error.details}.`
+  else if (code === "DISPATCH_PREP_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este pedido pertenece al Bulto general ${error.details}.`
   else if (code === "DISPATCH_RESOLUTION_WRONG_ORDER" && error.details && /^\d+$/.test(error.details)) message = `Ese código es de ${orderCode(Number(error.details))}, no de este pedido.`
   else if (error.details && /^\d+$/.test(error.details)) message = `${orderCode(Number(error.details))}: ${message}`
   return message
 }
 
-const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,parcels_request_key"
+const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,parcels_request_key,identification_method,identified_at"
 export const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id,created_at,cliente_nombre"
 const ORDER_SHIPPING_COLUMNS = "shipping_estimate,shipping_provider_quote_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount,shipping_parcel_quote_request_key"
-const BATCH_COLUMNS = "id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by"
+const BATCH_COLUMNS = "id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round,verification_required"
 
 const optionalNumber = (value: unknown) => value === null || value === undefined ? null : Number(value)
 
@@ -343,15 +377,16 @@ export function dispatchShippingInfo(input: {
 export type OrderDispatchDetail = NonNullable<Awaited<ReturnType<typeof getOrderDispatch>>>
 export type BatchDispatchDetail = NonNullable<Awaited<ReturnType<typeof getBatchDispatch>>>
 
+type BatchItemRow = DispatchMembership & { verified_at: string | null; verification_method: DispatchVerificationMethod | null; verification_round: number | null }
+
 export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
-  const [batchResult, itemsResult, scansResult] = await Promise.all([
+  const [batchResult, itemsResult] = await Promise.all([
     admin.from("dispatch_batches").select(BATCH_COLUMNS).eq("id", batchId).maybeSingle(),
-    admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").eq("batch_id", batchId).is("removed_at", null).order("order_id"),
-    admin.from("dispatch_batch_parcel_scans").select("batch_item_id,parcel_id").eq("batch_id", batchId),
+    admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at,verified_at,verification_method,verification_round").eq("batch_id", batchId).is("removed_at", null).order("order_id"),
   ])
-  if (batchResult.error || itemsResult.error || scansResult.error) throw batchResult.error ?? itemsResult.error ?? scansResult.error
+  if (batchResult.error || itemsResult.error) throw batchResult.error ?? itemsResult.error
   if (!batchResult.data) return null
-  const items = (itemsResult.data ?? []) as DispatchMembership[]
+  const items = (itemsResult.data ?? []) as BatchItemRow[]
   const ids = items.map((item) => item.order_id)
   const [blocksResult, ordersResult, packagesResult, holdsResult] = ids.length ? await Promise.all([
     admin.from("dispatch_blocks").select("order_id,reason").in("order_id", ids).is("resolved_at", null),
@@ -364,8 +399,6 @@ export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
   const packages = (packagesResult.data ?? []) as Pick<DispatchPackage, "id" | "attempt_number" | "parcel_count">[]
   const parcelsByPackage = await currentParcels(admin, packages)
   const packageById = new Map(packages.map((pkg) => [pkg.id, pkg]))
-  const scanned = new Map<number, Set<number>>()
-  for (const scan of scansResult.data ?? []) scanned.set(scan.batch_item_id, (scanned.get(scan.batch_item_id) ?? new Set()).add(scan.parcel_id))
   const blockReasons = new Map((blocksResult.data ?? []).map((block) => [block.order_id, dispatchBlockReason(block.reason)]))
   const blockedIds = new Set(blockReasons.keys())
   for (const order of ordersResult.data ?? []) if (order.cancelled_at && !order.andreani_handed_over_at) blockedIds.add(order.id)
@@ -373,11 +406,24 @@ export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
   const operatorResult = batch.handed_over_by ? await admin.from("profiles").select("nombre,username,email").eq("id", batch.handed_over_by).maybeSingle() : null
   if (operatorResult?.error) throw operatorResult.error
   const operator = operatorResult?.data
-  const detailed: DispatchBatchItem[] = items.map((item) => {
-    const parcels = parcelsByPackage.get(item.package_id) ?? []
-    const itemScans = scanned.get(item.id) ?? new Set<number>()
+  const round = batch.verification_round ?? 1
+  const detailed: DispatchBatchItem[] = items.map(({ verified_at: verifiedAt, verification_method: method, verification_round: itemRound, ...item }) => {
+    const pkg = packageById.get(item.package_id)
     const cancellationHold = heldIds.has(item.order_id)
-    return { ...item, blocked: blockedIds.has(item.order_id) || cancellationHold, blockReason: cancellationHold ? "Pedido cancelado dentro del lote" : blockReasons.get(item.order_id) ?? (blockedIds.has(item.order_id) ? "Revisión requerida" : null), parcelCount: packageById.get(item.package_id)?.parcel_count ?? null, scannedParcels: parcels.filter((parcel) => itemScans.has(parcel.id)).length, parcels: parcels.map((parcel) => ({ ...parcel, scanned: itemScans.has(parcel.id) })), cancellationHold }
+    // Una verificación de una ronda anterior no cuenta: la composición cambió.
+    const verified = Boolean(verifiedAt) && itemRound === round
+    return { ...item, blocked: blockedIds.has(item.order_id) || cancellationHold, blockReason: cancellationHold ? "Pedido cancelado dentro del Bulto general" : blockReasons.get(item.order_id) ?? (blockedIds.has(item.order_id) ? "Revisión requerida" : null), cancellationHold,
+      preparedCode: preparedOrderCode(item.order_id, pkg?.attempt_number ?? 1), verified, verifiedAt: verified ? verifiedAt : null, verificationMethod: verified ? method : null,
+      parcelCount: pkg?.parcel_count ?? null, parcels: parcelsByPackage.get(item.package_id) ?? [] }
   })
-  return { batch, items: detailed, blockedCount: blockedIds.size, parcelCount: detailed.reduce((sum, item) => sum + (item.parcelCount ?? 0), 0), scannedParcelCount: detailed.reduce((sum, item) => sum + item.scannedParcels, 0), operatorName: operator?.nombre || operator?.username || operator?.email || null }
+  const verifiedCount = detailed.filter((item) => item.verified).length
+  // false sólo en Bultos generales finalizados antes de la verificación por
+  // BX-PREP: sus pedidos sin escaneos no figuran como verificados ni faltantes.
+  const verificationRequired = batch.verification_required ?? true
+  const missingCount = verificationRequired ? detailed.length - verifiedCount : 0
+  return { batch, items: detailed, blockedCount: blockedIds.size, cancelledCount: detailed.filter((item) => item.cancellationHold).length,
+    expectedCount: detailed.length, verifiedCount, missingCount, verificationRequired,
+    // Cerrado y con un pedido retirado: hay que volver a validar antes de entregar.
+    requiresRevalidation: batch.status === "closed" && missingCount > 0,
+    parcelCount: detailed.reduce((sum, item) => sum + (item.parcelCount ?? 0), 0), operatorName: operator?.nombre || operator?.username || operator?.email || null }
 }
