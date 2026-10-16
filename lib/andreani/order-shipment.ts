@@ -199,6 +199,11 @@ interface AndreaniShipmentCreationDependencies {
   logAttemptError?: (context: AndreaniShipmentAttemptErrorContext) => void
   /** Sólo para tests: evita depender de site_settings real en la base. */
   getAndreaniCommercialSettings?: () => Promise<AndreaniCommercialSettings>
+  /**
+   * Unidades por renglón (order_item_id -> unidades) que realmente salen, p. ej.
+   * después de una diferencia de pickeo. Sin mapa se declara lo vendido.
+   */
+  itemQuantities?: ReadonlyMap<number, number>
 }
 
 function requiredText(value: string | undefined | null) {
@@ -857,7 +862,7 @@ export async function createAndreaniShipmentForOrder(
   assertAndreaniProdShipmentCreationAuthorized(config.environment, env)
 
   const envio = buildAndreaniShipmentEnvio(order, config)
-  const items = await loadOrderShipmentItems(admin, orderId)
+  const items = await loadOrderShipmentItems(admin, orderId, dependencies.itemQuantities)
   // Bultos reales del armado si ya se cargaron sus medidas; si no (envío
   // generado antes de armar, o armado legacy), los bultos estimados.
   const measured = await loadCurrentMeasuredParcels(admin, orderId)
@@ -943,9 +948,14 @@ export async function createAndreaniShipmentForOrder(
     }
 
     const nowIso = (dependencies.now?.() ?? new Date()).toISOString()
+    // Cada bulto tiene su número: cualquiera de sus etiquetas identifica el pedido en Despachos.
+    const bultoNumbers = [...new Set(response.bultos
+      .map((item) => item.numeroDeEnvio?.replace(/\s+/g, "").toUpperCase())
+      .filter((value): value is string => Boolean(value)))]
     const persistedUpdate = {
       andreani_envio_id: envioId,
       andreani_tracking: bulto?.numeroDeEnvio ?? null,
+      andreani_bulto_numbers: bultoNumbers,
       andreani_etiqueta_url: etiquetaUrl,
       andreani_estado: response.estado,
       andreani_contrato: envio.contrato,

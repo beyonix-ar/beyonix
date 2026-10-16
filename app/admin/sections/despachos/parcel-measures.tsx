@@ -1,6 +1,5 @@
 "use client"
 
-import { AlertTriangle } from "lucide-react"
 import { useState } from "react"
 
 import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
@@ -18,8 +17,6 @@ const ANDREANI_B2C_MAX_WEIGHT_KG = 50
 const emptyDraft = (): ParcelDraft => ({ weightKg: "", lengthCm: "", widthCm: "", heightCm: "" })
 const decimal = (value: number, digits = 1) =>
   new Intl.NumberFormat("es-AR", { maximumFractionDigits: digits }).format(value)
-const money = (value: number) =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value)
 
 /** Borrador inicial: medidas ya cargadas (al cambiar bultos) o vacío. */
 export function initialParcelDrafts(parcels: DispatchParcel[], count: number): ParcelDraft[] {
@@ -81,36 +78,6 @@ function sizeSummary(parcels: ParcelSize[]) {
 
 export function estimateSummary(estimate: DispatchShippingInfo["estimate"]) {
   return sizeSummary(estimate?.parcels ?? [])
-}
-
-/** Medidas reales cargadas al armar (null si algún bulto es legacy sin medidas). */
-export function realSummary(parcels: DispatchParcel[]) {
-  if (!parcels.length || parcels.some((parcel) => parcel.weight_kg == null)) return null
-  return sizeSummary(parcels.map((parcel) => ({
-    lengthCm: parcel.length_cm ?? 0,
-    widthCm: parcel.width_cm ?? 0,
-    heightCm: parcel.height_cm ?? 0,
-    weightKg: parcel.weight_kg ?? 0,
-  })))
-}
-
-/** Estimado en checkout vs real del armado, para calibrar el estimador. */
-export function EstimateVsReal({ estimate, parcels }: { estimate: DispatchShippingInfo["estimate"]; parcels: DispatchParcel[] }) {
-  const estimated = estimateSummary(estimate)
-  const real = realSummary(parcels)
-  if (!estimated && !real) return null
-  return (
-    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2" data-estimate-vs-real>
-      <div>
-        <p className="font-black uppercase tracking-widest text-white/55">Estimado</p>
-        {(estimated ?? ["Sin estimación (pedido anterior)"]).map((text, index) => <p key={index} className="text-white/80">{text}</p>)}
-      </div>
-      <div>
-        <p className="font-black uppercase tracking-widest text-white/55">Real</p>
-        {(real ?? ["Medidas no cargadas"]).map((text, index) => <p key={index} className="font-bold text-white">{text}</p>)}
-      </div>
-    </div>
-  )
 }
 
 export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
@@ -178,36 +145,5 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
         )
       })}
     </div>
-  )
-}
-
-/** Recotización con los bultos reales: sólo Admin, nunca se cobra al cliente. */
-export function ParcelQuoteNotice({ shipping }: { shipping: DispatchShippingInfo }) {
-  const quote = shipping.parcelQuote
-  if (!shipping.costsVisible) return null
-  if (!quote?.current) {
-    return <p className="mt-2 text-xs text-white/60" data-parcel-quote="pending">Cotización con paquete real: pendiente.</p>
-  }
-  if (quote.status === "failed" || quote.amount === null) {
-    return <p className="mt-2 text-xs font-bold text-amber-200" data-parcel-quote="failed">No se pudo cotizar con el paquete real. Se puede generar el envío igual.</p>
-  }
-  const difference = quote.differenceAmount
-  const signed = difference === null ? null : `${difference >= 0 ? "+" : "−"}${money(Math.abs(difference))}`
-  const percent = quote.differencePercent === null ? "" : ` (${quote.differencePercent >= 0 ? "+" : "−"}${decimal(Math.abs(quote.differencePercent), 1)}%)`
-  if (quote.alert && quote.checkoutAmount !== null) {
-    return (
-      <div role="alert" className="mt-3 rounded-xl border border-amber-400/45 bg-amber-950 p-3 text-sm text-white" data-parcel-quote="alert">
-        <p className="flex items-center gap-1.5 font-black"><AlertTriangle className="size-4" /> El costo estimado de Andreani cambió {decimal(Math.abs(quote.differencePercent ?? 0), 1)}%.</p>
-        <p className="mt-1">Checkout: {money(quote.checkoutAmount)}</p>
-        <p>Paquete real: {money(quote.amount)}</p>
-        <p className="mt-1 font-bold">Revisar antes de generar envío.</p>
-      </div>
-    )
-  }
-  return (
-    <p className="mt-2 text-xs text-white/70" data-parcel-quote="quoted">
-      Cotizado con paquete real: <strong className="text-white">{money(quote.amount)}</strong>
-      {quote.checkoutAmount !== null ? <> · tarifa checkout {money(quote.checkoutAmount)}{signed ? ` · ${signed}${percent}` : ""}</> : null}
-    </p>
   )
 }

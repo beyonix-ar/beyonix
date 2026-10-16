@@ -16,6 +16,7 @@ const TEST_FILES = [
   "lib/orders/dispatch-db.test.ts",
   "lib/orders/dispatch-cancellation-hold-db.test.ts",
   "lib/orders/dispatch-general-bundle-db.test.ts",
+  "lib/orders/dispatch-andreani-db.test.ts",
   "lib/orders/shipping-parcel-measures-db.test.ts",
   "lib/orders/catalog-random-db.test.ts",
   "lib/orders/dispatch-eligibility.test.ts",

@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import Link from "next/link"
-import { AlertTriangle, CheckCircle2, Circle, Printer, Truck, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Circle, Lock, PackagePlus, PackageX, Printer, Truck, XCircle } from "lucide-react"
 
-import { AdminBadge, AdminButton, AdminCard, AdminEmptyState, AdminModal, AdminPrimaryButton, AdminTextInput } from "@/app/admin/components/admin-controls"
+import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
 import { supabase } from "@/lib/supabase/client"
 import { DISPATCH_VERIFICATION_METHOD_LABELS, orderCode, type BatchDispatchDetail, type DispatchBatchItem, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
@@ -17,18 +17,17 @@ import { ScanField } from "./scan-field"
 
 type Feedback = { tone: "success" | "warning" | "error"; message: string }
 type BundleResponse = BatchDispatchDetail & { verification?: DispatchVerificationResult | null; handover?: { duplicate: boolean } | null }
-type Dialog = { kind: "remove"; orderId: number } | { kind: "confirm"; item: DispatchBatchItem } | { kind: "close" } | { kind: "handover"; code: string } | { kind: "label" }
+type Dialog = { kind: "remove"; orderId: number } | { kind: "confirm"; item: DispatchBatchItem } | { kind: "close" } | { kind: "handover"; code: string } | { kind: "label" } | { kind: "add" }
 
-const MAX_ISSUES = 5
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 const dateTime = (value: string | null | undefined) =>
   value ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—"
 
 /**
  * Bulto general (dispatch_batches): pedidos ESPERADOS vs VERIFICADOS. Cada
- * pedido se verifica con su BX-PREP por lector, cámara, tipeo/pegado o una
- * confirmación manual explícita; todo pasa por la misma acción "verify".
- * Los errores se muestran y la lectura sigue disponible.
+ * pedido se verifica con su etiqueta Andreani por lector, cámara, tipeo/pegado
+ * o una confirmación manual explícita; todo pasa por la misma acción "verify".
+ * Una sola acción principal por estado: cerrar (abierto) o entregar (cerrado).
  */
 export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, onChange, onOpenResolution, onRefresh }: {
   detail: BatchDispatchDetail
@@ -43,7 +42,6 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   const [scan, setScan] = useState("")
   const [handoverScan, setHandoverScan] = useState("")
   const [feedback, setFeedback] = useState<Feedback | null>(null)
-  const [issues, setIssues] = useState<Feedback[]>([])
   const [issueCount, setIssueCount] = useState(0)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [reason, setReason] = useState("")
@@ -80,9 +78,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   function report(next: Feedback) {
     setFeedback(next)
     playScanFeedback(next.tone)
-    if (next.tone === "success") return
-    setIssueCount((count) => count + 1)
-    setIssues((current) => [next, ...current].slice(0, MAX_ISSUES))
+    if (next.tone !== "success") setIssueCount((count) => count + 1)
   }
 
   async function run(action: () => Promise<void>) {
@@ -117,6 +113,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         setScan(""); scanKey.current = null
         onRefresh()
       } catch (cause) {
+        // Un código incorrecto avisa y no rompe nada: la lectura sigue disponible.
         if (!(cause instanceof DispatchRequestError && cause.retryable)) { scanKey.current = null; setScan("") }
         report({ tone: "error", message: `${code}: ${cause instanceof Error ? cause.message : "No se pudo verificar el pedido."}` })
       } finally { busyRef.current = false; setBusy(false) }
@@ -145,7 +142,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
     event.preventDefault()
     const id = orderIdFromDispatchCode(addCode)
     if (!id) { setError("Ingresá un pedido como BX-1031."); return }
-    void run(async () => { onChange(await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "add", orderId: id })); setAddCode("") })
+    void run(async () => { onChange(await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "add", orderId: id })); setAddCode(""); setDialog(null) })
   }
 
   function confirmDialog() {
@@ -162,125 +159,113 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
     })
   }
 
-  const statusLabel = batch.status === "handed_over" ? "Entregado a Andreani" : blocked ? "Requiere revisión" : detail.requiresRevalidation ? "Volver a validar" : batch.status === "open" ? "Abierto · verificando" : "Cerrado · listo para entregar"
+  const statusLabel = batch.status === "handed_over" ? "Entregado a Andreani" : blocked ? "Requiere revisión" : detail.requiresRevalidation ? "Volver a validar" : batch.status === "open" ? "Abierto" : "Cerrado · listo para entregar"
   const statusTone = batch.status === "handed_over" ? "success" : blocked ? "danger" : detail.requiresRevalidation ? "warning" : batch.status === "open" ? "info" : "success"
-  const counters = [
-    { label: "Esperados", value: detail.expectedCount, tone: "text-white" },
-    { label: "Verificados", value: detail.verifiedCount, tone: "text-emerald-300" },
-    { label: "Faltantes", value: detail.missingCount, tone: detail.missingCount ? "text-amber-300" : "text-white" },
-    { label: "Cancelados", value: detail.cancelledCount, tone: detail.cancelledCount ? "text-red-300" : "text-white" },
-    { label: "Duplicados / errores", value: issueCount, tone: issueCount ? "text-amber-300" : "text-white" },
-  ]
-  const batchLabel = [{ kind: "batch" as const, code: batch.code, orderCount: items.length, parcelCount: detail.parcelCount, date: dateTime(batch.closed_at) }]
+  const batchLabel = [{ kind: "batch" as const, code: batch.code, date: dateTime(batch.closed_at) }]
   const firstBlocked = items.find((item) => item.blocked)
   const dialogOpen = dialog !== null && dialog.kind !== "label"
+  const labelItems: AdminRowMenuAction[] = batch.status !== "open" ? [{ key: "label", label: "Imprimir etiqueta del Bulto general", icon: <Printer className="size-4" />, onSelect: () => setDialog({ kind: "label" }) }] : []
+  const bundleItems: AdminRowMenuAction[] = batch.status === "open" ? [{ key: "add", label: "Agregar pedido por número", icon: <PackagePlus className="size-4" />, onSelect: () => { setAddCode(""); setDialog({ kind: "add" }) } }] : []
 
-  return <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start">
-    <div className="min-w-0 space-y-3">
-      <AdminCard className="dispatch-card p-3 sm:p-4">
-        <div className="flex flex-wrap items-start justify-between gap-2">
+  return <div className="mx-auto w-full max-w-3xl min-w-0 space-y-3">
+    {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
+    <AdminCard className="dispatch-card min-w-0 p-0">
+      <div className="space-y-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">Bulto general</span>
-            <span className="block truncate font-mono text-lg font-black text-white">{batch.code}</span>
+            <h3 className="truncate font-mono text-xl font-black text-white">{batch.code}</h3>
           </div>
           <AdminBadge tone={statusTone}>{statusLabel}</AdminBadge>
         </div>
-        <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5" aria-label="Control del Bulto general">
-          {counters.map((counter) => <div key={counter.label} className="rounded-xl bg-black/25 px-3 py-2">
-            <dt className="text-10px font-black uppercase tracking-widest text-white/55">{counter.label}</dt>
-            <dd className={`text-xl font-black tabular-nums ${counter.tone}`}>{counter.value}</dd>
-          </div>)}
-        </dl>
-        {batch.status !== "handed_over" && <DispatchProgress className="mt-3" done={detail.verifiedCount} total={detail.expectedCount} unit="pedidos verificados" />}
-        {blocked && <p role="alert" className="mt-3 flex items-start gap-2 text-sm font-bold text-red-200"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{plural(detail.blockedCount, "pedido requiere", "pedidos requieren")} revisión{firstBlocked ? ` (${orderCode(firstBlocked.order_id)})` : ""}. No se puede cerrar ni entregar hasta retirarlo físicamente.</p>}
-        {detail.requiresRevalidation && !blocked && <p role="alert" className="mt-3 flex items-start gap-2 text-sm font-bold text-amber-200"><AlertTriangle className="mt-0.5 size-4 shrink-0" />La composición cambió: volvé a validar {plural(detail.missingCount, "pedido", "pedidos")} antes de entregar.</p>}
-        {detail.verificationRequired === false && <p className="mt-3 text-xs text-white/60">Histórico: finalizado antes de la verificación por BX-PREP. Sólo figuran como verificados los pedidos con escaneos registrados.</p>}
-        {batch.status === "handed_over" && <p role="status" className="mt-3 text-sm font-bold text-emerald-300">✓ Entregado a Andreani · {dateTime(batch.handed_over_at)}{detail.operatorName ? ` · ${detail.operatorName}` : ""}</p>}
-      </AdminCard>
-      {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
+        {(labelItems.length > 0 || bundleItems.length > 0) && <div className="flex flex-wrap gap-2" aria-label="Acciones secundarias">
+          {labelItems.length > 0 && <AdminRowMenu triggerLabel="Etiquetas" ariaLabel="Etiquetas" items={labelItems} />}
+          {bundleItems.length > 0 && <AdminRowMenu triggerLabel="Bulto" ariaLabel="Bulto general" items={bundleItems} />}
+        </div>}
+        <p className="text-sm text-white/70" aria-label="Control del Bulto general">
+          Pedidos esperados: <span className="font-black tabular-nums text-white">{detail.expectedCount}</span> · Verificados: <span className="font-black tabular-nums text-emerald-300">{detail.verifiedCount}</span>
+          {issueCount > 0 && <> · Lecturas con error: <span className="font-black tabular-nums text-amber-300">{issueCount}</span></>}
+        </p>
+        {batch.status !== "handed_over" && <DispatchProgress done={detail.verifiedCount} total={detail.expectedCount} unit="pedidos verificados" />}
+        {blocked && <p role="alert" className="flex items-start gap-2 text-sm font-bold text-red-200"><AlertTriangle className="mt-0.5 size-4 shrink-0" />{plural(detail.blockedCount, "pedido requiere", "pedidos requieren")} revisión{firstBlocked ? ` (${orderCode(firstBlocked.order_id)})` : ""}. No se puede cerrar ni entregar hasta retirarlo físicamente.</p>}
+        {detail.requiresRevalidation && !blocked && <p role="alert" className="flex items-start gap-2 text-sm font-bold text-amber-200"><AlertTriangle className="mt-0.5 size-4 shrink-0" />La composición cambió: volvé a validar {plural(detail.missingCount, "pedido", "pedidos")} antes de entregar.</p>}
+        {detail.verificationRequired === false && <p className="text-xs text-white/60">Histórico: sólo figuran como verificados los pedidos con escaneos registrados.</p>}
+        {batch.status === "handed_over" && <p role="status" className="text-sm font-bold text-emerald-300">✓ Entregado a Andreani · {dateTime(batch.handed_over_at)}{detail.operatorName ? ` · ${detail.operatorName}` : ""}</p>}
+        {canVerify && <div className="space-y-2">
+          <p className="text-sm font-bold text-white">Escaneá la etiqueta Andreani de cada pedido.</p>
+          <ScanField label="Escanear o ingresar etiqueta Andreani" placeholder="Etiqueta Andreani del pedido" submitLabel="Verificar"
+            value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
+            busy={busy} autoFocus={dialog === null} cameraTitle={`Bulto general ${batch.code}`} cameraHint="Encuadrá el código de barras de la etiqueta Andreani" continuousCamera feedback={feedback} />
+        </div>}
+        {feedback && <FeedbackLine feedback={feedback} />}
+      </div>
 
-      {items.length > 0 ? <ul className="space-y-2" aria-label="Pedidos del Bulto general">{items.map((item) => {
+      {items.length > 0 ? <ul className="dispatch-divider dispatch-lines border-t px-4 sm:px-5" aria-label="Pedidos del Bulto general">{items.map((item) => {
         const hold = item.cancellationHold ? holds.find((entry) => entry.orderId === item.order_id) : undefined
         const Icon = item.blocked ? XCircle : item.verified ? CheckCircle2 : Circle
         const legacy = !item.verified && detail.verificationRequired === false
-        const badge = item.cancellationHold ? "Cancelado · retirar" : item.blocked ? "Requiere revisión" : item.verified ? "Verificado" : legacy ? "Sin verificación registrada" : "Pendiente"
-        return <li key={item.id}><AdminCard data-dispatch-blocked={item.blocked ? "true" : undefined} data-verified={item.verified ? "true" : undefined} className={`dispatch-card flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between ${item.blocked ? "border-red-500/50 bg-red-950" : item.verified ? "border-emerald-500/35" : ""}`}>
-          <div className="flex min-w-0 items-start gap-2.5">
-            <Icon aria-hidden="true" className={`mt-0.5 size-5 shrink-0 ${item.blocked ? "text-red-300" : item.verified ? "text-emerald-300" : "text-white/40"}`} />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href={`/admin/pedidos/${item.order_id}`} className="font-black tabular-nums text-white underline">{orderCode(item.order_id)}</Link>
-                <AdminBadge tone={item.blocked ? "danger" : item.verified ? "success" : legacy ? "neutral" : "warning"}>{badge}</AdminBadge>
-              </div>
-              <p className="mt-1 break-all text-xs text-white/65"><span className="font-mono">{item.preparedCode}</span>{item.verified && item.verificationMethod ? ` · ${DISPATCH_VERIFICATION_METHOD_LABELS[item.verificationMethod]}` : ""}{item.parcelCount ? ` · ${plural(item.parcelCount, "paquete", "paquetes")}` : ""}</p>
-              {item.blocked && <p role="alert" className="mt-1 text-xs font-bold text-white">{item.cancellationHold ? `${orderCode(item.order_id)} fue cancelado y está dentro de este Bulto general: retiralo y escanealo.` : `Pedido bloqueado · ${item.blockReason ?? "Revisión requerida"}`}</p>}
+        const badge = item.cancellationHold ? "Cancelado · retirar" : item.blocked ? "Requiere revisión" : item.verified ? "Verificado" : legacy ? "Sin verificación" : "Pendiente"
+        const rowItems: AdminRowMenuAction[] = [
+          ...(!item.verified && !item.blocked && canVerify ? [{ key: "confirm", label: "Confirmar a mano", icon: <CheckCircle2 className="size-4" />, disabled: busy, onSelect: () => setDialog({ kind: "confirm", item }) }] : []),
+          { key: "remove", label: "Retirar del Bulto general", icon: <PackageX className="size-4" />, tone: "danger", disabled: busy, onSelect: () => { setReason(""); setDialog({ kind: "remove", orderId: item.order_id }) } },
+        ]
+        return <li key={item.id} data-dispatch-blocked={item.blocked ? "true" : undefined} data-verified={item.verified ? "true" : undefined} className="flex flex-wrap items-center gap-3 py-3">
+          <Icon aria-hidden="true" className={`size-5 shrink-0 ${item.blocked ? "text-red-300" : item.verified ? "text-emerald-300" : "text-white/40"}`} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/admin/pedidos/${item.order_id}`} className="font-black tabular-nums text-white underline">{orderCode(item.order_id)}</Link>
+              <AdminBadge tone={item.blocked ? "danger" : item.verified ? "success" : legacy ? "neutral" : "warning"}>{badge}</AdminBadge>
             </div>
+            <p className="mt-0.5 break-all text-xs text-white/60"><span className="font-mono">{item.labelCode}</span>{item.verified && item.verificationMethod ? ` · ${DISPATCH_VERIFICATION_METHOD_LABELS[item.verificationMethod]}` : ""}</p>
+            {item.blocked && <p role="alert" className="mt-1 text-xs font-bold text-white">{item.cancellationHold ? `${orderCode(item.order_id)} fue cancelado y está dentro de este Bulto general: retiralo y escanealo.` : `Pedido bloqueado · ${item.blockReason ?? "Revisión requerida"}`}</p>}
           </div>
-          {batch.status !== "handed_over" && <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-            {item.cancellationHold
-              ? <AdminPrimaryButton className="h-11 w-full sm:w-auto" disabled={!hold} onClick={() => hold && onOpenResolution(hold)}>Escanear para retirar</AdminPrimaryButton>
-              : <>
-                {!item.verified && !item.blocked && canVerify && <AdminButton size="sm" className="h-10" disabled={busy} onClick={() => setDialog({ kind: "confirm", item })}>Confirmar</AdminButton>}
-                <AdminButton size="sm" variant="ghost" className="h-10" disabled={busy} onClick={() => { setReason(""); setDialog({ kind: "remove", orderId: item.order_id }) }}>Retirar</AdminButton>
-              </>}
-          </div>}
-        </AdminCard></li>
-      })}</ul> : <AdminEmptyState title="El Bulto general no tiene pedidos" description="Agregá pedidos listos desde la cola o por número." />}
-    </div>
+          {batch.status !== "handed_over" && (item.cancellationHold
+            ? <AdminPrimaryButton className="h-11 w-full sm:w-auto" disabled={!hold} onClick={() => hold && onOpenResolution(hold)}>Escanear para retirar</AdminPrimaryButton>
+            : <AdminRowMenu ariaLabel={`Opciones de ${orderCode(item.order_id)}`} items={rowItems} />)}
+        </li>
+      })}</ul> : <p className="dispatch-divider border-t px-4 py-4 text-sm text-white/60 sm:px-5">El Bulto general no tiene pedidos. Agregá pedidos listos desde Preparación.</p>}
 
-    <div className={`space-y-3 lg:sticky lg:top-4 ${canVerify ? "dispatch-action-bar" : ""}`}>
-      {canVerify && <AdminCard className="dispatch-card space-y-3 p-3 sm:p-4">
-        <p className="text-sm font-bold text-white">Verificá cada pedido con su BX-PREP.</p>
-        <ScanField label="Escanear o ingresar BX-PREP" placeholder="BX-PREP-…" submitLabel="Verificar"
-          value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
-          busy={busy} autoFocus={dialog === null} cameraTitle={`Bulto general ${batch.code}`} cameraHint="Encuadrá la etiqueta BX-PREP del pedido" continuousCamera feedback={feedback} />
-        {feedback && <FeedbackLine feedback={feedback} />}
-        {issues.length > 0 && <div className="rounded-xl border border-white/10 bg-black/20 p-2.5">
-          <p className="text-10px font-black uppercase tracking-widest text-white/55">Duplicados / errores</p>
-          <ul className="mt-1 space-y-1 text-xs text-white/80">{issues.map((issue, index) => <li key={`${index}-${issue.message}`} className={issue.tone === "error" ? "text-red-200" : "text-amber-200"}>{issue.message}</li>)}</ul>
-        </div>}
-        {batch.status === "open" && <>
-          <AdminPrimaryButton className="h-12 w-full text-base" disabled={busy || liveUpdating || !allVerified || blocked} onClick={() => setDialog({ kind: "close" })}>CERRAR BULTO GENERAL</AdminPrimaryButton>
-          {!allVerified && items.length > 0 && <p className="text-xs text-amber-300">Faltan {plural(detail.missingCount, "pedido", "pedidos")} por verificar para cerrar.</p>}
-          <details className="text-sm text-white/70"><summary className="cursor-pointer">Agregar pedido por número</summary><form onSubmit={addOrder} className="mt-2 flex flex-col gap-2"><AdminTextInput title="Agregar pedido" value={addCode} onChange={setAddCode} placeholder="BX-1031" /><AdminButton type="submit" disabled={busy || !addCode.trim()}>Agregar pedido</AdminButton></form></details>
-        </>}
-      </AdminCard>}
-      {batch.status !== "open" && <AdminCard className="dispatch-card space-y-3 p-3 sm:p-4">
-        <DispatchLabel batch={batch} orderCount={items.length} parcelCount={detail.parcelCount} barcodeUrl={barcodeUrl} />
-        <AdminButton className="w-full" icon={<Printer className="size-4" />} onClick={() => setDialog({ kind: "label" })}>Imprimir etiqueta DSP</AdminButton>
-      </AdminCard>}
-      {batch.status === "closed" && <AdminCard className="dispatch-card space-y-3 p-3 sm:p-4">
-        <p className="flex items-center gap-2 text-sm font-black text-white"><Truck className="size-5 text-beyonix-sky" />Entrega a Andreani</p>
-        <p className="text-xs text-white/70">Llevá el Bulto general a la puerta y escaneá o ingresá su DSP justo antes de entregarlo. Cerrado no es lo mismo que entregado.</p>
+      {batch.status === "open" && <div className="dispatch-divider dispatch-primary-bar border-t p-4 sm:p-5">
+        <AdminPrimaryButton className="h-12 w-full justify-center text-base" icon={<Lock className="size-5" />} disabled={busy || liveUpdating || !allVerified || blocked} onClick={() => setDialog({ kind: "close" })}>CERRAR BULTO GENERAL</AdminPrimaryButton>
+        {!allVerified && items.length > 0 && <p className="mt-2 text-center text-xs text-white/60">Faltan {plural(detail.missingCount, "pedido", "pedidos")} por verificar para cerrar.</p>}
+      </div>}
+      {batch.status === "closed" && <div className="dispatch-divider dispatch-primary-bar space-y-3 border-t p-4 sm:p-5">
+        <p className="flex items-center gap-2 text-sm font-black text-white"><Truck className="size-5 text-beyonix-sky" />Confirmar entrega a Andreani</p>
+        <p className="text-xs text-white/65">En la puerta, escaneá o ingresá el DSP del Bulto general justo antes de entregarlo. Cerrado no es lo mismo que entregado.</p>
         <ScanField label="Escanear o ingresar DSP" placeholder={`Escaneá ${batch.code}`} submitLabel="Verificar DSP"
           value={handoverScan} onChange={setHandoverScan} onScan={scanHandover}
           busy={busy} disabled={exitBlocked} cameraTitle={`Entrega de ${batch.code}`} cameraHint="Encuadrá la etiqueta DSP" feedback={feedback} />
-        {!canVerify && feedback && <FeedbackLine feedback={feedback} />}
         {blocked && firstBlocked && <p role="alert" className="text-sm text-amber-300">{orderCode(firstBlocked.order_id)} requiere revisión antes de la entrega.</p>}
         {detail.requiresRevalidation && !blocked && <p role="alert" className="text-sm text-amber-300">Volvé a validar los pedidos antes de la entrega.</p>}
-      </AdminCard>}
-      {batch.status === "handed_over" && feedback && <FeedbackLine feedback={feedback} />}
-    </div>
+      </div>}
+    </AdminCard>
+
+    {batch.status !== "open" && <details className="text-sm text-white/70">
+      <summary className="cursor-pointer">Ver etiqueta del Bulto general</summary>
+      <div className="mt-3"><DispatchLabel batch={batch} barcodeUrl={barcodeUrl} /></div>
+    </details>}
 
     <AdminModal open={dialogOpen && !(blocked && (dialog?.kind === "close" || dialog?.kind === "handover"))} compact
-      title={dialog?.kind === "remove" ? "Retirar pedido del Bulto general" : dialog?.kind === "confirm" ? "Confirmar pedido manualmente" : dialog?.kind === "close" ? "CERRAR BULTO GENERAL" : "Confirmar entrega a Andreani"}
-      description={dialog?.kind === "handover" ? `Ingresaste ${dialog.code}. ¿Confirmás que el Bulto general salió físicamente hacia Andreani? Pedidos: ${items.length} / Paquetes: ${detail.parcelCount}.`
+      title={dialog?.kind === "remove" ? "Retirar pedido del Bulto general" : dialog?.kind === "confirm" ? "Confirmar pedido manualmente" : dialog?.kind === "close" ? "CERRAR BULTO GENERAL" : dialog?.kind === "add" ? "Agregar pedido" : "Confirmar entrega a Andreani"}
+      description={dialog?.kind === "handover" ? `Ingresaste ${dialog.code}. ¿Confirmás que el Bulto general salió físicamente hacia Andreani? Pedidos: ${items.length}.`
         : dialog?.kind === "close" ? `${batch.code} · ${detail.verifiedCount} de ${detail.expectedCount} pedidos verificados. Se vuelve a validar pago, factura, envío y bloqueos de cada pedido.`
-        : dialog?.kind === "confirm" ? `¿Confirmás que el pedido ${orderCode(dialog.item.order_id)} (${dialog.item.preparedCode}) está físicamente dentro de este Bulto general?`
+        : dialog?.kind === "confirm" ? `¿Confirmás que el pedido ${orderCode(dialog.item.order_id)} (${dialog.item.labelCode}) está físicamente dentro de este Bulto general?`
+        : dialog?.kind === "add" ? "Sólo entran pedidos con el envío Andreani generado y su etiqueta impresa."
         : "Esta acción quedará registrada."}
       onClose={() => setDialog(null)}
-      footer={<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      footer={dialog?.kind === "add" ? undefined : <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <AdminButton className="h-11" onClick={() => setDialog(null)}>Cancelar</AdminButton>
         <AdminPrimaryButton className="h-11" disabled={busy || ((dialog?.kind === "handover" || dialog?.kind === "close") && (liveUpdating || boardError)) || (dialog?.kind === "remove" && reason.trim().length < 10)}
           onClick={() => dialog?.kind === "confirm" ? confirmManually(dialog.item) : confirmDialog()}>{dialog?.kind === "handover" ? "Confirmar entrega" : dialog?.kind === "close" ? "Cerrar Bulto general" : dialog?.kind === "confirm" ? "Confirmar verificado" : "Confirmar"}</AdminPrimaryButton>
       </div>}>
       {dialog?.kind === "remove" && <AdminTextInput title="Motivo obligatorio" value={reason} onChange={setReason} placeholder="Ingresá el motivo (mínimo 10 caracteres)" />}
-      {dialog?.kind === "confirm" && <p className="text-sm text-white/70">Usalo sólo si no podés leer ni ingresar el BX-PREP. Queda registrado como confirmación manual, con tu usuario y la hora.</p>}
+      {dialog?.kind === "confirm" && <p className="text-sm text-white/70">Usalo sólo si no podés leer ni ingresar la etiqueta Andreani. Queda registrado como confirmación manual, con tu usuario y la hora.</p>}
       {dialog?.kind === "handover" && <p className="text-sm text-white/70">Este paso registra el momento en que la mercadería salió físicamente de BEYONIX. Estado final: ENTREGADO A ANDREANI.</p>}
-      {dialog?.kind === "close" && <p className="text-sm text-white/70">Al cerrar, el DSP queda listo para la entrega. Si después se cancela un pedido, el Bulto general queda en revisión hasta retirarlo y volver a validar.</p>}
+      {dialog?.kind === "close" && <p className="text-sm text-white/70">Al cerrar se genera la etiqueta del Bulto general (DSP). Si después se cancela un pedido, el Bulto general queda en revisión hasta retirarlo y volver a validar.</p>}
+      {dialog?.kind === "add" && <form onSubmit={addOrder} className="flex flex-col gap-2 sm:flex-row"><div className="flex-1"><AdminTextInput title="Pedido" value={addCode} onChange={setAddCode} placeholder="BX-1031" /></div><AdminPrimaryButton type="submit" disabled={busy || !addCode.trim()}>Agregar</AdminPrimaryButton></form>}
       {error && <p role="alert" className="mt-2 text-sm font-bold text-red-300">{error}</p>}
     </AdminModal>
-    <LabelPrintDialog open={dialog?.kind === "label"} title="Etiqueta del Bulto general" description={`${batch.code} · Pedidos: ${items.length} / Paquetes: ${detail.parcelCount}`} labels={batchLabel} onClose={() => setDialog(null)} />
+    <LabelPrintDialog open={dialog?.kind === "label"} title="Etiqueta del Bulto general" description={batch.code} labels={batchLabel} onClose={() => setDialog(null)} />
   </div>
 }
 

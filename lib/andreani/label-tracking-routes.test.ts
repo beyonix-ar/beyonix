@@ -7,9 +7,12 @@ function readRoute(relativePath: string) {
 }
 
 test("el endpoint de etiqueta exige admin, andreani_envio_id y usa el ambiente donde se creó el envío", () => {
-  const source = readRoute("../../app/api/andreani/etiqueta/route.ts")
+  const routeSource = readRoute("../../app/api/andreani/etiqueta/route.ts")
+  assert.match(routeSource, /requireInternalUser\(request, \["admin", "super_admin"\]\)/)
+  assert.match(routeSource, /fetchAndreaniOrderLabel\(/)
 
-  assert.match(source, /requireInternalUser\(request, \["admin", "super_admin"\]\)/)
+  // La lectura de la etiqueta vive en un módulo compartido con Despachos.
+  const source = readRoute("../../lib/andreani/dispatch-shipment.ts")
   assert.match(source, /andreani_envio_id/)
   assert.match(
     source,

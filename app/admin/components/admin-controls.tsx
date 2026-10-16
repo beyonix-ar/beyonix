@@ -564,6 +564,8 @@ interface AdminRowMenuProps {
   items: AdminRowMenuEntry[]
   ariaLabel: string
   triggerClassName?: string
+  /** Texto visible del disparador ("Etiquetas ▾"); sin texto se muestra "⋮". */
+  triggerLabel?: string
 }
 
 /**
@@ -575,6 +577,7 @@ export function AdminRowMenu({
   items,
   ariaLabel,
   triggerClassName,
+  triggerLabel,
 }: AdminRowMenuProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -652,12 +655,13 @@ export function AdminRowMenu({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "flex size-9 cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/50 transition-colors hover:border-white/22 hover:text-white",
+          "flex cursor-pointer items-center justify-center rounded-xl border border-white/8 text-white/50 transition-colors hover:border-white/22 hover:text-white",
+          triggerLabel ? "h-9 gap-1.5 px-3 text-xs font-bold text-white/80" : "size-9",
           open && "border-beyonix-sky/40 bg-beyonix-blue/18 text-white",
           triggerClassName,
         )}
       >
-        <MoreVertical className="size-4" />
+        {triggerLabel ? <>{triggerLabel}<ChevronDown className="size-3.5" aria-hidden="true" /></> : <MoreVertical className="size-4" />}
       </button>
 
       {mounted &&

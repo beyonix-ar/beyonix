@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
-import { AndreaniError, getEtiquetas, normalizeAndreaniError } from "@/lib/andreani/client"
+import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
+import { fetchAndreaniOrderLabel } from "@/lib/andreani/dispatch-shipment"
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 function statusForAndreaniError(error: AndreaniError) {
@@ -33,38 +34,14 @@ export async function POST(request: Request) {
   }
   const formato = body.formato === "zpl" ? "zpl" : "pdf"
 
-  const { data: order, error: orderError } = await authorization.admin
-    .from("ordenes")
-    .select("andreani_envio_id, andreani_creation_environment")
-    .eq("id", orderId)
-    .maybeSingle()
-
-  if (orderError || !order) {
-    return NextResponse.json({ ok: false, error: "No encontramos el pedido." }, { status: 404 })
-  }
-
-  const envioId = typeof order.andreani_envio_id === "string" ? order.andreani_envio_id.trim() : ""
-  if (!envioId) {
-    return NextResponse.json(
-      { ok: false, error: "El pedido todavía no tiene un envío Andreani generado." },
-      { status: 409 },
-    )
-  }
-
-  // La etiqueta se pide contra el mismo ambiente donde se creó el envío
-  // (persistido al crear), nunca contra el ambiente configurado hoy.
-  const environment = order.andreani_creation_environment === "PROD" ? "PROD" : "QA"
-
   try {
-    const label = await getEtiquetas(envioId, formato, {
-      env: { ...process.env, ANDREANI_ENV: environment },
-      productionAccess: environment === "PROD" ? "shipment-read" : undefined,
-    })
+    // La etiqueta se pide contra el mismo ambiente donde se creó el envío.
+    const label = await fetchAndreaniOrderLabel(authorization.admin, orderId, formato)
 
     return new NextResponse(Buffer.from(label.data), {
       headers: {
         "Content-Type": label.contentType,
-        "Content-Disposition": `inline; filename="andreani-${envioId}.${formato}"`,
+        "Content-Disposition": `inline; filename="andreani-${label.envioId}.${formato}"`,
         "Cache-Control": "private, no-store",
       },
     })
@@ -72,7 +49,6 @@ export async function POST(request: Request) {
     const safeError = normalizeAndreaniError(error)
     console.error("ANDREANI_ETIQUETA_ERROR", {
       orderId,
-      environment,
       code: safeError.code,
       status: safeError.status,
       requestId: safeError.requestId,

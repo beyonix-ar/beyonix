@@ -10,9 +10,10 @@ import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
 import { ScanField } from "./scan-field"
 
 /**
- * Pedido cancelado después del armado (con o sin Bulto general). El escaneo
- * del BX-PREP o de un paquete de envío confirma el retiro físico: la base lo
- * saca del Bulto general, devuelve el stock exacto y libera el reintegro, una vez.
+ * Pedido cancelado después del primer pickeo (con o sin Bulto general). El
+ * escaneo de su etiqueta Andreani (o, sin etiqueta todavía, de su número de
+ * pedido) confirma el retiro físico: la base lo saca del Bulto general y
+ * devuelve el stock exacto, una vez. El reintegro siempre es manual.
  */
 export function CancellationResolution({ hold, onResolved, onClose }: {
   hold: DispatchHold
@@ -68,13 +69,13 @@ export function CancellationResolution({ hold, onResolved, onClose }: {
       <p className="mt-1 text-sm text-white/80">{hold.prepared ? "Este pedido ya fue preparado físicamente" : `Este pedido ya tenía ${hold.pickedUnits} de ${hold.units} unidades pickeadas`}{hold.batchCode ? <> y está dentro del Bulto general <span className="font-mono font-bold text-white">{hold.batchCode}</span></> : ""}. Requiere resolución física: el stock queda retenido hasta confirmar el retiro. El reintegro (incluido el saldo a favor) es manual: nunca automático.</p>
       <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:max-w-md">
         <div className="rounded-xl bg-black/25 px-3 py-2"><dt className="text-10px font-black uppercase tracking-widest text-white/55">Pickeadas</dt><dd className="font-black tabular-nums text-white">{hold.pickedUnits} de {hold.units}</dd></div>
-        <div className="rounded-xl bg-black/25 px-3 py-2"><dt className="text-10px font-black uppercase tracking-widest text-white/55">Código</dt><dd className="truncate font-mono font-bold text-white">{hold.prepared ? hold.preparedCode : orderLabel}</dd></div>
+        <div className="rounded-xl bg-black/25 px-3 py-2"><dt className="text-10px font-black uppercase tracking-widest text-white/55">Escanear</dt><dd className="truncate font-bold text-white">{hold.prepared ? "Etiqueta Andreani" : orderLabel}</dd></div>
       </dl>
     </div>
 
     <ol className="space-y-2 text-sm text-white/80">
-      <li className="flex gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-black text-white">1</span>{hold.prepared ? `Separá el pedido${hold.batchCode ? " y todos sus paquetes del Bulto general" : " del circuito de despacho"}.` : "Juntá las unidades ya pickeadas del pedido y devolvelas a la estantería."}</li>
-      <li className="flex gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-black text-white">2</span>{hold.prepared ? "Escaneá el BX-PREP del pedido o la etiqueta de uno de sus paquetes de envío." : `Identificá el pedido escaneando o ingresando ${orderLabel} (o ${hold.preparedCode}).`}</li>
+      <li className="flex gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-black text-white">1</span>{hold.prepared ? `Separá el pedido${hold.batchCode ? " y todos sus bultos del Bulto general" : " del circuito de despacho"}.` : "Juntá las unidades ya pickeadas del pedido y devolvelas a la estantería."}</li>
+      <li className="flex gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-black text-white">2</span>{hold.prepared ? `Escaneá la etiqueta Andreani del pedido (si todavía no tenía, ingresá ${orderLabel}).` : `Identificá el pedido escaneando o ingresando ${orderLabel}.`}</li>
     </ol>
 
     <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm font-bold ${confirmed ? "border-emerald-500/45 bg-emerald-950/60 text-white" : "border-amber-500/45 bg-amber-950/50 text-amber-100"}`}>
@@ -82,10 +83,10 @@ export function CancellationResolution({ hold, onResolved, onClose }: {
       <span>{hold.prepared ? `Confirmo que retiré físicamente el pedido ${orderLabel}${hold.batchCode ? ` del Bulto general ${hold.batchCode}` : ""}.` : `Confirmo que devolví a la estantería ${hold.pickedUnits === 1 ? "la unidad pickeada" : `las ${hold.pickedUnits} unidades pickeadas`} de ${orderLabel}.`}</span>
     </label>
 
-    <ScanField label="Escanear pedido cancelado" placeholder={hold.prepared ? `Escaneá ${hold.preparedCode} o un paquete de envío` : `Escaneá o ingresá ${orderLabel}`} submitLabel="Liberar stock"
+    <ScanField label="Escanear pedido cancelado" placeholder={hold.prepared ? "Escaneá la etiqueta Andreani" : `Escaneá o ingresá ${orderLabel}`} submitLabel="Liberar stock"
       value={code} onChange={(value) => { setCode(value); requestKey.current = null }} onScan={(scanned) => void resolve(scanned)}
       busy={busy} disabled={!confirmed} autoFocus={confirmed}
-      cameraTitle={`Retirar ${orderLabel}`} cameraHint="Encuadrá el BX-PREP o la etiqueta de un paquete" feedback={error ? { tone: "error", message: error } : null} />
+      cameraTitle={`Retirar ${orderLabel}`} cameraHint="Encuadrá la etiqueta Andreani del pedido" feedback={error ? { tone: "error", message: error } : null} />
     {!confirmed && <p className="flex items-center gap-2 text-xs font-bold text-amber-200"><AlertTriangle className="size-4" />Marcá la confirmación para habilitar el escaneo.</p>}
     {error && <p role="alert" className="flex items-center gap-2 text-sm font-bold text-red-300"><XCircle className="size-5 shrink-0" />{error}</p>}
     <AdminButton className="h-11 w-full sm:w-auto" onClick={onClose}>Volver</AdminButton>

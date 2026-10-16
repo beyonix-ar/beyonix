@@ -8,7 +8,7 @@ export type PrintableLabel =
   | { kind: "product"; code: string; name: string; variant?: string | null; sku?: string | null; copies?: number }
   | { kind: "parcel"; code: string; orderCode: string; index: number; count: number }
   | { kind: "prepared"; code: string; orderCode: string; units: number; parcelCount: number | null }
-  | { kind: "batch"; code: string; orderCount: number; parcelCount: number; date?: string | null }
+  | { kind: "batch"; code: string; date?: string | null }
 
 const MAX_COPIES = 500
 
@@ -48,7 +48,6 @@ function labelBody(label: PrintableLabel, svg: string) {
   return `<div class="brand">BEYONIX</div>
     <div class="title">BULTO GENERAL</div>
     ${barcode}
-    <div class="big">Pedidos: ${label.orderCount} / Paquetes: ${label.parcelCount}</div>
     ${label.date ? `<div class="meta">${escapeHtml(label.date)}</div>` : ""}`
 }
 

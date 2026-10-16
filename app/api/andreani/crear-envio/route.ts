@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
-import { createAndreaniShipmentForOrder } from "@/lib/andreani/order-shipment"
+import { createDispatchAndreaniShipment } from "@/lib/andreani/dispatch-shipment"
 import { requireInternalUser } from "@/lib/auth/admin-api"
 
 function statusForAndreaniError(error: AndreaniError) {
@@ -35,7 +35,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await createAndreaniShipmentForOrder(authorization.admin, orderId)
+    // Misma regla que Despachos: sólo con el pickeo completo.
+    const result = await createDispatchAndreaniShipment(authorization.admin, orderId)
 
     return NextResponse.json({
       ok: true,
