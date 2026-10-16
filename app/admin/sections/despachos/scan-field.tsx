@@ -52,21 +52,18 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
 
   const submitDisabled = busy || disabled || !value.trim()
   const submitText = busy ? "Verificando…" : submitLabel
-  return <div className="space-y-2">
-    {/* Celular: la cámara es la acción principal, a una mano. */}
-    <AdminPrimaryButton className="h-14 w-full text-base sm:hidden" icon={<Camera className="size-5" />} disabled={disabled} onClick={() => setCameraOpen(true)}>ESCANEAR CON CÁMARA</AdminPrimaryButton>
-    <form onSubmit={submit} className="flex gap-2">
-      <label className="relative min-w-0 flex-1">
+  return <div className="dispatch-scan-field space-y-2">
+    <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row">
+      <label className="dispatch-scan-input relative min-w-0 flex-1">
         <span className="sr-only">{label}</span>
         <ScanLine className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-beyonix-sky" />
         <input ref={inputRef} aria-label={label} autoFocus={autoFocus} autoComplete="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="send"
           value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled}
-          className="admin-control-input admin-ds-control h-12 w-full min-w-0 pl-12 pr-3 text-base text-white outline-none sm:h-14 sm:pr-4 sm:text-lg" />
+          className="admin-control-input admin-ds-control h-14 w-full min-w-0 pl-12 pr-3 text-base text-white outline-none sm:pr-4" />
       </label>
-      <AdminButton type="submit" className="h-12 shrink-0 px-4 sm:hidden" disabled={submitDisabled}>{busy ? "…" : "OK"}</AdminButton>
-      <AdminPrimaryButton type="submit" className="hidden h-14 shrink-0 px-6 text-base sm:inline-flex" disabled={submitDisabled}>{submitText}</AdminPrimaryButton>
-      <AdminButton className="hidden h-14 shrink-0 px-4 sm:inline-flex" icon={<Camera className="size-5" />} disabled={disabled} onClick={() => setCameraOpen(true)} aria-label="Escanear con cámara" title="Escanear con cámara" />
+      <AdminPrimaryButton type="submit" className="h-12 w-full shrink-0 px-5 text-sm sm:h-14 sm:w-auto" disabled={submitDisabled}>{submitText}</AdminPrimaryButton>
     </form>
+    <AdminButton className="h-12 w-full text-sm sm:h-11" icon={<Camera className="size-5" />} disabled={disabled} onClick={() => setCameraOpen(true)}>Escanear con cámara</AdminButton>
     <CameraScanner open={cameraOpen} title={cameraTitle} hint={cameraHint} continuous={continuousCamera} paused={busy} feedback={feedback}
       onDetected={(code) => { emit(code); if (!continuousCamera) setCameraOpen(false) }} onClose={() => setCameraOpen(false)} />
   </div>

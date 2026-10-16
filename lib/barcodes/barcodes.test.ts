@@ -41,7 +41,7 @@ test("Code 128 se genera en el servidor y rechaza texto no imprimible", () => {
 })
 
 test("etiquetas: N copias, A4 o térmica, texto escapado y lote con totales", () => {
-  const svgs = { "BX-AUR-000001": "<svg></svg>", "BX-PKG-1050-01": "<svg></svg>", "DSP-20261007-001": "<svg></svg>" }
+  const svgs = { "BX-AUR-000001": "<svg></svg>", "BX-PKG-1050-01": "<svg></svg>", "BX-PREP-1050": "<svg></svg>", "DSP-20261007-001": "<svg></svg>" }
   assert.equal(expandLabels([{ kind: "product", code: "BX-AUR-000001", name: "A", copies: 3 }]).length, 3)
   assert.equal(expandLabels([{ kind: "product", code: "BX-AUR-000001", name: "A", copies: 0 }]).length, 1)
   const product = buildLabelsDocument([{ kind: "product", code: "BX-AUR-000001", name: "Auriculares <Pro> & más", variant: "Negro", sku: "AUR-01", copies: 2 }], svgs, "a4")
@@ -51,8 +51,11 @@ test("etiquetas: N copias, A4 o térmica, texto escapado y lote con totales", ()
   assert.match(product, /@page \{ size: A4/)
   const parcel = buildLabelsDocument([{ kind: "parcel", code: "BX-PKG-1050-01", orderCode: "BX-1050", index: 1, count: 3 }], svgs, "single")
   assert.match(parcel, /Pedido BX-1050/)
-  assert.match(parcel, /Bulto 1\/3/)
-  assert.match(parcel, /@page \{ size: 100mm 100mm/)
+  assert.doesNotMatch(parcel, /Bulto 1\/3|class="brand"|BX-PKG-1050-01<\/div>/)
+  assert.match(parcel, /@page \{ size: 76mm 40mm/)
+  const prepared = buildLabelsDocument([{ kind: "prepared", code: "BX-PREP-1050", orderCode: "BX-1050", units: 3, parcelCount: 2 }], svgs, "single")
+  assert.match(prepared, /<section class="label prepared"><div class="internal-title">Pedido BX-1050<\/div>\s*<div class="barcode"><svg><\/svg><\/div><\/section>/)
+  assert.doesNotMatch(prepared, /PEDIDO PREPARADO|3 unidades|2 bultos|BX-PREP-1050<\/div>/)
   const lot = buildLabelsDocument([{ kind: "batch", code: "DSP-20261007-001", orderCount: 4, parcelCount: 7 }], svgs, "a4")
   assert.match(lot, /LOTE DE ENVÍO/)
   assert.match(lot, /Pedidos: 4 \/ Bultos: 7/)

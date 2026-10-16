@@ -1,6 +1,7 @@
 "use client"
 
 import { AlertTriangle } from "lucide-react"
+import { useState } from "react"
 
 import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
 import type { DispatchParcel, DispatchShippingInfo } from "@/lib/admin/dispatch"
@@ -36,6 +37,17 @@ export function initialParcelDrafts(parcels: DispatchParcel[], count: number): P
 
 export function resizeParcelDrafts(drafts: ParcelDraft[], count: number) {
   return Array.from({ length: count }, (_, index) => drafts[index] ?? emptyDraft())
+}
+
+/** Cada bulto toma sólo su propia estimación. Una cantidad distinta requiere carga manual. */
+export function estimatedParcelDrafts(estimate: DispatchShippingInfo["estimate"], count: number): ParcelDraft[] | null {
+  if (!estimate || estimate.parcels.length !== count) return null
+  return estimate.parcels.map((parcel) => ({
+    weightKg: decimal(parcel.weightKg, 3),
+    lengthCm: decimal(parcel.lengthCm),
+    widthCm: decimal(parcel.widthCm),
+    heightCm: decimal(parcel.heightCm),
+  }))
 }
 
 /** Medidas listas para enviar, o el primer error a mostrar. */
@@ -108,22 +120,32 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
   estimate: DispatchShippingInfo["estimate"]
 }) {
   const summary = estimateSummary(estimate)
+  const [copied, setCopied] = useState(false)
+  const canCopy = Boolean(estimatedParcelDrafts(estimate, drafts.length))
   return (
     <div className="mt-3 space-y-3">
       {summary ? (
         <div className="rounded-xl border border-white/12 bg-black/25 p-3 text-sm" data-checkout-estimate>
-          <p className="flex items-center gap-1.5 text-11px font-black uppercase tracking-widest text-white/60">
-            Estimación utilizada en checkout
-            <AdminHelpTip label="Estimación de checkout" text="Bulto que BEYONIX calculó para cotizar el envío. Es sólo una referencia: cargá las medidas reales." />
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-11px font-black uppercase tracking-widest text-white/60">
+              Estimación utilizada en checkout
+              <AdminHelpTip label="Estimación de checkout" text="Bulto que BEYONIX calculó para cotizar el envío. Es sólo una referencia: cargá las medidas reales." />
+            </p>
+            <button type="button" disabled={disabled || !canCopy} onClick={() => {
+              const next = estimatedParcelDrafts(estimate, drafts.length)
+              if (next) { onChange(next); setCopied(true) }
+            }} className="dispatch-copy-estimate rounded-lg border border-sky-400/45 px-2.5 py-1.5 text-xs font-bold text-sky-100 disabled:cursor-not-allowed disabled:opacity-45">Usar medidas estimadas</button>
+          </div>
           <ul className="mt-1 space-y-0.5 font-bold text-white">{summary.map((line, index) => <li key={index}>{line}</li>)}</ul>
+          {copied && canCopy && <p role="status" className="mt-1 text-xs font-bold text-emerald-300">Medidas copiadas ✓ · podés editarlas.</p>}
+          {!canCopy && <p className="mt-1 text-xs text-amber-200">La cantidad de bultos no coincide con la estimación; cargá las medidas reales de cada uno.</p>}
         </div>
       ) : null}
       <p className="text-11px font-black uppercase tracking-widest text-white/60">Medidas reales</p>
       {drafts.map((draft, index) => {
         const weight = parseMeasureText(draft.weightKg)
         return (
-          <fieldset key={index} className="rounded-xl border border-white/12 p-3" data-parcel-measures={index + 1}>
+          <fieldset key={index} className="rounded-xl border border-white/12 bg-white/[0.025] p-3" data-parcel-measures={index + 1}>
             <legend className="px-1 text-sm font-black text-white">BULTO {index + 1}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {PARCEL_MEASURE_FIELDS.map((field) => (
@@ -139,6 +161,7 @@ export function ParcelMeasuresEditor({ drafts, onChange, disabled, estimate }: {
                       value={draft[field.key]}
                       onChange={(event) => {
                         const value = event.target.value.replace(/[^\d,.]/g, "").slice(0, 9)
+                        setCopied(false)
                         onChange(drafts.map((current, position) => position === index ? { ...current, [field.key]: value } : current))
                       }}
                       className="admin-control-input admin-ds-control h-11 w-full pl-3 pr-9 text-base font-black text-white outline-none"

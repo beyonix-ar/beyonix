@@ -16,7 +16,8 @@ export function LabelPrintDialog({ open, title, description, labels, allowCopies
   onClose: () => void
 }) {
   const [copies, setCopies] = useState("1")
-  const [format, setFormat] = useState<LabelFormat>("a4")
+  const [format, setFormat] = useState<LabelFormat | null>(null)
+  const selectedFormat = format ?? (labels.length > 0 && labels.every((label) => label.kind === "parcel" || label.kind === "prepared") ? "single" : "a4")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const copyCount = Number(copies)
@@ -26,7 +27,7 @@ export function LabelPrintDialog({ open, title, description, labels, allowCopies
     if (busy || !validCopies) return
     setBusy(true); setError("")
     try {
-      await printLabels(allowCopies ? labels.map((label) => label.kind === "product" ? { ...label, copies: copyCount } : label) : labels, format)
+      await printLabels(allowCopies ? labels.map((label) => label.kind === "product" ? { ...label, copies: copyCount } : label) : labels, selectedFormat)
       onClose()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudieron imprimir las etiquetas.")
@@ -41,7 +42,7 @@ export function LabelPrintDialog({ open, title, description, labels, allowCopies
       <fieldset>
         <legend className="mb-1 text-xs font-black text-white">Formato</legend>
         <div className="grid gap-2 sm:grid-cols-2">
-          {([["a4", "Hoja A4", "Impresora común, con líneas de corte"], ["single", "Etiqueta individual", "Una por página (impresora térmica)"]] as const).map(([value, label, hint]) => <label key={value} className={`flex cursor-pointer flex-col rounded-xl border p-3 text-sm ${format === value ? "border-beyonix-sky/60 bg-beyonix-blue/30" : "border-white/12"}`}><span className="flex items-center gap-2 font-bold text-white"><input type="radio" name="label-format" value={value} checked={format === value} onChange={() => setFormat(value)} />{label}</span><span className="mt-1 text-xs text-white/60">{hint}</span></label>)}
+          {([["a4", "Hoja A4", "Impresora común, con líneas de corte"], ["single", "Etiqueta individual", "Una por página (impresora térmica)"]] as const).map(([value, label, hint]) => <label key={value} className={`flex cursor-pointer flex-col rounded-xl border p-3 text-sm ${selectedFormat === value ? "border-beyonix-sky/60 bg-beyonix-blue/30" : "border-white/12"}`}><span className="flex items-center gap-2 font-bold text-white"><input type="radio" name="label-format" value={value} checked={selectedFormat === value} onChange={() => setFormat(value)} />{label}</span><span className="mt-1 text-xs text-white/60">{hint}</span></label>)}
         </div>
       </fieldset>
       {error && <p role="alert" className="text-sm font-bold text-red-300">{error}</p>}

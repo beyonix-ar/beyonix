@@ -109,17 +109,27 @@ test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente y bultos
     assert.equal(new Set(keys).size, keys.length - 1, "cada escaneo nuevo usa su propia clave")
     assert.match(text(), /Pedido preparado/)
     assert.match(text(), /BX-PREP-1031/, "muestra el código general del pedido preparado")
+    await act(async () => { button(dom, "Imprimir")!.click() })
+    assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[name="label-format"][value="single"]')?.checked, true, "etiqueta interna pequeña por defecto, aun si el código llegó después de montar el diálogo")
+    await act(async () => { button(dom, "Cancelar")!.click() })
     await act(async () => { button(dom, "FINALIZAR ARMADO")!.click() })
     assert.match(text(), /¿Cuántos bultos tiene este pedido\?/)
     assert.match(text(), /Estimación utilizada en checkout/)
     assert.match(text(), /1 bulto · 35 × 25 × 18 cm · 2,2 kg/)
     const parcels = dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Cantidad de bultos"]')!
     assert.equal(parcels.value, "1", "sugiere la cantidad de bultos estimada")
+    const measure = (index: number, label: string) =>
+      dom.window.document.querySelector<HTMLInputElement>(`input[aria-label="Bulto ${index}: ${label}"]`)!
+    await act(async () => { button(dom, "Usar medidas estimadas")!.click() })
+    assert.equal(measure(1, "Peso en kg").value, "2,2")
+    assert.equal(measure(1, "Largo en cm").value, "35")
+    assert.match(text(), /Medidas copiadas ✓/)
+    await type(dom, measure(1, "Peso en kg"), "2,450")
+    assert.equal(measure(1, "Peso en kg").value, "2,450", "los campos copiados siguen editables")
     await type(dom, parcels, "2")
     assert.match(text(), /BULTO 1/)
     assert.match(text(), /BULTO 2/)
-    const measure = (index: number, label: string) =>
-      dom.window.document.querySelector<HTMLInputElement>(`input[aria-label="Bulto ${index}: ${label}"]`)!
+    assert.equal(button(dom, "Usar medidas estimadas")!.disabled, true, "con cantidad distinta no duplica la estimación en otro bulto")
     assert.equal(button(dom, "Confirmar bultos")!.disabled, true, "las medidas son obligatorias")
     for (const [index, values] of [[1, ["2,450", "40", "30", "20"]], [2, ["0,8", "25", "20", "8"]]] as const) {
       await type(dom, measure(index, "Peso en kg"), values[0])

@@ -305,8 +305,9 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     { label: "Requieren acción", value: actionCount, icon: <AlertTriangle className="size-4" />, tone: actionCount > 0 ? "warning" : "neutral", status: `Despachos · ${actionCount} requieren acción` },
   ]
 
-  return <div className={`${adminPageClassName} mx-auto max-w-7xl`}>
-    <AdminPageHeader className="sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Prepará pedidos, creá lotes de envío y confirmá la entrega física a Andreani." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
+  return <div className={`${adminPageClassName} dispatch-page mx-auto max-w-7xl`}>
+    <div className="dispatch-workspace space-y-4 sm:space-y-5">
+    <AdminPageHeader className="dispatch-header sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Prepará pedidos, creá lotes de envío y confirmá la entrega física a Andreani." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
 
     {holds.length > 0 && !resolving && <section aria-label="Cancelaciones que requieren acción" className="space-y-2">
       {holds.map((hold) => <div key={hold.id} role="alert" className="flex flex-col gap-3 rounded-2xl border border-red-500/45 bg-red-950 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
@@ -319,20 +320,20 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     </section>}
 
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {metrics.map((metric) => <AdminCard key={metric.label} role={metric.status ? "status" : undefined} aria-label={metric.status} className="dispatch-card flex items-center gap-3 p-3">
+      <div className="dispatch-metrics grid grid-cols-2 lg:grid-cols-4">
+        {metrics.map((metric) => <div key={metric.label} role={metric.status ? "status" : undefined} aria-label={metric.status} className="dispatch-metric flex min-w-0 items-center gap-3 p-3">
           <span className={`admin-ds-badge admin-ds-tone-${metric.tone} flex size-9 shrink-0 items-center justify-center p-0`} aria-hidden="true">{metric.icon}</span>
           <span className="min-w-0">
             <span className="block truncate text-10px font-black uppercase tracking-widest text-white/60">{metric.label}</span>
             <span className="block text-xl font-black leading-tight tabular-nums text-white">{board ? metric.value : "—"}</span>
           </span>
-        </AdminCard>)}
+        </div>)}
       </div>
-      <nav aria-label="Estados de despacho" className="admin-ds-card admin-ds-surface bx-surface bx-surface-section dispatch-surface flex gap-1 overflow-x-auto p-1">
+      <nav aria-label="Estados de despacho" className="dispatch-tabs flex gap-1 overflow-x-auto p-1">
         {TABS.map((item) => {
           const active = tab === item.key && !resolving
           const count = tabCounts[item.key]
-          return <button key={item.key} type="button" aria-current={active ? "page" : undefined} onClick={() => { setTab(item.key); setOrderId(null); setQueue([]); setBatch(null); setResolving(null); setScanFeedback(null); setError("") }} className={`inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition-colors ${active ? "border-beyonix-blue-light bg-beyonix-blue text-white shadow-[0_0_14px_rgba(17,42,67,0.32)]" : "border-transparent text-white/60 hover:bg-white/5 hover:text-white"}`}>
+          return <button key={item.key} type="button" aria-current={active ? "page" : undefined} onClick={() => { setTab(item.key); setOrderId(null); setQueue([]); setBatch(null); setResolving(null); setScanFeedback(null); setError("") }} className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition-colors ${active ? "border-sky-400/50 bg-[#173b57] text-white" : "border-transparent text-white/60 hover:bg-white/5 hover:text-white"}`}>
             {item.label}
             {count !== undefined && <span className={`min-w-5 rounded-md px-1.5 py-0.5 text-center text-10px tabular-nums ${active ? "bg-white/15 text-white" : "bg-white/8 text-white/70"}`}>{count}</span>}
           </button>
@@ -438,6 +439,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       {dialog === "close" && <p className="text-sm text-white/70">Al cerrar el lote se genera su código para la salida. Si después se cancela un pedido, el lote queda en revisión hasta retirarlo escaneándolo.</p>}
     </AdminModal>
     <LabelPrintDialog open={dialog === "label"} title="Etiqueta del lote" description={batch ? `${batch.batch.code} · Pedidos: ${batch.items.length} / Bultos: ${batchParcels}` : undefined} labels={batchLabel} onClose={() => setDialog(null)} />
+    </div>
   </div>
 }
 
@@ -456,7 +458,7 @@ function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
   const pending = item.pendingBeforeDispatch ?? []
   const units = item.units ?? 0
   const started = Boolean(item.package)
-  return <AdminCard interactive className={`dispatch-card flex h-full flex-col gap-3 p-3 ${blocked ? "border-red-500/40" : checked ? "border-beyonix-sky/45" : ""}`}>
+  return <AdminCard interactive className={`dispatch-card dispatch-queue-card flex h-full flex-col gap-3 p-3 ${blocked ? "border-red-500/40" : checked ? "border-beyonix-sky/45" : ""}`}>
     <label className={`flex min-w-0 items-start gap-3 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
       <input type="checkbox" className="mt-0.5 size-5 shrink-0" aria-label={`Seleccionar ${orderCode(item.id)}`} checked={checked && !disabled} disabled={disabled} onChange={onToggle} />
       <span className="min-w-0 flex-1">
@@ -471,6 +473,6 @@ function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
     {tab === "armado" && started && units > 0 && <DispatchProgress compact done={item.scannedUnits ?? 0} total={units} unit="unidades" />}
     {blocked && <p className="flex items-start gap-1.5 text-xs font-bold text-red-200"><XCircle className="mt-0.5 size-3.5 shrink-0" />{item.blockReason ?? "Revisión requerida"}</p>}
     {!blocked && pending.length > 0 && <p className="flex items-start gap-1.5 text-xs text-sky-200"><Info className="mt-0.5 size-3.5 shrink-0" />{pending.join(" · ")}{tab === "armado" ? " — no frena la preparación" : ""}</p>}
-    <AdminButton className="mt-auto h-11 w-full" variant={tab === "armado" && !blocked ? "primary" : "secondary"} onClick={onOpen}>{tab === "armado" ? started ? "Continuar armado" : "Iniciar armado" : "Ver pedido"}</AdminButton>
+    <AdminButton className="mt-auto h-11 w-full" variant={tab === "armado" && !blocked ? "primary" : "secondary"} onClick={onOpen}>{tab === "armado" ? started ? "Continuar armado" : "Armar" : "Ver pedido"}</AdminButton>
   </AdminCard>
 }

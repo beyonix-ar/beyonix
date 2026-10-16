@@ -38,17 +38,12 @@ function labelBody(label: PrintableLabel, svg: string) {
       ${barcode}`
   }
   if (label.kind === "parcel") {
-    return `<div class="brand">BEYONIX</div>
-      <div class="title">Pedido ${escapeHtml(label.orderCode)}</div>
-      <div class="big">Bulto ${label.index}/${label.count}</div>
-      ${barcode}`
+    return `<div class="internal-title">Pedido ${escapeHtml(label.orderCode)}</div>
+      <div class="barcode">${svg}</div>`
   }
   if (label.kind === "prepared") {
-    return `<div class="brand">BEYONIX</div>
-      <div class="title">PEDIDO PREPARADO</div>
-      <div class="big">${escapeHtml(label.orderCode)}</div>
-      ${barcode}
-      <div class="meta">${label.units} ${label.units === 1 ? "unidad" : "unidades"}${label.parcelCount ? ` · ${label.parcelCount} ${label.parcelCount === 1 ? "bulto" : "bultos"}` : ""}</div>`
+    return `<div class="internal-title">Pedido ${escapeHtml(label.orderCode)}</div>
+      <div class="barcode">${svg}</div>`
   }
   return `<div class="brand">BEYONIX</div>
     <div class="title">LOTE DE ENVÍO</div>
@@ -66,9 +61,12 @@ export function buildLabelsDocument(
   const missing = expanded.find((label) => !svgs[label.code])
   if (missing) throw new Error(`Falta el código de barras de ${missing.code}.`)
   const product = expanded.every((label) => label.kind === "product")
-  // A4 común: producto 3×8 (64×35 mm), bulto/lote 2×3 (95×90 mm), con líneas de
-  // corte. "single": una etiqueta por página para impresoras térmicas.
-  const size = product ? { width: 64, height: 35, singleWidth: 60, singleHeight: 40 } : { width: 95, height: 90, singleWidth: 100, singleHeight: 100 }
+  const internal = expanded.every((label) => label.kind === "parcel" || label.kind === "prepared")
+  // Producto 64×35 mm, identificación interna 76×40 mm y lote 95×90 mm.
+  // "single" usa el tamaño físico de cada etiqueta en print preview.
+  const size = product ? { width: 64, height: 35, singleWidth: 60, singleHeight: 40 }
+    : internal ? { width: 76, height: 40, singleWidth: 76, singleHeight: 40 }
+    : { width: 95, height: 90, singleWidth: 100, singleHeight: 100 }
   const page = format === "a4"
     ? `@page { size: A4; margin: 6mm; }
        .sheet { display: grid; grid-template-columns: repeat(auto-fill, ${size.width}mm); grid-auto-rows: ${size.height}mm; gap: 0; justify-content: center; }
@@ -92,5 +90,8 @@ export function buildLabelsDocument(
     .parcel .barcode svg, .batch .barcode svg, .prepared .barcode svg { max-height: 26mm; }
     .code { font-family: "Courier New", monospace; font-weight: 700; font-size: 9pt; letter-spacing: 0.06em; }
     .parcel .code, .batch .code, .prepared .code { font-size: 13pt; }
+    .internal-title { font-weight: 800; font-size: 12pt; line-height: 1.1; }
+    .parcel .barcode, .prepared .barcode { width: 100%; margin: 2mm 0 0; padding-inline: 2mm; }
+    .parcel .barcode svg, .prepared .barcode svg { width: 100%; max-height: 22mm; object-fit: contain; }
   </style></head><body><main class="sheet">${items}</main></body></html>`
 }

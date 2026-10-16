@@ -185,31 +185,29 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const pendingBeforeDispatch = detail.pendingBeforeDispatch
   const startPacking = () => void run(async () => { setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "start" })) })
 
-  return <div className="space-y-4">
+  return <div className="dispatch-picking space-y-4">
+    <AdminCard className="dispatch-card dispatch-picking-overview p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0"><span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">Pedido en preparación</span><h3 className="text-xl font-black tabular-nums text-white sm:text-2xl">{code}</h3></div>
+        <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
+      </div>
+      <DispatchProgress className="mt-3" done={units} total={detail.expectedUnits} unit="unidades" />
+      <p className="mt-2 text-xs font-bold text-white/60">{detail.itemCount} {detail.itemCount === 1 ? "producto" : "productos"} · {detail.expectedUnits} {detail.expectedUnits === 1 ? "unidad" : "unidades"}{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "bulto" : "bultos"}` : ""}</p>
+    </AdminCard>
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start">
-      <div className="min-w-0 space-y-3">
-        <AdminCard className="dispatch-card p-3 sm:p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
-            <span className="text-xs font-bold text-white/60">{detail.itemCount} {detail.itemCount === 1 ? "producto" : "productos"} · {detail.expectedUnits} {detail.expectedUnits === 1 ? "unidad" : "unidades"}{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "bulto" : "bultos"}` : ""}</span>
-          </div>
-          <DispatchProgress className="mt-3" done={units} total={detail.expectedUnits} unit="unidades" />
-        </AdminCard>
-
+      <div className="order-last min-w-0 space-y-3 lg:order-first">
         {packingBlocked && <div role="alert" className="rounded-xl border border-red-500/50 bg-red-950 p-3 text-sm text-white">
           <p className="font-black">{inBatch ? "RETIRAR DEL DESPACHO" : "Pedido bloqueado"} · {detail.blockReason ?? "Revisión requerida"}</p>
           {inBatch && detail.parcels.length > 0 && <p className="mt-1 text-xs">Separá {detail.parcels.length === 1 ? "el bulto" : `los ${detail.parcels.length} bultos`}: {detail.parcels.map((parcel) => parcel.barcode).join(", ")}. No se entrega a Andreani ni se reintegra automáticamente.</p>}
         </div>}
-        {!packingBlocked && pendingBeforeDispatch.length > 0 && <p role="status" className="flex items-start gap-2 rounded-xl border border-sky-500/30 bg-sky-950/50 px-3 py-2 text-xs font-bold text-sky-100">
-          <Info className="mt-0.5 size-4 shrink-0" />{pendingBeforeDispatch.join(" · ")}: podés preparar el pedido igual; se completa antes de entrar al lote.
-        </p>}
         {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
 
+        <p className="dispatch-subheading">Productos <span>{detail.itemCount}</span></p>
         <ul className="space-y-2" aria-label="Productos del pedido">{detail.lines.map((line) => {
           const complete = line.scanned_quantity === line.expected_quantity
           const remaining = line.expected_quantity - line.scanned_quantity
           return <li key={line.order_item_id}>
-            <AdminCard className={`dispatch-card flex items-center justify-between gap-3 p-3 ${complete ? "border-emerald-500/40" : ""}`}>
+            <AdminCard className={`dispatch-card dispatch-product flex items-center justify-between gap-3 p-3 sm:p-4 ${complete ? "dispatch-product-complete border-emerald-500/40" : line.scanned_quantity > 0 ? "dispatch-product-missing" : "dispatch-product-pending"}`}>
               <span className="flex min-w-0 items-start gap-2.5">
                 {complete ? <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-300" aria-label="Completo" /> : <span aria-hidden="true" className="mt-1 size-4 shrink-0 rounded-full border-2 border-white/25" />}
                 <span className="min-w-0 text-sm font-bold text-white">{line.name}<span className="block text-xs font-normal text-white/60">{line.random ? <>Reservado: {line.random.reservedVariant ?? "—"} · {line.random.dispatchedVariant ? <span className="font-bold text-emerald-300">Despachado: {line.random.dispatchedVariant}{line.random.manuallyConfirmed ? " (confirmado a mano)" : ""}</span> : "Escaneá la variante física que sale"}</> : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ")}</span>
@@ -220,15 +218,19 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
             </AdminCard>
           </li>
         })}</ul>
+        {!packingBlocked && pendingBeforeDispatch.length > 0 && <p role="status" className="flex items-start gap-2 rounded-xl border border-sky-500/30 bg-sky-950/30 px-3 py-2.5 text-xs font-bold text-sky-100">
+          <Info className="mt-0.5 size-4 shrink-0" />{pendingBeforeDispatch.join(" · ")}: podés preparar el pedido igual; se completa antes de entrar al lote.
+        </p>}
       </div>
 
-      {/* Acción principal: en desktop a la derecha; en celular fija abajo, a una mano. */}
-      <div className={`space-y-3 lg:sticky lg:top-4 ${pkg && !prepared ? "dispatch-action-bar" : ""}`}>
+      {/* Escaneo primero en móvil; en desktop permanece visible junto a las tareas. */}
+      <div className={`order-first space-y-3 lg:order-last lg:sticky lg:top-4 ${pkg && !prepared ? "dispatch-action-bar" : ""}`}>
         {!pkg ? <AdminCard className="dispatch-card space-y-3 p-3 sm:p-4">
           <p className="text-sm text-white/75">Empezá a pickear: cada unidad se verifica escaneando su código.</p>
           <AdminPrimaryButton className="h-14 w-full text-base" disabled={busy || packingBlocked} onClick={startPacking}>INICIAR ARMADO</AdminPrimaryButton>
         </AdminCard>
-          : !prepared ? <AdminCard className="dispatch-card space-y-3 p-3 sm:p-4">
+          : !prepared ? <AdminCard className="dispatch-card dispatch-scanner space-y-3 p-3 sm:p-4">
+            <p className="dispatch-subheading">Escaneo</p>
             <ScanField label="Escanear o ingresar código / SKU" placeholder="Escaneá el producto" submitLabel="Verificar"
               value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
               busy={busy} disabled={packingBlocked} autoFocus={!pendingVariant && dialog === null}
