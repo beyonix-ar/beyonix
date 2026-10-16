@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
-import { AlertTriangle, CheckCircle2, Info, PackageCheck, Printer, XCircle } from "lucide-react"
+import { AlertTriangle, ArrowRight, CheckCircle2, Info, Printer, XCircle } from "lucide-react"
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
@@ -22,12 +22,14 @@ import {
   resizeParcelDrafts,
   type ParcelDraft,
 } from "./parcel-measures"
+import { PreparationStep, preparationStepStates } from "./preparation-steps"
 import { ScanField } from "./scan-field"
 
 type ScanFeedback = { tone: "success" | "warning" | "error"; message: string }
 type OrderResponse = OrderDispatchDetail & { scan?: DispatchScanResult | null }
 /** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
 type PendingVariant = { code: string; productName: string | null; candidates: DispatchVariantCandidate[] }
+type OrderLine = OrderDispatchDetail["lines"][number]
 
 export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", identify: "warning", measures: "info", parcels_ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
 
@@ -39,10 +41,20 @@ export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", identify:
 const NO_SHIPPING_INFO: DispatchShippingInfo = { costsVisible: false, estimate: null, parcelQuote: null }
 const formatMeasure = (value: number | null | undefined, digits = 1) =>
   value == null ? "—" : new Intl.NumberFormat("es-AR", { maximumFractionDigits: digits }).format(value)
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
-export function OrderPreparationPanel({ orderId, onDone, footer }: {
+/**
+ * Preparación de un pedido en cuatro pasos: pickeo → identificar pedido
+ * (BX-PREP) → medidas del paquete → listo para Bulto general. A la izquierda
+ * (o abajo en pantallas angostas) el pedido y sus productos; a la derecha los
+ * pasos, con la acción del paso actual.
+ */
+export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
   orderId: number
+  /** Cierre tras resolver una cancelación con armado. */
   onDone?: () => void
+  /** Despachos: lleva el pedido listo a la selección del Bulto general. */
+  onReady?: () => void
   footer?: ReactNode
 }) {
   const [detail, setDetail] = useState<OrderDispatchDetail | null>(null)
@@ -149,7 +161,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     sendScan(pendingVariant.code, variantKey.current.key, variantId)
   }
 
-  if (loading && !detail) return <p role="status" className="text-sm text-white/70">Cargando armado…</p>
+  if (loading && !detail) return <p role="status" className="text-sm text-white/70">Cargando pedido…</p>
   if (!detail) return <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error || "No se pudo cargar el pedido."}</div>
 
   // Filtro de cancelación 1/2: cancelado con armado completo (dentro o fuera de un lote).
@@ -184,94 +196,91 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const packingBlocked = detail.packingBlocked
   const pendingBeforeDispatch = detail.pendingBeforeDispatch
   const startPacking = () => void run(async () => { setDetail(await dispatchRequest<OrderDispatchDetail>(`/orders/${orderId}`, { action: "start" })) })
+  const [pickState, identifyState, measureState, readyState] = preparationStepStates(detail.stage)
+  const missingBeforeBundle = pendingBeforeDispatch.length ? pendingBeforeDispatch.join(" · ") : detail.blocked ? detail.blockReason ?? "Revisión requerida" : null
+  const canChangeMeasures = detail.stage === "identify" || detail.stage === "parcels_ready" || detail.stage === "in_batch"
 
-  return <div className="dispatch-picking space-y-4">
-    <AdminCard className="dispatch-card dispatch-picking-overview p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0"><span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">{prepared ? "Pedido preparado" : "Pedido en preparación"}</span><h3 className="text-xl font-black tabular-nums text-white sm:text-2xl">{code}</h3></div>
-        <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
-      </div>
-      <DispatchProgress className="mt-3" done={units} total={detail.expectedUnits} unit="unidades" />
-      <p className="mt-2 text-xs font-bold text-white/60">{detail.itemCount} {detail.itemCount === 1 ? "producto" : "productos"} · {detail.expectedUnits} {detail.expectedUnits === 1 ? "unidad" : "unidades"}{parcelCount ? ` · ${parcelCount} ${parcelCount === 1 ? "paquete de envío" : "paquetes de envío"}` : ""}</p>
-    </AdminCard>
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start">
-      <div className="order-last min-w-0 space-y-3 lg:order-first">
-        {packingBlocked && <div role="alert" className="rounded-xl border border-red-500/50 bg-red-950 p-3 text-sm text-white">
-          <p className="font-black">{inBatch ? "RETIRAR DEL DESPACHO" : "Pedido bloqueado"} · {detail.blockReason ?? "Revisión requerida"}</p>
-          {inBatch && detail.parcels.length > 0 && <p className="mt-1 text-xs">Separá {detail.parcels.length === 1 ? "el paquete de envío" : `los ${detail.parcels.length} paquetes de envío`}: {detail.parcels.map((parcel) => parcel.barcode).join(", ")}. No se entrega a Andreani ni se reintegra automáticamente.</p>}
-        </div>}
-        {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
+  return <div className="@container min-w-0 space-y-3">
+    {packingBlocked && <div role="alert" className="rounded-xl border border-red-500/50 bg-red-950 p-3 text-sm text-white">
+      <p className="font-black">{inBatch ? "RETIRAR DEL DESPACHO" : "Pedido bloqueado"} · {detail.blockReason ?? "Revisión requerida"}</p>
+      {inBatch && detail.parcels.length > 0 && <p className="mt-1 text-xs">Separá {detail.parcels.length === 1 ? "el paquete de envío" : `los ${detail.parcels.length} paquetes de envío`}: {detail.parcels.map((parcel) => parcel.barcode).join(", ")}. No se entrega a Andreani ni se reintegra automáticamente.</p>}
+    </div>}
+    {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
 
-        <p className="dispatch-subheading">Productos <span>{detail.itemCount}</span></p>
-        <ul className="space-y-2" aria-label="Productos del pedido">{detail.lines.map((line) => {
-          const complete = line.scanned_quantity === line.expected_quantity
-          const remaining = line.expected_quantity - line.scanned_quantity
-          return <li key={line.order_item_id}>
-            <AdminCard className={`dispatch-card dispatch-product flex items-center justify-between gap-3 p-3 sm:p-4 ${complete ? "dispatch-product-complete border-emerald-500/40" : line.scanned_quantity > 0 ? "dispatch-product-missing" : "dispatch-product-pending"}`}>
-              <span className="flex min-w-0 items-start gap-2.5">
-                {complete ? <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-300" aria-label="Completo" /> : <span aria-hidden="true" className="mt-1 size-4 shrink-0 rounded-full border-2 border-white/25" />}
-                <span className="min-w-0 text-sm font-bold text-white">{line.name}<span className="block text-xs font-normal text-white/60">{line.random ? <>Reservado: {line.random.reservedVariant ?? "—"} · {line.random.dispatchedVariant ? <span className="font-bold text-emerald-300">Despachado: {line.random.dispatchedVariant}{line.random.manuallyConfirmed ? " (confirmado a mano)" : ""}</span> : "Escaneá la variante física que sale"}</> : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ")}</span>
-                  {!complete && <span className="mt-1 inline-block rounded-md bg-amber-500/15 px-1.5 py-0.5 text-10px font-black uppercase tracking-wide text-amber-200">Faltan {remaining}</span>}
-                </span>
-              </span>
-              <span className={`shrink-0 text-right text-2xl font-black tabular-nums ${complete ? "text-emerald-300" : "text-white"}`} aria-label={`${line.scanned_quantity} escaneados de ${line.expected_quantity} requeridos`}>{line.scanned_quantity}<span className="text-base text-white/50"> / {line.expected_quantity}</span></span>
-            </AdminCard>
-          </li>
-        })}</ul>
-        {!packingBlocked && pendingBeforeDispatch.length > 0 && <p role="status" className="flex items-start gap-2 rounded-xl border border-sky-500/30 bg-sky-950/30 px-3 py-2.5 text-xs font-bold text-sky-100">
+    <div className="grid gap-3 @2xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] @2xl:items-start @2xl:gap-4">
+      {/* Pedido actual: resumen, avance y productos. En pantallas angostas va debajo de los pasos. */}
+      <AdminCard className="dispatch-card order-last min-w-0 overflow-hidden p-0 @2xl:order-first">
+        <div className="p-4 sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">Pedido</span>
+              <h3 className="text-2xl font-black tabular-nums text-white">{code}</h3>
+              {detail.order.cliente_nombre && <p className="truncate text-sm text-white/65">{detail.order.cliente_nombre}</p>}
+            </div>
+            <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[detail.stage]}>{DISPATCH_STAGE_LABELS[detail.stage]}</AdminBadge>
+          </div>
+          <DispatchProgress className="mt-4" done={units} total={detail.expectedUnits} unit="unidades" />
+          <p className="mt-2 text-xs font-bold text-white/60">{plural(detail.itemCount, "producto", "productos")}{parcelCount ? ` · ${plural(parcelCount, "paquete de envío", "paquetes de envío")}` : ""}</p>
+        </div>
+        <div className="dispatch-divider border-t">
+          <p className="dispatch-subheading px-4 pt-3 sm:px-5">Productos <span>{detail.itemCount}</span></p>
+          <ul className="dispatch-lines px-4 pb-1 sm:px-5" aria-label="Productos del pedido">{detail.lines.map((line) => <ProductLine key={line.order_item_id} line={line} />)}</ul>
+        </div>
+        {!packingBlocked && pendingBeforeDispatch.length > 0 && <p role="status" className="dispatch-divider flex items-start gap-2 border-t bg-sky-950/30 px-4 py-3 text-xs font-bold text-sky-100 sm:px-5">
           <Info className="mt-0.5 size-4 shrink-0" />{pendingBeforeDispatch.join(" · ")}: podés preparar el pedido igual; se completa antes de entrar al Bulto general.
         </p>}
-      </div>
+      </AdminCard>
 
-      {/* Escaneo primero en móvil; en desktop permanece visible junto a las tareas. */}
-      <div className={`order-first space-y-3 lg:order-last lg:sticky lg:top-4 ${pkg && !prepared ? "dispatch-action-bar" : ""}`}>
-        {!pkg ? <AdminCard className="dispatch-card space-y-3 p-3 sm:p-4">
-          <p className="text-sm text-white/75">Empezá a pickear: cada unidad se verifica escaneando su código.</p>
-          <AdminPrimaryButton className="h-14 w-full text-base" disabled={busy || packingBlocked} onClick={startPacking}>INICIAR ARMADO</AdminPrimaryButton>
-        </AdminCard>
-          : !prepared ? <AdminCard className="dispatch-card dispatch-scanner space-y-3 p-3 sm:p-4">
-            <p className="dispatch-subheading">Escaneo</p>
-            <ScanField label="Escanear o ingresar código / SKU" placeholder="Escaneá el producto" submitLabel="Verificar"
-              value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
-              busy={busy} disabled={packingBlocked} autoFocus={!pendingVariant && dialog === null}
-              cameraTitle={`Armado ${code}`} cameraHint="Encuadrá el código de barras del producto" continuousCamera feedback={feedback} />
-            <LastScan feedback={feedback} />
-          </AdminCard>
-          : <>
-          {/* La última lectura (la que completó el pedido) sigue a la vista. */}
-          {feedback && <LastScan feedback={feedback} />}
-          {/* Orden operativo: pedido preparado → identificación BX-PREP → paquete de envío (medidas). */}
-          <div className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
-            <p className="font-black text-white">✓ Pedido preparado</p>
-            <p className="mt-1 text-sm text-white/70">Todas las unidades verificadas · {code} · {detail.expectedUnits} unidades</p>
-          </div>
-          {detail.preparedCode && pkg && <PhysicalIdentification orderId={orderId} orderCode={code} preparedCode={detail.preparedCode}
-            method={pkg.identification_method ?? null} identifiedAt={pkg.identified_at ?? null} units={detail.expectedUnits} parcelCount={parcelCount}
-            disabled={packingBlocked} onUpdated={setDetail} />}
-          {!parcelCount ? <section aria-label="Paquete de envío" className="rounded-xl border border-white/12 bg-black/20 p-4">
-            <p className="font-black text-white">Paquete de envío</p>
-            <p className="mt-1 text-sm text-white/70">Cargá cuántos paquetes salen y sus medidas reales para Andreani.</p>
-            <AdminPrimaryButton className="mt-3 h-12 w-full text-base" disabled={busy || packingBlocked || !pkg?.identification_method} onClick={openParcels}>CARGAR MEDIDAS DEL PAQUETE</AdminPrimaryButton>
-            {!pkg?.identification_method && <p className="mt-2 text-xs text-amber-200">Primero identificá el pedido con su BX-PREP.</p>}
-          </section>
-          : <section aria-label="Paquete de envío" className="rounded-xl border border-emerald-500/35 bg-emerald-950 p-4">
-            <p className="font-black text-white"><PackageCheck className="mr-1 inline size-5" /> Paquete de envío · {parcelCount} {parcelCount === 1 ? "paquete" : "paquetes"}</p>
-            <ul className="mt-2 space-y-1 text-sm text-white/80">{detail.parcels.map((parcel) => <li key={parcel.id}><span className="font-mono">{parcel.barcode} · Paquete {parcel.parcel_index}/{parcel.parcel_count}</span>{parcel.weight_kg != null ? <span className="block text-xs text-white/65">{formatMeasure(parcel.length_cm)} × {formatMeasure(parcel.width_cm)} × {formatMeasure(parcel.height_cm)} cm · {formatMeasure(parcel.weight_kg, 3)} kg</span> : <span className="block text-xs text-amber-200">Medidas no cargadas</span>}</li>)}</ul>
-            <EstimateVsReal estimate={shippingInfo.estimate} parcels={detail.parcels} />
-            <ParcelQuoteNotice shipping={shippingInfo} />
-            <div className="mt-3 flex flex-wrap gap-2">
-              <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={!parcelLabels.length} onClick={() => setDialog("labels")}>Imprimir etiquetas de paquetes</AdminPrimaryButton>
-              {detail.stage === "identify" || detail.stage === "parcels_ready" || detail.stage === "in_batch" ? <AdminButton disabled={busy} onClick={openParcels}>Cambiar medidas del paquete</AdminButton> : null}
-              {onDone && <AdminButton onClick={onDone}>Listo</AdminButton>}
-            </div>
-          </section>}
-          </>}
+      {/* Pasos en orden: sólo el paso actual muestra su acción principal. */}
+      <div className="order-first min-w-0 space-y-3 @2xl:sticky @2xl:top-4 @2xl:order-last">
+        <ol className="dispatch-steps" aria-label="Pasos de preparación">
+          <PreparationStep index={0} state={pickState} hint={pickState === "done" ? `${detail.expectedUnits} de ${detail.expectedUnits} unidades verificadas` : "Escaneá cada unidad del pedido."}>
+            {!pkg ? <AdminPrimaryButton className="h-12 w-full justify-center text-base" disabled={busy || packingBlocked} onClick={startPacking}>Empezar pickeo</AdminPrimaryButton>
+              : !prepared ? <div className="dispatch-scanner space-y-2">
+                <ScanField label="Escanear o ingresar código / SKU" placeholder="Escaneá el producto" submitLabel="Verificar"
+                  value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
+                  busy={busy} disabled={packingBlocked} autoFocus={!pendingVariant && dialog === null}
+                  cameraTitle={`Pickeo ${code}`} cameraHint="Encuadrá el código de barras del producto" continuousCamera feedback={feedback} />
+                <LastScan feedback={feedback} />
+              </div>
+              : feedback ? <LastScan feedback={feedback} /> : null}
+          </PreparationStep>
+
+          <PreparationStep index={1} state={identifyState} hint={identifyState === "pending" ? "Se habilita al terminar el pickeo." : undefined}>
+            {prepared && detail.preparedCode && pkg ? <PhysicalIdentification orderId={orderId} orderCode={code} preparedCode={detail.preparedCode}
+              method={pkg.identification_method ?? null} identifiedAt={pkg.identified_at ?? null} units={detail.expectedUnits} parcelCount={parcelCount}
+              disabled={packingBlocked} onUpdated={setDetail} /> : null}
+          </PreparationStep>
+
+          <PreparationStep index={2} state={measureState} hint={parcelCount ? null : measureState === "pending" ? "Primero identificá el pedido." : "Cantidad de paquetes, peso y medidas reales para Andreani."}>
+            {parcelCount ? <section aria-label="Paquetes de envío">
+              <ul className="space-y-1.5 text-sm text-white/80">{detail.parcels.map((parcel) => <li key={parcel.id}>
+                <span className="font-mono text-xs font-bold text-white">{parcel.barcode} · Paquete {parcel.parcel_index}/{parcel.parcel_count}</span>
+                {parcel.weight_kg != null ? <span className="block text-xs text-white/65">{formatMeasure(parcel.length_cm)} × {formatMeasure(parcel.width_cm)} × {formatMeasure(parcel.height_cm)} cm · {formatMeasure(parcel.weight_kg, 3)} kg</span> : <span className="block text-xs text-amber-200">Medidas no cargadas</span>}
+              </li>)}</ul>
+              <EstimateVsReal estimate={shippingInfo.estimate} parcels={detail.parcels} />
+              <ParcelQuoteNotice shipping={shippingInfo} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <AdminButton size="sm" icon={<Printer className="size-4" />} disabled={!parcelLabels.length} onClick={() => setDialog("labels")}>Imprimir etiquetas de paquetes</AdminButton>
+                {canChangeMeasures ? <AdminButton size="sm" variant="ghost" disabled={busy} onClick={openParcels}>Cambiar medidas</AdminButton> : null}
+              </div>
+            </section>
+              : measureState === "current" ? <AdminPrimaryButton className="h-12 w-full justify-center text-base" disabled={busy || packingBlocked} onClick={openParcels}>Cargar medidas del paquete</AdminPrimaryButton> : null}
+          </PreparationStep>
+
+          <PreparationStep index={3} state={readyState} hint={inBatch && detail.batch ? `Ya está en el Bulto general ${detail.batch.code}.` : readyState === "pending" ? "Se habilita al completar los pasos anteriores." : missingBeforeBundle ? null : "Todo listo: el pedido puede entrar al Bulto general."}>
+            {inBatch && detail.batch ? <Link href={`/admin/despachos?batch=${detail.batch.id}`} className="inline-flex items-center gap-1 text-sm font-bold text-beyonix-cyan underline">Abrir Bulto general {detail.batch.code}<ArrowRight className="size-4" /></Link>
+              : readyState === "done" && missingBeforeBundle ? <p role="status" className="flex items-start gap-2 rounded-lg bg-amber-950/60 px-3 py-2 text-xs font-bold text-amber-100"><AlertTriangle className="mt-0.5 size-4 shrink-0" />Antes del Bulto general falta: {missingBeforeBundle}</p>
+              : readyState === "done" && onReady ? <>
+                <AdminPrimaryButton className="h-12 w-full justify-center text-base" icon={<ArrowRight className="size-4" />} onClick={onReady}>Pasar al Bulto general</AdminPrimaryButton>
+                <p className="mt-1.5 text-xs text-white/55">Queda seleccionado en Listos para crear el Bulto general.</p>
+              </> : null}
+          </PreparationStep>
+        </ol>
+        {footer}
+        {pkg && !inBatch && !detail.order.andreani_handed_over_at && <details className="px-1 text-xs text-white/60"><summary className="cursor-pointer">Más opciones</summary><AdminButton className="mt-2" size="sm" variant="ghost" onClick={() => { resetKey.current = null; setReason(""); setDialog("reset") }}>Reiniciar armado</AdminButton></details>}
       </div>
     </div>
-
-    {detail.batch && <Link href={`/admin/despachos?batch=${detail.batch.id}`} className="inline-block text-sm font-bold text-beyonix-cyan underline">Abrir Bulto general {detail.batch.code}</Link>}
-    {pkg && !inBatch && !detail.order.andreani_handed_over_at && <details className="text-sm text-white/70"><summary className="cursor-pointer">Opciones</summary><AdminButton className="mt-2" size="sm" variant="ghost" onClick={() => { resetKey.current = null; setReason(""); setDialog("reset") }}>Reiniciar armado</AdminButton></details>}
-    {footer}
 
     <AdminModal open={dialog === "parcels"} title="MEDIDAS DEL PAQUETE" description="¿Cuántos paquetes de envío salen con este pedido?" onClose={() => setDialog(null)} footer={<div className="flex flex-wrap items-center justify-end gap-2">{parcelsReading && "error" in parcelsReading ? <span className="mr-auto text-xs font-bold text-amber-200">{parcelsReading.error}</span> : null}<AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton><AdminPrimaryButton disabled={busy || !parcelsReading || "error" in parcelsReading} onClick={() => void run(async () => {
       if (!parcelsReading || "error" in parcelsReading) return
@@ -306,6 +315,27 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     </AdminModal>
     <LabelPrintDialog open={dialog === "labels"} title="Etiquetas de paquetes de envío" description={`${code} · ${parcelLabels.length} ${parcelLabels.length === 1 ? "paquete" : "paquetes"}`} labels={parcelLabels} onClose={() => setDialog(null)} />
   </div>
+}
+
+/** Renglón operativo: producto, código, esperado vs. pickeado y estado. */
+function ProductLine({ line }: { line: OrderLine }) {
+  const { scanned_quantity: picked, expected_quantity: expected } = line
+  const status = picked > expected ? { label: "Con diferencia", tone: "danger" as const }
+    : picked === expected ? { label: "Completo", tone: "success" as const }
+    : picked > 0 ? { label: `Faltan ${expected - picked}`, tone: "warning" as const }
+    : { label: "Pendiente", tone: "neutral" as const }
+  const complete = status.tone === "success"
+  return <li className="dispatch-line flex items-center gap-3 py-3" data-status={status.tone}>
+    {complete ? <CheckCircle2 className="size-5 shrink-0 text-emerald-300" aria-hidden="true" /> : <span aria-hidden="true" className="size-5 shrink-0 rounded-full border-2 border-white/25" />}
+    <span className="min-w-0 flex-1">
+      <span className="block text-sm font-bold text-white">{line.name}</span>
+      <span className="block truncate text-xs text-white/60">{line.random ? <>Reservado: {line.random.reservedVariant ?? "—"} · {line.random.dispatchedVariant ? <span className="font-bold text-emerald-300">Despachado: {line.random.dispatchedVariant}{line.random.manuallyConfirmed ? " (confirmado a mano)" : ""}</span> : "Escaneá la variante física que sale"}</> : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ") || "Sin código"}</span>
+    </span>
+    <span className="flex shrink-0 flex-col items-end gap-1">
+      <span className={`text-lg font-black leading-none tabular-nums ${complete ? "text-emerald-300" : "text-white"}`} aria-label={`${picked} pickeados de ${expected} esperados`}>{picked}<span className="text-sm text-white/50"> / {expected}</span></span>
+      <AdminBadge tone={status.tone}>{status.label}</AdminBadge>
+    </span>
+  </li>
 }
 
 /** Resultado del último escaneo, siempre visible junto al campo de lectura. */

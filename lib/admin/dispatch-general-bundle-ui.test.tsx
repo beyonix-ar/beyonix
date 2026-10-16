@@ -165,7 +165,7 @@ test("Bulto general: confirmación manual explícita desde la lista y pedido can
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("identificación física: etiqueta colocada o manual confirmada; sin ella el pedido no está listo", async () => {
+test("identificación física: etiqueta pegada o código manual confirmada; sin ella el pedido no está listo", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?order=31")
   const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
   let method: string | null = null
@@ -191,33 +191,37 @@ test("identificación física: etiqueta colocada o manual confirmada; sin ella e
     const text = () => dom.window.document.body.textContent ?? ""
     assert.match(text(), /Pedido preparado/)
     assert.match(text(), /Falta identificación/)
-    assert.match(text(), /Sin identificación el pedido no entra al Bulto general/)
-    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent === "Imprimir etiqueta")!.click() })
+    assert.match(text(), /Sin este paso el pedido no puede entrar al Bulto general/)
+    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent === "Imprimir etiqueta del pedido")!.click() })
     assert.match(text(), /BX-1031 · BX-PREP-1031/, "la reimpresión usa el mismo BX-PREP")
     await act(async () => { button(dom, "Cancelar")!.click() })
 
     // Falla la impresora: identificación manual con confirmación explícita.
-    await act(async () => { button(dom, "Identificación manual")!.click() })
+    await act(async () => { button(dom, "Escribir a mano")!.click() })
     assert.match(text(), /Confirmo que escribí BX-PREP-1031 en el paquete del pedido BX-1031\./)
-    assert.equal(button(dom, "Confirmar identificación manual")?.disabled, true)
+    assert.equal(button(dom, "Confirmar código escrito")?.disabled, true)
     const check = [...dom.window.document.querySelectorAll<HTMLInputElement>("input[type=checkbox]")].at(-1)!
     await act(async () => { check.click() })
-    await act(async () => { button(dom, "Confirmar identificación manual")!.click() })
+    await act(async () => { button(dom, "Confirmar código escrito")!.click() })
     await settle()
     assert.deepEqual([posts[0].action, posts[0].method, posts[0].code], ["identify", "manual", "BX-PREP-1031"])
-    assert.match(text(), /Identificación manual colocada/)
+    assert.match(text(), /Código escrito a mano/)
     assert.ok(button(dom, "Reimprimir BX-PREP-1031"))
   } finally { await act(async () => root.unmount()); dom.window.close() }
 
   const second = await setup("https://beyonix.test/admin/despachos?order=31")
   method = null; posts.length = 0
   try {
-    await act(async () => { second.root.render(<OrderPreparationPanel orderId={31} />) })
+    let readyCalls = 0
+    await act(async () => { second.root.render(<OrderPreparationPanel orderId={31} onReady={() => { readyCalls += 1 }} />) })
+    assert.equal(button(second.dom, "Pasar al Bulto general"), undefined, "sin identificar no se ofrece el paso al Bulto general")
     await settle()
-    await act(async () => { button(second.dom, "Etiqueta colocada")!.click() })
+    await act(async () => { button(second.dom, "Confirmar etiqueta pegada")!.click() })
     await settle()
     assert.deepEqual([posts[0].action, posts[0].method, posts[0].code], ["identify", "printed", "BX-PREP-1031"])
-    assert.match(second.dom.window.document.body.textContent ?? "", /Etiqueta BX-PREP colocada/)
+    assert.match(second.dom.window.document.body.textContent ?? "", /BX-PREP-1031 · Etiqueta pegada/)
+    await act(async () => { button(second.dom, "Pasar al Bulto general")!.click() })
+    assert.equal(readyCalls, 1, "identificado y medido: pasa al Bulto general")
   } finally { await act(async () => second.root.unmount()); second.dom.window.close() }
 })
 

@@ -32,6 +32,16 @@ async function submit(dom: JSDOM, form: HTMLFormElement) {
 
 const button = (dom: JSDOM, text: string) => [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes(text))
 
+test("pasos de preparación: el paso actual sigue la etapa server-side", async () => {
+  const { preparationStepStates } = await import("../../app/admin/sections/despachos/preparation-steps")
+  assert.deepEqual(preparationStepStates("pending"), ["current", "pending", "pending", "pending"])
+  assert.deepEqual(preparationStepStates("packing"), ["current", "pending", "pending", "pending"])
+  assert.deepEqual(preparationStepStates("identify"), ["done", "current", "pending", "pending"])
+  assert.deepEqual(preparationStepStates("measures"), ["done", "done", "current", "pending"])
+  assert.deepEqual(preparationStepStates("parcels_ready"), ["done", "done", "done", "done"])
+  assert.deepEqual(preparationStepStates("in_batch"), ["done", "done", "done", "done"])
+})
+
 test("ARMAR PEDIDO: cancelado muestra el bloqueo y no permite iniciar armado", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/pedidos/2?tab=armado")
   const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
@@ -45,7 +55,7 @@ test("ARMAR PEDIDO: cancelado muestra el bloqueo y no permite iniciar armado", a
     await act(async () => { root.render(<OrderPreparationPanel orderId={2} />) })
     await settle()
     assert.match(dom.window.document.body.textContent ?? "", /Pedido cancelado — no requiere preparación/)
-    assert.equal(button(dom, "INICIAR ARMADO"), undefined)
+    assert.equal(button(dom, "Empezar pickeo"), undefined)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
@@ -112,16 +122,17 @@ test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente, identif
     assert.match(text(), /Pedido preparado/)
     assert.match(text(), /BX-PREP-1031/, "muestra el código general del pedido preparado")
     // Orden operativo: sin identificación BX-PREP no se cargan las medidas del paquete.
-    assert.equal(button(dom, "CARGAR MEDIDAS DEL PAQUETE")!.disabled, true)
-    assert.match(text(), /Primero identificá el pedido con su BX-PREP/)
-    const panelText = text()
-    assert.ok(panelText.indexOf("Identificación física") < panelText.indexOf("Paquete de envío"), "la identificación se muestra antes del paquete")
-    await act(async () => { button(dom, "Etiqueta colocada")!.click() })
+    assert.equal(button(dom, "Cargar medidas del paquete"), undefined)
+    assert.match(text(), /Primero identificá el pedido\./)
+    const steps = [...dom.window.document.querySelectorAll('ol[aria-label="Pasos de preparación"] > li')]
+    assert.deepEqual(steps.map((step) => step.getAttribute("data-state")), ["done", "current", "pending", "pending"], "paso actual: identificar pedido")
+    assert.match(steps[1].textContent ?? "", /Identificar pedido/)
+    await act(async () => { button(dom, "Confirmar etiqueta pegada")!.click() })
     await settle()
     await act(async () => { button(dom, "Reimprimir BX-PREP-1031")!.click() })
     assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[name="label-format"][value="single"]')?.checked, true, "etiqueta interna pequeña por defecto, aun si el código llegó después de montar el diálogo")
     await act(async () => { button(dom, "Cancelar")!.click() })
-    await act(async () => { button(dom, "CARGAR MEDIDAS DEL PAQUETE")!.click() })
+    await act(async () => { button(dom, "Cargar medidas del paquete")!.click() })
     assert.match(text(), /¿Cuántos paquetes de envío salen con este pedido\?/)
     assert.match(text(), /Estimación utilizada en checkout/)
     assert.match(text(), /1 paquete · 35 × 25 × 18 cm · 2,2 kg/)
@@ -153,7 +164,9 @@ test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente, identif
       { weightKg: 2.45, lengthCm: 40, widthCm: 30, heightCm: 20 },
       { weightKg: 0.8, lengthCm: 25, widthCm: 20, heightCm: 8 },
     ])
-    assert.match(text(), /Paquete de envío · 2 paquetes/)
+    assert.match(text(), /2 paquetes de envío/)
+    assert.match(text(), /Antes del Bulto general falta: Envío pendiente/, "un pendiente frena el paso al Bulto general")
+    assert.equal(button(dom, "Pasar al Bulto general"), undefined)
     assert.match(text(), /BX-PKG-1031-02 · Paquete 2\/2/)
     assert.doesNotMatch(text(), /Bulto [0-9]|[0-9] bultos?\b/, "BX-PKG nunca se llama bulto")
     assert.match(text(), /40 × 30 × 20 cm · 2,45 kg/)

@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
-import { AlertTriangle, Info, Layers, PackageCheck, PackageOpen, PackageX, RotateCcw, XCircle } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowRight, Info, Layers, PackageCheck, PackageOpen, PackageX, RotateCcw, XCircle } from "lucide-react"
 
 import {
   AdminBadge, AdminButton, AdminCard, AdminEmptyState,
@@ -9,7 +9,7 @@ import {
   adminPageClassName,
 } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_STAGE_LABELS, dispatchStage, orderCode, readyForGeneralBundle, type BatchDispatchDetail, type DispatchBatch, type DispatchHold, type DispatchMembership, type DispatchOrder, type DispatchPackage } from "@/lib/admin/dispatch"
+import { DISPATCH_STAGE_LABELS, dispatchStage, orderCode, readyForGeneralBundle, type BatchDispatchDetail, type DispatchBatch, type DispatchHold, type DispatchMembership, type DispatchOrder, type DispatchPackage, type DispatchStage } from "@/lib/admin/dispatch"
 import { orderIdFromDispatchCode } from "@/lib/admin/dispatch-scan"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchProgress } from "./dispatch-progress"
@@ -205,6 +205,14 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
   const queueIndex = orderId ? queue.indexOf(orderId) : -1
   const nextInQueue = queueIndex >= 0 ? queue[queueIndex + 1] : undefined
   const closeOrder = () => { setOrderId(null); setQueue([]); void refresh() }
+  // Pedido listo: vuelve a Listos con el pedido ya seleccionado para crear el Bulto general.
+  function sendToReady(id: number) {
+    setAllSelected([...new Set([...selected, id])])
+    setOrderId(null); setQueue([]); setTab("ready"); void refresh()
+  }
+  // Listado lateral: la cola elegida o los pedidos por preparar, siempre con el pedido actual.
+  const baseSideIds = queue.length > 1 ? queue : armadoOrders.map((item) => item.id)
+  const sideIds = orderId && !baseSideIds.includes(orderId) ? [orderId, ...baseSideIds] : baseSideIds
 
   // Contadores sólo de las colas operativas: el board trae hasta 100 lotes,
   // así que cerrados/entregados no tendrían un total confiable.
@@ -218,7 +226,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     { label: "Requieren acción", value: actionCount, icon: <AlertTriangle className="size-4" />, tone: actionCount > 0 ? "warning" : "neutral", status: `Despachos · ${actionCount} requieren acción` },
   ]
 
-  return <div className={`${adminPageClassName} dispatch-page mx-auto max-w-7xl`}>
+  return <div className={`${adminPageClassName} dispatch-page mx-auto max-w-6xl`}>
     <div className="dispatch-workspace space-y-4 sm:space-y-5">
     <AdminPageHeader className="dispatch-header sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Prepará pedidos, identificalos, armá el Bulto general y confirmá la entrega física a Andreani." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
 
@@ -258,8 +266,13 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
 
     {resolving ? <AdminSection compact className="dispatch-surface max-w-3xl" title={`Retirar ${orderCode(resolving.orderId)}`} eyebrow="Cancelación con armado" actions={<AdminButton size="sm" onClick={() => { setResolving(null); void refresh() }}>Volver</AdminButton>}>
       <CancellationResolution key={resolving.id} hold={resolving} onResolved={() => void refresh()} onClose={() => { setResolving(null); void refresh() }} />
-    </AdminSection> : orderId ? <AdminSection compact className="dispatch-surface" title={orderCode(orderId)} eyebrow={queue.length > 1 ? `Armado · ${queueIndex + 1} de ${queue.length}` : "Armado"} actions={<AdminButton size="sm" onClick={closeOrder}>Volver</AdminButton>}>
-      <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder} footer={nextInQueue ? <AdminPrimaryButton className="h-12 w-full sm:w-auto" onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminPrimaryButton> : null} />
+    </AdminSection> : orderId ? <AdminSection compact className="dispatch-surface @container" title="Preparar pedido" eyebrow={queue.length > 1 ? `Pedido ${queueIndex + 1} de ${queue.length}` : "Despachos"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeOrder}>Volver</AdminButton>}>
+      <div className={`grid gap-4 ${sideIds.length > 1 ? "@5xl:grid-cols-[220px_minmax(0,1fr)] @5xl:items-start" : ""}`}>
+        {sideIds.length > 1 && <PreparationQueue className="order-last @5xl:order-first" title={queue.length > 1 ? "Pedidos seleccionados" : "Pedidos por preparar"} ids={sideIds} orders={orders} currentId={orderId}
+          onSelect={(id) => { if (queue.length > 1) setOrderId(id); else startArmado([id]) }} />}
+        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder} onReady={() => sendToReady(orderId)}
+          footer={nextInQueue ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminButton> : null} />
+      </div>
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={batch.batch.code} eyebrow="Bulto general" actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
       <GeneralBundlePanel key={batch.batch.id} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
         onChange={(detail) => { setBatch(detail); setTab(detail.batch.status) }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
@@ -310,6 +323,32 @@ function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
     {tab === "armado" && started && units > 0 && <DispatchProgress compact done={item.scannedUnits ?? 0} total={units} unit="unidades" />}
     {blocked && <p className="flex items-start gap-1.5 text-xs font-bold text-red-200"><XCircle className="mt-0.5 size-3.5 shrink-0" />{item.blockReason ?? "Revisión requerida"}</p>}
     {!blocked && pending.length > 0 && <p className="flex items-start gap-1.5 text-xs text-sky-200"><Info className="mt-0.5 size-3.5 shrink-0" />{pending.join(" · ")}{tab === "armado" ? " — no frena la preparación" : ""}</p>}
-    <AdminButton className="mt-auto h-11 w-full" variant={tab === "armado" && !blocked ? "primary" : "secondary"} onClick={onOpen}>{tab === "armado" ? started ? "Continuar armado" : "Armar" : "Ver pedido"}</AdminButton>
+    <AdminButton className="mt-auto h-11 w-full" variant={tab === "armado" && !blocked ? "primary" : "secondary"} onClick={onOpen}>{tab === "armado" ? started ? "Continuar preparación" : "Preparar pedido" : "Ver pedido"}</AdminButton>
   </AdminCard>
+}
+
+const SHORT_STAGE: Partial<Record<DispatchStage, string>> = { pending: "Sin empezar", identify: "Falta identificar", measures: "Faltan medidas", parcels_ready: "Listo" }
+
+/** Listado compacto de pedidos mientras se prepara uno: el actual queda marcado. */
+function PreparationQueue({ ids, orders, currentId, title, className = "", onSelect }: {
+  ids: number[]
+  orders: OrderCard[]
+  currentId: number
+  title: string
+  className?: string
+  onSelect: (id: number) => void
+}) {
+  return <nav aria-label={title} className={`min-w-0 ${className}`}>
+    <p className="dispatch-subheading mb-2">{title} <span>{ids.length}</span></p>
+    <ul className="max-h-72 space-y-1 overflow-y-auto pr-1 @5xl:max-h-[70vh]">{ids.map((id) => {
+      const item = orders.find((order) => order.id === id)
+      const stage = item ? dispatchStage({ package: item.package, batchStatus: null }) : null
+      const status = !item || !stage ? "" : stage === "packing" ? `${item.scannedUnits ?? 0} de ${item.units ?? 0} u.` : SHORT_STAGE[stage] ?? DISPATCH_STAGE_LABELS[stage]
+      const current = id === currentId
+      return <li key={id}><button type="button" aria-current={current ? "true" : undefined} onClick={() => { if (!current) onSelect(id) }} className="dispatch-queue-item">
+        <span className="flex items-center justify-between gap-2"><span className="font-black tabular-nums">{orderCode(id)}</span><span className="shrink-0 text-11px font-bold opacity-75">{status}</span></span>
+        {item?.cliente_nombre && <span className="block truncate text-xs opacity-60">{item.cliente_nombre}</span>}
+      </button></li>
+    })}</ul>
+  </nav>
 }
