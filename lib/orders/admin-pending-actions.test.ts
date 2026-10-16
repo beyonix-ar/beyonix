@@ -344,6 +344,32 @@ test("D. pedido bloqueado en tanda: 'Retirar del despacho' primero, prioridad al
   assert.ok(!kinds({ ...order, andreani_handed_over_at: "2026-10-05T12:00:00Z" }).includes("dispatch_blocked"))
 })
 
+test("cancelado después del armado: primero el retiro físico; el reintegro queda en pausa", () => {
+  const order: AdminPendingActionsOrder = {
+    ...cancelledPaidTransfer,
+    id: 6,
+    admin_pending_facts: facts({
+      dispatch: { batchId: 9, batchStatus: "open", packageStatus: "prepared", blocked: true, physicalHold: true },
+      cancellationAutomaticIssue: { reason: "physical_resolution", error: null },
+    }),
+  }
+  const work = getAdminOrderWork(order)
+  assert.deepEqual(work.actions.map((action) => [action.kind, action.label, action.href, action.priority]),
+    [["dispatch_physical_return", "Escanear pedido cancelado", "/admin/despachos?resolve=6", 1]],
+    "ni 'Retirar del despacho' (el escaneo ya lo saca del lote) ni reintegro todavía")
+  assert.ok(work.automatic.includes("Reintegro en pausa hasta el retiro físico"))
+  // Resuelto el retiro: el stock volvió, pero el reintegro sigue siendo manual por política.
+  const released = { ...order, admin_pending_facts: facts({
+    dispatch: { batchId: null, batchStatus: null, packageStatus: "prepared", blocked: false, physicalHold: false, manualRefundRequired: true },
+    cancellationAutomaticIssue: { reason: "manual_refund_required", error: null },
+  }) }
+  const releasedWork = getAdminOrderWork(released)
+  assert.deepEqual(releasedWork.actions.map((action) => [action.kind, action.label, action.priority]),
+    [["refund_manual_required", "Reintegro manual requerido", 1]])
+  assert.ok(!releasedWork.automatic.some((text) => /autom/i.test(text)), "nunca 'reintegro automático en proceso'")
+  assert.ok(!kinds(released).includes("dispatch_physical_return"))
+})
+
 test("despacho Andreani: preparar cuenta por pedido; la entrega de la tanda no suma en cada pedido", () => {
   assert.deepEqual(getAdminPendingOrderActions(paidAndreani).map((action) => [action.label, action.href]),
     [["Preparar despacho", "/admin/despachos?order=31"]])

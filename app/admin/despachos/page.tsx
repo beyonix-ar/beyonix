@@ -4,7 +4,7 @@ import { AdminDispatches } from "@/app/admin/sections/despachos/admin-dispatches
 
 export const metadata: Metadata = { title: "Despachos" }
 
-export default async function DispatchesPage({ searchParams }: { searchParams: Promise<{ batch?: string; order?: string }> }) {
+export default async function DispatchesPage({ searchParams }: { searchParams: Promise<{ batch?: string; order?: string; resolve?: string }> }) {
   const params = await searchParams
-  return <AdminDispatches initialBatchId={params.batch} initialOrderId={params.order} />
+  return <AdminDispatches initialBatchId={params.batch} initialOrderId={params.order} initialResolveId={params.resolve} />
 }

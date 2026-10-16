@@ -172,6 +172,8 @@ function reservationError(message?: string) {
       "El importe supera lo que todavía falta devolver en dinero externo para este pedido. Si usó saldo a favor, esa parte ya se reintegró automáticamente.",
     ORDER_ALREADY_REFUNDED:
       "Este pedido ya fue reintegrado. No se puede emitir otra nota de crédito que mueva dinero.",
+    DISPATCH_PHYSICAL_RESOLUTION_REQUIRED:
+      "Requiere acción manual: el pedido ya estaba armado. Escaneá el pedido en Despachos para confirmar el retiro físico antes de emitir la nota de crédito.",
     // Guardas de logística del reclamo (20261001100000).
     CLAIM_MONEY_INCIDENT_OPEN: getClaimIncidentOpenError(),
     CLAIM_MONEY_RETURN_PENDING: getClaimReturnPendingError(),

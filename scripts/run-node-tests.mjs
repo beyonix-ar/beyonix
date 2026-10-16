@@ -8,11 +8,13 @@ import { existsSync } from "node:fs"
 
 const TEST_FILES = [
   "lib/admin/dispatch-stage3.test.ts",
+  "lib/admin/dispatch-scan.test.ts",
   "lib/barcodes/barcodes.test.ts",
   "lib/barcodes/catalog-lookup-db.test.ts",
   "lib/labels/labels.test.ts",
   "lib/business/cost-catalog-search.test.ts",
   "lib/orders/dispatch-db.test.ts",
+  "lib/orders/dispatch-cancellation-hold-db.test.ts",
   "lib/orders/shipping-parcel-measures-db.test.ts",
   "lib/orders/catalog-random-db.test.ts",
   "lib/orders/dispatch-eligibility.test.ts",
@@ -321,6 +323,8 @@ const TSX_TEST_FILES = [
   "lib/supabase/proxy-cookies.test.ts",
   "lib/admin/dispatch-realtime.test.tsx",
   "lib/admin/dispatch-armado.test.tsx",
+  "lib/admin/dispatch-camera.test.tsx",
+  "lib/admin/dispatch-cancellation-ui.test.tsx",
   "app/admin/sections/pedidos/financial-resolution-wizard.test.tsx",
   "lib/admin/admin-pending-realtime.test.tsx",
   "components/claims/claim-reply-draft.test.tsx",
@@ -352,6 +356,7 @@ const DB_TEST_FILES = [
   "lib/customer-credit/credit-reversal-concurrency.test.mjs",
   "lib/mercadopago/refund-closure-concurrency.test.mjs",
   "lib/orders/automatic-cancellation-concurrency.test.mjs",
+  "lib/orders/dispatch-cancellation-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y

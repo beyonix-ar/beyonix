@@ -70,7 +70,7 @@ export type AssistedRefundDecision =
 export function getAssistedMercadoPagoRefundDecision(facts: AssistedRefundFacts): AssistedRefundDecision {
   const reasons: string[] = []
   if (facts.paymentMethod !== "mercadopago" || !facts.paymentApproved) reasons.push("payment")
-  if (!Number.isFinite(facts.amount) || facts.amount <= 0 || facts.amount > 40_000) reasons.push("amount")
+  if (!Number.isFinite(facts.amount) || facts.amount <= 0) reasons.push("amount")
   if (facts.financialStatus !== "refund_pending") reasons.push("resolution")
   if (facts.handedOverAt || facts.dispatched || facts.trackingInCircuit) reasons.push("dispatch")
   if (facts.priorRefund) reasons.push("prior_refund")

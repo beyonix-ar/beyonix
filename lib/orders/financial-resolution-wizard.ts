@@ -15,7 +15,7 @@ export type FinancialResolutionView = {
   product: FinancialProductOutcome
   reception: FinancialReceptionState
   notice: string | null
-  resolution: { id: string; type: FinancialChoice; status: string; amount: number; detail: string | null } | null
+  resolution: { id: string; type: FinancialChoice; status: string; amount: number; detail: string | null; mpRefundId?: string | null } | null
 }
 
 export type FinancialWizardStep = "product" | "money" | "reception" | "review"
@@ -46,7 +46,7 @@ export const FINANCIAL_STEP_LABELS: Record<FinancialWizardStep, string> = {
 
 export const FINANCIAL_CHOICE_COPY: Record<FinancialChoice, { label: string; short: string; description: string }> = {
   beyonix_credit: { label: "Saldo BEYONIX", short: "Saldo BEYONIX", description: "Se acredita inmediatamente en la cuenta del cliente." },
-  mercadopago_refund: { label: "Reembolsar al medio de pago original", short: "Mercado Pago", description: "BEYONIX solicitará el reintegro a Mercado Pago." },
+  mercadopago_refund: { label: "Reintegrar por Mercado Pago", short: "Mercado Pago", description: "BEYONIX ejecuta el reintegro en Mercado Pago al confirmar, sin salir del sistema." },
   manual_refund: { label: "Reintegro manual", short: "Manual", description: "Registrá la devolución después de realizarla por fuera del sistema." },
 }
 

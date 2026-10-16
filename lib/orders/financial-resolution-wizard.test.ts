@@ -81,7 +81,10 @@ test("E/F. Mercado Pago visible sólo cuando la API lo ofrece", () => {
   const ineligible = { ...baseView, financialOptions: resolveOrderFinancialOptions({ ...facts, remotePaymentVerified: false }) }
   assert.equal(getFinancialMoneyOptions(ineligible, "no_return").some((item) => item.type === "mercadopago_refund"), false)
   assert.equal(run(ineligible, { type: "next" }, { type: "choice", value: "mercadopago_refund" }).choice, null)
-  assert.equal(resolveOrderFinancialOptions({ ...facts, preparedAt: "2026-10-05T12:00:00Z" }).some((item) => item.type === "mercadopago_refund"), false)
+  // Con pickeo/tanda cerrada: "Reintegrar por Mercado Pago" es una acción explícita del Admin,
+  // nunca automática, y sólo con la mercadería ya recuperada.
+  assert.equal(resolveOrderFinancialOptions({ ...facts, preparedAt: "2026-10-05T12:00:00Z" }).some((item) => item.type === "mercadopago_refund"), true)
+  assert.equal(resolveOrderFinancialOptions({ ...facts, preparedAt: "2026-10-05T12:00:00Z", physicalHoldActive: true }).length, 0)
 })
 
 test("G. transferencia: reintegro manual", () => {

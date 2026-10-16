@@ -30,7 +30,8 @@ export async function GET(request: Request, context: Context) {
         ? "El pedido ya salió de BEYONIX. La resolución requiere devolución y recepción del producto." : null,
       resolution: result.resolution && { id: result.resolution.id,
         type: result.resolution.choice, status: resolutionStatus, amount: result.resolution.amount,
-        detail: result.resolution.last_error ?? (interrupted ? FINANCIAL_INTERRUPTED_DETAIL : null) } })
+        detail: result.resolution.last_error ?? (interrupted ? FINANCIAL_INTERRUPTED_DETAIL : null),
+        mpRefundId: result.resolution.choice === "mercadopago_refund" ? result.mpRefundId : null } })
   } catch {
     return NextResponse.json({ error: "No se pudieron consultar las opciones financieras." }, { status: 500 })
   }
@@ -115,6 +116,9 @@ export async function POST(request: Request, context: Context) {
       { status: result.status === "requires_action" ? 202 : 200 })
   } catch (error) {
     const detail = error instanceof Error ? error.message : ""
+    if (detail.includes("DISPATCH_PHYSICAL_RESOLUTION_REQUIRED")) {
+      return NextResponse.json({ error: "Requiere acción manual: el pedido ya estaba armado. Escaneá el pedido en Despachos para confirmar el retiro físico antes de reintegrar." }, { status: 409 })
+    }
     const message = /^[A-Z][A-Z_]+/.test(detail) || !detail
       ? "No se pudo continuar. Revisá el pedido e intentá nuevamente."
       : detail

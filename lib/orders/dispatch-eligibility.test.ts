@@ -32,22 +32,27 @@ test("prepared and labelled remains under BEYONIX control until physical handove
   assert.deepEqual(getDispatchBlockReasons({ ...dispatchReady, refundInProgress: true }), ["refund_in_progress"])
 })
 
-test("MP refund at the limit is eligible only with admin confirmation", () => {
-  assert.deepEqual(getAssistedMercadoPagoRefundDecision(refundReady), {
-    kind: "eligible_with_admin_confirmation", amount: 40_000, installments: false,
-  })
+test("MP refund of any positive verified amount requires admin confirmation", () => {
+  for (const amount of [39_999, 40_000, 40_001, 100_000, 100_001]) {
+    assert.deepEqual(getAssistedMercadoPagoRefundDecision({ ...refundReady, amount }), {
+      kind: "eligible_with_admin_confirmation", amount, installments: false,
+    })
+  }
   assert.deepEqual(getAssistedMercadoPagoRefundDecision({ ...refundReady, installments: true }), {
     kind: "eligible_with_admin_confirmation", amount: 40_000, installments: true,
   })
 })
 
-test("handover, high amount, uncertain balance and pending inspection fail closed", () => {
+test("handover, uncertain balance and pending inspection fail closed", () => {
   const result = getAssistedMercadoPagoRefundDecision({
     ...refundReady, amount: 40_000.01, handedOverAt: "2026-10-05T12:00:00Z",
     mercadoPagoBalanceConfirmed: false, physicalReturnPending: true,
   })
   assert.equal(result.kind, "manual_review")
-  if (result.kind === "manual_review") assert.deepEqual(result.reasons, ["amount", "dispatch", "inspection", "mp_balance_unverified"])
+  if (result.kind === "manual_review") assert.deepEqual(result.reasons, ["dispatch", "inspection", "mp_balance_unverified"])
+  for (const amount of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.deepEqual(getAssistedMercadoPagoRefundDecision({ ...refundReady, amount }), { kind: "manual_review", reasons: ["amount"] })
+  }
 })
 
 test("only payment-method-appropriate resolutions are offered", () => {

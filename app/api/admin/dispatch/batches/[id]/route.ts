@@ -28,12 +28,16 @@ export async function POST(request: Request, context: Context) {
   const orderId = body.orderCode ? parseOrderCode(body.orderCode) : Number.isSafeInteger(body.orderId) && Number(body.orderId) > 0 ? body.orderId : null
   let result: { data?: unknown; error: { message: string; details?: string | null } | null }
   let scan: ParcelScan | null = null
+  let handover: { duplicate: boolean } | null = null
   if (body.action === "add") {
     if (!orderId) return Response.json({ error: "Ingresá un pedido BX válido." }, { status: 400 })
     result = await auth.admin.rpc("add_order_to_dispatch_batch", { p_batch_id: id, p_order_id: orderId, p_actor_id: auth.user.id })
   } else if (body.action === "scan") {
     const code = body.code?.trim() ?? ""
     if (!code || code.length > 64 || !isRequestKey(body.requestKey)) return Response.json({ error: "Escaneo inválido." }, { status: 400 })
+    // Cada caja se verifica por su propia etiqueta: el código general del
+    // pedido no prueba que estén todos los bultos.
+    if (/^BX-PREP-/i.test(code)) return Response.json({ error: "Ese es el código del pedido preparado. En el lote escaneá la etiqueta de cada bulto (BX-PKG-…)." }, { status: 409 })
     result = await auth.admin.rpc("scan_dispatch_parcel", { p_batch_id: id, p_code: code, p_actor_id: auth.user.id, p_request_key: body.requestKey })
     if (!result.error) scan = result.data as ParcelScan
   } else if (body.action === "remove") {
@@ -43,7 +47,11 @@ export async function POST(request: Request, context: Context) {
   } else if (body.action === "close") {
     result = await auth.admin.rpc("close_dispatch_batch", { p_batch_id: id, p_actor_id: auth.user.id })
   } else {
-    result = await auth.admin.rpc("hand_over_dispatch_batch", { p_batch_id: id, p_actor_id: auth.user.id })
+    // La salida física se confirma escaneando la etiqueta del lote en la puerta.
+    const code = body.code?.trim() ?? ""
+    if (!code || code.length > 64) return Response.json({ error: "Escaneá la etiqueta del lote para confirmar la entrega." }, { status: 400 })
+    result = await auth.admin.rpc("confirm_dispatch_batch_handover", { p_batch_id: id, p_code: code, p_actor_id: auth.user.id })
+    if (!result.error) handover = result.data as { duplicate: boolean }
   }
   if (result.error) {
     let message = dispatchError(result.error)
@@ -54,5 +62,5 @@ export async function POST(request: Request, context: Context) {
     }
     return Response.json({ error: message }, { status: 409 })
   }
-  return Response.json({ ...(await getBatchDispatch(auth.admin, id)), scan }, { headers: { "Cache-Control": "no-store" } })
+  return Response.json({ ...(await getBatchDispatch(auth.admin, id)), scan, handover }, { headers: { "Cache-Control": "no-store" } })
 }

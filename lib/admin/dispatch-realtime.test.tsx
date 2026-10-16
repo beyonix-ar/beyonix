@@ -72,7 +72,8 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="1" />) })
     await settle()
-    const handover = () => [...dom.window.document.querySelectorAll("button")].find((button) => button.textContent?.includes("Confirmar entrega a Andreani"))
+    // La salida a Andreani se confirma escaneando la etiqueta del lote.
+    const handover = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear etiqueta del lote"]')
     assert.equal(handover()?.disabled, false)
     blocked = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
@@ -83,7 +84,7 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
     blocked = false
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()
-    assert.match(dom.window.document.body.textContent ?? "", /0 bloqueados/)
+    assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión/)
     assert.equal(handover()?.disabled, false)
     removed = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })

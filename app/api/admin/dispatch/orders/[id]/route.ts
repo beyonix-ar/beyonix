@@ -47,6 +47,7 @@ export async function POST(request: Request, context: Context) {
     // código de grupo en un renglón aleatorio (la base valida que corresponda).
     const variantId = body.variantId == null ? null : Number(body.variantId)
     if (!code || code.length > 128 || !isRequestKey(body.requestKey) || (variantId !== null && (!Number.isSafeInteger(variantId) || variantId <= 0))) return Response.json({ error: "Escaneo inválido." }, { status: 400 })
+    if (/^BX-PREP-/i.test(code)) return Response.json({ error: "Ese es el código de un pedido preparado, no de un producto." }, { status: 409 })
     // La línea se resuelve en la base, bajo el lock del armado: un reintento
     // con la misma clave devuelve el mismo resultado sin sumar otra unidad.
     const result = await auth.admin.rpc("scan_order_preparation_code", { p_order_id: id, p_code: code, p_actor_id: auth.user.id, p_request_key: body.requestKey, p_variant_id: variantId })

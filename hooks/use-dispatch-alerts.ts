@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { supabase } from "@/lib/supabase/client"
-import { orderCode } from "@/lib/admin/dispatch"
+import { orderCode, type DispatchHold } from "@/lib/admin/dispatch"
 import type { AdminNotification } from "@/lib/admin/admin-notifications"
 
 type BlockedBatch = {
@@ -18,11 +18,12 @@ type BlockedBatch = {
 
 export function useDispatchAlerts(enabled: boolean) {
   const [batches, setBatches] = useState<BlockedBatch[]>([])
+  const [holds, setHolds] = useState<DispatchHold[]>([])
   const requestId = useRef(0)
 
   const refresh = useCallback(async () => {
     const id = ++requestId.current
-    if (!enabled) { setBatches([]); return }
+    if (!enabled) { setBatches([]); setHolds([]); return }
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session?.access_token) return
@@ -30,8 +31,8 @@ export function useDispatchAlerts(enabled: boolean) {
         headers: { Authorization: `Bearer ${session.access_token}` }, cache: "no-store",
       })
       if (!response.ok) return
-      const data = await response.json() as { batches: BlockedBatch[] }
-      if (id === requestId.current) setBatches(data.batches)
+      const data = await response.json() as { batches: BlockedBatch[]; holds?: DispatchHold[] }
+      if (id === requestId.current) { setBatches(data.batches); setHolds(data.holds ?? []) }
     } catch { /* La siguiente señal o foco recupera el estado. */ }
   }, [enabled])
 
@@ -47,7 +48,7 @@ export function useDispatchAlerts(enabled: boolean) {
     const onFocus = () => { if (document.visibilityState === "visible") schedule() }
     const onDispatchChange = (event: Event) => {
       const table = "detail" in event ? event.detail : null
-      if (typeof table === "string" && !["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages"].includes(table)) return
+      if (typeof table === "string" && !["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages", "order_cancellation_holds"].includes(table)) return
       schedule()
     }
     window.addEventListener(ADMIN_DISPATCH_CHANGED_EVENT, onDispatchChange)
@@ -62,8 +63,25 @@ export function useDispatchAlerts(enabled: boolean) {
     }
   }, [enabled, refresh])
 
-  const active = batches.filter((batch) => batch.status !== "handed_over" && batch.blockedOrders.length > 0)
-  const notifications: AdminNotification[] = active.flatMap((batch) => batch.blockedOrders.map((item) => ({
+  const heldIds = new Set(holds.map((hold) => hold.orderId))
+  // Cancelado después del armado: UNA alerta por pedido (aunque esté en un
+  // lote), con la acción física que libera stock y reintegro.
+  const notifications: AdminNotification[] = holds.map((hold) => ({
+    id: `dispatch-hold:${hold.id}`,
+    type: "shipping" as const,
+    eventKey: `dispatch-hold:${hold.id}`,
+    eventAt: hold.detectedAt,
+    title: `Pedido ${orderCode(hold.orderId)} cancelado`,
+    body: `${hold.prepared ? "Ya estaba preparado físicamente" : `Ya tenía ${hold.pickedUnits} de ${hold.units} unidades pickeadas`}${hold.batchCode ? ` y está en ${hold.batchCode}` : ""}. Requiere resolución física; el reintegro será manual.`,
+    actionLabel: "Escanear pedido",
+    actionUrl: `/admin/despachos?resolve=${hold.orderId}`,
+    orderId: hold.orderId,
+    isRead: false,
+    priority: "attention" as const,
+    kind: "action" as const,
+  }))
+  const active = batches.filter((batch) => batch.status !== "handed_over" && batch.blockedOrders.some((item) => !heldIds.has(item.orderId)))
+  notifications.push(...active.flatMap((batch) => batch.blockedOrders.filter((item) => !heldIds.has(item.orderId)).map((item) => ({
     id: `dispatch:${batch.id}:${item.orderId}`,
     type: "shipping" as const,
     eventKey: `dispatch:${batch.id}:${item.orderId}`,
@@ -76,7 +94,7 @@ export function useDispatchAlerts(enabled: boolean) {
     isRead: false,
     priority: "attention" as const,
     kind: "action" as const,
-  })))
+  }))))
   // Tanda cerrada sin bloqueados: UNA acción humana para toda la tanda. Con
   // bloqueados sólo se pide retirarlos (Despachos no permite confirmar).
   const readyToHandOver = batches.filter((batch) => batch.status === "closed" && batch.blockedOrders.length === 0)
@@ -95,5 +113,5 @@ export function useDispatchAlerts(enabled: boolean) {
       kind: "action",
     })
   }
-  return { reviewCount: active.length, handoverCount: readyToHandOver.length, notifications }
+  return { reviewCount: active.length, handoverCount: readyToHandOver.length, holdCount: holds.length, notifications }
 }

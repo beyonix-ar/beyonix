@@ -29,7 +29,7 @@ import { FinancialResolutionWizard } from "./app/admin/sections/pedidos/financia
 const option = (type, label) => ({ type, label, requiresConfirmation: true })
 const views = {
   wizard: { mode: "wizard", amount: 125000, status: "Pendiente", product: "no_return", reception: "not_applicable",
-    financialOptions: [option("beyonix_credit", "Saldo BEYONIX"), option("mercadopago_refund", "Reembolsar al medio de pago original"), option("manual_refund", "Reintegro manual")],
+    financialOptions: [option("beyonix_credit", "Saldo BEYONIX"), option("mercadopago_refund", "Reintegrar por Mercado Pago"), option("manual_refund", "Reintegro manual")],
     receptionOptions: [], notice: null, resolution: null },
   pending: { mode: "resolution", amount: 125000, status: "Requiere acción", product: "no_return", reception: "not_applicable",
     financialOptions: [], receptionOptions: [], notice: null,

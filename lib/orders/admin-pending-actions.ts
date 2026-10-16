@@ -28,6 +28,7 @@ export type AdminPendingOrderActionKind =
   | "legacy_credit_note"
   | "cancellation_request"
   | "refund"
+  | "refund_manual_required"
   | "refund_manual"
   | "refund_retry"
   | "advanced_case"
@@ -35,6 +36,7 @@ export type AdminPendingOrderActionKind =
   | "claim"
   | "return"
   | "dispatch_blocked"
+  | "dispatch_physical_return"
   | "dispatch_prepare"
   | "shipping"
 
@@ -65,6 +67,10 @@ export interface AdminPendingFacts {
     batchStatus: "open" | "closed" | "handed_over" | null
     packageStatus: "preparing" | "prepared" | null
     blocked: boolean
+    /** Cancelado con pickeo: stock retenido y reintegro en pausa hasta el retiro físico. */
+    physicalHold?: boolean
+    /** Cancelado con pickeo (antes o después del retiro): el reintegro es siempre manual. */
+    manualRefundRequired?: boolean
   } | null
   /**
    * El worker automático de ARCA va a tomar esta factura (misma regla que su
@@ -75,7 +81,7 @@ export interface AdminPendingFacts {
   /** El worker de cancelaciones tiene actividad real (lease o próximo intento vigente). */
   cancellationAutomatic?: boolean
   /** Cancelación automática trabada o derivada a Admin: vuelve el flujo manual. */
-  cancellationAutomaticIssue?: { reason: "stalled" | "manual"; error: string | null } | null
+  cancellationAutomaticIssue?: { reason: "stalled" | "manual" | "physical_resolution" | "manual_refund_required"; error: string | null } | null
 }
 
 export interface AdminPendingActionsOrder extends CancellationNextActionOrder {
@@ -153,6 +159,7 @@ export const ADMIN_PENDING_ACTION_LABELS: Record<AdminPendingOrderActionKind, st
   legacy_credit_note: "Emitir nota de crédito",
   cancellation_request: "Resolver cancelación",
   refund: "Resolver reintegro",
+  refund_manual_required: "Reintegro manual requerido",
   refund_manual: "Registrar reintegro",
   refund_retry: "Reintentar actualización",
   advanced_case: "Revisar caso avanzado",
@@ -160,6 +167,7 @@ export const ADMIN_PENDING_ACTION_LABELS: Record<AdminPendingOrderActionKind, st
   claim: "Resolver reclamo",
   return: "Revisar devolución",
   dispatch_blocked: "Retirar del despacho",
+  dispatch_physical_return: "Escanear pedido cancelado",
   dispatch_prepare: "Preparar despacho",
   shipping: "Preparar envío",
 }
@@ -171,6 +179,7 @@ const ACTION_PRIORITY: Record<AdminPendingOrderActionKind, AdminPendingActionPri
   legacy_credit_note: 1,
   cancellation_request: 1,
   refund: 1,
+  refund_manual_required: 1,
   refund_manual: 1,
   refund_retry: 1,
   advanced_case: 1,
@@ -178,6 +187,7 @@ const ACTION_PRIORITY: Record<AdminPendingOrderActionKind, AdminPendingActionPri
   claim: 1,
   return: 2,
   dispatch_blocked: 1,
+  dispatch_physical_return: 1,
   dispatch_prepare: 2,
   shipping: 2,
 }
@@ -322,9 +332,15 @@ export function getAdminOrderWork(order: AdminPendingActionsOrder): AdminOrderWo
     actions.push({ kind, label, urgent: priority === 1, priority, href })
   }
 
-  // ── Despacho bloqueado: aunque el pedido esté cancelado, sigue en la tanda ──
+  // ── Cancelado después del armado: primero el retiro físico (escaneo en
+  // Despachos, que también lo saca del lote); recién después el reintegro ──
   const dispatch = order.admin_pending_facts?.dispatch
-  if (dispatch?.blocked && dispatch.batchId && dispatch.batchStatus !== "handed_over" && !order.andreani_handed_over_at) {
+  const physicalHold = Boolean(dispatch?.physicalHold)
+  if (physicalHold) {
+    add("dispatch_physical_return", `/admin/despachos?resolve=${order.id ?? ""}`)
+    automatic.add("Reintegro en pausa hasta el retiro físico")
+  } else if (dispatch?.blocked && dispatch.batchId && dispatch.batchStatus !== "handed_over" && !order.andreani_handed_over_at) {
+    // ── Despacho bloqueado: aunque el pedido esté cancelado, sigue en la tanda ──
     add("dispatch_blocked", `/admin/despachos?batch=${dispatch.batchId}`)
   }
 
@@ -341,8 +357,11 @@ export function getAdminOrderWork(order: AdminPendingActionsOrder): AdminOrderWo
   if (order.financial_status === "cancellation_requested") {
     // Primero hay que decidir la solicitud: si se rechaza, no hay reintegro.
     add("cancellation_request", orderHref(order, "cancelacion"))
-  } else {
-    addFinancialWork(order, add, automatic)
+  } else if (!physicalHold) {
+    // Cancelación con pickeo ya resuelta físicamente: la decisión de dinero es
+    // siempre manual por política (no un error ni un timeout del automático).
+    const manualPolicy = Boolean(dispatch?.manualRefundRequired)
+    addFinancialWork(order, (kind, href) => add(manualPolicy && kind === "refund" ? "refund_manual_required" : kind, href), automatic)
   }
 
   // ── Facturación y envío del flujo normal (sólo pedidos pagados y vigentes) ──

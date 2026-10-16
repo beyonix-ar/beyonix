@@ -764,7 +764,7 @@ function getAdminOrderTabState(
   // la NC y la factura automáticas no se marcan como pendientes del Admin.
   const { actions } = getAdminOrderWork(pedido)
   const financialAction = actions.find((action) =>
-    ["cancellation_request", "refund", "refund_manual", "refund_retry", "advanced_case"].includes(action.kind))
+    ["cancellation_request", "refund", "refund_manual_required", "refund_manual", "refund_retry", "advanced_case"].includes(action.kind))
   const refunded = isRefundedOrder(pedido)
 
   return {
@@ -779,7 +779,7 @@ function getAdminOrderTabState(
             label: "Comprobante pendiente de revisión",
           }
         : null,
-      envio: actions.some((action) => ["dispatch_blocked", "dispatch_prepare", "shipping"].includes(action.kind))
+      envio: actions.some((action) => ["dispatch_blocked", "dispatch_physical_return", "dispatch_prepare", "shipping"].includes(action.kind))
         ? {
             type: "info",
             label: "Acción logística pendiente",
@@ -870,13 +870,15 @@ const RECOMMENDED_ACTION_DESCRIPTIONS: Record<AdminPendingOrderActionKind, strin
   legacy_credit_note: "El pedido se reintegró antes de facturarse y falta la nota de crédito.",
   cancellation_request: "El cliente pidió cancelar la compra.",
   refund: "Elegí cómo devolver el dinero.",
-  refund_manual: "Registrá el reintegro realizado por fuera del sistema.",
+  refund_manual_required: "Se canceló con el pickeo ya iniciado: el reintegro no es automático; lo autoriza administración desde BEYONIX (Factura C → Nota de Crédito C → Reintegrar por Mercado Pago o transferencia registrada).",
+  refund_manual:"Registrá el reintegro realizado por fuera del sistema.",
   refund_retry: "BEYONIX no pudo completar una actualización interna.",
   advanced_case: "El reintegro necesita la gestión completa.",
   invoice: "La factura no se emite automáticamente.",
   claim: "Hay una gestión del cliente que requiere respuesta.",
   return: "Revisá el producto devuelto y definí su destino.",
   dispatch_blocked: "El pedido está en un lote de envío y no puede despacharse.",
+  dispatch_physical_return: "Requiere resolución física: se canceló con el pickeo ya iniciado. Resolvelo en Despachos; el reintegro (incluido el saldo a favor) será manual.",
   dispatch_prepare: "El pedido está facturado y listo para preparar.",
   shipping: "El pedido está facturado y listo para enviar.",
 }
@@ -2723,7 +2725,11 @@ function AutomaticCancellationIssueNotice({ pedido }: { pedido: SupabasePedido }
   if (!issue || pedido.financial_status !== "refund_pending") return null
   return (
     <p role="status" data-testid="automatic-cancellation-issue" className="admin-order-billing-pending-note mb-3 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
-      {issue.reason === "stalled"
+      {issue.reason === "manual_refund_required"
+        ? "Reintegro manual requerido: el pedido se canceló con el pickeo ya iniciado. La mercadería ya volvió; nada se devuelve automáticamente (tampoco el saldo a favor). Autorizalo desde acá: Nota de Crédito C y Reintegrar por Mercado Pago o transferencia."
+        : issue.reason === "physical_resolution"
+        ? "Requiere resolución física: el pedido ya tenía unidades pickeadas. Resolvelo en Despachos para liberar el stock. El reintegro (incluido el saldo a favor) será manual."
+        : issue.reason === "stalled"
         ? "Requiere acción: la cancelación automática no avanzó a tiempo (Nota de Crédito C y reintegro). Podés resolverla desde acá."
         : `Requiere acción: la cancelación automática se detuvo${issue.error ? ` (${issue.error})` : ""}. Continuá desde acá.`}
     </p>

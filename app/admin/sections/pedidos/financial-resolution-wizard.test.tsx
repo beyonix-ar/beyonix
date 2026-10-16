@@ -10,7 +10,7 @@ const TECHNICAL = /ARCA|concilia|acreditaci|reconciliation|settlement|refund cla
 const option = (type: "beyonix_credit" | "mercadopago_refund" | "manual_refund", label: string) => ({ type, label, requiresConfirmation: true as const })
 const baseView: FinancialResolutionView = {
   mode: "wizard", amount: 25_000, status: "Pendiente", product: "no_return", reception: "not_applicable",
-  financialOptions: [option("beyonix_credit", "Saldo BEYONIX"), option("mercadopago_refund", "Reembolsar al medio de pago original")],
+  financialOptions: [option("beyonix_credit", "Saldo BEYONIX"), option("mercadopago_refund", "Reintegrar por Mercado Pago")],
   receptionOptions: [], notice: null, resolution: null,
 }
 const pedido = { id: 31, order_credit_notes: [] } as unknown as SupabasePedido
@@ -86,7 +86,7 @@ async function setup(responder: Responder = () => Response.json({ status: "compl
   }
   const toReview = async () => {
     await click("Continuar")
-    await click(/^Reembolsar al medio de pago original/)
+    await click(/^Reintegrar por Mercado Pago/)
     await click("Continuar")
     await click("Confirmar resolución")
   }

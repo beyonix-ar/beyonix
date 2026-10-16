@@ -29,19 +29,22 @@ async function one<T>(promise: PromiseLike<{ data: unknown; error: { message: st
 }
 
 export async function loadFinancialResolution(admin: Admin, orderId: number, verifyRemote = true) {
-  const [orderResult, membershipResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult] = await Promise.all([
+  const [orderResult, membershipResult, holdResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult] = await Promise.all([
     admin.from("ordenes").select(orderColumns).eq("id", orderId).maybeSingle(),
     admin.from("dispatch_batch_items").select("dispatch_batches(prepared_at)").eq("order_id", orderId),
+    // Cancelación con pickeo (retención física, activa o resuelta): mismo corte
+    // que un lote cerrado (order_was_prepared_for_dispatch), reintegro manual.
+    admin.from("order_cancellation_holds").select("detected_at,resolved_at").eq("order_id", orderId).order("detected_at"),
     admin.from("order_claims").select("id,status,failure_type,resolution").eq("order_id", orderId),
     admin.from("order_credit_notes").select("id,status,destination,total_amount,external_amount,cae,finalized_at,settlement_status").eq("order_id", orderId),
-    admin.from("mercadopago_order_refunds").select("status").eq("order_id", orderId),
+    admin.from("mercadopago_order_refunds").select("status,mp_refund_id,created_at").eq("order_id", orderId).order("created_at"),
     admin.from("order_refund_proofs").select("id").eq("order_id", orderId).limit(1),
     admin.from("order_financial_resolutions").select("*").eq("order_id", orderId).maybeSingle(),
     admin.rpc("order_financial_claim_block", { p_order_id: orderId }),
     // Cancelación directa de Admin (sin reclamo): autoriza la NC de cancelación.
     admin.rpc("order_has_admin_direct_cancellation", { p_order_id: orderId }),
   ])
-  for (const result of [orderResult, membershipResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult]) {
+  for (const result of [orderResult, membershipResult, holdResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult]) {
     if (result.error) throw new Error(result.error.message)
   }
   const order = orderResult.data as Order | null
@@ -49,7 +52,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   const memberships = (membershipResult.data ?? []) as unknown as Array<{ dispatch_batches: { prepared_at: string | null } | null }>
   const claims = (claimsResult.data ?? []) as Array<{ id: number; status: string; failure_type: string; resolution: string | null }>
   const notes = (notesResult.data ?? []) as Array<{ id: string; status: string; destination: string; total_amount: number; external_amount: number | null; cae: string | null; finalized_at: string | null; settlement_status: string | null }>
-  const refunds = (refundsResult.data ?? []) as Array<{ status: string }>
+  const refunds = (refundsResult.data ?? []) as Array<{ status: string; mp_refund_id: string | null }>
   const resolution = resolutionResult.data as Resolution | null
   const paidAmount = Number(order.payment_confirmed_amount || order.external_amount_due || 0)
   const externalNotes = notes.filter((note) => note.status === "authorized" && note.cae &&
@@ -63,7 +66,10 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
     note.destination !== "none").map((note) => note.destination))
   const fiscalDestination = fiscalDestinations.size === 1
     ? [...fiscalDestinations][0] as "external_refund" | "customer_balance" : null
-  const preparedAt = memberships.map((item) => item.dispatch_batches?.prepared_at).find(Boolean) ?? null
+  const holds = (holdResult.data ?? []) as Array<{ detected_at: string; resolved_at: string | null }>
+  const pickedCancellationAt = holds[0]?.detected_at ?? null
+  const physicalHoldActive = holds.some((hold) => !hold.resolved_at)
+  const preparedAt = memberships.map((item) => item.dispatch_batches?.prepared_at).find(Boolean) ?? pickedCancellationAt
   const adminDirectCancellation = adminCancellationResult.data === true
   const canCreateCancellationNote = adminDirectCancellation || claims.some((claim) => claim.failure_type === "cancelar_compra" &&
     ["aprobado", "reintegro_pendiente"].includes(claim.status))
@@ -92,10 +98,15 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   const returnPending = claimBlock === "CLAIM_MONEY_RETURN_PENDING" && returnContext.reception !== "exception"
   const partial = Math.round(amount * 100) !== Math.round(paidAmount * 100) ||
     Number(order.credit_balance_used ?? 0) > 0 && Number(order.payment_confirmed_amount ?? 0) !== Number(order.total ?? 0)
+  // Con pickeo o tanda cerrada, MP sólo por acción del Admin y con la mercadería
+  // ya recuperada. El mismo clic emite antes la NC C (ensureCreditNote) y la
+  // base exige la NC antes del refund. En un pago combinado se devuelve sólo
+  // lo capturado por MP; el saldo vuelve con la NC.
+  const mpRefundCandidate = preparedAt ? !physicalHoldActive : !partial
   let remotePaymentVerified = false
   let installments = false
   // Sin opción ofrecible (resolución elegida o pedido fuera de refund_pending) no se consulta MP.
-  if (verifyRemote && !resolution && order.financial_status === "refund_pending" && !partial && !shipmentCreated && order.payment_method_id === "mercadopago" && order.payment_id && amount > 0 && !preparedAt && !order.andreani_handed_over_at) {
+  if (verifyRemote && !resolution && order.financial_status === "refund_pending" && mpRefundCandidate && !shipmentCreated && order.payment_method_id === "mercadopago" && order.payment_id && amount > 0 && !order.andreani_handed_over_at) {
     try {
       const payment = await getMercadoPagoPayment(order.payment_id)
       remotePaymentVerified = validateRefundablePayment(payment, { order, expectedPaymentId: order.payment_id, expectedAmount: amount }) === null
@@ -111,12 +122,14 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
     fiscalConflict, receptionPending: returnPending, inspectionPending: returnPending,
     claimIncidentOpen: claimBlock === "CLAIM_MONEY_INCIDENT_OPEN" || claims.some((claim) => ["recibido", "en_revision", "falta_informacion"].includes(claim.status)),
     remotePaymentVerified, partial, installments, hasCustomerAccount: !!order.usuario_id, fiscalDestination,
+    physicalHoldActive,
   }
   const options = resolution ? [] : resolveOrderFinancialOptions(facts)
   // Opciones que quedarían disponibles al recibir el producto (o con una excepción auditada).
   const receptionOptions = resolution || !returnPending ? []
     : resolveOrderFinancialOptions({ ...facts, receptionPending: false, inspectionPending: false })
-  return { order, claims, notes, refunds, resolution, amount, preparedAt, options, receptionOptions, returnContext, adminDirectCancellation,
+  const mpRefundId = [...refunds].reverse().find((refund) => refund.status === "confirmed")?.mp_refund_id ?? null
+  return { order, claims, notes, refunds, resolution, amount, preparedAt, physicalHoldActive, mpRefundId, options, receptionOptions, returnContext, adminDirectCancellation,
     mode: getFinancialResolutionMode({ financialStatus: order.financial_status, hasResolution: !!resolution, options, receptionOptions }),
     status: financialHumanStatus(resolution ? getEffectiveFinancialResolutionStatus(resolution) : null), requiresReturn: !!order.andreani_handed_over_at }
 }
@@ -210,7 +223,9 @@ export async function executeFinancialResolution(
     // Relee el estado fiscal dentro de la intención reservada: nunca emite una segunda NC.
     let fresh = await loadFinancialResolution(admin, orderId, false)
     if (!fresh || fresh.order.andreani_handed_over_at) throw new Error("El pedido requiere devolución y recepción antes de resolverlo.")
-    if (fresh.preparedAt && claimed.choice !== "manual_refund") fail("La tanda ya fue preparada. Requiere resolución manual.")
+    // Con pickeo o tanda cerrada: sólo reintegro manual o Mercado Pago autorizado por Admin (este llamado).
+    if (fresh.preparedAt && claimed.choice === "beyonix_credit") fail("El pedido ya tuvo preparación física (pickeo o lote cerrado). Reintegro manual requerido.")
+    if (fresh.physicalHoldActive) fail("Primero resolvé físicamente el pedido en Despachos.")
     // Factura C antes que la NC y que mover dinero: una venta cobrada nunca
     // termina reintegrada sin comprobante (obligación nacida con el pago).
     if (hasPendingInvoiceObligation(fresh.order)) {

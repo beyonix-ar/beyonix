@@ -444,6 +444,11 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
           {resolution.type === "manual_refund" ? "Reintegro completado ✅" : "Completado ✅"}
         </p>
       )}
+      {outcome.kind === "completed" && resolution.type === "mercadopago_refund" && view.resolution?.mpRefundId && (
+        <p className="text-xs font-semibold text-[var(--admin-text-muted)]">
+          Reintegro en Mercado Pago {formatPrice(resolution.amount)} · ID {view.resolution.mpRefundId}
+        </p>
+      )}
 
       {outcome.kind === "processing" && (
         <div className="flex flex-wrap items-center justify-between gap-2">

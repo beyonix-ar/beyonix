@@ -28,17 +28,19 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
   const facts = new Map<number, AdminPendingFacts>()
   if (!ids.length) return facts
 
-  const [packagesResult, membershipsResult, blocksResult, resolutionsResult, controlResult] = await Promise.all([
+  const [packagesResult, membershipsResult, blocksResult, holdsResult, resolutionsResult, controlResult] = await Promise.all([
     admin.from("order_packages").select("order_id,status").in("order_id", ids),
     admin.from("dispatch_batch_items").select("order_id,batch_id,dispatch_batches(status)").in("order_id", ids).is("removed_at", null),
     admin.from("dispatch_blocks").select("order_id").in("order_id", ids).is("resolved_at", null),
+    // Activa (resolved_at null) = resolución física pendiente; cualquiera = cancelación con pickeo.
+    admin.from("order_cancellation_holds").select("order_id,resolved_at").in("order_id", ids),
     includeFinancial
       ? admin.from("order_financial_resolutions").select("order_id,status").in("order_id", ids)
       : Promise.resolve({ data: [], error: null }),
     // Misma fuente que el cron y Admin > Facturación para saber si la cola se procesa sola.
     admin.from("arca_auto_invoicing_control").select("enabled, cutoff_at, updated_at").eq("id", true).maybeSingle(),
   ])
-  const failure = [packagesResult, membershipsResult, blocksResult, resolutionsResult].find((result) => result.error)
+  const failure = [packagesResult, membershipsResult, blocksResult, holdsResult, resolutionsResult].find((result) => result.error)
   if (failure?.error) throw new Error(failure.error.message)
   // Sin control legible no se asume automático: la factura queda como tarea humana.
   const autoInvoicing = !controlResult.error && controlResult.data
@@ -51,12 +53,20 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
     return [row.order_id as number, { batchId: row.batch_id as number, batchStatus: batch?.status ?? null }]
   }))
   const blocked = new Set((blocksResult.data ?? []).map((row) => row.order_id as number))
+  const holdRows = (holdsResult.data ?? []) as Array<{ order_id: number; resolved_at: string | null }>
+  const held = new Set(holdRows.filter((row) => !row.resolved_at).map((row) => row.order_id))
+  const pickedCancellations = new Set(holdRows.map((row) => row.order_id))
   const resolutions = new Map((resolutionsResult.data ?? []).map((row) => [row.order_id as number, row.status as string]))
 
   const now = Date.now()
   for (const order of orders) {
     const membership = memberships.get(order.id)
-    const automaticCancellation = getAutomaticCancellationStatus(order, autoInvoicing, now)
+    const physicalHold = held.has(order.id)
+    // Cancelación con pickeo: el worker nunca la toma (claim_auto_cancellation),
+    // ni antes ni después del retiro físico. Nunca "procesando" ni "no avanzó a
+    // tiempo": la causa es la política de reintegro manual.
+    const manualRefundRequired = pickedCancellations.has(order.id)
+    const automaticCancellation = manualRefundRequired ? null : getAutomaticCancellationStatus(order, autoInvoicing, now)
     facts.set(order.id, {
       financial: null,
       dispatch: {
@@ -65,10 +75,16 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
         packageStatus: packages.get(order.id) ?? null,
         // Igual que el tablero de Despachos: un pedido cancelado dentro de una tanda queda bloqueado.
         blocked: blocked.has(order.id) || (!!membership && order.cancelled_at != null),
+        physicalHold,
+        manualRefundRequired,
       },
       invoiceAutomatic: autoInvoicing ? isOrderInAutoInvoicingQueue(autoInvoicing, order) : false,
       cancellationAutomatic: automaticCancellation?.state === "processing",
-      cancellationAutomaticIssue: automaticCancellation?.state === "requires_action"
+      cancellationAutomaticIssue: physicalHold
+        ? { reason: "physical_resolution", error: null }
+        : manualRefundRequired
+        ? { reason: "manual_refund_required", error: null }
+        : automaticCancellation?.state === "requires_action"
         ? { reason: automaticCancellation.reason, error: automaticCancellation.error }
         : null,
     })

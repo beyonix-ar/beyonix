@@ -1,5 +1,6 @@
 // Jerarquía de códigos BEYONIX (texto plano, Code 128):
 //   producto/variante  BX-AUR-000001      (o EAN/UPC del fabricante)
+//   pedido preparado   BX-PREP-1050       (BX-PREP-1050-R2 en un rearmado)
 //   bulto              BX-PKG-1050-02     (BX-PKG-1050-R2-02 en un rearmado)
 //   lote de envío      DSP-20261007-001
 // Las reglas de unicidad viven en la base (catalog_barcode_registry,
@@ -8,6 +9,7 @@
 export type BarcodeOrigin = "fabricante" | "beyonix"
 
 export const BEYONIX_PRODUCT_CODE = /^BX-[A-Z]{3}-\d{6,}$/
+export const PREPARED_ORDER_CODE = /^BX-PREP-\d+(?:-R\d+)?$/
 export const PARCEL_CODE = /^BX-PKG-\d+(?:-R\d+)?-\d{2}$/
 export const BATCH_CODE = /^DSP-\d{8}-\d{3,}$/
 
@@ -30,5 +32,5 @@ export function barcodeOriginLabel(origin: BarcodeOrigin | null) {
 }
 
 export function isReservedProductBarcode(code: string) {
-  return /^(BX-PKG-|DSP-)/i.test(code.trim())
+  return /^(BX-PKG-|BX-PREP-|DSP-)/i.test(code.trim())
 }

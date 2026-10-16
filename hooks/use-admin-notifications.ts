@@ -50,6 +50,7 @@ const REALTIME_TABLES = [
   "order_packages",
   "order_package_parcels",
   "dispatch_batch_parcel_scans",
+  "order_cancellation_holds",
 ] as const
 
 export const ADMIN_DISPATCH_CHANGED_EVENT = "beyonix:admin-dispatch-changed"
@@ -146,7 +147,7 @@ export function useAdminNotifications(enabled = true) {
           table,
         },
         () => {
-          if (["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages", "order_package_parcels", "dispatch_batch_parcel_scans", "ordenes", "orden_items", "order_claims", "order_refund_proofs"].includes(table)) {
+          if (["dispatch_blocks", "dispatch_batches", "dispatch_batch_items", "order_packages", "order_package_parcels", "dispatch_batch_parcel_scans", "order_cancellation_holds", "ordenes", "orden_items", "order_claims", "order_refund_proofs"].includes(table)) {
             window.dispatchEvent(new CustomEvent(ADMIN_DISPATCH_CHANGED_EVENT, { detail: table }))
           }
           // Las tareas de despacho de los pedidos también viven en la campana.

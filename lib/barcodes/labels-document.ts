@@ -7,6 +7,7 @@ export type LabelFormat = "a4" | "single"
 export type PrintableLabel =
   | { kind: "product"; code: string; name: string; variant?: string | null; sku?: string | null; copies?: number }
   | { kind: "parcel"; code: string; orderCode: string; index: number; count: number }
+  | { kind: "prepared"; code: string; orderCode: string; units: number; parcelCount: number | null }
   | { kind: "batch"; code: string; orderCount: number; parcelCount: number; date?: string | null }
 
 const MAX_COPIES = 500
@@ -41,6 +42,13 @@ function labelBody(label: PrintableLabel, svg: string) {
       <div class="title">Pedido ${escapeHtml(label.orderCode)}</div>
       <div class="big">Bulto ${label.index}/${label.count}</div>
       ${barcode}`
+  }
+  if (label.kind === "prepared") {
+    return `<div class="brand">BEYONIX</div>
+      <div class="title">PEDIDO PREPARADO</div>
+      <div class="big">${escapeHtml(label.orderCode)}</div>
+      ${barcode}
+      <div class="meta">${label.units} ${label.units === 1 ? "unidad" : "unidades"}${label.parcelCount ? ` · ${label.parcelCount} ${label.parcelCount === 1 ? "bulto" : "bultos"}` : ""}</div>`
   }
   return `<div class="brand">BEYONIX</div>
     <div class="title">LOTE DE ENVÍO</div>
@@ -81,8 +89,8 @@ export function buildLabelsDocument(
     .big { font-weight: 900; font-size: 18pt; margin: 1.5mm 0; }
     .barcode { width: 100%; margin: 1mm 0 0.5mm; }
     .barcode svg { display: block; width: 100%; height: auto; max-height: 14mm; }
-    .parcel .barcode svg, .batch .barcode svg { max-height: 26mm; }
+    .parcel .barcode svg, .batch .barcode svg, .prepared .barcode svg { max-height: 26mm; }
     .code { font-family: "Courier New", monospace; font-weight: 700; font-size: 9pt; letter-spacing: 0.06em; }
-    .parcel .code, .batch .code { font-size: 13pt; }
+    .parcel .code, .batch .code, .prepared .code { font-size: 13pt; }
   </style></head><body><main class="sheet">${items}</main></body></html>`
 }

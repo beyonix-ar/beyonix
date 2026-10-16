@@ -26,6 +26,8 @@ export type FinancialResolutionFacts = {
   installments: boolean
   hasCustomerAccount: boolean
   fiscalDestination: "external_refund" | "customer_balance" | null
+  /** Cancelado con pickeo y todavía sin resolución física (retención activa). */
+  physicalHoldActive?: boolean
 }
 
 /** Sólo ofrece resultados; la API/RPC vuelve a validar antes de mover dinero. */
@@ -36,11 +38,32 @@ export function resolveOrderFinancialOptions(facts: FinancialResolutionFacts): F
       facts.inspectionPending || facts.claimIncidentOpen || facts.fiscalConflict ||
       facts.priorRefund || facts.refundInProgress || facts.fiscalDestination === "customer_balance") return []
 
-  // Una tanda cerrada ya dejó la mercadería embalada: sólo gestión manual.
+  // Desde el primer pickeo (o con tanda cerrada) nada es automático: sólo
+  // acciones explícitas de Admin, y recién con la mercadería recuperada.
   if (facts.preparedAt) {
-    return ["transferencia", "mercadopago"].includes(facts.paymentMethod ?? "")
-      ? [{ type: "manual_refund", label: "Reintegro manual", requiresConfirmation: true }]
-      : []
+    if (facts.physicalHoldActive) return []
+    const options: FinancialOption[] = []
+    if (["transferencia", "mercadopago"].includes(facts.paymentMethod ?? "")) {
+      options.push({ type: "manual_refund", label: "Reintegro manual", requiresConfirmation: true })
+    }
+    // Reintegro por Mercado Pago iniciado por Admin desde BEYONIX: el mismo
+    // clic emite antes la NC C y devuelve sólo lo capturado por MP (en un pago
+    // combinado el saldo vuelve con la NC, nunca por este refund).
+    if (facts.paymentMethod === "mercadopago" && facts.paymentIdValid &&
+        Number.isFinite(facts.mpAmount) && facts.mpAmount > 0 && facts.mpAmount === facts.amount &&
+        getAssistedMercadoPagoRefundDecision({
+          paymentMethod: facts.paymentMethod, paymentApproved: facts.paymentApproved,
+          amount: facts.mpAmount, financialStatus: facts.financialStatus,
+          handedOverAt: facts.handedOverAt, dispatched: facts.shipmentCreated,
+          trackingInCircuit: facts.trackingInCircuit, priorRefund: facts.priorRefund,
+          fiscalConflict: facts.fiscalConflict, claimNeedsInspection: facts.inspectionPending,
+          physicalReturnPending: facts.receptionPending,
+          mercadoPagoBalanceConfirmed: facts.remotePaymentVerified,
+          installments: facts.installments,
+        }).kind === "eligible_with_admin_confirmation") {
+      options.push({ type: "mercadopago_refund", label: "Reintegrar por Mercado Pago", requiresConfirmation: true })
+    }
+    return options
   }
 
   const options: FinancialOption[] = []
@@ -60,7 +83,7 @@ export function resolveOrderFinancialOptions(facts: FinancialResolutionFacts): F
         mercadoPagoBalanceConfirmed: facts.remotePaymentVerified,
         installments: facts.installments,
       }).kind === "eligible_with_admin_confirmation") {
-    options.push({ type: "mercadopago_refund", label: "Reembolsar al medio de pago original", requiresConfirmation: true })
+    options.push({ type: "mercadopago_refund", label: "Reintegrar por Mercado Pago", requiresConfirmation: true })
   }
   return options
 }

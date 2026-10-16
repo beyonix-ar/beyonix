@@ -65,7 +65,10 @@ test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente y bultos
     parcels: parcelCount ? Array.from({ length: parcelCount }, (_, index) => ({ id: index + 1, parcel_index: index + 1, parcel_count: parcelCount, barcode: `BX-PKG-1031-0${index + 1}`, attempt_number: 1, weight_kg: savedParcels[index]?.weightKg ?? null, length_cm: savedParcels[index]?.lengthCm ?? null, width_cm: savedParcels[index]?.widthCm ?? null, height_cm: savedParcels[index]?.heightCm ?? null })) : [],
     shipping: { costsVisible: false, estimate: { parcels: [{ lengthCm: 35, widthCm: 25, heightCm: 18, volumeCm3: 15_750, weightKg: 2.2 }] }, parcelQuote: null },
     stage: parcelCount ? "parcels_ready" : scanned ? "packed" : "packing",
-    itemCount: 1, expectedUnits: 1, membership: null, batch: null, blocked: false, blockReason: null,
+    itemCount: 1, expectedUnits: 1, membership: null, batch: null, blocked: true, blockReason: "Envío pendiente",
+    // El envío pendiente no frena el pickeo (sólo el ingreso al lote).
+    packingBlocked: false, pendingBeforeDispatch: ["Envío pendiente"], hold: null,
+    preparedCode: scanned === 1 ? "BX-PREP-1031" : null,
   })
   globalThis.fetch = async (_input, init) => {
     if (!init?.body) return Response.json(detail())
@@ -86,7 +89,9 @@ test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente y bultos
     await act(async () => { root.render(<OrderPreparationPanel orderId={31} />) })
     await settle()
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /En armado/)
+    assert.match(text(), /En preparación/)
+    assert.match(text(), /Envío pendiente: podés preparar el pedido igual/)
+    assert.doesNotMatch(text(), /Pedido bloqueado/)
     assert.match(text(), /Auriculares · Negro/)
     const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar código / SKU"]')!
     const form = () => input().closest("form") as HTMLFormElement
@@ -102,7 +107,8 @@ test("ARMAR PEDIDO: escaneo con mensajes exactos, reintento idempotente y bultos
     assert.match(text(), /✓ Auriculares · Negro · 1 de 1/)
     assert.equal(keys.at(-1), keys.at(-2), "el reintento de red reutiliza la misma clave")
     assert.equal(new Set(keys).size, keys.length - 1, "cada escaneo nuevo usa su propia clave")
-    assert.match(text(), /Completo/)
+    assert.match(text(), /Pedido preparado/)
+    assert.match(text(), /BX-PREP-1031/, "muestra el código general del pedido preparado")
     await act(async () => { button(dom, "FINALIZAR ARMADO")!.click() })
     assert.match(text(), /¿Cuántos bultos tiene este pedido\?/)
     assert.match(text(), /Estimación utilizada en checkout/)
@@ -142,7 +148,7 @@ test("lote de envío: escaneo de bultos, Pedidos/Bultos y CERRAR LOTE sólo con 
   const batch = { id: 5, code: "DSP-20261007-001", status: "open", created_at: "2026-10-07T12:00:00Z", closed_at: null, prepared_at: null, handed_over_at: null, handed_over_by: null }
   const scannedIds = new Set<number>()
   const parcels = [1, 2].map((index) => ({ id: index, parcel_index: index, parcel_count: 2, barcode: `BX-PKG-1050-0${index}`, attempt_number: 1 }))
-  const detail = (): Json => ({ batch, blockedCount: 0, operatorName: null, parcelCount: 2, scannedParcelCount: scannedIds.size, items: [{ id: 9, batch_id: 5, order_id: 50, package_id: 7, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, parcelCount: 2, scannedParcels: scannedIds.size, parcels: parcels.map((parcel) => ({ ...parcel, scanned: scannedIds.has(parcel.id) })) }] })
+  const detail = (): Json => ({ batch, blockedCount: 0, operatorName: null, parcelCount: 2, scannedParcelCount: scannedIds.size, items: [{ id: 9, batch_id: 5, order_id: 50, package_id: 7, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false, parcelCount: 2, scannedParcels: scannedIds.size, parcels: parcels.map((parcel) => ({ ...parcel, scanned: scannedIds.has(parcel.id) })) }] })
   globalThis.fetch = async (input, init) => {
     const path = String(input)
     if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
@@ -155,7 +161,7 @@ test("lote de envío: escaneo de bultos, Pedidos/Bultos y CERRAR LOTE sólo con 
       return Response.json({ ...detail(), scan: { orderId: 50, parcelIndex: parcel.parcel_index, parcelCount: 2, scannedCount: scannedIds.size, complete: scannedIds.size === 2, duplicate } })
     }
     if (path.endsWith("/batches/5")) return Response.json(detail())
-    return Response.json({ orders: [], batches: [{ ...batch, orderCount: 1, packageCount: 2, blockedCount: 0 }] })
+    return Response.json({ orders: [], batches: [{ ...batch, orderCount: 1, packageCount: 2, blockedCount: 0 }], holds: [] })
   }
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="5" />) })
