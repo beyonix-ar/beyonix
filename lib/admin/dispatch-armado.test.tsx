@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
 import { act } from "react"
+import userEvent from "@testing-library/user-event"
 
 // Pedido en Despachos: UNA acción principal por etapa y menús secundarios que
 // sólo muestran opciones válidas. react-dom detecta el soporte de eventos al
@@ -50,7 +51,7 @@ const chooseMenu = async (dom: JSDOM, label: string, option: string) => {
 const order = { id: 31, estado: "pagado", financial_status: "payment_confirmed", payment_status: "confirmado", invoice_status: "authorized", shipping_provider: "andreani", envio_proveedor: null, cancelled_at: null, andreani_handed_over_at: null, andreani_handed_over_batch_id: null, created_at: "2026-10-16T09:00:00Z", cliente_nombre: "María José Peña" }
 
 /** Pedido BX-1031 simulado: 3 auriculares + 1 lámpara, con las mismas transiciones que la base. */
-function fakeOrder(role: Role) {
+function fakeOrder(role: Role, packingBlocked = false) {
   const state = { picked: [0, 0], expected: [3, 1], started: false, shipment: false, identified: false, adjustments: [] as Json[], posts: [] as Json[], labels: 0, dropNextScan: false }
   const viewer = { costsVisible: role !== "operador", canShip: role !== "operador", canForce: role === "super_admin" }
   const prepared = () => state.picked.every((picked, index) => picked === state.expected[index])
@@ -66,7 +67,7 @@ function fakeOrder(role: Role) {
     shipping: { costsVisible: viewer.costsVisible, estimate: { parcels: [{ lengthCm: 35, widthCm: 25, heightCm: 18, volumeCm3: 15_750, weightKg: 2.2 }] }, parcelQuote: null },
     shipment: { created: state.shipment, envioId: state.shipment ? "ENV-31" : null, tracking: state.shipment ? "360000001031" : null, creationStatus: state.shipment ? "created" : null },
     adjustments: state.adjustments, membership: null, batch: null, hold: null,
-    blocked: !state.shipment, blockReason: state.shipment ? null : "Envío pendiente", packingBlocked: false, pendingBeforeDispatch: state.shipment ? [] : ["Envío pendiente"], viewer,
+    blocked: !state.shipment, blockReason: state.shipment ? null : "Envío pendiente", packingBlocked, pendingBeforeDispatch: state.shipment ? [] : ["Envío pendiente"], viewer,
   })
   const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
@@ -259,5 +260,67 @@ test("Super Admin: puede forzar el envío con pickeo incompleto, con motivo y au
     await settle()
     const ship = fake.state.posts.find((post) => post.action === "ship")!
     assert.deepEqual([ship.force, ship.reason], [true, "Cliente retira hoy, falta una unidad en camino"])
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
+test("input real de picking: teclado, Enter, pegar y Verificar procesan la misma acción", async () => {
+  const { dom, root } = await setup("https://beyonix.test/admin/despachos?order=31")
+  const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
+  const fake = fakeOrder("operador")
+  fake.state.started = true
+  globalThis.fetch = fake.fetch
+  const user = userEvent.setup({ document: dom.window.document })
+  const input = () => dom.window.document.querySelector<HTMLInputElement>('input[placeholder="Escaneá el producto"]')!
+  const scans = () => fake.state.posts.filter((post) => post.action === "scan")
+  try {
+    await act(async () => { root.render(<OrderPreparationPanel orderId={31} />) })
+    await settle()
+    assert.equal(dom.window.document.activeElement, input())
+    assert.equal(input().type, "text")
+    assert.equal(input().readOnly, false)
+    assert.equal(input().disabled, false)
+
+    await act(async () => { await user.click(input()); await user.type(input(), "7790001000017") })
+    assert.equal(input().value, "7790001000017", "el input controlado muestra lo escrito")
+    await act(async () => { await user.keyboard("{Enter}") })
+    await settle()
+    assert.equal(scans().length, 1, "Enter envía una sola vez")
+    assert.equal(scans()[0].code, "7790001000017")
+    assert.equal(fake.state.picked[0], 1)
+    assert.equal(input().value, "")
+    assert.equal(dom.window.document.activeElement, input())
+
+    await act(async () => { await user.paste("7790001000017") })
+    assert.equal(input().value, "7790001000017")
+    await act(async () => { await user.click(button(dom, "Verificar")!) })
+    await settle()
+    assert.equal(scans().length, 2)
+    assert.equal(fake.state.picked[0], 2)
+
+    await act(async () => { await user.type(input(), "OTRO{Enter}") })
+    await settle()
+    assert.equal(scans().length, 3)
+    assert.equal(fake.state.picked[0], 2)
+    assert.match(dom.window.document.body.textContent ?? "", /Este producto no pertenece al pedido/)
+    assert.equal(input().disabled, false)
+    assert.equal(dom.window.document.activeElement, input())
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
+test("bloqueo operativo: el texto de picking sigue editable sin habilitar Verificar", async () => {
+  const { dom, root } = await setup("https://beyonix.test/admin/despachos?order=31")
+  const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
+  const fake = fakeOrder("operador", true)
+  fake.state.started = true
+  globalThis.fetch = fake.fetch
+  const user = userEvent.setup({ document: dom.window.document })
+  try {
+    await act(async () => { root.render(<OrderPreparationPanel orderId={31} />) })
+    await settle()
+    const input = dom.window.document.querySelector<HTMLInputElement>('input[placeholder="Escaneá el producto"]')!
+    assert.equal(input.disabled, false, "el bloqueo de envío no inutiliza el control de texto")
+    await act(async () => { await user.type(input, "7170972998100") })
+    assert.equal(input.value, "7170972998100")
+    assert.equal(button(dom, "Verificar")?.disabled, true)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })

@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
 import { act, useState } from "react"
+import userEvent from "@testing-library/user-event"
 
 import type { DispatchScanMethod } from "./dispatch"
 
@@ -11,6 +12,7 @@ test("ScanField acepta teclado, pegado y lector con foco estable durante esperas
   const { createRoot } = await import("react-dom/client")
   const { ScanField } = await import("../../app/admin/sections/despachos/scan-field")
   const root = createRoot(dom.window.document.getElementById("root")!)
+  const user = userEvent.setup({ document: dom.window.document })
   const reads: Array<{ code: string; method: DispatchScanMethod }> = []
 
   function Field({ busy = false }: { busy?: boolean }) {
@@ -27,15 +29,6 @@ test("ScanField acepta teclado, pegado y lector con foco estable durante esperas
   }
 
   const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear producto"]')!
-  const form = () => input().closest("form")!
-  const write = async (value: string) => {
-    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
-    await act(async () => { setter.call(input(), value); input().dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
-  }
-  const send = async () => {
-    await act(async () => { form().dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true })) })
-  }
-
   try {
     await act(async () => { root.render(<Field />) })
     assert.equal(input().type, "text")
@@ -43,37 +36,41 @@ test("ScanField acepta teclado, pegado y lector con foco estable durante esperas
     assert.equal(input().disabled, false)
     assert.equal(dom.window.document.activeElement, input(), "foco al entrar")
 
-    await write("7170972998100")
-    await act(async () => { input().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true })) })
-    await send()
-    assert.deepEqual(reads.at(-1), { code: "7170972998100", method: "manual_code" })
+    await act(async () => { await user.type(input(), "7170972998100") })
+    assert.equal(input().value, "7170972998100", "cada tecla actualiza el input controlado")
+    await act(async () => { await user.keyboard("{Enter}") })
+    assert.equal(reads.length, 1, "Enter procesa una sola vez")
+    assert.equal(reads.at(-1)?.code, "7170972998100")
     assert.equal(input().value, "")
     assert.equal(dom.window.document.activeElement, input(), "foco tras Enter")
 
-    await write("  BX-1006  ")
-    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.click() })
-    assert.deepEqual(reads.at(-1), { code: "BX-1006", method: "manual_code" })
+    await act(async () => { await user.type(input(), "BX-1006") })
+    assert.equal(input().value, "BX-1006")
+    await act(async () => { await user.click(dom.window.document.querySelector<HTMLButtonElement>('button[type="submit"]')!) })
+    assert.equal(reads.at(-1)?.code, "BX-1006")
     assert.equal(dom.window.document.activeElement, input(), "foco tras botón")
 
-    await act(async () => { input().dispatchEvent(new dom.window.Event("paste", { bubbles: true })) })
-    await write("DSP-20261016-001")
-    await send()
+    await act(async () => { await user.type(input(), "ABCD{Backspace}") })
+    assert.equal(input().value, "ABC", "Backspace edita el texto")
+    await act(async () => { await user.keyboard("{Control>}a{/Control}"); await user.keyboard("{Delete}") })
+    assert.equal(input().value, "", "Ctrl+A y Delete funcionan")
+
+    await act(async () => { await user.click(input()); await user.paste("DSP-20261016-001") })
+    assert.equal(input().value, "DSP-20261016-001")
+    await act(async () => { await user.keyboard("{Enter}") })
     assert.deepEqual(reads.at(-1), { code: "DSP-20261016-001", method: "manual_code" })
 
-    await write("7170972998100")
-    await act(async () => { for (const key of "7170972998100") input().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true })) })
-    await send()
+    await act(async () => { await user.keyboard("7170972998100{Enter}") })
     assert.deepEqual(reads.at(-1), { code: "7170972998100", method: "scanner" })
 
-    await write("ERROR")
-    await send()
+    await act(async () => { await user.type(input(), "ERROR{Enter}") })
     assert.equal(dom.window.document.activeElement, input(), "foco tras error")
     assert.equal(input().value, "")
 
     await act(async () => { root.render(<Field busy />) })
     assert.equal(input().disabled, false, "espera temporal no deshabilita el texto")
     assert.equal(input().readOnly, false)
-    await write("CODIGO-EN-ESPERA")
+    await act(async () => { await user.type(input(), "CODIGO-EN-ESPERA") })
     assert.equal(input().value, "CODIGO-EN-ESPERA")
     assert.equal(dom.window.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled, true)
     await act(async () => { root.render(<Field />) })
