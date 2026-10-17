@@ -17393,6 +17393,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed #disp
   color: #172433;
 }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card strong.text-white,
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white\/70,
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white\/65,
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white\/60 {
@@ -17405,6 +17406,15 @@ html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .disp
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-red-200 { color: #b91c1c; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-red-300 { color: #b91c1c; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-label-details { color: #334155; }
+.beyonix-admin-main .dispatch-issue-card { border-color: #7f3b43 !important; }
+.beyonix-admin-main .dispatch-issue-list > li + li { border-top: 1px solid #394655; }
+.beyonix-admin-main .dispatch-batch-problem { border-color: #7f3b43 !important; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-issue-card,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-batch-problem { border-color: #e9b7bb !important; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-issue-list > li + li { border-color: #dce4eb; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-batch-list-card p { color: #243449; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-batch-list-card p span.text-red-300 { color: #b91c1c; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-batch-list-card p span.text-emerald-300 { color: #047857; }
 .dispatch-progress-track {
   height: 10px;
   overflow: hidden;

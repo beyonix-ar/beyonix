@@ -9,7 +9,7 @@ test("bloqueo, alerta única, resolución y cleanup sin refrescar la página", a
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dispatch-test-key"
   const { supabase } = await import("../../lib/supabase/client")
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin" })
-  Object.assign(globalThis, { window: dom.window, self: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true })
+  Object.assign(globalThis, { window: dom.window, self: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
   Object.defineProperty(supabase.auth, "getSession", { configurable: true, value: async () => ({ data: { session: { access_token: "test-token" } }, error: null }) })
   const { useDispatchAlerts } = await import("../../hooks/use-dispatch-alerts")
   const { ADMIN_DISPATCH_CHANGED_EVENT } = await import("../../hooks/use-admin-notifications")
@@ -56,7 +56,7 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const { ADMIN_DISPATCH_CHANGED_EVENT } = await import("../../hooks/use-admin-notifications")
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin/despachos?batch=1" })
-  Object.assign(globalThis, { window: dom.window, self: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true })
+  Object.assign(globalThis, { window: dom.window, self: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
   let blocked = false
   let removed = false
   const batch = { id: 1, code: "DSP-20261005-001", status: "closed", created_at: "2026-10-05T12:00:00Z", closed_at: "2026-10-05T13:00:00Z", prepared_at: "2026-10-05T13:00:00Z", handed_over_at: null, handed_over_by: null }
@@ -75,22 +75,23 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="1" />) })
     await settle()
-    // La salida a Andreani se confirma con el DSP del Bulto general.
-    const handover = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]')
-    assert.equal(handover()?.disabled, false)
+    // El DSP se pide recién al iniciar la entrega.
+    const text = () => dom.window.document.body.textContent ?? ""
+    assert.match(text(), /Listo para entregar[\s\S]*Entregar a Andreani/)
+    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
     blocked = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
-    assert.equal(handover()?.disabled, false, "el operador puede tipear mientras se actualiza el tablero")
-    assert.equal([...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Verificar DSP"))?.disabled, true, "el envío espera la actualización")
     await settle()
-    assert.match(dom.window.document.body.textContent ?? "", /Requiere revisión/)
-    assert.match(dom.window.document.body.textContent ?? "", /BX-1031.*Pedido bloqueado.*Cancelación solicitada/)
-    assert.equal(handover()?.disabled, true)
+    assert.match(text(), /Problema[\s\S]*BX-1031[\s\S]*No puede continuar[\s\S]*Retirar pedido/)
+    assert.doesNotMatch(text(), /Requiere revisión|Pedido bloqueado|Envío ya en curso|Verificar DSP|Entregar a Andreani/)
+    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
+    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Retirar pedido"))!.click() })
+    assert.match(text(), /Retirar pedido del Bulto general/)
+    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent === "Cancelar")!.click() })
     blocked = false
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()
-    assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión/)
-    assert.equal(handover()?.disabled, false)
+    assert.match(text(), /Listo para entregar[\s\S]*Entregar a Andreani/)
     removed = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()

@@ -123,12 +123,18 @@ test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cáma
     await act(async () => { button(dom, "Cerrar Bulto general")!.click() })
     await settle(150)
     assert.deepEqual(posts.at(-1), { action: "close" })
-    assert.ok(button(dom, "Imprimir etiqueta del Bulto general"), "el Bulto cerrado ofrece una acción visible de impresión")
-    assert.match(text(), /Ver etiqueta del Bulto general/)
+    assert.match(text(), /Listo para entregar/)
+    assert.equal(input(), null, "el escaneo del DSP aparece sólo al iniciar la entrega")
+    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Etiquetas"]')!.click() })
+    assert.deepEqual([...dom.window.document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent), ["Imprimir", "Guardar PDF", "Ver etiqueta"])
+    await act(async () => { button(dom, "Ver etiqueta")!.click() })
+    assert.ok(dom.window.document.querySelector("#dispatch-print-label"))
+    await act(async () => { button(dom, "Entregar a Andreani")!.click() })
+    assert.ok(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]'))
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("Bulto general: confirmación manual explícita desde la lista y pedido cancelado que requiere revisión", async () => {
+test("Bulto general: un cancelado muestra sólo el problema y su retiro", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=6")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const batch = { id: 6, code: "DSP-20261016-002", status: "open", created_at: "2026-10-16T12:00:00Z", closed_at: null, prepared_at: null, handed_over_at: null, handed_over_by: null, verification_round: 1 }
@@ -153,20 +159,14 @@ test("Bulto general: confirmación manual explícita desde la lista y pedido can
     await act(async () => { root.render(<AdminDispatches initialBatchId="6" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Requiere revisión/)
-    assert.match(text(), /BX-1008 fue cancelado y está dentro de este Bulto general/)
-    assert.ok(button(dom, "Escanear para retirar"), "se identifica exactamente el pedido a retirar")
-    // La confirmación manual vive en el menú de cada pedido, no como botón suelto.
-    assert.equal(button(dom, "Confirmar a mano"), undefined)
-    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Opciones de BX-1006"]')!.click() })
-    await act(async () => { button(dom, "Confirmar a mano")!.click() })
-    assert.match(text(), /¿Confirmás que el pedido BX-1006 \(360000001006\) está físicamente dentro de este Bulto general\?/)
-    await act(async () => { button(dom, "Confirmar verificado")!.click() })
-    await settle(150)
-    assert.equal(posts.length, 1)
-    assert.deepEqual([posts[0].action, posts[0].method, posts[0].orderId], ["verify", "manual_selection", 6])
-    assert.match(text(), /Confirmación manual/)
-    assert.equal(button(dom, "CERRAR BULTO GENERAL")?.disabled, true, "con un cancelado adentro no se cierra")
+    assert.match(text(), /Problema[\s\S]*Sacá este pedido del bulto para continuar[\s\S]*BX-1008[\s\S]*Cancelado[\s\S]*Retirar pedido/)
+    assert.equal(button(dom, "Retirar pedido")?.disabled, false)
+    assert.equal(posts.length, 0)
+    for (const hidden of ["Requiere revisión", "Pedido bloqueado", "Envío ya en curso", "Pedidos esperados", "Verificados", "Confirmar entrega", "Verificar DSP"]) assert.doesNotMatch(text(), new RegExp(hidden))
+    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
+    assert.equal(dom.window.document.querySelector(".dispatch-progress-track"), null)
+    await act(async () => { button(dom, "Retirar pedido")!.click() })
+    assert.match(text(), /Retirar BX-1008/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
@@ -194,6 +194,51 @@ test("Etiquetas: la cámara suma ×1 por lectura usando el mismo camino que el l
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
+test("Cerrados: varios cancelados se listan para retirar y al resolver el último vuelve la entrega", async () => {
+  const { dom, root } = await setup("https://beyonix.test/admin/despachos")
+  const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
+  const { ADMIN_DISPATCH_CHANGED_EVENT } = await import("../../hooks/use-admin-notifications")
+  const batch = { id: 8, code: "DSP-20261017-001", display_number: 1, status: "closed", created_at: "2026-10-17T12:00:00Z", closed_at: "2026-10-17T13:00:00Z", prepared_at: "2026-10-17T13:00:00Z", handed_over_at: null, handed_over_by: null, verification_round: 1 }
+  const cancelled = new Set([6, 11, 15])
+  let needsRevalidation = false
+  const items = () => [6, 11, 15].map((id) => ({ id, batch_id: 8, order_id: id, package_id: id, added_at: batch.created_at, removed_at: null, blocked: cancelled.has(id), blockReason: cancelled.has(id) ? "Pedido cancelado" : null, cancellationHold: cancelled.has(id), labelCode: `3600000010${String(id).padStart(2, "0")}`, verified: !needsRevalidation, verifiedAt: needsRevalidation ? null : batch.closed_at, verificationMethod: needsRevalidation ? null : "scanner", parcelCount: 1, parcels: [] }))
+  const holds = () => [...cancelled].map((id) => ({ id, orderId: id, units: 1, pickedUnits: 1, prepared: true, itemCount: 1, detectedAt: batch.created_at, batchId: 8, batchCode: batch.code }))
+  const detail = () => ({ batch, items: items(), blockedCount: cancelled.size, cancelledCount: cancelled.size, expectedCount: 3, verifiedCount: needsRevalidation ? 0 : 3, missingCount: needsRevalidation ? 3 : 0, requiresRevalidation: needsRevalidation, parcelCount: 3, operatorName: null })
+  globalThis.fetch = async (input) => {
+    const path = String(input)
+    if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
+    if (path.endsWith("/batches/8")) return Response.json(detail())
+    return Response.json({ orders: [], batches: [{ ...batch, orderCount: 3, verifiedCount: 3, packageCount: 3, blockedCount: cancelled.size }], holds: holds() })
+  }
+  try {
+    await act(async () => { root.render(<AdminDispatches />) })
+    await settle(100)
+    await act(async () => { button(dom, "Cerrados")!.click() })
+    assert.match(dom.window.document.body.textContent ?? "", /Bulto - 0001[\s\S]*3 pedidos[\s\S]*Tiene 3 pedidos cancelados/)
+    assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión|Verificados/)
+    await act(async () => { button(dom, "Abrir")!.click() })
+    await settle(120)
+    const text = () => dom.window.document.body.textContent ?? ""
+    assert.match(text(), /Hay 3 pedidos que tenés que retirar/)
+    for (const code of ["BX-1006", "BX-1011", "BX-1015"]) assert.match(text(), new RegExp(code))
+    assert.equal([...dom.window.document.querySelectorAll("button")].filter((item) => item.textContent?.includes("Retirar pedido")).length, 3)
+    assert.doesNotMatch(text(), /Entregar a Andreani|Verificar DSP|Pedidos esperados|Verificados/)
+    assert.equal(dom.window.document.querySelector(".dispatch-progress-track"), null)
+    cancelled.clear()
+    needsRevalidation = true
+    await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
+    await settle(350)
+    assert.match(text(), /Verificá 3 pedidos para continuar/)
+    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
+    assert.doesNotMatch(text(), /Entregar a Andreani/)
+    needsRevalidation = false
+    await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
+    await settle(350)
+    assert.match(text(), /3 pedidos · Listo para entregar[\s\S]*Entregar a Andreani/)
+    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
 test("Bulto general histórico sin escaneos: legible, no figura como verificado y no bloquea la entrega", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=7")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
@@ -211,11 +256,10 @@ test("Bulto general histórico sin escaneos: legible, no figura como verificado 
     await act(async () => { root.render(<AdminDispatches initialBatchId="7" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Histórico: sólo figuran como verificados los pedidos con escaneos registrados/)
-    assert.match(text(), /BX-1031Verificado/)
-    assert.match(text(), /Histórico · paquetes BX-PKG escaneados/)
-    assert.match(text(), /BX-1032Sin verificación/)
-    assert.equal(button(dom, "Confirmar a mano"), undefined, "no se ofrece verificar un histórico finalizado")
+    assert.match(text(), /2 pedidos · Listo para entregar/)
+    assert.doesNotMatch(text(), /Histórico|Verificados|Pedidos esperados/)
+    assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]'), null)
+    await act(async () => { button(dom, "Entregar a Andreani")!.click() })
     assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]')?.disabled, false)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
