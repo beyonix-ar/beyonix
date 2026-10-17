@@ -73,6 +73,25 @@ const cancel = (db: PGlite, orderId: number) => db.query(
   "update ordenes set estado='cancelado',cancelled_at=now(),financial_status='refund_pending',cancellation_requested_at=now(),refund_pending_at=now() where id=$1",
   [orderId])
 
+test("numeración nueva: históricos DSP intactos, correlativo único e idempotencia", async () => {
+  const db = await setup()
+  try {
+    const old = (await db.query<{ id: number }>("select (create_dispatch_batch($1,$2)).id", [actor, key()])).rows[0]
+    await db.exec(read("supabase/migrations/20261016170000_dispatch_batch_display_numbers.sql"))
+    const requestA = key()
+    const requestB = key()
+    const [first, second] = await Promise.all([requestA, requestB].map((requestKey) =>
+      db.query<{ code: string; display_number: number }>("select (create_dispatch_batch($1,$2)).*", [actor, requestKey])))
+    assert.deepEqual([first.rows[0].display_number, second.rows[0].display_number].sort((a, b) => a - b), [1, 2])
+    assert.match(first.rows[0].code, /^DSP-/)
+    const previous = (await db.query<{ display_number: number | null }>("select display_number from dispatch_batches where id=$1", [old.id])).rows[0]
+    assert.equal(previous.display_number, null)
+    const retried = (await db.query<{ display_number: number }>("select (create_dispatch_batch($1,$2)).display_number", [actor, requestA])).rows[0]
+    assert.equal(retried.display_number, first.rows[0].display_number)
+    assert.equal(await count(db, "select count(*)::integer n from dispatch_batches where display_number is not null"), 2)
+  } finally { await db.close() }
+})
+
 test("identificación física: impresa o manual, obligatoria para el Bulto general y anulada al rearmar", async () => {
   const db = await setup()
   try {

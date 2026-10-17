@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageChec
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
 import { CancellationResolution } from "./cancellation-resolution"
@@ -182,7 +183,6 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
   const shippingInfo = detail.shipping ?? NO_SHIPPING_INFO
   const pendingLines = detail.lines.filter((line) => line.scanned_quantity < line.expected_quantity)
   // Pendientes que sólo frenan el Bulto general (p. ej. factura): se informan recién ahí.
-  const missingBeforeBundle = detail.pendingBeforeDispatch.filter((item) => item !== "Envío pendiente").join(" · ")
 
   const printLabel = (mode: "print" | "download") => void run(async () => {
     await openAndreaniLabel(orderId, mode)
@@ -205,11 +205,11 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
     : { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: !viewer.canShip || packingBlocked, hint: viewer.canShip ? undefined : "El envío lo genera un Admin.", onClick: openShip }
   else if (stage === "label") primary = { label: "Imprimir etiqueta Andreani", icon: <Printer className="size-5" />, onClick: () => printLabel("print") }
   else if (stage === "ready") primary = onReady
-    ? { label: "Agregar al Bulto general", icon: <ArrowRight className="size-5" />, disabled: Boolean(missingBeforeBundle) || detail.blocked, hint: missingBeforeBundle ? `Antes falta: ${missingBeforeBundle}.` : detail.blocked ? detail.blockReason ?? "Revisión requerida." : undefined, onClick: addToBundle }
+    ? { label: "Volver a Confirmados", icon: <ArrowRight className="size-5" />, onClick: addToBundle }
     : { label: "Ir a Despachos", icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?order=${orderId}`) }
   else if (stage === "in_batch" && detail.batch) {
     const batchId = detail.batch.id
-    primary = { label: `Abrir Bulto general ${detail.batch.code}`, icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?batch=${batchId}`) }
+    primary = { label: `Abrir ${dispatchBatchName(detail.batch)}`, icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?batch=${batchId}`) }
   }
 
   const labelItems: AdminRowMenuAction[] = shipment.created ? [

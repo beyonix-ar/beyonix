@@ -8,6 +8,7 @@ import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, Adm
 import { LabelPrintDialog } from "@/app/admin/components/label-print-dialog"
 import { supabase } from "@/lib/supabase/client"
 import { DISPATCH_VERIFICATION_METHOD_LABELS, orderCode, type BatchDispatchDetail, type DispatchBatchItem, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
+import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { normalizeScannedCode, orderIdFromDispatchCode } from "@/lib/admin/dispatch-scan"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { DispatchLabel } from "./dispatch-label"
@@ -184,7 +185,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">Bulto general</span>
-            <h3 className="truncate font-mono text-xl font-black text-white">{batch.code}</h3>
+            <h3 className="truncate font-mono text-xl font-black text-white">{dispatchBatchName(batch)}</h3>
           </div>
           <AdminBadge tone={statusTone}>{statusLabel}</AdminBadge>
         </div>

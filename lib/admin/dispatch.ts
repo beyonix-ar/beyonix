@@ -23,7 +23,7 @@ export type DispatchShippingInfo = {
   parcelQuote: { status: "quoted" | "failed"; current: boolean; amount: number | null; checkoutAmount: number | null; differenceAmount: number | null; differencePercent: number | null; alert: boolean } | null
 }
 /** Bulto general = dispatch_batches (código DSP). */
-export type DispatchBatch = { id: number; code: string; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; prepared_at?: string | null; handed_over_at: string | null; handed_over_by: string | null; verification_round?: number; verification_required?: boolean }
+export type DispatchBatch = { id: number; code: string; display_number?: number | null; status: "open" | "closed" | "handed_over"; created_at: string; closed_at: string | null; prepared_at?: string | null; handed_over_at: string | null; handed_over_by: string | null; verification_round?: number; verification_required?: boolean }
 export type DispatchMembership = { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null }
 /** Cómo se verificó un pedido dentro del Bulto general (mismo backend para todos). */
 export type DispatchVerificationMethod = "scanner" | "camera" | "manual_code" | "manual_selection" | "legacy_parcels"
@@ -257,7 +257,7 @@ export function dispatchError(error: { message: string; details?: string | null 
 const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,parcels_request_key,identification_method,identified_at"
 export const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id,created_at,cliente_nombre,andreani_envio_id,andreani_tracking,andreani_creation_status"
 const ORDER_SHIPPING_COLUMNS = "shipping_estimate,shipping_provider_quote_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount,shipping_parcel_quote_request_key"
-const BATCH_COLUMNS = "id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round,verification_required"
+const BATCH_COLUMNS = "id,code,display_number,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round,verification_required"
 
 const optionalNumber = (value: unknown) => value === null || value === undefined ? null : Number(value)
 

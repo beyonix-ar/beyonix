@@ -6,6 +6,7 @@ type MembershipRow = { id: number; batch_id: number; order_id: number; package_i
 type HoldRow = { id: number; order_id: number; attempt_number: number; batch_id: number | null; units: number; picked_units: number; prepared: boolean; items: unknown; detected_at: string }
 const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,identification_method"
 const MEMBERSHIP_COLUMNS = "id,batch_id,order_id,package_id,added_at,removed_at,verified_at,verification_round"
+const BATCH_COLUMNS = "id,code,display_number,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round"
 const PAGE = 1000
 const CHUNK = 100
 // Estados en los que el pedido ya salió por fuera de Despachos (circuito anterior).
@@ -29,13 +30,21 @@ export async function GET(request: Request) {
     activeOrders.push(...((page.data ?? []) as DispatchOrder[]))
     if ((page.data?.length ?? 0) < PAGE) break
   }
-  const [batchesResult, holdsResult] = await Promise.all([
-    auth.admin.from("dispatch_batches").select("id,code,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round").order("id", { ascending: false }).limit(100),
+  const [historicalBatches, holdsResult] = await Promise.all([
+    auth.admin.from("dispatch_batches").select(BATCH_COLUMNS).neq("status", "open").order("id", { ascending: false }).limit(100),
     auth.admin.from("order_cancellation_holds").select(HOLD_COLUMNS).is("resolved_at", null).order("detected_at"),
   ])
-  if (batchesResult.error || holdsResult.error) return fail("No se pudieron cargar los despachos.")
+  if (historicalBatches.error || holdsResult.error) return fail("No se pudieron cargar los despachos.")
+  const openBatches: NonNullable<typeof historicalBatches.data> = []
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await auth.admin.from("dispatch_batches").select(BATCH_COLUMNS).eq("status", "open")
+      .order("id", { ascending: false }).range(offset, offset + PAGE - 1)
+    if (page.error) return fail("No se pudieron cargar los Bultos abiertos.")
+    openBatches.push(...(page.data ?? []))
+    if ((page.data?.length ?? 0) < PAGE) break
+  }
   const orderIds = activeOrders.map((order) => order.id)
-  const batches = batchesResult.data ?? []
+  const batches = [...openBatches, ...(historicalBatches.data ?? [])].sort((left, right) => right.id - left.id)
   const packages: PackageRow[] = []
   const unitsByOrder = new Map<number, { items: number; units: number }>()
   for (const ids of chunks(orderIds)) {

@@ -17244,6 +17244,15 @@ html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { 
 .beyonix-admin-main .dispatch-copy-estimate:hover:not(:disabled) { background: rgba(56, 189, 248, 0.13); }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-workspace { background: #f5f7fa; border-color: #d9e1e8; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-tabs { background: #fff; border-color: #d9e1e8; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-tabs button:not([aria-current="page"]) { color: #516273; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-tabs button:not([aria-current="page"]):hover { color: #163047; background: #eef3f7; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-queue-card .text-white,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-queue-card .text-white\/85 { color: #172433; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-queue-card .text-white\/60,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-queue-card .text-white\/75 { color: #526476; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-surface input[type="date"] { color: #172433; background: #fff; border-color: #cbd5e1; color-scheme: light; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-filter-date,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-select-bar { color: #34495d; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-subheading { color: #223244; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-scan-input input {
   background: #fff !important;

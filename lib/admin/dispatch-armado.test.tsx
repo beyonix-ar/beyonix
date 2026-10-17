@@ -187,7 +187,7 @@ test("pickeo: una acción por etapa, envío bloqueado hasta completar, errores q
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("Admin: genera el envío Andreani con medidas, imprime su etiqueta y agrega el pedido al Bulto general", async () => {
+test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes de volver a Confirmados", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?order=31")
   const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
   const fake = fakeOrder("admin")
@@ -228,7 +228,7 @@ test("Admin: genera el envío Andreani con medidas, imprime su etiqueta y agrega
     assert.match(text(), /Listo para Bulto general/)
     assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Reimprimir etiqueta Andreani", "Guardar PDF de etiqueta Andreani"])
 
-    assert.equal(primary(dom)?.textContent, "Agregar al Bulto general")
+    assert.equal(primary(dom)?.textContent, "Volver a Confirmados")
     await act(async () => { primary(dom)!.click() })
     await settle()
     assert.equal(added, 1)
