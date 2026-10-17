@@ -14,7 +14,7 @@ import { CameraScanner, type CameraFeedback } from "./camera-scanner"
  * se informa para auditoría. El campo queda listo para la siguiente lectura
  * (foco) apenas termina la anterior.
  */
-export function ScanField({ label, placeholder, submitLabel, value, onChange, onScan, busy = false, disabled = false, inputDisabled = disabled, autoFocus = false, cameraTitle, cameraHint, continuousCamera = false, feedback = null }: {
+export function ScanField({ label, placeholder, submitLabel, value, onChange, onScan, busy = false, disabled = false, inputDisabled = false, autoFocus = false, cameraTitle, cameraHint, continuousCamera = false, feedback = null }: {
   label: string
   placeholder: string
   submitLabel: string
@@ -23,7 +23,7 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
   onScan: (code: string, method: DispatchScanMethod) => void
   busy?: boolean
   disabled?: boolean
-  /** Permite preparar el código mientras una actualización temporal bloquea el envío. */
+  /** Sólo para bloqueos operativos reales; busy/disabled no impiden escribir. */
   inputDisabled?: boolean
   autoFocus?: boolean
   cameraTitle: string
@@ -58,6 +58,7 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
     const method = typedInputMethod({ pasted: pasted.current, keyTimes: keyTimes.current })
     keyTimes.current = []; pasted.current = false
     emit(value, method)
+    if (autoFocus && !inputDisabled && !cameraOpen) inputRef.current?.focus()
   }
 
   const submitDisabled = busy || disabled || !value.trim()
@@ -67,7 +68,7 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
       <label className="dispatch-scan-input relative min-w-0 flex-1">
         <span className="sr-only">{label}</span>
         <ScanLine className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-beyonix-sky" />
-        <input ref={inputRef} aria-label={label} autoFocus={autoFocus} autoComplete="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="send"
+        <input ref={inputRef} type="text" aria-label={label} autoFocus={autoFocus} autoComplete="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="send"
           value={value} onChange={(event) => { if (!event.target.value) { keyTimes.current = []; pasted.current = false } onChange(event.target.value) }} placeholder={placeholder} disabled={inputDisabled}
           onKeyDown={(event) => { if (event.key.length === 1) keyTimes.current.push(event.timeStamp) }} onPaste={() => { pasted.current = true }}
           className="admin-control-input admin-ds-control h-14 w-full min-w-0 pl-12 pr-3 text-base text-white outline-none sm:pr-4" />

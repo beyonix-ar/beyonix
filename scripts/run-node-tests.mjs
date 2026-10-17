@@ -326,6 +326,7 @@ const TSX_TEST_FILES = [
   "lib/supabase/proxy-cookies.test.ts",
   "lib/admin/dispatch-realtime.test.tsx",
   "lib/admin/dispatch-armado.test.tsx",
+  "lib/admin/dispatch-scan-field.test.tsx",
   "lib/admin/dispatch-queue.test.ts",
   "lib/admin/dispatch-queue-ui.test.tsx",
   "lib/admin/dispatch-camera.test.tsx",

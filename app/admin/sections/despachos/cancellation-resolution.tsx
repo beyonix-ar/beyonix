@@ -85,7 +85,7 @@ export function CancellationResolution({ hold, onResolved, onClose }: {
 
     <ScanField label="Escanear pedido cancelado" placeholder={hold.prepared ? "Escaneá la etiqueta Andreani" : `Escaneá o ingresá ${orderLabel}`} submitLabel="Liberar stock"
       value={code} onChange={(value) => { setCode(value); requestKey.current = null }} onScan={(scanned) => void resolve(scanned)}
-      busy={busy} disabled={!confirmed} autoFocus={confirmed}
+      busy={busy} disabled={!confirmed} inputDisabled={!confirmed} autoFocus={confirmed}
       cameraTitle={`Retirar ${orderLabel}`} cameraHint="Encuadrá la etiqueta Andreani del pedido" feedback={error ? { tone: "error", message: error } : null} />
     {!confirmed && <p className="flex items-center gap-2 text-xs font-bold text-amber-200"><AlertTriangle className="size-4" />Marcá la confirmación para habilitar el escaneo.</p>}
     {error && <p role="alert" className="flex items-center gap-2 text-sm font-bold text-red-300"><XCircle className="size-5 shrink-0" />{error}</p>}

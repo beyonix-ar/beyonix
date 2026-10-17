@@ -280,7 +280,7 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
         {stage === "packing" && <div className="dispatch-scanner min-w-0 space-y-1">
           <ScanField label="Escanear o ingresar código / SKU" placeholder="Escaneá el producto" submitLabel="Verificar"
             value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
-            busy={busy} disabled={packingBlocked} autoFocus={!pendingVariant && dialog === null}
+            busy={busy} disabled={packingBlocked} inputDisabled={packingBlocked} autoFocus={!pendingVariant && dialog === null}
             cameraTitle={`Pickeo ${code}`} cameraHint="Encuadrá el código de barras del producto" continuousCamera feedback={feedback} />
           <LastScan feedback={feedback} />
         </div>}
