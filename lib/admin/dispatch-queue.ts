@@ -9,8 +9,9 @@ export function dispatchQueueStatus(order: QueueOrder): "pending" | "confirmed" 
   return order.package?.status === "prepared" ? "confirmed" : "pending"
 }
 
-export function dispatchBatchName(batch: Pick<DispatchBatch, "code" | "display_number">) {
-  return batch.display_number ? `Bulto - ${String(batch.display_number).padStart(4, "0")}` : batch.code
+export function dispatchBatchName(batch: Pick<DispatchBatch, "id" | "display_number">) {
+  const number = batch.display_number ?? batch.id
+  return `Bulto - ${String(number).padStart(4, "0")}`
 }
 
 export function filterDispatchOrders<T extends QueueOrder>(orders: T[], search: string, date: string) {

@@ -168,7 +168,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
   const eligibleReadyIds = new Set(eligibleReady.map((item) => item.id))
   const visibleSelectableIds = readyPage.items.filter((item) => eligibleReadyIds.has(item.id)).map((item) => item.id)
   const selectedReady = eligibleReady.filter((item) => selected.has(item.id))
-  const shownBatches = board?.batches ?? []
+  const shownBatches = (board?.batches ?? []).filter((item) => item.orderCount > 0)
 
   function toggleSelected(id: number) {
     createKey.current = null
@@ -210,18 +210,13 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
   const queueIndex = orderId ? queue.indexOf(orderId) : -1
   const nextInQueue = queueIndex >= 0 ? queue[queueIndex + 1] : undefined
   const closeOrder = () => { setOrderId(null); setQueue([]); void refresh() }
-  function finishReady() {
-    if (nextInQueue) setOrderId(nextInQueue)
-    else { setOrderId(null); setQueue([]); setTab("ready") }
-    void refresh()
-  }
   // Listado lateral: la cola elegida o los pedidos por preparar, siempre con el pedido actual.
   const baseSideIds = queue.length > 1 ? queue : armadoOrders.map((item) => item.id)
   const sideIds = orderId && !baseSideIds.includes(orderId) ? [orderId, ...baseSideIds] : baseSideIds
 
   // Contadores sólo de las colas operativas: el board trae hasta 100 lotes,
   // así que cerrados/entregados no tendrían un total confiable.
-  const openBatchCount = (board?.batches ?? []).length
+  const openBatchCount = shownBatches.length
   const tabCounts: Partial<Record<Tab, number>> = board ? { armado: armadoOrders.length, ready: readyOrders.length, open: openBatchCount } : {}
 
   return <div className={`${adminPageClassName} dispatch-page mx-auto max-w-6xl`}>
@@ -265,11 +260,11 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       <div className={`grid gap-4 ${sideIds.length > 1 ? "@5xl:grid-cols-[220px_minmax(0,1fr)] @5xl:items-start" : ""}`}>
         {sideIds.length > 1 && <PreparationQueue className="order-last @5xl:order-first" title={queue.length > 1 ? "Pedidos seleccionados" : "Pedidos por preparar"} ids={sideIds} orders={orders} currentId={orderId}
           onSelect={(id) => { if (queue.length > 1) setOrderId(id); else startArmado([id]) }} />}
-        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder} onReady={finishReady}
+        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder}
           footer={nextInQueue ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminButton> : null} />
       </div>
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow="Bulto general" actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
-      <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)} canReopen={board?.viewerRole === "super_admin"}
+      <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
         onChange={(detail) => { setBatch(detail); setTab("open") }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
     </AdminSection> : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />}>
       {(tab === "armado" || tab === "ready") ? (() => {
@@ -322,7 +317,7 @@ export function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
   // En la cola de preparación sólo bloquea lo que frena el pickeo; para el Bulto general, cualquier bloqueo.
   const blocked = tab === "ready" ? Boolean(item.blocked) : Boolean(item.packingBlocked ?? item.blocked)
   const selectable = tab === "ready" && !blocked && readyForGeneralBundle(item.package, andreaniShipmentCreated(item))
-  const status = blocked ? item.cancelled_at ? "Cancelado" : "No puede continuar" : tab === "ready" ? "Confirmado" : stage === "pending" ? "Pendiente" : DISPATCH_STAGE_LABELS[stage]
+  const status = blocked ? item.cancelled_at ? "Cancelado" : "No puede continuar" : tab === "ready" && selectable ? "Listo para Bulto" : tab === "ready" ? "Confirmado" : stage === "pending" ? "Pendiente" : DISPATCH_STAGE_LABELS[stage]
   return <tr className="dispatch-order-row" tabIndex={0} aria-label={`Abrir pedido ${orderCode(item.id)}`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen() } }}>
     {tab === "ready" && <td className="dispatch-order-check" onClick={(event) => event.stopPropagation()}><input type="checkbox" className="size-5" aria-label={`Seleccionar ${orderCode(item.id)}`} checked={checked && selectable} disabled={!selectable} onChange={onToggle} onKeyDown={(event) => event.stopPropagation()} /></td>}
     <td className="dispatch-order-code" data-label="Pedido">{orderCode(item.id)}</td>

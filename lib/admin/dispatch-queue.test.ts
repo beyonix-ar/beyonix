@@ -41,9 +41,9 @@ test("paginación de 20 se reacomoda y la selección total afecta sólo la pági
 })
 
 test("número visible nuevo e históricos DSP", () => {
-  assert.equal(dispatchBatchName({ code: "DSP-20261016-001", display_number: 1 }), "Bulto - 0001")
-  assert.equal(dispatchBatchName({ code: "DSP-20261016-002", display_number: 2 }), "Bulto - 0002")
-  assert.equal(dispatchBatchName({ code: "DSP-20261015-001", display_number: null }), "DSP-20261015-001")
+  assert.equal(dispatchBatchName({ id: 9, display_number: 1 }), "Bulto - 0001")
+  assert.equal(dispatchBatchName({ id: 10, display_number: 2 }), "Bulto - 0002")
+  assert.equal(dispatchBatchName({ id: 7, display_number: null }), "Bulto - 0007")
   const migration = readFileSync("supabase/migrations/20261016170000_dispatch_batch_display_numbers.sql", "utf8")
   assert.match(migration, /create sequence public\.dispatch_batch_display_number_seq as bigint start with 1/i)
   assert.match(migration, /create unique index dispatch_batches_display_number_unique/i)

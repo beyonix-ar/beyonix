@@ -476,6 +476,30 @@ Al finalizar cada tarea responder:
 
 ---
 
+# Eficiencia de tokens y autonomía
+
+Trabajar con máxima autonomía y mínimo intercambio innecesario con el usuario.
+
+Reglas:
+
+- No pedir confirmaciones para decisiones técnicas normales.
+- No explicar el plan antes de ejecutar salvo que exista riesgo real.
+- No realizar auditorías generales si la tarea es puntual.
+- Inspeccionar solamente los archivos, dependencias y datos necesarios.
+- Preferir búsquedas dirigidas antes que exploraciones amplias del repositorio.
+- Reutilizar implementaciones existentes antes de crear código nuevo.
+- Evitar leer archivos completos cuando alcanza con secciones relevantes.
+- Evitar repetir contexto ya disponible en este archivo o en el repositorio.
+- Si una migración es necesaria:
+  - crearla;
+  - aplicarla;
+  - verificar que quedó aplicada;
+  - continuar automáticamente.
+- Corregir automáticamente errores directamente relacionados encontrados durante la tarea.
+- No detener el trabajo por warnings no relacionados.
+- Al finalizar, responder de forma breve y concreta.
+
+
 # Principio general
 
 La prioridad absoluta es mantener BEYONIX:

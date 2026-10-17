@@ -178,7 +178,7 @@ test("estados de despacho visibles", () => {
   assert.equal(dispatchStage({ package: { status: "prepared", identification_method: "andreani" }, shipmentCreated: true, batchStatus: "open" }), "in_batch")
   assert.equal(dispatchStage({ package: { status: "prepared", identification_method: "andreani" }, shipmentCreated: true, batchStatus: "closed" }), "batch_closed")
   assert.equal(dispatchStage({ package: { status: "prepared", identification_method: "andreani" }, shipmentCreated: true, handedOver: true }), "handed_over")
-  assert.deepEqual(Object.values(DISPATCH_STAGE_LABELS), ["Sin empezar", "En pickeo", "Pedido completo", "Envío generado", "Listo para Bulto general", "En Bulto general", "Bulto general cerrado", "Entregado a Andreani"])
+  assert.deepEqual(Object.values(DISPATCH_STAGE_LABELS), ["Sin empezar", "En pickeo", "Pedido completo", "Envío generado", "Listo para Bulto", "En Bulto", "Bulto finalizado", "Bulto finalizado"])
 })
 
 test("Compras: códigos equivalentes resuelven la variante física o piden elegirla si son del grupo", async () => {

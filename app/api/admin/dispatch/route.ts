@@ -132,7 +132,7 @@ export async function GET(request: Request) {
     const round = batch.verification_round ?? 1
     return { ...batch, orderCount: items.length, verifiedCount: items.filter((item) => item.verified_at && item.verification_round === round).length, packageCount: items.reduce((sum, item) => sum + (packageById.get(item.package_id)?.parcel_count ?? 0), 0), blockedCount: items.filter((item) => blockedIds.has(item.order_id)).length,
       blockedOrders: items.filter((item) => blockedIds.has(item.order_id)).map((item) => ({ orderId: item.order_id, reason: blockedReasons.get(item.order_id) ?? "Revisión requerida", createdAt: blockedAt.get(item.order_id) ?? batch.created_at })) }
-  })
+  }).filter((batch) => batch.orderCount > 0)
   // Un Bulto finalizado ya no requiere una entrega adicional.
   return Response.json(alertsOnly ? { batches: batchCards.filter((batch) => batch.blockedCount > 0), holds } : { orders, batches: batchCards, holds, viewerRole: auth.profile.rol }, { headers: { "Cache-Control": "no-store" } })
 }

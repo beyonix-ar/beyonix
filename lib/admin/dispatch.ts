@@ -97,10 +97,10 @@ export const DISPATCH_STAGE_LABELS: Record<DispatchStage, string> = {
   packing: "En pickeo",
   shipment: "Pedido completo",
   label: "Envío generado",
-  ready: "Listo para Bulto general",
-  in_batch: "En Bulto general",
-  batch_closed: "Bulto general cerrado",
-  handed_over: "Entregado a Andreani",
+  ready: "Listo para Bulto",
+  in_batch: "En Bulto",
+  batch_closed: "Bulto finalizado",
+  handed_over: "Bulto finalizado",
 }
 
 /** Envío Andreani creado y confirmado (misma condición que shipment_pending en la base). */

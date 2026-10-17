@@ -120,8 +120,7 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(input(), null)
     assert.equal(posts.some((post) => post.action === "close" || post.action === "handover"), false)
     assert.doesNotMatch(text(), /Entregar a Andreani|Escanear o ingresar DSP/)
-    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Opciones del Bulto"]')!.click() })
-    assert.deepEqual([...dom.window.document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent), ["Ver historial", "Imprimir etiqueta del Bulto", "Guardar PDF"])
+    assert.equal(dom.window.document.querySelector('button[aria-label="Opciones del Bulto"]'), null)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 

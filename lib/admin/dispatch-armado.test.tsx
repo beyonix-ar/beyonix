@@ -199,9 +199,8 @@ test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes d
   Object.assign(fake.state, { started: true, picked: [3, 1] })
   globalThis.fetch = fake.fetch
   const opened = fakeLabelWindow(dom)
-  let added = 0
   try {
-    await act(async () => { root.render(<OrderPreparationPanel orderId={31} onReady={async () => { added += 1 }} />) })
+    await act(async () => { root.render(<OrderPreparationPanel orderId={31} />) })
     await settle()
     const text = () => dom.window.document.body.textContent ?? ""
     assert.equal(primary(dom)?.textContent, "Generar envío Andreani")
@@ -220,9 +219,9 @@ test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes d
 
     // Envío generado: la etiqueta Andreani identifica el pedido.
     assert.match(text(), /Envío generado/)
-    assert.match(text(), /Seguimiento Andreani: 360000001031/)
+    assert.match(text(), /Andreani: 360000001031/)
     assert.equal(primary(dom)?.textContent, "Imprimir etiqueta Andreani")
-    assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Imprimir etiqueta Andreani", "Guardar PDF de etiqueta Andreani"])
+    assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Guardar PDF de etiqueta Andreani"])
     assert.ok((await menuItems(dom, "Envío")).includes("Ver seguimiento"))
     assert.doesNotMatch(text(), /BX-PREP/, "sin etiqueta BEYONIX extra")
     await act(async () => { primary(dom)!.click() })
@@ -230,13 +229,10 @@ test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes d
     assert.equal(fake.state.labels, 1)
     assert.equal(opened.length, 1, "abre la etiqueta para imprimir")
     assert.match(opened[0], /^blob:/)
-    assert.match(text(), /Listo para Bulto general/)
+    assert.match(text(), /Listo para Bulto/)
     assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Reimprimir etiqueta Andreani", "Guardar PDF de etiqueta Andreani"])
 
-    assert.equal(primary(dom)?.textContent, "Volver a Confirmados")
-    await act(async () => { primary(dom)!.click() })
-    await settle()
-    assert.equal(added, 1)
+    assert.equal(primary(dom), null, "el pedido listo no agrega otra acción")
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 

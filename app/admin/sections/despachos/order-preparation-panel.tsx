@@ -41,15 +41,13 @@ const goTo = (path: string) => window.location.assign(path)
 /**
  * Pedido en Despachos: estado, progreso, productos y UNA acción principal
  * según la etapa (empezar → pickear → generar envío Andreani → imprimir su
- * etiqueta → agregar al Bulto general). Lo secundario vive en menús que sólo
+ * etiqueta). Lo secundario vive en menús que sólo
  * muestran opciones válidas para el estado actual.
  */
-export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
+export function OrderPreparationPanel({ orderId, onDone, footer }: {
   orderId: number
   /** Cierre tras resolver una cancelación con armado. */
   onDone?: () => void
-  /** Despachos: vuelve a la cola de Confirmados. */
-  onReady?: () => Promise<void> | void
   footer?: ReactNode
 }) {
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -195,7 +193,6 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
     setParcelDrafts(initialParcelDrafts(detail.parcels, count))
     openDialog("ship")
   }
-  const addToBundle = () => { if (onReady) void run(async () => { await onReady() }) }
 
   let primary: PrimaryAction | null = null
   if (stage === "pending") primary = { label: "Empezar preparación", icon: <PackageCheck className="size-5" />, disabled: packingBlocked, onClick: () => post({ action: "start" }) }
@@ -204,16 +201,14 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
     ? { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: true, hint: "Envío en revisión: requiere conciliación manual antes de reintentar." }
     : { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: !viewer.canShip || packingBlocked, hint: viewer.canShip ? undefined : "El envío lo genera un Admin.", onClick: openShip }
   else if (stage === "label") primary = { label: "Imprimir etiqueta Andreani", icon: <Printer className="size-5" />, onClick: () => printLabel("print") }
-  else if (stage === "ready") primary = onReady
-    ? { label: "Volver a Confirmados", icon: <ArrowRight className="size-5" />, onClick: addToBundle }
-    : { label: "Ir a Despachos", icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?order=${orderId}`) }
+  else if (stage === "ready") primary = null
   else if (stage === "in_batch" && detail.batch) {
     const batchId = detail.batch.id
     primary = { label: `Abrir ${dispatchBatchName(detail.batch)}`, icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?batch=${batchId}`) }
   }
 
   const labelItems: AdminRowMenuAction[] = shipment.created ? [
-    { key: "print", label: identified ? "Reimprimir etiqueta Andreani" : "Imprimir etiqueta Andreani", icon: <Printer className="size-4" />, disabled: busy, onSelect: () => printLabel("print") },
+    ...(identified ? [{ key: "print", label: "Reimprimir etiqueta Andreani", icon: <Printer className="size-4" />, disabled: busy, onSelect: () => printLabel("print") }] : []),
     { key: "download", label: "Guardar PDF de etiqueta Andreani", icon: <Download className="size-4" />, disabled: busy, onSelect: () => printLabel("download") },
   ] : []
   const orderItems: AdminRowMenuAction[] = [
@@ -222,9 +217,7 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
     ...(pkg && !inBatch && !handedOver ? [{ key: "reset", label: "Reiniciar preparación", icon: <RotateCcw className="size-4" />, tone: "danger" as const, onSelect: () => openDialog("reset") }] : []),
   ]
   const shipmentItems: AdminRowMenuAction[] = [
-    ...(stage === "shipment" && viewer.canShip && !shipmentUncertain && !packingBlocked ? [{ key: "ship", label: "Generar envío Andreani", icon: <Truck className="size-4" />, onSelect: openShip }] : []),
     ...(shipment.created ? [{ key: "tracking", label: "Ver seguimiento", icon: <Truck className="size-4" />, onSelect: () => goTo(`/admin/pedidos/${orderId}?tab=envio`) }] : []),
-    ...(shipment.created && identified ? [{ key: "reprint", label: "Reimprimir etiqueta Andreani", icon: <Printer className="size-4" />, disabled: busy, onSelect: () => printLabel("print") }] : []),
   ]
   // Excepciones: sólo Super Admin, con motivo y auditoría.
   const exceptionItems: AdminRowMenuAction[] = viewer.canForce && stage === "packing" && !shipment.created && !packingBlocked
@@ -251,9 +244,10 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
         <h3 className="text-base font-black tabular-nums text-white">Pedido {code}</h3>
         <span>Compra: {dateTime(detail.order.created_at)}</span>
         {pkg?.prepared_at && <span>Preparado: {dateTime(pkg.prepared_at)}</span>}
-        {detail.order.invoice_status === "authorized" && <span>Factura emitida</span>}
+        {detail.order.invoice_status === "authorized" && <span>Factura: Emitida</span>}
+        {shipment.created && <span>Andreani: {shipment.tracking ?? shipment.envioId}</span>}
         <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{DISPATCH_STAGE_LABELS[stage]}</AdminBadge>
-        <span>{units} de {detail.expectedUnits} unidades</span>
+        {stage !== "ready" && <span>{units} de {detail.expectedUnits} unidades</span>}
       </div>
       <div className="dispatch-order-actions flex flex-wrap gap-2 px-3 py-2 sm:px-4" aria-label="Acciones secundarias">
           {labelItems.length > 0 && <AdminRowMenu triggerLabel="Etiquetas" ariaLabel="Etiquetas" items={labelItems} />}
@@ -261,11 +255,10 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
           {shipmentItems.length > 0 && <AdminRowMenu triggerLabel="Envío" ariaLabel="Envío" items={shipmentItems} />}
           {exceptionItems.length > 0 && <AdminRowMenu triggerLabel="Más" ariaLabel="Más acciones" items={exceptionItems} />}
       </div>
-      {shipment.created && <p className="px-3 pb-2 text-xs text-white/70 sm:px-4">Seguimiento Andreani: <span className="font-mono font-bold text-white">{shipment.tracking ?? shipment.envioId}</span></p>}
 
       <div className="dispatch-product-table-wrap">
         <table className="dispatch-product-table w-full" aria-label="Productos del pedido">
-          <thead><tr><th scope="col">SKU</th><th scope="col">Producto</th><th scope="col">Variante</th><th scope="col">Cant. solicitada</th><th scope="col">Picking</th><th scope="col">Precio unitario</th><th scope="col">Total</th></tr></thead>
+          <thead><tr><th scope="col">SKU</th><th scope="col">Producto</th><th scope="col">Variante</th><th scope="col">Cantidad</th><th scope="col">Picking</th><th scope="col">Precio</th><th scope="col">Total</th></tr></thead>
           <tbody>{displayItems.map((item) => <ProductLine key={item.orderItemId} item={item} line={lineByItem.get(item.orderItemId)} adjusted={lastAdjustment.has(item.orderItemId)} />)}</tbody>
         </table>
         {displayItems.length === 0 && <p className="px-4 py-3 text-sm text-white/60">Sin productos para mostrar.</p>}

@@ -1,37 +1,26 @@
 "use client"
 
-import { useEffect, useRef, useState, type FormEvent } from "react"
-import { CheckCircle2, Circle, Download, Printer } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { CheckCircle2, Circle } from "lucide-react"
 
-import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
-import { printLabels, saveBatchLabelsPdf } from "@/lib/barcodes/print-labels"
+import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
-import { orderIdFromDispatchCode } from "@/lib/admin/dispatch-scan"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
 import { ScanField } from "./scan-field"
 
 type Feedback = { tone: "success" | "warning" | "error"; message: string }
 type BundleResponse = BatchDispatchDetail & { verification?: DispatchVerificationResult | null }
-type Dialog = { kind: "remove"; orderId: number } | { kind: "add" } | { kind: "history" } | { kind: "reopen" }
-type BatchEvent = { id: number; action: string; order_id: number | null; created_at: string; metadata?: { reason?: string } | null }
-
-const eventNames: Record<string, string> = {
-  created: "Bulto creado", order_added: "Pedido agregado", order_verified: "Pedido controlado",
-  order_removed: "Pedido retirado", closed: "Bulto finalizado", revalidation_required: "Control pendiente",
-  handed_over: "Entrega registrada", reopened: "Bulto reabierto",
-}
+type Dialog = { kind: "remove"; orderId: number }
 const plural = (count: number) => `${count} ${count === 1 ? "pedido" : "pedidos"}`
-const dateTime = (value: string) => new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value))
 
 /** Control físico del Bulto: la última etiqueta Andreani lo finaliza en la RPC. */
-export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, canReopen = false, onChange, onOpenResolution, onRefresh }: {
+export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, onChange, onOpenResolution, onRefresh }: {
   detail: BatchDispatchDetail
   holds: readonly DispatchHold[]
   liveUpdating: boolean
   boardError: boolean
-  canReopen?: boolean
   onChange: (detail: BatchDispatchDetail) => void
   onOpenResolution: (hold: DispatchHold) => void
   onRefresh: () => void
@@ -41,10 +30,8 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, ca
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [reason, setReason] = useState("")
-  const [addCode, setAddCode] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [history, setHistory] = useState<BatchEvent[]>([])
   const scanKey = useRef<string | null>(null)
   const busyRef = useRef(false)
   const autoFinalizeKey = useRef<string | null>(null)
@@ -111,34 +98,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, ca
     })()
   }
 
-  function addOrder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const id = orderIdFromDispatchCode(addCode)
-    if (!id) { setError("Ingresá un pedido como BX-1031."); return }
-    void run(async () => { onChange(await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "add", orderId: id })); setAddCode(""); setDialog(null) })
-  }
-
-  function openHistory() {
-    setDialog({ kind: "history" })
-    void run(async () => { setHistory(await dispatchRequest<BatchEvent[]>(`/batches/${batch.id}?events=1`)) })
-  }
-
-  function outputLabel(mode: "print" | "pdf") {
-    void run(async () => {
-      if (mode === "print") await printLabels([{ kind: "batch", code: batch.code }], "single")
-      else await saveBatchLabelsPdf([batch.code], "single")
-    })
-  }
-
-  const menu: AdminRowMenuAction[] = [
-    { key: "history", label: "Ver historial", onSelect: openHistory },
-    { key: "print", label: "Imprimir etiqueta del Bulto", icon: <Printer className="size-4" />, disabled: busy || !finalized, onSelect: () => outputLabel("print") },
-    { key: "pdf", label: "Guardar PDF", icon: <Download className="size-4" />, disabled: busy || !finalized, onSelect: () => outputLabel("pdf") },
-    ...(batch.status === "open" ? [{ key: "add", label: "Agregar pedido", onSelect: () => setDialog({ kind: "add" }) }] : []),
-    ...(canReopen && batch.status === "closed" ? [{ key: "reopen", label: "Reabrir Bulto", onSelect: () => { setReason(""); setDialog({ kind: "reopen" }) } }] : []),
-  ]
-
-  return <section className="mx-auto w-full max-w-3xl min-w-0" aria-label={`Bulto ${dispatchBatchName(batch)}`}>
+  return <section className="mx-auto w-full max-w-3xl min-w-0" aria-label={dispatchBatchName(batch)}>
     <AdminCard className="dispatch-card min-w-0 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="text-sm text-white/70">{plural(items.length)}</p>
@@ -171,7 +131,6 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, ca
         {canVerify && <div className="mt-3"><ScanField label="Escanear o ingresar etiqueta Andreani" placeholder="Escanear / escribir etiqueta Andreani" submitLabel="Verificar"
           value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
           busy={busy} autoFocus={dialog === null} cameraTitle={dispatchBatchName(batch)} cameraHint="Etiqueta Andreani" continuousCamera feedback={feedback} /></div>}
-        <div className="mt-3"><AdminRowMenu triggerLabel="Bulto" ariaLabel="Opciones del Bulto" items={menu} /></div>
       </>}
       {feedback && !blocked && <p role="status" className={`mt-2 text-sm font-bold ${feedback.tone === "error" ? "text-red-300" : "text-emerald-300"}`}>{feedback.message}</p>}
       {error && <p role="alert" className="mt-2 text-sm text-red-300">{error}</p>}
@@ -179,17 +138,14 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, ca
       {liveUpdating && !blocked && <p role="status" className="mt-2 text-xs text-white/60">Actualizando…</p>}
     </AdminCard>
 
-    <AdminModal open={dialog !== null} compact title={dialog?.kind === "remove" ? "Retirar pedido" : dialog?.kind === "history" ? "Historial del Bulto" : dialog?.kind === "reopen" ? "Reabrir Bulto" : "Agregar pedido"}
-      onClose={() => setDialog(null)} footer={dialog?.kind === "history" || dialog?.kind === "add" ? undefined : <div className="flex justify-end gap-2">
+    <AdminModal open={dialog !== null} compact title="Retirar pedido"
+      onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2">
         <AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton>
-        <AdminPrimaryButton disabled={busy || ((dialog?.kind === "remove" || dialog?.kind === "reopen") && reason.trim().length < 10)} onClick={() => {
-          if (dialog?.kind === "remove") void run(async () => { onChange(await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "remove", orderId: dialog.orderId, reason })); setDialog(null) })
-          else if (dialog?.kind === "reopen") void run(async () => { onChange(await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "reopen", reason })); setDialog(null) })
+        <AdminPrimaryButton disabled={busy || reason.trim().length < 10} onClick={() => {
+          if (dialog) void run(async () => { onChange(await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "remove", orderId: dialog.orderId, reason })); setDialog(null) })
         }}>Confirmar</AdminPrimaryButton>
       </div>}>
-      {(dialog?.kind === "remove" || dialog?.kind === "reopen") && <AdminTextInput title="Motivo obligatorio" value={reason} onChange={setReason} placeholder="Ingresá un motivo (mínimo 10 caracteres)" />}
-      {dialog?.kind === "history" && <ul className="max-h-64 overflow-y-auto text-sm text-white/80">{history.map((event) => <li key={event.id} className="border-b border-white/10 py-2">{dateTime(event.created_at)} · {eventNames[event.action] ?? event.action}{event.order_id ? ` · ${orderCode(event.order_id)}` : ""}{event.metadata?.reason ? ` · ${event.metadata.reason}` : ""}</li>)}</ul>}
-      {dialog?.kind === "add" && <form onSubmit={addOrder} className="flex flex-col gap-2 sm:flex-row"><div className="flex-1"><AdminTextInput title="Pedido" value={addCode} onChange={setAddCode} placeholder="BX-1031" /></div><AdminPrimaryButton type="submit" disabled={busy || !addCode.trim()}>Agregar</AdminPrimaryButton></form>}
+      <AdminTextInput title="Motivo obligatorio" value={reason} onChange={setReason} placeholder="Ingresá un motivo (mínimo 10 caracteres)" />
     </AdminModal>
   </section>
 }
