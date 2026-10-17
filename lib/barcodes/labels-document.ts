@@ -4,6 +4,8 @@
 
 export type LabelFormat = "a4" | "single"
 
+export function dispatchPdfFilename(code: string) { return `${code}.pdf` }
+
 export type PrintableLabel =
   | { kind: "product"; code: string; name: string; variant?: string | null; sku?: string | null; copies?: number }
   | { kind: "parcel"; code: string; orderCode: string; index: number; count: number }

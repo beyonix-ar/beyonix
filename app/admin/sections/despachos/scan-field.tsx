@@ -14,7 +14,7 @@ import { CameraScanner, type CameraFeedback } from "./camera-scanner"
  * se informa para auditoría. El campo queda listo para la siguiente lectura
  * (foco) apenas termina la anterior.
  */
-export function ScanField({ label, placeholder, submitLabel, value, onChange, onScan, busy = false, disabled = false, autoFocus = false, cameraTitle, cameraHint, continuousCamera = false, feedback = null }: {
+export function ScanField({ label, placeholder, submitLabel, value, onChange, onScan, busy = false, disabled = false, inputDisabled = disabled, autoFocus = false, cameraTitle, cameraHint, continuousCamera = false, feedback = null }: {
   label: string
   placeholder: string
   submitLabel: string
@@ -23,6 +23,8 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
   onScan: (code: string, method: DispatchScanMethod) => void
   busy?: boolean
   disabled?: boolean
+  /** Permite preparar el código mientras una actualización temporal bloquea el envío. */
+  inputDisabled?: boolean
   autoFocus?: boolean
   cameraTitle: string
   cameraHint: string
@@ -35,13 +37,15 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
   const keyTimes = useRef<number[]>([])
   const pasted = useRef(false)
 
-  // Al terminar una lectura el foco vuelve al campo, salvo que el operador
-  // esté usando otro control (modal, cámara, otro input).
+  // La etapa activa recibe foco incluso si quedó seleccionado el botón anterior.
   useEffect(() => {
-    if (busy || disabled || cameraOpen || !autoFocus) return
-    const active = document.activeElement
-    if (!active || active === document.body || active === inputRef.current) inputRef.current?.focus()
-  }, [busy, disabled, cameraOpen, autoFocus])
+    if (inputDisabled || cameraOpen || !autoFocus) return
+    inputRef.current?.focus()
+  }, [inputDisabled, cameraOpen, autoFocus])
+
+  useEffect(() => {
+    if (feedback?.tone === "error" && autoFocus && !inputDisabled && !cameraOpen) inputRef.current?.focus()
+  }, [feedback, autoFocus, inputDisabled, cameraOpen])
 
   function emit(raw: string, method: DispatchScanMethod) {
     const code = normalizeScannedCode(raw)
@@ -64,7 +68,7 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
         <span className="sr-only">{label}</span>
         <ScanLine className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-beyonix-sky" />
         <input ref={inputRef} aria-label={label} autoFocus={autoFocus} autoComplete="off" autoCapitalize="characters" spellCheck={false} enterKeyHint="send"
-          value={value} onChange={(event) => { if (!event.target.value) { keyTimes.current = []; pasted.current = false } onChange(event.target.value) }} placeholder={placeholder} disabled={disabled}
+          value={value} onChange={(event) => { if (!event.target.value) { keyTimes.current = []; pasted.current = false } onChange(event.target.value) }} placeholder={placeholder} disabled={inputDisabled}
           onKeyDown={(event) => { if (event.key.length === 1) keyTimes.current.push(event.timeStamp) }} onPaste={() => { pasted.current = true }}
           className="admin-control-input admin-ds-control h-14 w-full min-w-0 pl-12 pr-3 text-base text-white outline-none sm:pr-4" />
       </label>

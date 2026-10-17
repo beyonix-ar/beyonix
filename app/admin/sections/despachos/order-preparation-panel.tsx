@@ -214,7 +214,7 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
 
   const labelItems: AdminRowMenuAction[] = shipment.created ? [
     { key: "print", label: identified ? "Reimprimir etiqueta Andreani" : "Imprimir etiqueta Andreani", icon: <Printer className="size-4" />, disabled: busy, onSelect: () => printLabel("print") },
-    { key: "download", label: "Descargar etiqueta (PDF)", icon: <Download className="size-4" />, disabled: busy, onSelect: () => printLabel("download") },
+    { key: "download", label: "Guardar PDF de etiqueta Andreani", icon: <Download className="size-4" />, disabled: busy, onSelect: () => printLabel("download") },
   ] : []
   const orderItems: AdminRowMenuAction[] = [
     { key: "history", label: "Ver historial", icon: <History className="size-4" />, onSelect: () => goTo(`/admin/pedidos/${orderId}?tab=historial`) },

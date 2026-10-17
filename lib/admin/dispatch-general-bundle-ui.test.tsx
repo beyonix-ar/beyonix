@@ -112,7 +112,7 @@ test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cáma
     await act(async () => { button(dom, "Escanear con cámara")!.click() })
     await settle(700)
     assert.equal(posts.filter((post) => post.method === "camera").length, 1, "la misma etiqueta en cuadro no se cuenta dos veces")
-    await act(async () => { button(dom, "Terminar con la cámara")!.click() })
+    await act(async () => { button(dom, "Cerrar cámara")!.click() })
     assert.match(control(), /Verificados: 4/)
     assert.match(text(), /Lector/)
     assert.match(text(), /Cámara/)

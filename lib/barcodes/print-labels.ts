@@ -22,6 +22,21 @@ export async function printLabels(labels: readonly PrintableLabel[], format: Lab
   await printHtmlDocument(buildLabelsDocument(labels, svgs, format))
 }
 
+export async function saveBatchLabelsPdf(codes: readonly string[], format: LabelFormat) {
+  const svgs = await fetchBarcodeSvgs([...new Set(codes)])
+  const { batchPdfFilename, buildBatchLabelsPdf } = await import("./batch-label-pdf")
+  const bytes = await buildBatchLabelsPdf(codes, svgs, format)
+  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/pdf" }))
+  try {
+    const link = document.createElement("a")
+    link.href = url
+    link.download = batchPdfFilename(codes)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } finally { window.setTimeout(() => URL.revokeObjectURL(url), 60_000) }
+}
+
 // Imprime desde un iframe aislado: la página del admin no cambia y el diálogo
 // de impresión recibe sólo la hoja de etiquetas.
 export function printHtmlDocument(html: string) {

@@ -217,7 +217,7 @@ test("Admin: genera el envío Andreani con medidas, imprime su etiqueta y agrega
     assert.match(text(), /Envío generado/)
     assert.match(text(), /Seguimiento Andreani: 360000001031/)
     assert.equal(primary(dom)?.textContent, "Imprimir etiqueta Andreani")
-    assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Imprimir etiqueta Andreani", "Descargar etiqueta (PDF)"])
+    assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Imprimir etiqueta Andreani", "Guardar PDF de etiqueta Andreani"])
     assert.ok((await menuItems(dom, "Envío")).includes("Ver seguimiento"))
     assert.doesNotMatch(text(), /BX-PREP/, "sin etiqueta BEYONIX extra")
     await act(async () => { primary(dom)!.click() })
@@ -226,7 +226,7 @@ test("Admin: genera el envío Andreani con medidas, imprime su etiqueta y agrega
     assert.equal(opened.length, 1, "abre la etiqueta para imprimir")
     assert.match(opened[0], /^blob:/)
     assert.match(text(), /Listo para Bulto general/)
-    assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Reimprimir etiqueta Andreani", "Descargar etiqueta (PDF)"])
+    assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Reimprimir etiqueta Andreani", "Guardar PDF de etiqueta Andreani"])
 
     assert.equal(primary(dom)?.textContent, "Agregar al Bulto general")
     await act(async () => { primary(dom)!.click() })

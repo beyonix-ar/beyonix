@@ -243,7 +243,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         <p className="text-xs text-white/65">En la puerta, escaneá o ingresá el DSP del Bulto general justo antes de entregarlo. Cerrado no es lo mismo que entregado.</p>
         <ScanField label="Escanear o ingresar DSP" placeholder={`Escaneá ${batch.code}`} submitLabel="Verificar DSP"
           value={handoverScan} onChange={setHandoverScan} onScan={scanHandover}
-          busy={busy} disabled={exitBlocked} cameraTitle={`Entrega de ${batch.code}`} cameraHint="Encuadrá la etiqueta DSP" feedback={feedback} />
+          busy={busy} disabled={exitBlocked} inputDisabled={blocked || detail.requiresRevalidation} autoFocus={dialog === null} cameraTitle="Escanear Bulto general" cameraHint="Encuadrá la etiqueta DSP" feedback={feedback} />
         {blocked && firstBlocked && <p role="alert" className="text-sm text-amber-300">{orderCode(firstBlocked.order_id)} requiere revisión antes de la entrega.</p>}
         {detail.requiresRevalidation && !blocked && <p role="alert" className="text-sm text-amber-300">Volvé a validar los pedidos antes de la entrega.</p>}
       </div>}

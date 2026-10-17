@@ -10,6 +10,7 @@ const TEST_FILES = [
   "lib/admin/dispatch-stage3.test.ts",
   "lib/admin/dispatch-scan.test.ts",
   "lib/barcodes/barcodes.test.ts",
+  "lib/barcodes/batch-label-pdf.test.ts",
   "lib/barcodes/catalog-lookup-db.test.ts",
   "lib/labels/labels.test.ts",
   "lib/business/cost-catalog-search.test.ts",

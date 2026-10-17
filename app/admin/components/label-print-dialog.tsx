@@ -1,11 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Printer } from "lucide-react"
+import { Download, Printer } from "lucide-react"
 
 import { AdminButton, AdminModal, AdminPrimaryButton, AdminTextInput } from "@/app/admin/components/admin-controls"
 import type { LabelFormat, PrintableLabel } from "@/lib/barcodes/labels-document"
-import { printLabels } from "@/lib/barcodes/print-labels"
+import { printLabels, saveBatchLabelsPdf } from "@/lib/barcodes/print-labels"
 
 export function LabelPrintDialog({ open, title, description, labels, allowCopies = false, onClose, onPrinted }: {
   open: boolean
@@ -19,27 +19,33 @@ export function LabelPrintDialog({ open, title, description, labels, allowCopies
   const [copies, setCopies] = useState("1")
   const [format, setFormat] = useState<LabelFormat | null>(null)
   const selectedFormat = format ?? (labels.length > 0 && labels.every((label) => label.kind === "parcel" || label.kind === "prepared" || label.kind === "batch") ? "single" : "a4")
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<"print" | "pdf" | null>(null)
   const [error, setError] = useState("")
   const copyCount = Number(copies)
   const validCopies = !allowCopies || (Number.isInteger(copyCount) && copyCount >= 1 && copyCount <= 500)
 
-  async function print() {
+  const batchLabels = labels.filter((label) => label.kind === "batch")
+  const canSavePdf = batchLabels.length > 0 && batchLabels.length === labels.length
+
+  async function output(mode: "print" | "pdf") {
     if (busy || !validCopies) return
-    setBusy(true); setError("")
+    setBusy(mode); setError("")
     try {
-      await printLabels(allowCopies ? labels.map((label) => label.kind === "product" ? { ...label, copies: copyCount } : label) : labels, selectedFormat)
-      onPrinted?.()
+      if (mode === "pdf") await saveBatchLabelsPdf(batchLabels.map((label) => label.code), selectedFormat)
+      else {
+        await printLabels(allowCopies ? labels.map((label) => label.kind === "product" ? { ...label, copies: copyCount } : label) : labels, selectedFormat)
+        onPrinted?.()
+      }
       onClose()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudieron imprimir las etiquetas.")
+      setError(cause instanceof Error ? cause.message : "No se pudo preparar la etiqueta.")
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
-  return <AdminModal open={open} compact title={title} description={description} onClose={onClose} footer={<div className="flex justify-end gap-2"><AdminButton onClick={onClose}>Cancelar</AdminButton><AdminPrimaryButton icon={<Printer className="size-4" />} disabled={busy || !validCopies || labels.length === 0} onClick={() => void print()}>{busy ? "Preparando…" : "Imprimir"}</AdminPrimaryButton></div>}>
-    <div className="space-y-3">
+  return <AdminModal open={open} compact title={title} description={description} onClose={onClose} footer={<div className="flex flex-wrap justify-end gap-2"><AdminButton onClick={onClose}>Cancelar</AdminButton><AdminPrimaryButton icon={<Printer className="size-4" />} disabled={busy !== null || !validCopies || labels.length === 0} onClick={() => void output("print")}>{busy === "print" ? "Preparando…" : "Imprimir"}</AdminPrimaryButton>{canSavePdf && <AdminButton icon={<Download className="size-4" />} disabled={busy !== null || !validCopies} onClick={() => void output("pdf")}>{busy === "pdf" ? "Generando…" : "Guardar PDF"}</AdminButton>}</div>}>
+    <div className="dispatch-label-print-options space-y-3">
       {allowCopies && <div><p className="mb-1 text-xs font-black text-white">Cantidad de etiquetas</p><AdminTextInput title="Cantidad de etiquetas" placeholder="1" inputMode="numeric" value={copies} onChange={(value) => setCopies(value.replace(/\D/g, "").slice(0, 3))} /></div>}
       <fieldset>
         <legend className="mb-1 text-xs font-black text-white">Formato</legend>

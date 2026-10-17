@@ -80,6 +80,8 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
     assert.equal(handover()?.disabled, false)
     blocked = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
+    assert.equal(handover()?.disabled, false, "el operador puede tipear mientras se actualiza el tablero")
+    assert.equal([...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Verificar DSP"))?.disabled, true, "el envío espera la actualización")
     await settle()
     assert.match(dom.window.document.body.textContent ?? "", /Requiere revisión/)
     assert.match(dom.window.document.body.textContent ?? "", /BX-1031.*Pedido bloqueado.*Cancelación solicitada/)

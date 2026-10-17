@@ -118,10 +118,11 @@ test("lectura única (retiro/entrega): toma un código y deja de leer", async ()
 })
 
 const failures = [
-  ["permiso denegado (Safari o Android)", new DOMException("denied", "NotAllowedError"), /No diste permiso para usar la cámara/, "denied"],
+  ["permiso denegado (Safari o Android)", new DOMException("denied", "NotAllowedError"), /Permiso de cámara denegado/, "denied"],
   ["cámara inexistente", new DOMException("none", "NotFoundError"), /No se encontró una cámara disponible/, "unavailable"],
-  ["cámara ocupada por otra app", new DOMException("busy", "NotReadableError"), /La cámara está en uso por otra app/, "busy"],
+  ["cámara ocupada por otra app", new DOMException("busy", "NotReadableError"), /La cámara está ocupada por otra aplicación/, "busy"],
   ["navegador sin acceso a cámara", null, /Este navegador no permite usar la cámara/, "unsupported"],
+  ["error desconocido", new DOMException("unknown", "UnknownError"), /No pudimos abrir la cámara/, "unknown"],
 ] as const
 for (const [name, error, message, state] of failures) {
   test(`${name}: mensaje claro e ingreso manual por el mismo flujo`, async () => {
@@ -136,8 +137,68 @@ for (const [name, error, message, state] of failures) {
       assert.match(dom.window.document.body.textContent ?? "", message)
       assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), state)
       assert.equal(readerRequested, false, "sin cámara no se carga ningún motor")
+      assert.ok([...dom.window.document.querySelectorAll("button")].some((item) => item.textContent?.includes("Reintentar cámara")))
+      assert.ok([...dom.window.document.querySelectorAll("button")].some((item) => item.textContent?.includes("Cerrar cámara")))
       await manual(dom, "  7790000000041 ")
       assert.deepEqual(detected, ["7790000000041"])
     } finally { await act(async () => root.unmount()); dom.window.close() }
   })
 }
+
+test("Android prompt solicita permiso y reintentar cámara vuelve a pedir acceso", async () => {
+  const { dom, root } = await setup()
+  const { CameraScanner } = await import("../../app/admin/sections/despachos/camera-scanner")
+  let attempts = 0
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    permissions: { query: async () => ({ state: "prompt" }) },
+    mediaDevices: { getUserMedia: async () => {
+      attempts += 1
+      if (attempts === 1) throw new DOMException("denied", "NotAllowedError")
+      return { getTracks: () => [{ stop: () => {} }] }
+    } },
+  } })
+  try {
+    await act(async () => { root.render(<CameraScanner open title="Escanear Bulto general" hint="DSP" createReader={async () => frames("native", [])} onDetected={() => {}} onClose={() => {}} />) })
+    await settle()
+    assert.equal(attempts, 1, "prompt llama a getUserMedia")
+    assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "denied")
+    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Reintentar cámara"))!.click() })
+    await settle()
+    assert.equal(attempts, 2)
+    assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "scanning")
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
+test("Android con permiso denegado: informa el bloqueo sin volver a pedir cámara", async () => {
+  const { dom, root } = await setup()
+  const { CameraScanner } = await import("../../app/admin/sections/despachos/camera-scanner")
+  let attempts = 0
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+    permissions: { query: async () => ({ state: "denied" }) },
+    mediaDevices: { getUserMedia: async () => { attempts += 1; throw new Error("No debería solicitar cámara") } },
+  } })
+  try {
+    await act(async () => { root.render(<CameraScanner open title="Escanear Bulto general" hint="DSP" onDetected={() => {}} onClose={() => {}} />) })
+    await settle()
+    assert.equal(attempts, 0)
+    assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "denied")
+    assert.match(dom.window.document.body.textContent ?? "", /Permiso de cámara denegado/)
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
+test("contexto inseguro: mensaje específico, reintento y entrada manual", async () => {
+  const { dom, root } = await setup()
+  const { CameraScanner } = await import("../../app/admin/sections/despachos/camera-scanner")
+  Object.defineProperty(dom.window, "isSecureContext", { configurable: true, value: false })
+  const cam = camera("ok")
+  const detected: string[] = []
+  try {
+    await act(async () => { root.render(<CameraScanner open title="Escanear Bulto general" hint="DSP" onDetected={(code) => detected.push(code)} onClose={() => {}} />) })
+    await settle()
+    assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "insecure")
+    assert.match(dom.window.document.body.textContent ?? "", /conexión segura \(HTTPS\)/)
+    assert.equal(cam.constraints, undefined, "no pide la cámara en HTTP")
+    await manual(dom, "DSP-20261016-001")
+    assert.deepEqual(detected, ["DSP-20261016-001"])
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})

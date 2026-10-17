@@ -17245,7 +17245,11 @@ html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { 
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-workspace { background: #f5f7fa; border-color: #d9e1e8; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-tabs { background: #fff; border-color: #d9e1e8; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-subheading { color: #223244; }
-html[data-admin-theme="light"] .beyonix-admin-main .dispatch-scan-input input { background: #fff; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-scan-input input {
+  background: #fff !important;
+  color: #172433 !important;
+  caret-color: #075985;
+}
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-steps { background: #fff; border-color: #d9e1e8; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-step[data-state="current"] { background: #f0f7fc; border-color: rgba(2, 132, 199, 0.4); }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-step-marker { border-color: #b8c4cf; color: #5b6b7b; }
@@ -17298,6 +17302,7 @@ html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .disp
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-amber-300,
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-amber-200 { color: #92400e; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-red-200 { color: #b91c1c; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-red-300 { color: #b91c1c; }
 html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-label-details { color: #334155; }
 .dispatch-progress-track {
   height: 10px;
@@ -17329,6 +17334,19 @@ html[data-admin-theme="light"] .dispatch-progress-bar[data-complete="true"] {
   border: 2px solid rgba(56, 189, 248, 0.9);
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
 }
+.dispatch-camera .admin-ds-control,
+html[data-admin-theme="light"] .dispatch-camera .admin-ds-control {
+  background-color: #111a22 !important;
+  border-color: #64748b !important;
+  color: #fff !important;
+  color-scheme: dark;
+}
+.dispatch-camera .admin-ds-control::placeholder,
+html[data-admin-theme="light"] .dispatch-camera .admin-ds-control::placeholder { color: #a8b6c7 !important; }
+html[data-admin-theme="light"] .dispatch-label-print-options :is(legend, p, label span) { color: #243449; }
+html[data-admin-theme="light"] .dispatch-label-print-options label { background-color: #fff; border-color: #cbd5e1; }
+html[data-admin-theme="light"] .dispatch-label-print-options label:has(input:checked) { background-color: #eaf6fc; border-color: #0284c7; }
+html[data-admin-theme="light"] .dispatch-label-print-options [role="alert"] { color: #b91c1c; }
 .dispatch-camera-line {
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.9);
   animation: dispatch-camera-scan 1.6s ease-in-out infinite alternate;

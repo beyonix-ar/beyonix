@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import { dispatchPdfFilename } from "@/lib/barcodes/labels-document"
 
 /**
  * Abre (para imprimir) o descarga la etiqueta Andreani de un pedido. Imprimirla
@@ -25,7 +26,7 @@ export async function openAndreaniLabel(orderId: number, mode: "print" | "downlo
     if (mode === "download") {
       const link = document.createElement("a")
       link.href = blobUrl
-      link.download = `andreani-${orderId}.pdf`
+      link.download = dispatchPdfFilename(`BX-${1000 + orderId}`)
       link.click()
     } else if (labelWindow) {
       // El "load" se escucha después de navegar: si no, puede dispararse con about:blank.
