@@ -149,15 +149,19 @@ test("pickeo: una acción por etapa, envío bloqueado hasta completar, errores q
 
     const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar código / SKU"]')!
     const form = () => input().closest("form") as HTMLFormElement
+    assert.equal(dom.window.document.activeElement, input(), "el escaneo recibe foco al empezar el pickeo")
     await type(dom, input(), "OTRO"); await submit(dom, form())
     assert.match(text(), /Este producto no pertenece al pedido\./)
     assert.equal(input().disabled, false, "un código incorrecto no rompe el pickeo")
+    assert.equal(dom.window.document.activeElement, input(), "un error devuelve el foco al escaneo")
     fake.state.dropNextScan = true
     await type(dom, input(), "7790001000017"); await submit(dom, form())
     assert.match(text(), /Sin conexión\. Reintentá: el escaneo no se duplica\./)
     assert.equal(input().value, "7790001000017", "el código queda para reintentar")
     await submit(dom, form())
     assert.match(text(), /✓ Auriculares · Negro · 1 de 3 · faltan 2/)
+    assert.equal(input().value, "", "el escaneo válido limpia el campo")
+    assert.equal(dom.window.document.activeElement, input(), "el escaneo válido devuelve el foco")
     await type(dom, input(), "7790001000017"); await submit(dom, form())
     await type(dom, input(), "7790001000024"); await submit(dom, form())
     assert.match(text(), /3 de 4 unidades/)

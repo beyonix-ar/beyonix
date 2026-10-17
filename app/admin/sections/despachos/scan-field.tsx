@@ -39,9 +39,9 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
 
   // La etapa activa recibe foco incluso si quedó seleccionado el botón anterior.
   useEffect(() => {
-    if (inputDisabled || cameraOpen || !autoFocus) return
+    if (inputDisabled || busy || cameraOpen || !autoFocus) return
     inputRef.current?.focus()
-  }, [inputDisabled, cameraOpen, autoFocus])
+  }, [inputDisabled, busy, cameraOpen, autoFocus])
 
   useEffect(() => {
     if (feedback?.tone === "error" && autoFocus && !inputDisabled && !cameraOpen) inputRef.current?.focus()

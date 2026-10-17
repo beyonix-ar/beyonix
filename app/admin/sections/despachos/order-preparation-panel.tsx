@@ -5,13 +5,12 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageChec
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DifferenceResolution, type DifferenceInput } from "./difference-resolution"
-import { DispatchProgress } from "./dispatch-progress"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
 import { initialParcelDrafts, ParcelMeasuresEditor, readParcelDrafts, resizeParcelDrafts, type ParcelDraft } from "./parcel-measures"
 import { ScanField } from "./scan-field"
@@ -35,6 +34,7 @@ export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", shipment:
 const NO_SHIPPING_INFO: DispatchShippingInfo = { costsVisible: false, estimate: null, parcelQuote: null }
 const NO_VIEWER: Viewer = { costsVisible: false, canShip: false, canForce: false }
 const money = (value: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(value)
+const dateTime = (value: string) => new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
 // El panel también vive en el detalle del pedido: la navegación no depende del router de Despachos.
 const goTo = (path: string) => window.location.assign(path)
 
@@ -48,7 +48,7 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
   orderId: number
   /** Cierre tras resolver una cancelación con armado. */
   onDone?: () => void
-  /** Despachos: agrega el pedido listo al Bulto general. */
+  /** Despachos: vuelve a la cola de Confirmados. */
   onReady?: () => Promise<void> | void
   footer?: ReactNode
 }) {
@@ -231,35 +231,53 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
     ? [{ key: "force", label: "Generar envío con pickeo incompleto", icon: <AlertTriangle className="size-4" />, tone: "danger", onSelect: () => openDialog("force") }]
     : []
   const lastAdjustment = new Map(detail.adjustments.map((adjustment) => [adjustment.orderItemId, adjustment]))
+  const displayItems: DispatchSaleItem[] = detail.saleItems?.length ? detail.saleItems : detail.lines.map((line) => ({
+    orderItemId: line.order_item_id, sku: line.expected_sku, productName: line.name ?? "Producto", variantName: null,
+    orderedQuantity: line.orderedQuantity, unitPrice: line.unitPrice,
+  }))
+  const lineByItem = new Map(detail.lines.map((line) => [line.order_item_id, line]))
   const parcelValue = Number(parcelInput)
   const validParcels = Number.isInteger(parcelValue) && parcelValue >= 1 && parcelValue <= 50
   const parcelsReading = validParcels ? readParcelDrafts(parcelDrafts) : null
 
-  return <div className="dispatch-order mx-auto w-full max-w-3xl min-w-0 space-y-3">
+  return <div className="dispatch-order w-full min-w-0 space-y-2">
     {packingBlocked && <div role="alert" className="rounded-xl border border-red-500/50 bg-red-950 p-3 text-sm text-white">
       <p className="font-black">{inBatch ? "RETIRAR DEL DESPACHO" : "Pedido bloqueado"} · {detail.blockReason ?? "Revisión requerida"}</p>
     </div>}
     {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
 
-    <AdminCard className="dispatch-card min-w-0 p-0">
-      <div className="space-y-4 p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <span className="block text-10px font-black uppercase tracking-widest text-sky-200/70">Pedido</span>
-            <h3 className="text-2xl font-black tabular-nums text-white">{code}</h3>
-            {detail.order.cliente_nombre && <p className="truncate text-sm text-white/65">{detail.order.cliente_nombre}</p>}
-          </div>
-          <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{DISPATCH_STAGE_LABELS[stage]}</AdminBadge>
-        </div>
-        <div className="flex flex-wrap gap-2" aria-label="Acciones secundarias">
+    <AdminCard className="dispatch-card dispatch-order-card min-w-0 p-0">
+      <div className="dispatch-order-heading flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2.5 sm:px-4">
+        <h3 className="text-base font-black tabular-nums text-white">Pedido {code}</h3>
+        <span>Compra: {dateTime(detail.order.created_at)}</span>
+        {pkg?.prepared_at && <span>Preparado: {dateTime(pkg.prepared_at)}</span>}
+        {detail.order.invoice_status === "authorized" && <span>Factura emitida</span>}
+        <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{DISPATCH_STAGE_LABELS[stage]}</AdminBadge>
+        <span>{units} de {detail.expectedUnits} unidades</span>
+      </div>
+      <div className="dispatch-order-actions flex flex-wrap gap-2 px-3 py-2 sm:px-4" aria-label="Acciones secundarias">
           {labelItems.length > 0 && <AdminRowMenu triggerLabel="Etiquetas" ariaLabel="Etiquetas" items={labelItems} />}
           <AdminRowMenu triggerLabel="Pedido" ariaLabel="Pedido" items={orderItems} />
           {shipmentItems.length > 0 && <AdminRowMenu triggerLabel="Envío" ariaLabel="Envío" items={shipmentItems} />}
           {exceptionItems.length > 0 && <AdminRowMenu triggerLabel="Más" ariaLabel="Más acciones" items={exceptionItems} />}
-        </div>
-        <DispatchProgress done={units} total={detail.expectedUnits} unit="unidades" />
-        {shipment.created && <p className="flex flex-wrap items-center gap-x-2 text-sm text-white/70"><Truck className="size-4 text-beyonix-sky" />Seguimiento Andreani: <span className="font-mono font-bold text-white">{shipment.tracking ?? shipment.envioId}</span></p>}
-        {stage === "packing" && <div className="dispatch-scanner space-y-2">
+      </div>
+      {shipment.created && <p className="px-3 pb-2 text-xs text-white/70 sm:px-4">Seguimiento Andreani: <span className="font-mono font-bold text-white">{shipment.tracking ?? shipment.envioId}</span></p>}
+
+      <div className="dispatch-product-table-wrap">
+        <table className="dispatch-product-table w-full" aria-label="Productos del pedido">
+          <thead><tr><th scope="col">SKU</th><th scope="col">Producto</th><th scope="col">Variante</th><th scope="col">Cant. solicitada</th><th scope="col">Picking</th><th scope="col">Precio unitario</th><th scope="col">Total</th></tr></thead>
+          <tbody>{displayItems.map((item) => <ProductLine key={item.orderItemId} item={item} line={lineByItem.get(item.orderItemId)} adjusted={lastAdjustment.has(item.orderItemId)} />)}</tbody>
+        </table>
+        {displayItems.length === 0 && <p className="px-4 py-3 text-sm text-white/60">Sin productos para mostrar.</p>}
+      </div>
+      {detail.adjustments.length > 0 && <ul className="dispatch-divider space-y-1 border-t px-3 py-2 text-xs text-amber-100 sm:px-4" aria-label="Diferencias registradas">
+        {detail.adjustments.map((adjustment) => <li key={adjustment.id}>
+          {DISPATCH_ADJUSTMENT_PROBLEMS[adjustment.problem]} · {adjustment.quantityBefore} → {adjustment.quantityAfter} · {DISPATCH_ADJUSTMENT_SETTLEMENTS[adjustment.settlement]}{adjustment.differenceAmount != null ? ` · ${money(adjustment.differenceAmount)}` : ""}
+        </li>)}
+      </ul>}
+
+      <div className="dispatch-scan-total border-t px-3 py-3 sm:px-4">
+        {stage === "packing" && <div className="dispatch-scanner min-w-0 space-y-1">
           <ScanField label="Escanear o ingresar código / SKU" placeholder="Escaneá el producto" submitLabel="Verificar"
             value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
             busy={busy} disabled={packingBlocked} autoFocus={!pendingVariant && dialog === null}
@@ -267,22 +285,12 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
           <LastScan feedback={feedback} />
         </div>}
         {stage !== "packing" && feedback && <LastScan feedback={feedback} />}
-        {notice && <p role="status" className="flex items-start gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" />{notice}</p>}
+        {detail.order.total != null && <p className="dispatch-order-total-amount">TOTAL PEDIDO: <strong>{money(Number(detail.order.total))}</strong></p>}
       </div>
-
-      <div className="dispatch-divider border-t">
-        <p className="dispatch-subheading px-4 pt-3 sm:px-5">Productos <span>{detail.itemCount}</span></p>
-        <ul className="dispatch-lines px-4 pb-1 sm:px-5" aria-label="Productos del pedido">{detail.lines.map((line) => <ProductLine key={line.order_item_id} line={line} adjusted={lastAdjustment.has(line.order_item_id)} />)}</ul>
-        {detail.adjustments.length > 0 && <ul className="dispatch-divider space-y-1 border-t px-4 py-3 text-xs text-amber-100 sm:px-5" aria-label="Diferencias registradas">
-          {detail.adjustments.map((adjustment) => <li key={adjustment.id}>
-            {DISPATCH_ADJUSTMENT_PROBLEMS[adjustment.problem]} · {adjustment.quantityBefore} → {adjustment.quantityAfter} · {DISPATCH_ADJUSTMENT_SETTLEMENTS[adjustment.settlement]}{adjustment.differenceAmount != null ? ` · ${money(adjustment.differenceAmount)}` : ""}
-          </li>)}
-        </ul>}
-      </div>
-
-      {primary && <div className="dispatch-divider dispatch-primary-bar border-t p-4 sm:p-5">
-        <AdminPrimaryButton className="h-12 w-full justify-center text-base" icon={primary.icon} disabled={busy || primary.disabled} onClick={primary.onClick}>{primary.label}</AdminPrimaryButton>
-        {primary.hint && <p className="mt-2 text-center text-xs text-white/60">{primary.hint}</p>}
+      {notice && <p role="status" className="px-3 py-2 text-xs font-bold text-emerald-300 sm:px-4">{notice}</p>}
+      {primary && <div className="dispatch-divider dispatch-primary-bar border-t px-3 py-2.5 sm:px-4">
+        <AdminPrimaryButton className="h-10 w-full justify-center text-sm sm:w-auto" icon={primary.icon} disabled={busy || primary.disabled} onClick={primary.onClick}>{primary.label}</AdminPrimaryButton>
+        {primary.hint && <p className="mt-1 text-xs text-white/60">{primary.hint}</p>}
       </div>}
     </AdminCard>
     {footer}
@@ -331,33 +339,28 @@ export function OrderPreparationPanel({ orderId, onDone, onReady, footer }: {
   </div>
 }
 
-/** Renglón operativo: producto, código, pickeado vs. esperado y estado. */
-function ProductLine({ line, adjusted }: { line: OrderLine; adjusted: boolean }) {
-  const { scanned_quantity: picked, expected_quantity: expected } = line
-  const status = picked > expected ? { label: "Con diferencia", tone: "danger" as const }
-    : picked === expected ? { label: "Completo", tone: "success" as const }
-    : picked > 0 ? { label: `Faltan ${expected - picked}`, tone: "warning" as const }
-    : { label: "Pendiente", tone: "neutral" as const }
-  const complete = status.tone === "success"
-  return <li className="dispatch-line flex items-center gap-3 py-3" data-status={status.tone}>
-    {complete ? <CheckCircle2 className="size-5 shrink-0 text-emerald-300" aria-hidden="true" /> : <span aria-hidden="true" className="size-5 shrink-0 rounded-full border-2 border-white/25" />}
-    <span className="min-w-0 flex-1">
-      <span className="block text-sm font-bold text-white">{line.name}</span>
-      <span className="block truncate text-xs text-white/60">{line.random ? <>Reservado: {line.random.reservedVariant ?? "—"} · {line.random.dispatchedVariant ? <span className="font-bold text-emerald-300">Despachado: {line.random.dispatchedVariant}{line.random.manuallyConfirmed ? " (confirmado a mano)" : ""}</span> : "Escaneá la variante física que sale"}</> : [line.expected_sku, line.expected_barcode].filter(Boolean).join(" · ") || "Sin código"}</span>
-      {adjusted && <span className="block text-xs font-bold text-amber-200">Pedidas {line.orderedQuantity} · salen {expected}</span>}
-    </span>
-    <span className="flex shrink-0 flex-col items-end gap-1">
-      <span className={`text-lg font-black leading-none tabular-nums ${complete ? "text-emerald-300" : "text-white"}`} aria-label={`${picked} pickeados de ${expected} esperados`}>{picked}<span className="text-sm text-white/50"> / {expected}</span></span>
-      <AdminBadge tone={status.tone}>{status.label}</AdminBadge>
-    </span>
-  </li>
+/** Tabla del pedido: cantidades físicas y precios de venta visibles sólo con permiso. */
+export function ProductLine({ item, line, adjusted }: { item: DispatchSaleItem; line?: OrderLine; adjusted: boolean }) {
+  const picked = line?.scanned_quantity ?? 0
+  const expected = line?.expected_quantity ?? item.orderedQuantity
+  const complete = picked === expected
+  const price = item.unitPrice
+  return <tr className="dispatch-product-row">
+    <td className="dispatch-product-sku" data-label="SKU">{item.sku ?? line?.expected_sku ?? "—"}</td>
+    <td className="dispatch-product-name" data-label="Producto">{item.productName}</td>
+    <td className="dispatch-product-variant" data-label="Variante">{line?.random?.dispatchedVariant ?? item.variantName ?? "—"}</td>
+    <td className="dispatch-product-quantity" data-label="Cant. solicitada">{item.orderedQuantity}{adjusted && <small>Pedidas {item.orderedQuantity} · salen {expected}</small>}</td>
+    <td data-label="Picking"><span className={`dispatch-pick-count ${complete ? "is-complete" : "is-missing"}`} aria-label={`${picked} pickeados de ${expected} esperados`}>{picked}/{expected}</span></td>
+    <td className="dispatch-product-price" data-label="Precio unitario">{price == null ? "—" : money(price)}</td>
+    <td className="dispatch-product-total" data-label="Total">{price == null ? "—" : money(price * expected)}</td>
+  </tr>
 }
 
 /** Resultado del último escaneo, siempre visible junto al campo de lectura. */
 function LastScan({ feedback }: { feedback: ScanFeedback | null }) {
-  if (!feedback) return <p className="text-xs text-white/50">Último escaneo: —</p>
+  if (!feedback) return <p className="dispatch-last-scan text-xs text-white/50">Último escaneo: —</p>
   const Icon = feedback.tone === "error" ? XCircle : feedback.tone === "warning" ? AlertTriangle : CheckCircle2
-  return <p role="status" className={`flex items-start gap-2 rounded-xl px-3 py-2.5 text-sm font-bold ${feedback.tone === "success" ? "bg-emerald-950 text-emerald-200" : feedback.tone === "warning" ? "bg-amber-950 text-amber-200" : "bg-red-950 text-red-200"}`}>
+  return <p role="status" data-tone={feedback.tone} className={`dispatch-last-scan flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs font-bold ${feedback.tone === "success" ? "bg-emerald-950 text-emerald-200" : feedback.tone === "warning" ? "bg-amber-950 text-amber-200" : "bg-red-950 text-red-200"}`}>
     <Icon className="mt-0.5 size-5 shrink-0" /><span className="min-w-0"><span className="block text-10px font-black uppercase tracking-widest opacity-70">Último escaneo</span>{feedback.message}</span>
   </p>
 }

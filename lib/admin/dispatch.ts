@@ -33,7 +33,8 @@ export const DISPATCH_VERIFICATION_METHOD_LABELS: Record<DispatchVerificationMet
   scanner: "Lector", camera: "Cámara", manual_code: "Código ingresado", manual_selection: "Confirmación manual", legacy_parcels: "Histórico · paquetes BX-PKG escaneados",
 }
 export type DispatchVerificationResult = { orderId: number; code: string; method: DispatchVerificationMethod; duplicate: boolean; expected: number; verified: number }
-export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; cliente_nombre: string | null; andreani_envio_id: string | null; andreani_tracking: string | null; andreani_creation_status: string | null }
+export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; total?: number | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; cliente_nombre: string | null; andreani_envio_id: string | null; andreani_tracking: string | null; andreani_creation_status: string | null }
+export type DispatchSaleItem = { orderItemId: number; sku: string | null; productName: string; variantName: string | null; orderedQuantity: number; unitPrice: number | null }
 /** Orden operativo: pickeo → pedido completo → envío Andreani → etiqueta Andreani → Bulto general → DSP → entrega. */
 export type DispatchStage = "pending" | "packing" | "shipment" | "label" | "ready" | "in_batch" | "batch_closed" | "handed_over"
 /** Pedido esperado dentro del Bulto general: verificado con su etiqueta Andreani (o confirmación manual explícita). */
@@ -255,7 +256,7 @@ export function dispatchError(error: { message: string; details?: string | null 
 }
 
 const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,parcels_request_key,identification_method,identified_at"
-export const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id,created_at,cliente_nombre,andreani_envio_id,andreani_tracking,andreani_creation_status"
+export const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id,created_at,cliente_nombre,andreani_envio_id,andreani_tracking,andreani_creation_status,total"
 const ORDER_SHIPPING_COLUMNS = "shipping_estimate,shipping_provider_quote_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount,shipping_parcel_quote_request_key"
 const BATCH_COLUMNS = "id,code,display_number,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round,verification_required"
 
@@ -282,7 +283,7 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const [orderResult, packageResult, itemsResult, membershipResult, blocksResult, holdResult] = await Promise.all([
     admin.from("ordenes").select(`${ORDER_COLUMNS},${ORDER_SHIPPING_COLUMNS}`).eq("id", orderId).maybeSingle(),
     admin.from("order_packages").select(PACKAGE_COLUMNS).eq("order_id", orderId).maybeSingle(),
-    admin.from("orden_items").select("id,producto_id,variante_id,reserved_variant_id,conditioned_name,cantidad,precio,random_fulfillment,productos(nombre),producto_variantes(nombre)").eq("orden_id", orderId).order("id"),
+    admin.from("orden_items").select("id,producto_id,variante_id,reserved_variant_id,conditioned_name,cantidad,precio,random_fulfillment,productos(nombre,sku),producto_variantes(nombre,sku)").eq("orden_id", orderId).order("id"),
     admin.from("dispatch_batch_items").select("id,batch_id,order_id,package_id,added_at,removed_at").eq("order_id", orderId).is("removed_at", null).maybeSingle(),
     admin.from("dispatch_blocks").select("id,reason,source").eq("order_id", orderId).is("resolved_at", null),
     admin.from("order_cancellation_holds").select(HOLD_COLUMNS).eq("order_id", orderId).is("resolved_at", null).maybeSingle(),
@@ -307,6 +308,14 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const randomTrace = await randomTraces(admin, randomItemRows, (scansResult?.data ?? []) as RandomScanRow[])
   const names = new Map<number, string>()
   const ordered = new Map((itemsResult.data ?? []).map((item) => [item.id, { quantity: Number(item.cantidad), unitPrice: Number(item.precio ?? 0) }]))
+  const saleItems: DispatchSaleItem[] = (itemsResult.data ?? []).map((item) => {
+    const product = item.productos as unknown as { nombre?: string; sku?: string } | null
+    const variant = item.producto_variantes as unknown as { nombre?: string; sku?: string } | null
+    return { orderItemId: item.id, sku: variant?.sku ?? product?.sku ?? null,
+      productName: item.conditioned_name || product?.nombre || "Producto",
+      variantName: item.random_fulfillment === true ? "Color aleatorio" : variant?.nombre ?? null,
+      orderedQuantity: Number(item.cantidad), unitPrice: options.includeCosts ? Number(item.precio ?? 0) : null }
+  })
   for (const item of itemsResult.data ?? []) {
     const product = item.productos as unknown as { nombre?: string } | null
     const variant = item.producto_variantes as unknown as { nombre?: string } | null
@@ -327,8 +336,8 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
     differenceAmount: options.includeCosts ? Number(row.difference_amount) : null,
   }))
   const batch = (batchResult?.data ?? null) as DispatchBatch | null
-  const { shipping_estimate: estimate, shipping_provider_quote_amount: checkoutQuote, shipping_parcel_quote_status: quoteStatus, shipping_parcel_quote_amount: quoteAmount, shipping_parcel_quote_request_key: quoteKey, ...orderFields } = orderResult.data as unknown as DispatchOrder & DispatchOrderShippingRow
-  const order: DispatchOrder = orderFields
+  const { shipping_estimate: estimate, shipping_provider_quote_amount: checkoutQuote, shipping_parcel_quote_status: quoteStatus, shipping_parcel_quote_amount: quoteAmount, shipping_parcel_quote_request_key: quoteKey, total, ...orderFields } = orderResult.data as unknown as DispatchOrder & DispatchOrderShippingRow
+  const order: DispatchOrder = options.includeCosts ? { ...orderFields, total: total == null ? null : Number(total) } : orderFields
   const shipping = dispatchShippingInfo({ estimate, checkoutQuote, quoteStatus, quoteAmount, quoteKey, requestKey: (pkg as { parcels_request_key?: string | null } | null)?.parcels_request_key ?? null, includeCosts: Boolean(options.includeCosts) })
   const shipmentCreated = andreaniShipmentCreated(order)
   const stage = dispatchStage({ package: pkg, shipmentCreated, batchStatus: batch?.status ?? null, handedOver: Boolean(order.andreani_handed_over_at) })
@@ -340,7 +349,7 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const packingBlock = blocks.find(blocksPacking)
   // Con diferencias registradas, lo que sale es lo esperado por renglón (no lo vendido).
   const expectedUnits = pkg ? lines.reduce((sum, line) => sum + line.expected_quantity, 0) : (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0)
-  return { order, package: pkg, lines, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits, membership, batch, shipping, hold, shipment, adjustments,
+  return { order, package: pkg, lines, saleItems, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits, membership, batch, shipping, hold, shipment, adjustments,
     blocked: cancelled || blocks.length > 0, blockReason: hold ? "Cancelado con pickeo iniciado — requiere resolución física" : cancelled ? "Pedido cancelado — no requiere preparación" : blocks[0] ? dispatchBlockReason((packingBlock ?? blocks[0]).reason) : null,
     // Lo que frena el pickeo. Factura y envío pendientes sólo se informan.
     packingBlocked: cancelled || Boolean(packingBlock),

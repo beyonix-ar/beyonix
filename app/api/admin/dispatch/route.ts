@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   const alertsOnly = new URL(request.url).searchParams.has("alerts")
+  const includeAmounts = auth.profile.rol === "admin" || auth.profile.rol === "super_admin"
   const fail = (message: string) => Response.json({ error: message }, { status: 500 })
 
   // Todos los pedidos pagos pendientes de despacho, sin importar la fecha:
@@ -122,7 +123,7 @@ export async function GET(request: Request) {
   const orders = activeOrders.filter((order) => (order.shipping_provider || order.envio_proveedor || "").toLowerCase() === "andreani" && !OUT_OF_DISPATCH.includes(order.estado)).map((order) => {
     const pkg = packageByOrder.get(order.id) ?? null
     const totals = unitsByOrder.get(order.id) ?? { items: 0, units: 0 }
-    return { ...order, package: pkg, membership: membershipByOrder.get(order.id) ?? null, blocked: blockedIds.has(order.id), blockReason: blockedReasons.get(order.id) ?? null,
+    return { ...order, total: includeAmounts && order.total != null ? Number(order.total) : null, package: pkg, membership: membershipByOrder.get(order.id) ?? null, blocked: blockedIds.has(order.id), blockReason: blockedReasons.get(order.id) ?? null,
       packingBlocked: packingBlockedIds.has(order.id), pendingBeforeDispatch: pendingBeforeDispatch.get(order.id) ?? [],
       itemCount: totals.items, units: totals.units, scannedUnits: !pkg ? 0 : pkg.status === "prepared" ? totals.units : scannedByPackage.get(pkg.id) ?? 0 }
   })

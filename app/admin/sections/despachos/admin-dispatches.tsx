@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, PackageCheck, Packa
 
 import {
   AdminBadge, AdminButton, AdminCard, AdminEmptyState,
-  AdminPageHeader, AdminPrimaryButton, AdminSection, AdminTextInput,
+  AdminPageHeader, AdminPrimaryButton, AdminSection,
   adminPageClassName,
 } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
@@ -38,8 +38,13 @@ function writeSelection(selection: Set<number>) {
 }
 
 function dateTime(value: string | null | undefined) {
-  return value ? new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—"
+  return value ? new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—"
 }
+function shortDate(value: string) {
+  return new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hourCycle: "h23", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+}
+const money = (value: number | null | undefined) => typeof value === "number" && Number.isFinite(value)
+  ? new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 2 }).format(value) : "—"
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`
 
@@ -240,6 +245,11 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         })}
       </nav>
     </div>
+    {!orderId && !batch && !resolving && (tab === "armado" || tab === "ready") && <div role="search" aria-label="Filtros de pedidos" className="dispatch-filters grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px_auto] sm:items-end">
+      <label className="min-w-0"><span>Buscar pedido</span><input type="search" value={searchOrder} onChange={(event) => { setSearchOrder(event.target.value); setPages({ armado: 1, ready: 1 }) }} placeholder="BX-1006 o 1006" className="admin-control-input admin-ds-control h-10 w-full min-w-0" /></label>
+      <label className="min-w-0"><span>Fecha</span><input type="date" value={orderDate} onChange={(event) => { setOrderDate(event.target.value); setPages({ armado: 1, ready: 1 }) }} className="admin-control-input admin-ds-control h-10 w-full min-w-0" /></label>
+      <AdminButton className="h-10 w-full sm:w-auto" disabled={!searchOrder && !orderDate} onClick={() => { setSearchOrder(""); setOrderDate(""); setPages({ armado: 1, ready: 1 }) }}>Limpiar</AdminButton>
+    </div>}
     {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
     {notice && <p role="status" className="flex items-start gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" />{notice}</p>}
     {loading && <p role="status" className="text-sm text-white/70">Cargando…</p>}
@@ -256,14 +266,15 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow="Bulto general" actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
       <GeneralBundlePanel key={batch.batch.id} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
         onChange={(detail) => { setBatch(detail); setTab(detail.batch.status) }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
-    </AdminSection> : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />} actions={tab === "ready" ? <AdminPrimaryButton className="w-full sm:w-auto" disabled={busy || selectedReady.length === 0} onClick={createLot}>Crear bulto{selectedReady.length ? ` · ${selectedReady.length}` : ""}</AdminPrimaryButton> : undefined}>
-      {(tab === "armado" || tab === "ready") && <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]"><AdminTextInput title="Buscar pedido" value={searchOrder} onChange={(value) => { setSearchOrder(value); setPages({ armado: 1, ready: 1 }) }} placeholder="BX-1006 o 1006" /><label className="dispatch-filter-date flex min-w-0 flex-col gap-1 text-xs font-bold text-white/75">Fecha del pedido<input type="date" value={orderDate} onChange={(event) => { setOrderDate(event.target.value); setPages({ armado: 1, ready: 1 }) }} className="h-10 min-w-0 rounded-lg border border-white/20 bg-white/10 px-2 text-sm text-white [color-scheme:dark]" /></label></div>}
-      {tab === "ready" && readyOrders.length > 0 && <div className="dispatch-select-bar mb-3 flex flex-wrap items-center gap-3 text-sm text-white/80"><label className="flex cursor-pointer items-center gap-2 font-bold"><input type="checkbox" className="size-5" checked={visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selected.has(id))} disabled={visibleSelectableIds.length === 0} onChange={(event) => setAllSelected(visibleSelectableIds, event.target.checked)} />Seleccionar todos de esta página</label><span>{selectedReady.length} pedidos seleccionados</span></div>}
+    </AdminSection> : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />}>
       {(tab === "armado" || tab === "ready") ? (() => {
         const page = tab === "armado" ? pendingPage : readyPage
-        return <>{page.items.length ? <ul className="space-y-2">{page.items.map((item) => <li key={item.id}><OrderQueueCard item={item} tab={tab}
-          checked={selected.has(item.id)} onToggle={() => toggleSelected(item.id)} onOpen={() => startArmado([item.id])} /></li>)}</ul>
+        return <>{page.items.length ? <table className="dispatch-orders-table w-full" aria-label={tab === "armado" ? "Pedidos pendientes" : "Pedidos confirmados"}>
+          <thead><tr>{tab === "ready" && <th scope="col"><input type="checkbox" aria-label="Seleccionar todos de esta página" checked={visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selected.has(id))} disabled={visibleSelectableIds.length === 0} onChange={(event) => setAllSelected(visibleSelectableIds, event.target.checked)} /></th>}<th scope="col">Pedido</th><th scope="col">Fecha</th><th scope="col">Productos</th><th scope="col">Unidades</th><th scope="col">Estado</th><th scope="col">Total</th></tr></thead>
+          <tbody>{page.items.map((item) => <OrderQueueCard key={item.id} item={item} tab={tab} checked={selected.has(item.id)} onToggle={() => toggleSelected(item.id)} onOpen={() => startArmado([item.id])} />)}</tbody>
+        </table>
           : <AdminEmptyState title="No hay pedidos en esta vista" description="Los pedidos aparecen sin límite de fecha cuando no hay filtros aplicados." />}
+          {tab === "ready" && <div className="dispatch-selection-footer mt-3 flex flex-wrap items-center justify-between gap-2"><span>{selectedReady.length} seleccionados</span><AdminPrimaryButton disabled={busy || selectedReady.length === 0} onClick={createLot}>Crear bulto</AdminPrimaryButton></div>}
           {page.totalPages > 1 && <DispatchPagination page={page.currentPage} pages={page.totalPages} onPage={(value) => setPages((current) => ({ ...current, [tab]: value }))} />}</>
       })() : <>{shownBatches.length ? <ul className={tab === "open" ? "space-y-2" : "grid gap-2 md:grid-cols-2 xl:grid-cols-3"}>{shownBatches.map((item) => <li key={item.id}><AdminCard interactive className={`dispatch-card flex items-center justify-between gap-3 p-3 ${item.blockedCount > 0 && item.status !== "handed_over" ? "border-amber-500/40" : ""}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-black text-white">{dispatchBatchName(item)}</p>{item.blockedCount > 0 && item.status !== "handed_over" ? <AdminBadge tone="warning">Requiere revisión</AdminBadge> : <AdminBadge tone={item.status === "handed_over" ? "success" : "info"}>{item.status === "open" ? "Abierto" : item.status === "closed" ? "Cerrado" : "Entregado"}</AdminBadge>}</div><p className="mt-1 text-xs text-white/60">{item.status === "open" ? `${plural(item.orderCount, "pedido", "pedidos")} · Creado: ${dateTime(item.created_at)}` : item.status === "handed_over" ? plural(item.orderCount, "pedido", "pedidos") : `Verificados: ${item.verifiedCount ?? 0} / ${item.orderCount}`}{item.blockedCount > 0 ? ` · ${item.blockedCount} bloqueados` : ""}</p></div><AdminButton size="sm" onClick={() => void openBatch(item.id)}>Abrir</AdminButton></AdminCard></li>)}</ul> : <AdminEmptyState title="No hay Bultos generales en esta vista" description="Creá uno desde Confirmados." />}</>}
     </AdminSection>}
@@ -283,7 +294,7 @@ function DispatchPagination({ page, pages, onPage }: { page: number; pages: numb
   </nav>
 }
 
-/** Pedido en la cola de preparación o listo para el Bulto general: estado, avance y acción. */
+/** Una fila de pedido; el clic abre la preparación y el checkbox sólo selecciona. */
 export function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
   item: OrderCard
   tab: "armado" | "ready"
@@ -295,19 +306,16 @@ export function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
   // En la cola de preparación sólo bloquea lo que frena el pickeo; para el Bulto general, cualquier bloqueo.
   const blocked = tab === "ready" ? Boolean(item.blocked) : Boolean(item.packingBlocked ?? item.blocked)
   const selectable = tab === "ready" && !blocked && readyForGeneralBundle(item.package, andreaniShipmentCreated(item))
-  const units = item.units ?? 0
-  return <AdminCard interactive className={`dispatch-card dispatch-queue-card flex min-w-0 flex-col gap-2 p-3 sm:flex-row sm:items-center ${blocked ? "border-red-500/40" : checked ? "border-beyonix-sky/45" : ""}`}>
-    {tab === "ready" && <input type="checkbox" className="size-6 shrink-0" aria-label={`Seleccionar ${orderCode(item.id)}`} checked={checked && selectable} disabled={!selectable} onChange={onToggle} />}
-    <div className="grid min-w-0 flex-1 gap-1 sm:grid-cols-[minmax(115px,0.8fr)_minmax(100px,1fr)_minmax(125px,1fr)_auto] sm:items-center sm:gap-3">
-      <div className="min-w-0"><p className="font-black tabular-nums text-white">{orderCode(item.id)}</p><p className="text-xs text-white/60">{dateTime(item.created_at)}</p></div>
-      <p className="min-w-0 truncate text-sm text-white/85">{item.cliente_nombre || "Cliente sin nombre"}</p>
-      <p className="text-xs font-bold text-white/75">{plural(item.itemCount ?? 0, "producto", "productos")} · {plural(units, "unidad", "unidades")}</p>
-      <AdminBadge tone={blocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{blocked ? "Requiere revisión" : tab === "ready" ? "Confirmado" : stage === "pending" ? "Pendiente" : DISPATCH_STAGE_LABELS[stage]}</AdminBadge>
-    </div>
-    {tab === "ready" && item.andreani_tracking && <span className="max-w-full truncate text-xs text-white/60 sm:max-w-32" title={item.andreani_tracking}>{item.andreani_tracking}</span>}
-    {blocked && <span className="text-xs text-red-200">{item.blockReason ?? "Revisión requerida"}</span>}
-    <AdminButton className="h-10 w-full shrink-0 sm:w-auto" variant={tab === "armado" && !blocked ? "primary" : "secondary"} onClick={onOpen}>{tab === "armado" ? "Preparar pedido" : "Abrir"}</AdminButton>
-  </AdminCard>
+  const status = blocked ? "Requiere revisión" : tab === "ready" ? "Confirmado" : stage === "pending" ? "Pendiente" : DISPATCH_STAGE_LABELS[stage]
+  return <tr className="dispatch-order-row" tabIndex={0} aria-label={`Abrir pedido ${orderCode(item.id)}`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen() } }}>
+    {tab === "ready" && <td className="dispatch-order-check" onClick={(event) => event.stopPropagation()}><input type="checkbox" className="size-5" aria-label={`Seleccionar ${orderCode(item.id)}`} checked={checked && selectable} disabled={!selectable} onChange={onToggle} onKeyDown={(event) => event.stopPropagation()} /></td>}
+    <td className="dispatch-order-code" data-label="Pedido">{orderCode(item.id)}</td>
+    <td className="dispatch-order-date" data-label="Fecha">{shortDate(item.created_at)}</td>
+    <td className="dispatch-order-products" data-label="Productos">{item.itemCount ?? 0}<span className="dispatch-mobile-only"> productos</span></td>
+    <td className="dispatch-order-units" data-label="Unidades">{item.units ?? 0}<span className="dispatch-mobile-only"> unidades</span></td>
+    <td className="dispatch-order-status" data-label="Estado"><AdminBadge tone={blocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{status}</AdminBadge></td>
+    <td className="dispatch-order-total" data-label="Total">{money(item.total)}</td>
+  </tr>
 }
 
 const SHORT_STAGE: Partial<Record<DispatchStage, string>> = { pending: "Sin empezar", shipment: "Generar envío", label: "Imprimir etiqueta", ready: "Listo" }
