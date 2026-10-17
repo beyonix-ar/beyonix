@@ -341,12 +341,10 @@ export function AdminClient({ children }: { children: ReactNode }) {
         description: dispatchAlerts.holdCount
           ? `${dispatchAlerts.holdCount} cancelado${dispatchAlerts.holdCount === 1 ? "" : "s"} para retirar`
           : dispatchAlerts.reviewCount
-          ? `${dispatchAlerts.reviewCount} requiere revisión`
-          : dispatchAlerts.handoverCount
-            ? `${dispatchAlerts.handoverCount} lista${dispatchAlerts.handoverCount === 1 ? "" : "s"} para entregar`
-            : "Preparación y Bultos generales",
+          ? `${dispatchAlerts.reviewCount} pedido${dispatchAlerts.reviewCount === 1 ? "" : "s"} por retirar`
+          : "Preparación y Bultos generales",
         icon: <PackageCheck className="size-4" />,
-        notificationCount: dispatchAlerts.holdCount + dispatchAlerts.reviewCount + dispatchAlerts.handoverCount,
+        notificationCount: dispatchAlerts.holdCount + dispatchAlerts.reviewCount,
         notificationTone: "shipping",
       },
     ]
@@ -437,7 +435,7 @@ export function AdminClient({ children }: { children: ReactNode }) {
           ]
         : []),
     ]
-  }, [invoicePendingCount, invoiceCountError, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications, dispatchAlerts.holdCount, dispatchAlerts.reviewCount, dispatchAlerts.handoverCount])
+  }, [invoicePendingCount, invoiceCountError, isOperator, isSuperAdmin, notificationCount, notificationGroups.mercadolibre_return, notificationTone, notifications, dispatchAlerts.holdCount, dispatchAlerts.reviewCount])
 
   useEffect(() => {
     if (!isSuperAdmin) {

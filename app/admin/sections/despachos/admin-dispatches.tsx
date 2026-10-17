@@ -16,13 +16,13 @@ import { dispatchRequest } from "./dispatch-request"
 import { GeneralBundlePanel } from "./general-bundle-panel"
 import { DISPATCH_STAGE_TONE, OrderPreparationPanel } from "./order-preparation-panel"
 
-type Tab = "armado" | "ready" | "open" | "closed" | "handed_over"
+type Tab = "armado" | "ready" | "open"
 type OrderCard = DispatchOrder & {
   package: DispatchPackage | null; membership: DispatchMembership | null; blocked?: boolean; blockReason?: string | null
   packingBlocked?: boolean; pendingBeforeDispatch?: string[]; itemCount?: number; units?: number; scannedUnits?: number
 }
 type BatchCard = DispatchBatch & { orderCount: number; verifiedCount?: number; packageCount: number; blockedCount: number }
-type Board = { orders: OrderCard[]; batches: BatchCard[]; holds?: DispatchHold[] }
+type Board = { orders: OrderCard[]; batches: BatchCard[]; holds?: DispatchHold[]; viewerRole?: string }
 
 const SELECTION_KEY = "beyonix:dispatch-lot-selection"
 
@@ -50,12 +50,11 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "armado", label: "Pendientes" }, { key: "ready", label: "Confirmados" },
-  { key: "open", label: "Bultos" }, { key: "closed", label: "Cerrados" },
-  { key: "handed_over", label: "Entregados" },
+  { key: "open", label: "Bultos" },
 ]
 
 export function AdminDispatches({ initialBatchId, initialOrderId, initialResolveId }: { initialBatchId?: string; initialOrderId?: string; initialResolveId?: string }) {
-  const [tab, setTab] = useState<Tab>(initialBatchId ? "closed" : "armado")
+  const [tab, setTab] = useState<Tab>(initialBatchId ? "open" : "armado")
   const [board, setBoard] = useState<Board | null>(null)
   const [orderId, setOrderId] = useState<number | null>(null)
   const [queue, setQueue] = useState<number[]>([])
@@ -86,7 +85,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
 
   const openBatch = useCallback(async (id: number) => {
     setLoading(true); setError("")
-    try { const detail = await dispatchRequest<BatchDispatchDetail>(`/batches/${id}`); setBatch(detail); setTab(detail.batch.status); setOrderId(null); setResolving(null) }
+    try { const detail = await dispatchRequest<BatchDispatchDetail>(`/batches/${id}`); setBatch(detail); setTab("open"); setOrderId(null); setResolving(null) }
     catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo abrir el Bulto general.") }
     finally { setLoading(false) }
   }, [])
@@ -169,7 +168,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
   const eligibleReadyIds = new Set(eligibleReady.map((item) => item.id))
   const visibleSelectableIds = readyPage.items.filter((item) => eligibleReadyIds.has(item.id)).map((item) => item.id)
   const selectedReady = eligibleReady.filter((item) => selected.has(item.id))
-  const shownBatches = (board?.batches ?? []).filter((item) => item.status === tab)
+  const shownBatches = board?.batches ?? []
 
   function toggleSelected(id: number) {
     createKey.current = null
@@ -222,12 +221,12 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
 
   // Contadores sólo de las colas operativas: el board trae hasta 100 lotes,
   // así que cerrados/entregados no tendrían un total confiable.
-  const openBatchCount = (board?.batches ?? []).filter((item) => item.status === "open").length
+  const openBatchCount = (board?.batches ?? []).length
   const tabCounts: Partial<Record<Tab, number>> = board ? { armado: armadoOrders.length, ready: readyOrders.length, open: openBatchCount } : {}
 
   return <div className={`${adminPageClassName} dispatch-page mx-auto max-w-6xl`}>
     <div className="dispatch-workspace space-y-4 sm:space-y-5">
-    <AdminPageHeader className="dispatch-header sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Pickeá, generá el envío Andreani, armá el Bulto general y entregalo." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
+    <AdminPageHeader className="dispatch-header sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Pickeá, confirmá el pedido y controlá los pedidos del Bulto." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
 
     {holds.length > 0 && !resolving && !batch && (tab === "armado" || tab === "ready") && <section aria-label="Cancelaciones que requieren acción" className="space-y-2">
       {holds.map((hold) => <div key={hold.id} role="alert" className="flex flex-col gap-3 rounded-2xl border border-red-500/45 bg-red-950 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
@@ -270,8 +269,8 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
           footer={nextInQueue ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminButton> : null} />
       </div>
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow="Bulto general" actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
-      <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
-        onChange={(detail) => { setBatch(detail); setTab(detail.batch.status) }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
+      <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)} canReopen={board?.viewerRole === "super_admin"}
+        onChange={(detail) => { setBatch(detail); setTab("open") }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
     </AdminSection> : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />}>
       {(tab === "armado" || tab === "ready") ? (() => {
         const page = tab === "armado" ? pendingPage : readyPage
@@ -288,7 +287,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         const needsVerification = item.status === "closed" && item.verification_required !== false && (item.verifiedCount ?? 0) < item.orderCount
         const status = hasProblem
           ? cancelled > 0 ? cancelled === 1 ? "Tiene un pedido cancelado" : `Tiene ${cancelled} pedidos cancelados` : `${plural(item.blockedCount, "pedido", "pedidos")} por retirar`
-          : needsVerification ? "Faltan pedidos por verificar" : item.status === "closed" ? "Listo para entregar" : item.status === "open" ? "Abierto" : "Entregado"
+          : needsVerification ? "Faltan pedidos por controlar" : item.status === "open" ? "En armado" : "Finalizado"
         return <li key={item.id}><AdminCard interactive className={`dispatch-card dispatch-batch-list-card flex flex-wrap items-center justify-between gap-2 p-3 ${hasProblem ? "dispatch-batch-problem" : ""}`}>
           <div className="min-w-0"><p className="font-black text-white">{dispatchBatchName(item)}</p><p className="mt-0.5 text-xs text-white/70">{plural(item.orderCount, "pedido", "pedidos")} · <span className={hasProblem ? "text-red-300" : item.status === "closed" ? "text-emerald-300" : ""}>{status}</span>{item.status === "open" ? ` · Creado: ${dateTime(item.created_at)}` : ""}</p></div>
           <AdminButton size="sm" onClick={() => void openBatch(item.id)}>Abrir</AdminButton>

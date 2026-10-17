@@ -54,7 +54,7 @@ async function submit(dom: JSDOM, input: HTMLInputElement) {
   await settle()
 }
 
-test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cámara/tipeo/pegado, errores visibles y cierre", async () => {
+test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectura finaliza sin cuarto paso", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=5")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const batch = { id: 5, code: "DSP-20261016-001", status: "open", created_at: "2026-10-16T12:00:00Z", closed_at: null, prepared_at: null, handed_over_at: null, handed_over_by: null, verification_round: 1 }
@@ -69,12 +69,12 @@ test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cáma
     if (path.endsWith("/batches/5") && init?.body) {
       const body = JSON.parse(String(init.body)) as { action: string; code?: string; method: string; orderId?: number }
       posts.push(body)
-      if (body.action === "close") { batch.status = "closed"; return Response.json(detail()) }
       const orderId = body.method === "manual_selection" ? 1000 + Number(body.orderId) : Number(/^36000000(\d{4})$/.exec(body.code ?? "")?.[1])
       if (/^BX-PKG-/i.test(body.code ?? "")) return Response.json({ error: "Esa es una etiqueta interna (BX-PKG). Escaneá la etiqueta Andreani del pedido." }, { status: 409 })
       if (!orders.includes(orderId)) return Response.json({ error: "Código no reconocido." }, { status: 409 })
       const duplicate = verified.has(orderId)
       if (!duplicate) verified.set(orderId, body.method)
+      if (verified.size === orders.length) batch.status = "closed"
       return Response.json({ ...detail(), verification: { orderId: orderId - 1000, code: `36000000${orderId}`, method: verified.get(orderId), duplicate, expected: orders.length, verified: verified.size } })
     }
     if (path.endsWith("/batches/5")) return Response.json(detail())
@@ -84,14 +84,14 @@ test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cáma
     await act(async () => { root.render(<AdminDispatches initialBatchId="5" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    const control = () => dom.window.document.querySelector("[aria-label='Control del Bulto general']")?.textContent ?? ""
+    const control = () => dom.window.document.querySelector("[aria-label^='Bulto ']")?.textContent ?? ""
     assert.match(text(), /Bulto general/)
-    assert.match(control(), /Pedidos esperados: 4 · Verificados: 0/, "seleccionar no es verificar")
-    assert.equal(button(dom, "CERRAR BULTO GENERAL")?.disabled, true, "cierre bloqueado con faltantes")
+    assert.match(control(), /0 de 4 pedidos/, "seleccionar no es controlar")
+    assert.equal(button(dom, "CERRAR BULTO GENERAL"), undefined)
     const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar etiqueta Andreani"]')!
 
     await scanWithReader(dom, input(), "360000001006")
-    assert.match(text(), /✓ BX-1006 verificado · 1 de 4 pedidos/)
+    assert.match(control(), /1 de 4 pedidos/)
     await type(dom, input(), "360000001007"); await submit(dom, input())
     await paste(dom, input(), "360000001008")
     assert.deepEqual(posts.map((post) => post.method), ["scanner", "manual_code", "manual_code"], "tipeado y pegado: código ingresado")
@@ -100,37 +100,28 @@ test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cáma
     await type(dom, input(), "BX-PKG-1009-01"); await submit(dom, input())
     assert.match(text(), /Esa es una etiqueta interna \(BX-PKG\)/)
     await type(dom, input(), "ZZZ"); await submit(dom, input())
-    assert.match(text(), /ZZZ: Código no reconocido\./)
+    assert.match(text(), /Código no reconocido\./)
     await type(dom, input(), "360000001006"); await submit(dom, input())
-    assert.match(text(), /BX-1006 ya estaba verificado · 3 de 4 pedidos/)
-    assert.match(control(), /Lecturas con error: 3/)
+    assert.match(text(), /BX-1006 ya estaba controlado/)
+    assert.match(control(), /3 de 4 pedidos/)
     assert.equal(input().disabled, false)
-    assert.equal(button(dom, "CERRAR BULTO GENERAL")?.disabled, true)
 
     // Cámara: misma acción, método "camera".
     fakeCamera([null, "360000001009", "360000001009", null])
     await act(async () => { button(dom, "Escanear con cámara")!.click() })
     await settle(700)
     assert.equal(posts.filter((post) => post.method === "camera").length, 1, "la misma etiqueta en cuadro no se cuenta dos veces")
-    await act(async () => { button(dom, "Cerrar cámara")!.click() })
-    assert.match(control(), /Verificados: 4/)
-    assert.match(text(), /Lector/)
-    assert.match(text(), /Cámara/)
+    assert.equal(button(dom, "Cerrar cámara"), undefined, "al finalizar se desmonta el visor")
+    assert.match(control(), /4 de 4 pedidos/)
 
     await settle(300)
-    assert.equal(button(dom, "CERRAR BULTO GENERAL")?.disabled, false, "cierre habilitado con todos verificados")
-    await act(async () => { button(dom, "CERRAR BULTO GENERAL")!.click() })
-    await act(async () => { button(dom, "Cerrar Bulto general")!.click() })
-    await settle(150)
-    assert.deepEqual(posts.at(-1), { action: "close" })
-    assert.match(text(), /Listo para entregar/)
-    assert.equal(input(), null, "el escaneo del DSP aparece sólo al iniciar la entrega")
-    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Etiquetas"]')!.click() })
-    assert.deepEqual([...dom.window.document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent), ["Imprimir", "Guardar PDF", "Ver etiqueta"])
-    await act(async () => { button(dom, "Ver etiqueta")!.click() })
-    assert.ok(dom.window.document.querySelector("#dispatch-print-label"))
-    await act(async () => { button(dom, "Entregar a Andreani")!.click() })
-    assert.ok(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]'))
+    assert.equal(batch.status, "closed")
+    assert.match(control(), /Bulto finalizado/)
+    assert.equal(input(), null)
+    assert.equal(posts.some((post) => post.action === "close" || post.action === "handover"), false)
+    assert.doesNotMatch(text(), /Entregar a Andreani|Escanear o ingresar DSP/)
+    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Opciones del Bulto"]')!.click() })
+    assert.deepEqual([...dom.window.document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent), ["Ver historial", "Imprimir etiqueta del Bulto", "Guardar PDF"])
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
@@ -159,7 +150,7 @@ test("Bulto general: un cancelado muestra sólo el problema y su retiro", async 
     await act(async () => { root.render(<AdminDispatches initialBatchId="6" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Problema[\s\S]*Sacá este pedido del bulto para continuar[\s\S]*BX-1008[\s\S]*Cancelado[\s\S]*Retirar pedido/)
+    assert.match(text(), /Sacá este pedido del Bulto para continuar[\s\S]*BX-1008[\s\S]*Cancelado[\s\S]*Retirar pedido/)
     assert.equal(button(dom, "Retirar pedido")?.disabled, false)
     assert.equal(posts.length, 0)
     for (const hidden of ["Requiere revisión", "Pedido bloqueado", "Envío ya en curso", "Pedidos esperados", "Verificados", "Confirmar entrega", "Verificar DSP"]) assert.doesNotMatch(text(), new RegExp(hidden))
@@ -194,7 +185,7 @@ test("Etiquetas: la cámara suma ×1 por lectura usando el mismo camino que el l
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("Cerrados: varios cancelados se listan para retirar y al resolver el último vuelve la entrega", async () => {
+test("Bultos: varios cancelados se listan para retirar y al resolver el último vuelve el control", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const { ADMIN_DISPATCH_CHANGED_EVENT } = await import("../../hooks/use-admin-notifications")
@@ -213,7 +204,7 @@ test("Cerrados: varios cancelados se listan para retirar y al resolver el últim
   try {
     await act(async () => { root.render(<AdminDispatches />) })
     await settle(100)
-    await act(async () => { button(dom, "Cerrados")!.click() })
+    await act(async () => { button(dom, "Bultos")!.click() })
     assert.match(dom.window.document.body.textContent ?? "", /Bulto - 0001[\s\S]*3 pedidos[\s\S]*Tiene 3 pedidos cancelados/)
     assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión|Verificados/)
     await act(async () => { button(dom, "Abrir")!.click() })
@@ -228,18 +219,20 @@ test("Cerrados: varios cancelados se listan para retirar y al resolver el últim
     needsRevalidation = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle(350)
-    assert.match(text(), /Verificá 3 pedidos para continuar/)
+    assert.match(text(), /0 de 3 pedidos/)
+    assert.ok(dom.window.document.querySelector('input[aria-label="Escanear o ingresar etiqueta Andreani"]'))
     assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
     assert.doesNotMatch(text(), /Entregar a Andreani/)
     needsRevalidation = false
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle(350)
-    assert.match(text(), /3 pedidos · Listo para entregar[\s\S]*Entregar a Andreani/)
+    assert.match(text(), /Bulto finalizado/)
+    assert.doesNotMatch(text(), /Entregar a Andreani/)
     assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("Bulto general histórico sin escaneos: legible, no figura como verificado y no bloquea la entrega", async () => {
+test("Bulto histórico sin escaneos: conserva el estado finalizado sin inventar lecturas", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=7")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const batch = { id: 7, code: "DSP-20261001-001", status: "closed", created_at: "2026-10-01T12:00:00Z", closed_at: "2026-10-01T13:00:00Z", prepared_at: "2026-10-01T13:00:00Z", handed_over_at: null, handed_over_by: null, verification_round: 1, verification_required: false }
@@ -256,10 +249,9 @@ test("Bulto general histórico sin escaneos: legible, no figura como verificado 
     await act(async () => { root.render(<AdminDispatches initialBatchId="7" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /2 pedidos · Listo para entregar/)
+    assert.match(text(), /2 pedidos · Bulto finalizado/)
     assert.doesNotMatch(text(), /Histórico|Verificados|Pedidos esperados/)
     assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]'), null)
-    await act(async () => { button(dom, "Entregar a Andreani")!.click() })
-    assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]')?.disabled, false)
+    assert.doesNotMatch(text(), /Entregar a Andreani/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })

@@ -11,6 +11,12 @@ const MIGRATION = source(
 )
 const ROUTE = source("app/api/admin/pedidos/[id]/cancel/route.ts")
 
+test("la ruta conserva la RPC normal y reserva la cancelación forzada para Super Admin", () => {
+  assert.match(ROUTE, /forceCancel = action === "cancel" && auth\.profile\.rol === "super_admin"/)
+  assert.match(ROUTE, /\.rpc\("super_admin_cancel_order",/)
+  assert.match(ROUTE, /\.rpc\("admin_cancel_order",/)
+})
+
 test("3/4/13. la RPC lockea la fila (for update) antes de decidir -- dos requests simultáneos serializan, el segundo ve el estado ya cancelado", () => {
   assert.match(
     MIGRATION,

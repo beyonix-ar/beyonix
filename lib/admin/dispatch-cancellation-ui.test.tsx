@@ -21,8 +21,6 @@ async function setup(url: string) {
 }
 
 const settle = async (ms = 80) => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) }) }
-const button = (dom: JSDOM, text: string) => [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes(text))
-
 async function type(dom: JSDOM, input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
   await act(async () => { setter.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
@@ -98,55 +96,24 @@ test("pickeo parcial: requiere resolución física, pide devolver lo pickeado e 
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("entrega a Andreani: sólo con el DSP de ESTE Bulto general y una confirmación", async () => {
+test("Bulto finalizado: conserva el histórico sin pedir DSP ni entrega", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=9")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
-  const batch = { id: 9, code: "DSP-20261016-001", status: "closed", created_at: "2026-10-16T09:00:00Z", closed_at: "2026-10-16T11:00:00Z", prepared_at: "2026-10-16T11:00:00Z", handed_over_at: null as string | null, handed_over_by: null }
-  const handovers: Json[] = []
-  const detail = (): Json => ({ batch, blockedCount: 0, cancelledCount: 0, expectedCount: 1, verifiedCount: 1, missingCount: 0, requiresRevalidation: false, operatorName: null, parcelCount: 1, items: [{ id: 1, batch_id: 9, order_id: 31, package_id: 7, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false, preparedCode: "BX-PREP-1031", verified: true, verifiedAt: batch.created_at, verificationMethod: "camera", parcelCount: 1, parcels: [] }] })
+  const batch = { id: 9, code: "DSP-20261016-001", status: "closed", created_at: "2026-10-16T09:00:00Z", closed_at: "2026-10-16T11:00:00Z", prepared_at: "2026-10-16T11:00:00Z", handed_over_at: null, handed_over_by: null }
+  const detail = { batch, blockedCount: 0, cancelledCount: 0, expectedCount: 1, verifiedCount: 1, missingCount: 0, requiresRevalidation: false, operatorName: null, parcelCount: 1, items: [{ id: 1, batch_id: 9, order_id: 31, package_id: 7, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false, verified: true, verifiedAt: batch.created_at, verificationMethod: "camera", parcelCount: 1, parcels: [] }] }
+  const posts: Json[] = []
   globalThis.fetch = async (input, init) => {
     const path = String(input)
-    if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
-    if (path.endsWith("/batches/9") && init?.body) {
-      const body = JSON.parse(String(init.body)) as Json
-      handovers.push(body)
-      Object.assign(batch, { status: "handed_over", handed_over_at: "2026-10-16T12:00:00Z" })
-      return Response.json({ ...detail(), handover: { duplicate: false } })
-    }
-    if (path.endsWith("/batches/9")) return Response.json(detail())
+    if (init?.body) posts.push(JSON.parse(String(init.body)) as Json)
+    if (path.endsWith("/batches/9")) return Response.json(detail)
     return Response.json({ orders: [], batches: [{ ...batch, orderCount: 1, packageCount: 1, blockedCount: 0 }], holds: [] })
   }
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="9" />) })
     await settle(150)
-    const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Listo para entregar/)
-    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
-    await act(async () => { button(dom, "Entregar a Andreani")!.click() })
-    const input = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar DSP"]')!
-    assert.equal(dom.window.document.activeElement, input(), "el DSP recibe foco al entrar a la etapa")
-    assert.equal(input().disabled, false)
-    await type(dom, input(), "DSP-20261015-007"); await submit(dom, input())
-    assert.match(text(), /Ese código no corresponde a este Bulto general/)
-    assert.equal(handovers.length, 0, "un código equivocado no envía nada")
-    assert.equal(dom.window.document.activeElement, input(), "el error devuelve el foco")
-    await act(async () => { button(dom, "Escanear con cámara")!.click() })
-    await settle()
-    await act(async () => { button(dom, "Cerrar cámara")!.click() })
-    assert.equal(dom.window.document.activeElement, input(), "cerrar cámara devuelve el foco")
-    await act(async () => { input().dispatchEvent(new dom.window.Event("paste", { bubbles: true })) })
-    await type(dom, input(), "DSP-20261016-001"); await submit(dom, input())
-    assert.match(text(), /¿Confirmás que el bulto salió físicamente hacia Andreani\?/, "pegar valida el DSP")
-    await act(async () => { button(dom, "Cancelar")!.click() })
-    await act(async () => { for (const key of "DSP-20261016-001") input().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true })) })
-    await type(dom, input(), "DSP-20261016-001"); await submit(dom, input())
-    assert.match(text(), /¿Confirmás que el bulto salió físicamente hacia Andreani\?/, "lector USB usa el mismo flujo")
-    await act(async () => { button(dom, "Cancelar")!.click() })
-    await type(dom, input(), "dsp-20261016-001"); await submit(dom, input())
-    assert.match(text(), /¿Confirmás que el bulto salió físicamente hacia Andreani\?/)
-    await act(async () => { button(dom, "Confirmar entrega")!.click() })
-    await settle(150)
-    assert.deepEqual(handovers, [{ action: "handover", code: "DSP-20261016-001" }])
-    assert.match(text(), /Bulto general entregado a Andreani/)
+    const text = dom.window.document.body.textContent ?? ""
+    assert.match(text, /Bulto finalizado/)
+    assert.doesNotMatch(text, /Entregar a Andreani|Escanear o ingresar DSP|Confirmar entrega/)
+    assert.equal(posts.length, 0)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })

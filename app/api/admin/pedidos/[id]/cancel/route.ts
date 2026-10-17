@@ -59,17 +59,27 @@ export async function POST(
     )
   }
 
-  const { data: order, error: cancellationError } = await auth.admin.rpc(
-    "admin_cancel_order",
-    {
+  const forceCancel = action === "cancel" && auth.profile.rol === "super_admin"
+  if (forceCancel && reasonText.length < 10) {
+    return NextResponse.json({ error: "Describí el motivo de la intervención con al menos 10 caracteres." }, { status: 400 })
+  }
+
+  const cancellation = forceCancel
+    ? await auth.admin.rpc("super_admin_cancel_order", {
+      p_order_id: orderId,
+      p_actor_id: auth.user.id,
+      p_reason_code: reasonCode,
+      p_reason_text: reasonText,
+    })
+    : await auth.admin.rpc("admin_cancel_order", {
       p_order_id: orderId,
       p_admin_id: auth.user.id,
       p_admin_role: auth.profile.rol,
       p_action: action,
       p_reason_code: reasonCode,
       p_reason_text: reasonText,
-    },
-  )
+    })
+  const { data: order, error: cancellationError } = cancellation
 
   if (cancellationError || !order) {
     const message = cancellationError?.message ?? ""
@@ -121,6 +131,12 @@ export async function POST(
     }
     if (message.includes("INVALID_REASON")) {
       return NextResponse.json({ error: "Indicá un motivo válido." }, { status: 400 })
+    }
+    if (message.includes("SUPER_ADMIN_REQUIRED")) {
+      return NextResponse.json({ error: "Sólo Super Admin puede forzar la cancelación." }, { status: 403 })
+    }
+    if (message.includes("CANCELLATION_REASON_REQUIRED")) {
+      return NextResponse.json({ error: "Indicá un motivo de al menos 10 caracteres." }, { status: 400 })
     }
 
     return NextResponse.json(

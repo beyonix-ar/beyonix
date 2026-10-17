@@ -10,6 +10,7 @@ import { PGlite } from "@electric-sql/pglite"
 
 const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8")
 const actor = "20000000-0000-4000-8000-000000000002"
+const superAdmin = "20000000-0000-4000-8000-000000000003"
 let requestNumber = 0
 const key = () => `81000000-0000-4000-8000-${String(++requestNumber).padStart(12, "0")}`
 
@@ -31,6 +32,8 @@ const MIGRATIONS = [
   "supabase/migrations/20261016130000_picked_cancellation_admin_refund_only.sql",
   "supabase/migrations/20261016150000_dispatch_general_bundle_verification.sql",
   "supabase/migrations/20261016160000_dispatch_andreani_identification.sql",
+  "supabase/migrations/20261017100000_dispatch_finalize_on_verification.sql",
+  "supabase/migrations/20261017110000_super_admin_force_cancellation.sql",
 ]
 
 async function setup() {
@@ -38,7 +41,15 @@ async function setup() {
   for (const file of MIGRATIONS) {
     await db.exec(read(file))
     // Columnas reales de producción que el fixture compartido no declara.
-    if (file.endsWith("dispatch-schema.sql")) await db.exec("alter table ordenes add column andreani_tracking text; alter table orden_items add column precio numeric default 1000;")
+    if (file.endsWith("dispatch-schema.sql")) await db.exec(`
+      alter table ordenes add column andreani_tracking text;
+      alter table ordenes add column credit_note_required boolean default false;
+      alter table ordenes add column invoice_number integer;
+      alter table ordenes add column invoice_point integer;
+      alter table ordenes add column cancellation_requested_by uuid;
+      alter table orden_items add column precio numeric default 1000;
+    `)
+    if (file.endsWith("dispatch-inventory-schema.sql")) await db.exec("alter table order_credit_notes add column total_amount numeric default 0;")
   }
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   await db.query("insert into profiles(id,rol) values ($1,'operador')", [actor])
@@ -80,11 +91,140 @@ const newBatch = async (db: PGlite, orderIds: number[]) =>
 type Verify = { orderId: number; code: string; method: string; duplicate: boolean; expected: number; verified: number }
 const verify = async (db: PGlite, batchId: number, code: string | null, method: string, requestKey = key(), orderId: number | null = null) =>
   (await db.query<{ r: Verify }>("select verify_dispatch_batch_order($1,$2,$3,$4,$5,$6) r", [batchId, code, method, actor, requestKey, orderId])).rows[0].r
+const verifyAndFinalize = async (db: PGlite, batchId: number, code: string, requestKey = key()) =>
+  (await db.query<{ r: Verify & { finalized: boolean } }>("select verify_and_finalize_dispatch_batch($1,$2,'scanner',$3,$4,null) r", [batchId, code, actor, requestKey])).rows[0].r
 const count = async (db: PGlite, sql: string, params: unknown[] = []) => (await db.query<{ n: number }>(sql, params)).rows[0].n
 const reasons = async (db: PGlite, orderId: number) => (await db.query<{ r: string[] }>("select dispatch_order_block_reasons($1) r", [orderId])).rows[0].r
 const cancel = (db: PGlite, orderId: number) => db.query(
   "update ordenes set estado='cancelado',cancelled_at=now(),financial_status='refund_pending',cancellation_requested_at=now(),refund_pending_at=now() where id=$1",
   [orderId])
+
+test("Super Admin cancela de inmediato un pedido facturado dentro de Bulto; conserva stock y audita pendientes", async () => {
+  const db = await setup()
+  try {
+    await db.query("insert into profiles(id,rol) values ($1,'super_admin')", [superAdmin])
+    await ready(db, 1032)
+    const batch = await newBatch(db, [1032])
+    const stockBefore = (await db.query<{ stock: number }>("select stock from producto_variantes where id=12")).rows[0].stock
+    await db.query("select set_config('request.jwt.claim.role','authenticated',false)")
+    await assert.rejects(db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1032, superAdmin, "solicitud_cliente", "Solicitud del cliente confirmada"]), /FORBIDDEN/)
+    await db.query("select set_config('request.jwt.claim.role','service_role',false)")
+    await assert.rejects(db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1032, actor, "solicitud_cliente", "Solicitud del cliente confirmada"]), /SUPER_ADMIN_REQUIRED/)
+    await assert.rejects(db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1032, superAdmin, "solicitud_cliente", "corto"]), /CANCELLATION_REASON_REQUIRED/)
+    const order = (await db.query<{ estado: string; financial_status: string; credit_note_required: boolean }>("select (r).estado,(r).financial_status,(r).credit_note_required from (select super_admin_cancel_order($1,$2,$3,$4) r) s", [1032, superAdmin, "solicitud_cliente", "Solicitud del cliente confirmada"])).rows[0]
+    assert.deepEqual(order, { estado: "cancelado", financial_status: "refund_pending", credit_note_required: true })
+    await assert.rejects(db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1032, superAdmin, "solicitud_cliente", "Solicitud del cliente confirmada"]), /ORDER_ALREADY_CANCELLED/)
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where order_id=1032 and action='order_force_cancelled_by_super_admin'"), 1)
+    assert.equal((await db.query<{ manual: boolean }>("select auto_cancellation_next_attempt_at='infinity'::timestamptz manual from ordenes where id=1032")).rows[0].manual, true)
+    assert.equal(await count(db, "select count(*)::int n from order_cancellation_holds where order_id=1032 and resolved_at is null"), 1)
+    assert.equal((await db.query<{ stock: number }>("select stock from producto_variantes where id=12")).rows[0].stock, stockBefore)
+    const audit = (await db.query<{ actor_id: string; previous_status: string; new_status: string; metadata: { batchId: number; stock: { physicalHoldId: number }; fiscal: { resolution: string }; financial: { refundResolution: string } } }>("select actor_id,previous_status,new_status,metadata from order_audit_events where order_id=1032 and action='order_force_cancelled_by_super_admin'")).rows[0]
+    assert.equal(audit.actor_id, superAdmin)
+    assert.equal(audit.previous_status, "pagado")
+    assert.equal(audit.new_status, "cancelado")
+    assert.equal(audit.metadata.batchId, batch.id)
+    assert.ok(audit.metadata.stock.physicalHoldId)
+    assert.equal(audit.metadata.fiscal.resolution, "pending")
+    assert.equal(audit.metadata.financial.refundResolution, "pending")
+    await db.query("select resolve_cancelled_order_preparation($1,$2,$3,$4)", ["360000001032", actor, key(), 1032])
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_items where batch_id=$1 and order_id=1032 and removed_at is null", [batch.id]), 0)
+    assert.equal(await count(db, "select count(*)::int n from order_cancellation_holds where order_id=1032 and resolved_at is null"), 0)
+    assert.equal((await db.query<{ stock: number }>("select stock from producto_variantes where id=12")).rows[0].stock, stockBefore + 1)
+    const pending = (await db.query<{ financial_status: string; credit_note_required: boolean }>("select financial_status,credit_note_required from ordenes where id=1032")).rows[0]
+    assert.deepEqual(pending, { financial_status: "refund_pending", credit_note_required: true })
+  } finally { await db.close() }
+})
+
+test("Super Admin cancela un Bulto finalizado y un pedido entregado sin liberar stock despachado", async () => {
+  const db = await setup()
+  try {
+    await db.query("insert into profiles(id,rol) values ($1,'super_admin')", [superAdmin])
+    for (const orderId of [1032, 1033]) await ready(db, orderId)
+    const batch = await newBatch(db, [1032])
+    await verifyAndFinalize(db, batch.id, "360000001032")
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1032, superAdmin, "error_administrativo", "Pedido cancelado dentro del Bulto finalizado"])
+    assert.equal(await count(db, "select count(*)::int n from order_cancellation_holds where order_id=1032 and batch_id=$1 and resolved_at is null", [batch.id]), 1)
+
+    const deliveredBatch = await newBatch(db, [1033])
+    await verifyAndFinalize(db, deliveredBatch.id, "360000001033")
+    await db.query("select confirm_dispatch_batch_handover($1,$2,$3)", [deliveredBatch.id, deliveredBatch.code, actor])
+    await db.query("update ordenes set estado='entregado' where id=1033")
+    const stockBefore = (await db.query<{ stock: number }>("select stock from producto_variantes where id=12")).rows[0].stock
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1033, superAdmin, "solicitud_cliente", "Cancelación posterior a la entrega confirmada"])
+    const delivered = (await db.query<{ estado: string; financial_status: string; retained: boolean }>("select estado,financial_status,super_admin_stock_retained_at is not null retained from ordenes where id=1033")).rows[0]
+    assert.deepEqual(delivered, { estado: "cancelado", financial_status: "refund_pending", retained: true })
+    assert.equal((await db.query<{ stock: number }>("select stock from producto_variantes where id=12")).rows[0].stock, stockBefore)
+    assert.equal(await count(db, "select count(*)::int n from order_cancellation_holds where order_id=1033"), 0)
+  } finally { await db.close() }
+})
+
+test("Super Admin cancela sin pago y durante conciliación Andreani; no inventa reintegro", async () => {
+  const db = await setup()
+  try {
+    await db.query("insert into profiles(id,rol) values ($1,'super_admin')", [superAdmin])
+    await db.query(`update ordenes set estado='pendiente',payment_status='pendiente',paid_at=null,
+      payment_confirmed_amount=0,financial_status='pending_payment',invoice_status='pending',invoice_cae=null,
+      andreani_creation_status='reconciliation_required' where id=1032`)
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1032, superAdmin, "error_administrativo", "Cancelar antes de recibir pago confirmado"])
+    const order = (await db.query<{ estado: string; financial_status: string; credit_note_required: boolean; refund_pending_at: string | null }>("select estado,financial_status,credit_note_required,refund_pending_at from ordenes where id=1032")).rows[0]
+    assert.deepEqual(order, { estado: "cancelado", financial_status: "cancelled", credit_note_required: false, refund_pending_at: null })
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where order_id=1032 and action='order_force_cancelled_by_super_admin' and metadata->'andreani'->>'creationStatus'='reconciliation_required'"), 1)
+    await db.query("update ordenes set invoice_status='pending',invoice_cae=null,andreani_creation_status='claimed' where id=1033")
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1033, superAdmin, "solicitud_cliente", "Cancelar pedido pagado sin factura emitida"])
+    const paid = (await db.query<{ financial_status: string; credit_note_required: boolean }>("select financial_status,credit_note_required from ordenes where id=1033")).rows[0]
+    assert.deepEqual(paid, { financial_status: "refund_pending", credit_note_required: false })
+  } finally { await db.close() }
+})
+
+test("Super Admin conserva una Nota de Crédito ya autorizada y un reintegro completado", async () => {
+  const db = await setup()
+  try {
+    await db.query("insert into profiles(id,rol) values ($1,'super_admin')", [superAdmin])
+    await db.query("insert into order_credit_notes(order_id,status,total_amount) values (1033,'authorized',10000)")
+    await db.query("update ordenes set financial_status='refunded' where id=1033")
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1033, superAdmin, "error_administrativo", "Cancelación excepcional después de reintegro"])
+    const order = (await db.query<{ estado: string; financial_status: string; credit_note_required: boolean }>("select estado,financial_status,credit_note_required from ordenes where id=1033")).rows[0]
+    assert.deepEqual(order, { estado: "cancelado", financial_status: "refunded", credit_note_required: false })
+  } finally { await db.close() }
+})
+
+test("la última etiqueta Andreani finaliza el Bulto sin entrega ni DSP; reintento idempotente", async () => {
+  const db = await setup()
+  try {
+    await ready(db, 1032)
+    await ready(db, 1033)
+    const batch = await newBatch(db, [1032, 1033])
+    const first = await verifyAndFinalize(db, batch.id, "360000001032")
+    assert.deepEqual([first.verified, first.expected, first.finalized], [1, 2, false])
+    assert.equal((await db.query<{ status: string }>("select status from dispatch_batches where id=$1", [batch.id])).rows[0].status, "open")
+    const requestKey = key()
+    const last = await verifyAndFinalize(db, batch.id, "360000001033", requestKey)
+    assert.deepEqual([last.verified, last.expected, last.finalized], [2, 2, true])
+    assert.equal((await verifyAndFinalize(db, batch.id, "360000001033", requestKey)).duplicate, true)
+    const row = (await db.query<{ status: string; handed_over_at: string | null }>("select status,handed_over_at from dispatch_batches where id=$1", [batch.id])).rows[0]
+    assert.deepEqual(row, { status: "closed", handed_over_at: null })
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_events where batch_id=$1 and action='closed'", [batch.id]), 1)
+    assert.equal(await count(db, "select count(*)::int n from ordenes where id in (1032,1033) and andreani_handed_over_at is not null"), 0)
+  } finally { await db.close() }
+})
+
+test("reabrir exige Super Admin y motivo; registra la intervención y pide nuevo control", async () => {
+  const db = await setup()
+  const superAdmin = "20000000-0000-4000-8000-000000000003"
+  try {
+    await db.query("insert into profiles(id,rol) values ($1,'super_admin')", [superAdmin])
+    await ready(db, 1032)
+    const batch = await newBatch(db, [1032])
+    await verifyAndFinalize(db, batch.id, "360000001032")
+    await assert.rejects(db.query("select reopen_dispatch_batch($1,$2,$3)", [batch.id, actor, "Control físico repetido"]), /DISPATCH_FORBIDDEN/)
+    await assert.rejects(db.query("select reopen_dispatch_batch($1,$2,$3)", [batch.id, superAdmin, "corto"]), /DISPATCH_REASON_REQUIRED/)
+    await db.query("select reopen_dispatch_batch($1,$2,$3)", [batch.id, superAdmin, "Control físico repetido por diferencia"])
+    const reopened = (await db.query<{ status: string; verification_round: number }>("select status,verification_round from dispatch_batches where id=$1", [batch.id])).rows[0]
+    assert.deepEqual(reopened, { status: "open", verification_round: 2 })
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_events where batch_id=$1 and action='reopened' and actor_id=$2 and metadata->>'reason'='Control físico repetido por diferencia'", [batch.id, superAdmin]), 1)
+    assert.equal((await verifyAndFinalize(db, batch.id, "360000001032")).finalized, true)
+  } finally { await db.close() }
+})
 
 test("faltante resuelto por un operador: cantidad, diferencia, acuerdo y auditoría", async () => {
   const db = await setup()

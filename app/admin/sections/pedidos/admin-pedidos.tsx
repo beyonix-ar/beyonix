@@ -130,6 +130,7 @@ import {
   ADMIN_ORDER_CANCELLATION_REASONS,
   canCancelOrder,
   canRejectOrder,
+  canSuperAdminCancelOrder,
   type AdminOrderCancellationAction,
 } from "@/lib/orders/admin-order-cancellation-reasons"
 import { getAllowedAdminTransferPaymentStatuses } from "@/lib/orders/transfer-payment-status"
@@ -4940,12 +4941,12 @@ function PedidoDetailModal({
             </button>
           )}
         </header>
-        {(canRejectOrder(pedido) || canCancelOrder(pedido)) && (
+        {(canRejectOrder(pedido) || canCancelOrder(pedido) || (isSuperAdmin && canSuperAdminCancelOrder(pedido))) && (
           <div className="bx-surface-inherit flex shrink-0 flex-wrap items-center justify-end gap-2 border-b border-white/8 bg-[#05070A] px-3 py-2 sm:px-4">
             <p className="mr-auto text-10px font-bold uppercase tracking-widest text-white/38">
               Acciones administrativas
             </p>
-            {canRejectOrder(pedido) && (
+            {!isSuperAdmin && canRejectOrder(pedido) && (
               <button
                 type="button"
                 onClick={() => onRequestCancelReject(pedido, "reject")}
@@ -4955,7 +4956,7 @@ function PedidoDetailModal({
                 Rechazar pedido
               </button>
             )}
-            {canCancelOrder(pedido) && (
+            {(canCancelOrder(pedido) || (isSuperAdmin && canSuperAdminCancelOrder(pedido))) && (
               <button
                 type="button"
                 onClick={() => onRequestCancelReject(pedido, "cancel")}
@@ -4965,6 +4966,13 @@ function PedidoDetailModal({
                 Cancelar pedido
               </button>
             )}
+          </div>
+        )}
+        {pedido.estado === "cancelado" && (
+          <div className="flex flex-wrap gap-x-5 gap-y-1 border-b border-white/8 px-3 py-2 text-xs font-semibold text-white/80 sm:px-4">
+            <span>Estado pedido: Cancelado</span>
+            <span>Resolución fiscal: {pedido.credit_note_required || pedido.invoice_status === "processing" ? "Pendiente" : "Sin pendiente"}</span>
+            <span>Reintegro: {pedido.financial_status === "refund_pending" ? "Pendiente" : pedido.financial_status === "refunded" ? "Completado" : "Sin pendiente"}</span>
           </div>
         )}
         <div className={`bx-surface-inherit custom-scrollbar min-h-0 flex-1 bg-[#05070A] ${embedded ? "" : "overflow-y-auto"}`}>
@@ -6612,12 +6620,14 @@ type CancelRejectRequest = {
 
 function AdminOrderCancelRejectModal({
   request,
+  forceCancel,
   loading,
   error,
   onCancel,
   onConfirm,
 }: {
   request: CancelRejectRequest
+  forceCancel: boolean
   loading: boolean
   error: string
   onCancel: () => void
@@ -6635,7 +6645,7 @@ function AdminOrderCancelRejectModal({
 
   const isReject = request.action === "reject"
   const isOtherReason = reasonCode === ADMIN_ORDER_CANCELLATION_OTHER_REASON
-  const canConfirm = reasonCode !== "" && (!isOtherReason || reasonText.trim().length >= 3)
+  const canConfirm = reasonCode !== "" && (forceCancel ? reasonText.trim().length >= 10 : !isOtherReason || reasonText.trim().length >= 3)
 
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] flex items-center justify-center bg-black/82 px-4 py-6 backdrop-blur-sm">
@@ -6682,20 +6692,22 @@ function AdminOrderCancelRejectModal({
             </AdminSelect>
           </div>
 
-          {isOtherReason && (
+          {(isOtherReason || forceCancel) && (
             <AdminTextarea
               title="Detalle del motivo"
               ariaLabel="Detalle del motivo"
               value={reasonText}
               onChange={setReasonText}
-              placeholder="Contanos brevemente el motivo..."
+              placeholder={forceCancel ? "Describí la intervención (mínimo 10 caracteres)" : "Contanos brevemente el motivo..."}
               maxLength={600}
               disabled={loading}
             />
           )}
 
           <div className="admin-cancel-reject-modal__alert p-3 text-xs font-semibold leading-5">
-            {isReject
+            {forceCancel
+              ? "El pedido se cancelará ahora. La Nota de Crédito y el reintegro, cuando correspondan, quedarán pendientes. Si hay mercadería fuera de estantería, habrá que resolver su retiro físico."
+              : isReject
               ? "Este pedido todavía no tiene un pago confirmado: al rechazarlo no se genera ningún reintegro ni Nota de Crédito, porque no hubo cobro. El stock reservado se libera y el cliente será notificado del rechazo."
               : request.pedido.admin_pending_facts?.invoiceAutomatic
                 ? "Este pedido tiene el pago confirmado. Al cancelarlo, la Factura C, la Nota de Crédito C y el reintegro se procesarán automáticamente, en ese orden."
@@ -6721,7 +6733,7 @@ function AdminOrderCancelRejectModal({
           <button
             type="button"
             onClick={() =>
-              onConfirm(reasonCode, isOtherReason ? reasonText.trim() : "")
+              onConfirm(reasonCode, isOtherReason || forceCancel ? reasonText.trim() : "")
             }
             disabled={loading || !canConfirm}
             className="admin-cancel-reject-modal__confirm inline-flex h-10 cursor-pointer items-center justify-center rounded-xl border px-4 text-11px font-black uppercase tracking-wide transition-colors disabled:cursor-not-allowed"
@@ -7334,7 +7346,7 @@ export function AdminPedidos({
     // pedido" (admin_cancel_order, con todas sus guardas: Andreani en
     // curso, facturado, despachado), en vez de duplicar esa lógica acá.
     if (nextEstado === "cancelado") {
-      if (canCancelOrder(pedido)) {
+      if (canCancelOrder(pedido) || (isSuperAdmin && canSuperAdminCancelOrder(pedido))) {
         setCancelRejectRequest({ pedido, action: "cancel" })
       } else if (canRejectOrder(pedido)) {
         setCancelRejectRequest({ pedido, action: "reject" })
@@ -7951,6 +7963,7 @@ export function AdminPedidos({
         <TrackingStatusModal request={trackingStatusRequest} loading={trackingStatusLoading} onCancel={() => setTrackingStatusRequest(null)} onConfirm={(tracking) => void confirmTrackingStatusChange(tracking)} />
         <AdminOrderCancelRejectModal
           request={cancelRejectRequest}
+          forceCancel={isSuperAdmin && cancelRejectRequest?.action === "cancel"}
           loading={cancelRejectLoading}
           error={cancelRejectError}
           onCancel={() => {
@@ -8388,6 +8401,7 @@ export function AdminPedidos({
       />
       <AdminOrderCancelRejectModal
         request={cancelRejectRequest}
+        forceCancel={isSuperAdmin && cancelRejectRequest?.action === "cancel"}
         loading={cancelRejectLoading}
         error={cancelRejectError}
         onCancel={() => {

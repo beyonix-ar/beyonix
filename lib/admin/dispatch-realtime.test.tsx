@@ -32,8 +32,8 @@ test("bloqueo, alerta única, resolución y cleanup sin refrescar la página", a
     const beforeUnrelatedOrder = calls
     await act(async () => { dom.window.dispatchEvent(new dom.window.CustomEvent(ADMIN_DISPATCH_CHANGED_EVENT, { detail: "ordenes" })); await new Promise((resolve) => setTimeout(resolve, 230)) })
     assert.equal(calls, beforeUnrelatedOrder)
-    assert.equal(seen.notifications[0].title, "Pedido BX-1031 bloqueado")
-    assert.match(seen.notifications[0].body, /DSP-20261005-001.*Retiralo antes del despacho/)
+    assert.equal(seen.notifications[0].title, "Pedido BX-1031 por retirar")
+    assert.match(seen.notifications[0].body, /DSP-20261005-001.*Retiralo para continuar/)
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)); await new Promise((resolve) => setTimeout(resolve, 230)) })
     assert.equal(seen.notifications.length, 1)
     blocked = false
@@ -48,7 +48,7 @@ test("bloqueo, alerta única, resolución y cleanup sin refrescar la página", a
   } finally { supabase.auth.stopAutoRefresh(); await supabase.removeAllChannels(); supabase.realtime.disconnect(); dom.window.close() }
 })
 
-test("tanda preparada cambia a revisión y recupera la entrega al resolver o retirar", async () => {
+test("Bulto finalizado muestra la cancelación y recupera el estado al resolver o retirar", async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dispatch-realtime.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dispatch-test-key"
   const { supabase } = await import("../../lib/supabase/client")
@@ -75,23 +75,22 @@ test("tanda preparada cambia a revisión y recupera la entrega al resolver o ret
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="1" />) })
     await settle()
-    // El DSP se pide recién al iniciar la entrega.
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Listo para entregar[\s\S]*Entregar a Andreani/)
+    assert.match(text(), /Bulto finalizado/)
     assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
     blocked = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()
-    assert.match(text(), /Problema[\s\S]*BX-1031[\s\S]*No puede continuar[\s\S]*Retirar pedido/)
+    assert.match(text(), /BX-1031[\s\S]*Retirar pedido/)
     assert.doesNotMatch(text(), /Requiere revisión|Pedido bloqueado|Envío ya en curso|Verificar DSP|Entregar a Andreani/)
     assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
     await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Retirar pedido"))!.click() })
-    assert.match(text(), /Retirar pedido del Bulto general/)
+    assert.match(text(), /Retirar pedido/)
     await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent === "Cancelar")!.click() })
     blocked = false
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()
-    assert.match(text(), /Listo para entregar[\s\S]*Entregar a Andreani/)
+    assert.match(text(), /Bulto finalizado/)
     removed = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()

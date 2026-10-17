@@ -121,3 +121,8 @@ export function canRejectOrder(order: OrderForCancellationEligibility) {
 export function canCancelOrder(order: OrderForCancellationEligibility) {
   return isSafeToCancelOrReject(order) && isOrderPaymentConfirmed(order)
 }
+
+/** Super Admin conserva la cancelación operativa aunque haya envío o factura. */
+export function canSuperAdminCancelOrder(order: OrderForCancellationEligibility) {
+  return !isOrderAlreadyCancelled(order)
+}

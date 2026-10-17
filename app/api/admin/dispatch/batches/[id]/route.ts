@@ -9,6 +9,11 @@ export async function GET(request: Request, context: Context) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   try {
+    if (new URL(request.url).searchParams.has("events")) {
+      const result = await auth.admin.from("dispatch_batch_events").select("id,action,order_id,created_at,metadata").eq("batch_id", id).order("id", { ascending: false }).limit(100)
+      if (result.error) throw result.error
+      return Response.json(result.data ?? [], { headers: { "Cache-Control": "no-store" } })
+    }
     const detail = await getBatchDispatch(auth.admin, id)
     return detail ? Response.json(detail, { headers: { "Cache-Control": "no-store" } }) : Response.json({ error: "Lote no encontrado." }, { status: 404 })
   } catch {
@@ -16,8 +21,8 @@ export async function GET(request: Request, context: Context) {
   }
 }
 
-// Scanner, cámara, tipeo/pegado y confirmación manual: una sola RPC de verificación.
-const VERIFY_METHODS = new Set(["scanner", "camera", "manual_code", "manual_selection"])
+// Scanner, cámara y código tipeado/pegado usan la misma validación.
+const VERIFY_METHODS = new Set(["scanner", "camera", "manual_code"])
 
 export async function POST(request: Request, context: Context) {
   const id = validId((await context.params).id)
@@ -25,7 +30,7 @@ export async function POST(request: Request, context: Context) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   const body = await request.json().catch(() => null) as { action?: string; orderCode?: string; orderId?: number; reason?: string; code?: string; requestKey?: string; method?: string } | null
-  if (!body || !["add", "remove", "close", "handover", "verify"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
+  if (!body || !["add", "remove", "close", "handover", "verify", "reopen"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
   const orderId = body.orderCode ? parseOrderCode(body.orderCode) : Number.isSafeInteger(body.orderId) && Number(body.orderId) > 0 ? body.orderId : null
   let result: { data?: unknown; error: { message: string; details?: string | null } | null }
   let verification: DispatchVerificationResult | null = null
@@ -34,12 +39,11 @@ export async function POST(request: Request, context: Context) {
     if (!orderId) return Response.json({ error: "Ingresá un pedido BX válido." }, { status: 400 })
     result = await auth.admin.rpc("add_order_to_dispatch_batch", { p_batch_id: id, p_order_id: orderId, p_actor_id: auth.user.id })
   } else if (body.action === "verify") {
-    // Un BX-PREP por pedido; la selección manual explícita manda el pedido.
+    // Una lectura Andreani por pedido; la última finaliza el Bulto de forma atómica.
     const method = body.method ?? ""
-    const manual = method === "manual_selection"
     const code = body.code?.trim() ?? ""
-    if (!VERIFY_METHODS.has(method) || !isRequestKey(body.requestKey) || (manual ? !orderId : !code || code.length > 64)) return Response.json({ error: "Lectura inválida." }, { status: 400 })
-    result = await auth.admin.rpc("verify_dispatch_batch_order", { p_batch_id: id, p_code: manual ? null : code, p_method: method, p_actor_id: auth.user.id, p_request_key: body.requestKey, p_order_id: manual ? orderId : null })
+    if (!VERIFY_METHODS.has(method) || !isRequestKey(body.requestKey) || !code || code.length > 64) return Response.json({ error: "Lectura inválida." }, { status: 400 })
+    result = await auth.admin.rpc("verify_and_finalize_dispatch_batch", { p_batch_id: id, p_code: code, p_method: method, p_actor_id: auth.user.id, p_request_key: body.requestKey, p_order_id: null })
     if (!result.error) verification = result.data as DispatchVerificationResult
   } else if (body.action === "remove") {
     const reason = body.reason?.trim() ?? ""
@@ -47,6 +51,11 @@ export async function POST(request: Request, context: Context) {
     result = await auth.admin.rpc("remove_order_from_dispatch_batch", { p_batch_id: id, p_order_id: orderId, p_actor_id: auth.user.id, p_reason: reason })
   } else if (body.action === "close") {
     result = await auth.admin.rpc("close_dispatch_batch", { p_batch_id: id, p_actor_id: auth.user.id })
+  } else if (body.action === "reopen") {
+    if (auth.profile.rol !== "super_admin") return Response.json({ error: "Sólo Super Admin puede reabrir un Bulto." }, { status: 403 })
+    const reason = body.reason?.trim() ?? ""
+    if (reason.length < 10 || reason.length > 1000) return Response.json({ error: "Ingresá un motivo de al menos 10 caracteres." }, { status: 400 })
+    result = await auth.admin.rpc("reopen_dispatch_batch", { p_batch_id: id, p_actor_id: auth.user.id, p_reason: reason })
   } else {
     // La salida física se confirma con el DSP del Bulto general en la puerta.
     const code = body.code?.trim() ?? ""

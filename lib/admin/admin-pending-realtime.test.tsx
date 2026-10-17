@@ -93,7 +93,7 @@ test("campana: acciones con CTA separadas de la información; la información no
   }
 })
 
-test("tanda cerrada: UNA acción 'Confirmar entrega' por tanda; con bloqueados sólo se pide retirarlos; entregada no cuenta", async () => {
+test("Bulto finalizado no genera tarea de entrega; los pedidos bloqueados sí requieren retiro", async () => {
   const ui = await setup()
   const { useDispatchAlerts } = await import("../../hooks/use-dispatch-alerts")
   const { ADMIN_DISPATCH_CHANGED_EVENT } = await import("../../hooks/use-admin-notifications")
@@ -109,24 +109,18 @@ test("tanda cerrada: UNA acción 'Confirmar entrega' por tanda; con bloqueados s
   }
   try {
     await act(async () => { ui.root.render(<Probe />); await new Promise((resolve) => setTimeout(resolve, 20)) })
-    assert.equal(seen!.notifications.length, 1, "30 pedidos = 1 acción")
-    assert.equal(seen!.notifications[0].title, "Confirmar entrega de DSP-20261005-004 a Andreani")
-    assert.equal(seen!.notifications[0].actionUrl, "/admin/despachos?batch=4")
-    assert.equal(seen!.notifications[0].kind, "action")
-    assert.equal(seen!.handoverCount, 1)
+    assert.equal(seen!.notifications.length, 0, "un Bulto finalizado no requiere entrega adicional")
     assert.equal(seen!.reviewCount, 0)
 
     batches = [{ id: 4, code: "DSP-20261005-004", status: "closed", orderCount: 30,
       blockedOrders: [{ orderId: 31, reason: "Cancelación solicitada", createdAt: "2026-10-05T12:30:00Z" }] }]
     await refresh()
-    assert.deepEqual(seen!.notifications.map((item) => item.actionLabel), ["Retirar del despacho"], "con bloqueados no se ofrece la entrega")
-    assert.equal(seen!.handoverCount, 0)
+    assert.deepEqual(seen!.notifications.map((item) => item.actionLabel), ["Retirar pedido"], "con bloqueados sólo se pide retirarlos")
     assert.equal(seen!.reviewCount, 1)
 
     batches = []
     await refresh()
-    assert.equal(seen!.notifications.length, 0, "tanda entregada: 0 acciones")
-    assert.equal(seen!.handoverCount, 0)
+    assert.equal(seen!.notifications.length, 0, "sin bloqueos: 0 acciones")
     await act(async () => ui.root.unmount())
   } finally {
     ui.supabase.auth.stopAutoRefresh()

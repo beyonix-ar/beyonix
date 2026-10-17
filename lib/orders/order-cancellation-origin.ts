@@ -42,6 +42,7 @@ export function deriveOrderCancellationInfo(
           "cancellation_requested",
           "cancellation_requested_refund_pending",
           "order_cancelled_refund_pending",
+          "order_force_cancelled_by_super_admin",
           "order_rejected_by_admin",
           "order_status_changed",
         ].includes(event.action) &&

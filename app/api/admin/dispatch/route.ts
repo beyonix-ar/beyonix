@@ -133,7 +133,6 @@ export async function GET(request: Request) {
     return { ...batch, orderCount: items.length, verifiedCount: items.filter((item) => item.verified_at && item.verification_round === round).length, packageCount: items.reduce((sum, item) => sum + (packageById.get(item.package_id)?.parcel_count ?? 0), 0), blockedCount: items.filter((item) => blockedIds.has(item.order_id)).length,
       blockedOrders: items.filter((item) => blockedIds.has(item.order_id)).map((item) => ({ orderId: item.order_id, reason: blockedReasons.get(item.order_id) ?? "Revisión requerida", createdAt: blockedAt.get(item.order_id) ?? batch.created_at })) }
   })
-  // Alertas: Bultos generales con bloqueados (revisar), cerrados pendientes de entrega
-  // y cancelaciones armadas que esperan el retiro físico.
-  return Response.json(alertsOnly ? { batches: batchCards.filter((batch) => batch.blockedCount > 0 || batch.status === "closed"), holds } : { orders, batches: batchCards, holds }, { headers: { "Cache-Control": "no-store" } })
+  // Un Bulto finalizado ya no requiere una entrega adicional.
+  return Response.json(alertsOnly ? { batches: batchCards.filter((batch) => batch.blockedCount > 0), holds } : { orders, batches: batchCards, holds, viewerRole: auth.profile.rol }, { headers: { "Cache-Control": "no-store" } })
 }

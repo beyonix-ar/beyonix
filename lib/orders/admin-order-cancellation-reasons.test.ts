@@ -6,11 +6,23 @@ import {
   ADMIN_ORDER_CANCELLATION_REASONS,
   canCancelOrder,
   canRejectOrder,
+  canSuperAdminCancelOrder,
   isAndreaniCreationBlockingCancellation,
   isOrderAlreadyCancelled,
   isOrderDispatchedForCancellation,
   isOrderInvoicedForCancellation,
 } from "./admin-order-cancellation-reasons.ts"
+
+test("Super Admin puede iniciar cancelación en cualquier etapa; Admin conserva las guardas", () => {
+  for (const order of [
+    { estado: "pendiente", payment_status: "pendiente_comprobante" },
+    { estado: "pagado", invoice_status: "authorized", payment_status: "confirmado" },
+    { estado: "en_camino", andreani_creation_status: "claimed", payment_status: "confirmado" },
+    { estado: "entregado", andreani_envio_id: "ENV-1", payment_status: "confirmado" },
+  ]) assert.equal(canSuperAdminCancelOrder(order), true)
+  assert.equal(canSuperAdminCancelOrder({ estado: "cancelado" }), false)
+  assert.equal(canCancelOrder({ estado: "entregado", payment_status: "confirmado" }), false)
+})
 
 // 1. Rechazar pedido pendiente (nunca tuvo pago confirmado).
 test("1. rechazar: pedido pendiente sin ninguna evidencia de pago -- Rechazar disponible, Cancelar no", () => {
