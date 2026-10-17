@@ -40,7 +40,7 @@ test("Code 128 se genera en el servidor y rechaza texto no imprimible", () => {
   assert.throws(() => renderCode128Svg("ÑANDÚ"), /Code 128/)
 })
 
-test("etiquetas: N copias, A4 o térmica, texto escapado y lote con totales", () => {
+test("etiquetas: N copias, A4 o térmica y Bulto general compacto", () => {
   const svgs = { "BX-AUR-000001": "<svg></svg>", "BX-PKG-1050-01": "<svg></svg>", "BX-PREP-1050": "<svg></svg>", "DSP-20261007-001": "<svg></svg>" }
   assert.equal(expandLabels([{ kind: "product", code: "BX-AUR-000001", name: "A", copies: 3 }]).length, 3)
   assert.equal(expandLabels([{ kind: "product", code: "BX-AUR-000001", name: "A", copies: 0 }]).length, 1)
@@ -56,9 +56,11 @@ test("etiquetas: N copias, A4 o térmica, texto escapado y lote con totales", ()
   const prepared = buildLabelsDocument([{ kind: "prepared", code: "BX-PREP-1050", orderCode: "BX-1050", units: 3, parcelCount: 2 }], svgs, "single")
   assert.match(prepared, /<section class="label prepared"><div class="internal-title">Pedido BX-1050<\/div>\s*<div class="barcode"><svg><\/svg><\/div><\/section>/)
   assert.doesNotMatch(prepared, /PEDIDO PREPARADO|3 unidades|2 bultos|BX-PREP-1050<\/div>/)
-  const lot = buildLabelsDocument([{ kind: "batch", code: "DSP-20261007-001" }], svgs, "a4")
-  assert.match(lot, /BULTO GENERAL/)
-  assert.doesNotMatch(lot, /Pedidos:|Paquetes:/, "etiqueta del Bulto general: sólo DSP y código de barras")
+  const lot = buildLabelsDocument([{ kind: "batch", code: "DSP-20261007-001", date: "07/10/2026" }], svgs, "single")
+  assert.match(lot, /<section class="label batch"><div class="title">Bulto general<\/div>\s*<div class="code">DSP-20261007-001<\/div>\s*<div class="barcode"><svg><\/svg><\/div><\/section>/)
+  assert.doesNotMatch(lot.match(/<section class="label batch">[\s\S]*?<\/section>/)?.[0] ?? "", /BEYONIX|07\/10\/2026|Pedidos:|Paquetes:/)
+  assert.match(lot, /@page \{ size: 76mm 40mm/)
+  assert.match(lot, /background: #fff; color: #000/)
   assert.throws(() => buildLabelsDocument([{ kind: "product", code: "OTRO", name: "X" }], svgs, "a4"), /Falta el código/)
 })
 

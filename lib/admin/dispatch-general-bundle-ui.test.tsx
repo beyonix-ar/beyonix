@@ -123,6 +123,8 @@ test("Bulto general: esperado ≠ verificado, etiqueta Andreani por lector/cáma
     await act(async () => { button(dom, "Cerrar Bulto general")!.click() })
     await settle(150)
     assert.deepEqual(posts.at(-1), { action: "close" })
+    assert.ok(button(dom, "Imprimir etiqueta del Bulto general"), "el Bulto cerrado ofrece una acción visible de impresión")
+    assert.match(text(), /Ver etiqueta del Bulto general/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 

@@ -49,6 +49,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [barcodeUrl, setBarcodeUrl] = useState<string | null>(null)
+  const [printedCode, setPrintedCode] = useState<string | null>(null)
   const scanKey = useRef<string | null>(null)
   const confirmKey = useRef<{ orderId: number; key: string } | null>(null)
   const busyRef = useRef(false)
@@ -57,6 +58,16 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   const allVerified = items.length > 0 && detail.missingCount === 0
   const canVerify = batch.status === "open" || detail.requiresRevalidation
   const exitBlocked = blocked || detail.requiresRevalidation || liveUpdating || boardError
+
+  useEffect(() => {
+    try { setPrintedCode(window.localStorage.getItem(`dispatch-label-printed:${batch.code}`) === "true" ? batch.code : null) }
+    catch { setPrintedCode(null) }
+  }, [batch.code])
+
+  function markLabelPrinted() {
+    setPrintedCode(batch.code)
+    try { window.localStorage.setItem(`dispatch-label-printed:${batch.code}`, "true") } catch { /* La acción sigue disponible sin almacenamiento local. */ }
+  }
 
   useEffect(() => {
     if (batch.status === "open") { setBarcodeUrl(null); return }
@@ -161,13 +172,12 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
 
   const statusLabel = batch.status === "handed_over" ? "Entregado a Andreani" : blocked ? "Requiere revisión" : detail.requiresRevalidation ? "Volver a validar" : batch.status === "open" ? "Abierto" : "Cerrado · listo para entregar"
   const statusTone = batch.status === "handed_over" ? "success" : blocked ? "danger" : detail.requiresRevalidation ? "warning" : batch.status === "open" ? "info" : "success"
-  const batchLabel = [{ kind: "batch" as const, code: batch.code, date: dateTime(batch.closed_at) }]
+  const batchLabel = [{ kind: "batch" as const, code: batch.code }]
   const firstBlocked = items.find((item) => item.blocked)
   const dialogOpen = dialog !== null && dialog.kind !== "label"
-  const labelItems: AdminRowMenuAction[] = batch.status !== "open" ? [{ key: "label", label: "Imprimir etiqueta del Bulto general", icon: <Printer className="size-4" />, onSelect: () => setDialog({ kind: "label" }) }] : []
   const bundleItems: AdminRowMenuAction[] = batch.status === "open" ? [{ key: "add", label: "Agregar pedido por número", icon: <PackagePlus className="size-4" />, onSelect: () => { setAddCode(""); setDialog({ kind: "add" }) } }] : []
 
-  return <div className="mx-auto w-full max-w-3xl min-w-0 space-y-3">
+  return <div className={`mx-auto w-full max-w-3xl min-w-0 space-y-3 ${batch.status !== "open" ? "dispatch-bundle-closed" : ""}`}>
     {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
     <AdminCard className="dispatch-card min-w-0 p-0">
       <div className="space-y-4 p-4 sm:p-5">
@@ -178,8 +188,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
           </div>
           <AdminBadge tone={statusTone}>{statusLabel}</AdminBadge>
         </div>
-        {(labelItems.length > 0 || bundleItems.length > 0) && <div className="flex flex-wrap gap-2" aria-label="Acciones secundarias">
-          {labelItems.length > 0 && <AdminRowMenu triggerLabel="Etiquetas" ariaLabel="Etiquetas" items={labelItems} />}
+        {bundleItems.length > 0 && <div className="flex flex-wrap gap-2" aria-label="Acciones secundarias">
           {bundleItems.length > 0 && <AdminRowMenu triggerLabel="Bulto" ariaLabel="Bulto general" items={bundleItems} />}
         </div>}
         <p className="text-sm text-white/70" aria-label="Control del Bulto general">
@@ -240,10 +249,15 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
       </div>}
     </AdminCard>
 
-    {batch.status !== "open" && <details className="text-sm text-white/70">
-      <summary className="cursor-pointer">Ver etiqueta del Bulto general</summary>
-      <div className="mt-3"><DispatchLabel batch={batch} barcodeUrl={barcodeUrl} /></div>
-    </details>}
+    {batch.status !== "open" && <div className="space-y-3">
+      <AdminButton className="w-full min-w-0 whitespace-normal sm:w-auto" icon={<Printer className="size-4 shrink-0" />} onClick={() => setDialog({ kind: "label" })}>
+        {printedCode === batch.code ? "Reimprimir etiqueta del Bulto general" : "Imprimir etiqueta del Bulto general"}
+      </AdminButton>
+      <details className="dispatch-label-details text-sm text-white/70">
+        <summary className="cursor-pointer">Ver etiqueta del Bulto general</summary>
+        <div className="mt-3"><DispatchLabel batch={batch} barcodeUrl={barcodeUrl} /></div>
+      </details>
+    </div>}
 
     <AdminModal open={dialogOpen && !(blocked && (dialog?.kind === "close" || dialog?.kind === "handover"))} compact
       title={dialog?.kind === "remove" ? "Retirar pedido del Bulto general" : dialog?.kind === "confirm" ? "Confirmar pedido manualmente" : dialog?.kind === "close" ? "CERRAR BULTO GENERAL" : dialog?.kind === "add" ? "Agregar pedido" : "Confirmar entrega a Andreani"}
@@ -265,7 +279,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
       {dialog?.kind === "add" && <form onSubmit={addOrder} className="flex flex-col gap-2 sm:flex-row"><div className="flex-1"><AdminTextInput title="Pedido" value={addCode} onChange={setAddCode} placeholder="BX-1031" /></div><AdminPrimaryButton type="submit" disabled={busy || !addCode.trim()}>Agregar</AdminPrimaryButton></form>}
       {error && <p role="alert" className="mt-2 text-sm font-bold text-red-300">{error}</p>}
     </AdminModal>
-    <LabelPrintDialog open={dialog?.kind === "label"} title="Etiqueta del Bulto general" description={batch.code} labels={batchLabel} onClose={() => setDialog(null)} />
+    <LabelPrintDialog open={dialog?.kind === "label"} title="Etiqueta del Bulto general" description={batch.code} labels={batchLabel} onClose={() => setDialog(null)} onPrinted={markLabelPrinted} />
   </div>
 }
 

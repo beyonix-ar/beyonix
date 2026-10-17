@@ -45,10 +45,9 @@ function labelBody(label: PrintableLabel, svg: string) {
     return `<div class="internal-title">Pedido ${escapeHtml(label.orderCode)}</div>
       <div class="barcode">${svg}</div>`
   }
-  return `<div class="brand">BEYONIX</div>
-    <div class="title">BULTO GENERAL</div>
-    ${barcode}
-    ${label.date ? `<div class="meta">${escapeHtml(label.date)}</div>` : ""}`
+  return `<div class="title">Bulto general</div>
+    <div class="code">${escapeHtml(label.code)}</div>
+    <div class="barcode">${svg}</div>`
 }
 
 export function buildLabelsDocument(
@@ -60,8 +59,8 @@ export function buildLabelsDocument(
   const missing = expanded.find((label) => !svgs[label.code])
   if (missing) throw new Error(`Falta el código de barras de ${missing.code}.`)
   const product = expanded.every((label) => label.kind === "product")
-  const internal = expanded.every((label) => label.kind === "parcel" || label.kind === "prepared")
-  // Producto 64×35 mm, identificación interna 76×40 mm y lote 95×90 mm.
+  const internal = expanded.every((label) => label.kind === "parcel" || label.kind === "prepared" || label.kind === "batch")
+  // Producto 64×35 mm; identificación interna y Bulto general 76×40 mm.
   // "single" usa el tamaño físico de cada etiqueta en print preview.
   const size = product ? { width: 64, height: 35, singleWidth: 60, singleHeight: 40 }
     : internal ? { width: 76, height: 40, singleWidth: 76, singleHeight: 40 }

@@ -17270,6 +17270,35 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-surface.dispatch-su
 html[data-admin-theme="light"] .beyonix-admin-main .admin-ds-card.dispatch-card {
   background: var(--bx-surface-card) !important;
 }
+/* Bulto cerrado: la información operativa acompaña el tema; el barcode queda neutro. */
+.beyonix-admin-main .dispatch-bundle-closed #dispatch-print-label.dispatch-label-preview {
+  border-color: #475569;
+  background-color: #202a36 !important;
+  color: #f8fafc;
+}
+.beyonix-admin-main .dispatch-bundle-closed .dispatch-label-barcode {
+  background-color: #fff !important;
+}
+.beyonix-admin-main .dispatch-bundle-closed .dispatch-label-barcode img {
+  filter: none;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed #dispatch-print-label.dispatch-label-preview {
+  border-color: #cbd5e1;
+  background-color: #fff !important;
+  color: #172433;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white\/70,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white\/65,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card :is(h3, p, a, span, label).text-white\/60 {
+  color: #243449;
+}
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-sky-200\/70 { color: #075985; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-emerald-300 { color: #047857; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-amber-300,
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-amber-200 { color: #92400e; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-card .text-red-200 { color: #b91c1c; }
+html[data-admin-theme="light"] .beyonix-admin-main .dispatch-bundle-closed .dispatch-label-details { color: #334155; }
 .dispatch-progress-track {
   height: 10px;
   overflow: hidden;

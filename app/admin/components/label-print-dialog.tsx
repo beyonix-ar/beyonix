@@ -7,17 +7,18 @@ import { AdminButton, AdminModal, AdminPrimaryButton, AdminTextInput } from "@/a
 import type { LabelFormat, PrintableLabel } from "@/lib/barcodes/labels-document"
 import { printLabels } from "@/lib/barcodes/print-labels"
 
-export function LabelPrintDialog({ open, title, description, labels, allowCopies = false, onClose }: {
+export function LabelPrintDialog({ open, title, description, labels, allowCopies = false, onClose, onPrinted }: {
   open: boolean
   title: string
   description?: string
   labels: readonly PrintableLabel[]
   allowCopies?: boolean
   onClose: () => void
+  onPrinted?: () => void
 }) {
   const [copies, setCopies] = useState("1")
   const [format, setFormat] = useState<LabelFormat | null>(null)
-  const selectedFormat = format ?? (labels.length > 0 && labels.every((label) => label.kind === "parcel" || label.kind === "prepared") ? "single" : "a4")
+  const selectedFormat = format ?? (labels.length > 0 && labels.every((label) => label.kind === "parcel" || label.kind === "prepared" || label.kind === "batch") ? "single" : "a4")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const copyCount = Number(copies)
@@ -28,6 +29,7 @@ export function LabelPrintDialog({ open, title, description, labels, allowCopies
     setBusy(true); setError("")
     try {
       await printLabels(allowCopies ? labels.map((label) => label.kind === "product" ? { ...label, copies: copyCount } : label) : labels, selectedFormat)
+      onPrinted?.()
       onClose()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudieron imprimir las etiquetas.")
