@@ -5,6 +5,17 @@ import { PDFDocument } from "pdf-lib"
 import { batchPdfFilename, buildBatchLabelsPdf } from "./batch-label-pdf.ts"
 import { dispatchPdfFilename } from "./labels-document.ts"
 import { buildLabelsDocument } from "./labels-document.ts"
+import { dispatchBatchControlUrl } from "./labels-document.ts"
+
+test("QR del Bulto apunta a su control autenticado y la etiqueta mide 4×2 pulgadas", () => {
+  const url = dispatchBatchControlUrl("https://beyonix.test", 47)
+  assert.equal(url, "https://beyonix.test/admin/despachos/bultos/47/control")
+  const html = buildLabelsDocument([{ kind: "batch", code: "DSP-20261018-001", details: { displayName: "Bulto - 0001", orderCodes: ["BX-1009", "BX-1010"], date: "18/10/2026", url } }], { "DSP-20261018-001": "<svg></svg>" }, "single")
+  assert.match(html, /@page \{ size: 101\.6mm 50\.8mm; margin: 0/)
+  assert.match(html, /2 pedidos/)
+  assert.match(html, /18\/10\/2026/)
+  assert.doesNotMatch(html, /BX-1009/)
+})
 
 test("nombres de PDF: pedido, DSP y varios Bultos generales", () => {
   assert.equal(dispatchPdfFilename("BX-1006"), "BX-1006.pdf")
@@ -47,6 +58,10 @@ test("Guardar PDF genera etiqueta térmica neutra independiente del diálogo de 
     assert.equal(pdf.getPageCount(), 1)
     assert.ok(Math.abs(pdf.getPage(0).getWidth() - 76 * 72 / 25.4) < 0.1)
     assert.ok(Math.abs(pdf.getPage(0).getHeight() - 51 * 72 / 25.4) < 0.1)
+    const compactBytes = await buildBatchLabelsPdf(["DSP-20261018-001"], { "DSP-20261018-001": "<svg></svg>" }, "single", { "DSP-20261018-001": { displayName: "Bulto - 0001", orderCodes: ["BX-1009", "BX-1010"], date: "18/10/2026", url: "https://beyonix.test/admin/despachos/bultos/47/control" } })
+    const compact = await PDFDocument.load(compactBytes)
+    assert.ok(Math.abs(compact.getPage(0).getWidth() - 101.6 * 72 / 25.4) < 0.1)
+    assert.ok(Math.abs(compact.getPage(0).getHeight() - 50.8 * 72 / 25.4) < 0.1)
   } finally {
     Object.assign(globalThis, { Image: originalImage, document: originalDocument })
     URL.createObjectURL = originalCreate

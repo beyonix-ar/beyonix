@@ -667,6 +667,10 @@ export function AdminClient({ children }: { children: ReactNode }) {
     </aside>
   )
 
+  if (/^\/admin\/despachos\/bultos\/[^/]+\/control$/.test(pathname)) {
+    return <AdminThemeProvider><main className="beyonix-admin-shell min-h-screen bg-beyonix-page">{hasResolvedInternalAccess && !routeDenied ? children : <AdminSectionLoading />}</main></AdminThemeProvider>
+  }
+
   return (
     <AdminThemeProvider>
       <div className="beyonix-admin-shell min-h-screen text-white lg:flex">

@@ -201,6 +201,11 @@ export async function proxy(request: NextRequest) {
     return authCookies.redirect(new URL("/", request.url))
   }
 
+  if (/^\/admin\/despachos\/bultos\/[^/]+\/control$/.test(pathname) &&
+      profile.rol !== "admin" && profile.rol !== "super_admin") {
+    return authCookies.redirect(new URL(ADMIN_ROUTES.dashboard, request.url))
+  }
+
   const routeKey = getAdminRouteKeyFromPathname(pathname)
   if (!canAccessAdminRoute(profile.rol, routeKey)) {
     return authCookies.redirect(

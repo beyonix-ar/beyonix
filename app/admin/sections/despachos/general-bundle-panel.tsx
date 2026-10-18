@@ -6,6 +6,7 @@ import { CheckCircle2, Circle, Download, Printer } from "lucide-react"
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
+import { dispatchBatchControlUrl } from "@/lib/barcodes/labels-document"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { printLabels, saveBatchLabelsPdf } from "@/lib/barcodes/print-labels"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
@@ -42,7 +43,9 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   const finalized = batch.status !== "open" && !detail.requiresRevalidation
   const canVerify = !blocked && (batch.status === "open" || detail.requiresRevalidation)
   const canEdit = batch.status !== "handed_over"
-  const labelDetails = { displayName: dispatchBatchName(batch), orderCodes: items.map((item) => orderCode(item.order_id)) }
+  const labelDetails = { displayName: dispatchBatchName(batch), orderCodes: items.map((item) => orderCode(item.order_id)),
+    date: new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(batch.created_at)),
+    url: typeof window === "undefined" ? "" : dispatchBatchControlUrl(window.location.origin, batch.id) }
 
   // Cubre un Bulto que quedó completo tras retirar un pedido o recargar la página.
   // La RPC de cierre vuelve a validar bloqueos, preparación y cada lectura.

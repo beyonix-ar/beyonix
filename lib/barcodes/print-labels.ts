@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client"
 
 import { buildLabelsDocument, type BatchLabelDetails, type LabelFormat, type PrintableLabel } from "./labels-document"
+import QRCode from "qrcode"
 
 async function fetchBarcodeSvgs(codes: string[]) {
   const { data } = await supabase.auth.getSession()
@@ -18,12 +19,17 @@ async function fetchBarcodeSvgs(codes: string[]) {
 
 export async function printLabels(labels: readonly PrintableLabel[], format: LabelFormat = "a4") {
   if (!labels.length) throw new Error("No hay etiquetas para imprimir.")
-  const svgs = await fetchBarcodeSvgs([...new Set(labels.map((label) => label.code))])
+  const qrLabels = labels.filter((label) => label.kind === "batch" && label.details?.url)
+  const barcodeCodes = [...new Set(labels.filter((label) => !qrLabels.includes(label)).map((label) => label.code))]
+  const svgs = barcodeCodes.length ? await fetchBarcodeSvgs(barcodeCodes) : {}
+  for (const label of qrLabels) if (label.kind === "batch" && label.details?.url) svgs[label.code] = await QRCode.toString(label.details.url, { type: "svg", margin: 0, errorCorrectionLevel: "M" })
   await printHtmlDocument(buildLabelsDocument(labels, svgs, format))
 }
 
 export async function saveBatchLabelsPdf(codes: readonly string[], format: LabelFormat, details?: Readonly<Record<string, BatchLabelDetails>>) {
-  const svgs = await fetchBarcodeSvgs([...new Set(codes)])
+  const barcodeCodes = [...new Set(codes.filter((code) => !details?.[code]?.url))]
+  const svgs = barcodeCodes.length ? await fetchBarcodeSvgs(barcodeCodes) : {}
+  for (const code of codes) if (details?.[code]?.url) svgs[code] = await QRCode.toString(details[code].url, { type: "svg", margin: 0, errorCorrectionLevel: "M" })
   const { batchPdfFilename, buildBatchLabelsPdf } = await import("./batch-label-pdf")
   const bytes = await buildBatchLabelsPdf(codes, svgs, format, details)
   const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/pdf" }))

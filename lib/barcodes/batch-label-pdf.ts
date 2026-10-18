@@ -54,29 +54,34 @@ export async function buildBatchLabelsPdf(codes: readonly string[], svgs: Readon
   }
   const a4 = format === "a4"
   const columns = a4 ? 2 : 1
-  const labelHeight = batchLabelHeight(Math.max(0, ...codes.map((code) => details?.[code]?.orderCodes.length ?? 0))) * POINTS_PER_MM
+  const compact = codes.some((code) => details?.[code]?.url)
+  const widthMm = compact ? 101.6 : 76
+  const labelHeight = (compact ? 50.8 : batchLabelHeight(Math.max(0, ...codes.map((code) => details?.[code]?.orderCodes.length ?? 0)))) * POINTS_PER_MM
   const rows = a4 ? Math.max(1, Math.floor((841.89 - 12 * POINTS_PER_MM) / labelHeight)) : 1
   const margin = a4 ? 6 * POINTS_PER_MM : 0
   for (let index = 0; index < codes.length; index += 1) {
     const slot = index % (columns * rows)
-    if (slot === 0) pdf.addPage(a4 ? [595.28, 841.89] : [labelWidth, labelHeight])
+    if (slot === 0) pdf.addPage(a4 ? [595.28, 841.89] : [widthMm * POINTS_PER_MM, labelHeight])
     const page = pdf.getPages().at(-1)!
-    const x = margin + (slot % columns) * labelWidth
+    const x = margin + (slot % columns) * widthMm * POINTS_PER_MM
     const y = page.getHeight() - margin - (Math.floor(slot / columns) + 1) * labelHeight
-    page.drawRectangle({ x, y, width: labelWidth, height: labelHeight, color: rgb(1, 1, 1) })
+    page.drawRectangle({ x, y, width: widthMm * POINTS_PER_MM, height: labelHeight, color: rgb(1, 1, 1) })
     const code = codes[index]
     const info = details?.[code]
     const title = info?.displayName ?? "Bulto general"
-    page.drawText(title, { x: x + (labelWidth - bold.widthOfTextAtSize(title, 11)) / 2, y: y + labelHeight - 10 * POINTS_PER_MM, size: 11, font: bold, color: black })
+    page.drawText(title, { x: x + (widthMm * POINTS_PER_MM - bold.widthOfTextAtSize(title, 11)) / 2, y: y + labelHeight - 7 * POINTS_PER_MM, size: 11, font: bold, color: black })
     if (info) {
       const count = `${info.orderCodes.length} ${info.orderCodes.length === 1 ? "pedido" : "pedidos"}`
-      page.drawText(count, { x: x + (labelWidth - bold.widthOfTextAtSize(count, 9)) / 2, y: y + labelHeight - 16 * POINTS_PER_MM, size: 9, font: bold, color: black })
-      info.orderCodes.forEach((order, line) => page.drawText(order, { x: x + (labelWidth - bold.widthOfTextAtSize(order, 8)) / 2, y: y + labelHeight - (21 + line * 4) * POINTS_PER_MM, size: 8, font: bold, color: black }))
+      page.drawText(count, { x: x + (widthMm * POINTS_PER_MM - bold.widthOfTextAtSize(count, 9)) / 2, y: y + labelHeight - 12 * POINTS_PER_MM, size: 9, font: bold, color: black })
+      if (info.url) {
+        const date = info.date ?? ""
+        page.drawText(date, { x: x + (widthMm * POINTS_PER_MM - bold.widthOfTextAtSize(date, 9)) / 2, y: y + labelHeight - 17 * POINTS_PER_MM, size: 9, font: bold, color: black })
+      } else info.orderCodes.forEach((order, line) => page.drawText(order, { x: x + (labelWidth - bold.widthOfTextAtSize(order, 8)) / 2, y: y + labelHeight - (21 + line * 4) * POINTS_PER_MM, size: 8, font: bold, color: black }))
     } else page.drawText(code, { x: x + (labelWidth - bold.widthOfTextAtSize(code, 12)) / 2, y: y + 23 * POINTS_PER_MM, size: 12, font: bold, color: black })
     const image = images.get(code)!
-    const width = 66 * POINTS_PER_MM
-    const height = Math.min(16 * POINTS_PER_MM, width * image.height / image.width)
-    page.drawImage(image, { x: x + (labelWidth - width) / 2, y: y + 3 * POINTS_PER_MM, width, height })
+    const width = (info?.url ? 28 : 66) * POINTS_PER_MM
+    const height = info?.url ? width : Math.min(16 * POINTS_PER_MM, width * image.height / image.width)
+    page.drawImage(image, { x: x + (widthMm * POINTS_PER_MM - width) / 2, y: y + 2 * POINTS_PER_MM, width, height })
   }
   return pdf.save()
 }

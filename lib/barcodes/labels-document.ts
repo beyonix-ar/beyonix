@@ -4,9 +4,13 @@
 
 export type LabelFormat = "a4" | "single"
 
+export function dispatchBatchControlUrl(origin: string, batchId: number) {
+  return `${origin}/admin/despachos/bultos/${batchId}/control`
+}
+
 export function dispatchPdfFilename(code: string) { return `${code}.pdf` }
 
-export type BatchLabelDetails = { displayName: string; orderCodes: readonly string[] }
+export type BatchLabelDetails = { displayName: string; orderCodes: readonly string[]; date?: string; url?: string }
 export const batchLabelHeight = (count: number) => count ? 43 + 4 * count : 40
 
 export type PrintableLabel =
@@ -50,6 +54,10 @@ function labelBody(label: PrintableLabel, svg: string) {
     return `<div class="internal-title">Pedido ${escapeHtml(label.orderCode)}</div>
       <div class="barcode">${svg}</div>`
   }
+  if (label.details?.url) return `<div class="title">${escapeHtml(label.details.displayName)}</div>
+    <div class="batch-count">${label.details.orderCodes.length} ${label.details.orderCodes.length === 1 ? "pedido" : "pedidos"}</div>
+    <div class="batch-date">${escapeHtml(label.details.date ?? "")}</div>
+    <div class="batch-qr">${svg}</div>`
   if (label.details) return `<div class="title">${escapeHtml(label.details.displayName)}</div>
     <div class="batch-count">${label.details.orderCodes.length} ${label.details.orderCodes.length === 1 ? "pedido" : "pedidos"}</div>
     <div class="batch-orders">${label.details.orderCodes.map(escapeHtml).join(" · ")}</div>
@@ -69,9 +77,9 @@ export function buildLabelsDocument(
   const internal = expanded.every((label) => label.kind === "parcel" || label.kind === "prepared" || label.kind === "batch")
   // Producto 64×35 mm; identificación interna y Bulto general 76×40 mm.
   // "single" usa el tamaño físico de cada etiqueta en print preview.
-  const batchHeight = Math.max(40, ...expanded.filter((label) => label.kind === "batch").map((label) => batchLabelHeight(label.details?.orderCodes.length ?? 0)))
+  const batchHeight = expanded.some((label) => label.kind === "batch" && label.details?.url) ? 50.8 : Math.max(40, ...expanded.filter((label) => label.kind === "batch").map((label) => batchLabelHeight(label.details?.orderCodes.length ?? 0)))
   const size = product ? { width: 64, height: 35, singleWidth: 60, singleHeight: 40 }
-    : internal ? { width: 76, height: batchHeight, singleWidth: 76, singleHeight: batchHeight }
+    : internal ? { width: batchHeight === 50.8 ? 101.6 : 76, height: batchHeight, singleWidth: batchHeight === 50.8 ? 101.6 : 76, singleHeight: batchHeight }
     : { width: 95, height: 90, singleWidth: 100, singleHeight: 100 }
   const page = format === "a4"
     ? `@page { size: A4; margin: 6mm; }
@@ -86,6 +94,7 @@ export function buildLabelsDocument(
     html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     ${page}
     .label { overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2mm 3mm; break-inside: avoid; page-break-inside: avoid; }
+    .label:last-child { break-after: auto; page-break-after: auto; }
     .brand { font-weight: 900; letter-spacing: 0.18em; font-size: 8pt; }
     .name { font-weight: 700; font-size: 8pt; line-height: 1.15; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .meta { font-size: 7pt; line-height: 1.2; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -99,6 +108,9 @@ export function buildLabelsDocument(
     .internal-title { font-weight: 800; font-size: 12pt; line-height: 1.1; }
     .batch-count { font-weight: 700; font-size: 9pt; margin-top: 1mm; }
     .batch-orders { font-weight: 700; font-size: 8pt; line-height: 4mm; overflow-wrap: anywhere; }
+    .batch-date { font-size: 9pt; margin-top: 1mm; }
+    .batch-qr { width: 27mm; height: 27mm; margin-top: 1mm; }
+    .batch-qr svg { display: block; width: 100%; height: 100%; }
     .batch .barcode { margin-top: auto; }
     .batch .barcode svg { max-height: 16mm; }
     .parcel .barcode, .prepared .barcode { width: 100%; margin: 2mm 0 0; padding-inline: 2mm; }

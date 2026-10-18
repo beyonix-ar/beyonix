@@ -30,6 +30,7 @@ const BASE_SETUP = [
   "supabase/migrations/20261016130000_picked_cancellation_admin_refund_only.sql",
 ]
 const BUNDLE_MIGRATION = "supabase/migrations/20261016150000_dispatch_general_bundle_verification.sql"
+const MOBILE_CONTROL_MIGRATION = "supabase/migrations/20261018120000_dispatch_mobile_final_control.sql"
 
 async function setup({ withBundleMigration = true } = {}) {
   const db = new PGlite()
@@ -362,5 +363,27 @@ test("RPC nuevas: sólo service_role con operador verificado", async () => {
     await prepare(db, 1031)
     await db.query("select set_config('request.jwt.claim.role','authenticated',false)")
     await assert.rejects(identify(db, 1031, "manual"), /DISPATCH_FORBIDDEN/)
+  } finally { await db.close() }
+})
+
+test("control móvil final: cancelado bloquea, retiro recalcula, confirmación audita contenido e idempotencia", async () => {
+  const db = await setup()
+  try {
+    await db.exec(read(MOBILE_CONTROL_MIGRATION))
+    assert.equal((await db.query<{ allowed: boolean }>("select has_function_privilege('authenticated','public.confirm_dispatch_batch_mobile_control(bigint,uuid)','EXECUTE') allowed")).rows[0].allowed, false)
+    await prepare(db, 1031, 2); await identify(db, 1031, "printed")
+    await prepare(db, 1032); await identify(db, 1032, "printed")
+    const bundle = await newBatch(db, [1031, 1032])
+    await cancel(db, 1032)
+    await assert.rejects(db.query("select confirm_dispatch_batch_mobile_control($1,$2)", [bundle.id, actor]), /DISPATCH_ORDER_BLOCKED/)
+    await db.query("select resolve_cancelled_order_preparation($1,$2,$3,$4)", ["BX-PREP-2032", actor, key(), 1032])
+    const result = (await db.query<{ value: { parcelCount: number; includedOrderIds: number[]; removedOrderIds: number[]; duplicate: boolean } }>(
+      "select confirm_dispatch_batch_mobile_control($1,$2) value", [bundle.id, actor])).rows[0].value
+    assert.deepEqual([result.parcelCount, result.includedOrderIds, result.removedOrderIds, result.duplicate], [2, [1031], [1032], false])
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_events where batch_id=$1 and action='mobile_control_confirmed' and actor_id=$2 and metadata->>'parcelCount'='2'", [bundle.id, actor]), 1)
+    assert.equal(await count(db, "select count(*)::int n from ordenes where id=1031 and andreani_handed_over_batch_id=$1", [bundle.id]), 1)
+    assert.equal(await count(db, "select count(*)::int n from ordenes where id=1032 and andreani_handed_over_at is not null"), 0)
+    assert.equal((await db.query<{ value: { duplicate: boolean } }>("select confirm_dispatch_batch_mobile_control($1,$2) value", [bundle.id, actor])).rows[0].value.duplicate, true)
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_events where batch_id=$1 and action='mobile_control_confirmed'", [bundle.id]), 1)
   } finally { await db.close() }
 })
