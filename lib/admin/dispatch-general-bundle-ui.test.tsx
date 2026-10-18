@@ -118,6 +118,8 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(batch.status, "closed")
     assert.match(control(), /Bulto finalizado/)
     assert.equal(input(), null)
+    assert.ok(button(dom, "Imprimir etiqueta"))
+    assert.ok(button(dom, "Guardar PDF"))
     assert.equal(posts.some((post) => post.action === "close" || post.action === "handover"), false)
     assert.doesNotMatch(text(), /Entregar a Andreani|Escanear o ingresar DSP/)
     assert.equal(dom.window.document.querySelector('button[aria-label="Opciones del Bulto"]'), null)

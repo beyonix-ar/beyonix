@@ -13,8 +13,8 @@ test("Pendientes y Confirmados: filtros, selección y fila accesible abren el pe
   const { createRoot } = await import("react-dom/client")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const root = createRoot(dom.window.document.getElementById("root")!)
-  const order = (id: number, prepared: boolean) => ({ id, created_at: "2026-10-16T15:32:00-03:00", cliente_nombre: "Lucas", estado: "pagado", financial_status: "payment_confirmed", payment_status: "approved", invoice_status: "authorized", total: 50000, shipping_provider: "andreani", envio_proveedor: null, cancelled_at: null, andreani_handed_over_at: null, andreani_handed_over_batch_id: null, andreani_envio_id: prepared ? "ENV" : null, andreani_tracking: null, andreani_creation_status: prepared ? "created" : null, package: prepared ? { id, order_id: id, status: "prepared", attempt_number: 1, prepared_at: "2026-10-16T15:00:00Z", prepared_by: null, identification_method: "andreani" } : null, membership: null, itemCount: 1, units: 2, scannedUnits: prepared ? 2 : 0 })
-  const board = { orders: [order(6, false), order(7, true)], batches: [], holds: [] }
+  const order = (id: number, prepared: boolean) => ({ id, created_at: "2026-10-16T15:32:00-03:00", cliente_nombre: "Lucas", estado: "pagado", financial_status: "payment_confirmed", payment_status: "approved", invoice_status: "authorized", total: 50000, shipping_provider: "andreani", envio_proveedor: null, cancelled_at: null, andreani_handed_over_at: null, andreani_handed_over_batch_id: null, andreani_envio_id: prepared ? "ENV" : null, andreani_tracking: prepared ? `3600000010${id.toString().padStart(2, "0")}` : null, andreani_creation_status: prepared ? "created" : null, package: prepared ? { id, order_id: id, status: "prepared", attempt_number: 1, prepared_at: "2026-10-16T15:00:00Z", prepared_by: null, identification_method: "andreani" } : null, membership: null, itemCount: 1, units: 2, scannedUnits: prepared ? 2 : 0 })
+  const board = { orders: [order(6, false), order(7, true), { ...order(9, true), andreani_envio_id: null, andreani_tracking: null, andreani_creation_status: null, package: { ...order(9, true).package!, identification_method: null } }], batches: [], holds: [] }
   const detail = { order: board.orders[0], package: null, lines: [], saleItems: [{ orderItemId: 1, sku: "MT01", productName: "Mate", variantName: "Negro", orderedQuantity: 2, unitPrice: 10000 }], parcels: [], stage: "pending", itemCount: 1, expectedUnits: 2, membership: null, batch: null, shipping: { costsVisible: true, estimate: null, parcelQuote: null }, hold: null, shipment: { created: false, envioId: null, tracking: null, creationStatus: null }, adjustments: [], blocked: false, blockReason: null, packingBlocked: false, pendingBeforeDispatch: [], viewer: { costsVisible: true, canShip: true, canForce: false } }
   globalThis.fetch = async (input) => Response.json(String(input).endsWith("/orders/6") ? detail : board)
   const settle = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)) }) }
@@ -25,18 +25,20 @@ test("Pendientes y Confirmados: filtros, selección y fila accesible abren el pe
   try {
     await act(async () => { root.render(<AdminDispatches />) })
     await settle()
-    assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 1)
+    assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 2)
+    assert.match(dom.window.document.querySelector('table[aria-label="Pedidos pendientes"]')?.textContent ?? "", /BX-1009[\s\S]*Pedido completo/)
     const search = dom.window.document.querySelector<HTMLInputElement>('.dispatch-filters input[type="search"]')!
     await change(search, "1007")
     assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 0)
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filters button")!.click() })
-    assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 1)
+    assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 2)
     const date = dom.window.document.querySelector<HTMLInputElement>('.dispatch-filters input[type="date"]')!
     await change(date, "2026-10-15")
     assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 0)
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filters button")!.click() })
     await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>(".dispatch-tabs button")].find((button) => button.textContent?.includes("Confirmados"))!.click() })
     assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos confirmados"] tbody tr').length, 1)
+    assert.doesNotMatch(dom.window.document.querySelector('table[aria-label="Pedidos confirmados"]')?.textContent ?? "", /BX-1009/)
     const checkbox = dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Seleccionar BX-1007"]')!
     await act(async () => { checkbox.click() })
     assert.match(dom.window.document.body.textContent ?? "", /1 seleccionados/)

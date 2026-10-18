@@ -1,4 +1,4 @@
-import { orderCode, type DispatchBatch, type DispatchOrder, type DispatchPackage } from "./dispatch"
+import { andreaniShipmentCreated, orderCode, type DispatchBatch, type DispatchOrder, type DispatchPackage } from "./dispatch"
 
 export const DISPATCH_PAGE_SIZE = 20
 
@@ -6,7 +6,7 @@ export type QueueOrder = DispatchOrder & { package: DispatchPackage | null; memb
 
 export function dispatchQueueStatus(order: QueueOrder): "pending" | "confirmed" | "in_batch" {
   if (order.membership) return "in_batch"
-  return order.package?.status === "prepared" ? "confirmed" : "pending"
+  return order.package?.status === "prepared" && andreaniShipmentCreated(order) && Boolean(order.andreani_tracking?.trim()) ? "confirmed" : "pending"
 }
 
 export function dispatchBatchName(batch: Pick<DispatchBatch, "id" | "display_number">) {

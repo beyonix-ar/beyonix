@@ -31,7 +31,7 @@ export function LabelPrintDialog({ open, title, description, labels, allowCopies
     if (busy || !validCopies) return
     setBusy(mode); setError("")
     try {
-      if (mode === "pdf") await saveBatchLabelsPdf(batchLabels.map((label) => label.code), selectedFormat)
+      if (mode === "pdf") await saveBatchLabelsPdf(batchLabels.map((label) => label.code), selectedFormat, Object.fromEntries(batchLabels.filter((label) => label.details).map((label) => [label.code, label.details!])))
       else {
         await printLabels(allowCopies ? labels.map((label) => label.kind === "product" ? { ...label, copies: copyCount } : label) : labels, selectedFormat)
         onPrinted?.()

@@ -6,11 +6,14 @@ export type LabelFormat = "a4" | "single"
 
 export function dispatchPdfFilename(code: string) { return `${code}.pdf` }
 
+export type BatchLabelDetails = { displayName: string; orderCodes: readonly string[] }
+export const batchLabelHeight = (count: number) => count ? 43 + 4 * count : 40
+
 export type PrintableLabel =
   | { kind: "product"; code: string; name: string; variant?: string | null; sku?: string | null; copies?: number }
   | { kind: "parcel"; code: string; orderCode: string; index: number; count: number }
   | { kind: "prepared"; code: string; orderCode: string; units: number; parcelCount: number | null }
-  | { kind: "batch"; code: string; date?: string | null }
+  | { kind: "batch"; code: string; date?: string | null; details?: BatchLabelDetails }
 
 const MAX_COPIES = 500
 
@@ -47,9 +50,11 @@ function labelBody(label: PrintableLabel, svg: string) {
     return `<div class="internal-title">Pedido ${escapeHtml(label.orderCode)}</div>
       <div class="barcode">${svg}</div>`
   }
-  return `<div class="title">Bulto general</div>
-    <div class="code">${escapeHtml(label.code)}</div>
+  if (label.details) return `<div class="title">${escapeHtml(label.details.displayName)}</div>
+    <div class="batch-count">${label.details.orderCodes.length} ${label.details.orderCodes.length === 1 ? "pedido" : "pedidos"}</div>
+    <div class="batch-orders">${label.details.orderCodes.map(escapeHtml).join(" · ")}</div>
     <div class="barcode">${svg}</div>`
+  return `<div class="title">Bulto general</div><div class="code">${escapeHtml(label.code)}</div><div class="barcode">${svg}</div>`
 }
 
 export function buildLabelsDocument(
@@ -64,8 +69,9 @@ export function buildLabelsDocument(
   const internal = expanded.every((label) => label.kind === "parcel" || label.kind === "prepared" || label.kind === "batch")
   // Producto 64×35 mm; identificación interna y Bulto general 76×40 mm.
   // "single" usa el tamaño físico de cada etiqueta en print preview.
+  const batchHeight = Math.max(40, ...expanded.filter((label) => label.kind === "batch").map((label) => batchLabelHeight(label.details?.orderCodes.length ?? 0)))
   const size = product ? { width: 64, height: 35, singleWidth: 60, singleHeight: 40 }
-    : internal ? { width: 76, height: 40, singleWidth: 76, singleHeight: 40 }
+    : internal ? { width: 76, height: batchHeight, singleWidth: 76, singleHeight: batchHeight }
     : { width: 95, height: 90, singleWidth: 100, singleHeight: 100 }
   const page = format === "a4"
     ? `@page { size: A4; margin: 6mm; }
@@ -91,6 +97,10 @@ export function buildLabelsDocument(
     .code { font-family: "Courier New", monospace; font-weight: 700; font-size: 9pt; letter-spacing: 0.06em; }
     .parcel .code, .batch .code, .prepared .code { font-size: 13pt; }
     .internal-title { font-weight: 800; font-size: 12pt; line-height: 1.1; }
+    .batch-count { font-weight: 700; font-size: 9pt; margin-top: 1mm; }
+    .batch-orders { font-weight: 700; font-size: 8pt; line-height: 4mm; overflow-wrap: anywhere; }
+    .batch .barcode { margin-top: auto; }
+    .batch .barcode svg { max-height: 16mm; }
     .parcel .barcode, .prepared .barcode { width: 100%; margin: 2mm 0 0; padding-inline: 2mm; }
     .parcel .barcode svg, .prepared .barcode svg { width: 100%; max-height: 22mm; object-fit: contain; }
   </style></head><body><main class="sheet">${items}</main></body></html>`

@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 
-import { buildLabelsDocument, type LabelFormat, type PrintableLabel } from "./labels-document"
+import { buildLabelsDocument, type BatchLabelDetails, type LabelFormat, type PrintableLabel } from "./labels-document"
 
 async function fetchBarcodeSvgs(codes: string[]) {
   const { data } = await supabase.auth.getSession()
@@ -22,15 +22,15 @@ export async function printLabels(labels: readonly PrintableLabel[], format: Lab
   await printHtmlDocument(buildLabelsDocument(labels, svgs, format))
 }
 
-export async function saveBatchLabelsPdf(codes: readonly string[], format: LabelFormat) {
+export async function saveBatchLabelsPdf(codes: readonly string[], format: LabelFormat, details?: Readonly<Record<string, BatchLabelDetails>>) {
   const svgs = await fetchBarcodeSvgs([...new Set(codes)])
   const { batchPdfFilename, buildBatchLabelsPdf } = await import("./batch-label-pdf")
-  const bytes = await buildBatchLabelsPdf(codes, svgs, format)
+  const bytes = await buildBatchLabelsPdf(codes, svgs, format, details)
   const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/pdf" }))
   try {
     const link = document.createElement("a")
     link.href = url
-    link.download = batchPdfFilename(codes)
+    link.download = batchPdfFilename(codes, details)
     document.body.appendChild(link)
     link.click()
     link.remove()

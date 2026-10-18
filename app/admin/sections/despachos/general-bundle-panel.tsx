@@ -1,12 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { CheckCircle2, Circle } from "lucide-react"
+import { CheckCircle2, Circle, Download, Printer } from "lucide-react"
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
+import { printLabels, saveBatchLabelsPdf } from "@/lib/barcodes/print-labels"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
 import { ScanField } from "./scan-field"
 
@@ -41,6 +42,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   const finalized = batch.status !== "open" && !detail.requiresRevalidation
   const canVerify = !blocked && (batch.status === "open" || detail.requiresRevalidation)
   const canEdit = batch.status !== "handed_over"
+  const labelDetails = { displayName: dispatchBatchName(batch), orderCodes: items.map((item) => orderCode(item.order_id)) }
 
   // Cubre un Bulto que quedó completo tras retirar un pedido o recargar la página.
   // La RPC de cierre vuelve a validar bloqueos, preparación y cada lectura.
@@ -128,6 +130,10 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
           ]} />}
         </li>)}</ul>
         <p className="mt-3 text-sm font-bold text-white">{detail.verificationRequired === false ? plural(detail.expectedCount) : `${detail.verifiedCount} de ${detail.expectedCount} pedidos`}{finalized ? " · Bulto finalizado ✓" : ""}</p>
+        {finalized && items.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
+          <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={busy} onClick={() => void run(() => printLabels([{ kind: "batch", code: batch.code, details: labelDetails }], "single"))}>Imprimir etiqueta</AdminPrimaryButton>
+          <AdminButton icon={<Download className="size-4" />} disabled={busy} onClick={() => void run(() => saveBatchLabelsPdf([batch.code], "single", { [batch.code]: labelDetails }))}>Guardar PDF</AdminButton>
+        </div>}
         {canVerify && <div className="mt-3"><ScanField label="Escanear o ingresar etiqueta Andreani" placeholder="Escanear / escribir etiqueta Andreani" submitLabel="Verificar"
           value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}
           busy={busy} autoFocus={dialog === null} cameraTitle={dispatchBatchName(batch)} cameraHint="Etiqueta Andreani" continuousCamera feedback={feedback} /></div>}

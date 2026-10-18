@@ -10,14 +10,19 @@ const order = (id: number, created_at = "2026-10-15T23:00:00-03:00"): QueueOrder
   andreani_creation_status: null, package: null, membership: null,
 })
 
-test("un pedido viejo sigue pendiente hasta quedar preparado y persiste al reconstruir la cola", () => {
+test("picking incompleto o sin envío Andreani sigue pendiente; solo envío creado con tracking confirma", () => {
   const old = order(6)
   assert.equal(dispatchQueueStatus(old), "pending")
   assert.equal(filterDispatchOrders([old], "", "").length, 1)
   const prepared: QueueOrder = { ...old, package: { id: 1, order_id: 6, status: "prepared", attempt_number: 1, prepared_at: "2026-10-16T15:00:00Z", prepared_by: null } }
-  assert.equal(dispatchQueueStatus(prepared), "confirmed")
-  assert.equal(dispatchQueueStatus({ ...prepared }), "confirmed")
-  assert.equal(dispatchQueueStatus({ ...prepared, membership: { id: 10 } }), "in_batch")
+  assert.equal(dispatchQueueStatus(prepared), "pending")
+  const withoutTracking = { ...prepared, andreani_envio_id: "ENV-6", andreani_creation_status: "created" }
+  assert.equal(dispatchQueueStatus(withoutTracking), "pending")
+  const confirmed = { ...withoutTracking, andreani_tracking: "360000001006" }
+  assert.equal(dispatchQueueStatus(confirmed), "confirmed")
+  assert.equal(dispatchQueueStatus({ ...confirmed, package: { ...prepared.package!, status: "preparing" } }), "pending")
+  assert.equal(dispatchQueueStatus({ ...confirmed, andreani_creation_status: "reconciliation_required" }), "pending")
+  assert.equal(dispatchQueueStatus({ ...confirmed, membership: { id: 10 } }), "in_batch")
 })
 
 test("búsqueda BX o número y fecha del pedido en Buenos Aires", () => {
