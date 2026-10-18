@@ -1,5 +1,6 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { dispatchError, getBatchDispatch, isRequestKey, orderCode, parseOrderCode, validId, type DispatchVerificationResult } from "@/lib/admin/dispatch"
+import { getDispatchHistory } from "@/lib/admin/dispatch-history"
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -9,6 +10,10 @@ export async function GET(request: Request, context: Context) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   try {
+    if (new URL(request.url).searchParams.has("history")) {
+      const history = await getDispatchHistory(auth.admin, id)
+      return history ? Response.json(history, { headers: { "Cache-Control": "no-store" } }) : Response.json({ error: "Bulto no encontrado." }, { status: 404 })
+    }
     if (new URL(request.url).searchParams.has("events")) {
       const result = await auth.admin.from("dispatch_batch_events").select("id,action,order_id,created_at,metadata").eq("batch_id", id).order("id", { ascending: false }).limit(100)
       if (result.error) throw result.error

@@ -33,7 +33,7 @@ export const DISPATCH_VERIFICATION_METHOD_LABELS: Record<DispatchVerificationMet
   scanner: "Lector", camera: "Cámara", manual_code: "Código ingresado", manual_selection: "Confirmación manual", legacy_parcels: "Histórico · paquetes BX-PKG escaneados",
 }
 export type DispatchVerificationResult = { orderId: number; code: string; method: DispatchVerificationMethod; duplicate: boolean; expected: number; verified: number }
-export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; total?: number | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; cliente_nombre: string | null; andreani_envio_id: string | null; andreani_tracking: string | null; andreani_creation_status: string | null }
+export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; total?: number | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; andreani_created_at?: string | null; cliente_nombre: string | null; andreani_envio_id: string | null; andreani_tracking: string | null; andreani_creation_status: string | null }
 export type DispatchSaleItem = { orderItemId: number; sku: string | null; productName: string; variantName: string | null; orderedQuantity: number; unitPrice: number | null }
 /** Orden operativo: pickeo → pedido completo → envío Andreani → etiqueta Andreani → Bulto general → DSP → entrega. */
 export type DispatchStage = "pending" | "packing" | "shipment" | "label" | "ready" | "in_batch" | "batch_closed" | "handed_over"
@@ -256,7 +256,7 @@ export function dispatchError(error: { message: string; details?: string | null 
 }
 
 const PACKAGE_COLUMNS = "id,order_id,status,attempt_number,prepared_at,prepared_by,parcel_count,parcels_defined_at,parcels_request_key,identification_method,identified_at"
-export const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id,created_at,cliente_nombre,andreani_envio_id,andreani_tracking,andreani_creation_status,total"
+export const ORDER_COLUMNS = "id,estado,financial_status,payment_status,invoice_status,shipping_provider,envio_proveedor,cancelled_at,andreani_handed_over_at,andreani_handed_over_batch_id,created_at,andreani_created_at,cliente_nombre,andreani_envio_id,andreani_tracking,andreani_creation_status,total"
 const ORDER_SHIPPING_COLUMNS = "shipping_estimate,shipping_provider_quote_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount,shipping_parcel_quote_request_key"
 const BATCH_COLUMNS = "id,code,display_number,status,created_at,closed_at,prepared_at,handed_over_at,handed_over_by,verification_round,verification_required"
 

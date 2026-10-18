@@ -113,6 +113,13 @@ export async function POST(request: Request, context: Context) {
       console.error("DISPATCH_ANDREANI_SHIPMENT_ERROR", { orderId: id, code: safeError.code, status: safeError.status, requestId: safeError.requestId })
       return Response.json({ error: safeError.message }, { status: error instanceof AndreaniError && error.code === "VALIDATION_ERROR" ? 409 : 502 })
     }
+    if (!order.andreani_envio_id) {
+      const audit = await auth.admin.from("order_audit_events").insert({
+        order_id: id, actor_type: "admin", actor_id: auth.user.id,
+        action: "dispatch_andreani_shipment_generated", metadata: { requestKey: body.requestKey, forced: force },
+      })
+      if (audit.error && audit.error.code !== "23505") return Response.json({ error: "El envío se creó, pero no se pudo registrar el operador. Reintentá para verificarlo." }, { status: 500 })
+    }
     // Recotización con los bultos reales, después de responder. Nunca cobra al cliente.
     after(async () => {
       const outcome = await quoteOrderParcels(auth.admin, id).catch(() => ({ status: "failed" as const, error: "UNEXPECTED_ERROR" }))
