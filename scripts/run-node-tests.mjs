@@ -12,6 +12,7 @@ const TEST_FILES = [
   "lib/barcodes/barcodes.test.ts",
   "lib/barcodes/batch-label-pdf.test.ts",
   "lib/barcodes/catalog-lookup-db.test.ts",
+  "lib/barcodes/catalog-auto-generation-db.test.ts",
   "lib/labels/labels.test.ts",
   "lib/business/cost-catalog-search.test.ts",
   "lib/orders/dispatch-db.test.ts",

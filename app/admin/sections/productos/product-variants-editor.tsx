@@ -1986,7 +1986,7 @@ function VariantFields({
         <input
           type="text"
           value={barcode}
-          placeholder="Escaneá el código del fabricante"
+          placeholder="Escaneá el código o BEYONIX lo generará"
           maxLength={64}
           disabled={disabled}
           onChange={(event) => onBarcodeChange(event.target.value)}

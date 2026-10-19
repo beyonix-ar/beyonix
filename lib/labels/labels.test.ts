@@ -104,7 +104,7 @@ function target(product: LabelCatalogProduct, variantId: number | null) {
 
 function item(product: LabelCatalogProduct, variantId: number | null, copies: number, code?: string): LabelQueueItem {
   const selected = target(product, variantId)
-  const created = createQueueItem(selected, code ?? selected.options[0].code, copies)
+  const created = createQueueItem(selected, code ?? selected.options.find((option) => option.source === "principal")?.code ?? selected.options[0].code, copies)
   assert.ok(created)
   return created
 }
@@ -147,7 +147,7 @@ test("variantes: normal, aleatoria, bicolor, alias y producto sin variantes", ()
   const normal = buildLabelTargets(lighter)
   assert.equal(normal.targets.length, 2)
   assert.equal(normal.targets[0].variantLabel, "MARRÓN")
-  assert.deepEqual(normal.targets[0].options.map((option) => [option.code, option.source]), [[EAN_A, "principal"], ["ENC-MAR-ALT", "alias"], ["ENC-MAR", "sku"]])
+  assert.deepEqual(normal.targets[0].options.map((option) => [option.code, option.source]), [[EAN_A, "principal"], ["ENC-MAR-ALT", "alias"]])
   // El alias de grupo no identifica el color: no se ofrece para imprimir.
   assert.deepEqual(normal.groupAliases, ["7790000000000"])
   assert.ok(normal.targets.every((entry) => entry.options.every((option) => option.code !== "7790000000000")))
@@ -166,8 +166,40 @@ test("variantes: normal, aleatoria, bicolor, alias y producto sin variantes", ()
   const single = buildLabelTargets(stand)
   assert.equal(single.targets.length, 1)
   assert.equal(single.targets[0].variantId, null)
-  assert.deepEqual(single.targets[0].options.map((option) => option.code), ["BX-SOP-000030", "SOPORTE-ALT", "SOP-NB"], "sin variantes, el alias de producto sí identifica el artículo")
+  assert.deepEqual(single.targets[0].options.map((option) => option.code), ["SOPORTE-ALT", "BX-SOP-000030"], "sin variantes, el alias de proveedor se ofrece antes del código interno")
   assert.deepEqual(single.groupAliases, [])
+})
+
+test("SKU nunca aparece como barcode; sólo códigos persistidos son imprimibles", () => {
+  const apoyabrazos: LabelCatalogProduct = {
+    id: 7, name: "APOYABRAZOS DE ESCRITORIO ERGONÓMICO 360°", active: true,
+    sku: null, barcode: null, price: null, randomSale: false,
+    variants: [{ id: 7, name: "NEGRO", active: true, stock: 1, sku: "AP01", colorHex: "#000000", colorHexSecondary: null, barcode: "6917116316809" }],
+    aliases: [],
+  }
+  const black = target(apoyabrazos, 7)
+  assert.equal(black.sku, "AP01")
+  assert.deepEqual(black.options.map((option) => [option.code, option.source]), [["6917116316809", "principal"]])
+
+  const noBarcode = target({ ...apoyabrazos, barcode: null, variants: [{ ...apoyabrazos.variants[0], barcode: null }] }, 7)
+  assert.deepEqual(noBarcode.options, [], "el SKU no reemplaza un código ausente")
+  const internal = target({ ...apoyabrazos, variants: [{ ...apoyabrazos.variants[0], barcode: "BX-APO-000004" }] }, 7)
+  assert.deepEqual(internal.options.map((option) => option.code), ["BX-APO-000004"])
+  assert.equal(internal.options[0].classification.kind, "beyonix")
+  const withAliases = target({ ...apoyabrazos, aliases: [
+    { barcode: "714604245896", variantId: 7 },
+    { barcode: "7950000250666", variantId: 7 },
+  ] }, 7)
+  assert.deepEqual(withAliases.options.map((option) => option.code), ["6917116316809", "714604245896", "7950000250666"])
+  const supplierAfterInternal = target({ ...apoyabrazos, variants: [{ ...apoyabrazos.variants[0], barcode: "BX-APO-000004" }], aliases: [
+    { barcode: "714604245896", variantId: 7 },
+  ] }, 7)
+  assert.deepEqual(supplierAfterInternal.options.map((option) => option.code), ["714604245896", "BX-APO-000004"])
+  const staleSku = { ...item(apoyabrazos, 7, 2), key: "7:7:AP01", code: "AP01", codeSource: "sku" as const }
+  const [stale] = reconcileQueue(parseStoredQueue([staleSku]), [apoyabrazos])
+  assert.match(stale.issue ?? "", /ya no pertenece/)
+  assert.equal(queueLabelCount([stale]), 0, "una selección previa del SKU no se imprime con el código incorrecto")
+  assert.equal(target({ ...apoyabrazos, variants: [{ ...apoyabrazos.variants[0], barcode: null, sku: null }] }, 7).options.length, 0)
 })
 
 test("cola: agregar, sumar duplicados, quitar, cantidad válida y orden", () => {

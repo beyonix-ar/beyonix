@@ -1211,7 +1211,7 @@ export function ProductosRow({
                             type="text"
                             value={editBarcode}
                             maxLength={64}
-                            placeholder="Sin código de barra"
+                            placeholder="Vacío: BEYONIX genera un código"
                             aria-label={`Editar código de barra de ${variante.nombre}`}
                             onChange={(event) => setEditBarcode(event.target.value)}
                             onKeyDown={editKeyDown}

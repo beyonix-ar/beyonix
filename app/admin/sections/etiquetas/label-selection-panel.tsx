@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react"
 import { Camera, Check, Search, Trash2 } from "lucide-react"
-import { AdminButton, AdminPrimaryButton, AdminTextInput, adminCardClassName } from "@/app/admin/components/admin-controls"
+import { AdminButton, AdminPrimaryButton, AdminSelect, AdminTextInput, adminCardClassName } from "@/app/admin/components/admin-controls"
 import { CameraScanner } from "@/app/admin/sections/despachos/camera-scanner"
 import { normalizeScannedCode } from "@/lib/admin/dispatch-scan"
 import { MAX_CATALOG_SEARCH_LENGTH } from "@/lib/business/cost-catalog-search"
@@ -42,11 +42,11 @@ function SelectionRow({ target, item, maxCopies, onConfirm, onRemove, onRefresh 
     <td className="max-w-0 truncate whitespace-nowrap px-3 py-2 font-bold text-white" title={target.productName}>{target.productName}{!target.active && <span className="ml-1 text-amber-300">(inactivo)</span>}</td>
     <td className="max-w-0 px-3 py-2 text-white/80" title={target.variantLabel ?? undefined}><span className="flex min-w-0 items-center gap-2"><LabelSwatch colorHex={target.colorHex} colorHexSecondary={target.colorHexSecondary} /><span className="truncate">{target.variantLabel ?? "—"}</span></span></td>
     <td className="max-w-0 truncate whitespace-nowrap px-3 py-2 font-mono text-xs text-white/75" title={target.sku ?? undefined}>{target.sku ?? "—"}</td>
-    <td className="px-3 py-2">{target.options.length > 1 ? <select aria-label={`Código de barras de ${name}`} value={selectedCode} onChange={(event) => { setCode(event.target.value); setError("") }} className="admin-control-input admin-ds-control h-9 w-full rounded px-2 font-mono text-xs">{target.options.map((option) => <option key={option.code} value={option.code}>{option.code}</option>)}</select> : <span className="font-mono text-xs text-white/80">{target.options[0]?.code ?? "Sin código"}</span>}</td>
+    <td className="px-3 py-2">{target.options.length > 1 ? <AdminSelect title="Código de barras" ariaLabel={`Código de barras de ${name}`} value={selectedCode} onChange={(value) => { setCode(value); setError("") }} compact triggerClassName="font-mono text-xs">{target.options.map((option) => <option key={option.code} value={option.code}>{option.code}</option>)}</AdminSelect> : <span className="font-mono text-xs text-white/80">{target.options[0]?.code ?? "Sin código"}</span>}</td>
     <td className="px-3 py-2">{target.options.length ? <form noValidate onSubmit={submit} className="flex items-center gap-2">
       <input type="number" min="1" max={maxCopies} step="1" inputMode="numeric" aria-label={`Cantidad de etiquetas de ${name}`} value={quantity} onChange={(event) => { setQuantity(event.target.value); setError("") }} className="admin-control-input admin-ds-control h-9 w-16 rounded px-2 text-center text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
       <AdminPrimaryButton type="submit" size="sm" aria-label={`Confirmar etiquetas de ${name}`}>OK</AdminPrimaryButton>
-      {item && <button type="button" aria-label={`Quitar ${name}`} onClick={() => onRemove(item.key)} className="p-1 text-white/50 hover:text-red-300"><Trash2 className="size-4" /></button>}
+      {item && <button type="button" aria-label={`Quitar ${name}`} onClick={() => onRemove(item.key)} className="cursor-pointer p-1 text-white/50 hover:text-red-300"><Trash2 className="size-4" /></button>}
       {confirmed && <span className="whitespace-nowrap text-xs font-bold text-emerald-300"><Check className="inline size-3.5" /> {item.copies}</span>}
       {item?.issue && <span role="alert" className="text-xs text-amber-300" title={item.issue}>Revisar código</span>}
       {error && <span role="alert" className="text-xs text-red-300">{error}</span>}

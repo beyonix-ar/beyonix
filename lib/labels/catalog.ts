@@ -1,4 +1,4 @@
-import { BEYONIX_PRODUCT_CODE, isPrintableBarcode } from "../barcodes/codes.ts"
+import { BEYONIX_PRODUCT_CODE } from "../barcodes/codes.ts"
 import { getColorName } from "../products/variant-color.ts"
 import { getProductColorMode, type ProductColorMode } from "../products/color-mode.ts"
 import { classifyBarcode, type BarcodeClassification } from "./symbology.ts"
@@ -34,7 +34,7 @@ export interface LabelCatalogProduct {
   aliases: LabelCatalogAlias[]
 }
 
-export type LabelCodeSource = "principal" | "alias" | "sku"
+export type LabelCodeSource = "principal" | "alias"
 
 export interface LabelCodeOption {
   code: string
@@ -62,7 +62,6 @@ export interface LabelTarget {
 export const LABEL_CODE_SOURCE_LABELS: Record<LabelCodeSource, string> = {
   principal: "Principal",
   alias: "Equivalente",
-  sku: "SKU",
 }
 
 const normalize = (code: string) => code.trim().toUpperCase()
@@ -72,9 +71,8 @@ function codeOption(code: string | null | undefined, source: LabelCodeSource): L
   return classification ? { code: classification.code, source, classification } : null
 }
 
-// Principal → equivalentes → SKU (sólo si no repite un código ya listado). El
-// SKU se ofrece porque Compras y el armado también lo resuelven al escanear.
-function collectOptions(principal: string | null, aliases: readonly string[], sku: string | null) {
+// Sólo códigos de barras persistidos: principal y equivalentes.
+function collectOptions(principal: string | null, aliases: readonly string[]) {
   const options: LabelCodeOption[] = []
   const seen = new Set<string>()
   const push = (option: LabelCodeOption | null) => {
@@ -84,8 +82,10 @@ function collectOptions(principal: string | null, aliases: readonly string[], sk
   }
   push(codeOption(principal, "principal"))
   aliases.forEach((alias) => push(codeOption(alias, "alias")))
-  if (sku?.trim() && isPrintableBarcode(sku.trim())) push(codeOption(sku, "sku"))
-  return options
+  // Si se añadió luego un código de proveedor a un artículo con BX interno,
+  // el código del proveedor queda seleccionado por defecto.
+  return options.sort((left, right) =>
+    Number(left.classification.kind === "beyonix") - Number(right.classification.kind === "beyonix"))
 }
 
 export function variantDisplayLabel(variant: Pick<LabelCatalogVariant, "name" | "colorHex" | "colorHexSecondary">) {
@@ -110,7 +110,7 @@ export function buildLabelTargets(product: LabelCatalogProduct): { targets: Labe
       ...(product.barcode && variant.barcode ? [variant.barcode] : []),
       ...groupAliases,
       ...product.aliases.filter((alias) => alias.variantId === variant.id).map((alias) => alias.barcode),
-    ], product.sku ?? variant.sku)
+    ])
     return {
       groupAliases: [],
       targets: [{
@@ -130,7 +130,7 @@ export function buildLabelTargets(product: LabelCatalogProduct): { targets: Labe
     }
   }
   if (!product.variants.length) {
-    const options = collectOptions(product.barcode, groupAliases, product.sku)
+    const options = collectOptions(product.barcode, groupAliases)
     return {
       groupAliases: [],
       targets: [{
@@ -153,7 +153,7 @@ export function buildLabelTargets(product: LabelCatalogProduct): { targets: Labe
     groupAliases,
     targets: product.variants.map((variant) => {
       const aliases = product.aliases.filter((alias) => alias.variantId === variant.id).map((alias) => alias.barcode)
-      const options = collectOptions(variant.barcode, aliases, variant.sku)
+      const options = collectOptions(variant.barcode, aliases)
       return {
         productId: product.id,
         variantId: variant.id,

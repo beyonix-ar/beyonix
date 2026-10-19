@@ -26,7 +26,7 @@ const CATALOG: LabelCatalogProduct[] = [
       { id: 101, name: "MARRÓN", active: true, stock: 5, sku: "ENC-MAR", colorHex: "#8B5A2B", colorHexSecondary: null, barcode: EAN_A },
       { id: 102, name: "NEGRO", active: true, stock: 3, sku: "ENC-NEG", colorHex: "#000000", colorHexSecondary: null, barcode: EAN_B },
     ],
-    aliases: [],
+    aliases: [{ barcode: "ENC-MAR-ALT", variantId: 101 }],
   },
   {
     id: 20, name: "Botella Smart", active: true, sku: null, barcode: null, price: 8500, randomSale: true,
@@ -34,6 +34,11 @@ const CATALOG: LabelCatalogProduct[] = [
     aliases: [],
   },
   { id: 30, name: "Soporte Notebook", active: true, sku: "SOP-NB", barcode: "BX-SOP-000030", price: 25000, randomSale: false, variants: [], aliases: [] },
+  {
+    id: 7, name: "APOYABRAZOS DE ESCRITORIO ERGONÓMICO 360°", active: true, sku: null, barcode: null, price: null, randomSale: false,
+    variants: [{ id: 7, name: "NEGRO", active: true, stock: 1, sku: "AP01", colorHex: "#000000", colorHexSecondary: null, barcode: "6917116316809" }],
+    aliases: [],
+  },
 ]
 
 function queueItem(productId: number, variantId: number | null, copies: number): LabelQueueItem {
@@ -251,6 +256,41 @@ test("rollo doble: cada variante conserva su código en dos columnas y en PDF", 
 })
 
 for (const theme of ["light", "dark"] as const) {
+  for (const width of [1440, 768, 390]) {
+    test(`${theme} ${width}px: códigos, select de Admin y cursor de eliminar`, async () => {
+      const page = await open(theme, width)
+      try {
+        const table = page.getByRole("table", { name: "Productos para etiquetas" })
+        await page.getByLabel("Buscar productos y variantes").fill("APOYABRAZOS")
+        const armrest = table.locator("tbody tr").filter({ hasText: "AP01" })
+        await armrest.waitFor()
+        assert.equal((await armrest.locator("td").nth(2).innerText()).trim(), "AP01")
+        assert.equal((await armrest.locator("td").nth(3).innerText()).trim(), "6917116316809")
+        assert.equal(await armrest.getByRole("button", { name: /Código de barras/ }).count(), 0, "un barcode real no ofrece el SKU como alternativa")
+        await page.getByLabel("Buscar productos y variantes").fill("Encendedor")
+        const brown = table.locator("tbody tr").filter({ hasText: "MARRÓN" })
+        const select = brown.getByRole("button", { name: /Código de barras/ })
+        await select.waitFor()
+        assert.match(await select.getAttribute("class") ?? "", /admin-control-select/)
+        const style = await select.evaluate((element) => {
+          const computed = getComputedStyle(element)
+          return { height: element.getBoundingClientRect().height, background: computed.backgroundColor, border: computed.borderColor, radius: computed.borderRadius }
+        })
+        assert.ok(style.height >= 32 && style.height <= 48)
+        assert.ok(style.background !== "rgba(0, 0, 0, 0)" && style.border !== "rgba(0, 0, 0, 0)" && style.radius !== "0px")
+        await select.focus()
+        await page.keyboard.press("ArrowDown")
+        const options = page.getByRole("listbox", { name: /Código de barras/ }).getByRole("option")
+        assert.deepEqual(await options.allTextContents(), [EAN_A, "ENC-MAR-ALT"])
+        await options.first().focus()
+        await page.keyboard.press("ArrowDown")
+        await page.keyboard.press("Enter")
+        assert.match(await select.innerText(), /ENC-MAR-ALT/)
+        assert.equal(await brown.getByRole("button", { name: /Quitar/ }).evaluate((element) => getComputedStyle(element).cursor), "pointer")
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      } finally { await page.close() }
+    })
+  }
   test(`${theme}: el listado en móvil mantiene el scroll dentro de la tabla`, async () => {
     const page = await open(theme, 390)
     try {

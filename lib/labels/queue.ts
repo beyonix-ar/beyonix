@@ -181,7 +181,7 @@ export function parseStoredQueue(value: unknown): LabelQueueItem[] {
     const variantId = raw.variantId == null ? null : id(raw.variantId)
     const code = text(raw.code)?.trim()
     const copies = parseCopies(raw.copies)
-    const source = raw.codeSource === "alias" || raw.codeSource === "sku" ? raw.codeSource : "principal"
+    const source = raw.codeSource === "alias" ? "alias" : "principal"
     if (!productId || (raw.variantId != null && !variantId) || !code || !copies) continue
     const key = queueItemKey(productId, variantId, code)
     if (items.some((item) => item.key === key)) continue
