@@ -12,6 +12,7 @@ import {
   type ClaimBranch,
 } from "@/lib/andreani/claim-shipments"
 import { normalizeAndreaniError } from "@/lib/andreani/client"
+import { claimShipmentTestStatusEnabled } from "@/lib/andreani/claim-test-status"
 import { claimErrorResponse, getClaimResult } from "@/lib/orders/claim-server"
 import { CLAIM_INCIDENT_LABELS } from "@/lib/orders/claim-shipment-view"
 import type { createAdminClient } from "@/lib/supabase/admin"
@@ -104,6 +105,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ cla
   }
   const action = String(body.action ?? "")
   const actorId = auth.user.id
+
+  if (action === "test_status") {
+    if (!claimShipmentTestStatusEnabled()) {
+      return NextResponse.json({ error: "La simulación de envíos no está habilitada." }, { status: 403 })
+    }
+    const shipmentId = positiveInteger(body.shipmentId)
+    const notes = note(body.notes)
+    if (!shipmentId || notes.length < 10 ||
+      !["generada", "en_transito", "en_sucursal", "entregada"].includes(String(body.status))) {
+      return NextResponse.json({ error: "Elegí un estado y explicá la simulación (mínimo 10 caracteres)." }, { status: 400 })
+    }
+    const shipment = await loadClaimShipment(auth.admin, shipmentId).catch(() => null)
+    if (!shipment || shipment.claim_id !== claimId) {
+      return NextResponse.json({ error: "El reclamo no tiene ese envío." }, { status: 404 })
+    }
+    if (shipment.environment !== "QA") {
+      return NextResponse.json({ error: "Sólo se pueden simular envíos Andreani de QA." }, { status: 403 })
+    }
+    const { error } = await auth.admin.rpc("simulate_order_claim_shipment_status", {
+      p_shipment_id: shipmentId, p_actor_id: actorId,
+      p_status: body.status,
+      p_note: notes,
+    })
+    if (error) return claimErrorResponse(error)
+    return getClaimResult(auth.admin, claimId)
+  }
 
   if (action === "request") {
     const direction = body.direction
@@ -255,6 +282,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ clai
   const auth = await requireAdmin(request)
   if ("error" in auth) return auth.error
   const claimId = positiveInteger((await params).claimId)
+  if (claimId && new URL(request.url).searchParams.get("capabilities") === "1") {
+    return NextResponse.json({ testStatusEnabled: claimShipmentTestStatusEnabled() }, {
+      headers: { "Cache-Control": "private, no-store" },
+    })
+  }
   const shipmentId = positiveInteger(new URL(request.url).searchParams.get("shipmentId"))
   if (!claimId || !shipmentId) {
     return NextResponse.json({ error: "Solicitud inválida." }, { status: 400 })

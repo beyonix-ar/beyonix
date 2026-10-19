@@ -1,6 +1,7 @@
 import type {
   ClaimShipmentCreationStatus,
   ClaimShipmentCustomerSource,
+  ClaimShipmentStatus,
   ClaimUnitSource,
 } from "../orders/claim-shipment-view.ts"
 import type { AdminPendingFacts } from "../orders/admin-pending-actions.ts"
@@ -908,6 +909,7 @@ export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource 
   /** Sólo Admin. */
   id: number
   claim_id?: number
+  created_at?: string | null
   andreani_envio_id?: string | null
   andreani_estado?: string | null
   andreani_last_event?: string | null
@@ -921,6 +923,8 @@ export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource 
   creation_error?: string | null
   creation_started_at?: string | null
   last_checked_at?: string | null
+  manual_status_override?: ClaimShipmentStatus | null
+  manual_status_override_at?: string | null
   /** Fila del modelo inicial (20260928100000), sin sucursal ni unidades. */
   legacy?: boolean
 }

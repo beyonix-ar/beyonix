@@ -28,6 +28,13 @@ const unit = (role: "original" | "reemplazo", location: ClaimUnitSource["locatio
   id: ++unitId, order_item_id: 70, role, location, shipment_id: null, incident_open: false, ...overrides,
 })
 
+test("cliente distingue una entrega simulada QA de un evento real de Andreani", () => {
+  const view = getCustomerClaimShipmentView({ direction: "devolucion", status: "entregada", manual_status_override: "entregada" })
+  assert.match(view?.statusLabel ?? "", /Simulación QA/)
+  assert.ok(view?.instructions.some((line) => line.includes("simulada")))
+  assert.ok(!view?.instructions.some((line) => line.includes("Andreani informó")))
+})
+
 test("cliente, CAMBIO: sucursal, qué preparar y qué pasa si no entrega el original; nunca domicilio ni datos internos", () => {
   const generated = getCustomerClaimShipmentView({
     direction: "cambio", status: "generada", modality: "cambio_sucursal", andreani_tracking: " 360000012345678 ",

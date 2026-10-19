@@ -84,6 +84,13 @@ const scenarios = {
     shipments: [leg({ direction: "devolucion", status: "en_transito", creation_status: "created", modality: "despacho_sucursal", andreani_tracking: "360000000802" })],
     units: [unit("original", "en_andreani", 1)],
   },
+  traza: {
+    shipments: [
+      leg({ id: 11, direction: "devolucion", status: "entregada", creation_status: "created", closed_at: "2026-10-05T10:00:00Z", delivered_at: "2026-10-05T10:00:00Z", andreani_envio_id: "DEV-11", andreani_tracking: "TRACK-DEV-11" }),
+      leg({ id: 12, direction: "reemplazo", status: "en_transito", creation_status: "created", environment: "QA", andreani_envio_id: "REP-12", andreani_tracking: "TRACK-REP-12", manual_status_override: "en_transito" }),
+    ],
+    units: [unit("original", "baja", 11), unit("reemplazo", "en_andreani", 12)],
+  },
   rechazado: {
     shipments: [], units: [unit("original", "conservada_cliente")],
     claim: { status: "rechazado", resolution: "rechazado", rejection_reason: "No corresponde: daño por mal uso.", closed_at: "2026-09-22T10:00:00Z" },
@@ -105,6 +112,8 @@ const claim = {
 const pedido = {
   id: 500, usuario_id: "c", estado: "entregado", delivered_at: "2026-09-18T12:00:00Z", total: 20000, created_at: "2026-09-15T12:00:00Z",
   payment_method_id: "mercadopago", shipping_type: "domicilio", order_credit_notes: [],
+  andreani_envio_id: scenario === "traza" ? "ORI-1" : null,
+  andreani_tracking: scenario === "traza" ? "TRACK-ORI-1" : null,
   orden_items: [{ id: 71, orden_id: 500, producto_id: 1, cantidad: 1, precio: 20000, productos: producto }],
   order_claims: [claim],
 }
@@ -114,6 +123,7 @@ window.__posts = []
 window.__patches = []
 window.fetch = async (input, init) => {
   const url = String(input)
+  if (url.includes("/andreani-shipment?capabilities=1")) return Response.json({ testStatusEnabled: scenario === "traza" })
   if (url.includes("/andreani-branches?")) {
     return url.includes("q=") ? Response.json({ branches: [branch] }) : Response.json({ branches: [], suggested: scenario === "sugerida" ? rosario : null })
   }
@@ -672,4 +682,23 @@ test("ayuda (?) de 'Cancelar reclamo': nunca se corta (abre abajo si arriba no h
       await bubble.waitFor({ state: "hidden" })
     } finally { await page.close() }
   }
+})
+
+test("trazabilidad muestra los tres envíos y la simulación QA sin desbordar en móvil", async () => {
+  const page = await open("traza")
+  try {
+    const trace = page.locator("[data-claim-shipment-trace]")
+    assert.equal(await trace.locator("ol").first().locator("li").count(), 3)
+    for (const value of ["TRACK-ORI-1", "TRACK-DEV-11", "TRACK-REP-12"]) {
+      assert.ok((await trace.innerText()).includes(value))
+    }
+    assert.ok((await trace.innerText()).includes("SIMULADO · QA"))
+    await page.setViewportSize({ width: 375, height: 780 })
+    assert.equal(await trace.evaluate((element) => element.scrollWidth <= element.clientWidth), true)
+    await trace.getByRole("button", { name: "Simular estado · QA" }).click()
+    await trace.getByRole("textbox", { name: "Motivo de prueba" }).fill("Simulación de seguimiento QA")
+    await trace.getByRole("button", { name: "Aplicar simulación" }).click()
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
+    assert.deepEqual((await posts(page))[0], { action: "test_status", shipmentId: 12, status: "en_transito", notes: "Simulación de seguimiento QA" })
+  } finally { await page.close() }
 })

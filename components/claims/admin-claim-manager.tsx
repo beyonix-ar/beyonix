@@ -63,6 +63,7 @@ import { useClaimWizardScroll } from "@/components/claims/use-claim-wizard-scrol
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { ClaimAndreaniShipmentPanel, type ClaimLogisticsPanelSection } from "@/components/claims/claim-andreani-shipment-panel"
+import { ClaimShipmentTrace } from "@/components/claims/claim-shipment-trace"
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
@@ -2271,6 +2272,7 @@ export function AdminClaimManager({
           </p>
         )}
       </header>
+      <ClaimShipmentTrace order={pedido} claim={claim} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
 
       {!helpMessage && !cancellation && (
         <div className="admin-claim-summary grid gap-3 border-b p-3 sm:p-4 md:grid-cols-3">

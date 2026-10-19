@@ -46,6 +46,7 @@ export interface ClaimShipmentCustomerSource {
   branch_custody_since?: string | null
   delivered_at?: string | null
   closed_at?: string | null
+  manual_status_override?: ClaimShipmentStatus | null
 }
 
 /** Fila completa (sólo Admin). */
@@ -66,6 +67,7 @@ export interface ClaimShipmentAdminSource extends ClaimShipmentCustomerSource {
 
 export interface ClaimUnitSource {
   id: number
+  updated_at?: string | null
   order_item_id: number
   role: ClaimUnitRole
   location: ClaimUnitLocation
@@ -77,7 +79,7 @@ export interface ClaimUnitSource {
 
 /** Columnas del embed seguro para el cliente (API de Mis compras). */
 export const CUSTOMER_CLAIM_SHIPMENT_COLUMNS =
-  "id,direction,attempt,status,modality,branch_name,branch_address,andreani_tracking,exchange_outcome,incident_open,branch_custody_since,delivered_at,closed_at"
+  "id,direction,attempt,status,modality,branch_name,branch_address,andreani_tracking,exchange_outcome,incident_open,branch_custody_since,delivered_at,closed_at,manual_status_override"
 
 export const CLAIM_RETURN_PACKING_INSTRUCTIONS =
   "Prepará el producto completo, con caja, bolsas, manuales, accesorios y todos los elementos recibidos, correctamente embalado y en el mejor estado posible."
@@ -210,7 +212,9 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
       statusLabel = "Cambio no completado"
       instructions.push("El cambio no se completó porque no se entregó el producto original. El producto nuevo vuelve a BEYONIX; te vamos a escribir por este medio para definir cómo seguimos.")
     } else if (source.exchange_outcome === "completado" || source.status === "entregada") {
-      instructions.push("Andreani te entregó el producto nuevo y recibió el original. Cuando el original llegue a BEYONIX lo revisamos.")
+      instructions.push(source.manual_status_override
+        ? "Estado simulado para pruebas QA. Cuando el original llegue a BEYONIX lo revisamos."
+        : "Andreani te entregó el producto nuevo y recibió el original. Cuando el original llegue a BEYONIX lo revisamos.")
     } else {
       instructions.push(CLAIM_RETURN_PACKING_INSTRUCTIONS)
       instructions.push(source.status === "pendiente"
@@ -222,7 +226,9 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
     }
   } else if (source.direction === "devolucion") {
     if (source.status === "entregada") {
-      instructions.push("Andreani informó la entrega en BEYONIX. Vamos a revisar el producto y te avisaremos por este medio cómo sigue.")
+      instructions.push(source.manual_status_override
+        ? "Entrega simulada para pruebas QA. La recepción física y la inspección se registran por separado."
+        : "Andreani informó la entrega en BEYONIX. Vamos a revisar el producto y te avisaremos por este medio cómo sigue.")
     } else {
       instructions.push(CLAIM_RETURN_PACKING_INSTRUCTIONS)
       instructions.push(source.status === "pendiente"
@@ -233,7 +239,9 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
   } else if (source.status === "pendiente") {
     instructions.push("Estamos preparando el envío de tu producto de reemplazo.")
   } else if (source.status === "entregada") {
-    instructions.push("Andreani informó que retiraste tu producto de reemplazo.")
+    instructions.push(source.manual_status_override
+      ? "Entrega simulada para pruebas QA."
+      : "Andreani informó que retiraste tu producto de reemplazo.")
   } else {
     instructions.push(`Retiralo en ${where} cuando Andreani te avise que está disponible. Llevá tu DNI.`)
   }
@@ -245,6 +253,7 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
     ? formatClaimDate(source.branch_custody_since)
     : null
   if (custodyDate) statusLabel = `${statusLabel} desde el ${custodyDate}`
+  if (source.manual_status_override) statusLabel = `${statusLabel} · Simulación QA`
 
   return {
     direction: source.direction,

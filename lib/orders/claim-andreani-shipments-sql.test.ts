@@ -364,6 +364,49 @@ test("DEVOLUCIÓN para reintegro: RETIRO sucursal -> recepción -> inspección; 
   }
 })
 
+test("simulación QA: devolución y reemplazo entregados conservan tracking real, efectos y auditoría", async () => {
+  const db = await setup()
+  try {
+    await db.exec(migration("20261019110000_claim_shipment_test_status"))
+    await db.exec(migration("20261019111000_claim_test_simulation_provenance"))
+    await db.exec(migration("20261019112000_claim_tracking_override_race_guard"))
+    const id = await acceptChange(db)
+    const returnLeg = await plan(db, id, "devolucion")
+    const createQa = async (shipmentId: number, modality: string, contract: string, envioId: string) => {
+      const token = randomUUID()
+      await db.query("select * from claim_order_claim_shipment_creation($1,$2,'QA',$3,$4)", [shipmentId, token, modality, contract])
+      await complete(db, shipmentId, token, envioId)
+    }
+    await createQa(returnLeg, ...RETURN, "QA-RETURN-1")
+    await assert.rejects(db.query("select * from simulate_order_claim_shipment_status($1,$2,'entregada','Prueba controlada')", [returnLeg, operator]), /CLAIM_LOGISTICS_FORBIDDEN/)
+    await db.query("select * from simulate_order_claim_shipment_status($1,$2,'en_transito','Prueba de devolución')", [returnLeg, admin])
+    await db.query("select * from observe_order_claim_shipment_tracking_in_test($1,'Estado real','TRACK-RETURN','EnvioDespachado',now())", [returnLeg])
+    await db.query("select * from apply_order_claim_shipment_tracking_guarded($1,'entregada',false,'Entregado real','TRACK-RETURN','EnvioEntregado',now(),null,null)", [returnLeg])
+    assert.deepEqual([(await leg(db, returnLeg)).status, (await leg(db, returnLeg)).andreani_tracking,
+      (await leg(db, returnLeg)).andreani_estado], ["en_transito", "QA-RETURN-1", "Entregado real"])
+    await db.query("select * from simulate_order_claim_shipment_status($1,$2,'entregada','Prueba de recepción')", [returnLeg, admin])
+    assert.equal((await leg(db, returnLeg)).manual_status_override, "entregada")
+    assert.match((await messages(db, id)).at(-1)?.message ?? "", /Simulación QA/)
+    assert.deepEqual(await units(db, id), { "original:en_andreani": 2 })
+    await assert.rejects(plan(db, id, "reemplazo"), /CLAIM_LOGISTICS_REQUIRES_INSPECTION/)
+    await arrival(db, id, "original", 1, 2)
+    await inspectOriginal(db, id, 1, 0, 2)
+    const resend = await plan(db, id, "reemplazo")
+    await reserve(db, id, 1, 2, 2, randomUUID(), "otra_variante")
+    await createQa(resend, ...RESEND, "QA-RESEND-1")
+    await db.query("select * from simulate_order_claim_shipment_status($1,$2,'entregada','Prueba de entrega')", [resend, admin])
+    assert.match((await messages(db, id)).at(-1)?.message ?? "", /Simulación QA/)
+    assert.deepEqual(await units(db, id), { "original:baja": 2, "reemplazo:entregada_cliente": 2 })
+    assert.equal((await leg(db, resend)).andreani_envio_id, "QA-RESEND-1")
+    await close(db, id)
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where action='claim_shipment_test_status_override'"), 3)
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where action='claim_shipment_delivered' and metadata->>'simulated'='true'"), 2)
+    await assert.rejects(db.query("select * from simulate_order_claim_shipment_status($1,$2,'entregada','Prueba indebida')", [resend, admin]), /CLAIM_SHIPMENT_TEST_UNAVAILABLE/)
+  } finally {
+    await db.close()
+  }
+})
+
 test("cambio de método: libre antes de Andreani; con una operación real exige motivo y queda auditado", async () => {
   const db = await setup()
   try {

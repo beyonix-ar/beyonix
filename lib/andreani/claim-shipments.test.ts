@@ -145,7 +145,7 @@ function fakeAdmin({ order = homeOrder as Row, direction = "cambio", leg = {} as
     return builder
   }
   const legOf = (id: unknown) => tables.order_claim_shipments.find((row) => row.id === id)
-  const rpc = async (name: string, args: Row) => {
+  const rpc = async (name: string, args: Row): Promise<{ data: Row | null; error: { message: string } | null }> => {
     rpcs.push({ name, args })
     const row = legOf(args.p_shipment_id)
     if (!row) return { data: null, error: { message: "CLAIM_SHIPMENT_NOT_FOUND" } }
@@ -185,6 +185,16 @@ function fakeAdmin({ order = homeOrder as Row, direction = "cambio", leg = {} as
       if (row.status === "entregada") Object.assign(row, { delivered_at: row.delivered_at ?? "ahora", closed_at: row.closed_at ?? "ahora" })
       Object.assign(row, { andreani_estado: args.p_estado, incident_open: args.p_incident, last_checked_at: "ahora" })
       if (args.p_review_event) Object.assign(row, { review_required: true, review_event: args.p_review_event })
+      return { data: { ...row }, error: null }
+    }
+    if (name === "apply_order_claim_shipment_tracking_guarded") {
+      return row.manual_status_override
+        ? rpc("observe_order_claim_shipment_tracking_in_test", args)
+        : rpc("apply_order_claim_shipment_tracking", args)
+    }
+    if (name === "observe_order_claim_shipment_tracking_in_test") {
+      Object.assign(row, { andreani_estado: args.p_estado, andreani_last_event: args.p_last_event,
+        last_checked_at: "ahora" })
       return { data: { ...row }, error: null }
     }
     if (name === "flag_order_claim_shipment_review") {
@@ -531,4 +541,21 @@ test("cron: sólo tramos creados y abiertos, ambiente de creación, sólo GET; u
     syncClaimShipmentTracking(admin, { ...tables.order_claim_shipments[3], creation_status: "not_started" } as never, { fetchSnapshot }),
     /todavía no tiene una orden/,
   )
+})
+
+test("sync Andreani conserva el estado QA simulado y actualiza la observación real", async () => {
+  const { admin, leg, rpcs } = fakeAdmin({ leg: {
+    creation_status: "created", status: "en_sucursal", andreani_envio_id: "QA-1",
+    andreani_tracking: "QA-1", environment: "QA", manual_status_override: "en_sucursal",
+  } })
+  const eventos = [{ Evento: "EnvioDespachado", Fecha: "2026-10-19T12:00:00-03:00" }]
+  const result = await syncClaimShipmentTracking(admin, leg() as never, { fetchSnapshot: (async () => ({
+    logisticsEstado: "En tránsito real", resolvedTracking: "QA-1", etiquetaUrl: null,
+    rejectedAfterCreation: false, eventos, latestEvent: eventos[0],
+  })) as never })
+  assert.equal(result.shipment.status, "en_sucursal")
+  assert.equal(result.shipment.andreani_estado, "En tránsito real")
+  assert.ok(rpcs.some((call) => call.name === "observe_order_claim_shipment_tracking_in_test"))
+  assert.ok(rpcs.some((call) => call.name === "apply_order_claim_shipment_tracking_guarded"))
+  assert.ok(!rpcs.some((call) => call.name === "apply_order_claim_shipment_tracking"))
 })

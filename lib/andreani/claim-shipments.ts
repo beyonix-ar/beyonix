@@ -120,10 +120,12 @@ export interface ClaimShipmentRow {
   delivered_at: string | null
   closed_at: string | null
   last_checked_at: string | null
+  manual_status_override: ClaimShipmentStatus | null
+  manual_status_override_at: string | null
 }
 
 export const CLAIM_SHIPMENT_SELECT =
-  "id, claim_id, order_id, direction, attempt, status, exchange_outcome, modality, branch_id, branch_name, branch_address, environment, contract, andreani_envio_id, andreani_tracking, andreani_estado, andreani_last_event, andreani_last_event_at, incident_open, incident_event, review_required, review_event, legacy, branch_custody_since, cost_amount, creation_status, creation_error, creation_started_at, delivered_at, closed_at, last_checked_at"
+  "id, claim_id, order_id, direction, attempt, status, exchange_outcome, modality, branch_id, branch_name, branch_address, environment, contract, andreani_envio_id, andreani_tracking, andreani_estado, andreani_last_event, andreani_last_event_at, incident_open, incident_event, review_required, review_event, legacy, branch_custody_since, cost_amount, creation_status, creation_error, creation_started_at, delivered_at, closed_at, last_checked_at, manual_status_override, manual_status_override_at"
 
 export interface AndreaniClaimContracts {
   shipment: AndreaniShipmentCreationConfig
@@ -792,7 +794,7 @@ export async function syncClaimShipmentTracking(
     throw error
   }
   const tracking = resolveClaimShipmentTracking(snapshot.eventos, snapshot.rejectedAfterCreation)
-  const updated = await rpcShipment(admin, "apply_order_claim_shipment_tracking", {
+  const updated = await rpcShipment(admin, "apply_order_claim_shipment_tracking_guarded", {
     p_shipment_id: shipment.id,
     p_phase: tracking.phase,
     p_incident: tracking.incident,
