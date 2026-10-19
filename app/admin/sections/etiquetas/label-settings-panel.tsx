@@ -246,9 +246,9 @@ export function LabelSettingsPanel({ settings, onChange, presets, storageUnavail
   return (
     <LabelStepSection
       id={LABEL_STEP_IDS.format}
-      step={3}
-      title="Formato de etiqueta"
-      description="Dónde imprimís, el tamaño de cada etiqueta y qué datos lleva."
+      step={2}
+      title="Configurar impresión"
+      description="Elegí el papel, el tamaño y el contenido de las etiquetas. La impresora física se elige en el diálogo de impresión."
       className={className}
     >
       <div className="space-y-5">
@@ -410,7 +410,7 @@ export function LabelSettingsPanel({ settings, onChange, presets, storageUnavail
             {settings.content.price && <p className="text-xs text-amber-300">El precio queda impreso: si cambia, hay que reimprimir.</p>}
           </Group>
 
-          <Group title="Impresora y calidad" summary={`${settings.dpi} dpi · margen interno ${formatMm(settings.paddingMm)} · letra ${TYPOGRAPHY_LABELS[settings.typography].toLowerCase()}`}>
+          <Group title="Calidad y diseño" summary={`${settings.dpi} dpi · margen interno ${formatMm(settings.paddingMm)} · letra ${TYPOGRAPHY_LABELS[settings.typography].toLowerCase()}`}>
             <div className="grid grid-cols-2 gap-3">
               <div className="min-w-0">
                 <FieldLabel help="Densidad de la impresora (figura en su ficha). Térmicas: 203 o 300 dpi. A4 láser/tinta: 600. Las barras se ajustan a puntos enteros para que salgan nítidas." helpLabel="Densidad (dpi)">Densidad (dpi)</FieldLabel>

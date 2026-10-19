@@ -22,7 +22,6 @@ import {
   moveQueueItem,
   queueLabelCount,
   removeFromQueue,
-  setQueueCopies,
   setQueueLabelName,
   type LabelQueueItem,
 } from "@/lib/labels/queue"
@@ -31,7 +30,7 @@ import { classifyBarcode } from "@/lib/labels/symbology"
 import { cn } from "@/lib/utils"
 
 import { LabelSwatch } from "./label-swatch"
-import { LABEL_STEP_IDS, LabelStepSection, QuantityStepper, plural } from "./label-ui"
+import { LABEL_STEP_IDS, LabelStepSection, plural } from "./label-ui"
 
 type QueueUpdate = (change: (queue: LabelQueueItem[]) => LabelQueueItem[]) => void
 
@@ -81,7 +80,7 @@ function QueueRow({ item, index, total, maxCopies, products, patternError, place
             <p className="mt-1 text-xs text-white/60">Texto impreso: <span className="font-bold text-white/85">{item.labelName}</span></p>
           )}
         </div>
-        <QuantityStepper value={item.copies} max={maxCopies} name={fullName} size="sm" onChange={(copies) => update((queue) => setQueueCopies(queue, item.key, copies, maxCopies))} />
+        <span className="shrink-0 text-xs font-bold text-emerald-300">×{item.copies}</span>
       </div>
 
       {editingName && (
@@ -143,7 +142,7 @@ function QueueRow({ item, index, total, maxCopies, products, patternError, place
 const dateFormatter = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
 const OUTPUT_LABELS: Record<LabelBatchSummary["output"], string> = { print: "Impresa", pdf: "PDF", zpl: "ZPL" }
 
-function BatchHistory({ batches, onRepeat }: { batches: LabelBatchSummary[]; onRepeat: (batch: LabelBatchSummary) => void }) {
+export function BatchHistory({ batches, onRepeat }: { batches: LabelBatchSummary[]; onRepeat: (batch: LabelBatchSummary) => void }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="mt-4 border-t border-white/10 pt-3">

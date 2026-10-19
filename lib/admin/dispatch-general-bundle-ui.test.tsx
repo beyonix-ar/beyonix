@@ -164,7 +164,7 @@ test("Bulto general: un cancelado muestra sólo el problema y su retiro", async 
 
 test("Etiquetas: la cámara suma ×1 por lectura usando el mismo camino que el lector", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/etiquetas")
-  const { LabelSearchPanel } = await import("../../app/admin/sections/etiquetas/label-search-panel")
+  const { LabelSelectionPanel } = await import("../../app/admin/sections/etiquetas/label-selection-panel")
   const product = { id: 10, name: "Encendedor USB", active: true, sku: null, barcode: null, price: null, randomSale: false,
     variants: [{ id: 101, name: "NEGRO", active: true, stock: 5, sku: "ENC-NEG", colorHex: "#000000", colorHexSecondary: null, barcode: "7790000000041" }], aliases: [] }
   const searches: string[] = []
@@ -176,9 +176,9 @@ test("Etiquetas: la cámara suma ×1 por lectura usando el mismo camino que el l
   const added: Array<[string, number]> = []
   fakeCamera([null, "7790000000041", "7790000000041", null, null, null, "7790000000041", null])
   try {
-    await act(async () => { root.render(<LabelSearchPanel maxCopies={500} queuedCopies={new Map()} onAdd={(_target, code, copies) => added.push([code, copies])} onProducts={() => {}} />) })
+    await act(async () => { root.render(<LabelSelectionPanel maxCopies={500} queue={[]} products={new Map()} onAdd={(_target, code, copies) => added.push([code, copies])} onConfirm={() => {}} onRemove={() => {}} onProducts={() => {}} />) })
     await settle(400)
-    await act(async () => { button(dom, "Escanear con cámara")!.click() })
+    await act(async () => { button(dom, "Escanear")!.click() })
     // Pasos cortos: cada lectura se procesa (búsqueda incluida) antes de la siguiente.
     for (let step = 0; step < 24; step += 1) await settle(80)
     assert.deepEqual(added, [["7790000000041", 1], ["7790000000041", 1]], "escanear de nuevo el mismo artículo suma; quieto en cuadro no")

@@ -9,7 +9,6 @@ import {
   AdminModal,
   AdminPageHeader,
   AdminPrimaryButton,
-  adminCardClassName,
   adminPageClassName,
 } from "@/app/admin/components/admin-controls"
 import { printHtmlDocument } from "@/lib/barcodes/print-labels"
@@ -28,7 +27,7 @@ import type { BarcodePattern } from "@/lib/labels/drawing"
 import { defaultBatchName, toBatchItems, type LabelBatchOutput, type LabelBatchSummary, type LabelPreset } from "@/lib/labels/history"
 import { layoutNotices, type LabelPlan } from "@/lib/labels/layout"
 import { labelQueueStore, labelSettingsStore } from "@/lib/labels/local-store"
-import { addToQueue, createQueueItem, expandQueue, findTarget, queueLabelCount, reconcileQueue, type LabelQueueItem } from "@/lib/labels/queue"
+import { MAX_QUEUE_ITEMS, addToQueue, createQueueItem, expandQueue, findTarget, queueLabelCount, reconcileQueue, removeFromQueue, type LabelQueueItem } from "@/lib/labels/queue"
 import { buildPrintDocument, prepareBatch } from "@/lib/labels/render"
 import { MAX_BATCH_LABELS, normalizeLabelSettings, type LabelSettings } from "@/lib/labels/settings"
 import { buildZpl, zplUnavailableReason } from "@/lib/labels/zpl"
@@ -36,10 +35,10 @@ import { cn } from "@/lib/utils"
 
 import { LabelOutputPanel, describeOutput, type PrintBlocker } from "./label-output-panel"
 import { LabelSheetPreview, LabelZoomModal, PreviewLegend, PreviewPager, previewPageCount } from "./label-preview"
-import { LabelQueuePanel } from "./label-queue-panel"
-import { LabelSearchPanel } from "./label-search-panel"
+import { BatchHistory, LabelQueuePanel } from "./label-queue-panel"
+import { LabelSelectionPanel } from "./label-selection-panel"
 import { LabelSettingsPanel, describeFormat } from "./label-settings-panel"
-import { LABEL_STEP_IDS, LabelStepsBar, plural, type LabelStepStatus } from "./label-ui"
+import { plural } from "./label-ui"
 
 const PREFERENCE_SAVE_DELAY_MS = 1200
 
@@ -96,6 +95,7 @@ export function AdminEtiquetas() {
   const [zoomIndex, setZoomIndex] = useState<number | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [busy, setBusy] = useState<LabelBatchOutput | null>(null)
+  const [view, setView] = useState<"selection" | "settings" | "preview">("selection")
   const [message, setMessage] = useState<{ tone: "success" | "danger" | "info"; text: string } | null>(null)
   const settingsTouched = useRef(false)
   // Filas ya validadas contra el catálogo del servidor en esta sesión.
@@ -218,9 +218,7 @@ export function AdminEtiquetas() {
           : loadingPatterns
             ? { text: "Generando códigos de barras…", pending: true }
             : null
-  const queuedCopies = useMemo(() => new Map(queue.map((item) => [item.key, item.copies])), [queue])
   const placements = useMemo(() => queuePlacements(labels, plan), [labels, plan])
-  const issues = queue.filter((item) => item.issue || patternErrors[item.code]).length
 
   const addTarget = useCallback((target: LabelTarget, code: string, copies: number) => {
     const item = createQueueItem(target, code, copies)
@@ -233,6 +231,23 @@ export function AdminEtiquetas() {
     setMessage(outcome.rejected
       ? { tone: "danger", text: "La cola llegó al máximo de artículos. Imprimí o vaciá antes de seguir." }
       : { tone: "success", text: `${outcome.merged ? "Sumado" : "Agregado"}: ${name} ×${copies}${outcome.clamped ? ` (tope de ${max} por artículo)` : ""}.` })
+  }, [])
+
+  const confirmTarget = useCallback((target: LabelTarget, code: string, copies: number, oldKey?: string) => {
+    const item = createQueueItem(target, code, copies)
+    if (!item) return
+    const current = labelQueueStore.get()
+    if (current.length >= MAX_QUEUE_ITEMS && !oldKey && !current.some((entry) => entry.key === item.key)) {
+      setMessage({ tone: "danger", text: `La selección admite hasta ${MAX_QUEUE_ITEMS} artículos. Quitá alguno antes de agregar otro.` })
+      return
+    }
+    validatedKeys.current.add(item.key)
+    labelQueueStore.update((current) => {
+      const previous = oldKey ? current.find((entry) => entry.key === oldKey) : null
+      const withoutOld = oldKey && oldKey !== item.key ? current.filter((entry) => entry.key !== oldKey) : current
+      if (withoutOld.some((entry) => entry.key === item.key)) return withoutOld.map((entry) => entry.key === item.key ? { ...item, labelName: previous?.labelName ?? entry.labelName } : entry)
+      return addToQueue(withoutOld, { ...item, labelName: previous?.labelName ?? null }, labelSettingsStore.get().maxCopiesPerItem).queue
+    })
   }, [])
 
   async function repeatBatch(entry: LabelBatchSummary) {
@@ -313,33 +328,6 @@ export function AdminEtiquetas() {
   const outputDisabled = Boolean(printBlocker) || busy !== null
   const outputSummary = total ? `${plural(total, "etiqueta")} · ${describeOutput(plan)}` : "La cola está vacía"
 
-  const steps: LabelStepStatus[] = [
-    {
-      id: LABEL_STEP_IDS.search,
-      title: "Buscar y agregar",
-      status: queue.length ? "Podés seguir sumando artículos" : "Buscá o escaneá un producto",
-      state: queue.length ? "done" : "current",
-    },
-    {
-      id: LABEL_STEP_IDS.queue,
-      title: "Revisar la cola",
-      status: issues ? `${plural(issues, "artículo")} con aviso` : queue.length ? `${plural(queue.length, "artículo")} · ${plural(total, "etiqueta")}` : "Vacía",
-      state: issues ? "blocked" : total ? "done" : "idle",
-    },
-    {
-      id: LABEL_STEP_IDS.format,
-      title: "Elegir formato",
-      status: describeFormat(settings),
-      state: plan.error ? "blocked" : total ? "done" : "idle",
-    },
-    {
-      id: LABEL_STEP_IDS.output,
-      title: "Revisar e imprimir",
-      status: !total ? "Esperando etiquetas" : printBlocker ? printBlocker.text : `Listo · ${describeOutput(plan)}`,
-      state: !total ? "idle" : printBlocker && !printBlocker.pending ? "blocked" : "current",
-    },
-  ]
-
   const outputActions = (
     <div className="flex flex-wrap items-center gap-2">
       <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={outputDisabled} onClick={() => void runOutput("print")}>
@@ -361,10 +349,8 @@ export function AdminEtiquetas() {
       <AdminPageHeader
         eyebrow="Productos"
         title="Etiquetas"
-        description="Armá una tanda de etiquetas con código de barras para hoja A4 o impresora térmica: buscá, revisá la cola, elegí el formato e imprimí."
+        description={view === "selection" ? undefined : view === "settings" ? "Configurar impresión" : "Previsualización"}
       />
-
-      <LabelStepsBar steps={steps} />
 
       {message && (
         <AdminInfoBlock role={message.tone === "danger" ? "alert" : "status"} tone={message.tone}>
@@ -372,24 +358,31 @@ export function AdminEtiquetas() {
         </AdminInfoBlock>
       )}
 
-      {/* xl: (1 buscar + 2 cola) | (3 formato + 4 vista previa). 2xl: buscar · cola · formato y vista previa. */}
-      <div className="grid items-start gap-5 xl:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)]">
-        <div className="grid min-w-0 items-start gap-5 2xl:grid-cols-2">
-          <LabelSearchPanel maxCopies={settings.maxCopiesPerItem} queuedCopies={queuedCopies} onAdd={addTarget} onProducts={mergeProducts} />
-          <LabelQueuePanel
+      {view === "selection" && <div className="min-w-0 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={!total} onClick={() => setView("settings")}>Imprimir etiquetas</AdminPrimaryButton>
+          <span className="text-sm font-bold text-white/70">{plural(total, "etiqueta")} confirmadas</span>
+        </div>
+        {queue.some((item) => item.issue) && <AdminInfoBlock tone="warning">Hay etiquetas guardadas que requieren revisión. Abrí «Opciones de la selección» para corregirlas o quitarlas.</AdminInfoBlock>}
+        <LabelSelectionPanel queue={queue} products={products} maxCopies={settings.maxCopiesPerItem} onAdd={addTarget} onConfirm={confirmTarget} onRemove={(key) => updateQueue((current) => removeFromQueue(current, key))} onProducts={mergeProducts} />
+        {configLoaded && !storageUnavailable && <BatchHistory batches={batches} onRepeat={(entry) => void repeatBatch(entry)} />}
+        <details className="rounded-xl border border-white/10 px-3 py-2 text-sm text-white/70"><summary className="cursor-pointer font-bold">Opciones de la selección</summary>
+          <div className="mt-3"><LabelQueuePanel
             queue={queue}
             products={products}
             maxCopies={settings.maxCopiesPerItem}
             order={settings.order}
             patternErrors={patternErrors}
             placements={placements}
-            batches={batches}
-            historyAvailable={configLoaded && !storageUnavailable}
+            batches={[]}
+            historyAvailable={false}
             onRepeat={(entry) => void repeatBatch(entry)}
             update={updateQueue}
-          />
-        </div>
-        <div className="min-w-0 space-y-5">
+          /></div>
+        </details>
+      </div>}
+      {view === "settings" && <div className="min-w-0 space-y-4">
+          <AdminButton onClick={() => setView("selection")}>Volver a productos</AdminButton>
           <LabelSettingsPanel
             settings={settings}
             onChange={updateSettings}
@@ -399,6 +392,11 @@ export function AdminEtiquetas() {
             onSavePreset={savePreset}
             onDeletePreset={removePreset}
           />
+          {printBlocker && <AdminInfoBlock tone={printBlocker.pending ? "info" : "danger"}>{printBlocker.text}</AdminInfoBlock>}
+          <div className="flex justify-end"><AdminPrimaryButton disabled={outputDisabled} onClick={() => { setPage(0); setView("preview") }}>Continuar</AdminPrimaryButton></div>
+      </div>}
+      {view === "preview" && <div className="min-w-0 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3"><AdminButton onClick={() => setView("settings")}>Volver</AdminButton>{outputActions}</div>
           <LabelOutputPanel
             plan={plan}
             drawings={drawings}
@@ -414,17 +412,7 @@ export function AdminEtiquetas() {
             onZoom={setZoomIndex}
             onExpand={() => setPreviewOpen(true)}
           />
-        </div>
-      </div>
-
-      {/* Paso final siempre a mano: resumen de la tanda + salidas. */}
-      <div className={cn(adminCardClassName, "admin-label-print-dock sticky bottom-3 z-20 flex flex-wrap items-center justify-between gap-3 px-4 py-3")} role="region" aria-label="Imprimir o descargar">
-        <div className="min-w-0">
-          <p className="text-sm font-black text-white">{outputSummary}</p>
-          <p className="truncate text-xs text-white/55">{total ? (printBlocker ? printBlocker.text : describeFormat(settings)) : "Agregá artículos para habilitar la impresión."}</p>
-        </div>
-        {outputActions}
-      </div>
+      </div>}
 
       <AdminModal
         open={previewOpen}

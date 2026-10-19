@@ -65,8 +65,8 @@ export function LabelOutputPanel({ plan, drawings, labels, settings, total, page
   return (
     <LabelStepSection
       id={LABEL_STEP_IDS.output}
-      step={4}
-      title="Vista previa"
+      step={3}
+      title="Previsualización"
       description={sizeLine}
       actions={<AdminButton size="sm" icon={<Maximize2 className="size-3.5" />} disabled={!total} onClick={onExpand}>Ampliar</AdminButton>}
       className={className}
