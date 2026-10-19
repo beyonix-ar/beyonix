@@ -334,6 +334,7 @@ const TSX_TEST_FILES = [
   "lib/admin/dispatch-board-sql.test.ts",
   "lib/admin/dispatch-board-api.test.ts",
   "lib/admin/dispatch-filter-bar.test.tsx",
+  "lib/admin/dispatch-history.test.ts",
   "lib/admin/dispatch-delivered-ui.test.tsx",
   "lib/admin/dispatch-camera.test.tsx",
   "lib/admin/dispatch-cancellation-ui.test.tsx",

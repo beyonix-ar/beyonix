@@ -264,7 +264,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder}
           footer={nextInQueue ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminButton> : null} />
       </div>
-    </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow="Bulto general" actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
+    </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Entregado" : "Bulto general"} actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
       {batch.batch.status === "handed_over" ? <DeliveredBatchPanel batchId={batch.batch.id} /> : <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
         onChange={(detail) => { setBatch(detail); setTab("open") }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
       }
@@ -287,7 +287,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
           : item.status === "handed_over" ? "Entregado" : needsVerification ? "Faltan pedidos por controlar" : item.status === "open" ? "En armado" : "Listo para entregar"
         return <li key={item.id}><AdminCard interactive className={`dispatch-card dispatch-batch-list-card flex flex-wrap items-center justify-between gap-2 p-3 ${hasProblem ? "dispatch-batch-problem" : ""}`}>
           <div className="min-w-0"><p className="font-black text-white">{dispatchBatchName(item)}</p><p className="mt-0.5 text-xs text-white/70">{plural(item.orderCount, "pedido", "pedidos")} · <span className={hasProblem ? "text-red-300" : item.status === "closed" ? "text-emerald-300" : ""}>{status}</span>{item.status === "open" ? ` · Creado: ${dateTime(item.created_at)}` : item.status === "handed_over" ? ` · ${dateTime(item.handed_over_at)}` : ""}</p></div>
-          <AdminButton size="sm" onClick={() => void openBatch(item.id)}>Abrir</AdminButton>
+          <AdminButton size="sm" onClick={() => void openBatch(item.id)}>{item.status === "handed_over" ? "Ver" : "Abrir"}</AdminButton>
         </AdminCard></li>
       })}</ul> : <AdminEmptyState title={tab === "delivered" ? "No hay Bultos entregados en esta fecha" : "No hay Bultos generales en esta vista"} description={tab === "delivered" ? "Elegí otra fecha o rango." : "Creá uno desde Confirmados."} />}{totalPages > 1 && <DispatchPagination page={pages[tab]} pages={totalPages} onPage={(value) => setPages((current) => ({ ...current, [tab]: value }))} />}</>}
     </AdminSection>}

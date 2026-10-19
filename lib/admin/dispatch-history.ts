@@ -4,6 +4,7 @@ export type DispatchHistory = {
   batch: { id: number; code: string; display_number: number | null; created_at: string; closed_at: string | null; handed_over_at: string | null; status: string }
   orderCount: number
   parcelCount: number
+  pickingBy: string[]
   preparedBy: string[]
   assembledBy: string | null
   controlledBy: string[]
@@ -22,13 +23,25 @@ export async function getDispatchHistory(admin: DispatchAdmin, batchId: number):
   const memberships = itemsResult.data ?? []
   const packageIds = memberships.map((item) => item.package_id)
   const [packagesResult, ordersResult] = await Promise.all([
-    packageIds.length ? admin.from("order_packages").select("id,parcel_count,prepared_by").in("id", packageIds) : Promise.resolve({ data: [], error: null }),
+    packageIds.length ? admin.from("order_packages").select("id,parcel_count,prepared_by,attempt_number").in("id", packageIds) : Promise.resolve({ data: [], error: null }),
     memberships.length ? admin.from("ordenes").select("id,cancelled_at").in("id", memberships.map((item) => item.order_id)) : Promise.resolve({ data: [], error: null }),
   ])
   if (packagesResult.error || ordersResult.error) throw packagesResult.error ?? ordersResult.error
   const packages = new Map((packagesResult.data ?? []).map((item) => [item.id, item]))
   const cancelled = new Set((ordersResult.data ?? []).filter((item) => item.cancelled_at).map((item) => item.id))
+  const activePackageIds = [...new Set(memberships.filter((item) => !item.removed_at).map((item) => item.package_id))]
+  const scans: Array<{ package_id: number; attempt_number: number; scanned_by: string }> = []
+  if (activePackageIds.length) {
+    for (let offset = 0; ; offset += 1000) {
+      const result = await admin.from("order_preparation_scans").select("package_id,attempt_number,scanned_by").in("package_id", activePackageIds)
+        .order("id").range(offset, offset + 999)
+      if (result.error) throw result.error
+      scans.push(...(result.data ?? []).filter((scan) => scan.attempt_number === packages.get(scan.package_id)?.attempt_number))
+      if ((result.data?.length ?? 0) < 1000) break
+    }
+  }
   const actorIds = [...new Set([batch.created_by, batch.closed_by, batch.handed_over_by,
+    ...scans.map((item) => item.scanned_by),
     ...memberships.flatMap((item) => [item.verified_by, item.removed_by, packages.get(item.package_id)?.prepared_by])]
     .filter((id): id is string => typeof id === "string" && id.length > 0))]
   const profilesResult = actorIds.length ? await admin.from("profiles").select("id,nombre,username,email").in("id", actorIds) : { data: [], error: null }
@@ -42,6 +55,7 @@ export async function getDispatchHistory(admin: DispatchAdmin, batchId: number):
     created_at: batch.created_at, closed_at: batch.closed_at, handed_over_at: batch.handed_over_at },
     orderCount: items.filter((item) => !item.removedAt).length,
     parcelCount: items.filter((item) => !item.removedAt).reduce((sum, item) => sum + item.parcelCount, 0),
+    pickingBy: [...new Set(scans.map((item) => name(item.scanned_by)).filter((item): item is string => Boolean(item)))],
     preparedBy: [...new Set(items.filter((item) => !item.removedAt).map((item) => item.preparedBy).filter((item): item is string => Boolean(item)))],
     assembledBy: name(batch.created_by), controlledBy: [...new Set(items.map((item) => item.controlledBy).filter((item): item is string => Boolean(item)))],
     deliveredBy: name(batch.handed_over_by), items }

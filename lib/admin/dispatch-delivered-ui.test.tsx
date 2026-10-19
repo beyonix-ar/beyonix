@@ -20,7 +20,7 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
   globalThis.fetch = async (input) => {
     const url = String(input)
     requests.push(url)
-    if (url.includes("/batches/7?history")) return Response.json({ batch, orderCount: 1, parcelCount: 3, preparedBy: ["Lucía"], assembledBy: "Juan", controlledBy: ["Lucía"], deliveredBy: "María", items: [
+    if (url.includes("/batches/7?history")) return Response.json({ batch, orderCount: 1, parcelCount: 3, pickingBy: ["Pedro"], preparedBy: ["Lucía"], assembledBy: "Juan", controlledBy: ["Lucía"], deliveredBy: "María", items: [
       { orderId: 12, parcelCount: 3, removedAt: null, removalReason: null, cancelled: false, preparedBy: "Lucía", controlledBy: "Lucía", removedBy: null },
       { orderId: 13, parcelCount: 1, removedAt: `${today}T13:00:00-03:00`, removalReason: "Pedido cancelado", cancelled: true, preparedBy: "Juan", controlledBy: null, removedBy: "María" },
     ] })
@@ -36,13 +36,15 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
     await settle()
     assert.ok(requests.some((url) => url.includes("tab=delivered") && url.includes(`dateFrom=${today}`) && url.includes(`dateTo=${today}`)))
     assert.match(dom.window.document.body.textContent ?? "", /Bulto - 0007/)
+    assert.equal(dom.window.document.querySelector(".dispatch-batch-list-card button")?.textContent, "Ver")
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-batch-list-card button")!.click() })
     await settle()
     const content = dom.window.document.body.textContent ?? ""
     assert.match(content, /3 paquetes/)
-    assert.match(content, /Preparó: Lucía/)
-    assert.match(content, /Armó: Juan/)
-    assert.match(content, /Confirmó entrega: María/)
+    assert.equal((content.match(/Bulto - 0007/g) ?? []).length, 1)
+    assert.match(content, /Picking: Pedro[\s\S]*Armado: Juan[\s\S]*Confirmación: María[\s\S]*Control del bulto: Lucía[\s\S]*Entregado:/)
+    const [year, month, day] = today.split("-")
+    assert.ok(content.includes(`Entregado: ${day}/${month}/${year} - 16:00`))
     assert.match(content, /BX-1012/)
     assert.match(content, /BX-1013/)
     assert.match(content, /Cancelado y retirado/)
@@ -50,7 +52,7 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
     await settle()
     const date = dom.window.document.querySelector<HTMLInputElement>('input[aria-label="FECHA"]')!
     const inputSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
-    await act(async () => { inputSetter.call(date, "2026-10-15"); date.dispatchEvent(new dom.window.Event("input", { bubbles: true })); date.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
+    await act(async () => { inputSetter.call(date, "15/10/2026"); date.dispatchEvent(new dom.window.Event("input", { bubbles: true })); date.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
     await settle()
     assert.ok(requests.some((url) => url.includes("tab=delivered") && url.includes("dateFrom=2026-10-15") && url.includes("dateTo=2026-10-15")))
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click() })

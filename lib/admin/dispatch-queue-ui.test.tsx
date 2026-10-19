@@ -47,8 +47,8 @@ test("Pendientes y Confirmados: filtros, selección y fila accesible abren el pe
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click() })
     await settle()
     assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 2)
-    const date = dom.window.document.querySelector<HTMLInputElement>('.dispatch-filters input[type="date"]')!
-    await change(date, "2026-10-15")
+    const date = dom.window.document.querySelector<HTMLInputElement>('.dispatch-filters input[aria-label="FECHA"]')!
+    await change(date, "15/10/2026")
     await settle()
     assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 0)
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click() })
