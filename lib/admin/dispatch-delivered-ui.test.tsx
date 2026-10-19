@@ -48,10 +48,7 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
     assert.match(content, /Cancelado y retirado/)
     await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Volver")!.click() })
     await settle()
-    const select = dom.window.document.querySelector<HTMLSelectElement>('select[aria-label="Período"]')!
-    const selectSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, "value")!.set!
-    await act(async () => { selectSetter.call(select, "day"); select.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
-    const date = dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Desde"]')!
+    const date = dom.window.document.querySelector<HTMLInputElement>('input[aria-label="FECHA"]')!
     const inputSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
     await act(async () => { inputSetter.call(date, "2026-10-15"); date.dispatchEvent(new dom.window.Event("input", { bubbles: true })); date.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
     await settle()

@@ -35,10 +35,6 @@ test("Pendientes y Confirmados: filtros, selección y fila accesible abren el pe
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
     await act(async () => { setter.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); input.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
   }
-  const changeSelect = async (select: HTMLSelectElement, value: string) => {
-    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, "value")!.set!
-    await act(async () => { setter.call(select, value); select.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
-  }
   try {
     await act(async () => { root.render(<AdminDispatches />) })
     await settle()
@@ -51,7 +47,6 @@ test("Pendientes y Confirmados: filtros, selección y fila accesible abren el pe
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click() })
     await settle()
     assert.equal(dom.window.document.querySelectorAll('table[aria-label="Pedidos pendientes"] tbody tr').length, 2)
-    await changeSelect(dom.window.document.querySelector<HTMLSelectElement>('select[aria-label="Período"]')!, "day")
     const date = dom.window.document.querySelector<HTMLInputElement>('.dispatch-filters input[type="date"]')!
     await change(date, "2026-10-15")
     await settle()

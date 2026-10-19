@@ -250,7 +250,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         })}
       </nav>
     </div>
-    {!orderId && !batch && !resolving && <DispatchFilterBar tab={tab} filters={filters} onChange={(patch) => { setFiltersByTab((current) => ({ ...current, [tab]: { ...current[tab], ...patch } })); setPages((current) => ({ ...current, [tab]: 1 })) }} onClear={() => { setFiltersByTab((current) => ({ ...current, [tab]: defaultDispatchFilters(tab) })); setPages((current) => ({ ...current, [tab]: 1 })) }} />}
+    {!orderId && !batch && !resolving && <DispatchFilterBar filters={filters} onChange={(patch) => { setFiltersByTab((current) => ({ ...current, [tab]: { ...current[tab], ...patch } })); setPages((current) => ({ ...current, [tab]: 1 })) }} onClear={() => { setFiltersByTab((current) => ({ ...current, [tab]: defaultDispatchFilters(tab) })); setPages((current) => ({ ...current, [tab]: 1 })) }} />}
     {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
     {notice && <p role="status" className="flex items-start gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" />{notice}</p>}
     {loading && <p role="status" className="text-sm text-white/70">Cargando…</p>}
