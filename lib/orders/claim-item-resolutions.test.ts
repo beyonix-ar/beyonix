@@ -8,6 +8,7 @@ import {
   getClaimCommercialStatus,
   getClaimCreditableQuantities,
   getClaimLinesSummary,
+  getClaimLogisticsResolution,
   getClaimOperationalResolution,
   getClaimRequirements,
   getClaimResolutionLines,
@@ -39,7 +40,9 @@ const view = (input: {
   replaced?: Array<[number, number]> | null
   delivered?: Array<[number, number]> | null
   notes?: ClaimCreditNoteFact[]
+  units?: Array<{ order_item_id: number; role: string; location: string }>
 }) => getMixedClaimView({
+  originalUnits: input.units ?? null,
   claimId: 7,
   affectedItems: input.affected,
   lines: input.lines,
@@ -52,9 +55,11 @@ const closeOf = (mixed: ReturnType<typeof view>, logisticsResolved: boolean | nu
 
 test("A/B/C: un reclamo simple sigue siendo su resolución global sobre todas las unidades (compatibilidad)", () => {
   const affected = [{ order_item_id: AURICULAR, quantity: 1 }]
-  assert.deepEqual(getClaimResolutionLines({ resolution: "cambio_producto", affected_items: affected }), [line(AURICULAR, "replacement", 1)])
-  assert.deepEqual(getClaimResolutionLines({ resolution: "reintegro_total", affected_items: affected }), [line(AURICULAR, "refund", 1)])
-  assert.deepEqual(getClaimResolutionLines({ resolution: "saldo_a_favor", affected_items: affected }), [line(AURICULAR, "credit", 1)])
+  // Simple: la devolución la sigue decidiendo la logística del reclamo (return_quantity null).
+  const simple = (solution: ClaimItemResolutionRow["solution"]) => ({ ...line(AURICULAR, solution, 1), return_quantity: null })
+  assert.deepEqual(getClaimResolutionLines({ resolution: "cambio_producto", affected_items: affected }), [simple("replacement")])
+  assert.deepEqual(getClaimResolutionLines({ resolution: "reintegro_total", affected_items: affected }), [simple("refund")])
+  assert.deepEqual(getClaimResolutionLines({ resolution: "saldo_a_favor", affected_items: affected }), [simple("credit")])
   assert.deepEqual(getClaimResolutionLines({ resolution: "otro", affected_items: affected }), [], "otra solución no mueve unidades")
   assert.deepEqual(getClaimResolutionLines({ resolution: null, affected_items: affected }), [])
   // Las reglas de siempre no cambian: un simple nunca usa el cierre mixto.
@@ -102,7 +107,7 @@ test("5: reemplazo entregado completo + reintegro pendiente -> abierto; reintegr
   const lines = [line(AURICULAR, "replacement", 1), line(ENCENDEDOR, "refund", 1)]
   const base = { affected, lines, replaced: [[AURICULAR, 1]] as Array<[number, number]>, delivered: [[AURICULAR, 1]] as Array<[number, number]> }
   const processing = view({ ...base, notes: [note("external_refund", [[ENCENDEDOR, 1]], { settlement_status: "pendiente" })] })
-  assert.deepEqual(processing.items[1].lines[0], { solution: "refund", label: "Reintegro", quantity: 1, stage: "processing", stageLabel: "En proceso", missing: "Registrar el reintegro" })
+  assert.deepEqual(processing.items[1].lines[0], { solution: "refund", label: "Reintegro", quantity: 1, returnQuantity: null, stage: "processing", stageLabel: "En proceso", missing: "Registrar el reintegro" })
   assert.equal(closeOf(processing)?.canClose, false)
   assert.equal(closeOf(view({ ...base, notes: [note("external_refund", [[ENCENDEDOR, 1]])] }))?.canClose, true)
 })
@@ -226,4 +231,71 @@ test("cliente: el reparto en una frase y el estado sin conceptos internos", () =
   assert.equal(getCustomerClaimHeadline({ ...claim, order_claim_shipments: [{ id: 1, direction: "reemplazo", status: "en_transito" } as never] }),
     "Tu reemplazo está en camino", "el tramo físico vigente manda")
   assert.equal(getCustomerClaimHeadline({ ...claim, status: "cerrado" }), "Reclamo resuelto")
+})
+
+// ── Obligación de devolución por producto ──────────────────────────────────
+
+const original = (order_item_id: number, location: string) => ({ order_item_id, role: "original", location })
+const withReturn = (row: ClaimItemResolutionRow, return_quantity: number) => ({ ...row, return_quantity })
+
+test("1/4: A reemplazo sin devolución + B reintegro con devolución -> B espera su devolución y el reclamo no cierra", () => {
+  const affected = [{ order_item_id: AURICULAR, quantity: 1 }, { order_item_id: ENCENDEDOR, quantity: 1 }]
+  const lines = [withReturn(line(AURICULAR, "replacement", 1), 0), withReturn(line(ENCENDEDOR, "refund", 1), 1)]
+  for (const units of [[], [original(AURICULAR, "conservada_cliente"), original(ENCENDEDOR, "en_andreani")]]) {
+    const waiting = view({ affected, lines, replaced: [], units })
+    assert.deepEqual(waiting.items.map((item) => item.returnPending), [false, true])
+    assert.deepEqual(waiting.items[0].lines[0].missing, "Registrar reemplazo", "A no espera nada")
+    assert.deepEqual([waiting.items[1].lines[0].stageLabel, waiting.items[1].lines[0].missing], ["Esperando devolución", "Recibir e inspeccionar el producto"])
+    assert.deepEqual(waiting.creditNotePending, { refund: 0, credit: 0 }, "el reintegro de B no se ofrece antes de recibirlo")
+    assert.ok(closeOf(waiting)?.blockers.includes("Devolución pendiente"))
+  }
+  // Con A entregado y el reintegro emitido por excepción, igual falta la devolución obligatoria de B.
+  const exception = view({
+    affected, lines, replaced: [[AURICULAR, 1]], delivered: [[AURICULAR, 1]],
+    units: [original(AURICULAR, "conservada_cliente"), original(ENCENDEDOR, "con_cliente")],
+    notes: [note("external_refund", [[ENCENDEDOR, 1]])],
+  })
+  assert.deepEqual(closeOf(exception)?.blockers, ["Devolución pendiente"], "4: no cierra con una devolución obligatoria pendiente")
+  const inspected = view({
+    affected, lines, replaced: [[AURICULAR, 1]], delivered: [[AURICULAR, 1]],
+    units: [original(AURICULAR, "conservada_cliente"), original(ENCENDEDOR, "reincorporada_stock")],
+    notes: [note("external_refund", [[ENCENDEDOR, 1]])],
+  })
+  assert.deepEqual(closeOf(inspected), { action: "close", canClose: true, blockers: [] })
+})
+
+test("2: A reemplazo sin devolución + B saldo sin devolución -> ninguno espera devolución", () => {
+  const affected = [{ order_item_id: AURICULAR, quantity: 1 }, { order_item_id: ENCENDEDOR, quantity: 1 }]
+  const lines = [withReturn(line(AURICULAR, "replacement", 1), 0), withReturn(line(ENCENDEDOR, "credit", 1), 0)]
+  const pending = view({ affected, lines, replaced: [] })
+  assert.deepEqual(pending.items.map((item) => item.returnPending), [false, false])
+  assert.deepEqual(pending.creditNotePending, { refund: 0, credit: 1 }, "el saldo se puede calcular ya")
+  assert.ok(!pending.blockers.includes("Devolución pendiente"))
+  assert.deepEqual(getClaimLogisticsResolution({ resolution: "mixta", affected_items: affected, order_claim_item_resolutions: lines }),
+    { resolution: "cambio_producto", allowExchange: false, returnRequired: false }, "logística: sólo 'sin devolución'")
+})
+
+test("3: dos reemplazos, uno vuelve y otro no -> cada rama progresa por su cuenta", () => {
+  const affected = [{ order_item_id: AURICULAR, quantity: 1 }, { order_item_id: ENCENDEDOR, quantity: 1 }]
+  const lines = [withReturn(line(AURICULAR, "replacement", 1), 1), withReturn(line(ENCENDEDOR, "replacement", 1), 0)]
+  const units = [original(AURICULAR, "con_cliente"), original(ENCENDEDOR, "conservada_cliente")]
+  const first = view({ affected, lines, replaced: [[ENCENDEDOR, 1]], delivered: [[ENCENDEDOR, 1]], units })
+  assert.deepEqual(first.items.map((item) => item.lines[0].stageLabel), ["Esperando devolución", "Entregado"])
+  assert.deepEqual(first.blockers, ["Devolución pendiente"])
+  const second = view({ affected, lines, replaced: [[ENCENDEDOR, 1]], delivered: [[ENCENDEDOR, 1]], units: [original(AURICULAR, "baja"), units[1]] })
+  assert.deepEqual(second.items.map((item) => item.lines[0].missing), ["Registrar reemplazo", null], "recibido e inspeccionado: ya se puede reemplazar")
+  assert.deepEqual(getClaimLogisticsResolution({ resolution: "mixta", affected_items: affected, order_claim_item_resolutions: lines }).returnRequired, true,
+    "logística: sin 'sin devolución' mientras algo deba volver")
+})
+
+test("reparto: devoluciones válidas; sin dato, vuelve; un simple no cambia", () => {
+  const affected = [{ order_item_id: AURICULAR, quantity: 2 }]
+  assert.match(getClaimResolutionLinesError(affected, [withReturn(line(AURICULAR, "replacement", 1), 2), line(AURICULAR, "refund", 1)], { initial: true }) ?? "", /no pueden superar/)
+  assert.equal(getClaimResolutionLinesError(affected, [withReturn(line(AURICULAR, "replacement", 1), 0), withReturn(line(AURICULAR, "refund", 1), 1)], { initial: true }), null)
+  assert.equal(getClaimResolutionLines({ resolution: "mixta", affected_items: affected, order_claim_item_resolutions: [line(AURICULAR, "refund", 2)] })[0].return_quantity, 2)
+  assert.deepEqual(getClaimLogisticsResolution({ resolution: "cambio_producto", affected_items: affected }),
+    { resolution: "cambio_producto", allowExchange: true, returnRequired: undefined })
+  assert.equal(getClaimLogisticsResolution({ resolution: "mixta", affected_items: affected,
+    order_claim_item_resolutions: [withReturn(line(AURICULAR, "refund", 1), 0), withReturn(line(AURICULAR, "credit", 1), 0)] }).resolution, null,
+    "sin devolución ni reemplazo no hay logística")
 })

@@ -551,7 +551,7 @@ export async function POST(
   const { data: selectedClaim, error: claimError } = claimId
     ? await auth.admin
         .from("order_claims")
-        .select("id, order_id, user_id, status, failure_type, resolution, affected_items, order_claim_item_resolutions(order_item_id, solution, quantity)")
+        .select("id, order_id, user_id, status, failure_type, resolution, affected_items, order_claim_item_resolutions(order_item_id, solution, quantity, return_quantity)")
         .eq("id", claimId)
         .maybeSingle()
     : { data: null, error: null }

@@ -87,7 +87,7 @@ import {
   isMixedClaimResolution,
   type ClaimItemResolutionRow,
 } from "@/lib/orders/claim-policy"
-import { ClaimItemResolutionPanel, ClaimLineEditor, claimLineKey } from "@/components/claims/claim-item-resolution-panel"
+import { ClaimItemResolutionPanel, ClaimLineEditor, claimLineKey, claimLineReturnKey } from "@/components/claims/claim-item-resolution-panel"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard, getCancelledClaimOccurredSteps } from "@/lib/orders/admin-claim-wizard"
@@ -317,8 +317,10 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
 /** Reparto del editor ("ítem:solución" -> unidades) como filas para la base. */
 function decisionLinesToRows(values: Record<string, number>): ClaimItemResolutionRow[] {
   return Object.entries(values).flatMap(([key, quantity]) => {
-    const [itemId, solution] = key.split(":")
-    return quantity > 0 && isClaimLineSolution(solution) ? [{ order_item_id: Number(itemId), solution, quantity }] : []
+    const [itemId, solution, ...rest] = key.split(":")
+    if (rest.length || quantity <= 0 || !isClaimLineSolution(solution)) return []
+    const returning = Math.min(values[claimLineReturnKey(Number(itemId), solution)] ?? 0, quantity)
+    return [{ order_item_id: Number(itemId), solution, quantity, return_quantity: returning }]
   })
 }
 
@@ -328,7 +330,10 @@ const compareLines = (left: ClaimItemResolutionRow, right: ClaimItemResolutionRo
 
 /** Reparto vigente de un reclamo mixto, para editarlo (sólo se agregan unidades). */
 function decisionLinesFromRows(rows: ReadonlyArray<ClaimItemResolutionRow>): Record<string, number> {
-  return Object.fromEntries(rows.map((row) => [claimLineKey(row.order_item_id, row.solution), row.quantity]))
+  return Object.fromEntries(rows.flatMap((row) => [
+    [claimLineKey(row.order_item_id, row.solution), row.quantity],
+    [claimLineReturnKey(row.order_item_id, row.solution), row.return_quantity ?? row.quantity],
+  ]))
 }
 
 function getDefaultDecisionResolution(claim?: SupabaseOrderClaim | null): Exclude<OrderClaimResolution, "rechazado"> {
@@ -2082,6 +2087,8 @@ export function AdminClaimManager({
           return counts
         }, new Map<number, number>())
       : null,
+    // Devolución obligatoria por producto: su paradero real (unidades originales).
+    originalUnits: claim.order_claim_units ?? null,
     creditNotes: pedido.order_credit_notes ?? null,
   }) : null
   const closeReadiness = getClaimCloseReadiness({
@@ -2966,6 +2973,8 @@ export function AdminClaimManager({
           mixedMinimum={mixed ? decisionLinesFromRows(resolutionLines) : {}}
           mixedError={getClaimResolutionLinesError(claim.affected_items ?? [], decisionLinesToRows(decisionLines), { initial: !mixed })}
           mixedUnchanged={mixed && JSON.stringify(decisionLinesToRows(decisionLines).sort(compareLines)) === JSON.stringify([...resolutionLines].sort(compareLines))}
+          // Una unidad faltante nunca vuelve; el resto, por defecto, sí.
+          mixedReturnByDefault={!["faltante", "cantidad_menor"].includes(claim.failure_type ?? "")}
           onMixedLinesChange={setDecisionLines}
         />
       )}
@@ -3487,6 +3496,7 @@ function ClaimActionModal({
   mixedMinimum = {},
   mixedError = null,
   mixedUnchanged = false,
+  mixedReturnByDefault = true,
   onMixedLinesChange,
 }: {
   action: ClaimAction
@@ -3499,6 +3509,7 @@ function ClaimActionModal({
   mixedError?: string | null
   /** El reparto no cambió respecto del vigente. */
   mixedUnchanged?: boolean
+  mixedReturnByDefault?: boolean
   onMixedLinesChange?: (next: Record<string, number>) => void
   /** Corrección de una solución ya aprobada (Revisión editable). */
   editingResolution?: string | null
@@ -3622,7 +3633,7 @@ function ClaimActionModal({
               {selectedHint && <p className="admin-claim-lines-hint mt-1.5" data-claim-solution-hint>{selectedHint}</p>}
               {resolution === MIXED_CLAIM_RESOLUTION && onMixedLinesChange && (
                 <div className="mt-2">
-                  <ClaimLineEditor items={mixedItems} values={mixedLines} minimum={mixedMinimum} onChange={onMixedLinesChange} />
+                  <ClaimLineEditor items={mixedItems} values={mixedLines} minimum={mixedMinimum} onChange={onMixedLinesChange} returnByDefault={mixedReturnByDefault} />
                   {mixedError && <p className="admin-claim-lines-missing mt-1" data-claim-line-error>{mixedError}</p>}
                 </div>
               )}

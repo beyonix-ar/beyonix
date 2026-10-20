@@ -92,7 +92,7 @@ export async function POST(
   const [originalItem, replacementVariant, changeClaims] = await Promise.all([
     auth.admin.from("orden_items").select("producto_id,return_restocked_quantity,return_written_off_quantity").eq("id", orderItemId).eq("orden_id", orderId).maybeSingle(),
     auth.admin.from("producto_variantes").select("producto_id").eq("id", replacementVariantId).maybeSingle(),
-    auth.admin.from("order_claims").select("id,status,resolution,affected_items,order_claim_shipments(direction,status,closed_at),order_claim_units(role,location),order_claim_item_resolutions(order_item_id,solution,quantity)")
+    auth.admin.from("order_claims").select("id,status,resolution,affected_items,order_claim_shipments(direction,status,closed_at),order_claim_units(role,location),order_claim_item_resolutions(order_item_id,solution,quantity,return_quantity)")
       .eq("order_id", orderId).in("resolution", ["cambio_producto", "mixta"]),
   ])
   if (originalItem.error || replacementVariant.error || changeClaims.error) {

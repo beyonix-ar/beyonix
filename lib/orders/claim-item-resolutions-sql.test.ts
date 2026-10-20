@@ -40,11 +40,14 @@ const CHAIN = [
   "20261001170000_claim_return_dropoff_copy",
   "20261019120000_claim_policy_consolidation",
   "20261020100000_claim_item_resolutions",
+  "20261020110000_claim_item_return_obligation",
 ]
 
 type Db = PGlite
 type Row = Record<string, unknown>
-type Line = { order_item_id: number; solution: "replacement" | "refund" | "credit"; quantity: number }
+type Line = { order_item_id: number; solution: "replacement" | "refund" | "credit"; quantity: number; return_quantity?: number }
+/** Unidades que el cliente conserva (ninguna vuelve a BEYONIX). */
+const kept = (rows: Line[]) => rows.map((row) => ({ ...row, return_quantity: 0 }))
 
 // Pedido: ítem 1 = Auricular x3 ($30.000 c/u, variante 1); ítem 2 = Encendedor x1 ($9.000, variante 3).
 async function setup() {
@@ -99,9 +102,9 @@ const resendWithoutReturn = async (db: Db, claimId: number) =>
     [claimId, admin, NOTE, BRANCH])).id)
 const reserve = (db: Db, claimId: number, itemId: number, variant: number, quantity: number, key = randomUUID()) =>
   db.query("select * from create_order_replacement(1,$1,$2,$3,'mismo_producto',$4,$5,null,null,$6)", [itemId, variant, quantity, admin, key, claimId])
-async function generate(db: Db, legId: number, envioId: string) {
+async function generate(db: Db, legId: number, envioId: string, [modality, contract] = ["entrega_sucursal", "400042106"]) {
   const token = randomUUID()
-  await db.query("select * from claim_order_claim_shipment_creation($1,$2,'PROD','entrega_sucursal','400042106')", [legId, token])
+  await db.query("select * from claim_order_claim_shipment_creation($1,$2,'PROD',$3,$4)", [legId, token, modality, contract])
   await db.query("select * from complete_order_claim_shipment_creation($1,$2,$3,$3,'Creada',null)", [legId, token, envioId])
 }
 const deliver = (db: Db, legId: number) =>
@@ -126,6 +129,17 @@ async function creditNote(db: Db, claimId: number, destination: string, items: A
 const settle = (db: Db, noteId: string) =>
   db.query("update order_credit_notes set status='authorized', cae='75123456789012', settlement_status='completado' where id=$1", [noteId])
 const close = (db: Db, id: number, resolution = "mixta") => mutate(db, id, { status: "cerrado", resolution })
+const plan = async (db: Db, claimId: number, direction: string) =>
+  Number((await one(db, "select * from request_order_claim_logistics($1,$2,$3,null,$4,'Sucursal Once','Av. Pueyrredón 100')",
+    [claimId, admin, direction, BRANCH])).id)
+const RETURN: [string, string] = ["despacho_sucursal", "400042114"]
+const arrive = (db: Db, claimId: number, itemId: number, quantity: number) =>
+  db.query("select register_order_claim_units_arrival($1,$2,'original',$3,$4,'Llegó al depósito',null,$5)", [claimId, admin, itemId, quantity, randomUUID()])
+const inspect = (db: Db, claimId: number, itemId: number, quantity: number) =>
+  db.query("select process_claim_return_inventory($1,1,$2,$3,0,'Revisado en depósito',$4,$5)", [claimId, itemId, quantity, admin, randomUUID()])
+const originals = async (db: Db, claimId: number) =>
+  (await db.query<{ order_item_id: number; location: string; n: number }>(
+    "select order_item_id::int, location, count(*)::int n from order_claim_units where claim_id=$1 and role='original' group by 1,2 order by 1,2", [claimId])).rows
 
 test("G: nunca más unidades que las reclamadas ni dos veces la misma unidad", async () => {
   const db = await setup()
@@ -164,7 +178,7 @@ test("D/P/L/M: Auricular x2 = 1 reemplazo + 1 reintegro; NC sólo por la unidad 
   const db = await setup()
   try {
     const id = await createClaim(db)
-    await setLines(db, id, [{ order_item_id: 1, solution: "replacement", quantity: 1 }, { order_item_id: 1, solution: "refund", quantity: 1 }])
+    await setLines(db, id, kept([{ order_item_id: 1, solution: "replacement", quantity: 1 }, { order_item_id: 1, solution: "refund", quantity: 1 }]))
     const claim = await one<{ status: string; resolution: string }>(db, "select status, resolution from order_claims where id=$1", [id])
     assert.deepEqual(claim, { status: "aprobado", resolution: "mixta" })
     assert.equal(await count(db, "select count(*)::int n from order_audit_events where action='claim_item_resolutions_set'"), 1)
@@ -204,7 +218,7 @@ test("E/K/N/P: dos productos (A reemplazo, B saldo); el saldo va primero y no cr
   const db = await setup()
   try {
     const id = await createClaim(db, [{ order_item_id: 1, quantity: 1 }, { order_item_id: 2, quantity: 1 }])
-    await setLines(db, id, [{ order_item_id: 1, solution: "replacement", quantity: 1 }, { order_item_id: 2, solution: "credit", quantity: 1 }])
+    await setLines(db, id, kept([{ order_item_id: 1, solution: "replacement", quantity: 1 }, { order_item_id: 2, solution: "credit", quantity: 1 }]))
     const orders = await count(db, "select count(*)::int n from ordenes")
     // Logística primero (el cliente conserva ambos originales); el dinero queda liberado.
     const legId = await resendWithoutReturn(db, id)
@@ -235,11 +249,11 @@ test("F: resolución parcial -> no cierra; agregar la unidad pendiente nunca red
   const db = await setup()
   try {
     const id = await createClaim(db)
-    await setLines(db, id, [{ order_item_id: 1, solution: "refund", quantity: 1 }])
+    await setLines(db, id, kept([{ order_item_id: 1, solution: "refund", quantity: 1 }]))
     await assert.rejects(close(db, id), /CLAIM_MIXED_UNRESOLVED_UNITS/)
-    await assert.rejects(setLines(db, id, [{ order_item_id: 1, solution: "credit", quantity: 1 }]), /CLAIM_RESOLUTION_LOCKED/,
+    await assert.rejects(setLines(db, id, kept([{ order_item_id: 1, solution: "credit", quantity: 1 }])), /CLAIM_RESOLUTION_LOCKED/,
       "no se mueve una unidad ya asignada")
-    await setLines(db, id, [{ order_item_id: 1, solution: "refund", quantity: 1 }, { order_item_id: 1, solution: "credit", quantity: 1 }])
+    await setLines(db, id, kept([{ order_item_id: 1, solution: "refund", quantity: 1 }, { order_item_id: 1, solution: "credit", quantity: 1 }]))
     assert.deepEqual(await lines(db, id), [
       { order_item_id: 1, solution: "credit", quantity: 1 }, { order_item_id: 1, solution: "refund", quantity: 1 },
     ])
@@ -301,10 +315,10 @@ test("I (mixto): sólo la unidad de reemplazo pasa a reintegro; lo demás queda 
   const db = await setup()
   try {
     const id = await createClaim(db, [{ order_item_id: 1, quantity: 2 }, { order_item_id: 2, quantity: 1 }])
-    await setLines(db, id, [
+    await setLines(db, id, kept([
       { order_item_id: 1, solution: "replacement", quantity: 1 }, { order_item_id: 1, solution: "refund", quantity: 1 },
       { order_item_id: 2, solution: "replacement", quantity: 1 },
-    ])
+    ]))
     await resendWithoutReturn(db, id)
     await reserve(db, id, 1, 1, 1)
     await reserve(db, id, 2, 3, 1)
@@ -347,5 +361,138 @@ test("compatibilidad: un reemplazo con la devolución iniciada sigue sin cambiar
     await assert.rejects(mutate(db, id, { status: "aprobado", resolution: "reintegro_total" }), /CLAIM_LOGISTICS_LOCKED/)
   } finally {
     await db.close()
+  }
+})
+
+// ── Obligación de devolución por producto (20261020110000) ─────────────────
+
+test("1/4: A reemplazo sin devolución + B reintegro con devolución -> B espera su devolución; no cierra antes", async () => {
+  const db = await setup()
+  try {
+    const id = await createClaim(db, [{ order_item_id: 1, quantity: 1 }, { order_item_id: 2, quantity: 1 }])
+    await setLines(db, id, [
+      { order_item_id: 1, solution: "replacement", quantity: 1, return_quantity: 0 },
+      { order_item_id: 2, solution: "refund", quantity: 1, return_quantity: 1 },
+    ])
+    await assert.rejects(resendWithoutReturn(db, id), /CLAIM_RETURN_REQUIRED/, "'sin devolución' nunca dispensa a B")
+    await assert.rejects(creditNote(db, id, "external_refund", [[2, 1]]), /CLAIM_MONEY_RETURN_PENDING/, "sin B recibido no hay reintegro")
+    await assert.rejects(db.query("insert into order_refund_proofs(order_id,amount) values(1,9000)"), /CLAIM_MONEY_RETURN_PENDING/)
+    await assert.rejects(close(db, id), /CLAIM_MIXED_RETURN_PENDING/)
+
+    // El retiro lleva sólo a B: A queda con el cliente desde el inicio.
+    const legId = await plan(db, id, "devolucion")
+    assert.deepEqual(await originals(db, id), [
+      { order_item_id: 1, location: "conservada_cliente", n: 1 }, { order_item_id: 2, location: "con_cliente", n: 1 },
+    ])
+    await generate(db, legId, "360000000911", RETURN)
+    await deliver(db, legId)
+    await assert.rejects(creditNote(db, id, "external_refund", [[2, 1]]), /CLAIM_MONEY_RETURN_PENDING/, "en camino tampoco")
+    await arrive(db, id, 2, 1)
+    await assert.rejects(creditNote(db, id, "external_refund", [[2, 1]]), /CLAIM_MONEY_RETURN_PENDING/, "recibida sin inspeccionar tampoco")
+    await inspect(db, id, 2, 1)
+
+    const refund = await creditNote(db, id, "external_refund", [[2, 1]])
+    await settle(db, refund)
+    const resend = await plan(db, id, "reemplazo")
+    await reserve(db, id, 1, 1, 1)
+    await generate(db, resend, "360000000912")
+    await deliver(db, resend)
+    await close(db, id)
+    assert.equal((await one(db, "select status from order_claims where id=$1", [id])).status, "cerrado")
+  } finally {
+    await db.close()
+  }
+})
+
+test("2: A reemplazo sin devolución + B saldo sin devolución -> ninguno espera devolución", async () => {
+  const db = await setup()
+  try {
+    const id = await createClaim(db, [{ order_item_id: 1, quantity: 1 }, { order_item_id: 2, quantity: 1 }])
+    await setLines(db, id, [
+      { order_item_id: 1, solution: "replacement", quantity: 1, return_quantity: 0 },
+      { order_item_id: 2, solution: "credit", quantity: 1, return_quantity: 0 },
+    ])
+    const credit = await creditNote(db, id, "customer_balance", [[2, 1]])
+    await settle(db, credit)
+    const legId = await resendWithoutReturn(db, id)
+    assert.deepEqual(await units(db, id), { "original:conservada_cliente": 2 })
+    await reserve(db, id, 1, 1, 1)
+    await generate(db, legId, "360000000913")
+    await deliver(db, legId)
+    await close(db, id)
+  } finally {
+    await db.close()
+  }
+})
+
+test("3/4: dos reemplazos, uno vuelve y otro no -> cada rama progresa por su cuenta; cierra recién con la devolución", async () => {
+  const db = await setup()
+  try {
+    // Ítem 1 x2: una unidad se reemplaza y vuelve, la otra va a saldo y se conserva. Ítem 2: se reemplaza sin devolución.
+    const id = await createClaim(db, [{ order_item_id: 1, quantity: 2 }, { order_item_id: 2, quantity: 1 }])
+    await setLines(db, id, [
+      { order_item_id: 1, solution: "replacement", quantity: 1, return_quantity: 1 },
+      { order_item_id: 1, solution: "credit", quantity: 1, return_quantity: 0 },
+      { order_item_id: 2, solution: "replacement", quantity: 1, return_quantity: 0 },
+    ])
+    // El producto 2 sale sin esperar la devolución del 1.
+    const legId = await plan(db, id, "reemplazo")
+    assert.deepEqual(await originals(db, id), [
+      { order_item_id: 1, location: "con_cliente", n: 1 }, { order_item_id: 1, location: "conservada_cliente", n: 1 },
+      { order_item_id: 2, location: "conservada_cliente", n: 1 },
+    ])
+    await assert.rejects(reserve(db, id, 1, 1, 1), /REPLACEMENT_REQUIRES_INSPECTION/, "el 1 espera su propia devolución")
+    await reserve(db, id, 2, 3, 1)
+    await generate(db, legId, "360000000914")
+    await deliver(db, legId)
+    // La unidad a saldo del ítem 1 se conserva: su saldo no espera la devolución.
+    const credit = await creditNote(db, id, "customer_balance", [[1, 1]])
+    await settle(db, credit)
+    await assert.rejects(close(db, id), /CLAIM_MIXED_RETURN_PENDING/, "4: sin la devolución obligatoria no cierra")
+
+    const returnLeg = await plan(db, id, "devolucion")
+    await generate(db, returnLeg, "360000000915", RETURN)
+    await deliver(db, returnLeg)
+    await arrive(db, id, 1, 1)
+    await inspect(db, id, 1, 1)
+    const second = await plan(db, id, "reemplazo")
+    await reserve(db, id, 1, 1, 1)
+    await generate(db, second, "360000000916")
+    await deliver(db, second)
+    await close(db, id)
+    assert.equal((await one(db, "select status from order_claims where id=$1", [id])).status, "cerrado")
+  } finally {
+    await db.close()
+  }
+})
+
+test("reparto: la devolución nunca supera la cantidad, no se dispensa después de exigida y por defecto vuelve", async () => {
+  const db = await setup()
+  try {
+    const id = await createClaim(db)
+    await assert.rejects(setLines(db, id, [
+      { order_item_id: 1, solution: "replacement", quantity: 1, return_quantity: 2 },
+      { order_item_id: 1, solution: "refund", quantity: 1, return_quantity: 1 },
+    ]), /CLAIM_RESOLUTION_INVALID_LINES/)
+    await setLines(db, id, [
+      { order_item_id: 1, solution: "replacement", quantity: 1, return_quantity: 0 },
+      { order_item_id: 1, solution: "refund", quantity: 1, return_quantity: 1 },
+    ])
+    await assert.rejects(setLines(db, id, [
+      { order_item_id: 1, solution: "replacement", quantity: 1, return_quantity: 0 },
+      { order_item_id: 1, solution: "refund", quantity: 1, return_quantity: 0 },
+    ]), /CLAIM_RESOLUTION_LOCKED/, "no se dispensa en silencio una devolución ya exigida")
+  } finally {
+    await db.close()
+  }
+
+  const db2 = await setup()
+  try {
+    const id = await createClaim(db2)
+    await setLines(db2, id, [{ order_item_id: 1, solution: "replacement", quantity: 1 }, { order_item_id: 1, solution: "refund", quantity: 1 }])
+    assert.deepEqual((await db2.query("select solution, return_quantity from order_claim_item_resolutions where claim_id=$1 order by solution", [id])).rows,
+      [{ solution: "refund", return_quantity: 1 }, { solution: "replacement", return_quantity: 1 }], "sin dato, lo conservador: vuelve")
+  } finally {
+    await db2.close()
   }
 })

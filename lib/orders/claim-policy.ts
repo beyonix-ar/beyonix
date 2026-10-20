@@ -371,6 +371,12 @@ export interface ClaimItemResolutionRow {
   order_item_id: number
   solution: ClaimLineSolution
   quantity: number
+  /**
+   * Reclamo mixto: cuántas de estas unidades deben volver a BEYONIX (recibidas
+   * e inspeccionadas); el resto queda con el cliente. null en un reclamo
+   * simple: ahí la devolución la decide la logística para todo el reclamo.
+   */
+  return_quantity?: number | null
 }
 
 export function isClaimLineSolution(value: unknown): value is ClaimLineSolution {
@@ -392,7 +398,12 @@ type ClaimQuantitySource = ReadonlyArray<{ order_item_id: number | string; quant
 export interface ClaimResolutionLinesSource {
   resolution?: string | null
   affected_items?: ClaimQuantitySource | null
-  order_claim_item_resolutions?: ReadonlyArray<{ order_item_id: number | string; solution: string; quantity: number | string }> | null
+  order_claim_item_resolutions?: ReadonlyArray<{
+    order_item_id: number | string
+    solution: string
+    quantity: number | string
+    return_quantity?: number | string | null
+  }> | null
 }
 
 /**
@@ -404,14 +415,20 @@ export function getClaimResolutionLines(claim: ClaimResolutionLinesSource): Clai
   if (isMixedClaimResolution(claim.resolution)) {
     return (claim.order_claim_item_resolutions ?? []).flatMap((row) =>
       isClaimLineSolution(row.solution) && Number(row.quantity) > 0
-        ? [{ order_item_id: Number(row.order_item_id), solution: row.solution, quantity: Number(row.quantity) }]
+        ? [{
+            order_item_id: Number(row.order_item_id),
+            solution: row.solution,
+            quantity: Number(row.quantity),
+            // Sin dato, lo conservador: vuelve (mismo default que la base).
+            return_quantity: Number(row.return_quantity ?? row.quantity),
+          }]
         : [])
   }
   const solution = getClaimLineSolution(claim.resolution)
   if (!solution) return []
   return (claim.affected_items ?? [])
     .filter((item) => Number(item.quantity) > 0)
-    .map((item) => ({ order_item_id: Number(item.order_item_id), solution, quantity: Number(item.quantity) }))
+    .map((item) => ({ order_item_id: Number(item.order_item_id), solution, quantity: Number(item.quantity), return_quantity: null }))
 }
 
 function quantitiesByItem(rows: ClaimQuantitySource) {
@@ -449,7 +466,7 @@ export function getClaimLineQuantities(lines: ReadonlyArray<ClaimItemResolutionR
  */
 export function getClaimResolutionLinesError(
   affectedItems: ClaimQuantitySource,
-  lines: ReadonlyArray<{ order_item_id: number; solution: string; quantity: number }>,
+  lines: ReadonlyArray<{ order_item_id: number; solution: string; quantity: number; return_quantity?: number | null }>,
   options: { initial: boolean },
 ): string | null {
   const claimed = quantitiesByItem(affectedItems)
@@ -457,6 +474,9 @@ export function getClaimResolutionLinesError(
   const seen = new Set<string>()
   for (const line of lines) {
     if (!isClaimLineSolution(line.solution) || !Number.isInteger(line.quantity) || line.quantity <= 0) return "Revisá las cantidades indicadas."
+    if (line.return_quantity != null && (!Number.isInteger(line.return_quantity) || line.return_quantity < 0 || line.return_quantity > line.quantity)) {
+      return "Las unidades que vuelven no pueden superar las de su solución."
+    }
     if (!claimed.has(line.order_item_id)) return "Un producto indicado no forma parte del reclamo."
     const key = `${line.order_item_id}:${line.solution}`
     if (seen.has(key)) return "Cada solución se indica una sola vez por producto."
@@ -508,9 +528,18 @@ export function getClaimOperationalResolution(
  * sucursal entrega una unidad por cada original que retira).
  */
 export function getClaimLogisticsResolution(claim: ClaimResolutionLinesSource) {
+  const lines = getClaimResolutionLines(claim)
+  if (!isMixedClaimResolution(claim.resolution)) {
+    return { resolution: claim.resolution ?? null, allowExchange: true, returnRequired: undefined }
+  }
+  // Mixto: la devolución se definió por producto. Sin devolución ni reemplazo
+  // no hay logística; "sin devolución" sólo si ninguna unidad debe volver.
+  const returnRequired = lines.some((line) => (line.return_quantity ?? 0) > 0)
+  const replacement = lines.some((line) => line.solution === "replacement")
   return {
-    resolution: getClaimOperationalResolution(claim.resolution, getClaimResolutionLines(claim)),
-    allowExchange: !isMixedClaimResolution(claim.resolution),
+    resolution: returnRequired || replacement ? getClaimOperationalResolution(claim.resolution, lines) : null,
+    allowExchange: false,
+    returnRequired,
   }
 }
 
@@ -520,6 +549,8 @@ export interface ClaimLineView {
   solution: ClaimLineSolution
   label: string
   quantity: number
+  /** Unidades de la línea que deben volver (null: lo decide la logística del reclamo). */
+  returnQuantity: number | null
   stage: ClaimLineStage
   stageLabel: string
   /** Lo que falta en esta línea (null si está completa). */
@@ -531,6 +562,8 @@ export interface ClaimItemResolutionView {
   claimed: number
   /** Unidades reclamadas todavía sin solución. */
   unresolved: number
+  /** Quedan unidades de este producto que deben volver (retiro, recepción o inspección). */
+  returnPending: boolean
   lines: ClaimLineView[]
   complete: boolean
 }
@@ -553,6 +586,7 @@ export interface MixedClaimView {
 
 const MIXED_BLOCKER_ORDER = [
   "Unidades sin solución",
+  "Devolución pendiente",
   "Verificando el reemplazo",
   "Falta registrar el reemplazo",
   "Saldo pendiente de acreditar",
@@ -572,8 +606,18 @@ export function getMixedClaimView(input: {
   replacedByItem: ReadonlyMap<number, number> | null
   /** Reemplazos entregados por ítem (unidades del reclamo); null = sin logística por unidades. */
   deliveredByItem?: ReadonlyMap<number, number> | null
+  /** Unidades originales del reclamo (paradero); null/vacío = logística sin iniciar. */
+  originalUnits?: ReadonlyArray<{ order_item_id: number; role: string; location: string }> | null
   creditNotes?: ReadonlyArray<ClaimCreditNoteFact> | null
 }): MixedClaimView {
+  // Mismo criterio que order_claim_item_return_pending: con unidades, su
+  // paradero; antes de la logística, el reparto (alguna unidad debe volver).
+  const originals = (input.originalUnits ?? []).filter((unit) => unit.role === "original")
+  const returnPending = (itemId: number) => originals.length > 0
+    ? originals.some((unit) => unit.order_item_id === itemId && ["con_cliente", "en_andreani", "recibida_beyonix"].includes(unit.location))
+    : input.lines.some((line) => line.order_item_id === itemId && (line.return_quantity ?? 0) > 0)
+  // Una línea espera su devolución sólo si alguna de sus unidades debe volver.
+  const waitsReturn = (itemId: number, line: ClaimItemResolutionRow) => (line.return_quantity ?? 0) > 0 && returnPending(itemId)
   const notes = (input.creditNotes ?? []).filter((note) =>
     note.claim_id === input.claimId && (note.status === "processing" || note.status === "authorized"))
   const covered = (destination: string, itemId: number, settled: boolean) => notes
@@ -586,13 +630,18 @@ export function getMixedClaimView(input: {
   const blockers = new Set<string>()
 
   const lineView = (itemId: number, line: ClaimItemResolutionRow): ClaimLineView => {
-    const base = { solution: line.solution, label: CLAIM_LINE_SOLUTION_LABELS[line.solution].label, quantity: line.quantity }
+    const base = {
+      solution: line.solution, label: CLAIM_LINE_SOLUTION_LABELS[line.solution].label, quantity: line.quantity,
+      returnQuantity: line.return_quantity ?? null,
+    }
+    const waitingReturn = { stage: "pending" as const, stageLabel: "Esperando devolución", missing: "Recibir e inspeccionar el producto" }
     if (line.solution === "replacement") {
       const replaced = input.replacedByItem ? input.replacedByItem.get(itemId) ?? 0 : null
       if (replaced === null) {
         blockers.add("Verificando el reemplazo")
         return { ...base, stage: "pending", stageLabel: "Verificando", missing: "Verificando el reemplazo" }
       }
+      if (replaced < line.quantity && waitsReturn(itemId, line)) return { ...base, ...waitingReturn }
       if (replaced < line.quantity) {
         blockers.add("Falta registrar el reemplazo")
         return { ...base, stage: "pending", stageLabel: "Pendiente", missing: "Registrar reemplazo" }
@@ -607,9 +656,11 @@ export function getMixedClaimView(input: {
     const destination = refund ? "external_refund" : "customer_balance"
     const settled = covered(destination, itemId, true)
     const issued = covered(destination, itemId, false)
-    creditNotePending[refund ? "refund" : "credit"] += Math.max(0, line.quantity - issued)
     if (settled >= line.quantity) return { ...base, stage: "done", stageLabel: refund ? "Reintegrado" : "Acreditado", missing: null }
     blockers.add(refund ? "Reintegro pendiente" : "Saldo pendiente de acreditar")
+    // Sin su producto recibido e inspeccionado no se calcula (la base lo exige).
+    if (issued < line.quantity && waitsReturn(itemId, line)) return { ...base, ...waitingReturn }
+    creditNotePending[refund ? "refund" : "credit"] += Math.max(0, line.quantity - issued)
     if (issued >= line.quantity) {
       return { ...base, stage: "processing", stageLabel: "En proceso", missing: refund ? "Registrar el reintegro" : "Acreditando el saldo" }
     }
@@ -623,8 +674,14 @@ export function getMixedClaimView(input: {
     const assigned = itemLines.reduce((sum, line) => sum + line.quantity, 0)
     const unresolved = Math.max(0, claimed - assigned)
     if (unresolved > 0) blockers.add("Unidades sin solución")
+    // Una devolución obligatoria pendiente frena el cierre (order_claim_mixed_blockers).
+    const pending = itemLines.some((line) => waitsReturn(orderItemId, line))
+    if (pending) blockers.add("Devolución pendiente")
     const lines = itemLines.map((line) => lineView(orderItemId, line))
-    return { orderItemId, claimed, unresolved, lines, complete: unresolved === 0 && lines.every((line) => line.stage === "done") }
+    return {
+      orderItemId, claimed, unresolved, returnPending: pending, lines,
+      complete: unresolved === 0 && !pending && lines.every((line) => line.stage === "done"),
+    }
   })
   const has = (solution: ClaimLineSolution) => input.lines.some((line) => line.solution === solution)
   const list = MIXED_BLOCKER_ORDER.filter((blocker) => blockers.has(blocker))

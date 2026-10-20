@@ -14,6 +14,16 @@ import {
 } from "@/lib/orders/claim-policy"
 
 export const claimLineKey = (orderItemId: number, solution: ClaimLineSolution) => `${orderItemId}:${solution}`
+/** Unidades de esa línea que vuelven a BEYONIX. */
+export const claimLineReturnKey = (orderItemId: number, solution: ClaimLineSolution) => `${orderItemId}:${solution}:vuelve`
+
+/** "Vuelve" / "No vuelve" / "1 de 2 vuelven" (null: lo decide la logística del reclamo). */
+function returnLabel(quantity: number, returnQuantity: number | null) {
+  if (returnQuantity === null) return null
+  if (returnQuantity === 0) return quantity === 1 ? "No vuelve" : "No vuelven"
+  if (returnQuantity >= quantity) return quantity === 1 ? "Vuelve" : "Vuelven"
+  return `${returnQuantity} de ${quantity} vuelven`
+}
 
 const STAGE_TONES: Record<ClaimLineStage, string> = {
   done: "is-success",
@@ -62,6 +72,9 @@ export function ClaimItemResolutionPanel({
                     <span className="admin-claim-lines-qty">{line.quantity}</span>
                     <span className="admin-claim-lines-arrow" aria-hidden="true">→</span>
                     <span className="admin-claim-lines-solution">{line.label}</span>
+                    {returnLabel(line.quantity, line.returnQuantity) && (
+                      <span className="admin-claim-lines-return" data-claim-line-return>· {returnLabel(line.quantity, line.returnQuantity)}</span>
+                    )}
                     <span className={`admin-claim-pill is-small ${STAGE_TONES[line.stage]}`}>{line.stageLabel}</span>
                     {line.missing && <span className="admin-claim-lines-missing">{line.missing}</span>}
                   </li>
@@ -94,19 +107,23 @@ export function ClaimItemResolutionPanel({
 }
 
 /**
- * Reparto de las unidades al aprobar: por producto, un contador por solución.
- * `minimum`: unidades ya asignadas que no se reducen (completar pendientes).
+ * Reparto de las unidades al aprobar: por producto, un contador por solución
+ * y, por cada solución elegida, cuántas de esas unidades vuelven a BEYONIX.
+ * `minimum`: lo ya asignado no se reduce (ni unidades, ni devoluciones, ni lo
+ * que el cliente conserva). `returnByDefault`: las unidades nuevas vuelven.
  */
 export function ClaimLineEditor({
   items,
   values,
   onChange,
   minimum = {},
+  returnByDefault = true,
 }: {
   items: Array<{ orderItemId: number; name: string; claimed: number }>
   values: Record<string, number>
   onChange: (next: Record<string, number>) => void
   minimum?: Record<string, number>
+  returnByDefault?: boolean
 }) {
   return (
     <div className="admin-claim-lines is-editor" data-claim-line-editor>
@@ -125,19 +142,40 @@ export function ClaimLineEditor({
               <ul className="admin-claim-lines-rows">
                 {CLAIM_LINE_SOLUTIONS.map((solution) => {
                   const key = claimLineKey(item.orderItemId, solution)
+                  const returnKey = claimLineReturnKey(item.orderItemId, solution)
                   const value = values[key] ?? 0
+                  const returning = Math.min(values[returnKey] ?? 0, value)
+                  const minKept = (minimum[key] ?? 0) - (minimum[returnKey] ?? 0)
                   const label = CLAIM_LINE_SOLUTION_LABELS[solution].action
-                  const set = (next: number) => onChange({ ...values, [key]: next })
+                  const setQuantity = (next: number) => onChange({
+                    ...values, [key]: next,
+                    [returnKey]: next > value ? returning + (returnByDefault ? 1 : 0) : Math.min(returning, next),
+                  })
+                  const setReturning = (next: number) => onChange({ ...values, [returnKey]: next })
                   return (
                     <li key={solution} className="admin-claim-lines-stepper-row" data-claim-line={solution}>
                       <span className="admin-claim-lines-solution">{label}</span>
                       <span className="admin-claim-lines-stepper">
                         <button type="button" aria-label={`Una unidad menos: ${label}`} disabled={value <= (minimum[key] ?? 0)}
-                          onClick={() => set(value - 1)}><Minus className="size-3.5" aria-hidden="true" /></button>
+                          onClick={() => setQuantity(value - 1)}><Minus className="size-3.5" aria-hidden="true" /></button>
                         <output aria-label={`${label}: unidades`}>{value}</output>
                         <button type="button" aria-label={`Una unidad más: ${label}`} disabled={unassigned <= 0}
-                          onClick={() => set(value + 1)}><Plus className="size-3.5" aria-hidden="true" /></button>
+                          onClick={() => setQuantity(value + 1)}><Plus className="size-3.5" aria-hidden="true" /></button>
                       </span>
+                      {value > 0 && (
+                        <span className="admin-claim-lines-return-row" data-claim-line-return-editor={solution}>
+                          <span>Vuelven a BEYONIX</span>
+                          <span className="admin-claim-lines-stepper">
+                            <button type="button" aria-label={`Una devolución menos: ${label}`}
+                              disabled={returning <= (minimum[returnKey] ?? 0)}
+                              onClick={() => setReturning(returning - 1)}><Minus className="size-3.5" aria-hidden="true" /></button>
+                            <output aria-label={`${label}: unidades que vuelven`}>{returning}</output>
+                            <button type="button" aria-label={`Una devolución más: ${label}`}
+                              disabled={returning >= value || value - returning <= minKept}
+                              onClick={() => setReturning(returning + 1)}><Plus className="size-3.5" aria-hidden="true" /></button>
+                          </span>
+                        </span>
+                      )}
                     </li>
                   )
                 })}
@@ -147,6 +185,7 @@ export function ClaimLineEditor({
           )
         })}
       </ul>
+      <p className="admin-claim-lines-hint">Lo que no vuelve queda con el cliente; lo que vuelve se recibe e inspecciona antes del reintegro, el saldo o el reemplazo.</p>
       <p className="admin-claim-lines-hint">Saldo a favor también sirve para cambiar por otro producto. {CLAIM_PRODUCT_CHANGE_HINT}</p>
     </div>
   )

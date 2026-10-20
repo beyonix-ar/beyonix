@@ -13,10 +13,13 @@ function parseClaimResolutionLines(value: unknown): ClaimItemResolutionRow[] | n
   const lines: ClaimItemResolutionRow[] = []
   for (const entry of value) {
     if (!entry || typeof entry !== "object") return null
-    const { order_item_id: orderItemId, solution, quantity } = entry as Record<string, unknown>
+    const { order_item_id: orderItemId, solution, quantity, return_quantity: returnQuantity } = entry as Record<string, unknown>
     if (!Number.isSafeInteger(orderItemId) || Number(orderItemId) <= 0 || !isClaimLineSolution(solution) ||
       !Number.isSafeInteger(quantity) || Number(quantity) <= 0) return null
-    lines.push({ order_item_id: Number(orderItemId), solution, quantity: Number(quantity) })
+    // Unidades que vuelven: 0..cantidad; sin dato, la base asume que vuelven todas.
+    if (returnQuantity !== undefined && (!Number.isSafeInteger(returnQuantity) || Number(returnQuantity) < 0 || Number(returnQuantity) > Number(quantity))) return null
+    lines.push({ order_item_id: Number(orderItemId), solution, quantity: Number(quantity),
+      ...(returnQuantity !== undefined ? { return_quantity: Number(returnQuantity) } : {}) })
   }
   return lines
 }

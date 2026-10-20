@@ -63,10 +63,15 @@ const leg = (overrides) => ({
   id: 1, claim_id: 900, direction: "reemplazo", attempt: 1, status: "pendiente", creation_status: "not_started", closed_at: null,
   branch_id: "4567", branch_name: "Sucursal Once", branch_address: "Av. Pueyrredón 100", legacy: false, ...overrides,
 })
+// Reparto sin devoluciones (el cliente conserva todo); "devolucion": B debe volver.
 const lines = [
-  { order_item_id: 71, solution: "replacement", quantity: 1 },
-  { order_item_id: 71, solution: "refund", quantity: 1 },
-  { order_item_id: 72, solution: "credit", quantity: 1 },
+  { order_item_id: 71, solution: "replacement", quantity: 1, return_quantity: 0 },
+  { order_item_id: 71, solution: "refund", quantity: 1, return_quantity: 0 },
+  { order_item_id: 72, solution: "credit", quantity: 1, return_quantity: 0 },
+]
+const mustReturn = [
+  { order_item_id: 71, solution: "replacement", quantity: 2, return_quantity: 0 },
+  { order_item_id: 72, solution: "refund", quantity: 1, return_quantity: 1 },
 ]
 const kept = [unit(71, "original", "conservada_cliente"), unit(71, "original", "conservada_cliente"), unit(72, "original", "conservada_cliente")]
 const settledNote = (destination, order_item_id, total_amount) => ({
@@ -76,6 +81,12 @@ const settledNote = (destination, order_item_id, total_amount) => ({
 const scenarios = {
   revision: { claim: { status: "en_revision", resolution: null }, shipments: [], units: [] },
   metodo: { claim: { resolution: "mixta", order_claim_item_resolutions: lines }, shipments: [], units: [] },
+  metodo_devolucion: { claim: { resolution: "mixta", order_claim_item_resolutions: mustReturn }, shipments: [], units: [] },
+  devolucion: {
+    claim: { resolution: "mixta", order_claim_item_resolutions: mustReturn },
+    shipments: [leg({ direction: "devolucion", status: "en_transito", creation_status: "created", andreani_tracking: "360000000921" })],
+    units: [unit(71, "original", "conservada_cliente"), unit(71, "original", "conservada_cliente"), unit(72, "original", "en_andreani", 1)],
+  },
   pendiente: { claim: { resolution: "mixta", order_claim_item_resolutions: lines }, shipments: [leg({})], units: kept },
   parcial: {
     claim: { resolution: "mixta", order_claim_item_resolutions: [lines[0], lines[2]] },
@@ -205,26 +216,46 @@ test("aprobar: 'Una solución distinta por producto' reparte unidades sin supera
     await auricular.getByRole("button", { name: "Una unidad más: Reintegrar" }).click()
     assert.equal(await auricular.getByRole("button", { name: "Una unidad más: Saldo a favor" }).isDisabled(), true,
       "nunca más unidades que las reclamadas")
+    assert.equal(await auricular.getByRole("button", { name: "Una devolución más: Reemplazar" }).isDisabled(), true,
+      "nunca vuelven más unidades que las de la solución")
+    await auricular.getByRole("button", { name: "Una devolución menos: Reemplazar" }).click()
+    assert.equal(await auricular.getByLabel("Reemplazar: unidades que vuelven").innerText(), "0")
     await editor.locator('[data-claim-item="72"]').getByRole("button", { name: "Una unidad más: Saldo a favor" }).click()
     assert.equal(await accept.isDisabled(), false)
     await accept.click()
     await page.waitForFunction(() => (window as unknown as { __patches: unknown[] }).__patches.length > 0)
     const [patch] = await patches(page)
     assert.equal(patch.action, "set_item_resolutions")
+    // Por defecto las unidades vuelven; el reemplazo se marca sin devolución.
     assert.deepEqual(patch.lines, [
-      { order_item_id: 71, solution: "replacement", quantity: 1 },
-      { order_item_id: 71, solution: "refund", quantity: 1 },
-      { order_item_id: 72, solution: "credit", quantity: 1 },
+      { order_item_id: 71, solution: "replacement", quantity: 1, return_quantity: 0 },
+      { order_item_id: 71, solution: "refund", quantity: 1, return_quantity: 1 },
+      { order_item_id: 72, solution: "credit", quantity: 1, return_quantity: 1 },
     ])
   } finally { await page.close() }
 })
 
-test("mixto recién aprobado: el paso Logística ofrece devolución o reenvío sin devolución, nunca cambio directo", async () => {
-  const page = await open("metodo")
+test("mixto recién aprobado: la logística respeta la devolución definida por producto (nunca cambio directo)", async () => {
+  const radios = (page: Page) => page.locator("[data-claim-logistics-section=method]").getByRole("radio").evaluateAll((inputs) =>
+    inputs.map((input) => (input as HTMLInputElement).value))
+  const nothingReturns = await open("metodo")
   try {
-    assert.match(await page.locator(".admin-claim-manage-heading").innerText(), /Logística/)
-    assert.deepEqual(await page.locator("[data-claim-logistics-section=method]").getByRole("radio").evaluateAll((inputs) =>
-      inputs.map((input) => (input as HTMLInputElement).value)), ["devolucion", "sin_devolucion"])
+    assert.match(await nothingReturns.locator(".admin-claim-manage-heading").innerText(), /Logística/)
+    assert.deepEqual(await radios(nothingReturns), ["sin_devolucion"], "nada vuelve: sólo el reenvío")
+  } finally { await nothingReturns.close() }
+  const someReturns = await open("metodo_devolucion")
+  try {
+    assert.deepEqual(await radios(someReturns), ["devolucion"], "B debe volver: 'sin devolución' no se ofrece")
+  } finally { await someReturns.close() }
+})
+
+test("devolución obligatoria de un producto: B espera su devolución, A no; sin cálculo de reintegro ni cierre", async () => {
+  const page = await open("devolucion")
+  try {
+    assert.deepEqual(await rows(page, 71), ["2 → Reemplazo · No vuelven Pendiente Registrar reemplazo"])
+    assert.deepEqual(await rows(page, 72), ["1 → Reintegro · Vuelve Esperando devolución Recibir e inspeccionar el producto"])
+    assert.equal(await page.locator("[data-claim-line-actions]").getByRole("button", { name: /Calcular reintegro/ }).count(), 0)
+    assert.equal(await page.getByRole("button", { name: /Finalizar reclamo/ }).count(), 0)
   } finally { await page.close() }
 })
 
@@ -234,10 +265,10 @@ test("mixto en curso: qué recibe cada unidad, acciones pendientes agrupadas y n
     assert.equal(await page.locator("[data-claim-solution]").innerText(), "Solución por producto: 1 reemplazo · 1 reintegro · 1 saldo a favor")
     assert.match(await page.getByTestId("admin-claim-status-badge").innerText(), /Solución por producto en proceso/i)
     assert.deepEqual(await rows(page, 71), [
-      "1 → Reemplazo Pendiente Registrar reemplazo",
-      "1 → Reintegro Pendiente Calcular reintegro",
+      "1 → Reemplazo · No vuelve Pendiente Registrar reemplazo",
+      "1 → Reintegro · No vuelve Pendiente Calcular reintegro",
     ])
-    assert.deepEqual(await rows(page, 72), ["1 → Saldo a favor Pendiente Calcular saldo a favor"])
+    assert.deepEqual(await rows(page, 72), ["1 → Saldo a favor · No vuelve Pendiente Calcular saldo a favor"])
     const actions = page.locator("[data-claim-line-actions]")
     assert.equal(await actions.getByRole("button", { name: /Calcular saldo a favor/ }).count(), 1)
     assert.equal(await actions.getByRole("button", { name: /Calcular reintegro/ }).count(), 1)
@@ -282,7 +313,7 @@ test("reclamo simple de reemplazo: la salida segura por falta de stock aparece e
 test("parcial: una unidad sin definir bloquea el cierre y se completa sin tocar lo asignado", async () => {
   const page = await open("parcial")
   try {
-    assert.deepEqual(await rows(page, 71), ["1 → Reemplazo Pendiente Registrar reemplazo", "1 → Sin definir Pendiente"])
+    assert.deepEqual(await rows(page, 71), ["1 → Reemplazo · No vuelve Pendiente Registrar reemplazo", "1 → Sin definir Pendiente"])
     await page.locator("[data-claim-line-actions]").getByRole("button", { name: "Definir unidades pendientes" }).click()
     const dialog = page.getByRole("dialog")
     const auricular = dialog.locator('[data-claim-line-editor] [data-claim-item="71"]')
@@ -294,9 +325,9 @@ test("parcial: una unidad sin definir bloquea el cierre y se completa sin tocar 
     const [patch] = await patches(page)
     assert.equal(patch.action, "set_item_resolutions")
     assert.deepEqual(patch.lines, [
-      { order_item_id: 71, solution: "replacement", quantity: 1 },
-      { order_item_id: 72, solution: "credit", quantity: 1 },
-      { order_item_id: 71, solution: "refund", quantity: 1 },
+      { order_item_id: 71, solution: "replacement", quantity: 1, return_quantity: 0 },
+      { order_item_id: 72, solution: "credit", quantity: 1, return_quantity: 0 },
+      { order_item_id: 71, solution: "refund", quantity: 1, return_quantity: 1 },
     ])
   } finally { await page.close() }
 })
@@ -304,8 +335,8 @@ test("parcial: una unidad sin definir bloquea el cierre y se completa sin tocar 
 test("completo: todas las ramas terminadas -> listo para finalizar con un solo botón", async () => {
   const page = await open("completo")
   try {
-    assert.deepEqual(await rows(page, 71), ["1 → Reemplazo Entregado", "1 → Reintegro Reintegrado"])
-    assert.deepEqual(await rows(page, 72), ["1 → Saldo a favor Acreditado"])
+    assert.deepEqual(await rows(page, 71), ["1 → Reemplazo · No vuelve Entregado", "1 → Reintegro · No vuelve Reintegrado"])
+    assert.deepEqual(await rows(page, 72), ["1 → Saldo a favor · No vuelve Acreditado"])
     assert.match(await page.getByTestId("admin-claim-status-badge").innerText(), /Listo para finalizar/i)
     const finish = page.getByRole("button", { name: /Finalizar reclamo/ })
     assert.equal(await finish.count(), 1)
@@ -346,6 +377,8 @@ test("visual: panel y editor legibles y sin desborde en Light/Dark a 390, 430, 1
       assert.equal(await editor.isVisible(), true)
       assert.ok(await review.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `modal sin desborde ${theme} ${width}`)
       const stepper = editor.getByRole("button", { name: "Una unidad más: Reemplazar" }).first()
+      await stepper.click()
+      assert.equal(await editor.locator("[data-claim-line-return-editor=replacement]").first().isVisible(), true, `devolución por línea ${theme} ${width}`)
       const box = await stepper.boundingBox()
       assert.ok(box && box.width >= 28 && box.height >= 28, `botón táctil ${theme} ${width}`)
       await dialog.screenshot({ path: join(SHOTS, `editor-${theme}-${width}.png`) })

@@ -634,6 +634,12 @@ export function getAdminClaimLogisticsView(input: {
    * retira). false en un reclamo mixto: sólo parte de las unidades se reemplaza.
    */
   allowExchange?: boolean
+  /**
+   * Reclamo mixto: la devolución se definió por producto. true: alguna unidad
+   * debe volver (no se ofrece "sin devolución"). false: ninguna vuelve (no se
+   * ofrece pedir la devolución). undefined: reclamo simple, decide la logística.
+   */
+  returnRequired?: boolean
 }): AdminClaimLogisticsView | null {
   const shipments = rowsOf(input.shipments)
   const units = input.units ?? []
@@ -691,8 +697,10 @@ export function getAdminClaimLogisticsView(input: {
   // Un cambio de método con stock reservado o nota de crédito vigente exige
   // corregir primero ese efecto con su propio flujo auditado (el servidor
   // vuelve a exigirlo).
-  const candidates: ClaimLogisticsMethod[] = !isChange ? ["devolucion"]
+  const methods: ClaimLogisticsMethod[] = !isChange ? ["devolucion"]
     : input.allowExchange === false ? ["devolucion", "sin_devolucion"] : ["devolucion", "cambio", "sin_devolucion"]
+  const candidates = methods.filter((method) => input.returnRequired === undefined ||
+      (input.returnRequired ? method !== "sin_devolucion" : method === "sin_devolucion"))
   const samePlanAs = (direction: ClaimLogisticsMethod) =>
     plan !== null && (direction === "cambio"
       ? plan === "cambio_directo"

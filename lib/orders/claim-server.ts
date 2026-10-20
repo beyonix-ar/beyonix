@@ -187,7 +187,7 @@ const CUSTOMER_CLAIM_COLUMNS =
   "cancelled_at, cancellation_reason"
 const CUSTOMER_CLAIM_FILE_COLUMNS = "id, claim_id, file_role, file_name, file_path, mime_type, file_size, created_at"
 const CUSTOMER_CLAIM_MESSAGE_COLUMNS = "id, claim_id, author_role, message, created_at, system_key"
-export const CUSTOMER_CLAIM_SELECT = `${CUSTOMER_CLAIM_COLUMNS}, order_claim_files(${CUSTOMER_CLAIM_FILE_COLUMNS}), order_claim_messages(${CUSTOMER_CLAIM_MESSAGE_COLUMNS}), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS}), order_claim_item_resolutions(order_item_id, solution, quantity)`
+export const CUSTOMER_CLAIM_SELECT = `${CUSTOMER_CLAIM_COLUMNS}, order_claim_files(${CUSTOMER_CLAIM_FILE_COLUMNS}), order_claim_messages(${CUSTOMER_CLAIM_MESSAGE_COLUMNS}), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS}), order_claim_item_resolutions(order_item_id, solution, quantity, return_quantity)`
 
 export async function getClaimResult(admin: Admin, claimId: number, audience: "admin" | "customer" = "admin") {
   const { data, error } = audience === "admin"

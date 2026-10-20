@@ -16848,6 +16848,9 @@ html[data-admin-theme="light"] .admin-claim-details[open] > summary { color: #0f
 .admin-claim-lines-stepper { display: inline-flex; align-items: center; gap: .35rem; }
 .admin-claim-lines-stepper > button { display: inline-flex; width: 2rem; height: 2rem; align-items: center; justify-content: center; border: 1px solid var(--admin-border-soft); border-radius: .45rem; color: #e2e8f0; }
 .admin-claim-lines-stepper > button:disabled { opacity: .4; cursor: not-allowed; }
+.admin-claim-lines-return { color: #9fb0c0; font-size: .6875rem; font-weight: 700; }
+.admin-claim-lines-return-row { display: flex; flex-basis: 100%; align-items: center; justify-content: space-between; gap: .5rem; padding-left: .75rem; color: #9fb0c0; font-size: .6875rem; font-weight: 700; }
+.admin-claim-lines-return-row .admin-claim-lines-stepper > button { width: 1.75rem; height: 1.75rem; }
 .admin-claim-lines-stepper > output { min-width: 1.5rem; color: #f8fafc; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums; }
 html[data-admin-theme="light"] .admin-claim-lines:not(.is-editor) { background: #fff; }
 html[data-admin-theme="light"] .admin-claim-lines-name,
@@ -16857,7 +16860,9 @@ html[data-admin-theme="light"] .admin-claim-lines-stepper > button { color: #1e2
 html[data-admin-theme="light"] .admin-claim-lines-count,
 html[data-admin-theme="light"] .admin-claim-lines-arrow,
 html[data-admin-theme="light"] .admin-claim-lines-switch,
-html[data-admin-theme="light"] .admin-claim-lines-hint { color: #475569; }
+html[data-admin-theme="light"] .admin-claim-lines-hint,
+html[data-admin-theme="light"] .admin-claim-lines-return,
+html[data-admin-theme="light"] .admin-claim-lines-return-row { color: #475569; }
 html[data-admin-theme="light"] .admin-claim-lines-missing { color: #92400e; }
 
 /* Wizard: el encabezado queda visible debajo de la navegación del admin. */
