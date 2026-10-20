@@ -7,7 +7,14 @@
  * identificadores internos, errores técnicos ni la decisión interna del método.
  */
 
-import { RETURNABLE_CLAIM_RESOLUTIONS, getClaimRequirements } from "./claim-policy.ts"
+import {
+  RETURNABLE_CLAIM_RESOLUTIONS,
+  getClaimOperationalResolution,
+  getClaimRequirements,
+  getClaimResolutionLines,
+  isMixedClaimResolution,
+  type ClaimResolutionLinesSource,
+} from "./claim-policy.ts"
 
 export type ClaimShipmentDirection = "devolucion" | "cambio" | "reemplazo"
 export type ClaimShipmentStatus = "pendiente" | "generada" | "en_transito" | "en_sucursal" | "entregada" | "cancelada"
@@ -280,12 +287,17 @@ export function getCustomerClaimHeadline(claim: {
   resolution?: string | null
   cancelled_at?: string | null
   order_claim_shipments?: ClaimShipmentCustomerSource[] | ClaimShipmentCustomerSource | null
+  affected_items?: ClaimResolutionLinesSource["affected_items"]
+  order_claim_item_resolutions?: ClaimResolutionLinesSource["order_claim_item_resolutions"]
 }): string {
-  const requirements = getClaimRequirements(claim.resolution)
+  // Reclamo mixto: las frases físicas siguen su circuito (reemplazo o devolución).
+  const mixed = isMixedClaimResolution(claim.resolution)
+  const requirements = getClaimRequirements(getClaimOperationalResolution(claim.resolution, getClaimResolutionLines(claim)))
   const legs = rowsOf(claim.order_claim_shipments).filter((row) => row.status !== "cancelada")
   const delivered = (direction: ClaimShipmentDirection) => legs.some((row) => row.direction === direction && row.status === "entregada")
   if (claim.status === "cerrado") {
     if (claim.cancelled_at) return "Reclamo cancelado"
+    if (mixed) return "Reclamo resuelto"
     if (requirements?.solution === "replacement" && (delivered("reemplazo") || delivered("cambio"))) return "Tu reemplazo fue entregado"
     if (requirements?.financialAction === "refund") return "Tu reintegro fue procesado"
     if (requirements?.financialAction === "customer_credit") return "Tu saldo a favor fue acreditado"
@@ -315,6 +327,7 @@ export function getCustomerClaimHeadline(claim: {
   if (current?.direction === "devolucion") {
     return requirements.solution === "replacement" ? "Recibimos tu producto: preparando tu reemplazo" : "Recibimos tu producto"
   }
+  if (mixed) return "Estamos resolviendo cada producto de tu reclamo"
   if (requirements.financialAction === "refund") return "Estamos procesando tu reintegro"
   if (requirements.financialAction === "customer_credit") return "Estamos acreditando tu saldo a favor"
   if (requirements.solution === "replacement") return "Estamos preparando tu reemplazo"
@@ -616,6 +629,11 @@ export function getAdminClaimLogisticsView(input: {
   legacy?: boolean | null
   /** Nota de crédito del reclamo en proceso o autorizada (efecto financiero real). */
   creditNoteActive?: boolean
+  /**
+   * Cambio directo en sucursal (entrega una unidad por cada original que
+   * retira). false en un reclamo mixto: sólo parte de las unidades se reemplaza.
+   */
+  allowExchange?: boolean
 }): AdminClaimLogisticsView | null {
   const shipments = rowsOf(input.shipments)
   const units = input.units ?? []
@@ -673,7 +691,8 @@ export function getAdminClaimLogisticsView(input: {
   // Un cambio de método con stock reservado o nota de crédito vigente exige
   // corregir primero ese efecto con su propio flujo auditado (el servidor
   // vuelve a exigirlo).
-  const candidates: ClaimLogisticsMethod[] = isChange ? ["devolucion", "cambio", "sin_devolucion"] : ["devolucion"]
+  const candidates: ClaimLogisticsMethod[] = !isChange ? ["devolucion"]
+    : input.allowExchange === false ? ["devolucion", "sin_devolucion"] : ["devolucion", "cambio", "sin_devolucion"]
   const samePlanAs = (direction: ClaimLogisticsMethod) =>
     plan !== null && (direction === "cambio"
       ? plan === "cambio_directo"

@@ -41,6 +41,7 @@ const CHAIN = [
   "20261001130000_cancel_order_claim",
   "20261001170000_claim_return_dropoff_copy",
   "20261019120000_claim_policy_consolidation",
+  "20261020100000_claim_item_resolutions",
 ]
 
 type Db = PGlite

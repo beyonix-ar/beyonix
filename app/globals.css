@@ -16826,6 +16826,39 @@ html[data-admin-theme="light"] .admin-claim-progress-steps li.is-done { color: #
 html[data-admin-theme="light"] .admin-claim-progress-steps li.is-current { color: #07565d; }
 html[data-admin-theme="light"] .admin-claim-details > summary { color: #475569; }
 html[data-admin-theme="light"] .admin-claim-details[open] > summary { color: #0f172a; }
+/* Resolución por producto (reclamo mixto): una tarjeta por producto, una fila por solución. */
+.admin-claim-lines { display: grid; gap: .5rem; min-width: 0; margin: .75rem; padding: .75rem; border: 1px solid var(--admin-border-soft); border-radius: .75rem; background: rgba(255, 255, 255, .02); }
+.admin-claim-lines.is-editor { margin: 0; padding: 0; border: 0; background: none; }
+.admin-claim-lines-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 1024px) { .admin-claim-lines:not(.is-editor) .admin-claim-lines-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.admin-claim-lines-item { min-width: 0; padding: .55rem .65rem; border: 1px solid var(--admin-border-soft); border-radius: .6rem; }
+.admin-claim-lines-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .15rem .5rem; }
+.admin-claim-lines-name { min-width: 0; color: #f8fafc; font-size: .75rem; font-weight: 900; text-transform: uppercase; overflow-wrap: anywhere; }
+.admin-claim-lines-count { color: #9fb0c0; font-size: .6875rem; font-weight: 700; }
+.admin-claim-lines-rows { display: grid; gap: .3rem; margin: .4rem 0 0; padding: 0; list-style: none; }
+.admin-claim-lines-rows > li { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; color: #e2e8f0; font-size: .75rem; font-weight: 700; }
+.admin-claim-lines-qty { min-width: 1.1rem; font-weight: 900; text-align: right; font-variant-numeric: tabular-nums; }
+.admin-claim-lines-arrow { color: #9fb0c0; }
+.admin-claim-lines-solution { font-weight: 800; }
+.admin-claim-lines-missing { color: #fcd34d; font-size: .6875rem; font-weight: 700; }
+.admin-claim-lines-switch { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; margin-top: .45rem; color: #9fb0c0; font-size: .6875rem; font-weight: 700; }
+.admin-claim-lines-actions { display: grid; gap: .4rem; }
+.admin-claim-lines-hint { color: #9fb0c0; font-size: .6875rem; font-weight: 600; line-height: 1.35; }
+.admin-claim-lines-rows > li.admin-claim-lines-stepper-row { justify-content: space-between; }
+.admin-claim-lines-stepper { display: inline-flex; align-items: center; gap: .35rem; }
+.admin-claim-lines-stepper > button { display: inline-flex; width: 2rem; height: 2rem; align-items: center; justify-content: center; border: 1px solid var(--admin-border-soft); border-radius: .45rem; color: #e2e8f0; }
+.admin-claim-lines-stepper > button:disabled { opacity: .4; cursor: not-allowed; }
+.admin-claim-lines-stepper > output { min-width: 1.5rem; color: #f8fafc; font-weight: 900; text-align: center; font-variant-numeric: tabular-nums; }
+html[data-admin-theme="light"] .admin-claim-lines:not(.is-editor) { background: #fff; }
+html[data-admin-theme="light"] .admin-claim-lines-name,
+html[data-admin-theme="light"] .admin-claim-lines-stepper > output { color: #0f172a; }
+html[data-admin-theme="light"] .admin-claim-lines-rows > li,
+html[data-admin-theme="light"] .admin-claim-lines-stepper > button { color: #1e293b; }
+html[data-admin-theme="light"] .admin-claim-lines-count,
+html[data-admin-theme="light"] .admin-claim-lines-arrow,
+html[data-admin-theme="light"] .admin-claim-lines-switch,
+html[data-admin-theme="light"] .admin-claim-lines-hint { color: #475569; }
+html[data-admin-theme="light"] .admin-claim-lines-missing { color: #92400e; }
 
 /* Wizard: el encabezado queda visible debajo de la navegación del admin. */
 .admin-claim-wizard-header { scroll-margin-top: 5rem; }

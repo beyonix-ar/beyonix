@@ -34,6 +34,8 @@ export function getAdminClaimWizard(input: {
   receptionComplete?: boolean
   /** Reclamo cancelado (cerrado + cancelled_at). */
   cancelled?: boolean
+  /** Nombre del paso de dinero cuando la solución no lo define sola (reclamo mixto). */
+  executionLabel?: string
   /**
    * Sólo con cancelled: qué pasos ocurrieron realmente antes de cancelar.
    * Lo que no figure acá se muestra como no realizado, nunca como completado.
@@ -57,14 +59,15 @@ function getAdminClaimWizardSteps(input: {
   receivedUnits: number
   replacedUnits: number | null
   logistics?: AdminClaimWizardLogistics | null
+  executionLabel?: string
 }) {
   const closed = input.status === "cerrado" || input.status === "rechazado"
   const requirements = getClaimRequirements(input.resolution)
   const approved = Boolean(requirements)
   const replacement = requirements?.solution === "replacement"
   const reception = input.resolution === "cambio_producto"
-  const refundLabel = requirements?.financialAction === "refund" ? "Reintegro"
-    : requirements?.financialAction === "customer_credit" ? "Saldo a favor" : "Solución"
+  const refundLabel = input.executionLabel ?? (requirements?.financialAction === "refund" ? "Reintegro"
+    : requirements?.financialAction === "customer_credit" ? "Saldo a favor" : "Solución")
   const steps: AdminClaimWizardStep[] = [{ key: "review", label: "Revisar" }]
   if (!approved && !closed) steps.push({ key: "next", label: "Resolución" }, { key: "finish", label: "Finalizar" })
 

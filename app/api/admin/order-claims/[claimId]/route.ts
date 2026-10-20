@@ -6,6 +6,20 @@ import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { escapeXml } from "@/lib/arca/xml"
 import { ORDER_CLAIM_STATUSES, ORDER_CLAIM_RESOLUTIONS } from "@/lib/order-claims"
 import { getClaimResolutionText } from "@/lib/orders/claim-resolution"
+import { isClaimLineSolution, type ClaimItemResolutionRow } from "@/lib/orders/claim-policy"
+
+function parseClaimResolutionLines(value: unknown): ClaimItemResolutionRow[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) return null
+  const lines: ClaimItemResolutionRow[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") return null
+    const { order_item_id: orderItemId, solution, quantity } = entry as Record<string, unknown>
+    if (!Number.isSafeInteger(orderItemId) || Number(orderItemId) <= 0 || !isClaimLineSolution(solution) ||
+      !Number.isSafeInteger(quantity) || Number(quantity) <= 0) return null
+    lines.push({ order_item_id: Number(orderItemId), solution, quantity: Number(quantity) })
+  }
+  return lines
+}
 
 export async function GET(request: Request, { params }: { params: Promise<{ claimId: string }> }) {
   const auth = await requireOperator(request)
@@ -27,7 +41,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
     const body: unknown = await request.json()
     if (!body || typeof body !== "object" || Array.isArray(body)) return claimErrorResponse(new Error("CLAIM_INVALID"))
     const input = body as Record<string, unknown>
-    if (input.action && !["update","approve_cancellation","reject_cancellation","mark_refund_done","mark_credit_note_issued","reopen_review","cancel_claim"].includes(String(input.action))) {
+    if (input.action && !["update","approve_cancellation","reject_cancellation","mark_refund_done","mark_credit_note_issued","reopen_review","cancel_claim","set_item_resolutions","switch_replacement_resolution"].includes(String(input.action))) {
       return NextResponse.json({ error: "Esta acción ya no está disponible." }, { status: 410 })
     }
     const expected = typeof input.expectedUpdatedAt === "string" ? input.expectedUpdatedAt : ""
@@ -74,8 +88,36 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ cl
       })
       return getClaimResult(auth.admin, id)
     }
+    if (input.action === "set_item_resolutions") {
+      // Reclamo mixto: solución por producto/unidad. La base (set_order_claim_
+      // item_resolutions) exige Admin, valida cantidades y avisa al cliente.
+      const lines = parseClaimResolutionLines(input.lines)
+      const message = typeof input.admin_response === "string" ? input.admin_response.trim() : ""
+      if (!lines || message.length > 2000) return claimErrorResponse(new Error("CLAIM_RESOLUTION_INVALID_LINES"))
+      const { data: claim, error } = await auth.admin.rpc("set_order_claim_item_resolutions", {
+        p_claim_id: id, p_actor_id: auth.user.id, p_expected_updated_at: expected, p_lines: lines, p_message: message || null,
+      })
+      if (error || !claim) return claimErrorResponse(error)
+      return getClaimResult(auth.admin, id)
+    }
+    if (input.action === "switch_replacement_resolution") {
+      // Reemplazo sin stock -> reintegro o saldo. Sólo mientras el reemplazo es
+      // reversible; la base libera la reserva y deja la auditoría.
+      const target = input.target === "refund" || input.target === "credit" ? input.target : null
+      const orderItemId = input.order_item_id == null ? null : Number(input.order_item_id)
+      const note = typeof input.note === "string" ? input.note.trim() : ""
+      if (!target || (orderItemId !== null && (!Number.isSafeInteger(orderItemId) || orderItemId <= 0)) || note.length > 1000) {
+        return claimErrorResponse(new Error("CLAIM_INVALID"))
+      }
+      const { data: claim, error } = await auth.admin.rpc("switch_order_claim_replacement_resolution", {
+        p_claim_id: id, p_actor_id: auth.user.id, p_expected_updated_at: expected,
+        p_order_item_id: orderItemId, p_target: target, p_note: note || null,
+      })
+      if (error || !claim) return claimErrorResponse(error)
+      return getClaimResult(auth.admin, id)
+    }
     const patch: Record<string, unknown> = {}
-    const allowed = ["action","status","resolution","admin_response","rejection_reason","append_message","credit_note_amount"]
+    const allowed =["action","status","resolution","admin_response","rejection_reason","append_message","credit_note_amount"]
     for (const key of allowed) if (input[key] !== undefined) patch[key] = input[key]
     if (patch.status !== undefined && !ORDER_CLAIM_STATUSES.some((status) => status === patch.status) ||
         patch.resolution != null && !ORDER_CLAIM_RESOLUTIONS.some((resolution) => resolution === patch.resolution) ||

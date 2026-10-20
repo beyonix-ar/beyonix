@@ -49,6 +49,7 @@ import {
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
 import {
+  getClaimReplacedUnitsByItem,
   getReplacementFlow,
   sumReplacedUnits,
   sumClaimReplacedUnits,
@@ -66,13 +67,27 @@ import { ClaimShipmentTrace } from "@/components/claims/claim-shipment-trace"
 import { ClaimResolutionSummary } from "@/components/claims/claim-resolution-summary"
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
 import {
+  CLAIM_LINE_SOLUTIONS,
   CLAIM_SOLUTION_OPTIONS,
+  MIXED_CLAIM_LABEL,
+  MIXED_CLAIM_RESOLUTION,
   getClaimCloseReadiness,
   getClaimCommercialStatus,
   getClaimFinancialView,
+  getClaimLinesSummary,
+  getClaimLogisticsResolution,
+  getClaimOperationalResolution,
   getClaimRequirements,
+  getClaimResolutionLines,
+  getClaimResolutionLinesError,
   getClaimReturnSummary,
+  getMixedClaimView,
+  getReplacementSwitchState,
+  isClaimLineSolution,
+  isMixedClaimResolution,
+  type ClaimItemResolutionRow,
 } from "@/lib/orders/claim-policy"
+import { ClaimItemResolutionPanel, ClaimLineEditor, claimLineKey } from "@/components/claims/claim-item-resolution-panel"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard, getCancelledClaimOccurredSteps } from "@/lib/orders/admin-claim-wizard"
@@ -299,11 +314,27 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
   return STATUS_OPTIONS.find((option) => option.value === claim.status)?.label ?? claim.status
 }
 
+/** Reparto del editor ("ítem:solución" -> unidades) como filas para la base. */
+function decisionLinesToRows(values: Record<string, number>): ClaimItemResolutionRow[] {
+  return Object.entries(values).flatMap(([key, quantity]) => {
+    const [itemId, solution] = key.split(":")
+    return quantity > 0 && isClaimLineSolution(solution) ? [{ order_item_id: Number(itemId), solution, quantity }] : []
+  })
+}
+
+const compareLines = (left: ClaimItemResolutionRow, right: ClaimItemResolutionRow) =>
+  left.order_item_id - right.order_item_id ||
+  CLAIM_LINE_SOLUTIONS.indexOf(left.solution) - CLAIM_LINE_SOLUTIONS.indexOf(right.solution)
+
+/** Reparto vigente de un reclamo mixto, para editarlo (sólo se agregan unidades). */
+function decisionLinesFromRows(rows: ReadonlyArray<ClaimItemResolutionRow>): Record<string, number> {
+  return Object.fromEntries(rows.map((row) => [claimLineKey(row.order_item_id, row.solution), row.quantity]))
+}
+
 function getDefaultDecisionResolution(claim?: SupabaseOrderClaim | null): Exclude<OrderClaimResolution, "rechazado"> {
-  if (claim?.resolution === "saldo_a_favor") return "cupon_descuento"
+  // "Cambiar por otro producto" (saldo_a_favor) es una opción propia: se conserva.
   if (claim?.resolution && claim.resolution !== "rechazado") return claim.resolution
   if (claim?.customer_selected_resolution && claim.customer_selected_resolution !== "rechazado") {
-    if (claim.customer_selected_resolution === "saldo_a_favor") return "cupon_descuento"
     return claim.customer_selected_resolution
   }
   if (claim?.failure_type === "faltante" || claim?.failure_type === "cantidad_menor") {
@@ -1316,6 +1347,8 @@ export function AdminClaimManager({
   const [decisionReason, setDecisionReason] = useState(REJECTION_REASONS[0])
   const [decisionResolution, setDecisionResolution] = useState<Exclude<OrderClaimResolution, "rechazado">>("cambio_producto")
   const [decisionCreditNoteAmount, setDecisionCreditNoteAmount] = useState("")
+  // Reclamo mixto: unidades por (ítem, solución) del reparto que se aprueba.
+  const [decisionLines, setDecisionLines] = useState<Record<string, number>>({})
   const [refundProofFile, setRefundProofFile] = useState<File | null>(null)
   const [previewFile, setPreviewFile] = useState<SupabaseOrderClaimFile | null>(null)
   const [showCloseConversationModal, setShowCloseConversationModal] = useState(false)
@@ -1353,6 +1386,8 @@ export function AdminClaimManager({
     description: string
     confirmLabel: string
     run: () => void | Promise<void>
+    /** Acción que no cierra el reclamo (p. ej. cambio por falta de stock): no depende de poder finalizarlo. */
+    ignoresCloseReadiness?: boolean
   } | null>(null)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState("")
@@ -1428,6 +1463,7 @@ export function AdminClaimManager({
     setDecisionReason(REJECTION_REASONS[0])
     setDecisionResolution(getDefaultDecisionResolution(claim))
     setDecisionCreditNoteAmount("")
+    setDecisionLines({})
     setRefundProofFile(null)
     setPreviewFile(null)
     setViewedStep(null)
@@ -1650,6 +1686,24 @@ export function AdminClaimManager({
     const message = decisionMessage.trim() || response.trim()
     const creditNoteAmount = Number(decisionCreditNoteAmount.replace(",", ".").trim())
 
+    if (decisionResolution === MIXED_CLAIM_RESOLUTION) {
+      // Solución por producto: la base valida el reparto y avisa al cliente.
+      const lines = decisionLinesToRows(decisionLines)
+      const linesError = getClaimResolutionLinesError(claim.affected_items ?? [], lines, { initial: !isMixedClaimResolution(claim.resolution) })
+      if (linesError) {
+        setNotice(linesError)
+        return
+      }
+      const sent = await updateClaim({ action: "set_item_resolutions", lines, admin_response: message }, "")
+      if (sent) {
+        clearResponse()
+        setDecisionLines({})
+        setViewedStep(null)
+        closeDecision()
+      }
+      return
+    }
+
     if (
       getClaimRequirements(decisionResolution)?.requiresAmountOnApproval &&
       (!Number.isFinite(creditNoteAmount) || creditNoteAmount <= 0)
@@ -1834,6 +1888,28 @@ export function AdminClaimManager({
     )
   }
 
+  // Reemplazo sin stock: pasa a reintegro o saldo. La base libera la reserva
+  // reversible, rechaza si el reemplazo ya salió y deja la auditoría.
+  const askReplacementSwitch = (orderItemId: number | null, target: "refund" | "credit") => {
+    if (!claim) return
+    decisionVersionRef.current = claim.updated_at
+    const label = target === "refund" ? "reintegro" : "saldo a favor"
+    setPendingConfirmation({
+      title: `Pasar a ${label} por falta de stock`,
+      description: target === "refund"
+        ? "Se libera la reserva del reemplazo (si la hay) y se resuelve con el reintegro del dinero. Queda registrado."
+        : "Se libera la reserva del reemplazo (si la hay) y se acredita el valor como saldo a favor. Queda registrado.",
+      confirmLabel: `Pasar a ${label}`,
+      ignoresCloseReadiness: true,
+      run: async () => {
+        await updateClaim(
+          { action: "switch_replacement_resolution", order_item_id: orderItemId, target },
+          `Resolución cambiada a ${label} por falta de stock.`,
+        )
+      },
+    })
+  }
+
   const runDecisionAction = async () => {
     if (!decisionAction) return
     if (decisionAction === "approve") {
@@ -1903,12 +1979,18 @@ export function AdminClaimManager({
     })
     .filter((entry): entry is { item: SupabasePedidoItem; quantity: number } => entry !== null)
   const canReviewClaim = !closed && ["recibido", "en_revision", "falta_informacion"].includes(claim.status)
+  // Resolución por línea (claim-policy): un reclamo simple es su resolución
+  // global sobre todas las unidades; uno mixto, su reparto por producto. Las
+  // piezas físicas (logística, wizard, reemplazo) siguen la resolución operativa.
+  const mixed = isMixedClaimResolution(claim.resolution)
+  const resolutionLines = getClaimResolutionLines(claim)
+  const operationalResolution = getClaimOperationalResolution(claim.resolution, resolutionLines)
   const canCompleteAcceptedSolution = isAdmin && !closed && claim.status === "aprobado"
   const canCompleteReplacementSolution =
     canCompleteAcceptedSolution &&
-    (claim.resolution === "cambio_producto" || claim.resolution === "envio_unidad_faltante")
+    (operationalResolution === "cambio_producto" || operationalResolution === "envio_unidad_faltante")
   const summaryReceptionTotals = getReceptionTotals(summaryAffectedItems)
-  const replacedUnits = claim.resolution === "cambio_producto" ? sumClaimReplacedUnits(
+  const replacedUnits = operationalResolution === "cambio_producto" ? sumClaimReplacedUnits(
     registeredReplacements, claim, allClaims,
   ) : sumReplacedUnits(
     registeredReplacements,
@@ -1920,7 +2002,8 @@ export function AdminClaimManager({
   // del paradero de cada unidad; la base vuelve a validar cada acción.
   const logistics = getAdminClaimLogisticsView({
     status: claim.status,
-    resolution: claim.resolution,
+    // Mixto: resolución operativa y sin cambio directo (claim-policy).
+    ...getClaimLogisticsResolution(claim),
     shipments: claim.order_claim_shipments ?? null,
     units: claim.order_claim_units ?? null,
     legacy: claim.logistics_legacy,
@@ -1930,10 +2013,10 @@ export function AdminClaimManager({
   // Un cambio nuevo sin método elegido no reserva stock: primero el Admin
   // decide cambio directo o retiro + revisión (los históricos ya recibidos
   // conservan su flujo).
-  const methodPending = Boolean(logistics && !logistics.legacy && logistics.plan === null && claim.resolution === "cambio_producto" && summaryReceptionTotals.received === 0)
+  const methodPending = Boolean(logistics && !logistics.legacy && logistics.plan === null && operationalResolution === "cambio_producto" && summaryReceptionTotals.received === 0)
   const baseReplacementFlow = getReplacementFlow({
     status: claim.status,
-    resolution: claim.resolution,
+    resolution: operationalResolution,
     claimedUnits: summaryReceptionTotals.claimed,
     receivedUnits: summaryReceptionTotals.received,
     replacedUnits,
@@ -1979,23 +2062,39 @@ export function AdminClaimManager({
   )
   // Matriz de resoluciones (claim-policy): qué activa la solución elegida. Ningún
   // control decide por su cuenta si hay NC, reintegro, saldo, envío o cierre.
-  const requirements = getClaimRequirements(claim.resolution)
+  const requirements = getClaimRequirements(operationalResolution)
   const financial = getClaimFinancialView({
     claimId: claim.id,
     resolution: claim.resolution,
     paymentMethodId: pedido.payment_method_id,
     creditNotes: pedido.order_credit_notes ?? null,
   })
+  const replacementsVerified = !replacementLoadState || replacementLoadState === "ready"
+  // Reclamo mixto: progreso por producto y qué falta (order_claim_mixed_blockers).
+  const mixedView = mixed ? getMixedClaimView({
+    claimId: claim.id,
+    affectedItems: claim.affected_items ?? [],
+    lines: resolutionLines,
+    replacedByItem: replacementsVerified ? getClaimReplacedUnitsByItem(registeredReplacements, claim.id) : null,
+    deliveredByItem: (claim.order_claim_units?.length ?? 0) > 0
+      ? (claim.order_claim_units ?? []).reduce((counts, unit) => {
+          if (unit.role === "reemplazo" && unit.location === "entregada_cliente") counts.set(unit.order_item_id, (counts.get(unit.order_item_id) ?? 0) + 1)
+          return counts
+        }, new Map<number, number>())
+      : null,
+    creditNotes: pedido.order_credit_notes ?? null,
+  }) : null
   const closeReadiness = getClaimCloseReadiness({
     status: claim.status,
     resolution: claim.resolution,
     replacedUnits,
     replacementVerified: claim.resolution === "cambio_producto"
-      ? replacedUnits !== null && (!replacementLoadState || replacementLoadState === "ready")
+      ? replacedUnits !== null && replacementsVerified
       : replacementLoadState !== "loading",
     logisticsResolved: logistics && !logistics.legacy && (claim.order_claim_units?.length ?? 0) > 0 ? logistics.canClose : null,
     financial,
     orderRefunded: pedido.financial_status === "refunded",
+    mixed: mixedView,
   })
   // Estado comercial (no el crudo de Andreani): el detalle físico vive en Logística.
   const commercialStatus = getClaimCommercialStatus({
@@ -2008,8 +2107,23 @@ export function AdminClaimManager({
     financial,
     close: closeReadiness,
   })
-  const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && requirements?.financialAction === "refund"
-  const canIssueCreditNote = isAdmin && !closed && Boolean(requirements?.requiresCreditNote) && financial?.stage !== "done"
+  // Un mixto gestiona su dinero desde "Resolución por producto" (por unidades).
+  const canManageRefund = !mixed && isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && requirements?.financialAction === "refund"
+  const canIssueCreditNote = !mixed && isAdmin && !closed && Boolean(requirements?.requiresCreditNote) && financial?.stage !== "done"
+  const pendingRefundNotes = getPendingRefundNotes((pedido.order_credit_notes ?? []).filter((note) => note.claim_id === claim.id))
+  const mixedRefundExecution = Boolean(mixedView?.hasRefund) && isAdmin && !closed && pendingRefundNotes.length > 0
+  // Reemplazo -> reintegro / saldo por falta de stock: sólo mientras sea reversible.
+  const replacedByItemForSwitch = replacementsVerified ? getClaimReplacedUnitsByItem(registeredReplacements, claim.id) : null
+  const replacementSwitchFor = (orderItemId: number | null) => getReplacementSwitchState({
+    status: claim.status,
+    resolution: claim.resolution,
+    lines: resolutionLines,
+    orderItemId,
+    shipments: Array.isArray(claim.order_claim_shipments) ? claim.order_claim_shipments : null,
+    units: claim.order_claim_units ?? null,
+    replacedByItem: replacedByItemForSwitch,
+  })
+  const simpleReplacementSwitch = !mixed && isAdmin && !closed ? replacementSwitchFor(null) : null
   const canCloseClaim = !closed && !cancellation && closeReadiness?.action !== "mark_refund_done" && closeReadiness?.action !== "mark_credit_issued" &&
     (isAdmin || requirements?.solution !== "replacement")
   const canCloseConversation = helpMessage && !closed
@@ -2092,6 +2206,34 @@ export function AdminClaimManager({
   const openApproveDecision = () => {
     // Al corregir, el formulario parte de la solución vigente.
     if (reviewEdit.mode === "edit") setDecisionResolution(getDefaultDecisionResolution(claim))
+    setDecisionLines(mixed ? decisionLinesFromRows(resolutionLines) : {})
+    openDecision("approve")
+  }
+  // Comprobante del reintegro externo (transferencia): mismo bloque para el
+  // reintegro simple y para las unidades a reintegrar de un reclamo mixto.
+  const renderRefundProofUpload = () => (
+    <div className="admin-claim-wizard-action" data-claim-refund-proof>
+      <p className="text-xs font-black text-white">Comprobante de reintegro</p>
+      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-10px font-bold text-white/75 hover:border-emerald-300/35">
+        <Upload className="size-3.5" />
+        <span className="truncate">{refundProofFile?.name || refundProof?.file_name || "Elegir archivo"}</span>
+        <input
+          type="file"
+          accept=".jpg,.jpeg,.pdf"
+          className="sr-only"
+          onChange={(event) => setRefundProofFile(event.target.files?.[0] ?? null)}
+        />
+      </label>
+      <AdminButton size="sm" variant="primary" disabled={saving || !refundProofFile}
+        onClick={() => setPendingConfirmation({ title: "Registrar reintegro", description: "Confirmá que el dinero ya se devolvió al cliente.", confirmLabel: "Registrar reintegro", run: uploadRefundProof })}>
+        Registrar reintegro
+      </AdminButton>
+    </div>
+  )
+  // Mixto con unidades sin definir: se completan sin tocar lo ya asignado.
+  const openPendingUnitsDecision = () => {
+    setDecisionResolution(MIXED_CLAIM_RESOLUTION)
+    setDecisionLines(decisionLinesFromRows(resolutionLines))
     openDecision("approve")
   }
   // Pasos operativos con paso "Método": la reserva vive en la operación del
@@ -2103,11 +2245,14 @@ export function AdminClaimManager({
     return counts
   }, {})
   const { steps: workflowSteps, current: currentStep, currentIndex } = getAdminClaimWizard({
-    status: claim.status, resolution: claim.resolution,
+    status: claim.status, resolution: operationalResolution,
     receivedUnits: summaryReceptionTotals.received, replacedUnits,
     logistics: logistics && logisticsMethodStep ? { plan: logistics.plan, step: logistics.wizardStep } : null,
     receptionComplete: summaryReceptionTotals.received >= summaryReceptionTotals.claimed,
     cancelled: claimCancelled,
+    executionLabel: !mixedView ? undefined
+      : mixedView.hasRefund && mixedView.hasCredit ? "Reintegro y saldo"
+        : mixedView.hasRefund ? "Reintegro" : mixedView.hasCredit ? "Saldo a favor" : undefined,
     occurred: claimCancelled ? getCancelledClaimOccurredSteps({
       resolution: claim.resolution,
       logisticsPlan: logistics?.plan ?? null,
@@ -2215,11 +2360,58 @@ export function AdminClaimManager({
           problem={PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}
           description={claim.description ? getClaimMessageText(claim.description) : null}
           items={summaryAffectedItems}
-          solution={requirements ? `${requirements.label}${claimCancelled ? " (no se completó)" : ""}` : null}
-          returnSummary={getClaimReturnSummary(claim.resolution, logistics?.plan ?? null)}
+          solution={mixed
+            ? `${MIXED_CLAIM_LABEL}: ${getClaimLinesSummary(resolutionLines) || "a definir"}${claimCancelled ? " (no se completó)" : ""}`
+            : requirements ? `${requirements.label}${claimCancelled ? " (no se completó)" : ""}` : null}
+          returnSummary={getClaimReturnSummary(operationalResolution, logistics?.plan ?? null)}
           financial={financial}
           groups={logistics?.flow.groups ?? []}
           details={<ClaimShipmentTrace order={pedido} claim={claim} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />}
+        />
+      )}
+
+      {formalClaim && mixedView && (
+        <ClaimItemResolutionPanel
+          items={mixedView.items}
+          itemLabel={itemLabel}
+          disabled={saving}
+          switchState={isAdmin && !closed ? (orderItemId) => replacementSwitchFor(orderItemId) : undefined}
+          onSwitch={(orderItemId, target) => askReplacementSwitch(orderItemId, target)}
+          actions={!closed && isAdmin ? (
+            <>
+              {mixedView.blockers.includes("Unidades sin solución") && (
+                <AdminSecondaryButton size="sm" disabled={saving} onClick={openPendingUnitsDecision}>Definir unidades pendientes</AdminSecondaryButton>
+              )}
+              {mixedView.creditNotePending.credit > 0 && (
+                <DecisionButton
+                  icon={<CreditCard className="size-4" />}
+                  title="Calcular saldo a favor"
+                  description={invoiced ? `${mixedView.creditNotePending.credit} ${mixedView.creditNotePending.credit === 1 ? "unidad" : "unidades"} · se acredita en la cuenta del cliente.` : "Primero tiene que estar facturado."}
+                  tone="success"
+                  disabled={saving || !invoiced}
+                  onClick={onOpenBilling}
+                />
+              )}
+              {mixedView.creditNotePending.refund > 0 && (
+                <DecisionButton
+                  icon={<CreditCard className="size-4" />}
+                  title="Calcular reintegro"
+                  description={invoiced ? `${mixedView.creditNotePending.refund} ${mixedView.creditNotePending.refund === 1 ? "unidad" : "unidades"} · sólo los productos a reintegrar.` : "Primero tiene que estar facturado."}
+                  tone="success"
+                  disabled={saving || !invoiced}
+                  onClick={onOpenBilling}
+                />
+              )}
+              {(pedido.order_credit_notes ?? []).some((note) => note.claim_id === claim.id && note.status === "processing") && (
+                <p className="admin-claim-wizard-note" data-claim-financial-wait>Emitiendo la nota de crédito…</p>
+              )}
+              {mixedRefundExecution && (mixedView.refundWaitsForCredit
+                ? <p className="admin-claim-wizard-note" data-claim-refund-waits>Primero calculá el saldo a favor; después registrá el reintegro.</p>
+                : pedido.payment_method_id === "mercadopago"
+                  ? <MercadoPagoRefundAction pedido={pedido} onUpdated={onInventoryUpdated} />
+                  : renderRefundProofUpload())}
+            </>
+          ) : null}
         />
       )}
 
@@ -2449,7 +2641,7 @@ export function AdminClaimManager({
                   ? (selectedStep === "logistics" || selectedStep === "reception" || selectedStep === "replacement" ||
                     (selectedStep === "finish" && Boolean(logistics?.plan))) && renderLogisticsPanel(selectedStep)
                   : ["reception", "replacement", "execution"].includes(selectedStep) && renderLogisticsPanel("all")}
-                {selectedStep === "reception" && (claim.resolution === "cambio_producto" || Boolean(logistics?.plan)) && (
+                {selectedStep === "reception" && (operationalResolution === "cambio_producto" || Boolean(logistics?.plan)) && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
                     canManage={isAdmin && !closed && !claimCreditNoteActive}
                     arrivedUnitsByItem={logistics?.plan ? arrivedUnitsByItem : undefined}
@@ -2469,7 +2661,17 @@ export function AdminClaimManager({
                       : "Primero recibí el producto original."}</p>}
                   </div>
                 )}
-                {selectedStep === finishStep && !closed && canCompleteReplacementSolution && closeReadiness && (
+                {/* Reemplazo sin stock: salida segura mientras el reemplazo no salió (la base lo vuelve a exigir). */}
+                {simpleReplacementSwitch?.available && ["method", "logistics", "reception", "replacement"].includes(selectedStep) && (
+                  <div className="admin-claim-lines-switch" data-claim-replacement-switch>
+                    <span>¿Sin stock para reemplazar?</span>
+                    <button type="button" className="admin-claim-progress-link" disabled={saving}
+                      onClick={() => askReplacementSwitch(null, "refund")}>Pasar a reintegro</button>
+                    <button type="button" className="admin-claim-progress-link" disabled={saving}
+                      onClick={() => askReplacementSwitch(null, "credit")}>Pasar a saldo a favor</button>
+                  </div>
+                )}
+                {selectedStep === finishStep && !closed && canCompleteReplacementSolution && !mixed && closeReadiness && (
                   <div className="admin-claim-wizard-action" data-claim-finish-action>
                     <AdminButton variant="primary" disabled={saving || !closeReadiness.canClose}
                       onClick={() => setPendingConfirmation({
@@ -2479,6 +2681,9 @@ export function AdminClaimManager({
                       })}>Confirmar entrega y finalizar</AdminButton>
                     {!closeReadiness.canClose && <p className="admin-claim-wizard-note" data-claim-close-blockers>{closeReadiness.blockers.join(" · ")}</p>}
                   </div>
+                )}
+                {selectedStep === "execution" && mixedView && !closed && (
+                  <p className="admin-claim-wizard-note" data-claim-mixed-money-note>El reintegro y el saldo se gestionan por producto, en «Resolución por producto».</p>
                 )}
                 {/* Dinero: el paso muestra sólo la acción posible ahora. La NC es la consecuencia
                     fiscal del reintegro o del saldo; nunca se elige por separado. */}
@@ -2514,25 +2719,8 @@ export function AdminClaimManager({
                 {selectedStep === "execution" && canManageRefund && pedido.payment_method_id === "mercadopago" && (
                   <MercadoPagoRefundAction pedido={pedido} onUpdated={onInventoryUpdated} />
                 )}
-                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && getPendingRefundNotes(pedido.order_credit_notes).length > 0 && (
-                  <div className="admin-claim-wizard-action" data-claim-refund-proof>
-                    <p className="text-xs font-black text-white">Comprobante de reintegro</p>
-                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-10px font-bold text-white/75 hover:border-emerald-300/35">
-                      <Upload className="size-3.5" />
-                      <span className="truncate">{refundProofFile?.name || refundProof?.file_name || "Elegir archivo"}</span>
-                      <input
-                        type="file"
-                        accept=".jpg,.jpeg,.pdf"
-                        className="sr-only"
-                        onChange={(event) => setRefundProofFile(event.target.files?.[0] ?? null)}
-                      />
-                    </label>
-                    <AdminButton size="sm" variant="primary" disabled={saving || !refundProofFile}
-                      onClick={() => setPendingConfirmation({ title: "Registrar reintegro", description: "Confirmá que el dinero ya se devolvió al cliente.", confirmLabel: "Registrar reintegro", run: uploadRefundProof })}>
-                      Registrar reintegro
-                    </AdminButton>
-                  </div>
-                )}
+                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && getPendingRefundNotes(pedido.order_credit_notes).length > 0 &&
+                  renderRefundProofUpload()}
                 {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && closeReadiness?.action === "mark_refund_done" && closeReadiness.canClose && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
@@ -2548,7 +2736,7 @@ export function AdminClaimManager({
                     })}
                   />
                 )}
-                {selectedStep === finishStep && !closed && canCloseClaim && !canCompleteReplacementSolution && (
+                {selectedStep === finishStep && !closed && canCloseClaim && (!canCompleteReplacementSolution || mixed) && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
                     title="Finalizar reclamo"
@@ -2773,6 +2961,12 @@ export function AdminClaimManager({
           onConfirm={() => void runDecisionAction()}
           editingResolution={decisionAction === "approve" && reviewEdit.mode === "edit" ? claim.resolution ?? null : null}
           unavailableResolutions={decisionAction === "approve" && reviewEdit.mode === "edit" ? reviewEdit.unavailableResolutions : []}
+          mixedItems={summaryAffectedItems.map(({ item, quantity }) => ({ orderItemId: Number(item.id), name: itemLabel(Number(item.id)), claimed: quantity }))}
+          mixedLines={decisionLines}
+          mixedMinimum={mixed ? decisionLinesFromRows(resolutionLines) : {}}
+          mixedError={getClaimResolutionLinesError(claim.affected_items ?? [], decisionLinesToRows(decisionLines), { initial: !mixed })}
+          mixedUnchanged={mixed && JSON.stringify(decisionLinesToRows(decisionLines).sort(compareLines)) === JSON.stringify([...resolutionLines].sort(compareLines))}
+          onMixedLinesChange={setDecisionLines}
         />
       )}
       {pendingConfirmation && (
@@ -2795,7 +2989,7 @@ export function AdminClaimManager({
               </AdminSecondaryButton>
               <AdminButton
                 variant="primary"
-                disabled={saving || (requirements?.solution === "replacement" && closeReadiness?.canClose === false)}
+                disabled={saving || (!pendingConfirmation.ignoresCloseReadiness && requirements?.solution === "replacement" && closeReadiness?.canClose === false)}
                 onClick={async () => {
                   await pendingConfirmation.run()
                   setPendingConfirmation(null)
@@ -3288,9 +3482,24 @@ function ClaimActionModal({
   onConfirm,
   editingResolution = null,
   unavailableResolutions = [],
+  mixedItems = [],
+  mixedLines = {},
+  mixedMinimum = {},
+  mixedError = null,
+  mixedUnchanged = false,
+  onMixedLinesChange,
 }: {
   action: ClaimAction
   saving: boolean
+  /** Productos reclamados, para repartir unidades entre soluciones (reclamo mixto). */
+  mixedItems?: Array<{ orderItemId: number; name: string; claimed: number }>
+  mixedLines?: Record<string, number>
+  /** Unidades ya asignadas: no se reducen al completar las pendientes. */
+  mixedMinimum?: Record<string, number>
+  mixedError?: string | null
+  /** El reparto no cambió respecto del vigente. */
+  mixedUnchanged?: boolean
+  onMixedLinesChange?: (next: Record<string, number>) => void
   /** Corrección de una solución ya aprobada (Revisión editable). */
   editingResolution?: string | null
   /** Soluciones que no se pueden elegir al corregir desde el estado actual. */
@@ -3354,7 +3563,8 @@ function ClaimActionModal({
     (action === "reject" && message.trim().length < 5) ||
     (action === "reject_cancellation" && message.trim().length < 5) ||
     (action === "approve_cancellation" && !cancellationCanBeApproved) ||
-    (editing && (resolution === editingResolution || (editingResolution === "saldo_a_favor" && resolution === "cupon_descuento"))) ||
+    (editing && resolution !== MIXED_CLAIM_RESOLUTION && resolution === editingResolution) ||
+    (action === "approve" && resolution === MIXED_CLAIM_RESOLUTION && (Boolean(mixedError) || mixedUnchanged)) ||
     (
       action === "approve" &&
       getClaimRequirements(resolution)?.requiresAmountOnApproval &&
@@ -3368,11 +3578,19 @@ function ClaimActionModal({
     reintegro_total: "border-emerald-300/25 hover:border-emerald-300/60",
     reintegro_parcial: "border-emerald-300/25 hover:border-emerald-300/60",
     otro: "border-white/10 hover:border-white/25",
+    mixta: "border-violet-300/25 hover:border-violet-300/60",
   }
+  // Repartir sólo tiene sentido con más de una unidad reclamada.
+  const canSplit = mixedItems.reduce((sum, item) => sum + item.claimed, 0) > 1
+  const solutionOptions: ReadonlyArray<{ value: Exclude<OrderClaimResolution, "rechazado">; label: string; hint?: string }> = [
+    ...CLAIM_SOLUTION_OPTIONS,
+    ...(canSplit ? [{ value: MIXED_CLAIM_RESOLUTION, label: "Una solución distinta por producto", hint: "Repartí las unidades: por ejemplo, 1 reemplazo y 1 reintegro." } as const] : []),
+  ]
+  const selectedHint = solutionOptions.find((option) => option.value === resolution)?.hint
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/78 p-4" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="admin-claim-action-modal w-full max-w-md rounded-xl border border-blue-300/24 bg-[#050c14] p-3 shadow-2xl">
+      <div className="admin-claim-action-modal max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-xl border border-blue-300/24 bg-[#050c14] p-3 shadow-2xl">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h4 className="text-base font-black text-white">{title}</h4>
@@ -3388,7 +3606,7 @@ function ClaimActionModal({
             <div>
               <p className="text-sm font-black text-white">¿Qué recibe el cliente?</p>
               <div className="mt-2 grid gap-1">
-                {CLAIM_SOLUTION_OPTIONS.filter((option) => !unavailableResolutions.includes(option.value)).map((option) => (
+                {solutionOptions.filter((option) => !unavailableResolutions.includes(option.value)).map((option) => (
                   <label key={option.value} className={`flex cursor-pointer items-center gap-2 rounded-lg border bg-white/[0.03] px-2.5 py-1.5 text-xs font-bold text-white ${resolutionToneClassNames[option.value]}`}>
                     <input
                       type="radio"
@@ -3401,6 +3619,13 @@ function ClaimActionModal({
                   </label>
                 ))}
               </div>
+              {selectedHint && <p className="admin-claim-lines-hint mt-1.5" data-claim-solution-hint>{selectedHint}</p>}
+              {resolution === MIXED_CLAIM_RESOLUTION && onMixedLinesChange && (
+                <div className="mt-2">
+                  <ClaimLineEditor items={mixedItems} values={mixedLines} minimum={mixedMinimum} onChange={onMixedLinesChange} />
+                  {mixedError && <p className="admin-claim-lines-missing mt-1" data-claim-line-error>{mixedError}</p>}
+                </div>
+              )}
               {getClaimRequirements(resolution)?.requiresAmountOnApproval && (
                 <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-950/18 p-2">
                   <label className="text-10px font-black uppercase text-emerald-100/70">

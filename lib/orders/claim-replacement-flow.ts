@@ -58,6 +58,25 @@ export function sumClaimReplacedUnits(
     .reduce((sum, row) => sum + activeQuantity(row), 0)
 }
 
+/**
+ * Reemplazos activos (netos de reversiones) registrados para ESTE reclamo, por
+ * ítem. Misma fuente que la base (order_replacements.claim_id) para el cierre
+ * mixto y el cambio por falta de stock. null = todavía sin verificar.
+ */
+export function getClaimReplacedUnitsByItem(
+  replacements: RegisteredReplacement[] | null | undefined,
+  claimId: number,
+): Map<number, number> | null {
+  if (!replacements) return null
+  const byItem = new Map<number, number>()
+  for (const row of replacements) {
+    if (row.claim_id !== claimId) continue
+    const itemId = Number(row.original_order_item_id)
+    byItem.set(itemId, (byItem.get(itemId) ?? 0) + activeQuantity(row))
+  }
+  return byItem
+}
+
 export function sumReplacedUnits(
   replacements: RegisteredReplacement[] | null | undefined,
   orderItemIds: number[],

@@ -15,7 +15,8 @@ import {
   type RegisteredReplacement,
   type ReplacementLoadState,
 } from "@/lib/orders/claim-replacement-flow"
-import type { SupabasePedido } from "@/lib/supabase/types"
+import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
+import { getClaimLineQuantities, getClaimResolutionLines } from "@/lib/orders/claim-policy"
 import { HelpTip } from "@/components/claims/help-tip"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
 import { AdminSecondaryButton } from "../../components/admin-controls"
@@ -120,19 +121,21 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
     openReplacementModal(openRequest.orderItemId)
   }, [openRequest, openReplacementModal])
   const orderItems = pedido.orden_items ?? []
+  // Unidades a reemplazar por ítem: un cambio simple, todo lo reclamado; un
+  // reclamo mixto, sólo lo asignado a reemplazo (nunca las de reintegro o saldo).
+  const replacementUnits = (claim: SupabaseOrderClaim) => getClaimLineQuantities(getClaimResolutionLines(claim), "replacement")
   const openChangeClaims = (pedido.order_claims ?? []).filter((claim) =>
-    claim.resolution === "cambio_producto" && !["cerrado", "rechazado"].includes(claim.status))
+    ["cambio_producto", "mixta"].includes(claim.resolution ?? "") && replacementUnits(claim).size > 0 &&
+    !(["cerrado", "rechazado"].includes(claim.status)))
   // Ítem original fijo (sin selector) cuando no hay nada que elegir: pedido de
   // un solo ítem, o un único ítem reclamado en los cambios abiertos.
-  const claimedItemIds = [...new Set(openChangeClaims.flatMap((claim) =>
-    (claim.affected_items ?? []).filter((affected) => affected.quantity > 0).map((affected) => affected.order_item_id)))]
+  const claimedItemIds = [...new Set(openChangeClaims.flatMap((claim) => [...replacementUnits(claim).keys()]))]
   const fixedItem = orderItems.length === 1
     ? orderItems[0]
     : claimedItemIds.length === 1 ? orderItems.find((candidate) => candidate.id === claimedItemIds[0]) : undefined
   const fixedItemImage = fixedItem ? getCuentaItemImage(fixedItem) : null
   const item = fixedItem ?? orderItems.find((candidate) => candidate.id === Number(itemId))
-  const matchingClaims = openChangeClaims.filter((claim) =>
-    claim.affected_items?.some((affected) => affected.order_item_id === item?.id && affected.quantity > 0))
+  const matchingClaims = openChangeClaims.filter((claim) => (replacementUnits(claim).get(Number(item?.id)) ?? 0) > 0)
   // Reemplazo = mismo producto: sólo variantes del producto del ítem original.
   const productVariants = item ? (data?.variants ?? []).filter((candidate) => Number(candidate.producto_id) === Number(item.producto_id)) : []
   const originalVariant = item?.variante_id ? productVariants.find((candidate) => candidate.id === item.variante_id) : undefined
@@ -148,9 +151,7 @@ export function OrderReplacementManager({ pedido, onUpdated, onReplacementsChang
   // Cambio de producto: si el reclamo abarca unidades que todavía no
   // volvieron, sólo se avanza con la excepción explícita (el servidor lo
   // vuelve a validar).
-  const claimedUnits = Math.max(0, ...matchingClaims.map((claim) =>
-    (claim.affected_items ?? []).filter((affected) => affected.order_item_id === item?.id)
-      .reduce((sum, affected) => sum + Math.max(0, Number(affected.quantity) || 0), 0)))
+  const claimedUnits = Math.max(0, ...matchingClaims.map((claim) => replacementUnits(claim).get(Number(item?.id)) ?? 0))
   const pendingReception = warranty ? 0 : getPendingOriginalReception(claimedUnits, received)
   const count = Number(quantity)
   const valid = Boolean(item && variant && matchingClaims.length <= 1 && pendingReception === 0 && Number.isInteger(count) && count > 0 && count <= availableOriginal && count <= variant.stock && reason.trim().length >= 10 && !loading)

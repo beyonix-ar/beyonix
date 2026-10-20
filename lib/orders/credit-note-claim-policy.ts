@@ -1,4 +1,4 @@
-import { claimAllowsCreditNote } from "./claim-policy.ts"
+import { claimAllowsCreditNote, getClaimCreditableQuantities, isMixedClaimResolution } from "./claim-policy.ts"
 import { operationRequiresClaim } from "./credit-note-wizard.ts"
 
 export interface CreditNoteClaimPolicyClaim {
@@ -12,6 +12,12 @@ export interface CreditNoteClaimPolicyClaim {
     order_item_id: number
     quantity: number
   }> | null
+  /** Reclamo mixto: unidades por solución (reemplazo, reintegro, saldo). */
+  order_claim_item_resolutions?: Array<{
+    order_item_id: number
+    solution: string
+    quantity: number
+  }> | null
 }
 
 interface CreditNoteClaimPolicyInput {
@@ -21,6 +27,8 @@ interface CreditNoteClaimPolicyInput {
   orderUserId?: string | null
   claim: CreditNoteClaimPolicyClaim | null
   selectedItems: Array<{ order_item_id: number; quantity: number }>
+  /** Destino del dinero: en un reclamo mixto define qué unidades puede acreditar. */
+  destination?: string | null
   /**
    * El pedido se canceló directamente desde Admin (admin_cancel_order,
    * auditado): no existe reclamo del cliente. Misma evidencia que exige la
@@ -59,6 +67,7 @@ export function getCreditNoteClaimPolicyError({
   orderUserId,
   claim,
   selectedItems,
+  destination = null,
   adminDirectCancellation = false,
 }: CreditNoteClaimPolicyInput): string | null {
   if (isAdministrativeCreditNoteOperation(operationType)) {
@@ -105,12 +114,19 @@ export function getCreditNoteClaimPolicyError({
     return "La solicitud de cancelación no autoriza una devolución de productos."
   }
 
-  const affectedItems = new Map(
-    (claim.affected_items ?? []).map((item) => [
-      Number(item.order_item_id),
-      Number(item.quantity),
-    ]),
-  )
+  // Reclamo mixto: la NC toma sólo las unidades de reintegro (external_refund)
+  // o de saldo (customer_balance), nunca las reemplazadas ni el total del
+  // reclamo (guard_mixed_claim_credit_note_item vuelve a exigirlo).
+  const mixed = isMixedClaimResolution(claim.resolution)
+  if (mixed && selectedItems.length === 0) {
+    return "Indicá los productos del reintegro o del saldo a favor."
+  }
+  const affectedItems = getClaimCreditableQuantities(claim, destination ?? "")
+  if (mixed && affectedItems.size === 0) {
+    return destination === "external_refund"
+      ? "Este reclamo no tiene unidades a reintegrar."
+      : "Este reclamo no tiene unidades con saldo a favor."
+  }
   for (const item of selectedItems) {
     const affectedQuantity = affectedItems.get(item.order_item_id) ?? 0
     if (affectedQuantity < item.quantity) {

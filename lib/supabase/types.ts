@@ -5,6 +5,7 @@ import type {
   ClaimUnitSource,
 } from "../orders/claim-shipment-view.ts"
 import type { AdminPendingFacts } from "../orders/admin-pending-actions.ts"
+import type { ClaimItemResolutionRow } from "../orders/claim-policy.ts"
 import type { ProductColorMode } from "../products/color-mode.ts"
 
 // ─────────────────────────────────────────────────────────────
@@ -805,6 +806,8 @@ export type OrderClaimResolution =
   | "cupon_descuento"
   | "rechazado"
   | "otro"
+  /** Reclamo mixto: la solución se define por producto/unidad (order_claim_item_resolutions). */
+  | "mixta"
 
 export interface SupabaseOrderClaimFile {
   id: number
@@ -897,6 +900,8 @@ export interface SupabaseOrderClaim {
   order_claim_shipments?: SupabaseOrderClaimShipment[] | null
   /** Sólo Admin: paradero lógico de cada unidad (original y reemplazo). */
   order_claim_units?: SupabaseOrderClaimUnit[] | null
+  /** Reclamo mixto: unidades de cada ítem por solución (reemplazo, reintegro, saldo). */
+  order_claim_item_resolutions?: SupabaseOrderClaimItemResolution[] | null
   /** Reclamo anterior al circuito logístico por sucursal (sin unidades). */
   logistics_legacy?: boolean
   /** Reclamo cancelado por BEYONIX (status 'cerrado' + estos datos): se muestra como "Cancelado". */
@@ -930,6 +935,8 @@ export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource 
 }
 
 export type SupabaseOrderClaimUnit = ClaimUnitSource
+
+export type SupabaseOrderClaimItemResolution = ClaimItemResolutionRow
 
 export interface SupabaseReview {
   id: number

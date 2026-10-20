@@ -4,7 +4,7 @@ import type {
   OrderClaimType,
   SupabaseOrderCreditNote,
 } from "@/lib/supabase/types"
-import { getClaimRequirements } from "./orders/claim-policy.ts"
+import { MIXED_CLAIM_LABEL, getClaimRequirements, isMixedClaimResolution } from "./orders/claim-policy.ts"
 
 export const ORDER_CLAIM_BUCKET = "order-claim-evidence"
 
@@ -103,6 +103,7 @@ export const ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] = [
   "cupon_descuento",
   "rechazado",
   "otro",
+  "mixta",
 ]
 
 export const CUSTOMER_SELECTABLE_ORDER_CLAIM_RESOLUTIONS: OrderClaimResolution[] =
@@ -227,6 +228,7 @@ export function getOrderClaimTypeLabel(type?: string | null) {
 export function getOrderClaimResolutionLabel(resolution?: string | null) {
   if (!resolution) return "Sin resolución"
   if (resolution === "rechazado") return "Rechazado"
+  if (isMixedClaimResolution(resolution)) return MIXED_CLAIM_LABEL
   return getClaimRequirements(resolution)?.label ?? resolution
 }
 

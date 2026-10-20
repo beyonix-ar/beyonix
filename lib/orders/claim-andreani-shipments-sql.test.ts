@@ -45,6 +45,7 @@ const CHAIN = [
   "20261001170000_claim_return_dropoff_copy",
   // Matriz de resoluciones: NC sólo con dinero, reemplazo sin devolución.
   "20261019120000_claim_policy_consolidation",
+  "20261020100000_claim_item_resolutions",
 ]
 
 type Db = PGlite

@@ -55,7 +55,7 @@ test("DSP y acciones de impresión: contraste y ancho en light/dark", async () =
   } finally { await browser.close() }
 })
 
-test("módulo Despachos: tres etapas, superficies opacas y sin desborde en Light/Dark", async () => {
+test("módulo Despachos: cuatro etapas, superficies opacas y sin desborde en Light/Dark", async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dispatch-browser.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dispatch-browser-key"
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
@@ -67,7 +67,9 @@ test("módulo Despachos: tres etapas, superficies opacas y sin desborde en Light
     for (const theme of ["light", "dark"]) for (const width of [390, 1024, 1440]) {
       await page.setViewportSize({ width, height: 800 })
       await page.setContent(`<html data-admin-theme="${theme}"><head><style>${css}</style></head><body><div class="beyonix-admin-shell"><main class="beyonix-admin-main">${markup}</main></div></body></html>`)
-      assert.equal(await page.locator('nav[aria-label="Estados de despacho"] button').count(), 3)
+      // Pendientes -> Confirmados -> Bultos -> Entregados (historial de Bultos entregados, 4730ee7).
+      assert.deepEqual(await page.locator('nav[aria-label="Estados de despacho"] button').allTextContents(),
+        ["Pendientes", "Confirmados", "Bultos", "Entregados"])
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${theme} ${width}`)
       const opaque = await page.locator(".admin-ds-surface").first().evaluate((el) => getComputedStyle(el).backgroundColor)
       assert.notEqual(opaque, "rgba(0, 0, 0, 0)", `${theme} ${width}`)

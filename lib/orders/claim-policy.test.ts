@@ -75,7 +75,7 @@ test("OTRA SOLUCIÓN y sin decidir: nada se activa", () => {
 
 test("las opciones comerciales del Admin son soluciones, no logística ni fiscalidad", () => {
   assert.deepEqual(CLAIM_SOLUTION_OPTIONS.map((option) => option.label),
-    ["Reemplazar producto", "Enviar unidad faltante", "Reintegrar dinero", "Dar saldo a favor"])
+    ["Reemplazar producto", "Enviar unidad faltante", "Reintegrar dinero", "Cambiar por otro producto", "Dar saldo a favor"])
   assert.ok(CLAIM_SOLUTION_OPTIONS.every((option) => !/nota de crédito|devoluci/i.test(option.label)))
 })
 
@@ -103,15 +103,16 @@ test("NOTA DE CRÉDITO: sólo con dinero de por medio (o una cancelación)", () 
   assert.match(error ?? "", /no corresponde nota de crédito/)
 })
 
-test("la guarda SQL de NC usa exactamente las mismas resoluciones económicas", () => {
-  const sql = readFileSync(new URL("../../supabase/migrations/20261019120000_claim_policy_consolidation.sql", import.meta.url), "utf8")
-  const body = sql.slice(sql.indexOf("function public.claim_resolution_allows_credit_note"), sql.indexOf("create or replace function public.guard_claim_credit_note_resolution"))
+test("la guarda SQL de NC usa exactamente las mismas resoluciones económicas (+ el reclamo mixto)", () => {
+  const sql = readFileSync(new URL("../../supabase/migrations/20261020100000_claim_item_resolutions.sql", import.meta.url), "utf8")
+  const start = sql.indexOf("function public.claim_resolution_allows_credit_note")
+  const body = sql.slice(start, sql.indexOf("$$;", start))
   const listed = [...body.matchAll(/'([a-z_]+)'/g)].map((match) => match[1]).filter((value) => value !== "cancelar_compra")
-  assert.deepEqual([...listed].sort(), [...FINANCIAL_CLAIM_RESOLUTIONS].sort())
+  assert.deepEqual([...listed].sort(), [...FINANCIAL_CLAIM_RESOLUTIONS, "mixta"].sort())
 })
 
 test("el resumen congelado para el cliente usa los nombres de la matriz (sin conceptos fiscales)", () => {
-  const sql = readFileSync(new URL("../../supabase/migrations/20261019120000_claim_policy_consolidation.sql", import.meta.url), "utf8")
+  const sql = readFileSync(new URL("../../supabase/migrations/20261020100000_claim_item_resolutions.sql", import.meta.url), "utf8")
   const summary = sql.slice(sql.indexOf("function public.build_order_claim_resolution_summary"))
   for (const resolution of ["cambio_producto", "envio_unidad_faltante", "reintegro_total", "reintegro_parcial", "saldo_a_favor", "otro"] as const) {
     assert.ok(summary.includes(`'${CLAIM_RESOLUTION_REQUIREMENTS[resolution].label}'`), resolution)

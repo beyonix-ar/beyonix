@@ -70,7 +70,7 @@ test("AdminClaimManager: el borrador sólo depende de (pedido, reclamo)", () => 
   assert.doesNotMatch(claimManager, /setResponse\(""\)/)
   // Se limpia SÓLO tras un envío exitoso.
   const clears = [...claimManager.matchAll(/clearResponse\(\)/g)].map((match) => match.index ?? 0)
-  assert.equal(clears.length, 7)
+  assert.equal(clears.length, 8)
   for (const index of clears) {
     const before = claimManager.slice(Math.max(0, index - 40), index)
     assert.match(before, /if \(sent\)( \{\n\s*)?\s*$/, claimManager.slice(index - 60, index + 20))

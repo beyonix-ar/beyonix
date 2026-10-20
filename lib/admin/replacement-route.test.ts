@@ -64,7 +64,8 @@ const createPostgrest = ({
   }
   if (url.pathname === "/rest/v1/order_claims") {
     assert.equal(url.searchParams.get("order_id"), "eq.500")
-    assert.equal(url.searchParams.get("resolution"), "eq.cambio_producto")
+    // Cambios simples y reclamos mixtos (sus unidades a reemplazar).
+    assert.equal(url.searchParams.get("resolution"), "in.(cambio_producto,mixta)")
     return Response.json(claims)
   }
   if (url.pathname === "/rest/v1/rpc/create_order_replacement") return Response.json({ id: 1, quantity: 1 })
@@ -122,9 +123,9 @@ test("POST: otra variante del MISMO producto llega a la RPC con el payload intac
 
 test("B2: cambio de producto con unidades sin recibir -> 409 sin tocar stock; sólo la excepción explícita o la recepción completa llegan a la RPC", async () => {
   const claims = [
-    { id: 900, status: "aprobado", affected_items: [{ order_item_id: 71, quantity: 2 }] },
+    { id: 900, status: "aprobado", resolution: "cambio_producto", affected_items: [{ order_item_id: 71, quantity: 2 }] },
     // Un reclamo cerrado no exige nada.
-    { id: 901, status: "cerrado", affected_items: [{ order_item_id: 71, quantity: 5 }] },
+    { id: 901, status: "cerrado", resolution: "cambio_producto", affected_items: [{ order_item_id: 71, quantity: 5 }] },
   ]
   await withRoute(createPostgrest({ received: 1, claims }), async (route, requests) => {
     // Aunque el cliente omita claimId, el servidor busca los reclamos del pedido.
@@ -142,6 +143,25 @@ test("B2: cambio de producto con unidades sin recibir -> 409 sin tocar stock; s�
   })
   await withRoute(createPostgrest({ received: 2, claims }), async (route) => {
     assert.equal((await route.POST(post({ replacementVariantId: 10, claimId: 900 }), params)).status, 200)
+  })
+})
+
+test("reclamo mixto: sólo las unidades a reemplazar esperan su recepción (las de reintegro/saldo no)", async () => {
+  const claims = [{
+    id: 900, status: "aprobado", resolution: "mixta", affected_items: [{ order_item_id: 71, quantity: 2 }],
+    order_claim_item_resolutions: [
+      { order_item_id: 71, solution: "replacement", quantity: 1 },
+      { order_item_id: 71, solution: "refund", quantity: 1 },
+    ],
+  }]
+  await withRoute(createPostgrest({ received: 0, claims }), async (route) => {
+    const response = await route.POST(post({ replacementVariantId: 10, claimId: 900 }), params)
+    assert.equal(response.status, 409)
+    assert.match((await response.json()).error, /Faltan recibir 1 unidad del producto original/)
+  })
+  await withRoute(createPostgrest({ received: 1, claims }), async (route) => {
+    assert.equal((await route.POST(post({ replacementVariantId: 10, claimId: 900 }), params)).status, 200,
+      "recibida la unidad a reemplazar, no espera la del reintegro")
   })
 })
 

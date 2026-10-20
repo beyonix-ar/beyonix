@@ -87,6 +87,7 @@ import {
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
 import { isClaimEligibleForCreditNote } from "@/lib/orders/credit-note-claim-policy"
+import { getClaimCreditableQuantities, getClaimResolutionLines, isMixedClaimResolution } from "@/lib/orders/claim-policy"
 import { getClaimResolutionHistoryTitle, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { isClaimCancelled } from "@/lib/orders/claim-cancellation"
 import { getReturnReceptionOutcomeLines } from "@/lib/orders/claim-product-outcome"
@@ -3004,16 +3005,35 @@ function BillingManagementPanel({
   const linkedClaimReasonLabel = linkedClaim
     ? PROBLEM_LABELS[linkedClaim.failure_type ?? ""] ?? "Motivo informado por el cliente"
     : null
+  // Reclamo mixto: la NC toma sólo las unidades de la solución de su destino
+  // (reintegro -> externo, saldo -> cuenta BEYONIX), nunca las reemplazadas
+  // ni el total del reclamo (claim-policy, getClaimCreditableQuantities).
+  const linkedClaimMixed = isMixedClaimResolution(linkedClaim?.resolution)
   const claimAffectedQuantityByItem = useMemo(
-    () =>
-      new Map(
-        (linkedClaim?.affected_items ?? []).map((item) => [
-          Number(item.order_item_id),
-          Number(item.quantity),
-        ]),
-      ),
-    [linkedClaim],
+    () => linkedClaim ? getClaimCreditableQuantities(linkedClaim, creditDestination) : new Map<number, number>(),
+    [creditDestination, linkedClaim],
   )
+  const linkedClaimIdForCredit = linkedClaim?.id ?? null
+  const committedByClaimDestination = useMemo(() => {
+    const quantities = new Map<number, number>()
+    for (const note of committedCreditNotes) {
+      if (note.claim_id !== linkedClaimIdForCredit || note.destination !== creditDestination) continue
+      for (const item of note.order_credit_note_items ?? []) {
+        quantities.set(item.order_item_id, (quantities.get(item.order_item_id) ?? 0) + Number(item.quantity))
+      }
+    }
+    return quantities
+  }, [committedCreditNotes, creditDestination, linkedClaimIdForCredit])
+  // Unidades que todavía puede acreditar una NC: lo reclamado menos lo ya
+  // acreditado del pedido; en un mixto, además, menos lo ya acreditado de
+  // esa misma solución.
+  const remainingCreditableQuantity = (item: SupabasePedidoItem) => {
+    const claimed = claimAffectedQuantityByItem.get(item.id) ?? 0
+    const orderCommitted = committedQuantityByItem.get(item.id) ?? 0
+    return linkedClaimMixed
+      ? Math.max(0, Math.min(Number(item.cantidad) - orderCommitted, claimed - (committedByClaimDestination.get(item.id) ?? 0)))
+      : Math.max(0, Math.min(Number(item.cantidad), claimed) - orderCommitted)
+  }
   const creditableOrderItems = useMemo(
     () =>
       (pedido.orden_items ?? []).filter(
@@ -3023,10 +3043,7 @@ function BillingManagementPanel({
   )
   const totalAvailableOrderUnits = creditableOrderItems.reduce(
     (sum, item) => {
-      const claimed = claimAffectedQuantityByItem.get(item.id) ?? 0
-      const orderQuantity = Number(item.cantidad)
-      const committed = committedQuantityByItem.get(item.id) ?? 0
-      return sum + Math.max(0, Math.min(orderQuantity, claimed) - committed)
+      return sum + remainingCreditableQuantity(item)
     },
     0,
   )
@@ -3131,8 +3148,23 @@ function BillingManagementPanel({
   // reescribir las cantidades de una cancelación mientras el Admin opera.
   const linkedClaimResolution = linkedClaim?.resolution ?? ""
   const linkedClaimCustomerResolution = linkedClaim?.customer_selected_resolution ?? ""
-  const knownMoneyDestination = [linkedClaimCustomerResolution, linkedClaimResolution]
-    .find((value) => ["saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(value))
+  // Reclamo mixto: primero el saldo pendiente (el reintegro externo deja el
+  // pedido reintegrado y bloquea NC posteriores), después el reintegro.
+  const mixedCreditUnitsPending = linkedClaimMixed && linkedClaim
+    ? getClaimResolutionLines(linkedClaim).filter((line) => line.solution === "credit").reduce((sum, line) =>
+        sum + Math.max(0, line.quantity - committedCreditNotes
+          .filter((note) => note.claim_id === linkedClaim.id && note.destination === "customer_balance")
+          .flatMap((note) => note.order_credit_note_items ?? [])
+          .filter((item) => item.order_item_id === line.order_item_id)
+          .reduce((total, item) => total + Number(item.quantity), 0)), 0)
+    : 0
+  const mixedHasRefund = linkedClaimMixed && linkedClaim
+    ? getClaimResolutionLines(linkedClaim).some((line) => line.solution === "refund")
+    : false
+  const knownMoneyDestination = linkedClaimMixed
+    ? mixedCreditUnitsPending > 0 ? "saldo_a_favor" : mixedHasRefund ? "reintegro_total" : undefined
+    : [linkedClaimCustomerResolution, linkedClaimResolution]
+      .find((value) => ["saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(value))
   useEffect(() => {
     if (knownMoneyDestination === "saldo_a_favor" && pedido.usuario_id) {
       setCreditDestination("customer_balance")
@@ -3143,16 +3175,7 @@ function BillingManagementPanel({
     }
   }, [knownMoneyDestination, pedido.usuario_id])
   const cancellationCreditQuantitiesKey = JSON.stringify(
-    creditableOrderItems.map((item) => [
-      item.id,
-      Math.max(
-        0,
-        Math.min(
-          Number(item.cantidad),
-          claimAffectedQuantityByItem.get(item.id) ?? 0,
-        ) - (committedQuantityByItem.get(item.id) ?? 0),
-      ),
-    ]),
+    creditableOrderItems.map((item) => [item.id, remainingCreditableQuantity(item)]),
   )
   useEffect(() => {
     if (manualGestionOverride) return
@@ -3200,16 +3223,7 @@ function BillingManagementPanel({
     if (["devolucion_total", "cancelacion_antes_despacho"].includes(value)) {
       setCreditQuantities(
         Object.fromEntries(
-          creditableOrderItems.map((item) => [
-            item.id,
-            Math.max(
-              0,
-              Math.min(
-                Number(item.cantidad),
-                claimAffectedQuantityByItem.get(item.id) ?? 0,
-              ) - (committedQuantityByItem.get(item.id) ?? 0),
-            ),
-          ]),
+          creditableOrderItems.map((item) => [item.id, remainingCreditableQuantity(item)]),
         ),
       )
     }
@@ -3859,7 +3873,7 @@ function BillingManagementPanel({
                   <label>Ajuste adicional<input inputMode="decimal" value={manualCreditAmount} onChange={(event) => handleManualAmountChange(event.target.value)} aria-invalid={manualAmountRejected || undefined} /></label>
                   {manualAmountRejected && <p role="alert">Usá sólo números con hasta dos decimales.</p>}
                   {originalShippingPaid > 0 && <label className="admin-credit-wizard-check"><input type="checkbox" checked={includeOriginalShipping} onChange={(event) => setIncludeOriginalShipping(event.target.checked)} /> Reintegrar envío original ({formatPrice(originalShippingPaid)})</label>}
-                  <div className="admin-credit-wizard-advanced-items"><strong>Unidades del reclamo</strong>{creditableOrderItems.map((item) => { const available = Math.max(0, Math.min(Number(item.cantidad), claimAffectedQuantityByItem.get(item.id) ?? 0) - (committedQuantityByItem.get(item.id) ?? 0)); return <label key={item.id}>{item.productos?.nombre ?? "Artículo del pedido"}<input type="number" min={0} max={available} step={1} value={creditQuantities[item.id] ?? 0} onChange={(event) => { setManualGestionOverride(true); setCreditQuantities((current) => ({ ...current, [item.id]: Math.max(0, Math.min(available, Math.trunc(Number(event.target.value) || 0))) })) }} /></label> })}</div>
+                  <div className="admin-credit-wizard-advanced-items"><strong>Unidades del reclamo</strong>{creditableOrderItems.map((item) => { const available = remainingCreditableQuantity(item); return <label key={item.id}>{item.productos?.nombre ?? "Artículo del pedido"}<input type="number" min={0} max={available} step={1} value={creditQuantities[item.id] ?? 0} onChange={(event) => { setManualGestionOverride(true); setCreditQuantities((current) => ({ ...current, [item.id]: Math.max(0, Math.min(available, Math.trunc(Number(event.target.value) || 0))) })) }} /></label> })}</div>
                   {returnShippingParty !== "no_corresponde" && <>
                     <label>Canal de devolución<AdminSelect title="Canal de devolución" ariaLabel="Canal de devolución" value={returnShippingParty} onChange={(value) => selectReturnShippingMode(value as "cliente" | "beyonix")} compact><option value="cliente">Cliente / externo</option><option value="beyonix">BEYONIX</option></AdminSelect></label>
                     <label>Operador logístico<input value={returnShippingProvider} onChange={(event) => setReturnShippingProvider(event.target.value)} /></label>

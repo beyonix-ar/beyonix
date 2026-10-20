@@ -551,7 +551,7 @@ export async function POST(
   const { data: selectedClaim, error: claimError } = claimId
     ? await auth.admin
         .from("order_claims")
-        .select("id, order_id, user_id, status, failure_type, resolution, affected_items")
+        .select("id, order_id, user_id, status, failure_type, resolution, affected_items, order_claim_item_resolutions(order_item_id, solution, quantity)")
         .eq("id", claimId)
         .maybeSingle()
     : { data: null, error: null }
@@ -579,6 +579,7 @@ export async function POST(
     orderUserId: order.usuario_id,
     claim: selectedClaim,
     selectedItems,
+    destination,
     adminDirectCancellation: adminDirectCancellation === true,
   })
   if (claimPolicyError) {

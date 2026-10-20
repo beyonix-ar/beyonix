@@ -13,6 +13,7 @@ export type ClaimResolutionKind =
   | "cupon_descuento"
   | "reintegro_total"
   | "reintegro_parcial"
+  | "mixta"
   | "otro"
   | "rechazado"
   | "cancelacion"
@@ -51,6 +52,7 @@ const KINDS: readonly ClaimResolutionKind[] = [
   "cupon_descuento",
   "reintegro_total",
   "reintegro_parcial",
+  "mixta",
   "otro",
   "rechazado",
   "cancelacion",
@@ -64,6 +66,7 @@ const AMOUNT_LABELS: Partial<Record<ClaimResolutionKind, string>> = {
   cupon_descuento: "Saldo acreditado",
   reintegro_total: "Monto reintegrado",
   reintegro_parcial: "Monto reintegrado",
+  mixta: "Monto reintegrado o acreditado",
 }
 
 const isKind = (value: unknown): value is ClaimResolutionKind =>

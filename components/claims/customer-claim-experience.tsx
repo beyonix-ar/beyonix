@@ -46,7 +46,7 @@ import {
 } from "@/lib/claims/claim-unit-selection"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { CustomerClaimShipmentsNotice } from "@/components/claims/customer-claim-shipments-notice"
-import { getClaimRequirements } from "@/lib/orders/claim-policy"
+import { getClaimLinesSummary, getClaimRequirements, getClaimResolutionLines, isMixedClaimResolution } from "@/lib/orders/claim-policy"
 import { getCustomerClaimHeadline } from "@/lib/orders/claim-shipment-view"
 import {
   countUnreadBeyonixMessages,
@@ -310,6 +310,8 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
 function getCustomerSolutionLabel(claim: SupabaseOrderClaim) {
   if (["cerrado", "rechazado"].includes(claim.status)) return null
   const resolution = claim.resolution ?? claim.customer_selected_resolution
+  // Reclamo mixto: qué recibe por unidad ("1 reemplazo · 1 reintegro").
+  if (isMixedClaimResolution(resolution)) return getClaimLinesSummary(getClaimResolutionLines(claim)) || getOrderClaimResolutionLabel(resolution)
   return getClaimRequirements(resolution) ? getOrderClaimResolutionLabel(resolution) : null
 }
 

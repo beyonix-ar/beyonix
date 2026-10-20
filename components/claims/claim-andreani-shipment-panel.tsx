@@ -14,6 +14,7 @@ import {
   type ClaimUnitAction,
   type ClaimUnitActionOption,
 } from "@/lib/orders/claim-shipment-view"
+import { getClaimLogisticsResolution } from "@/lib/orders/claim-policy"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim } from "@/lib/supabase/types"
 
@@ -147,7 +148,8 @@ export function ClaimAndreaniShipmentPanel({
 
   const view = getAdminClaimLogisticsView({
     status: claim.status,
-    resolution: claim.resolution,
+    // Reclamo mixto: la logística sigue su resolución operativa (claim-policy).
+    ...getClaimLogisticsResolution(claim),
     shipments: claim.order_claim_shipments ?? null,
     units: claim.order_claim_units ?? null,
     legacy: claim.logistics_legacy,

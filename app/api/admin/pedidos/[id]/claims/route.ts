@@ -20,7 +20,7 @@ export async function GET(
 
   const { data, error } = await auth.admin
     .from("order_claims")
-    .select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*)")
+    .select("*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*), order_claim_item_resolutions(*)")
     .eq("order_id", orderId)
     .order("created_at", { ascending: false })
 

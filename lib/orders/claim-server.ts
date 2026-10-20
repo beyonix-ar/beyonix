@@ -93,6 +93,19 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_INSPECTION_NOT_RESTOCKABLE: [409, "Un paquete vacío o un producto distinto nunca vuelve a stock: registralo como baja."],
   CLAIM_MONEY_INCIDENT_OPEN: [409, "Hay un problema o una revisión abierta en el reclamo: resolvelo antes de la nota de crédito o el reintegro."],
   CLAIM_MONEY_RETURN_PENDING: [409, "El producto todavía no volvió a BEYONIX o no terminó su inspección. Registrá la recepción e inspección, o la excepción administrativa con su motivo."],
+  // Resolución por producto (20261020100000).
+  CLAIM_RESOLUTION_INVALID_LINES: [400, "Revisá la solución y la cantidad de cada producto."],
+  CLAIM_RESOLUTION_INVALID_ITEM: [400, "Un producto indicado no forma parte del reclamo o no tiene esa solución."],
+  CLAIM_RESOLUTION_QUANTITY_EXCEEDED: [409, "Hay más unidades resueltas que las reclamadas."],
+  CLAIM_RESOLUTION_NOT_MIXED: [400, "Con una sola solución para todas las unidades, elegila directamente."],
+  CLAIM_RESOLUTION_LINE_IMMUTABLE: [409, "Una unidad ya asignada no se mueve a otra solución desde acá."],
+  CLAIM_MIXED_UNRESOLVED_UNITS: [409, "Todavía hay unidades reclamadas sin solución."],
+  CLAIM_MIXED_REPLACEMENT_PENDING: [409, "Falta registrar el reemplazo de las unidades a reemplazar."],
+  CLAIM_MIXED_REFUND_PENDING: [409, "Falta completar el reintegro de las unidades a reintegrar."],
+  CLAIM_MIXED_CREDIT_PENDING: [409, "Falta acreditar el saldo a favor de las unidades correspondientes."],
+  CLAIM_MIXED_CREDIT_FIRST: [409, "Primero calculá el saldo a favor del reclamo; después registrá el reintegro."],
+  CLAIM_REPLACEMENT_ALREADY_SHIPPED: [409, "El reemplazo ya salió: la solución no se puede cambiar."],
+  CLAIM_REPLACEMENT_NOT_REVERSIBLE: [409, "El reemplazo registrado ya descontó stock sin una reserva que pueda liberarse: no se puede cambiar la solución."],
 }
 
 export function claimErrorResponse(error: unknown) {
@@ -150,7 +163,7 @@ export async function signClaims(admin: Admin, claims: SupabaseOrderClaim[]) {
 }
 
 /** Admin: reclamo con su logística completa (tramos y unidades). */
-export const ADMIN_CLAIM_SELECT = "*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*)"
+export const ADMIN_CLAIM_SELECT = "*, order_claim_files(*), order_claim_messages(*), order_claim_shipments(*), order_claim_units(*), order_claim_item_resolutions(*)"
 /** Cliente: sólo campos seguros de los tramos; nunca contrato, ambiente, costo, errores ni unidades. */
 // Columnas explícitas (nunca `*`): quedan afuera IDs de admins
 // (first_reviewed_by, refund_completed_by, cancelled_by,
@@ -174,7 +187,7 @@ const CUSTOMER_CLAIM_COLUMNS =
   "cancelled_at, cancellation_reason"
 const CUSTOMER_CLAIM_FILE_COLUMNS = "id, claim_id, file_role, file_name, file_path, mime_type, file_size, created_at"
 const CUSTOMER_CLAIM_MESSAGE_COLUMNS = "id, claim_id, author_role, message, created_at, system_key"
-export const CUSTOMER_CLAIM_SELECT = `${CUSTOMER_CLAIM_COLUMNS}, order_claim_files(${CUSTOMER_CLAIM_FILE_COLUMNS}), order_claim_messages(${CUSTOMER_CLAIM_MESSAGE_COLUMNS}), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS})`
+export const CUSTOMER_CLAIM_SELECT = `${CUSTOMER_CLAIM_COLUMNS}, order_claim_files(${CUSTOMER_CLAIM_FILE_COLUMNS}), order_claim_messages(${CUSTOMER_CLAIM_MESSAGE_COLUMNS}), order_claim_shipments(${CUSTOMER_CLAIM_SHIPMENT_COLUMNS}), order_claim_item_resolutions(order_item_id, solution, quantity)`
 
 export async function getClaimResult(admin: Admin, claimId: number, audience: "admin" | "customer" = "admin") {
   const { data, error } = audience === "admin"
