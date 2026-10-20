@@ -214,22 +214,22 @@ test("cancelado después de dar de baja: estado terminal claro, pasos reales con
     const steps = await page.locator(".admin-claim-wizard-step").evaluateAll((nodes) =>
       nodes.map((node) => [node.getAttribute("data-step-status"), (node.textContent ?? "").replace(/\s+/g, " ").trim()]))
     assert.deepEqual(steps, [
-      ["done", "✓1. Revisión"], ["done", "✓2. Recepción"],
+      ["done", "✓1. Revisar"], ["done", "✓2. Inspección"],
       ["skipped", "–3. Reemplazo (no se realizó)"], ["skipped", "–4. Entrega (no se realizó)"],
       ["cancelled", "✕5. Cancelado"],
     ])
-    assert.equal(await page.locator(".admin-claim-wizard-step", { hasText: "Finalización" }).count(), 0)
+    assert.equal(await page.locator(".admin-claim-wizard-step", { hasText: "Finalizar" }).count(), 0)
     const admin = await text(page, ADMIN)
     assert.match(admin, /^Reclamo cancelado posteriormente Se canceló después de recibir el producto\./)
     assert.match(admin, /Estado final del reclamo Cancelado/)
-    assert.match(admin, /Solución aprobada antes de cancelar Cambio de producto \(no se completó\)/)
+    assert.match(admin, /Solución aprobada antes de cancelar Reemplazo del producto \(no se completó\)/)
     assert.match(admin, /Motivo de la cancelación Era un test de prueba/)
     assert.match(admin, /Cancelado \d{1,2}\/\d{1,2}\/\d{2,4}, .+ · por un Admin/)
     assert.match(await text(page, "[data-testid=admin-claim-product-outcome]"), /^Qué pasó con el producto 1 unidad dada de baja\.$/)
     assert.doesNotMatch(await page.locator("#admin-root").innerText(), /baja o pérdida/)
 
     // La recepción registrada sigue visible como historial, con su destino exacto.
-    await page.locator(".admin-claim-wizard-step", { hasText: "Recepción" }).click()
+    await page.locator(".admin-claim-wizard-step", { hasText: "Inspección" }).click()
     assert.equal(await text(page, ".admin-claim-reception-feedback"), "Recepción completa · Dada de baja 1 unidad dada de baja.")
     await page.locator(".admin-claim-wizard-step", { hasText: "Reemplazo" }).click()
     assert.equal(await text(page, "[data-testid=admin-claim-step-skipped]"), "Este paso no se realizó: el reclamo se canceló antes.")

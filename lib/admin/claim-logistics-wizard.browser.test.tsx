@@ -68,6 +68,7 @@ const scenarios = {
   cambio_libre: { shipments: [leg({})], units: [unit("original", "con_cliente")] },
   cambio_reservado: { shipments: [leg({})], units: [unit("original", "con_cliente"), unit("reemplazo", "reservada")] },
   retiro_pendiente: { shipments: [leg({ direction: "devolucion" })], units: [unit("original", "con_cliente")] },
+  sin_devolucion: { shipments: [leg({ direction: "reemplazo" })], units: [unit("original", "conservada_cliente")] },
   cambio_generado: {
     shipments: [leg({ status: "generada", creation_status: "created", modality: "cambio_sucursal", andreani_tracking: "360000000801" })],
     units: [unit("original", "con_cliente", 1), unit("reemplazo", "reservada", 1)],
@@ -195,6 +196,10 @@ async function open(scenario: string): Promise<Page> {
 }
 
 const heading = (page: Page) => page.locator(".admin-claim-manage-heading").innerText()
+/** Hitos de un tramo en el resumen del reclamo ("Recibida (listo)"). */
+const progress = async (page: Page, group: string) =>
+  (await page.locator(`[data-claim-progress=${group}] li`).allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
+const primaries = (page: Page) => page.locator("[data-claim-logistics] .admin-ds-button-primary")
 const stepLabels = async (page: Page) =>
   (await page.locator(".admin-claim-wizard-step").allInnerTexts()).map((label) => label.replace(/\s+/g, " ").replace(/^[✓●○] ?/, ""))
 const methodPanel = "[data-claim-logistics-section=method]"
@@ -212,9 +217,10 @@ async function pickBranch(page: Page) {
 
 test("pasos: nombres de negocio en el orden real de cada método", async () => {
   const cases: Array<[string, string[], string]> = [
-    ["sin_metodo", ["1. Revisión", "2. Método", "3. Finalización"], "Método"],
-    ["cambio_libre", ["1. Revisión", "2. Método", "3. Cambio en sucursal", "4. Recepción", "5. Finalización"], "Cambio en sucursal"],
-    ["recepcion", ["1. Revisión", "2. Método", "3. Retiro", "4. Recepción", "5. Reenvío", "6. Finalización"], "Recepción"],
+    ["sin_metodo", ["1. Revisar", "2. Logística", "3. Finalizar"], "Logística"],
+    ["cambio_libre", ["1. Revisar", "2. Cambio en sucursal", "3. Inspección", "4. Finalizar"], "Cambio en sucursal"],
+    ["recepcion", ["1. Revisar", "2. Devolución", "3. Inspección", "4. Envío", "5. Finalizar"], "Inspección"],
+    ["sin_devolucion", ["1. Revisar", "2. Envío", "3. Finalizar"], "Envío"],
   ]
   for (const [scenario, labels, current] of cases) {
     const page = await open(scenario)
@@ -225,22 +231,24 @@ test("pasos: nombres de negocio en el orden real de cada método", async () => {
   }
 })
 
-test("Paso Método: sólo el método (sin recepción, unidades ni resumen); elegir muestra SOLO su formulario; cancelar limpia", async () => {
+test("Paso Logística: sólo el método (sin recepción, unidades ni resumen); elegir muestra SOLO su formulario; cancelar limpia", async () => {
   const page = await open("sin_metodo")
   try {
-    assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0, "Recepción no aparece en Método")
+    assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0, "Recepción no aparece en Logística")
     assert.equal(await page.locator("[data-claim-logistics-units], [data-claim-logistics-summary], [data-claim-replacement-reservation]").count(), 0)
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 0, "sin selección no hay formulario")
-    const help = page.getByRole("button", { name: "Ayuda: Cambio directo por sucursal" })
+    const help = page.getByRole("button", { name: "Ayuda: Cambio directo en sucursal" })
     await help.focus()
     const bubble = page.locator(`[id="${await help.getAttribute("aria-describedby")}"]`)
     assert.equal(await bubble.isVisible(), true)
-    assert.match(await bubble.innerText(), /Andreani lo entrega en la sucursal solo si el cliente entrega el producto original/)
-    const retiroHelp = page.getByRole("button", { name: "Ayuda: Retiro + revisión + reenvío" })
+    assert.match(await bubble.innerText(), /Andreani entrega el reemplazo en la sucursal sólo si el cliente entrega el producto original/)
+    const retiroHelp = page.getByRole("button", { name: "Ayuda: Debe volver: devolución y reenvío" })
     assert.match(await page.locator(`[id="${await retiroHelp.getAttribute("aria-describedby")}"]`).textContent() ?? "",
-      /BEYONIX lo recibe e inspecciona y recién después se decide y envía el reemplazo/)
+      /BEYONIX lo recibe, lo inspecciona y después envía el reemplazo/)
+    assert.deepEqual(await page.locator(methodPanel).getByRole("radio").evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value)),
+      ["devolucion", "cambio", "sin_devolucion"], "primero la opción estándar: el producto vuelve")
 
-    await radio(page, /Cambio directo por sucursal/).check()
+    await radio(page, /Cambio directo en sucursal/).check()
     await page.waitForSelector("[data-claim-logistics-branch-picker]")
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 1, "sólo el formulario elegido")
     const confirm = page.getByRole("button", { name: "Confirmar cambio" })
@@ -251,15 +259,45 @@ test("Paso Método: sólo el método (sin recepción, unidades ni resumen); eleg
     assert.equal(await confirm.isDisabled(), false)
     await page.getByRole("button", { name: "Cancelar", exact: true }).click()
     assert.equal(await page.locator("[data-claim-logistics-request]").count(), 0)
-    assert.equal(await radio(page, /Cambio directo por sucursal/).isChecked(), false)
+    assert.equal(await radio(page, /Cambio directo en sucursal/).isChecked(), false)
     assert.equal((await posts(page)).length, 0, "cancelar no envía nada")
+  } finally { await page.close() }
+})
+
+test("No vuelve: motivo obligatorio y segunda confirmación; envía sólo sucursal y motivo", async () => {
+  const page = await open("sin_metodo")
+  try {
+    await radio(page, /No vuelve: enviar reemplazo/).check()
+    await page.waitForSelector("[data-claim-logistics-request=sin_devolucion]")
+    await pickBranch(page)
+    const confirm = page.getByRole("button", { name: "Confirmar envío sin devolución" })
+    assert.equal(await confirm.isDisabled(), true, "motivo obligatorio")
+    await page.locator("[data-claim-logistics-request] textarea").fill("Falla de fábrica confirmada")
+    await confirm.click()
+    assert.match(await page.locator("[data-claim-logistics-request] [role=alert]").innerText(), /El cliente conserva el producto/)
+    assert.equal((await posts(page)).length, 0, "el primer click sólo pide confirmación")
+    await page.getByRole("button", { name: "Sí, confirmar" }).click()
+    await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
+    assert.deepEqual(await posts(page), [{ action: "request_without_return", branchId: "4567", notes: "Falla de fábrica confirmada" }])
+  } finally { await page.close() }
+})
+
+test("Envío sin devolución: el resumen dice que no vuelve y la acción es reservar el reemplazo", async () => {
+  const page = await open("sin_devolucion")
+  try {
+    assert.equal(await heading(page), "Envío")
+    assert.equal(await page.locator("[data-claim-return]").innerText(), "Producto: No vuelve")
+    assert.equal(await page.locator("[data-claim-progress=devolucion]").count(), 0, "sin devolución no hay tramo de devolución")
+    assert.deepEqual(await progress(page, "reemplazo"), ["Reservado (en curso)", "Enviado (pendiente)", "Entregado (pendiente)"])
+    assert.equal(await primaries(page).first().innerText(), "Reservar reemplazo")
+    assert.equal(await page.getByRole("button", { name: /Crear nota de crédito|Calcular reintegro|Calcular saldo/ }).count(), 0, "un reemplazo no ofrece dinero")
   } finally { await page.close() }
 })
 
 test("sucursal por defecto: la sugerida por el servidor (10179) queda elegida; 'Cambiar sucursal' permite otra", async () => {
   const page = await open("sugerida")
   try {
-    await radio(page, /Cambio directo por sucursal/).check()
+    await radio(page, /Cambio directo en sucursal/).check()
     await page.waitForFunction(() => /ROSARIO/.test(document.querySelector("[data-claim-logistics-branch]")?.textContent ?? ""))
     assert.equal(await page.locator("[data-claim-logistics-branch]").innerText(),
       "Sucursal: ROSARIO (AV EVA PERON) · Av. Eva Perón 6243 · Rosario, Santa Fe")
@@ -276,18 +314,18 @@ test("sucursal por defecto: la sugerida por el servidor (10179) queda elegida; '
   } finally { await page.close() }
 })
 
-test("teclado: flechas entre métodos cambian el formulario sin perder el foco ('Confirmar retiro')", async () => {
+test("teclado: flechas entre métodos cambian el formulario sin perder el foco ('Confirmar devolución')", async () => {
   const page = await open("sin_metodo")
   try {
-    await radio(page, /Cambio directo por sucursal/).focus()
+    await radio(page, /Cambio directo en sucursal/).focus()
     await page.keyboard.press("Space")
     await page.waitForSelector("[data-claim-logistics-request=cambio]")
-    await page.keyboard.press("ArrowDown")
+    await page.keyboard.press("ArrowUp")
     await page.waitForSelector("[data-claim-logistics-request=devolucion]")
-    assert.equal(await radio(page, /Retiro \+ revisión \+ reenvío/).isChecked(), true)
+    assert.equal(await radio(page, /Debe volver: devolución y reenvío/).isChecked(), true)
     assert.equal(await page.locator("[data-claim-logistics-request=cambio]").count(), 0)
     await pickBranch(page)
-    await page.getByRole("button", { name: "Confirmar retiro" }).click()
+    await page.getByRole("button", { name: "Confirmar devolución" }).click()
     await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
     assert.deepEqual(await posts(page), [{ action: "request", direction: "devolucion", branchId: "4567" }])
   } finally { await page.close() }
@@ -297,9 +335,9 @@ test("Revisión editable sin efectos: 'Corresponde' marcado; se corrige a 'No co
   const page = await open("sin_metodo")
   try {
     await back(page)
-    assert.equal(await heading(page), "Revisión")
+    assert.equal(await heading(page), "Revisar")
     assert.equal(await page.locator("[data-claim-review]").getAttribute("data-claim-review"), "edit")
-    assert.match(await page.locator("[data-claim-review-current]").innerText(), /Decisión actual: Corresponde · Solución: Cambio de producto\. Todavía no hubo movimientos reales/)
+    assert.match(await page.locator("[data-claim-review-current]").innerText(), /Decisión actual: Corresponde · Reemplazo del producto · Se puede corregir/)
     assert.equal(await reviewButton(page, /El reclamo es válido/).getAttribute("aria-pressed"), "true")
     assert.equal(await reviewButton(page, /El reclamo no corresponde/).getAttribute("aria-pressed"), "false")
 
@@ -307,8 +345,9 @@ test("Revisión editable sin efectos: 'Corresponde' marcado; se corrige a 'No co
     await reviewButton(page, /El reclamo es válido/).click()
     const modal = page.getByRole("dialog", { name: "Corregir la solución" })
     await modal.waitFor()
-    assert.equal(await modal.getByRole("radio", { name: "Cambio del producto" }).isChecked(), true, "precarga la solución vigente")
-    assert.equal(await modal.getByRole("radio", { name: "Reembolso" }).count(), 0, "desde aprobado no se salta a reintegro pendiente")
+    assert.equal(await modal.getByRole("radio", { name: "Reemplazar producto" }).isChecked(), true, "precarga la solución vigente")
+    assert.equal(await modal.getByRole("radio", { name: "Reintegrar dinero" }).count(), 0, "desde aprobado no se salta a reintegro pendiente")
+    assert.equal(await modal.getByRole("radio", { name: /nota de crédito/i }).count(), 0, "la NC no es una solución comercial")
     const save = modal.getByRole("button", { name: "Guardar corrección" })
     assert.equal(await save.isDisabled(), true, "sin cambios no hay nada que guardar")
     await modal.getByRole("radio", { name: "Enviar unidad faltante" }).check()
@@ -316,10 +355,10 @@ test("Revisión editable sin efectos: 'Corresponde' marcado; se corrige a 'No co
     await page.waitForFunction(() => (window as unknown as { __patches: unknown[] }).__patches.length === 1)
     const [solution] = await patches(page)
     assert.deepEqual([solution.status, solution.resolution], ["aprobado", "envio_unidad_faltante"])
-    assert.equal(await heading(page), "Método", "guardada la corrección, el wizard sigue en el paso vigente")
+    assert.equal(await heading(page), "Logística", "guardada la corrección, el wizard sigue en el paso vigente")
 
     // Corresponde -> No corresponde (con motivo).
-    await page.getByRole("button", { name: /1\. Revisión/ }).click()
+    await page.getByRole("button", { name: /1\. Revisar/ }).click()
     await reviewButton(page, /El reclamo no corresponde/).click()
     const reject = page.getByRole("dialog", { name: "El reclamo no corresponde" })
     await reject.waitFor()
@@ -336,7 +375,7 @@ test("Revisión con No corresponde sin efectos: 'Corresponde' reabre la revisió
   const page = await open("rechazado")
   try {
     await back(page)
-    assert.equal(await heading(page), "Revisión")
+    assert.equal(await heading(page), "Revisar")
     assert.equal(await page.locator("[data-claim-review]").getAttribute("data-claim-review"), "reopen")
     assert.equal(await reviewButton(page, /El reclamo no corresponde/).getAttribute("aria-pressed"), "true")
     await reviewButton(page, /El reclamo es válido/).click()
@@ -354,7 +393,7 @@ test("Revisión con No corresponde sin efectos: 'Corresponde' reabre la revisió
   } finally { await page.close() }
 })
 
-test("con efectos reales: Revisión y Método bloqueados mostrando qué pasó; recepción fuera del paso del cambio", async () => {
+test("con efectos reales: Revisar bloqueado mostrando qué pasó, sin método para corregir; recepción fuera del paso del cambio", async () => {
   const page = await open("cambio_generado")
   try {
     assert.equal(await heading(page), "Cambio en sucursal")
@@ -363,8 +402,9 @@ test("con efectos reales: Revisión y Método bloqueados mostrando qué pasó; r
     assert.equal(await page.getByText("No informado por Andreani").count(), 0, "sin datos técnicos que no ayudan")
     assert.equal(await page.getByText(/Contrato:/).count(), 0)
     assert.equal(await page.getByRole("button", { name: "Cancelar operación" }).count(), 1, "corrección auditada disponible en su paso")
+    assert.equal(await page.locator(methodPanel).count(), 0, "con la operación en curso no se ofrece cambiar el método")
 
-    await page.getByRole("button", { name: /1\. Revisión/ }).click()
+    await page.getByRole("button", { name: /1\. Revisar/ }).click()
     assert.equal(await page.locator("[data-claim-review]").getAttribute("data-claim-review"), "locked")
     const lock = await page.locator("[data-claim-review-lock]").innerText()
     assert.match(lock, /La decisión no se puede cambiar directamente/)
@@ -372,29 +412,22 @@ test("con efectos reales: Revisión y Método bloqueados mostrando qué pasó; r
     assert.match(lock, /Stock reservado para el reemplazo: 1 unidad/)
     assert.equal(await reviewButton(page, /El reclamo no corresponde/).isDisabled(), true)
     assert.equal(await reviewButton(page, /El reclamo es válido/).isDisabled(), true)
-
-    await page.getByRole("button", { name: /2\. Método/ }).click()
-    const methodLock = await page.locator("[data-claim-method-lock=blocked]").innerText()
-    assert.match(methodLock, /primero cancelá la operación Andreani con un motivo/)
-    assert.equal(await radio(page, /Retiro \+ revisión \+ reenvío/).isDisabled(), true)
   } finally { await page.close() }
 })
 
-test("volver atrás y adelante sin efectos: de 'Cambio en sucursal' a 'Método', corregir y volver al paso vigente", async () => {
+test("volver atrás y adelante sin efectos: el método se corrige en el paso 'Cambio en sucursal' y se vuelve al paso vigente", async () => {
   const page = await open("cambio_libre")
   try {
     assert.equal(await heading(page), "Cambio en sucursal")
-    await back(page)
-    assert.equal(await heading(page), "Método")
     assert.match(await page.locator("[data-claim-method-lock]").innerText(), /Todavía no hay operaciones reales/)
     assert.match(await page.locator("[data-claim-logistics-method=cambio]").innerText(), /Actual/i)
     await back(page)
-    assert.equal(await heading(page), "Revisión")
-    await page.getByRole("button", { name: /2\. Método/ }).click()
-    await radio(page, /Retiro \+ revisión \+ reenvío/).check()
+    assert.equal(await heading(page), "Revisar")
+    await page.getByRole("button", { name: /2\. Cambio en sucursal/ }).click()
+    await radio(page, /Debe volver: devolución y reenvío/).check()
     await page.waitForSelector("[data-claim-logistics-request=devolucion]")
     await pickBranch(page)
-    await page.getByRole("button", { name: "Confirmar retiro" }).click()
+    await page.getByRole("button", { name: "Confirmar devolución" }).click()
     await page.waitForFunction(() => (window as unknown as { __posts: unknown[] }).__posts.length === 1)
     await page.waitForFunction(() => document.querySelector(".admin-claim-manage-heading")?.textContent === "Cambio en sucursal")
   } finally { await page.close() }
@@ -403,12 +436,13 @@ test("volver atrás y adelante sin efectos: de 'Cambio en sucursal' a 'Método',
 test("con operación real previa (cambio no completado): corregir el método exige motivo y segunda confirmación", async () => {
   const page = await open("cambio_fallido")
   try {
-    await page.getByRole("button", { name: /2\. Método/ }).click()
+    assert.equal(await heading(page), "Cambio en sucursal")
     assert.match(await page.locator("[data-claim-method-lock=reason]").innerText(), /requiere motivo y queda auditado/)
-    await radio(page, /Retiro \+ revisión \+ reenvío/).check()
+    assert.equal(await radio(page, /No vuelve/).isDisabled(), true, "después de una operación real no se dispensa la devolución")
+    await radio(page, /Debe volver: devolución y reenvío/).check()
     await page.waitForSelector("[data-claim-logistics-request=devolucion]")
     await pickBranch(page)
-    const confirm = page.getByRole("button", { name: "Confirmar retiro" })
+    const confirm = page.getByRole("button", { name: "Confirmar devolución" })
     assert.equal(await confirm.isDisabled(), true, "motivo obligatorio")
     await page.locator("[data-claim-logistics-request] textarea").fill("Cliente no pudo ir a la sucursal")
     await confirm.click()
@@ -423,10 +457,10 @@ test("con operación real previa (cambio no completado): corregir el método exi
 test("Recepción: pantalla propia, acciones visibles por producto (sin desplegable) y ayudas (?) de stock y baja", async () => {
   const page = await open("recepcion")
   try {
-    assert.equal(await heading(page), "Recepción")
-    const summary = (await page.locator("[data-claim-logistics-summary] dt").allInnerTexts()).map((label) => label.trim().toLowerCase())
-    assert.deepEqual(summary, ["método", "sucursal", "estado", "problemas"])
-    assert.equal(await page.locator("[data-claim-logistics-status]").innerText(), "Recibido")
+    assert.equal(await heading(page), "Inspección")
+    assert.match(await page.locator("[data-claim-logistics-summary]").innerText(), /Devolución, revisión y reenvío · Sucursal Once/)
+    assert.deepEqual(await progress(page, "devolucion"), ["Generada (listo)", "Recibida (listo)", "Inspeccionada (en curso)"])
+    assert.equal(await page.locator("[data-testid=admin-claim-status-badge]").innerText(), "INSPECCIÓN PENDIENTE")
     assert.equal(await page.locator("[data-claim-current-action]").count(), 0, "sin acciones de logística en Recepción")
     assert.equal(await page.locator(methodPanel).count(), 0, "el método se revisa en su propio paso")
     assert.equal(await page.locator("select").filter({ hasText: "Elegí una acción" }).count(), 0, "sin el desplegable genérico")
@@ -456,7 +490,7 @@ test("Recepción: pantalla propia, acciones visibles por producto (sin desplegab
 test("Recepción antes de que llegue: se registra la llegada; stock/baja recién cuando está en BEYONIX", async () => {
   const page = await open("en_camino")
   try {
-    assert.equal(await heading(page), "Recepción")
+    assert.equal(await heading(page), "Inspección")
     assert.equal(await page.locator("[data-claim-reception-waiting]").count(), 1)
     assert.equal(await page.locator(".admin-claim-reception-panel").getByRole("button", { name: "Volver al stock", exact: true }).count(), 0)
     const arrival = page.locator("[data-claim-logistics-item-actions]").getByRole("button", { name: /Registrar llegada/ })
@@ -472,7 +506,7 @@ test("Recepción antes de que llegue: se registra la llegada; stock/baja recién
 test("legacy: se mantiene su flujo, con una ayuda corta y la opción de pasar al flujo nuevo si no tuvo movimientos", async () => {
   const page = await open("legacy")
   try {
-    assert.ok(!(await stepLabels(page)).includes("2. Método"), "sin paso Método: flujo original")
+    assert.ok(!(await stepLabels(page)).includes("2. Logística"), "sin paso Logística: flujo original")
     const badge = page.getByText("Reclamo anterior", { exact: true })
     assert.equal(await badge.count(), 1)
     assert.equal(await page.getByRole("button", { name: "Ayuda: Reclamo anterior" }).count(), 1)
@@ -480,17 +514,14 @@ test("legacy: se mantiene su flujo, con una ayuda corta y la opción de pasar al
   } finally { await page.close() }
 })
 
-const checklist = async (page: Page) =>
-  (await page.locator("[data-claim-checklist] li").allInnerTexts()).map((text) => text.replace(/\s+/g, " ").trim())
-const primaries = (page: Page) => page.locator("[data-claim-logistics] .admin-ds-button-primary")
-
 test("Cambio en sucursal: orden de arriba hacia abajo; sin reserva sólo 'Reservar reemplazo' (generar oculto)", async () => {
   const page = await open("cambio_libre")
   try {
-    assert.deepEqual(await checklist(page), [
-      "Reemplazo reservado (próximo)", "Cambio generado (pendiente)", "Intercambio realizado (pendiente)",
-      "Producto recibido (pendiente)", "Producto inspeccionado (pendiente)", "Reclamo finalizado (pendiente)",
-    ], "los checks tienen texto, no sólo color")
+    assert.deepEqual(await progress(page, "cambio"), [
+      "Reemplazo reservado (en curso)", "Generado (pendiente)", "Intercambio (pendiente)",
+      "Original recibido (pendiente)", "Inspeccionado (pendiente)",
+    ], "los hitos tienen texto, no sólo color")
+    assert.equal(await page.locator("[data-claim-checklist]").count(), 0, "el avance vive una sola vez, en el resumen")
     assert.equal(await primaries(page).count(), 1, "una sola acción principal")
     assert.equal(await primaries(page).first().innerText(), "Reservar reemplazo")
     assert.equal(await page.getByRole("button", { name: /Generar cambio/ }).count(), 0, "generar no aparece antes de reservar")
@@ -509,8 +540,8 @@ test("Cambio en sucursal: orden de arriba hacia abajo; sin reserva sólo 'Reserv
 test("Cambio en sucursal: con la reserva hecha se marca el check y la acción pasa a 'Generar cambio en sucursal'", async () => {
   const page = await open("cambio_reservado")
   try {
-    assert.equal((await checklist(page))[0], "Reemplazo reservado (listo)")
-    assert.equal((await checklist(page))[1], "Cambio generado (próximo)")
+    assert.equal((await progress(page, "cambio"))[0], "Reemplazo reservado (listo)")
+    assert.equal((await progress(page, "cambio"))[1], "Generado (en curso)")
     assert.equal(await primaries(page).count(), 1)
     assert.equal(await primaries(page).first().innerText(), "Generar cambio en sucursal")
     assert.equal(await page.getByRole("button", { name: "Reservar reemplazo" }).count(), 0)
@@ -525,23 +556,25 @@ test("Cambio en sucursal: con la reserva hecha se marca el check y la acción pa
 test("Cambio generado: estado de espera humano, sin acción principal; secundarias discretas", async () => {
   const page = await open("cambio_generado")
   try {
-    assert.deepEqual((await checklist(page)).slice(0, 3), ["Reemplazo reservado (listo)", "Cambio generado (listo)", "Intercambio realizado (próximo)"])
+    assert.deepEqual((await progress(page, "cambio")).slice(0, 3), ["Reemplazo reservado (listo)", "Generado (listo)", "Intercambio (en curso)"])
     assert.equal(await page.locator("[data-claim-waiting]").innerText(), "Esperando que Andreani retire el reemplazo")
-    assert.equal(await page.locator("[data-claim-logistics-status]").innerText(), "En Andreani")
+    assert.equal(await page.locator("[data-testid=admin-claim-status-badge]").innerText(), "REEMPLAZO EN PROCESO", "estado comercial, no el crudo de Andreani")
+    assert.match(await page.locator("[data-claim-progress=cambio]").innerText(), /Tracking 360000000801/)
+    assert.equal(await page.locator("[data-claim-progress=cambio]").getByRole("button", { name: "Etiqueta" }).count(), 1)
     assert.equal(await primaries(page).count(), 0, "nada que hacer: sólo esperar")
     const cancel = page.getByRole("button", { name: "Cancelar operación" })
     assert.match(await cancel.getAttribute("class") ?? "", /admin-ds-button-ghost/, "secundaria")
   } finally { await page.close() }
 })
 
-test("Retiro: 'Generar retiro' como única acción, checklist en el orden del método", async () => {
+test("Devolución: 'Generar devolución' como única acción; el reemplazo aparece recién después de la inspección", async () => {
   const page = await open("retiro_pendiente")
   try {
-    assert.equal(await heading(page), "Retiro")
-    assert.deepEqual((await checklist(page)).map((text) => text.replace(/ \(.*\)$/, "")),
-      ["Retiro generado", "Producto recibido", "Producto inspeccionado", "Reemplazo reservado", "Reenvío generado", "Reclamo finalizado"])
+    assert.equal(await heading(page), "Devolución")
+    assert.deepEqual((await progress(page, "devolucion")).map((text) => text.replace(/ \(.*\)$/, "")), ["Generada", "Recibida", "Inspeccionada"])
+    assert.equal(await page.locator("[data-claim-progress=reemplazo]").count(), 0)
     assert.equal(await primaries(page).count(), 1)
-    assert.equal(await primaries(page).first().innerText(), "Generar retiro")
+    assert.equal(await primaries(page).first().innerText(), "Generar devolución")
     assert.equal(await page.locator(".admin-claim-reception-panel").count(), 0)
   } finally { await page.close() }
 })
@@ -595,8 +628,8 @@ test("Cancelar reclamo con efectos pendientes: 'No se puede cancelar todavía' y
 test("'Ir a liberar reserva' lleva al paso exacto y resalta 'Liberar reserva' (desde otro paso)", async () => {
   const page = await open("cambio_reservado")
   try {
-    await page.getByRole("button", { name: /1\. Revisión/ }).click()
-    assert.equal(await heading(page), "Revisión")
+    await page.getByRole("button", { name: /1\. Revisar/ }).click()
+    assert.equal(await heading(page), "Revisar")
     await cancelTrigger(page).click()
     const modal = page.getByRole("dialog", { name: "Cancelar reclamo" })
     await modal.getByRole("button", { name: "Ir a liberar reserva" }).click()
@@ -684,10 +717,12 @@ test("ayuda (?) de 'Cancelar reclamo': nunca se corta (abre abajo si arriba no h
   }
 })
 
-test("trazabilidad muestra los tres envíos y la simulación QA sin desbordar en móvil", async () => {
+test("trazabilidad: plegada en 'Ver detalles'; muestra los tres envíos y la simulación QA sin desbordar en móvil", async () => {
   const page = await open("traza")
   try {
     const trace = page.locator("[data-claim-shipment-trace]")
+    assert.equal(await trace.isVisible(), false, "los números Andreani no dominan la pantalla")
+    await page.locator("[data-claim-details] > summary").click()
     assert.equal(await trace.locator("ol").first().locator("li").count(), 3)
     for (const value of ["TRACK-ORI-1", "TRACK-DEV-11", "TRACK-REP-12"]) {
       assert.ok((await trace.innerText()).includes(value))

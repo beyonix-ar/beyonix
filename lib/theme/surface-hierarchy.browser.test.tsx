@@ -120,7 +120,9 @@ test("el marcado de los fixtures usa las clases reales de cada zona", () => {
   assert.equal(pedidos.split("bx-surface-inherit").length - 1, 2)
   const claims = source("components/claims/admin-claim-manager.tsx")
   assert.match(claims, /admin-claim-card admin-claim-reception-panel bx-surface bx-surface-section/)
-  assert.equal(claims.split('"admin-claim-card bx-surface bx-surface-section rounded-xl border p-3"').length - 1, 4)
+  // Evidencia en el reclamo + las tres tarjetas del resumen (problema, solución, logística).
+  const claimSummary = source("components/claims/claim-resolution-summary.tsx")
+  assert.equal([claims, claimSummary].join("\n").split('"admin-claim-card bx-surface bx-surface-section rounded-xl border p-3"').length - 1, 4)
   assert.match(claims, /admin-claim-chat-panel bx-surface bx-surface-section/)
   const checkout = source("app/checkout/page.tsx")
   assert.match(checkout, /"checkout-panel checkout-form-panel relative overflow-hidden rounded-xl border border-\[#112A43\] bg-\[#070C12\]/)

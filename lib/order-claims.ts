@@ -4,6 +4,7 @@ import type {
   OrderClaimType,
   SupabaseOrderCreditNote,
 } from "@/lib/supabase/types"
+import { getClaimRequirements } from "./orders/claim-policy.ts"
 
 export const ORDER_CLAIM_BUCKET = "order-claim-evidence"
 
@@ -222,19 +223,11 @@ export function getOrderClaimTypeLabel(type?: string | null) {
   return type ? labels[type] ?? type : "Reclamo"
 }
 
+// Nombre comercial: el mismo de la matriz de resoluciones (claim-policy).
 export function getOrderClaimResolutionLabel(resolution?: string | null) {
-  const labels: Record<string, string> = {
-    cambio_producto: "Cambio de producto",
-    envio_unidad_faltante: "Envío de unidad faltante",
-    reintegro_total: "Reintegro total",
-    reintegro_parcial: "Reintegro parcial",
-    saldo_a_favor: "Saldo a favor",
-    cupon_descuento: "Nota de crédito",
-    rechazado: "Rechazado",
-    otro: "Otra solución",
-  }
-
-  return resolution ? labels[resolution] ?? resolution : "Sin resolución"
+  if (!resolution) return "Sin resolución"
+  if (resolution === "rechazado") return "Rechazado"
+  return getClaimRequirements(resolution)?.label ?? resolution
 }
 
 export function getClaimDeadline(deliveredAt: string, type: OrderClaimType) {

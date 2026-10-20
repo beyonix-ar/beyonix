@@ -770,7 +770,7 @@ test("Volver al paso anterior conserva la acción y desplaza al encabezado", asy
     await page.evaluate("window.__scrollIntoViewCalls = 0")
     await page.getByRole("button", { name: "Volver al paso anterior" }).click()
     await page.waitForFunction("window.__scrollIntoViewCalls === 1")
-    assert.match(await page.locator('.admin-claim-wizard-steps [aria-current="step"]').innerText(), /Recepción/)
+    assert.match(await page.locator('.admin-claim-wizard-steps [aria-current="step"]').innerText(), /Inspección/)
     await page.locator(".admin-claim-wizard-steps").getByRole("button", { name: /Reemplazo/ }).click()
     await page.waitForFunction("window.__scrollIntoViewCalls === 2")
     assert.match(await page.locator('.admin-claim-wizard-steps [aria-current="step"]').innerText(), /Reemplazo/)

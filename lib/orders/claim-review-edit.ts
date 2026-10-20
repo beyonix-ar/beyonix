@@ -3,6 +3,8 @@
 // base vuelve a validar cada cambio (mutate_admin_order_claim, guardas de
 // logística y NC, reopen_rejected_order_claim).
 
+import { FINANCIAL_CLAIM_RESOLUTIONS } from "./claim-policy.ts"
+
 export type ClaimReviewDecision = "approve" | "reject"
 
 export type ClaimReviewEditMode =
@@ -30,7 +32,7 @@ export interface ClaimReviewEditability {
 
 const UNDECIDED = ["recibido", "en_revision", "falta_informacion"]
 const APPROVED = ["aprobado", "reintegro_pendiente", "cambio_pendiente", "cupon_pendiente", "reemplazo_enviado"]
-const ECONOMIC = ["reintegro_total", "reintegro_parcial", "saldo_a_favor", "cupon_descuento"]
+const ECONOMIC: readonly string[] = FINANCIAL_CLAIM_RESOLUTIONS
 
 export function getClaimReviewEditability(input: {
   status: string

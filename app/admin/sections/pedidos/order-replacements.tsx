@@ -488,7 +488,7 @@ function ReplacementDialog({
         <header className="admin-replacement-modal__header">
           <span className="admin-replacement-modal__icon" aria-hidden="true"><Repeat2 /></span>
           <div className="admin-replacement-modal__heading">
-            <p className="admin-replacement-modal__eyebrow">Cambio de producto</p>
+            <p className="admin-replacement-modal__eyebrow">Reemplazo del producto</p>
             <h2 id="order-replacement-title" className="admin-replacement-modal__title">{title}</h2>
             <p className="admin-replacement-modal__subtitle">Registrá qué unidad recibe el cliente y descontala del stock.</p>
           </div>

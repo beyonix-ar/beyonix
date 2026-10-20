@@ -21,7 +21,11 @@ export function CustomerClaimShipmentsNotice({ claim }: { claim: SupabaseOrderCl
           <Truck className="size-3.5 text-[#D7FFFD]" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-xs font-black text-[#D7FFFD]">{view.title} · {view.statusLabel}</p>
+          {/* El estado ya está en el encabezado del reclamo: acá sólo el tramo y, si existe,
+              la fecha real de custodia o la marca de simulación QA. */}
+          <p className="text-xs font-black text-[#D7FFFD]">
+            {view.title}{/desde el|Simulación QA/.test(view.statusLabel) ? ` · ${view.statusLabel}` : ""}
+          </p>
           {view.branchLabel && <p className="mt-1 text-xs font-bold text-white/85">Sucursal Andreani: {view.branchLabel}</p>}
           {view.tracking && (
             <p className="mt-1 text-xs font-semibold text-white/80">

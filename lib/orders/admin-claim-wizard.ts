@@ -1,4 +1,6 @@
 // Deriva sólo la presentación. Las validaciones siguen en los flujos existentes.
+import { getClaimRequirements } from "./claim-policy.ts"
+
 export type AdminClaimWizardStepKey =
   "review" | "next" | "method" | "logistics" | "reception" | "replacement" | "execution" | "finish"
 
@@ -17,7 +19,7 @@ export type AdminClaimWizardStepView = AdminClaimWizardStep & { status: AdminCla
 
 export interface AdminClaimWizardLogistics {
   /** null: el Admin todavía tiene que elegir el método logístico. */
-  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | null
+  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion" | null
   /** Paso actual según el paradero de las unidades (getAdminClaimLogisticsView). */
   step: "logistics" | "reception" | "replacement" | "execution" | "finish"
 }
@@ -57,37 +59,42 @@ function getAdminClaimWizardSteps(input: {
   logistics?: AdminClaimWizardLogistics | null
 }) {
   const closed = input.status === "cerrado" || input.status === "rechazado"
-  const approved = Boolean(input.resolution && input.resolution !== "rechazado")
-  const replacement = input.resolution === "cambio_producto" || input.resolution === "envio_unidad_faltante"
+  const requirements = getClaimRequirements(input.resolution)
+  const approved = Boolean(requirements)
+  const replacement = requirements?.solution === "replacement"
   const reception = input.resolution === "cambio_producto"
-  const refundLabel = input.resolution === "reintegro_total" || input.resolution === "reintegro_parcial" ? "Reintegro" : "Aplicación"
-  const steps: AdminClaimWizardStep[] = [{ key: "review", label: "Revisión" }]
-  if (!approved && !closed) steps.push({ key: "next", label: "Resolución" }, { key: "finish", label: "Finalización" })
+  const refundLabel = requirements?.financialAction === "refund" ? "Reintegro"
+    : requirements?.financialAction === "customer_credit" ? "Saldo a favor" : "Solución"
+  const steps: AdminClaimWizardStep[] = [{ key: "review", label: "Revisar" }]
+  if (!approved && !closed) steps.push({ key: "next", label: "Resolución" }, { key: "finish", label: "Finalizar" })
 
-  // Con logística por sucursal cada paso es una sola cosa, en el orden real del
-  // método: Método -> operación Andreani -> lo que vuelve a BEYONIX -> reenvío
-  // o reintegro -> Finalización. En el cambio directo el reemplazo viaja en la
-  // misma operación que retira el original, por eso la recepción va después.
+  // Con logística por sucursal cada paso es una sola cosa, en el orden real:
+  // Logística (sólo mientras no se eligió) -> Devolución / Cambio -> Inspección
+  // -> Envío o reintegro -> Finalizar. Elegido el método, su corrección vive en
+  // el paso de la operación (no hay un paso "Método" aparte).
   if (approved && input.logistics) {
     const { plan } = input.logistics
-    steps.push({ key: "method", label: "Método" })
-    if (plan === "cambio_directo") {
-      steps.push({ key: "logistics", label: "Cambio en sucursal" }, { key: "reception", label: "Recepción" })
+    if (plan === null) {
+      steps.push({ key: "method", label: "Logística" })
+    } else if (plan === "cambio_directo") {
+      steps.push({ key: "logistics", label: "Cambio en sucursal" }, { key: "reception", label: "Inspección" })
     } else if (plan === "retiro_y_reenvio") {
-      steps.push({ key: "logistics", label: "Retiro" }, { key: "reception", label: "Recepción" }, { key: "replacement", label: "Reenvío" })
+      steps.push({ key: "logistics", label: "Devolución" }, { key: "reception", label: "Inspección" }, { key: "replacement", label: "Envío" })
     } else if (plan === "retiro") {
-      steps.push({ key: "logistics", label: "Retiro" }, { key: "reception", label: "Recepción" }, { key: "execution", label: refundLabel })
+      steps.push({ key: "logistics", label: "Devolución" }, { key: "reception", label: "Inspección" }, { key: "execution", label: refundLabel })
+    } else {
+      steps.push({ key: "replacement", label: "Envío" })
     }
-    steps.push({ key: "finish", label: "Finalización" })
+    steps.push({ key: "finish", label: "Finalizar" })
     const current = closed || input.status === "reemplazo_enviado" ? "finish" : plan === null ? "method" : input.logistics.step
     const index = steps.findIndex((step) => step.key === current)
     return { steps, current: index >= 0 ? current : "finish", currentIndex: index >= 0 ? index : steps.length - 1 }
   }
 
-  if (approved && reception) steps.push({ key: "reception", label: "Recepción" })
+  if (approved && reception) steps.push({ key: "reception", label: "Inspección" })
   if (approved && replacement) steps.push({ key: "replacement", label: reception ? "Reemplazo" : "Unidad faltante" })
   if (approved) steps.push({ key: "execution", label: replacement ? "Entrega" : refundLabel })
-  if (approved || closed) steps.push({ key: "finish", label: "Finalización" })
+  if (approved || closed) steps.push({ key: "finish", label: "Finalizar" })
   const current = closed || input.status === "reemplazo_enviado" ? "finish" : !approved ? "review" : reception && input.receivedUnits === 0
     ? "reception" : replacement && !(input.replacedUnits !== null && input.replacedUnits > 0)
       ? "replacement" : "execution"

@@ -46,6 +46,8 @@ import {
 } from "@/lib/claims/claim-unit-selection"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { CustomerClaimShipmentsNotice } from "@/components/claims/customer-claim-shipments-notice"
+import { getClaimRequirements } from "@/lib/orders/claim-policy"
+import { getCustomerClaimHeadline } from "@/lib/orders/claim-shipment-view"
 import {
   countUnreadBeyonixMessages,
   getLatestBeyonixMessage,
@@ -283,17 +285,18 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
     return { label: "Mensaje recibido", dot: "bg-blue-300", style: base }
   }
 
+  // Reclamo en curso: una frase según la solución y el tramo Andreani vigente.
   if (claim.status === "recibido") {
     return {
-      label: "Reclamo recibido",
+      label: getCustomerClaimHeadline(claim),
       dot: "bg-emerald-200",
       style: "border-emerald-200/45 bg-emerald-300/12 text-emerald-50",
     }
   }
-  if (claim.status === "en_revision") return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
+  if (claim.status === "en_revision") return { label: getCustomerClaimHeadline(claim), dot: "bg-blue-300", style: base }
   if (claim.status === "falta_informacion") return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
   if (["aprobado", "reintegro_pendiente", "cambio_pendiente", "cupon_pendiente", "reemplazo_enviado"].includes(claim.status)) {
-    return { label: "Solución en proceso", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
+    return { label: getCustomerClaimHeadline(claim), dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
   }
   if (claim.status === "rechazado") return { label: "Reclamo rechazado", dot: "bg-red-300", style: "border-red-300/25 bg-red-400/8" }
   if (claim.status === "cerrado" && claim.cancelled_at) return { label: "Reclamo cancelado", dot: "bg-slate-300", style: base }
@@ -302,62 +305,12 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
   return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
 }
 
-// Solución en curso (reclamo abierto). Terminado: ver getClaimResolutionView.
-function getCustomerResolutionSummary(claim: SupabaseOrderClaim) {
+// Solución aprobada de un reclamo abierto (el estado vive en la etiqueta del
+// encabezado). Terminado: ver getClaimResolutionView.
+function getCustomerSolutionLabel(claim: SupabaseOrderClaim) {
+  if (["cerrado", "rechazado"].includes(claim.status)) return null
   const resolution = claim.resolution ?? claim.customer_selected_resolution
-
-  if (resolution === "cambio_producto") {
-    if (claim.status === "reemplazo_enviado") {
-      const tracking = claim.replacement_tracking ? ` Seguimiento: ${claim.replacement_tracking}.` : ""
-      return {
-        title: "Solución: cambio de producto",
-        body: `BEYONIX ya despachó el reemplazo.${tracking}`,
-      }
-    }
-
-    return {
-      title: "Solución: cambio de producto",
-      body: "BEYONIX aprobó el cambio del producto.",
-    }
-  }
-
-  if (resolution === "envio_unidad_faltante") {
-    if (claim.status === "reemplazo_enviado") {
-      const tracking = claim.replacement_tracking ? ` Seguimiento: ${claim.replacement_tracking}.` : ""
-      return {
-        title: "Solución: envío de unidad faltante",
-        body: `BEYONIX ya despachó la unidad pendiente.${tracking}`,
-      }
-    }
-
-    return {
-      title: "Solución: envío de unidad faltante",
-      body: "BEYONIX aceptó el faltante y va a preparar el envío de la unidad pendiente.",
-    }
-  }
-
-  if (resolution === "cupon_descuento") {
-    return {
-      title: "Solución: nota de crédito",
-      body: "BEYONIX aprobó una nota de crédito a tu favor.",
-    }
-  }
-
-  if (resolution === "reintegro_total" || resolution === "reintegro_parcial") {
-    return {
-      title: `Solución: ${getOrderClaimResolutionLabel(resolution).toLowerCase()}`,
-      body: "BEYONIX aprobó la devolución del dinero correspondiente.",
-    }
-  }
-
-  if (resolution === "otro") {
-    return {
-      title: "Solución en proceso",
-      body: "BEYONIX está gestionando la solución del caso.",
-    }
-  }
-
-  return null
+  return getClaimRequirements(resolution) ? getOrderClaimResolutionLabel(resolution) : null
 }
 
 function FilePreview({ file }: { file: SupabaseOrderClaimFile }) {
@@ -982,7 +935,7 @@ export function CustomerClaimExperience({
     const refundPending =
       claim.status === "reintegro_pendiente" &&
       ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? claim.customer_selected_resolution ?? "")
-    const resolutionSummary = getCustomerResolutionSummary(claim)
+    const solutionLabel = helpMessage || cancellation ? null : getCustomerSolutionLabel(claim)
     // Reclamo terminado: la resolución persistida reemplaza los avisos de
     // "solución en proceso" y de rechazo (misma información, fuente única).
     const resolutionView = helpMessage ? null : getClaimResolutionView(claim)
@@ -1005,6 +958,7 @@ export function CustomerClaimExperience({
           <div className="min-w-0">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">
               {getOrderCode(order.id)} · {hideClosedHelpMetadata ? "Ayuda" : (PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo")}
+              {solutionLabel && <span data-testid="customer-claim-solution"> · Solución: {solutionLabel}</span>}
             </p>
             <h3 className="mt-1 text-xl font-black leading-6 text-white">
               {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Chat de ayuda" : "Chat del reclamo"}
@@ -1135,20 +1089,6 @@ export function CustomerClaimExperience({
           </div>
         )}
 
-        {resolutionSummary && !resolutionView && !helpMessage && !claim.rejection_reason && (
-          <div className="border-b border-[#77E6E2]/20 bg-[#071C20] px-3.5 py-3">
-            <div className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-[#77E6E2]/25 bg-[#77E6E2]/10">
-                <Check className="size-3.5 text-[#D7FFFD]" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-black text-[#D7FFFD]">{resolutionSummary.title}</p>
-                <p className="mt-1 text-xs font-semibold leading-5 text-white/80">{resolutionSummary.body}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
         {!helpMessage && !cancellation && <CustomerClaimShipmentsNotice claim={claim} />}
 
         <div ref={chatRef} className="customer-claim-chat-thread min-h-[22rem] max-h-[34rem] space-y-4 overflow-y-auto bg-[#070C12] px-5 py-5">
@@ -1187,7 +1127,7 @@ export function CustomerClaimExperience({
 
           {claim.coupon_code && (
             <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-2">
-              <span className="text-xs font-bold text-[#D7FFFD]">Nota de crédito:</span>
+              <span className="text-xs font-bold text-[#D7FFFD]">Código de saldo a favor:</span>
               <code className="rounded-md border border-white/10 bg-black/30 px-2 py-1 text-xs font-black text-white">{claim.coupon_code}</code>
               <button type="button" onClick={() => void navigator.clipboard?.writeText(claim.coupon_code ?? "")} className="h-7 rounded-md border border-blue-300/20 px-2 text-10px font-black text-blue-200 hover:border-blue-300/45">
                 Copiar

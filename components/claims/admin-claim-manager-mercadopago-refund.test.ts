@@ -12,12 +12,11 @@ test("MercadoPagoRefundAction se usa exclusivamente para pedidos pagados por Mer
 })
 
 test("el flujo de comprobante manual (subir archivo + mark_refund_done) queda excluido para pedidos de Mercado Pago", () => {
-  assert.match(source, /canManageRefund && pedido\.payment_method_id !== "mercadopago"/)
-  const manualBlockStart = source.indexOf('canManageRefund && pedido.payment_method_id !== "mercadopago"')
-  const manualBlockEnd = source.indexOf("{canCloseClaim &&", manualBlockStart)
-  const manualBlock = source.slice(manualBlockStart, manualBlockEnd)
-  assert.match(manualBlock, /Subir comprobante/)
-  assert.match(manualBlock, /mark_refund_done|markRefundDone/)
+  // Comprobante y cierre manual: dos acciones contextuales, ambas sólo fuera de Mercado Pago.
+  const manualBlocks = [...source.matchAll(/canManageRefund && pedido\.payment_method_id !== "mercadopago"[\s\S]*?\n {16}\)\}/g)].map((match) => match[0])
+  assert.equal(manualBlocks.length, 2)
+  assert.match(manualBlocks[0], /uploadRefundProof/)
+  assert.match(manualBlocks[1], /markRefundDone/)
 })
 
 test("transferencia (y cualquier medio no-MP) conserva el flujo manual sin cambios funcionales", () => {

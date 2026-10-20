@@ -1,3 +1,4 @@
+import { claimAllowsCreditNote } from "./claim-policy.ts"
 import { operationRequiresClaim } from "./credit-note-wizard.ts"
 
 export interface CreditNoteClaimPolicyClaim {
@@ -32,10 +33,13 @@ export function isAdministrativeCreditNoteOperation(operationType: string) {
   return !operationRequiresClaim(operationType)
 }
 
+// Además del estado, la solución tiene que mover dinero: un reemplazo nunca
+// habilita el asistente de nota de crédito (claim-policy.ts).
 export function isClaimEligibleForCreditNote(
   claim: Pick<CreditNoteClaimPolicyClaim, "status" | "failure_type" | "resolution">,
 ) {
   return (
+    claimAllowsCreditNote(claim) &&
     [
       "aprobado",
       "reintegro_pendiente",
@@ -81,6 +85,9 @@ export function getCreditNoteClaimPolicyError({
   }
   if (orderUserId && claim.user_id !== orderUserId) {
     return "El reclamo seleccionado no corresponde al cliente del pedido."
+  }
+  if (!claimAllowsCreditNote(claim)) {
+    return "La solución del reclamo no incluye reintegro ni saldo a favor: no corresponde nota de crédito."
   }
   if (!isClaimEligibleForCreditNote(claim)) {
     return "El reclamo seleccionado no está habilitado para una devolución o reintegro."

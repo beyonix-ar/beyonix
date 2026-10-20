@@ -1,10 +1,11 @@
 "use client"
 
 import { useRef, useState, type ReactNode } from "react"
-import { CheckCircle2, Circle, Clock, Download, LoaderCircle, Lock, PackageCheck, RefreshCw, Search, Truck } from "lucide-react"
+import { Clock, Download, LoaderCircle, Lock, PackageCheck, RefreshCw, Search, Truck } from "lucide-react"
 
 import { AdminButton, AdminGhostButton, AdminSecondaryButton, adminControlClassName } from "@/app/admin/components/admin-controls"
 import { HelpTip } from "@/components/claims/help-tip"
+import { openClaimShipmentLabel } from "@/components/claims/claim-shipment-label"
 import { getOrCreateIdempotencyAttempt, type IdempotencyAttempt } from "@/lib/business/idempotency-attempt"
 import {
   CLAIM_INCIDENT_LABELS,
@@ -17,7 +18,7 @@ import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim } from "@/lib/supabase/types"
 
 type Pending = "request" | "create" | "sync" | "reconcile" | "cancel" | "exchange_not_completed" | "review_resolve" | "label" | "unit" | "branches"
-type RequestKind = "cambio" | "devolucion" | "reemplazo"
+type RequestKind = "cambio" | "devolucion" | "reemplazo" | "sin_devolucion"
 type LegForm = "reconcile" | "cancel" | "exchange_not_completed" | "review_resolve"
 /**
  * Qué parte de la logística muestra cada paso del wizard (una sola cosa por paso):
@@ -59,11 +60,12 @@ const RESEND_REQUEST = {
 
 const CONFIRM_LABELS: Record<RequestKind, string> = {
   cambio: "Confirmar cambio",
-  devolucion: "Confirmar retiro",
+  devolucion: "Confirmar devolución",
   reemplazo: "Confirmar reenvío",
+  sin_devolucion: "Confirmar envío sin devolución",
 }
 
-const CREATE_LABELS = { cambio: "Generar cambio en sucursal", devolucion: "Generar retiro", reemplazo: "Generar reenvío" } as const
+const CREATE_LABELS = { cambio: "Generar cambio en sucursal", devolucion: "Generar devolución", reemplazo: "Generar envío del reemplazo" } as const
 
 const RECEPTION_ACTIONS: ClaimUnitAction[] = ["arrival_original", "arrival_replacement", "inspect_replacement", "incident_open", "incident_resolve", "waive_original"]
 const RESERVATION_ACTIONS: ClaimUnitAction[] = ["release_reservation", "deliver_manual"]
@@ -152,13 +154,17 @@ export function ClaimAndreaniShipmentPanel({
     creditNoteActive,
   })
   if (!view) return null
+  // Sin método, sin operación, sin unidades y sin nada que elegir: no hay logística que mostrar.
+  if (!view.plan && !view.legacy && !view.leg && view.items.length === 0 && !view.methodChoices.some((choice) => choice.available)) return null
   const leg = view.leg
   const all = section === "all"
   const showMethod = all || section === "method"
   const inLogistics = all || section === "logistics"
   const inReplacement = all || section === "replacement"
-  const inReception = all || section === "reception"
-  const reservationSection: ClaimLogisticsPanelSection = view.plan === "retiro_y_reenvio" ? "replacement" : "logistics"
+  const resendOnly = view.plan === "reenvio_sin_devolucion"
+  // Sin devolución no hay paso de Inspección: un reemplazo que vuelve sin retirar se revisa en Envío.
+  const inReception = all || section === "reception" || (resendOnly && section === "replacement")
+  const reservationSection: ClaimLogisticsPanelSection = view.plan === "retiro_y_reenvio" || resendOnly ? "replacement" : "logistics"
   const inReservation = all || section === reservationSection
   const legInSection = Boolean(leg) && (all ||
     (section === "logistics" && leg?.direction !== "reemplazo") ||
@@ -206,18 +212,9 @@ export function ClaimAndreaniShipmentPanel({
     })
 
   const openLabel = (shipmentId: number) =>
-    withToken("label", async (token) => {
-      const response = await fetch(`/api/admin/order-claims/${claim.id}/andreani-shipment?shipmentId=${shipmentId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!response.ok) {
-        const data = (await response.json().catch(() => ({}))) as { error?: string }
-        setError(data.error || "No se pudo obtener la etiqueta.")
-        return
-      }
-      const url = URL.createObjectURL(await response.blob())
-      window.open(url, "_blank", "noopener")
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    withToken("label", async () => {
+      const failure = await openClaimShipmentLabel(claim.id, shipmentId)
+      if (failure) setError(failure)
     })
 
   const fetchBranches = (params: string) =>
@@ -245,7 +242,7 @@ export function ClaimAndreaniShipmentPanel({
     setSuggestionLoading(true)
     // Sugerida por el servidor (tramo anterior o sucursal de BEYONIX), validada
     // contra el catálogo actual de Andreani. Si ya no existe, se elige otra.
-    const data = await fetchBranches(`direction=${kind}`)
+    const data = await fetchBranches(`direction=${kind === "sin_devolucion" ? "reemplazo" : kind}`)
     if (sequence !== requestSequenceRef.current) return
     setSuggestionLoading(false)
     if (data?.suggested) setSelectedBranch(data.suggested)
@@ -273,22 +270,21 @@ export function ClaimAndreaniShipmentPanel({
     setBranchQuery("")
   }
 
-  // Nuevo método (no reintento ni reenvío del mismo plan) con operación real previa: motivo.
-  const reasonRequired = requestKind !== null && requestKind !== "reemplazo" && view.methodChangeRequiresReason &&
-    view.methodOptions.some((option) => option.direction === requestKind)
+  // Nuevo método (no reintento ni reenvío del mismo plan) con operación real
+  // previa, o dispensar la devolución: motivo obligatorio y segunda confirmación.
+  const withoutReturn = requestKind === "sin_devolucion"
+  const reasonRequired = withoutReturn || (requestKind !== null && requestKind !== "reemplazo" && view.methodChangeRequiresReason &&
+    view.methodOptions.some((option) => option.direction === requestKind))
   const submitRequest = () => {
     if (!requestKind || !selectedBranch) return
-    // Corregir un método con operación Andreani previa: segunda confirmación.
     if (reasonRequired && !requestConfirming) {
       setRequestConfirming(true)
       return
     }
-    void post("request", {
-      action: "request",
-      direction: requestKind,
-      branchId: selectedBranch.id,
-      notes: requestNotes.trim() || undefined,
-    }, () => setRequestKind(null))
+    void post("request", withoutReturn
+      ? { action: "request_without_return", branchId: selectedBranch.id, notes: requestNotes.trim() }
+      : { action: "request", direction: requestKind, branchId: selectedBranch.id, notes: requestNotes.trim() || undefined },
+    () => setRequestKind(null))
   }
 
   const openUnitAction = (option: ClaimUnitActionOption) => {
@@ -383,6 +379,15 @@ export function ClaimAndreaniShipmentPanel({
     if (leg.canCancel) secondaries.push({ key: "cancel", label: "Cancelar operación", focus: "cancel_leg", run: () => { setLegForm("cancel"); setLegNotes("") } })
   }
   const showOperation = section === "logistics" || section === "replacement" || all
+  // En Envío (sin devolución) sólo aparece un producto nuevo que ya volvió a
+  // BEYONIX; registrar su regreso queda como acción secundaria del envío.
+  const resendStep = resendOnly && section === "replacement"
+  const receptionItems = resendStep
+    ? view.items.filter((item) => (item.replacement.recibida_beyonix ?? 0) > 0 || item.incident)
+    : view.items
+  const resendReturnActions = resendStep && canManage && !unitAction
+    ? view.unitActions.filter((option) => option.action === "arrival_replacement" && !option.noteMin)
+    : []
 
   return (
     <section className="admin-claim-wizard-action admin-claim-logistics" data-claim-logistics data-claim-logistics-section={section}>
@@ -398,25 +403,12 @@ export function ClaimAndreaniShipmentPanel({
               </>
             )}
           </h4>
-          <dl className="admin-claim-logistics-summary" data-claim-logistics-summary>
-            <div><dt>Método</dt><dd>{summary.method}</dd></div>
-            <div><dt>Sucursal</dt><dd>{summary.branch}</dd></div>
-            <div><dt>Estado</dt><dd data-claim-logistics-status>{summary.status}</dd></div>
-            <div><dt>Problemas</dt><dd>{summary.incidents}</dd></div>
-          </dl>
-          {flow.checklist.length > 0 && (
-            <ol className="admin-claim-checklist" aria-label="Avance del reclamo" data-claim-checklist>
-              {flow.checklist.map((item, index) => {
-                const next = !item.done && flow.checklist.slice(0, index).every((previous) => previous.done)
-                return (
-                  <li key={item.key} data-claim-check={item.key} data-done={item.done} className={`${item.done ? "is-done" : ""} ${next ? "is-next" : ""}`}>
-                    {item.done ? <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" /> : <Circle className="size-3.5 shrink-0" aria-hidden="true" />}
-                    <span>{item.label}</span>
-                    <span className="sr-only">{item.done ? " (listo)" : next ? " (próximo)" : " (pendiente)"}</span>
-                  </li>
-                )
-              })}
-            </ol>
+          {/* El avance por tramo vive en el resumen del reclamo: acá sólo el método y la sucursal. */}
+          {(view.plan || view.legacy) && (
+            <p className="admin-claim-logistics-hint" data-claim-logistics-summary>
+              {summary.method}{view.plan && summary.branch !== "Sin sucursal" ? ` · ${summary.branch}` : ""}
+              {summary.incidents > 0 && <strong className="admin-claim-logistics-warning"> · {summary.incidents} {summary.incidents === 1 ? "problema" : "problemas"}</strong>}
+            </p>
           )}
           {all && view.nextStep && !view.plan && (
             <p className="admin-claim-logistics-next is-action" data-claim-logistics-next>{view.nextStep}</p>
@@ -424,7 +416,7 @@ export function ClaimAndreaniShipmentPanel({
         </>
       )}
 
-      {showMethod && view.methodChoices.length > 0 && (
+      {showMethod && view.methodChoices.length > 0 && (view.plan || view.methodChoices.some((choice) => choice.available)) && (
         // Radios bloqueados sólo mientras se guarda (la consulta de sucursales no le quita el
         // foco al teclado); la ayuda (?) sigue accesible aunque el método no se pueda elegir.
         <fieldset className="admin-claim-method" data-claim-logistics-methods>
@@ -488,10 +480,15 @@ export function ClaimAndreaniShipmentPanel({
         </div>
       )}
 
-      {showOperation && (secondaries.length > 0 || reservationActions.length > 0) && (
+      {showOperation && (secondaries.length > 0 || reservationActions.length > 0 || resendReturnActions.length > 0) && (
         <div className="admin-claim-secondary-actions" data-claim-secondary-actions>
           {secondaries.map((entry) => (
             <AdminGhostButton key={entry.key} size="sm" disabled={busy} onClick={entry.run} data-claim-focus={entry.focus}>{entry.icon}{entry.label}</AdminGhostButton>
+          ))}
+          {resendReturnActions.map((option) => (
+            <AdminGhostButton key={`return-${option.orderItemId}`} size="sm" disabled={busy} onClick={() => openUnitAction(option)}>
+              El reemplazo volvió a BEYONIX{multipleItems ? ` · ${itemLabel(option.orderItemId)}` : ""}
+            </AdminGhostButton>
           ))}
           {reservationActions.map((option) => (
             <AdminGhostButton key={`${option.action}-${option.orderItemId}`} size="sm" disabled={busy} onClick={() => openUnitAction(option)}
@@ -565,7 +562,9 @@ export function ClaimAndreaniShipmentPanel({
           )}
           {requestConfirming && selectedBranch && (
             <p role="alert" className="admin-claim-logistics-warning">
-              Ya hubo una operación Andreani: el cambio de método queda auditado con tu usuario y el motivo. ¿Confirmás?
+              {withoutReturn
+                ? "El cliente conserva el producto y no se podrá pedir la devolución después. Queda auditado con tu usuario y el motivo. ¿Confirmás?"
+                : "Ya hubo una operación Andreani: el cambio de método queda auditado con tu usuario y el motivo. ¿Confirmás?"}
             </p>
           )}
           <div className="flex flex-wrap gap-2">
@@ -618,9 +617,9 @@ export function ClaimAndreaniShipmentPanel({
         </div>
       )}
 
-      {inReception && view.items.length > 0 && (
+      {inReception && receptionItems.length > 0 && (
         <ul className="admin-claim-logistics-units" data-claim-logistics-units>
-          {view.items.map((item) => {
+          {receptionItems.map((item) => {
             const itemActions = canManage && !unitAction
               ? view.unitActions.filter((option) => option.orderItemId === item.orderItemId && RECEPTION_ACTIONS.includes(option.action))
               : []

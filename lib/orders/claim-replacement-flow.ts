@@ -4,6 +4,8 @@
 // negocio. Las validaciones reales (stock, recepción, reemplazos, cierre)
 // siguen en los endpoints/RPC correspondientes.
 
+import { isFinancialClaimResolution, isRefundClaimResolution, isReplacementClaimResolution } from "./claim-policy.ts"
+
 export type ClaimStepState = "done" | "current" | "pending"
 
 export interface ClaimProgressStep {
@@ -84,9 +86,7 @@ export function formatPendingReceptionMessage(pendingUnits: number) {
   return `Faltan recibir ${pendingUnits} ${pendingUnits === 1 ? "unidad" : "unidades"} del producto original. Registrá la recepción o marcá «Continuar sin recepción previa».`
 }
 
-export function isReplacementResolution(resolution?: string | null) {
-  return resolution === "cambio_producto" || resolution === "envio_unidad_faltante"
-}
+export const isReplacementResolution = isReplacementClaimResolution
 
 // Una unidad faltante nunca volvió al depósito: no hay recepción previa.
 export function requiresOriginalReception(resolution?: string | null) {
@@ -173,9 +173,9 @@ export function getClaimProgressSteps(input: ClaimProgressInput): ClaimProgressS
     steps.push({ key: "reception", label: "Recepción", complete: receptionDone })
   }
 
-  if (["reintegro_total", "reintegro_parcial", "cupon_descuento", "saldo_a_favor"].includes(resolution)) {
+  if (isFinancialClaimResolution(resolution)) {
     steps.push({ key: "credit_note", label: "Nota de crédito", complete: input.creditNoteAuthorized })
-    if (resolution === "reintegro_total" || resolution === "reintegro_parcial") {
+    if (isRefundClaimResolution(resolution)) {
       steps.push({ key: "refund", label: "Reintegro", complete: input.refundCompleted })
     }
   }

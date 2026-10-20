@@ -16796,6 +16796,36 @@ html[data-admin-theme="light"] .admin-claim-checklist li.is-done { color: #16653
 html[data-admin-theme="light"] .admin-claim-checklist li.is-next { color: #0f172a; }
 html[data-admin-theme="light"] .admin-claim-current-action { border-color: #9bd8d4; }
 html[data-admin-theme="light"] .admin-claim-waiting { color: #1e293b; }
+/* Resumen del reclamo: problema y productos, solución (y dinero sólo si existe), logística por tramo. */
+.admin-claim-overview-grid { display: grid; gap: .75rem; min-width: 0; }
+@media (min-width: 768px) { .admin-claim-overview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.admin-claim-summary-eyebrow { color: rgba(255, 255, 255, .62); font-size: .625rem; font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
+.admin-claim-financial { display: grid; gap: .25rem; margin: 0; font-size: .75rem; }
+.admin-claim-financial > div { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.admin-claim-financial dt { color: #9fb0c0; font-weight: 700; }
+.admin-claim-financial dd { margin: 0; color: #f8fafc; font-weight: 800; text-align: right; }
+.admin-claim-progress-group { margin-top: .4rem; }
+.admin-claim-progress-group + .admin-claim-progress-group { padding-top: .4rem; border-top: 1px solid var(--admin-border-soft); }
+.admin-claim-progress-title { color: #e2e8f0; font-size: .75rem; font-weight: 900; }
+.admin-claim-progress-steps { display: grid; gap: .15rem; margin: .25rem 0 0; padding: 0; list-style: none; }
+.admin-claim-progress-steps li { display: flex; align-items: center; gap: .4rem; color: #9fb0c0; font-size: .75rem; font-weight: 600; }
+.admin-claim-progress-steps li.is-done { color: #8ee5c0; }
+.admin-claim-progress-steps li.is-current { color: #d7fffd; font-weight: 800; }
+.admin-claim-progress-actions { display: flex; flex-wrap: wrap; gap: .25rem .75rem; margin-top: .3rem; }
+/* Tracking y etiqueta: botones compactos (el detalle del pedido les da el estilo de botón del admin). */
+.admin-claim-progress-link { display: inline-flex; align-items: center; gap: .3rem; min-height: 1.75rem; padding: .2rem .55rem; border-radius: .45rem; font-size: .6875rem; font-weight: 800; word-break: break-all; }
+.admin-claim-progress-link:disabled { opacity: .6; cursor: wait; }
+.admin-claim-details > summary { cursor: pointer; color: #9fb0c0; font-size: .6875rem; font-weight: 800; }
+.admin-claim-details[open] > summary { color: #e2e8f0; }
+html[data-admin-theme="light"] .admin-claim-summary-eyebrow { color: #334155; }
+html[data-admin-theme="light"] .admin-claim-financial dt { color: #475569; }
+html[data-admin-theme="light"] .admin-claim-financial dd { color: #0f172a; }
+html[data-admin-theme="light"] .admin-claim-progress-title { color: #0f172a; }
+html[data-admin-theme="light"] .admin-claim-progress-steps li { color: #475569; }
+html[data-admin-theme="light"] .admin-claim-progress-steps li.is-done { color: #166534; }
+html[data-admin-theme="light"] .admin-claim-progress-steps li.is-current { color: #07565d; }
+html[data-admin-theme="light"] .admin-claim-details > summary { color: #475569; }
+html[data-admin-theme="light"] .admin-claim-details[open] > summary { color: #0f172a; }
 
 /* Wizard: el encabezado queda visible debajo de la navegación del admin. */
 .admin-claim-wizard-header { scroll-margin-top: 5rem; }

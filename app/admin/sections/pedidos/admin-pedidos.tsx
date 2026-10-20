@@ -2989,9 +2989,18 @@ function BillingManagementPanel({
   // (ajuste_manual, reembolso_excepcional), que por diseño no depende de
   // order_claims. Ver supabase/migrations/20260825090000_credit_note_requires_claim.sql.
   const hasEligibleClaim = Boolean(linkedClaim)
-  const hasAnyCommercialClaim = (pedido.order_claims ?? []).some(
-    (claim) => claim.failure_type !== "consulta_pedido",
+  // Un reclamo sin decidir puede terminar en reintegro o saldo: se espera la
+  // resolución. Uno decidido sin dinero (reemplazo, otra solución) nunca
+  // muestra el asistente de nota de crédito (claim-policy).
+  const hasUndecidedCommercialClaim = (pedido.order_claims ?? []).some(
+    (claim) => claim.failure_type !== "consulta_pedido" && ["recibido", "en_revision", "falta_informacion"].includes(claim.status),
   )
+  const showAdminAdjustmentEntry = !hasEligibleClaim && !hasUndecidedCommercialClaim && isSuperAdmin
+  const showCreditNoteAssistant = invoiceCreditRemaining > 0 &&
+    (hasEligibleClaim || hasUndecidedCommercialClaim || showAdminAdjustmentEntry)
+  // El panel también conserva lo ya emitido (resumen, historial, NC heredada, error).
+  const showCreditNotePanel = showCreditNoteAssistant || authorizedCreditNotes.length > 0 ||
+    managementEvents.length > 0 || creditNoteIssued || Boolean(pedido.credit_note_error)
   const linkedClaimReasonLabel = linkedClaim
     ? PROBLEM_LABELS[linkedClaim.failure_type ?? ""] ?? "Motivo informado por el cliente"
     : null
@@ -3612,33 +3621,25 @@ function BillingManagementPanel({
           El dinero de esta venta ya se reintegró. La nota de crédito pendiente se emite desde la pestaña Cancelación.
         </p>
       )}
-      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && creditNoteView.emitAction !== "legacy" && (
-        <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3">
+      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && creditNoteView.emitAction !== "legacy" && showCreditNotePanel && (
+        <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3" data-credit-note-assistant>
           <header className="admin-credit-note-header">
             <div className="admin-credit-note-title">
               <div>
-                <p className="admin-order-bl-eyebrow">Asistente de resolución</p>
-                <h3 className="admin-order-bl-title">Crear nota de crédito</h3>
-                <p className="admin-credit-note-intro">Un paso por vez. Los datos del reclamo ya están cargados.</p>
+                <p className="admin-order-bl-eyebrow">{showCreditNoteAssistant && hasEligibleClaim ? "Reintegro o saldo del reclamo" : "Facturación"}</p>
+                <h3 className="admin-order-bl-title">
+                  {!showCreditNoteAssistant ? "Notas de crédito" : hasEligibleClaim ? "Crear nota de crédito" : showAdminAdjustmentEntry ? "Ajuste administrativo" : "Nota de crédito"}
+                </h3>
+                {showCreditNoteAssistant && hasEligibleClaim && <p className="admin-credit-note-intro">Los datos del reclamo ya están cargados.</p>}
               </div>
             </div>
           </header>
 
-          {invoiceCreditRemaining > 0 && !hasEligibleClaim && (
+          {showCreditNoteAssistant && !hasEligibleClaim && (
             <div className="admin-credit-note-editor-step mt-3">
-              <p className="admin-order-billing-pending-note rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
-                {hasAnyCommercialClaim
-                  ? "Hay una solicitud del cliente, pero todavía no está aprobada para emitir una devolución o reintegro."
-                  : "No hay reclamos iniciados por el cliente para este pedido."}
-              </p>
-
-              {hasAnyCommercialClaim ? (
-                <p className="mt-2 text-xs font-medium text-white/60">
-                  Revisá el reclamo y aprobá una resolución comercial antes de continuar.
-                </p>
-              ) : !isSuperAdmin ? (
-                <p className="mt-2 text-xs font-medium text-white/60">
-                  Los ajustes administrativos sin reclamo están reservados a superadministradores.
+              {hasUndecidedCommercialClaim ? (
+                <p className="admin-order-billing-pending-note rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
+                  El reclamo todavía no tiene una solución aprobada.
                 </p>
               ) : !showAdminAdjustmentForm ? (
                 <button
@@ -3769,7 +3770,7 @@ function BillingManagementPanel({
             </div>
           )}
 
-          {invoiceCreditRemaining > 0 && hasEligibleClaim && (
+          {showCreditNoteAssistant && hasEligibleClaim && (
             <>
               <nav className="admin-credit-note-steps" aria-label="Pasos para crear la nota">
                 {([

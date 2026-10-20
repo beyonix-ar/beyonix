@@ -7,6 +7,8 @@
  * identificadores internos, errores técnicos ni la decisión interna del método.
  */
 
+import { RETURNABLE_CLAIM_RESOLUTIONS, getClaimRequirements } from "./claim-policy.ts"
+
 export type ClaimShipmentDirection = "devolucion" | "cambio" | "reemplazo"
 export type ClaimShipmentStatus = "pendiente" | "generada" | "en_transito" | "en_sucursal" | "entregada" | "cancelada"
 export type ClaimShipmentModality = "despacho_sucursal" | "cambio_sucursal" | "entrega_sucursal"
@@ -268,9 +270,65 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
   }
 }
 
+/**
+ * Estado del reclamo para el cliente en una frase ("Tu reemplazo está en
+ * camino"): solución comercial + tramo vigente. Sin contratos, IDs ni estados
+ * crudos de Andreani, y sin conceptos fiscales.
+ */
+export function getCustomerClaimHeadline(claim: {
+  status: string
+  resolution?: string | null
+  cancelled_at?: string | null
+  order_claim_shipments?: ClaimShipmentCustomerSource[] | ClaimShipmentCustomerSource | null
+}): string {
+  const requirements = getClaimRequirements(claim.resolution)
+  const legs = rowsOf(claim.order_claim_shipments).filter((row) => row.status !== "cancelada")
+  const delivered = (direction: ClaimShipmentDirection) => legs.some((row) => row.direction === direction && row.status === "entregada")
+  if (claim.status === "cerrado") {
+    if (claim.cancelled_at) return "Reclamo cancelado"
+    if (requirements?.solution === "replacement" && (delivered("reemplazo") || delivered("cambio"))) return "Tu reemplazo fue entregado"
+    if (requirements?.financialAction === "refund") return "Tu reintegro fue procesado"
+    if (requirements?.financialAction === "customer_credit") return "Tu saldo a favor fue acreditado"
+    return "Reclamo resuelto"
+  }
+  if (claim.status === "rechazado") return "Reclamo rechazado"
+  if (claim.status === "falta_informacion") return "Esperando tu respuesta"
+  if (!requirements || ["recibido", "en_revision"].includes(claim.status)) return "Recibimos tu reclamo"
+
+  const current = pickCurrentClaimShipment(legs)
+  if (current?.direction === "devolucion" && current.status !== "entregada") {
+    return current.status === "pendiente" ? "Estamos preparando tu devolución"
+      : current.status === "generada" ? "Esperamos que lleves el producto a Andreani"
+        : "Tu producto está en camino a BEYONIX"
+  }
+  if (current?.direction === "cambio") {
+    if (current.exchange_outcome === "no_completado") return "El cambio no se completó"
+    return current.status === "pendiente" ? "Estamos preparando tu cambio"
+      : current.status === "en_sucursal" ? "Tu reemplazo te espera en la sucursal"
+        : current.status === "entregada" ? "Cambio realizado" : "Tu reemplazo está en camino"
+  }
+  if (current?.direction === "reemplazo") {
+    return current.status === "pendiente" ? "Estamos preparando tu reemplazo"
+      : current.status === "en_sucursal" ? "Tu reemplazo está en la sucursal"
+        : current.status === "entregada" ? "Tu reemplazo fue entregado" : "Tu reemplazo está en camino"
+  }
+  if (current?.direction === "devolucion") {
+    return requirements.solution === "replacement" ? "Recibimos tu producto: preparando tu reemplazo" : "Recibimos tu producto"
+  }
+  if (requirements.financialAction === "refund") return "Estamos procesando tu reintegro"
+  if (requirements.financialAction === "customer_credit") return "Estamos acreditando tu saldo a favor"
+  if (requirements.solution === "replacement") return "Estamos preparando tu reemplazo"
+  return "Estamos resolviendo tu reclamo"
+}
+
 // ── Admin ───────────────────────────────────────────────────────────────────
 
-export type ClaimLogisticsPlan = "cambio_directo" | "retiro" | "retiro_y_reenvio"
+/**
+ * cambio_directo: CAMBIO sucursal. retiro: RETIRO sucursal (reintegro/saldo).
+ * retiro_y_reenvio: retiro -> inspección -> reenvío. reenvio_sin_devolucion:
+ * el cliente conserva el original (decisión auditada) y sólo viaja el reemplazo.
+ */
+export type ClaimLogisticsPlan = "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion"
 /**
  * Paso operativo vigente del wizard:
  *   logistics   -> la operación Andreani del método (cambio en sucursal / retiro);
@@ -301,8 +359,10 @@ export interface ClaimUnitActionOption {
   noteMin: number
 }
 
+export type ClaimLogisticsMethod = "cambio" | "devolucion" | "sin_devolucion"
+
 export interface ClaimLogisticsMethodOption {
-  direction: "cambio" | "devolucion"
+  direction: ClaimLogisticsMethod
   label: string
   description: string
 }
@@ -382,8 +442,23 @@ export interface ClaimChecklistItem {
 }
 
 /** Lo que el wizard muestra para guiar al Admin: checklist automático y qué falta ahora. */
+export type ClaimProgressState = "done" | "current" | "pending"
+
+/** Un tramo físico (devolución, cambio o reemplazo) con sus hitos, para el resumen. */
+export interface ClaimLogisticsProgressGroup {
+  key: ClaimShipmentDirection
+  title: string
+  steps: Array<{ key: string; label: string; state: ClaimProgressState }>
+  /** Tramo Andreani vigente de este grupo (tracking / etiqueta). */
+  shipmentId: number | null
+  tracking: string | null
+  labelAvailable: boolean
+}
+
 export interface ClaimLogisticsFlow {
   checklist: ClaimChecklistItem[]
+  /** Progreso físico agrupado por tramo (un bloque por tramo, sin repetir estados). */
+  groups: ClaimLogisticsProgressGroup[]
   /** Falta reservar el reemplazo antes de generar la operación (la base también lo exige). */
   needsReservation: boolean
   /** La operación vigente no requiere acción: sólo esperar (texto corto). */
@@ -421,31 +496,37 @@ export interface AdminClaimLogisticsView {
 
 const PLAN_LABELS: Record<ClaimLogisticsPlan, string> = {
   cambio_directo: "Cambio directo por sucursal",
-  retiro: "Retiro por sucursal + revisión",
-  retiro_y_reenvio: "Retiro + revisión + reenvío",
+  retiro: "Devolución por sucursal",
+  retiro_y_reenvio: "Devolución, revisión y reenvío",
+  reenvio_sin_devolucion: "Sin devolución: envío del reemplazo",
 }
 
-export const CLAIM_METHOD_OPTIONS: Record<"cambio" | "devolucion", ClaimLogisticsMethodOption> = {
-  cambio: {
-    direction: "cambio",
-    label: "Cambio directo por sucursal",
-    description: "Se reserva el reemplazo y Andreani lo entrega en la sucursal solo si el cliente entrega el producto original. El producto devuelto vuelve a BEYONIX para inspección.",
-  },
+export const CLAIM_METHOD_OPTIONS: Record<ClaimLogisticsMethod, ClaimLogisticsMethodOption> = {
   devolucion: {
     direction: "devolucion",
-    label: "Retiro + revisión + reenvío",
-    description: "El cliente entrega el producto en una sucursal Andreani. BEYONIX lo recibe e inspecciona y recién después se decide y envía el reemplazo.",
+    label: "Debe volver: devolución y reenvío",
+    description: "El cliente despacha el producto en una sucursal Andreani. BEYONIX lo recibe, lo inspecciona y después envía el reemplazo.",
+  },
+  cambio: {
+    direction: "cambio",
+    label: "Cambio directo en sucursal",
+    description: "Andreani entrega el reemplazo en la sucursal sólo si el cliente entrega el producto original, que vuelve a BEYONIX para inspección.",
+  },
+  sin_devolucion: {
+    direction: "sin_devolucion",
+    label: "No vuelve: enviar reemplazo",
+    description: "El cliente conserva el producto (queda auditado con motivo). BEYONIX reserva y envía el reemplazo a la sucursal Andreani elegida.",
   },
 }
 
 const REFUND_METHOD: ClaimLogisticsMethodOption = {
   direction: "devolucion",
-  label: "Retiro por sucursal + revisión",
-  description: "El cliente entrega el producto en una sucursal Andreani. BEYONIX lo recibe e inspecciona antes de habilitar la nota de crédito o el reintegro.",
+  label: "Debe volver: devolución por sucursal",
+  description: "El cliente despacha el producto en una sucursal Andreani. BEYONIX lo recibe e inspecciona antes del reintegro o el saldo a favor.",
 }
 
 const ACCEPTED_STATUSES = ["aprobado", "reintegro_pendiente", "cambio_pendiente", "cupon_pendiente"]
-const RETURNABLE_RESOLUTIONS = ["cambio_producto", "reintegro_total", "reintegro_parcial", "saldo_a_favor", "cupon_descuento"]
+const RETURNABLE_RESOLUTIONS: readonly string[] = RETURNABLE_CLAIM_RESOLUTIONS
 
 function adminLegView(source: ClaimShipmentAdminSource, units: ClaimUnitSource[]): AdminClaimLegView {
   const creation = source.creation_status ?? "not_started"
@@ -497,6 +578,19 @@ function countBy(units: ClaimUnitSource[], role: ClaimUnitRole, predicate: (unit
   return units.filter((unit) => unit.role === role && predicate(unit)).length
 }
 
+/**
+ * Devolución dispensada antes del reemplazo: todo original quedó con el
+ * cliente y nunca hubo retiro ni cambio vigente. Igual que order_claim_return_waived.
+ */
+export function isClaimReturnWaived(
+  shipments: ReadonlyArray<Pick<ClaimShipmentCustomerSource, "direction" | "status">>,
+  units: ReadonlyArray<Pick<ClaimUnitSource, "role" | "location">>,
+) {
+  const originals = units.filter((unit) => unit.role === "original")
+  return originals.length > 0 && originals.every((unit) => unit.location === "conservada_cliente") &&
+    !shipments.some((row) => row.status !== "cancelada" && (row.direction === "devolucion" || row.direction === "cambio"))
+}
+
 /** Mismas condiciones que guard_order_claim_logistics (la base las vuelve a exigir). */
 export function canCloseClaimLogistics(shipments: ClaimShipmentAdminSource[], units: ClaimUnitSource[]) {
   if (shipments.some((row) => row.creation_status === "processing" || row.creation_status === "manual_review")) return false
@@ -535,9 +629,14 @@ export function getAdminClaimLogisticsView(input: {
   const current = pickCurrentClaimShipment(shipments)
   const openLeg = shipments.find((row) => !row.closed_at) ?? null
   const lastActive = [...active].sort((left, right) => right.id - left.id)[0] ?? null
-  const plan: ClaimLogisticsPlan | null = !lastActive
-    ? null
-    : lastActive.direction === "cambio" ? "cambio_directo" : isChange ? "retiro_y_reenvio" : "retiro"
+  const originals = units.filter((unit) => unit.role === "original")
+  // Devolución dispensada antes de enviar el reemplazo (request_order_claim_resend_without_return).
+  const returnWaived = isChange && isClaimReturnWaived(shipments, units)
+  const plan: ClaimLogisticsPlan | null = returnWaived
+    ? "reenvio_sin_devolucion"
+    : !lastActive
+      ? null
+      : lastActive.direction === "cambio" ? "cambio_directo" : isChange ? "retiro_y_reenvio" : "retiro"
 
   const itemIds = [...new Set(units.map((unit) => unit.order_item_id))].sort((a, b) => a - b)
   const items = itemIds.map((orderItemId) => {
@@ -574,14 +673,20 @@ export function getAdminClaimLogisticsView(input: {
   // Un cambio de método con stock reservado o nota de crédito vigente exige
   // corregir primero ese efecto con su propio flujo auditado (el servidor
   // vuelve a exigirlo).
-  const candidates: Array<"cambio" | "devolucion"> = isChange ? ["cambio", "devolucion"] : ["devolucion"]
-  const samePlanAs = (direction: "cambio" | "devolucion") =>
-    plan !== null && (direction === "cambio" ? plan === "cambio_directo" : plan !== "cambio_directo")
+  const candidates: ClaimLogisticsMethod[] = isChange ? ["devolucion", "cambio", "sin_devolucion"] : ["devolucion"]
+  const samePlanAs = (direction: ClaimLogisticsMethod) =>
+    plan !== null && (direction === "cambio"
+      ? plan === "cambio_directo"
+      : direction === "sin_devolucion" ? plan === "reenvio_sin_devolucion" : plan === "retiro" || plan === "retiro_y_reenvio")
   const methodOptions: ClaimLogisticsMethodOption[] = []
   let methodChangeRequiresReason = false
+  // Con el dinero ya en marcha (NC vigente) no se ofrece pedir la devolución:
+  // sería una acción incompatible con el reintegro o el saldo en curso.
   if (accepted && !closed && openIsFree && !incidentOpen && (units.length === 0 || originalsWithCustomer > 0) && !deliveredOrMoving &&
-    !(plan !== null && (reservedReplacements > 0 || creditNoteActive))) {
+    !creditNoteActive && !(plan !== null && reservedReplacements > 0)) {
     for (const direction of candidates) {
+      // Dispensar la devolución sólo antes de cualquier operación Andreani real.
+      if (direction === "sin_devolucion" && realOperation) continue
       if (!samePlanAs(direction)) methodOptions.push(isChange ? CLAIM_METHOD_OPTIONS[direction] : REFUND_METHOD)
     }
     methodChangeRequiresReason = plan !== null && realOperation
@@ -638,8 +743,9 @@ export function getAdminClaimLogisticsView(input: {
                   : "El producto ya está en el circuito: continuá con las acciones del paso actual.",
       }
   const canRetryExchange = accepted && !closed && plan === "cambio_directo" && !openLeg && originalsWithCustomer > 0 && !incidentOpen && !deliveredOrMoving
-  const canAuthorizeResend = accepted && !closed && isChange && plan === "retiro_y_reenvio" && !openLeg && originalsInspected &&
-    !deliveredOrMoving && active.some((row) => row.direction === "devolucion" && row.creation_status === "created")
+  const canAuthorizeResend = accepted && !closed && isChange && !openLeg && originalsInspected && !deliveredOrMoving && (
+    (plan === "retiro_y_reenvio" && active.some((row) => row.direction === "devolucion" && row.creation_status === "created")) ||
+    plan === "reenvio_sin_devolucion")
 
   // Acciones válidas sobre unidades (la base vuelve a validar cada una).
   const unitActions: ClaimUnitActionOption[] = []
@@ -669,7 +775,8 @@ export function getAdminClaimLogisticsView(input: {
         "Excepción: el cliente conserva el producto original", 10)
       for (const role of ["original", "reemplazo"] as ClaimUnitRole[]) {
         const roleUnits = itemUnits.filter((unit) => unit.role === role)
-        if (!roleUnits.length) continue
+        // Un original que el cliente conserva nunca se inspecciona.
+        if (!roleUnits.length || roleUnits.every((unit) => unit.location === "conservada_cliente" && !unit.incident_open)) continue
         const label = role === "original" ? "original" : "reemplazo"
         if (roleUnits.some((unit) => unit.incident_open)) push("incident_resolve", role, 1, `Resolver problema (${label})`, 10)
         else push("incident_open", role, 1, `Registrar problema de inspección (${label})`, 5)
@@ -691,8 +798,8 @@ export function getAdminClaimLogisticsView(input: {
     nextStep = "Reclamo anterior al circuito por sucursal: seguí su flujo original. Si nunca tuvo movimientos, podés elegir un método logístico."
   } else if (plan === null && methodOptions.length) {
     nextStep = isChange
-      ? "Elegí el método logístico del cambio: cambio directo por sucursal o retiro + revisión + reenvío."
-      : "Si el producto tiene que volver a BEYONIX, elegí el retiro por sucursal antes de la nota de crédito o el reintegro."
+      ? "Elegí si el producto vuelve a BEYONIX antes de enviar el reemplazo."
+      : "Si el producto tiene que volver, generá la devolución antes del reintegro o el saldo."
   } else if (shipments.some((row) => row.creation_status === "manual_review")) {
     nextStep = "Resultado incierto con Andreani: verificá la operación y conciliala antes de continuar. No se reintenta sola."
   } else if (incidentOpen) {
@@ -731,7 +838,9 @@ export function getAdminClaimLogisticsView(input: {
   } else if (has("original", ["en_andreani"])) {
     nextStep = "Andreani trae el producto original a BEYONIX: registrá su llegada cuando esté en el depósito."
   } else if (canAuthorizeResend) {
-    nextStep = "Original inspeccionado y sin problemas: autorizá el reemplazo para enviarlo a una sucursal, o finalizá con otra resolución."
+    nextStep = plan === "reenvio_sin_devolucion"
+      ? "El producto no vuelve: elegí la sucursal y enviá el reemplazo."
+      : "Original inspeccionado y sin problemas: autorizá el reemplazo para enviarlo a una sucursal, o finalizá con otra resolución."
   } else if (unassignedReservations.length > 0) {
     nextStep = "Hay una reserva de reemplazo sin operación: generala o liberala."
   } else if (canRetryExchange) {
@@ -759,6 +868,10 @@ export function getAdminClaimLogisticsView(input: {
       : has("reemplazo", ["entregada_cliente"]) && !openLeg && unassignedReservations.length === 0 ? "finish" : "replacement"
     wizardStep = reviewLeg || uncertainLeg || !returnGenerated ? "logistics"
       : receptionPending || !originalsInspected ? "reception" : afterInspection
+  } else if (plan === "reenvio_sin_devolucion") {
+    // Sólo viaja el reemplazo: su envío (y, si vuelve sin retirar, su revisión) vive en un paso.
+    wizardStep = has("reemplazo", ["entregada_cliente"]) && !openLeg && unassignedReservations.length === 0 &&
+      !has("reemplazo", ["en_andreani", "recibida_beyonix"]) && !reviewLeg && !uncertainLeg ? "finish" : "replacement"
   } else {
     wizardStep = isChange ? "logistics" : "reception"
   }
@@ -767,7 +880,6 @@ export function getAdminClaimLogisticsView(input: {
   // unidades y de las operaciones; el Admin no interpreta estados técnicos.
   const legDone = (direction: ClaimShipmentDirection) =>
     active.some((row) => row.direction === direction && row.creation_status === "created")
-  const originals = units.filter((unit) => unit.role === "original")
   const originalsReceived = originals.length > 0 &&
     originals.every((unit) => ["recibida_beyonix", "reincorporada_stock", "baja", "conservada_cliente"].includes(unit.location))
   const claimClosed = input.status === "cerrado"
@@ -798,7 +910,60 @@ export function getAdminClaimLogisticsView(input: {
             check("inspected", "Producto inspeccionado", originalsInspected),
             check("closed", "Reclamo finalizado", claimClosed),
           ]
-        : []
+        : plan === "reenvio_sin_devolucion"
+          ? [
+              check("reserved", "Reemplazo reservado", units.some((unit) => unit.role === "reemplazo")),
+              check("resend", "Envío generado", legDone("reemplazo")),
+              check("delivered", "Reemplazo entregado", has("reemplazo", ["entregada_cliente"])),
+              check("closed", "Reclamo finalizado", claimClosed),
+            ]
+          : []
+
+  // Progreso físico por tramo: un bloque por movimiento real, sin repetir el
+  // estado del reclamo. El primer hito incompleto es el actual.
+  const groupLeg = (direction: ClaimShipmentDirection) =>
+    [...active].filter((row) => row.direction === direction).sort((left, right) => right.id - left.id)[0] ?? null
+  const progressGroup = (key: ClaimShipmentDirection, title: string, steps: Array<[string, string, boolean]>): ClaimLogisticsProgressGroup => {
+    const firstOpen = steps.findIndex(([, , done]) => !done)
+    const row = groupLeg(key)
+    const created = row?.creation_status === "created"
+    return {
+      key,
+      title,
+      steps: steps.map(([stepKey, label, done], index) => ({
+        key: stepKey, label, state: done ? "done" : index === firstOpen && !closed ? "current" : "pending",
+      })),
+      shipmentId: row?.id ?? null,
+      tracking: created ? text(row?.andreani_tracking) || null : null,
+      labelAvailable: Boolean(created && row && row.status !== "cancelada"),
+    }
+  }
+  const replacementReserved = units.some((unit) => unit.role === "reemplazo")
+  const replacementDelivered = has("reemplazo", ["entregada_cliente"])
+  const resendGroup = (sent: boolean) => progressGroup("reemplazo", "Reemplazo", [
+    ["reserved", "Reservado", replacementReserved],
+    ["sent", "Enviado", sent],
+    ["delivered", "Entregado", replacementDelivered],
+  ])
+  const groups: ClaimLogisticsProgressGroup[] = []
+  if (plan === "retiro" || plan === "retiro_y_reenvio") {
+    groups.push(progressGroup("devolucion", "Devolución", [
+      ["generated", "Generada", legDone("devolucion")],
+      ["received", "Recibida", originalsReceived],
+      ["inspected", "Inspeccionada", originalsInspected],
+    ]))
+  }
+  if (plan === "cambio_directo") {
+    groups.push(progressGroup("cambio", "Cambio en sucursal", [
+      ["reserved", "Reemplazo reservado", replacementReserved],
+      ["generated", "Generado", legDone("cambio")],
+      ["swapped", "Intercambio", shipments.some((row) => row.direction === "cambio" && row.exchange_outcome === "completado") || replacementDelivered],
+      ["received", "Original recibido", originalsReceived],
+      ["inspected", "Inspeccionado", originalsInspected],
+    ]))
+  }
+  if (plan === "retiro_y_reenvio" && (originalsInspected || replacementReserved || legDone("reemplazo"))) groups.push(resendGroup(legDone("reemplazo")))
+  if (plan === "reenvio_sin_devolucion") groups.push(resendGroup(legDone("reemplazo")))
   const needsReservation = Boolean(openLeg) && openLeg?.status === "pendiente" && openLeg.direction !== "devolucion" &&
     (openLeg.direction === "cambio"
       ? pendingReservation > 0
@@ -834,7 +999,7 @@ export function getAdminClaimLogisticsView(input: {
     branch: current ? branchLabel(current) || legView?.branchLabel || "Sin sucursal" : "Sin sucursal",
     status: humanStatus,
     andreani: legView ? `${legView.statusLabel}${legView.andreaniEstado ? ` · ${legView.andreaniEstado}` : ""}` : "Sin operación",
-    inspection: !units.some((unit) => unit.role === "original") && !units.some((unit) => unit.location === "recibida_beyonix")
+    inspection: (returnWaived || !units.some((unit) => unit.role === "original")) && !units.some((unit) => unit.location === "recibida_beyonix")
       ? "No aplica"
       : has("original", ["con_cliente", "en_andreani", "recibida_beyonix"]) || has("reemplazo", ["recibida_beyonix"]) ? "Pendiente" : "Completa",
     incidents,
@@ -860,6 +1025,6 @@ export function getAdminClaimLogisticsView(input: {
     unitActions,
     canClose,
     wizardStep,
-    flow: { checklist, needsReservation, waiting },
+    flow: { checklist, groups, needsReservation, waiting },
   }
 }

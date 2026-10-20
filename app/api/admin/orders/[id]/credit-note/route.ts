@@ -162,6 +162,8 @@ function reservationError(message?: string) {
       "Esta gestión requiere un reclamo del cliente para el pedido. Iniciá el reclamo antes de emitir la devolución.",
     INVALID_CREDIT_NOTE_CLAIM_STATUS:
       "El reclamo no está habilitado para esta devolución o reintegro.",
+    CREDIT_NOTE_CLAIM_NOT_FINANCIAL:
+      "La solución del reclamo no incluye reintegro ni saldo a favor: no corresponde nota de crédito.",
     INVALID_CREDIT_NOTE_CLAIM_ITEM:
       "La nota incluye productos o cantidades que no forman parte del reclamo.",
     CREDIT_NOTE_ADMIN_OPERATION_FORBIDDEN:

@@ -33,9 +33,9 @@ test("unidad faltante omite recepción", () => {
   assert.equal(wizard.steps.some((step) => step.key === "reception"), false)
 })
 
-test("reembolso y nota de crédito sólo muestran su aplicación", () => {
+test("reintegro y saldo a favor sólo muestran su aplicación", () => {
   assert.deepEqual(view("reintegro_pendiente", "reintegro_total").steps.map((step) => step.label),
-    ["Revisión", "Reintegro", "Finalización"])
+    ["Revisar", "Reintegro", "Finalizar"])
   assert.equal(view("aprobado", "cupon_descuento").current, "execution")
 })
 
@@ -48,7 +48,7 @@ test("rechazo y cierre terminan en Finalización", () => {
 test("un reclamo finalizado normalmente marca los pasos previos como completados", () => {
   const wizard = getAdminClaimWizard({ status: "cerrado", resolution: "cambio_producto", receivedUnits: 1, replacedUnits: 1 })
   assert.deepEqual(wizard.steps.map((step) => [step.label, step.status]),
-    [["Revisión", "done"], ["Recepción", "done"], ["Reemplazo", "done"], ["Entrega", "done"], ["Finalización", "open"]])
+    [["Revisar", "done"], ["Inspección", "done"], ["Reemplazo", "done"], ["Entrega", "done"], ["Finalizar", "open"]])
 })
 
 test("la recepción parcial no se marca completada aunque el flujo avance", () => {
@@ -63,8 +63,8 @@ test("cancelado después de recibir: conserva lo ocurrido, lo demás no se reali
   })
   assert.equal(wizard.current, "finish")
   assert.deepEqual(wizard.steps.map((step) => [step.label, step.status]),
-    [["Revisión", "done"], ["Recepción", "done"], ["Reemplazo", "skipped"], ["Entrega", "skipped"], ["Cancelado", "cancelled"]])
-  assert.equal(wizard.steps.some((step) => step.label === "Finalización"), false, "nunca parece una finalización normal")
+    [["Revisar", "done"], ["Inspección", "done"], ["Reemplazo", "skipped"], ["Entrega", "skipped"], ["Cancelado", "cancelled"]])
+  assert.equal(wizard.steps.some((step) => step.label === "Finalizar"), false, "nunca parece una finalización normal")
 })
 
 test("cancelado antes de decidir: la revisión no figura como completada", () => {
@@ -72,7 +72,7 @@ test("cancelado antes de decidir: la revisión no figura como completada", () =>
     status: "cerrado", resolution: null, receivedUnits: 0, replacedUnits: 0, cancelled: true,
     occurred: getCancelledClaimOccurredSteps({ resolution: null, receivedUnits: 0 }),
   })
-  assert.deepEqual(wizard.steps.map((step) => [step.label, step.status]), [["Revisión", "skipped"], ["Cancelado", "cancelled"]])
+  assert.deepEqual(wizard.steps.map((step) => [step.label, step.status]), [["Revisar", "skipped"], ["Cancelado", "cancelled"]])
 })
 
 test("cancelado con logística: método y operación sólo figuran si ocurrieron realmente", () => {
@@ -93,11 +93,23 @@ test("cancelado con logística: método y operación sólo figuran si ocurrieron
     logistics: { plan: "cambio_directo", step: "logistics" },
   })
   assert.deepEqual(wizard.steps.map((step) => [step.label, step.status]),
-    [["Revisión", "done"], ["Método", "done"], ["Cambio en sucursal", "skipped"], ["Recepción", "skipped"], ["Cancelado", "cancelled"]])
+    [["Revisar", "done"], ["Cambio en sucursal", "skipped"], ["Inspección", "skipped"], ["Cancelado", "cancelled"]])
 })
 
 test("un rechazo no se presenta como cancelación", () => {
   const wizard = getAdminClaimWizard({ status: "rechazado", resolution: "rechazado", receivedUnits: 0, replacedUnits: 0, cancelled: true })
-  assert.equal(wizard.steps.at(-1)?.label, "Finalización")
+  assert.equal(wizard.steps.at(-1)?.label, "Finalizar")
   assert.equal(wizard.steps.some((step) => step.status === "cancelled"), false)
+})
+
+test("sin devolución: Revisar -> Envío -> Finalizar; el método elegido no vuelve como paso", () => {
+  const pending = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: null, step: "logistics" } })
+  assert.deepEqual(pending.steps.map((step) => step.label), ["Revisar", "Logística", "Finalizar"])
+  assert.equal(pending.current, "method")
+  const resend = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0,
+    logistics: { plan: "reenvio_sin_devolucion", step: "replacement" } })
+  assert.deepEqual(resend.steps.map((step) => step.label), ["Revisar", "Envío", "Finalizar"])
+  assert.equal(resend.current, "replacement")
+  const refund = getAdminClaimWizard({ status: "aprobado", resolution: "saldo_a_favor", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "retiro", step: "execution" } })
+  assert.deepEqual(refund.steps.map((step) => step.label), ["Revisar", "Devolución", "Inspección", "Saldo a favor", "Finalizar"])
 })

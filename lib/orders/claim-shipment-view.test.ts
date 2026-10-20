@@ -83,11 +83,12 @@ test("tramo vigente: el abierto; si no hay, el último intento (nunca uno cancel
 test("Admin: sin método elegido ofrece los dos (cambio) o el retiro (reintegro); nada automático", () => {
   const change = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [], units: [] })
   assert.equal(change?.plan, null)
-  assert.deepEqual(change?.methodOptions.map((option) => option.direction), ["cambio", "devolucion"])
-  assert.match(change?.methodOptions[0].label ?? "", /Cambio directo por sucursal/)
-  assert.match(change?.methodOptions[1].label ?? "", /Retiro \+ revisión \+ reenvío/)
+  assert.deepEqual(change?.methodOptions.map((option) => option.direction), ["devolucion", "cambio", "sin_devolucion"])
+  assert.match(change?.methodOptions[0].label ?? "", /Debe volver: devolución y reenvío/)
+  assert.match(change?.methodOptions[1].label ?? "", /Cambio directo en sucursal/)
+  assert.match(change?.methodOptions[2].label ?? "", /No vuelve: enviar reemplazo/)
   assert.ok(change?.methodOptions.every((option) => option.description.length > 20))
-  assert.match(change?.nextStep ?? "", /Elegí el método logístico/)
+  assert.match(change?.nextStep ?? "", /Elegí si el producto vuelve a BEYONIX/)
   assert.equal(change?.canAuthorizeResend, false)
   const refund = getAdminClaimLogisticsView({ status: "reintegro_pendiente", resolution: "reintegro_total", shipments: [], units: [] })
   assert.deepEqual(refund?.methodOptions.map((option) => option.direction), ["devolucion"])
@@ -100,7 +101,7 @@ test("Admin, CAMBIO DIRECTO: reserva -> generar -> custodia -> no completado; el
   assert.equal(view?.plan, "cambio_directo")
   assert.match(view?.nextStep ?? "", /Reservá el producto de reemplazo \(2 unidades\)/)
   assert.equal(view?.wizardStep, "logistics", "reserva y generación viven en el paso del cambio en sucursal")
-  assert.deepEqual(view?.methodOptions.map((option) => option.direction), ["devolucion"], "antes de Andreani se puede cambiar de método")
+  assert.deepEqual(view?.methodOptions.map((option) => option.direction), ["devolucion", "sin_devolucion"], "antes de Andreani se puede cambiar de método")
   assert.equal(view?.methodChangeRequiresReason, false)
 
   const inTransit = getAdminClaimLogisticsView({
@@ -182,12 +183,12 @@ test("Admin: cierre sólo con todo resuelto; nunca original con el cliente + ree
 
 test("wizard: un paso por concepto, en el orden real del método elegido", () => {
   const exchange = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "cambio_directo", step: "logistics" } })
-  assert.deepEqual(exchange.steps.map((step) => step.label), ["Revisión", "Método", "Cambio en sucursal", "Recepción", "Finalización"])
+  assert.deepEqual(exchange.steps.map((step) => step.label), ["Revisar", "Cambio en sucursal", "Inspección", "Finalizar"])
   const resend = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "retiro_y_reenvio", step: "reception" } })
-  assert.deepEqual(resend.steps.map((step) => step.label), ["Revisión", "Método", "Retiro", "Recepción", "Reenvío", "Finalización"])
+  assert.deepEqual(resend.steps.map((step) => step.label), ["Revisar", "Devolución", "Inspección", "Envío", "Finalizar"])
   assert.equal(resend.current, "reception")
   const refundDone = getAdminClaimWizard({ status: "reintegro_pendiente", resolution: "reintegro_total", receivedUnits: 0, replacedUnits: null, logistics: { plan: "retiro", step: "execution" } })
-  assert.deepEqual(refundDone.steps.map((step) => step.label), ["Revisión", "Método", "Retiro", "Recepción", "Reintegro", "Finalización"])
+  assert.deepEqual(refundDone.steps.map((step) => step.label), ["Revisar", "Devolución", "Inspección", "Reintegro", "Finalizar"])
   assert.equal(refundDone.current, "execution")
   const resolved = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 1, replacedUnits: 1, logistics: { plan: "cambio_directo", step: "finish" } })
   assert.equal(resolved.current, "finish", "logística resuelta: sólo queda finalizar")
@@ -195,15 +196,15 @@ test("wizard: un paso por concepto, en el orden real del método elegido", () =>
   assert.equal(legacy.current, "reception", "reclamos históricos sin logística: sin cambios")
 })
 
-test("wizard: sin método el paso vigente es 'Método'; con método, el paso anterior al primero operativo es 'Método'", () => {
+test("wizard: sin método el paso vigente es 'Logística'; elegido, su corrección vive en el paso de la operación", () => {
   const pending = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: null, logistics: { plan: null, step: "logistics" } })
   assert.deepEqual(pending.steps.map((step) => step.key), ["review", "method", "finish"])
   assert.equal(pending.current, "method")
   assert.equal(pending.steps[pending.currentIndex - 1].key, "review", "desde Método, volver lleva a Revisión")
   const chosen = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: 0, logistics: { plan: "cambio_directo", step: "logistics" } })
-  assert.equal(chosen.steps[chosen.currentIndex - 1].key, "method", "volver al paso anterior lleva a revisar el método")
+  assert.equal(chosen.steps[chosen.currentIndex - 1].key, "review", "el método elegido no es un paso aparte")
   const refund = getAdminClaimWizard({ status: "reintegro_pendiente", resolution: "reintegro_total", receivedUnits: 0, replacedUnits: null, logistics: { plan: "retiro", step: "reception" } })
-  assert.deepEqual(refund.steps.map((step) => step.key), ["review", "method", "logistics", "reception", "execution", "finish"])
+  assert.deepEqual(refund.steps.map((step) => step.key), ["review", "logistics", "reception", "execution", "finish"])
   const closed = getAdminClaimWizard({ status: "cerrado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: null, logistics: { plan: null, step: "logistics" } })
   assert.equal(closed.current, "finish")
 })
@@ -213,8 +214,8 @@ test("Admin: corregir el método sólo sin efectos reales; con efectos se muestr
   const free = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg()], units: originals })
   assert.deepEqual(free?.methodLock, { status: "free", effects: [], correction: null })
   assert.deepEqual(free?.methodChoices.map((choice) => [choice.direction, choice.current, choice.available]),
-    [["cambio", true, false], ["devolucion", false, true]])
-  assert.match(free?.methodChoices[0].description ?? "", /solo si el cliente entrega el producto original/)
+    [["devolucion", false, true], ["cambio", true, false], ["sin_devolucion", false, true]])
+  assert.match(free?.methodChoices[1].description ?? "", /sólo si el cliente entrega el producto original/)
 
   const reserved = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg()], units: [...originals, unit("reemplazo", "reservada")] })
   assert.deepEqual(reserved?.methodOptions, [], "stock reservado: no se cambia de método sin liberar la reserva")
@@ -257,12 +258,12 @@ test("Admin: corregir el método sólo sin efectos reales; con efectos se muestr
 
   const noPlan = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [], units: originals })
   assert.deepEqual(noPlan?.methodChoices.map((choice) => [choice.direction, choice.current, choice.available]),
-    [["cambio", false, true], ["devolucion", false, true]])
+    [["devolucion", false, true], ["cambio", false, true], ["sin_devolucion", false, true]])
 })
 
 test("servidor: cambiar de método con stock reservado o nota de crédito vigente se rechaza antes del RPC", () => {
   const route = read("app/api/admin/order-claims/[claimId]/andreani-shipment/route.ts")
-  const request = route.slice(route.indexOf('if (action === "request")'), route.indexOf("if ((LEG_ACTIONS"))
+  const request = route.slice(route.indexOf('if (action === "request"'), route.indexOf("if ((LEG_ACTIONS"))
   assert.ok(request.indexOf("getMethodChangeBlock(") < request.indexOf('rpc("request_order_claim_logistics"'))
   const guard = route.slice(route.indexOf("async function getMethodChangeBlock"), route.indexOf("export async function POST"))
   assert.match(guard, /\.eq\("role", "reemplazo"\)\.eq\("location", "reservada"\)/)
@@ -361,7 +362,7 @@ test("UI: método explícito con confirmación, sucursal del catálogo, doble cl
   assert.doesNotMatch(panel, /idgla\)/, "el Admin no escribe el idgla")
   assert.match(panel, /disabled=\{pending !== null \|\| !selectedBranch/, "sin sucursal válida no hay logística")
   const manager = read("components/claims/admin-claim-manager.tsx")
-  assert.match(manager, /selectedStep === "method" && renderLogisticsPanel\("method"\)/)
+  assert.match(manager, /\(selectedStep === "method" \|\|[\s\S]{0,200}renderLogisticsPanel\("method"\)/, "el método se elige en Logística y se corrige en el paso de la operación")
   assert.match(manager, /\(selectedStep === "logistics" \|\| selectedStep === "reception" \|\| selectedStep === "replacement" \|\|\s+\(selectedStep === "finish" && Boolean\(logistics\?\.plan\)\)\) && renderLogisticsPanel\(selectedStep\)/,
     "cada paso operativo muestra sólo su parte de la logística")
   assert.doesNotMatch(panel, /Elegí una acción…|Recepción e inspección de unidades/, "sin el desplegable genérico de acciones")
@@ -446,5 +447,48 @@ test("UI: una acción principal por vez y en orden (revisión > conciliación > 
   assert.ok(panel.includes("let primary: ReactNode = null"))
   assert.ok(panel.includes("<AdminGhostButton key={entry.key}"), "cancelar / seguimiento / etiqueta no compiten con la principal")
   assert.ok(!panel.includes("AdminDangerButton"))
-  assert.ok(panel.includes('<span className="sr-only">{item.done ? " (listo)"'), "los checks no dependen sólo del color")
+  const summary = read("components/claims/claim-resolution-summary.tsx")
+  assert.ok(summary.includes('<span className="sr-only">{step.state === "done" ? " (listo)"'), "los hitos no dependen sólo del color")
+})
+
+test("Admin, SIN DEVOLUCIÓN: el original queda con el cliente, sólo viaja el reemplazo; sin inspección", () => {
+  const waived = [unit("original", "conservada_cliente"), unit("original", "conservada_cliente")]
+  const opened = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [leg({ direction: "reemplazo" })], units: waived })
+  assert.equal(opened?.plan, "reenvio_sin_devolucion")
+  assert.equal(opened?.wizardStep, "replacement")
+  assert.equal(opened?.flow.needsReservation, true)
+  assert.equal(opened?.summary.inspection, "No aplica")
+  assert.deepEqual(opened?.methodOptions, [], "dispensada la devolución, no se vuelve a pedir")
+  assert.equal(opened?.unitActions.some((option) => option.role === "original"), false, "nada que inspeccionar del original")
+  assert.deepEqual(opened?.flow.groups.map((group) => [group.key, group.steps.map((step) => step.state)]),
+    [["reemplazo", ["current", "pending", "pending"]]])
+
+  const delivered = getAdminClaimLogisticsView({
+    status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ direction: "reemplazo", status: "entregada", creation_status: "created", closed_at: "x", andreani_tracking: "360000000999" })],
+    units: [...waived, unit("reemplazo", "entregada_cliente", { shipment_id: 1 }), unit("reemplazo", "entregada_cliente", { shipment_id: 1 })],
+  })
+  assert.equal(delivered?.wizardStep, "finish")
+  assert.equal(delivered?.canClose, true)
+  assert.deepEqual(delivered?.flow.groups[0].steps.map((step) => step.state), ["done", "done", "done"])
+  assert.equal(delivered?.flow.groups[0].tracking, "360000000999")
+
+  // Tramo cancelado antes de salir: se vuelve a pedir el envío, nunca la devolución.
+  const cancelled = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto",
+    shipments: [leg({ direction: "reemplazo", status: "cancelada", closed_at: "x" })], units: waived })
+  assert.equal(cancelled?.plan, "reenvio_sin_devolucion")
+  assert.equal(cancelled?.canAuthorizeResend, true)
+})
+
+test("progreso por tramo: devolución y luego reemplazo, sin repetir estados", () => {
+  const returning = leg({ direction: "devolucion", status: "entregada", creation_status: "created", closed_at: "x", andreani_tracking: "360000000500" })
+  const inspected = getAdminClaimLogisticsView({ status: "aprobado", resolution: "cambio_producto", shipments: [returning], units: [unit("original", "baja", { shipment_id: 1 })] })
+  assert.deepEqual(inspected?.flow.groups.map((group) => group.title), ["Devolución", "Reemplazo"])
+  assert.deepEqual(inspected?.flow.groups[0].steps.map((step) => step.state), ["done", "done", "done"])
+  assert.deepEqual(inspected?.flow.groups[1].steps.map((step) => step.state), ["current", "pending", "pending"])
+  const refund = getAdminClaimLogisticsView({ status: "reintegro_pendiente", resolution: "reintegro_total",
+    shipments: [leg({ direction: "devolucion", status: "generada", creation_status: "created", andreani_tracking: "360000000501" })],
+    units: [unit("original", "con_cliente", { shipment_id: 1 })] })
+  assert.deepEqual(refund?.flow.groups.map((group) => group.title), ["Devolución"], "un reintegro nunca muestra envío de reemplazo")
+  assert.deepEqual([refund?.flow.groups[0].tracking, refund?.flow.groups[0].labelAvailable], ["360000000501", true])
 })

@@ -73,6 +73,8 @@ const TEST_FILES = [
   "lib/store-config.test.ts",
   "lib/security/revoke-public-internal-rpcs-sql.test.ts",
   "lib/orders/claim-review-edit.test.ts",
+  "lib/orders/claim-policy.test.ts",
+  "lib/orders/claim-policy-sql.test.ts",
   "lib/admin/claim-attention.test.ts",
   "lib/orders/claim-cancellation.test.ts",
   "lib/orders/claim-product-outcome.test.ts",

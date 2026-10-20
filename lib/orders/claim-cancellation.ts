@@ -79,7 +79,7 @@ export interface ClaimCancellationBlockerView {
  * o a Finalización cuando el flujo no lo tiene.
  */
 export function getClaimCancellationBlockerViews(codes: readonly ClaimCancellationBlocker[], context: {
-  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | null
+  plan: "cambio_directo" | "retiro" | "retiro_y_reenvio" | "reenvio_sin_devolucion" | null
   /** Dirección de la operación Andreani vigente. */
   legDirection?: "cambio" | "devolucion" | "reemplazo" | null
   /** La incidencia está en unidades (Recepción); si no, es un evento de Andreani a revisar. */
@@ -93,7 +93,8 @@ export function getClaimCancellationBlockerViews(codes: readonly ClaimCancellati
   return codes.map((code) => {
     switch (code) {
       case "reservation":
-        return view(code, "Ir a liberar reserva", context.plan === "retiro_y_reenvio" ? "replacement" : "logistics", "release_reservation")
+        return view(code, "Ir a liberar reserva",
+          context.plan === "retiro_y_reenvio" || context.plan === "reenvio_sin_devolucion" ? "replacement" : "logistics", "release_reservation")
       case "andreani_uncertain":
         return view(code, "Ir a operación", legStep, "reconcile")
       case "andreani_open":
@@ -103,7 +104,7 @@ export function getClaimCancellationBlockerViews(codes: readonly ClaimCancellati
           ? view(code, "Ir al problema", "reception", "incident_resolve")
           : view(code, "Ir al problema", legStep, "review_resolve")
       case "replacement_in_transit":
-        return view(code, "Ir a recepción", "reception", "arrival_replacement")
+        return view(code, "Ir a recepción", context.plan === "reenvio_sin_devolucion" ? "replacement" : "reception", "arrival_replacement")
       case "return_in_transit":
         return view(code, "Ir a recepción", "reception", "arrival_original")
       case "inspection_pending":

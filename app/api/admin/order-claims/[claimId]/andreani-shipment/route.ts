@@ -132,10 +132,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ cla
     return getClaimResult(auth.admin, claimId)
   }
 
-  if (action === "request") {
-    const direction = body.direction
+  if (action === "request" || action === "request_without_return") {
+    // Sin devolución: el cliente conserva el original y sólo viaja el reemplazo
+    // (tramo "reemplazo"). Motivo obligatorio; la base lo vuelve a exigir.
+    const withoutReturn = action === "request_without_return"
+    const direction = withoutReturn ? "reemplazo" : body.direction
     if (!REQUESTABLE.includes(direction as (typeof REQUESTABLE)[number])) {
       return NextResponse.json({ error: "Acción inválida." }, { status: 400 })
+    }
+    if (withoutReturn && note(body.notes).length < 10) {
+      return NextResponse.json({ error: "Indicá por qué el producto no vuelve (mínimo 10 caracteres)." }, { status: 400 })
     }
     // Sucursal: siempre validada ahora contra el catálogo real de Andreani;
     // nombre/dirección salen del catálogo, nunca del navegador. Sin id, la
@@ -156,11 +162,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ cla
       const blocked = await getMethodChangeBlock(auth.admin, claimId, direction as "cambio" | "devolucion")
       if (blocked) return NextResponse.json({ error: blocked.error }, { status: blocked.status })
     }
-    const { error } = await auth.admin.rpc("request_order_claim_logistics", {
-      p_claim_id: claimId, p_actor_id: actorId, p_direction: direction, p_note: note(body.notes) || null,
-      p_branch_id: branch.id, p_branch_name: branch.name,
-      p_branch_address: [branch.address, branch.locality, branch.province].filter(Boolean).join(", ") || null,
-    })
+    const branchAddress = [branch.address, branch.locality, branch.province].filter(Boolean).join(", ") || null
+    const { error } = withoutReturn
+      ? await auth.admin.rpc("request_order_claim_resend_without_return", {
+          p_claim_id: claimId, p_actor_id: actorId, p_note: note(body.notes),
+          p_branch_id: branch.id, p_branch_name: branch.name, p_branch_address: branchAddress,
+        })
+      : await auth.admin.rpc("request_order_claim_logistics", {
+          p_claim_id: claimId, p_actor_id: actorId, p_direction: direction, p_note: note(body.notes) || null,
+          p_branch_id: branch.id, p_branch_name: branch.name, p_branch_address: branchAddress,
+        })
     if (error) return claimErrorResponse(error)
     return getClaimResult(auth.admin, claimId)
   }

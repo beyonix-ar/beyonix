@@ -72,6 +72,7 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_ORIGINAL_NOT_RETURNED: [409, "El reemplazo fue entregado pero el producto original no volvió a BEYONIX. Registrá su recepción o la excepción explícita."],
   CLAIM_LOGISTICS_NOT_ALLOWED: [409, "Esta operación no corresponde a la solución aceptada del reclamo."],
   CLAIM_LOGISTICS_NOT_NEEDED: [409, "No quedan unidades en poder del cliente para esta operación."],
+  CLAIM_RETURN_ALREADY_STARTED: [409, "La devolución ya empezó (operación Andreani o producto en camino): seguí el circuito de devolución."],
   CLAIM_LOGISTICS_ATTEMPTS: [409, "Se alcanzó el máximo de intentos logísticos para este reclamo."],
   CLAIM_LOGISTICS_NOTE_REQUIRED: [400, "Indicá el motivo (mínimo 10 caracteres; 5 para problemas y llegadas con novedad)."],
   CLAIM_LOGISTICS_INVALID: [400, "Revisá la acción, el producto y la cantidad."],

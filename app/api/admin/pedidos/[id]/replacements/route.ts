@@ -5,6 +5,7 @@ import {
   formatPendingReceptionMessage,
   getPendingOriginalReception,
 } from "@/lib/orders/claim-replacement-flow"
+import { isClaimReturnWaived } from "@/lib/orders/claim-shipment-view"
 
 const DIFFERENT_PRODUCT_ERROR =
   "El reemplazo tiene que ser del mismo producto reclamado. Para otro producto, gestioná la devolución con Nota de Crédito / saldo a favor."
@@ -90,7 +91,7 @@ export async function POST(
   const [originalItem, replacementVariant, changeClaims] = await Promise.all([
     auth.admin.from("orden_items").select("producto_id,return_restocked_quantity,return_written_off_quantity").eq("id", orderItemId).eq("orden_id", orderId).maybeSingle(),
     auth.admin.from("producto_variantes").select("producto_id").eq("id", replacementVariantId).maybeSingle(),
-    auth.admin.from("order_claims").select("id,status,affected_items,order_claim_shipments(direction,status,closed_at)")
+    auth.admin.from("order_claims").select("id,status,affected_items,order_claim_shipments(direction,status,closed_at),order_claim_units(role,location)")
       .eq("order_id", orderId).eq("resolution", "cambio_producto"),
   ])
   if (originalItem.error || replacementVariant.error || changeClaims.error) {
@@ -115,6 +116,11 @@ export async function POST(
       .filter((claim) => !(Array.isArray(claim.order_claim_shipments) ? claim.order_claim_shipments : [])
         .some((leg: { direction?: unknown; status?: unknown; closed_at?: unknown }) =>
           leg.direction === "cambio" && leg.status === "pendiente" && !leg.closed_at))
+      // Sin devolución: el original no vuelve, no hay recepción que esperar.
+      .filter((claim) => !isClaimReturnWaived(
+        Array.isArray(claim.order_claim_shipments) ? claim.order_claim_shipments : [],
+        Array.isArray(claim.order_claim_units) ? claim.order_claim_units : [],
+      ))
       .map((claim) => (Array.isArray(claim.affected_items) ? claim.affected_items : [])
         .filter((affected: { order_item_id?: unknown }) => Number(affected?.order_item_id) === orderItemId)
         .reduce((sum: number, affected: { quantity?: unknown }) => sum + Math.max(0, Number(affected?.quantity) || 0), 0)))

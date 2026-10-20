@@ -43,6 +43,8 @@ const CHAIN = [
   "20261001130000_cancel_order_claim",
   // Devolución: sucursal Andreani habilitada + etiqueta (nunca una sucursal fija).
   "20261001170000_claim_return_dropoff_copy",
+  // Matriz de resoluciones: NC sólo con dinero, reemplazo sin devolución.
+  "20261019120000_claim_policy_consolidation",
 ]
 
 type Db = PGlite
@@ -1016,7 +1018,9 @@ test("cancelar reclamo bloqueado mientras haya efectos reales pendientes (reserv
   }
   const db2 = await setup()
   try {
-    const id = await acceptChange(db2)
+    // Reintegro: la única solución que admite NC (20261019120000).
+    const id = await createClaim(db2)
+    await mutate(db2, id, { status: "reintegro_pendiente", resolution: "reintegro_total" })
     await plan(db2, id, "devolucion")
     await db2.query("update order_claim_units set incident_open=true, incident_type='otro', incident_note='Falta revisar' where claim_id=$1 and id=(select min(id) from order_claim_units where claim_id=$1)", [id])
     await assert.rejects(cancelClaim(db2, id), cancelBlocked(["incident"]))

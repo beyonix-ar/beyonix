@@ -37,7 +37,6 @@ import {
   AdminSelect,
   adminControlClassName,
 } from "@/app/admin/components/admin-controls"
-import { formatPrice } from "@/app/admin/sections/productos/helpers"
 import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { ADMIN_SENSITIVE_DANGER } from "@/lib/admin/admin-sensitive-visuals"
@@ -64,7 +63,16 @@ import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { ClaimAndreaniShipmentPanel, type ClaimLogisticsPanelSection } from "@/components/claims/claim-andreani-shipment-panel"
 import { ClaimShipmentTrace } from "@/components/claims/claim-shipment-trace"
+import { ClaimResolutionSummary } from "@/components/claims/claim-resolution-summary"
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
+import {
+  CLAIM_SOLUTION_OPTIONS,
+  getClaimCloseReadiness,
+  getClaimCommercialStatus,
+  getClaimFinancialView,
+  getClaimRequirements,
+  getClaimReturnSummary,
+} from "@/lib/orders/claim-policy"
 import { HelpTip } from "@/components/claims/help-tip"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { getAdminClaimWizard, getCancelledClaimOccurredSteps } from "@/lib/orders/admin-claim-wizard"
@@ -128,27 +136,6 @@ const STATUS_OPTIONS: Array<{ value: OrderClaimStatus; label: string }> = [
   { value: "cerrado", label: "Reclamo finalizado" },
 ]
 
-const RESOLUTION_OPTIONS: Array<{
-  value: Exclude<OrderClaimResolution, "rechazado">
-  label: string
-}> = [
-  {
-    value: "cambio_producto",
-    label: "Cambio del producto",
-  },
-  {
-    value: "envio_unidad_faltante",
-    label: "Enviar unidad faltante",
-  },
-  {
-    value: "cupon_descuento",
-    label: "Nota de crédito por diferencia",
-  },
-  {
-    value: "reintegro_total",
-    label: "Reembolso",
-  },
-]
 
 const REJECTION_REASONS = [
   "Evidencia insuficiente",
@@ -187,17 +174,6 @@ function formatFileSize(bytes?: number | null) {
   if (!bytes || bytes <= 0) return "Sin tamaño"
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-// Versión local y mínima del mismo mapeo que ya existe en
-// admin-pedidos.tsx (getCompactPaymentMethodLabel) -- no se importa desde
-// ahí porque ese archivo importa este componente (AdminClaimManager),
-// y hacerlo al revés generaría un import circular entre ambos módulos.
-function getClaimSummaryPaymentLabel(pedido: SupabasePedido) {
-  if (pedido.payment_method_id === "transferencia") return "Transferencia"
-  if (pedido.payment_method_id === "mercadopago" || pedido.payment_id) return "Mercado Pago"
-  if (pedido.payment_method_id === "customer_credit") return "Saldo a favor"
-  return "Medio de pago sin datos"
 }
 
 function sortUniqueMessages(messages: SupabaseOrderClaim["order_claim_messages"] = []) {
@@ -321,56 +297,6 @@ function getStatusLabel(claim: SupabaseOrderClaim) {
   }
 
   return STATUS_OPTIONS.find((option) => option.value === claim.status)?.label ?? claim.status
-}
-
-function getResolutionNextStep(claim: SupabaseOrderClaim) {
-  const resolution = claim.resolution ?? claim.customer_selected_resolution
-
-  if (resolution === "envio_unidad_faltante") {
-    if (claim.status === "reemplazo_enviado") {
-      return "Unidad faltante despachada. El cliente puede consultar el seguimiento desde el chat."
-    }
-
-    if (claim.status === "cerrado") {
-      return "Reposición de la unidad faltante registrada. El reclamo quedó finalizado en el historial."
-    }
-
-    return "Prepará y despachá la unidad faltante. Luego registrá la acción cuando corresponda."
-  }
-
-  if (resolution === "cambio_producto") {
-    if (claim.status === "reemplazo_enviado") {
-      return "Reemplazo despachado. El cliente puede consultar el seguimiento desde el chat."
-    }
-
-    if (claim.status === "cerrado") {
-      return "Cambio registrado. El reclamo quedó finalizado en el historial."
-    }
-
-    return "Coordiná por el chat dónde debe enviar o entregar el producto original. Luego prepará el reemplazo y marcá la acción cuando corresponda."
-  }
-
-  if (resolution === "cupon_descuento") {
-    if (claim.status === "cerrado") {
-      return "Nota de crédito registrada para el cliente. El reclamo quedó finalizado."
-    }
-
-    return "Generá la nota de crédito y confirmá la acción cuando quede emitida."
-  }
-
-  if (resolution === "reintegro_total" || resolution === "reintegro_parcial") {
-    if (claim.status === "reintegro_pendiente") {
-      return claim.refund_details_submitted_at
-        ? "Datos del cliente recibidos. Cargá el comprobante y marcá el reintegro realizado."
-        : "Esperando que el cliente complete los datos para el reintegro."
-    }
-
-    return claim.status === "cerrado" ? "Reintegro registrado para el cliente. El reclamo quedó finalizado." : "Registrá la devolución desde la gestión de reintegros del pedido."
-  }
-
-  if (resolution === "rechazado") return "El cliente ve el motivo del rechazo."
-
-  return "Todavía no hay una decisión operativa cargada."
 }
 
 function getDefaultDecisionResolution(claim?: SupabaseOrderClaim | null): Exclude<OrderClaimResolution, "rechazado"> {
@@ -1725,10 +1651,10 @@ export function AdminClaimManager({
     const creditNoteAmount = Number(decisionCreditNoteAmount.replace(",", ".").trim())
 
     if (
-      decisionResolution === "cupon_descuento" &&
+      getClaimRequirements(decisionResolution)?.requiresAmountOnApproval &&
       (!Number.isFinite(creditNoteAmount) || creditNoteAmount <= 0)
     ) {
-      setNotice("Indicá el monto real a reconocer con nota de crédito.")
+      setNotice("Indicá el monto del saldo a favor.")
       return
     }
 
@@ -1743,7 +1669,7 @@ export function AdminClaimManager({
         resolution: decisionResolution,
         admin_response: message || claim.admin_response || "",
         append_message: Boolean(message),
-        ...(decisionResolution === "cupon_descuento"
+        ...(getClaimRequirements(decisionResolution)?.requiresAmountOnApproval
           ? { credit_note_amount: creditNoteAmount }
           : {}),
       },
@@ -1837,19 +1763,12 @@ export function AdminClaimManager({
 
   const markAcceptedSolutionDone = async () => {
     if (!claim) return
-    const nextStatus = "cerrado"
+    const customerCredit = getClaimRequirements(claim.resolution)?.financialAction === "customer_credit"
     const sent = await updateClaim(
-      ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "")
-        ? {
-            action: "mark_credit_note_issued",
-          }
-        : {
-            status: nextStatus,
-            resolution: claim.resolution ?? decisionResolution,
-          },
-      ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "")
-        ? "Nota de crédito informada al cliente y reclamo finalizado."
-        : "Reclamo finalizado.",
+      customerCredit
+        ? { action: "mark_credit_note_issued" }
+        : { status: "cerrado", resolution: claim.resolution ?? decisionResolution },
+      customerCredit ? "Saldo a favor informado al cliente y reclamo finalizado." : "Reclamo finalizado.",
     )
     if (sent) closeDecision()
   }
@@ -2058,24 +1977,46 @@ export function AdminClaimManager({
         onClaimChange(next)
       }} />
   )
-  const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
-  const canIssueCreditNote =
-    isAdmin && !closed &&
-    ["cupon_descuento", "saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "")
-  const creditNoteIssued =
-    Boolean(
-      pedido.credit_note_issued &&
-        pedido.credit_note_status === "authorized" &&
-        pedido.credit_note_cae,
-    )
-  const canCloseClaim = !closed && !cancellation && !["cupon_descuento", "saldo_a_favor", "reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") &&
-    (isAdmin || !["cambio_producto", "envio_unidad_faltante"].includes(claim.resolution ?? ""))
+  // Matriz de resoluciones (claim-policy): qué activa la solución elegida. Ningún
+  // control decide por su cuenta si hay NC, reintegro, saldo, envío o cierre.
+  const requirements = getClaimRequirements(claim.resolution)
+  const financial = getClaimFinancialView({
+    claimId: claim.id,
+    resolution: claim.resolution,
+    paymentMethodId: pedido.payment_method_id,
+    creditNotes: pedido.order_credit_notes ?? null,
+  })
+  const closeReadiness = getClaimCloseReadiness({
+    status: claim.status,
+    resolution: claim.resolution,
+    replacedUnits,
+    replacementVerified: claim.resolution === "cambio_producto"
+      ? replacedUnits !== null && (!replacementLoadState || replacementLoadState === "ready")
+      : replacementLoadState !== "loading",
+    logisticsResolved: logistics && !logistics.legacy && (claim.order_claim_units?.length ?? 0) > 0 ? logistics.canClose : null,
+    financial,
+    orderRefunded: pedido.financial_status === "refunded",
+  })
+  // Estado comercial (no el crudo de Andreani): el detalle físico vive en Logística.
+  const commercialStatus = getClaimCommercialStatus({
+    status: claim.status,
+    resolution: claim.resolution,
+    failureType: claim.failure_type,
+    cancelled: claimCancelled,
+    logisticsStep: logistics?.plan ? logistics.wizardStep : null,
+    logisticsPending: methodPending,
+    financial,
+    close: closeReadiness,
+  })
+  const canManageRefund = isAdmin && !closed && ["reintegro_pendiente", "aprobado"].includes(claim.status) && requirements?.financialAction === "refund"
+  const canIssueCreditNote = isAdmin && !closed && Boolean(requirements?.requiresCreditNote) && financial?.stage !== "done"
+  const canCloseClaim = !closed && !cancellation && closeReadiness?.action !== "mark_refund_done" && closeReadiness?.action !== "mark_credit_issued" &&
+    (isAdmin || requirements?.solution !== "replacement")
   const canCloseConversation = helpMessage && !closed
   const helpResolved = helpMessage && claim.status === "cerrado"
   const finalizedStatus = !helpResolved && claim.status === "cerrado" && !claimCancelled
   const conversationStatus = getConversationStatusLabel(claim, messages)
   const formalClaim = !helpMessage && !cancellation
-  const needsReception = claim.resolution === "cambio_producto"
   const hasReplacement = replacedUnits !== null && replacedUnits > 0
   // Revisión editable: la decisión se corrige sólo sin efectos reales (la base
   // vuelve a validar cada cambio con sus guardas).
@@ -2089,7 +2030,7 @@ export function AdminClaimManager({
       claimCreditNoteActive && "Nota de crédito emitida o en proceso",
       hasReplacement && "Reemplazo registrado con salida de stock",
       summaryReceptionTotals.received > 0 && "Recepción registrada",
-      pedido.financial_status === "refunded" && ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? "") && "Reintegro registrado",
+      pedido.financial_status === "refunded" && requirements?.financialAction === "refund" && "Reintegro registrado",
     ],
   })
   const cancelPreview = getClaimCancellationPreview({
@@ -2217,13 +2158,9 @@ export function AdminClaimManager({
               <h3 className="text-lg font-black text-white">Pedido BX-{1000 + pedido.id}</h3>
               <span data-testid="admin-claim-status-badge" className={`inline-flex items-center gap-2 px-2.5 py-1 text-10px font-black uppercase ${claimCancelled ? "admin-claim-status-cancelled" : finalizedStatus ? "admin-claim-status-finalized" : `rounded-full border ${helpResolved ? "admin-claim-help-resolved-badge" : getStatusTone(claim.status, cancellation)}`}`}>
                 {claimCancelled ? <XCircle className="size-3.5" aria-hidden="true" /> : <span className="size-2 rounded-full bg-current" />}
-                {getStatusLabel(claim)}
+                {formalClaim ? commercialStatus : getStatusLabel(claim)}
               </span>
-              {claim.resolution && claim.resolution !== "rechazado" && (
-                <span className="admin-claim-wizard-resolution">
-                  {getOrderClaimResolutionLabel(claim.resolution)}{claimCancelled ? " · no se completó" : ""}
-                </span>
-              )}
+              {formalClaim && <span className="admin-claim-wizard-resolution">{PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}</span>}
             </div>
           </div>
 
@@ -2272,62 +2209,18 @@ export function AdminClaimManager({
           </p>
         )}
       </header>
-      <ClaimShipmentTrace order={pedido} claim={claim} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />
-
-      {!helpMessage && !cancellation && (
-        <div className="admin-claim-summary grid gap-3 border-b p-3 sm:p-4 md:grid-cols-3">
-          <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
-            <p className="text-10px font-black uppercase text-white/62">Pedido</p>
-            <p className="mt-1 text-xs font-bold text-white">{formatDate(pedido.created_at)}</p>
-            <p className="mt-1 text-xs font-semibold text-white/70">{pedido.estado}</p>
-            <p className="mt-1 text-xs font-semibold text-white/70">
-              {getClaimSummaryPaymentLabel(pedido)} · {pedido.shipping_type === "sucursal" ? "Retiro en sucursal" : "Envío a domicilio"}
-            </p>
-            <p className="mt-1 text-xs font-semibold text-white/70">Total: {formatPrice(pedido.total)}</p>
-          </section>
-
-          <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
-            <p className="text-10px font-black uppercase text-white/62">Motivo del reclamo</p>
-            <p className="mt-1 text-xs font-bold text-white">{PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}</p>
-            <p className="mt-1 text-[11px] leading-4 text-white/60 line-clamp-3">{claim.description}</p>
-          </section>
-
-          <section className="admin-claim-card bx-surface bx-surface-section rounded-xl border p-3">
-            <p className="text-10px font-black uppercase text-white/62">Producto afectado</p>
-            {summaryAffectedItems.length === 0 ? (
-              <p className="mt-1.5 text-xs font-semibold text-white/70">Pedido completo</p>
-            ) : (
-              <ul className="mt-1.5 space-y-2">
-                {summaryAffectedItems.map(({ item, quantity }) => {
-                  const image = getCuentaItemImage(item)
-                  const variantName = item.conditioned_name || item.producto_variantes?.nombre
-                  const sku = item.conditioned_sku || item.producto_variantes?.sku
-                  return (
-                    <li key={item.id} className="flex items-center gap-2">
-                      <span className="admin-claim-summary-thumb flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-white/10">
-                        {image ? (
-                          <img src={image} alt="" className="size-full object-contain" />
-                        ) : (
-                          <Package className="size-4 text-black/40" />
-                        )}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-bold text-white">
-                          {item.productos?.nombre ?? `Producto #${item.producto_id}`}
-                        </span>
-                        <span className="block truncate text-10px text-white/55">
-                          {variantName ? `${variantName} · ` : ""}
-                          {sku ? `SKU ${sku} · ` : ""}
-                          {quantity} de {item.cantidad} reclamadas
-                        </span>
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </section>
-        </div>
+      {formalClaim && (
+        <ClaimResolutionSummary
+          claimId={claim.id}
+          problem={PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo"}
+          description={claim.description ? getClaimMessageText(claim.description) : null}
+          items={summaryAffectedItems}
+          solution={requirements ? `${requirements.label}${claimCancelled ? " (no se completó)" : ""}` : null}
+          returnSummary={getClaimReturnSummary(claim.resolution, logistics?.plan ?? null)}
+          financial={financial}
+          groups={logistics?.flow.groups ?? []}
+          details={<ClaimShipmentTrace order={pedido} claim={claim} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />}
+        />
       )}
 
       {formalClaim && (
@@ -2465,12 +2358,6 @@ export function AdminClaimManager({
                 </div>
               )}
              </div>}
-             {selectedStep === "review" && claim.resolution && claim.resolution !== "rechazado" && !canCompleteReplacementSolution && (
-              <p className="admin-claim-resolution-next mt-2 text-[11px] font-semibold leading-4">
-                {getResolutionNextStep(claim)}
-              </p>
-            )}
-
             {cancellation ? (
               <div className="mt-2 grid gap-2">
                 <DecisionButton
@@ -2497,9 +2384,9 @@ export function AdminClaimManager({
                     {reviewEdit.mode !== "decide" && (
                       <p className="admin-claim-wizard-note" data-claim-review-current>
                         Decisión actual: <strong>{reviewEdit.current === "reject" ? "No corresponde" : reviewEdit.current === "approve" ? "Corresponde" : getStatusLabel(claim)}</strong>
-                        {reviewEdit.current === "approve" && claim.resolution ? ` · Solución: ${getOrderClaimResolutionLabel(claim.resolution)}` : ""}
-                        {reviewEdit.mode === "edit" && ". Todavía no hubo movimientos reales: podés corregirla."}
-                        {reviewEdit.mode === "reopen" && ". Sin movimientos reales: si fue un error, podés reabrir la revisión."}
+                        {reviewEdit.current === "approve" && claim.resolution ? ` · ${getOrderClaimResolutionLabel(claim.resolution)}` : ""}
+                        {reviewEdit.mode === "edit" && " · Se puede corregir."}
+                        {reviewEdit.mode === "reopen" && " · Se puede reabrir."}
                       </p>
                     )}
                     {reviewEdit.mode === "locked" && (
@@ -2554,12 +2441,15 @@ export function AdminClaimManager({
                     )}
                   </div>
                 )}
-                {selectedStep === "method" && renderLogisticsPanel("method")}
+                {/* Elegido el método, su corrección (si todavía se puede) vive en el paso de la operación. */}
+                {(selectedStep === "method" ||
+                  (selectedStep === "logistics" && Boolean(logistics?.plan) && Boolean(logistics?.methodChoices.some((choice) => choice.available)))) &&
+                  renderLogisticsPanel("method")}
                 {logisticsMethodStep
                   ? (selectedStep === "logistics" || selectedStep === "reception" || selectedStep === "replacement" ||
                     (selectedStep === "finish" && Boolean(logistics?.plan))) && renderLogisticsPanel(selectedStep)
                   : ["reception", "replacement", "execution"].includes(selectedStep) && renderLogisticsPanel("all")}
-                {selectedStep === "reception" && (needsReception || Boolean(logistics?.plan)) && (
+                {selectedStep === "reception" && (claim.resolution === "cambio_producto" || Boolean(logistics?.plan)) && (
                   <ReturnInventoryPanel pedido={pedido} claim={claim}
                     canManage={isAdmin && !closed && !claimCreditNoteActive}
                     arrivedUnitsByItem={logistics?.plan ? arrivedUnitsByItem : undefined}
@@ -2579,108 +2469,92 @@ export function AdminClaimManager({
                       : "Primero recibí el producto original."}</p>}
                   </div>
                 )}
-                {selectedStep === finishStep && !closed && canCompleteReplacementSolution && (
+                {selectedStep === finishStep && !closed && canCompleteReplacementSolution && closeReadiness && (
                   <div className="admin-claim-wizard-action" data-claim-finish-action>
-                    {replacementLoadState === "loading" && <p className="admin-claim-wizard-note">Verificando el reemplazo registrado…</p>}
-                    {replacementLoadState === "error" && <p className="admin-claim-wizard-note">No se pudo verificar el reemplazo. Recargá los datos antes de continuar.</p>}
-                    <span className="inline-flex items-center gap-1.5">
-                      <AdminButton variant="primary" disabled={saving || !replacementFlow.canConfirmDelivery}
-                        onClick={() => setPendingConfirmation({
-                          title: "Confirmar entrega del reemplazo",
-                          description: "Confirmá sólo si el reemplazo ya fue enviado o entregado. Se finalizará el reclamo y se notificará al cliente. No crea envíos ni descuenta stock.",
-                          confirmLabel: "Ya fue enviado o entregado", run: markAcceptedSolutionDone,
-                        })}>Confirmar entrega y finalizar</AdminButton>
-                      <HelpTip label="Confirmar entrega y finalizar" align="start">{logistics?.plan
-                        ? "Se habilita con el reemplazo entregado y el producto original recibido e inspeccionado. Notifica al cliente."
-                        : "Confirmá cuando el producto ya fue enviado o entregado. Notifica al cliente."}</HelpTip>
-                    </span>
+                    <AdminButton variant="primary" disabled={saving || !closeReadiness.canClose}
+                      onClick={() => setPendingConfirmation({
+                        title: "Confirmar entrega del reemplazo",
+                        description: "Finaliza el reclamo y avisa al cliente.",
+                        confirmLabel: "Confirmar y finalizar", run: markAcceptedSolutionDone,
+                      })}>Confirmar entrega y finalizar</AdminButton>
+                    {!closeReadiness.canClose && <p className="admin-claim-wizard-note" data-claim-close-blockers>{closeReadiness.blockers.join(" · ")}</p>}
                   </div>
                 )}
-                {selectedStep === "execution" && canIssueCreditNote && (
+                {/* Dinero: el paso muestra sólo la acción posible ahora. La NC es la consecuencia
+                    fiscal del reintegro o del saldo; nunca se elige por separado. */}
+                {selectedStep === "execution" && canIssueCreditNote && financial?.stage === "pending" && (
                   <DecisionButton
                     icon={<CreditCard className="size-4" />}
-                    title="Gestionar nota de crédito"
-                    description="Revisar productos e importes en Facturación."
+                    title={requirements?.financialAction === "refund" ? "Calcular reintegro" : "Calcular saldo a favor"}
+                    description={invoiced ? "Productos e importe; emite la nota de crédito." : "Primero tiene que estar facturado."}
                     tone="success"
                     disabled={saving || !invoiced}
                     onClick={onOpenBilling}
                   />
                 )}
-                {selectedStep === "execution" && isAdmin && !closed && ["cupon_descuento", "saldo_a_favor"].includes(claim.resolution ?? "") && (
+                {selectedStep === "execution" && financial?.stage === "processing" && (pedido.order_credit_notes ?? [])
+                  .some((note) => note.claim_id === claim.id && note.status === "processing") && (
+                  <p className="admin-claim-wizard-note" data-claim-financial-wait>Emitiendo la nota de crédito…</p>
+                )}
+                {selectedStep === "execution" && isAdmin && !closed && closeReadiness?.action === "mark_credit_issued" && closeReadiness.canClose && (
                   <DecisionButton
-                    icon={<CreditCard className="size-4" />}
-                    title="Nota de crédito emitida"
-                    description={
-                      creditNoteIssued
-                        ? "Confirmar que el crédito fue generado para el cliente."
-                        : "Se habilita después de que ARCA autorice la nota de crédito."
-                    }
+                    icon={<CheckCircle2 className="size-4" />}
+                    title="Finalizar: saldo acreditado"
+                    description="Avisa al cliente que ya puede usarlo."
                     tone="success"
-                    disabled={saving || !creditNoteIssued}
-                    mutedWhenDisabled
-                    onClick={() =>
-                      setPendingConfirmation({
-                        title: "Confirmar nota de crédito emitida",
-                        description: "Esto finaliza el reclamo y le informa al cliente que ya puede usar el saldo a favor. No se puede deshacer desde acá.",
-                        confirmLabel: "Confirmar y finalizar",
-                        run: markAcceptedSolutionDone,
-                      })
-                    }
+                    disabled={saving}
+                    onClick={() => setPendingConfirmation({
+                      title: "Saldo acreditado",
+                      description: "Finaliza el reclamo y avisa al cliente.",
+                      confirmLabel: "Confirmar y finalizar",
+                      run: markAcceptedSolutionDone,
+                    })}
                   />
                 )}
                 {selectedStep === "execution" && canManageRefund && pedido.payment_method_id === "mercadopago" && (
                   <MercadoPagoRefundAction pedido={pedido} onUpdated={onInventoryUpdated} />
                 )}
-                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && (
-                  <div className="rounded-lg border border-emerald-300/20 bg-emerald-950/20 p-2">
-                    <p className="text-xs font-black text-white">Reembolso</p>
-                    <div className="mt-2 grid gap-2">
-                      <p className="text-xs text-white/70">El importe se toma de la nota de crédito autorizada. Registrá el comprobante únicamente después de devolver el dinero.</p>
-                      <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-10px font-bold text-white/75 hover:border-emerald-300/35">
-                        <Upload className="size-3.5" />
-                        <span className="truncate">{refundProofFile?.name || refundProof?.file_name || "Subir comprobante"}</span>
-                        <input
-                          type="file"
-                          accept=".jpg,.jpeg,.pdf"
-                          className="sr-only"
-                          onChange={(event) => setRefundProofFile(event.target.files?.[0] ?? null)}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        disabled={saving || !refundProofFile}
-                        onClick={() => setPendingConfirmation({ title: "Registrar reintegro", description: "Confirmá que ya devolviste el importe de la nota de crédito autorizada. Se registrará el reintegro financiero y su comprobante en el pedido.", confirmLabel: "Registrar reintegro", run: uploadRefundProof })}
-                        className="admin-ds-button admin-ds-button-secondary h-8 px-3 text-10px font-black disabled:opacity-45"
-                      >
-                        Subir comprobante
-                      </button>
-                      {pedido.financial_status === "refunded" && (
-                        <DecisionButton
-                          icon={<CheckCircle2 className="size-4" />}
-                          title="Marcar reintegro realizado"
-                          description="Confirmar que el dinero fue devuelto al cliente."
-                          tone="success"
-                          disabled={saving}
-                          onClick={() =>
-                            setPendingConfirmation({
-                              title: "Marcar reintegro realizado",
-                              description: "Esto confirma el reintegro registrado en el pedido y finaliza el reclamo. No se puede deshacer desde acá.",
-                              confirmLabel: "Confirmar reintegro",
-                              run: markRefundDone,
-                            })
-                          }
-                        />
-                      )}
-                    </div>
+                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && getPendingRefundNotes(pedido.order_credit_notes).length > 0 && (
+                  <div className="admin-claim-wizard-action" data-claim-refund-proof>
+                    <p className="text-xs font-black text-white">Comprobante de reintegro</p>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-10px font-bold text-white/75 hover:border-emerald-300/35">
+                      <Upload className="size-3.5" />
+                      <span className="truncate">{refundProofFile?.name || refundProof?.file_name || "Elegir archivo"}</span>
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.pdf"
+                        className="sr-only"
+                        onChange={(event) => setRefundProofFile(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    <AdminButton size="sm" variant="primary" disabled={saving || !refundProofFile}
+                      onClick={() => setPendingConfirmation({ title: "Registrar reintegro", description: "Confirmá que el dinero ya se devolvió al cliente.", confirmLabel: "Registrar reintegro", run: uploadRefundProof })}>
+                      Registrar reintegro
+                    </AdminButton>
                   </div>
+                )}
+                {selectedStep === "execution" && canManageRefund && pedido.payment_method_id !== "mercadopago" && closeReadiness?.action === "mark_refund_done" && closeReadiness.canClose && (
+                  <DecisionButton
+                    icon={<CheckCircle2 className="size-4" />}
+                    title="Finalizar: reintegro realizado"
+                    description="Avisa al cliente."
+                    tone="success"
+                    disabled={saving}
+                    onClick={() => setPendingConfirmation({
+                      title: "Reintegro realizado",
+                      description: "Finaliza el reclamo y avisa al cliente.",
+                      confirmLabel: "Confirmar y finalizar",
+                      run: markRefundDone,
+                    })}
+                  />
                 )}
                 {selectedStep === finishStep && !closed && canCloseClaim && !canCompleteReplacementSolution && (
                   <DecisionButton
                     icon={<CheckCircle2 className="size-4" />}
                     title="Finalizar reclamo"
-                    description="Bloquear nuevas acciones y dejarlo visible en el historial."
+                    description="Sin acciones pendientes."
                     tone="primary"
-                    disabled={saving || (claim.resolution === "cambio_producto" && !replacementFlow.canConfirmDelivery)}
+                    disabled={saving || closeReadiness?.canClose === false}
                     onClick={() => openDecision("close")}
                   />
                 )}
@@ -2773,7 +2647,7 @@ export function AdminClaimManager({
                 {selectedStep === "finish" && claim.status === "reemplazo_enviado" && canCloseClaim && (
                   <DecisionButton icon={<CheckCircle2 className="size-4" />} title="Finalizar reclamo"
                     description="Dejar la solución registrada en el historial." tone="primary"
-                    disabled={saving || (needsReception && (!hasReplacement || replacementLoadState !== "ready"))}
+                    disabled={saving || closeReadiness?.canClose === false}
                     onClick={() => openDecision("close")} />
                 )}
               </div>
@@ -2885,7 +2759,7 @@ export function AdminClaimManager({
         <ClaimActionModal
           action={decisionAction}
           saving={saving}
-          closeBlocked={needsReception && (!hasReplacement || replacementLoadState !== "ready")}
+          closeBlocked={closeReadiness?.canClose === false}
           message={decisionMessage}
           reason={decisionReason}
           resolution={decisionResolution}
@@ -2921,7 +2795,7 @@ export function AdminClaimManager({
               </AdminSecondaryButton>
               <AdminButton
                 variant="primary"
-                disabled={saving || (claim.resolution === "cambio_producto" && !replacementFlow.canConfirmDelivery)}
+                disabled={saving || (requirements?.solution === "replacement" && closeReadiness?.canClose === false)}
                 onClick={async () => {
                   await pendingConfirmation.run()
                   setPendingConfirmation(null)
@@ -3483,7 +3357,7 @@ function ClaimActionModal({
     (editing && (resolution === editingResolution || (editingResolution === "saldo_a_favor" && resolution === "cupon_descuento"))) ||
     (
       action === "approve" &&
-      resolution === "cupon_descuento" &&
+      getClaimRequirements(resolution)?.requiresAmountOnApproval &&
       (!Number.isFinite(creditNoteAmountNumber) || creditNoteAmountNumber <= 0)
     )
   const resolutionToneClassNames: Record<Exclude<OrderClaimResolution, "rechazado">, string> = {
@@ -3512,9 +3386,9 @@ function ClaimActionModal({
         <div className="mt-3 space-y-2">
           {action === "approve" && (
             <div>
-              <p className="text-sm font-black text-white">¿Cómo se resolverá el caso?</p>
+              <p className="text-sm font-black text-white">¿Qué recibe el cliente?</p>
               <div className="mt-2 grid gap-1">
-                {RESOLUTION_OPTIONS.filter((option) => !unavailableResolutions.includes(option.value)).map((option) => (
+                {CLAIM_SOLUTION_OPTIONS.filter((option) => !unavailableResolutions.includes(option.value)).map((option) => (
                   <label key={option.value} className={`flex cursor-pointer items-center gap-2 rounded-lg border bg-white/[0.03] px-2.5 py-1.5 text-xs font-bold text-white ${resolutionToneClassNames[option.value]}`}>
                     <input
                       type="radio"
@@ -3527,14 +3401,11 @@ function ClaimActionModal({
                   </label>
                 ))}
               </div>
-              {resolution === "cupon_descuento" && (
+              {getClaimRequirements(resolution)?.requiresAmountOnApproval && (
                 <div className="mt-2 rounded-lg border border-emerald-300/20 bg-emerald-950/18 p-2">
                   <label className="text-10px font-black uppercase text-emerald-100/70">
-                    Monto a reconocer con nota de crédito
+                    Monto del saldo a favor
                   </label>
-                  <p className="mt-1 text-[11px] font-semibold leading-4 text-emerald-50/70">
-                    Cargá solo la diferencia a favor del cliente. Ej: si facturaste $50.000 y conserva un producto de $20.000, corresponde $30.000.
-                  </p>
                   <input
                     inputMode="decimal"
                     value={creditNoteAmount}

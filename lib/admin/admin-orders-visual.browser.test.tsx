@@ -121,7 +121,7 @@ const DETAIL_ONLY = [
   order(6, { invoice_status: "authorized", invoice_arca_environment: "production" }),
   order(7, { invoice_status: "authorized", invoice_arca_environment: "production", order_claims: [{
     id: 701, order_id: 7, user_id: "c1", status: "aprobado", failure_type: "falla",
-    resolution: "devolucion_dinero", description: "Producto con falla", affected_items: [{ order_item_id: 70, quantity: 1 }],
+    resolution: "cupon_descuento", description: "Producto con falla", affected_items: [{ order_item_id: 70, quantity: 1 }],
     created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
   }] }),
   order(8, { invoice_status: "authorized", invoice_arca_environment: "production", order_claims: [{
@@ -131,9 +131,15 @@ const DETAIL_ONLY = [
     created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
   }] }),
   order(9, { invoice_status: "authorized", invoice_arca_environment: "production", order_claims: [{
-    id: 901, order_id: 9, user_id: "c1", status: "aprobado", failure_type: "falla",
+    id: 901, order_id: 9, user_id: "c1", status: "aprobado", failure_type: "falla", resolution: "cupon_descuento",
     description: "Producto con falla", affected_items: [{ order_item_id: 90, quantity: 1 }],
     order_claim_units: [{ id: 2, order_item_id: 90, role: "original", location: "con_cliente", incident_open: false }],
+    created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
+  }] }),
+  // Reemplazo puro aprobado: nunca ofrece crear una nota de crédito.
+  order(11, { invoice_status: "authorized", invoice_arca_environment: "production", order_claims: [{
+    id: 1101, order_id: 11, user_id: "c1", status: "aprobado", failure_type: "falla", resolution: "cambio_producto",
+    description: "Producto con falla", affected_items: [{ order_item_id: 110, quantity: 1 }],
     created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
   }] }),
   order(10, { invoice_status: "authorized", invoice_arca_environment: "production", order_credit_notes: [{
@@ -509,6 +515,17 @@ test("Nota de crédito: opciones avanzadas no agrandan el wizard", async () => {
   } finally { await page.close() }
 })
 
+test("REEMPLAZO PURO: Facturación no muestra 'Crear nota de crédito' (light/dark, 390 y 1440)", async () => {
+  for (const [theme, width] of [["dark", 1440], ["light", 390]] as const) {
+    const page = await open(theme, { width, orderId: 11, tab: "facturacion" })
+    try {
+      await page.waitForTimeout(400)
+      assert.equal(await page.getByRole("heading", { name: "Crear nota de crédito" }).count(), 0, `${theme} ${width}px`)
+      assert.equal(await page.getByRole("heading", { name: "¿Qué pasa con el producto?" }).count(), 0)
+      assert.equal(await page.getByRole("button", { name: "Emitir nota de crédito" }).count(), 0)
+    } finally { await page.close() }
+  }
+})
 test("Nota de crédito: reutiliza resolución y recepción inspeccionada del reclamo", async () => {
   const page = await open("dark", { orderId: 8, tab: "facturacion" })
   try {

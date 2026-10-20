@@ -76,9 +76,9 @@ export function ClaimShipmentTrace({ order, claim, canManage, onClaimChange }: {
   }
 
   return (
-    <section className="admin-claim-card bx-surface bx-surface-section mx-3 mt-3 min-w-0 rounded-xl border p-3 sm:mx-4 sm:mt-4" data-claim-shipment-trace>
-      <h4 className="text-sm font-bold">Trazabilidad de envíos</h4>
-      <ol className="mt-2 grid min-w-0 gap-2 lg:grid-cols-3">
+    <section className="min-w-0" data-claim-shipment-trace>
+      <h4 className="text-xs font-bold">Trazabilidad de envíos</h4>
+      <ol className="mt-1.5 grid min-w-0 gap-2">
         {rows.map((row) => (
           <li key={row.key} className="min-w-0 rounded-lg border border-current/15 p-2.5" data-shipment-kind={row.title}>
             <div className="flex flex-wrap items-center gap-2">

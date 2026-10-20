@@ -309,10 +309,10 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     assert.equal(receptionCalls, 1, "cancelar no registra la recepción")
     // Progreso: el stepper del panel se reemplazó por el wizard de
     // AdminClaimManager (507b007). Aprobado + cambio de producto sin unidades
-    // recibidas: Revisión hecha, Recepción actual, Reemplazo y Entrega después.
+    // recibidas: Revisar hecho, Inspección actual, Reemplazo y Entrega después.
     const { getAdminClaimWizard } = await import("../orders/admin-claim-wizard")
     const wizard = getAdminClaimWizard({ status: "aprobado", resolution: "cambio_producto", receivedUnits: 0, replacedUnits: null })
-    assert.deepEqual(wizard.steps.map((step) => step.label), ["Revisión", "Recepción", "Reemplazo", "Entrega", "Finalización"])
+    assert.deepEqual(wizard.steps.map((step) => step.label), ["Revisar", "Inspección", "Reemplazo", "Entrega", "Finalizar"])
     assert.equal(wizard.current, "reception")
     const { formatAuditDescription } = await import("../../app/admin/sections/auditoria/audit-helpers")
     const cases: [string, Record<string, unknown>, RegExp][] = [

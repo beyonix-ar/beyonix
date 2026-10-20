@@ -166,7 +166,7 @@ const AUDIT = `(() => {
 const BLOCK_LUMINANCE = `(() => {
   ${BROWSER_HELPERS}
   const blocks = {
-    resumen: ".admin-claim-summary .admin-claim-card",
+    resumen: ".admin-claim-overview-grid .admin-claim-card",
     chat: ".admin-claim-wizard-chat-drawer .admin-claim-chat-header",
     gestionar: ".admin-claim-manage-panel",
     composer: ".admin-claim-composer",
@@ -257,10 +257,10 @@ for (const theme of ["light", "dark"] as const) {
     }
   })
 
-  test(`${theme}: Revisión al volver atrás (decisión vigente marcada y bloqueo por efectos reales) cumple contraste AA`, async () => {
+  test(`${theme}: Revisar al volver atrás (decisión vigente marcada y bloqueo por efectos reales) cumple contraste AA`, async () => {
     const page = await open(theme)
     try {
-      await page.getByRole("button", { name: /1\. Revisión/ }).click()
+      await page.getByRole("button", { name: /1\. Revisar/ }).click()
       await page.waitForSelector("[data-claim-review-lock]")
       const { audited, failures } = (await page.evaluate(AUDIT)) as { audited: number; failures: string[] }
       assert.ok(audited > 25, `se auditaron ${audited} textos de Revisión`)
@@ -270,14 +270,15 @@ for (const theme of ["light", "dark"] as const) {
     }
   })
 
-  test(`${theme}: paso "Método" (radios, bloqueo por efectos reales y ayuda abierta) cumple contraste AA`, async () => {
+  test(`${theme}: paso "Devolución" con los detalles de envíos abiertos cumple contraste AA`, async () => {
     const page = await open(theme)
     try {
-      await page.getByRole("button", { name: /2\. Método/ }).click()
-      await page.waitForSelector("[data-claim-method-lock=blocked]")
-      await page.getByRole("button", { name: "Ayuda: Cambio directo por sucursal" }).focus()
+      await page.getByRole("button", { name: /2\. Devolución/ }).click()
+      await page.waitForSelector("[data-claim-logistics-section=logistics]")
+      await page.locator("[data-claim-details] > summary").click()
+      await page.waitForSelector("[data-claim-shipment-trace]")
       const { audited, failures } = (await page.evaluate(AUDIT)) as { audited: number; failures: string[] }
-      assert.ok(audited > 25, `se auditaron ${audited} textos del paso Método`)
+      assert.ok(audited > 25, `se auditaron ${audited} textos del paso Devolución y los detalles`)
       assert.deepEqual(failures, [])
     } finally {
       await page.close()
@@ -327,6 +328,6 @@ test("CSS: los colores de las superficies legacy de Dark están acotados al tema
     .filter((rule) => !rule.includes(darkOnly))
   assert.deepEqual(unscoped, [])
   // Miniatura del producto con fondo propio (bg-white se remapea en Light).
-  const claims = readFileSync("components/claims/admin-claim-manager.tsx", "utf8")
-  assert.match(claims, /className="admin-claim-summary-thumb flex size-9/)
+  const claims = readFileSync("components/claims/claim-resolution-summary.tsx", "utf8")
+  assert.match(claims, /className="admin-claim-summary-thumb flex size-8/)
 })
