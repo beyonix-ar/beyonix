@@ -35,6 +35,17 @@ test("cliente distingue una entrega simulada QA de un evento real de Andreani", 
   assert.ok(!view?.instructions.some((line) => line.includes("Andreani informó")))
 })
 
+test("cliente: un reenvío forzado por BEYONIX no se ve como forzado ni simulado, ni se atribuye a Andreani", () => {
+  const view = getCustomerClaimShipmentView({ direction: "reemplazo", status: "entregada", andreani_tracking: "360000000041",
+    manual_status_override: "entregada", manual_status_override_kind: "admin_override" })
+  const text = [view?.statusLabel, ...(view?.instructions ?? [])].join(" ")
+  assert.doesNotMatch(text, /forzad|Simulación|simulada|Andreani informó/i)
+  assert.match(text, /Registramos la entrega de tu producto de reemplazo/)
+  assert.equal(view?.tracking, "360000000041")
+  assert.match(CUSTOMER_CLAIM_SHIPMENT_COLUMNS, /manual_status_override_kind/)
+  assert.doesNotMatch(CUSTOMER_CLAIM_SHIPMENT_COLUMNS, /manual_status_override_note|andreani_envio_id/, "ni el motivo ni el ID interno")
+})
+
 test("cliente, CAMBIO: sucursal, qué preparar y qué pasa si no entrega el original; nunca domicilio ni datos internos", () => {
   const generated = getCustomerClaimShipmentView({
     direction: "cambio", status: "generada", modality: "cambio_sucursal", andreani_tracking: " 360000012345678 ",

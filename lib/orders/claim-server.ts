@@ -84,6 +84,13 @@ const CLAIM_ERRORS: Record<string, [number, string]> = {
   CLAIM_SHIPMENT_CLOSED: [409, "Esta operación ya está cerrada."],
   CLAIM_SHIPMENT_IN_FLIGHT: [409, "La operación se está generando o requiere conciliación: no puede cancelarse."],
   CLAIM_SHIPMENT_ALREADY_MOVING: [409, "Andreani ya tiene el producto: la operación no puede cancelarse."],
+  // Estado forzado del reenvío (20261020120000).
+  CLAIM_SHIPMENT_FORCE_FORBIDDEN: [403, "Sólo un superadministrador puede forzar el estado del reenvío."],
+  CLAIM_SHIPMENT_FORCE_UNSUPPORTED: [409, "Sólo se puede forzar el estado del reenvío del reemplazo."],
+  CLAIM_SHIPMENT_FORCE_BACKWARD: [409, "El estado elegido no avanza el envío: no se permiten retrocesos."],
+  CLAIM_SHIPMENT_FORCE_REVIEW_OPEN: [409, "El envío tiene una revisión de Andreani abierta: resolvela antes de forzar el estado."],
+  CLAIM_SHIPMENT_NOT_CREATED: [409, "El envío todavía no fue generado en Andreani."],
+  CLAIM_SHIPMENT_INVALID: [400, "Revisá el estado elegido."],
   CLAIM_LOGISTICS_BRANCH_REQUIRED: [400, "Elegí una sucursal Andreani válida para la operación."],
   CLAIM_LOGISTICS_PLAN_LOCKED: [409, "Ya hubo una operación Andreani: cambiar de método requiere un motivo (mínimo 10 caracteres)."],
   CLAIM_LOGISTICS_RESERVATION_ACTIVE: [409, "Hay stock reservado para el reemplazo: liberá la reserva (con motivo) antes de cambiar el método."],

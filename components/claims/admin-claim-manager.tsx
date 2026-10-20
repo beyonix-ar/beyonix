@@ -63,7 +63,9 @@ import { useClaimWizardScroll } from "@/components/claims/use-claim-wizard-scrol
 import { useScopedState } from "@/hooks/use-scoped-state"
 import { ReceptionConfirmationModal } from "@/components/claims/reception-confirmation-modal"
 import { ClaimAndreaniShipmentPanel, type ClaimLogisticsPanelSection } from "@/components/claims/claim-andreani-shipment-panel"
+import { ClaimShipmentForceStatus } from "@/components/claims/claim-shipment-force-status"
 import { ClaimShipmentTrace } from "@/components/claims/claim-shipment-trace"
+import { getClaimForceOptions, getClaimShipmentOverride } from "@/lib/orders/claim-shipment-trace"
 import { ClaimResolutionSummary } from "@/components/claims/claim-resolution-summary"
 import { getAdminClaimLogisticsView } from "@/lib/orders/claim-shipment-view"
 import {
@@ -1335,7 +1337,7 @@ export function AdminClaimManager({
   /** Abre directamente el formulario de reemplazo (OrderReplacements), con el ítem reclamado si es uno solo. */
   onRegisterReplacement?: (orderItemId: number | null) => void
 }) {
-  const { user } = useAuth()
+  const { user, isSuperAdmin } = useAuth()
   const isAdmin = getAdminCapabilities(user?.rol).canManageReturns
   const allClaims = pedido.order_claims ?? []
   const claims = allClaims.filter((item) => isClaimVisibleForMode(item.failure_type, mode))
@@ -2374,6 +2376,13 @@ export function AdminClaimManager({
           financial={financial}
           groups={logistics?.flow.groups ?? []}
           details={<ClaimShipmentTrace order={pedido} claim={claim} canManage={isAdmin && !closed} onClaimChange={onClaimChange} />}
+          groupActions={(group) => {
+            // Reenvío: estado operativo forzable por un super admin (nunca Andreani).
+            const leg = group.key === "reemplazo" ? claim.order_claim_shipments?.find((row) => row.id === group.shipmentId) : undefined
+            const canForce = isSuperAdmin && !closed
+            if (!leg || (getClaimShipmentOverride(leg) !== "forced" && (!canForce || getClaimForceOptions(leg).length === 0))) return null
+            return <ClaimShipmentForceStatus claimId={claim.id} leg={leg} canForce={canForce} onClaimChange={onClaimChange} />
+          }}
         />
       )}
 

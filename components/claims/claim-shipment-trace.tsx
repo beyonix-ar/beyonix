@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AdminButton, AdminSecondaryButton, AdminSelect, adminControlClassName } from "@/app/admin/components/admin-controls"
+import { AdminButton, AdminSecondaryButton, AdminSelect, AdminTrackingValue, adminControlClassName } from "@/app/admin/components/admin-controls"
 import { buildClaimJourney, buildClaimShipmentTrace } from "@/lib/orders/claim-shipment-trace"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabaseOrderClaim, SupabasePedido } from "@/lib/supabase/types"
@@ -83,13 +83,17 @@ export function ClaimShipmentTrace({ order, claim, canManage, onClaimChange }: {
           <li key={row.key} className="min-w-0 rounded-lg border border-current/15 p-2.5" data-shipment-kind={row.title}>
             <div className="flex flex-wrap items-center gap-2">
               <strong className="text-xs">{row.title}</strong>
-              {row.simulated && <span className="rounded border border-amber-500/50 px-1.5 py-0.5 text-[10px] font-bold text-amber-500">SIMULADO · QA</span>}
+              {row.override === "qa" && <span className="rounded border border-amber-500/50 px-1.5 py-0.5 text-[10px] font-bold text-amber-500">SIMULADO · QA</span>}
+              {row.override === "forced" && <span className="admin-claim-forced-chip" data-claim-forced-status>FORZADO · BEYONIX</span>}
             </div>
             <dl className="mt-1.5 grid min-w-0 gap-0.5 text-xs">
               <div className="flex gap-2"><dt className="shrink-0 opacity-65">N.º</dt><dd className="min-w-0 break-all">{row.number || "Pendiente"}</dd></div>
-              <div className="flex gap-2"><dt className="shrink-0 opacity-65">Tracking</dt><dd className="min-w-0 break-all">{row.tracking || "Pendiente"}</dd></div>
-              <div className="flex gap-2"><dt className="shrink-0 opacity-65">Estado</dt><dd>{row.status}</dd></div>
-              {row.simulated && <div className="flex gap-2"><dt className="shrink-0 opacity-65">Andreani</dt><dd>{row.realStatus || "Sin novedad observada"}</dd></div>}
+              <div className="flex items-center gap-2"><dt className="shrink-0 opacity-65">Tracking</dt><dd className="min-w-0 break-all">
+                {row.tracking ? <AdminTrackingValue value={row.tracking} label={`seguimiento de ${row.title.toLowerCase()}`} /> : "Pendiente"}
+              </dd></div>
+              <div className="flex gap-2"><dt className="shrink-0 opacity-65">{row.override ? "Estado BEYONIX" : "Estado"}</dt><dd>{row.status}{row.override === "forced" ? " (forzado)" : ""}</dd></div>
+              {row.override && <div className="flex gap-2"><dt className="shrink-0 opacity-65">Andreani</dt><dd>{row.realStatus || "Sin novedad observada"}</dd></div>}
+              {row.override === "forced" && row.overrideNote && <div className="flex gap-2"><dt className="shrink-0 opacity-65">Motivo</dt><dd className="min-w-0 break-words">{row.overrideNote}</dd></div>}
               <div className="flex gap-2"><dt className="shrink-0 opacity-65">Fecha</dt><dd>{dateLabel(row.date)}</dd></div>
             </dl>
             {testEnabled && canManage && row.canSimulate && row.shipmentId && (

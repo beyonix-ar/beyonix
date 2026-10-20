@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Copy,
   MoreVertical,
   Search,
   X,
@@ -822,6 +823,66 @@ export function AdminGhostButton(props: Omit<AdminButtonProps, "variant">) {
 
 export function AdminDangerButton(props: Omit<AdminButtonProps, "variant">) {
   return <AdminButton variant="destructive" {...props} />
+}
+
+/**
+ * Botón cuadrado para copiar un valor (seguimiento, códigos). Confirma con
+ * un check y lo anuncia a lectores de pantalla; si el navegador no deja
+ * copiar, lo avisa en el propio botón en vez de fallar en silencio.
+ */
+export function AdminCopyButton({
+  value,
+  label,
+  className,
+}: {
+  value: string
+  /** Qué se copia, para el nombre accesible: "Copiar {label}". */
+  label: string
+  className?: string
+}) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle")
+  const timer = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current)
+  }, [])
+
+  const copy = async () => {
+    let next: "copied" | "failed" = "copied"
+    try {
+      await navigator.clipboard.writeText(value)
+    } catch {
+      next = "failed"
+    }
+    setState(next)
+    if (timer.current !== null) window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setState("idle"), 1800)
+  }
+
+  const feedback = state === "copied" ? "Copiado" : state === "failed" ? "No se pudo copiar: seleccioná el número" : ""
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      aria-label={`Copiar ${label}`}
+      title={feedback || `Copiar ${label}`}
+      data-copy-state={state}
+      className={cn("admin-copy-button", className)}
+    >
+      {state === "copied" ? <Check className="size-3.5" aria-hidden="true" /> : <Copy className="size-3.5" aria-hidden="true" />}
+      <span className="sr-only" aria-live="polite">{feedback}</span>
+    </button>
+  )
+}
+
+/** Número de seguimiento con su acción de copiar, alineados en una fila. */
+export function AdminTrackingValue({ value, label = "número de seguimiento", className }: { value: string; label?: string; className?: string }) {
+  return (
+    <span className={cn("admin-tracking-value", className)}>
+      <span className="admin-tracking-value-text">{value}</span>
+      <AdminCopyButton value={value} label={label} />
+    </span>
+  )
 }
 
 export function AdminPageHeader({

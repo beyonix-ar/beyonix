@@ -15,6 +15,7 @@ import { normalizeAndreaniError } from "@/lib/andreani/client"
 import { claimShipmentTestStatusEnabled } from "@/lib/andreani/claim-test-status"
 import { claimErrorResponse, getClaimResult } from "@/lib/orders/claim-server"
 import { CLAIM_INCIDENT_LABELS } from "@/lib/orders/claim-shipment-view"
+import { CLAIM_FORCEABLE_STATUSES } from "@/lib/orders/claim-shipment-trace"
 import type { createAdminClient } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
@@ -127,6 +128,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ cla
       p_shipment_id: shipmentId, p_actor_id: actorId,
       p_status: body.status,
       p_note: notes,
+    })
+    if (error) return claimErrorResponse(error)
+    return getClaimResult(auth.admin, claimId)
+  }
+
+  // Estado operativo forzado del reenvío (super admin; nunca toca Andreani).
+  // La base repite rol, tramo, motivo y guardas (force_order_claim_shipment_status).
+  if (action === "force_status") {
+    if (auth.profile.rol !== "super_admin") {
+      return NextResponse.json({ error: "Sólo un superadministrador puede forzar el estado del reenvío." }, { status: 403 })
+    }
+    const shipmentId = positiveInteger(body.shipmentId)
+    const notes = note(body.notes)
+    if (!shipmentId || !(CLAIM_FORCEABLE_STATUSES as readonly string[]).includes(String(body.status))) {
+      return NextResponse.json({ error: "Elegí el estado a forzar." }, { status: 400 })
+    }
+    if (notes.length < 10) {
+      return NextResponse.json({ error: "Explicá el motivo del cambio (mínimo 10 caracteres)." }, { status: 400 })
+    }
+    const shipment = await loadClaimShipment(auth.admin, shipmentId).catch(() => null)
+    if (!shipment || shipment.claim_id !== claimId) {
+      return NextResponse.json({ error: "El reclamo no tiene ese envío." }, { status: 404 })
+    }
+    const { error } = await auth.admin.rpc("force_order_claim_shipment_status", {
+      p_shipment_id: shipmentId, p_actor_id: actorId, p_status: body.status, p_note: notes,
     })
     if (error) return claimErrorResponse(error)
     return getClaimResult(auth.admin, claimId)

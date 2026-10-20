@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react"
 import { Check, Circle, Download, ExternalLink, Package } from "lucide-react"
 
+import { AdminCopyButton } from "@/app/admin/components/admin-controls"
 import { formatPrice } from "@/app/admin/sections/productos/helpers"
 import { getCuentaItemImage } from "@/lib/account/account-utils"
 import { ANDREANI_PUBLIC_TRACKING_PAGE_URL } from "@/lib/andreani/public-tracking"
@@ -26,6 +27,7 @@ export function ClaimResolutionSummary({
   financial,
   groups,
   details,
+  groupActions,
 }: {
   claimId: number
   problem: string
@@ -38,6 +40,8 @@ export function ClaimResolutionSummary({
   groups: ClaimLogisticsProgressGroup[]
   /** Trazabilidad completa (envío original, tramos, historial, simulación QA). */
   details: ReactNode
+  /** Acciones extra por tramo (p. ej. forzar el estado del reenvío). */
+  groupActions?: (group: ClaimLogisticsProgressGroup) => ReactNode
 }) {
   const [labelError, setLabelError] = useState("")
   const [labelBusy, setLabelBusy] = useState<number | null>(null)
@@ -111,13 +115,16 @@ export function ClaimResolutionSummary({
                 </li>
               ))}
             </ol>
-            {(group.tracking || group.labelAvailable) && group.shipmentId && (
+            {group.shipmentId && (group.tracking || group.labelAvailable || groupActions?.(group)) && (
               <div className="admin-claim-progress-actions">
                 {group.tracking && (
-                  <a href={ANDREANI_PUBLIC_TRACKING_PAGE_URL} target="_blank" rel="noreferrer" className="admin-claim-progress-link"
-                    title={`Seguimiento Andreani ${group.tracking}`}>
-                    <ExternalLink className="size-3.5" aria-hidden="true" />Tracking {group.tracking}
-                  </a>
+                  <span className="admin-claim-progress-tracking" data-claim-tracking={group.key}>
+                    <a href={ANDREANI_PUBLIC_TRACKING_PAGE_URL} target="_blank" rel="noreferrer" className="admin-claim-progress-link"
+                      title={`Abrir el seguimiento de Andreani y buscar ${group.tracking}`}>
+                      <ExternalLink className="size-3.5" aria-hidden="true" />Tracking {group.tracking}
+                    </a>
+                    <AdminCopyButton value={group.tracking} label={`seguimiento de ${group.title.toLowerCase()}`} />
+                  </span>
                 )}
                 {group.labelAvailable && (
                   <button type="button" className="admin-claim-progress-link" disabled={labelBusy !== null}
@@ -125,6 +132,7 @@ export function ClaimResolutionSummary({
                     <Download className="size-3.5" aria-hidden="true" />{labelBusy === group.shipmentId ? "Abriendo..." : "Etiqueta"}
                   </button>
                 )}
+                {groupActions?.(group)}
               </div>
             )}
           </div>

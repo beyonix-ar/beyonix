@@ -411,6 +411,93 @@ test("simulación QA: devolución y reemplazo entregados conservan tracking real
   }
 })
 
+test("estado forzado del reenvío: sólo super admin, motivo, auditado, sin retrocesos; Andreani real se conserva", async () => {
+  const db = await setup()
+  try {
+    for (const name of ["20261019110000_claim_shipment_test_status", "20261019111000_claim_test_simulation_provenance",
+      "20261019112000_claim_tracking_override_race_guard", "20261020120000_claim_replacement_status_override"]) await db.exec(migration(name))
+    const force = (legId: number, status: string, note = "Andreani no actualiza el estado real", actor = admin2) =>
+      db.query("select * from force_order_claim_shipment_status($1,$2,$3,$4)", [legId, actor, status, note])
+    const id = await acceptChange(db)
+    const returnLeg = await plan(db, id, "devolucion")
+    await generate(db, returnLeg, ...RETURN, "360000000501")
+    await track(db, returnLeg, "entregada", "EnvioEntregado", "2026-10-01T10:00:00Z")
+    await arrival(db, id, "original", 1, 2)
+    await inspectOriginal(db, id, 1, 0, 2)
+    await assert.rejects(force(returnLeg, "entregada"), /CLAIM_SHIPMENT_FORCE_UNSUPPORTED/, "sólo el tramo de reenvío")
+
+    // Creado -> Cancelado: misma cancelación (y guardas) de siempre; la reserva queda para el próximo intento.
+    const first = await plan(db, id, "reemplazo")
+    await reserve(db, id, 1, 2, 2, randomUUID(), "otra_variante")
+    await generate(db, first, ...RESEND, "360000000502")
+    assert.equal(await stock(db, 2), 1)
+    await force(first, "cancelada")
+    assert.equal((await leg(db, first)).status, "cancelada")
+    assert.deepEqual(await units(db, id), { "original:baja": 2, "reemplazo:reservada": 2 })
+
+    const resend = await plan(db, id, "reemplazo")
+    await generate(db, resend, ...RESEND, "360000000503")
+    assert.equal(await stock(db, 2), 1, "una sola reserva para los dos intentos")
+    await assert.rejects(force(resend, "en_transito", "Motivo", admin2), /CLAIM_LOGISTICS_NOTE_REQUIRED/)
+    await assert.rejects(force(resend, "en_transito", undefined, admin), /CLAIM_SHIPMENT_FORCE_FORBIDDEN/, "un admin no fuerza")
+    await assert.rejects(force(resend, "en_transito", undefined, operator), /CLAIM_LOGISTICS_FORBIDDEN/)
+    await assert.rejects(force(resend, "generada"), /CLAIM_SHIPMENT_INVALID/)
+
+    await force(resend, "en_transito")
+    let row = await leg(db, resend)
+    assert.deepEqual([row.status, row.manual_status_override, row.manual_status_override_kind, row.environment],
+      ["en_transito", "en_transito", "admin_override", "PROD"])
+    assert.deepEqual(await units(db, id), { "original:baja": 2, "reemplazo:en_andreani": 2 })
+    // El sync (PROD) sólo observa: el estado real queda guardado, el operativo no se mueve.
+    await db.query("select * from apply_order_claim_shipment_tracking_guarded($1,'en_sucursal',false,'En sucursal real','360000000503','EnvioEnSucursal',now(),null,null)", [resend])
+    row = await leg(db, resend)
+    assert.deepEqual([row.status, row.andreani_estado], ["en_transito", "En sucursal real"])
+    await assert.rejects(force(resend, "en_transito"), /CLAIM_SHIPMENT_FORCE_BACKWARD/, "nunca el mismo estado")
+    await assert.rejects(force(resend, "cancelada"), /CLAIM_SHIPMENT_ALREADY_MOVING/, "en camino ya no se cancela")
+    await assert.rejects(db.query("update order_claims set status='cerrado' where id=$1", [id]), /CLAIM_LOGISTICS_OPEN/)
+
+    await force(resend, "entregada", "El cliente confirmó la entrega por teléfono")
+    row = await leg(db, resend)
+    assert.equal(row.status, "entregada")
+    assert.ok(row.closed_at, "el tramo queda cerrado")
+    assert.deepEqual(await units(db, id), { "original:baja": 2, "reemplazo:entregada_cliente": 2 })
+    assert.equal((await messages(db, id)).at(-1)?.message, "Registramos la entrega de tu producto de reemplazo.", "no se atribuye a Andreani")
+    await assert.rejects(force(resend, "entregada"), /CLAIM_SHIPMENT_CLOSED/)
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where action='claim_shipment_status_forced'"), 3)
+    const audit = await one<{ metadata: Row }>(db, "select metadata from order_audit_events where action='claim_shipment_status_forced' order by id desc limit 1")
+    assert.deepEqual([audit.metadata.previousStatus, audit.metadata.status, audit.metadata.andreaniStatus, audit.metadata.note],
+      ["en_transito", "entregada", "En sucursal real", "El cliente confirmó la entrega por teléfono"])
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where action='claim_shipment_delivered' and metadata->>'forced'='true' and metadata->>'simulated' is null"), 1)
+    await close(db, id)
+    await assert.rejects(force(resend, "entregada"), /CLAIM_TERMINAL|CLAIM_SHIPMENT_CLOSED/)
+  } finally {
+    await db.close()
+  }
+})
+
+test("estado forzado: una revisión Andreani abierta se resuelve antes; la simulación QA sigue identificada", async () => {
+  const db = await setup()
+  try {
+    for (const name of ["20261019110000_claim_shipment_test_status", "20261019111000_claim_test_simulation_provenance",
+      "20261019112000_claim_tracking_override_race_guard", "20261020120000_claim_replacement_status_override"]) await db.exec(migration(name))
+    const id = await acceptChange(db)
+    const returnLeg = await plan(db, id, "devolucion")
+    await generate(db, returnLeg, ...RETURN, "360000000601")
+    await track(db, returnLeg, "entregada", "EnvioEntregado", "2026-10-01T10:00:00Z")
+    await arrival(db, id, "original", 1, 2)
+    await inspectOriginal(db, id, 1, 0, 2)
+    const resend = await plan(db, id, "reemplazo")
+    await reserve(db, id, 1, 2, 2, randomUUID(), "otra_variante")
+    await generate(db, resend, ...RESEND, "360000000602")
+    await track(db, resend, "sin_cambio", "EventoDesconocido", "2026-10-02T10:00:00Z", false, "EventoDesconocido")
+    await assert.rejects(db.query("select * from force_order_claim_shipment_status($1,$2,'entregada','Prueba con revisión abierta')", [resend, admin2]),
+      /CLAIM_SHIPMENT_FORCE_REVIEW_OPEN/)
+    assert.equal(await count(db, "select count(*)::int n from order_claim_shipments where manual_status_override_kind='qa_simulation'"), 0)
+  } finally {
+    await db.close()
+  }
+})
+
 test("cambio de método: libre antes de Andreani; con una operación real exige motivo y queda auditado", async () => {
   const db = await setup()
   try {

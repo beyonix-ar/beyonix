@@ -141,6 +141,7 @@ const TEST_FILES = [
   "lib/orders/claim-mercadopago-refund-sql.test.ts",
   "lib/orders/claim-shipment-view.test.ts",
   "lib/orders/claim-shipment-trace.test.ts",
+  "lib/orders/order-management-events.test.ts",
   "lib/andreani/tracking-sync-batch.test.ts",
   "lib/andreani/branch-delivery-sql-contract.test.ts",
   "lib/andreani/branch-delivery-ui.test.ts",

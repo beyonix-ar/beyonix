@@ -20,9 +20,12 @@ test("admin: el ícono de copiar vive dentro de la mini-card de Seguimiento, con
 
   assert.match(source, /label="Seguimiento"/)
   assert.match(source, /action=\{\s*pedidoTracking\.trackingNumber \?/)
-  assert.match(source, /title=\{trackingCopied \? "Copiado" : "Copiar seguimiento"\}/)
-  // Ícono pequeño (size-5/size-3), no el botón h-8 de las demás acciones.
-  assert.match(source, /size-5 shrink-0 cursor-pointer/)
+  // Botón compartido AdminCopyButton (1:1, mismo estilo en Envío, Reclamos,
+  // Despachos y Logística), con el número real del pedido.
+  assert.match(source, /<AdminCopyButton\s+value=\{pedidoTracking\.trackingNumber\}/)
+  const controls = readSource("../../app/admin/components/admin-controls.tsx")
+  assert.match(controls, /export function AdminCopyButton/)
+  assert.match(controls, /aria-label=\{`Copiar \$\{label\}`\}/)
 })
 
 test("admin: 'Ver envío' sigue siendo una acción separada de copiar tracking", () => {

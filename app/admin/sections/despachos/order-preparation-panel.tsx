@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageCheck, Printer, RotateCcw, Scale, Truck, XCircle } from "lucide-react"
 
-import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
+import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, AdminTrackingValue, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
@@ -245,7 +245,10 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
         <span>Compra: {dateTime(detail.order.created_at)}</span>
         {pkg?.prepared_at && <span>Preparado: {dateTime(pkg.prepared_at)}</span>}
         {detail.order.invoice_status === "authorized" && <span>Factura: Emitida</span>}
-        {shipment.created && <span>Andreani: {shipment.tracking ?? shipment.envioId}</span>}
+        {/* El número a copiar es el seguimiento real; el ID de envío de la API sólo se muestra. */}
+        {shipment.created && (shipment.tracking
+          ? <span className="inline-flex items-center gap-1.5">Andreani: <AdminTrackingValue value={shipment.tracking} label={`seguimiento del pedido ${code}`} /></span>
+          : <span>Andreani: envío {shipment.envioId}</span>)}
         <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{DISPATCH_STAGE_LABELS[stage]}</AdminBadge>
         {stage !== "ready" && <span>{units} de {detail.expectedUnits} unidades</span>}
       </div>

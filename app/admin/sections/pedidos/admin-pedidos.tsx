@@ -27,7 +27,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
-  Copy,
   CreditCard,
   Download,
   Eye,
@@ -54,7 +53,6 @@ import {
 } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
-import { useAdminTheme, type AdminTheme } from "@/context/admin-theme-context"
 import { usePedidos } from "@/hooks/use-pedidos"
 import { AdminClaimManager, PROBLEM_LABELS } from "@/components/claims/admin-claim-manager"
 import { parseDeliveryAddress } from "@/lib/delivery-address"
@@ -87,6 +85,7 @@ import {
   roundCreditMoney,
 } from "@/lib/orders/credit-note-calculations"
 import { isClaimEligibleForCreditNote } from "@/lib/orders/credit-note-claim-policy"
+import { describeOrderManagementEvent, isOrderManagementEvent } from "@/lib/orders/order-management-events"
 import { getClaimCreditableQuantities, getClaimResolutionLines, isMixedClaimResolution } from "@/lib/orders/claim-policy"
 import { getClaimResolutionHistoryTitle, getClaimResolutionView } from "@/lib/orders/claim-resolution"
 import { isClaimCancelled } from "@/lib/orders/claim-cancellation"
@@ -147,6 +146,7 @@ import type {
 } from "@/lib/supabase/types"
 import {
   AdminBadge,
+  AdminCopyButton,
   AdminEmptyState,
   AdminFiltersBar,
   AdminInfoBlock,
@@ -2692,28 +2692,42 @@ function CreditDestinationOption({
   onClick,
   title,
   description,
+  help,
 }: {
   selected: boolean
   disabled?: boolean
   onClick: () => void
   title: string
-  description: string
+  /** Leyenda visible debajo del título. */
+  description?: string
+  /** Explicación a demanda: (?) en la esquina superior derecha, sin leyenda visible. */
+  help?: string
 }) {
-  return (
+  const option = (
     <button
       type="button"
       role="radio"
       aria-checked={selected}
       disabled={disabled}
       onClick={onClick}
-      className={`admin-credit-destination-option cursor-pointer disabled:cursor-not-allowed ${selected ? "is-selected" : ""}`}
+      className={`admin-credit-destination-option cursor-pointer disabled:cursor-not-allowed ${selected ? "is-selected" : ""} ${help ? "has-help" : ""}`}
     >
       <span className="admin-credit-destination-option-heading">
         {selected && <Check className="admin-credit-destination-option-check size-3.5" />}
         {title}
       </span>
-      <span className="admin-credit-destination-option-description">{description}</span>
+      {description && <span className="admin-credit-destination-option-description">{description}</span>}
     </button>
+  )
+  if (!help) return option
+  // El (?) es un botón propio: va al lado del radio (nunca dentro de otro botón).
+  return (
+    <div className="admin-credit-destination-option-shell">
+      {option}
+      <span className="admin-credit-destination-option-help">
+        <HelpTip label={title}>{help}</HelpTip>
+      </span>
+    </div>
   )
 }
 
@@ -2957,25 +2971,16 @@ function BillingManagementPanel({
     setCreditNotePreview({ noteId, token: session.access_token })
   }
   const managementEvents = (pedido.order_audit_events ?? [])
-    .filter((event) =>
-      [
-        "credit_note",
-        "refund",
-        "return",
-        "cancel",
-        "customer_balance",
-      ].some((token) => event.action.includes(token)),
-    )
+    .filter((event) => isOrderManagementEvent(event.action))
     .slice(-5)
-  const managementEventLabel = (action: string) => {
-    if (action.includes("settlement")) return "Saldo acreditado"
-    if (action.includes("credit_note_authorized")) return "Nota de crédito autorizada"
-    if (action.includes("refund_proof")) return "Comprobante de reintegro cargado"
-    if (action.includes("refunded")) return "Reintegro completado"
-    if (action.includes("return")) return "Devolución actualizada"
-    if (action.includes("cancel")) return "Cancelación actualizada"
-    return "Gestión actualizada"
-  }
+  const describeManagementEvent = (event: (typeof managementEvents)[number]) =>
+    describeOrderManagementEvent(event, {
+      formatAmount: formatPrice,
+      itemName: (orderItemId) => {
+        const item = (pedido.orden_items ?? []).find((row) => row.id === orderItemId)
+        return item ? item.productos?.nombre ?? `Producto #${item.producto_id}` : null
+      },
+    })
 
   // El reclamo formal más reciente ya trae el motivo del cliente y, si el
   // Admin ya decidió una resolución en el chat de reclamos, también trae esa
@@ -3692,7 +3697,6 @@ function BillingManagementPanel({
                       value={operationType}
                       onChange={(value) => selectOperationType(value)}
                       wrapperClassName="admin-credit-adjustment-control"
-                      compact
                     >
                       <option value="ajuste_manual">Ajuste manual</option>
                       <option value="reembolso_excepcional">Reembolso excepcional</option>
@@ -3741,13 +3745,13 @@ function BillingManagementPanel({
                       selected={creditDestination === "customer_balance"}
                       onClick={() => setCreditDestination("customer_balance")}
                       title="Saldo a favor del cliente"
-                      description="Acredita el importe como saldo interno de BEYONIX en la cuenta del cliente, disponible para usar en una próxima compra."
+                      help="Acredita el importe como saldo interno de BEYONIX en la cuenta del cliente, disponible para usar en una próxima compra."
                     />
                     <CreditDestinationOption
                       selected={creditDestination === "external_refund"}
                       onClick={() => setCreditDestination("external_refund")}
                       title="Reintegro externo"
-                      description="Registra que el dinero se devuelve por fuera de BEYONIX (transferencia, Mercado Pago, etc.). Queda pendiente hasta cargar el comprobante."
+                      help="Registra que el dinero se devuelve por fuera de BEYONIX (transferencia, Mercado Pago, etc.). Queda pendiente hasta cargar el comprobante."
                     />
                   </div>
 
@@ -3917,31 +3921,42 @@ function BillingManagementPanel({
           {managementEvents.length > 0 && (
             <section className="admin-return-timeline">
               <div className="admin-return-timeline-events">
-                {managementEvents.map((event) => (
-                  <div key={event.id}>
-                    <span aria-hidden="true" />
-                    <p>
-                      <strong>{managementEventLabel(event.action)}</strong>
-                      <small>{formatOptionalOrderDate(event.created_at)}</small>
-                    </p>
-                  </div>
-                ))}
+                {managementEvents.map((event) => {
+                  const view = describeManagementEvent(event)
+                  return (
+                    <div key={event.id}>
+                      <span aria-hidden="true" />
+                      <div className="admin-return-timeline-entry">
+                        <strong>{view.title}</strong>
+                        <small>{formatOptionalOrderDate(event.created_at)}</small>
+                        {view.facts.length > 0 && (
+                          <ul className="admin-return-timeline-facts" data-management-event-facts>
+                            {view.facts.map((fact) => <li key={fact}>{fact}</li>)}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-              <details>
-                <summary>Ver detalle técnico</summary>
-                <div>
-                  {managementEvents.map((event) => (
-                    <p key={event.id}>
-                      <b>{event.action}</b>
-                      <code>
-                        {event.metadata
-                          ? JSON.stringify(event.metadata)
-                          : "Sin datos adicionales"}
-                      </code>
-                    </p>
-                  ))}
-                </div>
-              </details>
+              {/* Datos internos sólo para soporte: super admin y un nivel más adentro. */}
+              {isSuperAdmin && (
+                <details className="admin-return-timeline-support">
+                  <summary>Datos para soporte técnico</summary>
+                  <div>
+                    {managementEvents.map((event) => (
+                      <p key={event.id}>
+                        <b>{event.action}</b>
+                        <code>
+                          {event.metadata
+                            ? JSON.stringify(event.metadata)
+                            : "Sin datos adicionales"}
+                        </code>
+                      </p>
+                    ))}
+                  </div>
+                </details>
+              )}
             </section>
           )}
 
@@ -4263,75 +4278,21 @@ function AdminOrderSummaryDashboard({
   )
 }
 
-// Colores semánticos por estado del select "Estado operativo"
-// (admin-order-shipping-status-select). Theme-aware a propósito: en Dark es
-// un chip oscuro con texto pastel (diseño original); en Light usar el MISMO
-// fondo oscuro se ve como "un bloque negro" desconectado del resto de la
-// pantalla (reporte real de usuario, 2026-09-15), así que Light usa un
-// badge pastel claro (misma fórmula que .admin-order-tone-* ya usada en las
-// listas de pedidos) en vez de intentar reescribir el fondo oscuro por CSS
-// -- las utilidades `!` de Tailwind conviven en la misma capa que las
-// reglas base de .admin-control-select y le ganan por diseño; agregar un
-// override en globals.css para pisarlas de nuevo sólo generaba otra pelea
-// de cascada. Elegir el className correcto en el componente (que ya sabe
-// qué tema está activo vía useAdminTheme) evita esa pelea por completo.
-function getOrderStatusSelectClassName(status: string, theme: AdminTheme) {
-  const darkStyles: Record<string, string> = {
-    pendiente:
-      "!border-amber-400/35 !bg-[#111827] !text-amber-200 hover:!bg-[#15191F]",
-    pagado:
-      "!border-emerald-400/35 !bg-[#111827] !text-emerald-200 hover:!bg-[#15191F]",
-    enviado:
-      "!border-beyonix-blue-light/45 !bg-beyonix-blue/35 !text-beyonix-sky hover:!bg-beyonix-blue/45",
-    en_camino:
-      "!border-sky-300/35 !bg-[#111827] !text-sky-200 hover:!bg-[#15191F]",
-    visita_fallida:
-      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
-    en_sucursal:
-      "!border-cyan-300/35 !bg-[#111827] !text-cyan-100 hover:!bg-[#15191F]",
-    retiro_pendiente:
-      "!border-cyan-300/35 !bg-[#111827] !text-cyan-100 hover:!bg-[#15191F]",
-    retiro_vencido:
-      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
-    en_devolucion:
-      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
-    devuelto_beyonix:
-      "!border-amber-300/45 !bg-[#111827] !text-amber-100 hover:!bg-[#15191F]",
-    entregado:
-      "!border-emerald-300/45 !bg-[#111827] !text-emerald-100 hover:!bg-[#15191F]",
-    cancelado:
-      "!border-[#9f3546]/70 !bg-[#111827] !text-[#ffc2c8] hover:!bg-[#15191F]",
-  }
-  const lightStyles: Record<string, string> = {
-    pendiente:
-      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
-    pagado:
-      "!border-emerald-400/50 !bg-emerald-50 !text-emerald-800 hover:!bg-emerald-100",
-    enviado:
-      "!border-blue-400/50 !bg-blue-50 !text-blue-800 hover:!bg-blue-100",
-    en_camino:
-      "!border-sky-400/50 !bg-sky-50 !text-sky-800 hover:!bg-sky-100",
-    visita_fallida:
-      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
-    en_sucursal:
-      "!border-cyan-400/50 !bg-cyan-50 !text-cyan-800 hover:!bg-cyan-100",
-    retiro_pendiente:
-      "!border-cyan-400/50 !bg-cyan-50 !text-cyan-800 hover:!bg-cyan-100",
-    retiro_vencido:
-      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
-    en_devolucion:
-      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
-    devuelto_beyonix:
-      "!border-amber-400/50 !bg-amber-50 !text-amber-800 hover:!bg-amber-100",
-    entregado:
-      "!border-emerald-400/50 !bg-emerald-50 !text-emerald-800 hover:!bg-emerald-100",
-    cancelado:
-      "!border-red-400/50 !bg-red-50 !text-red-800 hover:!bg-red-100",
-  }
-
-  const styles = theme === "light" ? lightStyles : darkStyles
-
-  return styles[status] ?? ""
+// Punto semántico del select "Estado operativo": el select es el AdminSelect
+// común (igual a Transportista y al resto del detalle) y el estado se
+// distingue por el color del punto, como "Estado del pago".
+const ORDER_STATUS_DOT_CLASS_NAMES: Record<string, string> = {
+  pendiente: "bg-amber-300",
+  pagado: "bg-emerald-300",
+  en_camino: "bg-sky-300",
+  visita_fallida: "bg-amber-300",
+  en_sucursal: "bg-cyan-300",
+  retiro_pendiente: "bg-cyan-300",
+  retiro_vencido: "bg-amber-300",
+  en_devolucion: "bg-amber-300",
+  devuelto_beyonix: "bg-amber-300",
+  entregado: "bg-emerald-300",
+  cancelado: "bg-red-300",
 }
 
 function getOrderFinancialBreakdown(pedido: SupabasePedido) {
@@ -4434,7 +4395,6 @@ function PedidoDetailModal({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { theme: adminTheme } = useAdminTheme()
   const { user: currentAdmin } = useAuth()
   const capabilities = getAdminCapabilities(currentAdmin?.rol)
   const items = pedido.orden_items ?? []
@@ -4485,7 +4445,6 @@ function PedidoDetailModal({
   } | null>(null)
   const [andreaniLabelLoading, setAndreaniLabelLoading] =
     useState<AndreaniLabelAction | null>(null)
-  const [trackingCopied, setTrackingCopied] = useState(false)
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [invoiceDownloading, setInvoiceDownloading] = useState(false)
   const [orderSummarySeen, setOrderSummarySeen] = useState(true)
@@ -4735,19 +4694,6 @@ function PedidoDetailModal({
       })
     } finally {
       setAndreaniLabelLoading(null)
-    }
-  }
-
-  const copyTrackingNumber = async (trackingNumber: string) => {
-    try {
-      await navigator.clipboard.writeText(trackingNumber)
-      setTrackingCopied(true)
-      window.setTimeout(() => setTrackingCopied(false), 1800)
-    } catch {
-      setAndreaniNotice({
-        ok: false,
-        message: "No pudimos copiar el número. Seleccionalo manualmente.",
-      })
     }
   }
 
@@ -5557,7 +5503,6 @@ function PedidoDetailModal({
 
           {activeView === "envio" && (
           <div className="admin-order-shipping-refined mt-3 space-y-2.5">
-            <OrderDispatchStatus orderId={pedido.id} onOpenArmado={usesAndreaniDispatch ? () => showDetailView("armado") : undefined} />
             <section className="admin-order-shipping-card admin-order-shipping-overview rounded-lg border p-3">
               <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
@@ -5590,6 +5535,8 @@ function PedidoDetailModal({
             <section className="admin-order-shipping-card admin-order-shipping-progress-card rounded-lg border p-3">
               <ShippingProgressTimeline pedido={pedido} />
             </section>
+
+            <OrderDispatchStatus orderId={pedido.id} onOpenArmado={usesAndreaniDispatch ? () => showDetailView("armado") : undefined} />
 
             <div className="grid gap-2.5 lg:grid-cols-5">
               <section className="admin-order-shipping-card admin-order-shipping-destination-card rounded-lg border p-3 lg:col-span-3">
@@ -5633,10 +5580,14 @@ function PedidoDetailModal({
                     </p>
                     <div className="mt-1.5">
                       <AdminSelect
-                        compact
                         title="Estado operativo del pedido"
                         value={pedido.estado === "enviado" ? "en_camino" : pedido.estado}
-                        triggerClassName={`admin-order-shipping-status-select ${getOrderStatusSelectClassName(pedido.estado, adminTheme)}`}
+                        leadingIcon={
+                          <span
+                            aria-hidden="true"
+                            className={cn("admin-order-status-dot block size-2 rounded-full", ORDER_STATUS_DOT_CLASS_NAMES[pedido.estado === "enviado" ? "en_camino" : pedido.estado] ?? "bg-slate-300")}
+                          />
+                        }
                         onChange={(value) => onEstadoChange(pedido, value)}
                       >
                         <option value="pendiente">Pendiente</option>
@@ -5664,10 +5615,8 @@ function PedidoDetailModal({
                     </p>
                     <div className="mt-1.5">
                       <AdminSelect
-                        compact
                         title="Modalidad logística"
                         value={shippingModality}
-                        triggerClassName="admin-order-shipping-modality-select"
                         onChange={(value) => {
                           setShippingModality(value as ShippingModalityOption)
                           setCustomShippingNotice(null)
@@ -5804,19 +5753,10 @@ function PedidoDetailModal({
                   icon={<RefreshCw className="size-3.5" />}
                   action={
                     pedidoTracking.trackingNumber ? (
-                      <button
-                        type="button"
-                        onClick={() => void copyTrackingNumber(pedidoTracking.trackingNumber!)}
-                        aria-label={`Copiar número de seguimiento del pedido ${pedido.id}`}
-                        title={trackingCopied ? "Copiado" : "Copiar seguimiento"}
-                        className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-beyonix-gray-300 transition-colors hover:text-[var(--beyonix-text-primary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-beyonix-sky/55"
-                      >
-                        {trackingCopied ? (
-                          <Check className="size-3" />
-                        ) : (
-                          <Copy className="size-3" />
-                        )}
-                      </button>
+                      <AdminCopyButton
+                        value={pedidoTracking.trackingNumber}
+                        label={`número de seguimiento del pedido ${pedido.id}`}
+                      />
                     ) : undefined
                   }
                 />
@@ -6176,8 +6116,9 @@ function ShippingMiniCard({
           <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
             {label}
           </p>
-          <div className="mt-0.5 flex items-center gap-1">
-            <p className="truncate text-xs font-black text-[var(--beyonix-text-primary)] sm:text-sm">
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            {/* Con acción (copiar seguimiento) el valor nunca se trunca: se lee entero. */}
+            <p className={cn("text-xs font-black text-[var(--beyonix-text-primary)] sm:text-sm", action ? "min-w-0 break-all" : "truncate")}>
               {value}
             </p>
             {action}

@@ -930,6 +930,8 @@ export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource 
   last_checked_at?: string | null
   manual_status_override?: ClaimShipmentStatus | null
   manual_status_override_at?: string | null
+  manual_status_override_note?: string | null
+  review_required?: boolean | null
   /** Fila del modelo inicial (20260928100000), sin sucursal ni unidades. */
   legacy?: boolean
 }

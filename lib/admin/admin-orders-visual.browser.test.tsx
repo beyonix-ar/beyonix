@@ -24,7 +24,7 @@ const stubs: Plugin = {
     for (const [filter, path] of Object.entries(map)) b.onResolve({ filter: new RegExp(filter) }, () => ({ path, namespace: "stub" }))
     b.onLoad({ filter: /^auth$/, namespace: "stub" }, () => ({
       loader: "js",
-      contents: `export function useAuth() { return { user: { id: "u1", rol: "super_admin" }, isSuperAdmin: true, isAdmin: true } }`,
+      contents: `export function useAuth() { const rol = window.__role || "super_admin"; return { user: { id: "u1", rol }, isSuperAdmin: rol === "super_admin", isAdmin: true } }`,
     }))
     b.onLoad({ filter: /^navigation$/, namespace: "stub" }, () => ({
       loader: "js",
@@ -78,7 +78,13 @@ import { AdminPedidos } from "@/app/admin/sections/pedidos/admin-pedidos"
 import { AdminThemeProvider } from "@/context/admin-theme-context"
 window.__creditNotePosts = []
 window.__pdfRequests = []
+window.__claimPosts = []
 window.fetch = async (input, init) => {
+  if (String(input).includes("/andreani-shipment") && init && init.method === "POST") {
+    window.__claimPosts.push(JSON.parse(init.body))
+    return Response.json({ claim: window.__forcedClaim })
+  }
+  if (String(input).includes("capabilities=1")) return Response.json({ testStatusEnabled: false })
   if (String(input).includes("/invoice/pdf?type=credit_note")) {
     window.__pdfRequests.push({ url: String(input), authorization: init?.headers?.Authorization })
     return new Response(new Blob(["%PDF-1.4\\n%%EOF"], { type: "application/pdf" }), { headers: { "Content-Type": "application/pdf", "Content-Disposition": 'inline; filename="Nota-Credito-BEYONIX.pdf"' } })
@@ -149,10 +155,10 @@ const DETAIL_ONLY = [
   }] }),
 ]
 
-const pageHtml = (theme: "dark" | "light", css: string, bundle: string, orderId?: number, pedidos?: unknown[]) => `<!doctype html>
+const pageHtml = (theme: "dark" | "light", css: string, bundle: string, orderId?: number, pedidos?: unknown[], role = "super_admin") => `<!doctype html>
 <html data-admin-theme="${theme}"><head><meta charset="utf-8"><style>${css}</style></head><body>
 <div class="beyonix-admin-shell"><main class="beyonix-admin-main"><div id="root"></div></main></div>
-<script>window.__pedidos = ${JSON.stringify(pedidos ?? (orderId ? [...PEDIDOS, ...DETAIL_ONLY].filter((p) => p.id === orderId) : PEDIDOS))}; window.__initialOrderId = ${orderId ?? 0}</script>
+<script>window.__pedidos = ${JSON.stringify(pedidos ?? (orderId ? [...PEDIDOS, ...DETAIL_ONLY].filter((p) => p.id === orderId) : PEDIDOS))}; window.__initialOrderId = ${orderId ?? 0}; window.__role = ${JSON.stringify(role)}</script>
 <script>${bundle}</script></body></html>`
 
 // Helpers de color (canvas: acepta oklch/oklab/color-mix), ejecutados como string.
@@ -189,10 +195,10 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(theme: "dark" | "light", { width = 1440, orderId, tab, pedidos }: { width?: number; orderId?: number; tab?: string; pedidos?: unknown[] } = {}): Promise<Page> {
+async function open(theme: "dark" | "light", { width = 1440, orderId, tab, pedidos, role }: { width?: number; orderId?: number; tab?: string; pedidos?: unknown[]; role?: string } = {}): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: 1000 } })
   page.setDefaultTimeout(15000)
-  const html = pageHtml(theme, css, bundle, orderId, pedidos)
+  const html = pageHtml(theme, css, bundle, orderId, pedidos, role)
   await page.route("**/*", (route) =>
     route.request().url().startsWith("http://localhost/pedidos") ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
   )
@@ -567,26 +573,213 @@ test("Dark: la jerarquía de fondos del detalle no cambia", async () => {
   }
 })
 
-test("15: Envío > Transportista muestra el texto en blanco sin cambiar su fondo", async () => {
-  for (const theme of ["light", "dark"] as const) {
-    const page = await open(theme, { orderId: 1, tab: "envio" })
+// ─────────────── Selects BEYONIX, copiar seguimiento, Facturación, reenvío forzado ───────────────
+
+const SELECT_SIGNATURE = (selector: string) => `(() => {
+  const t = document.querySelector('${selector}'); const s = getComputedStyle(t); const label = t.querySelector("span span:last-child")
+  const px = (value) => Math.round(parseFloat(value)) + "px"
+  return [s.backgroundColor, s.backgroundImage.slice(0, 50), s.borderTopColor, px(s.borderTopLeftRadius), px(s.height), px(s.paddingLeft),
+    px(getComputedStyle(label).fontSize), getComputedStyle(label).fontWeight, getComputedStyle(label).color].join(" | ")
+})()`
+const STATUS_SELECT = 'button[aria-label="Estado operativo del pedido"]'
+const CARRIER_SELECT = 'button[aria-label="Modalidad logística"]'
+
+for (const theme of ["light", "dark"] as const) {
+  test(`15 (${theme}): Estado operativo, Transportista y Tipo de gestión son el mismo AdminSelect del detalle, con foco visible`, async () => {
+    const shipping = await open(theme, { orderId: 1, tab: "envio" })
+    let status = "", carrier = ""
     try {
-      const style = (await page.evaluate(`(() => { ${COLOR_HELPERS}
-        const t = document.querySelector(".admin-order-shipping-modality-select"); const label = t.querySelector("span span:last-child"); const s = getComputedStyle(t)
-        return { text: label.textContent, color: key(getComputedStyle(label).color), chevron: key(getComputedStyle(t.querySelector("svg")).stroke), bg: key(s.backgroundColor), img: s.backgroundImage.slice(0, 60),
-          contrast: ratio(parse(getComputedStyle(label).color), effectiveBg(t)) }
-      })()`)) as Record<string, string | number>
-      assert.equal(style.text, "Andreani")
-      assert.equal(style.bg, "17,42,67,1", `${theme}: fondo navy intacto`)
-      assert.match(String(style.img), /linear-gradient/)
-      assert.ok(Number(style.contrast) >= 7, `${theme}: texto legible (${style.contrast})`)
-      if (theme === "light") {
-        assert.equal(style.color, "255,255,255,1", "texto blanco")
-        assert.equal(style.chevron, "255,255,255,1", "chevron visible, como antes")
+      status = String(await shipping.evaluate(SELECT_SIGNATURE(STATUS_SELECT)))
+      carrier = String(await shipping.evaluate(SELECT_SIGNATURE(CARRIER_SELECT)))
+      assert.equal(status, carrier, "Estado operativo y Transportista idénticos")
+      assert.match(status, /\| 44px \|/, "tamaño estándar (no compacto)")
+      assert.match(status, /\| 14px \|/, "texto del tamaño estándar")
+      assert.equal(await shipping.locator(`${STATUS_SELECT} .admin-order-status-dot`).count(), 1, "el estado se distingue por el punto")
+      // Foco por teclado (Shift+Tab desde Transportista): ahí aplica :focus-visible.
+      await shipping.locator(CARRIER_SELECT).focus()
+      await shipping.keyboard.press("Shift+Tab")
+      await shipping.waitForTimeout(350) // transición de 200ms del AdminSelect
+      const focus = (await shipping.evaluate(`(() => { const t = document.querySelector('${STATUS_SELECT}')
+        return [document.activeElement === t, t.matches(":focus-visible"), getComputedStyle(t).boxShadow] })()`)) as [boolean, boolean, string]
+      assert.deepEqual(focus.slice(0, 2), [true, true])
+      assert.match(focus[2], /3px/, `foco visible (${focus[2]})`)
+      await shipping.locator(CARRIER_SELECT).click()
+      assert.deepEqual(await shipping.getByRole("option").allInnerTexts(), ["Andreani", "Otro"])
+    } finally {
+      await shipping.close()
+    }
+    const billing = await openAdjustment(theme)
+    try {
+      assert.equal(String(await billing.evaluate(SELECT_SIGNATURE(TRIGGER))), status, "Tipo de gestión idéntico a los de Envío")
+    } finally {
+      await billing.close()
+    }
+  })
+}
+
+const SHIP_ORDER = order(20, {
+  estado: "en_camino", invoice_status: "authorized", andreani_envio_id: "AND-000123", andreani_tracking: "360002123456789",
+  andreani_estado: "En tránsito", andreani_creation_status: "created", andreani_creation_environment: "PROD",
+  order_audit_events: [{ id: 1, action: "return_inventory_processed", created_at: "2026-09-25T12:00:00Z", metadata: {
+    productId: 1, remaining: 0, sourceKey: "order-item:200:return:x", variantId: 1, orderItemId: 200, soldQuantity: 1,
+    sellableQuantity: 1, cumulativeReturned: 1, discountedQuantity: 0, nonSellableQuantity: 0 } }],
+})
+const resendLeg = (overrides: Record<string, unknown> = {}) => ({
+  id: 12, claim_id: 2001, order_id: 20, direction: "reemplazo", attempt: 1, status: "en_transito", creation_status: "created",
+  environment: "PROD", andreani_envio_id: "AND-REP-2", andreani_tracking: "360002999000222", andreani_estado: "En distribución",
+  created_at: "2026-09-24T13:00:00Z", branch_name: "Sucursal Once", review_required: false, ...overrides,
+})
+const claimWith = (leg: Record<string, unknown>) => ({
+  id: 2001, order_id: 20, user_id: "c1", status: "aprobado", failure_type: "falla", resolution: "cambio_producto",
+  description: "Producto con falla", affected_items: [{ order_item_id: 200, quantity: 1 }],
+  created_at: "2026-09-22T12:00:00Z", updated_at: "2026-09-22T12:00:00Z",
+  order_claim_units: [{ id: 1, order_item_id: 200, role: "original", location: "reincorporada_stock", incident_open: false, updated_at: "2026-09-24T12:00:00Z" },
+    { id: 2, order_item_id: 200, role: "reemplazo", location: "en_andreani", incident_open: false, shipment_id: 12 }],
+  order_claim_shipments: [
+    { id: 11, claim_id: 2001, order_id: 20, direction: "devolucion", attempt: 1, status: "entregada", creation_status: "created", environment: "PROD",
+      andreani_envio_id: "AND-RET-1", andreani_tracking: "360002999000111", delivered_at: "2026-09-23T12:00:00Z", closed_at: "2026-09-23T12:00:00Z",
+      created_at: "2026-09-22T13:00:00Z", branch_name: "Sucursal Once" },
+    leg,
+  ],
+})
+const SHIP_PEDIDOS = [{ ...SHIP_ORDER, orden_items: [{ ...SHIP_ORDER.orden_items[0], id: 200, orden_id: 20 }], order_claims: [claimWith(resendLeg())] }]
+
+/** Portapapeles controlado: registra lo copiado (el permiso real no depende del test). */
+async function stubClipboard(page: Page) {
+  // Strings (no funciones): tsx agrega helpers que no existen en la página.
+  await page.evaluate(`window.__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (text) => { window.__copied.push(text) } } })`)
+}
+const copied = (page: Page) => page.evaluate("window.__copied")
+
+for (const theme of ["light", "dark"] as const) {
+  test(`Envío (${theme}): copiar seguimiento 1:1, alineado, copia el tracking real (no el ID de envío); acciones legibles`, async () => {
+    for (const width of [390, 1440]) {
+      const page = await open(theme, { width, pedidos: SHIP_PEDIDOS, orderId: 20, tab: "envio" })
+      try {
+        await stubClipboard(page)
+        const button = page.getByRole("button", { name: "Copiar número de seguimiento del pedido 20" })
+        const box = (await button.boundingBox())!
+        assert.equal(Math.round(box.width), Math.round(box.height), `${width}px: botón 1:1 (${box.width}x${box.height})`)
+        assert.ok(box.width >= 26 && box.width <= 32, `${width}px: tamaño consistente (${box.width})`)
+        const value = (await page.getByText("360002123456789", { exact: true }).boundingBox())!
+        assert.ok(Math.abs(value.y + value.height / 2 - (box.y + box.height / 2)) <= 4, `${width}px: alineado con el número`)
+        await button.click()
+        assert.deepEqual(await copied(page), ["360002123456789"])
+        assert.equal(await button.getAttribute("data-copy-state"), "copied")
+        const fontSize = await page.getByRole("button", { name: "Consultar envío Andreani del pedido 20" }).evaluate((el) => getComputedStyle(el).fontSize)
+        const rootSize = Number.parseFloat(String(await page.evaluate("getComputedStyle(document.documentElement).fontSize")))
+        assert.ok(Math.abs(Number.parseFloat(fontSize) - rootSize * 0.75) < 0.05, `acciones de Envío en 0.75rem, antes 0.625rem (${fontSize})`)
+        assert.equal(await page.evaluate("document.documentElement.scrollWidth > innerWidth"), false, `${width}px: sin scroll horizontal`)
+      } finally {
+        await page.close()
       }
+    }
+  })
+
+  test(`Facturación (${theme}): destinos con (?) y sin leyenda; historial legible, sin JSON salvo soporte (super admin)`, async () => {
+    const page = await open(theme, { pedidos: SHIP_PEDIDOS, orderId: 20, tab: "facturacion" })
+    try {
+      await page.getByRole("button", { name: "Registrar ajuste administrativo" }).click()
+      for (const name of ["Saldo a favor del cliente", "Reintegro externo"]) {
+        const radio = page.getByRole("radio", { name })
+        assert.equal(await radio.locator(".admin-credit-destination-option-description").count(), 0, `${name}: sin leyenda`)
+        const help = page.getByRole("button", { name: `Ayuda: ${name}` })
+        const [radioBox, helpBox] = [(await radio.boundingBox())!, (await help.boundingBox())!]
+        assert.ok(helpBox.x + helpBox.width <= radioBox.x + radioBox.width && helpBox.x > radioBox.x + radioBox.width / 2, `${name}: (?) a la derecha`)
+        assert.ok(helpBox.y - radioBox.y <= 12, `${name}: (?) arriba`)
+        const contrast = Number(await page.evaluate(`(() => { ${COLOR_HELPERS}
+          // El (?) se superpone a la tarjeta (su hermana en el DOM): se mide contra ella.
+          const el = document.querySelector('button[aria-label="Ayuda: ${name}"]')
+          const card = el.closest(".admin-credit-destination-option-shell").querySelector('[role="radio"]')
+          return ratio(over(parse(getComputedStyle(el).color), effectiveBg(card)), effectiveBg(card)) })()`))
+        assert.ok(contrast >= 3, `${name}: (?) visible (${contrast})`)
+        await help.hover()
+        await page.getByRole("tooltip").filter({ hasText: name === "Reintegro externo" ? "por fuera de BEYONIX" : "saldo interno" }).waitFor({ state: "visible" })
+        await page.mouse.move(0, 0)
+      }
+      const timeline = page.locator(".admin-return-timeline")
+      assert.match(await timeline.innerText(), /Inventario actualizado[\s\S]*Producto: Trípode Ñandú[\s\S]*1 unidad procesada[\s\S]*Reingreso vendible: 1[\s\S]*No vendible: 0[\s\S]*Restante por procesar: 0/)
+      assert.doesNotMatch(await timeline.innerText(), /return_inventory_processed|sourceKey|\{/, "nada técnico a la vista")
+      assert.equal(await page.getByText("Datos para soporte técnico").count(), 1, "soporte: un nivel más adentro")
     } finally {
       await page.close()
     }
+    const admin = await open(theme, { pedidos: SHIP_PEDIDOS, orderId: 20, tab: "facturacion", role: "admin" })
+    try {
+      await admin.locator(".admin-return-timeline").waitFor()
+      assert.equal(await admin.getByText("Datos para soporte técnico").count(), 0, "un admin no ve datos internos")
+    } finally {
+      await admin.close()
+    }
+  })
+
+  test(`Reclamos (${theme}): forzar el reenvío (super admin), motivo obligatorio, sin retrocesos; real vs forzado; copiar tracking real`, async () => {
+    const page = await open(theme, { pedidos: SHIP_PEDIDOS, orderId: 20, tab: "atencion" })
+    try {
+      await stubClipboard(page)
+      const tracking = page.locator("[data-claim-tracking=reemplazo]")
+      assert.match(await tracking.innerText(), /Tracking 360002999000222/)
+      assert.doesNotMatch(await tracking.innerText(), /AND-REP-2/, "el tracking real, nunca el ID de la API")
+      await tracking.getByRole("button", { name: /Copiar seguimiento de reemplazo/ }).click()
+      assert.deepEqual(await copied(page), ["360002999000222"])
+
+      await page.getByRole("button", { name: "Forzar estado" }).click()
+      const dialog = page.getByRole("dialog", { name: "Forzar estado del reenvío" })
+      await dialog.waitFor()
+      assert.match(await dialog.innerText(), /Estado en BEYONIX\s*En tránsito/i)
+      assert.match(await dialog.innerText(), /Último estado de Andreani\s*En distribución/i)
+      await dialog.getByRole("button", { name: "Nuevo estado del reenvío" }).click()
+      assert.deepEqual(await page.getByRole("option").allInnerTexts(), ["En sucursal", "Entregado"], "sólo hacia adelante; sin Creado ni Cancelado")
+      await page.getByRole("option", { name: "Entregado" }).click()
+      assert.match(await dialog.locator("[data-claim-force-effects]").innerText(), /No se puede deshacer[\s\S]*finalización del reclamo/)
+      const confirm = dialog.getByRole("button", { name: "Forzar: Entregado" })
+      assert.equal(await confirm.isDisabled(), true, "sin motivo no se confirma")
+      await dialog.getByRole("textbox").fill("corto")
+      assert.equal(await confirm.isDisabled(), true, "motivo de menos de 10 caracteres")
+      await dialog.getByRole("textbox").fill("Andreani no actualizó la entrega")
+      const forcedClaim = claimWith(resendLeg({ status: "entregada", delivered_at: "2026-09-26T12:00:00Z", closed_at: "2026-09-26T12:00:00Z",
+        manual_status_override: "entregada", manual_status_override_kind: "admin_override", manual_status_override_note: "Andreani no actualizó la entrega" }))
+      await page.evaluate(`window.__forcedClaim = ${JSON.stringify(forcedClaim)}`)
+      await confirm.click()
+      await dialog.waitFor({ state: "detached" })
+      assert.deepEqual(await page.evaluate("window.__claimPosts"),
+        [{ action: "force_status", shipmentId: 12, status: "entregada", notes: "Andreani no actualizó la entrega" }])
+
+      await page.locator("[data-claim-progress=reemplazo] [data-claim-forced-status]").waitFor()
+      assert.equal(await page.getByRole("button", { name: "Forzar estado" }).count(), 0, "entregado: no hay más estados")
+      await page.locator("[data-claim-details] > summary").click()
+      const row = page.locator('[data-shipment-kind="Reemplazo / reenvío"]')
+      const text = await row.innerText()
+      assert.match(text, /FORZADO · BEYONIX/)
+      assert.match(text, /Estado BEYONIX\s*Entregado \(forzado\)/)
+      assert.match(text, /Andreani\s*En distribución/, "el estado real de Andreani se ve aparte")
+      assert.match(text, /Motivo\s*Andreani no actualizó la entrega/)
+      assert.equal(await page.evaluate("document.documentElement.scrollWidth > innerWidth"), false)
+    } finally {
+      await page.close()
+    }
+  })
+}
+
+test("Reclamos: un admin (no super admin) no puede forzar el estado del reenvío; Creado ofrece Cancelado", async () => {
+  const admin = await open("dark", { pedidos: SHIP_PEDIDOS, orderId: 20, tab: "atencion", role: "admin" })
+  try {
+    await admin.locator("[data-claim-tracking=reemplazo]").waitFor()
+    assert.equal(await admin.getByRole("button", { name: "Forzar estado" }).count(), 0)
+  } finally {
+    await admin.close()
+  }
+  const created = [{ ...SHIP_PEDIDOS[0], order_claims: [claimWith(resendLeg({ status: "generada" }))] }]
+  const page = await open("light", { width: 390, pedidos: created, orderId: 20, tab: "atencion" })
+  try {
+    await page.getByRole("button", { name: "Forzar estado" }).click()
+    await page.getByRole("dialog").getByRole("button", { name: "Nuevo estado del reenvío" }).click()
+    assert.deepEqual(await page.getByRole("option").allInnerTexts(), ["En tránsito", "En sucursal", "Entregado", "Cancelado"])
+    await page.getByRole("option", { name: "Cancelado" }).click()
+    assert.match(await page.locator("[data-claim-force-effects]").innerText(), /No cancela nada en Andreani/)
+    assert.equal(await page.evaluate("document.documentElement.scrollWidth > innerWidth"), false, "390px sin scroll horizontal")
+  } finally {
+    await page.close()
   }
 })
 

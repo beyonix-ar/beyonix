@@ -5,7 +5,7 @@ import { ChevronDown, FileUp, PackageSearch } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 
 import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
-import { AdminButton, AdminEmptyState, AdminPageHeader, AdminSection } from "@/app/admin/components/admin-controls"
+import { AdminButton, AdminEmptyState, AdminPageHeader, AdminSection, AdminTrackingValue } from "@/app/admin/components/admin-controls"
 import type { LogisticsOrderRow } from "@/lib/admin/logistics"
 import { BILLED_HELP } from "@/lib/admin/andreani-billing"
 import {
@@ -62,7 +62,7 @@ export function LogisticsOrderTableRow({ row, onReconcile }: { row: LogisticsOrd
       <tr className="border-t border-white/8 text-sm text-white/85 hover:bg-white/[0.03]">
         <td className="whitespace-nowrap px-3 py-3 font-black text-white">{row.code}</td>
         <td className="whitespace-nowrap px-3 py-3 text-white/65">{formatDate(row.createdAt)}</td>
-        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">{row.tracking ?? "—"}</td>
+        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs">{row.tracking ? <AdminTrackingValue value={row.tracking} label={`seguimiento del pedido ${row.code}`} /> : "—"}</td>
         <td className="whitespace-nowrap px-3 py-3">{row.status}</td>
         <td className="px-3 py-3 text-right tabular-nums">{row.parcels ?? "—"}</td>
         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{money(row.chargedToCustomer)}</td>
