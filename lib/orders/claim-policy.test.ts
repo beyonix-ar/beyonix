@@ -14,7 +14,6 @@ import {
   getClaimReturnSummary,
 } from "./claim-policy.ts"
 import { getCreditNoteClaimPolicyError, isClaimEligibleForCreditNote } from "./credit-note-claim-policy.ts"
-import { getCustomerClaimHeadline } from "./claim-shipment-view.ts"
 
 // Matriz de resoluciones: única fuente de verdad de qué activa cada solución.
 // Si alguien cambia la UI o agrega una resolución, estos casos fijan el contrato.
@@ -193,20 +192,4 @@ test("estado comercial: separado del estado logístico de Andreani", () => {
   assert.equal(status({ resolution: "saldo_a_favor" }), "Saldo pendiente")
   assert.equal(status({ status: "cerrado", cancelled: true }), "Cancelado")
   assert.equal(status({ status: "cerrado" }), "Resuelto")
-})
-
-test("cliente: una frase por momento, sin datos internos", () => {
-  const leg = (direction: string, status: string, extra: Record<string, unknown> = {}) =>
-    ({ id: 1, direction, status, ...extra }) as never
-  const headline = (claim: Partial<Parameters<typeof getCustomerClaimHeadline>[0]>) =>
-    getCustomerClaimHeadline({ status: "aprobado", resolution: "cambio_producto", ...claim })
-  assert.equal(headline({ status: "en_revision" }), "Recibimos tu reclamo")
-  assert.equal(headline({ order_claim_shipments: [leg("devolucion", "generada")] }), "Esperamos que lleves el producto a Andreani")
-  assert.equal(headline({ order_claim_shipments: [leg("devolucion", "en_transito")] }), "Tu producto está en camino a BEYONIX")
-  assert.equal(headline({ order_claim_shipments: [leg("devolucion", "entregada", { closed_at: "x" })] }), "Recibimos tu producto: preparando tu reemplazo")
-  assert.equal(headline({ order_claim_shipments: [leg("reemplazo", "en_transito")] }), "Tu reemplazo está en camino")
-  assert.equal(headline({ status: "cerrado", order_claim_shipments: [leg("reemplazo", "entregada", { closed_at: "x" })] }), "Tu reemplazo fue entregado")
-  assert.equal(headline({ resolution: "reintegro_total" }), "Estamos procesando tu reintegro")
-  assert.equal(headline({ status: "cerrado", resolution: "reintegro_total" }), "Tu reintegro fue procesado")
-  assert.equal(headline({ status: "cerrado", resolution: "saldo_a_favor" }), "Tu saldo a favor fue acreditado")
 })

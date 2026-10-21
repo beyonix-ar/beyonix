@@ -259,7 +259,7 @@ test("4-5. Mis compras nunca marca leído; sólo la página del reclamo, con lo 
 test("9. click en la notificación abre el reclamo del pedido correcto", () => {
   assert.match(migration, /'\/cuenta\/compras\/' \|\| v_claim\.order_id \|\| '\/ayuda'/)
   const bell = readSource("../../components/customer-notifications-bell.tsx")
-  assert.match(bell, /notification\.type === "claim_response" \|\|[\s\S]*?return `\/cuenta\/compras\/\$\{notification\.order_id\}\$\{opensClaim \? "\/ayuda" : ""\}`/)
+  assert.match(bell, /const opensClaim = getCustomerClaimNotificationCta\(notification\.type\) !== null\s*return `\/cuenta\/compras\/\$\{notification\.order_id\}\$\{opensClaim \? "\/ayuda" : ""\}`/)
 })
 
 test("realtime: badge y campana se actualizan con el realtime existente", () => {

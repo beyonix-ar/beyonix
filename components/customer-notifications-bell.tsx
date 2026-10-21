@@ -30,6 +30,7 @@ import {
   ACCOUNT_NOTIFICATION_DANGER,
   isCustomerNotificationSensitive,
 } from "@/lib/account/account-notification-visuals"
+import { getCustomerClaimNotificationCta } from "@/lib/orders/customer-claim-experience"
 import { cn } from "@/lib/utils"
 
 interface CustomerNotificationsBellProps {
@@ -50,6 +51,7 @@ function getNotificationIcon(type: string) {
   if (type === "payment_proof_pending") return Clock3
   if (type === "payment_proof_received") return Clock3
   if (type === "claim_resolved") return BadgeCheck
+  if (type === "claim_update") return PackageCheck
   if (type === "admin_message" || type === "claim_response" || type === "help_message_started") return MessageCircle
   if (type === "offer" || type === "oferta") return Tag
   if (type === "promocion" || type === "producto_destacado") return Sparkles
@@ -104,11 +106,7 @@ function getNotificationActionUrl(notification: SupabaseCustomerNotification) {
   const url = new URL(actionUrl, window.location.origin)
   if (url.pathname !== "/cuenta") return actionUrl
 
-  const opensClaim =
-    notification.type === "admin_message" ||
-    notification.type === "claim_response" ||
-    notification.type === "claim_resolved" ||
-    notification.type === "help_message_started"
+  const opensClaim = getCustomerClaimNotificationCta(notification.type) !== null
 
   return `/cuenta/compras/${notification.order_id}${opensClaim ? "/ayuda" : ""}`
 }
@@ -443,6 +441,7 @@ export function CustomerNotificationsBell({
                 {notifications.map((notification) => {
                   const NotificationIcon = getNotificationIcon(notification.type)
                   const sensitive = isCustomerNotificationSensitive(notification.type)
+                  const cta = getCustomerClaimNotificationCta(notification.type)
 
                   return (
                     <button
@@ -486,8 +485,15 @@ export function CustomerNotificationsBell({
                         <span className="beyonix-notifications-item-body mt-0.5 line-clamp-2 block text-xs leading-5 text-[#C8C8C8]">
                           {notification.body}
                         </span>
-                        <span className="beyonix-notifications-panel-muted mt-1 block text-10px text-[#9CA3AF]">
-                          {formatRelativeDate(notification.created_at)}
+                        <span className="mt-1 flex items-center justify-between gap-2">
+                          <span className="beyonix-notifications-panel-muted text-10px text-[#9CA3AF]">
+                            {formatRelativeDate(notification.created_at)}
+                          </span>
+                          {cta && (
+                            <span data-notification-cta className="text-xs font-bold text-beyonix-sky group-hover:underline">
+                              {cta}
+                            </span>
+                          )}
                         </span>
                         {notification.target_items?.length ? (
                           <span className="mt-2 flex flex-wrap gap-1.5">

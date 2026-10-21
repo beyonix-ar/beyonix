@@ -151,20 +151,21 @@ async function open(scenario: string, theme: "dark" | "light" = "dark"): Promise
     route.request().url().startsWith("http://localhost/claim") ? route.fulfill({ contentType: "text/html", body: html }) : route.abort(),
   )
   await page.goto(`http://localhost/claim?scenario=${scenario}`)
-  await page.waitForSelector("[data-testid=customer-claim-resolution]")
+  await page.waitForSelector("[data-testid=customer-claim-status]")
   await page.waitForSelector("[data-testid=admin-claim-resolution]")
   return page
 }
 
 const text = async (page: Page, selector: string) => (await page.locator(selector).innerText()).replace(/\s+/g, " ").trim()
-const CUSTOMER = "[data-testid=customer-claim-resolution]"
+// Cliente: un solo estado en palabras simples (CustomerClaimStatusCard).
+const CUSTOMER = "[data-testid=customer-claim-status]"
 const ADMIN = "[data-testid=admin-claim-resolution]"
 
 test("8-9. saldo a favor: cliente y admin muestran resolución, detalle y monto", async () => {
   const page = await open("saldo")
   try {
     const customer = await text(page, CUSTOMER)
-    assert.match(customer, /^Resolución del reclamo Resolución Saldo a favor Detalle Se acreditaron \$27\.900 en tu cuenta BEYONIX\. Saldo acreditado \$\s?27\.900$/)
+    assert.match(customer, /^Listo Reclamo resuelto Tu saldo a favor ya está disponible\. Monto: \$\s?27\.900$/)
     const admin = await text(page, ADMIN)
     // Desde el wizard de reclamos (507b007) el cierre muestra su fecha debajo del título.
     assert.match(admin, /^Reclamo finalizado \d{1,2}\/\d{1,2}\/\d{2,4}, [^R]+ Resolución Saldo a favor Detalle Se acreditaron \$27\.900 en tu cuenta BEYONIX\. Saldo acreditado \$\s?27\.900/)
@@ -178,12 +179,10 @@ test("8-9. saldo a favor: cliente y admin muestran resolución, detalle y monto"
 test("7. rechazo: bloque único con motivo (sin duplicar el aviso anterior)", async () => {
   const page = await open("rechazado", "light")
   try {
-    // Bloque compacto: título, resolución y motivo (sin el rótulo "Detalle").
-    assert.equal(await text(page, CUSTOMER), "Resolución del reclamo Resolución: Reclamo no aprobado Motivo: El producto presenta daño por mal uso.")
-    // Motivo: una vez en el bloque y otra en el mensaje de cierre del chat
-    // (el bloque de rechazo anterior lo repetía una tercera vez).
+    assert.equal(await text(page, CUSTOMER), "No aprobado Tu reclamo no fue aprobado Motivo: El producto presenta daño por mal uso.")
+    // El motivo aparece una sola vez: el mensaje automático de cierre no se repite en el chat.
     const customerText = await page.locator("#customer-root").innerText()
-    assert.equal(customerText.split("daño por mal uso").length - 1, 2, "sin el bloque de rechazo anterior")
+    assert.equal(customerText.split("daño por mal uso").length - 1, 1, "sin repetir el cierre en el chat")
     assert.match(await text(page, ADMIN), /^Reclamo rechazado \d{1,2}\/\d{1,2}\/\d{2,4}, [^R]+ Resolución Reclamo no aprobado Detalle Motivo: El producto presenta daño por mal uso\./)
   } finally { await page.close() }
 })
@@ -192,14 +191,15 @@ test("admin: cambio de producto suma las unidades de reemplazo registradas", asy
   const page = await open("cambio")
   try {
     assert.match(await text(page, ADMIN), /Resolución Cambio de producto Detalle Se registró el reemplazo correspondiente\. Reemplazo 1 unidad registrada con salida de stock\./)
-    assert.match(await page.locator("#customer-root").innerText(), /Resolución: Cambio de producto\./, "el mensaje de cierre queda en el chat")
+    assert.equal(await text(page, CUSTOMER), "Listo Reclamo resuelto Te enviamos un producto nuevo.")
+    assert.doesNotMatch(await page.locator("#customer-root").innerText(), /Resolución:/, "el cierre automático no se repite en el chat")
   } finally { await page.close() }
 })
 
 test("13. histórico sin resumen: 'Reclamo finalizado' sin inventar resolución", async () => {
   const page = await open("historico")
   try {
-    assert.equal(await text(page, CUSTOMER), "Resolución del reclamo Resolución Reclamo finalizado")
+    assert.equal(await text(page, CUSTOMER), "Listo Reclamo resuelto Te enviamos un producto nuevo.")
     assert.equal(await page.locator(`${ADMIN} dl`).count(), 0)
     assert.equal(await page.locator(CUSTOMER).getByText("Cambio de producto").count(), 0)
   } finally { await page.close() }
@@ -241,5 +241,5 @@ test("historial y campana: contratos de integración", () => {
   assert.match(pedidos, /title: claimIsHelpMessage \? baseTitle : getClaimResolutionHistoryTitle\(baseTitle, claim\),/)
   const bell = readFileSync("components/customer-notifications-bell.tsx", "utf8")
   assert.match(bell, /if \(type === "claim_resolved"\) return BadgeCheck/)
-  assert.match(bell, /notification\.type === "claim_resolved" \|\|/)
+  assert.match(bell, /const opensClaim = getCustomerClaimNotificationCta\(notification\.type\) !== null/)
 })

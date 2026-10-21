@@ -27,7 +27,6 @@ import {
   CLAIM_TEXT_MAX_LENGTH,
   getClaimEligibilityError,
   isClaimOrderDelivered,
-  getOrderClaimResolutionLabel,
   ORDER_CLAIM_FILE_MAX_BYTES,
   ORDER_CLAIM_IMAGE_MAX_BYTES,
   ORDER_CLAIM_VIDEO_MAX_BYTES,
@@ -45,9 +44,13 @@ import {
   WHOLE_ORDER_SELECTION,
 } from "@/lib/claims/claim-unit-selection"
 import { formatClaimResolutionAmount, getClaimResolutionView } from "@/lib/orders/claim-resolution"
-import { CustomerClaimShipmentsNotice } from "@/components/claims/customer-claim-shipments-notice"
-import { getClaimLinesSummary, getClaimRequirements, getClaimResolutionLines, isMixedClaimResolution } from "@/lib/orders/claim-policy"
-import { getCustomerClaimHeadline } from "@/lib/orders/claim-shipment-view"
+import { getClaimLinesSummary, getClaimResolutionLines, isMixedClaimResolution } from "@/lib/orders/claim-policy"
+import { CustomerClaimHistory, CustomerClaimStatusCard } from "@/components/claims/customer-claim-status"
+import {
+  getCustomerClaimConversation,
+  getCustomerClaimHistory,
+  getCustomerClaimSummary,
+} from "@/lib/orders/customer-claim-experience"
 import {
   countUnreadBeyonixMessages,
   getLatestBeyonixMessage,
@@ -260,9 +263,9 @@ function getItemVariant(item: NonNullable<SupabasePedido["orden_items"]>[number]
     || "Sin variante"
 }
 
+// Cancelaciones y consultas de ayuda. El reclamo formal usa CustomerClaimStatusCard.
 function getClaimStatusInfo(claim: SupabaseOrderClaim) {
   const cancellation = claim.failure_type === "cancelar_compra"
-  const helpMessage = claim.failure_type === HELP_MESSAGE_PROBLEM_TYPE
   const base = "border-blue-300/25 bg-[#112A43]/35"
 
   if (cancellation) {
@@ -278,41 +281,10 @@ function getClaimStatusInfo(claim: SupabaseOrderClaim) {
     return { label: "Compra cancelada", dot: "bg-blue-300", style: base }
   }
 
-  if (helpMessage) {
-    if (claim.status === "rechazado") return { label: "Consulta cerrada", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
-    if (claim.status === "cerrado") return { label: "Consulta resuelta", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
-    if (claim.status === "falta_informacion") return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
-    return { label: "Mensaje recibido", dot: "bg-blue-300", style: base }
-  }
-
-  // Reclamo en curso: una frase según la solución y el tramo Andreani vigente.
-  if (claim.status === "recibido") {
-    return {
-      label: getCustomerClaimHeadline(claim),
-      dot: "bg-emerald-200",
-      style: "border-emerald-200/45 bg-emerald-300/12 text-emerald-50",
-    }
-  }
-  if (claim.status === "en_revision") return { label: getCustomerClaimHeadline(claim), dot: "bg-blue-300", style: base }
+  if (claim.status === "rechazado") return { label: "Consulta cerrada", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
+  if (claim.status === "cerrado") return { label: "Consulta resuelta", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
   if (claim.status === "falta_informacion") return { label: "Esperando tu respuesta", dot: "bg-blue-300", style: base }
-  if (["aprobado", "reintegro_pendiente", "cambio_pendiente", "cupon_pendiente", "reemplazo_enviado"].includes(claim.status)) {
-    return { label: getCustomerClaimHeadline(claim), dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
-  }
-  if (claim.status === "rechazado") return { label: "Reclamo rechazado", dot: "bg-red-300", style: "border-red-300/25 bg-red-400/8" }
-  if (claim.status === "cerrado" && claim.cancelled_at) return { label: "Reclamo cancelado", dot: "bg-slate-300", style: base }
-  if (claim.status === "cerrado") return { label: "Reclamo finalizado", dot: "bg-[#77E6E2]", style: "border-[#77E6E2]/25 bg-[#77E6E2]/8" }
-
-  return { label: "En revisión por BEYONIX", dot: "bg-blue-300", style: base }
-}
-
-// Solución aprobada de un reclamo abierto (el estado vive en la etiqueta del
-// encabezado). Terminado: ver getClaimResolutionView.
-function getCustomerSolutionLabel(claim: SupabaseOrderClaim) {
-  if (["cerrado", "rechazado"].includes(claim.status)) return null
-  const resolution = claim.resolution ?? claim.customer_selected_resolution
-  // Reclamo mixto: qué recibe por unidad ("1 reemplazo · 1 reintegro").
-  if (isMixedClaimResolution(resolution)) return getClaimLinesSummary(getClaimResolutionLines(claim)) || getOrderClaimResolutionLabel(resolution)
-  return getClaimRequirements(resolution) ? getOrderClaimResolutionLabel(resolution) : null
+  return { label: "Mensaje recibido", dot: "bg-blue-300", style: base }
 }
 
 function FilePreview({ file }: { file: SupabaseOrderClaimFile }) {
@@ -917,15 +889,21 @@ export function CustomerClaimExperience({
   if (claim) {
     const cancellation = claim.failure_type === "cancelar_compra"
     const helpMessage = claim.failure_type === HELP_MESSAGE_PROBLEM_TYPE
+    // Reclamo formal: estado arriba, historial plegado y sólo conversación real.
+    const formalClaim = !cancellation && !helpMessage
     const info = getClaimStatusInfo(claim)
     const messages = sortUniqueMessages(claim.order_claim_messages)
     const hideClosedHelpMetadata = helpMessage && claim.status === "cerrado"
-    const visibleMessages = hideClosedHelpMetadata
-      ? messages.filter((message) => {
-          const text = message.message.trim()
-          return !/^Esta conversación fue cerrada el .+ por BEYONIX\.$/.test(text)
-        })
+    const conversation = formalClaim
+      ? getCustomerClaimConversation({ ...claim, order_claim_messages: messages })
       : messages
+          .filter((message) => !hideClosedHelpMetadata || !/^Esta conversación fue cerrada el .+ por BEYONIX\.$/.test(message.message.trim()))
+          .map((message) => ({
+            id: message.id,
+            fromCustomer: message.author_role === "cliente",
+            message: message.message,
+            created_at: message.created_at,
+          }))
     const customerTurnLocked = messages[messages.length - 1]?.author_role === "cliente"
     const open = !["cerrado", "rechazado"].includes(claim.status)
     const claimFiles = claim.order_claim_files ?? []
@@ -937,10 +915,8 @@ export function CustomerClaimExperience({
     const refundPending =
       claim.status === "reintegro_pendiente" &&
       ["reintegro_total", "reintegro_parcial"].includes(claim.resolution ?? claim.customer_selected_resolution ?? "")
-    const solutionLabel = helpMessage || cancellation ? null : getCustomerSolutionLabel(claim)
-    // Reclamo terminado: la resolución persistida reemplaza los avisos de
-    // "solución en proceso" y de rechazo (misma información, fuente única).
-    const resolutionView = helpMessage ? null : getClaimResolutionView(claim)
+    // Cancelación terminada: la resolución persistida reemplaza el aviso de rechazo.
+    const resolutionView = cancellation ? getClaimResolutionView(claim) : null
     const refundDetailsSubmitted = Boolean(claim.refund_details_submitted_at)
 
     return (
@@ -960,10 +936,9 @@ export function CustomerClaimExperience({
           <div className="min-w-0">
             <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-300">
               {getOrderCode(order.id)} · {hideClosedHelpMetadata ? "Ayuda" : (PROBLEM_LABELS[claim.failure_type ?? ""] ?? "Reclamo")}
-              {solutionLabel && <span data-testid="customer-claim-solution"> · Solución: {solutionLabel}</span>}
             </p>
             <h3 className="mt-1 text-xl font-black leading-6 text-white">
-              {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Chat de ayuda" : "Chat del reclamo"}
+              {cancellation ? "Seguimiento de cancelación" : helpMessage ? "Chat de ayuda" : "Tu reclamo"}
             </h3>
             {!hideClosedHelpMetadata && (cancellation || helpMessage) && (
               <p className="mt-1 max-w-3xl text-sm font-semibold leading-5 text-[#9EB4C8]">
@@ -983,7 +958,7 @@ export function CustomerClaimExperience({
                 <p className="mt-1 text-xs font-bold leading-none text-emerald-50/78">Finalizado</p>
               </div>
             </div>
-          ) : (
+          ) : formalClaim ? null : (
             <span className={`inline-flex w-fit shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black text-white ${info.style}`}>
               <span className={`size-2 rounded-full ${info.dot}`} />
               {info.label}
@@ -1011,7 +986,7 @@ export function CustomerClaimExperience({
                 </span>
                 <div className="min-w-0 text-[13px] leading-5">
                   <p className="font-black text-[var(--account-danger-text)]">
-                    {cancellation ? "Resolución de la cancelación" : "Resolución del reclamo"}
+                    Resolución de la cancelación
                   </p>
                   <p className="text-[var(--account-text-primary)]">
                     <span className="font-bold text-[var(--account-text-secondary)]">Resolución:</span>{" "}
@@ -1035,7 +1010,7 @@ export function CustomerClaimExperience({
               </span>
               <div className="min-w-0">
                 <p className="text-xs font-black text-[#D7FFFD]">
-                  {cancellation ? "Resolución de la cancelación" : "Resolución del reclamo"}
+                  Resolución de la cancelación
                 </p>
                 <dl className="mt-1.5 grid gap-1.5 text-xs leading-5">
                   <div>
@@ -1061,7 +1036,7 @@ export function CustomerClaimExperience({
           </div>
         )}
 
-        {!resolutionView && claim.rejection_reason && (
+        {!formalClaim && !resolutionView && claim.rejection_reason && (
           <div className="border-b border-l-4 border-[var(--account-danger-border)] border-l-[var(--account-danger)] bg-[var(--account-danger-bg)] px-4 py-2">
             <div className="flex items-start gap-2.5">
               <span className="mt-px flex size-5 shrink-0 items-center justify-center rounded-full border border-[var(--account-danger-border)] bg-[var(--account-surface)]">
@@ -1091,11 +1066,31 @@ export function CustomerClaimExperience({
           </div>
         )}
 
-        {!helpMessage && !cancellation && <CustomerClaimShipmentsNotice claim={claim} />}
+        {formalClaim && (
+          <>
+            <CustomerClaimStatusCard
+              summary={getCustomerClaimSummary(claim)}
+              returnLabelUrl={`/api/orders/${claim.order_id}/claims/${claim.id}/return-label`}
+            />
+            {isMixedClaimResolution(claim.resolution) && (
+              <p className="border-b border-[var(--account-border-subtle)] px-5 py-3 text-sm font-semibold text-[var(--account-text-primary)]">
+                Solución por producto: {getClaimLinesSummary(getClaimResolutionLines(claim))}
+              </p>
+            )}
+            <CustomerClaimHistory steps={getCustomerClaimHistory(claim)} />
+            <p className="bg-[#070C12] px-5 pt-4 text-[11px] font-black uppercase tracking-wide text-blue-200/80">Mensajes</p>
+          </>
+        )}
 
-        <div ref={chatRef} className="customer-claim-chat-thread min-h-[22rem] max-h-[34rem] space-y-4 overflow-y-auto bg-[#070C12] px-5 py-5">
-          {visibleMessages.map((message) => {
-            const customer = message.author_role === "cliente"
+        <div
+          ref={chatRef}
+          role="log"
+          aria-label="Mensajes del reclamo"
+          data-testid="customer-claim-conversation"
+          className={`customer-claim-chat-thread space-y-4 overflow-y-auto bg-[#070C12] px-5 py-5 ${formalClaim ? "min-h-[10rem] max-h-[28rem]" : "min-h-[22rem] max-h-[34rem]"}`}
+        >
+          {conversation.map((message) => {
+            const customer = message.fromCustomer
             return (
               <div key={message.id} className={`flex ${customer ? "justify-end" : "justify-start"}`}>
                 <div className={`customer-claim-chat-message max-w-[86%] rounded-2xl px-4 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.22)] sm:max-w-[72%] ${customer ? "rounded-br-md border border-[#2C6CA3]/35 bg-[#112A43]" : "rounded-bl-md border border-white/9 bg-[#101820]"}`}>
@@ -1108,7 +1103,7 @@ export function CustomerClaimExperience({
               </div>
             )
           })}
-          {visibleMessages.length === 0 && (
+          {conversation.length === 0 && (
             <p className="rounded-xl border border-white/8 bg-[#101820] px-4 py-3 text-sm font-semibold text-white/65">
               La conversación todavía no tiene mensajes.
             </p>
@@ -1226,8 +1221,7 @@ export function CustomerClaimExperience({
                   data-testid="customer-claim-finished-notice"
                   className="rounded-lg border border-[#77E6E2]/20 bg-[#77E6E2]/5 px-3 py-1.5 text-xs font-semibold leading-5 text-white/70"
                 >
-                  <span className="font-black text-[#D7FFFD]">Reclamo finalizado.</span>{" "}
-                  Por otras consultas, escribinos a{" "}
+                  Si necesitás ayuda, escribinos a{" "}
                   <span className="font-bold text-[#D7FFFD]">{SUPPORT_EMAIL}</span>
                 </p>
               )}

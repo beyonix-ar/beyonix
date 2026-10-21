@@ -28,22 +28,20 @@ const unit = (role: "original" | "reemplazo", location: ClaimUnitSource["locatio
   id: ++unitId, order_item_id: 70, role, location, shipment_id: null, incident_open: false, ...overrides,
 })
 
-test("cliente distingue una entrega simulada QA de un evento real de Andreani", () => {
-  const view = getCustomerClaimShipmentView({ direction: "devolucion", status: "entregada", manual_status_override: "entregada" })
-  assert.match(view?.statusLabel ?? "", /Simulación QA/)
-  assert.ok(view?.instructions.some((line) => line.includes("simulada")))
-  assert.ok(!view?.instructions.some((line) => line.includes("Andreani informó")))
+test("cliente no ve una simulación QA ni se atribuye una entrega a Andreani", () => {
+  const view = getCustomerClaimShipmentView(leg({ direction: "devolucion", status: "entregada", manual_status_override: "entregada", manual_status_override_kind: "qa_simulation" }))
+  assert.doesNotMatch(JSON.stringify(view), /Simulación|simulada|QA|Andreani informó|override/i)
+  assert.match(view?.instructions.join(" ") ?? "", /Registramos la entrega en BEYONIX/)
 })
 
 test("cliente: un reenvío forzado por BEYONIX no se ve como forzado ni simulado, ni se atribuye a Andreani", () => {
-  const view = getCustomerClaimShipmentView({ direction: "reemplazo", status: "entregada", andreani_tracking: "360000000041",
-    manual_status_override: "entregada", manual_status_override_kind: "admin_override" })
+  const view = getCustomerClaimShipmentView(leg({ direction: "reemplazo", status: "entregada", andreani_tracking: "360000000041",
+    manual_status_override: "entregada", manual_status_override_kind: "admin_override" }))
   const text = [view?.statusLabel, ...(view?.instructions ?? [])].join(" ")
   assert.doesNotMatch(text, /forzad|Simulación|simulada|Andreani informó/i)
   assert.match(text, /Registramos la entrega de tu producto de reemplazo/)
   assert.equal(view?.tracking, "360000000041")
-  assert.match(CUSTOMER_CLAIM_SHIPMENT_COLUMNS, /manual_status_override_kind/)
-  assert.doesNotMatch(CUSTOMER_CLAIM_SHIPMENT_COLUMNS, /manual_status_override_note|andreani_envio_id/, "ni el motivo ni el ID interno")
+  assert.doesNotMatch(CUSTOMER_CLAIM_SHIPMENT_COLUMNS, /manual_status_override|manual_status_override_kind|manual_status_override_note|andreani_envio_id/, "sin datos de operación interna")
 })
 
 test("cliente, CAMBIO: sucursal, qué preparar y qué pasa si no entrega el original; nunca domicilio ni datos internos", () => {
@@ -378,9 +376,10 @@ test("UI: método explícito con confirmación, sucursal del catálogo, doble cl
     "cada paso operativo muestra sólo su parte de la logística")
   assert.doesNotMatch(panel, /Elegí una acción…|Recepción e inspección de unidades/, "sin el desplegable genérico de acciones")
   assert.doesNotMatch(panel, /modalityLabel/, "sin datos internos de contrato en pantalla")
-  const customer = read("components/claims/customer-claim-shipments-notice.tsx")
+  const customer = read("components/claims/customer-claim-status.tsx")
   assert.doesNotMatch(customer, /domicilio/i)
-  assert.match(customer, /\/api\/orders\/\$\{claim\.order_id\}\/claims\/\$\{claim\.id\}\/return-label/)
+  assert.match(customer, /href=\{returnLabelUrl\}/)
+  assert.match(read("components/claims/customer-claim-experience.tsx"), /\/api\/orders\/\$\{claim\.order_id\}\/claims\/\$\{claim\.id\}\/return-label/)
 })
 
 test("checklist automático y estado humano: CAMBIO DIRECTO avanza solo con los hechos reales", () => {

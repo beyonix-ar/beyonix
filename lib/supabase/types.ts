@@ -829,6 +829,8 @@ export interface SupabaseOrderClaimMessage {
   author_role: "cliente" | "operador" | "admin" | "super_admin"
   message: string
   created_at: string
+  /** Mensaje automático de un hito (idempotente); null = escrito por una persona. */
+  system_key?: string | null
 }
 
 export interface SupabaseOrderClaimAffectedItem {
@@ -929,6 +931,7 @@ export interface SupabaseOrderClaimShipment extends ClaimShipmentCustomerSource 
   creation_started_at?: string | null
   last_checked_at?: string | null
   manual_status_override?: ClaimShipmentStatus | null
+  manual_status_override_kind?: "qa_simulation" | "admin_override" | null
   manual_status_override_at?: string | null
   manual_status_override_note?: string | null
   review_required?: boolean | null

@@ -55,14 +55,13 @@ export interface ClaimShipmentCustomerSource {
   branch_custody_since?: string | null
   delivered_at?: string | null
   closed_at?: string | null
-  manual_status_override?: ClaimShipmentStatus | null
-  /** Simulación QA o estado forzado por un super admin (20261020120000). */
-  manual_status_override_kind?: "qa_simulation" | "admin_override" | null
 }
 
 /** Fila completa (sólo Admin). */
 export interface ClaimShipmentAdminSource extends ClaimShipmentCustomerSource {
   id: number
+  manual_status_override?: ClaimShipmentStatus | null
+  manual_status_override_kind?: "qa_simulation" | "admin_override" | null
   branch_id?: string | null
   creation_status?: ClaimShipmentCreationStatus | null
   creation_error?: string | null
@@ -90,7 +89,7 @@ export interface ClaimUnitSource {
 
 /** Columnas del embed seguro para el cliente (API de Mis compras). */
 export const CUSTOMER_CLAIM_SHIPMENT_COLUMNS =
-  "id,direction,attempt,status,modality,branch_name,branch_address,andreani_tracking,exchange_outcome,incident_open,branch_custody_since,delivered_at,closed_at,manual_status_override,manual_status_override_kind"
+  "id,direction,attempt,status,modality,branch_name,branch_address,andreani_tracking,exchange_outcome,incident_open,branch_custody_since,delivered_at,closed_at"
 
 export const CLAIM_RETURN_PACKING_INSTRUCTIONS =
   "Prepará el producto completo, con caja, bolsas, manuales, accesorios y todos los elementos recibidos, correctamente embalado y en el mejor estado posible."
@@ -185,7 +184,7 @@ export function formatClaimDate(value: string) {
     : date.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Argentina/Buenos_Aires" })
 }
 
-function branchLabel(source:Pick<ClaimShipmentCustomerSource, "branch_name" | "branch_address">) {
+export function claimBranchLabel(source: Pick<ClaimShipmentCustomerSource, "branch_name" | "branch_address">) {
   return [text(source.branch_name), text(source.branch_address)].filter(Boolean).join(" · ") || null
 }
 
@@ -213,22 +212,16 @@ export interface CustomerClaimShipmentView {
 export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource | null | undefined): CustomerClaimShipmentView | null {
   if (!source || source.status === "cancelada") return null
   const tracking = text(source.andreani_tracking) || null
-  const branch = branchLabel(source)
+  const branch = claimBranchLabel(source)
   const where = branch ?? "la sucursal Andreani indicada"
   const instructions: string[] = []
   let statusLabel = CUSTOMER_STATUS_LABELS[source.direction][source.status]
-  // Un estado forzado por BEYONIX (super admin) no es una simulación QA.
-  const forced = Boolean(source.manual_status_override) && source.manual_status_override_kind === "admin_override"
-  const simulated = Boolean(source.manual_status_override) && !forced
-
   if (source.direction === "cambio") {
     if (source.exchange_outcome === "no_completado") {
       statusLabel = "Cambio no completado"
       instructions.push("El cambio no se completó porque no se entregó el producto original. El producto nuevo vuelve a BEYONIX; te vamos a escribir por este medio para definir cómo seguimos.")
     } else if (source.exchange_outcome === "completado" || source.status === "entregada") {
-      instructions.push(simulated
-        ? "Estado simulado para pruebas QA. Cuando el original llegue a BEYONIX lo revisamos."
-        : "Andreani te entregó el producto nuevo y recibió el original. Cuando el original llegue a BEYONIX lo revisamos.")
+      instructions.push("Registramos la entrega del producto nuevo y la recepción del original. Cuando el original llegue a BEYONIX lo revisamos.")
     } else {
       instructions.push(CLAIM_RETURN_PACKING_INSTRUCTIONS)
       instructions.push(source.status === "pendiente"
@@ -240,9 +233,7 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
     }
   } else if (source.direction === "devolucion") {
     if (source.status === "entregada") {
-      instructions.push(simulated
-        ? "Entrega simulada para pruebas QA. La recepción física y la inspección se registran por separado."
-        : "Andreani informó la entrega en BEYONIX. Vamos a revisar el producto y te avisaremos por este medio cómo sigue.")
+      instructions.push("Registramos la entrega en BEYONIX. Vamos a revisar el producto y te avisaremos por este medio cómo sigue.")
     } else {
       instructions.push(CLAIM_RETURN_PACKING_INSTRUCTIONS)
       instructions.push(source.status === "pendiente"
@@ -253,11 +244,7 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
   } else if (source.status === "pendiente") {
     instructions.push("Estamos preparando el envío de tu producto de reemplazo.")
   } else if (source.status === "entregada") {
-    instructions.push(simulated
-      ? "Entrega simulada para pruebas QA."
-      : forced
-        ? "Registramos la entrega de tu producto de reemplazo."
-        : "Andreani informó que retiraste tu producto de reemplazo.")
+    instructions.push("Registramos la entrega de tu producto de reemplazo.")
   } else {
     instructions.push(`Retiralo en ${where} cuando Andreani te avise que está disponible. Llevá tu DNI.`)
   }
@@ -269,7 +256,6 @@ export function getCustomerClaimShipmentView(source: ClaimShipmentCustomerSource
     ? formatClaimDate(source.branch_custody_since)
     : null
   if (custodyDate) statusLabel = `${statusLabel} desde el ${custodyDate}`
-  if (simulated) statusLabel = `${statusLabel} · Simulación QA`
 
   return {
     direction: source.direction,
@@ -569,7 +555,7 @@ function adminLegView(source: ClaimShipmentAdminSource, units: ClaimUnitSource[]
     modalityLabel: source.modality
       ? (ADMIN_MODALITY_LABELS as Record<string, string>)[source.modality] ?? `${source.modality} (operación heredada)`
       : null,
-    branchLabel: [text(source.branch_id) && `Sucursal ${text(source.branch_id)}`, branchLabel(source)].filter(Boolean).join(" · ") || null,
+    branchLabel: [text(source.branch_id) && `Sucursal ${text(source.branch_id)}`, claimBranchLabel(source)].filter(Boolean).join(" · ") || null,
     tracking: text(source.andreani_tracking) || null,
     andreaniEstado: text(source.andreani_estado) || null,
     costLabel: cost != null && Number.isFinite(cost) ? `$ ${cost.toLocaleString("es-AR")}` : "No informado por Andreani",
@@ -1030,7 +1016,7 @@ export function getAdminClaimLogisticsView(input: {
   const incidents = units.filter((unit) => unit.incident_open).length + (reviewLeg ? 1 : 0)
   const summary: ClaimLogisticsSummary = {
     method: plan ? PLAN_LABELS[plan] : legacy ? "Flujo anterior (legacy)" : "Sin elegir",
-    branch: current ? branchLabel(current) || legView?.branchLabel || "Sin sucursal" : "Sin sucursal",
+    branch: current ? claimBranchLabel(current) || legView?.branchLabel || "Sin sucursal" : "Sin sucursal",
     status: humanStatus,
     andreani: legView ? `${legView.statusLabel}${legView.andreaniEstado ? ` · ${legView.andreaniEstado}` : ""}` : "Sin operación",
     inspection: (returnWaived || !units.some((unit) => unit.role === "original")) && !units.some((unit) => unit.location === "recibida_beyonix")

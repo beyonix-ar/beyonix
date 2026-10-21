@@ -265,12 +265,15 @@ export async function submitClaimUploadOperation(admin: Admin, actorId: string, 
     if (error || !claimId) throw error ?? new Error("CLAIM_CONFLICT")
     if (kind === "refund" || !payload.claimId) {
       const { data: recipient } = await admin.from("ordenes").select("cliente_email").eq("id", orderId).single()
+      const helpRequest = payload.problemType === "consulta_pedido"
       await sendOrderStatusEmail({
         to: recipient?.cliente_email,
-        subject: kind === "refund" ? "Reintegro registrado | BEYONIX" : "Solicitud recibida | BEYONIX",
+        subject: kind === "refund" ? "Reintegro registrado | BEYONIX" : helpRequest ? "Solicitud recibida | BEYONIX" : "Reclamo recibido | BEYONIX",
         html: kind === "refund"
           ? "<p>Registramos el reintegro de tu pedido. Podés ver el comprobante desde tu cuenta.</p>"
-          : "<p>Recibimos tu solicitud de ayuda. Podés consultar las respuestas y el seguimiento desde tu cuenta.</p>",
+          : helpRequest
+            ? "<p>Recibimos tu solicitud de ayuda. Podés consultar las respuestas y el seguimiento desde tu cuenta.</p>"
+            : "<p>Recibimos tu reclamo. Vamos a revisarlo y te avisamos por tu cuenta.</p>",
       })
     }
     return result(Number(claimId))

@@ -142,6 +142,8 @@ const TEST_FILES = [
   "lib/orders/claim-shipment-view.test.ts",
   "lib/orders/claim-shipment-trace.test.ts",
   "lib/orders/order-management-events.test.ts",
+  "lib/orders/customer-claim-experience.test.ts",
+  "lib/orders/claim-customer-milestones-sql.test.ts",
   "lib/andreani/tracking-sync-batch.test.ts",
   "lib/andreani/branch-delivery-sql-contract.test.ts",
   "lib/andreani/branch-delivery-ui.test.ts",
