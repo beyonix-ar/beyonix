@@ -69,3 +69,21 @@ export function progressPercent(done: number, total: number) {
   if (total <= 0) return 0
   return Math.min(100, Math.floor((Math.max(0, done) / total) * 100))
 }
+
+/**
+ * Confirmación de un Bulto finalizado. Acepta lo que trae su etiqueta: el QR
+ * (URL de control, sin comparar el dominio: pudo imprimirse desde otro host del
+ * admin), el código DSP de las etiquetas Code 128 o el nombre impreso
+ * ("Bulto - 0012") para tipearlo a mano.
+ */
+export function matchesDispatchBatch(value: string, batch: { id: number; code: string; display_number?: number | null }) {
+  const code = value.trim()
+  if (!code) return false
+  if (code.toUpperCase() === batch.code.toUpperCase()) return true
+  const name = /^BULTO-?0*(\d+)$/.exec(code.toUpperCase().replace(/\s+/g, ""))
+  if (name) return Number(name[1]) === (batch.display_number ?? batch.id)
+  try {
+    const url = new URL(code)
+    return (url.protocol === "https:" || url.protocol === "http:") && url.pathname.replace(/\/+$/, "") === `/admin/despachos/bultos/${batch.id}/control`
+  } catch { return false }
+}

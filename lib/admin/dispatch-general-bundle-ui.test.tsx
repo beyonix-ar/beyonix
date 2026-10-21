@@ -120,6 +120,19 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(input(), null)
     assert.ok(button(dom, "Imprimir etiqueta"))
     assert.ok(button(dom, "Guardar PDF"))
+
+    // Confirmación del Bulto finalizado con su QR: sólo en pantalla, no envía nada.
+    const postCount = posts.length
+    const qr = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar el QR del Bulto"]')!
+    await scanWithReader(dom, qr(), "https://beyonix.test/admin/despachos/bultos/6/control")
+    assert.match(control(), /El código no corresponde a este Bulto\./)
+    assert.doesNotMatch(control(), /Bulto confirmado/)
+    await scanWithReader(dom, qr(), "https://beyonix.test/admin/despachos/bultos/5/control")
+    assert.match(control(), /Bulto confirmado/)
+    assert.equal(qr().value, "")
+    await type(dom, qr(), "dsp-20261016-001"); await submit(dom, qr())
+    assert.match(control(), /Bulto confirmado/)
+    assert.equal(posts.length, postCount)
     assert.equal(posts.some((post) => post.action === "close" || post.action === "handover"), false)
     assert.doesNotMatch(text(), /Entregar a Andreani|Escanear o ingresar DSP/)
     assert.equal(dom.window.document.querySelector('button[aria-label="Opciones del Bulto"]'), null)

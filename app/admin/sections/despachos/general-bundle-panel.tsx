@@ -6,6 +6,7 @@ import { CheckCircle2, Circle, Download, Printer } from "lucide-react"
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
+import { matchesDispatchBatch } from "@/lib/admin/dispatch-scan"
 import { dispatchBatchControlUrl } from "@/lib/barcodes/labels-document"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { printLabels, saveBatchLabelsPdf } from "@/lib/barcodes/print-labels"
@@ -30,6 +31,8 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   const { batch, items } = detail
   const [scan, setScan] = useState("")
   const [feedback, setFeedback] = useState<Feedback | null>(null)
+  const [confirmation, setConfirmation] = useState("")
+  const [confirmFeedback, setConfirmFeedback] = useState<Feedback | null>(null)
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [reason, setReason] = useState("")
   const [busy, setBusy] = useState(false)
@@ -58,6 +61,16 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
       .then((updated) => { onChange(updated); onRefresh() })
       .catch((cause: unknown) => { setError(cause instanceof Error ? cause.message : "No se pudo finalizar el Bulto.") })
   }, [batch.id, batch.status, batch.verification_round, blocked, detail.expectedCount, detail.verifiedCount, onChange, onRefresh])
+
+  // Sólo verifica en pantalla que la etiqueta leída es la de este Bulto; no cambia su estado.
+  function confirmBundle(code: string) {
+    const next: Feedback = matchesDispatchBatch(code, batch)
+      ? { tone: "success", message: "Bulto confirmado" }
+      : { tone: "error", message: "El código no corresponde a este Bulto." }
+    setConfirmation("")
+    setConfirmFeedback(next)
+    playScanFeedback(next.tone)
+  }
 
   function report(next: Feedback) {
     setFeedback(next)
@@ -136,6 +149,12 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         {finalized && items.length > 0 && <div className="mt-4 flex flex-wrap gap-2">
           <AdminPrimaryButton icon={<Printer className="size-4" />} disabled={busy} onClick={() => void run(() => printLabels([{ kind: "batch", code: batch.code, details: labelDetails }], "single"))}>Imprimir etiqueta</AdminPrimaryButton>
           <AdminButton icon={<Download className="size-4" />} disabled={busy} onClick={() => void run(() => saveBatchLabelsPdf([batch.code], "single", { [batch.code]: labelDetails }))}>Guardar PDF</AdminButton>
+        </div>}
+        {finalized && items.length > 0 && <div className="mt-3">
+          <ScanField label="Escanear o ingresar el QR del Bulto" placeholder="Escanear / escribir QR del Bulto" submitLabel="Confirmar"
+            value={confirmation} onChange={setConfirmation} onScan={confirmBundle} autoFocus={dialog === null}
+            cameraTitle={dispatchBatchName(batch)} cameraHint="QR de la etiqueta del Bulto" feedback={confirmFeedback} />
+          {confirmFeedback && <p role={confirmFeedback.tone === "error" ? "alert" : "status"} className={`mt-2 text-sm font-bold ${confirmFeedback.tone === "error" ? "text-red-300" : "text-emerald-300"}`}>{confirmFeedback.message}</p>}
         </div>}
         {canVerify && <div className="mt-3"><ScanField label="Escanear o ingresar etiqueta Andreani" placeholder="Escanear / escribir etiqueta Andreani" submitLabel="Verificar"
           value={scan} onChange={(value) => { setScan(value); scanKey.current = null }} onScan={submitScan}

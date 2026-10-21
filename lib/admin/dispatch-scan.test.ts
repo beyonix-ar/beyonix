@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import { preparedOrderCode } from "./dispatch.ts"
-import { createCameraGate, normalizeScannedCode, orderIdFromDispatchCode, progressPercent, typedInputMethod } from "./dispatch-scan.ts"
+import { createCameraGate, matchesDispatchBatch, normalizeScannedCode, orderIdFromDispatchCode, progressPercent, typedInputMethod } from "./dispatch-scan.ts"
 
 test("método de lectura: lector USB (ráfaga), tipeo humano o pegado; todos van al mismo envío", () => {
   const burst = [0, 8, 15, 24, 31, 40, 47, 55, 63, 70, 78, 86]
@@ -53,4 +53,21 @@ test("progreso: nunca 100 % antes de completar ni más de 100 %", () => {
   assert.equal(progressPercent(7, 7), 100)
   assert.equal(progressPercent(9, 7), 100)
   assert.equal(progressPercent(3, 0), 0)
+})
+
+test("confirmación del Bulto: QR, código DSP o nombre impreso del mismo Bulto; nunca otro", () => {
+  const batch = { id: 42, code: "DSP-20261021-007", display_number: 12 }
+  assert.equal(matchesDispatchBatch("https://beyonix.com.ar/admin/despachos/bultos/42/control", batch), true)
+  assert.equal(matchesDispatchBatch("http://localhost:3000/admin/despachos/bultos/42/control/", batch), true, "otro host del admin")
+  assert.equal(matchesDispatchBatch(" dsp-20261021-007 ", batch), true)
+  assert.equal(matchesDispatchBatch("Bulto - 0012", batch), true)
+  assert.equal(matchesDispatchBatch("bulto 12", batch), true)
+  assert.equal(matchesDispatchBatch("https://beyonix.com.ar/admin/despachos/bultos/43/control", batch), false, "QR de otro Bulto")
+  assert.equal(matchesDispatchBatch("https://beyonix.com.ar/admin/despachos/bultos/42/control/extra", batch), false)
+  assert.equal(matchesDispatchBatch("javascript:/admin/despachos/bultos/42/control", batch), false)
+  assert.equal(matchesDispatchBatch("DSP-20261021-008", batch), false)
+  assert.equal(matchesDispatchBatch("Bulto - 0042", batch), false, "el id no es el número visible")
+  assert.equal(matchesDispatchBatch("Bulto - 0042", { id: 42, code: "DSP-20261021-007", display_number: null }), true, "sin número visible se usa el id")
+  assert.equal(matchesDispatchBatch("BX-PKG-1042-01", batch), false)
+  assert.equal(matchesDispatchBatch("", batch), false)
 })
