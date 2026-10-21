@@ -12,6 +12,7 @@ import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { andreaniShipmentCreated, DISPATCH_STAGE_LABELS, dispatchStage, orderCode, readyForGeneralBundle, type BatchDispatchDetail, type DispatchBatch, type DispatchHold, type DispatchMembership, type DispatchOrder, type DispatchPackage, type DispatchStage } from "@/lib/admin/dispatch"
 import { dispatchBatchName, dispatchQueueStatus, selectVisibleOrders } from "@/lib/admin/dispatch-queue"
 import { defaultDispatchFilters, dispatchFilterParams, dispatchPageCount, type DispatchBoardTab, type DispatchBoardFilters } from "@/lib/admin/dispatch-board-filters"
+import { defaultDispatchBoardView, DISPATCH_VIEW_KEY, dispatchLocationFromSearch, dispatchLocationHref, dispatchTabForStage, parseDispatchLocation, restoreDispatchBoardView, type DispatchLocation } from "@/lib/admin/dispatch-location"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchFilterBar } from "./dispatch-filter-bar"
 import { DeliveredBatchPanel } from "./delivered-batch-panel"
@@ -41,6 +42,10 @@ function writeSelection(selection: Set<number>) {
   try { window.sessionStorage.setItem(SELECTION_KEY, JSON.stringify([...selection])) } catch { /* Preferencia local opcional. */ }
 }
 
+function readView() {
+  try { return restoreDispatchBoardView(window.sessionStorage.getItem(DISPATCH_VIEW_KEY)) } catch { return defaultDispatchBoardView() }
+}
+
 function dateTime(value: string | null | undefined) {
   return value ? new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—"
 }
@@ -57,14 +62,14 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "open", label: "Bultos" }, { key: "delivered", label: "Entregados" },
 ]
 
-export function AdminDispatches({ initialBatchId, initialOrderId, initialResolveId }: { initialBatchId?: string; initialOrderId?: string; initialResolveId?: string }) {
-  const [tab, setTab] = useState<Tab>(initialBatchId ? "open" : "armado")
+export function AdminDispatches({ initialTab, initialBatchId, initialOrderId, initialResolveId }: { initialTab?: string; initialBatchId?: string; initialOrderId?: string; initialResolveId?: string }) {
+  // Pestaña, pedido y Bulto abiertos viven en la URL (refrescar/volver/otra pestaña).
+  const [location, setLocation] = useState<DispatchLocation>(() => parseDispatchLocation({ tab: initialTab, order: initialOrderId, batch: initialBatchId }))
   const [board, setBoard] = useState<Board | null>(null)
-  const [orderId, setOrderId] = useState<number | null>(null)
   const [queue, setQueue] = useState<number[]>([])
-  const [batch, setBatch] = useState<BatchDispatchDetail | null>(null)
+  const [loadedBatch, setBatch] = useState<BatchDispatchDetail | null>(null)
+  const [batchReload, setBatchReload] = useState(0)
   const [resolving, setResolving] = useState<DispatchHold | null>(null)
-  const [resolutionReturnBatchId, setResolutionReturnBatchId] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [liveUpdating, setLiveUpdating] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -77,8 +82,42 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
   const busyRef = useRef(false)
   const refreshVersion = useRef(0)
   const resolveHandled = useRef(false)
+  const viewRestored = useRef(false)
+  // true = el detalle abierto se apiló desde la lista: Volver = atrás del navegador.
+  const pushedDetail = useRef(false)
 
-  useEffect(() => { setSelected(readSelection()) }, [])
+  const orderId = location.orderId
+  const batch = loadedBatch && loadedBatch.batch.id === location.batchId ? loadedBatch : null
+  const tab: Tab = batch ? (batch.batch.status === "handed_over" ? "delivered" : "open") : location.tab ?? (location.batchId ? "open" : "armado")
+
+  const navigate = useCallback((next: DispatchLocation, mode: "push" | "replace") => {
+    const href = dispatchLocationHref(next)
+    try { if (mode === "push") window.history.pushState(null, "", href); else window.history.replaceState(null, "", href) } catch { /* La vista igual se actualiza. */ }
+    setLocation(next)
+  }, [])
+  useEffect(() => {
+    const onPopState = () => { pushedDetail.current = false; setLocation(dispatchLocationFromSearch(window.location.search)) }
+    window.addEventListener("popstate", onPopState)
+    return () => window.removeEventListener("popstate", onPopState)
+  }, [])
+  const locationRef = useRef(location)
+  useEffect(() => { locationRef.current = location }, [location])
+  // Enlace directo sin pestaña (p. ej. desde Pedidos): la etapa real ubica el pedido en su cola.
+  const reportOrderStage = useCallback((stage: DispatchStage) => {
+    const current = locationRef.current
+    if (current.orderId && !current.tab) navigate({ ...current, tab: dispatchTabForStage(stage) }, "replace")
+  }, [navigate])
+
+  // Filtros y página de cada pestaña sobreviven a volver desde otra pantalla.
+  useEffect(() => {
+    if (!viewRestored.current) return
+    try { window.sessionStorage.setItem(DISPATCH_VIEW_KEY, JSON.stringify({ filters: filtersByTab, pages })) } catch { /* Preferencia local opcional. */ }
+  }, [filtersByTab, pages])
+  useEffect(() => {
+    const view = readView()
+    viewRestored.current = true
+    setFiltersByTab(view.filters); setPages(view.pages); setSelected(readSelection())
+  }, [])
   const filters = filtersByTab[tab]
   const query = dispatchFilterParams(tab, filters, pages[tab])
   const latestQuery = useRef(query)
@@ -92,12 +131,17 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     finally { if (current === refreshVersion.current && query === latestQuery.current) setLoading(false) }
   }, [query])
 
-  const openBatch = useCallback(async (id: number) => {
+  const batchId = location.batchId
+  useEffect(() => {
+    if (!batchId) return
+    let active = true
     setLoading(true); setError("")
-    try { const detail = await dispatchRequest<BatchDispatchDetail>(`/batches/${id}`); setBatch(detail); setTab(detail.batch.status === "handed_over" ? "delivered" : "open"); setOrderId(null); setResolving(null) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo abrir el Bulto general.") }
-    finally { setLoading(false) }
-  }, [])
+    dispatchRequest<BatchDispatchDetail>(`/batches/${batchId}`)
+      .then((detail) => { if (active) setBatch(detail) })
+      .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "No se pudo abrir el Bulto general.") })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [batchId, batchReload])
 
   useEffect(() => { const timer = setTimeout(() => void refresh(), /(?:search|operator|batch|sku|tracking)=/.test(query) ? 250 : 0); return () => clearTimeout(timer) }, [refresh, query])
   const activeBatchId = batch?.batch.id
@@ -137,15 +181,6 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       document.removeEventListener("visibilitychange", onFocus)
     }
   }, [activeBatchId, query])
-  useEffect(() => {
-    const id = Number(initialOrderId)
-    if (Number.isSafeInteger(id) && id > 0) { setOrderId(id); setTab("armado") }
-    else if (initialBatchId) {
-      const batchId = Number(initialBatchId)
-      if (Number.isSafeInteger(batchId) && batchId > 0) void openBatch(batchId)
-    }
-  }, [initialBatchId, initialOrderId, openBatch])
-
   const holds = useMemo(() => board?.holds ?? [], [board])
   // Acceso directo desde la alerta: /admin/despachos?resolve=<pedido>.
   useEffect(() => {
@@ -154,7 +189,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     if (!Number.isSafeInteger(id) || id <= 0) return
     resolveHandled.current = true
     const hold = holds.find((item) => item.orderId === id)
-    if (hold) { setResolving(hold); setOrderId(null); setBatch(null) }
+    if (hold) setResolving(hold)
   }, [board, holds, initialResolveId])
 
   async function run(action: () => Promise<void>) {
@@ -186,20 +221,33 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     setSelected((current) => { const next = selectVisibleOrders(current, ids, checked); writeSelection(next); return next })
   }
 
+  /** Abre un pedido o un Bulto: desde la lista se apila (Atrás vuelve a la lista); entre detalles se reemplaza. */
+  function openDetail(next: { tab: Tab; orderId?: number; batchId?: number }) {
+    const fromList = !location.orderId && !location.batchId
+    navigate({ tab: next.tab, orderId: next.orderId ?? null, batchId: next.batchId ?? null }, fromList ? "push" : "replace")
+    if (fromList) pushedDetail.current = true
+    setResolving(null); setError(""); setNotice("")
+  }
+  function openOrder(id: number) { openDetail({ tab, orderId: id }) }
   function startArmado(ids: number[]) {
     if (!ids.length) return
-    setQueue(ids); setOrderId(ids[0]); setBatch(null); setResolving(null); setError(""); setNotice("")
+    setQueue(ids); openOrder(ids[0])
+  }
+  /** Volver a la pestaña desde donde se entró, con sus filtros y página. */
+  function closeDetail() {
+    setQueue([]); setError(""); setNotice("")
+    if (pushedDetail.current) { pushedDetail.current = false; window.history.back() }
+    else navigate({ tab, orderId: null, batchId: null }, "replace")
+    void refresh()
   }
 
   function openResolution(hold: DispatchHold) {
-    setResolutionReturnBatchId(batch?.batch.id ?? null)
-    setResolving(hold); setOrderId(null); setQueue([]); setBatch(null); setError("")
+    setResolving(hold); setQueue([]); setError("")
   }
   function closeResolution() {
     setResolving(null)
-    if (resolutionReturnBatchId) void openBatch(resolutionReturnBatchId)
+    if (batch) setBatchReload((value) => value + 1)
     else void refresh()
-    setResolutionReturnBatchId(null)
   }
 
   function createLot() {
@@ -210,13 +258,12 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       const detail = await dispatchRequest<BatchDispatchDetail>("/batches", { requestKey: createKey.current, orderIds })
       createKey.current = null
       setAllSelected(orderIds, false)
-      setBatch(detail); setTab("open")
+      setBatch(detail); openDetail({ tab: "open", batchId: detail.batch.id })
     })
   }
 
   const queueIndex = orderId ? queue.indexOf(orderId) : -1
   const nextInQueue = queueIndex >= 0 ? queue[queueIndex + 1] : undefined
-  const closeOrder = () => { setOrderId(null); setQueue([]); void refresh() }
   // Listado lateral: la cola elegida o los pedidos por preparar, siempre con el pedido actual.
   const baseSideIds = queue.length > 1 ? queue : armadoOrders.map((item) => item.id)
   const sideIds = orderId && !baseSideIds.includes(orderId) ? [orderId, ...baseSideIds] : baseSideIds
@@ -243,39 +290,39 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         {TABS.map((item) => {
           const active = tab === item.key && !resolving
           const count = tabCounts[item.key]
-          return <button key={item.key} type="button" aria-current={active ? "page" : undefined} onClick={() => { setTab(item.key); setOrderId(null); setQueue([]); setBatch(null); setResolving(null); setError(""); setNotice("") }} className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition-colors ${active ? "border-sky-400/50 bg-[#173b57] text-white" : "border-transparent text-white/60 hover:bg-white/5 hover:text-white"}`}>
+          return <button key={item.key} type="button" aria-current={active ? "page" : undefined} onClick={() => { pushedDetail.current = false; navigate({ tab: item.key, orderId: null, batchId: null }, "replace"); setQueue([]); setResolving(null); setError(""); setNotice("") }} className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-lg border px-3 text-11px font-black uppercase tracking-wide transition-colors ${active ? "border-sky-400/50 bg-[#173b57] text-white" : "border-transparent text-white/60 hover:bg-white/5 hover:text-white"}`}>
             {item.label}
             {count !== undefined && <span className={`min-w-5 rounded-md px-1.5 py-0.5 text-center text-10px tabular-nums ${active ? "bg-white/15 text-white" : "bg-white/8 text-white/70"}`}>{count}</span>}
           </button>
         })}
       </nav>
     </div>
-    {!orderId && !batch && !resolving && <DispatchFilterBar filters={filters} onChange={(patch) => { setFiltersByTab((current) => ({ ...current, [tab]: { ...current[tab], ...patch } })); setPages((current) => ({ ...current, [tab]: 1 })) }} onClear={() => { setFiltersByTab((current) => ({ ...current, [tab]: defaultDispatchFilters(tab) })); setPages((current) => ({ ...current, [tab]: 1 })) }} />}
+    {!orderId && !location.batchId && !resolving && <DispatchFilterBar filters={filters} onChange={(patch) => { setFiltersByTab((current) => ({ ...current, [tab]: { ...current[tab], ...patch } })); setPages((current) => ({ ...current, [tab]: 1 })) }} onClear={() => { setFiltersByTab((current) => ({ ...current, [tab]: defaultDispatchFilters(tab) })); setPages((current) => ({ ...current, [tab]: 1 })) }} />}
     {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
     {notice && <p role="status" className="flex items-start gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" />{notice}</p>}
     {loading && <p role="status" className="text-sm text-white/70">Cargando…</p>}
 
     {resolving ? <AdminSection compact className="dispatch-surface max-w-3xl" title={`Retirar ${orderCode(resolving.orderId)}`} eyebrow="Cancelación con armado" actions={<AdminButton size="sm" onClick={closeResolution}>Volver</AdminButton>}>
       <CancellationResolution key={resolving.id} hold={resolving} onResolved={() => void refresh()} onClose={closeResolution} />
-    </AdminSection> : orderId ? <AdminSection compact className="dispatch-surface @container" title="Preparar pedido" eyebrow={queue.length > 1 ? `Pedido ${queueIndex + 1} de ${queue.length}` : "Despachos"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeOrder}>Volver</AdminButton>}>
+    </AdminSection> : orderId ? <AdminSection compact className="dispatch-surface @container" title="Preparar pedido" eyebrow={queue.length > 1 ? `Pedido ${queueIndex + 1} de ${queue.length}` : "Despachos"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
       <div className={`grid gap-4 ${sideIds.length > 1 ? "@5xl:grid-cols-[220px_minmax(0,1fr)] @5xl:items-start" : ""}`}>
         {sideIds.length > 1 && <PreparationQueue className="order-last @5xl:order-first" title={queue.length > 1 ? "Pedidos seleccionados" : "Pedidos por preparar"} ids={sideIds} orders={orders} currentId={orderId}
-          onSelect={(id) => { if (queue.length > 1) setOrderId(id); else startArmado([id]) }} />}
-        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeOrder}
-          footer={nextInQueue ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => setOrderId(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminButton> : null} />
+          onSelect={(id) => { if (queue.length > 1) openOrder(id); else startArmado([id]) }} />}
+        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextInQueue ? undefined : closeDetail} onStage={reportOrderStage}
+          footer={nextInQueue ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => openOrder(nextInQueue)}>Siguiente pedido · {orderCode(nextInQueue)}</AdminButton> : null} />
       </div>
-    </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Entregado" : "Bulto general"} actions={<AdminButton size="sm" onClick={() => { setBatch(null); void refresh() }}>Volver</AdminButton>}>
+    </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Entregado" : "Bulto general"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
       {batch.batch.status === "handed_over" ? <DeliveredBatchPanel batchId={batch.batch.id} /> : <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
-        onChange={(detail) => { setBatch(detail); setTab("open") }} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
+        onChange={setBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
       }
-    </AdminSection> : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />}>
+    </AdminSection> : location.batchId ? (error ? null : <p role="status" className="text-sm text-white/70">Abriendo Bulto…</p>) : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />}>
       {(tab === "armado" || tab === "ready") ? (() => {
         const pageItems = tab === "armado" ? armadoOrders : readyOrders
         return <>{pageItems.length ? <table className="dispatch-orders-table w-full" aria-label={tab === "armado" ? "Pedidos pendientes" : "Pedidos confirmados"}>
-          <thead><tr>{tab === "ready" && <th scope="col"><input type="checkbox" aria-label="Seleccionar todos de esta página" checked={visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selected.has(id))} disabled={visibleSelectableIds.length === 0} onChange={(event) => setAllSelected(visibleSelectableIds, event.target.checked)} /></th>}<th scope="col">Pedido</th><th scope="col">Fecha</th><th scope="col">Productos</th><th scope="col">Unidades</th><th scope="col">Estado</th><th scope="col">Total</th></tr></thead>
+          <thead><tr>{tab === "ready" && <th scope="col"><input type="checkbox" aria-label="Seleccionar todos de esta página" checked={visibleSelectableIds.length > 0 && visibleSelectableIds.every((id) => selected.has(id))} disabled={visibleSelectableIds.length === 0} onChange={(event) => setAllSelected(visibleSelectableIds, event.target.checked)} /></th>}<th scope="col">Pedido</th><th scope="col">{tab === "ready" ? "Preparado" : "Fecha"}</th><th scope="col">Productos</th><th scope="col">Unidades</th><th scope="col">Estado</th><th scope="col">Total</th></tr></thead>
           <tbody>{pageItems.map((item) => <OrderQueueCard key={item.id} item={item} tab={tab} checked={selected.has(item.id)} onToggle={() => toggleSelected(item.id)} onOpen={() => startArmado([item.id])} />)}</tbody>
         </table>
-          : <AdminEmptyState title="No hay pedidos en esta vista" description={tab === "armado" ? "Los pendientes siguen visibles aunque sean de días anteriores." : "Probá otra fecha o rango."} />}
+          : <AdminEmptyState title="No hay pedidos en esta vista" description={tab === "armado" ? "Los pendientes siguen visibles aunque sean de días anteriores." : "Los confirmados siguen visibles hasta entrar a un Bulto."} />}
           {tab === "ready" && <div className="dispatch-selection-footer mt-3 flex flex-wrap items-center justify-between gap-2"><span>{selectedReady.length} seleccionados</span><AdminPrimaryButton disabled={busy || selectedReady.length === 0} onClick={createLot}>Crear bulto</AdminPrimaryButton></div>}
           {totalPages > 1 && <DispatchPagination page={pages[tab]} pages={totalPages} onPage={(value) => setPages((current) => ({ ...current, [tab]: value }))} />}</>
       })() : <>{shownBatches.length ? <ul className="space-y-2">{shownBatches.map((item) => {
@@ -287,7 +334,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
           : item.status === "handed_over" ? "Entregado" : needsVerification ? "Faltan pedidos por controlar" : item.status === "open" ? "En armado" : "Listo para entregar"
         return <li key={item.id}><AdminCard interactive className={`dispatch-card dispatch-batch-list-card flex flex-wrap items-center justify-between gap-2 p-3 ${hasProblem ? "dispatch-batch-problem" : ""}`}>
           <div className="min-w-0"><p className="font-black text-white">{dispatchBatchName(item)}</p><p className="mt-0.5 text-xs text-white/70">{plural(item.orderCount, "pedido", "pedidos")} · <span className={hasProblem ? "text-red-300" : item.status === "closed" ? "text-emerald-300" : ""}>{status}</span>{item.status === "open" ? ` · Creado: ${dateTime(item.created_at)}` : item.status === "handed_over" ? ` · ${dateTime(item.handed_over_at)}` : ""}</p></div>
-          <AdminButton size="sm" onClick={() => void openBatch(item.id)}>{item.status === "handed_over" ? "Ver" : "Abrir"}</AdminButton>
+          <AdminButton size="sm" onClick={() => openDetail({ tab: item.status === "handed_over" ? "delivered" : "open", batchId: item.id })}>{item.status === "handed_over" ? "Ver" : "Abrir"}</AdminButton>
         </AdminCard></li>
       })}</ul> : <AdminEmptyState title={tab === "delivered" ? "No hay Bultos entregados en esta fecha" : "No hay Bultos generales en esta vista"} description={tab === "delivered" ? "Elegí otra fecha o rango." : "Creá uno desde Confirmados."} />}{totalPages > 1 && <DispatchPagination page={pages[tab]} pages={totalPages} onPage={(value) => setPages((current) => ({ ...current, [tab]: value }))} />}</>}
     </AdminSection>}
@@ -319,11 +366,11 @@ export function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
   // En la cola de preparación sólo bloquea lo que frena el pickeo; para el Bulto general, cualquier bloqueo.
   const blocked = tab === "ready" ? Boolean(item.blocked) : Boolean(item.packingBlocked ?? item.blocked)
   const selectable = tab === "ready" && !blocked && readyForGeneralBundle(item.package, andreaniShipmentCreated(item))
-  const status = blocked ? item.cancelled_at ? "Cancelado" : "No puede continuar" : tab === "ready" ? "Confirmado" : stage === "pending" ? "Pendiente" : DISPATCH_STAGE_LABELS[stage]
+  const status = blocked ? item.cancelled_at ? "Cancelado" : "No puede continuar" : stage === "pending" ? "Pendiente" : DISPATCH_STAGE_LABELS[stage]
   return <tr className="dispatch-order-row" tabIndex={0} aria-label={`Abrir pedido ${orderCode(item.id)}`} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen() } }}>
     {tab === "ready" && <td className="dispatch-order-check" onClick={(event) => event.stopPropagation()}><input type="checkbox" className="size-5" aria-label={`Seleccionar ${orderCode(item.id)}`} checked={checked && selectable} disabled={!selectable} onChange={onToggle} onKeyDown={(event) => event.stopPropagation()} /></td>}
     <td className="dispatch-order-code" data-label="Pedido">{orderCode(item.id)}{item.preparedByName && <small className="block truncate font-normal opacity-75" title={`Preparó: ${item.preparedByName}`}>Preparó: {item.preparedByName}</small>}</td>
-    <td className="dispatch-order-date" data-label="Fecha">{shortDate(tab === "ready" ? item.andreani_created_at || item.package?.prepared_at || item.created_at : item.created_at)}</td>
+    <td className="dispatch-order-date" data-label={tab === "ready" ? "Preparado" : "Fecha"}>{shortDate(tab === "ready" ? item.package?.prepared_at || item.andreani_created_at || item.created_at : item.created_at)}</td>
     <td className="dispatch-order-products" data-label="Productos">{item.itemCount ?? 0}<span className="dispatch-mobile-only"> productos</span></td>
     <td className="dispatch-order-units" data-label="Unidades">{item.units ?? 0}<span className="dispatch-mobile-only"> unidades</span></td>
     <td className="dispatch-order-status" data-label="Estado"><AdminBadge tone={blocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{status}</AdminBadge></td>
@@ -331,7 +378,7 @@ export function OrderQueueCard({ item, tab, checked, onToggle, onOpen }: {
   </tr>
 }
 
-const SHORT_STAGE: Partial<Record<DispatchStage, string>> = { pending: "Sin empezar", shipment: "Generar envío", label: "Imprimir etiqueta", ready: "Listo" }
+const SHORT_STAGE: Partial<Record<DispatchStage, string>> = { pending: "Sin empezar", shipment: "Generar envío", label: "Confirmar etiqueta", ready: "Listo" }
 
 /** Listado compacto de pedidos mientras se prepara uno: el actual queda marcado. */
 function PreparationQueue({ ids, orders, currentId, title, className = "", onSelect }: {

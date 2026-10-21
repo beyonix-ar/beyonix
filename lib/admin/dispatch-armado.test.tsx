@@ -52,7 +52,7 @@ const order = { id: 31, estado: "pagado", financial_status: "payment_confirmed",
 
 /** Pedido BX-1031 simulado: 3 auriculares + 1 lámpara, con las mismas transiciones que la base. */
 function fakeOrder(role: Role, packingBlocked = false) {
-  const state = { picked: [0, 0], expected: [3, 1], started: false, shipment: false, identified: false, adjustments: [] as Json[], posts: [] as Json[], labels: 0, dropNextScan: false }
+  const state = { picked: [0, 0], expected: [3, 1], started: false, shipment: false, identified: false, adjustments: [] as Json[], posts: [] as Json[], labels: 0, confirmations: 0, dropNextScan: false }
   const viewer = { costsVisible: role !== "operador", canShip: role !== "operador", canForce: role === "super_admin" }
   const prepared = () => state.picked.every((picked, index) => picked === state.expected[index])
   const stage = () => !state.started ? "pending" : !prepared() ? "packing" : !state.shipment ? "shipment" : state.identified ? "ready" : "label"
@@ -71,11 +71,19 @@ function fakeOrder(role: Role, packingBlocked = false) {
   })
   const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
-    if (path.endsWith("/andreani-label")) { state.labels += 1; if (prepared() && state.shipment) state.identified = true; return new Response(new Blob(["%PDF"], { type: "application/pdf" })) }
+    // Imprimir sólo entrega el PDF: no confirma la etiqueta.
+    if (path.endsWith("/andreani-label")) { state.labels += 1; return new Response(new Blob(["%PDF"], { type: "application/pdf" })) }
     if (!init?.body) return Response.json(detail())
     const body = JSON.parse(String(init.body)) as Json
     state.posts.push(body)
     if (body.action === "start") { state.started = true; return Response.json(detail()) }
+    if (body.action === "confirm_label") {
+      // Mismo contrato que confirm_order_andreani_label: sólo el seguimiento real, nunca el ID de la API.
+      if (String(body.code).replace(/\s+/g, "").toUpperCase() !== "360000001031") return Response.json({ error: "Esta etiqueta no corresponde al pedido BX-1031." }, { status: 409 })
+      const duplicate = state.identified
+      if (!duplicate) { state.identified = true; state.confirmations += 1 }
+      return Response.json({ ...detail(), labelConfirmation: { orderId: 31, code: "360000001031", duplicate, confirmedAt: "2026-10-16T10:00:00Z" } })
+    }
     if (body.action === "scan") {
       if (state.dropNextScan) { state.dropNextScan = false; throw new TypeError("network down") }
       const index = body.code === "7790001000017" ? 0 : body.code === "7790001000024" ? 1 : -1
@@ -192,7 +200,7 @@ test("pickeo: una acción por etapa, envío bloqueado hasta completar, errores q
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
-test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes de volver a Confirmados", async () => {
+test("Admin: genera el envío Andreani, imprime la etiqueta y la confirma escaneando su seguimiento", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?order=31")
   const { OrderPreparationPanel } = await import("../../app/admin/sections/despachos/order-preparation-panel")
   const fake = fakeOrder("admin")
@@ -217,8 +225,8 @@ test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes d
     assert.deepEqual(ship.parcels, [{ weightKg: 2.2, lengthCm: 35, widthCm: 25, heightCm: 18 }])
     assert.equal(ship.force, undefined)
 
-    // Envío generado: la etiqueta Andreani identifica el pedido.
-    assert.match(text(), /Envío generado/)
+    // Envío generado: falta imprimir y confirmar la etiqueta Andreani.
+    assert.match(text(), /Falta confirmar etiqueta/)
     assert.match(text(), /Andreani: 360000001031/)
     assert.equal(primary(dom)?.textContent, "Imprimir etiqueta Andreani")
     assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Guardar PDF de etiqueta Andreani"])
@@ -229,7 +237,31 @@ test("Admin: genera el envío Andreani con medidas e imprime su etiqueta antes d
     assert.equal(fake.state.labels, 1)
     assert.equal(opened.length, 1, "abre la etiqueta para imprimir")
     assert.match(opened[0], /^blob:/)
+    // Imprimir no alcanza: el pedido sigue esperando la confirmación física.
+    assert.match(text(), /Falta confirmar etiqueta/)
+    assert.doesNotMatch(text(), /Listo para Bulto/)
+    const labelInput = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escaneá o escribí el seguimiento"]')
+    assert.ok(labelInput(), "campo para escanear o tipear el seguimiento")
+    assert.equal(dom.window.document.activeElement, labelInput(), "foco automático para el lector")
+    assert.equal(button(dom, "Escanear con cámara"), undefined, "sin cámara en este paso")
+
+    // Etiqueta equivocada o ID interno de la API: no avanza.
+    for (const wrong of ["360000009999", "ENV-31"]) {
+      await type(dom, labelInput()!, wrong); await submit(dom, labelInput()!.closest("form")!)
+      assert.match(text(), /Esta etiqueta no corresponde al pedido BX-1031./)
+      assert.match(text(), /Falta confirmar etiqueta/)
+    }
+    assert.equal(fake.state.identified, false)
+
+    // Lector USB: escribe el seguimiento y Enter confirma.
+    const user = userEvent.setup({ document: dom.window.document })
+    await act(async () => { await user.click(labelInput()!); await user.type(labelInput()!, " 360000001031{Enter}") })
+    await settle()
+    assert.equal(fake.state.posts.filter((post) => post.action === "confirm_label").length, 3)
+    assert.equal(fake.state.confirmations, 1)
+    assert.match(text(), /✓ Etiqueta confirmada/)
     assert.match(text(), /Listo para Bulto/)
+    assert.equal(labelInput(), null, "confirmada: el campo desaparece")
     assert.deepEqual(await menuItems(dom, "Etiquetas"), ["Reimprimir etiqueta Andreani", "Guardar PDF de etiqueta Andreani"])
 
     assert.equal(primary(dom), null, "el pedido listo no agrega otra acción")

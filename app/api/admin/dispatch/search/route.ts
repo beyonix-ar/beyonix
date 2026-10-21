@@ -1,6 +1,6 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { blocksPacking, dispatchBlockReason, dispatchHold, HOLD_COLUMNS, ORDER_COLUMNS, type DispatchOrder } from "@/lib/admin/dispatch"
-import { DISPATCH_BOARD_PAGE_SIZE, type DispatchBoardTab } from "@/lib/admin/dispatch-board-filters"
+import { DISPATCH_BOARD_PAGE_SIZE, dispatchDefaultDate, type DispatchBoardTab } from "@/lib/admin/dispatch-board-filters"
 
 const TABS = new Set<DispatchBoardTab>(["armado", "ready", "open", "delivered"])
 const validDate = (value: string | null) => {
@@ -36,8 +36,8 @@ export async function GET(request: Request) {
     if (result.error) return Response.json({ error: "No se pudo buscar el operador." }, { status: 500 })
     operatorIds = (result.data ?? []).map((row) => row.id)
   }
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())
-  const defaultDate = (tab === "ready" || tab === "delivered") && params.get("allDates") !== "true" ? today : null
+  // Pendientes, Confirmados y Bultos son trabajo abierto: nunca se limitan a hoy por defecto.
+  const defaultDate = dispatchDefaultDate(tab, params.get("allDates") === "true")
   const searched = await auth.admin.rpc("search_dispatch_board", {
     p_tab: tab, p_page: page, p_search: textOrNull(params.get("search")),
     p_date_from: params.get("dateFrom") || defaultDate, p_date_to: params.get("dateTo") || defaultDate,

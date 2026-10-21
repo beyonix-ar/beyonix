@@ -94,6 +94,17 @@ test("tablero SQL: fecha, búsqueda, operador, estado, cantidad, combinación y 
     assert.deepEqual((await find("ready", "p_search => 'BAR-02'")).ids, [2])
     assert.deepEqual((await find("ready", "p_search => 'Ñandú'")).ids, [3,2])
     assert.deepEqual((await find("armado", "p_page => 2")).ids, [100,1])
+
+    // 20261021101000: Confirmados como cola de trabajo.
+    await db.exec(readFileSync("supabase/migrations/20261021101000_dispatch_board_ready_queue.sql", "utf8"))
+    assert.deepEqual((await find("ready")).ids, [3,2], "sin fecha: los preparados de días anteriores siguen visibles hasta entrar a un Bulto")
+    assert.ok(!(await find("ready")).ids.some((id) => [4,5,6,7].includes(id)), "en un Bulto o entregado: sale de Confirmados")
+    // Preparado el 17 tarde, envío Andreani generado pasada la medianoche: la fecha manual usa la preparación.
+    await db.exec("update public.ordenes set andreani_created_at = '2026-10-18 00:05-03' where id = 3")
+    assert.deepEqual((await find("ready", "p_date_from => '2026-10-17', p_date_to => '2026-10-17'")).ids, [3])
+    assert.deepEqual((await find("ready", "p_date_from => '2026-10-18', p_date_to => '2026-10-18'")).ids, [2])
+    await db.exec(`insert into public.order_audit_events values (3,'${C}','order_andreani_label_confirmed')`)
+    assert.deepEqual((await find("ready", `p_operator_ids => array['${C}']::uuid[]`)).ids, [3,2], "quien confirmó la etiqueta también es operador del pedido")
     await db.exec("set role anon")
     await assert.rejects(find("armado"), /permission denied/i)
   } finally { await db.close() }

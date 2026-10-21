@@ -14,7 +14,7 @@ import { CameraScanner, type CameraFeedback } from "./camera-scanner"
  * se informa para auditoría. El campo queda listo para la siguiente lectura
  * (foco) apenas termina la anterior.
  */
-export function ScanField({ label, placeholder, submitLabel, value, onChange, onScan, busy = false, disabled = false, inputDisabled = false, autoFocus = false, cameraTitle, cameraHint, continuousCamera = false, feedback = null }: {
+export function ScanField({ label, placeholder, submitLabel, value, onChange, onScan, busy = false, disabled = false, inputDisabled = false, autoFocus = false, cameraTitle, cameraHint, continuousCamera = false, camera = true, feedback = null }: {
   label: string
   placeholder: string
   submitLabel: string
@@ -30,6 +30,8 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
   cameraHint: string
   /** Armado/lote: la cámara sigue abierta para leer varias etiquetas seguidas. */
   continuousCamera?: boolean
+  /** false: sólo lector USB o tipeo (sin botón de cámara). */
+  camera?: boolean
   feedback?: CameraFeedback
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -75,8 +77,8 @@ export function ScanField({ label, placeholder, submitLabel, value, onChange, on
       </label>
       <AdminPrimaryButton type="submit" className="h-12 w-full shrink-0 px-5 text-sm sm:h-14 sm:w-auto" disabled={submitDisabled}>{submitText}</AdminPrimaryButton>
     </form>
-    <AdminButton className="h-12 w-full text-sm sm:h-11" icon={<Camera className="size-5" />} disabled={disabled} onClick={() => setCameraOpen(true)}>Escanear con cámara</AdminButton>
-    <CameraScanner open={cameraOpen} title={cameraTitle} hint={cameraHint} continuous={continuousCamera} paused={busy} feedback={feedback}
-      onDetected={(code, source) => { emit(code, source === "camera" ? "camera" : "manual_code"); if (!continuousCamera) setCameraOpen(false) }} onClose={() => setCameraOpen(false)} />
+    {camera && <AdminButton className="h-12 w-full text-sm sm:h-11" icon={<Camera className="size-5" />} disabled={disabled} onClick={() => setCameraOpen(true)}>Escanear con cámara</AdminButton>}
+    {camera && <CameraScanner open={cameraOpen} title={cameraTitle} hint={cameraHint} continuous={continuousCamera} paused={busy} feedback={feedback}
+      onDetected={(code, source) => { emit(code, source === "camera" ? "camera" : "manual_code"); if (!continuousCamera) setCameraOpen(false) }} onClose={() => setCameraOpen(false)} />}
   </div>
 }

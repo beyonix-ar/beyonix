@@ -35,8 +35,10 @@ const MIGRATIONS = [
   "supabase/migrations/20261017100000_dispatch_finalize_on_verification.sql",
   "supabase/migrations/20261017110000_super_admin_force_cancellation.sql",
 ]
+const LABEL_SCAN_MIGRATION = "supabase/migrations/20261021100000_dispatch_andreani_label_scan_confirmation.sql"
 
-async function setup() {
+/** legacy: hasta 20261017110000, donde imprimir la etiqueta identificaba el pedido. */
+async function setup(options: { legacy?: boolean } = {}) {
   const db = new PGlite()
   for (const file of MIGRATIONS) {
     await db.exec(read(file))
@@ -66,6 +68,7 @@ async function setup() {
       (1,1031,1,11,3,12500.50),(2,1031,2,null,1,8000),(3,1032,1,12,1,9000),(4,1033,1,12,1,9000);
   `)
   await db.exec("select refresh_inventory_stock(1); select refresh_inventory_stock(2);")
+  if (!options.legacy) await db.exec(read(LABEL_SCAN_MIGRATION))
   return db
 }
 
@@ -75,9 +78,11 @@ async function pick(db: PGlite, orderId: number, codes = CODES[orderId]) {
   await db.query("select begin_order_preparation($1,$2)", [orderId, actor])
   for (const code of codes) await scan(db, orderId, code)
 }
-const printLabel = (db: PGlite, orderId: number) =>
-  db.query<{ m: string | null }>("select (confirm_order_andreani_label($1,$2)).identification_method m", [orderId, actor])
-async function ready(db: PGlite, orderId: number) { await pick(db, orderId); await printLabel(db, orderId) }
+type LabelConfirmation = { orderId: number; code: string; duplicate: boolean; confirmedAt: string | null }
+/** Seguimiento leído de la etiqueta Andreani (lector o tipeo); por defecto, el real del pedido. */
+const confirmLabel = async (db: PGlite, orderId: number, code = `360000${String(orderId).padStart(6, "0")}`, actorId = actor) =>
+  (await db.query<{ r: LabelConfirmation }>("select confirm_order_andreani_label($1,$2,$3) r", [orderId, code, actorId])).rows[0].r
+async function ready(db: PGlite, orderId: number) { await pick(db, orderId); await confirmLabel(db, orderId) }
 
 type Adjust = { quantity_before: number; quantity_after: number; unit_price: string; difference_amount: string; settlement: string; actor_id: string }
 const adjust = async (db: PGlite, orderId: number, itemId: number, quantity: number, options: { problem?: string; settlement?: string; agreement?: string; requestKey?: string } = {}) =>
@@ -231,7 +236,7 @@ test("faltante resuelto por un operador: cantidad, diferencia, acuerdo y auditor
   try {
     await pick(db, 1031, ["BAR-A-RED", "BAR-A-RED", "BAR-B"])
     assert.equal((await db.query<{ s: string }>("select status s from order_packages where order_id=1031")).rows[0].s, "preparing", "2 de 3: incompleto")
-    await assert.rejects(printLabel(db, 1031), /DISPATCH_PACKAGE_NOT_PREPARED/, "incompleto: sin etiqueta Andreani")
+    await assert.rejects(confirmLabel(db, 1031), /DISPATCH_PACKAGE_NOT_PREPARED/, "incompleto: sin etiqueta Andreani")
 
     await assert.rejects(adjust(db, 1031, 1, 1), /DISPATCH_ADJUSTMENT_BELOW_PICKED/, "no se puede bajar de lo ya pickeado")
     await assert.rejects(adjust(db, 1031, 1, 3), /DISPATCH_ADJUSTMENT_INVALID/, "tiene que reducir")
@@ -287,16 +292,44 @@ test("etiqueta Andreani: exige envío creado, identifica el pedido y reimprimir 
   try {
     await db.query("update ordenes set andreani_envio_id=null, andreani_creation_status=null where id=1032")
     await pick(db, 1032)
-    await assert.rejects(printLabel(db, 1032), /DISPATCH_SHIPMENT_PENDING/, "sin envío Andreani no hay etiqueta")
+    await assert.rejects(confirmLabel(db, 1032), /DISPATCH_SHIPMENT_PENDING/, "sin envío Andreani no hay etiqueta")
     const empty = (await db.query<{ id: number }>("select (create_dispatch_batch($1,$2)).id", [actor, key()])).rows[0]
     await assert.rejects(db.query("select add_order_to_dispatch_batch($1,$2,$3)", [empty.id, 1032, actor]), /DISPATCH_IDENTIFICATION_PENDING/)
 
     await db.query("update ordenes set andreani_envio_id='ENV-1032', andreani_creation_status='created' where id=1032")
-    assert.equal((await printLabel(db, 1032)).rows[0].m, "andreani")
-    assert.equal((await printLabel(db, 1032)).rows[0].m, "andreani", "reimprimir")
-    assert.equal(await count(db, "select count(*)::int n from order_audit_events where order_id=1032 and action='order_andreani_label_printed'"), 1)
+    // Envío creado pero etiqueta sin confirmar: no entra al Bulto general.
+    await assert.rejects(db.query("select add_order_to_dispatch_batch($1,$2,$3)", [empty.id, 1032, actor]), /DISPATCH_IDENTIFICATION_PENDING/)
+    const identification = () => db.query<{ m: string | null; by: string | null }>("select identification_method m, identified_by by from order_packages where order_id=1032").then((r) => r.rows[0])
+
+    // Etiqueta de otro pedido, ID interno de la API o número de pedido: no cambia nada.
+    for (const wrong of ["360000001033", "ENV-1032", "BX-1032"]) {
+      await assert.rejects(confirmLabel(db, 1032, wrong), (error: Error & { detail?: string }) => /DISPATCH_LABEL_MISMATCH/.test(error.message) && error.detail === "1032", wrong)
+    }
+    await assert.rejects(confirmLabel(db, 1032, "  "), /DISPATCH_LABEL_CODE_INVALID/)
+    assert.equal((await identification()).m, null)
+    assert.equal(await count(db, "select count(*)::int n from order_audit_events where order_id=1032 and action='order_andreani_label_confirmed'"), 0)
+
+    // Lector: espacios y saltos de línea se normalizan contra el seguimiento persistido.
+    const first = await confirmLabel(db, 1032, " 360000001032\r\n")
+    assert.deepEqual([first.duplicate, first.code], [false, "360000001032"])
+    assert.deepEqual([(await identification()).m, (await identification()).by], ["andreani", actor])
+    // Releer (u otro admin) la misma etiqueta: idempotente, sin registros nuevos.
+    await db.query("insert into profiles(id,rol) values ($1,'admin')", [superAdmin])
+    const again = await confirmLabel(db, 1032, "360000001032", superAdmin)
+    assert.equal(again.duplicate, true)
+    assert.equal((await identification()).by, actor, "conserva quién confirmó primero")
+    // Otra etiqueta sobre una ya confirmada: se rechaza.
+    await assert.rejects(confirmLabel(db, 1032, "360000001033"), /DISPATCH_LABEL_MISMATCH/)
+    const audit = await db.query<{ metadata: { code: string; tracking: string } }>("select metadata from order_audit_events where order_id=1032 and action='order_andreani_label_confirmed'")
+    assert.equal(audit.rows.length, 1)
+    assert.deepEqual([audit.rows[0].metadata.code, audit.rows[0].metadata.tracking], ["360000001032", "360000001032"])
+
     // Sin BX-PKG medidos: el envío Andreani ya define los bultos.
     await db.query("select add_order_to_dispatch_batch($1,$2,$3)", [empty.id, 1032, actor])
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_items where order_id=1032 and removed_at is null"), 1)
+    // Un pedido nunca queda en dos Bultos generales.
+    const second = (await db.query<{ id: number }>("select (create_dispatch_batch($1,$2)).id", [actor, key()])).rows[0]
+    await assert.rejects(db.query("select add_order_to_dispatch_batch($1,$2,$3)", [second.id, 1032, actor]))
     assert.equal(await count(db, "select count(*)::int n from dispatch_batch_items where order_id=1032 and removed_at is null"), 1)
   } finally { await db.close() }
 })
@@ -402,13 +435,36 @@ test("RPC y tabla nuevas: sólo service_role con operador verificado", async () 
   const db = await setup()
   try {
     const access = (await db.query<{ label: boolean; adjust: boolean; lookup: boolean; table: boolean }>(`select
-      has_function_privilege('authenticated','public.confirm_order_andreani_label(bigint,uuid)','EXECUTE') label,
+      has_function_privilege('authenticated','public.confirm_order_andreani_label(bigint,text,uuid)','EXECUTE') label,
       has_function_privilege('authenticated','public.adjust_order_preparation_line(bigint,bigint,integer,text,text,text,uuid,uuid)','EXECUTE') adjust,
       has_function_privilege('anon','public.order_id_from_andreani_code(text)','EXECUTE') lookup,
       has_table_privilege('authenticated','public.order_preparation_adjustments','SELECT') "table"`)).rows[0]
     assert.deepEqual(access, { label: false, adjust: false, lookup: false, table: false })
     await pick(db, 1032)
     await db.query("select set_config('request.jwt.claim.role','authenticated',false)")
-    await assert.rejects(printLabel(db, 1032), /DISPATCH_FORBIDDEN/)
+    await assert.rejects(confirmLabel(db, 1032), /DISPATCH_FORBIDDEN/)
+  } finally { await db.close() }
+})
+
+test("migración: un número de bulto también confirma y los pedidos sólo impresos vuelven a confirmar etiqueta", async () => {
+  const db = await setup({ legacy: true })
+  try {
+    // Antes: imprimir identificaba. 1032 quedó fuera de un Bulto; 1033 ya está en uno.
+    for (const orderId of [1032, 1033]) { await pick(db, orderId); await db.query("select confirm_order_andreani_label($1,$2)", [orderId, actor]) }
+    await newBatch(db, [1033])
+    await db.exec(read(LABEL_SCAN_MIGRATION))
+    const method = async (orderId: number) => (await db.query<{ m: string | null }>("select identification_method m from order_packages where order_id=$1", [orderId])).rows[0].m
+    assert.equal(await method(1032), null, "sólo impreso: falta confirmar etiqueta")
+    assert.equal(await method(1033), "andreani", "dentro de un Bulto general no cambia")
+    const reset = await db.query<{ actor_type: string; metadata: { reason: string } }>("select actor_type, metadata from order_audit_events where order_id=1032 and action='order_andreani_label_confirmation_required'")
+    assert.deepEqual(reset.rows.map((row) => [row.actor_type, row.metadata.reason]), [["system", "label_printed_not_scanned"]])
+    await assert.rejects(db.query("select confirm_order_andreani_label($1,$2)", [1032, actor]), /does not exist/, "imprimir ya no tiene atajo")
+    // El trigger de inmutabilidad volvió a quedar activo.
+    await assert.rejects(db.query("update order_packages set identification_method=null, identified_at=null, identified_by=null, identification_request_key=null where order_id=1033"), /DISPATCH_IDENTIFICATION_IMMUTABLE/)
+
+    // Pedido con dos bultos Andreani: la etiqueta de cualquiera de ellos lo confirma.
+    await pick(db, 1031)
+    assert.equal((await confirmLabel(db, 1031, "360000001031-02")).duplicate, false)
+    assert.equal(await method(1031), "andreani")
   } finally { await db.close() }
 })

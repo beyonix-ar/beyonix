@@ -4,7 +4,7 @@ import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
 import { createDispatchAndreaniShipment } from "@/lib/andreani/dispatch-shipment"
 import { quoteOrderParcels } from "@/lib/andreani/parcel-quote"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchScanResult } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchLabelConfirmation, type DispatchScanResult } from "@/lib/admin/dispatch"
 import { parseParcelMeasures, ParcelMeasuresError } from "@/lib/shipping/parcel-measures"
 
 type Context = { params: Promise<{ id: string }> }
@@ -47,7 +47,7 @@ export async function POST(request: Request, context: Context) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   const body = await request.json().catch(() => null) as Body | null
-  if (!body || !["start", "scan", "reset", "adjust", "ship"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
+  if (!body || !["start", "scan", "reset", "adjust", "ship", "confirm_label"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
   const { data: order, error: orderError } = await auth.admin.from("ordenes")
     .select("estado,cancelled_at,financial_status,andreani_envio_id").eq("id", id).maybeSingle()
   if (orderError || !order) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
@@ -55,7 +55,16 @@ export async function POST(request: Request, context: Context) {
     return Response.json({ error: "Pedido cancelado — no requiere preparación." }, { status: 409 })
   }
   let scan: DispatchScanResult | null = null
-  if (body.action === "start") {
+  let labelConfirmation: DispatchLabelConfirmation | null = null
+  if (body.action === "confirm_label") {
+    // El seguimiento leído se valida en la base contra el envío persistido del
+    // pedido, bajo lock: releer la misma etiqueta es idempotente y otra se rechaza.
+    const code = body.code?.trim() ?? ""
+    if (!code || code.length > 128) return Response.json({ error: "Escaneá o escribí el seguimiento de la etiqueta Andreani." }, { status: 400 })
+    const result = await auth.admin.rpc("confirm_order_andreani_label", { p_order_id: id, p_code: code, p_actor_id: auth.user.id })
+    if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
+    labelConfirmation = result.data as DispatchLabelConfirmation
+  } else if (body.action === "start") {
     const result = await auth.admin.rpc("begin_order_preparation", { p_order_id: id, p_actor_id: auth.user.id })
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
   } else if (body.action === "scan") {
@@ -132,7 +141,7 @@ export async function POST(request: Request, context: Context) {
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
   }
   try {
-    return await detailResponse(auth, id, { scan })
+    return await detailResponse(auth, id, { scan, labelConfirmation })
   } catch {
     return Response.json({ error: "La operación se guardó, pero no se pudo actualizar la vista. Recargá el pedido." }, { status: 503 })
   }

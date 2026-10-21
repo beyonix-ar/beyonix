@@ -33,6 +33,8 @@ export const DISPATCH_VERIFICATION_METHOD_LABELS: Record<DispatchVerificationMet
   scanner: "Lector", camera: "Cámara", manual_code: "Código ingresado", manual_selection: "Confirmación manual", legacy_parcels: "Histórico · paquetes BX-PKG escaneados",
 }
 export type DispatchVerificationResult = { orderId: number; code: string; method: DispatchVerificationMethod; duplicate: boolean; expected: number; verified: number }
+/** Etiqueta Andreani confirmada al leer su seguimiento (confirm_order_andreani_label). */
+export type DispatchLabelConfirmation = { orderId: number; code: string; duplicate: boolean; confirmedAt: string | null }
 export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; total?: number | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; andreani_created_at?: string | null; cliente_nombre: string | null; andreani_envio_id: string | null; andreani_tracking: string | null; andreani_creation_status: string | null }
 export type DispatchSaleItem = { orderItemId: number; sku: string | null; productName: string; variantName: string | null; orderedQuantity: number; unitPrice: number | null }
 /** Orden operativo: pickeo → pedido completo → envío Andreani → etiqueta Andreani → Bulto general → DSP → entrega. */
@@ -96,11 +98,11 @@ export const DISPATCH_STAGE_LABELS: Record<DispatchStage, string> = {
   pending: "Sin empezar",
   packing: "En pickeo",
   shipment: "Pedido completo",
-  label: "Envío generado",
+  label: "Falta confirmar etiqueta",
   ready: "Listo para Bulto",
   in_batch: "En Bulto",
   batch_closed: "Bulto finalizado",
-  handed_over: "Bulto finalizado",
+  handed_over: "Entregado",
 }
 
 /** Envío Andreani creado y confirmado (misma condición que shipment_pending en la base). */
@@ -119,7 +121,7 @@ export function dispatchStage(input: { package: StagePackage | null; shipmentCre
   return input.package.identification_method ? "ready" : "label"
 }
 
-/** Listo para el Bulto general: pickeo completo, envío Andreani creado y etiqueta impresa. */
+/** Listo para el Bulto general: pickeo completo, envío Andreani creado y etiqueta confirmada (escaneada). */
 export const readyForGeneralBundle = (pkg: StagePackage | null, shipmentCreated: boolean) =>
   Boolean(pkg && pkg.status === "prepared" && pkg.identification_method && shipmentCreated)
 
@@ -215,7 +217,10 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_BATCH_NOT_CLOSED: "Cerrá el Bulto general antes de confirmar la entrega.",
     DISPATCH_ALREADY_HANDED_OVER: "El Bulto general ya fue entregado.",
     DISPATCH_RESET_REQUIRES_REMOVAL: "Retirá el pedido del Bulto general para reiniciar su armado.",
-    DISPATCH_IDENTIFICATION_PENDING: "Falta imprimir la etiqueta Andreani del pedido.",
+    DISPATCH_IDENTIFICATION_PENDING: "Falta confirmar la etiqueta Andreani del pedido.",
+    DISPATCH_LABEL_CODE_INVALID: "Escaneá o escribí el seguimiento de la etiqueta Andreani.",
+    DISPATCH_LABEL_TRACKING_MISSING: "El envío Andreani del pedido todavía no tiene seguimiento.",
+    DISPATCH_LABEL_MISMATCH: "Esta etiqueta no corresponde al pedido.",
     DISPATCH_SHIPMENT_PENDING: "Primero generá el envío Andreani del pedido.",
     DISPATCH_ANDREANI_CODE_AMBIGUOUS: "Ese código Andreani corresponde a más de un pedido. Confirmá el pedido desde la lista.",
     DISPATCH_ADJUSTMENT_INVALID: "Revisá la diferencia: la cantidad nueva tiene que ser menor que la actual.",
@@ -250,6 +255,7 @@ export function dispatchError(error: { message: string; details?: string | null 
   let message = code ? messages[code] : error.message.includes("dispatch_batch_items_active_order_unique") ? "Este pedido ya pertenece a otro Bulto general." : fallback
   if (code === "DISPATCH_PARCEL_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este paquete pertenece al Bulto general ${error.details}.`
   else if (code === "DISPATCH_PREP_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este pedido pertenece al Bulto general ${error.details}.`
+  else if (code === "DISPATCH_LABEL_MISMATCH" && error.details && /^\d+$/.test(error.details)) message = `Esta etiqueta no corresponde al pedido ${orderCode(Number(error.details))}.`
   else if (code === "DISPATCH_RESOLUTION_WRONG_ORDER" && error.details && /^\d+$/.test(error.details)) message = `Ese código es de ${orderCode(Number(error.details))}, no de este pedido.`
   else if (error.details && /^\d+$/.test(error.details)) message = `${orderCode(Number(error.details))}: ${message}`
   return message

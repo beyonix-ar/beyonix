@@ -8,9 +8,9 @@ import { validId } from "@/lib/admin/dispatch"
 type Context = { params: Promise<{ id: string }> }
 
 /**
- * Etiqueta Andreani para Despachos. Imprimirla identifica físicamente el
- * pedido (confirm_order_andreani_label): es la etiqueta que después se escanea
- * en el Bulto general. Reimprimir no cambia el primer registro.
+ * Etiqueta Andreani para Despachos: sólo entrega el PDF. Imprimir no confirma
+ * nada; el pedido queda listo para el Bulto general recién cuando el operador
+ * escanea el seguimiento impreso (acción confirm_label del pedido).
  */
 export async function POST(request: Request, context: Context) {
   const id = validId((await context.params).id)
@@ -29,19 +29,11 @@ export async function POST(request: Request, context: Context) {
     return Response.json({ error: safeError.message }, { status: error instanceof AndreaniError && error.code === "VALIDATION_ERROR" ? 409 : 502 })
   }
 
-  // Sólo un pedido con el pickeo completo queda identificado; la etiqueta se
-  // entrega igual (p. ej. reimpresión de un pedido ya en el Bulto general).
-  const identified = await auth.admin.rpc("confirm_order_andreani_label", { p_order_id: id, p_actor_id: auth.user.id })
-  if (identified.error && !/DISPATCH_PACKAGE_NOT_PREPARED|DISPATCH_PREPARATION_NOT_STARTED/.test(identified.error.message)) {
-    console.error("DISPATCH_ANDREANI_LABEL_IDENTIFICATION_ERROR", { orderId: id, message: identified.error.message })
-  }
-
   return new NextResponse(Buffer.from(label.data), {
     headers: {
       "Content-Type": label.contentType,
       "Content-Disposition": `inline; filename="andreani-${label.envioId}.${formato}"`,
       "Cache-Control": "private, no-store",
-      "X-Dispatch-Identified": identified.error ? "false" : "true",
     },
   })
 }

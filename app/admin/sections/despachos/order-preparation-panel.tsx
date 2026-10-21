@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageChec
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, AdminTrackingValue, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchLabelConfirmation, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchStage, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
@@ -19,7 +19,7 @@ type ScanFeedback = { tone: "success" | "warning" | "error"; message: string }
 /** Qué puede hacer quien mira el pedido (lo decide el servidor y lo vuelve a validar al ejecutar). */
 type Viewer = { costsVisible: boolean; canShip: boolean; canForce: boolean }
 type Detail = OrderDispatchDetail & { viewer?: Viewer }
-type OrderResponse = Detail & { scan?: DispatchScanResult | null }
+type OrderResponse = Detail & { scan?: DispatchScanResult | null; labelConfirmation?: DispatchLabelConfirmation | null }
 /** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
 type PendingVariant = { code: string; productName: string | null; candidates: DispatchVariantCandidate[] }
 type OrderLine = OrderDispatchDetail["lines"][number]
@@ -41,13 +41,15 @@ const goTo = (path: string) => window.location.assign(path)
 /**
  * Pedido en Despachos: estado, progreso, productos y UNA acción principal
  * según la etapa (empezar → pickear → generar envío Andreani → imprimir su
- * etiqueta). Lo secundario vive en menús que sólo
- * muestran opciones válidas para el estado actual.
+ * etiqueta → escanear su seguimiento para confirmarla). Lo secundario vive en
+ * menús que sólo muestran opciones válidas para el estado actual.
  */
-export function OrderPreparationPanel({ orderId, onDone, footer }: {
+export function OrderPreparationPanel({ orderId, onDone, onStage, footer }: {
   orderId: number
   /** Cierre tras resolver una cancelación con armado. */
   onDone?: () => void
+  /** Etapa real del pedido cada vez que cambia (p. ej. para ubicar su pestaña). */
+  onStage?: (stage: DispatchStage) => void
   footer?: ReactNode
 }) {
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -57,6 +59,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
   const [notice, setNotice] = useState("")
   const [feedback, setFeedback] = useState<ScanFeedback | null>(null)
   const [scan, setScan] = useState("")
+  const [labelCode, setLabelCode] = useState("")
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [dialogError, setDialogError] = useState("")
   const [parcelInput, setParcelInput] = useState("")
@@ -81,6 +84,8 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     window.addEventListener(ADMIN_DISPATCH_CHANGED_EVENT, reload)
     return () => { if (timer) clearTimeout(timer); window.removeEventListener(ADMIN_DISPATCH_CHANGED_EVENT, reload) }
   }, [load])
+  const currentStage = detail?.stage
+  useEffect(() => { if (currentStage) onStage?.(currentStage) }, [currentStage, onStage])
 
   async function run(action: () => Promise<void>, onError: (message: string) => void = setError) {
     if (busyRef.current) return
@@ -156,6 +161,31 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     }, dialog ? setDialogError : setError)
   }
 
+  /**
+   * Confirmación física de la etiqueta Andreani: el seguimiento leído (lector
+   * USB + Enter o tipeo) se valida en el servidor contra el envío del pedido.
+   * Releer la misma etiqueta no duplica nada; otra se rechaza sin cambiar el estado.
+   */
+  function confirmLabel(code: string) {
+    if (busyRef.current) return
+    setLabelCode(code)
+    void run(async () => {
+      try {
+        const updated = await dispatchRequest<OrderResponse>(`/orders/${orderId}`, { action: "confirm_label", code })
+        setDetail(updated)
+        setLabelCode("")
+        const duplicate = Boolean(updated.labelConfirmation?.duplicate)
+        setFeedback({ tone: duplicate ? "warning" : "success", message: duplicate ? "✓ Etiqueta ya confirmada" : "✓ Etiqueta confirmada" })
+        playScanFeedback(duplicate ? "warning" : "success")
+      } catch (cause) {
+        // Sin respuesta del servidor se conserva el código para reintentar (es idempotente).
+        if (!(cause instanceof DispatchRequestError && cause.retryable)) setLabelCode("")
+        setFeedback({ tone: "error", message: cause instanceof Error ? cause.message : "No se pudo confirmar la etiqueta." })
+        playScanFeedback("error")
+      }
+    })
+  }
+
   function openDialog(next: Dialog) { actionKey.current = null; setDialogError(""); setReason(""); setDialog(next) }
 
   if (loading && !detail) return <p role="status" className="text-sm text-white/70">Cargando pedido…</p>
@@ -184,7 +214,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
 
   const printLabel = (mode: "print" | "download") => void run(async () => {
     await openAndreaniLabel(orderId, mode)
-    setNotice(mode === "print" ? "Etiqueta Andreani lista para imprimir. Pegala en el paquete." : "Etiqueta Andreani descargada.")
+    setNotice(mode === "print" ? "Etiqueta Andreani lista para imprimir. Pegala en el paquete y escaneá su seguimiento." : "Etiqueta Andreani descargada.")
     await load()
   })
   const openShip = () => {
@@ -280,6 +310,16 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
             cameraTitle={`Pickeo ${code}`} cameraHint="Encuadrá el código de barras del producto" continuousCamera feedback={feedback} />
           <LastScan feedback={feedback} />
         </div>}
+        {stage === "label" && <div className="dispatch-scanner dispatch-label-confirm min-w-0 space-y-1">
+          <p className="dispatch-subheading">Confirmar etiqueta</p>
+          <ScanField label="Escaneá o escribí el seguimiento" placeholder="Escaneá o escribí el seguimiento" submitLabel="Confirmar"
+            value={labelCode} onChange={setLabelCode} onScan={confirmLabel} busy={busy} disabled={packingBlocked}
+            autoFocus={dialog === null} camera={false} cameraTitle={`Etiqueta ${code}`} cameraHint="Encuadrá el código de la etiqueta Andreani" feedback={feedback} />
+        </div>}
+        {stage === "ready" && identified && <p role="status" className="dispatch-label-confirmed flex flex-wrap items-center gap-2 text-sm font-bold">
+          <AdminBadge tone="success"><CheckCircle2 className="size-4" />Etiqueta confirmada</AdminBadge>
+          {pkg?.identified_at && <span className="text-xs font-normal opacity-75">{dateTime(pkg.identified_at)}</span>}
+        </p>}
         {stage !== "packing" && feedback && <LastScan feedback={feedback} />}
         {detail.order.total != null && <p className="dispatch-order-total-amount">TOTAL PEDIDO: <strong>{money(Number(detail.order.total))}</strong></p>}
       </div>
