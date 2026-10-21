@@ -67,7 +67,7 @@ test("E/L. el contador baja sin refrescar cuando se resuelve el bloqueo y el can
   }
 })
 
-test("campana: acciones con CTA separadas de la información; la información no se cuenta", async () => {
+test("campana: acciones con CTA separadas de la información; el encabezado cuenta todas las no leídas", async () => {
   const ui = await setup()
   const { AdminNotificationsPopover } = await import("../../components/admin-notifications-popover")
   const action = { id: "a", type: "cancellation" as const, eventKey: "cancellation:refund_manual:31", eventAt: "2026-10-05T10:00:00Z",
@@ -78,13 +78,15 @@ test("campana: acciones con CTA separadas de la información; la información no
   try {
     await act(async () => { ui.root.render(<AdminNotificationsPopover notifications={[info, action]} onNotificationClick={() => {}} />) })
     const doc = ui.dom.window.document
-    assert.match(doc.body.textContent ?? "", /1 acción pendiente/)
+    assert.equal(doc.querySelector("[data-notification-summary]")?.textContent, "2 sin leer")
     const sections = [...doc.querySelectorAll("[data-notification-section]")].map((section) => section.getAttribute("data-notification-section"))
     assert.deepEqual(sections, ["actions", "info"])
     assert.match(doc.querySelector("[data-notification-section='actions']")?.textContent ?? "", /Registrar reintegro/)
     assert.match(doc.querySelector("[data-notification-section='info']")?.textContent ?? "", /Pedido nuevo/)
     await act(async () => { ui.root.render(<AdminNotificationsPopover notifications={[info]} onNotificationClick={() => {}} />) })
-    assert.match(doc.body.textContent ?? "", /Sin acciones pendientes/)
+    assert.equal(doc.querySelector("[data-notification-summary]")?.textContent, "1 sin leer")
+    await act(async () => { ui.root.render(<AdminNotificationsPopover notifications={[]} onNotificationClick={() => {}} />) })
+    assert.equal(doc.querySelector("[data-notification-summary]")?.textContent, "Todo está al día")
     assert.doesNotMatch(doc.body.textContent ?? "", /reconciliation|settlement|conciliaci|RPC/i)
     await act(async () => ui.root.unmount())
   } finally {

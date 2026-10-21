@@ -59,6 +59,7 @@ const FALLBACK_REFRESH_INTERVAL_MS = 60_000
 
 export function useAdminNotifications(enabled = true) {
   const requestId = useRef(0)
+  const hasLoaded = useRef(false)
   const [notificationCount, setNotificationCount] = useState(0)
   const [notificationTone, setNotificationTone] =
     useState<AdminNotificationTone>("order")
@@ -75,6 +76,7 @@ export function useAdminNotifications(enabled = true) {
     const currentRequestId = ++requestId.current
 
     if (!enabled) {
+      hasLoaded.current = false
       setNotificationCount(0)
       setNotificationTone("order")
       setNotificationGroups(EMPTY_GROUPS)
@@ -84,11 +86,14 @@ export function useAdminNotifications(enabled = true) {
       return
     }
 
-    setLoading(true)
+    // Las recargas en segundo plano (realtime, foco, intervalo) conservan la
+    // lista anterior: el desplegable y el contador no parpadean a vacío.
+    if (!hasLoaded.current) setLoading(true)
     try {
       const summary = await getAdminNotifications()
       if (currentRequestId !== requestId.current) return
 
+      hasLoaded.current = true
       setNotificationCount(summary.count)
       setNotificationTone(summary.tone)
       setNotificationGroups(summary.groups)
@@ -108,7 +113,7 @@ export function useAdminNotifications(enabled = true) {
   }, [enabled])
 
   useEffect(() => {
-    setLoading(enabled)
+    setLoading(enabled && !hasLoaded.current)
     void loadNotifications()
 
     window.addEventListener(

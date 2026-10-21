@@ -112,6 +112,7 @@ const TEST_FILES = [
   "components/phone/argentina-phone-input-contract.test.ts",
   "components/public-minimal-header-contract.test.ts",
   "components/customer-notifications-bell-contract.test.ts",
+  "lib/notifications/notification-badge.test.ts",
   "lib/orders/admin-order-cancellation-reasons.test.ts",
   "lib/orders/admin-order-cancellation.test.ts",
   "lib/orders/admin-cancel-order-previous-estado.test.ts",

@@ -29,6 +29,7 @@ import {
   ACCOUNT_NOTIFICATION_SUCCESS,
   ACCOUNT_NOTIFICATION_WARNING,
 } from "@/lib/account/account-notification-visuals"
+import { countUnreadNotifications } from "@/lib/notifications/notification-badge"
 import { cn } from "@/lib/utils"
 
 const TYPE_LABELS: Record<AdminNotificationType, string> = {
@@ -110,9 +111,12 @@ export function AdminNotificationsPopover({
   variant = "admin",
 }: AdminNotificationsPopoverProps) {
   const isStorefront = variant === "storefront"
-  // Acciones (requieren intervención) primero; la información nunca suma al contador.
+  // Acciones (requieren intervención) primero. El badge de la campana cuenta
+  // todo lo listado (acciones + información sin leer).
   const actions = notifications.filter(isAdminActionNotification)
   const information = notifications.filter((notification) => !isAdminActionNotification(notification))
+  // Mismo número que el badge de la campana.
+  const unreadCount = countUnreadNotifications(notifications, (notification) => notification.isRead)
 
   return (
     <div
@@ -130,10 +134,10 @@ export function AdminNotificationsPopover({
         <p className={cn("text-sm font-black", isStorefront ? "beyonix-header-notif-title" : "text-white")}>
           {isStorefront ? "Notificaciones" : "Notificaciones admin"}
         </p>
-        <p className={cn("mt-0.5 text-10px", isStorefront ? "beyonix-header-notif-muted" : "text-white/50")}>
-          {error ? "No se pudieron cargar las alertas" : loading ? "Cargando alertas…" : actions.length > 0
-            ? actions.length === 1 ? "1 acción pendiente" : `${actions.length} acciones pendientes`
-            : information.length > 0 ? "Sin acciones pendientes" : "Todo está al día"}
+        <p data-notification-summary className={cn("mt-0.5 text-10px", isStorefront ? "beyonix-header-notif-muted" : "text-white/50")}>
+          {error ? "No se pudieron cargar las alertas" : loading ? "Cargando alertas…" : unreadCount > 0
+            ? `${unreadCount} sin leer`
+            : "Todo está al día"}
         </p>
       </div>
 
@@ -217,6 +221,7 @@ export function AdminNotificationsPopover({
                 <button
                   key={notification.id}
                   type="button"
+                  data-unread={!notification.isRead || undefined}
                   onClick={() => onNotificationClick(notification)}
                   className={cn(
                     "group flex w-full cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all",

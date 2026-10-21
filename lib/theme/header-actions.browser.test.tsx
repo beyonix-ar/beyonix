@@ -63,7 +63,7 @@ const adminRoot = document.getElementById("root-admin")
 if (adminRoot) {
   createRoot(adminRoot).render(
     h("div", { "data-actions": "admin", className: "flex items-center gap-1.5 p-4" },
-      h(AdminNotificationBell, { count: 0, tone: "neutral", groups, notifications: [] }),
+      h(AdminNotificationBell, { tone: "neutral", groups, notifications: [] }),
       h(AdminThemeToggle, null),
     ),
   )
@@ -75,7 +75,7 @@ for (const scope of ["header", "checkout", "contenido"]) {
     h("div", { "data-actions": scope, className: "flex items-center justify-end gap-2 p-4" },
       h(CustomerNotificationsBell, { userId: "u1", open: false, onOpenChange() {} }),
       h(AccountThemeToggle, null),
-      h(AdminNotificationBell, { variant: "storefront", count: 0, tone: "neutral", groups, notifications: [] }),
+      h(AdminNotificationBell, { variant: "storefront", tone: "neutral", groups, notifications: [] }),
       h(AccountMenu, { open: true, onOpenChange() {} }),
     ),
   )

@@ -31,6 +31,11 @@ import {
   isCustomerNotificationSensitive,
 } from "@/lib/account/account-notification-visuals"
 import { getCustomerClaimNotificationCta } from "@/lib/orders/customer-claim-experience"
+import {
+  countUnreadNotifications,
+  getNotificationsButtonLabel,
+} from "@/lib/notifications/notification-badge"
+import { NotificationCountBadge } from "@/components/notification-count-badge"
 import { cn } from "@/lib/utils"
 
 interface CustomerNotificationsBellProps {
@@ -133,7 +138,7 @@ export function CustomerNotificationsBell({
   const [error, setError] = useState("")
 
   const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.is_read).length,
+    () => countUnreadNotifications(notifications, (notification) => notification.is_read),
     [notifications],
   )
 
@@ -322,12 +327,6 @@ export function CustomerNotificationsBell({
   }, [loadNotifications, notifications, userId])
 
   useEffect(() => {
-    if (!open || loading || unreadCount === 0) return
-
-    void handleMarkAllRead()
-  }, [handleMarkAllRead, loading, open, unreadCount])
-
-  useEffect(() => {
     if (open) {
       wasOpenRef.current = true
       return
@@ -349,7 +348,7 @@ export function CustomerNotificationsBell({
       <button
         ref={buttonRef}
         type="button"
-        aria-label="Abrir notificaciones"
+        aria-label={getNotificationsButtonLabel("Abrir notificaciones", unreadCount)}
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
         onFocus={openPopover}
@@ -360,11 +359,10 @@ export function CustomerNotificationsBell({
       >
         <Bell className="size-4.5" />
 
-        {unreadCount > 0 && (
-          <span className="beyonix-notifications-badge pointer-events-none absolute -right-0.5 -top-0.5 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-red-600 px-1 text-10px font-bold leading-none tabular-nums text-white shadow-[0_0_0_2px_#0D1117]">
-            {unreadCount > 99 ? "99+" : unreadCount}
-          </span>
-        )}
+        <NotificationCountBadge
+          count={unreadCount}
+          className="beyonix-notifications-badge bg-red-600 text-white shadow-[0_0_0_2px_#0D1117]"
+        />
       </button>
 
       {open && (
@@ -382,7 +380,7 @@ export function CustomerNotificationsBell({
             <div>
               <h2 className="beyonix-notifications-panel-title text-sm font-bold text-white">Notificaciones</h2>
               {unreadCount > 0 && (
-                <p className="beyonix-notifications-panel-muted mt-0.5 text-10px text-[#9CA3AF]">
+                <p data-notification-summary className="beyonix-notifications-panel-muted mt-0.5 text-10px text-[#9CA3AF]">
                   {unreadCount} sin leer
                 </p>
               )}
@@ -447,6 +445,7 @@ export function CustomerNotificationsBell({
                     <button
                       key={notification.id}
                       type="button"
+                      data-unread={!notification.is_read || undefined}
                       onClick={() => void handleNotificationClick(notification)}
                       className={cn(
                         "group flex w-full cursor-pointer items-start gap-3 rounded-xl border p-3 text-left transition-colors",

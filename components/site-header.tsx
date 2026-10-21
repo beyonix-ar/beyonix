@@ -265,7 +265,6 @@ export function SiteHeader() {
                 <div className="hidden lg:block">
                   <AdminNotificationsBell
                     variant="storefront"
-                    count={adminNotifications.notificationCount}
                     tone={adminNotifications.notificationTone}
                     groups={adminNotifications.notificationGroups}
                     notifications={adminNotifications.notifications}

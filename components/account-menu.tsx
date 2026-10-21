@@ -20,6 +20,8 @@ import { useAuth } from "@/context/auth-context"
 import { useCustomerCredit } from "@/context/customer-credit-context"
 import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { formatARS } from "@/lib/customer-credit"
+import { formatNotificationBadgeCount } from "@/lib/notifications/notification-badge"
+import { NotificationCountBadge } from "@/components/notification-count-badge"
 import { beyonixHoverBorder, cn } from "@/lib/utils"
 
 const ACCOUNT_MENU_ICON_COLOR = "#ffffff"
@@ -62,7 +64,7 @@ export function AccountMenuIcon({
       )}
       {Boolean(countBadge) && (
         <span className="absolute -right-1.5 -top-1.5 flex min-w-3.5 h-3.5 items-center justify-center rounded-full border border-black bg-red-600 px-0.5 text-[9px] font-black leading-none text-white">
-          {countBadge && countBadge > 99 ? "99+" : countBadge}
+          {formatNotificationBadgeCount(countBadge ?? 0)}
         </span>
       )}
     </span>
@@ -172,12 +174,10 @@ export function AccountMenu({
           )}
         </span>
         {compact ? (
-          Boolean(unreadNotificationsCount) && (
-            <span
-              aria-hidden="true"
-              className="beyonix-notifications-badge pointer-events-none absolute -right-0.5 -top-0.5 size-3 rounded-full border-2 border-[#0D1117] bg-red-600"
-            />
-          )
+          <NotificationCountBadge
+            count={unreadNotificationsCount ?? 0}
+            className="beyonix-notifications-badge bg-red-600 text-white shadow-[0_0_0_2px_#0D1117]"
+          />
         ) : (
           <>
             <span className="beyonix-account-menu-trigger-label whitespace-nowrap text-sm font-medium uppercase text-white/86">

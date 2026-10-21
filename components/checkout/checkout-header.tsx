@@ -51,7 +51,6 @@ export function CheckoutHeader() {
             {isInternal && (
               <AdminNotificationsBell
                 variant="storefront"
-                count={adminNotifications.notificationCount}
                 tone={adminNotifications.notificationTone}
                 groups={adminNotifications.notificationGroups}
                 notifications={adminNotifications.notifications}

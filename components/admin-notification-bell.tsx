@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Bell } from "lucide-react"
 
 import {
+  isAdminActionNotification,
   markAdminNotificationRead,
   type AdminNotification,
   type AdminNotificationGroups,
@@ -21,6 +22,11 @@ import {
   ACCOUNT_NOTIFICATION_WARNING,
 } from "@/lib/account/account-notification-visuals"
 import { AdminNotificationsPopover } from "@/components/admin-notifications-popover"
+import { NotificationCountBadge } from "@/components/notification-count-badge"
+import {
+  countUnreadNotifications,
+  getNotificationsButtonLabel,
+} from "@/lib/notifications/notification-badge"
 import { cn } from "@/lib/utils"
 
 const ADMIN_NEUTRAL_BELL_STYLE =
@@ -43,7 +49,6 @@ const STOREFRONT_NEUTRAL_BELL_STYLE = "beyonix-header-icon-button"
 const STOREFRONT_NEUTRAL_BADGE_STYLE = "beyonix-header-notif-badge"
 
 interface AdminNotificationBellProps {
-  count: number
   tone: AdminNotificationTone
   groups: AdminNotificationGroups
   notifications: AdminNotification[]
@@ -55,10 +60,9 @@ interface AdminNotificationBellProps {
 }
 
 export function AdminNotificationBell({
-  count,
   tone,
   groups,
-  notifications,
+  notifications: loadedNotifications,
   loading = false,
   error = "",
   onRetry,
@@ -68,6 +72,15 @@ export function AdminNotificationBell({
   const isStorefront = variant === "storefront"
   const router = useRouter()
   const [open, setOpen] = useState(false)
+  // Lectura optimista: la información leída sale de la lista (y del contador)
+  // sin esperar la recarga; las acciones siguen hasta resolverse.
+  const [readIds, setReadIds] = useState<ReadonlySet<string>>(() => new Set())
+  const notifications = useMemo(
+    () => loadedNotifications.filter((notification) => !readIds.has(`${notification.id}@${notification.eventAt}`)),
+    [loadedNotifications, readIds],
+  )
+  // Misma lista que muestra el desplegable (acciones + información sin leer).
+  const count = countUnreadNotifications(notifications, (notification) => notification.isRead)
   const rootRef = useRef<HTMLDivElement>(null)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -122,6 +135,9 @@ export function AdminNotificationBell({
       notification.type !== "shipping" &&
       notification.type !== "mercadolibre_return"
     ) {
+      if (!isAdminActionNotification(notification)) {
+        setReadIds((current) => new Set(current).add(`${notification.id}@${notification.eventAt}`))
+      }
       await markAdminNotificationRead(notification)
     }
     router.push(notification.actionUrl)
@@ -152,7 +168,7 @@ export function AdminNotificationBell({
     >
       <button
         type="button"
-        aria-label={error ? "No se pudieron cargar las alertas. Abrir para reintentar" : "Abrir notificaciones administrativas"}
+        aria-label={error ? "No se pudieron cargar las alertas. Abrir para reintentar" : getNotificationsButtonLabel("Abrir notificaciones administrativas", count)}
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         onFocus={openPopover}
@@ -184,10 +200,10 @@ export function AdminNotificationBell({
       >
         <Bell className="size-4.5" />
         {error && <span role="status" className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 text-xs text-white">!</span>}
-        {!error && !loading && count > 0 && (
-          <span
+        {!error && (
+          <NotificationCountBadge
+            count={count}
             className={cn(
-              "absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-9px font-medium leading-none",
               isStorefront
                 ? mercadoLibreReturnTone
                   ? ACCOUNT_NOTIFICATION_WARNING.badge
@@ -204,9 +220,7 @@ export function AdminNotificationBell({
                       ? ADMIN_INCOMING_PAYMENT_BADGE_STYLE
                       : ADMIN_NEUTRAL_BADGE_STYLE,
             )}
-          >
-            {count > 99 ? "99+" : count}
-          </span>
+          />
         )}
       </button>
 

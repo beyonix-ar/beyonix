@@ -570,7 +570,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
         </Link>
         <div className="flex shrink-0 items-center gap-1.5">
           <AdminNotificationsBell
-            count={notificationCount + dispatchAlerts.notifications.length}
             tone={notificationTone}
             groups={notificationGroups}
             notifications={bellNotifications}
@@ -688,7 +687,6 @@ export function AdminClient({ children }: { children: ReactNode }) {
           <p className="text-sm font-black tracking-widest">BEYONIX ADMIN</p>
           <div className="flex shrink-0 items-center gap-1.5">
             <AdminNotificationsBell
-              count={notificationCount + dispatchAlerts.notifications.length}
               tone={notificationTone}
               groups={notificationGroups}
               notifications={bellNotifications}

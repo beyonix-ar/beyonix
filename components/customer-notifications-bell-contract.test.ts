@@ -23,9 +23,9 @@ test("campana del navbar: botón compartido del header, negra sobre blanco en Li
 })
 
 test("badge de notificaciones: rojo con número, compacto y con aro del color del botón", () => {
-  assert.match(bell, /\{unreadCount > 0 && \(\s*<span className="beyonix-notifications-badge /)
-  assert.match(bell, /beyonix-notifications-badge[^"]*-right-0\.5 -top-0\.5[^"]*h-4\.5 min-w-4\.5[^"]*bg-red-600[^"]*tabular-nums text-white shadow-\[0_0_0_2px_#0D1117\]/)
-  assert.match(bell, /\{unreadCount > 99 \? "99\+" : unreadCount\}/)
+  assert.match(bell, /<NotificationCountBadge\s+count=\{unreadCount\}\s+className="beyonix-notifications-badge bg-red-600 text-white shadow-\[0_0_0_2px_#0D1117\]"/)
+  // Abrir el desplegable (hover/foco) no marca nada como leído.
+  assert.doesNotMatch(bell, /if \(!open \|\| loading \|\| unreadCount === 0\) return/)
   assert.match(
     css,
     /html\[data-account-theme="light"\]\[data-account-scope\] \.beyonix-notifications-badge \{\n  box-shadow: 0 0 0 2px #fff;\n\}/,
