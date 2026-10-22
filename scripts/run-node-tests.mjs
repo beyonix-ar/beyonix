@@ -340,13 +340,12 @@ const TSX_TEST_FILES = [
   "lib/admin/dispatch-armado.test.tsx",
   "lib/admin/dispatch-scan-field.test.tsx",
   "lib/admin/dispatch-queue.test.ts",
-  "lib/admin/dispatch-queue-ui.test.tsx",
+  "lib/admin/dispatch-records-ui.test.tsx",
 
   "lib/admin/dispatch-navigation.test.tsx",
-  "lib/admin/dispatch-board-filters.test.ts",
 
   "lib/admin/dispatch-location.test.ts",
-  "lib/admin/dispatch-board-sql.test.ts",
+  "lib/admin/dispatch-records-sql.test.ts",
   "lib/admin/dispatch-board-api.test.ts",
   "lib/admin/dispatch-filter-bar.test.tsx",
   "lib/admin/dispatch-history.test.ts",

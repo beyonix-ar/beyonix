@@ -2,9 +2,9 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
 import { act } from "react"
-import { dispatchToday } from "./dispatch-board-filters"
+import { dispatchToday } from "./dispatch-records"
 
-test("Entregados abre el historial con actores, paquetes y retirados; fecha y Limpiar conservan defaults", async () => {
+test("Bulto entregado en la tabla única: historial con actores, paquetes y retirados; fecha y Limpiar conservan hoy", async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dispatch-delivered.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dispatch-delivered-key"
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin/despachos" })
@@ -15,7 +15,8 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
   const root = createRoot(dom.window.document.getElementById("root")!)
   const today = dispatchToday()
-  const batch = { id: 7, code: "DSP-20261018-007", display_number: 7, status: "handed_over", created_at: `${today}T09:00:00-03:00`, closed_at: `${today}T12:00:00-03:00`, handed_over_at: `${today}T16:00:00-03:00`, handed_over_by: "actor-c", verification_round: 1, orderCount: 1, packageCount: 3, blockedCount: 0 }
+  const batch = { id: 7, code: "DSP-20261018-007", display_number: 7, status: "handed_over", created_at: `${today}T09:00:00-03:00`, closed_at: `${today}T12:00:00-03:00`, handed_over_at: `${today}T16:00:00-03:00`, handed_over_by: "actor-c", verification_round: 1 }
+  const record = { kind: "batch", id: 7, code: batch.code, displayNumber: 7, state: "E", at: batch.handed_over_at, actorId: "actor-c", actorName: "María", units: 3, total: 9000, orderCount: 1, selectable: false }
   const requests: string[] = []
   globalThis.fetch = async (input) => {
     const url = String(input)
@@ -26,18 +27,17 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
     ] })
     if (url.endsWith("/batches/7")) return Response.json({ batch, items: [], blockedCount: 0, cancelledCount: 0, expectedCount: 1, verifiedCount: 1, missingCount: 0, verificationRequired: true, requiresRevalidation: false, parcelCount: 3, operatorName: "María" })
     const params = new URL(url, "https://beyonix.test").searchParams
-    return Response.json({ orders: [], batches: params.get("tab") === "delivered" ? [batch] : [], holds: [], total: params.get("tab") === "delivered" ? 1 : 0, page: 1 })
+    const rows = params.get("date") === today ? [record] : []
+    return Response.json({ rows, holds: [], users: [], total: rows.length, page: 1 })
   }
   const settle = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)) }) }
   try {
     await act(async () => { root.render(<AdminDispatches />) })
     await settle()
-    await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>(".dispatch-tabs button")].find((button) => button.textContent?.includes("Entregados"))!.click() })
-    await settle()
-    assert.ok(requests.some((url) => url.includes("tab=delivered") && url.includes(`dateFrom=${today}`) && url.includes(`dateTo=${today}`)))
-    assert.match(dom.window.document.body.textContent ?? "", /Bulto - 0007/)
-    assert.equal(dom.window.document.querySelector(".dispatch-batch-list-card button")?.textContent, "Ver")
-    await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-batch-list-card button")!.click() })
+    assert.ok(requests.some((url) => url.includes(`date=${today}`)))
+    const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0007"]')!
+    assert.match(row.textContent ?? "", /Bulto - 0007[\s\S]*María[\s\S]*EEntregado/)
+    await act(async () => { row.click() })
     await settle()
     const content = dom.window.document.body.textContent ?? ""
     assert.match(content, /3 paquetes/)
@@ -54,10 +54,11 @@ test("Entregados abre el historial con actores, paquetes y retirados; fecha y Li
     const inputSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
     await act(async () => { inputSetter.call(date, "15/10/2026"); date.dispatchEvent(new dom.window.Event("input", { bubbles: true })); date.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
     await settle()
-    assert.ok(requests.some((url) => url.includes("tab=delivered") && url.includes("dateFrom=2026-10-15") && url.includes("dateTo=2026-10-15")))
+    assert.ok(requests.some((url) => url.includes("date=2026-10-15")))
+    assert.match(dom.window.document.body.textContent ?? "", /No hay registros con estos filtros/)
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click() })
     await settle()
-    assert.ok(requests.at(-1)?.includes(`dateFrom=${today}`))
+    assert.ok(requests.at(-1)?.includes(`date=${today}`))
   } finally {
     await act(async () => root.unmount())
     supabase.auth.stopAutoRefresh()

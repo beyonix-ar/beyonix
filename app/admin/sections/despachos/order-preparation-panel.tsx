@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageChec
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, AdminTrackingValue, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchLabelConfirmation, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchStage, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchLabelConfirmation, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
@@ -44,12 +44,10 @@ const goTo = (path: string) => window.location.assign(path)
  * etiqueta → escanear su seguimiento para confirmarla). Lo secundario vive en
  * menús que sólo muestran opciones válidas para el estado actual.
  */
-export function OrderPreparationPanel({ orderId, onDone, onStage, footer }: {
+export function OrderPreparationPanel({ orderId, onDone, footer }: {
   orderId: number
   /** Cierre tras resolver una cancelación con armado. */
   onDone?: () => void
-  /** Etapa real del pedido cada vez que cambia (p. ej. para ubicar su pestaña). */
-  onStage?: (stage: DispatchStage) => void
   footer?: ReactNode
 }) {
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -84,8 +82,6 @@ export function OrderPreparationPanel({ orderId, onDone, onStage, footer }: {
     window.addEventListener(ADMIN_DISPATCH_CHANGED_EVENT, reload)
     return () => { if (timer) clearTimeout(timer); window.removeEventListener(ADMIN_DISPATCH_CHANGED_EVENT, reload) }
   }, [load])
-  const currentStage = detail?.stage
-  useEffect(() => { if (currentStage) onStage?.(currentStage) }, [currentStage, onStage])
 
   async function run(action: () => Promise<void>, onError: (message: string) => void = setError) {
     if (busyRef.current) return

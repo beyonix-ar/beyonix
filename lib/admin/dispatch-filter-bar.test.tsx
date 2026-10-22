@@ -2,42 +2,57 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
 import { act, useState } from "react"
-import { defaultDispatchFilters } from "./dispatch-board-filters"
+import { defaultDispatchRecordFilters } from "./dispatch-records"
 
-test("la barra muestra cuatro campos, combina filtros y Limpiar restaura la fecha de la pestaña", async () => {
+test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nativos), Equipo sin datos y Limpiar", async () => {
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin/despachos" })
   Object.assign(globalThis, { window: dom.window, document: dom.window.document, HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })
   const { createRoot } = await import("react-dom/client")
   const { DispatchFilterBar } = await import("../../app/admin/sections/despachos/dispatch-filter-bar")
   const root = createRoot(dom.window.document.getElementById("root")!)
-  let filters = defaultDispatchFilters("delivered", "2026-10-18")
+  const today = "2026-10-22"
+  let filters = defaultDispatchRecordFilters(today)
+  const users = [{ id: "u-1", name: "María Ñúñez" }, { id: "u-2", name: "Pedro" }]
   function Wrapper() {
     const [current, setCurrent] = useState(filters)
     filters = current
-    return <DispatchFilterBar filters={current} onChange={(patch) => setCurrent((value) => ({ ...value, ...patch }))} onClear={() => setCurrent(defaultDispatchFilters("delivered", "2026-10-18"))} />
+    return <DispatchFilterBar filters={current} users={users} onChange={(patch) => setCurrent((value) => ({ ...value, ...patch }))} onClear={() => setCurrent(defaultDispatchRecordFilters(today))} />
   }
+  const document = dom.window.document
   const change = async (label: string, value: string) => {
-    const input = dom.window.document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+    const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
     const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, "value")!.set!
     await act(async () => { setter.call(input, value); input.dispatchEvent(new dom.window.Event("input", { bubbles: true })); input.dispatchEvent(new dom.window.Event("change", { bubbles: true })) })
   }
+  const choose = async (label: string, option: string) => {
+    await act(async () => document.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click())
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((item) => item.textContent === option)!.click())
+  }
   try {
     await act(async () => root.render(<Wrapper />))
-    assert.deepEqual([...dom.window.document.querySelectorAll("[role=search] input")].map((input) => input.getAttribute("aria-label")), ["NRO PEDIDO", "NRO BULTO", "FECHA", "USUARIO"])
-    assert.equal(dom.window.document.querySelectorAll("[role=search] details, [role=search] select").length, 0)
-    assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="FECHA"]')?.value, "18/10/2026")
-    assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="FECHA"]')?.placeholder, "dd/mm/aaaa")
-    assert.equal(dom.window.document.querySelectorAll('input[type="date"]').length, 0)
-    assert.ok(dom.window.document.querySelector('button[aria-label="Abrir calendario"]'))
-    await act(async () => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Abrir calendario"]')!.click())
-    assert.match(dom.window.document.body.textContent ?? "", /Seleccionar fecha/)
-    await change("NRO PEDIDO", "1009")
-    await change("NRO BULTO", "0007")
+    const search = document.querySelector("[role=search]")!
+    assert.deepEqual([...search.querySelectorAll("input")].map((input) => input.getAttribute("aria-label")), ["FECHA", "N° PEDIDO", "N° BULTO"])
+    assert.deepEqual([...search.querySelectorAll("button[aria-haspopup=listbox]")].map((button) => button.getAttribute("aria-label")), ["USUARIO", "EQUIPO", "ESTADO"])
+    assert.equal(search.querySelectorAll("select, details, input[type=date]").length, 0, "nada de selects nativos")
+    assert.equal(document.querySelector<HTMLInputElement>('input[aria-label="FECHA"]')?.value, "22/10/2026", "fecha por defecto: hoy")
+    assert.ok(document.querySelector('button[aria-label="Abrir calendario"]'), "selector de fecha BEYONIX")
+    const device = document.querySelector<HTMLButtonElement>('button[aria-label="EQUIPO"]')!
+    assert.equal(device.disabled, true, "sin registro de equipo no se ofrece un filtro que no filtra")
+    assert.match(device.textContent ?? "", /sin registro/)
+
+    await change("N° PEDIDO", "BX-1012")
+    await change("N° BULTO", "Bulto-0002")
     await change("FECHA", "15/10/2026")
-    await change("USUARIO", "María")
-    assert.deepEqual([filters.search, filters.batch, filters.dateFrom, filters.dateTo, filters.operator], ["1009", "0007", "2026-10-15", "2026-10-15", "María"])
-    await act(async () => dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click())
-    assert.deepEqual(filters, defaultDispatchFilters("delivered", "2026-10-18"))
+    await choose("USUARIO", "María Ñúñez")
+    await choose("ESTADO", "[E] Entregado")
+    assert.deepEqual(filters, { date: "2026-10-15", manualDate: true, order: "BX-1012", batch: "Bulto-0002", user: "u-1", state: "E" }, "fecha elegida a mano")
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="ESTADO"]')!.click())
+    assert.deepEqual([...document.querySelectorAll('[role="option"]')].map((item) => item.textContent),
+      ["Todos los estados", "[P] Pendiente", "[C] Confirmado", "[E] Entregado", "[X] Cancelado"], "sin Anulado: no existe en la base")
+    await act(async () => { document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })) })
+    assert.match(document.querySelector('button[aria-label="ESTADO"]')?.textContent ?? "", /\[E\] Entregado/)
+    await act(async () => document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click())
+    assert.deepEqual(filters, defaultDispatchRecordFilters(today))
   } finally {
     await act(async () => root.unmount())
     dom.window.close()

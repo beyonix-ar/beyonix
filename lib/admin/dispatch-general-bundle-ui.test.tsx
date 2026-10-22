@@ -62,7 +62,7 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
   const orders = [1006, 1007, 1008, 1009]
   const verified = new Map<number, string>()
   const posts: Json[] = []
-  const boardTabs: string[] = []
+  const boardStates: string[] = []
   let handoverEvents = 0
   const item = (orderId: number) => ({ id: orderId, batch_id: 5, order_id: orderId - 1000, package_id: orderId, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false,
     labelCode: `36000000${orderId}`, verified: verified.has(orderId), verifiedAt: verified.has(orderId) ? batch.created_at : null, verificationMethod: verified.get(orderId) ?? null, parcelCount: 1, parcels: [] })
@@ -89,10 +89,13 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
       return Response.json({ ...detail(), verification: { orderId: orderId - 1000, code: `36000000${orderId}`, method: verified.get(orderId), duplicate, expected: orders.length, verified: verified.size } })
     }
     if (path.endsWith("/batches/5")) return Response.json(detail())
-    const tab = new URL(path, "https://beyonix.test").searchParams.get("tab") ?? ""
-    boardTabs.push(tab)
-    const listed = (tab === "delivered") === (batch.status === "handed_over")
-    return Response.json({ orders: [], batches: listed ? [{ ...batch, orderCount: orders.length, verifiedCount: verified.size, packageCount: orders.length, blockedCount: 0 }] : [], holds: [] })
+    // Tabla única: el estado de la fila sigue al del Bulto (P en armado, C finalizado, E entregado).
+    const state = batch.status === "handed_over" ? "E" : batch.status === "closed" ? "C" : "P"
+    const requested = new URL(path, "https://beyonix.test").searchParams.get("state")
+    boardStates.push(state)
+    const rows = !requested || requested === state ? [{ kind: "batch", id: 5, code: batch.code, displayNumber: null, state, at: batch.handed_over_at ?? batch.closed_at ?? batch.created_at,
+      actorId: batch.handed_over_by, actorName: batch.handed_over_by ? "María Peña" : null, units: 4, total: 40000, orderCount: orders.length, selectable: false }] : []
+    return Response.json({ rows, total: rows.length, page: 1, holds: [], users: [] })
   }
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="5" />) })
@@ -162,17 +165,15 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(handoverEvents, 1)
     assert.deepEqual([batch.status, batch.handed_over_by, batch.handed_over_at], ["handed_over", "actor-maria", "2026-10-16T19:00:00Z"])
     assert.equal(qr(), null, "sin recargar: deja el control del Bulto")
-    assert.match(dom.window.location.search, /tab=delivered/)
-    assert.equal(boardTabs.at(-1), "delivered")
+    assert.equal(dom.window.location.search, "?batch=5")
+    assert.equal(boardStates.at(-1), "E", "la tabla se refresca sin recargar")
     assert.match(text(), /Confirmación: María Peña[\s\S]*Entregado: 16\/10\/2026 - 16:00/)
 
     await act(async () => { button(dom, "Volver")!.click() })
     await settle(300)
-    assert.match(text(), /Bulto - 0005/, "aparece en Entregados")
-    await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>(".dispatch-tabs button")].find((item) => item.textContent?.includes("Bultos"))!.click() })
-    await settle(300)
-    assert.equal(boardTabs.at(-1), "open")
-    assert.doesNotMatch(text(), /Bulto - 0005/, "ya no aparece en Bultos")
+    const row = dom.window.document.querySelector('tr[aria-label="Ver Bulto - 0005"]')
+    assert.match(row?.textContent ?? "", /María Peña[\s\S]*EEntregado/, "la fila del Bulto pasa a Entregado con quién lo entregó")
+    assert.doesNotMatch(row?.textContent ?? "", /Pendiente|Confirmado/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
@@ -250,15 +251,15 @@ test("Bultos: varios cancelados se listan para retirar y al resolver el último 
     const path = String(input)
     if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
     if (path.endsWith("/batches/8")) return Response.json(detail())
-    return Response.json({ orders: [], batches: [{ ...batch, orderCount: 3, verifiedCount: 3, packageCount: 3, blockedCount: cancelled.size }], holds: holds() })
+    return Response.json({ rows: [{ kind: "batch", id: 8, code: batch.code, displayNumber: 1, state: "C", at: batch.closed_at, actorId: null, actorName: null, units: 3, total: 30000, orderCount: 3, selectable: false }], total: 1, page: 1, holds: holds(), users: [] })
   }
   try {
     await act(async () => { root.render(<AdminDispatches />) })
     await settle(100)
-    await act(async () => { button(dom, "Bultos")!.click() })
-    assert.match(dom.window.document.body.textContent ?? "", /Bulto - 0001[\s\S]*3 pedidos[\s\S]*Tiene 3 pedidos cancelados/)
+    const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0001"]')!
+    assert.match(row.textContent ?? "", /Bulto - 0001[\s\S]*3 pedidos[\s\S]*3 pedidos cancelados/)
     assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión|Verificados/)
-    await act(async () => { button(dom, "Abrir")!.click() })
+    await act(async () => { row.click() })
     await settle(120)
     const text = () => dom.window.document.body.textContent ?? ""
     assert.match(text(), /Hay 3 pedidos que tenés que retirar/)

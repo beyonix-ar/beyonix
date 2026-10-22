@@ -1,40 +1,34 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { dispatchLocationFromSearch, dispatchLocationHref, dispatchTabForStage, parseDispatchLocation, restoreDispatchBoardView } from "./dispatch-location"
+import { dispatchLocationFromSearch, dispatchLocationHref, parseDispatchLocation } from "./dispatch-location"
+import { defaultDispatchRecordFilters, dispatchRecordParams, dispatchToday, restoreDispatchRecordsView } from "./dispatch-records"
 
-test("URL estable de Despachos: pestaña, pedido y Bulto sobreviven a refrescar y volver", () => {
-  assert.deepEqual(dispatchLocationFromSearch("?tab=ready&order=11"), { tab: "ready", orderId: 11, batchId: null })
-  assert.equal(dispatchLocationHref({ tab: "ready", orderId: 11, batchId: null }), "/admin/despachos?tab=ready&order=11")
-  assert.equal(dispatchLocationHref({ tab: "ready", orderId: null, batchId: null }), "/admin/despachos?tab=ready")
-  assert.equal(dispatchLocationHref({ tab: null, orderId: null, batchId: null }), "/admin/despachos")
-  assert.deepEqual(dispatchLocationFromSearch("?tab=open&batch=5"), { tab: "open", orderId: null, batchId: 5 })
-  // Enlace directo desde Pedidos: sin pestaña, la etapa del pedido la define.
-  assert.deepEqual(parseDispatchLocation({ order: "11" }), { tab: null, orderId: 11, batchId: null })
+test("URL estable de Despachos: pedido y Bulto sobreviven a refrescar y volver; ?tab viejo se ignora", () => {
+  assert.deepEqual(dispatchLocationFromSearch("?tab=ready&order=11"), { orderId: 11, batchId: null })
+  assert.equal(dispatchLocationHref({ orderId: 11, batchId: null }), "/admin/despachos?order=11")
+  assert.equal(dispatchLocationHref({ orderId: null, batchId: 5 }), "/admin/despachos?batch=5")
+  assert.equal(dispatchLocationHref({ orderId: null, batchId: null }), "/admin/despachos")
+  assert.deepEqual(dispatchLocationFromSearch("?tab=open&batch=5"), { orderId: null, batchId: 5 })
+  assert.deepEqual(parseDispatchLocation({ order: "11" }), { orderId: 11, batchId: null })
   for (const invalid of ["?tab=otra&order=-1", "?order=abc&batch=0", "?order=1e3", "?batch=99999999999999999"]) {
-    assert.deepEqual(dispatchLocationFromSearch(invalid), { tab: null, orderId: null, batchId: null }, invalid)
+    assert.deepEqual(dispatchLocationFromSearch(invalid), { orderId: null, batchId: null }, invalid)
   }
 })
 
-test("cada etapa del pedido vive en su pestaña", () => {
-  assert.deepEqual((["pending", "packing", "shipment", "label", "ready", "in_batch", "batch_closed", "handed_over"] as const).map(dispatchTabForStage),
-    ["armado", "armado", "armado", "ready", "ready", "open", "open", "delivered"])
-})
-
-test("filtros y página por pestaña: se restauran validados y 'hoy' nunca queda en una fecha vieja", () => {
-  const stored = JSON.stringify({
-    filters: {
-      ready: { search: "BX-1011", dateMode: "day", dateFrom: "2026-10-20", dateTo: "2026-10-20", operator: "María Ñúñez" },
-      delivered: { dateMode: "today", dateFrom: "2026-10-20", dateTo: "2026-10-20" },
-      open: { dateMode: "otra", search: 7 },
-    },
-    pages: { ready: 3, armado: -2, open: 1.5 },
-  })
-  const view = restoreDispatchBoardView(stored, "2026-10-21")
-  assert.deepEqual([view.filters.ready.search, view.filters.ready.dateFrom, view.filters.ready.operator], ["BX-1011", "2026-10-20", "María Ñúñez"])
-  assert.deepEqual([view.filters.delivered.dateFrom, view.filters.delivered.dateTo], ["2026-10-21", "2026-10-21"])
-  assert.deepEqual([view.filters.open.dateMode, view.filters.open.search], ["all", ""])
-  assert.deepEqual(view.pages, { armado: 1, ready: 3, open: 1, delivered: 1 })
-  assert.equal(view.filters.armado.dateFrom, "", "Pendientes sin fecha")
-  assert.equal(view.filters.ready.quantityKind, "units")
-  for (const broken of [null, "", "{", "[]", "\"x\""]) assert.equal(restoreDispatchBoardView(broken, "2026-10-21").filters.ready.dateFrom, "")
+test("filtros: fecha por defecto hoy, parámetros sin vacíos y restauración validada", () => {
+  assert.deepEqual(defaultDispatchRecordFilters("2026-10-22"), { date: "2026-10-22", manualDate: false, order: "", batch: "", user: "", state: "" })
+  assert.match(dispatchToday(new Date("2026-10-23T02:30:00Z")), /^2026-10-22$/, "hoy en Buenos Aires")
+  // Hoy por defecto sólo recorta lo resuelto; una fecha elegida a mano filtra todo.
+  assert.equal(dispatchRecordParams({ date: "2026-10-22", manualDate: false, order: " BX-1012 ", batch: "", user: "", state: "P" }, 2), "page=2&date=2026-10-22&order=BX-1012&state=P&openAllDates=true")
+  assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), date: "2026-10-20", manualDate: true }, 1), "page=1&date=2026-10-20")
+  assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), date: "", manualDate: true }, 1), "page=1", "sin fecha: todo")
+  const stored = (today: string, filters: Record<string, unknown>, page: unknown = 3) => JSON.stringify({ today, filters, page })
+  const view = restoreDispatchRecordsView(stored("2026-10-22", { date: "2026-10-20", manualDate: true, order: "BX-1011", user: "María Ñúñez", state: "E" }), "2026-10-22")
+  assert.deepEqual([view.filters.date, view.filters.manualDate, view.filters.order, view.filters.state, view.page], ["2026-10-20", true, "BX-1011", "E", 3])
+  assert.equal(restoreDispatchRecordsView(stored("2026-10-22", { state: "A", manualDate: "sí" }), "2026-10-22").filters.state, "", "Anulado ya no es un estado")
+  assert.equal(restoreDispatchRecordsView(stored("2026-10-22", { manualDate: "sí" }), "2026-10-22").filters.manualDate, false)
+  assert.deepEqual(restoreDispatchRecordsView(stored("2026-10-21", { date: "2026-10-21", order: "BX-1" }), "2026-10-22").filters, defaultDispatchRecordFilters("2026-10-22"), "guardado ayer: vuelve a hoy")
+  const broken = restoreDispatchRecordsView(stored("2026-10-22", { date: "ayer", state: "Z", batch: 7 }, -1), "2026-10-22")
+  assert.deepEqual([broken.filters.date, broken.filters.state, broken.filters.batch, broken.page], ["2026-10-22", "", "", 1])
+  for (const raw of [null, "", "{", "[]", "\"x\""]) assert.equal(restoreDispatchRecordsView(raw, "2026-10-22").filters.date, "2026-10-22")
 })
