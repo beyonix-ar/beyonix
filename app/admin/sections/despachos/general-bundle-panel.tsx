@@ -62,14 +62,23 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
       .catch((cause: unknown) => { setError(cause instanceof Error ? cause.message : "No se pudo finalizar el Bulto.") })
   }, [batch.id, batch.status, batch.verification_round, blocked, detail.expectedCount, detail.verifiedCount, onChange, onRefresh])
 
-  // Sólo verifica en pantalla que la etiqueta leída es la de este Bulto; no cambia su estado.
+  // La etiqueta de este Bulto registra su entrega interna (idempotente en la RPC); otro código no envía nada.
   function confirmBundle(code: string) {
-    const next: Feedback = matchesDispatchBatch(code, batch)
-      ? { tone: "success", message: "Bulto confirmado" }
-      : { tone: "error", message: "El código no corresponde a este Bulto." }
+    if (busyRef.current) return
     setConfirmation("")
-    setConfirmFeedback(next)
-    playScanFeedback(next.tone)
+    const reject = (message: string) => { setConfirmFeedback({ tone: "error", message }); playScanFeedback("error") }
+    if (!matchesDispatchBatch(code, batch)) return reject("El código no corresponde a este Bulto.")
+    void (async () => {
+      busyRef.current = true
+      setBusy(true); setError(""); setConfirmFeedback(null)
+      try {
+        const updated = await dispatchRequest<BatchDispatchDetail>(`/batches/${batch.id}`, { action: "handover", code })
+        playScanFeedback("success")
+        onChange(updated)
+        onRefresh()
+      } catch (cause) { reject(cause instanceof Error ? cause.message : "No se pudo confirmar la entrega del Bulto.") }
+      finally { busyRef.current = false; setBusy(false) }
+    })()
   }
 
   function report(next: Feedback) {
@@ -152,7 +161,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         </div>}
         {finalized && items.length > 0 && <div className="mt-3">
           <ScanField label="Escanear o ingresar el QR del Bulto" placeholder="Escanear / escribir QR del Bulto" submitLabel="Confirmar"
-            value={confirmation} onChange={setConfirmation} onScan={confirmBundle} autoFocus={dialog === null}
+            value={confirmation} onChange={setConfirmation} onScan={confirmBundle} busy={busy} autoFocus={dialog === null}
             cameraTitle={dispatchBatchName(batch)} cameraHint="QR de la etiqueta del Bulto" feedback={confirmFeedback} />
           {confirmFeedback && <p role={confirmFeedback.tone === "error" ? "alert" : "status"} className={`mt-2 text-sm font-bold ${confirmFeedback.tone === "error" ? "text-red-300" : "text-emerald-300"}`}>{confirmFeedback.message}</p>}
         </div>}

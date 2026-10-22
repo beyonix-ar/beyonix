@@ -1,6 +1,7 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { dispatchError, getBatchDispatch, isRequestKey, orderCode, parseOrderCode, validId, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { getDispatchHistory } from "@/lib/admin/dispatch-history"
+import { matchesDispatchBatch } from "@/lib/admin/dispatch-scan"
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -62,10 +63,14 @@ export async function POST(request: Request, context: Context) {
     if (reason.length < 10 || reason.length > 1000) return Response.json({ error: "Ingresá un motivo de al menos 10 caracteres." }, { status: 400 })
     result = await auth.admin.rpc("reopen_dispatch_batch", { p_batch_id: id, p_actor_id: auth.user.id, p_reason: reason })
   } else {
-    // La salida física se confirma con el DSP del Bulto general en la puerta.
+    // La entrega se confirma con la etiqueta del Bulto: QR de control, DSP o nombre impreso.
     const code = body.code?.trim() ?? ""
-    if (!code || code.length > 64) return Response.json({ error: "Escaneá o ingresá el DSP del Bulto general para confirmar la entrega." }, { status: 400 })
-    result = await auth.admin.rpc("confirm_dispatch_batch_handover", { p_batch_id: id, p_code: code, p_actor_id: auth.user.id })
+    if (!code || code.length > 128) return Response.json({ error: "Escaneá o ingresá el QR del Bulto para confirmar la entrega." }, { status: 400 })
+    const batchResult = await auth.admin.from("dispatch_batches").select("id,code,display_number").eq("id", id).maybeSingle()
+    if (batchResult.error) return Response.json({ error: "No se pudo confirmar la entrega." }, { status: 500 })
+    if (!batchResult.data) return Response.json({ error: "Lote no encontrado." }, { status: 404 })
+    if (!matchesDispatchBatch(code, batchResult.data)) return Response.json({ error: dispatchError({ message: "DISPATCH_HANDOVER_CODE_MISMATCH" }) }, { status: 409 })
+    result = await auth.admin.rpc("confirm_dispatch_batch_handover", { p_batch_id: id, p_code: batchResult.data.code, p_actor_id: auth.user.id })
     if (!result.error) handover = result.data as { duplicate: boolean }
   }
   if (result.error) {

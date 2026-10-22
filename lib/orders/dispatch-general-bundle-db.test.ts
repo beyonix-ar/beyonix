@@ -192,9 +192,17 @@ test("Bulto general: esperado ≠ verificado, un BX-PREP por pedido, todos los m
     assert.deepEqual([closed.status, closed.handed_over_at], ["closed", null])
     assert.equal(await count(db, "select count(*)::int n from ordenes where id in (1031,1032) and andreani_handed_over_at is not null"), 0)
     await assert.rejects(db.query("select confirm_dispatch_batch_handover($1,$2,$3)", [bundle.id, other.code, actor]), /DISPATCH_HANDOVER_CODE_MISMATCH/)
+    type Delivery = { status: string; handed_over_by: string | null; handed_over_at: string | null }
+    const delivery = async () => (await db.query<Delivery>("select status,handed_over_by,handed_over_at from dispatch_batches where id=$1", [bundle.id])).rows[0]
+    assert.deepEqual(await delivery(), { status: "closed", handed_over_by: null, handed_over_at: null }, "código incorrecto no cambia nada")
     const handed = (await db.query<{ r: { duplicate: boolean } }>("select confirm_dispatch_batch_handover($1,$2,$3) r", [bundle.id, ` ${bundle.code.toLowerCase()} `, actor])).rows[0].r
     assert.equal(handed.duplicate, false)
+    const delivered = await delivery()
+    assert.deepEqual([delivered.status, delivered.handed_over_by], ["handed_over", actor])
+    assert.ok(delivered.handed_over_at)
     assert.equal((await db.query<{ r: { duplicate: boolean } }>("select confirm_dispatch_batch_handover($1,$2,$3) r", [bundle.id, bundle.code, actor])).rows[0].r.duplicate, true, "doble lectura del DSP")
+    assert.equal(String((await delivery()).handed_over_at), String(delivered.handed_over_at), "la segunda lectura conserva la entrega original")
+    assert.equal(await count(db, "select count(*)::int n from dispatch_batch_events where batch_id=$1 and action='handed_over'", [bundle.id]), 1)
     assert.equal(await count(db, "select count(*)::int n from ordenes where id in (1031,1032) and andreani_handed_over_batch_id=$1", [bundle.id]), 2)
     assert.equal(await count(db, "select count(*)::int n from order_audit_events where order_id=1031 and action='order_handed_over_to_andreani'"), 1)
   } finally { await db.close() }

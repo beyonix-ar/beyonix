@@ -57,18 +57,29 @@ async function submit(dom: JSDOM, input: HTMLInputElement) {
 test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectura finaliza sin cuarto paso", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=5")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
-  const batch = { id: 5, code: "DSP-20261016-001", status: "open", created_at: "2026-10-16T12:00:00Z", closed_at: null, prepared_at: null, handed_over_at: null, handed_over_by: null, verification_round: 1 }
+  const batch: { id: number; code: string; status: string; created_at: string; closed_at: string | null; prepared_at: string | null; handed_over_at: string | null; handed_over_by: string | null; verification_round: number } =
+    { id: 5, code: "DSP-20261016-001", status: "open", created_at: "2026-10-16T12:00:00Z", closed_at: null, prepared_at: null, handed_over_at: null, handed_over_by: null, verification_round: 1 }
   const orders = [1006, 1007, 1008, 1009]
   const verified = new Map<number, string>()
   const posts: Json[] = []
+  const boardTabs: string[] = []
+  let handoverEvents = 0
   const item = (orderId: number) => ({ id: orderId, batch_id: 5, order_id: orderId - 1000, package_id: orderId, added_at: batch.created_at, removed_at: null, blocked: false, blockReason: null, cancellationHold: false,
     labelCode: `36000000${orderId}`, verified: verified.has(orderId), verifiedAt: verified.has(orderId) ? batch.created_at : null, verificationMethod: verified.get(orderId) ?? null, parcelCount: 1, parcels: [] })
   const detail = (): Json => ({ batch, items: orders.map(item), blockedCount: 0, cancelledCount: 0, expectedCount: orders.length, verifiedCount: verified.size, missingCount: orders.length - verified.size, requiresRevalidation: false, parcelCount: orders.length, operatorName: null })
   globalThis.fetch = async (input, init) => {
     const path = String(input)
+    if (path.endsWith("/batches/5?history")) return Response.json({ batch, orderCount: 4, parcelCount: 4, pickingBy: ["Pedro"], preparedBy: ["Lucía"], assembledBy: "Juan", controlledBy: ["Lucía"], deliveredBy: batch.handed_over_by === "actor-maria" ? "María Peña" : null, items: [] })
     if (path.endsWith("/batches/5") && init?.body) {
       const body = JSON.parse(String(init.body)) as { action: string; code?: string; method: string; orderId?: number }
       posts.push(body)
+      if (body.action === "handover") {
+        // Como la RPC: una sola entrega con actor y fecha; repetirla no suma eventos.
+        await new Promise((resolve) => setTimeout(resolve, 40))
+        const duplicate = batch.status === "handed_over"
+        if (!duplicate) { Object.assign(batch, { status: "handed_over", handed_over_at: "2026-10-16T19:00:00Z", handed_over_by: "actor-maria" }); handoverEvents += 1 }
+        return Response.json({ ...detail(), verification: null, handover: { duplicate } })
+      }
       const orderId = body.method === "manual_selection" ? 1000 + Number(body.orderId) : Number(/^36000000(\d{4})$/.exec(body.code ?? "")?.[1])
       if (/^BX-PKG-/i.test(body.code ?? "")) return Response.json({ error: "Esa es una etiqueta interna (BX-PKG). Escaneá la etiqueta Andreani del pedido." }, { status: 409 })
       if (!orders.includes(orderId)) return Response.json({ error: "Código no reconocido." }, { status: 409 })
@@ -78,7 +89,10 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
       return Response.json({ ...detail(), verification: { orderId: orderId - 1000, code: `36000000${orderId}`, method: verified.get(orderId), duplicate, expected: orders.length, verified: verified.size } })
     }
     if (path.endsWith("/batches/5")) return Response.json(detail())
-    return Response.json({ orders: [], batches: [{ ...batch, orderCount: orders.length, verifiedCount: verified.size, packageCount: orders.length, blockedCount: 0 }], holds: [] })
+    const tab = new URL(path, "https://beyonix.test").searchParams.get("tab") ?? ""
+    boardTabs.push(tab)
+    const listed = (tab === "delivered") === (batch.status === "handed_over")
+    return Response.json({ orders: [], batches: listed ? [{ ...batch, orderCount: orders.length, verifiedCount: verified.size, packageCount: orders.length, blockedCount: 0 }] : [], holds: [] })
   }
   try {
     await act(async () => { root.render(<AdminDispatches initialBatchId="5" />) })
@@ -121,21 +135,44 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.ok(button(dom, "Imprimir etiqueta"))
     assert.ok(button(dom, "Guardar PDF"))
 
-    // Confirmación del Bulto finalizado con su QR: sólo en pantalla, no envía nada.
+    assert.equal(posts.some((post) => post.action === "handover"), false, "finalizar no entrega")
+    assert.doesNotMatch(text(), /Entregar a Andreani|Escanear o ingresar DSP/)
+    assert.equal(dom.window.document.querySelector('button[aria-label="Opciones del Bulto"]'), null)
+
+    // QR incorrecto: avisa y no envía ni cambia nada.
     const postCount = posts.length
     const qr = () => dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar el QR del Bulto"]')!
     await scanWithReader(dom, qr(), "https://beyonix.test/admin/despachos/bultos/6/control")
     assert.match(control(), /El código no corresponde a este Bulto\./)
-    assert.doesNotMatch(control(), /Bulto confirmado/)
-    await scanWithReader(dom, qr(), "https://beyonix.test/admin/despachos/bultos/5/control")
-    assert.match(control(), /Bulto confirmado/)
-    assert.equal(qr().value, "")
-    await type(dom, qr(), "dsp-20261016-001"); await submit(dom, qr())
-    assert.match(control(), /Bulto confirmado/)
     assert.equal(posts.length, postCount)
-    assert.equal(posts.some((post) => post.action === "close" || post.action === "handover"), false)
-    assert.doesNotMatch(text(), /Entregar a Andreani|Escanear o ingresar DSP/)
-    assert.equal(dom.window.document.querySelector('button[aria-label="Opciones del Bulto"]'), null)
+    assert.equal(batch.status, "closed")
+    assert.equal(qr().value, "")
+
+    // QR correcto (dos lecturas seguidas): una sola entrega, con actor y fecha, y la vista pasa a Entregados.
+    await type(dom, qr(), "https://beyonix.test/admin/despachos/bultos/5/control")
+    const form = qr().closest("form")!
+    await act(async () => {
+      form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }))
+      form.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }))
+    })
+    await settle(400)
+    const handovers = posts.filter((post) => post.action === "handover")
+    assert.equal(handovers.length, 1, "doble lectura: un solo envío")
+    assert.equal(handovers[0].code, "https://beyonix.test/admin/despachos/bultos/5/control")
+    assert.equal(handoverEvents, 1)
+    assert.deepEqual([batch.status, batch.handed_over_by, batch.handed_over_at], ["handed_over", "actor-maria", "2026-10-16T19:00:00Z"])
+    assert.equal(qr(), null, "sin recargar: deja el control del Bulto")
+    assert.match(dom.window.location.search, /tab=delivered/)
+    assert.equal(boardTabs.at(-1), "delivered")
+    assert.match(text(), /Confirmación: María Peña[\s\S]*Entregado: 16\/10\/2026 - 16:00/)
+
+    await act(async () => { button(dom, "Volver")!.click() })
+    await settle(300)
+    assert.match(text(), /Bulto - 0005/, "aparece en Entregados")
+    await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>(".dispatch-tabs button")].find((item) => item.textContent?.includes("Bultos"))!.click() })
+    await settle(300)
+    assert.equal(boardTabs.at(-1), "open")
+    assert.doesNotMatch(text(), /Bulto - 0005/, "ya no aparece en Bultos")
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 

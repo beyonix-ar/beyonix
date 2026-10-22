@@ -241,6 +241,14 @@ export function AdminDispatches({ initialTab, initialBatchId, initialOrderId, in
     void refresh()
   }
 
+  /** Un Bulto entregado deja Bultos: el detalle y Volver pasan a Entregados. */
+  function changeBatch(detail: BatchDispatchDetail) {
+    setBatch(detail)
+    if (detail.batch.status !== "handed_over" || location.tab === "delivered") return
+    pushedDetail.current = false
+    navigate({ tab: "delivered", orderId: null, batchId: detail.batch.id }, "replace")
+  }
+
   function openResolution(hold: DispatchHold) {
     setResolving(hold); setQueue([]); setError("")
   }
@@ -313,7 +321,7 @@ export function AdminDispatches({ initialTab, initialBatchId, initialOrderId, in
       </div>
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Entregado" : "Bulto general"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
       {batch.batch.status === "handed_over" ? <DeliveredBatchPanel batchId={batch.batch.id} /> : <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
-        onChange={setBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
+        onChange={changeBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
       }
     </AdminSection> : location.batchId ? (error ? null : <p role="status" className="text-sm text-white/70">Abriendo Bulto…</p>) : <AdminSection compact className="dispatch-surface" title={TABS.find((item) => item.key === tab)?.label ?? "Despachos"} icon={<PackageCheck className="size-4" />}>
       {(tab === "armado" || tab === "ready") ? (() => {

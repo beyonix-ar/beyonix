@@ -249,7 +249,7 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_RESOLUTION_WRONG_ORDER: "Ese código es de otro pedido.",
     DISPATCH_RESOLUTION_CODE_IS_PRODUCT: "Ese código es de un producto. Escaneá la etiqueta Andreani del pedido.",
     DISPATCH_RESOLUTION_LABEL_REQUIRED: "Este pedido ya estaba preparado: escaneá su etiqueta Andreani, no el número de pedido.",
-    DISPATCH_HANDOVER_CODE_MISMATCH: "Ese código no corresponde a este Bulto general. Escaneá o ingresá su DSP.",
+    DISPATCH_HANDOVER_CODE_MISMATCH: "El código no corresponde a este Bulto.",
   }
   const code = Object.keys(messages).sort((left, right) => right.length - left.length).find((key) => error.message.includes(key))
   let message = code ? messages[code] : error.message.includes("dispatch_batch_items_active_order_unique") ? "Este pedido ya pertenece a otro Bulto general." : fallback
