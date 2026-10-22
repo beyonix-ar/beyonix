@@ -145,6 +145,25 @@ for (const [name, error, message, state] of failures) {
   })
 }
 
+for (const permission of ["prompt", "granted"] as const) {
+  test(`Android con permiso "${permission}": pide la cámara con getUserMedia y la abre`, async () => {
+    const { dom, root } = await setup()
+    const { CameraScanner } = await import("../../app/admin/sections/despachos/camera-scanner")
+    let attempts = 0
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {
+      permissions: { query: async () => ({ state: permission }) },
+      mediaDevices: { getUserMedia: async () => { attempts += 1; return { getTracks: () => [{ stop: () => {} }] } } },
+    } })
+    try {
+      await act(async () => { root.render(<CameraScanner open title="Escanear Bulto general" hint="DSP" createReader={async () => frames("native", [])} onDetected={() => {}} onClose={() => {}} />) })
+      await settle()
+      assert.equal(attempts, 1, "no asume denegado antes de pedirla")
+      assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "scanning")
+      assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Permiso de cámara denegado/)
+    } finally { await act(async () => root.unmount()); dom.window.close() }
+  })
+}
+
 test("Android prompt solicita permiso y reintentar cámara vuelve a pedir acceso", async () => {
   const { dom, root } = await setup()
   const { CameraScanner } = await import("../../app/admin/sections/despachos/camera-scanner")
@@ -162,6 +181,7 @@ test("Android prompt solicita permiso y reintentar cámara vuelve a pedir acceso
     await settle()
     assert.equal(attempts, 1, "prompt llama a getUserMedia")
     assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "denied")
+    assert.match(dom.window.document.body.textContent ?? "", /Permisos → Cámara → Permitir/, "NotAllowedError: instrucciones para desbloquear")
     await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Reintentar cámara"))!.click() })
     await settle()
     assert.equal(attempts, 2)
@@ -182,7 +202,7 @@ test("Android con permiso denegado: informa el bloqueo sin volver a pedir cámar
     await settle()
     assert.equal(attempts, 0)
     assert.equal(dom.window.document.querySelector("[data-camera-state]")?.getAttribute("data-camera-state"), "denied")
-    assert.match(dom.window.document.body.textContent ?? "", /Permiso de cámara denegado/)
+    assert.match(dom.window.document.body.textContent ?? "", /Permiso de cámara denegado\. Tocá el ícono junto a la dirección del sitio, entrá a Permisos → Cámara → Permitir/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { pathToFileURL } from "node:url"
 import test from "node:test"
 
 // HSTS de producción: un año en el dominio principal.
@@ -48,8 +49,21 @@ test("el resto de los headers de seguridad estáticos no cambió", () => {
   )
   assert.match(
     source,
-    /key: "Permissions-Policy",\s*\n\s*value: "camera=\(\), microphone=\(\), geolocation=\(\), payment=\(self\)",/,
+    /key: "Permissions-Policy",\s*\n\s*value: "camera=\(self\), microphone=\(\), geolocation=\(\), payment=\(self\)",/,
   )
+})
+
+// Con camera=() Chrome rechaza getUserMedia (NotAllowedError) sin mostrar el
+// pedido de permiso: el escáner de Despachos quedaba siempre "denegado".
+test("Permissions-Policy habilita la cámara sólo para el propio origen, en todas las rutas", async () => {
+  const { default: config } = await import(pathToFileURL(join(process.cwd(), "next.config.mjs")).href)
+  const rules = await config.headers()
+  const policies = rules.flatMap((rule: { source: string; headers: Array<{ key: string; value: string }> }) =>
+    rule.headers.filter((header) => header.key === "Permissions-Policy").map((header) => ({ source: rule.source, value: header.value })))
+  assert.deepEqual(policies.map((policy: { source: string }) => policy.source), ["/:path*"])
+  const camera = policies[0].value.split(",").map((item: string) => item.trim()).find((item: string) => item.startsWith("camera="))
+  assert.equal(camera, "camera=(self)")
+  assert.match(policies[0].value, /microphone=\(\)/)
 })
 
 test("Next.js no expone X-Powered-By", () => {

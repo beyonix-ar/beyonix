@@ -5,13 +5,17 @@
 // Mercado Pago cargado en el cliente (Checkout Pro es un redirect, no un
 // iframe embebido) y no se usa `navigator.geolocation` en ningún lado, así
 // que puede deshabilitar esas features sin romper nada existente.
+// La cámara queda en (self): el escáner de Despachos la usa, y con camera=()
+// Chrome la bloquea sin mostrar el pedido de permiso. Va en todo el sitio
+// porque la política es la del primer documento cargado (p. ej. /login →
+// /admin sin recargar); los iframes de terceros siguen sin acceso.
 const SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=(self)",
+    value: "camera=(self), microphone=(), geolocation=(), payment=(self)",
   },
   // El dominio principal usa HTTPS en producción. No extender a subdominios
   // ni solicitar preload sin verificar antes todos sus servicios.

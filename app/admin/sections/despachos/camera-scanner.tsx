@@ -26,7 +26,7 @@ export type CameraFeedback = { tone: "success" | "warning" | "error"; message: s
 const FALLBACK_MESSAGES: Record<Exclude<CameraState["kind"], "starting" | "scanning">, string> = {
   insecure: "La cámara requiere una conexión segura (HTTPS).",
   unsupported: "Este navegador no permite usar la cámara.",
-  denied: "Permiso de cámara denegado. Habilitalo en el navegador.",
+  denied: "Permiso de cámara denegado. Tocá el ícono junto a la dirección del sitio, entrá a Permisos → Cámara → Permitir y después tocá «Reintentar cámara».",
   unavailable: "No se encontró una cámara disponible.",
   busy: "La cámara está ocupada por otra aplicación.",
   unknown: "No pudimos abrir la cámara.",
@@ -80,8 +80,9 @@ export function CameraScanner({ open, title, hint, continuous = false, paused = 
     void (async () => {
       if (typeof window !== "undefined" && window.isSecureContext === false) { setState({ kind: "insecure" }); return }
       if (!navigator.mediaDevices?.getUserMedia) { setState({ kind: "unsupported" }); return }
-      // Safari puede no implementar Permissions API para camera: en ese caso
-      // getUserMedia sigue siendo la fuente de verdad y dispara el prompt.
+      // Sólo "denied" corta antes de pedir la cámara; "prompt" y "granted" siguen
+      // a getUserMedia, que es la fuente de verdad y muestra el pedido nativo.
+      // Safari puede no implementar Permissions API para camera.
       try {
         const permission = await navigator.permissions?.query({ name: "camera" as PermissionName })
         if (cancelled) return
