@@ -891,6 +891,32 @@ test("consulta trazas mediante PULL v3", async () => {
     tracking.eventos[0]?.Submotivo,
     "Entregado en Domicilio de Destinatario",
   )
+  assert.deepEqual(tracking.eventosNoReconocidos, [])
+})
+
+test("un evento o ciclo fuera del maestro no invalida el seguimiento: se separa crudo, sin interpretarlo", async () => {
+  resetAndreaniRuntimeStateForTests()
+  const client = new AndreaniClient({
+    env: qaEnvironment(),
+    fetch: async (input) => {
+      if (String(input).endsWith("/login")) return Response.json({ token: "token" })
+      return Response.json({
+        eventos: [
+          { Fecha: "2026-10-21T08:00:00", Ciclo: "Distribution", Evento: "EnvioDespachado", Estado: "En viaje" },
+          { Fecha: "2026-10-21T09:00:00", Ciclo: "Distribution", Evento: "EventoNuevoDeAndreani", Estado: "Novedad", Motivo: "M" },
+          { Fecha: "2026-10-21T10:00:00", Ciclo: "CICLO_NUEVO", Evento: "Distribucion", Estado: "En distribución" },
+        ],
+      })
+    },
+  })
+
+  const tracking = await client.getTrackingPullV3("360000044179430")
+
+  assert.deepEqual(tracking.eventos.map((event) => event.Evento), ["EnvioDespachado"])
+  assert.deepEqual(tracking.eventosNoReconocidos, [
+    { Fecha: "2026-10-21T09:00:00", Evento: "EventoNuevoDeAndreani", Ciclo: "Distribution", Estado: "Novedad", Motivo: "M", Submotivo: undefined, Sucursal: undefined },
+    { Fecha: "2026-10-21T10:00:00", Evento: "Distribucion", Ciclo: "CICLO_NUEVO", Estado: "En distribución", Motivo: undefined, Submotivo: undefined, Sucursal: undefined },
+  ])
 })
 
 for (const status of [400, 404] as const) {

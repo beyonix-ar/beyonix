@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 
 import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
 import {
+  ANDREANI_ORDER_TRACKING_SELECT,
   resolveAndreaniTrackingEnvironment,
   syncAndreaniOrderTracking,
   type AndreaniOrderTrackingRow,
@@ -19,9 +20,6 @@ function statusForAndreaniError(error: AndreaniError) {
       return 502
   }
 }
-
-const ORDER_TRACKING_SELECT =
-  "id, estado, delivered_at, andreani_tracking, andreani_envio_id, andreani_creation_environment, cliente_email, cliente_nombre, tracking_number, tracking_url"
 
 export async function POST(request: Request) {
   const authorization = await requireInternalUser(request, ["admin", "super_admin"])
@@ -42,7 +40,7 @@ export async function POST(request: Request) {
 
   const { data: order, error: orderError } = await authorization.admin
     .from("ordenes")
-    .select(ORDER_TRACKING_SELECT)
+    .select(ANDREANI_ORDER_TRACKING_SELECT)
     .eq("id", orderId)
     .maybeSingle()
 
@@ -60,13 +58,16 @@ export async function POST(request: Request) {
     })
 
     const { snapshot } = result
-    const message = snapshot.rejectedAfterCreation
+    const baseMessage = snapshot.rejectedAfterCreation
       ? "Andreani rechazó la orden después de haberla creado. Requiere revisión manual."
       : result.statusChanged
         ? `Actualizado a "${result.newEstado}" según Andreani (${snapshot.logisticsEstado}).`
         : snapshot.latestEvent
           ? `${snapshot.logisticsEstado} (${snapshot.latestEvent.Fecha})`
           : `El envío continúa: ${snapshot.logisticsEstado}.`
+    const message = snapshot.eventosNoReconocidos.length
+      ? `${baseMessage} Andreani informó un evento que BEYONIX no reconoce: quedó registrado para revisión y no cambió el estado.`
+      : baseMessage
 
     return NextResponse.json({
       ok: true,

@@ -28,9 +28,13 @@ test("el endpoint de tracking exige admin y delega en el sync compartido con el 
   const source = readRoute("../../app/api/andreani/tracking/route.ts")
 
   assert.match(source, /requireInternalUser\(request, \["admin", "super_admin"\]\)/)
-  assert.match(source, /andreani_tracking/)
-  assert.match(source, /andreani_envio_id/)
-  assert.match(source, /andreani_creation_environment/)
+  // Mismas columnas que el cron: un único select compartido.
+  assert.match(source, /\.select\(ANDREANI_ORDER_TRACKING_SELECT\)/)
+  const shared = readRoute("../../lib/andreani/order-tracking-sync.ts")
+  const select = shared.slice(shared.indexOf("export const ANDREANI_ORDER_TRACKING_SELECT"))
+  for (const column of ["andreani_tracking", "andreani_envio_id", "andreani_creation_environment", "shipping_type"]) {
+    assert.match(select.split("\n").slice(0, 2).join("\n"), new RegExp(column))
+  }
   assert.match(source, /syncAndreaniOrderTracking\(/)
   assert.match(source, /resolveAndreaniTrackingEnvironment\(/)
 })

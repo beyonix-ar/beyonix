@@ -11,9 +11,23 @@ import {
   getTrackingPullV3,
   type AndreaniClientOptions,
 } from "./client.ts"
+import {
+  collectAndreaniTrackingHistoryEvents,
+  logUnrecognizedAndreaniEvents,
+  recordAndreaniTrackingHistory,
+  type AndreaniTrackingHistoryEvent,
+} from "./tracking-history.ts"
 import { parseAndreaniTimestamp } from "./tracking-timestamps.ts"
-import { resolveAndreaniAutoOrderTransition } from "./tracking-status-mapping.ts"
-import type { AndreaniEnvironment, AndreaniTrackingEvent } from "./types.ts"
+import {
+  mapAndreaniEventToOrderMilestone,
+  resolveAndreaniAutoOrderTransition,
+  type AndreaniAutoOrderTransition,
+} from "./tracking-status-mapping.ts"
+import type {
+  AndreaniEnvironment,
+  AndreaniTrackingEvent,
+  AndreaniUnrecognizedTrackingEvent,
+} from "./types.ts"
 import { isAndreaniPreShipmentRejected } from "./types.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -25,17 +39,25 @@ export interface AndreaniOrderTrackingRow {
   andreani_envio_id: string | null
   andreani_tracking: string | null
   andreani_creation_environment: AndreaniEnvironment | null
+  /** "sucursal" | "domicilio": decide si la llegada a sucursal es "en_sucursal" o tránsito. */
+  shipping_type: string | null
   cliente_email: string | null
   cliente_nombre: string | null
   tracking_number: string | null
   tracking_url: string | null
 }
 
+/** Columnas que necesita `syncAndreaniOrderTracking` (cron y botón "Consultar"). */
+export const ANDREANI_ORDER_TRACKING_SELECT =
+  "id, estado, delivered_at, andreani_tracking, andreani_envio_id, andreani_creation_environment, shipping_type, cliente_email, cliente_nombre, tracking_number, tracking_url"
+
 export interface AndreaniOrderTrackingSnapshot {
   logisticsEstado: string
   resolvedTracking: string
   etiquetaUrl: string | null
   eventos: AndreaniTrackingEvent[]
+  /** Eventos fuera del maestro: se registran y piden revisión, nunca mueven estados. */
+  eventosNoReconocidos: AndreaniUnrecognizedTrackingEvent[]
   latestEvent: AndreaniTrackingEvent | null
   rejectedAfterCreation: boolean
 }
@@ -89,7 +111,7 @@ export async function fetchAndreaniOrderTrackingSnapshot(
     numeroDeTrackingConocido || orderStatus.bultos[0]?.numeroDeEnvio || ""
   const tracking = resolvedTracking
     ? await getTrackingPullV3(resolvedTracking, clientOptions)
-    : { eventos: [] }
+    : { eventos: [], eventosNoReconocidos: [] }
 
   // Fechas con y sin offset pueden convivir: comparar instantes absolutos.
   const sortedEvents = [...tracking.eventos].sort(
@@ -119,6 +141,7 @@ export async function fetchAndreaniOrderTrackingSnapshot(
     resolvedTracking,
     etiquetaUrl,
     eventos: tracking.eventos,
+    eventosNoReconocidos: tracking.eventosNoReconocidos,
     latestEvent: latestEvent ?? null,
     rejectedAfterCreation,
   }
@@ -129,7 +152,9 @@ export interface AndreaniOrderTrackingSyncResult {
   checkedAt: string
   /** true sólo si `ordenes.estado` efectivamente cambió como consecuencia de esta consulta. */
   statusChanged: boolean
-  newEstado: "en_camino" | "entregado" | null
+  newEstado: AndreaniAutoOrderTransition | null
+  /** Eventos que esta consulta agregó al historial (vacío si ya estaban). */
+  newHistoryEvents: AndreaniTrackingHistoryEvent[]
 }
 
 /**
@@ -152,7 +177,9 @@ export async function syncAndreaniOrderTracking(
   const snapshot = await fetchAndreaniOrderTrackingSnapshot(order, options.clientOptions)
   const checkedAt = new Date().toISOString()
 
-  const autoTransition = snapshot.rejectedAfterCreation ? null : resolveAndreaniAutoOrderTransition(snapshot.eventos, order.estado)
+  const autoTransition = snapshot.rejectedAfterCreation
+    ? null
+    : resolveAndreaniAutoOrderTransition(snapshot.eventos, order.estado, order.shipping_type)
   const isRealTransition = Boolean(autoTransition && autoTransition !== order.estado)
   const eventAt = snapshot.latestEvent ? parseAndreaniTimestamp(snapshot.latestEvent.Fecha) : null
 
@@ -218,10 +245,82 @@ export async function syncAndreaniOrderTracking(
     await sendOrderStateEmail(data)
   }
 
+  const historyScope = { orderId: order.id, tracking: snapshot.resolvedTracking }
+  const historyEvents = collectAndreaniTrackingHistoryEvents(historyScope, snapshot)
+  // La transición se atribuye al primer evento (cronológico) que prueba el
+  // hito alcanzado: el resto de los eventos queda sin cambio de estado.
+  const milestoneCodes = new Set<string>(
+    snapshot.eventos
+      .filter((event) => mapAndreaniEventToOrderMilestone(event.Evento, order.shipping_type) === autoTransition)
+      .map((event) => event.Evento),
+  )
+  const drivingEvent = statusChanged
+    ? historyEvents.find((event) => event.recognized && milestoneCodes.has(event.code))
+    : undefined
+  const newHistoryEvents = await recordAndreaniTrackingHistory(
+    admin,
+    historyScope,
+    historyEvents,
+    drivingEvent && autoTransition
+      ? { dedupeKey: drivingEvent.dedupeKey, previousStatus: order.estado, newStatus: autoTransition }
+      : null,
+  )
+  await flagUnrecognizedOrderTrackingEvents(admin, order.id, historyScope, newHistoryEvents, options)
+
   return {
     snapshot,
     checkedAt,
     statusChanged,
     newEstado: statusChanged ? autoTransition : null,
+    newHistoryEvents,
+  }
+}
+
+/**
+ * Evento que BEYONIX no sabe interpretar: no cambia `ordenes.estado` (el
+ * resto del tracking sigue aplicándose), queda crudo en el historial, en un
+ * log estructurado y en la auditoría del pedido, y el pedido se marca para
+ * revisión (`andreani_tracking_review_*`, sólo el primero: nunca se pisa).
+ * Se ejecuta una sola vez por evento: sólo para los recién registrados.
+ */
+async function flagUnrecognizedOrderTrackingEvents(
+  admin: AdminClient,
+  orderId: number,
+  scope: { orderId: number; tracking: string },
+  newHistoryEvents: readonly AndreaniTrackingHistoryEvent[],
+  options: { actorType: OrderAuditActorType; actorId: string | null },
+) {
+  const unrecognized = newHistoryEvents.filter((event) => !event.recognized)
+  if (unrecognized.length === 0) return
+  logUnrecognizedAndreaniEvents(scope, unrecognized)
+
+  const [first] = unrecognized
+  const { error } = await admin
+    .from("ordenes")
+    .update({
+      andreani_tracking_review_event: [first.code, first.text].filter(Boolean).join(" · ").slice(0, 300),
+      andreani_tracking_review_at: new Date().toISOString(),
+    } as never)
+    .eq("id", orderId)
+    .is("andreani_tracking_review_event", null)
+  if (error) {
+    console.error("ANDREANI_TRACKING_REVIEW_FLAG_ERROR", { orderId, message: error.message })
+  }
+
+  for (const event of unrecognized) {
+    await appendOrderAuditEvent(admin, {
+      orderId,
+      actorType: options.actorType,
+      actorId: options.actorId,
+      action: "andreani_tracking_unknown_event",
+      metadata: {
+        tracking: scope.tracking,
+        eventCode: event.code,
+        eventText: event.text,
+        eventCycle: event.cycle,
+        eventAt: event.at,
+        details: event.details,
+      },
+    })
   }
 }

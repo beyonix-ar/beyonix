@@ -28,6 +28,7 @@ import {
 import {
   getClientOrderStatusBadge,
   getCuentaItemImage,
+  getCustomerShippingMilestone,
   getOrderPaymentTotalDisplay,
   getPaymentProgressLabel,
   type CustomerOrderDetailView,
@@ -256,11 +257,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   ? "Comprobante rechazado"
                   : !paymentConfirmed
                     ? getPaymentProgressLabel(order)
-                    : order.estado === "entregado"
-                ? "Entregado"
-                : order.estado === "en_camino" || order.estado === "enviado"
-                  ? "En camino"
-                  : "Preparando envío"
+                    : getCustomerShippingMilestone(order)?.label ?? "Preparando envío"
             // null => se muestra la línea de seguimiento en vivo (número + copiar)
             // en vez de este texto genérico.
             const shippingDetail: string | null =

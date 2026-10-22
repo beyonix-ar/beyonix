@@ -47,6 +47,12 @@ import {
   ANDREANI_PHONE_MIN_DIGITS,
   ANDREANI_RECIPIENT_NAME_MAX_LENGTH,
 } from "./shipment-limits.ts"
+import {
+  collectAndreaniTrackingHistoryEvents,
+  logUnrecognizedAndreaniEvents,
+  recordAndreaniTrackingHistory,
+  type AndreaniTrackingHistoryEvent,
+} from "./tracking-history.ts"
 import { parseAndreaniTimestamp } from "./tracking-timestamps.ts"
 import { mapAndreaniEventToLogisticsPhase } from "./tracking-status-mapping.ts"
 import type {
@@ -766,12 +772,22 @@ export interface ClaimShipmentTrackingDependencies {
   fetchSnapshot?: typeof fetchAndreaniOrderTrackingSnapshot
 }
 
-/** Consulta Andreani (sólo GET) y avanza el tramo. Idempotente; cron y Admin llegan al mismo estado. */
+/**
+ * Consulta Andreani (sólo GET) y avanza el tramo. Idempotente; cron y Admin
+ * llegan al mismo estado. Cada evento queda en el historial
+ * (andreani_tracking_events); un evento fuera del maestro se registra crudo
+ * y pide revisión, congelando el avance igual que un evento no clasificable.
+ */
 export async function syncClaimShipmentTracking(
   admin: AdminClient,
-  shipment: Pick<ClaimShipmentRow, "id" | "andreani_envio_id" | "andreani_tracking" | "environment" | "creation_status" | "status">,
+  shipment: Pick<ClaimShipmentRow, "id" | "order_id" | "andreani_envio_id" | "andreani_tracking" | "environment" | "creation_status" | "status">,
   dependencies: ClaimShipmentTrackingDependencies = {},
-): Promise<{ shipment: ClaimShipmentRow; tracking: ClaimShipmentTrackingResolution; snapshot: AndreaniOrderTrackingSnapshot }> {
+): Promise<{
+  shipment: ClaimShipmentRow
+  tracking: ClaimShipmentTrackingResolution
+  snapshot: AndreaniOrderTrackingSnapshot
+  newHistoryEvents: AndreaniTrackingHistoryEvent[]
+}> {
   if (shipment.creation_status !== "created" || !text(shipment.andreani_envio_id) || shipment.status === "cancelada") {
     throw new AndreaniError("VALIDATION_ERROR", "La operación todavía no tiene una orden Andreani.")
   }
@@ -793,7 +809,13 @@ export async function syncClaimShipmentTracking(
     }
     throw error
   }
-  const tracking = resolveClaimShipmentTracking(snapshot.eventos, snapshot.rejectedAfterCreation)
+  const previousStatus = shipment.status
+  const resolved = resolveClaimShipmentTracking(snapshot.eventos, snapshot.rejectedAfterCreation)
+  const tracking: ClaimShipmentTrackingResolution = {
+    ...resolved,
+    reviewEvent: resolved.reviewEvent ??
+      (snapshot.eventosNoReconocidos.length ? CLAIM_UNREADABLE_TRACKING_EVENT : null),
+  }
   const updated = await rpcShipment(admin, "apply_order_claim_shipment_tracking_guarded", {
     p_shipment_id: shipment.id,
     p_phase: tracking.phase,
@@ -806,7 +828,42 @@ export async function syncClaimShipmentTracking(
     p_review_event: tracking.reviewEvent,
   })
   if (!updated) throw new AndreaniError("REQUEST_FAILED", "No se pudo actualizar el seguimiento.")
-  return { shipment: updated, tracking, snapshot }
+
+  const historyScope = { orderId: shipment.order_id, claimShipmentId: shipment.id, tracking: snapshot.resolvedTracking }
+  const historyEvents = collectAndreaniTrackingHistoryEvents(historyScope, snapshot)
+  // Mismo criterio que los pedidos: la transición queda en el primer evento
+  // (cronológico) que prueba la fase alcanzada.
+  const phaseCodes = new Set<string>(
+    snapshot.eventos
+      .filter((event) => resolveClaimShipmentTracking([event], false).phase === updated.status)
+      .map((event) => event.Evento),
+  )
+  const drivingEvent = updated.status !== previousStatus
+    ? historyEvents.find((event) => event.recognized && phaseCodes.has(event.code))
+    : undefined
+  const newHistoryEvents = await recordAndreaniTrackingHistory(
+    admin,
+    historyScope,
+    historyEvents,
+    drivingEvent ? { dedupeKey: drivingEvent.dedupeKey, previousStatus, newStatus: updated.status } : null,
+  )
+  logUnrecognizedAndreaniEvents(historyScope, newHistoryEvents)
+  return { shipment: updated, tracking, snapshot, newHistoryEvents }
+}
+
+/** Mismo criterio que los pedidos: un tramo que falla pasa al final de la fila sin bloquear al resto. */
+async function deferFailedClaimShipment(admin: AdminClient, shipmentId: number) {
+  try {
+    const { error } = await admin.from("order_claim_shipments")
+      .update({ last_checked_at: new Date().toISOString() } as never)
+      .eq("id", shipmentId)
+    if (error) throw new Error(error.message)
+  } catch (error) {
+    console.error("ANDREANI_CLAIM_SHIPMENT_DEFER_ERROR", {
+      shipmentId,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 /**
@@ -815,7 +872,11 @@ export async function syncClaimShipmentTracking(
  */
 export async function runClaimShipmentTrackingBatch(
   admin: AdminClient,
-  { limit = 20, ...dependencies }: ClaimShipmentTrackingDependencies & { limit?: number } = {},
+  { limit = 20, deadlineMs, ...dependencies }: ClaimShipmentTrackingDependencies & {
+    limit?: number
+    /** Ver runAndreaniTrackingSyncBatch: pasado este instante no se empieza otro tramo. */
+    deadlineMs?: number
+  } = {},
 ) {
   const { data, error } = await admin
     .from("order_claim_shipments")
@@ -830,16 +891,26 @@ export async function runClaimShipmentTrackingBatch(
   let delivered = 0
   let failed = 0
   let review = 0
+  let unknownEvents = 0
+  let deferred = 0
   for (const row of (data ?? []) as ClaimShipmentRow[]) {
+    if (deadlineMs !== undefined && Date.now() >= deadlineMs) {
+      deferred += 1
+      continue
+    }
     const previousStatus = row.status
     try {
       const result = await syncClaimShipmentTracking(admin, row, dependencies)
       updated += 1
       if (result.shipment.status === "entregada" && previousStatus !== "entregada") delivered += 1
       if (result.shipment.review_required) review += 1
+      unknownEvents += result.newHistoryEvents.filter((event) => !event.recognized).length
     } catch (syncError) {
       if (syncError instanceof AndreaniError && syncError.code === "INVALID_RESPONSE") review += 1
-      else failed += 1
+      else {
+        failed += 1
+        await deferFailedClaimShipment(admin, row.id)
+      }
       console.error("ANDREANI_CLAIM_SHIPMENT_TRACKING_ERROR", {
         shipmentId: row.id,
         claimId: row.claim_id,
@@ -848,5 +919,5 @@ export async function runClaimShipmentTrackingBatch(
       })
     }
   }
-  return { checked: (data ?? []).length, updated, delivered, failed, review }
+  return { checked: (data ?? []).length, updated, delivered, failed, review, unknownEvents, deferred }
 }

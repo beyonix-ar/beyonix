@@ -50,8 +50,8 @@ test("la ruta rechaza antes de ejecutar el batch de tracking", () => {
     /if\s*\(\s*!isAndreaniTrackingCronAuthorized\([\s\S]*?\)\s*\)\s*\{([\s\S]*?)\n\s*\}/,
   )
   const adminIndex = source.indexOf("const admin = createAdminClient()")
-  const batchCallIndex = source.indexOf("runAndreaniTrackingSyncBatch(admin)")
-  const returnsBatchIndex = source.indexOf("runClaimShipmentTrackingBatch(admin)")
+  const batchCallIndex = source.indexOf("runAndreaniTrackingSyncBatch(admin,")
+  const returnsBatchIndex = source.indexOf("runClaimShipmentTrackingBatch(admin,")
 
   assert.ok(guard?.index !== undefined, "Falta el guard de autorización")
   assert.match(guard[1], /return NextResponse\.json\([\s\S]*status: 401/)

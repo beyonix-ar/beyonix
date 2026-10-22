@@ -106,16 +106,85 @@ export function assertAllAndreaniEventsAreMapped(): void {
   }
 }
 
-export type AndreaniAutoOrderTransition = "en_camino" | "entregado"
+/** Hitos de `ordenes.estado` que el tracking Andreani puede fijar solo. */
+export type AndreaniAutoOrderTransition = "enviado" | "en_camino" | "en_sucursal" | "entregado"
+
+const AUTO_TRANSITION_RANK: Record<AndreaniAutoOrderTransition, number> = {
+  enviado: 1,
+  en_camino: 2,
+  en_sucursal: 3,
+  entregado: 4,
+}
 
 /**
- * Pedidos BEYONIX desde los que es seguro avanzar automáticamente a
- * `en_camino` cuando Andreani confirma despacho real. Un pedido que ya está
- * en un estado más específico (en_sucursal, retiro_pendiente, etc.) no se
- * toca -- esta automatización nunca retrocede ni pisa un estado que ya
- * refleja más información que "despachado".
+ * Estados desde los que el tracking puede avanzar hitos intermedios, con su
+ * rango. Nunca retrocede: sólo se avanza a un hito de rango mayor. Los
+ * estados que un Admin fija a mano y no tienen rango (visita_fallida,
+ * retiro_pendiente, retiro_vencido) sólo avanzan con una entrega confirmada.
  */
-const ORDER_STATES_ELIGIBLE_FOR_AUTO_EN_CAMINO = new Set(["pendiente", "pagado"])
+const ORDER_STATE_RANK: Readonly<Record<string, number>> = {
+  pendiente: 0,
+  pagado: 0,
+  enviado: 1,
+  en_camino: 2,
+  en_sucursal: 3,
+}
+
+/**
+ * Hito de pedido que prueba un `Evento` estable de Andreani, o null si el
+ * evento no prueba avance (pre-envío, internos, incidencias, no entregado,
+ * fin de custodia -- se registran en el historial pero no mueven el pedido):
+ *
+ * - `Admision`, `AsignacionACaja`, `EnvioConsolidado`: el paquete ya está en
+ *   manos de Andreani (`enviado`).
+ * - `EnvioDespachado`, hojas de ruta, `Distribucion`, `Visita`: en tránsito o
+ *   en reparto (`en_camino`).
+ * - Llegada/custodia en sucursal destino: `en_sucursal` sólo si el cliente
+ *   eligió retiro en sucursal; para entrega a domicilio es un paso del
+ *   tránsito (`en_camino`), nunca "pasá a retirarlo".
+ * - `EnvioEntregado`: `entregado`.
+ */
+export function mapAndreaniEventToOrderMilestone(
+  evento: AndreaniTrackingEventName,
+  shippingType: string | null | undefined,
+): AndreaniAutoOrderTransition | null {
+  switch (evento) {
+    case "Admision":
+    case "AsignacionACaja":
+    case "EnvioConsolidado":
+      return "enviado"
+
+    case "EnvioDespachado":
+    case "ExpedicionHojaDeRutaCabecera":
+    case "ExpedicionHojaDeRutaDeViaje":
+    case "Distribucion":
+    case "Visita":
+      return "en_camino"
+
+    case "RecepcionEnSucursalDestino":
+    case "ComienzoCustodiaEnSucursal":
+      return shippingType === "sucursal" ? "en_sucursal" : "en_camino"
+
+    case "EnvioEntregado":
+      return "entregado"
+
+    default:
+      return null
+  }
+}
+
+/** Siguiente estado si `milestone` avanza al pedido en `currentEstado`; si no, null. */
+export function resolveOrderMilestoneTransition(
+  milestone: AndreaniAutoOrderTransition | null,
+  currentEstado: string,
+): AndreaniAutoOrderTransition | null {
+  if (!milestone) return null
+  if ((ORDER_STATES_CLOSED_TO_AUTO_SYNC as readonly string[]).includes(currentEstado)) return null
+  if (milestone === "entregado") return "entregado"
+  const currentRank = ORDER_STATE_RANK[currentEstado]
+  if (currentRank === undefined) return null
+  return AUTO_TRANSITION_RANK[milestone] > currentRank ? milestone : null
+}
 
 /**
  * Estados terminales o ya avanzados: la sincronización automática nunca los
@@ -134,30 +203,25 @@ export const ORDER_STATES_CLOSED_TO_AUTO_SYNC = [
 /**
  * Decide si hay evidencia suficiente para avanzar automáticamente
  * `ordenes.estado`, a partir de los eventos reales (`Evento` estable) de un
- * tracking. Deliberadamente conservador -- exactamente lo pedido:
+ * tracking: el hito más avanzado que informan (ver
+ * `mapAndreaniEventToOrderMilestone`), sólo si supera el estado actual.
  *
  * - `entregado` sólo con `EnvioEntregado` explícito.
- * - `en_camino` sólo con `EnvioDespachado` explícito, y sólo si el pedido
- *   todavía no tiene un estado de despacho más específico.
  * - Nunca por "existe tracking" ni por "Pendiente de ingreso"
- *   (`OrdenDeEnvioSolicitada`/`OrdenDeEnvioCreada`) -- esos son
- *   `orden_creada`, no `en_camino`.
+ *   (`OrdenDeEnvioSolicitada`/`OrdenDeEnvioCreada`).
+ * - Nunca retrocede, aunque los eventos lleguen repetidos o desordenados.
  * - Nunca sobre un pedido ya cerrado (entregado/cancelado/devuelto/en
  *   devolución): esos estados sólo cambian por acción explícita.
  */
 export function resolveAndreaniAutoOrderTransition(
   eventos: readonly Pick<AndreaniTrackingEvent, "Evento">[],
   currentEstado: string,
+  shippingType?: string | null,
 ): AndreaniAutoOrderTransition | null {
-  if ((ORDER_STATES_CLOSED_TO_AUTO_SYNC as readonly string[]).includes(currentEstado)) return null
-
-  const hasDelivered = eventos.some((event) => event.Evento === "EnvioEntregado")
-  if (hasDelivered) return "entregado"
-
-  const hasDispatched = eventos.some((event) => event.Evento === "EnvioDespachado")
-  if (hasDispatched && ORDER_STATES_ELIGIBLE_FOR_AUTO_EN_CAMINO.has(currentEstado)) {
-    return "en_camino"
+  let best: AndreaniAutoOrderTransition | null = null
+  for (const event of eventos) {
+    const milestone = mapAndreaniEventToOrderMilestone(event.Evento, shippingType)
+    if (milestone && (!best || AUTO_TRANSITION_RANK[milestone] > AUTO_TRANSITION_RANK[best])) best = milestone
   }
-
-  return null
+  return resolveOrderMilestoneTransition(best, currentEstado)
 }

@@ -22,11 +22,44 @@ export type CustomerOrderDetailView = "detalle" | "factura" | "reclamo"
 
 const SHIPPING_INCIDENT_LABELS: Record<string, string> = {
   visita_fallida: "Visita fallida",
-  en_sucursal: "En sucursal",
-  retiro_pendiente: "Retiro pendiente",
   retiro_vencido: "Retiro vencido",
   en_devolucion: "En devolución",
   devuelto_beyonix: "Devuelto a BEYONIX",
+}
+
+export interface CustomerShippingMilestone {
+  label: string
+  detail: string
+}
+
+/**
+ * Hitos normales del envío tal como los ve el cliente: textos simples,
+ * nunca códigos, eventos ni estados crudos de Andreani. La fuente es
+ * `ordenes.estado` (que el tracking automático avanza), no `andreani_estado`.
+ */
+export function getCustomerShippingMilestone(
+  order: Pick<SupabasePedido, "estado" | "shipping_provider" | "envio_proveedor" | "andreani_tracking">,
+): CustomerShippingMilestone | null {
+  switch ((order.estado ?? "").toLowerCase()) {
+    case "enviado": {
+      const andreani = Boolean(order.andreani_tracking) ||
+        [order.shipping_provider, order.envio_proveedor].some((provider) => (provider ?? "").toLowerCase() === "andreani")
+      return {
+        label: "Despachado",
+        detail: andreani ? "Andreani recibió tu paquete." : "Tu pedido fue despachado.",
+      }
+    }
+    case "en_camino":
+      return { label: "En camino", detail: "Tu pedido está en camino." }
+    case "en_sucursal":
+      return { label: "En sucursal", detail: "Tu pedido llegó a la sucursal. Ya podés retirarlo." }
+    case "retiro_pendiente":
+      return { label: "Listo para retirar", detail: "Tu pedido te espera en la sucursal." }
+    case "entregado":
+      return { label: "Entregado", detail: "Tu pedido fue entregado." }
+    default:
+      return null
+  }
 }
 const DISPATCHED_ORDER_STATUSES = [
   "enviado",
@@ -152,9 +185,9 @@ export function getClientOrderStatusBadge(order: OrderStatusFields) {
     }
   }
 
-  if (status === "enviado" || status === "en_camino") {
+  if (["enviado", "en_camino", "en_sucursal", "retiro_pendiente"].includes(status)) {
     return {
-      label: "En camino",
+      label: getCustomerShippingMilestone({ estado: status })?.label ?? "En camino",
       className: "border-[var(--account-info-border)] bg-[var(--account-info-bg)] text-[var(--account-info-text)]",
     }
   }
@@ -356,7 +389,13 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
     Boolean(order.tracking_number || order.andreani_tracking)
   const isDelivered = estado === "entregado"
   const hasShippingIncident = Boolean(SHIPPING_INCIDENT_LABELS[estado])
-  const isInTransit = estado === "en_camino" || hasShippingIncident || isDelivered || isAndreaniOrderInTransit(order)
+  const shippingMilestone = getCustomerShippingMilestone(order)
+  const isAtBranch = estado === "en_sucursal" || estado === "retiro_pendiente"
+  const isInTransit =
+    estado === "en_camino" || isAtBranch || hasShippingIncident || isDelivered || isAndreaniOrderInTransit(order)
+  // Andreani ya tiene el paquete: el tramo de transporte arrancó aunque
+  // todavía no haya salido hacia el destino.
+  const isShippingStepActive = isInTransit || estado === "enviado"
 
   const cancellationState = getOrderCancellationRefundState(order)
   if (cancellationState) {
@@ -432,20 +471,24 @@ export function getOrderProgressSteps(order: SupabasePedido): OrderProgressStep[
       tone: isPaid ? (isDispatched ? "done" : "current") : "pending",
     },
     {
-      label: "En camino",
+      label: isAtBranch && shippingMilestone ? shippingMilestone.label : "En camino",
       detail: hasShippingIncident
         ? "El envío tiene una incidencia logística. BEYONIX está revisando el seguimiento."
+        : shippingMilestone && !isDelivered
+        ? shippingMilestone.detail
         : isInTransit
-        ? "Andreani está llevando el pedido al domicilio indicado."
+        ? isDelivered
+          ? "El envío completó su recorrido."
+          : "Tu pedido está en camino."
         : isDispatched
           ? "El envío fue generado y quedará activo cuando Andreani inicie el transporte."
           : "Este paso se activa cuando Andreani inicia el transporte.",
-      tone: isInTransit ? (isDelivered ? "done" : "current") : "pending",
+      tone: isShippingStepActive ? (isDelivered ? "done" : "current") : "pending",
     },
     {
       label: "Entregado",
       detail: isDelivered
-        ? "El pedido figura como entregado."
+        ? "Tu pedido fue entregado."
         : "Último paso del recorrido.",
       tone: isDelivered ? "done" : "pending",
     },

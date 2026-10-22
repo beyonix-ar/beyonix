@@ -3,7 +3,11 @@ import "server-only"
 import type { createAdminClient } from "../supabase/admin.ts"
 
 import { AndreaniError, sanitizeAndreaniMessage, type AndreaniClientOptions } from "./client.ts"
-import { syncAndreaniOrderTracking, type AndreaniOrderTrackingRow } from "./order-tracking-sync.ts"
+import {
+  ANDREANI_ORDER_TRACKING_SELECT,
+  syncAndreaniOrderTracking,
+  type AndreaniOrderTrackingRow,
+} from "./order-tracking-sync.ts"
 import { ORDER_STATES_CLOSED_TO_AUTO_SYNC } from "./tracking-status-mapping.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
@@ -23,9 +27,8 @@ type AdminClient = ReturnType<typeof createAdminClient>
  */
 const DEFAULT_BATCH_SIZE = 15
 const DEFAULT_MIN_RECHECK_INTERVAL_MS = 20 * 60 * 1000
-
-const ORDER_TRACKING_SYNC_SELECT =
-  "id, estado, delivered_at, andreani_tracking, andreani_envio_id, andreani_creation_environment, cliente_email, cliente_nombre, tracking_number, tracking_url"
+/** Margen para reintentar un pedido que falló en el próximo tick del timer (15 min). */
+const FAILED_RETRY_MARGIN_MS = 60 * 1000
 
 export interface AndreaniTrackingSyncBatchResult {
   /** Pedidos elegibles encontrados en este lote. */
@@ -36,6 +39,28 @@ export interface AndreaniTrackingSyncBatchResult {
   statusChanged: number
   /** Consultas que fallaron (quedan para el próximo ciclo, no bloquean el lote). */
   errors: number
+  /** Eventos Andreani fuera del maestro detectados por primera vez en este lote. */
+  unknownEvents: number
+  /** Pedidos que no llegaron a consultarse por agotar el tiempo de la corrida. */
+  deferred: number
+}
+
+/**
+ * Un pedido que falla queda "consultado hace casi el intervalo mínimo": sigue
+ * entrando en el próximo tick (mismo reintento que antes), pero detrás de
+ * los pedidos más atrasados. Sin esto, 15 envíos que fallan siempre (p. ej.
+ * un envío dado de baja en Andreani) ocupaban la cabeza del lote en cada
+ * corrida y el resto nunca se sincronizaba.
+ */
+async function deferFailedOrder(admin: AdminClient, orderId: number, now: Date, minRecheckIntervalMs: number) {
+  const retryCheckedAt = new Date(now.getTime() - minRecheckIntervalMs + FAILED_RETRY_MARGIN_MS).toISOString()
+  const { error } = await admin
+    .from("ordenes")
+    .update({ andreani_tracking_checked_at: retryCheckedAt } as never)
+    .eq("id", orderId)
+  if (error) {
+    console.error("ANDREANI_TRACKING_SYNC_DEFER_ERROR", { orderId, message: sanitizeAndreaniMessage(error.message) })
+  }
 }
 
 /**
@@ -51,6 +76,12 @@ export async function runAndreaniTrackingSyncBatch(
     now?: () => Date
     batchSize?: number
     minRecheckIntervalMs?: number
+    /**
+     * Instante (epoch ms) a partir del cual no se empieza ningún pedido más:
+     * lo pendiente queda para el próximo tick en vez de que el timer corte
+     * la llamada a mitad de lote.
+     */
+    deadlineMs?: number
     /** Sólo para tests: evita pegarle a la red real de Andreani. */
     clientOptions?: AndreaniClientOptions
   } = {},
@@ -64,7 +95,7 @@ export async function runAndreaniTrackingSyncBatch(
 
   const { data, error } = await admin
     .from("ordenes")
-    .select(ORDER_TRACKING_SYNC_SELECT)
+    .select(ANDREANI_ORDER_TRACKING_SELECT)
     .not("andreani_envio_id", "is", null)
     .not("estado", "in", closedStatesList)
     .or(`andreani_tracking_checked_at.is.null,andreani_tracking_checked_at.lt.${staleBefore}`)
@@ -86,12 +117,18 @@ export async function runAndreaniTrackingSyncBatch(
   let updated = 0
   let statusChanged = 0
   let errors = 0
+  let unknownEvents = 0
+  let deferred = 0
 
   // Secuencial a propósito: el token Andreani ya se cachea a nivel de
   // módulo (client.ts) y se reutiliza entre pedidos de la misma corrida --
   // no hace falta concurrencia, y evita ráfagas de requests simultáneas
   // contra Andreani por un solo cron tick.
   for (const order of orders) {
+    if (dependencies.deadlineMs !== undefined && Date.now() >= dependencies.deadlineMs) {
+      deferred += 1
+      continue
+    }
     try {
       const result = await syncAndreaniOrderTracking(admin, order, {
         actorType: "system",
@@ -100,6 +137,7 @@ export async function runAndreaniTrackingSyncBatch(
       })
       updated += 1
       if (result.statusChanged) statusChanged += 1
+      unknownEvents += result.newHistoryEvents.filter((event) => !event.recognized).length
     } catch (syncError) {
       errors += 1
       console.error("ANDREANI_TRACKING_SYNC_BATCH_ITEM_ERROR", {
@@ -110,8 +148,9 @@ export async function runAndreaniTrackingSyncBatch(
           syncError instanceof Error ? syncError.message : String(syncError),
         ),
       })
+      await deferFailedOrder(admin, order.id, now, minRecheckIntervalMs)
     }
   }
 
-  return { checked: orders.length, updated, statusChanged, errors }
+  return { checked: orders.length, updated, statusChanged, errors, unknownEvents, deferred }
 }

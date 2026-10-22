@@ -312,7 +312,7 @@ test("sin automatismos: aceptar, reservar stock o el cron nunca generan operacio
   assert.match(migration, /drop function if exists public\.claim_order_claim_shipment_creation\(bigint, text, uuid, text, text, text\)/)
   const lib = read("lib/andreani/claim-shipments.ts")
   assert.doesNotMatch(lib, /HOME_CONTRACT|RETURN_PICKUP|domicilioContrato|"create_order_replacement"|adjust_variant_stock/)
-  assert.match(read("app/api/cron/andreani-sync-tracking/route.ts"), /runClaimShipmentTrackingBatch\(admin\)/)
+  assert.match(read("app/api/cron/andreani-sync-tracking/route.ts"), /runClaimShipmentTrackingBatch\(admin,/)
   // NC/reintegro: guardas en la BASE (la ruta sólo registra la excepción explícita).
   const creditNote = read("app/api/admin/orders/[id]/credit-note/route.ts")
   assert.match(creditNote, /rpc\("register_claim_financial_exception"/)

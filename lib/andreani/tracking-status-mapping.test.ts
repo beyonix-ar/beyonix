@@ -5,6 +5,7 @@ import { ANDREANI_TRACKING_EVENTS } from "./types.ts"
 import {
   assertAllAndreaniEventsAreMapped,
   mapAndreaniEventToLogisticsPhase,
+  mapAndreaniEventToOrderMilestone,
   resolveAndreaniAutoOrderTransition,
 } from "./tracking-status-mapping.ts"
 
@@ -46,8 +47,41 @@ test("EnvioDespachado real -> en_camino sólo desde pendiente/pagado", () => {
 })
 
 test("EnvioDespachado NO avanza un pedido que ya tiene un estado de despacho más específico", () => {
-  for (const estado of ["enviado", "en_camino", "en_sucursal", "retiro_pendiente", "visita_fallida"]) {
+  for (const estado of ["en_camino", "en_sucursal", "retiro_pendiente", "visita_fallida"]) {
     assert.equal(resolveAndreaniAutoOrderTransition(events("EnvioDespachado"), estado), null)
+  }
+})
+
+test("admisión: Andreani recibió el paquete -> enviado (nunca retrocede un pedido ya en camino)", () => {
+  assert.equal(resolveAndreaniAutoOrderTransition(events("OrdenDeEnvioCreada", "Admision"), "pagado"), "enviado")
+  assert.equal(resolveAndreaniAutoOrderTransition(events("AsignacionACaja"), "pagado"), "enviado")
+  assert.equal(resolveAndreaniAutoOrderTransition(events("Admision"), "enviado"), null)
+  assert.equal(resolveAndreaniAutoOrderTransition(events("Admision"), "en_camino"), null)
+})
+
+test("en tránsito: despacho, hojas de ruta, distribución y visita -> en_camino desde pagado o enviado", () => {
+  for (const evento of ["EnvioDespachado", "ExpedicionHojaDeRutaCabecera", "ExpedicionHojaDeRutaDeViaje", "Distribucion", "Visita"]) {
+    assert.equal(resolveAndreaniAutoOrderTransition(events("Admision", evento), "pagado"), "en_camino", evento)
+    assert.equal(resolveAndreaniAutoOrderTransition(events(evento), "enviado"), "en_camino", evento)
+  }
+})
+
+test("llegada a sucursal: en_sucursal sólo si el cliente retira en sucursal; a domicilio es tránsito", () => {
+  for (const evento of ["RecepcionEnSucursalDestino", "ComienzoCustodiaEnSucursal"]) {
+    assert.equal(mapAndreaniEventToOrderMilestone(evento as never, "sucursal"), "en_sucursal")
+    assert.equal(mapAndreaniEventToOrderMilestone(evento as never, "domicilio"), "en_camino")
+    assert.equal(resolveAndreaniAutoOrderTransition(events("EnvioDespachado", evento), "en_camino", "sucursal"), "en_sucursal")
+    assert.equal(resolveAndreaniAutoOrderTransition(events("EnvioDespachado", evento), "en_camino", "domicilio"), null)
+  }
+  // Repetidos/desordenados no retroceden: ya en sucursal, un despacho viejo no lo devuelve a "en camino".
+  assert.equal(resolveAndreaniAutoOrderTransition(events("ComienzoCustodiaEnSucursal", "EnvioDespachado"), "en_sucursal", "sucursal"), null)
+  assert.equal(resolveAndreaniAutoOrderTransition(events("EnvioEntregado"), "en_sucursal", "sucursal"), "entregado")
+})
+
+test("incidencias, internos, no entregado y fin de custodia se registran pero no mueven el pedido", () => {
+  for (const evento of ["EnvioNoEntregado", "Siniestro", "CambioDeDestino", "FinCustodiaEnSucursal", "Impresion", "EnvioAnulado"]) {
+    assert.equal(mapAndreaniEventToOrderMilestone(evento as never, "sucursal"), null, evento)
+    assert.equal(resolveAndreaniAutoOrderTransition(events(evento), "pagado", "sucursal"), null, evento)
   }
 })
 

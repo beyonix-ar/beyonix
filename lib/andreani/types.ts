@@ -541,8 +541,23 @@ export interface AndreaniTrackingEvent {
   Comentario?: string
 }
 
+/**
+ * Evento con `Evento` o `Ciclo` fuera del maestro documentado. Se conserva
+ * crudo (para historial y revisión) y nunca se traduce a un estado BEYONIX.
+ */
+export interface AndreaniUnrecognizedTrackingEvent {
+  Fecha: string
+  Evento: string
+  Ciclo?: string
+  Estado?: string
+  Motivo?: string
+  Submotivo?: string
+  Sucursal?: string
+}
+
 export interface AndreaniTrackingResponse {
   eventos: AndreaniTrackingEvent[]
+  eventosNoReconocidos: AndreaniUnrecognizedTrackingEvent[]
 }
 
 export interface AndreaniConnectionTestResult {

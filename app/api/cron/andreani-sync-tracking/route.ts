@@ -6,6 +6,14 @@ import { isAndreaniTrackingCronAuthorized } from "@/lib/andreani/tracking-sync-c
 import { runAndreaniTrackingSyncBatch } from "@/lib/andreani/tracking-sync-batch"
 import { createAdminClient } from "@/lib/supabase/admin"
 
+/**
+ * El timer de la VPS corta la llamada a los 120 s (curl --max-time). Pasado
+ * este presupuesto no se empieza ningún envío más: lo pendiente queda para el
+ * próximo tick, nunca a medio procesar cuando curl ya abandonó la respuesta.
+ */
+const PEDIDOS_TIME_BUDGET_MS = 60_000
+const CLAIM_SHIPMENTS_TIME_BUDGET_MS = 95_000
+
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET
   const authorization = request.headers.get("authorization")
@@ -19,10 +27,12 @@ export async function GET(request: Request) {
 
   try {
     const admin = createAdminClient()
-    const result = await runAndreaniTrackingSyncBatch(admin)
+    const result = await runAndreaniTrackingSyncBatch(admin, { deadlineMs: startedAt + PEDIDOS_TIME_BUDGET_MS })
     // Envíos de reclamos (devolución y reemplazo): mismo cron, sin tocar el
     // resultado del batch de pedidos si fallara.
-    const claimShipments = await runClaimShipmentTrackingBatch(admin).catch((error: unknown) => {
+    const claimShipments = await runClaimShipmentTrackingBatch(admin, {
+      deadlineMs: startedAt + CLAIM_SHIPMENTS_TIME_BUDGET_MS,
+    }).catch((error: unknown) => {
       console.error("ANDREANI_CLAIM_SHIPMENT_BATCH_ERROR", normalizeAndreaniError(error))
       return null
     })

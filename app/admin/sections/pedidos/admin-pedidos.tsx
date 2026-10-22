@@ -5767,6 +5767,16 @@ function PedidoDetailModal({
                 />
               </div>
 
+              {pedido.andreani_tracking_review_event && (
+                <p
+                  role="status"
+                  className="mt-3 rounded-lg border border-amber-400/35 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100"
+                >
+                  Andreani informó un evento que BEYONIX no reconoce ({pedido.andreani_tracking_review_event}).
+                  Quedó registrado y no cambió el estado del pedido: revisalo en Andreani.
+                </p>
+              )}
+
               {(pedido.andreani_error || andreaniNotice) && (
                 <div className="mt-3 space-y-2">
                   {pedido.andreani_error && (

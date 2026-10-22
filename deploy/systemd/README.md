@@ -281,9 +281,17 @@ systemctl show beyonix-andreani-sync-tracking.service -p Result
 ```
 
 `Result=success` es una corrida correcta; el resumen (`checked`, `updated`,
-`statusChanged`, `errors`) queda en `pm2 logs beyonix` como
-`ANDREANI_TRACKING_SYNC_BATCH_FINISHED`. `401` = el archivo de curl no coincide con
-el `CRON_SECRET` de la app.
+`statusChanged`, `errors`, `unknownEvents`, `deferred` y `claimShipments`) queda en
+`pm2 logs beyonix` como `ANDREANI_TRACKING_SYNC_BATCH_FINISHED`. `401` = el archivo
+de curl no coincide con el `CRON_SECRET` de la app.
+
+Otros logs del job: `ANDREANI_TRACKING_SYNC_BATCH_ITEM_ERROR` (un envío falló; el
+resto del lote sigue y ese envío se reintenta en el próximo tick),
+`ANDREANI_TRACKING_UNKNOWN_EVENT` (evento fuera del maestro: queda en
+`andreani_tracking_events` con `review_required` y el pedido marcado en
+`andreani_tracking_review_event`), `ANDREANI_TRACKING_HISTORY_ERROR` (no se pudo
+guardar el historial; el tracking se aplicó igual). `deferred > 0` = la corrida agotó
+su presupuesto de tiempo (60 s pedidos / 95 s total) y lo pendiente pasa al próximo tick.
 
 ---
 

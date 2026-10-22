@@ -28,6 +28,7 @@ import type {
   AndreaniTrackingEvent,
   AndreaniTrackingEventName,
   AndreaniTrackingResponse,
+  AndreaniUnrecognizedTrackingEvent,
 } from "./types.ts"
 import {
   ANDREANI_PRE_SHIPMENT_STATUSES,
@@ -1059,7 +1060,9 @@ function parseTrackingResponse(payload: unknown): AndreaniTrackingResponse {
     )
   }
 
-  const eventos: AndreaniTrackingEvent[] = record.eventos.map((item) => {
+  const eventos: AndreaniTrackingEvent[] = []
+  const eventosNoReconocidos: AndreaniUnrecognizedTrackingEvent[] = []
+  for (const item of record.eventos) {
     const event = requiredRecord(
       item,
       "Andreani devolvió un evento de seguimiento inválido.",
@@ -1070,19 +1073,28 @@ function parseTrackingResponse(payload: unknown): AndreaniTrackingResponse {
       "Evento",
       "Andreani devolvió un evento sin nombre.",
     )
+    const fecha = requiredResponseString(
+      event,
+      "Fecha",
+      "Andreani devolvió un evento sin fecha.",
+    )
+    // Un evento fuera del maestro no invalida el resto del seguimiento: se
+    // conserva crudo para historial/revisión y nunca se interpreta.
     if ((ciclo && !trackingCycles.has(ciclo)) || !trackingEvents.has(evento)) {
-      throw new AndreaniError(
-        "INVALID_RESPONSE",
-        "Andreani devolvió un evento fuera del maestro documentado.",
-      )
+      eventosNoReconocidos.push({
+        Fecha: fecha,
+        Evento: evento,
+        Ciclo: ciclo,
+        Estado: optionalResponseString(event, "Estado"),
+        Motivo: optionalResponseString(event, "Motivo"),
+        Submotivo: optionalResponseString(event, "Submotivo"),
+        Sucursal: optionalResponseString(event, "Sucursal"),
+      })
+      continue
     }
 
-    return {
-      Fecha: requiredResponseString(
-        event,
-        "Fecha",
-        "Andreani devolvió un evento sin fecha.",
-      ),
+    eventos.push({
+      Fecha: fecha,
       Ciclo: ciclo as AndreaniTrackingCycle | undefined,
       Evento: evento as AndreaniTrackingEventName,
       Motivo: optionalResponseString(event, "Motivo"),
@@ -1092,10 +1104,10 @@ function parseTrackingResponse(payload: unknown): AndreaniTrackingResponse {
       Sucursal: optionalResponseString(event, "Sucursal"),
       SucursalId: optionalResponseString(event, "SucursalId"),
       Comentario: optionalResponseString(event, "Comentario"),
-    }
-  })
+    })
+  }
 
-  return { eventos }
+  return { eventos, eventosNoReconocidos }
 }
 
 function validateOrderLocation(value: unknown, fieldName: string) {

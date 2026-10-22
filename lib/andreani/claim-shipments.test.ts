@@ -3,6 +3,7 @@ import test from "node:test"
 
 import { AndreaniError } from "./client.ts"
 import {
+  CLAIM_UNREADABLE_TRACKING_EVENT,
   chooseClaimShipmentModality,
   claimShipmentReference,
   createClaimShipment,
@@ -129,9 +130,22 @@ function fakeAdmin({ order = homeOrder as Row, direction = "cambio", leg = {} as
   const query = (table: string) => {
     const filters: Array<(row: Row) => boolean> = []
     let limit = Infinity
+    let pendingUpdate: Row | null = null
     // Copias, como Supabase: mutar la base no cambia lo ya leído.
-    const rows = () => (tables[table] ?? []).filter((row) => filters.every((filter) => filter(row))).slice(0, limit).map((row) => ({ ...row }))
+    const rows = () => {
+      const matching = (tables[table] ?? []).filter((row) => filters.every((filter) => filter(row))).slice(0, limit)
+      if (pendingUpdate) for (const row of matching) Object.assign(row, pendingUpdate)
+      return matching.map((row) => ({ ...row }))
+    }
     const builder = {
+      update: (payload: Row) => { pendingUpdate = payload; return builder },
+      // UNIQUE(dedupe_key) + ON CONFLICT DO NOTHING de andreani_tracking_events.
+      upsert: (incoming: Row[]) => {
+        const target = (tables[table] ??= [])
+        const inserted = incoming.filter((row) => !target.some((existing) => existing.dedupe_key === row.dedupe_key))
+        target.push(...inserted)
+        return { select: async () => ({ data: inserted.map((row) => ({ dedupe_key: row.dedupe_key })), error: null }) }
+      },
       select: () => builder,
       eq: (key: string, value: unknown) => { filters.push((row) => row[key] === value); return builder },
       neq: (key: string, value: unknown) => { filters.push((row) => row[key] !== value); return builder },
@@ -523,15 +537,23 @@ test("cron: sólo tramos creados y abiertos, ambiente de creación, sólo GET; u
     if (order.andreani_envio_id === "FALLA") throw new AndreaniError("SERVICE_UNAVAILABLE", "Caída", { status: 503 })
     const delivered = order.andreani_envio_id === "C-1"
     const eventos = [{ Evento: delivered ? "EnvioEntregado" : "Distribucion", Fecha: "2026-09-28T12:00:00-03:00" }]
-    return { logisticsEstado: "x", resolvedTracking: String(order.andreani_envio_id), etiquetaUrl: null, rejectedAfterCreation: false, eventos, latestEvent: eventos[0] }
+    return { logisticsEstado: "x", resolvedTracking: String(order.andreani_envio_id), etiquetaUrl: null, rejectedAfterCreation: false, eventos, eventosNoReconocidos: [], latestEvent: eventos[0] }
   }) as never
   const errors = console.error
   console.error = () => {}
   try {
     const batch = await runClaimShipmentTrackingBatch(admin, { fetchSnapshot })
-    assert.deepEqual(batch, { checked: 3, updated: 2, delivered: 1, failed: 1, review: 0 })
+    assert.deepEqual(batch, { checked: 3, updated: 2, delivered: 1, failed: 1, review: 0, unknownEvents: 0, deferred: 0 })
     assert.deepEqual(seen.map((row) => row.andreani_creation_environment), ["PROD", "QA", "QA"])
     assert.ok(!rpcs.some((call) => /claim_order_claim_shipment_creation|complete_order/.test(call.name)), "el cron nunca genera operaciones")
+    // Historial: un registro por evento, con la transición en el evento que la provocó.
+    const history = tables.andreani_tracking_events ?? []
+    assert.deepEqual(history.map((row) => [row.claim_shipment_id, row.event_code, row.previous_status, row.new_status]), [
+      [1, "Distribucion", "generada", "en_transito"],
+      [2, "EnvioEntregado", "en_transito", "entregada"],
+    ])
+    // El tramo que falló pasó al final de la fila (last_checked_at = ahora).
+    assert.ok(tables.order_claim_shipments.find((row) => row.id === 5)?.last_checked_at)
     const again = await runClaimShipmentTrackingBatch(admin, { fetchSnapshot: (async () => { throw new AndreaniError("TIMEOUT", "x") }) as never })
     assert.equal(again.checked, 2, "lo entregado/cerrado no se vuelve a consultar")
   } finally {
@@ -551,11 +573,62 @@ test("sync Andreani conserva el estado QA simulado y actualiza la observación r
   const eventos = [{ Evento: "EnvioDespachado", Fecha: "2026-10-19T12:00:00-03:00" }]
   const result = await syncClaimShipmentTracking(admin, leg() as never, { fetchSnapshot: (async () => ({
     logisticsEstado: "En tránsito real", resolvedTracking: "QA-1", etiquetaUrl: null,
-    rejectedAfterCreation: false, eventos, latestEvent: eventos[0],
+    rejectedAfterCreation: false, eventos, eventosNoReconocidos: [], latestEvent: eventos[0],
   })) as never })
   assert.equal(result.shipment.status, "en_sucursal")
   assert.equal(result.shipment.andreani_estado, "En tránsito real")
   assert.ok(rpcs.some((call) => call.name === "observe_order_claim_shipment_tracking_in_test"))
   assert.ok(rpcs.some((call) => call.name === "apply_order_claim_shipment_tracking_guarded"))
   assert.ok(!rpcs.some((call) => call.name === "apply_order_claim_shipment_tracking"))
+})
+
+function claimSnapshot(eventos: Row[], eventosNoReconocidos: Row[] = [], tracking = "R-1") {
+  return (async () => ({
+    logisticsEstado: "x", resolvedTracking: tracking, etiquetaUrl: null, rejectedAfterCreation: false,
+    eventos, eventosNoReconocidos, latestEvent: eventos.at(-1) ?? null,
+  })) as never
+}
+
+test("devolución y reemplazo: avanzan por tracking y cada evento queda una sola vez en el historial", async () => {
+  for (const direction of ["devolucion", "reemplazo"]) {
+    const { admin, leg, tables } = fakeAdmin({ direction, leg: { creation_status: "created", status: "generada", andreani_envio_id: "R-1", andreani_tracking: "R-1", environment: "PROD" } })
+    const eventos: Row[] = [{ Evento: "Admision", Fecha: "2026-10-20T10:00:00-03:00" }]
+    await syncClaimShipmentTracking(admin, leg() as never, { fetchSnapshot: claimSnapshot(eventos) })
+    eventos.push({ Evento: "EnvioDespachado", Fecha: "2026-10-21T10:00:00-03:00" })
+    await syncClaimShipmentTracking(admin, leg() as never, { fetchSnapshot: claimSnapshot(eventos) })
+    eventos.push({ Evento: "EnvioEntregado", Fecha: "2026-10-22T10:00:00-03:00" })
+    await syncClaimShipmentTracking(admin, leg() as never, { fetchSnapshot: claimSnapshot(eventos) })
+    await syncClaimShipmentTracking(admin, leg() as never, { fetchSnapshot: claimSnapshot(eventos) })
+    assert.equal(leg().status, "entregada", direction)
+    assert.deepEqual(
+      tables.andreani_tracking_events.map((row) => [row.order_id, row.claim_shipment_id, row.event_code, row.previous_status, row.new_status]),
+      [[7, 1, "Admision", null, null], [7, 1, "EnvioDespachado", "generada", "en_transito"], [7, 1, "EnvioEntregado", "en_transito", "entregada"]],
+      direction,
+    )
+  }
+})
+
+// El congelamiento del avance con review_event lo hace la RPC real
+// (cubierto en claim-andreani-shipments-sql.test.ts); acá, que se le pida.
+test("tramo con evento fuera del maestro: queda crudo en el historial y se pide revisión a la RPC", async () => {
+  const { admin, leg, tables, rpcs } = fakeAdmin({ leg: { creation_status: "created", status: "generada", andreani_envio_id: "R-1", andreani_tracking: "R-1", environment: "PROD" } })
+  const warn = console.warn
+  console.warn = () => {}
+  try {
+    const result = await syncClaimShipmentTracking(admin, leg() as never, {
+      fetchSnapshot: claimSnapshot(
+        [{ Evento: "Distribucion", Fecha: "2026-10-21T10:00:00-03:00" }],
+        [{ Evento: "EventoNuevo", Estado: "Algo nuevo", Fecha: "2026-10-21T11:00:00-03:00" }],
+      ),
+    })
+    assert.equal(result.tracking.reviewEvent, CLAIM_UNREADABLE_TRACKING_EVENT)
+    assert.deepEqual(result.newHistoryEvents.filter((event) => !event.recognized).map((event) => event.code), ["EventoNuevo"])
+  } finally {
+    console.warn = warn
+  }
+  assert.equal(leg().review_required, true)
+  const applied = rpcs.find((call) => call.name === "apply_order_claim_shipment_tracking_guarded")
+  assert.equal(applied?.args.p_review_event, CLAIM_UNREADABLE_TRACKING_EVENT)
+  const unknown = tables.andreani_tracking_events.find((row) => row.event_code === "EventoNuevo")
+  assert.deepEqual([unknown?.recognized, unknown?.review_required, unknown?.event_text], [false, true, "Algo nuevo"])
 })

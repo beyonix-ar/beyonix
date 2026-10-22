@@ -137,6 +137,7 @@ const TEST_FILES = [
   "lib/andreani/tracking-timestamps.test.ts",
   "lib/andreani/tracking-status-mapping.test.ts",
   "lib/andreani/order-tracking-sync.test.ts",
+  "lib/andreani/tracking-history-sql.test.ts",
   "lib/andreani/claim-shipments.test.ts",
   "lib/orders/claim-andreani-shipments-sql.test.ts",
   "lib/orders/claim-mercadopago-refund-sql.test.ts",

@@ -30,6 +30,8 @@ interface FakeOrdenRow extends Record<string, unknown> {
 
 function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
   const auditEvents: Array<Record<string, unknown>> = []
+  const historyRows: Array<Record<string, unknown>> = []
+  const updates: Array<{ id: unknown; payload: Record<string, unknown> }> = []
 
   function ordenesTable() {
     return {
@@ -49,6 +51,12 @@ function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
         const filters: Array<{ col: string; val: unknown }> = []
             let eventPredicate: (row: Record<string, unknown>) => boolean = () => true
         const builder = {
+          then(resolve: (value: { error: null }) => unknown) {
+            const row = seedOrders.find((candidate) => filters.every((filter) => candidate[filter.col] === filter.val))
+            if (row) Object.assign(row, payload)
+            updates.push({ id: filters.find((filter) => filter.col === "id")?.val, payload })
+            return resolve({ error: null })
+          },
               or(expression: string) {
                 const timestamp = expression.split(".lte.")[1]
                 eventPredicate = (row) => row.andreani_tracking_event_at == null ||
@@ -95,11 +103,30 @@ function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
           },
         }
       }
+      if (table === "andreani_tracking_events") {
+        return {
+          upsert(rows: Array<Record<string, unknown>>) {
+            const inserted = rows.filter((row) => !historyRows.some((existing) => existing.dedupe_key === row.dedupe_key))
+            historyRows.push(...inserted)
+            return { select: async () => ({ data: inserted.map((row) => ({ dedupe_key: row.dedupe_key })), error: null }) }
+          },
+        }
+      }
       throw new Error(`tabla inesperada en el mock: ${table}`)
     },
   }
 
-  return { admin, auditEvents }
+  return { admin, auditEvents, historyRows, updates }
+}
+
+function silenceConsole<T>(run: () => Promise<T>) {
+  const { error, warn } = console
+  console.error = () => {}
+  console.warn = () => {}
+  return run().finally(() => {
+    console.error = error
+    console.warn = warn
+  })
 }
 
 function fakeAndreaniFetch(eventosByEnvio: Record<string, unknown[]>) {
@@ -267,4 +294,77 @@ test("respeta el batchSize pasado por parámetro", async () => {
   })
 
   assert.equal(result.checked, 2)
+})
+
+function activeOrder(id: number, overrides: Partial<FakeOrdenRow> = {}): FakeOrdenRow {
+  return {
+    id,
+    estado: "pagado",
+    delivered_at: null,
+    andreani_envio_id: `ENV${id}`,
+    andreani_tracking: `tracking-ENV${id}`,
+    andreani_creation_environment: "PROD",
+    cliente_email: null,
+    cliente_nombre: null,
+    tracking_number: null,
+    tracking_url: null,
+    ...overrides,
+  }
+}
+
+test("fallo de un tracking (Andreani caído para ese envío): el resto del lote avanza y el fallido no bloquea la cabeza de la fila", async () => {
+  const orders = [activeOrder(1), activeOrder(2), activeOrder(3)]
+  const { admin, updates } = createFakeAdmin(orders)
+  const now = new Date("2026-10-21T12:00:00.000Z")
+  const fetch = fakeAndreaniFetch({
+    "tracking-ENV1": [{ Fecha: "2026-10-21T08:00:00.0000000", Evento: "EnvioDespachado" }],
+    "tracking-ENV3": [{ Fecha: "2026-10-21T08:00:00.0000000", Evento: "EnvioEntregado" }],
+  })
+  const result = await silenceConsole(() => runAndreaniTrackingSyncBatch(admin as never, {
+    now: () => now,
+    clientOptions: {
+      env: qaClientEnv,
+      fetch: async (input) => String(input).includes("tracking-ENV2")
+        ? new Response("upstream caído", { status: 503 })
+        : fetch(input),
+    },
+  }))
+
+  assert.deepEqual(result, { checked: 3, updated: 2, statusChanged: 2, errors: 1, unknownEvents: 0, deferred: 0 })
+  assert.deepEqual(orders.map((order) => order.estado), ["en_camino", "pagado", "entregado"])
+  // El fallido queda "consultado hace 19 min": vuelve a entrar en el próximo
+  // tick (cada 15 min) pero detrás de los pedidos más atrasados.
+  const deferral = updates.find((update) => update.id === 2 && "andreani_tracking_checked_at" in update.payload)
+  assert.equal(deferral?.payload.andreani_tracking_checked_at, "2026-10-21T11:41:00.000Z")
+})
+
+test("presupuesto de tiempo: pasado el límite no se empieza otro pedido (queda para el próximo tick)", async () => {
+  const orders = [activeOrder(1), activeOrder(2)]
+  const { admin } = createFakeAdmin(orders)
+  const result = await runAndreaniTrackingSyncBatch(admin as never, {
+    deadlineMs: Date.now() - 1,
+    clientOptions: { env: qaClientEnv, fetch: async () => { throw new Error("no debería consultar") } },
+  })
+  assert.deepEqual(result, { checked: 2, updated: 0, statusChanged: 0, errors: 0, unknownEvents: 0, deferred: 2 })
+})
+
+test("el lote cuenta eventos desconocidos nuevos y no los vuelve a contar en la próxima corrida", async () => {
+  const orders = [activeOrder(1, { estado: "en_camino" })]
+  const { admin, historyRows } = createFakeAdmin(orders)
+  const clientOptions = {
+    env: qaClientEnv,
+    fetch: fakeAndreaniFetch({
+      "tracking-ENV1": [
+        { Fecha: "2026-10-21T08:00:00.0000000", Evento: "EnvioDespachado" },
+        { Fecha: "2026-10-21T09:00:00.0000000", Evento: "EventoQueNoExiste", Estado: "???" },
+      ],
+    }),
+  }
+  const first = await silenceConsole(() => runAndreaniTrackingSyncBatch(admin as never, { clientOptions }))
+  assert.equal(first.unknownEvents, 1)
+  assert.equal(first.errors, 0, "un evento desconocido no rompe el pedido")
+  const second = await silenceConsole(() => runAndreaniTrackingSyncBatch(admin as never, { clientOptions }))
+  assert.equal(second.unknownEvents, 0)
+  assert.equal(historyRows.length, 2)
+  assert.equal(orders[0].estado, "en_camino")
 })

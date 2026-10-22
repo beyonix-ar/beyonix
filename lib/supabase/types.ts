@@ -417,6 +417,9 @@ export interface SupabasePedido {
   andreani_created_at?: string | null
   andreani_tracking_checked_at?: string | null
   andreani_tracking_event_at?: string | null
+  /** Primer evento de tracking Andreani no reconocido (código · texto crudos): pide revisión. Sólo Admin. */
+  andreani_tracking_review_event?: string | null
+  andreani_tracking_review_at?: string | null
   order_change_used?: boolean | null
   order_change_status?: "change_requested" | "change_approved" | "extra_payment_pending" | "rejected" | null
   order_change_extra_amount?: number | null
