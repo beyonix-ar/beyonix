@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Image from "next/image"
 import { Check, Copy, ExternalLink, Package, Sparkles, Star } from "lucide-react"
 
 import { BeyonixButton } from "@/components/account/account-ui"
@@ -699,8 +700,8 @@ export function OrderExperienceFeedback({ order }: { order: SupabasePedido }) {
       <div className="mt-3">
         <article className="rounded-lg border border-[var(--account-border)] bg-[var(--account-surface)] p-2.5">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-[var(--account-border)] bg-white">
-              <Sparkles className="size-4 text-[var(--account-text-primary)]" />
+            <div data-experience-brand className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--account-border)] bg-white">
+              <Image src="/icon.png" alt="" aria-hidden="true" width={28} height={28} className="size-7 object-contain" />
             </div>
             <div className="min-w-0">
               <p className="text-8px font-medium uppercase tracking-widest text-[var(--account-text-secondary)]">

@@ -153,6 +153,8 @@ const AUDIT_HOME_CARDS = `(() => {
   return { texts, failures }
 })()`
 
+const FAVICON = readFileSync("app/icon.png")
+
 let browser: Browser
 let css: string
 let bundle: string
@@ -183,11 +185,13 @@ async function open(theme: "dark" | "light", width = 1280): Promise<Page> {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Origen http (no about:blank): la sección de Home usa localStorage.
-  await page.route("**/*", (route) =>
-    route.request().url() === "http://reviews.test/"
-      ? route.fulfill({ contentType: "text/html; charset=utf-8", body: pageHtml(theme, css, bundle) })
-      : route.abort(),
-  )
+  await page.route("**/*", (route) => {
+    const url = route.request().url()
+    if (url === "http://reviews.test/") return route.fulfill({ contentType: "text/html; charset=utf-8", body: pageHtml(theme, css, bundle) })
+    // Isotipo de "Experiencia en BEYONIX": mismo archivo que el favicon (app/icon.png).
+    if (decodeURIComponent(url).includes("url=/icon.png")) return route.fulfill({ contentType: "image/png", body: FAVICON })
+    return route.abort()
+  })
   await page.goto("http://reviews.test/")
   try {
     await page.waitForSelector("#home-root [data-public-review]", { timeout: 10_000 })
@@ -383,6 +387,43 @@ for (const theme of ["light", "dark"] as const) {
         await page.keyboard.press("Escape")
         await listbox.waitFor({ state: "detached" })
         assert.equal(await page.locator("[role=dialog]").count(), 1, "Escape cierra sólo el desplegable")
+      } finally {
+        await page.close()
+      }
+    }
+  })
+
+  test(`I. ${theme}: "Experiencia en BEYONIX" muestra el isotipo del favicon centrado; el producto no cambia`, async () => {
+    for (const width of [1280, 768, 390]) {
+      const page = await open(theme, width)
+      try {
+        await page.waitForFunction(`document.querySelector("[data-experience-brand] img")?.complete`)
+        if (process.env.REVIEWS_SHOTS) await page.locator("#account-root").screenshot({ path: `${process.env.REVIEWS_SHOTS}/experience-${theme}-${width}.png` })
+        const brand = (await page.evaluate(`(() => {
+          const box = document.querySelector("[data-experience-brand]")
+          const img = box.querySelector("img")
+          const outer = box.getBoundingClientRect(), inner = img.getBoundingClientRect()
+          return {
+            src: decodeURIComponent(img.currentSrc), natural: img.naturalWidth, alt: img.alt,
+            box: Math.round(outer.width) + "x" + Math.round(outer.height), size: Math.round(inner.width) + "x" + Math.round(inner.height),
+            offsetX: Math.abs(inner.left + inner.width / 2 - (outer.left + outer.width / 2)), offsetY: Math.abs(inner.top + inner.height / 2 - (outer.top + outer.height / 2)),
+            background: getComputedStyle(box).backgroundColor, sparkles: box.querySelector("svg") !== null,
+            brandImages: document.querySelectorAll("#account-root img[src*='icon.png']").length,
+            pageOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+          }
+        })()`)) as { src: string; natural: number; alt: string; box: string; size: string; offsetX: number; offsetY: number; background: string; sparkles: boolean; brandImages: number; pageOverflow: boolean }
+        assert.match(brand.src, /url=\/icon\.png/, "misma fuente que el favicon")
+        assert.ok(brand.natural > 0, "el isotipo cargó")
+        assert.equal(brand.alt, "")
+        const [boxSide] = brand.box.split("x").map(Number)
+        const [logoWidth, logoHeight] = brand.size.split("x").map(Number)
+        assert.equal(logoWidth, logoHeight, `proporción original cuadrada (${brand.size})`)
+        assert.ok(logoWidth > 16 && logoWidth >= boxSide * 0.6 && logoWidth < boxSide, `más grande que el favicon y dentro del cuadrado (${brand.size} en ${brand.box})`)
+        assert.ok(brand.offsetX < 0.5 && brand.offsetY < 0.5, `centrado (${brand.offsetX}, ${brand.offsetY})`)
+        assert.equal(brand.background, "rgb(255, 255, 255)", "fondo blanco igual al del favicon")
+        assert.equal(brand.sparkles, false, "sin ícono genérico")
+        assert.equal(brand.brandImages, 1, "sólo en Experiencia en BEYONIX, no en la reseña del producto")
+        assert.equal(brand.pageOverflow, false)
       } finally {
         await page.close()
       }
