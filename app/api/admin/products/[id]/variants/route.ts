@@ -1,52 +1,13 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import {
-  parseOptionalProductLogistics,
-  ProductLogisticsValidationError,
-} from "@/lib/shipping/logistics-validation"
-import { catalogSkuConflictMessage } from "@/lib/products/catalog-sku-conflict"
-import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
+  VARIANT_CREATION_RULE_CODE,
+  VARIANT_CREATION_RULE_MESSAGE,
+  purchaseUrlForProduct,
+} from "@/lib/products/variant-creation-rule"
 
 function positiveInteger(value: unknown) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
-}
-
-function nonNegativeInteger(value: unknown) {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
-}
-
-function requiredText(value: unknown, maxLength: number) {
-  if (typeof value !== "string") return null
-  const normalized = value.trim()
-  return normalized ? normalized.slice(0, maxLength) : null
-}
-
-function optionalText(value: unknown, maxLength: number) {
-  if (typeof value !== "string") return null
-  return value.trim().slice(0, maxLength) || null
-}
-
-function normalizedSku(value: unknown) {
-  return optionalText(value, 120)?.toLocaleUpperCase("es") ?? null
-}
-
-function validColor(value: unknown) {
-  const normalized = requiredText(value, 7)
-  return normalized && /^#[0-9A-F]{6}$/i.test(normalized)
-    ? normalized.toUpperCase()
-    : null
-}
-
-function imageUrls(value: unknown) {
-  if (!Array.isArray(value)) return null
-  const urls = value.filter(
-    (item): item is string =>
-      typeof item === "string" &&
-      item.startsWith("https://") &&
-      item.length <= 2000,
-  )
-  return urls.length === value.length ? urls : null
 }
 
 export async function GET(
@@ -81,6 +42,8 @@ export async function GET(
   return Response.json({ variants: data ?? [] })
 }
 
+// Alta libre de variantes deshabilitada: una variante física nueva nace de una
+// compra / ingreso de mercadería (ver lib/products/variant-creation-rule.ts).
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -89,131 +52,15 @@ export async function POST(
   if ("error" in auth) return auth.error
 
   const productId = positiveInteger((await context.params).id)
-  const body = (await request.json().catch(() => null)) as
-    | Record<string, unknown>
-    | null
-  const sku = optionalText(body?.sku, 120)
-  const color = validColor(body?.color)
-  const quantity = nonNegativeInteger(body?.quantity)
-  const images = imageUrls(body?.images)
-  let logistics
-  try {
-    logistics = parseOptionalProductLogistics(body ?? {})
-  } catch (validationError) {
-    return Response.json(
-      {
-        error:
-          validationError instanceof ProductLogisticsValidationError
-            ? validationError.message
-            : "Los datos de envío de la variante no son válidos.",
-      },
-      { status: 400 },
-    )
-  }
-
-  if (!productId || !color || quantity == null || !images) {
-    return Response.json(
-      { error: "Completá correctamente la variante y sus unidades." },
-      { status: 400 },
-    )
-  }
-
-  // producto_variantes.nombre no es editable: se deriva siempre del color,
-  // nunca del valor que envíe el cliente (una variante se identifica por
-  // color/SKU/asignación, no por un nombre propio).
-  const name = deriveVariantNameFromColor(color)
-
-  const productResult = await auth.admin
-    .from("productos")
-    .select("id, sku, activo")
-    .eq("id", productId)
-    .maybeSingle()
-
-  if (productResult.error) {
-    return Response.json(
-      { error: "No se pudo preparar la creación de la variante." },
-      { status: 500 },
-    )
-  }
-  if (!productResult.data) {
-    return Response.json(
-      { error: "El producto ya no existe." },
-      { status: 404 },
-    )
-  }
-
-  const skuKey = normalizedSku(sku)
-  if (skuKey) {
-    const registry = await auth.admin
-      .from("catalog_sku_registry")
-      .select("product_id, variant_id")
-      .eq("normalized_sku", skuKey)
-      .maybeSingle()
-    if (registry.error) {
-      return Response.json(
-        { error: "No se pudo validar la identidad SKU." },
-        { status: 500 },
-      )
-    }
-    const ownedByCurrentSimpleProduct =
-      Number(registry.data?.product_id) === productId &&
-      registry.data?.variant_id == null
-    if (registry.data && !ownedByCurrentSimpleProduct) {
-      return Response.json(
-        {
-          error: await catalogSkuConflictMessage(
-            auth.admin,
-            sku ?? skuKey,
-            registry.data,
-          ),
-        },
-        { status: 409 },
-      )
-    }
-  }
-
-  const atomicResult = await auth.admin.rpc(
-    "create_product_variant_with_allocation_v2",
-    {
-      p_product_id: productId,
-      p_name: name,
-      p_sku: sku,
-      p_color_hex: color,
-      p_images: images,
-      p_quantity: quantity,
-      p_actor_id: auth.user.id,
-      p_peso_empaquetado_kg: logistics.peso_empaquetado_kg,
-      p_alto_paquete_cm: logistics.alto_paquete_cm,
-      p_ancho_paquete_cm: logistics.ancho_paquete_cm,
-      p_largo_paquete_cm: logistics.largo_paquete_cm,
-    },
-  )
-  if (!atomicResult.error) {
-    const atomicVariant = Array.isArray(atomicResult.data)
-      ? atomicResult.data[0]
-      : atomicResult.data
-    if (!atomicVariant) {
-      return Response.json(
-        { error: "La variante se creó sin una respuesta verificable." },
-        { status: 500 },
-      )
-    }
-    return Response.json({ variant: atomicVariant }, { status: 201 })
-  }
-  const missingMigration =
-    /create_product_variant_with_allocation_v2|schema cache|PGRST202/i.test(
-      atomicResult.error.message,
-    )
   return Response.json(
     {
-      error: missingMigration
-        ? "Falta aplicar la migración 20260801102000_product_shipping_data.sql."
-        : atomicResult.error.message,
+      error: VARIANT_CREATION_RULE_MESSAGE,
+      code: VARIANT_CREATION_RULE_CODE,
+      purchaseUrl: purchaseUrlForProduct(productId),
     },
-    { status: missingMigration ? 503 : 409 },
+    { status: 409 },
   )
 }
-
 export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> },

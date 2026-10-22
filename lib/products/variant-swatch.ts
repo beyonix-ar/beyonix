@@ -2,10 +2,13 @@ import type { CSSProperties } from "react"
 
 import { isRandomColorName } from "./color-mode.ts"
 
+/** Colores del swatch "Aleatorio" (no representan ningún color físico). */
+export const RANDOM_SWATCH_COLORS = ["#EF4444", "#FACC15", "#22C55E", "#38BDF8", "#6366F1", "#EC4899"] as const
+
 /** Swatch "Aleatorio": varios colores (no representa ningún color físico). */
 export const RANDOM_SWATCH_STYLE: CSSProperties = {
   backgroundColor: "#64748B",
-  backgroundImage: "conic-gradient(#EF4444 0 60deg, #FACC15 60deg 120deg, #22C55E 120deg 180deg, #38BDF8 180deg 240deg, #6366F1 240deg 300deg, #EC4899 300deg 360deg)",
+  backgroundImage: `conic-gradient(${RANDOM_SWATCH_COLORS.map((color, index) => `${color} ${index * 60}deg ${(index + 1) * 60}deg`).join(", ")})`,
 }
 
 /**

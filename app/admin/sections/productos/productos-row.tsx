@@ -1,5 +1,6 @@
 "use client"
 
+import { VARIANT_REMOVAL_RULE_TEXT } from "@/lib/products/variant-creation-rule"
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -200,6 +201,8 @@ export function ProductosRow({
   const [pendingVariantDelete, setPendingVariantDelete] =
     useState<SupabaseProductoVariante | null>(null)
   const [variantError, setVariantError] =
+    useState("")
+  const [variantNotice, setVariantNotice] =
     useState("")
 
 
@@ -610,10 +613,12 @@ export function ProductosRow({
   const removeVariant = async (
     variante: SupabaseProductoVariante
   ) => {
+    let removal
     try {
       setDeletingVariantId(variante.id)
       setVariantError("")
-      await deleteProductoVariante(producto.id, variante.id, {
+      setVariantNotice("")
+      removal = await deleteProductoVariante(producto.id, variante.id, {
         force: false,
       })
     } catch (error) {
@@ -627,11 +632,16 @@ export function ProductosRow({
       setDeletingVariantId(null)
     }
 
-    const nextVariantes =
-      variantes.filter(
-        (item) =>
-          item.id !== variante.id
-      )
+    // Con historial la variante no se borra: queda archivada (inactiva).
+    const archived = removal.mode === "archived"
+    const nextVariantes = archived
+      ? variantes.map((item) =>
+          item.id === variante.id
+            ? (removal.variant ?? { ...item, activo: false })
+            : item,
+        )
+      : variantes.filter((item) => item.id !== variante.id)
+    if (archived) setVariantNotice(removal.message)
 
     setLocalVariantes(nextVariantes)
     setPendingVariantDelete(null)
@@ -1263,6 +1273,11 @@ export function ProductosRow({
                 {variantError}
               </div>
             )}
+            {variantNotice && (
+              <div role="status" className="mx-4 rounded-xl border border-amber-300/25 bg-amber-300/8 px-3 py-2 text-xs font-semibold text-amber-100">
+                {variantNotice}
+              </div>
+            )}
 
             {conditionedStock.map((item) => {
               const linkedVariant = variantes.find(
@@ -1364,11 +1379,7 @@ export function ProductosRow({
             open
             compact
             title="Eliminar variante"
-            description={
-              isSuperAdmin
-                ? "Acción permanente de SUPER ADMIN: se elimina aunque tenga stock, compras, ventas o devoluciones asociadas. El historial se conserva desvinculado."
-                : "Esta acción es permanente."
-            }
+            description={VARIANT_REMOVAL_RULE_TEXT}
             onClose={() => {
               if (!deletingVariantId) {
                 setPendingVariantDelete(null)

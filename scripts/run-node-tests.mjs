@@ -43,6 +43,7 @@ const TEST_FILES = [
   "lib/products/admin-product-visuals.test.ts",
   "lib/products/product-activation.test.ts",
   "lib/products/product-variant-state-db.test.ts",
+  "lib/products/variant-parent-integrity-db.test.ts",
   "lib/products/installments.test.ts",
   "lib/pricing/product-pricing.test.ts",
   "lib/pricing/financed-pricing.test.ts",
@@ -301,6 +302,7 @@ const TEST_FILES = [
   "lib/mercadopago/refund-origin.test.ts",
   "lib/orders/legacy-credit-note.test.ts",
   "lib/orders/payment-incidents.test.ts",
+  "lib/orders/order-consistency.test.ts",
   "lib/orders/credit-note-mp-settlement.test.ts",
   "lib/mercadopago/refund-closure-sql.test.ts",
   "lib/arca/fiscal-obligation-guards-sql.test.ts",
@@ -396,6 +398,7 @@ const DB_ROUTE_TEST_FILES = [
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
   "lib/labels/labels-routes.test.ts",
+  "lib/products/variant-parent-integrity-routes.test.ts",
   "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
   "lib/orders/automatic-cancellation-worker.test.ts",

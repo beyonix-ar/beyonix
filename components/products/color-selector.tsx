@@ -5,6 +5,7 @@ import Image from "next/image"
 import { productColors } from "@/lib/product-colors"
 import { FALLBACK_PRODUCT_IMAGE } from "@/lib/products/product-variants"
 import { variantSwatchStyle } from "@/lib/products/variant-swatch"
+import { RANDOM_COLOR_LABEL, RandomColorSwatch } from "./random-color-swatch"
 
 interface ColorOption {
   name: string
@@ -12,6 +13,8 @@ interface ColorOption {
   colorHex?: string | null
   secondaryColorHex?: string | null
   image?: string | null
+  /** Opción "aleatorio": se muestra como swatch multicolor, no como foto. */
+  isRandom?: boolean
 }
 
 interface ColorSelectorProps {
@@ -86,9 +89,9 @@ export function ColorSelector({
             <button
               key={value}
               type="button"
-              aria-label={`Seleccionar color ${label}`}
+              aria-label={color.isRandom ? RANDOM_COLOR_LABEL : `Seleccionar color ${label}`}
               aria-pressed={isSelected}
-              title={label}
+              title={color.isRandom ? RANDOM_COLOR_LABEL : label}
               onClick={() => onSelect(value)}
               onMouseEnter={() => onPreviewChange?.(color)}
               onMouseLeave={() => onPreviewChange?.(null)}
@@ -98,15 +101,24 @@ export function ColorSelector({
                 isSelected
                   ? "border-2 border-[#112A43]"
                   : "border border-[#112A43]"
-              }`}
+              } ${color.isRandom ? "flex items-center justify-center" : ""}`}
             >
-              <Image
-                src={color.image || FALLBACK_PRODUCT_IMAGE}
-                alt=""
-                fill
-                sizes="56px"
-                className="object-cover"
-              />
+              {color.isRandom ? (
+                <RandomColorSwatch
+                  decorative
+                  className={`size-7 transition-shadow duration-200 sm:size-8 ${
+                    isSelected ? "ring-2 ring-beyonix-blue-light ring-offset-2 ring-offset-white shadow-beyonix-color-selected" : ""
+                  }`}
+                />
+              ) : (
+                <Image
+                  src={color.image || FALLBACK_PRODUCT_IMAGE}
+                  alt=""
+                  fill
+                  sizes="56px"
+                  className="object-cover"
+                />
+              )}
             </button>
           )
         }

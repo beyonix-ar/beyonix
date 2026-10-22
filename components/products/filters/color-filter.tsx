@@ -2,7 +2,7 @@
 
 import { productColors } from "@/lib/product-colors"
 import { MULTICOLOR_FILTER, RANDOM_COLOR_FILTER } from "@/lib/products/catalog-filters"
-import { Shuffle } from "lucide-react"
+import { RANDOM_COLOR_LABEL, RandomColorSwatch } from "@/components/products/random-color-swatch"
 
 interface ColorFilterProps {
   selectedColors: string[]
@@ -57,21 +57,29 @@ export function ColorFilter({
             />
           )
         })}
+        {availableColors.includes(RANDOM_COLOR_FILTER) && (
+          <button
+            type="button"
+            aria-label={RANDOM_COLOR_LABEL}
+            title={RANDOM_COLOR_LABEL}
+            aria-pressed={selectedColors.includes(RANDOM_COLOR_FILTER)}
+            onClick={() => onToggleColor(RANDOM_COLOR_FILTER)}
+            className={`beyonix-color-swatch relative size-7 cursor-pointer rounded-full transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-cyan/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#071018] ${
+              selectedColors.includes(RANDOM_COLOR_FILTER)
+                ? "ring-2 ring-beyonix-cyan/60 ring-offset-2 ring-offset-[#071018] shadow-beyonix-color-selected"
+                : "hover:scale-105"
+            }`}
+          >
+            <RandomColorSwatch decorative className="size-full" />
+          </button>
+        )}
       </div>
-      {availableColors.some((color) => color === MULTICOLOR_FILTER || color === RANDOM_COLOR_FILTER) && (
+      {availableColors.includes(MULTICOLOR_FILTER) && (
         <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-3">
-          {availableColors.includes(MULTICOLOR_FILTER) && (
-            <button type="button" aria-label="Filtrar por Multicolor" aria-pressed={selectedColors.includes(MULTICOLOR_FILTER)} onClick={() => onToggleColor(MULTICOLOR_FILTER)} className={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs transition-colors ${selectedColors.includes(MULTICOLOR_FILTER) ? "border-beyonix-cyan text-white" : "border-white/20 text-white/70 hover:border-white/50"}`}>
-              <span className="size-4 rounded-full bg-[conic-gradient(#4868b5,#bd6b9d,#a6b76b,#4868b5)]" aria-hidden="true" />
-              Multicolor
-            </button>
-          )}
-          {availableColors.includes(RANDOM_COLOR_FILTER) && (
-            <button type="button" aria-label="Filtrar por Aleatorio" aria-pressed={selectedColors.includes(RANDOM_COLOR_FILTER)} onClick={() => onToggleColor(RANDOM_COLOR_FILTER)} className={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs transition-colors ${selectedColors.includes(RANDOM_COLOR_FILTER) ? "border-beyonix-cyan text-white" : "border-white/20 text-white/70 hover:border-white/50"}`}>
-              <Shuffle className="size-4 text-beyonix-sky" aria-hidden="true" />
-              Aleatorio
-            </button>
-          )}
+          <button type="button" aria-label="Filtrar por Multicolor" aria-pressed={selectedColors.includes(MULTICOLOR_FILTER)} onClick={() => onToggleColor(MULTICOLOR_FILTER)} className={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs transition-colors ${selectedColors.includes(MULTICOLOR_FILTER) ? "border-beyonix-cyan text-white" : "border-white/20 text-white/70 hover:border-white/50"}`}>
+            <span className="size-4 rounded-full bg-[conic-gradient(#4868b5,#bd6b9d,#a6b76b,#4868b5)]" aria-hidden="true" />
+            Multicolor
+          </button>
         </div>
       )}
     </div>

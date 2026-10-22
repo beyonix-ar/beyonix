@@ -458,6 +458,55 @@ test("venta aleatoria en el modal: rótulo y ayuda, sin leyenda bajo miniaturas 
   assert.doesNotMatch(markup, /&lt;p&gt;|&lt;strong&gt;/)
 })
 
+// Aleatorio + unidad con descuento: el selector aparece y la opción aleatoria
+// es el swatch multicolor (no una foto ni el texto "Aleatorio").
+const randomWithDiscounted = {
+  ...product,
+  conditioned_stock: [{
+    id: "52ae23f0-cabd-4c17-9a41-9ca6df3851ad", product_id: 7, variant_id: 71, original_quantity: 1, sold_quantity: 0, quantity: 1,
+    discount_percent: 20, reason: "Marca superficial", non_sellable_quantity: 0, non_sellable_reason: null, active: true,
+    approved_at: "2026-07-01T00:00:00.000Z", conditioned_name: "Negro · Con descuento", conditioned_sku: "ENC-N-DESC",
+    conditioned_color_hex: "#000000", conditioned_images: ["/placeholder.svg"],
+  }],
+} as unknown as SupabaseProducto
+
+for (const theme of ["dark", "light"] as const) {
+  for (const width of [1440, 390]) {
+    test(`opción aleatoria del selector (cliente y vista previa del admin) ${theme} ${width}px: swatch multicolor accesible y seleccionado en azul`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 900 } })
+      try {
+        const html = renderModal(randomWithDiscounted)
+        await page.setContent(`<html lang="es" ${theme === "light" ? 'data-account-theme="light" data-account-scope' : ""}><head><style>${css}</style></head><body style="margin:0;background:#000">${html}</body></html>`)
+        const random = page.getByRole("button", { name: "Color aleatorio", exact: true })
+        assert.equal(await random.count(), 1)
+        const data = await random.evaluate((button: HTMLButtonElement) => {
+          const swatch = button.querySelector<HTMLElement>("[data-random-swatch]")!
+          const outer = button.getBoundingClientRect(), inner = swatch.getBoundingClientRect()
+          return {
+            title: button.title, pressed: button.getAttribute("aria-pressed"), text: (button.textContent ?? "").trim(), images: button.querySelectorAll("img").length,
+            segments: swatch.querySelectorAll("svg path").length, round: parseFloat(getComputedStyle(swatch).borderTopLeftRadius) >= inner.width / 2,
+            centered: Math.abs(inner.left + inner.width / 2 - (outer.left + outer.width / 2)) < 0.5 && Math.abs(inner.top + inner.height / 2 - (outer.top + outer.height / 2)) < 0.5,
+            ring: getComputedStyle(swatch).boxShadow, size: inner.width / outer.width,
+            siblings: [...button.parentElement!.querySelectorAll("button")].map((item) => item.getAttribute("aria-label")),
+            pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          }
+        })
+        assert.equal(data.title, "Color aleatorio")
+        assert.equal(data.pressed, "true", "mismo valor lógico seleccionado")
+        assert.equal(data.text, "", "sin texto Aleatorio en la opción")
+        assert.equal(data.images, 0, "no usa una foto como opción aleatoria")
+        assert.equal(data.segments, 6)
+        assert.ok(data.round && data.centered && data.size >= 0.5 && data.size < 0.8, JSON.stringify(data))
+        assert.match(data.ring, /0px 0px 0px 4px/, "seleccionado: ring azul BEYONIX con offset")
+        assert.deepEqual(data.siblings, ["Color aleatorio", "Seleccionar color Negro · Con Descuento"], "los demás colores no cambian")
+        assert.ok(data.pageOverflow <= 0)
+        assert.equal(await page.locator("[data-random-swatch]").count(), 2, "rótulo + opción usan el mismo componente")
+        if (SHOTS) await random.locator("xpath=ancestor::section[1]").screenshot({ path: `${SHOTS}/random-option-${theme}-${width}.png` })
+      } finally { await page.close() }
+    })
+  }
+}
+
 test("ayuda de variantes aleatorias: hover y tap muestran la aclaración, segundo tap la cierra", async () => {
   for (const hasTouch of [false, true]) {
     const page = await browser.newPage({ viewport: { width: hasTouch ? 390 : 1440, height: 800 }, hasTouch })

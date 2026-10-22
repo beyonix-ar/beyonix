@@ -231,7 +231,16 @@ for (const width of [390, 768, 1024, 1366, 1440, 1920]) {
         assert.equal(await page.getByText("Categorías", { exact: true }).count(), 1)
         assert.equal(await page.getByText("Colores", { exact: true }).count(), 1)
         assert.equal(await page.getByRole("button", { name: "Filtrar por Multicolor" }).count(), 1)
-        assert.equal(await page.getByRole("button", { name: "Filtrar por Aleatorio" }).count(), 1)
+        const random = page.getByRole("button", { name: "Color aleatorio", exact: true })
+        assert.equal(await random.count(), 1)
+        const swatch = await random.evaluate((button: HTMLButtonElement) => {
+          const box = button.getBoundingClientRect(), color = button.closest("div")!.querySelector("button[aria-label^='Filtrar por color']")!.getBoundingClientRect()
+          return { title: button.title, text: (button.textContent ?? "").trim(), radius: getComputedStyle(button).borderRadius, width: Math.round(box.width), height: Math.round(box.height),
+            colorSize: Math.round(color.width) + "x" + Math.round(color.height), segments: button.querySelectorAll("svg path").length, top: Math.round(box.top) === Math.round(color.top) }
+        })
+        assert.deepEqual({ title: swatch.title, text: swatch.text, round: parseFloat(swatch.radius) >= swatch.width / 2, size: `${swatch.width}x${swatch.height}`, segments: swatch.segments, top: swatch.top },
+          { title: "Color aleatorio", text: "", round: true, size: swatch.colorSize, segments: 6, top: true }, "swatch circular multicolor sin texto, del tamaño y alineado con los colores")
+        assert.equal(await page.getByText("Aleatorio", { exact: true }).count(), 0)
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 0)
         if (kind === "category") {
           assert.equal(await page.getByRole("checkbox", { name: "Tecnología & Gadgets" }).isChecked(), true)
@@ -241,6 +250,15 @@ for (const width of [390, 768, 1024, 1366, 1440, 1920]) {
           assert.deepEqual(await page.locator("[data-product-id]").evaluateAll((items) => items.map((item) => item.getAttribute("data-product-id"))), ["2"])
           await page.getByRole("button", { name: "Limpiar filtros" }).click()
           assert.equal(await page.locator("[data-product-id]").count(), 3)
+          assert.equal(await random.getAttribute("aria-pressed"), "false")
+          await random.click()
+          assert.equal(await random.getAttribute("aria-pressed"), "true")
+          assert.deepEqual(await page.locator("[data-product-id]").evaluateAll((items) => items.map((item) => item.getAttribute("data-product-id"))), ["3"], "mismo filtro lógico 'aleatorio'")
+          await page.waitForTimeout(300)
+          assert.match(await random.evaluate((button) => getComputedStyle(button).boxShadow), /0px 0px 0px 4px/, "seleccionado: ring azul con offset, igual que los demás colores")
+          if (SHOTS) await page.getByText("Colores", { exact: true }).locator("..").screenshot({ path: `${SHOTS}/random-filter-${width}.png` })
+          await page.getByRole("button", { name: "Limpiar filtros" }).click()
+          assert.equal(await random.getAttribute("aria-pressed"), "false")
         }
       } finally { await page.close() }
     }

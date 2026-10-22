@@ -10,6 +10,8 @@ import {
   withPurchaseBarcode,
 } from "@/lib/business/cost-catalog-server"
 import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
+import { isReservedProductBarcode } from "@/lib/barcodes/codes"
+import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 import type {
   BusinessCostCatalogProduct,
   CatalogPurchaseTarget,
@@ -56,6 +58,51 @@ function reception(value: unknown) {
   return new Set(["pendiente", "parcial", "recibida", "anulada"]).has(status)
     ? status
     : null
+}
+
+function hexColor(value: unknown) {
+  const color = text(value, 7)
+  return color && /^#[0-9A-F]{6}$/i.test(color) ? color.toUpperCase() : null
+}
+
+// Variante física nueva que nace con esta compra (Compras → artículo nuevo o
+// color nuevo de un producto). Sólo identidad: producto, nombre, SKU, color y
+// código. El servidor la crea junto con la compra en una sola transacción.
+function newVariantInput(value: unknown) {
+  if (value == null) return { variant: null, error: null }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { variant: null, error: "Los datos de la variante nueva no son válidos." }
+  }
+  const record = value as Record<string, unknown>
+  const productId = record.productId == null || record.productId === "" ? null : positiveInteger(record.productId)
+  const productName = text(record.productName, 240)
+  const colorHex = hexColor(record.colorHex)
+  const sku = text(record.sku, 120)
+  const barcode = text(record.barcode, 64)
+  const generateBarcode = record.generateBarcode === true
+  if ((record.productId != null && record.productId !== "" && !productId) || (!productId && !productName)) {
+    return { variant: null, error: "Elegí el producto o escribí el nombre del artículo nuevo." }
+  }
+  if (!colorHex) return { variant: null, error: "Elegí un color válido para la variante nueva." }
+  if (!sku) return { variant: null, error: "La variante nueva necesita un SKU." }
+  if (barcode && generateBarcode) {
+    return { variant: null, error: "Elegí escanear un código o generar uno BEYONIX, no ambos." }
+  }
+  if (barcode && isReservedProductBarcode(barcode)) {
+    return { variant: null, error: "Ese código pertenece a un bulto o lote de envío, no a un artículo." }
+  }
+  return {
+    variant: {
+      productId,
+      productName,
+      name: text(record.colorName, 160)?.toUpperCase() ?? deriveVariantNameFromColor(colorHex),
+      sku,
+      colorHex,
+      barcode,
+      generateBarcode,
+    },
+    error: null,
+  }
 }
 
 function date(value: unknown) {
@@ -217,6 +264,10 @@ export async function POST(request: Request) {
   }
 
   if (kind === "product") {
+    const newVariant = newVariantInput(body?.newVariant)
+    if (newVariant.error) {
+      return Response.json({ error: newVariant.error }, { status: 400 })
+    }
     const productId = body?.productId ? positiveInteger(body.productId) : null
     const variantId = body?.variantId ? positiveInteger(body.variantId) : null
     const articleName = text(body?.articleName, 180)
@@ -229,7 +280,7 @@ export async function POST(request: Request) {
     )
 
     if (
-      (!productId && !articleName) ||
+      (!productId && !articleName && !newVariant.variant) ||
       !purchaseDate ||
       !quantity ||
       unitCost == null ||
@@ -248,6 +299,13 @@ export async function POST(request: Request) {
     if (variantId && !productId) {
       return Response.json(
         { error: "No se puede asignar una variante a un artículo no catalogado." },
+        { status: 400 },
+      )
+    }
+
+    if (newVariant.variant && (productId || variantId)) {
+      return Response.json(
+        { error: "Una variante nueva no puede apuntar a una variante existente." },
         { status: 400 },
       )
     }
@@ -275,6 +333,84 @@ export async function POST(request: Request) {
       return Response.json({ error: "Los importes no pueden ser negativos." }, { status: 400 })
     }
 
+    const purchaseFields = {
+      purchase_date: purchaseDate,
+      quantity,
+      received_quantity: requestedReceivedQuantity,
+      reception_status: receptionStatus,
+      unit_cost: unitCost,
+      ...extraAmounts,
+      supplier: text(body?.supplier, 180),
+      document_type: text(body?.documentType, 80),
+      document_number: text(body?.documentNumber, 120),
+      payment_method: text(body?.paymentMethod, 100),
+      notes: text(body?.notes, 1000),
+    }
+
+    if (newVariant.variant) {
+      // Variante nueva + compra: una sola transacción idempotente. O quedan
+      // variante, SKU, código, compra, costo, stock y movimiento, o nada.
+      const { data: created, error: createError } = await auth.admin.rpc(
+        "create_variant_and_purchase",
+        {
+          p_product_id: newVariant.variant.productId,
+          p_product_name: newVariant.variant.productName,
+          p_variant: {
+            name: newVariant.variant.name,
+            sku: newVariant.variant.sku,
+            color_hex: newVariant.variant.colorHex,
+            barcode: newVariant.variant.barcode,
+            generate_barcode: newVariant.variant.generateBarcode,
+          },
+          p_purchase: purchaseFields,
+          p_actor_id: auth.user.id,
+          p_idempotency_key: idempotencyKey,
+        },
+      )
+      if (createError) {
+        const missingMigration =
+          /create_variant_and_purchase|PGRST202|42883/i.test(
+            `${createError.code ?? ""} ${createError.message}`,
+          )
+        return Response.json(
+          {
+            error: missingMigration
+              ? "Falta aplicar la migración 20261015130000_variant_parent_integrity.sql."
+              : createError.message || "No se pudo registrar la compra de la variante nueva.",
+          },
+          { status: missingMigration ? 503 : 409 },
+        )
+      }
+      const result = (Array.isArray(created) ? created[0] : created) as
+        | { productId?: unknown; variantId?: unknown; purchase?: unknown; replayed?: unknown }
+        | null
+      const createdProductId = positiveInteger(result?.productId)
+      const createdVariantId = positiveInteger(result?.variantId)
+      if (!result?.purchase || !createdProductId || !createdVariantId) {
+        return Response.json(
+          { error: "La compra se registró sin una respuesta verificable." },
+          { status: 500 },
+        )
+      }
+      const reconciliation = await reconcileUnlinkedMercadoLibreSalesByExactSku(auth.admin, {
+        sku: newVariant.variant.sku,
+        actorId: auth.user.id,
+      })
+      return Response.json(
+        {
+          item: result.purchase,
+          productId: createdProductId,
+          variantId: createdVariantId,
+          replayed: result.replayed === true,
+          automaticallyLinkedSales: reconciliation.linked,
+          automaticLinkWarning: reconciliation.errors.length
+            ? "La compra se guardó, pero algunas ventas con el mismo SKU no pudieron vincularse automáticamente."
+            : null,
+        },
+        { status: result.replayed === true ? 200 : 201 },
+      )
+    }
+
     const { data: inserted, error } = await auth.admin.rpc(
       "save_product_purchase_idempotent",
       {
@@ -283,17 +419,7 @@ export async function POST(request: Request) {
           variant_id: variantId,
           article_name: productId ? null : articleName,
           sku: text(body?.sku, 120),
-          purchase_date: purchaseDate,
-          quantity,
-          received_quantity: requestedReceivedQuantity,
-          reception_status: receptionStatus,
-          unit_cost: unitCost,
-          ...extraAmounts,
-          supplier: text(body?.supplier, 180),
-          document_type: text(body?.documentType, 80),
-          document_number: text(body?.documentNumber, 120),
-          payment_method: text(body?.paymentMethod, 100),
-          notes: text(body?.notes, 1000),
+          ...purchaseFields,
         },
         p_actor_id: auth.user.id,
         p_idempotency_key: idempotencyKey,

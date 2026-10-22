@@ -13,7 +13,7 @@ import { ProductPurchaseBox } from "./product-purchase-box"
 import { ProductRatingSummary } from "./product-rating-summary"
 import { ProductReviewsDialog } from "./product-reviews-dialog"
 import { RandomVariantHint } from "./random-variant-hint"
-import { RANDOM_SWATCH_STYLE } from "@/lib/products/variant-swatch"
+import { RandomColorSwatch } from "./random-color-swatch"
 import {
   DEFAULT_VARIANT_VALUE,
   getProductVariantOptions,
@@ -228,12 +228,7 @@ export function ProductDetailsPanel({
                   {isRandomSelected && !previewedColor ? "Color/modelo:" : "Color:"}
                 </span>
                 {isRandomSelected && !previewedColor && (
-                  <span
-                    data-random-swatch
-                    aria-hidden="true"
-                    style={RANDOM_SWATCH_STYLE}
-                    className="mx-0.5 inline-block size-4 shrink-0 rounded-full align-middle shadow-[0_0_0_1px_rgba(255,255,255,0.35)]"
-                  />
+                  <RandomColorSwatch decorative className="mx-0.5 align-middle" />
                 )}
                 <span className="beyonix-modal-title font-semibold text-white">
                   {displayedColorName}
@@ -249,6 +244,7 @@ export function ProductDetailsPanel({
                     colorHex: color.colorHex,
                     secondaryColorHex: color.secondaryColorHex,
                     image: color.images[0] ?? null,
+                    isRandom: color.isRandom,
                   }))}
                   selectedColor={selectedColor}
                   onSelect={onColorChange}

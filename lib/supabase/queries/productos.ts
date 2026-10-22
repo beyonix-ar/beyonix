@@ -755,6 +755,8 @@ export async function updateProductoCatalog(
   catalog: ProductoPayload,
   primarySku: string | null,
   variantStates: Record<number, boolean>,
+  /** Revisión de la ficha que cargó el editor; si cambió, el servidor rechaza el guardado. */
+  expectedRevision: number | null = null,
 ) {
   const {
     data: { session },
@@ -783,6 +785,7 @@ export async function updateProductoCatalog(
       catalog,
       primarySku,
       variantStates: requestedVariantStates,
+      ...(expectedRevision != null ? { expectedRevision } : {}),
     }),
     cache: "no-store",
   })
