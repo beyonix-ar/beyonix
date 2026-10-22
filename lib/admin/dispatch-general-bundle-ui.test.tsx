@@ -172,7 +172,7 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     await act(async () => { button(dom, "Volver")!.click() })
     await settle(300)
     const row = dom.window.document.querySelector('tr[aria-label="Ver Bulto - 0005"]')
-    assert.match(row?.textContent ?? "", /María Peña[\s\S]*EEntregado/, "la fila del Bulto pasa a Entregado con quién lo entregó")
+    assert.match(row?.textContent ?? "", /María Peña[\s\S]*Entregado/, "la fila del Bulto pasa a Entregado con quién lo entregó")
     assert.doesNotMatch(row?.textContent ?? "", /Pendiente|Confirmado/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
@@ -257,7 +257,10 @@ test("Bultos: varios cancelados se listan para retirar y al resolver el último 
     await act(async () => { root.render(<AdminDispatches />) })
     await settle(100)
     const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0001"]')!
-    assert.match(row.textContent ?? "", /Bulto - 0001[\s\S]*3 pedidos[\s\S]*3 pedidos cancelados/)
+    // La fila sólo nombra al Bulto (3 pedidos en Unidades); las cancelaciones se avisan arriba de la tabla.
+    assert.equal(row.querySelector(".dispatch-record-batch")?.textContent, "Bulto - 0001")
+    assert.equal(row.querySelector(".dispatch-order-units")?.firstChild?.textContent, "3")
+    assert.equal(dom.window.document.querySelectorAll('section[aria-label="Cancelaciones que requieren acción"] [role="alert"]').length, 3)
     assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión|Verificados/)
     await act(async () => { row.click() })
     await settle(120)

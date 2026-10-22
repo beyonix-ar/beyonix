@@ -46,7 +46,7 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
   const readyBundle: BatchDispatchDetail = { ...bundle, items: bundle.items.map((item) => ({ ...item, blocked: false, blockReason: null, cancellationHold: false })), blockedCount: 0, cancelledCount: 0 }
   const bundleProps = { holds: [], liveUpdating: false, boardError: false, onChange: () => {}, onOpenResolution: () => {}, onRefresh: () => {} }
   const shell = renderToStaticMarkup(<AdminDispatches />)
-  const table = renderToStaticMarkup(<DispatchRecordsTable rows={rows} cancelledByBatch={new Map([[2, 1]])} selected={new Set()} onToggle={() => {}} onOpen={() => {}} />)
+  const table = renderToStaticMarkup(<DispatchRecordsTable rows={rows} selected={new Set()} onToggle={() => {}} onOpen={() => {}} />)
   const markup = `<div class="beyonix-admin-shell min-h-screen text-white"><main class="beyonix-admin-main bg-beyonix-page"><div class="dispatch-page">${shell}<div class="admin-ds-surface dispatch-surface">${table}</div><div class="dispatch-surface"><table class="dispatch-product-table"><tbody>${renderToStaticMarkup(<><ProductLine item={product} line={line} adjusted={false} /><ProductLine item={product} line={{ ...line, scanned_quantity: 2 }} adjusted={false} /></>)}</tbody></table></div><div class="dispatch-surface">${renderToStaticMarkup(<GeneralBundlePanel detail={bundle} {...bundleProps} />)}${renderToStaticMarkup(<GeneralBundlePanel detail={readyBundle} {...bundleProps} />)}</div></div></main></div>`
   const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chrome", headless: true })
   try {
@@ -61,30 +61,62 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.equal(await tableRows.count(), 5)
       const first = tableRows.first()
       assert.match(await first.innerText(), /BX-1012[\s\S]*Pendiente[\s\S]*\$\s?50\.000/i)
-      assert.match(await tableRows.nth(2).innerText(), /Bulto - 0002[\s\S]*10 pedidos[\s\S]*1 pedido cancelado[\s\S]*\$\s?100\.000/i)
-      // Mobile: prioriza fecha, Pedido/Bulto, estado e importe; sin "—" ni Equipo.
+      // Bulto: sólo su nombre; la cantidad de pedidos va en Unidades. Pedido: sus unidades.
+      const bundleRow = tableRows.nth(2)
+      assert.equal((await bundleRow.locator(".dispatch-record-batch").innerText()).trim(), "Bulto - 0002")
+      assert.match((await bundleRow.locator(".dispatch-order-units").innerText()).trim(), width >= 640 ? /^10$/ : /^10 pedidos$/)
+      assert.match((await first.locator(".dispatch-order-units").innerText()).trim(), width >= 640 ? /^3$/ : /^3 u\.$/)
+      assert.match(await bundleRow.innerText(), /\$\s?100\.000/)
+      // Sin Equipo: ni columna ni filtro.
+      assert.equal(await page.locator(".dispatch-record-device, .dispatch-col-device, button[aria-label=EQUIPO]").count(), 0)
+      assert.doesNotMatch(await page.locator(".dispatch-records-table").innerText(), /Equipo/i)
+      // Mobile: prioriza fecha, Pedido/Bulto, estado e importe; sin "—".
       const visible = async (selector: string) => first.locator(selector).isVisible()
       for (const selector of [".dispatch-order-date", ".dispatch-record-order", ".dispatch-order-status", ".dispatch-order-total"]) assert.ok(await visible(selector), `${label}: ${selector}`)
       assert.equal(await visible(".dispatch-record-batch"), width >= 640, `${label}: "—" de Bulto sólo en tabla`)
-      assert.equal(await visible(".dispatch-record-device"), width >= 640, `${label}: Equipo es secundario`)
       assert.equal(await page.locator(".dispatch-records-table thead").isVisible(), width >= 640)
+      if (width < 640) {
+        // El checkbox del confirmado no pisa su número.
+        const [check, code] = await Promise.all([tableRows.nth(1).locator("input[type=checkbox]").boundingBox(), tableRows.nth(1).locator(".dispatch-record-order").boundingBox()])
+        assert.ok(check && code && check.x + check.width <= code.x, `${label}: checkbox separado del número`)
+      }
+      // Filtros: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Limpiar, misma altura y texto centrado.
+      const filters = ["input[aria-label=FECHA]", 'input[aria-label="N° PEDIDO"]', 'input[aria-label="N° BULTO"]', "button[aria-label=USUARIO]", "button[aria-label=ESTADO]", ".dispatch-filter-clear"]
+      const boxes = await Promise.all(filters.map((selector) => page.locator(`.dispatch-filters ${selector}`).boundingBox()))
+      assert.ok(boxes.every((box) => box && Math.abs(box.height - boxes[0]!.height) < 1), `${label}: altura uniforme (${boxes.map((box) => box?.height).join(", ")})`)
+      const rowsOf = new Set(boxes.map((box) => Math.round(box!.y)))
+      assert.equal(rowsOf.size, width >= 1024 ? 1 : width >= 640 ? 2 : 4, `${label}: filas de filtros`)
+      const row = await page.locator(".dispatch-filter-row").evaluate((element) => [element.scrollWidth, element.clientWidth])
+      assert.ok(row[0] <= row[1] + 1, `${label}: ningún filtro queda escondido con scroll`)
+      const centers = await page.locator(".dispatch-filters").evaluate((element) => ["button[aria-label=USUARIO]", "button[aria-label=ESTADO]"].map((selector) => {
+        const button = element.querySelector(selector)!.getBoundingClientRect(), text = element.querySelector(`${selector} span.truncate`)!.getBoundingClientRect()
+        return [button.top + button.height / 2, text.top + text.height / 2]
+      }))
+      assert.ok(centers.every(([button, text]) => Math.abs(button - text) <= 1), `${label}: texto de los selects centrado (${JSON.stringify(centers)})`)
+      if (width >= 1024) assert.ok(Math.abs(centers[0][0] - (boxes[1]!.y + boxes[1]!.height / 2)) <= 1, `${label}: selects e inputs en la misma línea`)
       if (width >= 1024) {
         const scroll = await page.locator(".dispatch-records-scroll").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
         assert.ok(scroll, `${label}: la tabla entra completa`)
-        // Siete filtros en una sola fila.
-        const boxes = await Promise.all(["input[aria-label=FECHA]", 'input[aria-label="N° PEDIDO"]', 'input[aria-label="N° BULTO"]', "button[aria-label=USUARIO]", "button[aria-label=EQUIPO]", "button[aria-label=ESTADO]", ".dispatch-filter-clear"].map((selector) => page.locator(`.dispatch-filters ${selector}`).boundingBox()))
-        assert.ok(boxes.every((box) => box && boxes[0] && Math.abs(box.y - boxes[0].y) < 3), `${label}: filtros alineados`)
+        // Unidades centradas e importe a la derecha; menú alineado en el centro de la fila.
+        const align = await bundleRow.evaluate((element) => ["dispatch-order-units", "dispatch-order-total", "dispatch-actions-cell"].map((name) => getComputedStyle(element.querySelector(`.${name}`)!).textAlign))
+        assert.deepEqual(align, ["center", "right", "center"])
+        const [menuBox, rowBox] = await Promise.all([bundleRow.locator("button[aria-haspopup=menu]").boundingBox(), bundleRow.boundingBox()])
+        assert.ok(menuBox && rowBox && Math.abs(menuBox.y + menuBox.height / 2 - (rowBox.y + rowBox.height / 2)) <= 1.5, `${label}: menú centrado`)
       }
       if (width === 768) assert.ok(await page.locator(".dispatch-records-scroll").evaluate((element) => getComputedStyle(element).overflowX === "auto"), `${label}: scroll interno sólo en la tabla`)
       const filterBackground = await page.locator(".dispatch-filter-row").evaluate((element) => getComputedStyle(element).backgroundColor)
       assert.equal(filterBackground, theme === "light" ? "rgb(238, 243, 248)" : "rgb(28, 41, 53)", `${label}: filtros azul/gris suave`)
       const color = await page.locator(".dispatch-record-order").first().evaluate((element) => getComputedStyle(element).color)
       assert.equal(color, theme === "light" ? "rgb(23, 36, 51)" : "rgb(248, 250, 252)")
-      // Estados: una tonalidad por letra, legible en cada tema.
-      const states = await page.locator(".dispatch-state-badge").evaluateAll((badges) => badges.map((badge) => [badge.getAttribute("data-state"), getComputedStyle(badge).color]))
-      badgeColors[label] = [...new Set(states.map(([, value]) => value as string))]
-      assert.equal(badgeColors[label].length, 4, `${label}: P, C, E y X con colores distintos`)
-      for (const target of [page.locator(".dispatch-state-badge").first(), page.locator(".dispatch-record-row .dispatch-order-total").first(), page.locator(".dispatch-record-alert")]) {
+      // Estados: sólo texto (sin letra), amarillo/verde/azul/rojo, legibles en cada tema.
+      const states = await page.locator(".dispatch-state-badge").evaluateAll((badges) => badges.map((badge) => [badge.getAttribute("data-state") ?? "", getComputedStyle(badge).color, badge.textContent ?? ""]))
+      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Entregado", X: "Cancelado" })
+      assert.equal(await page.locator(".dispatch-state-letter").count(), 0)
+      badgeColors[label] = [...new Set(states.map(([, value]) => value))]
+      assert.equal(badgeColors[label].length, 4, `${label}: cuatro colores distintos`)
+      const hue = Object.fromEntries(states.map(([state, value]) => { const [red, green, blue] = channels(value); return [state, red > blue && green > blue && Math.abs(red - green) < 110 ? "amarillo" : green > red && green >= blue ? "verde" : blue > red && blue >= green ? "azul" : red > green && red > blue ? "rojo" : "otro"] }))
+      assert.deepEqual(hue, { P: "amarillo", C: "verde", E: "azul", X: "rojo" }, `${label}: paleta ${JSON.stringify(states)}`)
+      for (const target of [...["P", "C", "E", "X"].map((state) => page.locator(`.dispatch-state-badge[data-state="${state}"]`).first()), page.locator(".dispatch-record-row .dispatch-order-total").first()]) {
         const [fore, ...backgrounds] = await target.evaluate((element) => {
           const values = [getComputedStyle(element).color]
           for (let node: Element | null = element; node; node = node.parentElement) values.push(getComputedStyle(node).backgroundColor)

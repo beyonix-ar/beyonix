@@ -36,7 +36,7 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     await settle()
     assert.ok(requests.some((url) => url.includes(`date=${today}`)))
     const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0007"]')!
-    assert.match(row.textContent ?? "", /Bulto - 0007[\s\S]*María[\s\S]*EEntregado/)
+    assert.match(row.textContent ?? "", /Bulto - 0007María[\s\S]*Entregado/)
     await act(async () => { row.click() })
     await settle()
     const content = dom.window.document.body.textContent ?? ""

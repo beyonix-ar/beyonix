@@ -149,13 +149,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       document.removeEventListener("visibilitychange", onFocus)
     }
   }, [activeBatchId, query])
-  const holds = useMemo(() => board?.holds ?? [], [board])
-  const cancelledByBatch = useMemo(() => {
-    const counts = new Map<number, number>()
-    for (const hold of holds) if (hold.batchId) counts.set(hold.batchId, (counts.get(hold.batchId) ?? 0) + 1)
-    return counts
-  }, [holds])
-  // Acceso directo desde la alerta: /admin/despachos?resolve=<pedido>.
+  const holds = useMemo(() => board?.holds ?? [], [board])  // Acceso directo desde la alerta: /admin/despachos?resolve=<pedido>.
   useEffect(() => {
     if (resolveHandled.current || !board) return
     const id = Number(initialResolveId)
@@ -270,7 +264,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         onChange={setBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
       }
     </AdminSection> : location.batchId ? (error ? null : <p role="status" className="text-sm text-white/70">Abriendo Bulto…</p>) : <AdminSection compact className="dispatch-surface" title="Pedidos y Bultos" icon={<PackageCheck className="size-4" />}>
-      {rows.length ? <DispatchRecordsTable rows={rows} cancelledByBatch={cancelledByBatch} selected={selected} onToggle={toggleSelected} onOpen={openRecord} />
+      {rows.length ? <DispatchRecordsTable rows={rows} selected={selected} onToggle={toggleSelected} onOpen={openRecord} />
         : board && <AdminEmptyState title="No hay registros con estos filtros" description="Elegí otra fecha o limpiá los filtros." />}
       {canCreateBundle && <div className="dispatch-selection-footer mt-3 flex flex-wrap items-center justify-between gap-2"><span>{selectedOrders.length} seleccionados</span><AdminPrimaryButton disabled={busy || selectedOrders.length === 0} onClick={createLot}>Crear bulto</AdminPrimaryButton></div>}
       {totalPages > 1 && <DispatchPagination page={page} pages={totalPages} onPage={setPage} />}
