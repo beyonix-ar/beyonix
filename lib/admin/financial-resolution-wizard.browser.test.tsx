@@ -30,10 +30,12 @@ const option = (type, label) => ({ type, label, requiresConfirmation: true })
 const views = {
   wizard: { mode: "wizard", amount: 125000, status: "Pendiente", product: "no_return", reception: "not_applicable",
     financialOptions: [option("beyonix_credit", "Saldo BEYONIX"), option("mercadopago_refund", "Reintegrar por Mercado Pago"), option("manual_refund", "Reintegro manual")],
-    receptionOptions: [], notice: null, resolution: null },
+    receptionOptions: [], notice: null, resolution: null, merchandise: "not_dispatched", returnInspectionRequired: false, returnInspection: null },
   pending: { mode: "resolution", amount: 125000, status: "Requiere acción", product: "no_return", reception: "not_applicable",
-    financialOptions: [], receptionOptions: [], notice: null,
+    financialOptions: [], receptionOptions: [], notice: null, merchandise: "not_dispatched", returnInspectionRequired: false, returnInspection: null,
     resolution: { id: "r1", type: "manual_refund", status: "requires_action", amount: 125000, detail: "Detalle" } },
+  inspection: { mode: "wizard", amount: 125000, status: "Pendiente", product: "return", reception: "unavailable",
+    financialOptions: [], receptionOptions: [], notice: null, resolution: null, merchandise: "not_returned", returnInspectionRequired: true, returnInspection: null },
 }
 // Mismas clases que el panel existente (RefundManagementPanel): panel -> cards -> subcards.
 const LEGACY = '<section class="admin-order-cancellation-panel rounded-xl border p-3" data-testid="financial-resolution">' +
@@ -46,7 +48,7 @@ window.__mount = (name) => {
   if (name === "legacy") { document.getElementById("root").innerHTML = LEGACY; return }
   createRoot(document.getElementById("root")).render(createElement(FinancialResolutionWizard, {
     pedido: { id: 31, order_credit_notes: [] }, view: views[name], orderNumber: "BX-1031", customerName: "Begoña Núñez",
-    reason: "Arrepentimiento del cliente", onChanged() {}, onResolved() {}, onOpenBilling() {}, onOpenAttention() {}, onDownloadCreditNote() {},
+    reason: "Arrepentimiento del cliente", onChanged() {}, onResolved() {}, onOpenAttention() {}, onDownloadCreditNote() {},
   }))
 }
 `
@@ -93,7 +95,7 @@ test.before(async () => {
 
 test.after(async () => { await browser?.close() })
 
-async function mount(theme: "dark" | "light", view: "wizard" | "pending" | "legacy", width = 1366): Promise<Page> {
+async function mount(theme: "dark" | "light", view: "wizard" | "pending" | "legacy" | "inspection", width = 1366): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
   await page.route("**/*", (route) => route.abort())
   await page.setContent(pageHtml(theme, bundle))
@@ -163,7 +165,6 @@ for (const theme of ["light", "dark"] as const) {
       assert.ok(contrast(parse(title.color), parse(option.background)) >= 4.5, `contraste opción ${theme}`)
       const heights: number[] = []
       heights.push(await page.locator(".admin-financial-wizard-body").boundingBox().then((box) => box!.height))
-      await page.getByRole("button", { name: "Continuar" }).click()
       await page.getByRole("radio", { name: /Saldo a favor/ }).click()
       const selected = await style(page, ".admin-financial-wizard-option.is-selected")
       const selectedTitle = await style(page, ".admin-financial-wizard-option.is-selected .admin-financial-wizard-option-title")
@@ -181,7 +182,7 @@ for (const theme of ["light", "dark"] as const) {
   })
 
   test(`M. ${theme}: teléfono sin scroll horizontal y aviso legible`, async () => {
-    for (const view of ["wizard", "pending", "legacy"] as const) {
+    for (const view of ["wizard", "pending", "legacy", "inspection"] as const) {
       const page = await mount(theme, view, 375)
       try {
         // El contenedor del detalle es del arnés: se mide que el panel no desborde su propio ancho.

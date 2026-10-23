@@ -43,6 +43,7 @@ const MIGRATIONS = [
 ]
 const CUTOFF_MIGRATION = "supabase/migrations/20261023100000_bundle_handover_cancellation_cutoff.sql"
 const DIRECT_CANCELLATION_MIGRATION = "supabase/migrations/20261023110000_super_admin_cancellation_financial_circuit.sql"
+const RETURN_INSPECTION_MIGRATION = "supabase/migrations/20261023120000_return_inspection_money_decision.sql"
 
 const between = (file: string, start: string, end: string) => {
   const text = read(file)
@@ -74,6 +75,9 @@ async function setup() {
   await db.exec(read("supabase/migrations/20260917110000_fix_customer_cancellation_type_and_null_bugs.sql"))
   await db.exec(read(CUTOFF_MIGRATION))
   await db.exec(read(DIRECT_CANCELLATION_MIGRATION))
+  // Columnas reales que usan las restricciones de ordenes que redefine la inspección.
+  await db.exec("alter table ordenes add column if not exists admin_visible_at timestamptz, add column if not exists payment_confirmed_at timestamptz")
+  await db.exec(read(RETURN_INSPECTION_MIGRATION))
   // Mismo trigger que producción para el aviso de cancelación.
   await db.exec(`create trigger zz_notify_customer_order_cancelled_trigger after update of estado, financial_status
     on ordenes for each row execute function notify_customer_order_cancelled()`)
@@ -317,5 +321,69 @@ test("cancelación del cliente y de Super Admin: mismo circuito Saldo/Reintegro 
     await assert.rejects(reserve(1039, "manual_refund"), /DISPATCH_PHYSICAL_RESOLUTION_REQUIRED/, "H: sin destino con stock pendiente")
     await resolve(db, 1039)
     assert.equal((await reserve(1039, "beyonix_credit")).rows[0].choice, "beyonix_credit", "stock resuelto: entra al circuito normal")
+  } finally { await db.close() }
+})
+
+test("devolución después del despacho: sin inspección no se mueve dinero; aprobar o rechazar, una sola vez", async () => {
+  const db = await setup()
+  try {
+    const reserve = (orderId: number, choice: string) => db.query<{ id: string; choice: string }>(
+      "select (r).id, (r).choice from (select reserve_order_financial_resolution($1,$2,$3) r) s", [orderId, adminActor, choice])
+    const inspect = (orderId: number, state: string, decision: string, reason: string | null = null, message: string | null = null) =>
+      db.query<{ id: number; physical_state: string; decision: string }>(
+        "select (r).id, (r).physical_state, (r).decision from (select record_order_return_inspection($1,$2,$3,$4,$5,$6) r) s",
+        [orderId, adminActor, state, decision, reason, message])
+    const financialStatus = async (orderId: number) =>
+      (await db.query<{ s: string }>("select financial_status s from ordenes where id=$1", [orderId])).rows[0].s
+    // Dos ventas por transferencia entregadas a Andreani y canceladas por Super Admin (retención de stock).
+    await db.exec("update ordenes set payment_method_id='transferencia', payment_id=null where id in (1037,1038)")
+    for (const orderId of [1037, 1038]) await ready(db, orderId)
+    await handover(db, await closedBundle(db, [1037, 1038]))
+    for (const orderId of [1037, 1038]) {
+      await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [orderId, superAdmin, "solicitud_cliente", "El cliente devolvió el paquete"])
+    }
+    assert.equal(await financialStatus(1037), "refund_pending")
+
+    // Sin inspección: ni resolución, ni reintegro, ni NC con dinero (cualquier camino).
+    await assert.rejects(reserve(1037, "manual_refund"), /FINANCIAL_RETURN_INSPECTION_REQUIRED/)
+    await assert.rejects(db.query("insert into order_refund_proofs(order_id) values (1037)"), /RETURN_INSPECTION_REQUIRED/)
+    await assert.rejects(db.query("insert into mercadopago_order_refunds(order_id,status) values (1037,'processing')"), /RETURN_INSPECTION_REQUIRED/)
+    await assert.rejects(db.query("insert into order_credit_notes(order_id,destination) values (1037,'external_refund')"), /RETURN_INSPECTION_REQUIRED/)
+
+    // C: no recibida nunca se aprueba. G: rechazar exige motivo. Pre-despacho: no aplica.
+    await assert.rejects(inspect(1037, "not_received", "approved"), /RETURN_NOT_RECEIVED/)
+    await assert.rejects(inspect(1037, "damaged", "rejected", "corto"), /RETURN_REJECTION_REASON_REQUIRED/)
+    await db.exec("update ordenes set andreani_envio_id=null, andreani_tracking=null where id=1031")
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1031, superAdmin, "error_administrativo", "Error en la carga del pedido"])
+    await assert.rejects(inspect(1031, "received_ok", "approved"), /RETURN_INSPECTION_NOT_APPLICABLE/, "la cancelación previa no se inspecciona")
+
+    // D/H/I: rechazo por producto dañado: cierra el dinero sin moverlo.
+    const rejected = (await inspect(1037, "damaged", "rejected", "Pantalla rota por golpe", "Te escribimos con el detalle.")).rows[0]
+    assert.equal(await financialStatus(1037), "refund_rejected")
+    assert.equal((await inspect(1037, "damaged", "rejected", "Pantalla rota por golpe")).rows[0].id, rejected.id, "J: reintento idempotente")
+    await assert.rejects(inspect(1037, "received_ok", "approved"), /RETURN_INSPECTION_CONFLICT/, "nunca una segunda decisión distinta")
+    await assert.rejects(reserve(1037, "beyonix_credit"), /RETURN_MONEY_REJECTED|FINANCIAL_NOT_PENDING/, "I: sin reintegro ni saldo")
+    await assert.rejects(db.query("insert into customer_credit_movements(user_id,movement_type,amount,order_id) values ($1,'credit',10000,1037)", [customer]),
+      /RETURN_MONEY_REJECTED/, "H: no acredita saldo")
+    await assert.rejects(db.query("insert into order_credit_notes(order_id,destination) values (1037,'customer_balance')"), /RETURN_MONEY_REJECTED/)
+    await db.query("insert into order_credit_notes(order_id,destination) values (1037,'none')")
+    assert.equal(await count(db, "select count(*)::int n from order_credit_notes where order_id=1037 and destination='none'"), 1,
+      "la obligación fiscal sigue su curso: una NC sin dinero no queda bloqueada")
+    const audit = (await db.query<{ actor_id: string; metadata: { physicalState: string; decision: string; reason: string } }>(
+      "select actor_id, metadata from order_audit_events where order_id=1037 and action='return_inspection_recorded'")).rows
+    assert.deepEqual(audit.map((row) => [row.actor_id, row.metadata.physicalState, row.metadata.decision, row.metadata.reason]),
+      [[adminActor, "damaged", "rejected", "Pantalla rota por golpe"]], "auditoría única")
+    const notice = (await db.query<{ body: string }>("select body from customer_notifications where source_key='order:1037:refund-rejected'")).rows
+    assert.deepEqual(notice.map((row) => row.body), ["Revisamos la devolución de tu pedido BX-2037 y no pudimos aprobar el reintegro. Te escribimos con el detalle."])
+    assert.doesNotMatch(notice[0].body, /Pantalla rota|RETURN_|refund_rejected/, "el motivo interno no llega al cliente")
+
+    // B: recibida correctamente y aprobada: entra al circuito normal (saldo o reintegro), una sola vez.
+    await inspect(1038, "received_ok", "approved")
+    assert.equal(await financialStatus(1038), "refund_pending")
+    assert.equal((await db.query<{ ok: boolean }>("select order_has_admin_direct_cancellation(1038) ok")).rows[0].ok, true, "autoriza la NC de la cancelación")
+    const resolution = (await reserve(1038, "manual_refund")).rows[0]
+    assert.equal(resolution.choice, "manual_refund")
+    assert.equal((await reserve(1038, "manual_refund")).rows[0].id, resolution.id)
+    await assert.rejects(reserve(1038, "beyonix_credit"), /FINANCIAL_CHOICE_CONFLICT/)
   } finally { await db.close() }
 })

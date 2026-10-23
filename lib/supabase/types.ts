@@ -231,6 +231,8 @@ export type OrderFinancialStatus =
   | "refund_pending"
   | "refunded"
   | "cancelled"
+  /** Devolución posterior al despacho inspeccionada y con el dinero rechazado. */
+  | "refund_rejected"
 
 export interface SupabasePedido {
   id: number

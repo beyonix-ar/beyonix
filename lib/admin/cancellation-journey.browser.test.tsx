@@ -63,10 +63,12 @@ test("asistente de cancelación: teléfono y escritorio, Light/Dark, paso actual
       const [color, background] = await current.evaluate((element) => [getComputedStyle(element).color, getComputedStyle(element).backgroundColor])
       assert.equal(parse(background)[3], 1, `${label}: el paso actual no puede ser transparente`)
       assert.ok(contrast(parse(color), parse(background)) >= 4.5, `${label}: contraste del paso actual ${color} / ${background}`)
-      assert.match(await page.locator("[data-testid='cancellation-journey']").innerText(), /Bulto 0008: retiralo antes de entregarlo/)
+      const journeyText = await page.locator("[data-testid='cancellation-journey']").innerText()
+      assert.match(journeyText, /Bulto 0008: retiralo antes de entregarlo/)
+      assert.doesNotMatch(journeyText, /Continuá abajo/, "sin bloques que sólo ocupan espacio")
       // El texto del paso sobre la superficie del panel también se lee.
       const [detailColor, panelBackground] = await page.locator("[data-testid='cancellation-journey']").evaluate((panel) => {
-        const detail = panel.querySelector(".admin-financial-wizard-body p:nth-child(2)")!
+        const detail = panel.querySelector("[data-step] p")!
         // Primer fondo opaco hacia arriba (las capas transparentes no cuentan).
         let node: Element | null = detail
         while (node && /rgba\([^)]*,\s*0\)$|transparent/.test(getComputedStyle(node).backgroundColor)) node = node.parentElement

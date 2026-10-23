@@ -2,9 +2,9 @@
 // de Etapa 5: acá sólo se ordenan sus respuestas en pasos humanos.
 import type {
   FinancialChoice, FinancialHumanStatus, FinancialOption, FinancialProductOutcome,
-  FinancialReceptionState, FinancialResolutionMode,
+  FinancialReceptionState, FinancialResolutionMode, MerchandiseSituation, ReturnMoneyDecision, ReturnPhysicalState,
 } from "./financial-resolution.ts"
-import { financialHumanStatus } from "./financial-resolution.ts"
+import { financialHumanStatus, MERCHANDISE_SITUATION_COPY } from "./financial-resolution.ts"
 
 export type FinancialResolutionView = {
   mode: FinancialResolutionMode
@@ -15,10 +15,21 @@ export type FinancialResolutionView = {
   product: FinancialProductOutcome
   reception: FinancialReceptionState
   notice: string | null
+  /** Situación real de la mercadería (MERCHANDISE_SITUATION_COPY). */
+  merchandise: MerchandiseSituation
+  /** Cancelación ya despachada: el dinero exige inspección y decisión. */
+  returnInspectionRequired: boolean
+  returnInspection: {
+    physicalState: ReturnPhysicalState
+    decision: ReturnMoneyDecision
+    reason: string | null
+    customerMessage: string | null
+    inspectedAt: string
+  } | null
   resolution: { id: string; type: FinancialChoice; status: string; amount: number; detail: string | null; mpRefundId?: string | null } | null
 }
 
-export type FinancialWizardStep = "product" | "money" | "reception" | "review"
+export type FinancialWizardStep = "money" | "reception" | "review"
 
 export type FinancialWizardState = {
   step: FinancialWizardStep
@@ -41,7 +52,7 @@ export type FinancialWizardAction =
 export const EXCEPTION_REASON_MIN_LENGTH = 10
 
 export const FINANCIAL_STEP_LABELS: Record<FinancialWizardStep, string> = {
-  product: "Producto", money: "Dinero", reception: "Recepción", review: "Revisar",
+  money: "Dinero", reception: "Recepción", review: "Revisar",
 }
 
 export const FINANCIAL_CHOICE_COPY: Record<FinancialChoice, { label: string; short: string; description: string }> = {
@@ -50,13 +61,32 @@ export const FINANCIAL_CHOICE_COPY: Record<FinancialChoice, { label: string; sho
   manual_refund: { label: "Reintegro externo", short: "Reintegro externo", description: "Transferí el dinero al cliente y registrá el comprobante después." },
 }
 
-export const FINANCIAL_PRODUCT_COPY: Record<FinancialProductOutcome, { label: string; description: string }> = {
-  no_return: { label: "No vuelve", description: "El producto no sale o queda con el cliente." },
-  return: { label: "Debe volver", description: "BEYONIX tiene que recibirlo antes de cerrar el reintegro." },
+export const RETURN_DECISION_COPY: Record<ReturnMoneyDecision, string> = {
+  approved: "Aprobar devolución del dinero",
+  rejected: "Rechazar devolución del dinero",
 }
 
+/** El producto ya lo determinó BEYONIX (view.product): el asistente arranca en el dinero. */
 export function initialFinancialWizardState(view: FinancialResolutionView): FinancialWizardState {
-  return { step: "product", product: view.product, choice: null, receptionAnswer: null, exception: false, exceptionReason: "" }
+  return { step: "money", product: view.product, choice: null, receptionAnswer: null, exception: false, exceptionReason: "" }
+}
+
+export function getMerchandiseSituationLabel(view: Pick<FinancialResolutionView, "merchandise">) {
+  return MERCHANDISE_SITUATION_COPY[view.merchandise]
+}
+
+/** Sólo una devolución inspeccionada tiene una decisión de dinero para mostrar. */
+export function getReturnDecisionLabel(view: Pick<FinancialResolutionView, "returnInspection">) {
+  return view.returnInspection ? RETURN_DECISION_COPY[view.returnInspection.decision] : null
+}
+
+/** Cancelación despachada sin inspección: el asistente empieza por la mercadería. */
+export function needsReturnInspection(view: FinancialResolutionView) {
+  return view.returnInspectionRequired && !view.returnInspection && !view.resolution
+}
+
+export function isReturnMoneyRejected(view: FinancialResolutionView) {
+  return view.returnInspection?.decision === "rejected"
 }
 
 /** Sólo la respuesta que coincide con lo registrado en BEYONIX es elegible. */
@@ -69,7 +99,7 @@ function needsReceptionStep(view: FinancialResolutionView, product: FinancialPro
 }
 
 export function getFinancialWizardSteps(view: FinancialResolutionView, state: Pick<FinancialWizardState, "product">): FinancialWizardStep[] {
-  return needsReceptionStep(view, state.product) ? ["product", "money", "reception", "review"] : ["product", "money", "review"]
+  return needsReceptionStep(view, state.product) ? ["money", "reception", "review"] : ["money", "review"]
 }
 
 /** Opciones devueltas por la API; con recepción pendiente, las que se habilitan al recibir o con excepción. */
@@ -79,7 +109,6 @@ export function getFinancialMoneyOptions(view: FinancialResolutionView, product:
 }
 
 export function canContinueFinancialWizard(view: FinancialResolutionView, state: FinancialWizardState) {
-  if (state.step === "product") return !!state.product && isProductOptionAvailable(view, state.product) && getFinancialMoneyOptions(view, state.product).length > 0
   if (state.step === "money") return getFinancialMoneyOptions(view, state.product).some((option) => option.type === state.choice)
   if (state.step === "reception") return state.receptionAnswer === "no" && state.exception &&
     state.exceptionReason.trim().length >= EXCEPTION_REASON_MIN_LENGTH
@@ -146,13 +175,14 @@ export function getFinancialOutcome(resolution: NonNullable<FinancialResolutionV
  * una acción del Admin; un caso avanzado o un paso incompleto sí.
  */
 export function getFinancialHumanState(view: FinancialResolutionView): FinancialHumanStatus {
+  if (isReturnMoneyRejected(view)) return "Completado"
   if (view.resolution) {
     const outcome = getFinancialOutcome(view.resolution)
     if (outcome.kind === "completed") return "Completado"
     if (outcome.kind === "processing") return "En proceso"
     return "Requiere acción"
   }
-  if (view.mode === "advanced" || (view.mode === "wizard" && view.financialOptions.length > 0)) return "Requiere acción"
+  if (needsReturnInspection(view) || view.mode === "advanced" || (view.mode === "wizard" && view.financialOptions.length > 0)) return "Requiere acción"
   return "Pendiente"
 }
 

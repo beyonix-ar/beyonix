@@ -12,11 +12,12 @@ import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
 import { isOrderDispatchCutoffReached } from "./dispatch-cutoff"
 import { ensureSaleInvoiced, hasPendingInvoiceObligation } from "./fiscal-sequencing"
 import {
-  deriveFinancialReturnContext, financialHumanStatus, getEffectiveFinancialResolutionStatus, getFinancialResolutionMode, resolveOrderFinancialOptions,
-  type FinancialChoice, type FinancialResolutionFacts,
+  deriveFinancialReturnContext, deriveMerchandiseSituation, financialHumanStatus, getEffectiveFinancialResolutionStatus, getFinancialResolutionMode, resolveOrderFinancialOptions,
+  type FinancialChoice, type FinancialResolutionFacts, type ReturnMoneyDecision, type ReturnPhysicalState,
 } from "./financial-resolution"
 
 type Admin = ReturnType<typeof createAdminClient>
+type ReturnInspection = { id: number; physical_state: ReturnPhysicalState; decision: ReturnMoneyDecision; reason: string | null; customer_message: string | null; amount: number; inspected_by: string; inspected_at: string }
 type Resolution = { id: string; order_id: number; choice: FinancialChoice; amount: number; status: string; lease_key: string | null; lease_until: string | null; updated_at: string | null; note_id: string | null; last_error: string | null }
 type Order = { id: number; usuario_id: string | null; financial_status: string | null; payment_method_id: string | null; payment_status: string | null; paid_at: string | null; payment_id: string | null; payment_confirmed_amount: number | null; external_amount_due: number | null; invoice_status: string | null; invoice_cae: string | null; credit_note_required: boolean | null; andreani_handed_over_at: string | null; tracking_number: string | null; andreani_tracking: string | null; andreani_envio_id: string | null; andreani_estado: string | null; estado: string | null; mercadopago_reference: string | null; mercadopago_reference_assigned_at: string | null; credit_balance_used: number | null; original_total: number | null; total: number | null; shipping_cost_charged: number | null; invoice_queued_at: string | null }
 
@@ -30,7 +31,7 @@ async function one<T>(promise: PromiseLike<{ data: unknown; error: { message: st
 }
 
 export async function loadFinancialResolution(admin: Admin, orderId: number, verifyRemote = true) {
-  const [orderResult, membershipResult, holdResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult, packageResult] = await Promise.all([
+  const [orderResult, membershipResult, holdResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult, packageResult, inspectionResult] = await Promise.all([
     admin.from("ordenes").select(orderColumns).eq("id", orderId).maybeSingle(),
     admin.from("dispatch_batch_items").select("removed_at,dispatch_batches(prepared_at)").eq("order_id", orderId),
     // Cancelación con pickeo (retención física, activa o resuelta): mismo corte
@@ -46,8 +47,9 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
     admin.rpc("order_has_admin_direct_cancellation", { p_order_id: orderId }),
     // Armado en Despachos: con él, el envío Andreani creado no es "despachado" (corte = QR final del Bulto).
     admin.from("order_packages").select("id").eq("order_id", orderId).maybeSingle(),
+    admin.from("order_return_inspections").select("id,physical_state,decision,reason,customer_message,amount,inspected_by,inspected_at").eq("order_id", orderId).maybeSingle(),
   ])
-  for (const result of [orderResult, membershipResult, holdResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult, packageResult]) {
+  for (const result of [orderResult, membershipResult, holdResult, claimsResult, notesResult, refundsResult, proofResult, resolutionResult, claimGateResult, adminCancellationResult, packageResult, inspectionResult]) {
     if (result.error) throw new Error(result.error.message)
   }
   const order = orderResult.data as Order | null
@@ -57,6 +59,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   const notes = (notesResult.data ?? []) as Array<{ id: string; status: string; destination: string; total_amount: number; external_amount: number | null; cae: string | null; finalized_at: string | null; settlement_status: string | null }>
   const refunds = (refundsResult.data ?? []) as Array<{ status: string; mp_refund_id: string | null }>
   const resolution = resolutionResult.data as Resolution | null
+  const returnInspection = inspectionResult.data as ReturnInspection | null
   const paidAmount = Number(order.payment_confirmed_amount || order.external_amount_due || 0)
   const externalNotes = notes.filter((note) => note.status === "authorized" && note.cae &&
     note.destination === "external_refund" && note.settlement_status !== "completado")
@@ -84,6 +87,8 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   const trackingInCircuit = ["enviado", "en_camino", "visita_fallida", "en_sucursal", "retiro_pendiente", "retiro_vencido", "en_devolucion", "devuelto_beyonix", "entregado"].includes(order.estado ?? "")
   // "Ya salió de BEYONIX" (QR final del Bulto); un envío creado y retirado del Bulto no cuenta.
   const shipmentCreated = isOrderDispatchCutoffReached(order, Boolean(packageResult.data))
+  // Cancelación ya despachada: el dinero espera la recepción e inspección (record_order_return_inspection).
+  const returnInspectionRequired = order.estado === "cancelado" && (shipmentCreated || Boolean(order.andreani_handed_over_at))
   const openClaimIds = claims.filter((claim) => !["cerrado", "rechazado"].includes(claim.status)).map((claim) => claim.id)
   const [unitsResult, exceptionsResult] = openClaimIds.length
     ? await Promise.all([
@@ -128,15 +133,20 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
     fiscalConflict, receptionPending: returnPending, inspectionPending: returnPending,
     claimIncidentOpen: claimBlock === "CLAIM_MONEY_INCIDENT_OPEN" || claims.some((claim) => ["recibido", "en_revision", "falta_informacion"].includes(claim.status)),
     remotePaymentVerified, partial, installments, hasCustomerAccount: !!order.usuario_id, fiscalDestination,
-    physicalHoldActive, pickedCancellationResolved,
+    physicalHoldActive, pickedCancellationResolved, returnInspectionRequired, returnApproved: returnInspection?.decision === "approved",
   }
   const options = resolution ? [] : resolveOrderFinancialOptions(facts)
   // Opciones que quedarían disponibles al recibir el producto (o con una excepción auditada).
   const receptionOptions = resolution || !returnPending ? []
     : resolveOrderFinancialOptions({ ...facts, receptionPending: false, inspectionPending: false })
   const mpRefundId = [...refunds].reverse().find((refund) => refund.status === "confirmed")?.mp_refund_id ?? null
+  const moneyRejected = returnInspection?.decision === "rejected"
+  const merchandise = deriveMerchandiseSituation({ dispatched: returnInspectionRequired, inspection: returnInspection?.physical_state ?? null,
+    product: returnContext.product, reception: returnContext.reception })
   return { order, claims, notes, refunds, resolution, amount, preparedAt, physicalHoldActive, pickedCancellationResolved, mpRefundId, options, receptionOptions, returnContext, adminDirectCancellation,
-    mode: getFinancialResolutionMode({ financialStatus: order.financial_status, hasResolution: !!resolution, options, receptionOptions }),
+    returnInspection, returnInspectionRequired, merchandise,
+    mode: getFinancialResolutionMode({ financialStatus: order.financial_status, hasResolution: !!resolution, options, receptionOptions, moneyRejected,
+      returnInspectionPending: returnInspectionRequired && !returnInspection && order.financial_status === "refund_pending" && facts.paymentApproved && !physicalHoldActive }),
     status: financialHumanStatus(resolution ? getEffectiveFinancialResolutionStatus(resolution) : null), requiresReturn: !!order.andreani_handed_over_at }
 }
 
@@ -238,10 +248,11 @@ export async function executeFinancialResolution(
   try {
     // Relee el estado fiscal dentro de la intención reservada: nunca emite una segunda NC.
     let fresh = await loadFinancialResolution(admin, orderId, false)
-    if (!fresh || fresh.order.andreani_handed_over_at) throw new Error("El pedido requiere devolución y recepción antes de resolverlo.")
+    if (!fresh || (fresh.returnInspectionRequired && fresh.returnInspection?.decision !== "approved")) throw new Error("El pedido requiere devolución, recepción e inspección antes de resolverlo.")
     if (fresh.physicalHoldActive) fail("Primero resolvé físicamente el pedido en Despachos.")
     // Con pickeo o tanda cerrada: saldo BEYONIX sólo con la mercadería ya recuperada.
-    if (fresh.preparedAt && claimed.choice === "beyonix_credit" && !fresh.pickedCancellationResolved) fail("El pedido sigue en preparación física. Resolvé la mercadería en Despachos antes de acreditar saldo.")
+    if (fresh.preparedAt && claimed.choice === "beyonix_credit" && !fresh.pickedCancellationResolved &&
+      fresh.returnInspection?.decision !== "approved") fail("El pedido sigue en preparación física. Resolvé la mercadería en Despachos antes de acreditar saldo.")
     // Factura C antes que la NC y que mover dinero: una venta cobrada nunca
     // termina reintegrada sin comprobante (obligación nacida con el pago).
     if (hasPendingInvoiceObligation(fresh.order)) {

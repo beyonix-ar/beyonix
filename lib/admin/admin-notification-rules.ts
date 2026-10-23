@@ -119,6 +119,7 @@ const CANCELLATION_ACTION_COPY: Partial<Record<AdminPendingOrderActionKind, stri
   refund_manual: "Registrá el reintegro realizado por fuera del sistema.",
   refund_retry: "BEYONIX no pudo completar una actualización interna.",
   advanced_case: "El reintegro necesita la gestión completa.",
+  return_inspection: "Registrá cómo volvió la mercadería y decidí la devolución del dinero.",
 }
 
 /**
@@ -130,6 +131,7 @@ const STALE_THRESHOLD_MS_BY_KIND: Partial<Record<AdminPendingOrderActionKind, nu
   refund_retry: 6 * 60 * 60 * 1000,
   advanced_case: 24 * 60 * 60 * 1000,
   refund: 48 * 60 * 60 * 1000,
+  return_inspection: 48 * 60 * 60 * 1000,
   refund_manual_required: 48 * 60 * 60 * 1000,
   refund_manual: 48 * 60 * 60 * 1000,
 }

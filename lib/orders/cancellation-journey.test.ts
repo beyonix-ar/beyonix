@@ -100,3 +100,21 @@ test("Q: la vuelta desde Despachos sólo acepta el paso de cancelación del pedi
     assert.equal(parseCancellationReturn(value), null, String(value))
   }
 })
+
+test("devolución despachada: primero la inspección; rechazada cierra el dinero sin reintegro", () => {
+  const handed = { andreani_handed_over_at: "2026-10-22T09:00:00Z" }
+  const pending = getCancellationJourney(cancelled({ ...handed, admin_pending_facts: {
+    financial: { mode: "wizard", resolutionStatus: null, hasOptions: false, returnInspectionPending: true }, dispatch: dispatch({ packageStatus: null }) } }))!
+  assert.equal(pending.current, "merchandise")
+  assert.match(pending.steps[1].detail, /Registrá cómo volvió la mercadería/)
+  assert.equal(pending.steps[2].status, "waiting", "el dinero espera la inspección")
+
+  const rejected = cancelled({ ...handed, financial_status: "refund_rejected", invoice_status: null, invoice_cae: null, credit_note_required: false,
+    admin_pending_facts: { financial: null, dispatch: dispatch({ packageStatus: null }) } })
+  assert.deepEqual(statuses(rejected), { cancellation: "done", merchandise: "done", money: "done", credit_note: "not_required", refund: "not_required", finished: "done" })
+  assert.match(getCancellationJourney(rejected)!.steps[2].detail, /Devolución del dinero rechazada/)
+  // Con factura: la NC sigue siendo una decisión fiscal aparte (nunca "se emite al confirmar el dinero").
+  const invoiced = cancelled({ ...handed, financial_status: "refund_rejected", admin_pending_facts: { financial: null, dispatch: dispatch({ packageStatus: null }) } })
+  assert.equal(statuses(invoiced).credit_note, "attention")
+  assert.equal(statuses(invoiced).refund, "not_required")
+})

@@ -93,6 +93,7 @@ export type AdminExecutiveStatusKey =
   | "cancelled_refund_pending"
   | "refunded"
   | "refund_pending"
+  | "cancelled_refund_rejected"
   | "cancellation_requested"
   | "help_message"
   | "claim_open"
@@ -108,6 +109,7 @@ export const ADMIN_EXECUTIVE_STATUS: Record<AdminExecutiveStatusKey, AdminOrderS
   // Caso heredado: el dinero volvió pero falta la NC que anula la factura.
   cancelled_refunded_credit_note_pending: { label: "Reintegro realizado · Nota de crédito pendiente", tone: "warning" },
   cancelled_refund_pending: { label: ORDER_CANCELLATION_REFUND_LABELS.refund_in_progress.admin, tone: "danger" },
+  cancelled_refund_rejected: { label: ORDER_CANCELLATION_REFUND_LABELS.refund_rejected.admin, tone: "warning" },
   refunded: { label: "Reintegrado", tone: "neutral" },
   refund_pending: { label: "Reintegro pendiente", tone: "danger" },
   cancellation_requested: { label: "Cancelación solicitada", tone: "danger" },

@@ -63,18 +63,14 @@ export function CancellationJourneyPanel({ pedido, compact, onOpen }: {
           <li className="flex items-center gap-2"><CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />Cancelación completada</li>
         </ul>
       ) : focus && (
-        <div className="admin-financial-wizard-body mt-3 grid gap-2" data-step={focus.key}>
-          <p className="text-sm font-black text-[var(--admin-text)]">Paso {stepNumber} — {focus.label}</p>
-          <p className="text-xs font-semibold text-[var(--admin-text-soft)]">{focus.detail}</p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2" data-step={focus.key}>
+          <p className="min-w-0 text-xs font-semibold text-[var(--admin-text-soft)]">
+            <span className="font-black text-[var(--admin-text)]">Paso {stepNumber} — {focus.label}:</span> {focus.detail}
+          </p>
           {journey.action && focus.key === "merchandise" && (
-            <div>
-              <a href={journey.action.href} className="admin-ds-button admin-ds-button-primary inline-flex h-9 items-center justify-center gap-2 px-3.5 text-11px font-black uppercase tracking-wide">
-                {journey.action.label} <ArrowRight className="size-3.5" />
-              </a>
-            </div>
-          )}
-          {["money", "refund"].includes(focus.key) && focus.status !== "waiting" && (
-            <p className="text-xs font-semibold text-[var(--admin-text-muted)]">Continuá abajo, en esta misma pantalla.</p>
+            <a href={journey.action.href} className="admin-ds-button admin-ds-button-primary inline-flex h-8 shrink-0 items-center justify-center gap-2 px-3 text-11px font-black uppercase tracking-wide">
+              {journey.action.label} <ArrowRight className="size-3.5" />
+            </a>
           )}
         </div>
       )}

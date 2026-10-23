@@ -526,6 +526,8 @@ function getCancelledOrderProgressSteps(
   })
   if (state === "refund_in_progress") {
     steps.push({ label: "Reintegro en proceso", detail: "BEYONIX está gestionando la devolución.", tone: "warning" })
+  } else if (state === "refund_rejected") {
+    steps.push({ label: "Devolución revisada", detail: CUSTOMER_REFUND_REJECTED_DETAIL, tone: "warning" })
   } else if (state === "refunded") {
     steps.push({
       label: "Reintegro realizado",
@@ -536,8 +538,11 @@ function getCancelledOrderProgressSteps(
   return steps
 }
 
+/** Texto único para el cliente cuando la devolución no se aprobó (sin detalles internos). */
+export const CUSTOMER_REFUND_REJECTED_DETAIL = "Revisamos la devolución y no pudimos aprobar el reintegro."
+
 export interface CustomerRefundSummary {
-  state: Exclude<OrderCancellationRefundState, "cancelled">
+  state: Exclude<OrderCancellationRefundState, "cancelled" | "refund_rejected">
   statusLabel: "En proceso" | "Realizado"
   /** Importe devuelto (o a devolver); null si el pedido no lo informa. */
   amount: number | null

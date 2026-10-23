@@ -33,15 +33,31 @@ export type FinancialResolutionFacts = {
    * escaneo, fuera de todo Bulto): el Admin puede elegir también saldo BEYONIX.
    */
   pickedCancellationResolved?: boolean
+  /** Cancelación ya despachada (corte canónico): el dinero espera la inspección de la devolución. */
+  returnInspectionRequired?: boolean
+  /** Devolución recibida, inspeccionada y con el dinero aprobado (order_return_inspections). */
+  returnApproved?: boolean
 }
 
 /** Sólo ofrece resultados; la API/RPC vuelve a validar antes de mover dinero. */
 export function resolveOrderFinancialOptions(facts: FinancialResolutionFacts): FinancialOption[] {
+  const dispatched = Boolean(facts.handedOverAt || facts.trackingInCircuit || facts.returnInspectionRequired)
   if (!facts.paymentApproved || facts.financialStatus !== "refund_pending" ||
       !Number.isFinite(facts.amount) || facts.amount <= 0 ||
-      facts.handedOverAt || facts.trackingInCircuit || facts.receptionPending ||
+      (dispatched && !facts.returnApproved) || facts.receptionPending ||
       facts.inspectionPending || facts.claimIncidentOpen || facts.fiscalConflict ||
       facts.priorRefund || facts.refundInProgress || facts.fiscalDestination === "customer_balance") return []
+
+  // Devolución aprobada (misma regla que reserve_order_financial_resolution):
+  // saldo o reintegro externo, nunca un refund automático de Mercado Pago.
+  if (dispatched) {
+    const options: FinancialOption[] = []
+    if (facts.hasCustomerAccount && !facts.fiscalDestination) options.push({ type: "beyonix_credit", label: "Saldo BEYONIX", requiresConfirmation: true })
+    if (["transferencia", "mercadopago"].includes(facts.paymentMethod ?? "")) {
+      options.push({ type: "manual_refund", label: "Reintegro manual", requiresConfirmation: true })
+    }
+    return options
+  }
 
   // Desde el primer pickeo (o con tanda cerrada) nada es automático: sólo
   // acciones explícitas de Admin, y recién con la mercadería recuperada.
@@ -135,10 +151,76 @@ export function getFinancialResolutionMode(input: {
   hasResolution: boolean
   options: FinancialOption[]
   receptionOptions: FinancialOption[]
+  /** Cancelación despachada sin inspección: el Admin la registra en el mismo asistente. */
+  returnInspectionPending?: boolean
+  /** Devolución del dinero rechazada: resultado final, sin opciones. */
+  moneyRejected?: boolean
 }): FinancialResolutionMode {
-  if (input.hasResolution) return "resolution"
-  if (input.options.length > 0 || input.receptionOptions.length > 0) return "wizard"
+  if (input.hasResolution || input.moneyRejected) return "resolution"
+  if (input.options.length > 0 || input.receptionOptions.length > 0 || input.returnInspectionPending) return "wizard"
   return input.financialStatus === "refund_pending" ? "advanced" : "none"
+}
+
+export type ReturnPhysicalState = "received_ok" | "not_received" | "damaged" | "incomplete" | "wrong_product"
+export type ReturnMoneyDecision = "approved" | "rejected"
+export type MerchandiseSituation = "not_dispatched" | "not_returned" | ReturnPhysicalState
+
+export const RETURN_PHYSICAL_STATES: readonly ReturnPhysicalState[] = ["received_ok", "not_received", "damaged", "incomplete", "wrong_product"]
+export const RETURN_REJECTION_REASON_MIN_LENGTH = 10
+
+/** Texto único de la situación de la mercadería (Admin: asistente, modal y resumen). */
+export const MERCHANDISE_SITUATION_COPY: Record<MerchandiseSituation, string> = {
+  not_dispatched: "El producto no se despachó.",
+  not_returned: "El producto aún no volvió.",
+  received_ok: "El producto volvió correctamente.",
+  not_received: "Producto no recibido.",
+  damaged: "Producto recibido dañado.",
+  incomplete: "Producto recibido con faltantes.",
+  wrong_product: "Producto recibido incorrecto.",
+}
+
+export const RETURN_PHYSICAL_STATE_LABELS: Record<ReturnPhysicalState, string> = {
+  received_ok: "Producto recibido correctamente",
+  not_received: "Producto no recibido",
+  damaged: "Producto recibido dañado",
+  incomplete: "Producto recibido con faltantes",
+  wrong_product: "Producto incorrecto",
+}
+
+export type ReturnInspectionInput = {
+  physicalState: ReturnPhysicalState
+  decision: ReturnMoneyDecision
+  reason: string
+  customerMessage: string
+}
+
+/** Misma validación que record_order_return_inspection (la base la repite). */
+export function getReturnInspectionInputError(input: Partial<Record<keyof ReturnInspectionInput, unknown>>): string | null {
+  if (!RETURN_PHYSICAL_STATES.includes(input.physicalState as ReturnPhysicalState)) return "Indicá en qué estado se recibió la mercadería."
+  if (input.decision !== "approved" && input.decision !== "rejected") return "Elegí si aprobás o rechazás la devolución del dinero."
+  if (input.decision === "approved" && input.physicalState === "not_received") return "Sin la mercadería recibida no se puede aprobar la devolución del dinero."
+  const reason = typeof input.reason === "string" ? input.reason.trim() : ""
+  if (input.decision === "rejected" && (reason.length < RETURN_REJECTION_REASON_MIN_LENGTH || reason.length > 600)) {
+    return `Indicá el motivo del rechazo (mínimo ${RETURN_REJECTION_REASON_MIN_LENGTH} caracteres).`
+  }
+  const message = typeof input.customerMessage === "string" ? input.customerMessage.trim() : ""
+  if (message.length > 300) return "El mensaje para el cliente admite hasta 300 caracteres."
+  return null
+}
+
+/**
+ * Situación real de la mercadería: lo inspeccionado manda; sin inspección, si
+ * el pedido salió de BEYONIX (o hay una devolución por reclamo) y si ya volvió.
+ */
+export function deriveMerchandiseSituation(input: {
+  dispatched: boolean
+  inspection: ReturnPhysicalState | null
+  product: FinancialProductOutcome
+  reception: FinancialReceptionState
+}): MerchandiseSituation {
+  if (input.inspection) return input.inspection
+  if (input.product === "return") return input.reception === "received" ? "received_ok" : "not_returned"
+  return input.dispatched ? "not_returned" : "not_dispatched"
 }
 
 /** Una reserva sin lease más vieja que esto quedó cortada entre reservar y ejecutar. */

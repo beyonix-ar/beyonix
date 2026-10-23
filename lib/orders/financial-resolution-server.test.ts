@@ -75,3 +75,37 @@ test("J. NC exigida sin reclamo ni cancelación directa: sigue siendo caso avanz
   assert.equal(context.mode, "advanced")
   assert.deepEqual(context.options, [])
 })
+
+test("A. cancelación antes del despacho: \"El producto no se despachó\" y sin inspección", async () => {
+  const context = await loadFinancialResolution(fakeAdmin({ ordenes: [cancelledInvoicedTransfer] }, true), 14, false)
+  assert.ok(context)
+  assert.equal(context.merchandise, "not_dispatched")
+  assert.equal(context.returnInspectionRequired, false)
+})
+
+const handedOver = { ...cancelledInvoicedTransfer, andreani_handed_over_at: "2026-10-21T15:00:00Z", andreani_envio_id: "ENV-14" }
+const inspection = (physical_state: string, decision: string) => ({ id: 1, physical_state, decision, reason: decision === "rejected" ? "Producto dañado por mal uso" : null,
+  customer_message: null, amount: 899, inspected_by: "a", inspected_at: "2026-10-23T12:00:00Z" })
+
+test("devolución despachada: sin inspección pide la recepción; aprobada ofrece Saldo/Reintegro; rechazada termina", async () => {
+  const pending = await loadFinancialResolution(fakeAdmin({ ordenes: [handedOver] }, true), 14, false)
+  assert.ok(pending)
+  assert.equal(pending.returnInspectionRequired, true)
+  assert.equal(pending.merchandise, "not_returned", "\"El producto aún no volvió.\"")
+  assert.equal(pending.mode, "wizard", "el asistente pide la inspección (nunca caso avanzado)")
+  assert.deepEqual(pending.options, [], "sin inspección no hay dinero")
+
+  const approved = await loadFinancialResolution(fakeAdmin({ ordenes: [handedOver], order_return_inspections: [inspection("received_ok", "approved")] }, true), 14, false)
+  assert.ok(approved)
+  assert.equal(approved.merchandise, "received_ok")
+  assert.deepEqual(approved.options.map((option) => option.type), ["beyonix_credit", "manual_refund"])
+
+  for (const state of ["damaged", "incomplete", "wrong_product", "not_received"]) {
+    const rejected = await loadFinancialResolution(fakeAdmin({ ordenes: [{ ...handedOver, financial_status: "refund_rejected" }],
+      order_return_inspections: [inspection(state, "rejected")] }, true), 14, false)
+    assert.ok(rejected)
+    assert.equal(rejected.merchandise, state)
+    assert.equal(rejected.mode, "resolution")
+    assert.deepEqual(rejected.options, [])
+  }
+})

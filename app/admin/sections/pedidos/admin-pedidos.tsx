@@ -557,7 +557,7 @@ function isTransferOrder(pedido: SupabasePedido) {
 }
 
 function isRefundPaymentAttentionOrder(pedido: SupabasePedido) {
-  if (pedido.financial_status === "refunded" || pedido.financial_status === "cancelled") {
+  if (["refunded", "cancelled", "refund_rejected"].includes(pedido.financial_status ?? "")) {
     return false
   }
   if (pedido.financial_status === "refund_pending") return true
@@ -767,7 +767,7 @@ function getAdminOrderTabState(
   // la NC y la factura automáticas no se marcan como pendientes del Admin.
   const { actions } = getAdminOrderWork(pedido)
   const financialAction = actions.find((action) =>
-    ["cancellation_request", "refund", "refund_manual_required", "refund_manual", "refund_retry", "advanced_case"].includes(action.kind))
+    ["cancellation_request", "refund", "refund_manual_required", "refund_manual", "refund_retry", "advanced_case", "return_inspection"].includes(action.kind))
   const refunded = isRefundedOrder(pedido)
 
   return {
@@ -848,6 +848,9 @@ function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresen
   if (cancellationRefundState === "refund_in_progress") {
     return ADMIN_EXECUTIVE_STATUS.cancelled_refund_pending
   }
+  if (cancellationRefundState === "refund_rejected") {
+    return ADMIN_EXECUTIVE_STATUS.cancelled_refund_rejected
+  }
   if (isRefundedOrder(pedido)) return ADMIN_EXECUTIVE_STATUS.refunded
   if (isRefundPaymentAttentionOrder(pedido)) return ADMIN_EXECUTIVE_STATUS.refund_pending
   if (pedido.financial_status === "cancellation_requested") {
@@ -877,6 +880,7 @@ const RECOMMENDED_ACTION_DESCRIPTIONS: Record<AdminPendingOrderActionKind, strin
   refund_manual:"Registrá el reintegro realizado por fuera del sistema.",
   refund_retry: "BEYONIX no pudo completar una actualización interna.",
   advanced_case: "El reintegro necesita la gestión completa.",
+  return_inspection: "Registrá cómo volvió la mercadería y decidí la devolución del dinero.",
   invoice: "La factura no se emite automáticamente.",
   claim: "Hay una gestión del cliente que requiere respuesta.",
   return: "Revisá el producto devuelto y definí su destino.",
@@ -2128,7 +2132,6 @@ function RefundManagementPanel({
           notifyOrderNotificationsChanged()
         }}
         onResolved={financial.applyResolution}
-        onOpenBilling={onOpenBilling}
         onOpenAttention={onOpenAttention}
         onDownloadCreditNote={onDownloadCreditNote}
       />

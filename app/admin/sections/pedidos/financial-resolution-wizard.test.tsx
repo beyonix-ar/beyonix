@@ -12,6 +12,7 @@ const baseView: FinancialResolutionView = {
   mode: "wizard", amount: 25_000, status: "Pendiente", product: "no_return", reception: "not_applicable",
   financialOptions: [option("beyonix_credit", "Saldo BEYONIX"), option("mercadopago_refund", "Reintegrar por Mercado Pago")],
   receptionOptions: [], notice: null, resolution: null,
+  merchandise: "not_dispatched", returnInspectionRequired: false, returnInspection: null,
 }
 const pedido = { id: 31, order_credit_notes: [] } as unknown as SupabasePedido
 
@@ -47,10 +48,10 @@ async function setup(responder: Responder = () => Response.json({ status: "compl
   const { createRoot } = await import("react-dom/client")
   const { FinancialResolutionWizard, useFinancialResolutionView } = await import("./financial-resolution-wizard")
   const root: Root = createRoot(dom.window.document.getElementById("root")!)
-  const events = { changed: 0, billing: 0, attention: 0, download: [] as string[], resolved: [] as Array<{ status: string }> }
+  const events = { changed: 0, attention: 0, download: [] as string[], resolved: [] as Array<{ status: string }> }
   const props = (order: SupabasePedido) => ({
     pedido: order, orderNumber: "BX-1031", customerName: "Begoña Núñez", reason: "Arrepentimiento",
-    onOpenBilling: () => { events.billing++ }, onOpenAttention: () => { events.attention++ },
+    onOpenAttention: () => { events.attention++ },
     onDownloadCreditNote: (id: string) => { events.download.push(id) },
   })
   const render = async (view: FinancialResolutionView, order: SupabasePedido = pedido) => {
@@ -85,7 +86,6 @@ async function setup(responder: Responder = () => Response.json({ status: "compl
     dom.window.close()
   }
   const toReview = async () => {
-    await click("Continuar")
     await click(/^Reintegrar por Mercado Pago/)
     await click("Continuar")
     await click("Confirmar resolución")
@@ -133,12 +133,12 @@ test("éxito: Completado inmediato con la respuesta del POST; el refetch viejo n
     await ui.toReview()
     await ui.click("Confirmar")
     // Sin esperar la relectura: el resultado ya está en pantalla.
-    assert.match(ui.text(), /Completado ✅/)
+    assert.match(ui.text(), /EstadoCompletado/)
     assert.equal(ui.hasButton("Confirmar resolución"), false)
     assert.equal(gets, 2, "una sola relectura en segundo plano")
     await act(async () => { slowGet.resolve(Response.json(baseView)) })
     await ui.flush()
-    assert.match(ui.text(), /Completado ✅/, "la lectura vieja no revive el wizard")
+    assert.match(ui.text(), /EstadoCompletado/, "la lectura vieja no revive el wizard")
     assert.equal(ui.hasButton("Confirmar resolución"), false)
     assert.equal(posts(ui.calls).length, 1)
   } finally { await ui.cleanup() }
@@ -153,7 +153,7 @@ test("backend en proceso: muestra Procesando y no ofrece confirmar; completado o
     assert.match(ui.text(), /Procesando reintegro…/)
     assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), ["Actualizar"])
     await ui.render(resolved("completed"))
-    assert.match(ui.text(), /Completado ✅/)
+    assert.match(ui.text(), /EstadoCompletado/)
     assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), [], "operación completada: nada para reintentar ni confirmar")
   } finally { await ui.cleanup() }
 })
@@ -178,7 +178,7 @@ test("salir y volver a entrar con la confirmación en vuelo: bloqueado, sin una 
     assert.match(ui.text(), /Confirmando resolución…/, "sigue bloqueado hasta que llega la vista nueva")
     await ui.render({ ...baseView, mode: "resolution", financialOptions: [],
       resolution: { id: "r1", type: "mercadopago_refund", status: "completed", amount: 25_000, detail: null } })
-    assert.match(ui.text(), /Completado ✅/)
+    assert.match(ui.text(), /EstadoCompletado/)
     assert.equal(posts(ui.calls).length, 1)
   } finally { await ui.cleanup() }
 })
@@ -220,23 +220,25 @@ test("H. saldo BEYONIX: tres pasos, un único paso visible y una sola confirmaci
   try {
     await ui.render(baseView)
     const panel = () => ui.doc.querySelector("[data-testid='financial-resolution']")!
-    assert.deepEqual([...ui.doc.querySelectorAll("ol li")].map((item) => item.textContent), ["1Producto", "2Dinero", "3Revisar"])
+    // Sin un paso "Producto" sin decisión: la situación real en una línea.
+    assert.deepEqual([...ui.doc.querySelectorAll("ol li")].map((item) => item.textContent), ["1Dinero", "2Revisar"])
     assert.equal(ui.doc.querySelectorAll("fieldset").length, 1)
-    assert.match(panel().textContent ?? "", /¿Qué pasa con el producto\?/)
-    assert.equal(ui.button(/Debe volver/).disabled, true)
-    await ui.click("Continuar")
+    assert.match(panel().textContent ?? "", /Situación de la mercadería: El producto no se despachó\./)
+    assert.doesNotMatch(panel().textContent ?? "", /No vuelve|Debe volver|Continuá abajo/)
     assert.match(panel().textContent ?? "", /¿Cómo querés resolver/)
-    assert.doesNotMatch(panel().textContent ?? "", /¿Qué pasa con el producto\?/)
     assert.equal(ui.button("Continuar").disabled, true)
     await ui.click(/^Saldo a favor/)
     await ui.click("Continuar")
     const review = panel().textContent ?? ""
     assert.match(review, /BX-1031.*Begoña Núñez.*Arrepentimiento/)
+    assert.match(review, /Situación de la mercaderíaEl producto no se despachó\./)
     assert.match(review, /Se emitirá automáticamente si corresponde/)
     assert.doesNotMatch(review, TECHNICAL)
     await ui.click("Confirmar resolución")
     const dialog = ui.doc.querySelector("[role='dialog']")!
-    assert.match(dialog.textContent ?? "", /¿Confirmás esta resolución\?.*Saldo a favor/)
+    // L. El modal muestra importe, situación real y destino (nunca "Producto: No vuelve").
+    assert.match(dialog.textContent ?? "", /¿Confirmás esta resolución\?.*Importe.*Situación de la mercaderíaEl producto no se despachó\..*DestinoSaldo a favor/)
+    assert.doesNotMatch(dialog.textContent ?? "", /No vuelve|Producto:/)
     await ui.click("Confirmar")
     assert.equal(ui.calls.length, 1)
     assert.deepEqual(JSON.parse(String(ui.calls[0].body)), { action: "resolve", choice: "beyonix_credit", confirmed: true })
@@ -250,8 +252,7 @@ test("C/D. recepción pendiente: esperar no resuelve; excepción exige motivo", 
   try {
     await ui.render({ ...baseView, product: "return", reception: "pending", financialOptions: [],
       receptionOptions: [option("manual_refund", "Reintegro manual")] })
-    assert.equal(ui.doc.querySelectorAll("ol li").length, 4)
-    await ui.click("Continuar")
+    assert.equal(ui.doc.querySelectorAll("ol li").length, 3)
     await ui.click(/^Reintegro externo/)
     await ui.click("Continuar")
     await ui.click(/^No/)
@@ -303,19 +304,17 @@ test("I. NC emitida se muestra como resultado, sin acciones fiscales manuales", 
     await ui.render({ ...baseView, mode: "resolution", financialOptions: [],
       resolution: { id: "r1", type: "beyonix_credit", status: "completed", amount: 25_000, detail: null } }, order)
     const text = ui.doc.body.textContent ?? ""
-    assert.match(text, /Completado ✅.*Nota de crédito emitida ✅/)
+    // K. Resumen compacto: estado, importe, situación, resolución y NC; acciones en la misma pantalla.
+    assert.match(text, /EstadoCompletado.*Importe.*Situación de la mercaderíaEl producto no se despachó\..*ResoluciónSaldo a favor.*Nota de créditoEmitida/)
+    assert.equal(ui.hasButton("Ir a facturación"), false, "ver y descargar ya están acá")
     assert.doesNotMatch(text, /Emitir|Conciliar|Reintentar acreditación|CAE/)
     // "Ver nota de crédito" abre el visor existente ahí mismo (sin navegar a Facturación).
     await ui.click("Ver nota de crédito")
     await ui.flush()
     assert.ok(ui.doc.querySelector("[role='dialog']"), "abre el visor")
     assert.ok(ui.calls.some((call) => call.method === "GET"), "pide el PDF de la NC")
-    assert.equal(ui.events.billing, 0)
     await ui.click("Descargar")
     assert.deepEqual(ui.events.download, ["nc-1"])
-    // Navegar a Facturación queda como acción secundaria.
-    await ui.click("Ir a facturación")
-    assert.equal(ui.events.billing, 1)
   } finally { await ui.cleanup() }
 })
 
@@ -344,6 +343,85 @@ test("G. reintegro manual pendiente: exige el comprobante; referencia y observac
     assert.equal(form.get("reference"), null, "la referencia sigue siendo opcional")
     await ui.render({ ...baseView, mode: "resolution", financialOptions: [],
       resolution: { id: "r1", type: "manual_refund", status: "completed", amount: 25_000, detail: null } })
-    assert.match(ui.doc.body.textContent ?? "", /Reintegro completado ✅/)
+    assert.match(ui.doc.body.textContent ?? "", /EstadoCompletado.*ResoluciónReintegro externo/)
+  } finally { await ui.cleanup() }
+})
+
+const dispatchedView: FinancialResolutionView = { ...baseView, financialOptions: [], merchandise: "not_returned", returnInspectionRequired: true }
+const typeInto = async (ui: Awaited<ReturnType<typeof setup>>, element: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+  await act(async () => {
+    const prototype = element.tagName === "TEXTAREA" ? ui.doc.defaultView!.HTMLTextAreaElement.prototype : ui.doc.defaultView!.HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(prototype, "value")!.set!.call(element, value)
+    element.dispatchEvent(new ui.doc.defaultView!.Event("input", { bubbles: true }))
+  })
+}
+
+test("B/C. devolución despachada: recibida correctamente aprueba; no recibida nunca habilita el reintegro", async () => {
+  const ui = await setup(() => Response.json({ status: "recorded" }))
+  try {
+    await ui.render(dispatchedView)
+    assert.match(ui.text(), /Situación de la mercadería: El producto aún no volvió\./)
+    assert.equal(ui.hasButton("Continuar"), false, "sin inspección no hay paso de dinero")
+    assert.equal(ui.button("Registrar decisión").disabled, true)
+    await ui.click("Producto no recibido")
+    assert.equal(ui.button("Aprobar devolución del dinero" + "Requiere la mercadería recibida.").disabled, true, "C: sin recepción no se aprueba")
+    await ui.click("Producto recibido correctamente")
+    await ui.click("Aprobar devolución del dinero")
+    assert.equal(ui.button("Registrar decisión").disabled, false)
+    await ui.click("Registrar decisión")
+    const dialog = ui.doc.querySelector("[role='dialog']")!
+    assert.match(dialog.textContent ?? "", /Importe.*SituaciónProducto recibido correctamente.*ResoluciónAprobar devolución del dinero/)
+    await ui.click("Confirmar")
+    assert.deepEqual(JSON.parse(String(posts(ui.calls)[0].body)), { action: "inspect", confirmed: true,
+      physicalState: "received_ok", decision: "approved", reason: "", customerMessage: "" })
+  } finally { await ui.cleanup() }
+})
+
+for (const [state, label] of [["damaged", "Producto recibido dañado"], ["wrong_product", "Producto incorrecto"], ["incomplete", "Producto recibido con faltantes"]] as const) {
+  test(`D/E/F/G. ${label}: rechazar exige motivo y no mueve dinero`, async () => {
+    const ui = await setup(() => Response.json({ status: "recorded" }))
+    try {
+      await ui.render(dispatchedView)
+      await ui.click(label)
+      await ui.click("Rechazar devolución del dinero")
+      assert.equal(ui.button("Registrar decisión").disabled, true, "G: sin motivo no se registra")
+      await typeInto(ui, ui.doc.querySelector("textarea")!, "corto")
+      assert.equal(ui.button("Registrar decisión").disabled, true)
+      assert.match(ui.doc.querySelector("[role='alert']")?.textContent ?? "", /motivo del rechazo/)
+      await typeInto(ui, ui.doc.querySelector("textarea")!, "Faltan el cargador y la funda original")
+      await ui.click("Registrar decisión")
+      await ui.click("Confirmar")
+      const body = JSON.parse(String(posts(ui.calls)[0].body))
+      assert.deepEqual(body, { action: "inspect", confirmed: true, physicalState: state, decision: "rejected",
+        reason: "Faltan el cargador y la funda original", customerMessage: "" })
+      assert.equal(posts(ui.calls).length, 1, "H/I: ninguna operación de saldo o reintegro")
+    } finally { await ui.cleanup() }
+  })
+}
+
+test("rechazo registrado: resumen final sin acciones de dinero", async () => {
+  const ui = await setup()
+  try {
+    await ui.render({ ...dispatchedView, mode: "resolution", merchandise: "damaged",
+      returnInspection: { physicalState: "damaged", decision: "rejected", reason: "Pantalla rota por golpe", customerMessage: null, inspectedAt: "2026-10-23T12:00:00Z" } })
+    const text = ui.text()
+    assert.match(text, /Devolución del dinero rechazada/)
+    assert.match(text, /Situación de la mercaderíaProducto recibido dañado\..*ResoluciónRechazar devolución del dinero.*MotivoPantalla rota por golpe/)
+    assert.match(text, /No se acreditó saldo ni se realizó reintegro/)
+    assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), [], "sin reintegrar, acreditar ni confirmar otra")
+    assert.equal(ui.doc.querySelector("[data-testid='financial-resolution']")?.getAttribute("data-financial-state"), "Completado")
+  } finally { await ui.cleanup() }
+})
+
+test("devolución aprobada: la situación y la decisión viajan al modal del dinero", async () => {
+  const ui = await setup()
+  try {
+    await ui.render({ ...dispatchedView, merchandise: "received_ok", financialOptions: [option("manual_refund", "Reintegro manual")],
+      returnInspection: { physicalState: "received_ok", decision: "approved", reason: null, customerMessage: null, inspectedAt: "2026-10-23T12:00:00Z" } })
+    await ui.click(/^Reintegro externo/)
+    await ui.click("Continuar")
+    await ui.click("Confirmar resolución")
+    const dialog = ui.doc.querySelector("[role='dialog']")!
+    assert.match(dialog.textContent ?? "", /Importe.*Situación de la mercaderíaEl producto volvió correctamente\..*ResoluciónAprobar devolución del dinero.*DestinoReintegro externo/)
   } finally { await ui.cleanup() }
 })

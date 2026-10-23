@@ -106,7 +106,7 @@ function hasPaymentProofPendingReview(order: CancellationNextActionOrder): boole
  * algún tipo de reintegro?
  */
 function needsRefundAction(order: CancellationNextActionOrder): boolean {
-  if (order.financial_status === "refunded") return false
+  if (order.financial_status === "refunded" || order.financial_status === "refund_rejected") return false
   if (order.financial_status === "refund_pending") return true
   if (order.financial_status === "cancellation_requested") {
     return isPaymentConfirmedForRefund(order)

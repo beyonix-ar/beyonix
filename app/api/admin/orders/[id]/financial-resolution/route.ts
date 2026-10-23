@@ -1,12 +1,24 @@
 import { NextResponse } from "next/server"
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
 import { executeFinancialResolution, loadFinancialResolution } from "@/lib/orders/financial-resolution-server"
-import { FINANCIAL_INTERRUPTED_DETAIL, getEffectiveFinancialResolutionStatus, type FinancialChoice } from "@/lib/orders/financial-resolution"
+import {
+  FINANCIAL_INTERRUPTED_DETAIL, getEffectiveFinancialResolutionStatus, getReturnInspectionInputError,
+  type FinancialChoice, type ReturnMoneyDecision, type ReturnPhysicalState,
+} from "@/lib/orders/financial-resolution"
 import { prepareClaimUploads } from "@/lib/orders/claim-server"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { PAYMENT_PROOF_BUCKET, getPaymentProofValidationError, sanitizePaymentProofFileName } from "@/lib/payments/transfer"
 
 export const runtime = "nodejs"
+const RETURN_INSPECTION_ERRORS: Record<string, string> = {
+  RETURN_INSPECTION_CONFLICT: "La devolución ya tiene otra inspección registrada. Actualizá el pedido.",
+  RETURN_INSPECTION_NOT_APPLICABLE: "El pedido no salió de BEYONIX: no requiere inspección de devolución.",
+  RETURN_NOT_RECEIVED: "Sin la mercadería recibida no se puede aprobar la devolución del dinero.",
+  RETURN_REJECTION_REASON_REQUIRED: "Indicá el motivo del rechazo (mínimo 10 caracteres).",
+  RETURN_MONEY_REJECTED: "La devolución del dinero fue rechazada: no se puede acreditar saldo ni reintegrar.",
+  RETURN_INSPECTION_REQUIRED: "Registrá la recepción e inspección de la devolución antes de resolver el dinero.",
+  FINANCIAL_RETURN_INSPECTION_REQUIRED: "Registrá la recepción e inspección de la devolución antes de resolver el dinero.",
+}
 type Context = { params: Promise<{ id: string }> }
 const validId = async ({ params }: Context) => {
   const id = Number((await params).id)
@@ -26,7 +38,11 @@ export async function GET(request: Request, context: Context) {
     return NextResponse.json({ financialOptions: result.options, status: result.status, amount: result.amount,
       requiresReturn: result.requiresReturn, mode: result.mode, product: result.returnContext.product,
       reception: result.returnContext.reception, receptionOptions: result.receptionOptions,
-      notice: result.requiresReturn || result.returnContext.reception === "unavailable"
+      merchandise: result.merchandise, returnInspectionRequired: result.returnInspectionRequired,
+      returnInspection: result.returnInspection && { physicalState: result.returnInspection.physical_state,
+        decision: result.returnInspection.decision, reason: result.returnInspection.reason,
+        customerMessage: result.returnInspection.customer_message, inspectedAt: result.returnInspection.inspected_at },
+      notice: !result.returnInspectionRequired && result.returnContext.reception === "unavailable"
         ? "El pedido ya salió de BEYONIX. La resolución requiere devolución y recepción del producto." : null,
       resolution: result.resolution && { id: result.resolution.id,
         type: result.resolution.choice, status: resolutionStatus, amount: result.resolution.amount,
@@ -42,7 +58,8 @@ export async function POST(request: Request, context: Context) {
   if ("error" in auth) return auth.error
   const id = await validId(context)
   if (!id) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 })
-  let body: { action?: string; choice?: FinancialChoice; confirmed?: boolean; reference?: string; observation?: string; receptionExceptionReason?: string }
+  let body: { action?: string; choice?: FinancialChoice; confirmed?: boolean; reference?: string; observation?: string; receptionExceptionReason?: string
+    physicalState?: ReturnPhysicalState; decision?: ReturnMoneyDecision; reason?: string; customerMessage?: string }
   let file: File | null = null
   try {
     if (request.headers.get("content-type")?.includes("multipart/form-data")) {
@@ -84,6 +101,17 @@ export async function POST(request: Request, context: Context) {
       if (error) throw new Error(error.message)
       return NextResponse.json({ status: "Completado", resolution: data })
     }
+    if (body.action === "inspect") {
+      const inputError = getReturnInspectionInputError(body)
+      if (inputError) return NextResponse.json({ error: inputError }, { status: 400 })
+      // Idempotente en la base: el mismo registro devuelve el existente; otro distinto se rechaza.
+      const { data, error } = await auth.admin.rpc("record_order_return_inspection", {
+        p_order_id: id, p_actor_id: auth.user.id, p_physical_state: body.physicalState, p_decision: body.decision,
+        p_reason: body.reason?.trim() || null, p_customer_message: body.customerMessage?.trim() || null,
+      })
+      if (error) throw new Error(error.message)
+      return NextResponse.json({ status: "recorded", inspection: data })
+    }
     if (body.action !== "resolve" && body.action !== "retry") return NextResponse.json({ error: "Acción inválida." }, { status: 400 })
     if (body.action === "resolve" && !["beyonix_credit", "mercadopago_refund", "manual_refund"].includes(body.choice ?? "")) {
       return NextResponse.json({ error: "Resolución inválida." }, { status: 400 })
@@ -116,6 +144,8 @@ export async function POST(request: Request, context: Context) {
       { status: result.status === "requires_action" ? 202 : 200 })
   } catch (error) {
     const detail = error instanceof Error ? error.message : ""
+    const inspectionError = RETURN_INSPECTION_ERRORS[Object.keys(RETURN_INSPECTION_ERRORS).find((code) => detail.includes(code)) ?? ""]
+    if (inspectionError) return NextResponse.json({ error: inspectionError }, { status: 409 })
     if (detail.includes("DISPATCH_PHYSICAL_RESOLUTION_REQUIRED")) {
       return NextResponse.json({ error: "Requiere acción manual: el pedido ya estaba armado. Escaneá el pedido en Despachos para confirmar el retiro físico antes de reintegrar." }, { status: 409 })
     }

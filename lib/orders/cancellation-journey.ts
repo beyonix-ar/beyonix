@@ -75,8 +75,11 @@ export function getCancellationJourney(order: CancellationJourneyOrder): Cancell
   const next = getCancellationNextAction(order)
   const creditNote = getCreditNoteState(order)
   const refunded = order.financial_status === "refunded"
+  // Devolución posterior al despacho inspeccionada y con el dinero rechazado.
+  const rejected = order.financial_status === "refund_rejected" || financial?.returnDecision === "rejected"
+  const inspectionPending = Boolean(financial?.returnInspectionPending)
   const paymentReview = next.state === "blocked" && next.reason === "pending_payment_review"
-  const moneyInvolved = refunded || (next.state !== "none" && !paymentReview)
+  const moneyInvolved = refunded || rejected || (next.state !== "none" && !paymentReview)
   const steps: CancellationJourneyStep[] = []
   const push = (key: CancellationJourneyStepKey, status: CancellationJourneyStepStatus, detail: string) =>
     steps.push({ key, label: CANCELLATION_JOURNEY_LABELS[key], status, detail })
@@ -97,6 +100,10 @@ export function getCancellationJourney(order: CancellationJourneyOrder): Cancell
     action = { kind: "resolve_merchandise", label: "Resolver mercadería", href: resolveHref(order.id) }
   } else if (dispatch?.manualRefundRequired) {
     push("merchandise", "done", "Mercadería devuelta al stock.")
+  } else if (rejected || financial?.returnDecision === "approved") {
+    push("merchandise", "done", "Devolución recibida e inspeccionada.")
+  } else if (inspectionPending) {
+    push("merchandise", "current", "Registrá cómo volvió la mercadería y decidí la devolución del dinero.")
   } else if (order.andreani_handed_over_at) {
     push("merchandise", "attention", "El pedido ya se entregó al transportista: la mercadería vuelve con la devolución.")
   } else {
@@ -109,14 +116,18 @@ export function getCancellationJourney(order: CancellationJourneyOrder): Cancell
     push("money", paymentReview ? "attention" : "not_required", paymentReview
       ? "Revisá el comprobante de pago antes de decidir un reintegro."
       : "No hubo pago confirmado: no hay dinero para devolver.")
+  } else if (rejected) {
+    push("money", "done", "Devolución del dinero rechazada.")
   } else if (refunded || financial?.mode === "resolution") {
     push("money", "done", refunded ? "Dinero resuelto." : "Destino del dinero elegido.")
+  } else if (inspectionPending) {
+    push("money", "waiting", "Se habilita al registrar la inspección de la devolución.")
   } else if (holdActive) {
     push("money", "waiting", "Se habilita cuando la mercadería vuelva al stock.")
   } else if (automatic) {
     push("money", "processing", "BEYONIX lo resuelve automáticamente.")
   } else {
-    push("money", "current", "Elegí cómo devolver el dinero: saldo a favor o reintegro externo.")
+    push("money", "current", "Elegí saldo a favor o reintegro externo.")
   }
 
   // 4. Nota de crédito: consecuencia de la resolución, nunca un paso aparte del Admin.
@@ -126,6 +137,9 @@ export function getCancellationJourney(order: CancellationJourneyOrder): Cancell
     push("credit_note", "done", "Nota de crédito emitida.")
   } else if (creditNote.state === "processing") {
     push("credit_note", "processing", "En proceso en ARCA.")
+  } else if (rejected && creditNote.state !== "not_required") {
+    // La obligación fiscal no depende de la decisión del dinero: se define en Facturación.
+    push("credit_note", "attention", "Definí la nota de crédito en Facturación (sin devolver dinero).")
   } else if (creditNote.state === "error") {
     push("credit_note", "attention", "ARCA no la autorizó: revisala en Facturación.")
   } else if (creditNote.state === "required" || creditNote.state === "legacy_required" || hasPendingInvoiceObligation(order)) {
@@ -138,6 +152,8 @@ export function getCancellationJourney(order: CancellationJourneyOrder): Cancell
   const status = financial?.resolutionStatus ?? null
   if (!moneyInvolved) {
     push("refund", "not_required", "No corresponde.")
+  } else if (rejected) {
+    push("refund", "not_required", "No corresponde: la devolución del dinero fue rechazada.")
   } else if (refunded) {
     push("refund", "done", "Reintegro realizado.")
   } else if (status === "manual_pending" || next.state === "register_external_refund") {

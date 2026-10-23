@@ -7,7 +7,7 @@ import { isOrderPaymentConfirmed, type OrderPaymentConfirmationRow } from "./ord
  *   estado / financial_status   ciclo de cancelación y reintegro
  *   payment_status / paid_at    si hubo un cobro real que devolver
  */
-export type OrderCancellationRefundState = "cancelled" | "refund_in_progress" | "refunded"
+export type OrderCancellationRefundState = "cancelled" | "refund_in_progress" | "refunded" | "refund_rejected"
 
 export type OrderCancellationRefundFields = OrderPaymentConfirmationRow & {
   estado?: string | null
@@ -25,6 +25,8 @@ export function getOrderCancellationRefundState(
   const financialStatus = order.financial_status ?? ""
 
   if (financialStatus === "refunded") return "refunded"
+  // Devolución revisada y no aprobada: no hay reintegro en curso.
+  if (financialStatus === "refund_rejected") return "refund_rejected"
   if (financialStatus === "refund_pending") return "refund_in_progress"
   // Pago real recibido con el pedido ya cancelado: se está devolviendo.
   if (order.payment_status === "approved_after_cancellation") return "refund_in_progress"
@@ -40,4 +42,5 @@ export const ORDER_CANCELLATION_REFUND_LABELS: Record<
   cancelled: { customer: "Pedido cancelado", admin: "Cancelado" },
   refund_in_progress: { customer: "Reintegro en proceso", admin: "Cancelado · Reintegro en proceso" },
   refunded: { customer: "Reintegro realizado", admin: "Cancelado · Reintegrado" },
+  refund_rejected: { customer: "Reintegro no aprobado", admin: "Cancelado · Reintegro rechazado" },
 }

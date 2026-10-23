@@ -32,6 +32,7 @@ export type AdminPendingOrderActionKind =
   | "refund_manual"
   | "refund_retry"
   | "advanced_case"
+  | "return_inspection"
   | "invoice"
   | "claim"
   | "return"
@@ -61,6 +62,10 @@ export interface AdminPendingFacts {
     resolutionStatus: string | null
     /** La API ofrece hoy al menos una opción ejecutable. */
     hasOptions: boolean
+    /** Cancelación ya despachada: falta registrar la recepción y la decisión del dinero. */
+    returnInspectionPending?: boolean
+    /** Decisión registrada sobre la devolución del dinero (order_return_inspections). */
+    returnDecision?: "approved" | "rejected" | null
   } | null
   dispatch: {
     batchId: number | null
@@ -165,6 +170,7 @@ export const ADMIN_PENDING_ACTION_LABELS: Record<AdminPendingOrderActionKind, st
   refund_manual: "Registrar reintegro",
   refund_retry: "Reintentar actualización",
   advanced_case: "Revisar caso avanzado",
+  return_inspection: "Inspeccionar devolución",
   invoice: "Emitir factura",
   claim: "Resolver reclamo",
   return: "Revisar devolución",
@@ -185,6 +191,7 @@ const ACTION_PRIORITY: Record<AdminPendingOrderActionKind, AdminPendingActionPri
   refund_manual: 1,
   refund_retry: 1,
   advanced_case: 1,
+  return_inspection: 1,
   invoice: 2,
   claim: 1,
   return: 2,
@@ -253,6 +260,12 @@ function addFinancialWork(
     return
   }
   const financial = order.admin_pending_facts?.financial
+  // Devolución del dinero rechazada: el dinero quedó resuelto sin moverse.
+  if (order.financial_status === "refund_rejected" || financial?.returnDecision === "rejected") return
+  if (financial?.returnInspectionPending) {
+    add("return_inspection", cancellation)
+    return
+  }
   if (financial && financial.mode !== "none") {
     if (financial.mode === "resolution") {
       if (financial.resolutionStatus === "manual_pending") add("refund_manual", cancellation)

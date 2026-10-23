@@ -240,7 +240,7 @@ function isRefundPaymentAttentionOrder(order: {
   paid_at?: string | null
   payment_confirmed_amount?: number | string | null
 }) {
-  if (order.financial_status === "refunded") return false
+  if (order.financial_status === "refunded" || order.financial_status === "refund_rejected") return false
   if (order.financial_status === "refund_pending") return true
 
   if (order.financial_status === "cancellation_requested") {

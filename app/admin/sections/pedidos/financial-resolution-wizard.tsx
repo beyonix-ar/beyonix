@@ -1,15 +1,20 @@
 "use client"
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react"
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Download, Eye, LoaderCircle, RefreshCw } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Download, Eye, LoaderCircle, RefreshCw, XCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import {
+  RETURN_PHYSICAL_STATE_LABELS, RETURN_PHYSICAL_STATES, RETURN_REJECTION_REASON_MIN_LENGTH, getReturnInspectionInputError,
+  type ReturnMoneyDecision, type ReturnPhysicalState,
+} from "@/lib/orders/financial-resolution"
+import {
   applyFinancialResolution, buildFinancialResolvePayload, canContinueFinancialWizard, EXCEPTION_REASON_MIN_LENGTH,
-  FINANCIAL_CHOICE_COPY, FINANCIAL_PRODUCT_COPY, FINANCIAL_STEP_LABELS, getFinancialHumanState, getFinancialMoneyOptions,
-  getFinancialOutcome, getFinancialReceptionLabel, getFinancialWizardSteps, getResolutionFromResponse,
-  initialFinancialWizardState, isProductOptionAvailable, mergeFinancialResolutionView, reduceFinancialWizard,
-  type FinancialResolutionView, type FinancialWizardAction, type FinancialWizardState,
+  FINANCIAL_CHOICE_COPY, FINANCIAL_STEP_LABELS, RETURN_DECISION_COPY, getFinancialHumanState, getFinancialMoneyOptions,
+  getFinancialOutcome, getFinancialReceptionLabel, getFinancialWizardSteps, getMerchandiseSituationLabel, getResolutionFromResponse,
+  getReturnDecisionLabel, initialFinancialWizardState, isReturnMoneyRejected, mergeFinancialResolutionView, needsReturnInspection,
+  reduceFinancialWizard, type FinancialResolutionView, type FinancialWizardAction, type FinancialWizardState,
 } from "@/lib/orders/financial-resolution-wizard"
+import { getCreditNoteState } from "@/lib/orders/credit-note-state"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import { AdminButton, AdminModal, AdminTextarea, AdminTextInput } from "../../components/admin-controls"
@@ -89,13 +94,13 @@ type WizardProps = {
   onChanged: () => void
   /** Resultado confirmado por el POST: se refleja antes de releer el pedido. */
   onResolved: (resolution: FinancialResolution) => void
-  onOpenBilling: () => void
   onOpenAttention: () => void
   onDownloadCreditNote: (noteId: string) => void
 }
 
 export function FinancialResolutionWizard(props: WizardProps) {
   const humanState = getFinancialHumanState(props.view)
+  const rejected = isReturnMoneyRejected(props.view)
   return (
     <section
       className="admin-order-cancellation-panel admin-financial-wizard rounded-xl border p-3"
@@ -107,18 +112,22 @@ export function FinancialResolutionWizard(props: WizardProps) {
         <div className="min-w-0">
           <p className="text-11px font-bold uppercase tracking-widest text-[var(--admin-text-muted)]">Resolución · {props.orderNumber}</p>
           <h3 className="mt-1 text-base font-black text-[var(--admin-text)]">
-            {props.view.resolution ? FINANCIAL_CHOICE_COPY[props.view.resolution.type].label : "Cancelación / reintegro"}
+            {rejected ? "Devolución del dinero rechazada"
+              : props.view.resolution ? FINANCIAL_CHOICE_COPY[props.view.resolution.type].label : "Cancelación / reintegro"}
           </h3>
         </div>
         <p className="admin-financial-wizard-amount text-lg font-black">{formatPrice(props.view.resolution?.amount ?? props.view.amount)}</p>
       </header>
-      {props.view.resolution ? <FinancialResolutionOutcome {...props} /> : <FinancialWizardFlow {...props} />}
+      {rejected ? <ReturnRejectedOutcome {...props} />
+        : props.view.resolution ? <FinancialResolutionOutcome {...props} />
+        : needsReturnInspection(props.view) ? <ReturnInspectionStep {...props} />
+        : <FinancialWizardFlow {...props} />}
     </section>
   )
 }
 
 function OptionCard({ selected, disabled, title, description, onSelect }: {
-  selected: boolean; disabled?: boolean; title: string; description: string; onSelect: () => void
+  selected: boolean; disabled?: boolean; title: string; description?: string; onSelect: () => void
 }) {
   return (
     <button type="button" role="radio" aria-checked={selected} disabled={disabled} onClick={onSelect}
@@ -127,8 +136,17 @@ function OptionCard({ selected, disabled, title, description, onSelect }: {
         {selected && <Check className="size-3.5 shrink-0" aria-hidden="true" />}
         {title}
       </span>
-      <span className="admin-financial-wizard-option-description">{description}</span>
+      {description && <span className="admin-financial-wizard-option-description">{description}</span>}
     </button>
+  )
+}
+
+/** Una línea: lo que realmente pasó con el producto (nunca "No vuelve"). */
+function MerchandiseLine({ view }: { view: FinancialResolutionView }) {
+  return (
+    <p className="text-xs font-semibold text-[var(--admin-text-soft)]" data-testid="merchandise-situation">
+      <span className="font-black text-[var(--admin-text)]">Situación de la mercadería:</span> {getMerchandiseSituationLabel(view)}
+    </p>
   )
 }
 
@@ -198,6 +216,122 @@ function useFinancialOperation(pedidoId: number, view: FinancialResolutionView, 
   return { saving, error, run, refresh }
 }
 
+function ConfirmingNotice() {
+  return (
+    <div className="admin-financial-wizard-body mt-3 grid content-start gap-2" data-step="submitting" aria-live="polite">
+      <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-text)]">
+        <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Confirmando resolución…
+      </p>
+      <p className="text-xs font-semibold text-[var(--admin-text-soft)]">No cierres ni repitas la operación: el resultado aparece acá.</p>
+    </div>
+  )
+}
+
+/**
+ * Devolución de un pedido ya despachado: primero la recepción física y la
+ * decisión del dinero (record_order_return_inspection). Aprobada, el asistente
+ * sigue con Saldo / Reintegro; rechazada, termina sin mover dinero.
+ */
+function ReturnInspectionStep({ pedido, view, onChanged, onResolved }: WizardProps) {
+  const [physicalState, setPhysicalState] = useState<ReturnPhysicalState | null>(null)
+  const [decision, setDecision] = useState<ReturnMoneyDecision | null>(null)
+  const [reason, setReason] = useState("")
+  const [customerMessage, setCustomerMessage] = useState("")
+  const [confirming, setConfirming] = useState(false)
+  const operation = useFinancialOperation(pedido.id, view, onChanged, onResolved)
+  const { saving, error } = operation
+  const input = { physicalState: physicalState ?? undefined, decision: decision ?? undefined, reason, customerMessage }
+  const inputError = physicalState && decision ? getReturnInspectionInputError(input) : null
+  const ready = Boolean(physicalState && decision) && !inputError
+
+  const selectState = (value: ReturnPhysicalState) => {
+    setPhysicalState(value)
+    // Sin mercadería recibida no hay aprobación posible.
+    if (value === "not_received" && decision === "approved") setDecision(null)
+  }
+
+  const submit = async () => {
+    const result = await operation.run({
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "inspect", confirmed: true, physicalState, decision, reason: reason.trim(), customerMessage: customerMessage.trim() }),
+    }, "No se pudo registrar la inspección.")
+    if (result !== "skipped") setConfirming(false)
+  }
+
+  if (saving && !confirming) return <ConfirmingNotice />
+
+  return (
+    <>
+      <div className="admin-financial-wizard-body mt-3 grid gap-3" data-step="inspection">
+        <MerchandiseLine view={view} />
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-black text-[var(--admin-text)]">¿Cómo se recibió la mercadería?</legend>
+          <div role="radiogroup" aria-label="Recepción de la mercadería" className="admin-financial-wizard-options">
+            {RETURN_PHYSICAL_STATES.map((value) => (
+              <OptionCard key={value} selected={physicalState === value} title={RETURN_PHYSICAL_STATE_LABELS[value]}
+                onSelect={() => selectState(value)} />
+            ))}
+          </div>
+        </fieldset>
+        {physicalState && (
+          <fieldset className="grid gap-2">
+            <legend className="text-sm font-black text-[var(--admin-text)]">Devolución del dinero ({formatPrice(view.amount)})</legend>
+            <div role="radiogroup" aria-label="Decisión del dinero" className="admin-financial-wizard-options">
+              <OptionCard selected={decision === "approved"} disabled={physicalState === "not_received"}
+                title={RETURN_DECISION_COPY.approved}
+                description={physicalState === "not_received" ? "Requiere la mercadería recibida." : undefined}
+                onSelect={() => setDecision("approved")} />
+              <OptionCard selected={decision === "rejected"} title={RETURN_DECISION_COPY.rejected}
+                onSelect={() => setDecision("rejected")} />
+            </div>
+          </fieldset>
+        )}
+        {decision === "rejected" && (
+          <div className="grid gap-2">
+            <label className="grid gap-1.5">
+              <span className="text-11px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">Motivo del rechazo (interno)</span>
+              <AdminTextarea title="Motivo del rechazo" value={reason} maxLength={600} required className="min-h-16" onChange={setReason} />
+              <span className="text-11px font-semibold text-[var(--admin-text-muted)]">
+                Obligatorio (mínimo {RETURN_REJECTION_REASON_MIN_LENGTH} caracteres). Queda registrado con tu usuario. No se acredita saldo ni se reintegra.
+              </span>
+            </label>
+            <label className="grid gap-1.5">
+              <span className="text-11px font-black uppercase tracking-widest text-[var(--admin-text-muted)]">Mensaje para el cliente (opcional)</span>
+              <AdminTextInput title="Mensaje para el cliente" placeholder="Se suma al aviso al cliente" value={customerMessage} maxLength={300} onChange={setCustomerMessage} />
+            </label>
+          </div>
+        )}
+      </div>
+
+      {(error || inputError) && <p role="alert" className="admin-financial-wizard-error mt-3">{error || inputError}</p>}
+
+      <footer className="mt-3 flex flex-wrap items-center justify-end gap-2">
+        <AdminButton size="sm" variant="primary" disabled={!ready || saving} icon={<CheckCircle2 className="size-3.5" />} onClick={() => setConfirming(true)}>
+          Registrar decisión
+        </AdminButton>
+      </footer>
+
+      <AdminModal compact open={confirming} title="¿Confirmás esta decisión?" onClose={() => { if (!saving) setConfirming(false) }}
+        footer={(
+          <div className="flex justify-end gap-2">
+            <AdminButton size="sm" variant="ghost" disabled={saving} onClick={() => setConfirming(false)}>Cancelar</AdminButton>
+            <AdminButton size="sm" variant="primary" disabled={saving} onClick={() => void submit()}
+              icon={saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}>
+              {saving ? "Confirmando..." : "Confirmar"}
+            </AdminButton>
+          </div>
+        )}>
+        <dl className="admin-financial-wizard-summary is-modal">
+          <SummaryRow label="Importe" value={formatPrice(view.amount)} strong />
+          <SummaryRow label="Situación" value={physicalState ? RETURN_PHYSICAL_STATE_LABELS[physicalState] : "-"} />
+          <SummaryRow label="Resolución" value={decision ? RETURN_DECISION_COPY[decision] : "-"} />
+          {decision === "rejected" && <SummaryRow label="Motivo" value={reason.trim()} />}
+        </dl>
+      </AdminModal>
+    </>
+  )
+}
+
 function FinancialWizardFlow({ view, orderNumber, customerName, reason, onChanged, onResolved, onOpenAttention, pedido }: WizardProps) {
   const [state, dispatch] = useReducer(
     (current: FinancialWizardState, action: FinancialWizardAction) => reduceFinancialWizard(current, action, view),
@@ -211,6 +345,9 @@ function FinancialWizardFlow({ view, orderNumber, customerName, reason, onChange
   const stepIndex = steps.indexOf(state.step)
   const moneyOptions = getFinancialMoneyOptions(view, state.product)
   const choiceCopy = state.choice ? FINANCIAL_CHOICE_COPY[state.choice] : null
+  const merchandise = getMerchandiseSituationLabel(view)
+  const returnDecision = getReturnDecisionLabel(view)
+  const showReception = steps.includes("reception")
   const receptionLabel = getFinancialReceptionLabel(view, state)
 
   const submit = async () => {
@@ -223,16 +360,7 @@ function FinancialWizardFlow({ view, orderNumber, customerName, reason, onChange
 
   // Confirmada (o en curso desde otra apertura del pedido): bloqueado hasta
   // que la vista traiga la resolución. Sin "Volver" ni otra confirmación.
-  if (saving && !confirming) {
-    return (
-      <div className="admin-financial-wizard-body mt-3 grid content-start gap-2" data-step="submitting" aria-live="polite">
-        <p className="flex items-center gap-2 text-sm font-black text-[var(--admin-text)]">
-          <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Confirmando resolución…
-        </p>
-        <p className="text-xs font-semibold text-[var(--admin-text-soft)]">No cierres ni repitas la operación: el resultado aparece acá.</p>
-      </div>
-    )
-  }
+  if (saving && !confirming) return <ConfirmingNotice />
 
   if (waiting) {
     return (
@@ -256,24 +384,12 @@ function FinancialWizardFlow({ view, orderNumber, customerName, reason, onChange
         ))}
       </ol>
 
-      <div className="admin-financial-wizard-body mt-3" data-step={state.step}>
-        {state.step === "product" && (
-          <fieldset className="grid gap-3">
-            <legend className="text-sm font-black text-[var(--admin-text)]">¿Qué pasa con el producto?</legend>
-            {view.notice && <p className="admin-financial-wizard-notice">{view.notice}</p>}
-            <div role="radiogroup" className="admin-financial-wizard-options">
-              {(["no_return", "return"] as const).map((value) => (
-                <OptionCard key={value} selected={state.product === value} disabled={!isProductOptionAvailable(view, value)}
-                  title={FINANCIAL_PRODUCT_COPY[value].label} description={FINANCIAL_PRODUCT_COPY[value].description}
-                  onSelect={() => dispatch({ type: "product", value })} />
-              ))}
-            </div>
-          </fieldset>
-        )}
-
+      <div className="admin-financial-wizard-body mt-3 grid gap-3" data-step={state.step}>
+        {state.step !== "review" && <MerchandiseLine view={view} />}
         {state.step === "money" && (
           <fieldset className="grid gap-3">
             <legend className="text-sm font-black text-[var(--admin-text)]">¿Cómo querés resolver {formatPrice(view.amount)}?</legend>
+            {view.notice && <p className="admin-financial-wizard-notice">{view.notice}</p>}
             <div role="radiogroup" className="admin-financial-wizard-options">
               {moneyOptions.map((option) => (
                 <OptionCard key={option.type} selected={state.choice === option.type}
@@ -327,9 +443,10 @@ function FinancialWizardFlow({ view, orderNumber, customerName, reason, onChange
             <SummaryRow label="Cliente" value={customerName} />
             {reason && <SummaryRow label="Motivo" value={reason} />}
             <SummaryRow label="Importe" value={formatPrice(view.amount)} strong />
-            <SummaryRow label="Producto" value={state.product ? FINANCIAL_PRODUCT_COPY[state.product].label : "-"} />
-            <SummaryRow label="Recepción" value={receptionLabel} />
-            <SummaryRow label="Resolución" value={choiceCopy?.short ?? "-"} />
+            <SummaryRow label="Situación de la mercadería" value={merchandise} />
+            {showReception && <SummaryRow label="Recepción" value={receptionLabel} />}
+            {returnDecision && <SummaryRow label="Resolución" value={returnDecision} />}
+            <SummaryRow label="Destino" value={choiceCopy?.short ?? "-"} />
             <SummaryRow label="Nota de crédito" value="Se emitirá automáticamente si corresponde." />
           </dl>
         )}
@@ -364,9 +481,10 @@ function FinancialWizardFlow({ view, orderNumber, customerName, reason, onChange
         )}>
         <dl className="admin-financial-wizard-summary is-modal">
           <SummaryRow label="Importe" value={formatPrice(view.amount)} strong />
+          <SummaryRow label="Situación de la mercadería" value={merchandise} />
+          {showReception && <SummaryRow label="Recepción" value={receptionLabel} />}
+          {returnDecision && <SummaryRow label="Resolución" value={returnDecision} />}
           <SummaryRow label="Destino" value={choiceCopy?.label ?? "-"} />
-          <SummaryRow label="Producto" value={state.product ? FINANCIAL_PRODUCT_COPY[state.product].label : "-"} />
-          {state.product === "return" && <SummaryRow label="Recepción" value={receptionLabel} />}
         </dl>
       </AdminModal>
     </>
@@ -382,7 +500,72 @@ function SummaryRow({ label, value, strong = false }: { label: string; value: st
   )
 }
 
-function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpenBilling, onDownloadCreditNote }: WizardProps) {
+function useCreditNotePreview(pedido: SupabasePedido) {
+  const [preview, setPreview] = useState<{ noteId: string; token: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const open = async (noteId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      setError("Iniciá sesión nuevamente para ver la nota de crédito.")
+      return
+    }
+    setError(null)
+    setPreview({ noteId, token: session.access_token })
+  }
+  const note = [...(pedido.order_credit_notes ?? [])]
+    .filter((item) => item.status === "authorized" && item.cae)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  const creditNoteState = getCreditNoteState(pedido)
+  const label = note ? "Emitida" : creditNoteState.state === "not_required" ? "No corresponde" : "Pendiente"
+  const modal = preview && (
+    // Mismo visor y endpoint que Facturación: sin navegar fuera de la resolución.
+    <InvoiceViewerModal
+      title="Nota de crédito"
+      orderId={pedido.id}
+      requestUrl={`/api/admin/orders/${pedido.id}/invoice/pdf?type=credit_note&note=${encodeURIComponent(preview.noteId)}`}
+      bearerToken={preview.token}
+      documentLabel="nota de crédito"
+      onClose={() => setPreview(null)}
+    />
+  )
+  return { note, label, open, modal, error }
+}
+
+function CreditNoteActions({ noteId, onOpen, onDownload }: { noteId: string; onOpen: (noteId: string) => void; onDownload: (noteId: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <AdminButton size="sm" variant="ghost" icon={<Eye className="size-3.5" />} onClick={() => onOpen(noteId)}>Ver nota de crédito</AdminButton>
+      <AdminButton size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={() => onDownload(noteId)}>Descargar</AdminButton>
+    </div>
+  )
+}
+
+/** Rechazo registrado: resumen final, sin acciones de dinero. */
+function ReturnRejectedOutcome({ pedido, view, onDownloadCreditNote }: WizardProps) {
+  const inspection = view.returnInspection!
+  const creditNote = useCreditNotePreview(pedido)
+  return (
+    <div className="admin-financial-wizard-body mt-3 grid content-start gap-3" data-outcome="rejected">
+      <dl className="admin-financial-wizard-summary" aria-label="Resumen de la resolución">
+        <SummaryRow label="Estado" value="Devolución del dinero rechazada" strong />
+        <SummaryRow label="Importe" value={formatPrice(view.amount)} />
+        <SummaryRow label="Situación de la mercadería" value={getMerchandiseSituationLabel(view)} />
+        <SummaryRow label="Resolución" value={RETURN_DECISION_COPY.rejected} />
+        <SummaryRow label="Motivo" value={inspection.reason ?? "-"} />
+        <SummaryRow label="Fecha" value={new Date(inspection.inspectedAt).toLocaleString("es-AR")} />
+        <SummaryRow label="Nota de crédito" value={creditNote.label} />
+      </dl>
+      <p className="flex items-center gap-2 text-xs font-semibold text-[var(--admin-text-soft)]">
+        <XCircle className="size-3.5 shrink-0" aria-hidden="true" />No se acreditó saldo ni se realizó reintegro.
+      </p>
+      {creditNote.note && <CreditNoteActions noteId={creditNote.note.id} onOpen={(id) => void creditNote.open(id)} onDownload={onDownloadCreditNote} />}
+      {creditNote.modal}
+      {creditNote.error && <p role="alert" className="admin-financial-wizard-error">{creditNote.error}</p>}
+    </div>
+  )
+}
+
+function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onDownloadCreditNote }: WizardProps) {
   const resolution = view.resolution!
   const outcome = getFinancialOutcome(resolution)
   const operation = useFinancialOperation(pedido.id, view, onChanged, onResolved)
@@ -392,20 +575,8 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
   const [reference, setReference] = useState("")
   const [observation, setObservation] = useState("")
   const [file, setFile] = useState<File | null>(null)
-  const [creditNotePreview, setCreditNotePreview] = useState<{ noteId: string; token: string } | null>(null)
-  const [previewError, setPreviewError] = useState<string | null>(null)
-  const openCreditNotePreview = async (noteId: string) => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session?.access_token) {
-      setPreviewError("Iniciá sesión nuevamente para ver la nota de crédito.")
-      return
-    }
-    setPreviewError(null)
-    setCreditNotePreview({ noteId, token: session.access_token })
-  }
-  const creditNote = [...(pedido.order_credit_notes ?? [])]
-    .filter((note) => note.status === "authorized" && note.cae && note.destination !== "none")
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
+  const creditNote = useCreditNotePreview(pedido)
+  const returnDecision = getReturnDecisionLabel(view)
 
   // Otra solicitud tiene la operación (lease del backend): se relee sola unas
   // pocas veces en vez de ofrecer una acción que el backend rechazaría.
@@ -436,19 +607,23 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
     return post(form)
   }
 
+  const stateLabel = outcome.kind === "completed" ? "Completado"
+    : outcome.kind === "manual_pending" ? "Reintegro pendiente"
+    : outcome.kind === "processing" ? "En proceso" : "Requiere acción"
+
   return (
     <div className="admin-financial-wizard-body mt-3 grid content-start gap-3" data-outcome={outcome.kind}>
-      {outcome.kind === "completed" && (
-        <p className="admin-financial-wizard-success">
-          <CheckCircle2 className="size-4" aria-hidden="true" />
-          {resolution.type === "manual_refund" ? "Reintegro completado ✅" : "Completado ✅"}
-        </p>
-      )}
-      {outcome.kind === "completed" && resolution.type === "mercadopago_refund" && view.resolution?.mpRefundId && (
-        <p className="text-xs font-semibold text-[var(--admin-text-muted)]">
-          Reintegro en Mercado Pago {formatPrice(resolution.amount)} · ID {view.resolution.mpRefundId}
-        </p>
-      )}
+      <dl className="admin-financial-wizard-summary" aria-label="Resumen de la resolución">
+        <SummaryRow label="Estado" value={stateLabel} strong />
+        <SummaryRow label="Importe" value={formatPrice(resolution.amount)} />
+        <SummaryRow label="Situación de la mercadería" value={getMerchandiseSituationLabel(view)} />
+        {returnDecision && <SummaryRow label="Devolución" value={returnDecision} />}
+        <SummaryRow label="Resolución" value={FINANCIAL_CHOICE_COPY[resolution.type].short} />
+        <SummaryRow label="Nota de crédito" value={creditNote.label} />
+        {outcome.kind === "completed" && resolution.type === "mercadopago_refund" && view.resolution?.mpRefundId && (
+          <SummaryRow label="ID Mercado Pago" value={view.resolution.mpRefundId} />
+        )}
+      </dl>
 
       {outcome.kind === "processing" && (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -488,29 +663,10 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onOpe
         </div>
       )}
 
-      {creditNote && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-bold text-[var(--admin-text)]">Nota de crédito emitida ✅</p>
-          <div className="flex flex-wrap gap-2">
-            <AdminButton size="sm" variant="ghost" icon={<Eye className="size-3.5" />} onClick={() => void openCreditNotePreview(creditNote.id)}>Ver nota de crédito</AdminButton>
-            <AdminButton size="sm" variant="ghost" icon={<Download className="size-3.5" />} onClick={() => onDownloadCreditNote(creditNote.id)}>Descargar</AdminButton>
-            <AdminButton size="sm" variant="ghost" onClick={onOpenBilling}>Ir a facturación</AdminButton>
-          </div>
-        </div>
-      )}
-      {creditNotePreview && (
-        // Mismo visor y endpoint que Facturación: sin navegar fuera de la resolución.
-        <InvoiceViewerModal
-          title="Nota de crédito"
-          orderId={pedido.id}
-          requestUrl={`/api/admin/orders/${pedido.id}/invoice/pdf?type=credit_note&note=${encodeURIComponent(creditNotePreview.noteId)}`}
-          bearerToken={creditNotePreview.token}
-          documentLabel="nota de crédito"
-          onClose={() => setCreditNotePreview(null)}
-        />
-      )}
+      {creditNote.note && <CreditNoteActions noteId={creditNote.note.id} onOpen={(id) => void creditNote.open(id)} onDownload={onDownloadCreditNote} />}
+      {creditNote.modal}
 
-      {(error || previewError) && <p role="alert" className="admin-financial-wizard-error">{error || previewError}</p>}
+      {(error || creditNote.error) && <p role="alert" className="admin-financial-wizard-error">{error || creditNote.error}</p>}
 
       <AdminModal compact open={registering} title="Registrar reintegro realizado" description={`Importe: ${formatPrice(resolution.amount)}`}
         onClose={() => { if (!saving) setRegistering(false) }}

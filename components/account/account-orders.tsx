@@ -27,6 +27,7 @@ import {
 } from "@/lib/account/account-formatters"
 import {
   getClientOrderStatusBadge,
+  CUSTOMER_REFUND_REJECTED_DETAIL,
   getCuentaItemImage,
   getCustomerShippingMilestone,
   getOrderPaymentTotalDisplay,
@@ -243,7 +244,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             // Misma fuente de verdad que el detalle y Admin.
             const cancellationState = getOrderCancellationRefundState(order)
             const shippingLabel =
-              cancellationState === "refunded" || cancellationState === "refund_in_progress"
+              cancellationState === "refunded" || cancellationState === "refund_in_progress" || cancellationState === "refund_rejected"
                 ? ORDER_CANCELLATION_REFUND_LABELS[cancellationState].customer
                 : order.financial_status === "refunded"
                 ? "Dinero reintegrado"
@@ -265,6 +266,8 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                 ? "Pedido cancelado · el dinero ya fue reintegrado"
                 : cancellationState === "refund_in_progress"
                   ? "Pedido cancelado · BEYONIX está gestionando la devolución"
+                : cancellationState === "refund_rejected"
+                  ? CUSTOMER_REFUND_REJECTED_DETAIL
                 : order.financial_status === "refunded"
                 ? "Cancelado - dinero reintegrado"
                 : order.financial_status === "refund_pending"

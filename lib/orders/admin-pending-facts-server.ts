@@ -107,6 +107,8 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
           mode: result.mode,
           resolutionStatus: result.resolution ? getEffectiveFinancialResolutionStatus(result.resolution) : null,
           hasOptions: result.options.length > 0,
+          returnInspectionPending: result.returnInspectionRequired && !result.returnInspection && result.mode === "wizard",
+          returnDecision: result.returnInspection?.decision ?? null,
         }
       } catch {
         // Sin hechos financieros se usa la máquina de cancelación existente.
