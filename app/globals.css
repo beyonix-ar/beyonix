@@ -17239,12 +17239,6 @@ html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { 
 .beyonix-admin-main .dispatch-records-table th,
 .beyonix-admin-main .dispatch-records-table td { vertical-align: middle; }
 .beyonix-admin-main .dispatch-records-table td { height: 3.25rem; padding-block: 0.5rem; }
-.beyonix-admin-main .dispatch-records-table .dispatch-col-date { width: 8.5rem; }
-.beyonix-admin-main .dispatch-records-table .dispatch-col-order { width: 6rem; }
-.beyonix-admin-main .dispatch-records-table .dispatch-col-batch { width: 7.25rem; }
-.beyonix-admin-main .dispatch-records-table .dispatch-col-state { width: 8.75rem; }
-.beyonix-admin-main .dispatch-records-table .dispatch-col-units { width: 5.75rem; }
-.beyonix-admin-main .dispatch-records-table .dispatch-col-total { width: 8rem; }
 .beyonix-admin-main .dispatch-records-table .dispatch-actions-cell { width: 3.5rem; padding-inline: 0.375rem; overflow: visible; text-align: center; }
 .beyonix-admin-main .dispatch-records-table .dispatch-actions-cell > div { vertical-align: middle; }
 .beyonix-admin-main .dispatch-records-table .dispatch-center-cell { text-align: center; font-variant-numeric: tabular-nums; }

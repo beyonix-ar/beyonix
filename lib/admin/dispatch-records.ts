@@ -30,7 +30,7 @@ export const DISPATCH_RECORD_STATES: Record<DispatchRecordState, { label: string
   P: { label: "Pendiente", tone: "warning" },
   C: { label: "Confirmado", tone: "success" },
   // Entregado por BEYONIX al transportista; nunca "entregado al cliente".
-  E: { label: "Entregado al transporte", tone: "info" },
+  E: { label: "Entregado", tone: "info" },
   X: { label: "Cancelado", tone: "danger" },
 }
 const STATES = Object.keys(DISPATCH_RECORD_STATES) as DispatchRecordState[]
@@ -52,6 +52,11 @@ const TEXT_FILTERS = ["date", "order", "batch", "user", "state"] as const
 
 export function defaultDispatchRecordFilters(today = dispatchToday()): DispatchRecordFilters {
   return { date: today, manualDate: false, order: "", batch: "", user: "", state: "" }
+}
+
+/** Limpiar: todo vacío, incluida la fecha (sin fecha = todas las fechas). */
+export function clearedDispatchRecordFilters(): DispatchRecordFilters {
+  return { date: "", manualDate: true, order: "", batch: "", user: "", state: "" }
 }
 
 export function dispatchRecordParams(filters: DispatchRecordFilters, page: number) {

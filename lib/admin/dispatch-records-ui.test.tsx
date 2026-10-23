@@ -98,7 +98,7 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
 
     // Estados: letra + texto con la paleta BEYONIX.
     const tones = Object.fromEntries([...document.querySelectorAll<HTMLElement>(".dispatch-state-badge")].map((badge) => [badge.dataset.state, [badge.textContent, [...badge.classList].find((name) => name.startsWith("admin-ds-tone-"))]]))
-    assert.deepEqual(tones, { E: ["Entregado al transporte", "admin-ds-tone-info"], X: ["Cancelado", "admin-ds-tone-danger"], P: ["Pendiente", "admin-ds-tone-warning"], C: ["Confirmado", "admin-ds-tone-success"] }, "sin letras, misma paleta")
+    assert.deepEqual(tones, { E: ["Entregado", "admin-ds-tone-info"], X: ["Cancelado", "admin-ds-tone-danger"], P: ["Pendiente", "admin-ds-tone-warning"], C: ["Confirmado", "admin-ds-tone-success"] }, "sin letras, misma paleta")
 
     // Acciones: sólo consulta.
     assert.deepEqual(await menu("BX-1012"), ["Ver pedido"])
@@ -112,7 +112,7 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
     await change("N° PEDIDO", "BX-1015")
     assert.deepEqual(rows().map((item) => item.getAttribute("aria-label")), ["Ver Bulto - 0002"], "un pedido dentro de un Bulto lleva a su Bulto")
     await clear()
-    assert.equal(requests.at(-1)?.get("date"), today, "Limpiar vuelve a hoy")
+    assert.equal(requests.at(-1)?.toString(), "page=1", "Limpiar vacía todo, incluida la fecha")
     await change("N° BULTO", "Bulto-0002")
     assert.deepEqual(rows().map((item) => item.getAttribute("aria-label")), ["Ver Bulto - 0002"])
     await clear()
@@ -120,7 +120,7 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
     assert.equal(requests.at(-1)?.get("user"), "u-maria")
     assert.deepEqual(rows().map((item) => item.getAttribute("aria-label")), ["Ver Bulto - 0003", "Ver BX-1012", "Ver BX-1009"])
     await choose("ESTADO", "Pendiente")
-    assert.deepEqual([requests.at(-1)?.get("user"), requests.at(-1)?.get("state"), requests.at(-1)?.get("date")], ["u-maria", "P", today], "combinación")
+    assert.deepEqual([requests.at(-1)?.get("user"), requests.at(-1)?.get("state"), requests.at(-1)?.get("date")], ["u-maria", "P", null], "combinación")
     assert.deepEqual(rows().map((item) => item.getAttribute("aria-label")), ["Ver BX-1012", "Ver BX-1009"])
     const [yYear, yMonth, yDay] = yesterday.split("-")
     await change("FECHA", `${yDay}/${yMonth}/${yYear}`)

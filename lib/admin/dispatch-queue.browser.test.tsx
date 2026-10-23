@@ -21,7 +21,7 @@ function contrast(color: string, backgrounds: string[]) {
 const record = (value: Partial<DispatchRecord> & Pick<DispatchRecord, "kind" | "id" | "state">): DispatchRecord =>
   ({ code: null, displayNumber: null, at: "2026-10-22T16:54:00Z", actorId: "u", actorName: "María José Peña", units: 3, total: 50000, orderCount: 1, selectable: false, ...value })
 
-test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en light/dark", async () => {
+test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1280/1440 px en light/dark", async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dispatch-queue.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dispatch-queue-key"
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
@@ -52,7 +52,22 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
   try {
     const page = await browser.newPage()
     const badgeColors: Record<string, string[]> = {}
-    for (const theme of ["light", "dark"]) for (const width of [390, 430, 768, 1024, 1440]) {
+    // Columnas de datos equilibradas (sin hueco entre Usuario y Estado); Acciones angosta.
+    const assertBalancedTable = async (label: string) => {
+      const scroll = await page.locator(".dispatch-records-scroll").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
+      assert.ok(scroll, `${label}: la tabla entra completa`)
+      const columns = await page.locator(".dispatch-records-table thead th").evaluateAll((cells) => cells.map((cell) => [cell.textContent ?? "", cell.getBoundingClientRect().width] as const))
+      const data = columns.filter(([text]) => text && !/Seleccionar|Acciones/.test(text)).map(([, size]) => size)
+      assert.equal(data.length, 7)
+      assert.ok(Math.max(...data) - Math.min(...data) <= 1.5, `${label}: columnas parejas ${JSON.stringify(columns)}`)
+      assert.ok(columns.at(-1)![1] <= 60 && columns.at(-1)![1] < Math.min(...data) / 2, `${label}: acciones compacta`)
+      const clipped = await page.locator(".dispatch-record-row").first().evaluate((row) => [".dispatch-order-date", ".dispatch-state-badge", ".dispatch-order-total"].filter((selector) => {
+        const cell = row.querySelector<HTMLElement>(selector)!.closest("td")!
+        return cell.scrollWidth > cell.clientWidth + 1
+      }))
+      assert.deepEqual(clipped, [], `${label}: fecha, estado e importe sin recortar`)
+    }
+    for (const theme of ["light", "dark"]) for (const width of [390, 430, 768, 1024, 1280, 1440]) {
       const label = `${theme} ${width}`
       await page.setViewportSize({ width, height: 800 })
       await page.setContent(`<html data-admin-theme="${theme}"><head><style>${css}</style></head><body>${markup}</body></html>`)
@@ -95,8 +110,7 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.ok(centers.every(([button, text]) => Math.abs(button - text) <= 1), `${label}: texto de los selects centrado (${JSON.stringify(centers)})`)
       if (width >= 1024) assert.ok(Math.abs(centers[0][0] - (boxes[1]!.y + boxes[1]!.height / 2)) <= 1, `${label}: selects e inputs en la misma línea`)
       if (width >= 1024) {
-        const scroll = await page.locator(".dispatch-records-scroll").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)
-        assert.ok(scroll, `${label}: la tabla entra completa`)
+        await assertBalancedTable(label)
         // Unidades centradas e importe a la derecha; menú alineado en el centro de la fila.
         const align = await bundleRow.evaluate((element) => ["dispatch-order-units", "dispatch-order-total", "dispatch-actions-cell"].map((name) => getComputedStyle(element.querySelector(`.${name}`)!).textAlign))
         assert.deepEqual(align, ["center", "right", "center"])
@@ -110,7 +124,7 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.equal(color, theme === "light" ? "rgb(23, 36, 51)" : "rgb(248, 250, 252)")
       // Estados: sólo texto (sin letra), amarillo/verde/azul/rojo, legibles en cada tema.
       const states = await page.locator(".dispatch-state-badge").evaluateAll((badges) => badges.map((badge) => [badge.getAttribute("data-state") ?? "", getComputedStyle(badge).color, badge.textContent ?? ""]))
-      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Entregado al transporte", X: "Cancelado" })
+      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Entregado", X: "Cancelado" })
       assert.equal(await page.locator(".dispatch-state-letter").count(), 0)
       badgeColors[label] = [...new Set(states.map(([, value]) => value))]
       assert.equal(badgeColors[label].length, 4, `${label}: cuatro colores distintos`)
@@ -132,6 +146,13 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.match(await problem.getByRole("alert").innerText(), /Hay pedidos que tenés que retirar antes de entregar este Bulto\./)
       assert.equal(await problem.getByRole("button", { name: "Retirar del Bulto" }).count(), 1)
       assert.match(await ready.innerText(), /1 de 1 pedidos · Bulto finalizado ✓/)
+      if (width >= 1280) {
+        // Con el menú lateral real del admin, el área de la tabla es más angosta.
+        await page.setContent(`<html data-admin-theme="${theme}"><head><style>${css}</style></head><body>${markup.replace('<main class="beyonix-admin-main', '<div class="hidden lg:block"><aside class="beyonix-admin-sidebar admin-ds-sidebar flex h-full flex-col border-r"></aside></div><main class="beyonix-admin-main min-w-0 flex-1').replace('beyonix-admin-shell min-h-screen text-white', 'beyonix-admin-shell min-h-screen text-white lg:flex')}</body></html>`)
+        assert.ok(((await page.locator(".beyonix-admin-sidebar").boundingBox())?.width ?? 0) >= 250, `${label}: menú lateral visible`)
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${label} con menú lateral: la página no se ensancha`)
+        await assertBalancedTable(`${label} con menú lateral`)
+      }
     }
     assert.notDeepEqual(badgeColors["light 1440"], badgeColors["dark 1440"], "cada tema usa su variante de la paleta")
   } finally { await browser.close() }

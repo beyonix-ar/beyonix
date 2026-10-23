@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom"
 import { act } from "react"
 import { dispatchToday } from "./dispatch-records"
 
-test("Bulto entregado en la tabla única: historial con actores, paquetes y retirados; fecha y Limpiar conservan hoy", async () => {
+test("Bulto entregado en la tabla única: historial con actores, paquetes y retirados; Limpiar vacía todo, incluida la fecha", async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://dispatch-delivered.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "dispatch-delivered-key"
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin/despachos" })
@@ -13,7 +13,7 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
   Object.defineProperty(supabase.auth, "getSession", { configurable: true, value: async () => ({ data: { session: { access_token: "test-token" } }, error: null }) })
   const { createRoot } = await import("react-dom/client")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
-  const root = createRoot(dom.window.document.getElementById("root")!)
+  let root = createRoot(dom.window.document.getElementById("root")!)
   const today = dispatchToday()
   const batch = { id: 7, code: "DSP-20261018-007", display_number: 7, status: "handed_over", created_at: `${today}T09:00:00-03:00`, closed_at: `${today}T12:00:00-03:00`, handed_over_at: `${today}T16:00:00-03:00`, handed_over_by: "actor-c", verification_round: 1 }
   const record = { kind: "batch", id: 7, code: batch.code, displayNumber: 7, state: "E", at: batch.handed_over_at, actorId: "actor-c", actorName: "María", units: 3, total: 3599, orderCount: 2, selectable: false }
@@ -36,8 +36,8 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     await settle()
     assert.ok(requests.some((url) => url.includes(`date=${today}`)))
     const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0007"]')!
-    // E: entregado al transporte, nunca "Entregado" a secas; B: 2 pedidos (no "2 unidades").
-    assert.match(row.textContent ?? "", /Bulto - 0007María[\s\S]*Entregado al transporte/)
+    // E: el badge dice "Entregado"; B: 2 pedidos (no "2 unidades").
+    assert.equal(row.querySelector(".dispatch-state-badge")?.textContent, "Entregado")
     assert.equal(row.querySelector(".dispatch-order-units")?.textContent, "2 pedidos")
     assert.equal(dom.window.document.querySelectorAll('tr[aria-label="Ver BX-1012"], tr[aria-label="Ver BX-1013"]').length, 0, "A: sus pedidos no se duplican como filas")
     await act(async () => { row.click() })
@@ -62,7 +62,19 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     assert.match(dom.window.document.body.textContent ?? "", /No hay registros con estos filtros/)
     await act(async () => { dom.window.document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click() })
     await settle()
-    assert.ok(requests.at(-1)?.includes(`date=${today}`))
+    // Limpiar: todo vacío, fecha incluida; la consulta va sin filtros (todas las fechas).
+    const cleared = () => {
+      assert.equal(new URL(requests.at(-1)!, "https://beyonix.test").search, "?page=1")
+      assert.equal(dom.window.document.querySelector<HTMLInputElement>('input[aria-label="FECHA"]')?.value, "")
+      assert.equal(dom.window.location.search, "")
+    }
+    cleared()
+    // Refrescar no vuelve a inyectar la fecha anterior ni la de hoy.
+    await act(async () => root.unmount())
+    root = createRoot(dom.window.document.getElementById("root")!)
+    await act(async () => { root.render(<AdminDispatches />) })
+    await settle()
+    cleared()
   } finally {
     await act(async () => root.unmount())
     supabase.auth.stopAutoRefresh()

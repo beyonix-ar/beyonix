@@ -11,7 +11,7 @@ import {
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { holdBundleLabel, orderCode, type BatchDispatchDetail, type DispatchHold } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
-import { defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
+import { clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
 import { dispatchLocationFromSearch, dispatchLocationHref, parseCancellationReturn, parseDispatchLocation, type DispatchLocation } from "@/lib/admin/dispatch-location"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchFilterBar } from "./dispatch-filter-bar"
@@ -259,7 +259,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       </div>)}
     </section>}
 
-    {listView && <DispatchFilterBar filters={filters} users={board?.users ?? []} onChange={changeFilters} onClear={() => { setFilters(defaultDispatchRecordFilters()); setPage(1) }} />}
+    {listView && <DispatchFilterBar filters={filters} users={board?.users ?? []} onChange={changeFilters} onClear={() => { setFilters(clearedDispatchRecordFilters()); setPage(1) }} />}
     {error && <div role="alert" className="rounded-xl border border-red-500/35 bg-red-950 p-3 text-sm text-white">{error}</div>}
     {notice && <p role="status" className="flex items-start gap-2 text-sm font-bold text-emerald-300"><CheckCircle2 className="mt-0.5 size-4 shrink-0" />{notice}</p>}
     {loading && <p role="status" className="text-sm text-white/70">Cargando…</p>}

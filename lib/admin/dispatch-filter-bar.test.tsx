@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { JSDOM } from "jsdom"
 import { act, useState } from "react"
-import { defaultDispatchRecordFilters } from "./dispatch-records"
+import { clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchRecordParams, restoreDispatchRecordsView } from "./dispatch-records"
 
 test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nativos), sin Equipo y Limpiar", async () => {
   const dom = new JSDOM("<!doctype html><div id='root'></div>", { url: "https://beyonix.test/admin/despachos" })
@@ -16,7 +16,7 @@ test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nati
   function Wrapper() {
     const [current, setCurrent] = useState(filters)
     filters = current
-    return <DispatchFilterBar filters={current} users={users} onChange={(patch) => setCurrent((value) => ({ ...value, ...patch }))} onClear={() => setCurrent(defaultDispatchRecordFilters(today))} />
+    return <DispatchFilterBar filters={current} users={users} onChange={(patch) => setCurrent((value) => ({ ...value, ...patch }))} onClear={() => setCurrent(clearedDispatchRecordFilters())} />
   }
   const document = dom.window.document
   const change = async (label: string, value: string) => {
@@ -45,18 +45,36 @@ test("filtros: fecha BEYONIX en hoy, Pedido/Bulto, selects compartidos (sin nati
     await change("N° BULTO", "Bulto-0002")
     await change("FECHA", "15/10/2026")
     await choose("USUARIO", "María Ñúñez")
-    await choose("ESTADO", "Entregado al transporte")
+    await choose("ESTADO", "Entregado")
     assert.deepEqual(filters, { date: "2026-10-15", manualDate: true, order: "BX-1012", batch: "Bulto-0002", user: "u-1", state: "E" }, "fecha elegida a mano")
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="ESTADO"]')!.click())
     assert.deepEqual([...document.querySelectorAll('[role="option"]')].map((item) => item.textContent),
-      ["Todos los estados", "Pendiente", "Confirmado", "Entregado al transporte", "Cancelado"], "sin letras y sin Anulado")
+      ["Todos los estados", "Pendiente", "Confirmado", "Entregado", "Cancelado"], "sin letras y sin Anulado")
     await act(async () => { document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true })) })
-    assert.equal(document.querySelector('button[aria-label="ESTADO"]')?.textContent, "Entregado al transporte")
+    assert.equal(document.querySelector('button[aria-label="ESTADO"]')?.textContent, "Entregado")
     assert.equal(document.querySelector('button[aria-label="ESTADO"]')?.classList.contains("is-placeholder"), false)
     await act(async () => document.querySelector<HTMLButtonElement>(".dispatch-filter-clear")!.click())
-    assert.deepEqual(filters, defaultDispatchRecordFilters(today))
+    // "Limpiar" deja absolutamente todos los filtros vacíos, incluida fecha.
+    assert.deepEqual(filters, clearedDispatchRecordFilters())
+    assert.deepEqual([filters.date, filters.order, filters.batch, filters.user, filters.state], ["", "", "", "", ""])
+    assert.deepEqual([...search.querySelectorAll("input")].map((input) => input.value), ["", "", ""], "Fecha, N° Pedido y N° Bulto vacíos")
+    assert.deepEqual(["USUARIO", "ESTADO"].map((label) => {
+      const button = document.querySelector(`button[aria-label="${label}"]`)!
+      return [button.textContent, button.classList.contains("is-placeholder")]
+    }), [["USUARIO", true], ["ESTADO", true]], "Usuario y Estado vacíos")
+    assert.equal(dispatchRecordParams(filters, 1), "page=1", "sin fecha ni filtros ocultos")
   } finally {
     await act(async () => root.unmount())
     dom.window.close()
   }
+})
+
+test("Limpiar deja absolutamente todos los filtros vacíos, incluida fecha, y refrescar no la reinyecta", () => {
+  const today = "2026-10-22"
+  const cleared = clearedDispatchRecordFilters()
+  assert.deepEqual([cleared.date, cleared.order, cleared.batch, cleared.user, cleared.state], ["", "", "", "", ""])
+  assert.equal(dispatchRecordParams(cleared, 1), "page=1")
+  const restored = restoreDispatchRecordsView(JSON.stringify({ filters: cleared, page: 1, today }), today)
+  assert.deepEqual(restored.filters, cleared, "la sesión guardada conserva la fecha vacía")
+  assert.notDeepEqual(restored.filters, defaultDispatchRecordFilters(today))
 })
