@@ -218,6 +218,7 @@ const TEST_FILES = [
   "lib/customer-store-benefits.test.ts",
   "lib/orders/customer-order-list.test.ts",
   "lib/account/customer-invoice-viewer.test.ts",
+  "lib/account/customer-order-documents.test.ts",
   "lib/account/account-utils.test.ts",
   "components/account/account-orders-payment-status-contract.test.ts",
   "lib/admin/admin-server-boundaries.test.ts",

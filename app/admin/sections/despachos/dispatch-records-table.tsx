@@ -20,8 +20,11 @@ export function DispatchStateBadge({ state }: { state: DispatchRecordState }) {
 
 const recordName = (record: DispatchRecord) => record.kind === "order" ? dispatchRecordOrderLabel(record) : dispatchRecordBatchLabel(record)
 
-/** Unidades del pedido; en un Bulto, la cantidad de pedidos que contiene. */
-const recordQuantity = (record: DispatchRecord) => record.kind === "batch" ? record.orderCount : record.units
+/** Un pedido se mide en unidades; un Bulto, en pedidos (nunca se mezclan). */
+export const dispatchRecordQuantityLabel = (record: Pick<DispatchRecord, "kind" | "orderCount" | "units">) =>
+  record.kind === "batch"
+    ? `${record.orderCount} ${record.orderCount === 1 ? "pedido" : "pedidos"}`
+    : `${record.units} ${record.units === 1 ? "unidad" : "unidades"}`
 
 /**
  * Tabla de consulta: cada fila es un pedido sin Bulto o un Bulto completo. Las
@@ -40,12 +43,11 @@ export function DispatchRecordsTable({ rows, selected, onToggle, onOpen }: {
         {selectable && <th scope="col" className="dispatch-order-check"><span className="sr-only">Seleccionar para Bulto</span></th>}
         <th scope="col" className="dispatch-col-date">Fecha y hora</th><th scope="col" className="dispatch-col-order">N° Pedido</th><th scope="col" className="dispatch-col-batch">N° Bulto</th>
         <th scope="col">Usuario</th><th scope="col" className="dispatch-col-state">Estado</th>
-        <th scope="col" className="dispatch-col-units dispatch-center-cell">Unidades</th><th scope="col" className="dispatch-col-total dispatch-number-cell">Importe total</th><th scope="col" className="dispatch-actions-cell"><span className="sr-only">Acciones</span></th>
+        <th scope="col" className="dispatch-col-units dispatch-center-cell">Cantidad</th><th scope="col" className="dispatch-col-total dispatch-number-cell">Importe total</th><th scope="col" className="dispatch-actions-cell"><span className="sr-only">Acciones</span></th>
       </tr></thead>
       <tbody>{rows.map((row) => {
         const name = recordName(row)
         const open = () => onOpen(row)
-        const quantity = recordQuantity(row)
         return <tr key={`${row.kind}:${row.id}`} className="dispatch-order-row dispatch-record-row" data-kind={row.kind} tabIndex={0} aria-label={`Ver ${name}`}
           onClick={open} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); open() } }}>
           {selectable && <td className="dispatch-order-check" onClick={(event) => event.stopPropagation()}>{row.selectable && <input type="checkbox" className="size-5" aria-label={`Seleccionar ${name} para un Bulto`} checked={selected.has(row.id)} onChange={() => onToggle(row.id)} onKeyDown={(event) => event.stopPropagation()} />}</td>}
@@ -54,8 +56,8 @@ export function DispatchRecordsTable({ rows, selected, onToggle, onOpen }: {
           <td className={`dispatch-order-code dispatch-record-batch ${row.kind === "batch" ? "" : "is-empty"}`} data-label="N° Bulto">{dispatchRecordBatchLabel(row)}</td>
           <td className="dispatch-record-user" data-label="Usuario" title={row.actorName ?? undefined}>{row.actorName ?? "—"}</td>
           <td className="dispatch-order-status" data-label="Estado"><DispatchStateBadge state={row.state} /></td>
-          <td className="dispatch-order-units dispatch-center-cell" data-label="Unidades" title={row.kind === "batch" ? `${quantity} ${quantity === 1 ? "pedido" : "pedidos"} en el Bulto` : undefined}>
-            {quantity}<span className="dispatch-mobile-only">{row.kind === "batch" ? ` ${quantity === 1 ? "pedido" : "pedidos"}` : " u."}</span>
+          <td className="dispatch-order-units dispatch-center-cell" data-label="Cantidad" title={row.kind === "batch" ? `${row.units} unidades en total` : undefined}>
+            {dispatchRecordQuantityLabel(row)}
           </td>
           <td className="dispatch-order-total dispatch-number-cell" data-label="Importe total">{money(row.total)}</td>
           <td className="dispatch-actions-cell" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>

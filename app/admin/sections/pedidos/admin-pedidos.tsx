@@ -588,6 +588,8 @@ function needsShippingReminder(pedido: SupabasePedido) {
     ) &&
     pedido.invoice_status === "authorized" &&
     Boolean(pedido.invoice_cae) &&
+    // Ya entregado al transportista: el envío no está pendiente aunque el estado siga en "pagado".
+    !pedido.andreani_handed_over_at &&
     ![
       "preparado",
       ...SHIPPING_DISPATCHED_STATUSES,

@@ -7,6 +7,7 @@ import {
   FileText,
   MessageCircle,
   Package,
+  ReceiptText,
   ShoppingBag,
   Truck,
 } from "lucide-react"
@@ -20,6 +21,7 @@ import {
 import { AccountViewFrame } from "@/components/account/account-view-frame"
 import { TrackingCopyButton } from "@/components/account/account-order-components"
 import { TransferReservationNotice } from "@/components/account/transfer-reservation-notice"
+import { InvoiceViewerModal } from "@/components/account/invoice-viewer-modal"
 import {
   formatCuentaPrice,
   formatOrderCardDate,
@@ -27,6 +29,8 @@ import {
 } from "@/lib/account/account-formatters"
 import {
   getClientOrderStatusBadge,
+  isCustomerCreditNoteAvailable,
+  isInvoiceAvailable,
   CUSTOMER_REFUND_REJECTED_DETAIL,
   getCuentaItemImage,
   getCustomerShippingMilestone,
@@ -42,26 +46,12 @@ import {
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { supabase } from "@/lib/supabase/client"
-import { isClaimOrderDelivered } from "@/lib/order-claims"
 import {
   countUnreadBeyonixMessages,
   formatUnreadBadgeCount,
-  selectCustomerDisplayedClaim,
+  selectCustomerHistoryClaim,
 } from "@/lib/orders/customer-claim-unread"
-import type {
-  CustomerOrderSummary,
-  CustomerOrderSummaryClaim,
-} from "@/lib/supabase/types"
-
-function getLatestCustomerClaim(claims: CustomerOrderSummaryClaim[] = []) {
-  return claims
-    .filter(
-      (claim) =>
-        claim.failure_type !== "cancelar_compra" &&
-        claim.failure_type !== "consulta_pedido",
-    )
-    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))[0]
-}
+import type { CustomerOrderSummary } from "@/lib/supabase/types"
 
 export function MisOrdenes({ onBack }: { onBack: () => void }) {
   const { user } = useAuth()
@@ -78,6 +68,8 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
   const [serverNow, setServerNow] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  // Visor existente (mismo endpoint y titularidad que el detalle): ver antes de descargar.
+  const [documentViewer, setDocumentViewer] = useState<{ orderId: number; type: "invoice" | "credit_note" } | null>(null)
 
   const loadOrders = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
@@ -285,14 +277,12 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                 : hasTrackingNumber
                   ? null
                   : "Te avisaremos cuando el pedido esté en camino"
-            const existingClaim = getLatestCustomerClaim(order.order_claims)
-            // Respuestas de BEYONIX sin leer en el reclamo que abre "Ver
-            // reclamo" (misma selección que la página del reclamo).
-            const unreadClaimMessages = countUnreadBeyonixMessages(
-              selectCustomerDisplayedClaim(order.order_claims ?? [], {
-                canCreatePostDeliveryClaim: isClaimOrderDelivered(order),
-              }),
-            )
+            // Reclamo o conversación (también una consulta cerrada o de un
+            // pedido cancelado): "Ver reclamo" abre exactamente esa.
+            const existingClaim = selectCustomerHistoryClaim(order.order_claims ?? [])
+            const unreadClaimMessages = countUnreadBeyonixMessages(existingClaim)
+            const invoiceAvailable = isInvoiceAvailable(order)
+            const creditNoteAvailable = isCustomerCreditNoteAvailable(order)
             const unreadClaimBadge = formatUnreadBadgeCount(unreadClaimMessages)
 
             return (
@@ -365,11 +355,27 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
 
                   <TransferReservationNotice order={order} serverNow={serverNow} className="mt-3" />
 
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="customer-order-card-actions mt-3 flex flex-wrap gap-2" data-testid="customer-order-actions">
                     <BeyonixButton type="button" size="sm" onClick={() => router.push(`/cuenta/compras/${order.id}`)}>
                       <FileText className="size-4" />
                       Ver compra
                     </BeyonixButton>
+                    {invoiceAvailable && (
+                      <BeyonixButton type="button" size="sm" variant="secondary"
+                        aria-label={`Ver factura del pedido ${formatPublicOrderId(order.id)}`}
+                        onClick={() => setDocumentViewer({ orderId: order.id, type: "invoice" })}>
+                        <ReceiptText className="size-4" />
+                        Ver factura
+                      </BeyonixButton>
+                    )}
+                    {creditNoteAvailable && (
+                      <BeyonixButton type="button" size="sm" variant="secondary"
+                        aria-label={`Ver nota de crédito del pedido ${formatPublicOrderId(order.id)}`}
+                        onClick={() => setDocumentViewer({ orderId: order.id, type: "credit_note" })}>
+                        <ReceiptText className="size-4" />
+                        Ver nota de crédito
+                      </BeyonixButton>
+                    )}
                     {existingClaim && (
                       <span className="customer-claim-button-wrap">
                         <BeyonixButton
@@ -381,7 +387,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                               ? ` (${unreadClaimMessages} ${unreadClaimMessages === 1 ? "mensaje nuevo" : "mensajes nuevos"} de BEYONIX)`
                               : ""
                           }`}
-                          onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
+                          onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda?claim=${existingClaim.id}`)}
                         >
                           <MessageCircle className="size-4" />
                           Ver reclamo
@@ -404,6 +410,15 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
             )
           })}
         </div>
+      )}
+      {documentViewer && (
+        <InvoiceViewerModal
+          title={documentViewer.type === "credit_note" ? "Nota de crédito" : "Factura"}
+          orderId={documentViewer.orderId}
+          requestUrl={documentViewer.type === "credit_note" ? `/api/orders/${documentViewer.orderId}/invoice?type=credit_note` : undefined}
+          documentLabel={documentViewer.type === "credit_note" ? "nota de crédito" : undefined}
+          onClose={() => setDocumentViewer(null)}
+        />
       )}
     </AccountViewFrame>
   )

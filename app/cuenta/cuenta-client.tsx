@@ -63,6 +63,7 @@ import {
   getCustomerRefundSummary,
   getCuentaItemImage,
   getOrderPaymentTotalDisplay,
+  isCustomerCreditNoteAvailable,
   isInvoiceAvailable,
   isInvoiceAwaitingRetry,
   isInvoiceGenerating,
@@ -703,10 +704,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const invoiceAvailable = isInvoiceAvailable(order)
   const invoiceGenerating = isInvoiceGenerating(order)
   const invoiceAwaitingRetry = isInvoiceAwaitingRetry(order)
-  const creditNoteAvailable =
-    isOrderDetailInvoiced(order) &&
-    order.credit_note_status === "authorized" &&
-    Boolean(order.credit_note_number && order.credit_note_point && order.credit_note_cae)
+  const creditNoteAvailable = isCustomerCreditNoteAvailable(order)
   const creditNoteSection = creditNoteAvailable ? (
     <section className="customer-credit-note-surface rounded-xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] px-3.5 py-3 shadow-[0_14px_36px_rgba(0,0,0,0.16)]" aria-label="Nota de crédito emitida">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1450,6 +1448,9 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
 export function CompraAyudaClient({ orderId }: { orderId: number }) {
   const { user, isLoading } = useAuth()
   const router = useRouter()
+  // ?claim=<id> desde "Ver reclamo" de Mis compras: esa conversación (validada contra los reclamos del propio pedido).
+  const requestedClaimId = Number(useSearchParams().get("claim"))
+  const focusClaimId = Number.isSafeInteger(requestedClaimId) && requestedClaimId > 0 ? requestedClaimId : null
   const { backTo } = useBackNavigation()
   const authenticatedUserId = user?.id ?? ""
   const authenticatedUserEmail = user?.email ?? ""
@@ -1521,9 +1522,11 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
     return <main className="min-h-screen bg-[#05070A] px-4 pt-28"><div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-[#0D1117] p-6 text-center"><p className="text-sm font-bold text-white">{error || "No encontramos esta compra."}</p><button type="button" onClick={() => router.push(`/cuenta/compras/${orderId}`)} className="mt-4 h-10 rounded-lg bg-[#112A43] px-4 text-xs font-black text-white">Volver a la compra</button></div></main>
   }
 
+  // Un pedido cancelado con una conversación previa la sigue mostrando (historial).
+  const hasConversation = (order.order_claims ?? []).some((claim) => claim.failure_type !== "cancelar_compra")
   if (
     cancellationCompleted ||
-    (order.estado ?? "").toLowerCase() === "cancelado"
+    ((order.estado ?? "").toLowerCase() === "cancelado" && !hasConversation)
   ) {
     return (
       <main className="flex min-h-screen items-start justify-center bg-[var(--account-background)] px-4 pt-28 font-heading sm:pt-36">
@@ -1579,6 +1582,7 @@ export function CompraAyudaClient({ orderId }: { orderId: number }) {
             <CustomerClaimExperience
               order={order}
               claimsVerified
+              focusClaimId={focusClaimId}
               onOrderCancelled={() => setCancellationCompleted(true)}
             />
           </section>

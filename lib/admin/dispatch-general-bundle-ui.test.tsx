@@ -167,7 +167,7 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(qr(), null, "sin recargar: deja el control del Bulto")
     assert.equal(dom.window.location.search, "?batch=5")
     assert.equal(boardStates.at(-1), "E", "la tabla se refresca sin recargar")
-    assert.match(text(), /Confirmación: María Peña[\s\S]*Entregado: 16\/10\/2026 - 16:00/)
+    assert.match(text(), /Confirmación: María Peña[\s\S]*Entregado al transporte: 16\/10\/2026 - 16:00/)
 
     await act(async () => { button(dom, "Volver")!.click() })
     await settle(300)
@@ -301,7 +301,7 @@ test("Bultos: varios cancelados se listan para retirar y al resolver el último 
     const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0001"]')!
     // La fila sólo nombra al Bulto (3 pedidos en Unidades); las cancelaciones se avisan arriba de la tabla.
     assert.equal(row.querySelector(".dispatch-record-batch")?.textContent, "Bulto - 0001")
-    assert.equal(row.querySelector(".dispatch-order-units")?.firstChild?.textContent, "3")
+    assert.equal(row.querySelector(".dispatch-order-units")?.textContent, "3 pedidos")
     assert.equal(dom.window.document.querySelectorAll('section[aria-label="Cancelaciones que requieren acción"] [role="alert"]').length, 3)
     assert.doesNotMatch(dom.window.document.body.textContent ?? "", /Requiere revisión|Verificados/)
     await act(async () => { row.click() })

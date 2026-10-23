@@ -61,9 +61,11 @@ test("el badge cuenta el mismo reclamo que muestra la página del reclamo", () =
   assert.equal(selectCustomerDisplayedClaim([help], { canCreatePostDeliveryClaim: true }), undefined)
   assert.equal(selectCustomerDisplayedClaim([help], { canCreatePostDeliveryClaim: false })?.id, 1)
   const page = readSource("../../components/claims/customer-claim-experience.tsx")
-  assert.match(page, /const claim = useMemo\(\s*\(\) => selectCustomerDisplayedClaim\(claims, \{ canCreatePostDeliveryClaim \}\),/)
+  assert.match(page, /const claim = useMemo\(\s*\(\) => selectCustomerDisplayedClaim\(claims, \{ canCreatePostDeliveryClaim, preferredClaimId: focusClaimId \}\),/)
   const orders = readSource("../../components/account/account-orders.tsx")
-  assert.match(orders, /selectCustomerDisplayedClaim\(order\.order_claims \?\? \[\], \{\s*canCreatePostDeliveryClaim: isClaimOrderDelivered\(order\),/)
+  // Mis compras cuenta el mismo reclamo que abre "Ver reclamo" (?claim=<id>, que la página prefiere).
+  assert.match(orders, /const existingClaim = selectCustomerHistoryClaim\(order\.order_claims \?\? \[\]\)\s*const unreadClaimMessages = countUnreadBeyonixMessages\(existingClaim\)/)
+  assert.match(orders, /\/ayuda\?claim=\$\{existingClaim\.id\}/)
 })
 
 // ────────────────────────────── base real (PGlite) ──────────────────────────

@@ -83,22 +83,22 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
     assert.ok([...document.querySelectorAll("button")].some((item) => item.textContent?.includes("Actualizar")))
     assert.deepEqual([requests[0].get("date"), requests[0].get("openAllDates")], [today, "true"])
     assert.deepEqual([...document.querySelectorAll('table[aria-label="Registros de despachos"] thead th')].map((th) => th.textContent).filter(Boolean),
-      ["Seleccionar para Bulto", "Fecha y hora", "N° Pedido", "N° Bulto", "Usuario", "Estado", "Unidades", "Importe total", "Acciones"], "sin columna Equipo")
+      ["Seleccionar para Bulto", "Fecha y hora", "N° Pedido", "N° Bulto", "Usuario", "Estado", "Cantidad", "Importe total", "Acciones"], "sin columna Equipo")
     assert.deepEqual(rows().map((item) => item.getAttribute("aria-label")), ["Ver Bulto - 0003", "Ver BX-1030", "Ver Bulto - 0002", "Ver BX-1007", "Ver BX-1012", "Ver BX-1009"], "el pendiente de ayer sigue; el entregado de ayer no")
 
     // Pedido suelto: N° Pedido y "—" en Bulto. Bulto: "—" en Pedido, sumas del conjunto.
     const [day, month, year] = [today.slice(8, 10), today.slice(5, 7), today.slice(0, 4)]
-    assert.deepEqual(cells(row("BX-1012")), { "Fecha y hora": `${day}/${month}/${year} 09:00`, "N° Pedido": "BX-1012", "N° Bulto": "—", Usuario: "María Ñúñez", Estado: "Pendiente", Unidades: "3 u.", "Importe total": "$ 30.000,00" })
-    // Bulto: sólo su nombre; Unidades = cantidad de pedidos (el sufijo sólo se ve en mobile).
+    assert.deepEqual(cells(row("BX-1012")), { "Fecha y hora": `${day}/${month}/${year} 09:00`, "N° Pedido": "BX-1012", "N° Bulto": "—", Usuario: "María Ñúñez", Estado: "Pendiente", Cantidad: "3 unidades", "Importe total": "$ 30.000,00" })
+    // B: un Bulto se mide en pedidos, nunca en "unidades" (el pedido sí, con su unidad explícita).
     const bundle = cells(row("Bulto - 0002"))
-    assert.deepEqual([bundle["N° Pedido"], bundle["N° Bulto"], bundle.Unidades, bundle["Importe total"], bundle.Usuario], ["—", "Bulto - 0002", "10 pedidos", "$ 100.000,00", "Juan"])
-    assert.equal(row("Bulto - 0002").querySelector(".dispatch-order-units")?.firstChild?.textContent, "10")
+    assert.deepEqual([bundle["N° Pedido"], bundle["N° Bulto"], bundle.Cantidad, bundle["Importe total"], bundle.Usuario], ["—", "Bulto - 0002", "10 pedidos", "$ 100.000,00", "Juan"])
+    assert.equal(row("Bulto - 0002").querySelector(".dispatch-order-units")?.textContent, "10 pedidos")
     const table = document.querySelector('table[aria-label="Registros de despachos"]')!.textContent ?? ""
     for (const member of [1013, 1015, 1022, 1023]) assert.doesNotMatch(table, new RegExp(`BX-${member}`), "los pedidos del Bulto no aparecen sueltos")
 
     // Estados: letra + texto con la paleta BEYONIX.
     const tones = Object.fromEntries([...document.querySelectorAll<HTMLElement>(".dispatch-state-badge")].map((badge) => [badge.dataset.state, [badge.textContent, [...badge.classList].find((name) => name.startsWith("admin-ds-tone-"))]]))
-    assert.deepEqual(tones, { E: ["Entregado", "admin-ds-tone-info"], X: ["Cancelado", "admin-ds-tone-danger"], P: ["Pendiente", "admin-ds-tone-warning"], C: ["Confirmado", "admin-ds-tone-success"] }, "sin letras, misma paleta")
+    assert.deepEqual(tones, { E: ["Entregado al transporte", "admin-ds-tone-info"], X: ["Cancelado", "admin-ds-tone-danger"], P: ["Pendiente", "admin-ds-tone-warning"], C: ["Confirmado", "admin-ds-tone-success"] }, "sin letras, misma paleta")
 
     // Acciones: sólo consulta.
     assert.deepEqual(await menu("BX-1012"), ["Ver pedido"])

@@ -155,7 +155,7 @@ test("detalle del cliente cancelado: timeline final, bloque de reintegro, NC rea
   // Misma fuente que Admin (credit-note-state): incluye el caso heredado.
   assert.match(cancelledBranch, /\["required", "legacy_required", "processing"\]\.includes\(getCreditNoteState\(\{ \.\.\.order, order_credit_notes: undefined \}\)\.state\)/)
   assert.match(cancelledBranch, /Nota de crédito pendiente de emisión/)
-  assert.match(client, /order\.credit_note_status === "authorized" &&/)
+  assert.match(client, /const creditNoteAvailable = isCustomerCreditNoteAvailable\(order\)/)
   // Una pestaña abierta antes del pago/cancelación se actualiza al volver.
   assert.match(client, /document\.addEventListener\("visibilitychange", reloadWhenVisible\)/)
 })

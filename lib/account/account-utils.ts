@@ -85,8 +85,21 @@ export type DeliveryAddressDraft = {
   componentesDeDireccion: []
 }
 
-export function isInvoiceAvailable(order: SupabasePedido) {
+export function isInvoiceAvailable(order: Pick<SupabasePedido, "invoice_status">) {
   return order.invoice_status === "authorized"
+}
+
+/**
+ * NC visible para el cliente: autorizada en ARCA sobre una factura autorizada
+ * (el endpoint ?type=credit_note vuelve a exigir titularidad y ambas
+ * autorizaciones). Compartida por el detalle y "Mis compras".
+ */
+export function isCustomerCreditNoteAvailable(
+  order: Pick<SupabasePedido, "invoice_status" | "credit_note_status" | "credit_note_number" | "credit_note_point" | "credit_note_cae">,
+) {
+  return isInvoiceAvailable(order) &&
+    order.credit_note_status === "authorized" &&
+    Boolean(order.credit_note_number && order.credit_note_point && order.credit_note_cae)
 }
 
 export function isInvoiceGenerating(order: SupabasePedido) {

@@ -41,9 +41,12 @@ export interface ClaimUnreadSource {
  */
 export function selectCustomerDisplayedClaim<T extends ClaimUnreadSource>(
   claims: readonly T[],
-  { canCreatePostDeliveryClaim }: { canCreatePostDeliveryClaim: boolean },
+  { canCreatePostDeliveryClaim, preferredClaimId = null }: { canCreatePostDeliveryClaim: boolean; preferredClaimId?: number | null },
 ): T | undefined {
   const visible = claims.filter((claim) => claim.failure_type !== CANCELLATION_FAILURE_TYPE)
+  // "Ver reclamo" de Mis compras abre esa conversación aunque esté cerrada (historial).
+  const preferred = preferredClaimId === null ? undefined : visible.find((claim) => claim.id === preferredClaimId)
+  if (preferred) return preferred
   const displayable = canCreatePostDeliveryClaim
     ? visible.filter(
         (claim) =>
@@ -55,6 +58,18 @@ export function selectCustomerDisplayedClaim<T extends ClaimUnreadSource>(
     displayable.find((claim) => ACTIVE_CLAIM_STATUSES.includes(claim.status ?? "")) ??
     displayable[0]
   )
+}
+
+/**
+ * Reclamo o conversación que abre "Ver reclamo" en Mis compras: el activo o,
+ * si no hay, el más reciente -- incluida una consulta cerrada, con el pedido
+ * cancelado o no. Nunca la solicitud de cancelación (no es una conversación).
+ */
+export function selectCustomerHistoryClaim<T extends ClaimUnreadSource & { created_at?: string | null }>(claims: readonly T[]): T | undefined {
+  const visible = claims
+    .filter((claim) => claim.failure_type !== CANCELLATION_FAILURE_TYPE)
+    .sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""))
+  return visible.find((claim) => ACTIVE_CLAIM_STATUSES.includes(claim.status ?? "")) ?? visible[0]
 }
 
 function isBeyonixMessage(message: ClaimUnreadMessage) {

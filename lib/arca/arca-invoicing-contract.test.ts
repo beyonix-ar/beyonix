@@ -81,7 +81,7 @@ test("cliente: sólo ve y descarga una factura AUTORIZADA de un pedido propio", 
   assert.match(route, /order\.invoice_status !== "authorized"/)
   assert.match(route, /"Cache-Control": "private, no-store"/)
   const utils = read("lib/account/account-utils.ts")
-  assert.match(utils, /export function isInvoiceAvailable\(order: SupabasePedido\) \{\s*return order\.invoice_status === "authorized"/)
+  assert.match(utils, /export function isInvoiceAvailable\(order: Pick<SupabasePedido, "invoice_status">\) \{\s*return order\.invoice_status === "authorized"/)
 })
 
 test("Admin: estado fiscal separado del pago (pendiente / facturando / error con reintento / sin encolar)", () => {

@@ -438,11 +438,14 @@ export function CustomerClaimExperience({
   order,
   initialProblem,
   claimsVerified = false,
+  focusClaimId = null,
   onOrderCancelled,
 }: {
   order: SupabasePedido
   initialProblem?: ClaimProblemId
   claimsVerified?: boolean
+  /** Conversación elegida desde Mis compras (también cerrada): sólo se muestra si es de este pedido. */
+  focusClaimId?: number | null
   onOrderCancelled?: () => void
 }) {
   const router = useRouter()
@@ -542,8 +545,8 @@ export function CustomerClaimExperience({
   // (lib/orders/customer-claim-unread.ts): el reclamo activo o el primero
   // visible.
   const claim = useMemo(
-    () => selectCustomerDisplayedClaim(claims, { canCreatePostDeliveryClaim }),
-    [canCreatePostDeliveryClaim, claims],
+    () => selectCustomerDisplayedClaim(claims, { canCreatePostDeliveryClaim, preferredClaimId: focusClaimId }),
+    [canCreatePostDeliveryClaim, claims, focusClaimId],
   )
   const messageCount = claim?.order_claim_messages?.length ?? 0
   const latestBeyonixMessage = getLatestBeyonixMessage(claim)

@@ -61,11 +61,11 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.equal(await tableRows.count(), 5)
       const first = tableRows.first()
       assert.match(await first.innerText(), /BX-1012[\s\S]*Pendiente[\s\S]*\$\s?50\.000/i)
-      // Bulto: sólo su nombre; la cantidad de pedidos va en Unidades. Pedido: sus unidades.
+      // Bulto: sólo su nombre y la cantidad de pedidos; pedido: sus unidades (siempre con su unidad).
       const bundleRow = tableRows.nth(2)
       assert.equal((await bundleRow.locator(".dispatch-record-batch").innerText()).trim(), "Bulto - 0002")
-      assert.match((await bundleRow.locator(".dispatch-order-units").innerText()).trim(), width >= 640 ? /^10$/ : /^10 pedidos$/)
-      assert.match((await first.locator(".dispatch-order-units").innerText()).trim(), width >= 640 ? /^3$/ : /^3 u\.$/)
+      assert.match((await bundleRow.locator(".dispatch-order-units").innerText()).trim(), /^10 pedidos$/)
+      assert.match((await first.locator(".dispatch-order-units").innerText()).trim(), /^3 unidades$/)
       assert.match(await bundleRow.innerText(), /\$\s?100\.000/)
       // Sin Equipo: ni columna ni filtro.
       assert.equal(await page.locator(".dispatch-record-device, .dispatch-col-device, button[aria-label=EQUIPO]").count(), 0)
@@ -110,7 +110,7 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.equal(color, theme === "light" ? "rgb(23, 36, 51)" : "rgb(248, 250, 252)")
       // Estados: sólo texto (sin letra), amarillo/verde/azul/rojo, legibles en cada tema.
       const states = await page.locator(".dispatch-state-badge").evaluateAll((badges) => badges.map((badge) => [badge.getAttribute("data-state") ?? "", getComputedStyle(badge).color, badge.textContent ?? ""]))
-      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Entregado", X: "Cancelado" })
+      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Entregado al transporte", X: "Cancelado" })
       assert.equal(await page.locator(".dispatch-state-letter").count(), 0)
       badgeColors[label] = [...new Set(states.map(([, value]) => value))]
       assert.equal(badgeColors[label].length, 4, `${label}: cuatro colores distintos`)

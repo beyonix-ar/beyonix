@@ -20,6 +20,7 @@ export interface AdminOrderStatusPresentation {
 export type AdminDispatchStatusKey =
   | "not_shipped"
   | "preparing"
+  | "handed_over"
   | "shipped"
   | "in_transit"
   | "delivery_incident"
@@ -35,12 +36,15 @@ export interface AdminDispatchStatus extends AdminOrderStatusPresentation {
 export interface AdminDispatchOrder {
   estado: string
   delivered_at?: string | null
+  /** BEYONIX entregó el paquete al transportista (QR final del Bulto). */
+  andreani_handed_over_at?: string | null
   andreani_envio_id?: string | null
   andreani_creation_status?: string | null
 }
 
 const DISPATCH_BY_ESTADO: Partial<Record<string, AdminDispatchStatus>> = {
-  entregado: { key: "delivered", label: "Entregado", tone: "success" },
+  // Entrega final al cliente: nunca se confunde con la entrega al transportista.
+  entregado: { key: "delivered", label: "Entregado al cliente", tone: "success" },
   devuelto_beyonix: { key: "returned", label: "Devuelto a BEYONIX", tone: "neutral" },
   en_devolucion: { key: "returning", label: "En devolución", tone: "warning" },
   visita_fallida: { key: "delivery_incident", label: "Visita fallida", tone: "warning" },
@@ -51,6 +55,9 @@ const DISPATCH_BY_ESTADO: Partial<Record<string, AdminDispatchStatus>> = {
   enviado: { key: "shipped", label: "Enviado", tone: "info" },
   preparado: { key: "preparing", label: "En preparación", tone: "info" },
 }
+
+/** BEYONIX -> transportista; después manda el estado del transporte. */
+const HANDED_OVER: AdminDispatchStatus = { key: "handed_over", label: "Entregado al transporte", tone: "info" }
 
 const ANDREANI_SHIPMENT_IN_PROGRESS = new Set(["claimed", "created", "reconciliation_required"])
 
@@ -70,6 +77,8 @@ export function getAdminDispatchStatus(
   }
 
   const byEstado = DISPATCH_BY_ESTADO[order.estado]
+  // Ya entregado al transportista: nunca "En preparación" (ni "No enviado" aunque se cancele después).
+  if (order.andreani_handed_over_at && (!byEstado || byEstado.key === "preparing")) return HANDED_OVER
   if (byEstado) return byEstado
 
   if (
@@ -139,7 +148,7 @@ const EXECUTIVE_STATUS_BY_ESTADO: Partial<Record<string, AdminOrderStatusPresent
   retiro_vencido: { label: "Retiro vencido", tone: "warning" },
   en_devolucion: { label: "En devolución", tone: "warning" },
   devuelto_beyonix: { label: "Devuelto a BEYONIX", tone: "neutral" },
-  entregado: { label: "Entregado", tone: "success" },
+  entregado: { label: "Entregado al cliente", tone: "success" },
 }
 
 /**

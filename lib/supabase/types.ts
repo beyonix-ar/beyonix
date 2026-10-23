@@ -791,6 +791,12 @@ export interface CustomerOrderSummary {
   tracking_url?: string | null
   andreani_tracking?: string | null
   andreani_estado?: string | null
+  /** Accesos directos a los documentos fiscales (sin URLs ni PDF). */
+  invoice_status?: SupabasePedido["invoice_status"]
+  credit_note_status?: SupabasePedido["credit_note_status"]
+  credit_note_number?: string | null
+  credit_note_point?: number | null
+  credit_note_cae?: string | null
   orden_items?: CustomerOrderSummaryItem[]
   order_claims?: CustomerOrderSummaryClaim[]
   order_audit_events?: SupabaseOrderAuditEvent[]

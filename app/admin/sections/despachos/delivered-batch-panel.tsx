@@ -30,10 +30,10 @@ export function DeliveredBatchPanel({ batchId }: { batchId: number }) {
       <span><strong>Armado:</strong> {history.assembledBy || "Sin registro"}</span>
       <span><strong>Confirmación:</strong> {history.deliveredBy || "Sin registro"}</span>
       <span><strong>Control del bulto:</strong> {history.controlledBy.join(", ") || "Sin registro"}</span>
-      <span><strong>Entregado:</strong> {dateTime(history.batch.handed_over_at)}</span>
+      <span><strong>Entregado al transporte:</strong> {dateTime(history.batch.handed_over_at)}</span>
     </div>
     <div className="overflow-x-auto"><table className="dispatch-orders-table w-full" aria-label="Pedidos del Bulto entregado"><thead><tr><th scope="col">Pedido</th><th scope="col">Estado</th><th scope="col">Paquetes</th><th scope="col">Preparó</th><th scope="col">Controló / retiró</th></tr></thead>
-      <tbody>{history.items.map((item) => <tr key={item.orderId}><td>{orderCode(item.orderId)}</td><td title={item.removalReason || undefined}>{item.removedAt ? item.cancelled ? "Cancelado y retirado" : "Retirado" : "Entregado"}</td><td>{item.removedAt ? "—" : item.parcelCount}</td><td>{item.preparedBy || "—"}</td><td>{item.removedAt ? `${item.removedBy || "—"} · ${dateTime(item.removedAt)}` : item.controlledBy || "—"}</td></tr>)}</tbody>
+      <tbody>{history.items.map((item) => <tr key={item.orderId}><td><a href={`/admin/pedidos/${item.orderId}`} className="dispatch-delivered-order-link font-bold underline-offset-2 hover:underline">{orderCode(item.orderId)}</a></td><td title={item.removalReason || undefined}>{item.removedAt ? item.cancelled ? "Cancelado y retirado" : "Retirado" : "Entregado al transporte"}</td><td>{item.removedAt ? "—" : item.parcelCount}</td><td>{item.preparedBy || "—"}</td><td>{item.removedAt ? `${item.removedBy || "—"} · ${dateTime(item.removedAt)}` : item.controlledBy || "—"}</td></tr>)}</tbody>
     </table></div>
   </div>
 }

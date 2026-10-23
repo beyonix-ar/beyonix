@@ -29,7 +29,8 @@ export type DispatchUser = { id: string; name: string }
 export const DISPATCH_RECORD_STATES: Record<DispatchRecordState, { label: string; tone: "warning" | "success" | "info" | "danger" }> = {
   P: { label: "Pendiente", tone: "warning" },
   C: { label: "Confirmado", tone: "success" },
-  E: { label: "Entregado", tone: "info" },
+  // Entregado por BEYONIX al transportista; nunca "entregado al cliente".
+  E: { label: "Entregado al transporte", tone: "info" },
   X: { label: "Cancelado", tone: "danger" },
 }
 const STATES = Object.keys(DISPATCH_RECORD_STATES) as DispatchRecordState[]

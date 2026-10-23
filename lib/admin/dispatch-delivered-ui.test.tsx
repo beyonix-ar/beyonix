@@ -16,7 +16,7 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
   const root = createRoot(dom.window.document.getElementById("root")!)
   const today = dispatchToday()
   const batch = { id: 7, code: "DSP-20261018-007", display_number: 7, status: "handed_over", created_at: `${today}T09:00:00-03:00`, closed_at: `${today}T12:00:00-03:00`, handed_over_at: `${today}T16:00:00-03:00`, handed_over_by: "actor-c", verification_round: 1 }
-  const record = { kind: "batch", id: 7, code: batch.code, displayNumber: 7, state: "E", at: batch.handed_over_at, actorId: "actor-c", actorName: "María", units: 3, total: 9000, orderCount: 1, selectable: false }
+  const record = { kind: "batch", id: 7, code: batch.code, displayNumber: 7, state: "E", at: batch.handed_over_at, actorId: "actor-c", actorName: "María", units: 3, total: 3599, orderCount: 2, selectable: false }
   const requests: string[] = []
   globalThis.fetch = async (input) => {
     const url = String(input)
@@ -36,17 +36,21 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     await settle()
     assert.ok(requests.some((url) => url.includes(`date=${today}`)))
     const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0007"]')!
-    assert.match(row.textContent ?? "", /Bulto - 0007María[\s\S]*Entregado/)
+    // E: entregado al transporte, nunca "Entregado" a secas; B: 2 pedidos (no "2 unidades").
+    assert.match(row.textContent ?? "", /Bulto - 0007María[\s\S]*Entregado al transporte/)
+    assert.equal(row.querySelector(".dispatch-order-units")?.textContent, "2 pedidos")
+    assert.equal(dom.window.document.querySelectorAll('tr[aria-label="Ver BX-1012"], tr[aria-label="Ver BX-1013"]').length, 0, "A: sus pedidos no se duplican como filas")
     await act(async () => { row.click() })
     await settle()
     const content = dom.window.document.body.textContent ?? ""
     assert.match(content, /3 paquetes/)
     assert.equal((content.match(/Bulto - 0007/g) ?? []).length, 1)
-    assert.match(content, /Picking: Pedro[\s\S]*Armado: Juan[\s\S]*Confirmación: María[\s\S]*Control del bulto: Lucía[\s\S]*Entregado:/)
+    assert.match(content, /Picking: Pedro[\s\S]*Armado: Juan[\s\S]*Confirmación: María[\s\S]*Control del bulto: Lucía[\s\S]*Entregado al transporte:/)
     const [year, month, day] = today.split("-")
-    assert.ok(content.includes(`Entregado: ${day}/${month}/${year} - 16:00`))
-    assert.match(content, /BX-1012/)
-    assert.match(content, /BX-1013/)
+    assert.ok(content.includes(`Entregado al transporte: ${day}/${month}/${year} - 16:00`))
+    // C: el detalle del Bulto lista sus pedidos con acceso a cada uno.
+    const links = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('table[aria-label="Pedidos del Bulto entregado"] a')]
+    assert.deepEqual(links.map((link) => [link.textContent, link.getAttribute("href")]), [["BX-1012", "/admin/pedidos/12"], ["BX-1013", "/admin/pedidos/13"]])
     assert.match(content, /Cancelado y retirado/)
     await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Volver")!.click() })
     await settle()

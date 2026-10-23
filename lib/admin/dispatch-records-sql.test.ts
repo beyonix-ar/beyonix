@@ -140,3 +140,45 @@ test("tabla única de Despachos: pedido o Bulto (nunca ambos), estados, sumas, f
     await assert.rejects(find(today), /permission denied/i)
   } finally { await db.close() }
 })
+
+test("respaldo: entregado al transporte sin pertenencia activa sigue visible; con pertenencia, sólo en su Bulto", async () => {
+  const db = new PGlite()
+  try {
+    await db.exec(`create role anon; create role authenticated; create role service_role;
+      create table public.ordenes (id bigint primary key, financial_status text, cancelled_at timestamptz,
+        andreani_handed_over_at timestamptz, andreani_handed_over_by uuid, andreani_handed_over_batch_id bigint,
+        estado text, shipping_provider text, envio_proveedor text,
+        andreani_creation_status text, andreani_tracking text, andreani_envio_id text,
+        created_at timestamptz, andreani_created_at timestamptz, total numeric);
+      create table public.order_packages (id bigint primary key, order_id bigint, status text, attempt_number integer,
+        prepared_at timestamptz, prepared_by uuid, identified_by uuid, identification_method text);
+      create table public.dispatch_batches (id bigint primary key, code text, display_number integer, status text,
+        created_at timestamptz, closed_at timestamptz, handed_over_at timestamptz,
+        created_by uuid, closed_by uuid, handed_over_by uuid);
+      create table public.dispatch_batch_items (id bigint primary key, batch_id bigint, order_id bigint,
+        removed_at timestamptz, removed_by uuid);
+      create table public.orden_items (orden_id bigint, cantidad integer);
+      create table public.order_preparation_scans (id bigint primary key, package_id bigint, attempt_number integer, scanned_by uuid, scanned_at timestamptz);
+      create table public.order_cancellation_holds (order_id bigint, detected_at timestamptz, resolved_at timestamptz, resolved_by uuid);
+      create table public.dispatch_blocks (order_id bigint, resolved_at timestamptz);
+      -- Bulto 0003 entregado al transporte con BX-1012 y BX-1013 (2 pedidos, 3 unidades); 14 perdió su pertenencia.
+      insert into public.ordenes values
+        (12,'payment_confirmed',null,'2026-10-22 13:54-03','${C}',3,'pagado','andreani',null,'created','t12','e12','2026-10-22 07:00-03',null,1599),
+        (13,'payment_confirmed',null,'2026-10-22 13:54-03','${C}',3,'pagado','andreani',null,'created','t13','e13','2026-10-22 07:00-03',null,2000),
+        (14,'payment_confirmed',null,'2026-10-22 13:54-03','${C}',3,'pagado','andreani',null,'created','t14','e14','2026-10-22 07:00-03',null,500);
+      insert into public.orden_items values (12,1),(13,2),(14,1);
+      insert into public.dispatch_batches values
+        (3,'DSP-20261022-003',3,'handed_over','2026-10-22 08:00-03','2026-10-22 12:00-03','2026-10-22 13:54-03','${B}','${B}','${C}');
+      insert into public.dispatch_batch_items values (12,3,12,null,null),(13,3,13,null,null),(14,3,14,'2026-10-22 14:00-03','${A}');`)
+    for (const migration of ["20261022100000_dispatch_unified_records", "20261022110000_dispatch_records_open_work_no_annulled", "20261023130000_dispatch_records_handed_over_fallback"])
+      await db.exec(readFileSync(`supabase/migrations/${migration}.sql`, "utf8"))
+    const { rows } = await db.query<{ result: { rows: Row[]; total: number } }>("select public.search_dispatch_records(p_date => '2026-10-22') result")
+    const byKey = new Map(rows[0].result.rows.map((row) => [`${row.kind}:${row.id}`, row]))
+    assert.deepEqual([...byKey.keys()].sort(), ["batch:3", "order:14"], "A: 12 y 13 sólo dentro de su Bulto; F: 14 no desaparece")
+    const batch = byKey.get("batch:3")!
+    assert.deepEqual([batch.state, batch.orderCount, batch.units, Number(batch.total)], ["E", 2, 3, 3599], "2 pedidos (3 unidades), $3.599")
+    const orphan = byKey.get("order:14")!
+    assert.deepEqual([orphan.state, orphan.actorId, orphan.selectable, orphan.units], ["E", C, false, 1], "respaldo: entregado al transporte, nunca seleccionable")
+    assert.equal(new Date(orphan.at).toISOString(), "2026-10-22T16:54:00.000Z")
+  } finally { await db.close() }
+})
