@@ -23,6 +23,18 @@ export function dispatchLocationFromSearch(search: string): DispatchLocation {
   return parseDispatchLocation({ order: params.get("order"), batch: params.get("batch") })
 }
 
+const CANCELLATION_RETURN = /^\/admin\/pedidos\/\d{1,12}\?tab=cancelacion$/
+
+/** Vuelta al asistente de cancelación del pedido (?return=): sólo esa ruta interna. */
+export function parseCancellationReturn(value: string | null | undefined): string | null {
+  return value && CANCELLATION_RETURN.test(value) ? value : null
+}
+
+/** "Resolver mercadería": abre el retiro del pedido y sabe volver al paso de la cancelación. */
+export function cancellationResolveHref(orderId: number) {
+  return `${DISPATCH_PATH}?resolve=${orderId}&return=${encodeURIComponent(`/admin/pedidos/${orderId}?tab=cancelacion`)}`
+}
+
 export function dispatchLocationHref(location: DispatchLocation) {
   if (location.orderId) return `${DISPATCH_PATH}?order=${location.orderId}`
   if (location.batchId) return `${DISPATCH_PATH}?batch=${location.batchId}`

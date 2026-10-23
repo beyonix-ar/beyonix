@@ -26,6 +26,7 @@ import { isClaimVisibleForMode } from "@/lib/orders/claim-visibility"
 import {
   buildCancellationNotification,
   buildClaimNotification,
+  buildCustomerCancellationNotification,
   buildOrderWorkNotifications,
   claimNeedsAdminAttention,
   dedupeNotifications,
@@ -799,6 +800,8 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
 
       const cancellationNotification = buildCancellationNotification(order)
       if (cancellationNotification) notifications.push(cancellationNotification)
+      const customerCancellation = buildCustomerCancellationNotification(order)
+      if (customerCancellation) notifications.push(customerCancellation)
     }
 
     for (const claim of claims) {
@@ -845,7 +848,10 @@ export async function getAdminNotifications(): Promise<AdminNotificationSummary>
     return buildSummary(
       unreadNotifications.filter(
         (notification) =>
-          isPendingAdminTask(notification) || notification.type === "order",
+          isPendingAdminTask(notification) ||
+          notification.type === "order" ||
+          // "Pedido cancelado por el cliente": se lee una vez y desaparece.
+          (notification.type === "cancellation" && notification.kind === "info"),
       ),
     )
   } catch (error) {

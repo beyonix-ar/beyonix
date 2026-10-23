@@ -164,7 +164,7 @@ for (const theme of ["light", "dark"] as const) {
       const heights: number[] = []
       heights.push(await page.locator(".admin-financial-wizard-body").boundingBox().then((box) => box!.height))
       await page.getByRole("button", { name: "Continuar" }).click()
-      await page.getByRole("radio", { name: /Saldo BEYONIX/ }).click()
+      await page.getByRole("radio", { name: /Saldo a favor/ }).click()
       const selected = await style(page, ".admin-financial-wizard-option.is-selected")
       const selectedTitle = await style(page, ".admin-financial-wizard-option.is-selected .admin-financial-wizard-option-title")
       assert.ok(contrast(parse(selectedTitle.color), parse(selected.background)) >= 4.5, `contraste seleccionada ${theme}`)

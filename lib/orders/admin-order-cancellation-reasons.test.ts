@@ -104,6 +104,15 @@ test("9. pedido despachado: ni Rechazar ni Cancelar quedan disponibles", () => {
   assert.equal(isOrderDispatchedForCancellation({ estado: "entregado" }), true)
 })
 
+test("QR final del Bulto como corte: envío Andreani creado con armado en Despachos todavía no es despacho", () => {
+  const armado = { admin_pending_facts: { dispatch: { packageStatus: "prepared" } } }
+  const enBulto = { estado: "pagado", payment_status: "confirmado", andreani_envio_id: "ENV-1", andreani_tracking: "3600001", ...armado }
+  assert.equal(isOrderDispatchedForCancellation(enBulto), false)
+  assert.equal(isOrderDispatchedForCancellation({ ...enBulto, andreani_handed_over_at: "2026-10-22T10:00:00Z" }), true)
+  // Envío histórico sin armado registrado: no hay forma de saber si salió.
+  assert.equal(isOrderDispatchedForCancellation({ ...enBulto, admin_pending_facts: null }), true)
+})
+
 test("pedido sin ningún indicio de despacho no queda bloqueado por error", () => {
   assert.equal(isOrderDispatchedForCancellation({ estado: "pendiente" }), false)
   assert.equal(isOrderDispatchedForCancellation({ estado: "pagado", andreani_estado: "Retirado" }), false)

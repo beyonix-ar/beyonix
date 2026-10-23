@@ -162,6 +162,8 @@ function isOrderDelivered(order: SupabasePedido) {
 }
 
 function isOrderDispatched(order: SupabasePedido) {
+  // Corte calculado por el servidor (QR final del Bulto, lib/orders/dispatch-cutoff).
+  if (typeof order.dispatch_cutoff_reached === "boolean") return order.dispatch_cutoff_reached
   const estado = (order.estado ?? "").toLowerCase()
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
   const dispatchedStatuses = [
@@ -1354,6 +1356,15 @@ export function CustomerClaimExperience({
             </div>
           </div>
 
+          {!canCancel && dispatched && (
+            <div className="mt-4 border-t border-[var(--account-border-subtle)] pt-4">
+              <p className="flex max-w-xl items-start gap-2.5 rounded-lg border border-[var(--account-info-border)] bg-[var(--account-info-bg)] px-3 py-2.5 text-xs font-medium leading-5 text-[var(--account-info-text)]">
+                <Truck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                <span>Tu pedido ya fue despachado y no puede cancelarse en este momento. Cuando lo recibas, vas a poder solicitar una devolución desde acá.</span>
+              </p>
+            </div>
+          )}
+
           {canCancel && (
             // Acción distinta de la ayuda: separada por un divisor propio.
             <div className="mt-4 border-t border-[var(--account-border-subtle)] pt-4">
@@ -1413,10 +1424,10 @@ export function CustomerClaimExperience({
             </span>
             <div className="min-w-0">
               <h1 className="text-xl font-black leading-6 tracking-tight text-[var(--account-text-primary)]">
-                Iniciar reclamo
+                Solicitar devolución o reclamo
               </h1>
               <p className="mt-0.5 max-w-3xl text-[13px] leading-5 text-[var(--account-text-secondary)]">
-                Contanos qué problema tuvo el producto recibido. BEYONIX revisará el caso.
+                Tu pedido fue entregado. Contanos qué pasó con el producto y BEYONIX revisará el caso.
               </p>
             </div>
           </div>

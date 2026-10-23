@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/app/api/admin/clientes/_auth"
-import { dispatchError, dispatchHold, getBatchDispatch, HOLD_COLUMNS, validId } from "@/lib/admin/dispatch"
+import { DISPATCH_HANDOVER_BLOCKED_MESSAGE, dispatchError, dispatchHold, getBatchDispatch, HOLD_COLUMNS, parseDispatchHandoverIssues, validId } from "@/lib/admin/dispatch"
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -20,7 +20,8 @@ export async function GET(request: Request, context: Context) {
     const cancelled = new Set((ordersResult.data ?? []).filter((order) => order.estado === "cancelado" || order.cancelled_at).map((order) => order.id))
     const holds = new Map((holdsResult.data ?? []).map((row) => [row.order_id, dispatchHold(row, detail.batch.code)]))
     return Response.json({ batch: detail.batch, name: detail.batch.display_number ?? detail.batch.id,
-      items: detail.items.map((item) => ({ orderId: item.order_id, status: cancelled.has(item.order_id) || item.cancellationHold ? "CANCELADO" : "CORRECTO", blocked: item.blocked, hold: holds.get(item.order_id) ?? null })),
+      items: detail.items.map((item) => ({ orderId: item.order_id, status: cancelled.has(item.order_id) || item.cancellationHold ? "CANCELADO" : "CORRECTO", blocked: item.blocked,
+        reason: item.blocked ? item.blockReason : null, hold: holds.get(item.order_id) ?? null })),
       removedOrderIds: (removedResult.data ?? []).map((item) => item.order_id), parcelCount: detail.parcelCount,
     }, { headers: { "Cache-Control": "private, no-store" } })
   } catch {
@@ -34,6 +35,9 @@ export async function POST(request: Request, context: Context) {
   const auth = await requireAdmin(request)
   if ("error" in auth) return auth.error
   const { data, error } = await auth.admin.rpc("confirm_dispatch_batch_mobile_control", { p_batch_id: id, p_actor_id: auth.user.id })
-  if (error) return Response.json({ error: dispatchError(error) }, { status: 409 })
+  if (error) {
+    const issues = parseDispatchHandoverIssues(error)
+    return Response.json(issues ? { error: DISPATCH_HANDOVER_BLOCKED_MESSAGE, issues } : { error: dispatchError(error) }, { status: 409 })
+  }
   return Response.json(data, { headers: { "Cache-Control": "private, no-store" } })
 }

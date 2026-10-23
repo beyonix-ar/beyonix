@@ -129,8 +129,8 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1440 px en l
       assert.equal(await page.locator(".dispatch-pick-count.is-missing").innerText(), "1/2")
       assert.equal(await page.locator(".dispatch-pick-count.is-complete").innerText(), "2/2")
       const [problem, ready] = [page.locator('section[aria-label="Bulto - 0001"]').first(), page.locator('section[aria-label="Bulto - 0001"]').last()]
-      assert.match(await problem.getByRole("alert").innerText(), /Sacá este pedido del Bulto para continuar\./)
-      assert.equal(await problem.getByRole("button", { name: "Retirar pedido" }).count(), 1)
+      assert.match(await problem.getByRole("alert").innerText(), /Hay pedidos que tenés que retirar antes de entregar este Bulto\./)
+      assert.equal(await problem.getByRole("button", { name: "Retirar del Bulto" }).count(), 1)
       assert.match(await ready.innerText(), /1 de 1 pedidos · Bulto finalizado ✓/)
     }
     assert.notDeepEqual(badgeColors["light 1440"], badgeColors["dark 1440"], "cada tema usa su variante de la paleta")

@@ -1,3 +1,4 @@
+import { isOrderDispatchCutoffReached } from "./dispatch-cutoff.ts"
 import { isOrderPaymentConfirmed } from "./order-payment-status.ts"
 
 export type AdminOrderCancellationAction = "reject" | "cancel"
@@ -13,35 +14,15 @@ export const ADMIN_ORDER_CANCELLATION_REASONS: Array<{ value: string; label: str
 
 export const ADMIN_ORDER_CANCELLATION_OTHER_REASON = "otro"
 
-const DISPATCHED_ORDER_STATUSES = [
-  "enviado",
-  "en_camino",
-  "visita_fallida",
-  "en_sucursal",
-  "retiro_pendiente",
-  "retiro_vencido",
-  "en_devolucion",
-  "devuelto_beyonix",
-  "entregado",
-]
-
-const DISPATCHED_ANDREANI_FRAGMENTS = [
-  "camino",
-  "tránsito",
-  "transito",
-  "distribución",
-  "distribucion",
-  "reparto",
-  "visita",
-  "entregado",
-]
-
 interface OrderForCancellationEligibility {
   estado?: string | null
   tracking_number?: string | null
   andreani_tracking?: string | null
   andreani_envio_id?: string | null
   andreani_estado?: string | null
+  andreani_handed_over_at?: string | null
+  /** Armado en Despachos (hechos server-side del listado de Admin). */
+  admin_pending_facts?: { dispatch?: { packageStatus?: string | null } | null } | null
   andreani_creation_status?: string | null
   invoice_status?: string | null
   invoice_cae?: string | null
@@ -88,19 +69,9 @@ export function isOrderInvoicedForCancellation(order: OrderForCancellationEligib
   )
 }
 
+/** Corte canónico (QR final del Bulto); misma regla que order_dispatch_cutoff_reached. */
 export function isOrderDispatchedForCancellation(order: OrderForCancellationEligibility) {
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniEstado = (order.andreani_estado ?? "").toLowerCase()
-
-  return (
-    DISPATCHED_ORDER_STATUSES.includes(estado) ||
-    Boolean(
-      (order.tracking_number ?? "").trim() ||
-        (order.andreani_tracking ?? "").trim() ||
-        (order.andreani_envio_id ?? "").trim(),
-    ) ||
-    DISPATCHED_ANDREANI_FRAGMENTS.some((fragment) => andreaniEstado.includes(fragment))
-  )
+  return isOrderDispatchCutoffReached(order, Boolean(order.admin_pending_facts?.dispatch?.packageStatus))
 }
 
 function isSafeToCancelOrReject(order: OrderForCancellationEligibility) {

@@ -28,6 +28,11 @@ export type FinancialResolutionFacts = {
   fiscalDestination: "external_refund" | "customer_balance" | null
   /** Cancelado con pickeo y todavía sin resolución física (retención activa). */
   physicalHoldActive?: boolean
+  /**
+   * Cancelado con pickeo y la mercadería ya volvió (retención resuelta por
+   * escaneo, fuera de todo Bulto): el Admin puede elegir también saldo BEYONIX.
+   */
+  pickedCancellationResolved?: boolean
 }
 
 /** Sólo ofrece resultados; la API/RPC vuelve a validar antes de mover dinero. */
@@ -43,6 +48,10 @@ export function resolveOrderFinancialOptions(facts: FinancialResolutionFacts): F
   if (facts.preparedAt) {
     if (facts.physicalHoldActive) return []
     const options: FinancialOption[] = []
+    // Misma condición que reserve_order_financial_resolution (20261023100000).
+    if (facts.pickedCancellationResolved && facts.hasCustomerAccount && !facts.fiscalDestination) {
+      options.push({ type: "beyonix_credit", label: "Saldo BEYONIX", requiresConfirmation: true })
+    }
     if (["transferencia", "mercadopago"].includes(facts.paymentMethod ?? "")) {
       options.push({ type: "manual_refund", label: "Reintegro manual", requiresConfirmation: true })
     }

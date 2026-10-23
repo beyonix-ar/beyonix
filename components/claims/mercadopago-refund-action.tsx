@@ -4,32 +4,19 @@ import { useState } from "react"
 import { AlertTriangle, CheckCircle2, Loader2, RefreshCw } from "lucide-react"
 
 import { formatPrice } from "@/app/admin/sections/productos/helpers"
+import { isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import { supabase } from "@/lib/supabase/client"
 import type { SupabasePedido } from "@/lib/supabase/types"
-
-const DISPATCHED_ESTADOS = new Set([
-  "enviado",
-  "en_camino",
-  "visita_fallida",
-  "en_sucursal",
-  "retiro_pendiente",
-  "retiro_vencido",
-  "en_devolucion",
-  "devuelto_beyonix",
-  "entregado",
-])
 
 /**
  * Heurística SÓLO visual (mostrar/ocultar el botón antes de intentar nada).
  * La autoridad real de si el refund corresponde es
  * begin_mercadopago_order_refund (server-side) -- esta función nunca decide
- * si el refund se ejecuta, sólo si tiene sentido ofrecer el botón.
+ * si el refund se ejecuta, sólo si tiene sentido ofrecer el botón. Mismo
+ * corte que la base: el QR final del Bulto, no el envío Andreani creado.
  */
 export function isOrderDispatchedForDisplay(pedido: SupabasePedido) {
-  return (
-    DISPATCHED_ESTADOS.has((pedido.estado ?? "").toLowerCase()) ||
-    Boolean(pedido.tracking_number || pedido.andreani_tracking || pedido.andreani_envio_id)
-  )
+  return isOrderDispatchCutoffReached(pedido, Boolean(pedido.admin_pending_facts?.dispatch?.packageStatus))
 }
 
 interface Props {

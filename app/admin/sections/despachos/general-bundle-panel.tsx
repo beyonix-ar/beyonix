@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { CheckCircle2, Circle, Download, Printer } from "lucide-react"
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput } from "@/app/admin/components/admin-controls"
-import { orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
+import { DISPATCH_HANDOVER_BLOCKED_MESSAGE, orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { matchesDispatchBatch } from "@/lib/admin/dispatch-scan"
 import { dispatchBatchControlUrl } from "@/lib/barcodes/labels-document"
@@ -76,7 +76,12 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         playScanFeedback("success")
         onChange(updated)
         onRefresh()
-      } catch (cause) { reject(cause instanceof Error ? cause.message : "No se pudo confirmar la entrega del Bulto.") }
+      } catch (cause) {
+        reject(cause instanceof Error ? cause.message : "No se pudo confirmar la entrega del Bulto.")
+        // Validación final en la base: el Bulto vuelve con TODOS los pedidos a retirar.
+        const fresh = cause instanceof DispatchRequestError ? cause.payload?.detail : null
+        if (fresh && typeof fresh === "object") { onChange(fresh as BatchDispatchDetail); onRefresh() }
+      }
       finally { busyRef.current = false; setBusy(false) }
     })()
   }
@@ -133,15 +138,18 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
       </div>
 
       {blocked ? <div className="mt-4">
-        <p role="alert" className="text-sm font-bold text-red-300">{blockedItems.length === 1 ? "Sacá este pedido del Bulto para continuar." : `Hay ${blockedItems.length} pedidos que tenés que retirar.`}</p>
+        <div role="alert" className="rounded-xl border border-red-500/45 bg-red-950 p-3">
+          <p className="text-sm font-black text-white">{DISPATCH_HANDOVER_BLOCKED_MESSAGE}</p>
+          <p className="mt-0.5 text-sm font-bold text-red-200">⚠ {blockedItems.length === 1 ? "1 pedido requiere atención" : `${blockedItems.length} pedidos requieren atención`}</p>
+        </div>
         <ul className="mt-2 divide-y divide-white/10">{blockedItems.map((item) => {
           const hold = item.cancellationHold ? holds.find((entry) => entry.orderId === item.order_id) : undefined
           return <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-            <span className="text-sm font-bold text-white">{orderCode(item.order_id)} · <span className="text-red-300">{item.cancellationHold ? "Cancelado" : "Retirar"}</span></span>
+            <span className="text-sm font-bold text-white">{orderCode(item.order_id)} — <span className="text-red-300">{item.cancelled || item.cancellationHold ? "Cancelado" : item.blockReason ?? "Incidencia"}</span></span>
             <AdminPrimaryButton className="h-10 w-full sm:w-auto" disabled={busy || (item.cancellationHold && !hold)} onClick={() => {
               if (hold) onOpenResolution(hold)
               else { setReason(""); setDialog({ kind: "remove", orderId: item.order_id }) }
-            }}>Retirar pedido</AdminPrimaryButton>
+            }}>Retirar del Bulto</AdminPrimaryButton>
           </li>
         })}</ul>
         {!blockedItems.length && <AdminButton onClick={onRefresh}>Actualizar</AdminButton>}
@@ -160,6 +168,7 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
           <AdminButton icon={<Download className="size-4" />} disabled={busy} onClick={() => void run(() => saveBatchLabelsPdf([batch.code], "single", { [batch.code]: labelDetails }))}>Guardar PDF</AdminButton>
         </div>}
         {finalized && items.length > 0 && <div className="mt-3">
+          <p role="status" className="mb-2 flex items-center gap-2 text-sm font-black text-emerald-300"><CheckCircle2 className="size-4 shrink-0" />Bulto listo para entregar</p>
           <ScanField label="Escanear o ingresar el QR del Bulto" placeholder="Escanear / escribir QR del Bulto" submitLabel="Confirmar"
             value={confirmation} onChange={setConfirmation} onScan={confirmBundle} busy={busy} autoFocus={dialog === null}
             cameraTitle={dispatchBatchName(batch)} cameraHint="QR de la etiqueta del Bulto" feedback={confirmFeedback} />

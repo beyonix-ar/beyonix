@@ -163,7 +163,7 @@ test("el route mapea cada código de error de la RPC a un mensaje claro y distin
   // Cada código mapea a un texto propio (no todos comparten el mismo string).
   const messages = [...route.matchAll(/error:\s*"([^"]+)"/g)].map((m) => m[1])
   assert.ok(messages.includes("La compra ya está cancelada."))
-  assert.ok(messages.includes("El pedido ya fue despachado y no puede cancelarse desde acá."))
+  assert.ok(messages.includes("Tu pedido ya fue despachado y no puede cancelarse en este momento."))
   assert.ok(messages.some((m) => m.includes("generando el envío")))
   assert.ok(messages.some((m) => m.includes("necesita revisión")))
   assert.ok(messages.includes("No se pudo cancelar la compra de forma segura."))

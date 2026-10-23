@@ -1,5 +1,5 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
-import { dispatchError, getBatchDispatch, isRequestKey, orderCode, parseOrderCode, validId, type DispatchVerificationResult } from "@/lib/admin/dispatch"
+import { DISPATCH_HANDOVER_BLOCKED_MESSAGE, dispatchError, getBatchDispatch, isRequestKey, orderCode, parseDispatchHandoverIssues, parseOrderCode, validId, type DispatchVerificationResult } from "@/lib/admin/dispatch"
 import { getDispatchHistory } from "@/lib/admin/dispatch-history"
 import { matchesDispatchBatch } from "@/lib/admin/dispatch-scan"
 
@@ -74,6 +74,13 @@ export async function POST(request: Request, context: Context) {
     if (!result.error) handover = result.data as { duplicate: boolean }
   }
   if (result.error) {
+    // QR final rechazado por pedidos a retirar: se devuelve el Bulto vigente
+    // con TODOS los pedidos problemáticos (uno o cincuenta, igual).
+    const issues = parseDispatchHandoverIssues(result.error)
+    if (issues) {
+      const detail = await getBatchDispatch(auth.admin, id).catch(() => null)
+      return Response.json({ error: DISPATCH_HANDOVER_BLOCKED_MESSAGE, issues, detail }, { status: 409 })
+    }
     let message = dispatchError(result.error)
     if (result.error.message.includes("DISPATCH_ORDER_BLOCKED") && !result.error.details) {
       const detail = await getBatchDispatch(auth.admin, id).catch(() => null)

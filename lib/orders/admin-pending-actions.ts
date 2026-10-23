@@ -64,6 +64,8 @@ export interface AdminPendingFacts {
   } | null
   dispatch: {
     batchId: number | null
+    /** Número visible del Bulto ("Bulto - 0008"); null en los DSP históricos. */
+    batchNumber?: number | null
     batchStatus: "open" | "closed" | "handed_over" | null
     packageStatus: "preparing" | "prepared" | null
     blocked: boolean

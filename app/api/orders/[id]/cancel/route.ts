@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server"
 
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
-import {
-  buildCustomerCancelledOrderNotification,
-  upsertCustomerCancelledOrderNotification,
-} from "@/lib/orders/customer-cancellation-notification"
-import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
+import { buildCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
+import { isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -20,6 +17,7 @@ type CancelableOrder = {
   andreani_tracking?: string | null
   andreani_envio_id?: string | null
   andreani_estado?: string | null
+  andreani_handed_over_at?: string | null
   delivered_at?: string | null
   invoice_status?: string | null
   invoice_cae?: string | null
@@ -55,17 +53,7 @@ function toCustomerCancellationOrderView(order: CancelableOrder) {
   }
 }
 
-const DISPATCHED_ORDER_STATUSES = [
-  "enviado",
-  "en_camino",
-  "visita_fallida",
-  "en_sucursal",
-  "retiro_pendiente",
-  "retiro_vencido",
-  "en_devolucion",
-  "devuelto_beyonix",
-  "entregado",
-]
+const DISPATCHED_MESSAGE = "Tu pedido ya fue despachado y no puede cancelarse en este momento."
 
 function getOrderCode(orderId: number) {
   return `BX-${1000 + orderId}`
@@ -82,55 +70,18 @@ function isOrderDelivered(order: CancelableOrder) {
   )
 }
 
-function isOrderDispatched(order: CancelableOrder) {
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
-
-  return (
-    DISPATCHED_ORDER_STATUSES.includes(estado) ||
-    Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
-    ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
-      (status) => andreaniStatus.includes(status),
-    )
-  )
-}
-
-function hasPaymentProofPendingReview(order: CancelableOrder) {
-  return Boolean(order.payment_proof_url) &&
-    ["en_revision", "pendiente_comprobante", "pending"].includes(
-      order.payment_status ?? "",
-    )
-}
-
-function getCancellationFinancialStatus(order: CancelableOrder) {
-  if (isOrderPaymentConfirmed(order)) return "refund_pending"
-  if (hasPaymentProofPendingReview(order)) return "cancellation_requested"
-  return "cancelled"
-}
-
-async function notifyCustomerCancellation(
-  admin: ReturnType<typeof createAdminClient>,
-  order: CancelableOrder,
-) {
+/**
+ * La campana del cliente la escribe la base (notify_customer_order_cancelled,
+ * una sola vez y con el estado físico real); acá sólo se manda el email.
+ */
+async function emailCustomerCancellation(order: CancelableOrder) {
   const orderCode = getOrderCode(order.id)
-  const financialStatus = getCancellationFinancialStatus(order)
-  const needsRefund = financialStatus === "refund_pending"
   const notification = buildCustomerCancelledOrderNotification(order)
-
-  if (order.usuario_id) {
-    try {
-      await upsertCustomerCancelledOrderNotification(admin, order)
-    } catch (notificationError) {
-      console.log("No se pudo crear notificación de cancelación", notificationError)
-    }
-  }
 
   try {
     await sendOrderStatusEmail({
       to: order.cliente_email,
-      subject: needsRefund
-        ? `Pedido cancelado ${orderCode}`
-        : "Tu compra fue cancelada correctamente",
+      subject: `Recibimos la cancelación de tu pedido ${orderCode}`,
       html: `
         <h1>${notification.title}</h1>
         <p>Hola ${order.cliente_nombre ?? ""}, ${notification.body}</p>
@@ -182,14 +133,20 @@ export async function POST(
   }
 
   const admin = createAdminClient()
-  const { data: order, error: orderError } = await admin
-    .from("ordenes")
-    .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount")
-    .eq("id", orderId)
-    .maybeSingle()
+  const [{ data: order, error: orderError }, packageResult] = await Promise.all([
+    admin
+      .from("ordenes")
+      .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, andreani_handed_over_at, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount")
+      .eq("id", orderId)
+      .maybeSingle(),
+    admin.from("order_packages").select("id").eq("order_id", orderId).maybeSingle(),
+  ])
 
   if (orderError || !order) {
     return NextResponse.json({ error: "No encontramos el pedido." }, { status: 404 })
+  }
+  if (packageResult.error) {
+    return NextResponse.json({ error: "No se pudo cancelar la compra de forma segura." }, { status: 500 })
   }
 
   if (!isCustomerOrderOwner(order, user)) {
@@ -208,11 +165,15 @@ export async function POST(
     )
   }
 
-  if (isOrderDelivered(order) || isOrderDispatched(order)) {
+  // Atajo de UX: la RPC vuelve a validar el corte con el pedido bloqueado.
+  if (isOrderDelivered(order)) {
     return NextResponse.json(
-      { error: "Esta compra ya no se puede cancelar desde la cuenta." },
+      { error: "Tu pedido ya fue entregado. Podés solicitar una devolución desde Ayuda." },
       { status: 409 },
     )
+  }
+  if (isOrderDispatchCutoffReached(order, Boolean(packageResult.data))) {
+    return NextResponse.json({ error: DISPATCHED_MESSAGE }, { status: 409 })
   }
 
   const { data: cancellationResult, error: cancellationError } = await admin.rpc(
@@ -237,7 +198,7 @@ export async function POST(
     }
     if (message.includes("ORDER_ALREADY_DISPATCHED")) {
       return NextResponse.json(
-        { error: "El pedido ya fue despachado y no puede cancelarse desde acá." },
+        { error: "Tu pedido ya fue despachado y no puede cancelarse en este momento." },
         { status: 409 },
       )
     }
@@ -270,12 +231,12 @@ export async function POST(
   const updatedOrder = cancellationResult as unknown as CancelableOrder
   const nextFinancialStatus = updatedOrder.financial_status ?? "cancelled"
 
-  await notifyCustomerCancellation(admin, updatedOrder)
+  await emailCustomerCancellation(updatedOrder)
   return NextResponse.json({
     order: toCustomerCancellationOrderView(updatedOrder),
     message:
       nextFinancialStatus === "refund_pending"
-        ? "Ya recibimos tu solicitud de arrepentimiento y gestionaremos el reintegro."
-        : "Tu compra fue cancelada correctamente.",
+        ? "Recibimos la cancelación de tu pedido. Te avisamos cuando el reintegro esté listo."
+        : "Recibimos la cancelación de tu pedido.",
   })
 }

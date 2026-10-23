@@ -42,6 +42,8 @@ export type DispatchStage = "pending" | "packing" | "shipment" | "label" | "read
 /** Pedido esperado dentro del Bulto general: verificado con su etiqueta Andreani (o confirmación manual explícita). */
 export type DispatchBatchItem = DispatchMembership & {
   blocked: boolean; blockReason: string | null; cancellationHold: boolean
+  /** Pedido cancelado mientras estaba en el Bulto: hay que retirarlo antes de entregarlo. */
+  cancelled?: boolean
   /** Código que identifica el pedido: seguimiento Andreani (o BX-PREP en pedidos históricos). */
   labelCode: string; verified: boolean; verifiedAt: string | null; verificationMethod: DispatchVerificationMethod | null
   /** Paquetes de envío BX-PKG (medidas Andreani): sólo informativos acá. */
@@ -70,6 +72,12 @@ export type DispatchHold = {
   detectedAt: string
   batchId: number | null
   batchCode: string | null
+}
+
+/** "Bulto - 0008" (nombre visible) o "Bulto general DSP-…" (código histórico). */
+export function holdBundleLabel(batchCode: string | null): string | null {
+  if (!batchCode) return null
+  return batchCode.startsWith("Bulto") ? batchCode : `Bulto general ${batchCode}`
 }
 
 /** Resultado del escaneo de retiro físico (resolve_cancelled_order_preparation). */
@@ -172,6 +180,38 @@ export function dispatchBlockReason(reason: string): string {
   return reasons[reason] ?? "Revisión requerida"
 }
 
+/** Pedido que impide entregar el Bulto (dispatch_batch_handover_issues en la base). */
+export type DispatchHandoverIssue = { orderId: number; reasons: string[] }
+
+export const DISPATCH_HANDOVER_BLOCKED_MESSAGE = "Hay pedidos que tenés que retirar antes de entregar este Bulto."
+
+/** Lista completa de pedidos con problemas que devuelve la entrega rechazada (detail = JSON). */
+export function parseDispatchHandoverIssues(error: { message: string; details?: string | null } | null): DispatchHandoverIssue[] | null {
+  if (!error?.message.includes("DISPATCH_ORDER_BLOCKED") || !error.details?.startsWith("[")) return null
+  try {
+    const parsed: unknown = JSON.parse(error.details)
+    if (!Array.isArray(parsed)) return null
+    return parsed.flatMap((entry: unknown) => {
+      if (!entry || typeof entry !== "object") return []
+      const { orderId, reasons } = entry as { orderId?: unknown; reasons?: unknown }
+      const id = Number(orderId)
+      if (!Number.isSafeInteger(id) || id <= 0) return []
+      return [{ orderId: id, reasons: Array.isArray(reasons) ? reasons.filter((reason): reason is string => typeof reason === "string") : [] }]
+    })
+  } catch {
+    return null
+  }
+}
+
+/** Motivo en una palabra para el operador: "Cancelado" o la incidencia concreta. */
+export function dispatchIssueLabel(reasons: readonly string[]): string {
+  if (reasons.includes("cancelled") || reasons.includes("physical_hold")) return "Cancelado"
+  const reason = reasons.find((item) => !["financial_conflict", "claim"].includes(item)) ?? reasons[0]
+  if (!reason) return "Incidencia"
+  if (reason === "not_prepared") return "Armado incompleto"
+  return dispatchBlockReason(reason)
+}
+
 export function parseOrderCode(value: string): number | null {
   const match = /^#?BX-(\d+)$/i.exec(value.trim())
   if (!match) return null
@@ -253,7 +293,8 @@ export function dispatchError(error: { message: string; details?: string | null 
   }
   const code = Object.keys(messages).sort((left, right) => right.length - left.length).find((key) => error.message.includes(key))
   let message = code ? messages[code] : error.message.includes("dispatch_batch_items_active_order_unique") ? "Este pedido ya pertenece a otro Bulto general." : fallback
-  if (code === "DISPATCH_PARCEL_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este paquete pertenece al Bulto general ${error.details}.`
+  if (parseDispatchHandoverIssues(error)) message = DISPATCH_HANDOVER_BLOCKED_MESSAGE
+  else if (code === "DISPATCH_PARCEL_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este paquete pertenece al Bulto general ${error.details}.`
   else if (code === "DISPATCH_PREP_OTHER_BATCH" && error.details && /^DSP-/.test(error.details)) message = `Este pedido pertenece al Bulto general ${error.details}.`
   else if (code === "DISPATCH_LABEL_MISMATCH" && error.details && /^\d+$/.test(error.details)) message = `Esta etiqueta no corresponde al pedido ${orderCode(Number(error.details))}.`
   else if (code === "DISPATCH_RESOLUTION_WRONG_ORDER" && error.details && /^\d+$/.test(error.details)) message = `Ese código es de ${orderCode(Number(error.details))}, no de este pedido.`
@@ -465,7 +506,8 @@ export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
   const packageById = new Map(packages.map((pkg) => [pkg.id, pkg]))
   const blockReasons = new Map((blocksResult.data ?? []).map((block) => [block.order_id, dispatchBlockReason(block.reason)]))
   const blockedIds = new Set(blockReasons.keys())
-  for (const order of ordersResult.data ?? []) if (order.cancelled_at && !order.andreani_handed_over_at) blockedIds.add(order.id)
+  const cancelledIds = new Set((ordersResult.data ?? []).filter((order) => order.cancelled_at && !order.andreani_handed_over_at).map((order) => order.id))
+  for (const id of cancelledIds) blockedIds.add(id)
   const andreaniCodes = new Map((ordersResult.data ?? []).map((order) => [order.id, order.andreani_tracking?.trim() || order.andreani_envio_id?.trim() || null]))
   const batch = batchResult.data as DispatchBatch
   const operatorResult = batch.handed_over_by ? await admin.from("profiles").select("nombre,username,email").eq("id", batch.handed_over_by).maybeSingle() : null
@@ -477,7 +519,8 @@ export async function getBatchDispatch(admin: DispatchAdmin, batchId: number) {
     const cancellationHold = heldIds.has(item.order_id)
     // Una verificación de una ronda anterior no cuenta: la composición cambió.
     const verified = Boolean(verifiedAt) && itemRound === round
-    return { ...item, blocked: blockedIds.has(item.order_id) || cancellationHold, blockReason: cancellationHold ? "Pedido cancelado dentro del Bulto general" : blockReasons.get(item.order_id) ?? (blockedIds.has(item.order_id) ? "Revisión requerida" : null), cancellationHold,
+    const cancelled = cancellationHold || cancelledIds.has(item.order_id)
+    return { ...item, blocked: blockedIds.has(item.order_id) || cancellationHold, blockReason: cancelled ? "Cancelado" : blockReasons.get(item.order_id) ?? (blockedIds.has(item.order_id) ? "Revisión requerida" : null), cancellationHold, cancelled,
       labelCode: andreaniCodes.get(item.order_id) ?? preparedOrderCode(item.order_id, pkg?.attempt_number ?? 1), verified, verifiedAt: verified ? verifiedAt : null, verificationMethod: verified ? method : null,
       parcelCount: pkg?.parcel_count ?? null, parcels: parcelsByPackage.get(item.package_id) ?? [] }
   })

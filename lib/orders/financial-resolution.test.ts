@@ -41,6 +41,13 @@ test("pickeo/tanda preparada: sólo acciones de Admin (manual o Reintegrar por M
   assert.deepEqual(choices({ trackingInCircuit: true }), [])
   assert.deepEqual(choices({ shipmentCreated: true }), ["beyonix_credit"])
 })
+test("cancelación con pickeo y mercadería ya recuperada: el Admin también puede elegir saldo a favor", () => {
+  const picked = { preparedAt: "2026-10-05T12:00:00Z", pickedCancellationResolved: true }
+  assert.deepEqual(choices(picked), ["beyonix_credit", "manual_refund", "mercadopago_refund"])
+  assert.deepEqual(choices({ ...picked, physicalHoldActive: true }), [], "con retención activa, nada")
+  assert.deepEqual(choices({ ...picked, hasCustomerAccount: false }), ["manual_refund", "mercadopago_refund"], "sin cuenta no hay saldo")
+  assert.deepEqual(choices({ ...picked, fiscalDestination: "external_refund" }), ["manual_refund", "mercadopago_refund"], "NC ya emitida a reintegro externo")
+})
 test("refund previo, en curso, conflicto fiscal o recepción bloquean la resolución", () => {
   for (const facts of [{ priorRefund: true }, { refundInProgress: true }, { fiscalConflict: true },
     { receptionPending: true }, { inspectionPending: true }, { claimIncidentOpen: true }]) {

@@ -3,7 +3,8 @@ import { supabase } from "@/lib/supabase/client"
 export class DispatchRequestError extends Error {
   // false = el servidor respondió (rechazo definitivo); true = no hubo
   // respuesta y el mismo request_key puede reintentarse sin duplicar.
-  constructor(message: string, readonly retryable: boolean) {
+  // payload: cuerpo del rechazo (p. ej. el Bulto actualizado con sus pedidos a retirar).
+  constructor(message: string, readonly retryable: boolean, readonly payload: Record<string, unknown> | null = null) {
     super(message)
   }
 }
@@ -23,8 +24,8 @@ export async function dispatchRequest<T>(path: string, body?: object): Promise<T
     throw new DispatchRequestError("Sin conexión. Reintentá: el escaneo no se duplica.", true)
   }
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { error?: string } | null
-    throw new DispatchRequestError(payload?.error ?? "No se pudo completar la operación. Reintentá.", response.status >= 500)
+    const payload = await response.json().catch(() => null) as ({ error?: string } & Record<string, unknown>) | null
+    throw new DispatchRequestError(payload?.error ?? "No se pudo completar la operación. Reintentá.", response.status >= 500, payload)
   }
   return response.json() as Promise<T>
 }

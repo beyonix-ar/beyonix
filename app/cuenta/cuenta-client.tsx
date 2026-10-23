@@ -91,6 +91,8 @@ const CUSTOMER_PAYMENT_PROOF_EDITABLE_STATUSES = [
 ]
 
 function isOrderDetailDispatched(order: SupabasePedido) {
+  // Corte calculado por el servidor (QR final del Bulto, lib/orders/dispatch-cutoff).
+  if (typeof order.dispatch_cutoff_reached === "boolean") return order.dispatch_cutoff_reached
   const status = (order.estado ?? "").toLowerCase()
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
 
@@ -741,12 +743,14 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     ? existingHelpMessage
       ? "Ver mensaje de ayuda"
       : "Ver reclamo"
-    : "Iniciar reclamo"
+    : orderDelivered ? "Solicitar devolución" : "Iniciar reclamo"
   const claimHelpAriaLabel = existingClaim
     ? existingHelpMessage
       ? `Ver mensaje de ayuda del pedido ${formatPublicOrderId(order.id)}`
       : `Ver reclamo del pedido ${formatPublicOrderId(order.id)}`
-    : `Iniciar reclamo del pedido ${formatPublicOrderId(order.id)}`
+    : orderDelivered
+      ? `Solicitar devolución del pedido ${formatPublicOrderId(order.id)}`
+      : `Iniciar reclamo del pedido ${formatPublicOrderId(order.id)}`
   const claimDetailStatus = getCustomerClaimDetailStatus(existingClaim)
   const showPaymentProofSection =
     isTransferPayment &&

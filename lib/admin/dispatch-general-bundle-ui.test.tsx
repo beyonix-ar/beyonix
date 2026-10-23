@@ -177,6 +177,48 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
+test("QR final con la vista vieja: la base no entrega y el mismo Bulto muestra todos los pedidos a retirar", async () => {
+  const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=7")
+  const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
+  const batch = { id: 7, code: "DSP-20261022-001", display_number: 8, status: "closed", created_at: "2026-10-22T12:00:00Z", closed_at: "2026-10-22T13:00:00Z", prepared_at: "2026-10-22T13:00:00Z", handed_over_at: null, handed_over_by: null, verification_round: 1 }
+  const cancelled = new Set<number>()
+  const posts: Json[] = []
+  const items = () => [32, 38, 41, 50].map((orderId) => ({ id: orderId, batch_id: 7, order_id: orderId, package_id: orderId, added_at: batch.created_at, removed_at: null,
+    blocked: cancelled.has(orderId), blockReason: cancelled.has(orderId) ? "Cancelado" : null, cancellationHold: cancelled.has(orderId), cancelled: cancelled.has(orderId),
+    labelCode: `3600000010${orderId}`, verified: true, verifiedAt: batch.closed_at, verificationMethod: "scanner", parcelCount: 1, parcels: [] }))
+  const detail = () => ({ batch, items: items(), blockedCount: cancelled.size, cancelledCount: cancelled.size, expectedCount: 4, verifiedCount: 4, missingCount: 0, requiresRevalidation: false, parcelCount: 4, operatorName: null })
+  const holds = () => [...cancelled].map((orderId) => ({ id: orderId, orderId, units: 1, pickedUnits: 1, prepared: true, itemCount: 1, detectedAt: batch.created_at, batchId: 7, batchCode: "Bulto - 0008" }))
+  globalThis.fetch = async (input, init) => {
+    const path = String(input)
+    if (path.endsWith("/barcode")) return new Response(new Blob(), { status: 500 })
+    if (path.endsWith("/batches/7") && init?.body) {
+      posts.push(JSON.parse(String(init.body)) as Json)
+      // Mientras la pantalla estaba abierta cancelaron tres pedidos: la base valida y rechaza.
+      for (const orderId of [32, 38, 41]) cancelled.add(orderId)
+      return Response.json({ error: "Hay pedidos que tenés que retirar antes de entregar este Bulto.", issues: [32, 38, 41].map((orderId) => ({ orderId, reasons: ["cancelled"] })), detail: detail() }, { status: 409 })
+    }
+    if (path.endsWith("/batches/7")) return Response.json(detail())
+    return Response.json({ rows: [], total: 0, page: 1, holds: holds(), users: [] })
+  }
+  try {
+    await act(async () => { root.render(<AdminDispatches initialBatchId="7" />) })
+    await settle(150)
+    const text = () => dom.window.document.body.textContent ?? ""
+    assert.match(text(), /Bulto listo para entregar/)
+    const qr = dom.window.document.querySelector<HTMLInputElement>('input[aria-label="Escanear o ingresar el QR del Bulto"]')!
+    await type(dom, qr, batch.code); await submit(dom, qr)
+    await settle(300)
+    assert.deepEqual(posts.map((post) => post.action), ["handover"])
+    assert.notEqual(batch.status, "handed_over")
+    assert.equal(dom.window.location.search, "?batch=7", "se queda en el detalle de ESE Bulto")
+    assert.match(text(), /Hay pedidos que tenés que retirar antes de entregar este Bulto\.[\s\S]*3 pedidos requieren atención/)
+    for (const orderId of [32, 38, 41]) assert.match(text(), new RegExp(`BX-${1000 + orderId} — Cancelado`))
+    assert.doesNotMatch(text(), /BX-1050 — /, "el pedido correcto no se lista como problema")
+    assert.equal([...dom.window.document.querySelectorAll("button")].filter((item) => item.textContent?.includes("Retirar del Bulto")).length, 3)
+    assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar el QR del Bulto"]'), null, "sin QR hasta resolver")
+  } finally { await act(async () => root.unmount()); dom.window.close() }
+})
+
 test("Bulto general: un cancelado muestra sólo el problema y su retiro", async () => {
   const { dom, root } = await setup("https://beyonix.test/admin/despachos?batch=6")
   const { AdminDispatches } = await import("../../app/admin/sections/despachos/admin-dispatches")
@@ -202,13 +244,13 @@ test("Bulto general: un cancelado muestra sólo el problema y su retiro", async 
     await act(async () => { root.render(<AdminDispatches initialBatchId="6" />) })
     await settle(150)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Sacá este pedido del Bulto para continuar[\s\S]*BX-1008[\s\S]*Cancelado[\s\S]*Retirar pedido/)
-    assert.equal(button(dom, "Retirar pedido")?.disabled, false)
+    assert.match(text(), /Hay pedidos que tenés que retirar antes de entregar este Bulto\.[\s\S]*1 pedido requiere atención[\s\S]*BX-1008 — Cancelado[\s\S]*Retirar del Bulto/)
+    assert.equal(button(dom, "Retirar del Bulto")?.disabled, false)
     assert.equal(posts.length, 0)
     for (const hidden of ["Requiere revisión", "Pedido bloqueado", "Envío ya en curso", "Pedidos esperados", "Verificados", "Confirmar entrega", "Verificar DSP"]) assert.doesNotMatch(text(), new RegExp(hidden))
     assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
     assert.equal(dom.window.document.querySelector(".dispatch-progress-track"), null)
-    await act(async () => { button(dom, "Retirar pedido")!.click() })
+    await act(async () => { button(dom, "Retirar del Bulto")!.click() })
     assert.match(text(), /Retirar BX-1008/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
@@ -265,9 +307,9 @@ test("Bultos: varios cancelados se listan para retirar y al resolver el último 
     await act(async () => { row.click() })
     await settle(120)
     const text = () => dom.window.document.body.textContent ?? ""
-    assert.match(text(), /Hay 3 pedidos que tenés que retirar/)
-    for (const code of ["BX-1006", "BX-1011", "BX-1015"]) assert.match(text(), new RegExp(code))
-    assert.equal([...dom.window.document.querySelectorAll("button")].filter((item) => item.textContent?.includes("Retirar pedido")).length, 3)
+    assert.match(text(), /Hay pedidos que tenés que retirar antes de entregar este Bulto\.[\s\S]*3 pedidos requieren atención/)
+    for (const code of ["BX-1006", "BX-1011", "BX-1015"]) assert.match(text(), new RegExp(`${code} — Cancelado`))
+    assert.equal([...dom.window.document.querySelectorAll("button")].filter((item) => item.textContent?.includes("Retirar del Bulto")).length, 3)
     assert.doesNotMatch(text(), /Entregar a Andreani|Verificar DSP|Pedidos esperados|Verificados/)
     assert.equal(dom.window.document.querySelector(".dispatch-progress-track"), null)
     cancelled.clear()

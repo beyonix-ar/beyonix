@@ -48,6 +48,7 @@ import {
   isClaimVisibleForMode,
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
+import { isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import {
   getClaimReplacedUnitsByItem,
   getReplacementFlow,
@@ -255,28 +256,9 @@ function isOrderDelivered(order: SupabasePedido) {
   return estado === "entregado" || Boolean(order.delivered_at) || andreaniStatus.includes("entregado")
 }
 
+/** Mismo corte que approve_order_claim_cancellation: el QR final del Bulto. */
 function isOrderDispatched(order: SupabasePedido) {
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
-  const dispatchedStatuses = [
-    "enviado",
-    "en_camino",
-    "visita_fallida",
-    "en_sucursal",
-    "retiro_pendiente",
-    "retiro_vencido",
-    "en_devolucion",
-    "devuelto_beyonix",
-    "entregado",
-  ]
-
-  return (
-    dispatchedStatuses.includes(estado) ||
-    Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
-    ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
-      (status) => andreaniStatus.includes(status),
-    )
-  )
+  return isOrderDispatchCutoffReached(order, Boolean(order.admin_pending_facts?.dispatch?.packageStatus))
 }
 
 function isOrderInvoiced(order: SupabasePedido) {

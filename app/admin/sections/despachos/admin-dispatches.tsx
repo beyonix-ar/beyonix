@@ -9,10 +9,10 @@ import {
   adminPageClassName,
 } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { orderCode, type BatchDispatchDetail, type DispatchHold } from "@/lib/admin/dispatch"
+import { holdBundleLabel, orderCode, type BatchDispatchDetail, type DispatchHold } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
-import { dispatchLocationFromSearch, dispatchLocationHref, parseDispatchLocation, type DispatchLocation } from "@/lib/admin/dispatch-location"
+import { dispatchLocationFromSearch, dispatchLocationHref, parseCancellationReturn, parseDispatchLocation, type DispatchLocation } from "@/lib/admin/dispatch-location"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchFilterBar } from "./dispatch-filter-bar"
 import { DispatchRecordsTable } from "./dispatch-records-table"
@@ -40,7 +40,12 @@ function readView() {
   try { return restoreDispatchRecordsView(window.sessionStorage.getItem(DISPATCH_VIEW_KEY)) } catch { return restoreDispatchRecordsView(null) }
 }
 
-export function AdminDispatches({ initialBatchId, initialOrderId, initialResolveId }: { initialBatchId?: string; initialOrderId?: string; initialResolveId?: string }) {
+export function AdminDispatches({ initialBatchId, initialOrderId, initialResolveId, initialReturnTo }: { initialBatchId?: string; initialOrderId?: string; initialResolveId?: string; initialReturnTo?: string }) {
+  // Llegada desde el asistente de cancelación: al terminar, vuelve al mismo paso.
+  const returnOrderId = Number(initialResolveId)
+  const returnTo = Number.isSafeInteger(returnOrderId) && returnOrderId > 0 && parseCancellationReturn(initialReturnTo) === `/admin/pedidos/${returnOrderId}?tab=cancelacion`
+    ? `/admin/pedidos/${returnOrderId}?tab=cancelacion` : null
+  const [returnReady, setReturnReady] = useState(false)
   // Pedido y Bulto abiertos viven en la URL (refrescar/volver/otra pestaña).
   const [location, setLocation] = useState<DispatchLocation>(() => parseDispatchLocation({ order: initialOrderId, batch: initialBatchId }))
   const [board, setBoard] = useState<Board | null>(null)
@@ -157,7 +162,9 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     resolveHandled.current = true
     const hold = holds.find((item) => item.orderId === id)
     if (hold) setResolving(hold)
-  }, [board, holds, initialResolveId])
+    // Ya resuelta (otro dispositivo, o volver/recargar después del escaneo).
+    else if (returnTo) setReturnReady(true)
+  }, [board, holds, initialResolveId, returnTo])
 
   async function run(action: () => Promise<void>) {
     if (busyRef.current) return
@@ -235,11 +242,18 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     <div className="dispatch-workspace space-y-4 sm:space-y-5">
     <AdminPageHeader className="dispatch-header sm:flex-row sm:items-end sm:justify-between" eyebrow="Operación" title="Despachos" description="Pedidos y Bultos del día: pickeá, confirmá, armá el Bulto y entregalo." actions={<AdminButton onClick={() => void refresh()} disabled={loading || busy} icon={<RotateCcw className={`size-4 ${loading ? "animate-spin" : ""}`} />}>Actualizar</AdminButton>} />
 
+    {returnTo && <section aria-label="Cancelación en curso" className="flex flex-col gap-3 rounded-2xl border border-white/15 bg-white/5 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <p className="flex items-center gap-2 text-sm font-bold text-white">{returnReady
+        ? <><CheckCircle2 className="size-5 shrink-0 text-emerald-300" />Mercadería de {orderCode(returnOrderId)} resuelta.</>
+        : <>Cancelación de {orderCode(returnOrderId)}: devolvé la mercadería al stock y volvé al pedido.</>}</p>
+      <a href={returnTo} className="admin-ds-button admin-ds-button-primary inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 text-xs font-black uppercase tracking-wide">Continuar cancelación <ArrowRight className="size-4" /></a>
+    </section>}
+
     {holds.length > 0 && listView && <section aria-label="Cancelaciones que requieren acción" className="space-y-2">
       {holds.map((hold) => <div key={hold.id} role="alert" className="flex flex-col gap-3 rounded-2xl border border-red-500/45 bg-red-950 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
         <div className="min-w-0">
           <p className="flex items-center gap-2 font-black text-white"><PackageX className="size-5 shrink-0 text-red-300" />Pedido {orderCode(hold.orderId)} cancelado</p>
-          <p className="mt-0.5 text-sm text-white/80">{hold.prepared ? "Ya fue preparado físicamente" : `Ya tenía ${hold.pickedUnits} de ${hold.units} unidades pickeadas`}{hold.batchCode ? ` y está en ${hold.batchCode}` : ""}. Stock retenido · requiere resolución física · reintegro manual.</p>
+          <p className="mt-0.5 text-sm text-white/80">{hold.prepared ? "Ya fue preparado físicamente" : `Ya tenía ${hold.pickedUnits} de ${hold.units} unidades pickeadas`}{hold.batchCode ? `. Retiralo del ${holdBundleLabel(hold.batchCode)} antes de entregarlo` : ""}. El stock vuelve al escanear el pedido.</p>
         </div>
         <AdminPrimaryButton className="h-12 w-full shrink-0 sm:w-auto" onClick={() => openResolution(hold)}>ESCANEAR PEDIDO PARA LIBERAR STOCK</AdminPrimaryButton>
       </div>)}
@@ -251,7 +265,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     {loading && <p role="status" className="text-sm text-white/70">Cargando…</p>}
 
     {resolving ? <AdminSection compact className="dispatch-surface max-w-3xl" title={`Retirar ${orderCode(resolving.orderId)}`} eyebrow="Cancelación con armado" actions={<AdminButton size="sm" onClick={closeResolution}>Volver</AdminButton>}>
-      <CancellationResolution key={resolving.id} hold={resolving} onResolved={() => void refresh()} onClose={closeResolution} />
+      <CancellationResolution key={resolving.id} hold={resolving} onResolved={(result) => { if (result.orderId === returnOrderId) setReturnReady(true); void refresh() }} onClose={closeResolution} />
     </AdminSection> : orderId ? <AdminSection compact className="dispatch-surface @container" title="Preparar pedido" eyebrow="Despachos" actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
       <div className={`grid gap-4 ${sideIds.length > 1 ? "@5xl:grid-cols-[220px_minmax(0,1fr)] @5xl:items-start" : ""}`}>
         {sideIds.length > 1 && <PreparationQueue className="order-last @5xl:order-first" title="Pedidos por preparar" ids={sideIds} currentId={orderId}

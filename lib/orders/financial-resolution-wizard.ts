@@ -45,9 +45,9 @@ export const FINANCIAL_STEP_LABELS: Record<FinancialWizardStep, string> = {
 }
 
 export const FINANCIAL_CHOICE_COPY: Record<FinancialChoice, { label: string; short: string; description: string }> = {
-  beyonix_credit: { label: "Saldo BEYONIX", short: "Saldo BEYONIX", description: "Se acredita inmediatamente en la cuenta del cliente." },
+  beyonix_credit: { label: "Saldo a favor", short: "Saldo a favor", description: "Se acredita en la cuenta BEYONIX del cliente al confirmar." },
   mercadopago_refund: { label: "Reintegrar por Mercado Pago", short: "Mercado Pago", description: "BEYONIX ejecuta el reintegro en Mercado Pago al confirmar, sin salir del sistema." },
-  manual_refund: { label: "Reintegro manual", short: "Manual", description: "Registrá la devolución después de realizarla por fuera del sistema." },
+  manual_refund: { label: "Reintegro externo", short: "Reintegro externo", description: "Transferí el dinero al cliente y registrá el comprobante después." },
 }
 
 export const FINANCIAL_PRODUCT_COPY: Record<FinancialProductOutcome, { label: string; description: string }> = {

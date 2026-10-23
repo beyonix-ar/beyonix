@@ -65,7 +65,7 @@ test("filtro 1/2: alerta, confirmación del retiro, escaneo y stock liberado una
     assert.match(text(), /BX-1006 retirado del despacho/)
     assert.match(text(), /Stock liberado: 3 unidades/)
     assert.match(text(), /Quitado del Bulto general DSP-20261016-001/)
-    assert.match(text(), /Reintegro manual requerido: nada vuelve automáticamente \(tampoco el saldo a favor\)/, "el escaneo no habilita reintegro automático")
+    assert.match(text(), /Reintegro: lo decide Administración en la cancelación del pedido \(nunca automático\)/, "el escaneo no habilita reintegro automático")
     assert.deepEqual(posts.map((post) => [post.code, post.orderId]), [["BAR-A-RED", 6], ["BX-PREP-1006", 6]])
     assert.notEqual(posts[0].requestKey, posts[1].requestKey, "un código nuevo usa una clave nueva")
   } finally { await act(async () => root.unmount()); dom.window.close() }
@@ -84,7 +84,7 @@ test("pickeo parcial: requiere resolución física, pide devolver lo pickeado e 
     const text = () => dom.window.document.body.textContent ?? ""
     assert.match(text(), /ya tenía 1 de 3 unidades pickeadas/)
     assert.match(text(), /Requiere resolución física/)
-    assert.match(text(), /El reintegro \(incluido el saldo a favor\) es manual: nunca automático/)
+    assert.match(text(), /El reintegro se decide en la cancelación del pedido, nunca de forma automática/)
     assert.match(text(), /Confirmo que devolví a la estantería la unidad pickeada de BX-1006/)
     const confirm = [...dom.window.document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')][0]
     await act(async () => { confirm.click() })
@@ -92,7 +92,7 @@ test("pickeo parcial: requiere resolución física, pide devolver lo pickeado e 
     await type(dom, input, "BX-1006"); await submit(dom, input)
     assert.deepEqual(posts.map((post) => [post.code, post.orderId]), [["BX-1006", 6]])
     assert.match(text(), /Stock liberado: 3 unidades/)
-    assert.match(text(), /Reintegro manual requerido/)
+    assert.match(text(), /Reintegro: lo decide Administración/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 

@@ -30,8 +30,8 @@ test("despacho: bloqueo vigente, cancelado dentro de tanda y tanda cerrada", asy
   const { admin, queried } = fakeAdmin({
     order_packages: [{ order_id: 1, status: "prepared" }, { order_id: 2, status: "prepared" }],
     dispatch_batch_items: [
-      { order_id: 1, batch_id: 7, dispatch_batches: { status: "closed" } },
-      { order_id: 2, batch_id: 7, dispatch_batches: { status: "closed" } },
+      { order_id: 1, batch_id: 7, dispatch_batches: { status: "closed", display_number: 8 } },
+      { order_id: 2, batch_id: 7, dispatch_batches: { status: "closed", display_number: 8 } },
       { order_id: 3, batch_id: 8, dispatch_batches: { status: "open" } },
     ],
     dispatch_blocks: [{ order_id: 1 }],
@@ -50,14 +50,14 @@ test("despacho: bloqueo vigente, cancelado dentro de tanda y tanda cerrada", asy
   assert.equal(facts.get(5)?.dispatch?.manualRefundRequired, true)
   assert.equal(facts.get(5)?.cancellationAutomatic, false)
   assert.deepEqual(facts.get(5)?.cancellationAutomaticIssue, { reason: "manual_refund_required", error: null })
-  assert.deepEqual(facts.get(1)?.dispatch, { batchId: 7, batchStatus: "closed", packageStatus: "prepared", blocked: true, physicalHold: false, manualRefundRequired: false })
+  assert.deepEqual(facts.get(1)?.dispatch, { batchId: 7, batchNumber: 8, batchStatus: "closed", packageStatus: "prepared", blocked: true, physicalHold: false, manualRefundRequired: false })
   assert.equal(facts.get(2)?.dispatch?.blocked, true, "cancelado dentro de la tanda: retirarlo")
   // Cancelado ya armado: retiro físico pendiente; nunca "procesando automáticamente".
   assert.equal(facts.get(2)?.dispatch?.physicalHold, true)
   assert.equal(facts.get(2)?.cancellationAutomatic, false)
   assert.deepEqual(facts.get(2)?.cancellationAutomaticIssue, { reason: "physical_resolution", error: null })
-  assert.deepEqual(facts.get(3)?.dispatch, { batchId: 8, batchStatus: "open", packageStatus: null, blocked: false, physicalHold: false, manualRefundRequired: false })
-  assert.deepEqual(facts.get(4)?.dispatch, { batchId: null, batchStatus: null, packageStatus: null, blocked: false, physicalHold: false, manualRefundRequired: false })
+  assert.deepEqual(facts.get(3)?.dispatch, { batchId: 8, batchNumber: null, batchStatus: "open", packageStatus: null, blocked: false, physicalHold: false, manualRefundRequired: false })
+  assert.deepEqual(facts.get(4)?.dispatch, { batchId: null, batchNumber: null, batchStatus: null, packageStatus: null, blocked: false, physicalHold: false, manualRefundRequired: false })
   // Operador: sin datos financieros ni consulta al orquestador.
   assert.equal(facts.get(1)?.financial, null)
   assert.ok(!queried.includes("order_financial_resolutions"))

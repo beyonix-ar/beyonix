@@ -10,6 +10,7 @@ import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
 import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
 import { FinancialResolutionWizard, useFinancialResolutionView } from "./financial-resolution-wizard"
+import { CancellationJourneyPanel } from "./cancellation-journey-panel"
 import type { RegisteredReplacement, ReplacementLoadState } from "@/lib/orders/claim-replacement-flow"
 import { shareUnchanged } from "@/lib/admin/structural-sharing"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
@@ -2736,15 +2737,40 @@ function CreditDestinationOption({
  * estado de pago: el pedido sigue confirmado aunque ARCA falle.
  */
 /** Cancelación automática trabada o derivada a Admin: nunca un "procesando" eterno. */
+/**
+ * Facturación de una cancelación con resolución guiada: el sistema ya sabe
+ * pedido, monto y motivo. Lleva al asistente, que emite la NC con la decisión.
+ */
+function CancellationBillingPointer({ pedido, onOpen }: { pedido: SupabasePedido; onOpen: () => void }) {
+  // Mismo importe canónico que el orquestador: lo cobrado por el medio externo.
+  const amount = Number(pedido.payment_confirmed_amount || pedido.external_amount_due || 0)
+  const reason = deriveOrderCancellationInfo(pedido.order_audit_events, pedido).reasonText
+  return (
+    <section data-testid="cancellation-billing-pointer" className="admin-order-billing-panel mt-3 rounded-xl border p-3">
+      <p className="admin-order-bl-eyebrow">Facturación</p>
+      <h3 className="admin-order-bl-title">Resolución de la cancelación</h3>
+      <dl className="mt-2 grid gap-1 text-sm">
+        <div className="flex flex-wrap gap-2"><dt className="font-semibold text-[var(--admin-text-muted)]">Monto a devolver:</dt><dd className="font-black text-[var(--admin-text)]">{formatPrice(amount)}</dd></div>
+        {reason && <div className="flex flex-wrap gap-2"><dt className="font-semibold text-[var(--admin-text-muted)]">Motivo:</dt><dd className="text-[var(--admin-text)]">{reason}</dd></div>}
+      </dl>
+      <p className="mt-2 text-xs font-semibold text-[var(--admin-text-soft)]">Elegí saldo a favor o reintegro externo: la Nota de Crédito C se emite con esa decisión.</p>
+      <button type="button" onClick={onOpen}
+        className="admin-ds-button admin-ds-button-primary mt-3 inline-flex h-9 cursor-pointer items-center justify-center gap-2 px-3.5 text-11px font-black uppercase tracking-wide">
+        Resolver cancelación <ArrowRight className="size-3.5" />
+      </button>
+    </section>
+  )
+}
+
 function AutomaticCancellationIssueNotice({ pedido }: { pedido: SupabasePedido }) {
   const issue = pedido.admin_pending_facts?.cancellationAutomaticIssue
   if (!issue || pedido.financial_status !== "refund_pending") return null
   return (
     <p role="status" data-testid="automatic-cancellation-issue" className="admin-order-billing-pending-note mb-3 rounded-xl border px-3 py-2 text-xs font-medium text-amber-200">
       {issue.reason === "manual_refund_required"
-        ? "Reintegro manual requerido: el pedido se canceló con el pickeo ya iniciado. La mercadería ya volvió; nada se devuelve automáticamente (tampoco el saldo a favor). Autorizalo desde acá: Nota de Crédito C y Reintegrar por Mercado Pago o transferencia."
+        ? "La mercadería ya volvió al stock. Nada se devuelve solo: elegí acá cómo devolver el dinero (saldo a favor o reintegro externo). La Nota de Crédito C se emite con esa decisión."
         : issue.reason === "physical_resolution"
-        ? "Requiere resolución física: el pedido ya tenía unidades pickeadas. Resolvelo en Despachos para liberar el stock. El reintegro (incluido el saldo a favor) será manual."
+        ? "El pedido ya tenía unidades pickeadas: primero resolvé la mercadería en Despachos. Después vas a poder elegir cómo devolver el dinero."
         : issue.reason === "stalled"
         ? "Requiere acción: la cancelación automática no avanzó a tiempo (Nota de Crédito C y reintegro). Podés resolverla desde acá."
         : `Requiere acción: la cancelación automática se detuvo${issue.error ? ` (${issue.error})` : ""}. Continuá desde acá.`}
@@ -2782,6 +2808,7 @@ function BillingManagementPanel({
   onDownloadInvoice,
   onDownloadCreditNote,
   onBillingUpdated,
+  onOpenCancellation,
 }: {
   pedido: SupabasePedido
   isSuperAdmin: boolean
@@ -2792,9 +2819,15 @@ function BillingManagementPanel({
   onDownloadInvoice: () => void
   onDownloadCreditNote: (noteId?: string) => void
   onBillingUpdated: (order: SupabasePedido) => void
+  onOpenCancellation: () => void
 }) {
   const invoiceIssued = isOrderInvoicedForCreditNote(pedido)
   const automaticCancellation = pedido.admin_pending_facts?.cancellationAutomatic === true && pedido.financial_status === "refund_pending"
+  // Cancelación con resolución guiada: la NC sale de esa decisión (monto y
+  // motivo ya conocidos), nunca de un "Ajuste manual" genérico acá.
+  const guidedCancellation = !automaticCancellation && isCancellationFlowOrder(pedido) &&
+    pedido.financial_status === "refund_pending" &&
+    ["wizard", "resolution"].includes(pedido.admin_pending_facts?.financial?.mode ?? "")
   const testInvoice = invoiceIssued && !isFiscalArcaVoucher(pedido.invoice_arca_environment)
   // Estado único de la NC: el mismo que ven Cancelación, progreso y campana.
   const creditNoteView = getCreditNoteState(pedido)
@@ -3640,7 +3673,8 @@ function BillingManagementPanel({
           El dinero de esta venta ya se reintegró. La nota de crédito pendiente se emite desde la pestaña Cancelación.
         </p>
       )}
-      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && creditNoteView.emitAction !== "legacy" && showCreditNotePanel && (
+      {guidedCancellation && <CancellationBillingPointer pedido={pedido} onOpen={onOpenCancellation} />}
+      {invoiceIssued && !automaticCancellation && !automaticNoteManaged && !guidedCancellation && creditNoteView.emitAction !== "legacy" && showCreditNotePanel && (
         <div className="admin-order-billing-panel admin-order-billing-credit-section admin-credit-note-workflow mt-3 rounded-xl border p-3" data-credit-note-assistant>
           <header className="admin-credit-note-header">
             <div className="admin-credit-note-title">
@@ -4990,7 +5024,9 @@ function PedidoDetailModal({
             </aside>
 
             <div className="admin-order-detail-content min-w-0 flex-1">
-          <OperationalProgress steps={getCancellationProgress(pedido)} />
+          {capabilities.canManageFinancials
+            ? <CancellationJourneyPanel pedido={pedido} compact={activeView !== "cancelacion"} onOpen={() => showDetailView("cancelacion")} />
+            : <OperationalProgress steps={getCancellationProgress(pedido)} />}
           {activeView === "resumen" && (
             <AdminOrderSummaryDashboard
               pedido={pedido}
@@ -5311,6 +5347,7 @@ function PedidoDetailModal({
               onDownloadInvoice={handleDownloadInvoice}
               onDownloadCreditNote={handleDownloadCreditNote}
               onBillingUpdated={onRefundUpdated}
+              onOpenCancellation={() => showDetailView("cancelacion")}
             />
           )}
 

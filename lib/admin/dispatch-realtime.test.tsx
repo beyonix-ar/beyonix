@@ -81,10 +81,10 @@ test("Bulto finalizado muestra la cancelación y recupera el estado al resolver 
     blocked = true
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event(ADMIN_DISPATCH_CHANGED_EVENT)) })
     await settle()
-    assert.match(text(), /BX-1031[\s\S]*Retirar pedido/)
+    assert.match(text(), /BX-1031 — Cancelación solicitada[\s\S]*Retirar del Bulto/)
     assert.doesNotMatch(text(), /Requiere revisión|Pedido bloqueado|Envío ya en curso|Verificar DSP|Entregar a Andreani/)
     assert.equal(dom.window.document.querySelector('input[aria-label="Escanear o ingresar DSP"]'), null)
-    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Retirar pedido"))!.click() })
+    await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent?.includes("Retirar del Bulto"))!.click() })
     assert.match(text(), /Retirar pedido/)
     await act(async () => { [...dom.window.document.querySelectorAll("button")].find((item) => item.textContent === "Cancelar")!.click() })
     blocked = false

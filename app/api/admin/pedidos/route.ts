@@ -66,6 +66,9 @@ export async function GET(request: Request) {
     "credit_note_required",
     "cancelled_at",
     "cancellation_requested_at",
+    // Quién canceló: la campana avisa "cancelado por el cliente".
+    "usuario_id",
+    "cancellation_requested_by",
     "refund_pending_at",
     "invoice_next_attempt_at",
     "invoice_queued_at",

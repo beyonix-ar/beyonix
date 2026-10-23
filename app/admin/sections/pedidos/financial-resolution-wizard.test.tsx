@@ -228,7 +228,7 @@ test("H. saldo BEYONIX: tres pasos, un único paso visible y una sola confirmaci
     assert.match(panel().textContent ?? "", /¿Cómo querés resolver/)
     assert.doesNotMatch(panel().textContent ?? "", /¿Qué pasa con el producto\?/)
     assert.equal(ui.button("Continuar").disabled, true)
-    await ui.click(/^Saldo BEYONIX/)
+    await ui.click(/^Saldo a favor/)
     await ui.click("Continuar")
     const review = panel().textContent ?? ""
     assert.match(review, /BX-1031.*Begoña Núñez.*Arrepentimiento/)
@@ -236,7 +236,7 @@ test("H. saldo BEYONIX: tres pasos, un único paso visible y una sola confirmaci
     assert.doesNotMatch(review, TECHNICAL)
     await ui.click("Confirmar resolución")
     const dialog = ui.doc.querySelector("[role='dialog']")!
-    assert.match(dialog.textContent ?? "", /¿Confirmás esta resolución\?.*Saldo BEYONIX/)
+    assert.match(dialog.textContent ?? "", /¿Confirmás esta resolución\?.*Saldo a favor/)
     await ui.click("Confirmar")
     assert.equal(ui.calls.length, 1)
     assert.deepEqual(JSON.parse(String(ui.calls[0].body)), { action: "resolve", choice: "beyonix_credit", confirmed: true })
@@ -252,7 +252,7 @@ test("C/D. recepción pendiente: esperar no resuelve; excepción exige motivo", 
       receptionOptions: [option("manual_refund", "Reintegro manual")] })
     assert.equal(ui.doc.querySelectorAll("ol li").length, 4)
     await ui.click("Continuar")
-    await ui.click(/^Reintegro manual/)
+    await ui.click(/^Reintegro externo/)
     await ui.click("Continuar")
     await ui.click(/^No/)
     assert.match(ui.doc.body.textContent ?? "", /El reintegro normalmente se completa después de recibir el producto/)

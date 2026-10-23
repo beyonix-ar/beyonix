@@ -30,7 +30,7 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
 
   const [packagesResult, membershipsResult, blocksResult, holdsResult, resolutionsResult, controlResult] = await Promise.all([
     admin.from("order_packages").select("order_id,status").in("order_id", ids),
-    admin.from("dispatch_batch_items").select("order_id,batch_id,dispatch_batches(status)").in("order_id", ids).is("removed_at", null),
+    admin.from("dispatch_batch_items").select("order_id,batch_id,dispatch_batches(status,display_number)").in("order_id", ids).is("removed_at", null),
     admin.from("dispatch_blocks").select("order_id").in("order_id", ids).is("resolved_at", null),
     // Activa (resolved_at null) = resolución física pendiente; cualquiera = cancelación con pickeo.
     admin.from("order_cancellation_holds").select("order_id,resolved_at").in("order_id", ids),
@@ -49,8 +49,8 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
 
   const packages = new Map((packagesResult.data ?? []).map((row) => [row.order_id as number, row.status as "preparing" | "prepared"]))
   const memberships = new Map((membershipsResult.data ?? []).map((row) => {
-    const batch = row.dispatch_batches as unknown as { status: "open" | "closed" | "handed_over" } | null
-    return [row.order_id as number, { batchId: row.batch_id as number, batchStatus: batch?.status ?? null }]
+    const batch = row.dispatch_batches as unknown as { status: "open" | "closed" | "handed_over"; display_number: number | null } | null
+    return [row.order_id as number, { batchId: row.batch_id as number, batchNumber: batch?.display_number ?? null, batchStatus: batch?.status ?? null }]
   }))
   const blocked = new Set((blocksResult.data ?? []).map((row) => row.order_id as number))
   const holdRows = (holdsResult.data ?? []) as Array<{ order_id: number; resolved_at: string | null }>
@@ -71,6 +71,7 @@ export async function loadAdminPendingFacts(admin: Admin, orders: FactsOrder[], 
       financial: null,
       dispatch: {
         batchId: membership?.batchId ?? null,
+        batchNumber: membership?.batchNumber ?? null,
         batchStatus: membership?.batchStatus ?? null,
         packageStatus: packages.get(order.id) ?? null,
         // Igual que el tablero de Despachos: un pedido cancelado dentro de una tanda queda bloqueado.

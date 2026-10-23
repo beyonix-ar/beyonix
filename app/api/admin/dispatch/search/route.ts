@@ -1,5 +1,6 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { dispatchHold, HOLD_COLUMNS } from "@/lib/admin/dispatch"
+import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { DISPATCH_RECORDS_PAGE_SIZE, isDispatchRecordState, type DispatchRecord, type DispatchUser } from "@/lib/admin/dispatch-records"
 
 const validDate = (value: string | null) => {
@@ -45,11 +46,19 @@ export async function GET(request: Request) {
     if (extra.error) return Response.json({ error: "No se pudieron cargar los despachos." }, { status: 500 })
     for (const profile of extra.data ?? []) names.set(profile.id, profileName(profile))
   }
+  // Nombre visible del Bulto que contiene cada pedido cancelado ("Retiralo del Bulto - 0008").
+  const holdBatchIds = [...new Set((holdsResult.data ?? []).map((row) => row.batch_id).filter((id): id is number => typeof id === "number"))]
+  const batchNames = new Map<number, string>()
+  if (holdBatchIds.length) {
+    const batches = await auth.admin.from("dispatch_batches").select("id,display_number").in("id", holdBatchIds)
+    if (batches.error) return Response.json({ error: "No se pudieron cargar los despachos." }, { status: 500 })
+    for (const batch of batches.data ?? []) batchNames.set(batch.id, dispatchBatchName(batch))
+  }
   const seesAmounts = auth.profile.rol === "admin" || auth.profile.rol === "super_admin"
   const rows: DispatchRecord[] = result.rows.map((row) => ({ ...row, total: seesAmounts && row.total !== null ? Number(row.total) : null,
     actorName: row.actorId ? names.get(row.actorId) ?? null : null }))
   const users: DispatchUser[] = (usersResult.data ?? []).map((profile) => ({ id: profile.id, name: profileName(profile) }))
     .sort((left, right) => left.name.localeCompare(right.name, "es"))
-  return Response.json({ rows, total: result.total, page, pageSize: DISPATCH_RECORDS_PAGE_SIZE, holds: (holdsResult.data ?? []).map((row) => dispatchHold(row, null)), users },
+  return Response.json({ rows, total: result.total, page, pageSize: DISPATCH_RECORDS_PAGE_SIZE, holds: (holdsResult.data ?? []).map((row) => dispatchHold(row, row.batch_id ? batchNames.get(row.batch_id) ?? null : null)), users },
     { headers: { "Cache-Control": "no-store" } })
 }

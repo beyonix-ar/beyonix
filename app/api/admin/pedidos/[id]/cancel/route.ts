@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
 
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
-import { upsertCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
 import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import {
   ADMIN_ORDER_CANCELLATION_OTHER_REASON,
@@ -101,7 +100,7 @@ export async function POST(
     }
     if (message.includes("ORDER_ALREADY_DISPATCHED")) {
       return NextResponse.json(
-        { error: "El pedido ya fue despachado: no se puede cancelar como una compra estándar." },
+        { error: "El pedido ya se entregó al transportista: no se puede cancelar como una compra estándar." },
         { status: 409 },
       )
     }
@@ -147,12 +146,8 @@ export async function POST(
 
   const updatedOrder = order as SupabasePedido
 
+  // La campana del cliente la escribe la base (notify_customer_order_cancelled).
   await sendOrderStateEmail(updatedOrder)
-  try {
-    await upsertCustomerCancelledOrderNotification(auth.admin, updatedOrder)
-  } catch (notificationError) {
-    console.log("No se pudo crear notificación de cancelación", notificationError)
-  }
 
   return NextResponse.json({
     order: updatedOrder,

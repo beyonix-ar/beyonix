@@ -19,6 +19,8 @@ const TEST_FILES = [
   "lib/orders/dispatch-cancellation-hold-db.test.ts",
   "lib/orders/dispatch-general-bundle-db.test.ts",
   "lib/orders/dispatch-andreani-db.test.ts",
+  "lib/orders/bundle-handover-cancellation-db.test.ts",
+  "lib/orders/cancellation-journey.test.ts",
   "lib/orders/shipping-parcel-measures-db.test.ts",
   "lib/orders/catalog-random-db.test.ts",
   "lib/orders/dispatch-eligibility.test.ts",
@@ -387,6 +389,7 @@ const DB_TEST_FILES = [
   "lib/mercadopago/refund-closure-concurrency.test.mjs",
   "lib/orders/automatic-cancellation-concurrency.test.mjs",
   "lib/orders/dispatch-cancellation-concurrency.test.mjs",
+  "lib/orders/bundle-handover-cancellation-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y

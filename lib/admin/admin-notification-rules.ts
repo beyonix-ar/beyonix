@@ -81,6 +81,34 @@ export interface CancellationNotificationOrder extends AdminPendingActionsOrder 
   refund_pending_at?: string | null
   paid_at?: string | null
   invoice_created_at?: string | null
+  usuario_id?: string | null
+  cancellation_requested_by?: string | null
+}
+
+/**
+ * "Pedido cancelado por el cliente": aviso inmediato e informativo (se lee y
+ * desaparece). La mercadería pickeada tiene su propia tarea en tiempo real
+ * ("Pedido cancelado en Bulto 0008", hooks/use-dispatch-alerts) y el dinero la
+ * suya (buildCancellationNotification): éste no repite ninguna de las dos.
+ */
+export function buildCustomerCancellationNotification(order: CancellationNotificationOrder): AdminNotification | null {
+  const cancelledAt = order.cancellation_requested_at || order.cancelled_at
+  if (!cancelledAt || order.estado !== "cancelado") return null
+  if (order.admin_pending_facts?.dispatch?.physicalHold) return null
+  if (!order.usuario_id || order.cancellation_requested_by !== order.usuario_id) return null
+  const eventKey = `cancellation:customer:${order.id}`
+  return {
+    id: eventKey,
+    type: "cancellation",
+    eventKey,
+    eventAt: String(cancelledAt),
+    title: "Pedido cancelado",
+    body: `${formatOrderId(order.id)} fue cancelado por el cliente.`,
+    actionUrl: `${ADMIN_ROUTES.pedidos}/${order.id}?tab=cancelacion`,
+    orderId: order.id,
+    isRead: false,
+    kind: "info",
+  }
 }
 
 /** Acciones de dinero de una cancelación (misma fuente que el contador del pedido). */

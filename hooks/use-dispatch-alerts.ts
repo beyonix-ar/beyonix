@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { supabase } from "@/lib/supabase/client"
-import { orderCode, type DispatchHold } from "@/lib/admin/dispatch"
+import { holdBundleLabel, orderCode, type DispatchHold } from "@/lib/admin/dispatch"
 import type { AdminNotification } from "@/lib/admin/admin-notifications"
 
 type BlockedBatch = {
@@ -66,20 +66,25 @@ export function useDispatchAlerts(enabled: boolean) {
   const heldIds = new Set(holds.map((hold) => hold.orderId))
   // Cancelado después del armado: UNA alerta por pedido (aunque esté en un
   // lote), con la acción física que libera stock y reintegro.
-  const notifications: AdminNotification[] = holds.map((hold) => ({
-    id: `dispatch-hold:${hold.id}`,
-    type: "shipping" as const,
-    eventKey: `dispatch-hold:${hold.id}`,
-    eventAt: hold.detectedAt,
-    title: `Pedido ${orderCode(hold.orderId)} cancelado`,
-    body: `${hold.prepared ? "Ya estaba preparado físicamente" : `Ya tenía ${hold.pickedUnits} de ${hold.units} unidades pickeadas`}${hold.batchCode ? ` y está en ${hold.batchCode}` : ""}. Requiere resolución física; el reintegro será manual.`,
-    actionLabel: "Escanear pedido",
-    actionUrl: `/admin/despachos?resolve=${hold.orderId}`,
-    orderId: hold.orderId,
-    isRead: false,
-    priority: "attention" as const,
-    kind: "action" as const,
-  }))
+  const notifications: AdminNotification[] = holds.map((hold) => {
+    const bundle = holdBundleLabel(hold.batchCode)
+    return {
+      id: `dispatch-hold:${hold.id}`,
+      type: "shipping" as const,
+      eventKey: `dispatch-hold:${hold.id}`,
+      eventAt: hold.detectedAt,
+      title: bundle ? `Pedido cancelado en ${bundle}` : `Pedido ${orderCode(hold.orderId)} cancelado`,
+      body: bundle
+        ? `${orderCode(hold.orderId)} fue cancelado. Retiralo del ${bundle} antes de entregarlo.`
+        : `${orderCode(hold.orderId)} fue cancelado con ${hold.prepared ? "el armado completo" : `${hold.pickedUnits} de ${hold.units} unidades pickeadas`}. Devolvé la mercadería al stock.`,
+      actionLabel: bundle ? "Retirar del Bulto" : "Resolver mercadería",
+      actionUrl: `/admin/despachos?resolve=${hold.orderId}`,
+      orderId: hold.orderId,
+      isRead: false,
+      priority: "attention" as const,
+      kind: "action" as const,
+    }
+  })
   const active = batches.filter((batch) => batch.status !== "handed_over" && batch.blockedOrders.some((item) => !heldIds.has(item.orderId)))
   notifications.push(...active.flatMap((batch) => batch.blockedOrders.filter((item) => !heldIds.has(item.orderId)).map((item) => ({
     id: `dispatch:${batch.id}:${item.orderId}`,

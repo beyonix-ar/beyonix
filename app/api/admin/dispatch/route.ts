@@ -1,5 +1,6 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { blocksPacking, dispatchBlockReason, dispatchHold, HOLD_COLUMNS, ORDER_COLUMNS, type DispatchOrder } from "@/lib/admin/dispatch"
+import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 
 type PackageRow = { id: number; order_id: number; status: string; attempt_number: number; prepared_at: string | null; prepared_by: string | null; parcel_count: number | null; parcels_defined_at: string | null; identification_method: string | null }
 type MembershipRow = { id: number; batch_id: number; order_id: number; package_id: number; added_at: string; removed_at: string | null; verified_at: string | null; verification_round: number | null }
@@ -119,7 +120,12 @@ export async function GET(request: Request) {
   }
   for (const hold of holdRows) { blockedReasons.set(hold.order_id, "Pedido cancelado dentro del Bulto general"); blockedAt.set(hold.order_id, hold.detected_at) }
   const batchById = new Map(batches.map((batch) => [batch.id, batch]))
-  const holds = holdRows.map((row) => dispatchHold(row, row.batch_id ? batchById.get(row.batch_id)?.code ?? null : null))
+  // Nombre visible del Bulto (Bulto - 0008); los DSP históricos conservan su código.
+  const holdBatchLabel = (batchId: number | null) => {
+    const batch = batchId ? batchById.get(batchId) : undefined
+    return batch ? (batch.display_number ? dispatchBatchName(batch) : batch.code) : null
+  }
+  const holds = holdRows.map((row) => dispatchHold(row, holdBatchLabel(row.batch_id)))
   const orders = activeOrders.filter((order) => (order.shipping_provider || order.envio_proveedor || "").toLowerCase() === "andreani" && !OUT_OF_DISPATCH.includes(order.estado)).map((order) => {
     const pkg = packageByOrder.get(order.id) ?? null
     const totals = unitsByOrder.get(order.id) ?? { items: 0, units: 0 }

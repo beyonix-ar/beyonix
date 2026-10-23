@@ -464,6 +464,11 @@ export interface SupabasePedido {
   andreani_handed_over_at?: string | null
   /** Hechos server-side para las acciones pendientes (despacho y orquestador financiero). */
   admin_pending_facts?: AdminPendingFacts | null
+  /**
+   * Calculado por el servidor para el cliente (lib/orders/dispatch-cutoff):
+   * el pedido ya salió de BEYONIX (QR final del Bulto) y no puede cancelarse.
+   */
+  dispatch_cutoff_reached?: boolean
 }
 
 export interface SupabaseMercadoPagoOrderRefund {
