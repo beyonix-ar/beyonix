@@ -30,8 +30,8 @@ interface CreditNoteClaimPolicyInput {
   /** Destino del dinero: en un reclamo mixto define qué unidades puede acreditar. */
   destination?: string | null
   /**
-   * El pedido se canceló directamente desde Admin (admin_cancel_order,
-   * auditado): no existe reclamo del cliente. Misma evidencia que exige la
+   * El pedido se canceló directamente desde Admin (admin_cancel_order o
+   * super_admin_cancel_order, auditados): no existe reclamo del cliente. Misma evidencia que exige la
    * base (order_has_admin_direct_cancellation).
    */
   adminDirectCancellation?: boolean

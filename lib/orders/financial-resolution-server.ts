@@ -153,6 +153,15 @@ async function updateResolution(admin: Admin, resolution: Resolution, status: "r
   return data as Resolution
 }
 
+/** Motivo real de la cancelación directa (Admin o Super Admin): la NC no lo vuelve a pedir. */
+async function adminCancellationReason(admin: Admin, orderId: number) {
+  const { data } = await admin.from("order_audit_events").select("metadata").eq("order_id", orderId).eq("actor_type", "admin")
+    .in("action", ["order_cancelled_refund_pending", "order_force_cancelled_by_super_admin"])
+    .order("created_at", { ascending: false }).limit(1).maybeSingle()
+  const reason = (data?.metadata as { reasonText?: unknown } | null | undefined)?.reasonText
+  return typeof reason === "string" && reason.trim().length >= 3 ? reason.trim().slice(0, 120) : "Cancelación aprobada"
+}
+
 /** Venta con Factura C autorizada: el dinero vuelve sólo con NC, haya o no flag. */
 const isInvoicedSale = (order: Order) => Boolean(order.invoice_cae) || order.invoice_status === "authorized"
 
@@ -188,11 +197,12 @@ async function ensureCreditNote(admin: Admin, context: NonNullable<Awaited<Retur
   if (!claim && !context.adminDirectCancellation) throw new Error("La nota de crédito requiere una cancelación aprobada. Revisá el reclamo.")
   const { data: items, error } = await admin.from("orden_items").select("id,cantidad").eq("orden_id", context.order.id)
   if (error || !items?.length) throw new Error("No se pudieron verificar los artículos de la cancelación.")
+  const reason = claim ? "Cancelación aprobada" : await adminCancellationReason(admin, context.order.id)
   const { POST } = await import("@/app/api/admin/orders/[id]/credit-note/route")
   const response = await POST(new Request("http://localhost/api/admin/orders/credit-note", { method: "POST", headers: { authorization, "content-type": "application/json" }, body: JSON.stringify({
     items: items.map((item) => ({ order_item_id: item.id, quantity: item.cantidad })),
     operation_type: "cancelacion_antes_despacho", destination, reason_code: "cancelacion_antes_despacho",
-    reason: "Cancelación aprobada", claim_id: claim?.id ?? null, reception_status: "no_requiere", stock_destination: "no_reingresar",
+    reason, claim_id: claim?.id ?? null, reception_status: "no_requiere", stock_destination: "no_reingresar",
     include_original_shipping: Number(context.order.shipping_cost_charged ?? 0) > 0, other_adjustment_amount: 0, return_shipping_cost: 0, new_shipping_cost: 0,
     expected_note_ids: context.notes.map((note) => note.id),
   }) }), { params: Promise.resolve({ id: String(context.order.id) }) })

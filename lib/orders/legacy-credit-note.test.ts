@@ -77,7 +77,7 @@ test("SQL real: la NC heredada es sólo fiscal, no mueve dinero y no se emite do
     const from = source.indexOf(start)
     return source.slice(from, source.indexOf("$$;", source.indexOf("as $$", from)) + 3)
   }
-  const obligation = readFileSync("supabase/migrations/20261014100000_invoice_obligation_survives_cancellation.sql", "utf8").replace(/\r\n/g, "\n")
+  const directCancellation = readFileSync("supabase/migrations/20261023110000_super_admin_cancellation_financial_circuit.sql", "utf8").replace(/\r\n/g, "\n")
   const db = new PGlite()
   try {
     await db.exec(readFileSync("lib/orders/fixtures/claim-schema.sql", "utf8"))
@@ -101,7 +101,7 @@ test("SQL real: la NC heredada es sólo fiscal, no mueve dinero y no se emite do
       alter table ordenes add column if not exists andreani_envio_id text;
       alter table ordenes add column if not exists tracking_number text;
       alter table ordenes add column if not exists andreani_tracking text`)
-    await db.exec(block(obligation, "create or replace function public.order_has_admin_direct_cancellation("))
+    await db.exec(block(directCancellation, "create or replace function public.order_has_admin_direct_cancellation("))
     await db.exec(block(migration, "create or replace function public.begin_partial_credit_note("))
     await db.query("select set_config('request.jwt.claim.role','service_role',false)")
     const admin = "10000000-0000-4000-8000-000000000003"

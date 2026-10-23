@@ -46,8 +46,8 @@ export async function setupCombinedPaymentDb() {
       select coalesce(sum(case when movement_type in ('credit','reversal','adjustment') then amount else -amount end), 0)
       from customer_credit_movements where user_id = p_user $$;
   `)
-  const obligation = read("supabase/migrations/20261014100000_invoice_obligation_survives_cancellation.sql")
-  await db.exec(block(obligation, "create or replace function public.order_has_admin_direct_cancellation("))
+  const directCancellation = read("supabase/migrations/20261023110000_super_admin_cancellation_financial_circuit.sql")
+  await db.exec(block(directCancellation, "create or replace function public.order_has_admin_direct_cancellation("))
   const refundPolicy = read("supabase/migrations/20260917130000_external_refund_without_credit_note_and_mp_nc_policy.sql")
   await db.exec(block(refundPolicy, "create or replace function public.commit_order_refund_proof("))
   await db.exec(read("supabase/migrations/20261014120000_customer_credit_reversal_after_credit_note.sql"))

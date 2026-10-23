@@ -228,11 +228,12 @@ test("política de la app = política de la base: NC de cancelación sin reclamo
   assert.match(route, /adminDirectCancellation: adminDirectCancellation === true/)
 })
 
-test("NC de una cancelación directa de Admin: sin reclamo sólo con su auditoría; topes intactos", async () => {
+test("NC de una cancelación directa de Admin o Super Admin: sin reclamo sólo con su auditoría; topes intactos", async () => {
   const migration = readFileSync("supabase/migrations/20261014100000_invoice_obligation_survives_cancellation.sql", "utf8").replace(/\r\n/g, "\n")
-  const block = (start: string) => {
-    const from = migration.indexOf(start)
-    return migration.slice(from, migration.indexOf("$$;", migration.indexOf("as $$", from)) + 3)
+  const directCancellation = readFileSync("supabase/migrations/20261023110000_super_admin_cancellation_financial_circuit.sql", "utf8").replace(/\r\n/g, "\n")
+  const block = (start: string, source = migration) => {
+    const from = source.indexOf(start)
+    return source.slice(from, source.indexOf("$$;", source.indexOf("as $$", from)) + 3)
   }
   const db = new PGlite()
   try {
@@ -245,19 +246,27 @@ test("NC de una cancelación directa de Admin: sin reclamo sólo con su auditor�
       "supabase/migrations/20260906110000_claim_credit_note_snapshot.sql",
       "supabase/migrations/20260917120000_credit_note_refundable_external_cap.sql",
     ]) await db.exec(readFileSync(path, "utf8"))
-    await db.exec(block("create or replace function public.order_has_admin_direct_cancellation("))
+    await db.exec(block("create or replace function public.order_has_admin_direct_cancellation(", directCancellation))
     await db.exec(block("create or replace function public.begin_partial_credit_note("))
     await db.query("select set_config('request.jwt.claim.role','service_role',false)")
     const admin = "10000000-0000-4000-8000-000000000003"
     const customer = "10000000-0000-4000-8000-000000000001"
     await db.query("insert into auth.users values($1,'a@example.test',now()),($2,'c@example.test',now())", [admin, customer])
     await db.query("insert into profiles(id,email,rol) values($1,'a@example.test','admin'),($2,'c@example.test','cliente')", [admin, customer])
-    for (const id of [1, 2]) {
+    for (const id of [1, 2, 3, 4]) {
       await db.query(`insert into ordenes(id,usuario_id,estado,total,invoice_status,invoice_cae,invoice_number,invoice_point,
         payment_confirmed_amount,external_amount_due,financial_status) values ($1,$2,'cancelado',1000,'authorized','CAE',$3,1,1000,1000,'refund_pending')`, [id, customer, id])
     }
     await db.query(`insert into order_audit_events(order_id,actor_type,action,metadata)
       values (1,'admin','order_cancelled_refund_pending','{"source":"admin_direct_cancellation"}'::jsonb)`)
+    // Misma metadata que super_admin_cancel_order (20261017110000): 3 antes del despacho, 4 ya entregado a Andreani.
+    await db.query(`insert into order_audit_events(order_id,actor_type,action,metadata) values
+      (3,'admin','order_force_cancelled_by_super_admin','{"newEstado":"cancelado","reasonText":"Error en la carga del pedido","stock":{"dispatchedRetention":false}}'::jsonb),
+      (4,'admin','order_force_cancelled_by_super_admin','{"newEstado":"cancelado","reasonText":"Error en la carga del pedido","stock":{"dispatchedRetention":true}}'::jsonb)`)
+    const recognized = async (orderId: number) =>
+      (await db.query<{ ok: boolean }>("select order_has_admin_direct_cancellation($1) ok", [orderId])).rows[0].ok
+    assert.deepEqual([await recognized(1), await recognized(2), await recognized(3), await recognized(4)], [true, false, true, false],
+      "una sola regla: Admin y Super Admin antes del despacho; nunca sin auditoría ni con la venta ya entregada")
     const reserve = (orderId: number, amount: number) => db.query(
       "select id from begin_partial_credit_note($1::bigint,null,'external_refund','Cancelación aprobada',0,$2::numeric,$2::numeric,1,$1::bigint,$3::uuid,'[]','cancelacion_antes_despacho')",
       [orderId, amount, admin],
@@ -271,6 +280,11 @@ test("NC de una cancelación directa de Admin: sin reclamo sólo con su auditor�
     await assert.rejects(reserve(1, 1000), /CREDIT_NOTE_PROCESSING_IN_PROGRESS/)
     await db.query("update order_credit_notes set status='authorized' where order_id=1")
     await assert.rejects(reserve(1, 1), /CREDIT_NOTE_EXCEEDS_INVOICE|CREDIT_NOTE_EXCEEDS_REFUNDABLE_AMOUNT/)
+    // Super Admin: la misma NC de cancelación sin reclamo, una sola vez.
+    assert.ok((await reserve(3, 1000)).rows[0])
+    await assert.rejects(reserve(3, 1000), /CREDIT_NOTE_PROCESSING_IN_PROGRESS/)
+    // Venta ya entregada a Andreani: no es una NC "antes del despacho" (circuito de devolución).
+    await assert.rejects(reserve(4, 1000), /CLAIM_REQUIRED/)
     // Otra operación sin reclamo sigue prohibida aunque el pedido tenga la auditoría.
     await assert.rejects(db.query(
       "select id from begin_partial_credit_note(1,null,'external_refund','Devolución',0,1,1,1,1,$1,'[]','devolucion_parcial')", [admin],

@@ -559,6 +559,44 @@ test("Nota de crédito: no vuelve con unidades aún en cliente exige excepción 
     assert.equal(await page.getByRole("button", { name: /Devolución/ }).count(), 0)
   } finally { await page.close() }
 })
+// Venta cancelada por Super Admin, transferencia de $899 con Factura C y NC
+// pendiente: el orquestador la reconoce como cancelación directa (wizard).
+const superAdminCancelled = (id: number, mode: "wizard" | "advanced", auditEvents: unknown[]) => order(id, {
+  estado: "cancelado", financial_status: "refund_pending", cancelled_at: "2026-10-21T10:00:00Z",
+  payment_method_id: "transferencia", payment_status: "confirmado", paid_at: "2026-10-20T12:00:00Z",
+  payment_confirmed_amount: 899, external_amount_due: 899, total: 899, subtotal: 899,
+  invoice_status: "authorized", credit_note_required: true, order_audit_events: auditEvents,
+  admin_pending_facts: { financial: { mode, resolutionStatus: null, hasOptions: mode === "wizard" }, dispatch: null },
+})
+
+test("I/J. Facturación: la cancelación de Super Admin va a la resolución guiada; el ajuste administrativo queda para el caso avanzado real", async () => {
+  const cancelled = superAdminCancelled(14, "wizard", [{
+    id: 1, order_id: 14, actor_type: "admin", actor_id: "u1", action: "order_force_cancelled_by_super_admin",
+    previous_status: "pagado", new_status: "cancelado", created_at: "2026-10-21T10:00:00Z",
+    metadata: { newEstado: "cancelado", reasonText: "Error en la carga del pedido" },
+  }])
+  const page = await open("light", { orderId: 14, tab: "facturacion", pedidos: [cancelled] })
+  try {
+    const pointer = page.getByTestId("cancellation-billing-pointer")
+    await pointer.waitFor()
+    assert.match(await pointer.innerText(), /\$\s?899/, "monto canónico, no editable")
+    assert.match(await pointer.innerText(), /Error en la carga del pedido/, "motivo real de la cancelación")
+    assert.equal(await page.getByRole("button", { name: "Registrar ajuste administrativo" }).count(), 0)
+    assert.equal(await page.getByText("Ajuste administrativo", { exact: true }).count(), 0)
+    assert.equal(await page.locator(".admin-credit-adjustment-panel").count(), 0)
+  } finally {
+    await page.close()
+  }
+  // Caso avanzado real (NC exigida sin cancelación reconocible): conserva su flujo.
+  const advanced = await open("light", { orderId: 15, tab: "facturacion", pedidos: [superAdminCancelled(15, "advanced", [])] })
+  try {
+    assert.equal(await advanced.getByTestId("cancellation-billing-pointer").count(), 0)
+    await advanced.getByRole("button", { name: "Registrar ajuste administrativo" }).waitFor()
+  } finally {
+    await advanced.close()
+  }
+})
+
 test("Dark: la jerarquía de fondos del detalle no cambia", async () => {
   // Valores Dark medidos y verificados sin cambios contra HEAD.
   const expected: Record<string, string> = { resumen: "1,15,25,1", pago: "1,15,25,1", facturacion: "1,15,25,1", envio: "21,21,21,1", atencion: "21,21,21,1", historial: "21,21,21,1" }

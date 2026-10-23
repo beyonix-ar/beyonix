@@ -42,6 +42,7 @@ const MIGRATIONS = [
   "supabase/migrations/20261021100000_dispatch_andreani_label_scan_confirmation.sql",
 ]
 const CUTOFF_MIGRATION = "supabase/migrations/20261023100000_bundle_handover_cancellation_cutoff.sql"
+const DIRECT_CANCELLATION_MIGRATION = "supabase/migrations/20261023110000_super_admin_cancellation_financial_circuit.sql"
 
 const between = (file: string, start: string, end: string) => {
   const text = read(file)
@@ -72,6 +73,7 @@ async function setup() {
   for (const sql of REPLACED_FUNCTIONS) await db.exec(sql)
   await db.exec(read("supabase/migrations/20260917110000_fix_customer_cancellation_type_and_null_bugs.sql"))
   await db.exec(read(CUTOFF_MIGRATION))
+  await db.exec(read(DIRECT_CANCELLATION_MIGRATION))
   // Mismo trigger que producción para el aviso de cancelación.
   await db.exec(`create trigger zz_notify_customer_order_cancelled_trigger after update of estado, financial_status
     on ordenes for each row execute function notify_customer_order_cancelled()`)
@@ -277,5 +279,43 @@ test("W: Super Admin cancela dentro del Bulto: queda auditado y el QR sigue bloq
     await db.query("select verify_and_finalize_dispatch_batch($1,$2,'scanner',$3,$4,null)", [batch.id, label(1036), actor, key()])
     await handover(db, batch)
     assert.equal(await count(db, "select count(*)::int n from ordenes where id=1035 and andreani_handed_over_at is not null"), 0, "el cancelado nunca queda entregado")
+  } finally { await db.close() }
+})
+
+test("cancelación del cliente y de Super Admin: mismo circuito Saldo/Reintegro → NC, sin duplicados ni segundo destino", async () => {
+  const db = await setup()
+  try {
+    const reserve = (orderId: number, choice: string) => db.query<{ id: string; choice: string; amount: number }>(
+      "select (r).id, (r).choice, (r).amount from (select reserve_order_financial_resolution($1,$2,$3) r) s", [orderId, adminActor, choice])
+    const directCancellation = async (orderId: number) =>
+      (await db.query<{ ok: boolean }>("select order_has_admin_direct_cancellation($1) ok", [orderId])).rows[0].ok
+    // A: cliente antes del picking (reclamo de cancelación aprobado); B: Super Admin antes del picking.
+    await db.exec("update ordenes set andreani_envio_id=null, andreani_tracking=null, payment_method_id='transferencia', payment_id=null where id in (1037,1038)")
+    await customerCancel(db, 1037)
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1038, superAdmin, "error_administrativo", "Error en la carga del pedido"])
+    assert.equal(await count(db, "select count(*)::int n from order_claims where order_id=1037 and failure_type='cancelar_compra' and status in ('aprobado','reintegro_pendiente')"), 1,
+      "A: la NC del cliente se autoriza con su reclamo")
+    assert.equal(await directCancellation(1037), false, "A: sin auditoría de Admin, sólo el reclamo")
+    assert.equal(await directCancellation(1038), true, "B: la cancelación de Super Admin es una cancelación directa válida")
+    assert.equal(await count(db, "select count(*)::int n from ordenes where id in (1037,1038) and estado='cancelado' and financial_status='refund_pending'"), 2)
+
+    // C: ambos eligen destino; F: reintentar el mismo destino es idempotente; G: otro destino se rechaza.
+    for (const [orderId, choice, other] of [[1037, "beyonix_credit", "manual_refund"], [1038, "manual_refund", "beyonix_credit"]] as const) {
+      const first = (await reserve(orderId, choice)).rows[0]
+      assert.equal(first.choice, choice)
+      assert.equal((await reserve(orderId, choice)).rows[0].id, first.id, `F ${orderId}: reintento idempotente`)
+      await assert.rejects(reserve(orderId, other), /FINANCIAL_CHOICE_CONFLICT/, `G ${orderId}: nunca dos destinos`)
+    }
+    assert.equal(await count(db, "select count(*)::int n from order_financial_resolutions where order_id in (1037,1038)"), 2)
+
+    // H: Super Admin cancela con la mercadería en el Bulto → NC y dinero bloqueados hasta resolver el stock.
+    await ready(db, 1039)
+    await closedBundle(db, [1039])
+    await db.query("select super_admin_cancel_order($1,$2,$3,$4)", [1039, superAdmin, "error_administrativo", "Error en la carga del pedido"])
+    assert.equal(await directCancellation(1039), true)
+    await assert.rejects(db.query("insert into order_credit_notes(order_id) values (1039)"), /DISPATCH_PHYSICAL_RESOLUTION_REQUIRED/, "H: sin NC con stock pendiente")
+    await assert.rejects(reserve(1039, "manual_refund"), /DISPATCH_PHYSICAL_RESOLUTION_REQUIRED/, "H: sin destino con stock pendiente")
+    await resolve(db, 1039)
+    assert.equal((await reserve(1039, "beyonix_credit")).rows[0].choice, "beyonix_credit", "stock resuelto: entra al circuito normal")
   } finally { await db.close() }
 })
