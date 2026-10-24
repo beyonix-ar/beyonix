@@ -89,6 +89,7 @@ function quoteAndreaniCheckout(request: Parameters<typeof actualquoteAndreaniChe
     getAndreaniCommercialSettings: async () => ({ enabled: true }),
     getShippingSettings: async () => defaultTestShippingSettings,
     getShippingQuoteSettings: async () => ({ logisticsMarkupPercent: 0 }),
+    recordQuote: async () => {},
     ...dependencies,
   })
 }
@@ -173,6 +174,30 @@ test("la caché no reutiliza tarifas entre ambientes ni contratos", async () => 
   assert.equal((await quoteAndreaniCheckout(request, { ...dependencies, env: prod }))[0].price, 2000)
   assert.equal((await quoteAndreaniCheckout(request, { ...dependencies, env: { ...prod, ANDREANI_PROD_HOME_CONTRACT: "new-contract" } }))[0].price, 3000)
   assert.equal(calls, 3)
+})
+
+test("checkout registra el response real y conserva el precio original", async () => {
+  resetAndreaniCheckoutQuoteStateForTests()
+  const recorded: Array<{ environment: string; request: { contrato: string; bultos: unknown[] }; response: { tarifaConIva: { total: string } } }> = []
+  const [option] = await quoteAndreaniCheckout(
+    { cpDestino: "3230", localidad: "Paso de los Libres", provincia: "Corrientes", items: [{ productId: 10, quantity: 1 }] },
+    {
+      env: qaQuoteEnvironment(),
+      getLocalities: async () => officialLocalityResponse,
+      loadItems: async () => [{ product: completeProduct, variant: null, quantity: 1, discountPercent: 0 }],
+      quoteTariff: async () => ({
+        pesoAforado: "1", tarifaSinIva: { seguroDistribucion: "10", distribucion: "990", total: "1000" },
+        tarifaConIva: { seguroDistribucion: "12.10", distribucion: "1197.90", total: "1210" },
+      }),
+      recordQuote: async (input) => { recorded.push(input) },
+    },
+  )
+  assert.equal(recorded.length, 1)
+  assert.equal(recorded[0].environment, "QA")
+  assert.equal(recorded[0].request.contrato, qaQuoteEnvironment().ANDREANI_QA_HOME_CONTRACT)
+  assert.equal(recorded[0].response.tarifaConIva.total, "1210")
+  assert.equal(option.pricing.providerAmount, 1210)
+  assert.equal(option.price, 1210)
 })
 
 test("envíos: redondeo al múltiplo de $10 más cercano (nunca a centenas ni a miles)", () => {

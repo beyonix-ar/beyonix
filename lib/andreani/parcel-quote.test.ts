@@ -10,6 +10,7 @@ type Row = Record<string, unknown>
 /** Supabase mínimo: select/eq/in/order/maybeSingle + rpc capturado. */
 function fakeAdmin(tables: Record<string, Row[]>) {
   const rpcCalls: Array<{ name: string; args: Row }> = []
+  const insertedSnapshots: Row[] = []
   const select = (table: string) => {
     const filters: Array<[string, unknown, "eq" | "in"]> = []
     const rows = () => (tables[table] ?? []).filter((row) =>
@@ -25,7 +26,14 @@ function fakeAdmin(tables: Record<string, Row[]>) {
   }
   return {
     rpcCalls,
-    from: (table: string) => ({ select: () => select(table) }),
+    insertedSnapshots,
+    from: (table: string) => ({
+      select: () => select(table),
+      insert: async (row: Row) => {
+        if (table === "andreani_quote_snapshots") insertedSnapshots.push(row)
+        return { error: null }
+      },
+    }),
     rpc: async (name: string, args: Row) => {
       rpcCalls.push({ name, args })
       return { data: true, error: null }
@@ -84,6 +92,10 @@ test("recotización con bultos reales: UNA consulta con todos los bultos y difer
   assert.equal(recorded.args.p_status, "quoted")
   assert.equal(recorded.args.p_amount, 10_380)
   assert.equal(recorded.args.p_request_key, "40000000-0000-4000-8000-000000000009")
+  assert.equal(admin.insertedSnapshots.length, 1)
+  assert.equal(admin.insertedSnapshots[0].source, "measured")
+  assert.equal(admin.insertedSnapshots[0].order_id, 42)
+  assert.equal(admin.insertedSnapshots[0].amount_with_vat, 10_380)
 })
 
 test("diferencia considerable: alerta para revisar antes de generar el envío", async () => {

@@ -29,8 +29,9 @@ test("control móvil: Bulto correcto, cancelado bloquea, retiro recalcula y conf
     return Response.json({ error: "Ruta inesperada" }, { status: 404 })
   }
   const settle = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)) }) }
+  const navigated: string[] = []
   try {
-    await act(async () => { root.render(<MobileBundleControl id="47" />) })
+    await act(async () => { root.render(<MobileBundleControl id="47" navigate={(href) => navigated.push(href)} />) })
     await settle()
     const body = () => dom.window.document.body.textContent ?? ""
     const confirm = () => [...dom.window.document.querySelectorAll("button")].find((button) => button.textContent === "CONFIRMAR")!
@@ -56,11 +57,13 @@ test("control móvil: Bulto correcto, cancelado bloquea, retiro recalcula y conf
     assert.match(body(), /Cantidad de paquetes a despachar: 1/)
     assert.match(body(), /✓ Bulto listo para entregar/)
     assert.equal(confirm().disabled, false)
+    assert.deepEqual(navigated, [], "sin confirmar no se mueve")
     await act(async () => { confirm().click() })
     await settle()
     assert.deepEqual(posts, ["remove", "confirm"])
     assert.match(body(), /DESPACHADO ✓/)
     assert.equal(confirm(), undefined, "la entrega no añade otro paso")
+    assert.deepEqual(navigated, ["/admin/despachos"], "QR final confirmado por la base: vuelve a Despachos (reemplazando el control)")
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
 
@@ -90,8 +93,9 @@ test("control móvil: la vista vieja se confirma, la base rechaza y muestra los 
     return Response.json({ error: "Ruta inesperada" }, { status: 404 })
   }
   const settle = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 40)) }) }
+  const navigated: string[] = []
   try {
-    await act(async () => { root.render(<MobileBundleControl id="48" />) })
+    await act(async () => { root.render(<MobileBundleControl id="48" navigate={(href) => navigated.push(href)} />) })
     await settle()
     const body = () => dom.window.document.body.textContent ?? ""
     const confirm = () => [...dom.window.document.querySelectorAll("button")].find((button) => button.textContent === "CONFIRMAR")!
@@ -106,5 +110,6 @@ test("control móvil: la vista vieja se confirma, la base rechaza y muestra los 
     assert.equal([...dom.window.document.querySelectorAll("button")].filter((button) => button.textContent === "Retirar del Bulto").length, 5)
     assert.equal(confirm().disabled, true)
     assert.doesNotMatch(body(), /Bulto listo para entregar/)
+    assert.deepEqual(navigated, [], "con incidencias no avanza: queda en los pedidos a retirar")
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })

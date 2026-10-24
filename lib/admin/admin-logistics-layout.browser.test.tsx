@@ -57,7 +57,7 @@ test("La fila de pedidos prioriza seguimiento y oculta el desglose técnico hast
   const { LogisticsOrderTableRow } = await import("../../app/admin/sections/logistica/admin-logistica")
   const row: LogisticsOrderRow = {
     id: 42, code: "BX-1042", createdAt: "2026-10-01T12:00:00.000Z", tracking: "AR123", status: "Entregado",
-    parcels: 2, checkoutQuote: 10000, markupPercent: 10, markupAmount: 1000, benefit: 500,
+    parcels: 2, checkoutQuote: 10000, markupPercent: 10, markupAmount: 1000, extraCharged: 1000, benefit: 500,
     chargedToCustomer: 11000, parcelQuote: 12000, difference: 2000, differencePercent: 20,
     billedOutbound: 12500, billedTotal: 12500, billedEntries: 1, billedVsCheckout: 2500,
     billedVsParcel: 500, reconciliation: "major_difference", references: "FACT-123",

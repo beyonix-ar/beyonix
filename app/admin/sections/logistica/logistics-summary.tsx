@@ -35,7 +35,7 @@ export const LOGISTICS_HELP = {
   charged: "Importe de envío que efectivamente pagó el cliente.",
   providerQuoted: "Tarifa informada por Andreani al cotizar el envío.",
   markupPercent: "Porcentaje BEYONIX vigente cuando se creó el pedido.",
-  markup: "Importe adicional generado por el recargo logístico.",
+  markup: "Importe efectivamente cobrado al cliente por encima de la tarifa cotizada por Andreani. No incluye recargos bonificados.",
   benefit: "Parte del envío cubierta por BEYONIX.",
   parcelQuoted: "Tarifa calculada usando las medidas reales del pedido armado.",
   difference: "Cotizado con paquetes de envío medidos menos tarifa de checkout, en pedidos con ambos datos.",
@@ -141,7 +141,7 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
   const economics = [
     <Metric key="charged" page={page} label="Cobrado al cliente por envíos" help={LOGISTICS_HELP.charged} value={money(summary.chargedToCustomers)} detail={`${summary.soldOrders} pedidos vendidos`} />,
     <Metric key="quoted" page={page} label="Tarifa Andreani checkout" help={LOGISTICS_HELP.providerQuoted} value={money(summary.providerQuoted)} detail={legacyOrders > 0 ? `${legacyOrders} pedidos anteriores sin desglose` : "Con el paquete estimado"} />,
-    <Metric key="markup" page={page} label="Costo extra cobrado" help={LOGISTICS_HELP.markup} value={money(summary.markupCollected)} detail="Suma de cada recargo aplicado" tone="positive" />,
+    <Metric key="markup" page={page} label="Costo extra cobrado" help={LOGISTICS_HELP.markup} value={money(summary.markupCollected)} detail="Excedente realmente pagado sobre la tarifa Andreani" tone="positive" />,
     <Metric key="benefit" page={page} label="Beneficio cubierto por BEYONIX" help={LOGISTICS_HELP.benefit} value={money(summary.benefitAbsorbed)} detail="Bonificaciones de envío" />,
     <Metric key="parcel" page={page} label="Cotizado con paquetes de envío medidos" help={LOGISTICS_HELP.parcelQuoted} value={money(summary.parcelQuoted)} detail={`${summary.parcelQuotedOrders} pedidos recotizados`} />,
     <Metric key="billed" page={page} label="Facturado Andreani" help={LOGISTICS_HELP.billed} value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}

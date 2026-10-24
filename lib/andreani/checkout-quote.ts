@@ -15,6 +15,7 @@ import {
 import { canonicalizeCheckoutQuoteItems } from "../cart/checkout-shipping-items.ts"
 import { getCheckoutOrderItemUnitPrice } from "../orders/conditioned-checkout.ts"
 import { calculateCartTotals } from "../cart/cart-totals.ts"
+import { recordAndreaniQuoteSnapshot, type AndreaniQuoteSnapshotInput } from "./quote-snapshot.ts"
 import { calculateCustomerShippingCost, type ShippingBonusSettings } from "../store-config.ts"
 import {
   ANDREANI_B2C_MAX_PACKAGE_WEIGHT_KG,
@@ -166,6 +167,7 @@ interface CheckoutQuoteDependencies {
   quoteTariff?: (
     input: AndreaniTariffRequest,
   ) => Promise<AndreaniTariffResponse>
+  recordQuote?: (input: AndreaniQuoteSnapshotInput) => Promise<void>
   geocodeAddress?: typeof geocodeCustomerAddress
   isDestinationCached?: (
     request: Pick<
@@ -982,7 +984,7 @@ export async function quoteAndreaniCheckout(
     ) => {
       const tariffStart = performance.now()
       try {
-        const response = await quote({
+        const tariffRequest: AndreaniTariffRequest = {
           cpDestino: request.cpDestino,
           contrato,
           cliente: config.cliente,
@@ -990,9 +992,17 @@ export async function quoteAndreaniCheckout(
           // Todos los bultos estimados en una sola consulta: Andreani
           // devuelve la suma de la tarifa de cada uno.
           bultos: toAndreaniTariffPackages(packageData.parcels),
+        }
+        const response = await quote(tariffRequest)
+        const providerAmount = readAndreaniTariffAmount(response)
+        await (dependencies.recordQuote ?? recordAndreaniQuoteSnapshot)({
+          source: "checkout",
+          environment: config.environment,
+          request: tariffRequest,
+          response,
         })
         mark(`tarifa_${type}`, tariffStart)
-        return { type, providerAmount: readAndreaniTariffAmount(response), packageData }
+        return { type, providerAmount, packageData }
       } catch (error) {
         mark(`tarifa_${type}`, tariffStart)
         if (

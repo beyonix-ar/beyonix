@@ -16,6 +16,7 @@ import {
 import { loadCurrentMeasuredParcels, shipmentPackagesFromParcels } from "./order-parcels.ts"
 import { loadOrderShipmentItems } from "./order-shipment.ts"
 import type { AndreaniTariffRequest, AndreaniTariffResponse } from "./types.ts"
+import { recordAndreaniQuoteSnapshot, type AndreaniQuoteSnapshotInput } from "./quote-snapshot.ts"
 
 type AdminClient = ReturnType<typeof createAdminClient>
 
@@ -32,6 +33,7 @@ export interface ParcelQuoteDependencies {
   env?: NodeJS.ProcessEnv
   clientOptions?: AndreaniClientOptions
   quoteTariff?: (input: AndreaniTariffRequest) => Promise<AndreaniTariffResponse>
+  recordQuote?: (input: AndreaniQuoteSnapshotInput) => Promise<void>
 }
 
 export type ParcelQuoteResult =
@@ -99,13 +101,22 @@ export async function quoteOrderParcels(
     const quote = dependencies.quoteTariff ?? ((input: AndreaniTariffRequest) => client.cotizarEnvio(input))
     // Una sola consulta con todos los bultos reales (Andreani devuelve la
     // suma de la tarifa de cada bulto), igual que en checkout.
-    const amountCents = toCents(readAndreaniTariffAmount(await quote({
+    const tariffRequest: AndreaniTariffRequest = {
       cpDestino: order.cp_destino,
       contrato,
       cliente: config.cliente,
       sucursalOrigen: config.sucursalOrigen,
       bultos: toAndreaniTariffPackages(packages.parcels),
-    })))
+    }
+    const response = await quote(tariffRequest)
+    const amountCents = toCents(readAndreaniTariffAmount(response))
+    await (dependencies.recordQuote ?? ((input) => recordAndreaniQuoteSnapshot(input, admin)))({
+      source: "measured",
+      orderId,
+      environment: config.environment,
+      request: tariffRequest,
+      response,
+    })
     await record("quoted", amountCents / 100, null)
 
     const checkoutAmount = order.shipping_provider_quote_amount == null ? null : Number(order.shipping_provider_quote_amount)

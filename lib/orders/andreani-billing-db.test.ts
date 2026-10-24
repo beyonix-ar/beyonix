@@ -50,9 +50,50 @@ async function setup() {
       (2, 1, 24, 'reemplazo', '360000000000224', null);
   `)
   await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009120000_andreani_billing_reconciliation.sql"), "utf8"))
+  await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261024190000_andreani_quote_trace_and_collected_extra.sql"), "utf8"))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   return db
 }
+
+test("resumen logístico agrupa sólo el extra realmente cobrado", async () => {
+  const db = await setup()
+  try {
+    await db.exec(`insert into ordenes(id, estado, shipping_provider_quote_amount, shipping_markup_amount, shipping_cost_charged, shipping_cost_real, shipping_benefit_amount)
+      values (40, 'pagado', 10000, 500, 0, 10500, 10500),
+             (41, 'pagado', 10000, 500, 10200, 10500, 300),
+             (42, 'pagado', 10000, 500, 10500, 10500, 0),
+             (43, 'pagado', 10000, 500, 8000, 10500, 2500)`)
+    const result = await db.query<{ summary: { markupCollected: number; providerQuoted: number; benefitAbsorbed: number; chargedToCustomers: number } }>(
+      "select admin_logistics_summary('2026-10-05T00:00:00Z', '2026-10-06T00:00:00Z') summary")
+    assert.equal(Number(result.rows[0].summary.markupCollected), 700)
+    assert.equal(Number(result.rows[0].summary.providerQuoted), 68_000)
+    assert.equal(Number(result.rows[0].summary.benefitAbsorbed), 13_300)
+    assert.equal(Number(result.rows[0].summary.chargedToCustomers), 28_700)
+  } finally { await db.close() }
+})
+
+test("snapshot Andreani futuro persiste desglose y bultos sin modificar pedidos existentes", async () => {
+  const db = await setup()
+  try {
+    const before = await db.query<{ count: number }>("select count(*)::integer count from andreani_quote_snapshots")
+    assert.equal(before.rows[0].count, 0)
+    const inserted = await db.query<{ environment: string; amount_with_vat: string; response: { tarifaConIva: { total: number } } }>(`
+      insert into andreani_quote_snapshots
+        (source, order_id, environment, contract, client_code, origin_branch, destination_postal_code,
+         packages, amount_without_vat, amount_with_vat, distribution_without_vat, distribution_with_vat,
+         insurance_without_vat, insurance_with_vat, response)
+      values ('measured', 24, 'PROD', '400042104', '0012011683', 'RAC', '3300',
+        '[{"valorDeclarado":999,"volumen":833,"kilos":0.1}]'::jsonb,
+        14598.51, 17664.20, 14578.53, 17640.02, 19.98, 24.18,
+        '{"pesoAforado":"292.00","tarifaSinIva":{"total":14598.51},"tarifaConIva":{"total":17664.20}}'::jsonb)
+      returning environment, amount_with_vat, response`)
+    assert.equal(inserted.rows[0].environment, "PROD")
+    assert.equal(Number(inserted.rows[0].amount_with_vat), 17_664.2)
+    assert.equal(inserted.rows[0].response.tarifaConIva.total, 17_664.2)
+    assert.equal((await db.query<{ count: number }>("select count(*)::integer count from andreani_quote_snapshots")).rows[0].count, 1)
+    assert.equal((await db.query<{ count: number }>("select count(*)::integer count from ordenes")).rows[0].count, 5)
+  } finally { await db.close() }
+})
 
 type Result = { index: number; status: string; entryId?: number; orderId?: number | null; matchStatus?: string; unmatchedReason?: string | null; movementType?: string; error?: string }
 const record = async (db: PGlite, entries: unknown[], source = "csv", dryRun = false, actor = admin) =>

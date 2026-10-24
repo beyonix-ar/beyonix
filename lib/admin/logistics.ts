@@ -136,6 +136,8 @@ export interface LogisticsOrderRow {
   checkoutQuote: number | null
   markupPercent: number | null
   markupAmount: number | null
+  /** Cobrado al cliente por encima de la tarifa Andreani; null sin snapshot comparable. */
+  extraCharged: number | null
   /** Parte del envío cubierta por BEYONIX (snapshot; legacy: precio − cobrado). */
   benefit: number | null
   chargedToCustomer: number | null
@@ -183,6 +185,11 @@ interface OrderLogisticsRecord {
 
 const amount = (value: number | string | null) => value === null || value === undefined ? null : Number(value)
 
+export function calculateCollectedShippingExtra(quoted: number | null, charged: number | null) {
+  if (quoted === null || charged === null) return null
+  return Math.max(0, Math.round((charged - quoted) * 100) / 100)
+}
+
 export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: number | null, billing: OrderReconciliationRecord | null = null): LogisticsOrderRow {
   const checkoutQuote = amount(record.shipping_provider_quote_amount)
   const parcelQuote = record.shipping_parcel_quote_status === "quoted" ? amount(record.shipping_parcel_quote_amount) : null
@@ -201,6 +208,7 @@ export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: numbe
     checkoutQuote,
     markupPercent: amount(record.shipping_markup_percent),
     markupAmount: amount(record.shipping_markup_amount),
+    extraCharged: calculateCollectedShippingExtra(checkoutQuote, charged),
     benefit: amount(record.shipping_benefit_amount) ??
       (logisticsPrice !== null && charged !== null ? Math.max(0, Math.round((logisticsPrice - charged) * 100) / 100) : null),
     chargedToCustomer: charged,

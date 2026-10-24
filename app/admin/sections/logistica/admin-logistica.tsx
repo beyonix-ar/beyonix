@@ -47,7 +47,8 @@ const COLUMNS: Array<{ label: string; help?: string }> = [
 const DETAILS: Array<{ label: string; help?: string; value: (row: LogisticsOrderRow) => string }> = [
   { label: "Tarifa checkout", help: LOGISTICS_HELP.providerQuoted, value: (row) => money(row.checkoutQuote) },
   { label: "Recargo %", help: LOGISTICS_HELP.markupPercent, value: (row) => row.markupPercent === null ? "—" : `${new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(row.markupPercent)}%` },
-  { label: "Extra cobrado", help: LOGISTICS_HELP.markup, value: (row) => money(row.markupAmount) },
+  { label: "Recargo calculado", value: (row) => money(row.markupAmount) },
+  { label: "Extra cobrado", help: LOGISTICS_HELP.markup, value: (row) => money(row.extraCharged) },
   { label: "Beneficio", help: LOGISTICS_HELP.benefit, value: (row) => money(row.benefit) },
   { label: "Cotizado con paquetes de envío medidos", help: LOGISTICS_HELP.parcelQuoted, value: (row) => money(row.parcelQuote) },
   { label: "Dif. vs checkout", help: LOGISTICS_HELP.billedVsCheckout, value: (row) => signedOrDash(row.billedVsCheckout) },

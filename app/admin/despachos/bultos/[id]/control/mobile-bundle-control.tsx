@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import { CancellationResolution } from "@/app/admin/sections/despachos/cancellation-resolution"
 import { dispatchRequest } from "@/app/admin/sections/despachos/dispatch-request"
 import { DISPATCH_HANDOVER_BLOCKED_MESSAGE, orderCode, type DispatchBatch, type DispatchHold } from "@/lib/admin/dispatch"
+import { dispatchStepHref, getNextDispatchStep } from "@/lib/admin/dispatch-next-step"
 
 type ControlItem = { orderId: number; status: "CORRECTO" | "CANCELADO"; blocked: boolean; reason?: string | null; hold: DispatchHold | null }
 type ControlDetail = { batch: DispatchBatch; name: number; items: ControlItem[]; removedOrderIds: number[]; parcelCount: number }
@@ -13,7 +14,9 @@ const date = (value: string) => new Intl.DateTimeFormat("es-AR", { timeZone: "Am
 const needsAttention = (item: ControlItem) => item.blocked || item.status === "CANCELADO"
 const plural = (count: number) => `${count} ${count === 1 ? "pedido requiere" : "pedidos requieren"} atención`
 
-export function MobileBundleControl({ id }: { id: string }) {
+const replaceLocation = (href: string) => window.location.replace(href)
+
+export function MobileBundleControl({ id, navigate = replaceLocation }: { id: string; navigate?: (href: string) => void }) {
   const [detail, setDetail] = useState<ControlDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -21,8 +24,8 @@ export function MobileBundleControl({ id }: { id: string }) {
   const [resolving, setResolving] = useState<DispatchHold | null>(null)
 
   const reload = useCallback(async () => {
-    try { setDetail(await dispatchRequest<ControlDetail>(`/batches/${id}/control`)); setError("") }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo cargar el Bulto.") }
+    try { const next = await dispatchRequest<ControlDetail>(`/batches/${id}/control`); setDetail(next); setError(""); return next }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo cargar el Bulto."); return null }
     finally { setLoading(false) }
   }, [id])
 
@@ -38,7 +41,14 @@ export function MobileBundleControl({ id }: { id: string }) {
     setBusy(true); setError("")
     // La base vuelve a validar TODOS los pedidos con las filas bloqueadas: si
     // alguien canceló mientras tanto, nada se entrega y la lista se recarga.
-    try { await dispatchRequest(`/batches/${id}/control`, {}); await reload() }
+    try {
+      await dispatchRequest(`/batches/${id}/control`, {})
+      // Entregado según la base: vuelve a Despachos (reemplaza, así Atrás no reabre el control).
+      const fresh = await reload()
+      const step = fresh ? getNextDispatchStep({ kind: "batch", batchId: fresh.batch.id, status: fresh.batch.status, blocked: fresh.items.some(needsAttention) }) : null
+      const href = step?.screen === "list" ? dispatchStepHref(step) : null
+      if (href) navigate(href)
+    }
     catch (cause) { await reload(); setError(cause instanceof Error ? cause.message : "No se pudo confirmar el Bulto.") }
     finally { setBusy(false) }
   }

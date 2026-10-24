@@ -5,6 +5,7 @@ import { CheckCircle2, Circle, Download, Printer } from "lucide-react"
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextInput } from "@/app/admin/components/admin-controls"
 import { DISPATCH_HANDOVER_BLOCKED_MESSAGE, orderCode, type BatchDispatchDetail, type DispatchHold, type DispatchScanMethod, type DispatchVerificationResult } from "@/lib/admin/dispatch"
+import { batchStepFacts, getNextDispatchStep, type DispatchNextStep } from "@/lib/admin/dispatch-next-step"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { matchesDispatchBatch } from "@/lib/admin/dispatch-scan"
 import { dispatchBatchControlUrl } from "@/lib/barcodes/labels-document"
@@ -19,7 +20,7 @@ type Dialog = { kind: "remove"; orderId: number }
 const plural = (count: number) => `${count} ${count === 1 ? "pedido" : "pedidos"}`
 
 /** Control físico del Bulto: la última etiqueta Andreani lo finaliza en la RPC. */
-export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, onChange, onOpenResolution, onRefresh }: {
+export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, onChange, onOpenResolution, onRefresh, onAdvance }: {
   detail: BatchDispatchDetail
   holds: readonly DispatchHold[]
   liveUpdating: boolean
@@ -27,6 +28,8 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
   onChange: (detail: BatchDispatchDetail) => void
   onOpenResolution: (hold: DispatchHold) => void
   onRefresh: () => void
+  /** Tras la entrega confirmada por la base, abre el siguiente paso (la tabla actualizada). */
+  onAdvance?: (step: DispatchNextStep) => void
 }) {
   const { batch, items } = detail
   const [scan, setScan] = useState("")
@@ -76,6 +79,9 @@ export function GeneralBundlePanel({ detail, holds, liveUpdating, boardError, on
         playScanFeedback("success")
         onChange(updated)
         onRefresh()
+        // Con incidencias el paso es este mismo Bulto (sus pedidos a retirar): no se avanza.
+        const step = getNextDispatchStep(batchStepFacts(updated))
+        if (step.screen !== "batch" || step.batchId !== batch.id) onAdvance?.(step)
       } catch (cause) {
         reject(cause instanceof Error ? cause.message : "No se pudo confirmar la entrega del Bulto.")
         // Validación final en la base: el Bulto vuelve con TODOS los pedidos a retirar.

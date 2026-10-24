@@ -11,7 +11,8 @@ import {
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { holdBundleLabel, orderCode, type BatchDispatchDetail, type DispatchHold } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
-import { clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
+import { batchStepFacts, getNextDispatchStep, type DispatchNextStep } from "@/lib/admin/dispatch-next-step"
+import { bundleCandidateFilters, clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
 import { dispatchLocationFromSearch, dispatchLocationHref, parseCancellationReturn, parseDispatchLocation, type DispatchLocation } from "@/lib/admin/dispatch-location"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchFilterBar } from "./dispatch-filter-bar"
@@ -207,11 +208,37 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     if (record.kind === "order") openDetail({ orderId: record.id })
     else openDetail({ batchId: record.id })
   }
+  /** Tabla: si el detalle se apiló desde ella, Atrás (no queda una entrada que repita nada); si no, reemplaza. */
+  function showList() {
+    if (pushedDetail.current) { pushedDetail.current = false; window.history.back() }
+    else navigate({ orderId: null, batchId: null }, "replace")
+  }
   /** Volver a la tabla con sus filtros y página. */
   function closeDetail() {
     setError(""); setNotice("")
-    if (pushedDetail.current) { pushedDetail.current = false; window.history.back() }
-    else navigate({ orderId: null, batchId: null }, "replace")
+    showList()
+    void refresh()
+  }
+  /** Siguiente pantalla tras una confirmación ya guardada (getNextDispatchStep decide cuál). */
+  function advance(step: DispatchNextStep) {
+    if (step.screen === "current") return
+    if (step.screen === "batch") {
+      if (step.batchId !== location.batchId) openDetail({ batchId: step.batchId })
+      return
+    }
+    const finished = batch
+    setResolving(null); setError("")
+    showList()
+    if (step.screen === "bundle_list") {
+      setFilters(bundleCandidateFilters()); setPage(1)
+      createKey.current = null
+      setSelected((current) => { const next = new Set(current); next.add(step.orderId); writeSelection(next); return next })
+      setNotice(`Etiqueta confirmada · ${orderCode(step.orderId)} listo para Bulto. Sumá los pedidos y tocá "Crear bulto".`)
+    } else {
+      // Vista del día: ahí aparece lo recién despachado.
+      setFilters(defaultDispatchRecordFilters()); setPage(1)
+      setNotice(finished ? `${dispatchBatchName(finished.batch)} despachado.` : "Confirmado.")
+    }
     void refresh()
   }
 
@@ -232,7 +259,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       const detail = await dispatchRequest<BatchDispatchDetail>("/batches", { requestKey: createKey.current, orderIds })
       createKey.current = null
       clearSelected(orderIds)
-      setBatch(detail); openDetail({ batchId: detail.batch.id })
+      setBatch(detail); advance(getNextDispatchStep(batchStepFacts(detail)))
     })
   }
 
@@ -270,12 +297,12 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       <div className={`grid gap-4 ${sideIds.length > 1 ? "@5xl:grid-cols-[220px_minmax(0,1fr)] @5xl:items-start" : ""}`}>
         {sideIds.length > 1 && <PreparationQueue className="order-last @5xl:order-first" title="Pedidos por preparar" ids={sideIds} currentId={orderId}
           onSelect={(id) => openDetail({ orderId: id })} />}
-        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextPending ? undefined : closeDetail}
+        <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextPending ? undefined : closeDetail} onAdvance={advance}
           footer={nextPending ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => openDetail({ orderId: nextPending })}>Siguiente pedido · {orderCode(nextPending)}</AdminButton> : null} />
       </div>
     </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Despachado" : "Bulto general"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
       {batch.batch.status === "handed_over" ? <DeliveredBatchPanel batchId={batch.batch.id} /> : <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
-        onChange={setBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
+        onChange={setBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} onAdvance={advance} />
       }
     </AdminSection> : location.batchId ? (error ? null : <p role="status" className="text-sm text-white/70">Abriendo Bulto…</p>) : <AdminSection compact className="dispatch-surface" title="Pedidos y Bultos" icon={<PackageCheck className="size-4" />}>
       {rows.length ? <DispatchRecordsTable rows={rows} selected={selected} onToggle={toggleSelected} onOpen={openRecord} />

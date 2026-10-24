@@ -66,6 +66,11 @@ export function clearedDispatchRecordFilters(): DispatchRecordFilters {
   return { date: "", manualDate: true, order: "", batch: "", user: "", state: "", kind: "" }
 }
 
+/** Pedidos que pueden entrar a un Bulto: confirmados, sueltos, de cualquier día abierto. */
+export function bundleCandidateFilters(today = dispatchToday()): DispatchRecordFilters {
+  return { ...defaultDispatchRecordFilters(today), state: "C", kind: "order" }
+}
+
 export function dispatchRecordParams(filters: DispatchRecordFilters, page: number) {
   const params = new URLSearchParams({ page: String(page) })
   for (const key of TEXT_FILTERS) if (filters[key].trim()) params.set(key, filters[key].trim())

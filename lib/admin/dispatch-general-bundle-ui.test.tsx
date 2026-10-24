@@ -151,7 +151,7 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(batch.status, "closed")
     assert.equal(qr().value, "")
 
-    // QR correcto (dos lecturas seguidas): una sola entrega, con actor y fecha, y la vista pasa a Entregados.
+    // QR correcto (dos lecturas seguidas): una sola entrega, con actor y fecha, y vuelve sola a la tabla actualizada.
     await type(dom, qr(), "https://beyonix.test/admin/despachos/bultos/5/control")
     const form = qr().closest("form")!
     await act(async () => {
@@ -165,12 +165,10 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(handoverEvents, 1)
     assert.deepEqual([batch.status, batch.handed_over_by, batch.handed_over_at], ["handed_over", "actor-maria", "2026-10-16T19:00:00Z"])
     assert.equal(qr(), null, "sin recargar: deja el control del Bulto")
-    assert.equal(dom.window.location.search, "?batch=5")
+    assert.equal(dom.window.location.search, "", "sin pantalla de \"confirmado\": la URL es la tabla")
     assert.equal(boardStates.at(-1), "E", "la tabla se refresca sin recargar")
-    assert.match(text(), /Confirmación: María Peña[\s\S]*Despachado: 16\/10\/2026 - 16:00/)
-
-    await act(async () => { button(dom, "Volver")!.click() })
-    await settle(300)
+    assert.match(text(), /Bulto - 0005 despachado\./)
+    assert.equal(button(dom, "Volver"), undefined)
     const row = dom.window.document.querySelector('tr[aria-label="Ver Bulto - 0005"]')
     assert.match(row?.textContent ?? "", /María Peña[\s\S]*Despachado/, "la fila del Bulto pasa a Despachado con quién lo entregó")
     assert.doesNotMatch(row?.textContent ?? "", /Pendiente|Confirmado/)

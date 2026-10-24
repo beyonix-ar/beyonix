@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
+  calculateCollectedShippingExtra,
   LogisticsRangeError,
   normalizeLogisticsSummary,
   parseLogisticsRange,
@@ -38,6 +39,7 @@ test("fila de logística: diferencia checkout vs bulto real y conciliación pend
   assert.equal(row.differencePercent, 3.8)
   assert.equal(row.benefit, 2_500)
   assert.equal(row.markupAmount, 500)
+  assert.equal(row.extraCharged, 0)
   assert.equal(row.parcels, 2)
   assert.equal(row.billedOutbound, null, "sin factura cargada no hay 'real'")
   assert.equal(row.reconciliation, "pending")
@@ -57,6 +59,15 @@ test("fila de logística: diferencia checkout vs bulto real y conciliación pend
   assert.equal(failed.parcelQuote, null)
   assert.equal(failed.difference, null)
   assert.equal(failed.benefit, 3_000, "legacy: precio logístico − cobrado")
+  assert.equal(failed.extraCharged, null, "sin tarifa histórica no se inventa un extra")
+})
+
+test("extra cobrado: bonificación total, parcial, sin subsidio y recargo interno absorbido", () => {
+  assert.equal(calculateCollectedShippingExtra(10_000, 0), 0)
+  assert.equal(calculateCollectedShippingExtra(10_000, 10_200), 200)
+  assert.equal(calculateCollectedShippingExtra(10_000, 10_500), 500)
+  assert.equal(calculateCollectedShippingExtra(10_000, 8_000), 0)
+  assert.equal(calculateCollectedShippingExtra(null, 10_500), null)
 })
 
 test("resumen: números de la base normalizados; nunca NaN", () => {

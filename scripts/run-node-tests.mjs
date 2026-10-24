@@ -349,6 +349,8 @@ const TSX_TEST_FILES = [
   "lib/admin/dispatch-records-ui.test.tsx",
 
   "lib/admin/dispatch-navigation.test.tsx",
+  "lib/admin/dispatch-auto-advance.test.tsx",
+  "lib/admin/dispatch-next-step.test.ts",
 
   "lib/admin/dispatch-location.test.ts",
   "lib/admin/dispatch-records-sql.test.ts",

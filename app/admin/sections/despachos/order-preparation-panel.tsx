@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageChec
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, AdminTrackingValue, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchLabelConfirmation, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { getNextDispatchStep, orderStepFacts, type DispatchNextStep } from "@/lib/admin/dispatch-next-step"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
@@ -44,10 +45,12 @@ const goTo = (path: string) => window.location.assign(path)
  * etiqueta → escanear su seguimiento para confirmarla). Lo secundario vive en
  * menús que sólo muestran opciones válidas para el estado actual.
  */
-export function OrderPreparationPanel({ orderId, onDone, footer }: {
+export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
   orderId: number
   /** Cierre tras resolver una cancelación con armado. */
   onDone?: () => void
+  /** Despachos: tras una confirmación exitosa, abre el siguiente paso si no está en esta pantalla. */
+  onAdvance?: (step: DispatchNextStep) => void
   footer?: ReactNode
 }) {
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -147,13 +150,21 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     sendScan(pendingVariant.code, variantKey.current.key, variantId)
   }
 
+  /** Sólo con la respuesta exitosa del servidor: el siguiente paso sale de su estado real. */
+  function advance(updated: Detail) {
+    const step = getNextDispatchStep(orderStepFacts(updated))
+    if (step.screen !== "current") onAdvance?.(step)
+  }
+
   /** Acción con request_key: el reintento de la misma acción no se duplica. */
   function post(body: Record<string, unknown>, after?: () => void) {
     void run(async () => {
       actionKey.current ??= crypto.randomUUID()
-      setDetail(await dispatchRequest<Detail>(`/orders/${orderId}`, { ...body, requestKey: actionKey.current }))
+      const updated = await dispatchRequest<Detail>(`/orders/${orderId}`, { ...body, requestKey: actionKey.current })
+      setDetail(updated)
       actionKey.current = null
       after?.()
+      advance(updated)
     }, dialog ? setDialogError : setError)
   }
 
@@ -173,6 +184,7 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
         const duplicate = Boolean(updated.labelConfirmation?.duplicate)
         setFeedback({ tone: duplicate ? "warning" : "success", message: duplicate ? "✓ Etiqueta ya confirmada" : "✓ Etiqueta confirmada" })
         playScanFeedback(duplicate ? "warning" : "success")
+        advance(updated)
       } catch (cause) {
         // Sin respuesta del servidor se conserva el código para reintentar (es idempotente).
         if (!(cause instanceof DispatchRequestError && cause.retryable)) setLabelCode("")
@@ -227,7 +239,11 @@ export function OrderPreparationPanel({ orderId, onDone, footer }: {
     ? { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: true, hint: "Envío en revisión: requiere conciliación manual antes de reintentar." }
     : { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: !viewer.canShip || packingBlocked, hint: viewer.canShip ? undefined : "El envío lo genera un Admin.", onClick: openShip }
   else if (stage === "label") primary = { label: "Imprimir etiqueta Andreani", icon: <Printer className="size-5" />, onClick: () => printLabel("print") }
-  else if (stage === "ready") primary = null
+  else if (stage === "ready") {
+    // Volver/refrescar sobre un pedido ya confirmado: el siguiente paso queda a un toque, sin repetir nada.
+    const step = onAdvance ? getNextDispatchStep(orderStepFacts(detail)) : null
+    primary = step?.screen === "bundle_list" ? { label: "Agregar a un Bulto", icon: <ArrowRight className="size-5" />, onClick: () => onAdvance?.(step) } : null
+  }
   else if (stage === "in_batch" && detail.batch) {
     const batchId = detail.batch.id
     primary = { label: `Abrir ${dispatchBatchName(detail.batch)}`, icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?batch=${batchId}`) }
