@@ -273,7 +273,7 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
         <OrderPreparationPanel key={orderId} orderId={orderId} onDone={nextPending ? undefined : closeDetail}
           footer={nextPending ? <AdminButton className="h-11 w-full justify-center" icon={<ArrowRight className="size-4" />} onClick={() => openDetail({ orderId: nextPending })}>Siguiente pedido · {orderCode(nextPending)}</AdminButton> : null} />
       </div>
-    </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Entregado" : "Bulto general"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
+    </AdminSection> : batch ? <AdminSection compact className="dispatch-surface" title={dispatchBatchName(batch.batch)} eyebrow={batch.batch.status === "handed_over" ? "Despachado" : "Bulto general"} actions={<AdminButton size="sm" icon={<ArrowLeft className="size-4" />} onClick={closeDetail}>Volver</AdminButton>}>
       {batch.batch.status === "handed_over" ? <DeliveredBatchPanel batchId={batch.batch.id} /> : <GeneralBundlePanel key={`${batch.batch.id}:${batch.blockedCount > 0 ? "problem" : "normal"}`} detail={batch} holds={holds} liveUpdating={liveUpdating} boardError={Boolean(error)}
         onChange={setBatch} onOpenResolution={openResolution} onRefresh={() => void refresh()} />
       }

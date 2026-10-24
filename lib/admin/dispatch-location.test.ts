@@ -16,10 +16,13 @@ test("URL estable de Despachos: pedido y Bulto sobreviven a refrescar y volver; 
 })
 
 test("filtros: fecha por defecto hoy, parámetros sin vacíos y restauración validada", () => {
-  assert.deepEqual(defaultDispatchRecordFilters("2026-10-22"), { date: "2026-10-22", manualDate: false, order: "", batch: "", user: "", state: "" })
+  assert.deepEqual(defaultDispatchRecordFilters("2026-10-22"), { date: "2026-10-22", manualDate: false, order: "", batch: "", user: "", state: "", kind: "" })
   assert.match(dispatchToday(new Date("2026-10-23T02:30:00Z")), /^2026-10-22$/, "hoy en Buenos Aires")
   // Hoy por defecto sólo recorta lo resuelto; una fecha elegida a mano filtra todo.
-  assert.equal(dispatchRecordParams({ date: "2026-10-22", manualDate: false, order: " BX-1012 ", batch: "", user: "", state: "P" }, 2), "page=2&date=2026-10-22&order=BX-1012&state=P&openAllDates=true")
+  assert.equal(dispatchRecordParams({ date: "2026-10-22", manualDate: false, order: " BX-1012 ", batch: "", user: "", state: "P", kind: "" }, 2), "page=2&date=2026-10-22&order=BX-1012&state=P&openAllDates=true")
+  // TIPO viaja al servidor junto con los demás filtros (la paginación es server-side).
+  assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), state: "C", kind: "batch" }, 1), "page=1&date=2026-10-22&state=C&kind=batch&openAllDates=true")
+  assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), date: "2026-10-20", manualDate: true, kind: "order" }, 1), "page=1&date=2026-10-20&kind=order")
   assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), date: "2026-10-20", manualDate: true }, 1), "page=1&date=2026-10-20")
   assert.equal(dispatchRecordParams({ ...defaultDispatchRecordFilters("2026-10-22"), date: "", manualDate: true }, 1), "page=1", "sin fecha: todo")
   const stored = (today: string, filters: Record<string, unknown>, page: unknown = 3) => JSON.stringify({ today, filters, page })
@@ -28,7 +31,9 @@ test("filtros: fecha por defecto hoy, parámetros sin vacíos y restauración va
   assert.equal(restoreDispatchRecordsView(stored("2026-10-22", { state: "A", manualDate: "sí" }), "2026-10-22").filters.state, "", "Anulado ya no es un estado")
   assert.equal(restoreDispatchRecordsView(stored("2026-10-22", { manualDate: "sí" }), "2026-10-22").filters.manualDate, false)
   assert.deepEqual(restoreDispatchRecordsView(stored("2026-10-21", { date: "2026-10-21", order: "BX-1" }), "2026-10-22").filters, defaultDispatchRecordFilters("2026-10-22"), "guardado ayer: vuelve a hoy")
-  const broken = restoreDispatchRecordsView(stored("2026-10-22", { date: "ayer", state: "Z", batch: 7 }, -1), "2026-10-22")
-  assert.deepEqual([broken.filters.date, broken.filters.state, broken.filters.batch, broken.page], ["2026-10-22", "", "", 1])
+  const broken = restoreDispatchRecordsView(stored("2026-10-22", { date: "ayer", state: "Z", batch: 7, kind: "bulto" }, -1), "2026-10-22")
+  assert.deepEqual([broken.filters.date, broken.filters.state, broken.filters.batch, broken.filters.kind, broken.page], ["2026-10-22", "", "", "", 1])
+  assert.equal(restoreDispatchRecordsView(stored("2026-10-22", { kind: "batch" }), "2026-10-22").filters.kind, "batch", "TIPO sobrevive a refrescar")
+  assert.equal(restoreDispatchRecordsView(stored("2026-10-22", { state: "P" }), "2026-10-22").filters.kind, "", "sesión guardada antes de TIPO: Todos")
   for (const raw of [null, "", "{", "[]", "\"x\""]) assert.equal(restoreDispatchRecordsView(raw, "2026-10-22").filters.date, "2026-10-22")
 })

@@ -110,7 +110,9 @@ export function OrderProgressTimeline({ order }: { order: SupabasePedido }) {
     warning: "text-[var(--account-text-primary)]",
   }
   const gridClassName =
-    steps.length >= 6
+    steps.length >= 7
+      ? "md:grid-cols-7"
+      : steps.length === 6
       ? "md:grid-cols-6"
       : steps.length === 4
         ? "md:grid-cols-4"

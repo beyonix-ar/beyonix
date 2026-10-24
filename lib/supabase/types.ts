@@ -6,6 +6,7 @@ import type {
 } from "../orders/claim-shipment-view.ts"
 import type { AdminPendingFacts } from "../orders/admin-pending-actions.ts"
 import type { ClaimItemResolutionRow } from "../orders/claim-policy.ts"
+import type { DispatchProgress } from "../orders/shipping-stage.ts"
 import type { ProductColorMode } from "../products/color-mode.ts"
 
 // ─────────────────────────────────────────────────────────────
@@ -471,6 +472,8 @@ export interface SupabasePedido {
    * el pedido ya salió de BEYONIX (QR final del Bulto) y no puede cancelarse.
    */
   dispatch_cutoff_reached?: boolean
+  /** Calculado por el servidor para el cliente (lib/orders/shipping-stage): pickeo, listo o QR final. */
+  dispatch_progress?: DispatchProgress | null
 }
 
 export interface SupabaseMercadoPagoOrderRefund {

@@ -71,7 +71,7 @@ export function MobileBundleView({ detail, busy, error, resolving, onResolve, on
     <header className="border-b border-white/15 pb-4">
       <h1 className="text-xl font-bold">Bulto: {String(detail.name).padStart(4, "0")}</h1>
       <p className="mt-1 text-sm text-[color:var(--beyonix-text-secondary)]">Fecha: {date(detail.batch.created_at)}</p>
-      {delivered && <p className="mt-2 font-bold text-emerald-300" role="status">ENTREGADO ✓</p>}
+      {delivered && <p className="mt-2 font-bold text-emerald-300" role="status">DESPACHADO ✓</p>}
     </header>
 
     {blocked && !delivered && !resolving && <section role="alert" className="mt-4 rounded-lg border border-red-400/50 bg-red-950/70 px-3 py-3">

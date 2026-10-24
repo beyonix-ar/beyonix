@@ -98,7 +98,7 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
 
     // Estados: letra + texto con la paleta BEYONIX.
     const tones = Object.fromEntries([...document.querySelectorAll<HTMLElement>(".dispatch-state-badge")].map((badge) => [badge.dataset.state, [badge.textContent, [...badge.classList].find((name) => name.startsWith("admin-ds-tone-"))]]))
-    assert.deepEqual(tones, { E: ["Entregado", "admin-ds-tone-info"], X: ["Cancelado", "admin-ds-tone-danger"], P: ["Pendiente", "admin-ds-tone-warning"], C: ["Confirmado", "admin-ds-tone-success"] }, "sin letras, misma paleta")
+    assert.deepEqual(tones, { E: ["Despachado", "admin-ds-tone-info"], X: ["Cancelado", "admin-ds-tone-danger"], P: ["Pendiente", "admin-ds-tone-warning"], C: ["Confirmado", "admin-ds-tone-success"] }, "sin letras, misma paleta")
 
     // Acciones: sólo consulta.
     assert.deepEqual(await menu("BX-1012"), ["Ver pedido"])

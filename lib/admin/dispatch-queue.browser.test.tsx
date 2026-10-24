@@ -95,15 +95,20 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1280/1440 px
         const [check, code] = await Promise.all([tableRows.nth(1).locator("input[type=checkbox]").boundingBox(), tableRows.nth(1).locator(".dispatch-record-order").boundingBox()])
         assert.ok(check && code && check.x + check.width <= code.x, `${label}: checkbox separado del número`)
       }
-      // Filtros: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Limpiar, misma altura y texto centrado.
-      const filters = ["input[aria-label=FECHA]", 'input[aria-label="N° PEDIDO"]', 'input[aria-label="N° BULTO"]', "button[aria-label=USUARIO]", "button[aria-label=ESTADO]", ".dispatch-filter-clear"]
+      // Filtros: Fecha | N° Pedido | N° Bulto | Usuario | Estado | Tipo | Limpiar, misma altura y texto centrado.
+      const filters = ["input[aria-label=FECHA]", 'input[aria-label="N° PEDIDO"]', 'input[aria-label="N° BULTO"]', "button[aria-label=USUARIO]", "button[aria-label=ESTADO]", "button[aria-label=TIPO]", ".dispatch-filter-clear"]
       const boxes = await Promise.all(filters.map((selector) => page.locator(`.dispatch-filters ${selector}`).boundingBox()))
       assert.ok(boxes.every((box) => box && Math.abs(box.height - boxes[0]!.height) < 1), `${label}: altura uniforme (${boxes.map((box) => box?.height).join(", ")})`)
       const rowsOf = new Set(boxes.map((box) => Math.round(box!.y)))
       assert.equal(rowsOf.size, width >= 1024 ? 1 : width >= 640 ? 2 : 4, `${label}: filas de filtros`)
+      const [tipoBox, clearBox, rowBox] = [boxes[5]!, boxes[6]!, (await page.locator(".dispatch-filter-row").boundingBox())!]
+      assert.ok(Math.abs(tipoBox.y - clearBox.y) < 1, `${label}: Tipo y Limpiar en la misma fila`)
+      assert.ok(tipoBox.width >= 60 && clearBox.x + clearBox.width <= rowBox.x + rowBox.width + 1, `${label}: Tipo legible y Limpiar dentro de la barra`)
       const row = await page.locator(".dispatch-filter-row").evaluate((element) => [element.scrollWidth, element.clientWidth])
       assert.ok(row[0] <= row[1] + 1, `${label}: ningún filtro queda escondido con scroll`)
-      const centers = await page.locator(".dispatch-filters").evaluate((element) => ["button[aria-label=USUARIO]", "button[aria-label=ESTADO]"].map((selector) => {
+      const tipoClipped = await page.locator(".dispatch-filters button[aria-label=TIPO] span.truncate").first().evaluate((element) => element.scrollWidth > element.clientWidth + 1)
+      assert.equal(tipoClipped, false, `${label}: "TIPO" sin recortar`)
+      const centers = await page.locator(".dispatch-filters").evaluate((element) => ["button[aria-label=USUARIO]", "button[aria-label=ESTADO]", "button[aria-label=TIPO]"].map((selector) => {
         const button = element.querySelector(selector)!.getBoundingClientRect(), text = element.querySelector(`${selector} span.truncate`)!.getBoundingClientRect()
         return [button.top + button.height / 2, text.top + text.height / 2]
       }))
@@ -124,7 +129,7 @@ test("Despachos: tabla única, filtros y picking a 390/430/768/1024/1280/1440 px
       assert.equal(color, theme === "light" ? "rgb(23, 36, 51)" : "rgb(248, 250, 252)")
       // Estados: sólo texto (sin letra), amarillo/verde/azul/rojo, legibles en cada tema.
       const states = await page.locator(".dispatch-state-badge").evaluateAll((badges) => badges.map((badge) => [badge.getAttribute("data-state") ?? "", getComputedStyle(badge).color, badge.textContent ?? ""]))
-      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Entregado", X: "Cancelado" })
+      assert.deepEqual(Object.fromEntries(states.map(([state, , text]) => [state, text])), { P: "Pendiente", C: "Confirmado", E: "Despachado", X: "Cancelado" })
       assert.equal(await page.locator(".dispatch-state-letter").count(), 0)
       badgeColors[label] = [...new Set(states.map(([, value]) => value))]
       assert.equal(badgeColors[label].length, 4, `${label}: cuatro colores distintos`)

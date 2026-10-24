@@ -1,5 +1,6 @@
 import type { createAdminClient } from "@/lib/supabase/admin"
 import { compareParcelQuote } from "../shipping/shipping-pricing.ts"
+import { SHIPPING_STAGE_LABELS } from "../orders/shipping-stage.ts"
 
 export type DispatchAdmin = ReturnType<typeof createAdminClient>
 /** Identificación física del pedido preparado: etiqueta Andreani impresa (o, histórico, BX-PREP impresa o escrita a mano). */
@@ -110,7 +111,7 @@ export const DISPATCH_STAGE_LABELS: Record<DispatchStage, string> = {
   ready: "Listo para Bulto",
   in_batch: "En Bulto",
   batch_closed: "Bulto finalizado",
-  handed_over: "Entregado al transporte",
+  handed_over: SHIPPING_STAGE_LABELS.dispatched,
 }
 
 /** Envío Andreani creado y confirmado (misma condición que shipment_pending en la base). */
@@ -175,7 +176,7 @@ export function dispatchBlockReason(reason: string): string {
     refund_in_progress: "Reintegro en curso",
     items_changed: "Cambios en los artículos", wrong_carrier: "Transporte incompatible",
     shipment_pending: "Envío pendiente", shipment_uncertain: "Envío en revisión",
-    tracking_in_circuit: "Envío ya en curso", already_handed_over: "Ya entregado al transporte",
+    tracking_in_circuit: "Envío ya en curso", already_handed_over: "Ya despachado",
   }
   return reasons[reason] ?? "Revisión requerida"
 }
@@ -255,7 +256,7 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_BATCH_CLOSED: "El Bulto general ya está cerrado.",
     DISPATCH_BATCH_EMPTY: "Seleccioná al menos un pedido completo.",
     DISPATCH_BATCH_NOT_CLOSED: "Cerrá el Bulto general antes de confirmar la entrega.",
-    DISPATCH_ALREADY_HANDED_OVER: "El Bulto general ya fue entregado.",
+    DISPATCH_ALREADY_HANDED_OVER: "El Bulto general ya fue despachado.",
     DISPATCH_RESET_REQUIRES_REMOVAL: "Retirá el pedido del Bulto general para reiniciar su armado.",
     DISPATCH_IDENTIFICATION_PENDING: "Falta confirmar la etiqueta Andreani del pedido.",
     DISPATCH_LABEL_CODE_INVALID: "Escaneá o escribí el seguimiento de la etiqueta Andreani.",

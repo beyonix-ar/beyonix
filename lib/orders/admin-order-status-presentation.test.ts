@@ -46,42 +46,57 @@ test("DESPACHO: todavía no salió -> 'No enviado' (ámbar sólo si ya está pag
   assert.equal(getAdminDispatchStatus({ estado: "pagado" }).tone, "neutral")
 })
 
-test("DESPACHO: preparación, salida, tránsito y entrega", () => {
-  assert.deepEqual(getAdminDispatchStatus({ estado: "preparado" }), {
+const packageFacts = (packageStatus: "preparing" | "prepared") => ({ dispatch: { packageStatus } })
+
+test("DESPACHO: Preparando pedido → Listo para despachar → Despachado → En camino → Entregado", () => {
+  // A: pickeo iniciado.
+  assert.deepEqual(getAdminDispatchStatus({ estado: "pagado", admin_pending_facts: packageFacts("preparing") }), {
     key: "preparing",
-    label: "En preparación",
+    label: "Preparando pedido",
     tone: "info",
   })
-  // Envío Andreani ya creado/en curso sin despachar todavía.
-  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_envio_id: "ENV-9" }).key, "preparing")
-  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_creation_status: "claimed" }).key, "preparing")
+  // B: pickeo terminado, sin QR final (con o sin envío Andreani ya generado).
+  assert.deepEqual(getAdminDispatchStatus({ estado: "pagado", admin_pending_facts: packageFacts("prepared") }), {
+    key: "ready",
+    label: "Listo para despachar",
+    tone: "info",
+  })
+  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_envio_id: "ENV-9", admin_pending_facts: packageFacts("prepared") }).label, "Listo para despachar")
+  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_envio_id: "ENV-9" }).key, "ready")
+  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_creation_status: "claimed" }).key, "ready")
+  assert.equal(getAdminDispatchStatus({ estado: "preparado" }).label, "Listo para despachar")
   assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_creation_status: "failed" }).key, "not_shipped")
-  assert.deepEqual(getAdminDispatchStatus({ estado: "enviado" }), { key: "shipped", label: "Enviado", tone: "info" })
+  // Admisión de Andreani sin movimiento: sigue Despachado.
+  assert.deepEqual(getAdminDispatchStatus({ estado: "enviado" }), { key: "shipped", label: "Despachado", tone: "info" })
+  // D: movimiento real de Andreani.
   assert.equal(getAdminDispatchStatus({ estado: "en_camino" }).label, "En camino")
+  // E: entrega final.
   assert.deepEqual(getAdminDispatchStatus({ estado: "entregado" }), {
     key: "delivered",
-    label: "Entregado al cliente",
+    label: "Entregado",
     tone: "success",
   })
   // delivered_at manda aunque el estado haya cambiado después (p. ej. cancelado tras la entrega).
   assert.equal(getAdminDispatchStatus({ estado: "cancelado", delivered_at: "2026-09-01T10:00:00Z" }).key, "delivered")
 })
 
-test("DESPACHO: entregado al transporte (BEYONIX -> transportista) separado de la entrega al cliente", () => {
+test("DESPACHO: QR final (BEYONIX -> Andreani) es Despachado, separado de la entrega al cliente", () => {
   const handedOver = "2026-10-22T16:54:00Z"
-  const handed = { key: "handed_over", label: "Entregado al transporte", tone: "info" }
-  // D: con andreani_handed_over_at nunca "En preparación" (BX-1012/BX-1013 siguen en "pagado" con envío creado).
-  assert.deepEqual(getAdminDispatchStatus({ estado: "pagado", andreani_envio_id: "ENV-12", andreani_creation_status: "created", andreani_handed_over_at: handedOver }), handed)
+  const handed = { key: "handed_over", label: "Despachado", tone: "info" }
+  // C: BX-1012/BX-1013 siguen en "pagado" con envío creado y QR final.
+  assert.deepEqual(getAdminDispatchStatus({ estado: "pagado", andreani_envio_id: "ENV-12", andreani_creation_status: "created", andreani_handed_over_at: handedOver, admin_pending_facts: packageFacts("prepared") }), handed)
   assert.deepEqual(getAdminDispatchStatus({ estado: "preparado", andreani_handed_over_at: handedOver }), handed)
   assert.deepEqual(getAdminDispatchStatus({ estado: "cancelado", andreani_handed_over_at: handedOver }), handed, "salió aunque se cancele después")
-  // E: entregado al transporte no es "Entregado" a secas ni entrega al cliente.
+  // F y G: el QR final por sí solo nunca es "Entregado" ni "En camino".
+  assert.doesNotMatch(getAdminDispatchStatus({ estado: "pagado", andreani_handed_over_at: handedOver }).label, /Entregado|En camino|transporte/)
   assert.notEqual(getAdminDispatchStatus({ estado: "pagado", andreani_handed_over_at: handedOver }).key, "delivered")
-  assert.doesNotMatch(getAdminDispatchStatus({ estado: "pagado", andreani_handed_over_at: handedOver }).label, /^Entregado$|cliente/)
-  // Después manda el transporte; G: la entrega final es "Entregado al cliente".
-  assert.equal(getAdminDispatchStatus({ estado: "enviado", andreani_handed_over_at: handedOver }).label, "Enviado")
+  // Después manda el transporte.
+  assert.equal(getAdminDispatchStatus({ estado: "enviado", andreani_handed_over_at: handedOver }).label, "Despachado")
   assert.equal(getAdminDispatchStatus({ estado: "en_camino", andreani_handed_over_at: handedOver }).label, "En camino")
-  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_handed_over_at: handedOver, delivered_at: "2026-10-24T10:00:00Z" }).label, "Entregado al cliente")
-  assert.deepEqual(getAdminExecutiveStatusFromEstado("entregado"), { label: "Entregado al cliente", tone: "success" })
+  assert.equal(getAdminDispatchStatus({ estado: "pagado", andreani_handed_over_at: handedOver, delivered_at: "2026-10-24T10:00:00Z" }).label, "Entregado")
+  assert.deepEqual(getAdminExecutiveStatusFromEstado("entregado"), { label: "Entregado", tone: "success" })
+  assert.equal(getAdminExecutiveStatusFromEstado("enviado").label, "Despachado")
+  assert.equal(getAdminExecutiveStatusFromEstado("preparado").label, "Listo para despachar")
   // El RESUMEN tampoco lo trata como envío pendiente.
   assert.match(sliceFunction(adminPedidos, "function needsShippingReminder("), /!pedido\.andreani_handed_over_at/)
 })
@@ -135,7 +150,7 @@ test("RESUMEN: cancelado rojo, entregado y pago confirmado verde", () => {
   assert.deepEqual(getAdminExecutiveStatusFromEstado("cancelado"), { label: "Cancelado", tone: "danger" })
   assert.equal(ADMIN_EXECUTIVE_STATUS.cancelled_refunded.tone, "danger")
   assert.equal(ADMIN_EXECUTIVE_STATUS.cancelled_refund_pending.tone, "danger")
-  assert.deepEqual(getAdminExecutiveStatusFromEstado("entregado"), { label: "Entregado al cliente", tone: "success" })
+  assert.deepEqual(getAdminExecutiveStatusFromEstado("entregado"), { label: "Entregado", tone: "success" })
   // "pagado" es lo que devuelve getDisplayedOrderStatus para una transferencia confirmada.
   assert.deepEqual(getAdminExecutiveStatusFromEstado("pagado"), { label: "Pago confirmado", tone: "success" })
   assert.equal(ADMIN_EXECUTIVE_STATUS.payment_confirmed.tone, "success")

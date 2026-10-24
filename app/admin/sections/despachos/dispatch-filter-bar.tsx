@@ -2,7 +2,7 @@
 
 import { AdminSelect } from "@/app/admin/components/admin-controls"
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
-import { DISPATCH_RECORD_STATES, type DispatchRecordFilters, type DispatchRecordState, type DispatchUser } from "@/lib/admin/dispatch-records"
+import { DISPATCH_RECORD_KINDS, DISPATCH_RECORD_STATES, type DispatchRecordFilters, type DispatchRecordKind, type DispatchRecordState, type DispatchUser } from "@/lib/admin/dispatch-records"
 
 type Props = {
   filters: DispatchRecordFilters
@@ -29,6 +29,10 @@ export function DispatchFilterBar({ filters, users, onChange, onClear }: Props) 
     <AdminSelect title="ESTADO" value={filters.state} compact wrapperClassName={selectClass} triggerClassName={filters.state ? "" : placeholderClass} onChange={(state) => onChange({ state })}>
       <option value="" data-selected-label="ESTADO">Todos los estados</option>
       {(Object.keys(DISPATCH_RECORD_STATES) as DispatchRecordState[]).map((state) => <option key={state} value={state}>{DISPATCH_RECORD_STATES[state].label}</option>)}
+    </AdminSelect>
+    <AdminSelect title="TIPO" value={filters.kind} compact wrapperClassName={selectClass} triggerClassName={filters.kind ? "" : placeholderClass} onChange={(kind) => onChange({ kind })}>
+      <option value="" data-selected-label="TIPO">Todos</option>
+      {(Object.keys(DISPATCH_RECORD_KINDS) as DispatchRecordKind[]).map((kind) => <option key={kind} value={kind}>{DISPATCH_RECORD_KINDS[kind]}</option>)}
     </AdminSelect>
     <button type="button" className="dispatch-filter-clear" onClick={onClear}>Limpiar</button>
   </div>

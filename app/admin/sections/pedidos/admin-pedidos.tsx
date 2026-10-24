@@ -121,8 +121,10 @@ import {
   ADMIN_EXECUTIVE_STATUS,
   getAdminDispatchStatus,
   getAdminExecutiveStatusFromEstado,
+  getAdminShippingStage,
   type AdminOrderStatusPresentation,
 } from "@/lib/orders/admin-order-status-presentation"
+import { SHIPPING_STAGE_LABELS, SHIPPING_STAGES, shippingStageIndex } from "@/lib/orders/shipping-stage"
 import { getCancellationPanelViewModel } from "@/lib/orders/cancellation-panel-view"
 import { getCreditNoteState } from "@/lib/orders/credit-note-state"
 import { getPedidos } from "@/lib/supabase/queries/pedidos"
@@ -6058,26 +6060,9 @@ function CancellationMiniCard({
 }
 
 function ShippingProgressTimeline({ pedido }: { pedido: SupabasePedido }) {
-  const delivered = pedido.estado === "entregado" || Boolean(pedido.delivered_at)
-  const dispatched = SHIPPING_DISPATCHED_STATUSES.includes(
-    pedido.estado as (typeof SHIPPING_DISPATCHED_STATUSES)[number],
-  )
-  const achievedIndex = delivered
-    ? 4
-    : dispatched
-      ? 3
-      : Boolean(pedido.andreani_envio_id)
-        ? 2
-        : isOrderPaymentConfirmed(pedido)
-          ? 1
-          : 0
-  const steps = [
-    "Pedido registrado",
-    "Pago confirmado",
-    "Envío generado",
-    "En camino",
-    "Entregado",
-  ]
+  // Misma secuencia que ve el cliente: Preparando pedido → … → Entregado.
+  const achievedIndex = shippingStageIndex(getAdminShippingStage(pedido, isOrderPaymentConfirmed(pedido)))
+  const steps = SHIPPING_STAGES.map((stage) => SHIPPING_STAGE_LABELS[stage])
 
   return (
     <div>
@@ -8023,7 +8008,7 @@ export function AdminPedidos({
                 <option value="todos">Todos los estados</option>
                 <option value="pendiente">Pendientes</option>
                 <option value="pagado">Pagados</option>
-                <option value="enviado">Enviados</option>
+                <option value="enviado">Despachados</option>
                 <option value="en_camino">En camino</option>
                 <option value="visita_fallida">Visita fallida</option>
                 <option value="en_sucursal">En sucursal</option>

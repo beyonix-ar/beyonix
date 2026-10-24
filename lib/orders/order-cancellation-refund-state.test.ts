@@ -12,7 +12,7 @@ import type { SupabasePedido } from "../supabase/types.ts"
 import { ADMIN_EXECUTIVE_STATUS } from "./admin-order-status-presentation.ts"
 import { getOrderCancellationRefundState, ORDER_CANCELLATION_REFUND_LABELS } from "./order-cancellation-refund-state.ts"
 
-const SHIPPING_STEPS = ["Esperando confirmación del pago", "Preparando envío", "En camino", "Entregado"]
+const SHIPPING_STEPS = ["Esperando confirmación del pago", "Preparando pedido", "Listo para despachar", "Despachado", "En camino", "Entregado"]
 
 // Forma real del pedido BX-1002 (pagado por MP, cancelado y reintegrado).
 const refundedOrder: SupabasePedido = {
@@ -129,10 +129,10 @@ test("regresión: pedidos normales, pendientes y entregados siguen igual", () =>
   }
   assert.equal(getOrderCancellationRefundState(pending), null)
   assert.equal(getPaymentProgressLabel(pending), "Esperando confirmación del pago")
-  assert.deepEqual(labels(pending), ["Pedido registrado", "Esperando confirmación del pago", "Preparando envío", "En camino", "Entregado"])
+  assert.deepEqual(labels(pending), ["Pedido registrado", "Esperando confirmación del pago", "Preparando pedido", "Listo para despachar", "Despachado", "En camino", "Entregado"])
 
   const paid: SupabasePedido = { ...pending, estado: "pagado", payment_status: "approved", financial_status: "payment_confirmed", paid_at: "2026-10-13T22:05:00Z" }
-  assert.deepEqual(labels(paid), ["Pedido registrado", "Pago aprobado", "Preparando envío", "En camino", "Entregado"])
+  assert.deepEqual(labels(paid), ["Pedido registrado", "Pago aprobado", "Preparando pedido", "Listo para despachar", "Despachado", "En camino", "Entregado"])
   assert.equal(getOrderProgressSteps(paid)[2].tone, "current")
 
   const delivered: SupabasePedido = { ...paid, estado: "entregado", delivered_at: "2026-10-15T12:00:00Z" }
@@ -140,7 +140,7 @@ test("regresión: pedidos normales, pendientes y entregados siguen igual", () =>
   assert.equal(getClientOrderStatusBadge(delivered).label, "Entregado")
 
   const shipped: SupabasePedido = { ...paid, estado: "en_camino", tracking_number: "AND123" }
-  assert.equal(getOrderProgressSteps(shipped)[3].tone, "current")
+  assert.equal(getOrderProgressSteps(shipped)[5].tone, "current")
 })
 
 test("detalle del cliente cancelado: timeline final, bloque de reintegro, NC real o pendiente real y relectura al volver", () => {

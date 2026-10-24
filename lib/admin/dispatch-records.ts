@@ -1,5 +1,6 @@
 import { orderCode } from "./dispatch"
 import { dispatchBatchName } from "./dispatch-queue"
+import { SHIPPING_STAGE_LABELS } from "../orders/shipping-stage"
 
 /**
  * Tabla única de Despachos (search_dispatch_records): cada registro es un
@@ -8,8 +9,9 @@ import { dispatchBatchName } from "./dispatch-queue"
  */
 /** Sólo estados respaldados por datos: un estado "Anulado" no existe en la base. */
 export type DispatchRecordState = "P" | "C" | "E" | "X"
+export type DispatchRecordKind = "order" | "batch"
 export type DispatchRecord = {
-  kind: "order" | "batch"
+  kind: DispatchRecordKind
   id: number
   code: string | null
   displayNumber: number | null
@@ -29,12 +31,17 @@ export type DispatchUser = { id: string; name: string }
 export const DISPATCH_RECORD_STATES: Record<DispatchRecordState, { label: string; tone: "warning" | "success" | "info" | "danger" }> = {
   P: { label: "Pendiente", tone: "warning" },
   C: { label: "Confirmado", tone: "success" },
-  // Entregado por BEYONIX al transportista; nunca "entregado al cliente".
-  E: { label: "Entregado", tone: "info" },
+  // QR final: BEYONIX se lo entregó a Andreani; nunca "entregado al cliente".
+  E: { label: SHIPPING_STAGE_LABELS.dispatched, tone: "info" },
   X: { label: "Cancelado", tone: "danger" },
 }
 const STATES = Object.keys(DISPATCH_RECORD_STATES) as DispatchRecordState[]
 export const isDispatchRecordState = (value: unknown): value is DispatchRecordState => STATES.some((state) => state === value)
+
+/** Filtro TIPO: pedidos individuales o Bultos, según el kind de cada fila. */
+export const DISPATCH_RECORD_KINDS: Record<DispatchRecordKind, string> = { order: "Pedidos", batch: "Bultos" }
+const KINDS = Object.keys(DISPATCH_RECORD_KINDS) as DispatchRecordKind[]
+export const isDispatchRecordKind = (value: unknown): value is DispatchRecordKind => KINDS.some((kind) => kind === value)
 
 export const DISPATCH_RECORDS_PAGE_SIZE = 20
 
@@ -47,16 +54,16 @@ export function dispatchToday(date = new Date()) {
  * resuelto (Entregado, Cancelado): Pendiente y Confirmado siguen visibles hasta
  * resolverse. Una fecha elegida a mano (`manualDate`) filtra todo.
  */
-export type DispatchRecordFilters = { date: string; manualDate: boolean; order: string; batch: string; user: string; state: string }
-const TEXT_FILTERS = ["date", "order", "batch", "user", "state"] as const
+export type DispatchRecordFilters = { date: string; manualDate: boolean; order: string; batch: string; user: string; state: string; kind: string }
+const TEXT_FILTERS = ["date", "order", "batch", "user", "state", "kind"] as const
 
 export function defaultDispatchRecordFilters(today = dispatchToday()): DispatchRecordFilters {
-  return { date: today, manualDate: false, order: "", batch: "", user: "", state: "" }
+  return { date: today, manualDate: false, order: "", batch: "", user: "", state: "", kind: "" }
 }
 
 /** Limpiar: todo vacío, incluida la fecha (sin fecha = todas las fechas). */
 export function clearedDispatchRecordFilters(): DispatchRecordFilters {
-  return { date: "", manualDate: true, order: "", batch: "", user: "", state: "" }
+  return { date: "", manualDate: true, order: "", batch: "", user: "", state: "", kind: "" }
 }
 
 export function dispatchRecordParams(filters: DispatchRecordFilters, page: number) {
@@ -94,6 +101,7 @@ export function restoreDispatchRecordsView(raw: string | null, today = dispatchT
   if (typeof stored.manualDate === "boolean") view.filters.manualDate = stored.manualDate
   if (view.filters.date && !/^\d{4}-\d{2}-\d{2}$/.test(view.filters.date)) view.filters.date = today
   if (view.filters.state && !isDispatchRecordState(view.filters.state)) view.filters.state = ""
+  if (view.filters.kind && !isDispatchRecordKind(view.filters.kind)) view.filters.kind = ""
   if (typeof parsed.page === "number" && Number.isSafeInteger(parsed.page) && parsed.page >= 1 && parsed.page <= 100000) view.page = parsed.page
   return view
 }

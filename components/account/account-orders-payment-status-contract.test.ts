@@ -39,23 +39,23 @@ test("detalle de compra (cuenta-client.tsx) usa el MISMO helper en el encabezado
   assert.doesNotMatch(source, />Total pagado</)
 })
 
-test("historial: 'Preparando envío' nunca aparece si el pago no está confirmado (isOrderPaymentConfirmed)", () => {
+test("historial: 'Preparando pedido' nunca aparece si el pago no está confirmado (isOrderPaymentConfirmed)", () => {
   const source = readSource("./account-orders.tsx")
 
   assert.match(source, /import \{ isOrderPaymentConfirmed \} from "@\/lib\/orders\/order-payment-status"/)
   assert.match(source, /const paymentConfirmed = isOrderPaymentConfirmed\(order\)/)
-  // El fallback final a "Preparando envío" queda detrás de un chequeo previo
+  // El fallback final a "Preparando pedido" queda detrás de un chequeo previo
   // de !paymentConfirmed (que usa getPaymentProgressLabel en su lugar).
   assert.match(source, /!paymentConfirmed\s*\n\s*\? getPaymentProgressLabel\(order\)/)
   assert.match(source, /!paymentConfirmed\s*\n\s*\? "Te avisaremos cuando se haya aprobado\."/)
 })
 
-test("detalle de compra: el paso 'Preparando envío' del timeline ya dependía de isPaid -- no se tocó esa lógica", () => {
+test("detalle de compra: los pasos de envío del timeline dependen de isPaid", () => {
   const utils = readSource("../../lib/account/account-utils.ts")
 
   assert.match(
     utils,
-    /label: "Preparando envío",\s*\n\s*detail: isPaid/,
+    /\.\.\.getShippingProgressSteps\(order, isPaid\)/,
   )
 })
 

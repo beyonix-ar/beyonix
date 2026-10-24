@@ -1,7 +1,7 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { dispatchHold, HOLD_COLUMNS } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
-import { DISPATCH_RECORDS_PAGE_SIZE, isDispatchRecordState, type DispatchRecord, type DispatchUser } from "@/lib/admin/dispatch-records"
+import { DISPATCH_RECORDS_PAGE_SIZE, isDispatchRecordKind, isDispatchRecordState, type DispatchRecord, type DispatchUser } from "@/lib/admin/dispatch-records"
 
 const validDate = (value: string | null) => {
   if (!value) return true
@@ -24,14 +24,15 @@ export async function GET(request: Request) {
   const date = params.get("date")
   const user = params.get("user")
   const state = params.get("state")
+  const kind = params.get("kind")
   if (!Number.isSafeInteger(page) || page < 1 || page > 100000 || !validDate(date) ||
-    (user && !UUID.test(user)) || (state && !isDispatchRecordState(state))) {
+    (user && !UUID.test(user)) || (state && !isDispatchRecordState(state)) || (kind && !isDispatchRecordKind(kind))) {
     return Response.json({ error: "Filtros inválidos." }, { status: 400 })
   }
   const [searched, holdsResult, usersResult] = await Promise.all([
     auth.admin.rpc("search_dispatch_records", { p_page: page, p_date: date || null, p_order: textOrNull(params.get("order")),
       p_batch: textOrNull(params.get("batch")), p_actor_id: user || null, p_state: state || null,
-      p_open_all_dates: params.get("openAllDates") === "true" }),
+      p_open_all_dates: params.get("openAllDates") === "true", p_kind: kind || null }),
     auth.admin.from("order_cancellation_holds").select(HOLD_COLUMNS).is("resolved_at", null).order("detected_at", { ascending: false }).limit(50),
     auth.admin.from("profiles").select("id,nombre,username,email").in("rol", ["operador", "admin", "super_admin"]).limit(200),
   ])

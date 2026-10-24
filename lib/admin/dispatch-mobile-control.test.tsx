@@ -59,7 +59,7 @@ test("control móvil: Bulto correcto, cancelado bloquea, retiro recalcula y conf
     await act(async () => { confirm().click() })
     await settle()
     assert.deepEqual(posts, ["remove", "confirm"])
-    assert.match(body(), /ENTREGADO/)
+    assert.match(body(), /DESPACHADO ✓/)
     assert.equal(confirm(), undefined, "la entrega no añade otro paso")
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })
@@ -99,7 +99,7 @@ test("control móvil: la vista vieja se confirma, la base rechaza y muestra los 
     await act(async () => { confirm().click() })
     await settle()
     assert.deepEqual(posts, ["confirm"])
-    assert.doesNotMatch(body(), /ENTREGADO/, "no se marcó entregado")
+    assert.doesNotMatch(body(), /DESPACHADO/, "no se marcó despachado")
     assert.match(body(), /Hay pedidos que tenés que retirar antes de entregar este Bulto\./)
     assert.match(body(), /5 pedidos requieren atención/)
     for (const orderId of cancelledIds) assert.match(body(), new RegExp(`BX-${1000 + orderId}CANCELADO`))

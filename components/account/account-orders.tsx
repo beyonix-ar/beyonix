@@ -225,7 +225,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                     cancellation_requested_by: order.cancellation_requested_by,
                   })
                 : null
-            // "Preparando envío" implica un proceso operativo que todavía no
+            // "Preparando pedido" implica un proceso operativo que todavía no
             // arrancó mientras el pago no esté confirmado (ver
             // isOrderPaymentConfirmed) -- un intento de Mercado Pago
             // pendiente/abandonado/rechazado y reclamable (fix de
@@ -250,7 +250,7 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                   ? "Comprobante rechazado"
                   : !paymentConfirmed
                     ? getPaymentProgressLabel(order)
-                    : getCustomerShippingMilestone(order)?.label ?? "Preparando envío"
+                    : getCustomerShippingMilestone(order, paymentConfirmed)?.label ?? "Preparando pedido"
             // null => se muestra la línea de seguimiento en vivo (número + copiar)
             // en vez de este texto genérico.
             const shippingDetail: string | null =

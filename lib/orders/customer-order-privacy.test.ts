@@ -19,6 +19,11 @@ test("el allowlist del cliente no contiene ninguna clave interna", () => {
   assert.deepEqual(CUSTOMER_ORDER_FIELDS.filter((field) => forbidden.includes(field)), [])
   assert.deepEqual(CUSTOMER_ORDER_ITEM_FIELDS.filter((field) => forbidden.includes(field)), [])
   assert.ok(CUSTOMER_ORDER_FIELDS.includes("shipping_cost_charged"), "el precio final del envío sí se informa")
+  // Etapa visible del envío: sólo el avance calculado, nunca el QR ni el armado.
+  assert.ok(CUSTOMER_ORDER_FIELDS.includes("dispatch_progress"))
+  assert.ok(!(CUSTOMER_ORDER_FIELDS as readonly string[]).includes("andreani_handed_over_at"))
+  const dto = toCustomerOrderDto({ id: 1012, estado: "pagado", dispatch_progress: "dispatched", andreani_handed_over_at: "2026-10-22T16:54:00Z", order_packages: [{ status: "prepared" }] })
+  assert.deepEqual(dto, { id: 1012, estado: "pagado", dispatch_progress: "dispatched" })
 })
 
 test("toCustomerOrderDto descarta tarifa, recargo, recotización, facturación, bultos y costos", () => {

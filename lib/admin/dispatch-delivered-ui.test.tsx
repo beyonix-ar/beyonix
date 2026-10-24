@@ -36,8 +36,8 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     await settle()
     assert.ok(requests.some((url) => url.includes(`date=${today}`)))
     const row = dom.window.document.querySelector<HTMLTableRowElement>('tr[aria-label="Ver Bulto - 0007"]')!
-    // E: el badge dice "Entregado"; B: 2 pedidos (no "2 unidades").
-    assert.equal(row.querySelector(".dispatch-state-badge")?.textContent, "Entregado")
+    // E: el badge dice "Despachado" (QR final, no entrega al cliente); B: 2 pedidos (no "2 unidades").
+    assert.equal(row.querySelector(".dispatch-state-badge")?.textContent, "Despachado")
     assert.equal(row.querySelector(".dispatch-order-units")?.textContent, "2 pedidos")
     assert.equal(dom.window.document.querySelectorAll('tr[aria-label="Ver BX-1012"], tr[aria-label="Ver BX-1013"]').length, 0, "A: sus pedidos no se duplican como filas")
     await act(async () => { row.click() })
@@ -45,11 +45,11 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     const content = dom.window.document.body.textContent ?? ""
     assert.match(content, /3 paquetes/)
     assert.equal((content.match(/Bulto - 0007/g) ?? []).length, 1)
-    assert.match(content, /Picking: Pedro[\s\S]*Armado: Juan[\s\S]*Confirmación: María[\s\S]*Control del bulto: Lucía[\s\S]*Entregado al transporte:/)
+    assert.match(content, /Picking: Pedro[\s\S]*Armado: Juan[\s\S]*Confirmación: María[\s\S]*Control del bulto: Lucía[\s\S]*Despachado:/)
     const [year, month, day] = today.split("-")
-    assert.ok(content.includes(`Entregado al transporte: ${day}/${month}/${year} - 16:00`))
+    assert.ok(content.includes(`Despachado: ${day}/${month}/${year} - 16:00`))
     // C: el detalle del Bulto lista sus pedidos con acceso a cada uno.
-    const links = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('table[aria-label="Pedidos del Bulto entregado"] a')]
+    const links = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('table[aria-label="Pedidos del Bulto despachado"] a')]
     assert.deepEqual(links.map((link) => [link.textContent, link.getAttribute("href")]), [["BX-1012", "/admin/pedidos/12"], ["BX-1013", "/admin/pedidos/13"]])
     assert.match(content, /Cancelado y retirado/)
     await act(async () => { [...dom.window.document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Volver")!.click() })

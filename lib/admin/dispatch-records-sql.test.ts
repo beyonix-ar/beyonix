@@ -136,6 +136,34 @@ test("tabla única de Despachos: pedido o Bulto (nunca ambos), estados, sumas, f
     assert.equal(second.total, 27)
     assert.equal(second.rows.length, 7)
     for (const state of ["Z", "A"]) await assert.rejects(find(`p_state => '${state}'`), /DISPATCH_FILTER_INVALID/, state)
+
+    // Filtro TIPO (20261024100000) sobre el mismo fixture, con las migraciones posteriores aplicadas.
+    await db.exec("alter table public.ordenes add column andreani_handed_over_by uuid")
+    for (const migration of ["20261023130000_dispatch_records_handed_over_fallback", "20261024100000_dispatch_records_kind_filter"])
+      await db.exec(readFileSync(`supabase/migrations/${migration}.sql`, "utf8"))
+    const { rows: overloads } = await db.query<{ args: string }>("select pg_get_function_identity_arguments(oid) args from pg_proc where proname = 'search_dispatch_records'")
+    assert.equal(overloads.length, 1, "una sola firma: sin sobrecargas ambiguas para PostgREST")
+    const all = await find(today)
+    assert.equal(all.total, 27, "Todos: pedidos + Bultos, igual que sin filtro")
+    assert.deepEqual(keys((await find(`${today}, p_kind => null`)).rows), keys(all.rows))
+    const ordersOnly = await find(`${today}, p_kind => 'order'`)
+    assert.equal(ordersOnly.total, 25)
+    assert.ok(ordersOnly.rows.every((row) => row.kind === "order"), "Pedidos: sólo pedidos individuales")
+    assert.ok(!ordersOnly.rows.some((row) => row.id >= 11 && row.id <= 22), "Pedidos: no expande los pedidos agrupados en un Bulto")
+    assert.equal((await find(`${today}, p_kind => 'order', p_page => 2`)).rows.length, 5, "paginación sobre lo filtrado")
+    const batchesOnly = await find(`${today}, p_kind => 'batch'`)
+    assert.deepEqual([keys(batchesOnly.rows), batchesOnly.total], [["batch:3", "batch:2"], 2], "Bultos: sólo Bultos, total correcto")
+    assert.deepEqual([batchesOnly.rows[1].orderCount, batchesOnly.rows[1].units], [10, 30], "el Bulto conserva sus pedidos")
+    // Combinado con Estado y con Fecha.
+    assert.deepEqual(keys((await find(`${today}, p_state => 'P', p_kind => 'batch'`)).rows), ["batch:2"])
+    assert.deepEqual(keys((await find(`${today}, p_state => 'X', p_kind => 'order'`)).rows), ["order:30"])
+    assert.deepEqual(keys((await find(`${today}, p_state => 'E', p_kind => 'order'`)).rows), [])
+    assert.deepEqual(keys((await find(`p_date => '2026-10-21', p_kind => 'order'`)).rows), ["order:33", "order:9"])
+    assert.deepEqual(keys((await find(`p_date => '2026-10-21', p_kind => 'batch'`)).rows), ["batch:7"])
+    assert.deepEqual(keys((await find(`${today}, p_open_all_dates => true, p_state => 'C', p_kind => 'batch'`)).rows), ["batch:6"], "fecha por defecto: Bulto finalizado de otro día")
+    assert.deepEqual(keys((await find(`${today}, p_order => '1015', p_kind => 'order'`)).rows), [], "el pedido de un Bulto no reaparece como pedido")
+    assert.deepEqual(keys((await find(`${today}, p_order => '1015', p_kind => 'batch'`)).rows), ["batch:2"])
+    for (const kind of ["bulto", "pedido", "ORDER", ""]) await assert.rejects(find(`p_kind => '${kind}'`), /DISPATCH_FILTER_INVALID/, kind)
     await db.exec("set role anon")
     await assert.rejects(find(today), /permission denied/i)
   } finally { await db.close() }
@@ -170,7 +198,7 @@ test("respaldo: entregado al transporte sin pertenencia activa sigue visible; co
       insert into public.dispatch_batches values
         (3,'DSP-20261022-003',3,'handed_over','2026-10-22 08:00-03','2026-10-22 12:00-03','2026-10-22 13:54-03','${B}','${B}','${C}');
       insert into public.dispatch_batch_items values (12,3,12,null,null),(13,3,13,null,null),(14,3,14,'2026-10-22 14:00-03','${A}');`)
-    for (const migration of ["20261022100000_dispatch_unified_records", "20261022110000_dispatch_records_open_work_no_annulled", "20261023130000_dispatch_records_handed_over_fallback"])
+    for (const migration of ["20261022100000_dispatch_unified_records", "20261022110000_dispatch_records_open_work_no_annulled", "20261023130000_dispatch_records_handed_over_fallback", "20261024100000_dispatch_records_kind_filter"])
       await db.exec(readFileSync(`supabase/migrations/${migration}.sql`, "utf8"))
     const { rows } = await db.query<{ result: { rows: Row[]; total: number } }>("select public.search_dispatch_records(p_date => '2026-10-22') result")
     const byKey = new Map(rows[0].result.rows.map((row) => [`${row.kind}:${row.id}`, row]))

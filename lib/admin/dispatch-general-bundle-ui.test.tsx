@@ -167,12 +167,12 @@ test("Bulto: lector, cámara, tipeo y pegado controlan pedidos; la última lectu
     assert.equal(qr(), null, "sin recargar: deja el control del Bulto")
     assert.equal(dom.window.location.search, "?batch=5")
     assert.equal(boardStates.at(-1), "E", "la tabla se refresca sin recargar")
-    assert.match(text(), /Confirmación: María Peña[\s\S]*Entregado al transporte: 16\/10\/2026 - 16:00/)
+    assert.match(text(), /Confirmación: María Peña[\s\S]*Despachado: 16\/10\/2026 - 16:00/)
 
     await act(async () => { button(dom, "Volver")!.click() })
     await settle(300)
     const row = dom.window.document.querySelector('tr[aria-label="Ver Bulto - 0005"]')
-    assert.match(row?.textContent ?? "", /María Peña[\s\S]*Entregado/, "la fila del Bulto pasa a Entregado con quién lo entregó")
+    assert.match(row?.textContent ?? "", /María Peña[\s\S]*Despachado/, "la fila del Bulto pasa a Despachado con quién lo entregó")
     assert.doesNotMatch(row?.textContent ?? "", /Pendiente|Confirmado/)
   } finally { await act(async () => root.unmount()); dom.window.close() }
 })

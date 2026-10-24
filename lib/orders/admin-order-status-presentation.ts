@@ -9,6 +9,13 @@
  */
 
 import { ORDER_CANCELLATION_REFUND_LABELS } from "./order-cancellation-refund-state.ts"
+import {
+  getDispatchProgress,
+  getShippingStage,
+  SHIPPING_STAGE_LABELS,
+  type ShippingStage,
+  type ShippingStageOrder,
+} from "./shipping-stage.ts"
 
 export type AdminOrderStatusTone = "danger" | "success" | "warning" | "info" | "neutral"
 
@@ -20,6 +27,7 @@ export interface AdminOrderStatusPresentation {
 export type AdminDispatchStatusKey =
   | "not_shipped"
   | "preparing"
+  | "ready"
   | "handed_over"
   | "shipped"
   | "in_transit"
@@ -40,24 +48,29 @@ export interface AdminDispatchOrder {
   andreani_handed_over_at?: string | null
   andreani_envio_id?: string | null
   andreani_creation_status?: string | null
+  /** Pickeo en Despachos (admin_pending_facts del listado). */
+  admin_pending_facts?: { dispatch?: { packageStatus?: "preparing" | "prepared" | null } | null } | null
 }
 
 const DISPATCH_BY_ESTADO: Partial<Record<string, AdminDispatchStatus>> = {
-  // Entrega final al cliente: nunca se confunde con la entrega al transportista.
-  entregado: { key: "delivered", label: "Entregado al cliente", tone: "success" },
+  // Entrega final al cliente: nunca se confunde con la entrega a Andreani (Despachado).
+  entregado: { key: "delivered", label: SHIPPING_STAGE_LABELS.delivered, tone: "success" },
   devuelto_beyonix: { key: "returned", label: "Devuelto a BEYONIX", tone: "neutral" },
   en_devolucion: { key: "returning", label: "En devolución", tone: "warning" },
   visita_fallida: { key: "delivery_incident", label: "Visita fallida", tone: "warning" },
   retiro_vencido: { key: "delivery_incident", label: "Retiro vencido", tone: "warning" },
   en_sucursal: { key: "awaiting_pickup", label: "En sucursal", tone: "info" },
   retiro_pendiente: { key: "awaiting_pickup", label: "Retiro pendiente", tone: "info" },
-  en_camino: { key: "in_transit", label: "En camino", tone: "info" },
-  enviado: { key: "shipped", label: "Enviado", tone: "info" },
-  preparado: { key: "preparing", label: "En preparación", tone: "info" },
+  en_camino: { key: "in_transit", label: SHIPPING_STAGE_LABELS.in_transit, tone: "info" },
+  // Admisión de Andreani sin movimiento de transporte: sigue siendo Despachado.
+  enviado: { key: "shipped", label: SHIPPING_STAGE_LABELS.dispatched, tone: "info" },
+  preparado: { key: "ready", label: SHIPPING_STAGE_LABELS.ready, tone: "info" },
 }
 
-/** BEYONIX -> transportista; después manda el estado del transporte. */
-const HANDED_OVER: AdminDispatchStatus = { key: "handed_over", label: "Entregado al transporte", tone: "info" }
+/** QR final del Bulto (BEYONIX -> Andreani); después manda el estado del transporte. */
+const HANDED_OVER: AdminDispatchStatus = { key: "handed_over", label: SHIPPING_STAGE_LABELS.dispatched, tone: "info" }
+const PREPARING: AdminDispatchStatus = { key: "preparing", label: SHIPPING_STAGE_LABELS.preparing, tone: "info" }
+const READY = DISPATCH_BY_ESTADO.preparado as AdminDispatchStatus
 
 const ANDREANI_SHIPMENT_IN_PROGRESS = new Set(["claimed", "created", "reconciliation_required"])
 
@@ -77,16 +90,19 @@ export function getAdminDispatchStatus(
   }
 
   const byEstado = DISPATCH_BY_ESTADO[order.estado]
-  // Ya entregado al transportista: nunca "En preparación" (ni "No enviado" aunque se cancele después).
-  if (order.andreani_handed_over_at && (!byEstado || byEstado.key === "preparing")) return HANDED_OVER
+  // QR final: Despachado (nunca "Entregado" ni "En camino" por sí solo), aunque se cancele después.
+  if (order.andreani_handed_over_at && (!byEstado || byEstado.key === "ready")) return HANDED_OVER
   if (byEstado) return byEstado
 
-  if (
-    order.estado !== "cancelado" &&
-    (String(order.andreani_envio_id ?? "").trim() ||
-      ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? ""))
-  ) {
-    return DISPATCH_BY_ESTADO.preparado as AdminDispatchStatus
+  if (order.estado !== "cancelado") {
+    const progress = getDispatchProgress(null, order.admin_pending_facts?.dispatch?.packageStatus)
+    // El envío Andreani se genera al terminar el pickeo: ya está listo para despachar.
+    if (
+      progress === "ready" ||
+      String(order.andreani_envio_id ?? "").trim() ||
+      ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? "")
+    ) return READY
+    if (progress === "preparing") return PREPARING
   }
 
   return {
@@ -94,6 +110,21 @@ export function getAdminDispatchStatus(
     label: "No enviado",
     tone: awaitingDispatch && order.estado !== "cancelado" ? "warning" : "neutral",
   }
+}
+
+/**
+ * Etapa visible del envío en Admin (timeline del detalle): misma regla que el
+ * cliente; un envío Andreani ya generado sin armado registrado cuenta como listo.
+ */
+export function getAdminShippingStage(
+  order: AdminDispatchOrder & ShippingStageOrder,
+  paymentConfirmed: boolean,
+): ShippingStage | null {
+  const shipmentGenerated = Boolean(String(order.andreani_envio_id ?? "").trim()) ||
+    ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? "")
+  const dispatchProgress = getDispatchProgress(order.andreani_handed_over_at, order.admin_pending_facts?.dispatch?.packageStatus) ??
+    (shipmentGenerated ? "ready" : null)
+  return getShippingStage(order, { paymentConfirmed, dispatchProgress })
 }
 
 export type AdminExecutiveStatusKey =
@@ -139,16 +170,16 @@ const EXECUTIVE_STATUS_BY_ESTADO: Partial<Record<string, AdminOrderStatusPresent
   pendiente: { label: "Pendiente de pago", tone: "warning" },
   pagado: ADMIN_EXECUTIVE_STATUS.payment_confirmed,
   approved: ADMIN_EXECUTIVE_STATUS.payment_confirmed,
-  preparado: { label: "En preparación", tone: "info" },
-  enviado: { label: "Enviado", tone: "info" },
-  en_camino: { label: "En camino", tone: "info" },
+  preparado: { label: SHIPPING_STAGE_LABELS.ready, tone: "info" },
+  enviado: { label: SHIPPING_STAGE_LABELS.dispatched, tone: "info" },
+  en_camino: { label: SHIPPING_STAGE_LABELS.in_transit, tone: "info" },
   en_sucursal: { label: "En sucursal", tone: "info" },
   retiro_pendiente: { label: "Retiro pendiente", tone: "info" },
   visita_fallida: { label: "Visita fallida", tone: "warning" },
   retiro_vencido: { label: "Retiro vencido", tone: "warning" },
   en_devolucion: { label: "En devolución", tone: "warning" },
   devuelto_beyonix: { label: "Devuelto a BEYONIX", tone: "neutral" },
-  entregado: { label: "Entregado al cliente", tone: "success" },
+  entregado: { label: SHIPPING_STAGE_LABELS.delivered, tone: "success" },
 }
 
 /**

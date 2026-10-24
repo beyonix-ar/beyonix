@@ -26,7 +26,7 @@ export const CUSTOMER_ORDER_FIELDS = [
   "return_status", "return_reason", "return_requested_at", "return_resolved_at",
   "delivered_at", "cancelled_at",
   // Calculados por el servidor (no son columnas).
-  "transfer_reservation_expires_at", "dispatch_cutoff_reached",
+  "transfer_reservation_expires_at", "dispatch_cutoff_reached", "dispatch_progress",
 ] as const
 
 export const CUSTOMER_ORDER_ITEM_FIELDS = [
