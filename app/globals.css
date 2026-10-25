@@ -17205,8 +17205,6 @@ html[data-admin-theme="light"] .admin-credit-wizard-exception-reason textarea { 
 .beyonix-admin-main .dispatch-filter-date input { box-sizing: border-box; min-width: 0; width: 100%; min-height: 0 !important; height: 2.4rem !important; padding: 0 2.7rem 0 0.7rem; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: #f8fafc !important; font-size: 0.75rem; }
 .beyonix-admin-main .dispatch-filter-clear { height: 2.4rem; padding: 0 0.7rem; border: 0; background: transparent; color: #cbd5e1; font-size: 0.75rem; cursor: pointer; white-space: nowrap; }
 .beyonix-admin-main .dispatch-filter-clear:hover { color: #f8fafc; text-decoration: underline; }
-.beyonix-admin-main .dispatch-delivered-summary { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0.4rem 1rem; }
-@media (max-width: 600px) { .beyonix-admin-main .dispatch-delivered-summary { grid-template-columns: 1fr; } }
 .beyonix-admin-main .dispatch-orders-table { table-layout: fixed; border-collapse: collapse; color: #e2e8f0; font-size: 0.8125rem; }
 .beyonix-admin-main .dispatch-orders-table th { padding: 0.5rem 0.625rem; border-bottom: 1px solid #465260; color: #aebdcc; font-size: 0.6875rem; font-weight: 800; text-align: left; text-transform: uppercase; }
 .beyonix-admin-main .dispatch-orders-table td { padding: 0.625rem; border-bottom: 1px solid #303b46; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

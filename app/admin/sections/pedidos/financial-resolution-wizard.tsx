@@ -609,7 +609,8 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onDow
 
   const stateLabel = outcome.kind === "completed" ? "Completado"
     : outcome.kind === "manual_pending" ? "Reintegro pendiente"
-    : outcome.kind === "processing" ? "En proceso" : "Requiere acción"
+    : outcome.kind === "processing" || outcome.kind === "refund_pending" ? "En proceso" : "Requiere acción"
+  const mercadoPagoError = outcome.kind === "requires_action" && resolution.type === "mercadopago_refund"
 
   return (
     <div className="admin-financial-wizard-body mt-3 grid content-start gap-3" data-outcome={outcome.kind}>
@@ -642,18 +643,36 @@ function FinancialResolutionOutcome({ pedido, view, onChanged, onResolved, onDow
         </div>
       )}
 
-      {outcome.kind === "requires_action" && (
-        <div className="admin-financial-wizard-notice grid gap-2">
+      {outcome.kind === "refund_pending" && (
+        <div className="admin-financial-wizard-notice grid gap-2" data-refund-state="pending">
           <p className="flex items-center gap-2 text-sm font-black">
-            <AlertTriangle className="size-4" aria-hidden="true" />Actualización pendiente
+            <LoaderCircle className="size-4" aria-hidden="true" />Reintegro en proceso
           </p>
-          <p className="text-xs font-semibold">BEYONIX no pudo completar una actualización interna.</p>
+          <p className="text-xs font-semibold">Mercado Pago todavía está confirmando la operación. No hace falta volver a reintegrar.</p>
+          <div className="flex flex-wrap gap-2">
+            {/* Sólo concilia el reintegro existente: nunca crea otro. */}
+            <AdminButton size="sm" variant="primary" disabled={saving} onClick={() => void retry()}
+              icon={saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}>
+              Actualizar estado
+            </AdminButton>
+          </div>
+        </div>
+      )}
+
+      {outcome.kind === "requires_action" && (
+        <div className="admin-financial-wizard-notice grid gap-2" data-refund-state={mercadoPagoError ? "error" : undefined}>
+          <p className="flex items-center gap-2 text-sm font-black">
+            <AlertTriangle className="size-4" aria-hidden="true" />{mercadoPagoError ? "No pudimos procesar el reintegro" : "Actualización pendiente"}
+          </p>
+          <p className="text-xs font-semibold">{mercadoPagoError
+            ? outcome.detail ?? "El reintegro no se creó en Mercado Pago. Podés reintentar."
+            : "BEYONIX no pudo completar una actualización interna."}</p>
           <div className="flex flex-wrap gap-2">
             <AdminButton size="sm" variant="primary" disabled={saving} onClick={() => void retry()}
               icon={saving ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}>
               Reintentar
             </AdminButton>
-            {outcome.detail && (
+            {outcome.detail && !mercadoPagoError && (
               <AdminButton size="sm" variant="ghost" aria-expanded={showDetail} onClick={() => setShowDetail((value) => !value)}>
                 Ver detalle técnico
               </AdminButton>

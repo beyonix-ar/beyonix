@@ -26,7 +26,9 @@ export type FinancialResolutionView = {
     customerMessage: string | null
     inspectedAt: string
   } | null
-  resolution: { id: string; type: FinancialChoice; status: string; amount: number; detail: string | null; mpRefundId?: string | null } | null
+  resolution: { id: string; type: FinancialChoice; status: string; amount: number; detail: string | null; mpRefundId?: string | null
+    /** Reintegro ya enviado (o ambiguo) en Mercado Pago, todavía sin confirmar. */
+    refundPending?: boolean } | null
 }
 
 export type FinancialWizardStep = "money" | "reception" | "review"
@@ -161,11 +163,16 @@ export type FinancialOutcome =
   | { kind: "processing" }
   | { kind: "completed" }
   | { kind: "manual_pending" }
+  /** Mercado Pago tiene (o pudo recibir) el reintegro y falta su confirmación: no es un error. */
+  | { kind: "refund_pending"; detail: string | null }
   | { kind: "requires_action"; detail: string | null }
 
 export function getFinancialOutcome(resolution: NonNullable<FinancialResolutionView["resolution"]>): FinancialOutcome {
   if (resolution.status === "completed") return { kind: "completed" }
   if (resolution.status === "manual_pending") return { kind: "manual_pending" }
+  if (resolution.status === "requires_action" && resolution.type === "mercadopago_refund" && resolution.refundPending) {
+    return { kind: "refund_pending", detail: resolution.detail }
+  }
   if (resolution.status === "requires_action") return { kind: "requires_action", detail: resolution.detail }
   return { kind: "processing" }
 }
@@ -179,7 +186,7 @@ export function getFinancialHumanState(view: FinancialResolutionView): Financial
   if (view.resolution) {
     const outcome = getFinancialOutcome(view.resolution)
     if (outcome.kind === "completed") return "Completado"
-    if (outcome.kind === "processing") return "En proceso"
+    if (outcome.kind === "processing" || outcome.kind === "refund_pending") return "En proceso"
     return "Requiere acción"
   }
   if (needsReturnInspection(view) || view.mode === "advanced" || (view.mode === "wizard" && view.financialOptions.length > 0)) return "Requiere acción"
@@ -198,11 +205,11 @@ export function getResolutionFromResponse(data: unknown): FinancialResolution | 
   if (!data || typeof data !== "object") return null
   const { status, resolution } = data as { status?: unknown; resolution?: unknown }
   if (typeof status !== "string" || !RESOLUTION_STATUSES.includes(status) || !resolution || typeof resolution !== "object") return null
-  const { id, type, amount, detail } = resolution as { id?: unknown; type?: unknown; amount?: unknown; detail?: unknown }
+  const { id, type, amount, detail, refundPending } = resolution as { id?: unknown; type?: unknown; amount?: unknown; detail?: unknown; refundPending?: unknown }
   if (typeof id !== "string" || !id || !FINANCIAL_CHOICES.includes(type as FinancialChoice)) return null
   const value = Number(amount)
   if (!Number.isFinite(value) || value <= 0) return null
-  return { id, type: type as FinancialChoice, status, amount: value, detail: typeof detail === "string" ? detail : null }
+  return { id, type: type as FinancialChoice, status, amount: value, detail: typeof detail === "string" ? detail : null, ...(refundPending === true ? { refundPending } : {}) }
 }
 
 /** Vista con la resolución ya confirmada por el backend (sin opciones para elegir otra). */

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { getProductColorMode, type ProductColorMode } from "@/lib/products/color-mode"
 import {
   ArrowLeft,
@@ -40,11 +41,14 @@ import {
   adminPageClassName,
   AdminCard,
   AdminFormField,
+  AdminDangerButton,
   AdminInfoBlock,
+  AdminModal,
   AdminPrimaryButton,
   AdminSecondaryButton,
   AdminSelect,
 } from "../../components/admin-controls"
+import { hasVariantStateChanges } from "./product-form-dirty"
 import { getProductVideoSource } from "@/lib/products/product-video"
 import { firstUsableImage } from "@/lib/products/admin-product-visuals"
 import { getProductActivationStatus } from "@/lib/products/product-activation"
@@ -129,7 +133,10 @@ export function ProductoForm({
   const [variantDistribution, setVariantDistribution] =
     useState<ProductVariantDistribution | null>(null)
   const previewObjectUrls = useRef<string[]>([])
-  const leaveEditor = onCancel
+  // Salida pedida con cambios sin guardar: href = navegación interna a
+  // retomar si se confirma; null = volver al listado.
+  const [pendingLeave, setPendingLeave] = useState<{ href: string | null } | null>(null)
+  const router = useRouter()
   const finishProductSave = onSaved
   const { installmentsFinancing, pricing } = useSiteSettings()
 
@@ -145,6 +152,7 @@ export function ProductoForm({
     variantCosts,
     missingVariantCosts,
     priceRecalculation,
+    hasUnsavedFormChanges,
     setField,
     showError,
     submit,
@@ -155,6 +163,74 @@ export function ProductoForm({
   })
 
   const currentProductoId = producto?.id || savedId
+  // Imágenes, especificaciones y modo de color de un producto existente ya
+  // quedaron guardados por su cuenta; en un producto nuevo todo es borrador.
+  const hasUnsavedChanges =
+    hasUnsavedFormChanges ||
+    hasVariantStateChanges(pendingVariantStates, persistedVariants) ||
+    (!currentProductoId &&
+      (draftVariants.length > 0 || draftSpecifications.length > 0))
+
+  const leaveEditor = () => {
+    if (hasUnsavedChanges) setPendingLeave({ href: null })
+    else onCancel()
+  }
+
+  const confirmLeave = () => {
+    const href = pendingLeave?.href ?? null
+    setPendingLeave(null)
+    onCancel()
+    if (href) router.push(href)
+  }
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return
+
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+    // Navegación interna (menú lateral, links del admin): se frena antes de
+    // que la tome Next y se retoma sólo si el usuario confirma salir.
+    const interceptInternalLink = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        !(event.target instanceof Element)
+      ) {
+        return
+      }
+      const anchor = event.target.closest("a[href]")
+      if (!(anchor instanceof HTMLAnchorElement)) return
+      if (anchor.target && anchor.target !== "_self") return
+      if (anchor.hasAttribute("download")) return
+
+      const url = new URL(anchor.href, window.location.href)
+      if (url.origin !== window.location.origin) return
+      if (
+        url.pathname === window.location.pathname &&
+        url.search === window.location.search &&
+        url.hash
+      ) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setPendingLeave({ href: `${url.pathname}${url.search}${url.hash}` })
+    }
+
+    window.addEventListener("beforeunload", warnBeforeUnload)
+    document.addEventListener("click", interceptInternalLink, true)
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload)
+      document.removeEventListener("click", interceptInternalLink, true)
+    }
+  }, [hasUnsavedChanges])
   // El SKU pertenece a la variante en cuanto el producto tiene al menos una:
   // la DB ya fuerza productos.sku a null en ese caso (validate_product_sku_ownership).
   // "SKU principal" sólo tiene sentido para un producto que nunca tendrá variantes.
@@ -366,6 +442,15 @@ export function ProductoForm({
         setDraftVariants([])
         setDraftSpecifications([])
       },
+      // La activación elegida ya es la guardada: deja de contar como pendiente.
+      onCatalogSaved: () => {
+        setPersistedVariants((variants) =>
+          variants.map((variant) => ({
+            ...variant,
+            activo: pendingVariantStates[variant.id] ?? variant.activo,
+          })),
+        )
+      },
     })
   }
 
@@ -543,7 +628,7 @@ export function ProductoForm({
           </div>
         </div>
 
-        <div className="product-editor-window-actions flex shrink-0 items-center gap-1.5">
+        <div className="product-editor-window-actions flex shrink-0 flex-wrap items-center justify-end gap-1.5 max-sm:min-w-0 max-sm:shrink">
           <AdminSecondaryButton
             size="icon"
             title={form.destacado ? "Quitar destacado" : "Destacar producto"}
@@ -564,6 +649,14 @@ export function ProductoForm({
             <Eye className="size-4 text-white" />
           </AdminSecondaryButton>
           <ProductRequirementsPopover status={activationStatus} />
+          {hasUnsavedChanges && (
+            <span
+              role="status"
+              className="product-editor-unsaved whitespace-nowrap text-11px font-bold text-amber-200 max-sm:order-last max-sm:basis-full max-sm:text-right"
+            >
+              Cambios sin guardar
+            </span>
+          )}
           <AdminPrimaryButton
             size="icon"
             title="Guardar cambios"
@@ -822,6 +915,27 @@ export function ProductoForm({
           onClose={closeProductPreview}
         />
       )}
+
+      <AdminModal
+        open={pendingLeave !== null}
+        compact
+        title="Cambios sin guardar"
+        onClose={() => setPendingLeave(null)}
+        footer={
+          <div className="flex justify-end gap-2">
+            <AdminSecondaryButton size="sm" onClick={() => setPendingLeave(null)}>
+              Seguir editando
+            </AdminSecondaryButton>
+            <AdminDangerButton size="sm" onClick={confirmLeave}>
+              Salir sin guardar
+            </AdminDangerButton>
+          </div>
+        }
+      >
+        <p className="text-sm leading-6 text-white/70">
+          Tenés cambios sin guardar. ¿Querés salir igualmente?
+        </p>
+      </AdminModal>
     </div>
   )
 }

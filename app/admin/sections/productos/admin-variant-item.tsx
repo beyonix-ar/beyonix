@@ -63,7 +63,9 @@ export function AdminVariantThumbnail({
 }) {
   return (
     <span
-      className={`relative flex shrink-0 items-center justify-center overflow-hidden border bg-[#07111b] ${
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden border ${
+        image ? "bg-[#ffffff]" : "bg-[#07111b]"
+      } ${
         density === "comfortable" ? "size-16 rounded-2xl" : "size-9 rounded-lg"
       } ${
         tone === "discounted" ? "border-amber-300/24" : "border-white/10"

@@ -125,7 +125,9 @@ function ProductThumbnail({
 }) {
   return (
     <span
-      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-black/30 ${
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl border ${
+        image ? "bg-[#ffffff]" : "bg-black/30"
+      } ${
         size === "sm" ? "size-9" : "size-10"
       } ${
         tone === "conditioned"

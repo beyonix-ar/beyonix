@@ -210,7 +210,7 @@ test("resolución financiera: la Factura C va antes que la NC y que mover dinero
   const body = source.slice(source.indexOf("export async function executeFinancialResolution"))
   const invoiceIndex = body.indexOf("if (hasPendingInvoiceObligation(fresh.order))")
   const noteIndex = body.indexOf("await ensureCreditNote(admin, fresh, claimed, actorId, authorization)")
-  const refundIndex = body.indexOf("refundMercadoPagoOrderPayment(admin")
+  const refundIndex = body.indexOf("settleMercadoPagoOrderRefund(admin")
   const creditIndex = body.indexOf("createCustomerCreditMovement(admin")
   const manualIndex = body.indexOf('updateResolution(admin, claimed, "manual_pending"')
   assert.ok(invoiceIndex > 0 && invoiceIndex < noteIndex, "factura antes que la NC")

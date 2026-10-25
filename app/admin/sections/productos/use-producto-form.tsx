@@ -38,6 +38,7 @@ import {
 } from "@/lib/supabase/queries/productos"
 
 import { slugify } from "./helpers"
+import { hasProductFormChanges } from "./product-form-dirty"
 import { sanitizeRichDescription } from "@/lib/products/rich-description"
 import {
   isPlayableProductVideo,
@@ -61,6 +62,8 @@ interface SubmitOptions {
   primarySku?: string
   variantStates?: Record<number, boolean>
   onDraftSaved?: () => void
+  /** La ficha quedó guardada en el servidor (no se llama si falló). */
+  onCatalogSaved?: () => void
 }
 
 type SupabaseLikeError = {
@@ -170,6 +173,58 @@ const getErrorMessage = (
     : "Error desconocido al guardar el producto."
 }
 
+function getInitialFormState(
+  producto?: SupabaseProducto | null
+): ProductoFormState {
+  return {
+    nombre: (producto?.nombre ?? "").toUpperCase(),
+    sku: (
+      [...(producto?.producto_variantes ?? [])]
+        .sort((left, right) => left.orden - right.orden || left.id - right.id)[0]
+        ?.sku ?? producto?.sku ?? ""
+    ).toUpperCase(),
+    slug: producto?.slug ?? "",
+    descripcion:
+      producto?.descripcion ?? "",
+    video_url:
+      producto?.video_url ?? "",
+    precio:
+      Number(producto?.precio ?? 0) > 0
+        ? String(producto?.precio)
+        : "",
+    precio_anterior:
+      Number(producto?.precio_anterior ?? 0) > 0
+        ? String(producto?.precio_anterior)
+        : "",
+    // Método de precio: se completa de verdad al resolver getProductPricing()
+    // (abajo) -- hasta entonces, "manual" es el default seguro (igual que un
+    // producto sin fila en product_pricing).
+    pricingMode: "manual",
+    targetMarginPercent: "",
+    categoria_id: String(
+      producto?.categoria_id ?? ""
+    ),
+    destacado:
+      producto?.destacado ?? false,
+    activo:
+      producto?.activo ?? false,
+    peso_empaquetado_kg:
+      producto?.peso_empaquetado_kg == null
+        ? ""
+        : String(producto.peso_empaquetado_kg),
+    alto_paquete_cm:
+      producto?.alto_paquete_cm == null ? "" : String(producto.alto_paquete_cm),
+    ancho_paquete_cm:
+      producto?.ancho_paquete_cm == null
+        ? ""
+        : String(producto.ancho_paquete_cm),
+    largo_paquete_cm:
+      producto?.largo_paquete_cm == null
+        ? ""
+        : String(producto.largo_paquete_cm),
+  }
+}
+
 export function useProductoForm({
   producto,
   onSaved,
@@ -220,53 +275,14 @@ export function useProductoForm({
   // Un doble click no dispara dos guardados.
   const submittingRef = useRef(false)
 
-  const [form, setForm] = useState<ProductoFormState>({
-    nombre: (producto?.nombre ?? "").toUpperCase(),
-    sku: (
-      [...(producto?.producto_variantes ?? [])]
-        .sort((left, right) => left.orden - right.orden || left.id - right.id)[0]
-        ?.sku ?? producto?.sku ?? ""
-    ).toUpperCase(),
-    slug: producto?.slug ?? "",
-    descripcion:
-      producto?.descripcion ?? "",
-    video_url:
-      producto?.video_url ?? "",
-    precio:
-      Number(producto?.precio ?? 0) > 0
-        ? String(producto?.precio)
-        : "",
-    precio_anterior:
-      Number(producto?.precio_anterior ?? 0) > 0
-        ? String(producto?.precio_anterior)
-        : "",
-    // Método de precio: se completa de verdad al resolver getProductPricing()
-    // (abajo) -- hasta entonces, "manual" es el default seguro (igual que un
-    // producto sin fila en product_pricing).
-    pricingMode: "manual",
-    targetMarginPercent: "",
-    categoria_id: String(
-      producto?.categoria_id ?? ""
-    ),
-    destacado:
-      producto?.destacado ?? false,
-    activo:
-      producto?.activo ?? false,
-    peso_empaquetado_kg:
-      producto?.peso_empaquetado_kg == null
-        ? ""
-        : String(producto.peso_empaquetado_kg),
-    alto_paquete_cm:
-      producto?.alto_paquete_cm == null ? "" : String(producto.alto_paquete_cm),
-    ancho_paquete_cm:
-      producto?.ancho_paquete_cm == null
-        ? ""
-        : String(producto.ancho_paquete_cm),
-    largo_paquete_cm:
-      producto?.largo_paquete_cm == null
-        ? ""
-        : String(producto.largo_paquete_cm),
-  })
+  const [form, setForm] = useState<ProductoFormState>(() => getInitialFormState(producto))
+  // Última versión guardada de la ficha: contra ella se calcula si hay
+  // cambios sin guardar. Sólo avanza con un guardado exitoso.
+  const [savedForm, setSavedForm] = useState<ProductoFormState>(() => getInitialFormState(producto))
+  const hasUnsavedFormChanges = useMemo(
+    () => hasProductFormChanges(form, savedForm),
+    [form, savedForm],
+  )
 
   useEffect(() => {
     getCategorias()
@@ -304,12 +320,14 @@ export function useProductoForm({
               }
             : null,
         )
-        setForm((prev) => ({
-          ...prev,
+        const loadedPricing = {
           pricingMode: info.pricingMode,
           targetMarginPercent:
             info.targetMarginPercent != null ? String(info.targetMarginPercent) : "",
-        }))
+        }
+        // Es dato guardado, no una edición: entra también en la versión base.
+        setForm((prev) => ({ ...prev, ...loadedPricing }))
+        setSavedForm((prev) => ({ ...prev, ...loadedPricing }))
       })
       .catch((err) => {
         if (!active) return
@@ -452,6 +470,7 @@ export function useProductoForm({
     primarySku = form.sku,
     variantStates = {},
     onDraftSaved,
+    onCatalogSaved,
   }: SubmitOptions = {}) => {
     if (submittingRef.current) return
     setError("")
@@ -576,6 +595,8 @@ export function useProductoForm({
       const rememberRevision = (saved: SupabaseProducto) => {
         catalogRevisionRef.current =
           typeof saved.catalog_revision === "number" ? saved.catalog_revision : null
+        setSavedForm(form)
+        onCatalogSaved?.()
       }
 
       if (producto) {
@@ -696,8 +717,7 @@ export function useProductoForm({
           })
 
         setSavedId(created.id)
-        catalogRevisionRef.current =
-          typeof created.catalog_revision === "number" ? created.catalog_revision : null
+        rememberRevision(created)
         onDraftSaved?.()
         setSuccess(
           "Producto creado correctamente."
@@ -749,6 +769,7 @@ export function useProductoForm({
     variantCosts,
     missingVariantCosts,
     priceRecalculation,
+    hasUnsavedFormChanges,
 
     setField,
     showError,

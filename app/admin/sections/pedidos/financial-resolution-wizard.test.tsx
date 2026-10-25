@@ -297,6 +297,34 @@ test("J. fallo de postproceso: sólo Reintentar y detalle técnico a pedido", as
   } finally { await ui.cleanup() }
 })
 
+test("reintegro Mercado Pago: en proceso, error real y completado se distinguen", async () => {
+  const pendingResponse = () => Response.json({ status: "requires_action",
+    resolution: { id: "r1", type: "mercadopago_refund", amount: 25_000, detail: "Mercado Pago todavía está confirmando el reintegro.", refundPending: true } }, { status: 202 })
+  const ui = await setup(() => pendingResponse())
+  try {
+    const mp = (patch: { status: string; detail: string | null; refundPending?: boolean }) => ({ ...baseView, mode: "resolution" as const, financialOptions: [],
+      resolution: { id: "r1", type: "mercadopago_refund" as const, amount: 25_000, ...patch } })
+    const panel = () => ui.doc.querySelector("[data-testid='financial-resolution']")!
+    // Creado en Mercado Pago y sin confirmar: no es un error genérico.
+    await ui.render(mp({ status: "requires_action", detail: "Mercado Pago todavía está confirmando el reintegro.", refundPending: true }))
+    assert.match(panel().textContent ?? "", /EstadoEn proceso/)
+    assert.match(panel().textContent ?? "", /Reintegro en proceso.*Mercado Pago todavía está confirmando la operación/)
+    assert.doesNotMatch(panel().textContent ?? "", /Actualización pendiente|No pudimos|BEYONIX no pudo/)
+    assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), ["Actualizar estado"])
+    await ui.click("Actualizar estado")
+    assert.deepEqual(JSON.parse(String(ui.calls[0].body)), { action: "retry", confirmed: true }, "concilia por el mismo retry idempotente")
+    // Error real (Mercado Pago nunca recibió el reintegro): mensaje claro y Reintentar.
+    await ui.render(mp({ status: "requires_action", detail: "No se pudo iniciar el reintegro. Mercado Pago no fue contactado: reintentá." }))
+    assert.match(panel().textContent ?? "", /EstadoRequiere acción/)
+    assert.match(panel().textContent ?? "", /No pudimos procesar el reintegro.*Mercado Pago no fue contactado/)
+    assert.doesNotMatch(panel().textContent ?? "", /Mercado Pago no confirmó|BEYONIX no pudo completar/)
+    assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), ["Reintentar"])
+    await ui.render(mp({ status: "completed", detail: null }))
+    assert.match(panel().textContent ?? "", /EstadoCompletado/)
+    assert.deepEqual(ui.buttons().map((item) => item.textContent?.trim()), [])
+  } finally { await ui.cleanup() }
+})
+
 test("I. NC emitida se muestra como resultado, sin acciones fiscales manuales", async () => {
   const ui = await setup()
   try {

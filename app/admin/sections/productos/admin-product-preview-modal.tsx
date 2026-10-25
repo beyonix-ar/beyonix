@@ -1,12 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
 import { useCart } from "@/context/cart-context"
 import { ProductDetailsModal } from "@/components/products/product-details-modal"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import {
   getDefaultVariantValue,
+  getDraftPreviewProduct,
   getProductImagesByVariant,
 } from "@/lib/products/product-variants"
 import {
@@ -22,11 +23,17 @@ interface AdminProductPreviewModalProps {
 }
 
 export function AdminProductPreviewModal({
-  product,
+  product: sourceProduct,
   onClose,
-  readOnly = false,
+  readOnly: requestedReadOnly = false,
   initialVariantValue,
 }: AdminProductPreviewModalProps) {
+  const product = useMemo(
+    () => getDraftPreviewProduct(sourceProduct),
+    [sourceProduct],
+  )
+  // Variantes mostradas sólo para la vista previa: no se pueden agregar al carrito.
+  const readOnly = requestedReadOnly || product !== sourceProduct
   const [selectedColor, setSelectedColor] = useState(() =>
     initialVariantValue ?? getDefaultVariantValue(product)
   )

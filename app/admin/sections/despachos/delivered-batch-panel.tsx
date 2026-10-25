@@ -23,15 +23,22 @@ export function DeliveredBatchPanel({ batchId }: { batchId: number }) {
   }, [batchId])
   if (error) return <p role="alert" className="text-sm text-red-300">{error}</p>
   if (!history) return <p role="status" className="text-sm">Cargando historial…</p>
+  // Orden real del proceso; el Despachador es quien confirmó el QR final (handed_over_by).
+  const steps = [
+    { label: "Picking", value: history.pickingBy.join(", ") || "Sin registro" },
+    { label: "Armado del Bulto", value: history.assembledBy || "Sin registro" },
+    { label: "Control del Bulto", value: history.controlledBy.join(", ") || "Sin registro" },
+    { label: "Despachador", value: history.deliveredBy || "Sin registro" },
+    { label: "Despachado", value: history.batch.handed_over_at ? dateTime(history.batch.handed_over_at) : "Pendiente" },
+  ]
   return <div className="space-y-4 text-sm">
     <p>{history.orderCount} pedidos · {history.parcelCount} paquetes</p>
-    <div className="dispatch-delivered-summary">
-      <span><strong>Picking:</strong> {history.pickingBy.join(", ") || "Sin registro"}</span>
-      <span><strong>Armado:</strong> {history.assembledBy || "Sin registro"}</span>
-      <span><strong>Confirmación:</strong> {history.deliveredBy || "Sin registro"}</span>
-      <span><strong>Control del bulto:</strong> {history.controlledBy.join(", ") || "Sin registro"}</span>
-      <span><strong>Despachado:</strong> {dateTime(history.batch.handed_over_at)}</span>
-    </div>
+    <ol className="grid gap-1.5" aria-label="Responsables del despacho">
+      {steps.map((step, index) => <li key={step.label} className="flex min-w-0 gap-2">
+        <span className="shrink-0 font-black tabular-nums opacity-60">{index + 1}.</span>
+        <span className="min-w-0"><strong>{step.label}:</strong> {step.value}</span>
+      </li>)}
+    </ol>
     <div className="overflow-x-auto"><table className="dispatch-orders-table w-full" aria-label="Pedidos del Bulto despachado"><thead><tr><th scope="col">Pedido</th><th scope="col">Estado</th><th scope="col">Paquetes</th><th scope="col">Preparó</th><th scope="col">Controló / retiró</th></tr></thead>
       <tbody>{history.items.map((item) => <tr key={item.orderId}><td><a href={`/admin/pedidos/${item.orderId}`} className="dispatch-delivered-order-link font-bold underline-offset-2 hover:underline">{orderCode(item.orderId)}</a></td><td title={item.removalReason || undefined}>{item.removedAt ? item.cancelled ? "Cancelado y retirado" : "Retirado" : "Despachado"}</td><td>{item.removedAt ? "—" : item.parcelCount}</td><td>{item.preparedBy || "—"}</td><td>{item.removedAt ? `${item.removedBy || "—"} · ${dateTime(item.removedAt)}` : item.controlledBy || "—"}</td></tr>)}</tbody>
     </table></div>

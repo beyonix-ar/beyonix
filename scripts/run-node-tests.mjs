@@ -54,6 +54,7 @@ const TEST_FILES = [
   "components/products/financed-price-display-contract.test.ts",
   "components/products/installments-copy-contract.test.ts",
   "lib/products/product-variants.test.ts",
+  "lib/products/product-form-dirty.test.ts",
   "lib/products/variant-color.test.ts",
   "lib/products/product-color-filters.test.ts",
   "lib/products/catalog-filters.test.ts",

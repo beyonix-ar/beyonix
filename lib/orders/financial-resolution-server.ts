@@ -5,7 +5,7 @@ import { createCustomerCreditMovement } from "@/lib/customer-credit/server"
 import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { getMercadoPagoPayment } from "@/lib/mercadopago/customer-credit-topups"
-import { reconcileMercadoPagoOrderRefund, refundMercadoPagoOrderPayment, validateRefundablePayment } from "@/lib/mercadopago/order-refund"
+import { MERCADOPAGO_REFUND_PENDING_MESSAGE, settleMercadoPagoOrderRefund, validateRefundablePayment } from "@/lib/mercadopago/order-refund"
 import { requireArcaConfiguration } from "@/lib/arca/configuration"
 import { processArcaInvoice, type ArcaInvoiceResult } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
@@ -265,16 +265,11 @@ export async function executeFinancialResolution(
     await ensureCreditNote(admin, fresh, claimed, actorId, authorization)
     if (claimed.choice === "manual_refund") return updateResolution(admin, claimed, "manual_pending", actorId)
     if (claimed.choice === "mercadopago_refund") {
-      const current = await loadFinancialResolution(admin, orderId, false)
-      if (!current) throw new Error("Pedido no encontrado.")
-      const uncertain = current.refunds.some((refund) => ["processing", "needs_reconciliation"].includes(refund.status))
-      if (uncertain) {
-        const reconciled = await reconcileMercadoPagoOrderRefund(admin, { orderId })
-        if (reconciled.kind !== "confirmed") fail("Mercado Pago aún no confirmó el reintegro. Reintentá la actualización.")
-      } else {
-        const result = await refundMercadoPagoOrderPayment(admin, { orderId, adminId: actorId })
-        if (result.kind !== "confirmed" && result.kind !== "already_confirmed") fail("Mercado Pago no confirmó el reintegro. Reintentá la actualización.")
-      }
+      // Primer clic y "Reintentar" van por acá: concilia lo que Mercado Pago ya
+      // tenga y sólo crea el reintegro si no existe (nunca un segundo refund).
+      const settled = await settleMercadoPagoOrderRefund(admin, { orderId, adminId: actorId })
+      if (settled.kind === "pending") fail(MERCADOPAGO_REFUND_PENDING_MESSAGE)
+      if (settled.kind === "failed") fail(settled.message)
       return updateResolution(admin, claimed, "completed", actorId)
     }
     const afterNote = await loadFinancialResolution(admin, orderId, false)

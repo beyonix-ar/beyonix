@@ -56,12 +56,20 @@ function getBaseProductImages(product: SupabaseProducto) {
     ),
   )
 
-  // Mientras un producto con variantes todavía no tiene ninguna activa
-  // (caso normal durante la edición), la vista previa necesita una galería
-  // agregada. Se deriva de producto_variantes.imagenes, no de la tabla
-  // paralela de productos simples.
+  // Galería agregada: ilustración de los modos aleatorios y portada de un
+  // producto cuyas variantes todavía no están activas. Se deriva de
+  // producto_variantes.imagenes, no de la tabla paralela de productos simples.
   if (variantGallery.length) return variantGallery
 
+  return getParentProductImages(product)
+}
+
+/**
+ * Imágenes propias del producto padre (nunca las de sus variantes). Es el
+ * único respaldo válido de una variante de color específico sin fotos: así
+ * una variante nunca muestra las de otro color.
+ */
+function getParentProductImages(product: SupabaseProducto) {
   // Para un producto sin variantes, imagenes_producto es la galería
   // canónica y su orden define también la imagen inicial. También conserva
   // compatibilidad con variantes históricas que aún no tengan URLs propias.
@@ -118,7 +126,12 @@ export function getProductVariantOptions(
   product: SupabaseProducto,
 ): ProductVariantOption[] {
   const baseImages = getBaseProductImages(product)
+  const parentImages = getParentProductImages(product)
   const variants = getSortedActiveVariants(product)
+  const ownVariantImages = (variant: SupabaseProductoVariante | undefined) =>
+    variant && Array.isArray(variant.imagenes)
+      ? normalizeImageUrls(variant.imagenes)
+      : []
   const conditionedVariants = (product.conditioned_stock ?? [])
     .filter(
       (item) =>
@@ -134,6 +147,15 @@ export function getProductVariantOptions(
     )
     .map<ProductVariantOption>((item) => {
       const conditionedImages = normalizeImageUrls(item.conditioned_images)
+      // Sin fotos propias muestra las de su variante de origen, no la galería
+      // de todos los colores.
+      const sourceVariantImages = ownVariantImages(
+        product.producto_variantes?.find((variant) => variant.id === item.variant_id),
+      )
+      const fallbackImages =
+        sourceVariantImages.length && getProductColorMode(product) === "especifico"
+          ? sourceVariantImages
+          : baseImages
 
       return {
         id: null,
@@ -143,7 +165,7 @@ export function getProductVariantOptions(
         colorHex: item.conditioned_color_hex,
         secondaryColorHex: null,
         stock: item.quantity,
-        images: conditionedImages.length ? conditionedImages : baseImages,
+        images: conditionedImages.length ? conditionedImages : fallbackImages,
         sku: item.conditioned_sku?.trim() || null,
         price: Math.max(
           Math.round(product.precio * (1 - item.discount_percent / 100)),
@@ -239,13 +261,10 @@ export function getProductVariantOptions(
 
   return [
     ...variants.map((variant) => {
-      const variantImages = Array.isArray(variant.imagenes)
-        ? normalizeImageUrls(variant.imagenes)
-        : []
-      const images =
-        variantImages.length
-          ? variantImages
-          : baseImages
+      // Color específico: la galería es la de ESTA variante; sin fotos propias
+      // sólo cae a las del producto padre, nunca a las de otros colores.
+      const variantImages = ownVariantImages(variant)
+      const images = variantImages.length ? variantImages : parentImages
 
       return {
         id: variant.id,
@@ -267,6 +286,25 @@ export function getProductVariantOptions(
     }),
     ...conditionedVariants,
   ]
+}
+
+/**
+ * Vista previa de Admin de un producto cuyas variantes todavía no están
+ * activas (por ejemplo, recién nacidas de Compras): se muestran como las verá
+ * el cliente al activarlas, cada una con su color y su galería. Con al menos
+ * una activa se respeta el estado real. Nunca se usa en la tienda: ahí una
+ * variante inactiva no se vende.
+ */
+export function getDraftPreviewProduct(product: SupabaseProducto): SupabaseProducto {
+  const variants = product.producto_variantes ?? []
+  if (!variants.length || variants.some((variant) => variant.activo !== false)) {
+    return product
+  }
+
+  return {
+    ...product,
+    producto_variantes: variants.map((variant) => ({ ...variant, activo: true })),
+  }
 }
 
 export function getDefaultVariantOption(product: SupabaseProducto) {

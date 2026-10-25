@@ -47,7 +47,10 @@ export async function GET(request: Request, context: Context) {
       resolution: result.resolution && { id: result.resolution.id,
         type: result.resolution.choice, status: resolutionStatus, amount: result.resolution.amount,
         detail: result.resolution.last_error ?? (interrupted ? FINANCIAL_INTERRUPTED_DETAIL : null),
-        mpRefundId: result.resolution.choice === "mercadopago_refund" ? result.mpRefundId : null } })
+        mpRefundId: result.resolution.choice === "mercadopago_refund" ? result.mpRefundId : null,
+        // Intento ya enviado (o ambiguo) en Mercado Pago sin confirmar: se concilia, no es un error.
+        refundPending: result.resolution.choice === "mercadopago_refund" &&
+          result.refunds.some((refund) => ["processing", "needs_reconciliation"].includes(refund.status)) } })
   } catch {
     return NextResponse.json({ error: "No se pudieron consultar las opciones financieras." }, { status: 500 })
   }
@@ -139,8 +142,15 @@ export async function POST(request: Request, context: Context) {
     }
     const result = await executeFinancialResolution(auth.admin, id, auth.user.id,
       request.headers.get("authorization") ?? "", body.action === "resolve" ? body.choice ?? null : null, body.action === "retry")
-    return NextResponse.json({ status: result.status, resolution: { id: result.id, type: result.choice, amount: result.amount, detail: result.last_error ?? null },
-      message: result.status === "requires_action" ? "Actualización pendiente. Reintentá cuando corresponda." : null },
+    let refundPending = false
+    if (result.status === "requires_action" && result.choice === "mercadopago_refund") {
+      const { data: attempt } = await auth.admin.from("mercadopago_order_refunds").select("status").eq("order_id", id)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle()
+      refundPending = ["processing", "needs_reconciliation"].includes(attempt?.status ?? "")
+    }
+    return NextResponse.json({ status: result.status, resolution: { id: result.id, type: result.choice, amount: result.amount, detail: result.last_error ?? null, refundPending },
+      message: result.status !== "requires_action" ? null
+        : refundPending ? "Reintegro en proceso. Mercado Pago todavía está confirmando la operación." : "Actualización pendiente. Reintentá cuando corresponda." },
       { status: result.status === "requires_action" ? 202 : 200 })
   } catch (error) {
     const detail = error instanceof Error ? error.message : ""

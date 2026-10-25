@@ -207,6 +207,26 @@ test("pedido no pagado por Mercado Pago / no elegible: begin() devuelve error, n
   assert.equal(getPaymentCalled, false)
 })
 
+test("begin(): una regla de negocio no se reintenta; una falla transitoria sí, acotada y sin POST", async () => {
+  const business = fakeAdmin({ begin: { data: null, error: { message: "ORDER_NOT_REFUND_PENDING" } } })
+  const waits: number[] = []
+  const wait = async (ms: number) => { waits.push(ms) }
+  assert.deepEqual(await refundMercadoPagoOrderPayment(business.admin as never, { orderId, adminId: "admin-1" }, { wait }),
+    { kind: "validation_failed", reason: "ORDER_NOT_REFUND_PENDING" })
+  assert.equal(business.rpcCalls.length, 1)
+  assert.deepEqual(waits, [])
+
+  const transient = fakeAdmin({ begin: { data: null, error: { message: "canceling statement due to lock timeout" } } })
+  let createRefundCalled = false
+  const result = await refundMercadoPagoOrderPayment(transient.admin as never, { orderId, adminId: "admin-1" }, {
+    wait, createRefund: async () => { createRefundCalled = true; return { kind: "unknown", reason: "x" } },
+  })
+  assert.deepEqual(result, { kind: "not_started", reason: "canceling statement due to lock timeout" })
+  assert.equal(transient.rpcCalls.filter((call) => call.name === "begin_mercadopago_order_refund").length, 3)
+  assert.deepEqual(waits, [500, 1500])
+  assert.equal(createRefundCalled, false)
+})
+
 test("refund ya 'processing' (doble click/otro admin): no vuelve a llamar a Mercado Pago", async () => {
   const { admin } = fakeAdmin({
     begin: { data: [beginAttempt({ should_call_mp: false, status: "processing" })], error: null },

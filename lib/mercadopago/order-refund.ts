@@ -36,6 +36,8 @@ export type MercadoPagoOrderRefundResult =
   | { kind: "rejected"; code: string | null; message: string }
   | { kind: "unknown"; reason: string }
   | { kind: "validation_failed"; reason: string }
+  /** begin_mercadopago_order_refund falló de forma transitoria: no hay intento ni POST. */
+  | { kind: "not_started"; reason: string }
 
 export type MercadoPagoOrderReconciliationResult =
   | { kind: "confirmed"; mpRefundId: string; amount: number }
@@ -55,6 +57,41 @@ interface RefundDependencies {
     expectedAmount?: number | null,
   ) => ReturnType<typeof getMercadoPagoRefundStatus>
   getOrderReference?: (orderId: number) => Promise<MercadoPagoOrderReferenceFields | null>
+  wait?: (ms: number) => Promise<void>
+}
+
+/** Esperas antes de reintentar begin_mercadopago_order_refund ante una falla transitoria. */
+const BEGIN_RETRY_DELAYS_MS = [500, 1500]
+const defaultWait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Las reglas de negocio de begin_mercadopago_order_refund se informan con
+ * `raise exception 'CODIGO'` (P0001). Cualquier otro error (red hacia
+ * Supabase, lock_timeout / statement_timeout del rol de la API) es transitorio:
+ * la RPC no llegó a escribir nada y repetirla es seguro, porque un intento ya
+ * creado vuelve con should_call_mp=false.
+ */
+function isBusinessRuleError(error: { message: string; code?: string | null }) {
+  return error.code === "P0001" || /^[A-Z][A-Z0-9_]+$/.test(error.message.trim())
+}
+
+async function beginRefundAttempt(
+  admin: AdminClient,
+  params: { orderId: number; adminId: string | null },
+  wait: (ms: number) => Promise<void>,
+) {
+  for (let attempt = 0; ; attempt += 1) {
+    const { data, error } = await admin.rpc("begin_mercadopago_order_refund", {
+      p_order_id: params.orderId,
+      p_admin_id: params.adminId,
+    })
+    if (!error) return { data, error: null }
+    if (isBusinessRuleError(error) || attempt >= BEGIN_RETRY_DELAYS_MS.length) {
+      return { data: null, error: { message: error.message, transient: !isBusinessRuleError(error) } }
+    }
+    console.warn("MERCADOPAGO_REFUND_BEGIN_RETRY", { orderId: params.orderId, attempt: attempt + 1, message: error.message })
+    await wait(BEGIN_RETRY_DELAYS_MS[attempt])
+  }
 }
 
 async function loadOrderReference(
@@ -165,11 +202,10 @@ export async function refundMercadoPagoOrderPayment(
   const getOrderReference =
     deps.getOrderReference ?? ((orderId: number) => loadOrderReference(admin, orderId))
 
-  const { data: beginData, error: beginError } = await admin.rpc(
-    "begin_mercadopago_order_refund",
-    { p_order_id: params.orderId, p_admin_id: params.adminId },
-  )
+  const { data: beginData, error: beginError } = await beginRefundAttempt(admin, params, deps.wait ?? defaultWait)
   if (beginError) {
+    // Sin intento registrado: Mercado Pago nunca fue contactado.
+    if (beginError.transient) return { kind: "not_started", reason: beginError.message }
     return { kind: "validation_failed", reason: beginError.message }
   }
   const attempt = (Array.isArray(beginData) ? beginData[0] : beginData) as
@@ -350,4 +386,65 @@ export async function reconcileMercadoPagoOrderRefund(
   }
 
   return reconcileRefundAttempt(admin, pending, deps)
+}
+
+/**
+ * Resultado para la resolución financiera de Admin:
+ * - confirmed: Mercado Pago confirmó el reintegro (ahora o antes).
+ * - pending: hay un intento en Mercado Pago (o pudo haberlo) sin confirmar; sólo se concilia.
+ * - failed: no existe reintegro en Mercado Pago; reintentar es seguro.
+ */
+export type MercadoPagoOrderRefundSettlement =
+  | { kind: "confirmed" }
+  | { kind: "pending"; reason: string }
+  | { kind: "failed"; reason: string; message: string }
+
+export const MERCADOPAGO_REFUND_PENDING_MESSAGE = "Mercado Pago todavía está confirmando el reintegro."
+
+const REFUND_FAILURE_MESSAGES: Record<string, string> = {
+  PAYMENT_ALREADY_FULLY_REFUNDED: "Mercado Pago informa que el pago ya fue reintegrado por otra vía. Requiere revisión.",
+  PARTIAL_REFUND_ALREADY_EXISTS: "El pago ya tiene un reintegro parcial en Mercado Pago. Requiere revisión.",
+  PAYMENT_STATUS_NOT_REFUNDABLE: "Mercado Pago informa que el pago no se puede reintegrar en su estado actual.",
+  AMOUNT_MISMATCH: "El importe del pago en Mercado Pago no coincide con el del pedido. Requiere revisión.",
+  ORDER_NOT_REFUND_PENDING: "El pedido ya no está pendiente de reintegro. Actualizá el pedido.",
+  CREDIT_NOTE_REQUIRED: "Falta la nota de crédito del pedido antes de reintegrar.",
+  ORDER_ALREADY_DISPATCHED: "El pedido ya salió de BEYONIX: requiere devolución antes de reintegrar.",
+}
+
+function refundFailure(reason: string, fallback: string): MercadoPagoOrderRefundSettlement {
+  return { kind: "failed", reason, message: REFUND_FAILURE_MESSAGES[reason] ?? fallback }
+}
+
+/**
+ * Único camino del reintegro MP desde la resolución financiera (primer clic y
+ * "Reintentar"). Primero concilia por GET cualquier intento ambiguo: si
+ * Mercado Pago ya lo tiene, se registra sin otro POST. Recién cuando Mercado
+ * Pago no tiene el reintegro se intenta crearlo, y begin_mercadopago_order_refund
+ * reusa la misma idempotency_key del intento previo.
+ */
+export async function settleMercadoPagoOrderRefund(
+  admin: AdminClient,
+  params: { orderId: number; adminId: string | null },
+  deps: RefundDependencies = {},
+): Promise<MercadoPagoOrderRefundSettlement> {
+  const reconciled = await reconcileMercadoPagoOrderRefund(admin, { orderId: params.orderId }, deps)
+  if (reconciled.kind === "confirmed") return { kind: "confirmed" }
+  if (reconciled.kind === "unknown") return { kind: "pending", reason: reconciled.reason }
+
+  const result = await refundMercadoPagoOrderPayment(admin, params, deps)
+  switch (result.kind) {
+    case "confirmed":
+    case "already_confirmed":
+      return { kind: "confirmed" }
+    case "in_progress":
+      return { kind: "pending", reason: result.status }
+    case "unknown":
+      return { kind: "pending", reason: result.reason }
+    case "rejected":
+      return refundFailure(result.code ?? "MP_REJECTED", `Mercado Pago rechazó el reintegro: ${result.message}`)
+    case "not_started":
+      return refundFailure("REFUND_NOT_STARTED", "No se pudo iniciar el reintegro. Mercado Pago no fue contactado: reintentá.")
+    case "validation_failed":
+      return refundFailure(result.reason, `No se pudo validar el pago en Mercado Pago (${result.reason}).`)
+  }
 }

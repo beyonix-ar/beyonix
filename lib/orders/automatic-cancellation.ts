@@ -175,7 +175,7 @@ export async function processAutomaticCancellation(
     }
     const result = await deps.refundMercadoPagoOrderPayment(admin, { orderId, adminId: null })
     if (["confirmed", "already_confirmed"].includes(result.kind)) return { status: "completed" }
-    if (["in_progress", "unknown"].includes(result.kind)) return { status: "pending", reason: "MP_RECONCILIATION" }
+    if (["in_progress", "unknown", "not_started"].includes(result.kind)) return { status: "pending", reason: "MP_RECONCILIATION" }
     if (result.kind === "rejected" && order.auto_cancellation_attempts < 6) {
       return { status: "pending", reason: "MP_REFUND_RETRY" }
     }

@@ -4,7 +4,7 @@ import type { PGlite } from "@electric-sql/pglite"
 
 import type { CreditNoteArcaResult } from "../arca/credit-note-emission.ts"
 import type { ArcaInvoiceGateway } from "../arca/invoice-automation.ts"
-import type { MercadoPagoOrderReconciliationResult, MercadoPagoOrderRefundResult } from "../mercadopago/order-refund.ts"
+import { settleMercadoPagoOrderRefund, type MercadoPagoOrderReconciliationResult, type MercadoPagoOrderRefundResult } from "../mercadopago/order-refund.ts"
 import { AUTO_CANCELLATION_MAX_ATTEMPTS, runAutomaticCancellationBatch, type AutomaticCancellationDependencies } from "./automatic-cancellation.ts"
 import { getAutomaticCancellationStatus } from "./automatic-cancellation-state.ts"
 import { admin as adminId, customer, read, setupCombinedPaymentDb } from "./fixtures/combined-payment-db.ts"
@@ -587,6 +587,178 @@ test("P2. respuesta ambigua de Mercado Pago: queda para conciliar y nunca hay un
     assert.equal(reconciled.kind, "confirmed")
     assert.deepEqual(env.mp.posts, [100000])
     assert.equal((await order(env.db, 41)).financial_status, "refunded")
+  } finally { await env.db.close() }
+})
+
+/**
+ * Reintegro MP de la resolución financiera con el código real
+ * (settleMercadoPagoOrderRefund → begin_mercadopago_order_refund real) y un
+ * Mercado Pago simulado que respeta la idempotency key como el real.
+ */
+async function settleEnv(id: number) {
+  const env = await setup()
+  await env.db.exec(["record_mercadopago_order_refund_result", "reconcile_mercadopago_order_refund"].map((name) => `
+    create or replace function ${name}(p_refund_id uuid, p_outcome text, p_mp_refund_id text default null,
+      p_error_code text default null, p_error_message text default null) returns void language sql as $$
+      update mercadopago_order_refunds set status = p_outcome, mp_refund_id = coalesce(p_mp_refund_id, mp_refund_id) where id = p_refund_id;
+      update ordenes set financial_status = 'refunded'
+        where p_outcome = 'confirmed' and id = (select order_id from mercadopago_order_refunds where id = p_refund_id);
+    $$;`).join("\n"))
+  await cancelledSale(env.db, { id })
+  await adminCreditNote(env, id, 100000)
+  type Created = { key: string; paymentId: string; id: number; amount: number }
+  const mp = { posts: [] as string[], created: [] as Created[], nextPost: [] as Array<"ok" | "lost" | "down" | "reject">, nextGet: [] as Array<"ok" | "unknown"> }
+  const refund = (item: Created) => ({ id: item.id, payment_id: 9001, amount: item.amount })
+  const deps = {
+    wait: async () => {},
+    getOrderReference: async (orderId: number) => ({ id: orderId, mercadopago_reference: null, mercadopago_reference_assigned_at: null }),
+    getPayment: async (paymentId: string) => ({ id: paymentId, status: "approved", external_reference: paymentId.replace("PAY-", ""),
+      currency_id: "ARS", transaction_amount: 100000, transaction_amount_refunded: 0 }) as never,
+    async createRefund(paymentId: string, key: string) {
+      mp.posts.push(key)
+      const behavior = mp.nextPost.shift() ?? "ok"
+      if (behavior === "down") return { kind: "unknown" as const, reason: "timeout esperando respuesta de Mercado Pago" }
+      if (behavior === "reject") return { kind: "rejected" as const, status: 400, code: "2063", message: "Pago no disponible para reintegro" }
+      // Misma key = mismo refund (Mercado Pago no crea otro).
+      let item = mp.created.find((entry) => entry.key === key)
+      if (!item) { item = { key, paymentId, id: 3410202000 + mp.created.length + 1, amount: 100000 }; mp.created.push(item) }
+      return behavior === "lost" ? { kind: "unknown" as const, reason: "timeout esperando respuesta de Mercado Pago" } : { kind: "confirmed" as const, refund: refund(item) }
+    },
+    async getRefundStatus(paymentId: string) {
+      if ((mp.nextGet.shift() ?? "ok") === "unknown") return { kind: "unknown" as const, reason: "timeout reconciliando" }
+      const item = mp.created.find((entry) => entry.paymentId === paymentId)
+      return item ? { kind: "found" as const, refund: refund(item) } : { kind: "not_found" as const }
+    },
+  }
+  const base = pgliteAdmin(env.db)
+  const state = { beginFailures: 0 }
+  // Falla transitoria de la RPC (lock_timeout del rol de la API), antes de escribir nada.
+  const admin = { from: base.from, rpc: (name: string, args: Record<string, unknown>) => name === "begin_mercadopago_order_refund" && state.beginFailures-- > 0
+    ? Promise.resolve({ data: null, error: { message: "canceling statement due to lock timeout", code: "55P03" } })
+    : base.rpc(name, args) } as unknown as typeof base
+  const settle = () => settleMercadoPagoOrderRefund(admin as never, { orderId: id, adminId }, deps)
+  const attempts = async () => (await env.db.query<{ status: string; idempotency_key: string; attempt_count: number }>(
+    "select status, idempotency_key, attempt_count from mercadopago_order_refunds where order_id=$1 order by created_at", [id])).rows
+  return { env, mp, state, settle, attempts }
+}
+
+test("R1. reintegro confirmado en el primer intento: un POST, completado", async () => {
+  const { env, mp, settle, attempts } = await settleEnv(70)
+  try {
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1)
+    assert.deepEqual((await attempts()).map((row) => row.status), ["confirmed"])
+    assert.equal((await order(env.db, 70)).financial_status, "refunded")
+    // Refrescar / Atrás / otro clic: nunca otro POST.
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1)
+  } finally { await env.db.close() }
+})
+
+test("R2. BX-1015: la RPC de inicio falla de forma transitoria; se reintenta sola y no hay error", async () => {
+  const { env, mp, state, settle, attempts } = await settleEnv(71)
+  try {
+    state.beginFailures = 2
+    assert.deepEqual(await settle(), { kind: "confirmed" }, "el mismo clic termina el reintegro")
+    assert.equal(mp.posts.length, 1)
+    assert.deepEqual((await attempts()).map((row) => row.status), ["confirmed"])
+  } finally { await env.db.close() }
+})
+
+test("R3. si la falla de inicio persiste: error real (MP no contactado) y Reintentar crea el único reintegro", async () => {
+  const { env, mp, state, settle, attempts } = await settleEnv(72)
+  try {
+    state.beginFailures = 3
+    const failed = await settle()
+    assert.equal(failed.kind, "failed")
+    if (failed.kind === "failed") assert.match(failed.message, /Mercado Pago no fue contactado/)
+    assert.equal(mp.posts.length, 0, "nunca se llamó a Mercado Pago")
+    assert.equal((await attempts()).length, 0, "sin intento registrado")
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1)
+    assert.equal(mp.created.length, 1)
+  } finally { await env.db.close() }
+})
+
+test("R4. refund creado pero respuesta tardía/timeout: pendiente; Reintentar sólo concilia el existente", async () => {
+  const { env, mp, settle, attempts } = await settleEnv(73)
+  try {
+    mp.nextPost.push("lost")
+    const pending = await settle()
+    assert.equal(pending.kind, "pending", "Mercado Pago lo creó: no es un error")
+    assert.deepEqual((await attempts()).map((row) => row.status), ["needs_reconciliation"])
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1, "Reintentar no vuelve a hacer POST")
+    assert.equal(mp.created.length, 1)
+    assert.deepEqual((await attempts()).map((row) => row.status), ["confirmed"])
+  } finally { await env.db.close() }
+})
+
+test("R5. conciliación todavía ambigua: sigue pendiente sin POST; luego confirma", async () => {
+  const { env, mp, settle } = await settleEnv(74)
+  try {
+    mp.nextPost.push("lost")
+    mp.nextGet.push("unknown")
+    assert.equal((await settle()).kind, "pending")
+    assert.equal((await settle()).kind, "pending", "la consulta a MP no respondió: no se crea otro")
+    assert.equal(mp.posts.length, 1)
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1)
+  } finally { await env.db.close() }
+})
+
+test("R6. webhook llega después: el reintento lo ve confirmado y no repite", async () => {
+  const { env, mp, settle, attempts } = await settleEnv(75)
+  try {
+    mp.nextPost.push("lost")
+    assert.equal((await settle()).kind, "pending")
+    // El webhook de Mercado Pago confirma el intento en BEYONIX.
+    await env.db.query("update mercadopago_order_refunds set status='confirmed', mp_refund_id='3410202001' where order_id=75")
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1)
+    assert.deepEqual((await attempts()).map((row) => row.status), ["confirmed"])
+  } finally { await env.db.close() }
+})
+
+test("R7. timeout sin que Mercado Pago lo reciba: recién entonces se crea, con la MISMA idempotency key", async () => {
+  const { env, mp, settle, attempts } = await settleEnv(76)
+  try {
+    mp.nextPost.push("down")
+    assert.equal((await settle()).kind, "pending")
+    assert.equal(mp.created.length, 0)
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 2)
+    assert.equal(new Set(mp.posts).size, 1, "el segundo POST usa la misma key: Mercado Pago no puede duplicar")
+    assert.equal(mp.created.length, 1)
+    const rows = await attempts()
+    assert.deepEqual(rows.map((row) => [row.status, row.attempt_count]), [["confirmed", 2]], "un único intento, reclamado")
+  } finally { await env.db.close() }
+})
+
+test("R8. rechazo real de Mercado Pago: error con el motivo; Reintentar crea un intento nuevo", async () => {
+  const { env, mp, settle, attempts } = await settleEnv(77)
+  try {
+    mp.nextPost.push("reject")
+    const failed = await settle()
+    assert.equal(failed.kind, "failed")
+    if (failed.kind === "failed") assert.match(failed.message, /Mercado Pago rechazó el reintegro: Pago no disponible/)
+    assert.equal(mp.created.length, 0)
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.created.length, 1)
+    assert.deepEqual((await attempts()).map((row) => row.status), ["failed", "confirmed"])
+  } finally { await env.db.close() }
+})
+
+test("R9. doble clic simultáneo: un solo POST", async () => {
+  const { env, mp, settle } = await settleEnv(78)
+  try {
+    const results = await Promise.all([settle(), settle()])
+    assert.ok(results.some((result) => result.kind === "confirmed"))
+    assert.ok(results.every((result) => result.kind !== "failed"))
+    assert.equal(mp.posts.length, 1)
+    assert.deepEqual(await settle(), { kind: "confirmed" })
+    assert.equal(mp.posts.length, 1)
   } finally { await env.db.close() }
 })
 

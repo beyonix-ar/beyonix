@@ -17,6 +17,7 @@ const stubs: Plugin = {
           window.formValue = form;
           return { form, error: "", success: "", saving: false, savedId: null, categorias: [{ id: 1, nombre: "Accesorios" }, { id: 2, nombre: "Hogar" }], logisticsFieldError: null, knownUnitCost: null, variantCosts: [], missingVariantCosts: [], priceRecalculation: null, setField, showError: () => {}, submit: async () => { window.saveCalls = (window.saveCalls || 0) + 1 }, handleNombreChange: (value) => setField("nombre", value) };
         }`,
+      "navigation": `export function useRouter() { return { push: () => {} } }`,
       "use-site-settings": `export function useSiteSettings() { return { installmentsFinancing: {}, pricing: { transferDiscountPercent: 0 } } }`,
       "product-pricing": `export const calculateTargetMarginPrice = () => null; export const simulateProductProfitability = () => null;`,
       "product-activation": `export const getProductActivationStatus = () => ({ ready: true, checks: [] });`,
@@ -25,7 +26,7 @@ const stubs: Plugin = {
       "admin-product-preview-modal": `import React from "react"; export function AdminProductPreviewModal({onClose}) { return <div role="dialog" aria-label="Vista previa del producto"><button onClick={onClose}>Cerrar vista previa</button></div> }`,
       "product-requirements-popover": `import React from "react"; export function ProductRequirementsPopover() { return <button type="button" aria-label="Requisitos para activar">Requisitos para activar</button> }`,
     }
-    pluginBuild.onResolve({ filter: /(?:use-producto-form|use-site-settings|product-pricing|product-activation|product-variants-editor|product-specifications-editor|admin-product-preview-modal|product-requirements-popover)$/ }, (args) => {
+    pluginBuild.onResolve({ filter: /(?:use-producto-form|next\/navigation|use-site-settings|product-pricing|product-activation|product-variants-editor|product-specifications-editor|admin-product-preview-modal|product-requirements-popover)$/ }, (args) => {
       const name = args.path.split(/[\\/]/).at(-1)!
       return { path: name, namespace: "fixture" }
     })

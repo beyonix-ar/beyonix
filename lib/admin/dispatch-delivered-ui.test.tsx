@@ -45,9 +45,11 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
     const content = dom.window.document.body.textContent ?? ""
     assert.match(content, /3 paquetes/)
     assert.equal((content.match(/Bulto - 0007/g) ?? []).length, 1)
-    assert.match(content, /Picking: Pedro[\s\S]*Armado: Juan[\s\S]*Confirmación: María[\s\S]*Control del bulto: Lucía[\s\S]*Despachado:/)
+    // Responsables en el orden real del proceso; "Despachador" = quien confirmó el QR final.
     const [year, month, day] = today.split("-")
-    assert.ok(content.includes(`Despachado: ${day}/${month}/${year} - 16:00`))
+    const steps = [...dom.window.document.querySelectorAll('ol[aria-label="Responsables del despacho"] li')].map((item) => item.textContent)
+    assert.deepEqual(steps, ["1.Picking: Pedro", "2.Armado del Bulto: Juan", "3.Control del Bulto: Lucía", "4.Despachador: María", `5.Despachado: ${day}/${month}/${year} - 16:00`])
+    assert.doesNotMatch(content, /Confirmación:/)
     // C: el detalle del Bulto lista sus pedidos con acceso a cada uno.
     const links = [...dom.window.document.querySelectorAll<HTMLAnchorElement>('table[aria-label="Pedidos del Bulto despachado"] a')]
     assert.deepEqual(links.map((link) => [link.textContent, link.getAttribute("href")]), [["BX-1012", "/admin/pedidos/12"], ["BX-1013", "/admin/pedidos/13"]])
