@@ -37,9 +37,9 @@ const COLUMNS: Array<{ label: string; help?: string }> = [
   { label: "Tracking" },
   { label: "Estado" },
   { label: "Paquetes de envío" },
-  { label: "Cobrado cliente", help: LOGISTICS_HELP.charged },
-  { label: "Facturado Andreani", help: BILLED_HELP },
-  { label: "Diferencia", help: LOGISTICS_HELP.difference },
+  { label: "Costo facturado al cliente", help: LOGISTICS_HELP.charged },
+  { label: "Costo facturado por Andreani", help: BILLED_HELP },
+  { label: "Diferencia Andreani vs Cliente", help: LOGISTICS_HELP.billedVsCustomer },
   { label: "Estado conciliación", help: LOGISTICS_HELP.reconciliation },
   { label: "Detalle y acción" },
 ]
@@ -51,6 +51,7 @@ const DETAILS: Array<{ label: string; help?: string; value: (row: LogisticsOrder
   { label: "Extra cobrado", help: LOGISTICS_HELP.markup, value: (row) => money(row.extraCharged) },
   { label: "Beneficio", help: LOGISTICS_HELP.benefit, value: (row) => money(row.benefit) },
   { label: "Cotizado con paquetes de envío medidos", help: LOGISTICS_HELP.parcelQuoted, value: (row) => money(row.parcelQuote) },
+  { label: "Dif. checkout vs armado", help: LOGISTICS_HELP.difference, value: (row) => row.difference === null ? "—" : `${formatSignedMoney(row.difference)}${row.differencePercent === null ? "" : ` (${formatSignedPercent(row.differencePercent)})`}` },
   { label: "Dif. vs checkout", help: LOGISTICS_HELP.billedVsCheckout, value: (row) => signedOrDash(row.billedVsCheckout) },
   { label: "Dif. vs armado", help: LOGISTICS_HELP.billedVsParcel, value: (row) => signedOrDash(row.billedVsParcel) },
 ]
@@ -68,7 +69,7 @@ export function LogisticsOrderTableRow({ row, onReconcile }: { row: LogisticsOrd
         <td className="px-3 py-3 text-right tabular-nums">{row.parcels ?? "—"}</td>
         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{money(row.chargedToCustomer)}</td>
         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{row.billedOutbound === null && row.billedTotal === null ? <span className="text-white/55">Pendiente</span> : <>{money(row.billedOutbound)}{row.billedTotal !== null && row.billedTotal !== row.billedOutbound ? <span className="block text-xs text-white/60">Total {formatMoney(row.billedTotal)}</span> : null}</>}</td>
-        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">{row.difference === null ? "—" : <>{formatSignedMoney(row.difference)}{row.differencePercent === null ? null : <span className="block text-xs text-white/60">{formatSignedPercent(row.differencePercent)}</span>}</>}</td>
+        <td className={`whitespace-nowrap px-3 py-3 text-right font-bold tabular-nums ${row.billedVsCustomer === null || row.billedVsCustomer === 0 ? "" : row.billedVsCustomer > 0 ? "text-emerald-300" : "text-red-300"}`}>{row.billedVsCustomer === null ? <span className="font-normal text-white/55">Pendiente</span> : formatSignedMoney(row.billedVsCustomer)}</td>
         <td className="whitespace-nowrap px-3 py-3"><ReconciliationBadge status={row.reconciliation} /></td>
         <td className="whitespace-nowrap px-3 py-3"><button type="button" aria-expanded={expanded} aria-controls={expanded ? detailId : undefined} onClick={() => setExpanded((value) => !value)} className="inline-flex items-center gap-1 text-xs font-bold text-beyonix-cyan hover:text-white">{expanded ? "Ocultar detalle" : "Ver detalle"}<ChevronDown className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} /></button></td>
       </tr>

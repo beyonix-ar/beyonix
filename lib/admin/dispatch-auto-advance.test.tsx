@@ -60,6 +60,8 @@ test("Despachos avanza solo tras cada confirmación: etiqueta → pedidos para B
     const rows = (bundle
       ? [{ kind: "batch", id: 9, code: "DSP-20261024-001", displayNumber: 9, state: bundle.status === "handed_over" ? "E" : bundle.status === "closed" ? "C" : "P", at: `${today}T11:00:00-03:00`, actorId: null, actorName: null, units: 1, total: 30000, orderCount: 1, selectable: false }]
       : [{ kind: "order", id: 15, code: null, displayNumber: null, state: "C", at: `${today}T10:00:00-03:00`, actorId: null, actorName: null, units: 1, total: 30000, orderCount: 1, selectable: identified }])
+      // Un Bulto anterior del día: la tabla general muestra pedidos y Bultos.
+      .concat([{ kind: "batch", id: 8, code: "DSP-20261024-000", displayNumber: 8, state: "C", at: `${today}T08:00:00-03:00`, actorId: null, actorName: null, units: 2, total: 50000, orderCount: 2, selectable: false }])
       .filter((row) => (!params.get("state") || row.state === params.get("state")) && (!params.get("kind") || row.kind === params.get("kind")))
     return Response.json({ rows, total: rows.length, page: 1, pageSize: 20, holds: [], users: [] })
   }
@@ -107,15 +109,16 @@ test("Despachos avanza solo tras cada confirmación: etiqueta → pedidos para B
     assert.match(text(), /Esa etiqueta no corresponde a BX-1015\./)
     assert.ok(input("Escaneá o escribí el seguimiento"), "el campo sigue para reintentar")
 
-    // A + C. Éxito: sin pantalla de "confirmada"; abre los pedidos que pueden entrar a un Bulto con éste marcado.
+    // A + C. Éxito: sin pantalla de "confirmada"; vuelve a la tabla general (pedidos y Bultos) con éste marcado.
     await scan("Escaneá o escribí el seguimiento", tracking)
     assert.equal(actions("confirm_label"), 2)
     assert.equal(where(), "/admin/despachos", "Atrás del detalle apilado: la tabla")
     assert.ok(document.querySelector('table[aria-label="Registros de despachos"]'))
     assert.match(text(), /Etiqueta confirmada · BX-1015 listo para Bulto/)
-    assert.deepEqual(["ESTADO", "TIPO"].map((label) => document.querySelector(`button[aria-label="${label}"]`)?.textContent), ["Confirmado", "Pedidos"])
-    assert.deepEqual([searches.at(-1)?.get("state"), searches.at(-1)?.get("kind")], ["C", "order"])
-    assert.equal(selectedForBundle(), true, "listo para Crear bulto")
+    assert.deepEqual(["ESTADO", "TIPO"].map((label) => document.querySelector(`button[aria-label="${label}"]`)?.textContent), ["ESTADO", "TIPO"], "sin filtros de estado ni tipo")
+    assert.deepEqual([searches.at(-1)?.get("state"), searches.at(-1)?.get("kind"), searches.at(-1)?.get("openAllDates")], [null, null, "true"])
+    assert.ok(document.querySelector('tr[aria-label="Ver Bulto - 0008"]'), "los Bultos siguen en la tabla")
+    assert.equal(selectedForBundle(), true, "visible y listo para Crear bulto")
     assert.equal(button("Crear bulto")?.disabled, false)
 
     // I. Adelante/Atrás sobre el pedido ya confirmado: no repite la confirmación; el siguiente paso queda a un toque.
@@ -131,7 +134,7 @@ test("Despachos avanza solo tras cada confirmación: etiqueta → pedidos para B
 
     // H. Refrescar en la tabla: filtros y selección vuelven de la sesión.
     await remount()
-    assert.equal(document.querySelector('button[aria-label="ESTADO"]')?.textContent, "Confirmado")
+    assert.equal(document.querySelector('button[aria-label="ESTADO"]')?.textContent, "ESTADO")
     assert.equal(selectedForBundle(), true)
 
     // D. Bulto creado → su control.

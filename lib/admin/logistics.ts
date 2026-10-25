@@ -54,6 +54,8 @@ export interface LogisticsSummary {
   soldOrders: number
   snapshotOrders: number
   chargedToCustomers: number
+  /** Cobrado al cliente sólo en los pedidos con facturación Andreani registrada. */
+  chargedOnBilledOrders: number
   providerQuoted: number
   markupCollected: number
   roundingAdjustment: number
@@ -93,7 +95,7 @@ export interface ReconciliationThresholds {
 
 const SUMMARY_FIELDS: Array<keyof LogisticsSummary> = [
   "ordersCreated", "ordersSent", "ordersDelivered", "ordersReturned", "parcels", "soldOrders",
-  "snapshotOrders", "chargedToCustomers", "providerQuoted", "markupCollected", "roundingAdjustment",
+  "snapshotOrders", "chargedToCustomers", "chargedOnBilledOrders", "providerQuoted", "markupCollected", "roundingAdjustment",
   "benefitAbsorbed", "parcelQuoted", "parcelQuotedOrders", "parcelQuoteDifference",
   "parcelQuoteComparableOrders", "comparableProviderQuoted", "billedByAndreani", "billedOutbound",
   "billedReturnsAndExchanges", "billedOrders", "billedDifferenceVsCheckout", "billedDifferenceVsCheckoutOrders",
@@ -118,6 +120,31 @@ export function normalizeLogisticsSummary(value: unknown): LogisticsSummary {
       majorPercent: finiteOr(thresholds.majorPercent, 0),
     },
   }
+}
+
+/**
+ * Diferencia Andreani vs Cliente = cobrado al cliente − facturado por Andreani,
+ * sólo sobre pedidos con facturación real. Sin facturación no hay diferencia
+ * (nunca se usa la cotización como sustituto).
+ */
+export type BilledVsCustomer =
+  | { status: "pending" }
+  | { status: "billed"; difference: number; billedOrders: number; soldOrders: number }
+
+export function billedVsCustomer(summary: Pick<LogisticsSummary, "billedOrders" | "billedByAndreani" | "chargedOnBilledOrders" | "soldOrders">): BilledVsCustomer {
+  if (summary.billedOrders <= 0) return { status: "pending" }
+  return {
+    status: "billed",
+    difference: Math.round((summary.chargedOnBilledOrders - summary.billedByAndreani) * 100) / 100,
+    billedOrders: summary.billedOrders,
+    soldOrders: summary.soldOrders,
+  }
+}
+
+/** Por pedido: null mientras Andreani no facturó. Sin cobro registrado cuenta 0, igual que el resumen. */
+export function orderBilledVsCustomer(charged: number | null, billedTotal: number | null) {
+  if (billedTotal === null) return null
+  return Math.round(((charged ?? 0) - billedTotal) * 100) / 100
 }
 
 export async function loadLogisticsSummary(admin: AdminClient, range: LogisticsRange) {
@@ -151,6 +178,8 @@ export interface LogisticsOrderRow {
   /** Facturado (envío original) menos cada cotización guardada al conciliar. */
   billedVsCheckout: number | null
   billedVsParcel: number | null
+  /** Cobrado al cliente menos facturado total por Andreani; null sin facturación. */
+  billedVsCustomer: number | null
   reconciliation: ReconciliationStatus
   references: string | null
 }
@@ -195,6 +224,7 @@ export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: numbe
   const parcelQuote = record.shipping_parcel_quote_status === "quoted" ? amount(record.shipping_parcel_quote_amount) : null
   const charged = amount(record.shipping_cost_charged)
   const logisticsPrice = amount(record.shipping_cost_real)
+  const billedTotal = amount(billing?.billed_total ?? null)
   const comparison = parcelQuote !== null && checkoutQuote !== null
     ? compareParcelQuote(Math.round(checkoutQuote * 100), Math.round(parcelQuote * 100))
     : null
@@ -216,10 +246,11 @@ export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: numbe
     difference: comparison ? comparison.differenceCents / 100 : null,
     differencePercent: comparison?.differencePercent ?? null,
     billedOutbound: amount(billing?.billed_outbound ?? null),
-    billedTotal: amount(billing?.billed_total ?? null),
+    billedTotal,
     billedEntries: Number(billing?.entries ?? 0),
     billedVsCheckout: amount(billing?.difference_checkout ?? null),
     billedVsParcel: amount(billing?.difference_parcel ?? null),
+    billedVsCustomer: orderBilledVsCustomer(charged, billedTotal),
     reconciliation: isReconciliationStatus(billing?.status) ? billing.status : "pending",
     references: billing?.references_list ?? null,
   }

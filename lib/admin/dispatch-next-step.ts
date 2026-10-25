@@ -5,7 +5,7 @@ import { dispatchLocationHref, type DispatchLocation } from "./dispatch-location
  * Siguiente pantalla de Despachos después de una confirmación exitosa, según
  * el estado real que devolvió el servidor (nunca antes de esa respuesta):
  * - current: el paso siguiente está en la misma pantalla (pickeo, envío, etiqueta, QR).
- * - bundle_list: pedido listo para Bulto → tabla de pedidos confirmados, con él seleccionado.
+ * - bundle_list: pedido listo para Bulto → tabla general de Despachos, con él seleccionado.
  * - batch: detalle/control del Bulto (incluye sus incidencias a resolver).
  * - list: tabla de Despachos actualizada (Bulto entregado al transporte).
  */

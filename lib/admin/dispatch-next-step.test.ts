@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import type { DispatchStage } from "./dispatch"
 import { dispatchStepHref, getNextDispatchStep } from "./dispatch-next-step"
-import { bundleCandidateFilters, dispatchRecordParams } from "./dispatch-records"
+import { defaultDispatchRecordFilters, dispatchRecordParams } from "./dispatch-records"
 
 const order = (stage: DispatchStage, extra: { orderId?: number; blocked?: boolean; batchId?: number | null } = {}) =>
   getNextDispatchStep({ kind: "order", orderId: extra.orderId ?? 15, stage, blocked: extra.blocked ?? false, batchId: extra.batchId ?? null })
@@ -27,10 +27,11 @@ test("Bulto: incidencias primero; entregado vuelve a la tabla", () => {
   for (const status of ["open", "closed", "handed_over"]) assert.deepEqual(batch(status, true), { screen: "batch", batchId: 9 }, `${status} con incidencia: sus pedidos a retirar`)
 })
 
-test("destinos: URL que representa el paso y tabla de pedidos para armar Bulto", () => {
+test("destinos: URL que representa el paso; el pedido confirmado vuelve a la tabla general", () => {
   assert.equal(dispatchStepHref({ screen: "current" }), null)
   assert.equal(dispatchStepHref({ screen: "batch", batchId: 9 }), "/admin/despachos?batch=9")
   assert.equal(dispatchStepHref({ screen: "list" }), "/admin/despachos")
   assert.equal(dispatchStepHref({ screen: "bundle_list", orderId: 15 }), "/admin/despachos")
-  assert.equal(dispatchRecordParams(bundleCandidateFilters("2026-10-24"), 1), "page=1&date=2026-10-24&state=C&kind=order&openAllDates=true", "confirmados sueltos de cualquier día abierto")
+  // Tabla general: pedidos y Bultos, sin estado ni tipo; pendientes y confirmados de cualquier día abierto.
+  assert.equal(dispatchRecordParams(defaultDispatchRecordFilters("2026-10-24"), 1), "page=1&date=2026-10-24&openAllDates=true")
 })

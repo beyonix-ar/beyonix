@@ -7,7 +7,7 @@ import { AdminHelpTip } from "@/app/admin/components/admin-help-tip"
 import { AdminDatePicker } from "@/app/admin/components/admin-date-picker"
 import { AdminBadge, AdminSection } from "@/app/admin/components/admin-controls"
 import { BILLED_HELP } from "@/lib/admin/andreani-billing"
-import type { LogisticsOrderRow, LogisticsSummary } from "@/lib/admin/logistics"
+import { billedVsCustomer, type LogisticsOrderRow, type LogisticsSummary } from "@/lib/admin/logistics"
 import { supabase } from "@/lib/supabase/client"
 
 export interface LogisticsResponse {
@@ -32,7 +32,8 @@ export const LOGISTICS_HELP = {
   ordersDelivered: "Pedidos que Andreani informó como entregados.",
   ordersReturned: "Pedidos con devolución, cambio o reclamo.",
   parcels: "Paquetes de envío medidos definidos al finalizar el armado.",
-  charged: "Importe de envío que efectivamente pagó el cliente.",
+  charged: "Importe de envío que el cliente realmente pagó en los pedidos vendidos. No incluye el beneficio cubierto por BEYONIX ni recargos bonificados.",
+  billedVsCustomer: "Costo facturado al cliente menos costo facturado por Andreani (envío, devoluciones y cambios), sólo en pedidos con facturación Andreani registrada. Positivo: el cliente pagó más de lo que facturó Andreani.",
   providerQuoted: "Tarifa informada por Andreani al cotizar el envío.",
   markupPercent: "Porcentaje BEYONIX vigente cuando se creó el pedido.",
   markup: "Importe efectivamente cobrado al cliente por encima de la tarifa cotizada por Andreani. No incluye recargos bonificados.",
@@ -131,6 +132,7 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
     ? (summary.parcelQuoteDifference / summary.comparableProviderQuoted) * 100
     : null
   const legacyOrders = summary.soldOrders - summary.snapshotOrders
+  const result = billedVsCustomer(summary)
   const operational = [
     <Metric key="created" page={page} primary={page} label="Pedidos Andreani creados" help={LOGISTICS_HELP.ordersCreated} value={String(summary.ordersCreated)} />,
     <Metric key="sent" page={page} primary={page} label="Pedidos enviados" help={LOGISTICS_HELP.ordersSent} value={String(summary.ordersSent)} />,
@@ -138,15 +140,25 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
     <Metric key="returned" page={page} primary={page} label="Devoluciones / cambios" help={LOGISTICS_HELP.ordersReturned} value={String(summary.ordersReturned)} />,
     <Metric key="parcels" page={page} primary={page} label="Paquetes de envío totales" help={LOGISTICS_HELP.parcels} value={String(summary.parcels)} />,
   ]
+  // Resultado real del envío: sólo cobros y facturas, nunca cotizaciones.
+  const outcome = [
+    <Metric key="charged" page={page} label="Costo facturado al cliente" help={LOGISTICS_HELP.charged} value={money(summary.chargedToCustomers)} detail={`${summary.soldOrders} pedidos vendidos`} />,
+    <Metric key="billed" page={page} label="Costo facturado por Andreani" help={LOGISTICS_HELP.billed} value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}
+      detail={summary.billedOrders > 0 ? `${summary.billedOrders} pedidos · devoluciones y cambios ${money(summary.billedReturnsAndExchanges)}` : "Sin facturación cargada en el período"}
+      badge={summary.billedOrders > 0 ? "Con registros" : "Sin facturación"} />,
+    <Metric key="billed-customer" page={page} label="Diferencia Andreani vs Cliente" help={LOGISTICS_HELP.billedVsCustomer}
+      value={result.status === "pending" ? BILLING_PENDING_LABEL : hideAmounts ? "••••••" : formatSignedMoney(result.difference)}
+      detail={result.status === "pending" ? "Se calcula cuando Andreani factura" : result.billedOrders < result.soldOrders
+        ? `Parcial: ${result.billedOrders} de ${result.soldOrders} pedidos facturados · cobrado en ellos ${money(summary.chargedOnBilledOrders)}`
+        : `${result.billedOrders} pedidos facturados`}
+      tone={result.status === "pending" || hideAmounts || result.difference === 0 ? undefined : result.difference > 0 ? "positive" : "danger"}
+      badge={result.status === "pending" ? "Sin facturación" : undefined} />,
+  ]
   const economics = [
-    <Metric key="charged" page={page} label="Cobrado al cliente por envíos" help={LOGISTICS_HELP.charged} value={money(summary.chargedToCustomers)} detail={`${summary.soldOrders} pedidos vendidos`} />,
     <Metric key="quoted" page={page} label="Tarifa Andreani checkout" help={LOGISTICS_HELP.providerQuoted} value={money(summary.providerQuoted)} detail={legacyOrders > 0 ? `${legacyOrders} pedidos anteriores sin desglose` : "Con el paquete estimado"} />,
     <Metric key="markup" page={page} label="Costo extra cobrado" help={LOGISTICS_HELP.markup} value={money(summary.markupCollected)} detail="Excedente realmente pagado sobre la tarifa Andreani" tone="positive" />,
     <Metric key="benefit" page={page} label="Beneficio cubierto por BEYONIX" help={LOGISTICS_HELP.benefit} value={money(summary.benefitAbsorbed)} detail="Bonificaciones de envío" />,
     <Metric key="parcel" page={page} label="Cotizado con paquetes de envío medidos" help={LOGISTICS_HELP.parcelQuoted} value={money(summary.parcelQuoted)} detail={`${summary.parcelQuotedOrders} pedidos recotizados`} />,
-    <Metric key="billed" page={page} label="Facturado Andreani" help={LOGISTICS_HELP.billed} value={summary.billedOrders > 0 ? money(summary.billedByAndreani) : BILLING_PENDING_LABEL}
-      detail={summary.billedOrders > 0 ? `${summary.billedOrders} pedidos · devoluciones y cambios ${money(summary.billedReturnsAndExchanges)}` : "Sin facturación cargada en el período"}
-      badge={summary.billedOrders > 0 ? "Con registros" : "Sin facturación"} />,
   ]
   const differences = [
     <Metric key="checkout-parcel" page={page} label="Diferencia checkout vs armado" help={LOGISTICS_HELP.difference}
@@ -173,7 +185,8 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
     return (
       <div className="space-y-3">
         <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-5">{operational}</div>
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{economics}{differences[0]}</div>
+        <div className="grid gap-2 sm:grid-cols-3">{outcome}</div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">{economics}{differences[0]}</div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">{differences.slice(1)}{reconciliation}</div>
       </div>
     )
@@ -185,7 +198,9 @@ export function LogisticsSummaryGrid({ summary, hideAmounts = false, page = fals
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">{operational}</div>
       </AdminSection>
       <AdminSection icon={<CircleDollarSign className="size-5" />} eyebrow="02 · Importes" title="Costos y cobros" description="Importes cobrados al cliente, cotizaciones y facturación de Andreani." data-logistics-section="economics">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{economics}</div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-logistics-group="outcome">{outcome}</div>
+        <p className="mb-3 mt-6 text-11px font-black uppercase tracking-widest text-white/45">Cotizaciones, recargo y beneficio</p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-logistics-group="quotes">{economics}</div>
       </AdminSection>
       <AdminSection icon={<ClipboardCheck className="size-5" />} eyebrow="03 · Control" title="Conciliación y diferencias" description="Compará cotizaciones con importes facturados e identificá lo que requiere revisión." data-logistics-section="reconciliation">
         <p className="mb-3 text-11px font-black uppercase tracking-widest text-white/45">Comparaciones de importes</p>

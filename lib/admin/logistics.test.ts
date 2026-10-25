@@ -3,9 +3,11 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
+  billedVsCustomer,
   calculateCollectedShippingExtra,
   LogisticsRangeError,
   normalizeLogisticsSummary,
+  orderBilledVsCustomer,
   parseLogisticsRange,
   toLogisticsOrderRow,
 } from "./logistics.ts"
@@ -42,6 +44,7 @@ test("fila de logística: diferencia checkout vs bulto real y conciliación pend
   assert.equal(row.extraCharged, 0)
   assert.equal(row.parcels, 2)
   assert.equal(row.billedOutbound, null, "sin factura cargada no hay 'real'")
+  assert.equal(row.billedVsCustomer, null, "sin factura no hay diferencia contra el cliente (ni con la cotización)")
   assert.equal(row.reconciliation, "pending")
   // Con cargos: el estado y las diferencias vienen calculados por la base.
   const billed = toLogisticsOrderRow(record, 2, {
@@ -50,6 +53,7 @@ test("fila de logística: diferencia checkout vs bulto real y conciliación pend
   })
   assert.deepEqual([billed.billedOutbound, billed.billedTotal, billed.billedVsCheckout, billed.billedVsParcel, billed.reconciliation, billed.references],
     [10_900, 18_800, 900, 520, "major_difference", "A-0001-00001234"])
+  assert.equal(billed.billedVsCustomer, -10_800, "cobrado 8.000 − facturado total 18.800 (con devolución)")
   // Un estado desconocido nunca se muestra como conciliado.
   assert.equal(toLogisticsOrderRow(record, null, { order_id: 31, billed_outbound: null, billed_total: null, entries: 0,
     difference_checkout: null, difference_parcel: null, status: "otro", references_list: null }).reconciliation, "pending")
@@ -68,6 +72,18 @@ test("extra cobrado: bonificación total, parcial, sin subsidio y recargo intern
   assert.equal(calculateCollectedShippingExtra(10_000, 10_500), 500)
   assert.equal(calculateCollectedShippingExtra(10_000, 8_000), 0)
   assert.equal(calculateCollectedShippingExtra(null, 10_500), null)
+})
+
+test("Diferencia Andreani vs Cliente: sólo con facturación real; signo según resultado", () => {
+  const base = { soldOrders: 4, billedOrders: 0, billedByAndreani: 0, chargedOnBilledOrders: 0 }
+  assert.deepEqual(billedVsCustomer(base), { status: "pending" }, "sin factura no inventa diferencia")
+  assert.deepEqual(billedVsCustomer({ ...base, billedOrders: 4, billedByAndreani: 30_000, chargedOnBilledOrders: 32_500.5 }),
+    { status: "billed", difference: 2_500.5, billedOrders: 4, soldOrders: 4 })
+  assert.deepEqual(billedVsCustomer({ ...base, billedOrders: 2, billedByAndreani: 20_000, chargedOnBilledOrders: 15_000 }),
+    { status: "billed", difference: -5_000, billedOrders: 2, soldOrders: 4 }, "parcial: sólo pedidos facturados")
+  assert.equal(orderBilledVsCustomer(10_000, null), null)
+  assert.equal(orderBilledVsCustomer(10_000, 10_000), 0)
+  assert.equal(orderBilledVsCustomer(null, 9_000), -9_000, "envío sin cobro: todo lo facturado es costo")
 })
 
 test("resumen: números de la base normalizados; nunca NaN", () => {

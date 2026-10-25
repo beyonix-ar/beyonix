@@ -14,7 +14,7 @@ import type { LogisticsOrderRow } from "./logistics"
 
 const summary: LogisticsSummary = {
   ordersCreated: 12, ordersSent: 9, ordersDelivered: 7, ordersReturned: 1, parcels: 15,
-  soldOrders: 12, snapshotOrders: 12, chargedToCustomers: 120000, providerQuoted: 110000,
+  soldOrders: 12, snapshotOrders: 12, chargedToCustomers: 120000, chargedOnBilledOrders: 95000, providerQuoted: 110000,
   markupCollected: 10000, roundingAdjustment: 0, benefitAbsorbed: 5000,
   parcelQuoted: 115000, parcelQuotedOrders: 10, parcelQuoteDifference: 5000,
   parcelQuoteComparableOrders: 10, comparableProviderQuoted: 110000,
@@ -42,13 +42,45 @@ test("Logística ordena las métricas en tres bloques legibles sin desbordar des
       assert.equal(await page.locator("[data-logistics-section]").count(), 3)
       assert.deepEqual(await page.locator("[data-logistics-section]").evaluateAll((items) => items.map((item) => item.getAttribute("data-logistics-section"))), ["operational", "economics", "reconciliation"])
       assert.equal(await page.locator("[data-logistics-section='operational'] [data-logistics-metric]").count(), 5)
-      assert.equal(await page.locator("[data-logistics-section='economics'] [data-logistics-metric]").count(), 6)
+      assert.deepEqual(await page.locator("[data-logistics-group='outcome'] [data-logistics-metric]").evaluateAll((items) => items.map((item) => item.getAttribute("data-logistics-metric"))),
+        ["Costo facturado al cliente", "Costo facturado por Andreani", "Diferencia Andreani vs Cliente"])
+      assert.equal(await page.locator("[data-logistics-section='economics'] [data-logistics-metric]").count(), 7)
       assert.equal(await page.locator("[data-logistics-section='reconciliation'] [data-logistics-metric]").count(), 6)
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `desborde horizontal a ${width}px`)
     }
   } finally {
     await browser.close()
   }
+})
+
+test("Diferencia Andreani vs Cliente: + verde, − rojo, 0 neutral y pendiente sin factura", async () => {
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||= "https://example.supabase.co"
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||= "test-anon-key"
+  const { LogisticsSummaryGrid } = await import("../../app/admin/sections/logistica/logistics-summary")
+  const metric = (patch: Partial<LogisticsSummary>, label: string) => {
+    const dom = new JSDOM(renderToStaticMarkup(<LogisticsSummaryGrid summary={{ ...summary, ...patch }} page />))
+    const card = dom.window.document.querySelector(`[data-logistics-metric="${label}"]`)!
+    const value = card.querySelector("p.tabular-nums")!
+    return { text: (value.textContent ?? "").replace(/\s/g, " "), className: value.className, card: card.textContent ?? "" }
+  }
+  const difference = (patch: Partial<LogisticsSummary>) => metric(patch, "Diferencia Andreani vs Cliente")
+  // 9 facturados de 12: cobrado en ellos 95.000 − facturado 117.000.
+  const negative = difference({})
+  assert.match(negative.text, /^−\$ 22\.000$/)
+  assert.match(negative.className, /text-red-300/)
+  assert.match(negative.card, /Parcial: 9 de 12 pedidos facturados/)
+  const positive = difference({ chargedOnBilledOrders: 120000, billedOrders: 12 })
+  assert.match(positive.text, /^\+\$ 3\.000$/)
+  assert.match(positive.className, /text-emerald-300/)
+  const zero = difference({ chargedOnBilledOrders: 117000 })
+  assert.match(zero.text, /^\$ 0$/)
+  assert.match(zero.className, /text-white(\s|$)/)
+  const noBilling = { billedOrders: 0, billedByAndreani: 0, chargedOnBilledOrders: 0, billedOutbound: 0, billedReturnsAndExchanges: 0 }
+  const pending = difference(noBilling)
+  assert.equal(pending.text, "Pendiente / No conciliado")
+  assert.doesNotMatch(pending.className, /text-(red|emerald)/)
+  assert.equal(metric(noBilling, "Costo facturado por Andreani").text, "Pendiente / No conciliado", "nunca la cotización como costo facturado")
+  assert.match(metric(noBilling, "Costo facturado al cliente").text, /^\$ 120\.000$/)
 })
 
 test("La fila de pedidos prioriza seguimiento y oculta el desglose técnico hasta abrir el detalle", async () => {
@@ -60,7 +92,7 @@ test("La fila de pedidos prioriza seguimiento y oculta el desglose técnico hast
     parcels: 2, checkoutQuote: 10000, markupPercent: 10, markupAmount: 1000, extraCharged: 1000, benefit: 500,
     chargedToCustomer: 11000, parcelQuote: 12000, difference: 2000, differencePercent: 20,
     billedOutbound: 12500, billedTotal: 12500, billedEntries: 1, billedVsCheckout: 2500,
-    billedVsParcel: 500, reconciliation: "major_difference", references: "FACT-123",
+    billedVsParcel: 500, billedVsCustomer: -1500, reconciliation: "major_difference", references: "FACT-123",
   }
   const html = renderToStaticMarkup(<table><tbody><LogisticsOrderTableRow row={row} onReconcile={() => {}} /></tbody></table>)
   assert.match(html, /BX-1042/)
@@ -68,6 +100,8 @@ test("La fila de pedidos prioriza seguimiento y oculta el desglose técnico hast
   assert.match(html, /Ver detalle/)
   assert.match(html, /aria-expanded="false"/)
   assert.doesNotMatch(html, /Tarifa checkout|Recargo %|FACT-123|Conciliar pedido/)
+  // La columna de diferencia es cobrado − facturado (11.000 − 12.500), no la diferencia entre cotizaciones.
+  assert.match(html, /text-red-300[^>]*>−\$\s1\.500</)
   assert.equal((html.match(/<td\b/g) ?? []).length, 10)
 
   const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" })

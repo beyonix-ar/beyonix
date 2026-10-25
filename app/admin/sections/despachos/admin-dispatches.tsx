@@ -12,7 +12,7 @@ import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
 import { holdBundleLabel, orderCode, type BatchDispatchDetail, type DispatchHold } from "@/lib/admin/dispatch"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { batchStepFacts, getNextDispatchStep, type DispatchNextStep } from "@/lib/admin/dispatch-next-step"
-import { bundleCandidateFilters, clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
+import { clearedDispatchRecordFilters, defaultDispatchRecordFilters, dispatchPageCount, dispatchRecordParams, DISPATCH_VIEW_KEY, restoreDispatchRecordsView, type DispatchRecord, type DispatchRecordFilters, type DispatchUser } from "@/lib/admin/dispatch-records"
 import { dispatchLocationFromSearch, dispatchLocationHref, parseCancellationReturn, parseDispatchLocation, type DispatchLocation } from "@/lib/admin/dispatch-location"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DispatchFilterBar } from "./dispatch-filter-bar"
@@ -229,14 +229,13 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
     const finished = batch
     setResolving(null); setError("")
     showList()
+    // Tabla general del día (pedidos y Bultos): pendientes y confirmados siguen visibles en cualquier fecha.
+    setFilters(defaultDispatchRecordFilters()); setPage(1)
     if (step.screen === "bundle_list") {
-      setFilters(bundleCandidateFilters()); setPage(1)
       createKey.current = null
       setSelected((current) => { const next = new Set(current); next.add(step.orderId); writeSelection(next); return next })
-      setNotice(`Etiqueta confirmada · ${orderCode(step.orderId)} listo para Bulto. Sumá los pedidos y tocá "Crear bulto".`)
+      setNotice(`Etiqueta confirmada · ${orderCode(step.orderId)} listo para Bulto. Seguí con otro pedido o tocá "Crear bulto".`)
     } else {
-      // Vista del día: ahí aparece lo recién despachado.
-      setFilters(defaultDispatchRecordFilters()); setPage(1)
       setNotice(finished ? `${dispatchBatchName(finished.batch)} despachado.` : "Confirmado.")
     }
     void refresh()

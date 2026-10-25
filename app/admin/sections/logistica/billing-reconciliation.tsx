@@ -143,10 +143,10 @@ export function ReconcileOrderModal({ row, onClose, onSaved }: { row: LogisticsO
           ["Tracking", row.tracking ?? "—"],
           ["Cotizado checkout", money(row.checkoutQuote)],
           ["Cotizado con paquetes de envío medidos", money(row.parcelQuote)],
-          ["Facturado Andreani", entries && entries.length ? formatMoney(total) : "Pendiente"],
+          ["Costo facturado por Andreani", entries && entries.length ? formatMoney(total) : "Pendiente"],
         ].map(([label, value]) => (
           <div key={label} className="min-w-0 rounded-xl border border-white/10 px-3 py-2">
-            <dt className="flex items-center gap-1 text-10px font-black uppercase tracking-widest text-white/50">{label}{label === "Facturado Andreani" ? <AdminHelpTip label={label} text={BILLED_HELP} /> : null}</dt>
+            <dt className="flex items-center gap-1 text-10px font-black uppercase tracking-widest text-white/50">{label}{label === "Costo facturado por Andreani" ? <AdminHelpTip label={label} text={BILLED_HELP} /> : null}</dt>
             <dd className="mt-1 truncate font-black tabular-nums text-white">{value}</dd>
           </div>
         ))}

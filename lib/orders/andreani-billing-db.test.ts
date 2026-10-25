@@ -51,6 +51,7 @@ async function setup() {
   `)
   await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261009120000_andreani_billing_reconciliation.sql"), "utf8"))
   await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261024190000_andreani_quote_trace_and_collected_extra.sql"), "utf8"))
+  await db.exec(readFileSync(join(process.cwd(), "supabase/migrations/20261024200000_logistics_billed_vs_customer.sql"), "utf8"))
   await db.query("select set_config('request.jwt.claim.role','service_role',false)")
   return db
 }
@@ -245,6 +246,24 @@ test("resumen del dashboard: facturado, diferencias, estados y cargos sin pedido
     assert.deepEqual(pick(["billedDifferenceVsCheckout", "billedDifferenceVsCheckoutOrders", "billedDifferenceVsParcel", "billedDifferenceVsParcelOrders"]), [1450, 2, 50, 1])
     assert.deepEqual(pick(["reconciledOrders", "minorDifferenceOrders", "majorDifferenceOrders", "noReferenceOrders", "pendingReconciliationOrders"]), [1, 0, 1, 1, 2])
     assert.deepEqual(pick(["unmatchedEntries", "unmatchedAmount"]), [1, 1234])
+  } finally { await db.close() }
+})
+
+test("Diferencia Andreani vs Cliente: el cobro se compara sólo en pedidos facturados", async () => {
+  const db = await setup()
+  try {
+    await db.exec(`update ordenes set shipping_cost_charged = case id when 24 then 9000 when 25 then 10500 else 7000 end`)
+    const summary = async () => (await db.query<{ s: Record<string, unknown> }>(
+      "select admin_logistics_summary('2026-10-01T03:00:00Z', '2026-11-01T03:00:00Z') s")).rows[0].s
+    const before = await summary()
+    assert.deepEqual([Number(before.billedOrders), Number(before.billedByAndreani), Number(before.chargedOnBilledOrders)], [0, 0, 0],
+      "sin factura: ni costo Andreani ni cobro comparable (la cotización no se usa)")
+    assert.equal(Number(before.chargedToCustomers), 40_500, "cobro real de todos los pedidos vendidos")
+    // Factura sólo de 24 (envío + devolución) y 25: 26/27/28 quedan fuera de la comparación.
+    await record(db, [entry("360000000000024", "8450", "F-1"), entry("360000000000124", "7900", "F-1"), entry("360000000000025", "11000", "F-1")])
+    const after = await summary()
+    assert.deepEqual([Number(after.billedOrders), Number(after.billedByAndreani), Number(after.chargedOnBilledOrders), Number(after.chargedToCustomers)],
+      [2, 27_350, 19_500, 40_500])
   } finally { await db.close() }
 })
 
