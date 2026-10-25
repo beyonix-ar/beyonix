@@ -16,9 +16,18 @@ export interface ProductActivationVariant {
   images: readonly string[] | readonly File[]
   barcode: string | null
   assignedStock: number
+  /** Estado guardado; `false` = la variante pasa a activa en este guardado. */
+  persistedActive?: boolean
 }
 
 export interface ProductActivationInput {
+  /**
+   * `true` (default): requisitos para PUBLICAR (transición inactivo -> activo),
+   * como product_activation_error: además exige stock y código de barra, y al
+   * menos una variante activa vendible. `false`: producto ya publicado; sólo
+   * las invariantes (un publicado que se quedó sin stock se sigue editando).
+   */
+  publishing?: boolean
   title: string
   sku: string
   price: number
@@ -44,7 +53,9 @@ export interface ProductActivationRequirement {
     | "description"
     | "specifications"
     | "logistics"
+    | "images"
     | "primaryVariant"
+    | "activeVariants"
   label: string
   complete: boolean
 }
@@ -84,9 +95,14 @@ export function sortProductActivationVariants(
     .map(({ variant }) => variant)
 }
 
+/**
+ * Mismo orden y criterio que product_variant_listing_error: `requireStock`
+ * (código de barra + stock) sólo cuando la variante o el producto se activan.
+ */
 export function getVariantActivationError(
   variant: ProductActivationVariant,
   principal = false,
+  requireStock = true,
 ) {
   const subject = principal ? "La variante principal" : "La variante"
 
@@ -98,6 +114,7 @@ export function getVariantActivationError(
   if (variant.images.length === 0) {
     return `${subject} necesita al menos una imagen.`
   }
+  if (!requireStock) return null
   // Mismo orden que product_variant_listing_error (20261007100000).
   if (!variant.barcode?.trim()) {
     return `${subject} necesita un código de barra (de fabricante o BEYONIX).`
@@ -119,20 +136,37 @@ export function getProductActivationStatus(
       Boolean(specification.icono.trim()) &&
       Boolean(specification.texto.trim()),
   )
+  const publishing = input.publishing ?? true
   const logisticsComplete = Object.values(input.logistics).every(positiveFinite)
   const primaryVariantError = primaryVariant
-    ? getVariantActivationError(primaryVariant, true)
+    ? getVariantActivationError(primaryVariant, true, publishing)
     : "Creá al menos una variante."
   const activeVariants = input.variants.filter((variant) => variant.active === true)
+  // Como validate_variant_commercial_state: stock y código sólo se exigen a la
+  // variante que pasa a activa (o a todas si se publica el producto).
   const activeVariantError = activeVariants
-    .map((variant) => getVariantActivationError(variant))
+    .map((variant) =>
+      getVariantActivationError(
+        variant,
+        false,
+        publishing || variant.persistedActive !== true,
+      ),
+    )
     .find((error): error is string => error != null) ?? null
+  // Publicar exige al menos una variante activa y vendible (20261025100000).
+  const sellableActiveVariant = activeVariants.some(
+    (variant) => getVariantActivationError(variant, false, true) == null,
+  )
+  const activeVariantsError = publishing && !sellableActiveVariant
+    ? "Activá al menos una variante vendible antes de publicar el producto."
+    : null
 
-  // Una descripción enriquecida sin texto visible ("<p><br></p>") no cuenta.
+  // Una descripción enriquecida sin texto visible ("<p><br></p>") no cuenta,
+  // igual que rich_description_has_visible_text en la base.
   const hasDescription = richDescriptionToPlainText(input.description) !== ""
 
   const requirements: ProductActivationRequirement[] = [
-    { key: "title", label: "Título", complete: Boolean(input.title.trim()) },
+    { key: "title", label: "Nombre", complete: Boolean(input.title.trim()) },
     { key: "sku", label: "SKU", complete: Boolean(input.sku.trim()) },
     { key: "price", label: "Precio", complete: positiveFinite(input.price) },
     {
@@ -150,12 +184,24 @@ export function getProductActivationStatus(
       label: "Especificaciones",
       complete: activeSpecification,
     },
-    { key: "logistics", label: "Logística", complete: logisticsComplete },
+    { key: "logistics", label: "Peso y medidas", complete: logisticsComplete },
+    {
+      key: "images",
+      label: "Imágenes",
+      complete: (primaryVariant?.images.length ?? 0) > 0,
+    },
     {
       key: "primaryVariant",
       label: "Variante principal",
       complete: primaryVariantError == null,
     },
+    ...(publishing
+      ? [{
+          key: "activeVariants" as const,
+          label: "Variantes activas",
+          complete: activeVariantsError == null && activeVariantError == null,
+        }]
+      : []),
   ]
 
   const firstError = !input.title.trim()
@@ -172,7 +218,7 @@ export function getProductActivationStatus(
               ? "Agregá al menos una especificación activa."
               : !logisticsComplete
                 ? "Completá peso, profundidad, ancho y largo."
-                : primaryVariantError ?? activeVariantError
+                : primaryVariantError ?? activeVariantError ?? activeVariantsError
 
   return {
     ready: firstError == null,

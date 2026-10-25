@@ -1,6 +1,7 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import type { createAdminClient } from "@/lib/supabase/admin"
 import { resolveProductKnownCost } from "@/lib/admin/product-known-cost"
+import { getWorstCaseKnownCost } from "@/lib/business/product-costs"
 import {
   resolveTargetMarginPrice,
   selectRelevantVariantCosts,
@@ -96,7 +97,9 @@ export async function GET(
   })
 
   return Response.json({
-    knownUnitCost: knownCost.knownUnitCost,
+    // Mismo conjunto de variantes que usa el guardado autoritativo: el precio
+    // que el editor muestra en vivo es el que después persiste el servidor.
+    knownUnitCost: getWorstCaseKnownCost(relevantVariantCosts),
     variantCosts: knownCost.variantCosts,
     /** Variantes vendibles sin costo cargado: bloquean el margen objetivo. */
     missingVariantCosts,

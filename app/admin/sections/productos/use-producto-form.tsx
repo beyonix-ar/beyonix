@@ -53,7 +53,7 @@ import {
 
 interface Props {
   producto?: SupabaseProducto | null
-  onSaved: () => void
+  onSaved: (message: string) => void
 }
 
 interface SubmitOptions {
@@ -64,6 +64,8 @@ interface SubmitOptions {
   onDraftSaved?: () => void
   /** La ficha quedó guardada en el servidor (no se llama si falló). */
   onCatalogSaved?: () => void
+  /** Mensaje de éxito a mostrar (por ejemplo, borrador con datos pendientes). */
+  successMessage?: string
 }
 
 type SupabaseLikeError = {
@@ -471,6 +473,7 @@ export function useProductoForm({
     variantStates = {},
     onDraftSaved,
     onCatalogSaved,
+    successMessage,
   }: SubmitOptions = {}) => {
     if (submittingRef.current) return
     setError("")
@@ -520,9 +523,13 @@ export function useProductoForm({
       return
     }
 
+    // Guardar ≠ publicar: un borrador puede no tener peso ni medidas todavía;
+    // lo que sí se cargó se valida igual (formato y rango).
     let logistics
     try {
-      logistics = parseRequiredProductLogistics(form)
+      logistics = form.activo
+        ? parseRequiredProductLogistics(form)
+        : parseOptionalProductLogistics(form)
       for (const variant of draftVariants) {
         parseOptionalProductLogistics(variant)
       }
@@ -608,10 +615,9 @@ export function useProductoForm({
           catalogRevisionRef.current,
         ))
 
-        setSuccess(
-          "Producto actualizado correctamente."
-        )
-        onSaved()
+        const message = successMessage ?? "Producto actualizado correctamente."
+        setSuccess(message)
+        onSaved(message)
 
         return
       }
@@ -632,10 +638,9 @@ export function useProductoForm({
           )
         }
 
-        setSuccess(
-          "Producto actualizado correctamente."
-        )
-        onSaved()
+        const message = successMessage ?? "Producto actualizado correctamente."
+        setSuccess(message)
+        onSaved(message)
 
         return
       }
@@ -719,10 +724,9 @@ export function useProductoForm({
         setSavedId(created.id)
         rememberRevision(created)
         onDraftSaved?.()
-        setSuccess(
-          "Producto creado correctamente."
-        )
-        onSaved()
+        const message = successMessage ?? "Producto creado correctamente."
+        setSuccess(message)
+        onSaved(message)
       } catch (err) {
         if (uploadedImageUrls.length) {
           try {

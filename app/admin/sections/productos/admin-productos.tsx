@@ -192,6 +192,9 @@ export function AdminProductos() {
   const [editando, setEditando] = useState<SupabaseProducto | null | undefined>(
     undefined
   )
+  // Resultado del último guardado del editor (por ejemplo, borrador con datos
+  // pendientes para publicar), visible al volver al listado.
+  const [savedNotice, setSavedNotice] = useState("")
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
@@ -338,12 +341,14 @@ export function AdminProductos() {
     }
   }
 
-  const handleSaved = async () => {
+  const handleSaved = async (message: string) => {
     await reloadProductos()
+    setSavedNotice(message)
     setEditando(undefined)
   }
 
   const handleEdit = async (producto: SupabaseProducto) => {
+    setSavedNotice("")
     try {
       setLoadingProductId(producto.id)
       setEditando(await getProductoById(producto.id))
@@ -416,6 +421,11 @@ export function AdminProductos() {
           {actionMessage && (
             <AdminInfoBlock>
               {actionMessage}
+            </AdminInfoBlock>
+          )}
+          {savedNotice && (
+            <AdminInfoBlock tone="success">
+              {savedNotice}
             </AdminInfoBlock>
           )}
           {loadingProductId !== null && (

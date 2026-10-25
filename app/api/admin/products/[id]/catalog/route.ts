@@ -4,6 +4,7 @@ import {
   RichDescriptionInputError,
 } from "@/lib/products/rich-description"
 import {
+  parseOptionalProductLogistics,
   parseRequiredProductLogistics,
   ProductLogisticsValidationError,
 } from "@/lib/shipping/logistics-validation"
@@ -81,11 +82,15 @@ export async function PATCH(
     )
   }
 
+  // Guardar ≠ publicar: un borrador (inactivo) puede no tener peso ni medidas
+  // todavía; lo que sí se cargó se valida igual. Publicado, son obligatorios
+  // (y la base lo vuelve a exigir en update_product_catalog_atomic).
+  const publishing = (body.catalog as Record<string, unknown>).activo === true
   let logistics
   try {
-    logistics = parseRequiredProductLogistics(
-      body.catalog as Record<string, unknown>,
-    )
+    logistics = publishing
+      ? parseRequiredProductLogistics(body.catalog as Record<string, unknown>)
+      : parseOptionalProductLogistics(body.catalog as Record<string, unknown>)
   } catch (validationError) {
     return Response.json(
       {
@@ -148,6 +153,7 @@ export async function PATCH(
     delete catalogInput[legacyField]
   }
 
+  let pricingWarning: string | null = null
   if (pricingMode === "target_margin") {
     if (targetMarginPercent == null) {
       return Response.json(
@@ -174,19 +180,26 @@ export async function PATCH(
     // Se bloquea el cálculo automático (no se degrada silenciosamente a las
     // variantes con costo conocido) cuando falta el costo de alguna variante
     // vendible: el margen resultante no sería el prometido en esa variante.
+    // Publicado, eso impide guardar (no hay un precio válido calculable). En
+    // un borrador se guarda el progreso igual con el precio que ya tenía la
+    // ficha: el margen queda configurado y el precio se calcula cuando haya
+    // costo. Nunca se inventa un costo ni se asume 0.
     if (!targetMarginResult.ok) {
-      return Response.json(
-        {
-          error: targetMarginResult.message,
-          missingVariantCosts: targetMarginResult.missingVariantCosts,
-        },
-        { status: 400 },
-      )
+      if (publishing) {
+        return Response.json(
+          {
+            error: targetMarginResult.message,
+            missingVariantCosts: targetMarginResult.missingVariantCosts,
+          },
+          { status: 400 },
+        )
+      }
+      pricingWarning = targetMarginResult.message
+    } else {
+      // Autoritativo: el precio que haya mandado el navegador se ignora y se
+      // sobreescribe acá, igual que ya se hace con la logística.
+      catalogInput.precio = targetMarginResult.commercialPrice
     }
-
-    // Autoritativo: el precio que haya mandado el navegador se ignora y se
-    // sobreescribe acá, igual que ya se hace con la logística.
-    catalogInput.precio = targetMarginResult.commercialPrice
   }
 
   const resolvedTargetMarginPercent =
@@ -312,5 +325,6 @@ export async function PATCH(
       transaction && typeof transaction === "object" && "variants" in transaction
         ? transaction.variants
         : [],
+    ...(pricingWarning ? { pricingWarning } : {}),
   })
 }

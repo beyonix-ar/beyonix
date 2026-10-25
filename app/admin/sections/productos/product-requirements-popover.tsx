@@ -18,6 +18,49 @@ interface RequirementsPopoverProps {
 const CLOSE_DELAY_MS = 150
 
 /**
+ * Checklist de publicación siempre visible en el editor: qué está completo y
+ * qué falta, sin tener que intentar activar para enterarse.
+ */
+export function PublicationChecklist({ status }: RequirementsPopoverProps) {
+  return (
+    <section
+      aria-label="Checklist de publicación"
+      data-publication-ready={status.ready ? "true" : "false"}
+      className="product-editor-publication-checklist flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold"
+    >
+      <span
+        className={`text-10px font-black uppercase tracking-widest ${
+          status.ready ? "text-emerald-300" : "text-amber-200"
+        }`}
+      >
+        {status.ready ? "Listo para publicar" : "Pendiente para publicar"}
+      </span>
+      <ul className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        {status.requirements.map((requirement) => (
+          <li
+            key={requirement.key}
+            data-complete={requirement.complete ? "true" : "false"}
+            className={`inline-flex items-center gap-1 ${
+              requirement.complete ? "text-emerald-300" : "text-white"
+            }`}
+          >
+            {requirement.complete ? (
+              <Check className="size-3 shrink-0 text-emerald-300" aria-hidden="true" />
+            ) : (
+              <X className="size-3 shrink-0 text-rose-300" aria-hidden="true" />
+            )}
+            <span>
+              <span className="sr-only">{requirement.complete ? "Completo: " : "Falta: "}</span>
+              {requirement.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/**
  * Ícono de checklist + panel flotante con "Requisitos para activar". 100%
  * presentacional: no recalcula nada, sólo muestra `status` (ya calculado
  * arriba, en producto-form.tsx, vía getProductActivationStatus) -- mismo
@@ -167,7 +210,7 @@ export function ProductRequirementsPopover({ status }: RequirementsPopoverProps)
             style={{ left: position.left, top: position.top, width: position.width }}
           >
             <p className="mb-2 text-10px font-black uppercase tracking-widest text-white">
-              Requisitos para activar
+              {status.ready ? "Listo para publicar" : "Requisitos para publicar"}
             </p>
             <div className="space-y-1">
               {status.requirements.map((requirement) => (

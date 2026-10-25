@@ -104,10 +104,76 @@ test("una variante activa debe estar completa", () => {
   assert.equal(getVariantActivationError(variant), null)
 })
 
-test("un producto completo puede estar activo con todas sus variantes inactivas", () => {
+test("publicar exige al menos una variante activa y vendible (I/J)", () => {
   const withoutActiveVariants = completeProduct({
     variants: [{ ...completeProduct().variants[0]!, active: false }],
   })
+  const blocked = getProductActivationStatus(withoutActiveVariants)
+  assert.equal(blocked.ready, false)
+  assert.equal(blocked.firstError, "Activá al menos una variante vendible antes de publicar el producto.")
+  assert.equal(blocked.requirements.find((requirement) => requirement.key === "activeVariants")?.complete, false)
 
-  assert.equal(getProductActivationStatus(withoutActiveVariants).ready, true)
+  // Una variante activa pero sin stock no es vendible: tampoco publica.
+  const unsellable = completeProduct({
+    variants: [
+      { ...completeProduct().variants[0]!, active: false },
+      { ...completeProduct().variants[0]!, id: 11, orden: 2, active: true, assignedStock: 0 },
+    ],
+  })
+  assert.equal(getProductActivationStatus(unsellable).ready, false)
+
+  const sellable = completeProduct({
+    variants: [
+      { ...completeProduct().variants[0]!, active: false },
+      { ...completeProduct().variants[0]!, id: 11, orden: 2, active: true },
+    ],
+  })
+  assert.equal(getProductActivationStatus(sellable).ready, true)
+})
+
+test("un producto ya publicado con stock 0 se sigue pudiendo guardar (K)", () => {
+  const published = completeProduct({
+    publishing: false,
+    variants: [{ ...completeProduct().variants[0]!, assignedStock: 0, barcode: null, persistedActive: true }],
+  })
+  const status = getProductActivationStatus(published)
+  assert.equal(status.ready, true, status.firstError ?? "")
+  assert.equal(status.requirements.some((requirement) => requirement.key === "activeVariants"), false)
+
+  // Una variante que pasa a activa en ese guardado sí exige stock y código.
+  const activatingVariant = completeProduct({
+    publishing: false,
+    variants: [
+      { ...completeProduct().variants[0]!, persistedActive: true, assignedStock: 0 },
+      { ...completeProduct().variants[0]!, id: 11, orden: 2, active: true, persistedActive: false, assignedStock: 0 },
+    ],
+  })
+  assert.equal(getProductActivationStatus(activatingVariant).firstError, "La variante necesita stock asignado.")
+})
+
+test("una descripción HTML visualmente vacía no publica (L)", () => {
+  for (const description of ["<p><br></p>", "<div></div>", "<p>&nbsp;</p>", "   ", "<p> </p><p><br></p>"]) {
+    const status = getProductActivationStatus(completeProduct({ description }))
+    assert.equal(status.firstError, "Completá la descripción.", JSON.stringify(description))
+  }
+  assert.equal(getProductActivationStatus(completeProduct({ description: "<p>Sonido envolvente</p>" })).ready, true)
+})
+
+test("un borrador incompleto no publica y el checklist dice qué falta (G)", () => {
+  const draft = getProductActivationStatus(completeProduct({
+    price: 0,
+    categoryId: null,
+    categoryExists: false,
+    description: "",
+    logistics: { weight: null, depth: null, width: null, length: null },
+  }))
+  assert.equal(draft.ready, false)
+  assert.deepEqual(
+    draft.requirements.filter((requirement) => !requirement.complete).map((requirement) => requirement.label),
+    ["Precio", "Categoría", "Descripción", "Peso y medidas"],
+  )
+  assert.deepEqual(
+    getProductActivationStatus(completeProduct()).requirements.map((requirement) => requirement.label),
+    ["Nombre", "SKU", "Precio", "Categoría", "Descripción", "Especificaciones", "Peso y medidas", "Imágenes", "Variante principal", "Variantes activas"],
+  )
 })

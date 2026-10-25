@@ -37,7 +37,6 @@ const stubs: Plugin = {
       "navigation": `export function useRouter() { return { push: (href) => { window.pushedHref = href } } }`,
       "use-site-settings": `export function useSiteSettings() { return { installmentsFinancing: {}, pricing: { transferDiscountPercent: 0 } } }`,
       "product-pricing": `export const calculateTargetMarginPrice = () => null; export const simulateProductProfitability = () => null;`,
-      "product-activation": `export const getProductActivationStatus = () => ({ ready: true, checks: [] });`,
       "product-variants-editor": `import React from "react";
         export function ProductVariantsEditor({ persistedVariantStates, onPersistedVariantStatesChange, onPersistedVariantsChange }) {
           const variant = { id: 9, producto_id: 9, nombre: "NEGRO", sku: "AUMN01", color_hex: "#000000", stock: 6, activo: false, orden: 1, created_at: "2026-10-09T00:00:00.000Z" };
@@ -52,9 +51,8 @@ const stubs: Plugin = {
           return <section aria-label="Especificaciones"><button type="button" onClick={() => onPersistedSpecificationsChange([{ id: 106, producto_id: 9, icono: "Headphones", texto: "Almohadillas que rodean las orejas", orden: 1, activo: true, created_at: "2026-10-25T00:00:00.000Z" }])}>Guardar especificación</button></section>
         }`,
       "admin-product-preview-modal": `import React from "react"; export function AdminProductPreviewModal({ onClose }) { return <div role="dialog" aria-label="Vista previa del producto"><button onClick={onClose}>Cerrar vista previa</button></div> }`,
-      "product-requirements-popover": `import React from "react"; export function ProductRequirementsPopover() { return <button type="button" aria-label="Requisitos para activar">Requisitos para activar</button> }`,
     }
-    pluginBuild.onResolve({ filter: /(?:queries\/(?:productos|producto-especificaciones|producto-imagenes)|next\/navigation|use-site-settings|product-pricing|product-activation|product-variants-editor|product-specifications-editor|admin-product-preview-modal|product-requirements-popover)$/ }, (args) => {
+    pluginBuild.onResolve({ filter: /(?:queries\/(?:productos|producto-especificaciones|producto-imagenes)|next\/navigation|use-site-settings|product-pricing|product-variants-editor|product-specifications-editor|admin-product-preview-modal)$/ }, (args) => {
       const name = args.path.split(/[\\/]/).at(-1)!
       return { path: name, namespace: "fixture" }
     })
@@ -97,7 +95,7 @@ test.before(async () => {
   const result = await build({
     stdin: {
       contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { ProductoForm } from "./app/admin/sections/productos/producto-form.tsx";
-        createRoot(document.getElementById("root")).render(<ProductoForm producto={${JSON.stringify(PRODUCT)}} onSaved={() => { window.savedCalls = (window.savedCalls || 0) + 1 }} onCancel={() => { window.cancelCalls = (window.cancelCalls || 0) + 1 }} />);`,
+        createRoot(document.getElementById("root")).render(<ProductoForm producto={${JSON.stringify(PRODUCT)}} onSaved={(message) => { window.savedCalls = (window.savedCalls || 0) + 1; window.savedMessage = message }} onCancel={() => { window.cancelCalls = (window.cancelCalls || 0) + 1 }} />);`,
       resolveDir: process.cwd(), loader: "tsx", sourcefile: "product-editor-unsaved-fixture.tsx",
     },
     bundle: true, platform: "browser", format: "iife", write: false,
@@ -138,7 +136,8 @@ test("editar el precio avisa, guardar limpia y sin cambios se sale directo", asy
     assert.equal(await beforeUnloadBlocks(page), true, "con cambios el refresh/cierre advierte")
 
     await page.getByRole("button", { name: "Guardar cambios" }).click()
-    await page.getByText("Producto actualizado correctamente.").waitFor()
+    // Ficha incompleta (variante sin fotos ni especificaciones): se guarda como borrador.
+    await page.getByText(DRAFT_MESSAGE).waitFor()
     const [call] = await read<Array<{ payload: { precio: number }; revision: number }>>(page, "updateCalls")
     assert.equal(call.payload.precio, 21500)
     assert.equal(call.revision, 3)
@@ -214,7 +213,8 @@ test("imágenes y especificaciones guardadas no marcan la ficha; la activación 
     await page.getByRole("button", { name: "Alternar variante NEGRO" }).click()
     await unsavedBadge(page).waitFor()
     await page.getByRole("button", { name: "Guardar cambios" }).click()
-    await page.getByText("Producto actualizado correctamente.").waitFor()
+    // Ficha incompleta (variante sin fotos ni especificaciones): se guarda como borrador.
+    await page.getByText(DRAFT_MESSAGE).waitFor()
     const [call] = await read<Array<{ states: Record<string, boolean> }>>(page, "updateCalls")
     assert.deepEqual(call.states, { 9: true })
     assert.equal(await unsavedBadge(page).count(), 0)
@@ -251,3 +251,60 @@ for (const [width, theme] of [[1440, "dark"], [1440, "light"], [390, "dark"], [3
     } finally { await page.close() }
   })
 }
+
+const DRAFT_MESSAGE = "Guardado como borrador. Completá los datos pendientes para publicarlo."
+const pendingItems = (page: Page) => page.locator('section[aria-label="Checklist de publicación"] li[data-complete="false"]').evaluateAll((items) => items.map((item) => item.textContent?.replace(/^Falta: /, "").trim()))
+
+test("borrador incompleto: sin logística, sin categoría y precio 0 se guarda y avisa qué falta (A/B/D/E)", async () => {
+  const page = await openEditor()
+  try {
+    const checklist = page.getByRole("region", { name: "Checklist de publicación" })
+    await checklist.getByText("Pendiente para publicar").waitFor()
+    for (const id of ["#peso_empaquetado_kg", "#largo_paquete_cm", "#ancho_paquete_cm", "#alto_paquete_cm", "#precio"]) {
+      await page.locator(id).fill("")
+    }
+    await page.getByRole("button", { name: "Categoría" }).click()
+    await page.getByRole("option", { name: "Sin categoría" }).click()
+    await unsavedBadge(page).waitFor()
+    const pending = await pendingItems(page)
+    for (const label of ["Precio", "Categoría", "Peso y medidas", "Especificaciones", "Imágenes", "Variantes activas"]) {
+      assert.ok(pending.includes(label), `el checklist muestra que falta ${label}: ${pending.join(", ")}`)
+    }
+
+    await page.getByRole("button", { name: "Guardar cambios" }).click()
+    await page.waitForFunction(() => (window as unknown as { savedCalls?: number }).savedCalls === 1)
+    const [call] = await read<Array<{ payload: Record<string, unknown> }>>(page, "updateCalls")
+    assert.equal(call.payload.activo, false)
+    assert.equal(call.payload.precio, 0)
+    assert.equal(call.payload.categoria_id, null)
+    assert.deepEqual(
+      [call.payload.peso_empaquetado_kg, call.payload.alto_paquete_cm, call.payload.ancho_paquete_cm, call.payload.largo_paquete_cm],
+      [null, null, null, null],
+    )
+    assert.equal(await read<string>(page, "savedMessage"), DRAFT_MESSAGE)
+    assert.equal(await unsavedBadge(page).count(), 0, "el guardado parcial limpia Cambios sin guardar")
+    assert.equal(await beforeUnloadBlocks(page), false)
+  } finally { await page.close() }
+})
+
+test("en un borrador una medida cargada inválida se marca y no se guarda", async () => {
+  const page = await openEditor()
+  try {
+    await page.locator("#peso_empaquetado_kg").fill("0")
+    await page.getByRole("button", { name: "Guardar cambios" }).click()
+    await page.getByText("Peso empaquetado debe ser un número mayor que 0", { exact: false }).first().waitFor()
+    assert.equal(await read<unknown[] | undefined>(page, "updateCalls"), undefined)
+    assert.equal(await unsavedBadge(page).count(), 1)
+  } finally { await page.close() }
+})
+
+test("el checklist se actualiza en vivo al completar datos", async () => {
+  const page = await openEditor()
+  try {
+    await page.locator("#precio").fill("")
+    await page.waitForFunction(() => document.querySelector('section[aria-label="Checklist de publicación"] li[data-complete="false"]')?.textContent?.includes("Precio"))
+    await page.locator("#precio").fill("19990")
+    await page.waitForFunction(() => !Array.from(document.querySelectorAll('section[aria-label="Checklist de publicación"] li[data-complete="false"]')).some((item) => item.textContent?.includes("Precio")))
+    assert.ok(!(await pendingItems(page)).includes("Precio"))
+  } finally { await page.close() }
+})

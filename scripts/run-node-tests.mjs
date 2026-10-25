@@ -55,6 +55,7 @@ const TEST_FILES = [
   "components/products/installments-copy-contract.test.ts",
   "lib/products/product-variants.test.ts",
   "lib/products/product-form-dirty.test.ts",
+  "lib/products/product-draft-publish-db.test.ts",
   "lib/products/variant-color.test.ts",
   "lib/products/product-color-filters.test.ts",
   "lib/products/catalog-filters.test.ts",
@@ -407,6 +408,7 @@ const DB_ROUTE_TEST_FILES = [
 const SERVER_TSX_TEST_FILES = [
   "lib/labels/labels-routes.test.ts",
   "lib/products/variant-parent-integrity-routes.test.ts",
+  "lib/products/product-draft-publish-routes.test.ts",
   "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
   "lib/orders/financial-resolution-server.test.ts",

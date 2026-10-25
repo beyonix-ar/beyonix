@@ -284,7 +284,7 @@ export function getTargetMarginCostBasisError(
   basis: Exclude<TargetMarginCostBasis, { ok: true }>,
 ) {
   if (basis.reason === "no_cost") {
-    return "Costo desconocido: cargá un costo de compra para este producto en Admin > Costos antes de usar margen objetivo."
+    return "Costo desconocido: no hay un costo de compra disponible para calcular el precio automáticamente. Cargalo en Admin > Costos o usá precio manual."
   }
 
   return `No se puede calcular el margen objetivo porque existen variantes sin costo conocido: ${basis.missing

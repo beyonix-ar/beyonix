@@ -34,7 +34,7 @@ import { ProductVariantsEditor, StockSummaryItem } from "./product-variants-edit
 import type { ProductVariantDistribution } from "@/lib/supabase/queries/producto-variantes"
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { ProductPriceCard } from "./product-price-card"
-import { ProductRequirementsPopover } from "./product-requirements-popover"
+import { ProductRequirementsPopover, PublicationChecklist } from "./product-requirements-popover"
 import { useProductoForm } from "./use-producto-form"
 import {
   adminControlClassName,
@@ -84,9 +84,13 @@ function logisticsVolumeCm3(length: string, width: string, height: string) {
 
 interface ProductoFormProps {
   producto?: SupabaseProducto | null
-  onSaved: () => void
+  /** Guardado exitoso; `message` es el aviso a mostrar en el listado. */
+  onSaved: (message: string) => void
   onCancel: () => void
 }
+
+export const DRAFT_SAVED_MESSAGE =
+  "Guardado como borrador. Completá los datos pendientes para publicarlo."
 
 const inputCls =
   `${adminControlClassName} text-base`
@@ -354,6 +358,7 @@ export function ProductoForm({
           id: variant.id,
           orden: variant.orden,
           active: pendingVariantStates[variant.id] ?? variant.activo !== false,
+          persistedActive: variant.activo !== false,
           nombre: variant.nombre,
           sku: variant.sku ?? null,
           colorHex: variant.color_hex,
@@ -385,6 +390,8 @@ export function ProductoForm({
     )
 
     return getProductActivationStatus({
+      // Ya publicado: sólo invariantes (sin stock ni código, como la base).
+      publishing: !producto?.activo,
       title: form.nombre,
       sku: form.sku,
       price: Number(form.precio),
@@ -418,6 +425,7 @@ export function ProductoForm({
     persistedSpecifications,
     persistedVariants,
     pendingVariantStates,
+    producto?.activo,
   ])
   const busy = saving
   const logisticsVolume = logisticsVolumeCm3(form.largo_paquete_cm, form.ancho_paquete_cm, form.alto_paquete_cm)
@@ -438,6 +446,9 @@ export function ProductoForm({
       draftSpecifications,
       primarySku: form.sku,
       variantStates: pendingVariantStates,
+      // Guardar ≠ publicar: el borrador se guarda igual y avisa qué falta.
+      successMessage:
+        !form.activo && !activationStatus.ready ? DRAFT_SAVED_MESSAGE : undefined,
       onDraftSaved: () => {
         setDraftVariants([])
         setDraftSpecifications([])
@@ -681,6 +692,8 @@ export function ProductoForm({
           </AdminSecondaryButton>
         </div>
       </header>
+
+      {!producto?.activo && <PublicationChecklist status={activationStatus} />}
 
       <form
         onSubmit={(event) => {

@@ -39,6 +39,12 @@ export type TargetMarginPriceResolution =
  * editor de producto: gana sobre el estado actual en base para las variantes
  * que menciona. Las que NO menciona conservan su estado real en base -- nunca
  * se asume que una variante ausente del formulario quedó desactivada.
+ *
+ * Borrador (ninguna variante va a quedar vendible, por ejemplo un producto
+ * recién nacido de Compras con todas sus variantes inactivas): el precio se
+ * fija para cuando se publique, así que pesan TODAS sus variantes físicas.
+ * Antes la lista quedaba vacía y un producto con compras reales por variante
+ * se informaba como "Costo desconocido".
  */
 export function selectRelevantVariantCosts(
   variantCosts: VariantCostResolution[],
@@ -50,13 +56,15 @@ export function selectRelevantVariantCosts(
   )
   const activeIds = new Set(activeVariantIds)
 
-  return variantCosts.filter((entry) => {
+  const sellable = variantCosts.filter((entry) => {
     // Producto sin variantes: el costo vive a nivel producto y siempre pesa.
     if (entry.variantId == null) return true
 
     const requested = requestedState.get(entry.variantId)
     return requested ?? activeIds.has(entry.variantId)
   })
+
+  return sellable.length > 0 ? sellable : variantCosts
 }
 
 export interface ResolveTargetMarginPriceInput {

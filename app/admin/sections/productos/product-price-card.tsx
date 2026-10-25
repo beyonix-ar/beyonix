@@ -279,8 +279,8 @@ export function ProductPriceCard({
 
       {knownUnitCost === null && (
         <AdminInfoBlock tone="warning">
-          Costo desconocido para este producto. Cargá un costo de compra en Admin &gt; Costos para poder usar el
-          porcentaje de ganancia neta.
+          Costo desconocido: no hay un costo de compra disponible para calcular el precio automáticamente.
+          Podés guardar el producto igual y cargar el costo en Admin &gt; Costos, o usar precio manual.
         </AdminInfoBlock>
       )}
 
