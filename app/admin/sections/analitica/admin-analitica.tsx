@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Eye } from "lucide-react"
 
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
@@ -19,6 +19,12 @@ import { AdminDatePicker } from "../../components/admin-date-picker"
 import { AdminHelpTip } from "../../components/admin-help-tip"
 import { AdminEmptyState, AdminPageHeader, AdminSkeleton } from "../../components/admin-controls"
 import { ProductThumbnail } from "../productos/product-thumbnail"
+import {
+  AnalyticsRefreshControl,
+  AnalyticsRefreshProvider,
+  useAnalyticsRefresh,
+  useAnalyticsRefreshTask,
+} from "./analytics-refresh"
 import { ProductViewsChart } from "./product-views-chart"
 
 const viewsFormatter = new Intl.NumberFormat("es-AR")
@@ -26,9 +32,7 @@ const viewsFormatter = new Intl.NumberFormat("es-AR")
 const UNIQUE_VIEW_HELP =
   "Una vista es una apertura real del producto (página o vista rápida). Recargar o volver al mismo producto dentro de 30 minutos en la misma sesión no suma otra vista. No se cuentan la navegación del equipo ni los robots."
 
-type LoadResult =
-  | { key: string; status: "ready"; report: ProductViewReport }
-  | { key: string; status: "error"; message: string }
+const LOAD_ERROR = "No se pudieron cargar las vistas de productos."
 
 async function getAuthHeaders(): Promise<Record<string, string> | null> {
   const {
@@ -54,12 +58,25 @@ function viewsLabel(views: number) {
   return `${viewsFormatter.format(views)} ${views === 1 ? "vista" : "vistas"}`
 }
 
+/** Admin > Analítica: todos los módulos comparten el mismo ciclo de auto-actualización. */
 export function AdminAnalitica() {
+  return (
+    <AnalyticsRefreshProvider>
+      <AnalyticsPage />
+    </AnalyticsRefreshProvider>
+  )
+}
+
+function AnalyticsPage() {
   const [preset, setPreset] = useState<AnalyticsPeriodPreset>("7d")
   const [customFrom, setCustomFrom] = useState("")
   const [customTo, setCustomTo] = useState("")
-  const [result, setResult] = useState<LoadResult | null>(null)
+  // Últimos datos válidos (por período) y último fallo: un refresh fallido
+  // nunca vacía lo que ya se estaba mostrando.
+  const [loaded, setLoaded] = useState<{ key: string; report: ProductViewReport } | null>(null)
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null)
   const [todayKey] = useState(() => argentinaDateKey(new Date()))
+  const { restart } = useAnalyticsRefresh()
 
   const range = useMemo(
     () => resolveAnalyticsPeriod(preset, todayKey, { from: customFrom, to: customTo }),
@@ -67,38 +84,37 @@ export function AdminAnalitica() {
   )
   const rangeKey = range ? `${range.from}:${range.to}` : null
 
-  useEffect(() => {
+  // Productos más vistos dentro del ciclo global: cada refresh consulta
+  // exactamente el período elegido (el mismo que muestran los filtros).
+  const loadProductViews = useCallback(async (signal: AbortSignal) => {
     if (!range || !rangeKey) return
-    const controller = new AbortController()
-
-    void (async () => {
-      try {
-        const headers = await getAuthHeaders()
-        if (!headers) throw new Error("Tu sesión expiró. Volvé a ingresar.")
-        const response = await fetch(
-          `/api/admin/analytics/product-views?from=${range.from}&to=${range.to}`,
-          { headers, cache: "no-store", signal: controller.signal },
-        )
-        const body = (await response.json().catch(() => null)) as (ProductViewReport & { error?: string }) | null
-        if (!response.ok || !body || body.error) {
-          throw new Error(body?.error ?? "No se pudieron cargar las vistas de productos.")
-        }
-        setResult({ key: rangeKey, status: "ready", report: body })
-      } catch (error) {
-        if (controller.signal.aborted) return
-        setResult({
-          key: rangeKey,
-          status: "error",
-          message: error instanceof Error ? error.message : "No se pudieron cargar las vistas de productos.",
-        })
-      }
-    })()
-
-    return () => controller.abort()
+    try {
+      const headers = await getAuthHeaders()
+      if (!headers) throw new Error("Tu sesión expiró. Volvé a ingresar.")
+      const response = await fetch(
+        `/api/admin/analytics/product-views?from=${range.from}&to=${range.to}`,
+        { headers, cache: "no-store", signal },
+      )
+      const body = (await response.json().catch(() => null)) as (ProductViewReport & { error?: string }) | null
+      if (!response.ok || !body || body.error) throw new Error(body?.error ?? LOAD_ERROR)
+      if (signal.aborted) return
+      setLoaded({ key: rangeKey, report: body })
+      setFailure(null)
+    } catch (error) {
+      if (signal.aborted) return
+      setFailure({ key: rangeKey, message: error instanceof Error ? error.message : LOAD_ERROR })
+      throw error
+    }
   }, [range, rangeKey])
+  useAnalyticsRefreshTask(loadProductViews)
 
-  const current = result && result.key === rangeKey ? result : null
-  const report = current?.status === "ready" ? current.report : null
+  // Nuevo período: carga ya y el contador vuelve a 01:00 al terminar.
+  useEffect(() => {
+    if (rangeKey) void restart()
+  }, [rangeKey, restart])
+
+  const report = loaded?.key === rangeKey ? loaded.report : null
+  const loadError = !report && failure?.key === rangeKey ? failure.message : null
   const customIncomplete = preset === "custom" && !customFrom
 
   return (
@@ -107,6 +123,8 @@ export function AdminAnalitica() {
         eyebrow="Analítica"
         title="Productos más vistos"
         description="Qué productos reciben más visitas en la tienda."
+        className="md:flex-row md:items-start md:justify-between xl:items-start"
+        actions={<AnalyticsRefreshControl />}
       />
 
       <section className="admin-dashboard-filters rounded-2xl border p-4" aria-label="Período">
@@ -144,15 +162,15 @@ export function AdminAnalitica() {
         )}
       </section>
 
-      {range && !current && (
+      {range && !report && !loadError && (
         <div aria-busy="true" aria-label="Cargando vistas" className="space-y-4">
           <AdminSkeleton rows={4} />
         </div>
       )}
 
-      {current?.status === "error" && (
+      {loadError && (
         <div role="alert" className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-          {current.message}
+          {loadError}
         </div>
       )}
 
@@ -200,7 +218,7 @@ export function AdminAnalitica() {
                     <span role="cell" className="font-black tabular-nums text-white/60">{entry.position}</span>
                     <span role="cell" className="flex min-w-0 items-center gap-2.5">
                       <ProductThumbnail image={entry.image} alt={`Imagen de ${entry.name}`} size="sm" />
-                      {entry.slug ? (
+                      {entry.available && entry.slug ? (
                         <a
                           href={`/productos/${encodeURIComponent(entry.slug)}`}
                           target="_blank"
@@ -211,7 +229,10 @@ export function AdminAnalitica() {
                           {entry.name}
                         </a>
                       ) : (
-                        <span className="min-w-0 truncate text-sm font-bold text-white" title={entry.name}>{entry.name}</span>
+                        <span className="min-w-0" title={entry.name}>
+                          <span className="block truncate text-sm font-bold text-white">{entry.name}</span>
+                          <span className="block text-11px text-white/45">No publicado</span>
+                        </span>
                       )}
                     </span>
                     <span role="cell" className="text-right text-sm font-black tabular-nums text-white">

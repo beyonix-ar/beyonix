@@ -32,12 +32,12 @@ test("período personalizado: hasta vacío = hoy; inválido, invertido o mayor a
 })
 
 const ROWS: ProductViewStatsRow[] = [
-  { productId: 3, name: "Pava 12V", slug: "pava-12v", image: null, views: 95 },
-  { productId: 1, name: "Auricular Malibu", slug: "auricular-malibu", image: "https://cdn.test/a.webp", views: 245 },
-  { productId: 2, name: "Soporte Notebook HUB", slug: "soporte-hub", image: null, views: 180 },
-  { productId: 4, name: "Lámpara Ñandú", slug: "lampara", image: null, views: 95 },
-  { productId: 5, name: "Sin vistas", slug: "sin-vistas", image: null, views: 0 },
-  { productId: 6, name: "Ventilador", slug: "ventilador", image: null, views: 150 },
+  { productId: 3, name: "Pava 12V", slug: "pava-12v", image: null, available: true, views: 95 },
+  { productId: 1, name: "Auricular Malibu", slug: "auricular-malibu", image: "https://cdn.test/a.webp", available: true, views: 245 },
+  { productId: 2, name: "Soporte Notebook HUB", slug: "soporte-hub", image: null, available: true, views: 180 },
+  { productId: 4, name: "Lámpara Ñandú", slug: "lampara", image: null, available: true, views: 95 },
+  { productId: 5, name: "Sin vistas", slug: "sin-vistas", image: null, available: true, views: 0 },
+  { productId: 6, name: "Ventilador", slug: "ventilador", image: null, available: true, views: 150 },
 ]
 
 test("reporte: ranking por vistas, % del total y producto más visto; nunca productos con 0", () => {

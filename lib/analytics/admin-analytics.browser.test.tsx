@@ -34,7 +34,9 @@ const NAMES = [
 ]
 const VIEWS = [245, 180, 95, 60, 40, 30, 20, 15, 10, 8, 5, 2]
 const ROWS: ProductViewStatsRow[] = NAMES.map((name, index) => ({
-  productId: index + 1, name, slug: `producto-${index + 1}`, image: index === 0 ? "https://img.test/malibu.svg" : null, views: VIEWS[index],
+  productId: index + 1, name, slug: `producto-${index + 1}`, image: index === 0 ? "https://img.test/malibu.svg" : null,
+  // Pava 12V está archivada: conserva su histórico, sin PDP pública.
+  available: name !== "Pava 12V", views: VIEWS[index],
 }))
 
 const TODAY = argentinaDateKey(new Date())
@@ -64,8 +66,20 @@ test.after(async () => { await browser?.close() })
 
 type Responder = (range: AnalyticsDateRange) => ProductViewStatsRow[]
 
-async function openAnalytics(width: number, theme: "dark" | "light", responder: Responder = () => ROWS) {
+/** Control de la API simulada: status de la próxima respuesta y una barrera para demorarla. */
+interface ApiControl {
+  status: number
+  hold: Promise<void> | null
+}
+
+async function openAnalytics(
+  width: number,
+  theme: "dark" | "light",
+  responder: Responder = () => ROWS,
+  options: { clockAt?: number; api?: ApiControl } = {},
+) {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
+  const api = options.api ?? { status: 200, hold: null }
   const requests: { range: AnalyticsDateRange; authorization: string | null }[] = []
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
@@ -74,13 +88,21 @@ async function openAnalytics(width: number, theme: "dark" | "light", responder: 
     contentType: "text/html",
     body: `<!doctype html><html data-admin-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>*,*::before,*::after{transition:none!important}</style></head><body><div class="beyonix-admin-shell min-h-screen text-white lg:flex"><div class="hidden lg:block"><aside class="beyonix-admin-sidebar"></aside></div><main class="beyonix-admin-main min-w-0 flex-1"><div id="root"></div></main></div><script>window.process={env:{NODE_ENV:"production"}}</script><script>${bundle}</script></body></html>`,
   }))
-  await page.route("**/api/admin/analytics/product-views**", (route) => {
+  await page.route("**/api/admin/analytics/product-views**", async (route) => {
     const url = new URL(route.request().url())
     const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
     requests.push({ range, authorization: route.request().headers().authorization ?? null })
+    const status = api.status
+    if (api.hold) await api.hold
+    if (status !== 200) return route.fulfill({ status, json: { error: "No se pudieron cargar las vistas de productos." } })
     return route.fulfill({ json: buildProductViewReport(range, responder(range)) })
   })
   await page.route("https://img.test/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ccc"/></svg>` }))
+  if (options.clockAt !== undefined) {
+    // Reloj simulado y detenido: el contador sólo avanza con runFor/fastForward.
+    await page.clock.install({ time: options.clockAt })
+    await page.clock.pauseAt(options.clockAt + 1_000)
+  }
   await page.goto("http://admin.test/admin/analitica")
   return { page, requests, errors }
 }
@@ -169,11 +191,13 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
     assert.deepEqual(report.ranking.slice(0, 3), [
       ["1", "Auricular Malibu", "245", "34,5%"],
       ["2", "Soporte Notebook HUB", "180", "25,4%"],
-      ["3", "Pava 12V", "95", "13,4%"],
+      ["3", "Pava 12VNo publicado", "95", "13,4%"],
     ])
     assert.deepEqual(report.ranking.at(-1), ["12", "Webcam", "2", "0,3%"])
     assert.equal(report.thumbnailBackground, "rgb(255, 255, 255)", "miniatura con fondo blanco de Productos")
     assert.equal(await page.getByRole("link", { name: "Auricular Malibu" }).getAttribute("href"), "/productos/producto-1")
+    assert.equal(await page.getByRole("link", { name: "Pava 12V" }).count(), 0, "archivado: sin enlace a una PDP que ya no existe")
+    assert.equal(await page.locator(".admin-analytics-ranking a").count(), 11)
 
     assert.equal(report.bars.length, 10, "el gráfico muestra el Top 10")
     assert.equal(report.bars[0].label, "Auricular Malibu: 245 vistas, 34,5% del total")
@@ -216,6 +240,18 @@ for (const theme of ["dark", "light"] as const) {
             metricsTops: metrics.map((rect) => Math.round(rect.top)),
             barColor: getComputedStyle(root.querySelector(".admin-analytics-bar")!).backgroundColor,
             periodButtons: Array.from(root.querySelectorAll(".admin-dash-segmented-option"), (button) => button.getBoundingClientRect().height),
+            refresh: (() => {
+              const control = root.querySelector(".admin-analytics-refresh")!.getBoundingClientRect()
+              const title = root.querySelector("h1")!.getBoundingClientRect()
+              const status = root.querySelector<HTMLElement>(".admin-analytics-refresh-status")!
+              return {
+                left: control.left, right: control.right, top: control.top, height: control.height,
+                rootLeft: rootRect.left, rootRight: rootRect.right,
+                titleTop: title.top, titleBottom: title.bottom, titleRight: title.right,
+                statusFits: status.scrollWidth <= status.clientWidth + 1,
+                statusColor: getComputedStyle(status).color,
+              }
+            })(),
           }
         })
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/analitica-${theme}-${width}.png`, fullPage: true })
@@ -225,7 +261,143 @@ for (const theme of ["dark", "light"] as const) {
         assert.equal(new Set(layout.metricsTops).size, width >= 640 ? 1 : 3, "métricas: una fila en desktop, apiladas en mobile")
         assert.equal(layout.barColor, theme === "dark" ? "rgb(57, 135, 229)" : "rgb(42, 120, 214)")
         assert.ok(layout.periodButtons.every((height) => height >= 28), "filtros con área táctil")
+        const refresh = layout.refresh
+        assert.ok(refresh.left >= refresh.rootLeft - 1 && refresh.right <= refresh.rootRight + 1, `cronómetro fuera de la página a ${width}px`)
+        assert.ok(refresh.statusFits, "el texto del cronómetro entra completo")
+        assert.ok(refresh.height <= 80, `cronómetro demasiado grande: ${refresh.height}px`)
+        if (width >= 768) {
+          assert.ok(refresh.left > refresh.titleRight, `a ${width}px el cronómetro va a la derecha del título`)
+          assert.ok(Math.abs(refresh.top - refresh.titleTop) < 40, "arriba, alineado con el encabezado")
+        } else {
+          assert.ok(refresh.top >= refresh.titleBottom, "en mobile baja debajo del título")
+        }
+        assert.notEqual(refresh.statusColor, theme === "dark" ? "rgb(15, 23, 42)" : "rgb(248, 250, 252)", "texto legible en el tema")
       } finally { await page.close() }
     })
   }
 }
+
+// --- Auto-actualización global -------------------------------------------------
+
+const CLOCK_START = Date.parse("2026-10-26T15:00:00-03:00")
+const countdownText = (page: Page) => page.locator(".admin-analytics-refresh-status").innerText()
+const refreshButton = (page: Page) => page.getByRole("button", { name: "Actualizar ahora" })
+const rankingRows = (page: Page) => page.locator(".admin-analytics-ranking-row:not(.admin-analytics-ranking-head)")
+
+async function waitForText(page: Page, expected: string) {
+  await page.waitForFunction(
+    (text) => document.querySelector(".admin-analytics-refresh-status")?.textContent?.replace(/\s+/g, " ").includes(text),
+    expected,
+    { timeout: 5_000 },
+  )
+}
+
+test("cronómetro: arranca en 01:00, baja segundo a segundo y en 00:00 refresca el mismo período sin recargar la página", async () => {
+  const { page, requests, errors } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START })
+  try {
+    await waitForRequests(requests, 1)
+    await rankingRows(page).first().waitFor()
+    await page.evaluate(() => { (window as Window & { __sinRecarga?: boolean }).__sinRecarga = true })
+    assert.equal(await countdownText(page), "Próxima actualización en: 01:00")
+
+    await page.clock.runFor(1_000)
+    await waitForText(page, "00:59")
+    await page.clock.runFor(14_000)
+    await waitForText(page, "00:45")
+    assert.equal(requests.length, 1, "no refresca antes de tiempo")
+
+    await page.clock.runFor(45_000)
+    await waitForRequests(requests, 2)
+    assert.deepEqual(requests[1].range, requests[0].range, "consulta exactamente el mismo período")
+    await waitForText(page, "01:00")
+    assert.equal(requests.length, 2, "un solo refresh por vencimiento")
+    assert.equal(await page.evaluate(() => (window as Window & { __sinRecarga?: boolean }).__sinRecarga), true, "no se recargó la página")
+    assert.equal(await rankingRows(page).count(), 12, "Productos más vistos sigue mostrando el ranking")
+    assert.deepEqual(errors, [])
+  } finally { await page.close() }
+})
+
+test("Actualizar ahora: refresca ya, se deshabilita mientras tanto, no duplica requests (ni con el automático) y reinicia a 01:00", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, requests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
+  try {
+    await waitForRequests(requests, 1)
+    await rankingRows(page).first().waitFor()
+    await page.clock.runFor(20_000)
+    await waitForText(page, "00:40")
+
+    let release!: () => void
+    api.hold = new Promise((resolve) => { release = resolve })
+    await refreshButton(page).click()
+    await waitForRequests(requests, 2)
+    await waitForText(page, "Actualizando...")
+    assert.equal(await refreshButton(page).isDisabled(), true)
+    await refreshButton(page).click({ force: true })
+    await page.clock.runFor(60_000)
+    await page.waitForTimeout(150)
+    assert.equal(requests.length, 2, "botón + vencimiento durante el refresh: una sola consulta")
+    assert.equal(await rankingRows(page).count(), 12, "mientras actualiza se siguen viendo los datos")
+
+    api.hold = null
+    release()
+    await waitForText(page, "01:00")
+    assert.equal(await refreshButton(page).isDisabled(), false)
+    assert.equal(requests.length, 2)
+  } finally { await page.close() }
+})
+
+test("error al refrescar: conserva los últimos datos, avisa discretamente y el siguiente refresh funciona", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, requests } = await openAnalytics(1440, "light", () => ROWS, { clockAt: CLOCK_START, api })
+  try {
+    await waitForRequests(requests, 1)
+    await rankingRows(page).first().waitFor()
+    api.status = 500
+    await refreshButton(page).click()
+    await waitForRequests(requests, 2)
+    await page.getByText("No se pudo actualizar. Se muestran los últimos datos.").waitFor()
+    assert.equal(await rankingRows(page).count(), 12, "el panel no se vacía")
+    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 3)
+    await waitForText(page, "01:00")
+
+    api.status = 200
+    await page.clock.runFor(60_000)
+    await waitForRequests(requests, 3)
+    await page.getByText("No se pudo actualizar. Se muestran los últimos datos.").waitFor({ state: "detached" })
+    assert.equal(await rankingRows(page).count(), 12)
+  } finally { await page.close() }
+})
+
+test("filtros: cambiar el período carga el nuevo y reinicia el contador; el refresh siguiente conserva ese período", async () => {
+  const { page, requests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START })
+  try {
+    await waitForRequests(requests, 1)
+    await rankingRows(page).first().waitFor()
+    await page.clock.runFor(25_000)
+    await waitForText(page, "00:35")
+
+    await page.getByRole("button", { name: "Últimos 30 días" }).click()
+    await waitForRequests(requests, 2)
+    await waitForText(page, "01:00")
+    const thirtyDays = requests[1].range
+    assert.notDeepEqual(thirtyDays, requests[0].range)
+
+    await page.clock.runFor(60_000)
+    await waitForRequests(requests, 3)
+    assert.deepEqual(requests[2].range, thirtyDays, "el auto-refresh no resetea las fechas")
+    assert.equal(await page.getByRole("button", { name: "Últimos 30 días" }).getAttribute("aria-pressed"), "true")
+  } finally { await page.close() }
+})
+
+test("pestaña dormida varios minutos: al volver hace UNA sola actualización", async () => {
+  const { page, requests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START })
+  try {
+    await waitForRequests(requests, 1)
+    await rankingRows(page).first().waitFor()
+    await page.clock.fastForward("05:00")
+    await waitForRequests(requests, 2)
+    await waitForText(page, "01:00")
+    await page.waitForTimeout(200)
+    assert.equal(requests.length, 2, "no se acumulan refresh atrasados")
+  } finally { await page.close() }
+})

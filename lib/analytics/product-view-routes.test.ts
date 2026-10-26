@@ -11,13 +11,15 @@ const SESSION = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b"
 const BROWSER_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148 Safari"
 
 async function withSupabase(
-  options: { userId: string | null; role?: string | null; rpc?: (path: string, body: Record<string, unknown> | null) => Response },
+  options: { userId: string | null; role?: string | null; originSecret?: string; rpc?: (path: string, body: Record<string, unknown> | null) => Response },
   run: (calls: Call[]) => Promise<void>,
 ) {
   const previousEnv = { ...process.env }
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://analytics.invalid"
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-anon"
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key-with-enough-length"
+  if (options.originSecret) process.env.ANALYTICS_ORIGIN_HASH_SECRET = options.originSecret
+  else delete process.env.ANALYTICS_ORIGIN_HASH_SECRET
   const calls: Call[] = []
   const claims = mock.method(AuthClient.prototype, "getClaims", async () => (
     options.userId === null ? { data: null, error: new Error("invalid") } : { data: { claims: { sub: options.userId } }, error: null }))
@@ -35,7 +37,7 @@ async function withSupabase(
     await run(calls)
   } finally {
     claims.mock.restore(); fetchMock.mock.restore()
-    for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]) {
+    for (const key of ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "ANALYTICS_ORIGIN_HASH_SECRET"]) {
       if (previousEnv[key] === undefined) delete process.env[key]; else process.env[key] = previousEnv[key]
     }
   }
@@ -51,9 +53,11 @@ function viewRequest(body: unknown, headers: Record<string, string> = {}) {
 
 const recordCalls = (calls: Call[]) => calls.filter((call) => call.path === "/rest/v1/rpc/record_product_view")
 
+const ORIGIN_SECRET = "origin-secret-for-tests-with-enough-bytes"
+
 test("product_view anónimo: registra sesión, producto, origen y dispositivo; nunca el IP", async () => {
   const route = await import("../../app/api/analytics/product-view/route")
-  await withSupabase({ userId: null }, async (calls) => {
+  await withSupabase({ userId: null, originSecret: ORIGIN_SECRET }, async (calls) => {
     const response = await route.POST(viewRequest({ sessionId: SESSION, productId: 7, source: "product_page" }))
     assert.equal(response.status, 204)
     const [call] = recordCalls(calls)
@@ -63,7 +67,8 @@ test("product_view anónimo: registra sesión, producto, origen y dispositivo; n
     assert.equal(call.body?.p_user_id, null)
     assert.equal(call.body?.p_source, "product_page")
     assert.equal(call.body?.p_device_type, "mobile")
-    assert.match(String(call.body?.p_client_key), /^[0-9a-f]{32}$/)
+    const { getAnalyticsClientKey } = await import("../../lib/analytics/product-view-event")
+    assert.equal(call.body?.p_client_key, getAnalyticsClientKey("203.0.113.9", ORIGIN_SECRET), "HMAC con el secreto dedicado")
     assert.ok(!JSON.stringify(calls).includes("203.0.113.9"), "el IP no sale del servidor")
   })
 })
@@ -103,15 +108,34 @@ test("product_view: equipo interno y robots no cuentan; payload inválido 400", 
   })
 })
 
-test("product_view: si la base falla, la respuesta sigue siendo 204 (analítica nunca rompe la navegación)", async () => {
+test("product_view sin ANALYTICS_ORIGIN_HASH_SECRET: se registra igual, sin clave de origen, y nunca usa la service_role", async () => {
+  const route = await import("../../app/api/analytics/product-view/route")
+  const warn = mock.method(console, "warn", () => {})
+  try {
+    await withSupabase({ userId: null }, async (calls) => {
+      assert.equal((await route.POST(viewRequest({ sessionId: SESSION, productId: 7, source: "product_page" }))).status, 204)
+      assert.equal((await route.POST(viewRequest({ sessionId: SESSION, productId: 8, source: "product_page" }))).status, 204)
+      const records = recordCalls(calls)
+      assert.equal(records.length, 2, "las vistas se registran")
+      assert.ok(records.every((call) => call.body?.p_client_key === null), "límite por origen desactivado")
+    })
+    const warnings = warn.mock.calls.map((call) => String(call.arguments[0]))
+    assert.ok(warnings.filter((text) => text.includes("ANALYTICS_ORIGIN_HASH_SECRET")).length <= 1, "avisa una sola vez")
+    assert.ok(warnings.every((text) => !text.includes("test-service-role")), "nunca expone secretos")
+  } finally { warn.mock.restore() }
+})
+
+test("product_view: si la base falla responde 503 vacío para reintentar (el navegador nunca lo muestra)", async () => {
   const route = await import("../../app/api/analytics/product-view/route")
   const warn = mock.method(console, "warn", () => {})
   try {
     await withSupabase({ userId: null, rpc: () => Response.json({ message: "boom", code: "XX000" }, { status: 500 }) }, async () => {
-      assert.equal((await route.POST(viewRequest({ sessionId: SESSION, productId: 7, source: "product_page" }))).status, 204)
+      const response = await route.POST(viewRequest({ sessionId: SESSION, productId: 7, source: "product_page" }))
+      assert.equal(response.status, 503)
+      assert.equal(await response.text(), "", "sin detalle del error")
     })
     await withSupabase({ userId: null, rpc: () => { throw new TypeError("fetch failed") } }, async () => {
-      assert.equal((await route.POST(viewRequest({ sessionId: SESSION, productId: 7, source: "product_page" }))).status, 204)
+      assert.equal((await route.POST(viewRequest({ sessionId: SESSION, productId: 7, source: "product_page" }))).status, 503)
     })
   } finally { warn.mock.restore() }
 })
@@ -134,19 +158,19 @@ test("Admin > Analítica: anon 401, cliente y operador 403 sin tocar datos; Admi
     })
   }
   const rows = [
-    { product_id: 2, product_name: "Soporte Notebook HUB", product_slug: "soporte-hub", product_image: null, views: "180" },
-    { product_id: 1, product_name: "Auricular Malibu", product_slug: "auricular-malibu", product_image: "https://cdn.test/a.webp", views: "245" },
+    { product_id: 2, product_name: "Soporte Notebook HUB", product_slug: "soporte-hub", product_image: null, product_available: false, views: "180" },
+    { product_id: 1, product_name: "Auricular Malibu", product_slug: "auricular-malibu", product_image: "https://cdn.test/a.webp", product_available: true, views: "245" },
   ]
   for (const role of ["admin", "super_admin"]) {
     await withSupabase({ userId: "staff", role, rpc: () => Response.json(rows) }, async (calls) => {
       const response = await route.GET(statsRequest("from=2026-10-20&to=2026-10-26"))
       assert.equal(response.status, 200, role)
       assert.equal(response.headers.get("cache-control"), "private, no-store")
-      const report = await response.json() as { totalViews: number; productsViewed: number; topProduct: { name: string }; ranking: { name: string; position: number }[] }
+      const report = await response.json() as { totalViews: number; productsViewed: number; topProduct: { name: string }; ranking: { name: string; position: number; available: boolean }[] }
       assert.equal(report.totalViews, 425)
       assert.equal(report.productsViewed, 2)
       assert.equal(report.topProduct.name, "Auricular Malibu")
-      assert.deepEqual(report.ranking.map((entry) => entry.position), [1, 2])
+      assert.deepEqual(report.ranking.map((entry) => [entry.position, entry.available]), [[1, true], [2, false]], "archivado/eliminado: sigue contando, sin PDP")
       const rpc = calls.find((call) => call.path === "/rest/v1/rpc/admin_product_view_stats")
       assert.deepEqual(rpc?.body, { p_from: "2026-10-20", p_to: "2026-10-26" })
     })

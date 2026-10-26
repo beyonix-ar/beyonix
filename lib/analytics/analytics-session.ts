@@ -1,28 +1,27 @@
-import { ANALYTICS_SESSION_IDLE_MS, PRODUCT_VIEW_DEDUP_WINDOW_MS } from "./events.ts"
+import { getBrowserAnalyticsStore, type AnalyticsStore } from "./analytics-storage.ts"
+import { ANALYTICS_SESSION_IDLE_MS } from "./events.ts"
 
 /**
- * Sesión anónima de Analítica: un UUID aleatorio en localStorage que rota
- * tras 30 minutos sin actividad. Es deliberadamente independiente de
- * `cartSessionId`: aquél es la credencial de propiedad de las reservas de
- * stock (copiarlo a una tabla que lee Admin ampliaría su exposición) y vive
- * en sessionStorage, así que cada pestaña nueva sería otra "sesión" e
- * inflaría las vistas. No crea usuarios ni perfiles y no guarda datos
- * personales.
+ * Sesión anónima de Analítica.
+ *
+ * - Identidad: un UUID v4 aleatorio. Es deliberadamente independiente de
+ *   `cartSessionId` (credencial de las reservas de stock, por pestaña). No
+ *   crea usuarios ni perfiles y no guarda datos personales.
+ * - Actividad: `touchAnalyticsSession()` la renueva. El `session_id` se
+ *   mantiene mientras haya actividad con menos de 30 minutos entre una y la
+ *   siguiente; tras 30 minutos reales sin actividad, la próxima actividad
+ *   abre otra sesión.
+ * - Qué cuenta como actividad: hoy, abrir un producto (`product_view`). Los
+ *   próximos eventos (page_view, add_to_cart, search...) llaman a la misma
+ *   función. No hay timers: la sesión sólo se evalúa cuando hay actividad.
  */
 
 export const ANALYTICS_SESSION_STORAGE_KEY = "beyonix-analytics-session"
 
-interface StoredAnalyticsSession {
+export interface AnalyticsSession {
   id: string
   lastActivityAt: number
-  /** productId -> última vista enviada (ms). */
-  views: Record<string, number>
 }
-
-type SessionStorageLike = Pick<Storage, "getItem" | "setItem">
-
-/** Si el storage no está disponible (modo privado, bloqueado), la sesión dura lo que la página. */
-let memorySession: StoredAnalyticsSession | null = null
 
 function formatUuidV4(bytes: Uint8Array) {
   bytes[6] = (bytes[6] & 0x0f) | 0x40
@@ -41,69 +40,32 @@ export function createAnalyticsSessionId(): string | null {
   return null
 }
 
-function isStoredSession(value: unknown): value is StoredAnalyticsSession {
+function isAnalyticsSession(value: unknown): value is AnalyticsSession {
   if (!value || typeof value !== "object") return false
-  const session = value as Partial<StoredAnalyticsSession>
-  return (
-    typeof session.id === "string" &&
-    typeof session.lastActivityAt === "number" &&
-    Boolean(session.views) &&
-    typeof session.views === "object"
-  )
+  const session = value as Partial<AnalyticsSession>
+  return typeof session.id === "string" && typeof session.lastActivityAt === "number"
 }
 
-function readSession(storage: SessionStorageLike | null): StoredAnalyticsSession | null {
-  if (!storage) return memorySession
-  try {
-    const parsed: unknown = JSON.parse(storage.getItem(ANALYTICS_SESSION_STORAGE_KEY) ?? "null")
-    return isStoredSession(parsed) ? parsed : null
-  } catch {
-    return null
-  }
-}
-
-function writeSession(storage: SessionStorageLike | null, session: StoredAnalyticsSession) {
-  memorySession = session
-  if (!storage) return
-  try {
-    storage.setItem(ANALYTICS_SESSION_STORAGE_KEY, JSON.stringify(session))
-  } catch {
-    // Storage lleno o bloqueado: la sesión sigue en memoria.
-  }
-}
-
-function getBrowserStorage(): SessionStorageLike | null {
-  try {
-    return typeof window === "undefined" ? null : window.localStorage
-  } catch {
-    return null
-  }
+/** Sesión vigente sin registrar actividad (`null` si no hay o venció). */
+export function readAnalyticsSession(
+  now: number = Date.now(),
+  store: AnalyticsStore = getBrowserAnalyticsStore(),
+): AnalyticsSession | null {
+  const session = store.read(ANALYTICS_SESSION_STORAGE_KEY, isAnalyticsSession)
+  return session && now - session.lastActivityAt < ANALYTICS_SESSION_IDLE_MS ? session : null
 }
 
 /**
- * Decide si esta apertura de producto debe enviarse y con qué sesión. Aplica
- * en el navegador la misma ventana que el servidor (que es quien decide), para
- * no mandar requests por cada refresh. `null` = no enviar.
+ * Registra actividad real del visitante: renueva la ventana de 30 minutos de
+ * la sesión vigente o, si venció, abre una nueva. `null` sólo sin Web Crypto.
  */
-export function claimProductView(
-  productId: number,
+export function touchAnalyticsSession(
   now: number = Date.now(),
-  storage: SessionStorageLike | null = getBrowserStorage(),
-): { sessionId: string } | null {
-  const stored = readSession(storage)
-  const active = stored && now - stored.lastActivityAt < ANALYTICS_SESSION_IDLE_MS ? stored : null
-  const sessionId = active?.id ?? createAnalyticsSessionId()
-  if (!sessionId) return null
-
-  const views: Record<string, number> = {}
-  for (const [key, sentAt] of Object.entries(active?.views ?? {})) {
-    if (now - sentAt < PRODUCT_VIEW_DEDUP_WINDOW_MS) views[key] = sentAt
-  }
-
-  const key = String(productId)
-  const alreadySent = key in views
-  if (!alreadySent) views[key] = now
-
-  writeSession(storage, { id: sessionId, lastActivityAt: now, views })
-  return alreadySent ? null : { sessionId }
+  store: AnalyticsStore = getBrowserAnalyticsStore(),
+): AnalyticsSession | null {
+  const id = readAnalyticsSession(now, store)?.id ?? createAnalyticsSessionId()
+  if (!id) return null
+  const session = { id, lastActivityAt: now }
+  store.write(ANALYTICS_SESSION_STORAGE_KEY, session)
+  return session
 }

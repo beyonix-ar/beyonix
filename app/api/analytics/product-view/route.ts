@@ -1,7 +1,9 @@
 import { isInternalRole, isUserRole } from "@/lib/auth/roles"
 import { getTrustedClientIp } from "@/lib/auth/trusted-client-ip"
 import {
+  ANALYTICS_ORIGIN_HASH_SECRET_ENV,
   getAnalyticsClientKey,
+  getAnalyticsOriginSecret,
   getDeviceType,
   isAutomatedUserAgent,
   parseProductViewPayload,
@@ -14,14 +16,32 @@ import { createAdminClient } from "@/lib/supabase/admin"
  * - el usuario sale del token verificado, nunca del payload;
  * - el producto se valida en la base (existe y está activo);
  * - deduplicación y límites viven en `record_product_view` (server-side);
- * - la respuesta es siempre 204 vacío salvo payload inválido, así no se
- *   filtra si una vista contó, se descartó o falló. Analítica nunca devuelve
- *   un error que el cliente tenga que manejar.
+ * - la respuesta es 204 vacío tanto si la vista contó como si se descartó
+ *   (duplicada, límite, robot, equipo interno), así no se filtra cuál fue;
+ *   400 sólo para un payload inválido y 503 vacío si la base no respondió,
+ *   para que el navegador lo reintente más tarde. El cliente nunca muestra
+ *   ni propaga estos errores.
  */
 
 const NO_CONTENT = () => new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } })
+const UNAVAILABLE = () => new Response(null, { status: 503, headers: { "Cache-Control": "no-store" } })
 
 type AdminClient = ReturnType<typeof createAdminClient>
+
+let warnedMissingOriginSecret = false
+
+/** Clave de origen para el límite por origen; sin secreto dedicado ese límite queda desactivado (avisa una vez). */
+function resolveClientKey(request: Request) {
+  const secret = getAnalyticsOriginSecret()
+  if (!secret) {
+    if (!warnedMissingOriginSecret) {
+      warnedMissingOriginSecret = true
+      console.warn(`[analytics] ${ANALYTICS_ORIGIN_HASH_SECRET_ENV} no configurada: límite por origen desactivado`)
+    }
+    return null
+  }
+  return getAnalyticsClientKey(getTrustedClientIp(request), secret)
+}
 
 /** Usuario autenticado verificado, o `null`. Un token inválido no rechaza la vista: la vuelve anónima. */
 async function resolveViewer(admin: AdminClient, request: Request) {
@@ -58,13 +78,17 @@ export async function POST(request: Request) {
       p_user_id: viewer.userId,
       p_source: payload.source,
       p_device_type: getDeviceType(userAgent),
-      p_client_key: getAnalyticsClientKey(getTrustedClientIp(request)),
+      p_client_key: resolveClientKey(request),
     })
-    if (error) console.warn("[analytics] product_view no registrada", { code: error.code })
+    if (error) {
+      console.warn("[analytics] product_view no registrada", { code: error.code })
+      return UNAVAILABLE()
+    }
   } catch (error) {
     console.warn("[analytics] product_view no registrada", {
       message: error instanceof Error ? error.message.slice(0, 120) : "unknown",
     })
+    return UNAVAILABLE()
   }
 
   return NO_CONTENT()

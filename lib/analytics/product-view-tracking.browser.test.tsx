@@ -79,15 +79,17 @@ test.after(async () => { await browser?.close() })
 type Beacon = { body: Record<string, unknown>; headers: Record<string, string> }
 type EndpointMode = "ok" | "error" | "network-error" | "hang"
 
-async function serve(context: BrowserContext, beacons: Beacon[], mode: EndpointMode = "ok") {
+async function serve(context: BrowserContext, beacons: Beacon[], initialMode: EndpointMode | { current: EndpointMode } = "ok") {
+  const modeRef = typeof initialMode === "string" ? { current: initialMode } : initialMode
   await context.route("**/*", async (route: Route) => {
     const request = route.request()
     const url = new URL(request.url())
     if (url.href === ENDPOINT) {
       beacons.push({ body: JSON.parse(request.postData() ?? "null"), headers: request.headers() })
+      const mode = modeRef.current
       if (mode === "hang") return
       if (mode === "network-error") return route.abort("failed")
-      return route.fulfill({ status: mode === "error" ? 500 : 204, body: mode === "error" ? "boom" : "" })
+      return route.fulfill({ status: mode === "error" ? 503 : 204, body: "" })
     }
     if (url.pathname === "/api/reviews") return route.fulfill({ json: { reviews: [] } })
     if (url.pathname.startsWith("/api/")) return route.fulfill({ status: 404, json: { error: "No disponible en el fixture." } })
@@ -196,3 +198,51 @@ for (const mode of ["error", "network-error", "hang"] as const) {
     } finally { await context.close() }
   })
 }
+
+test("reintento: un envío fallido se reintenta en una apertura posterior (no antes de 30 s), con la misma sesión y sin más envíos tras el éxito", async () => {
+  const context = await browser.newContext()
+  const beacons: Beacon[] = []
+  const mode = { current: "network-error" as EndpointMode }
+  try {
+    await serve(context, beacons, mode)
+    const page = await context.newPage()
+    const start = Date.now()
+    await page.clock.setFixedTime(start)
+    await visit(page, "id=7")
+    await waitForBeacons(beacons, 1)
+    assert.equal(beacons.length, 1)
+
+    await page.clock.setFixedTime(start + 5_000)
+    await visit(page, "id=7")
+    await settle(page)
+    assert.equal(beacons.length, 1, "sin reintentos agresivos")
+
+    mode.current = "ok"
+    await page.clock.setFixedTime(start + 35_000)
+    await visit(page, "id=7")
+    await waitForBeacons(beacons, 2)
+    assert.equal(beacons.length, 2, "reintento en la siguiente apertura")
+    assert.equal(beacons[1].body.sessionId, beacons[0].body.sessionId, "misma sesión: si el primero hubiera llegado, la base lo marca duplicado")
+
+    await page.clock.setFixedTime(start + 60_000)
+    await visit(page, "id=7")
+    await settle(page)
+    assert.equal(beacons.length, 2, "confirmado: no se vuelve a enviar dentro de la ventana")
+  } finally { await context.close() }
+})
+
+test("localStorage bloqueado: la tienda carga sin errores y mide una sola vista por apertura", async () => {
+  const context = await browser.newContext()
+  const beacons: Beacon[] = []
+  try {
+    await context.addInitScript(() => {
+      Object.defineProperty(window, "localStorage", { get() { throw new DOMException("bloqueado", "SecurityError") } })
+    })
+    await serve(context, beacons)
+    const page = await context.newPage()
+    assert.deepEqual(await visit(page, "id=7&view=quick"), [])
+    await waitForBeacons(beacons, 1)
+    await settle(page)
+    assert.equal(beacons.length, 1, "sin storage: una sola vista por apertura en esa pestaña")
+  } finally { await context.close() }
+})

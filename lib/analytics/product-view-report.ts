@@ -28,6 +28,8 @@ export interface ProductViewStatsRow {
   name: string
   slug: string
   image: string | null
+  /** Hoy tiene PDP pública (activo). Archivados y eliminados conservan sus vistas, sin enlace. */
+  available: boolean
   views: number
 }
 

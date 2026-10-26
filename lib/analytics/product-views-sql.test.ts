@@ -3,11 +3,15 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
-// Migración real de Analítica (20261026100000) sobre PostgreSQL embebido:
-// vista única por sesión/producto, límites de abuso, ranking por fechas de
-// Argentina y permisos (anon/authenticated sin acceso).
+// Migraciones reales de Analítica (20261026100000 + 20261026120000) sobre
+// PostgreSQL embebido: vista única por sesión/producto, límites de abuso,
+// ranking por fechas de Argentina, histórico que sobrevive a borrados,
+// archivados y renombres, y permisos (anon/authenticated sin acceso).
 
-const MIGRATION = readFileSync("supabase/migrations/20261026100000_analytics_events_product_views.sql", "utf8")
+const MIGRATIONS = [
+  "20261026100000_analytics_events_product_views.sql",
+  "20261026120000_analytics_history_merge_snapshots.sql",
+].map((file) => readFileSync(`supabase/migrations/${file}`, "utf8"))
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 const SESSION_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -28,7 +32,7 @@ async function createDb() {
       (3, 'Pava 12V', 'pava-12v', true, null),
       (4, 'Producto pausado', 'pausado', false, null);
     insert into public.imagenes_producto values (10, 2, 'https://cdn.test/hub-2.webp', 2), (11, 2, 'https://cdn.test/hub-1.webp', 1);`)
-  await db.exec(MIGRATION)
+  for (const migration of MIGRATIONS) await db.exec(migration)
   return db
 }
 
@@ -138,9 +142,100 @@ test("admin_product_view_stats: ranking por vistas dentro del rango de fechas de
   } finally { await db.close() }
 })
 
+type StatsRow = { product_id: number; product_name: string; product_slug: string; product_image: string | null; product_available: boolean; views: number }
+
+async function allTimeStats(db: PGlite) {
+  return (await db.query<StatsRow>(
+    "select product_id::int, product_name, product_slug, product_image, product_available, views::int from public.admin_product_view_stats('2000-01-01', '2100-12-31')",
+  )).rows
+}
+
+test("histórico: borrar un producto no borra sus vistas y el ranking lo sigue mostrando con su snapshot", async () => {
+  const db = await createDb()
+  try {
+    assert.equal(await record(db, SESSION_A, 2), "recorded")
+    assert.equal(await record(db, SESSION_B, 2), "recorded")
+    assert.equal(await record(db, SESSION_A, 1), "recorded")
+    await db.exec("update public.productos set nombre = 'Soporte HUB Pro', slug = 'soporte-hub-pro' where id = 2")
+    await db.exec("delete from public.imagenes_producto where producto_id = 2 and id = 11")
+    await db.exec("delete from public.productos where id = 2")
+
+    assert.equal(await count(db, "product_id = 2"), 2, "los eventos sobreviven al borrado")
+    assert.deepEqual(await allTimeStats(db), [
+      // Última foto tomada justo antes del borrado: nombre nuevo e imagen que quedaba.
+      { product_id: 2, product_name: "Soporte HUB Pro", product_slug: "soporte-hub-pro", product_image: "https://cdn.test/hub-2.webp", product_available: false, views: 2 },
+      { product_id: 1, product_name: "Auricular Malibu", product_slug: "auricular-malibu", product_image: "https://cdn.test/malibu.webp", product_available: true, views: 1 },
+    ])
+  } finally { await db.close() }
+})
+
+test("histórico: producto archivado conserva sus vistas, sin PDP pública; renombrado usa el nombre actual", async () => {
+  const db = await createDb()
+  try {
+    await record(db, SESSION_A, 1)
+    await record(db, SESSION_A, 3)
+    await db.exec("update public.productos set activo = false where id = 1")
+    await db.exec("update public.productos set nombre = 'Pava eléctrica 12V' where id = 3")
+
+    const rows = await allTimeStats(db)
+    const archived = rows.find((row) => row.product_id === 1)!
+    assert.equal(archived.views, 1, "sigue sumando al total")
+    assert.equal(archived.product_available, false, "sin enlace público")
+    assert.equal(archived.product_name, "Auricular Malibu")
+    assert.equal(rows.find((row) => row.product_id === 3)!.product_name, "Pava eléctrica 12V", "si existe, se usa el dato actual")
+    assert.equal(await record(db, SESSION_B, 1), "invalid_product", "un archivado no suma vistas nuevas")
+  } finally { await db.close() }
+})
+
+test("snapshot: una fila por producto, se actualiza sólo si cambió y el histórico es legible tras renombrar y borrar", async () => {
+  const db = await createDb()
+  try {
+    await record(db, SESSION_A, 1)
+    await record(db, SESSION_B, 1)
+    const snapshots = async () => (await db.query<{ product_id: number; product_name: string; updated_at: string }>(
+      "select product_id::int, product_name, updated_at::text from public.analytics_product_snapshots order by product_id",
+    )).rows
+    const [first] = await snapshots()
+    assert.equal((await snapshots()).length, 1)
+
+    await db.exec("update public.productos set nombre = 'Auricular Malibu Max' where id = 1")
+    assert.equal(await record(db, "dddddddd-dddd-4ddd-8ddd-dddddddddddd", 1), "recorded")
+    const [renamed] = await snapshots()
+    assert.equal(renamed.product_name, "Auricular Malibu Max")
+    assert.notEqual(renamed.updated_at, first.updated_at)
+
+    await db.exec("update public.productos set nombre = 'Auricular Malibu Ultra' where id = 1")
+    await db.exec("delete from public.productos where id = 1")
+    assert.deepEqual((await allTimeStats(db)).map((row) => [row.product_name, row.views, row.product_available]), [["Auricular Malibu Ultra", 3, false]])
+  } finally { await db.close() }
+})
+
+test("snapshot: los eventos previos a esta migración quedan cubiertos por el backfill", async () => {
+  const db = new PGlite()
+  try {
+    await db.exec(`create role anon; create role authenticated; create role service_role;
+      create schema auth; create table auth.users (id uuid primary key);
+      create table public.productos (id bigint primary key, nombre text not null, slug text not null, activo boolean default true, imagen_principal text);
+      create table public.producto_variantes (id bigint primary key, producto_id bigint not null);
+      create table public.imagenes_producto (id bigint primary key, producto_id bigint, url text not null, orden integer default 0);
+      insert into public.productos values (1, 'Auricular Malibu', 'auricular-malibu', true, 'https://cdn.test/malibu.webp');`)
+    await db.exec(MIGRATIONS[0])
+    await db.exec(`select public.record_product_view('${SESSION_A}'::uuid, 1)`)
+    await db.exec(MIGRATIONS[1])
+    await db.exec("delete from public.productos where id = 1")
+    assert.deepEqual((await allTimeStats(db)).map((row) => [row.product_name, row.views]), [["Auricular Malibu", 1]])
+  } finally { await db.close() }
+})
+
 test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role sí", async () => {
   const db = await createDb()
   try {
+    for (const table of ["analytics_events", "analytics_product_snapshots"]) {
+      const { rows } = await db.query<{ rls: boolean; policies: number }>(
+        `select relrowsecurity as rls, (select count(*)::int from pg_policies where tablename = '${table}') as policies from pg_class where oid = 'public.${table}'::regclass`,
+      )
+      assert.deepEqual(rows[0], { rls: true, policies: 0 }, `${table}: RLS activo y sin políticas públicas`)
+    }
     await record(db, SESSION_A, 1)
     for (const role of ["anon", "authenticated"]) {
       await db.exec(`set role ${role}`)
@@ -148,6 +243,8 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
       await assert.rejects(db.exec(`insert into public.analytics_events (event_type, session_id, product_id) values ('product_view', '${SESSION_B}', 1)`), /permission denied/i, `${role}: insert`)
       await assert.rejects(db.query(`select public.record_product_view('${SESSION_B}'::uuid, 1)`), /permission denied/i, `${role}: record`)
       await assert.rejects(db.query("select * from public.admin_product_view_stats('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: stats`)
+      await assert.rejects(db.query("select * from public.analytics_product_snapshots"), /permission denied/i, `${role}: snapshots`)
+      await assert.rejects(db.query("select public.analytics_product_image(1, null)"), /permission denied/i, `${role}: imagen`)
       await db.exec("reset role")
     }
     await db.exec("set role service_role")

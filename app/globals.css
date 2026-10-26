@@ -18330,11 +18330,13 @@ html[data-admin-theme="light"] .admin-claim-force-effects p {
 .admin-analytics-page {
   --analytics-bar: #3987e5;
   --analytics-bar-tooltip-bg: #0b1622;
+  --analytics-warning: #fcd34d;
 }
 
 html[data-admin-theme="light"] .admin-analytics-page {
   --analytics-bar: #2a78d6;
   --analytics-bar-tooltip-bg: #ffffff;
+  --analytics-warning: #b45309;
 }
 
 .admin-analytics-page .admin-analytics-periods {
@@ -18410,6 +18412,46 @@ html[data-admin-theme="light"] .admin-analytics-page {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--admin-text-muted);
+}
+
+/* Auto-actualización (un solo ciclo para toda Analítica). */
+.admin-analytics-page .admin-analytics-refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 10px;
+  max-width: 100%;
+}
+
+.admin-analytics-page .admin-analytics-refresh-status {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--admin-text-soft);
+  white-space: nowrap;
+}
+
+.admin-analytics-page .admin-analytics-refresh-status .tabular-nums {
+  color: var(--admin-text);
+  font-weight: 900;
+}
+
+.admin-analytics-page .admin-analytics-refresh-error {
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--analytics-warning);
+}
+
+@media (max-width: 767px) {
+  .admin-analytics-page .admin-analytics-refresh {
+    justify-content: flex-start;
+  }
+
+  .admin-analytics-page .admin-analytics-refresh-error {
+    text-align: left;
+  }
 }
 
 @media (max-width: 479px) {

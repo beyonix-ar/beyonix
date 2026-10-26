@@ -559,6 +559,82 @@ async function commercialFicha(db: PGlite, id: number) {
   return { ficha, ...rest }
 }
 
+test("fusión + Analítica: A con 10 vistas y B con 5; fusionar B en A deja A con 15, sin duplicar ni perder eventos", async () => {
+  const db = await setup()
+  try {
+    await db.exec("create table auth.users (id uuid primary key)")
+    for (const file of ["20261026100000_analytics_events_product_views.sql", "20261026120000_analytics_history_merge_snapshots.sql"]) {
+      await db.exec(readMigration(file))
+    }
+    const keep = await completeProduct(db, "PRODUCTO A")
+    const absorbedId = (await db.query<{ id: number }>(
+      "insert into public.productos (nombre, slug, activo) values ('PRODUCTO B', 'producto-b', true) returning id",
+    )).rows[0].id
+    const views = (productId: number, times: number) => db.exec(`
+      insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+      select 'product_view', gen_random_uuid(), ${productId}, now() - (g || ' minutes')::interval from generate_series(1, ${times}) g`)
+    await views(keep.productId, 10)
+    await views(absorbedId, 5)
+    await db.exec(`insert into public.analytics_product_snapshots (product_id, product_name, product_slug)
+      values (${keep.productId}, 'PRODUCTO A', 'a'), (${absorbedId}, 'PRODUCTO B', 'producto-b')`)
+    const idsBefore = (await db.query<{ id: string }>("select id::text from public.analytics_events order by id")).rows.map((row) => row.id)
+
+    await db.query("select public.merge_catalog_products($1, $2, $3)", [keep.productId, absorbedId, actor])
+
+    const byProduct = (await db.query<{ product_id: number; views: number }>(
+      "select product_id::int, count(*)::int as views from public.analytics_events group by product_id",
+    )).rows
+    assert.deepEqual(byProduct, [{ product_id: keep.productId, views: 15 }])
+    const idsAfter = (await db.query<{ id: string }>("select id::text from public.analytics_events order by id")).rows.map((row) => row.id)
+    assert.deepEqual(idsAfter, idsBefore, "mismos 15 eventos: se mueven, no se copian")
+    const stats = (await db.query<{ product_id: number; views: number }>(
+      "select product_id::int, views::int from public.admin_product_view_stats('2000-01-01', '2100-12-31')",
+    )).rows
+    assert.deepEqual(stats, [{ product_id: keep.productId, views: 15 }], "el absorbido no queda como fila invisible")
+    assert.deepEqual(
+      (await db.query<{ product_id: number }>("select product_id::int from public.analytics_product_snapshots")).rows,
+      [{ product_id: keep.productId }],
+    )
+  } finally {
+    await db.close()
+  }
+})
+
+test("fusión + Analítica: si la fusión falla, las vistas quedan como estaban", async () => {
+  const db = await setup()
+  try {
+    await db.exec("create table auth.users (id uuid primary key)")
+    for (const file of ["20261026100000_analytics_events_product_views.sql", "20261026120000_analytics_history_merge_snapshots.sql"]) {
+      await db.exec(readMigration(file))
+    }
+    const keep = await completeProduct(db, "PRODUCTO A")
+    const absorbed = (await db.query<{ id: number }>(
+      "insert into public.productos (nombre, slug, activo) values ('PRODUCTO B', 'producto-b', true) returning id",
+    )).rows[0].id
+    // Misma variante (nombre) en ambos: el guard de identidad corta la fusión.
+    await db.exec(`create function public.reject_duplicate_variant() returns trigger language plpgsql as $$
+      begin
+        if exists (select 1 from public.producto_variantes v where v.producto_id = new.producto_id and v.nombre = new.nombre and v.id <> new.id) then
+          raise exception 'Variante duplicada';
+        end if;
+        return new;
+      end $$;
+      create trigger reject_duplicate_variant before update on public.producto_variantes
+        for each row execute function public.reject_duplicate_variant();`)
+    await db.query("insert into public.producto_variantes (producto_id, nombre, color_hex) values ($1, 'AZUL', '#C2D8EB')", [absorbed])
+    await db.exec(`insert into public.analytics_events (event_type, session_id, product_id)
+      select 'product_view', gen_random_uuid(), ${absorbed} from generate_series(1, 5)`)
+
+    await assert.rejects(db.query("select public.merge_catalog_products($1, $2, $3)", [keep.productId, absorbed, actor]), /Variante duplicada/)
+    const rows = (await db.query<{ product_id: number; views: number }>(
+      "select product_id::int, count(*)::int as views from public.analytics_events group by product_id",
+    )).rows
+    assert.deepEqual(rows, [{ product_id: absorbed, views: 5 }])
+  } finally {
+    await db.close()
+  }
+})
+
 test("variante nueva + compra válida: crea variante, SKU, código, compra, costo, stock y movimiento; el padre no cambia", async () => {
   const db = await setup()
   try {

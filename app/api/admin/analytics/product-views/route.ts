@@ -10,6 +10,7 @@ interface ProductViewStatsRecord {
   product_name: string | null
   product_slug: string | null
   product_image: string | null
+  product_available: boolean | null
   views: number | string
 }
 
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
     name: row.product_name ?? "Producto",
     slug: row.product_slug ?? "",
     image: row.product_image,
+    available: row.product_available === true,
     views: Number(row.views),
   }))
 

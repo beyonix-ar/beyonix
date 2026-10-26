@@ -61,25 +61,40 @@ export function getDeviceType(userAgent: string | null): DeviceType {
   return "desktop"
 }
 
-const CLIENT_KEY_DOMAIN = "beyonix:analytics:client-key:v1"
+const CLIENT_KEY_DOMAIN = "beyonix:analytics:origin:v2"
+
+/** Variable dedicada: nunca se reutiliza otra credencial (en particular, nunca la service_role). */
+export const ANALYTICS_ORIGIN_HASH_SECRET_ENV = "ANALYTICS_ORIGIN_HASH_SECRET"
+const MIN_SECRET_BYTES = 32
+
+/** Secreto del hash de origen, o `null` si falta o es demasiado corto. */
+export function getAnalyticsOriginSecret(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const secret = env[ANALYTICS_ORIGIN_HASH_SECRET_ENV]?.trim()
+  return secret && Buffer.byteLength(secret, "utf8") >= MIN_SECRET_BYTES ? secret : null
+}
 
 /**
- * Identificador de origen sólo para límites de abuso: HMAC del IP con un
- * secreto server-side y la fecha UTC, truncado. No es reversible sin el
- * secreto y cambia cada día, así que no permite seguir a un visitante en el
- * tiempo. Nunca se guarda el IP.
+ * Identificador de origen sólo para el límite de abuso por origen: HMAC del
+ * IP con un secreto server-side dedicado, truncado. Es estable (no depende de
+ * la fecha), así la ventana móvil de 60 minutos de `record_product_view` no
+ * se parte a medianoche; no es reversible sin el secreto, que nunca se guarda
+ * en la base ni llega al navegador. Nunca se guarda el IP.
+ *
+ * Sin secreto configurado devuelve `null`: se desactiva SÓLO el límite por
+ * origen (el de sesión y la deduplicación siguen) y las vistas se registran
+ * igual.
  */
 export function getAnalyticsClientKey(
   ip: string | null,
-  now: Date = new Date(),
-  secret: string | undefined = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  secret: string | null = getAnalyticsOriginSecret(),
 ): string | null {
   const normalizedIp = ip?.trim()
-  const normalizedSecret = secret?.trim()
-  if (!normalizedIp || !normalizedSecret) return null
+  if (!normalizedIp || !secret) return null
 
-  return createHmac("sha256", normalizedSecret)
-    .update(`${CLIENT_KEY_DOMAIN}:${now.toISOString().slice(0, 10)}:${normalizedIp}`)
+  return createHmac("sha256", secret)
+    .update(`${CLIENT_KEY_DOMAIN}:${normalizedIp}`)
     .digest("hex")
     .slice(0, 32)
 }

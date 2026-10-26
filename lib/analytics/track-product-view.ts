@@ -1,4 +1,4 @@
-import { claimProductView } from "./analytics-session"
+import { claimProductView, settleProductView } from "./product-view-state"
 import { PRODUCT_VIEW_ENDPOINT, type ProductViewSource } from "./events"
 
 const SEND_TIMEOUT_MS = 5_000
@@ -23,15 +23,20 @@ async function getAccessToken() {
  * espera y cualquier fallo (red, storage, auth, servidor) se descarta. El
  * token sólo viaja para que el servidor identifique al usuario por su cuenta;
  * el payload no lleva datos de usuario.
+ *
+ * Una respuesta del servidor (2xx) o un rechazo del payload (4xx, que no se
+ * arregla reintentando) cierran el envío; red caída, timeout o 5xx lo dejan
+ * para reintentar la próxima vez que se abra el producto.
  */
 export async function sendProductView(productId: number, source: ProductViewSource) {
+  let claim: { sessionId: string } | null = null
+  let delivered = false
   try {
-    const claim = claimProductView(productId)
+    claim = claimProductView(productId)
     if (!claim) return
 
     const token = await getAccessToken()
-
-    await fetch(PRODUCT_VIEW_ENDPOINT, {
+    const response = await fetch(PRODUCT_VIEW_ENDPOINT, {
       method: "POST",
       keepalive: true,
       cache: "no-store",
@@ -42,7 +47,16 @@ export async function sendProductView(productId: number, source: ProductViewSour
       body: JSON.stringify({ sessionId: claim.sessionId, productId, source }),
       signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
     })
+    delivered = response.status < 500
   } catch {
     // Analítica nunca interfiere con la navegación ni con la compra.
+  } finally {
+    if (claim) {
+      try {
+        settleProductView(productId, claim.sessionId, delivered)
+      } catch {
+        // Sin storage ni memoria utilizable: sólo se pierde el reintento.
+      }
+    }
   }
 }
