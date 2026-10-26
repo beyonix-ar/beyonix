@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Eye } from "lucide-react"
 
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
@@ -18,15 +18,10 @@ import { AdminDatePicker } from "../../components/admin-date-picker"
 import { AdminHelpTip } from "../../components/admin-help-tip"
 import { AdminEmptyState, AdminPageHeader, AdminSkeleton } from "../../components/admin-controls"
 import { ProductThumbnail } from "../productos/product-thumbnail"
-import { fetchAnalyticsReport } from "./analytics-api"
-import {
-  AnalyticsRefreshControl,
-  AnalyticsRefreshProvider,
-  useAnalyticsRefresh,
-  useAnalyticsRefreshTask,
-} from "./analytics-refresh"
-import { PeakHourCard, usePeakHourReport } from "./peak-hour"
+import { AnalyticsRefreshControl, AnalyticsRefreshProvider, useAnalyticsRefresh } from "./analytics-refresh"
+import { PeakHourCard, PeakWeekdayCard, usePeakHourReport, usePeakWeekdayReport } from "./peak-views"
 import { ProductViewsChart } from "./product-views-chart"
+import { useAnalyticsReport } from "./use-analytics-report"
 
 const viewsFormatter = new Intl.NumberFormat("es-AR")
 
@@ -37,7 +32,7 @@ const LOAD_ERROR = "No se pudieron cargar las vistas de productos."
 
 function MetricCard({ label, help, value, detail }: { label: string; help?: string; value: string; detail?: string }) {
   return (
-    <div className="admin-dashboard-kpi min-w-0 rounded-2xl border px-4 py-3">
+    <div className="admin-dashboard-kpi min-w-0 rounded-2xl border px-4 py-3 xl:col-span-2">
       <p className="flex items-center gap-1 text-10px font-black uppercase tracking-widest text-white/52">
         {label}
         {help && <AdminHelpTip label={label} text={help} />}
@@ -65,10 +60,6 @@ function AnalyticsPage() {
   const [preset, setPreset] = useState<AnalyticsPeriodPreset>("7d")
   const [customFrom, setCustomFrom] = useState("")
   const [customTo, setCustomTo] = useState("")
-  // Últimos datos válidos (por período) y último fallo: un refresh fallido
-  // nunca vacía lo que ya se estaba mostrando.
-  const [loaded, setLoaded] = useState<{ key: string; report: ProductViewReport } | null>(null)
-  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null)
   const [todayKey] = useState(() => argentinaDateKey(new Date()))
   const { restart } = useAnalyticsRefresh()
 
@@ -78,32 +69,17 @@ function AnalyticsPage() {
   )
   const rangeKey = range ? `${range.from}:${range.to}` : null
 
-  // Productos más vistos dentro del ciclo global: cada refresh consulta
-  // exactamente el período elegido (el mismo que muestran los filtros).
-  const loadProductViews = useCallback(async (signal: AbortSignal) => {
-    if (!range || !rangeKey) return
-    try {
-      const body = await fetchAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", range, signal, LOAD_ERROR)
-      if (signal.aborted) return
-      setLoaded({ key: rangeKey, report: body })
-      setFailure(null)
-    } catch (error) {
-      if (signal.aborted) return
-      setFailure({ key: rangeKey, message: error instanceof Error ? error.message : LOAD_ERROR })
-      throw error
-    }
-  }, [range, rangeKey])
-  useAnalyticsRefreshTask(loadProductViews)
-  // Horario pico: otra tarea del mismo ciclo global (mismo período, mismo refresh).
+  // Productos más vistos, horario pico y día con más visualizaciones: tareas
+  // del mismo ciclo global, siempre con el período que muestran los filtros.
+  const { report, loadError } = useAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", LOAD_ERROR, range, rangeKey)
   const peakHour = usePeakHourReport(range, rangeKey)
+  const peakWeekday = usePeakWeekdayReport(range, rangeKey)
 
   // Nuevo período: carga ya y el contador vuelve a 01:00 al terminar.
   useEffect(() => {
     if (rangeKey) void restart()
   }, [rangeKey, restart])
 
-  const report = loaded?.key === rangeKey ? loaded.report : null
-  const loadError = !report && failure?.key === rangeKey ? failure.message : null
   const customIncomplete = preset === "custom" && !customFrom
 
   return (
@@ -152,7 +128,8 @@ function AnalyticsPage() {
       </section>
 
       {range && (
-        <div className="admin-analytics-metrics grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        // Desktop: 3 métricas de resumen arriba y las 2 de pico abajo (grilla de 6).
+        <div className="admin-analytics-metrics grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
           {report && report.totalViews > 0 && report.topProduct && (
             <>
               <MetricCard label="Vistas totales" help={UNIQUE_VIEW_HELP} value={viewsFormatter.format(report.totalViews)} />
@@ -165,6 +142,7 @@ function AnalyticsPage() {
             </>
           )}
           <PeakHourCard {...peakHour} />
+          <PeakWeekdayCard {...peakWeekday} />
         </div>
       )}
 

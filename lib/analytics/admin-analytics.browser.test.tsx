@@ -8,7 +8,7 @@ import tailwindcss from "@tailwindcss/postcss"
 
 import { addDays } from "../business/dashboard-sales-analytics.ts"
 import { argentinaDateKey } from "../business/dashboard-timezone.ts"
-import { buildPeakHourReport } from "./peak-hour-report.ts"
+import { buildPeakHourReport, buildPeakWeekdayReport } from "./peak-views-report.ts"
 import { buildProductViewReport, type AnalyticsDateRange, type ProductViewStatsRow } from "./product-view-report.ts"
 
 // Admin > Analítica > Productos más vistos con el componente REAL y el CSS del
@@ -73,6 +73,13 @@ interface ApiControl {
   hold: Promise<void> | null
   /** Hora pico que devuelve el endpoint simulado (cambia entre refresh para verificar la card). */
   peakHour?: number
+  /** Día ISO que devuelve el endpoint simulado de "Día con más visualizaciones". */
+  peakWeekday?: number
+}
+
+/** Mock del día con más visualizaciones: con "Hoy" sólo existe un día, así que concentra el total. */
+function weekdayReport(range: AnalyticsDateRange, total: number, weekday = 3) {
+  return buildPeakWeekdayReport(range, total > 0 ? { bucket: weekday, views: range.from === range.to ? total : 255, totalViews: total } : null)
 }
 
 async function openAnalytics(
@@ -85,6 +92,7 @@ async function openAnalytics(
   const api = options.api ?? { status: 200, hold: null }
   const requests: { range: AnalyticsDateRange; authorization: string | null }[] = []
   const peakRequests: AnalyticsDateRange[] = []
+  const weekdayRequests: AnalyticsDateRange[] = []
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Playwright evalúa las rutas en orden inverso: la del HTML va primero para que la API la pise.
@@ -110,7 +118,17 @@ async function openAnalytics(
     if (status !== 200) return route.fulfill({ status, json: { error: "No se pudo cargar el horario pico de visualizaciones." } })
     const rows = responder(range)
     const total = rows.reduce((sum, row) => sum + row.views, 0)
-    return route.fulfill({ json: buildPeakHourReport(range, total > 0 ? { hour: api.peakHour ?? 14, views: 28, totalViews: total } : null) })
+    return route.fulfill({ json: buildPeakHourReport(range, total > 0 ? { bucket: api.peakHour ?? 14, views: 28, totalViews: total } : null) })
+  })
+  await page.route("**/api/admin/analytics/peak-weekday**", async (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    weekdayRequests.push(range)
+    const status = api.status
+    if (api.hold) await api.hold
+    if (status !== 200) return route.fulfill({ status, json: { error: "No se pudo cargar el día con más visualizaciones." } })
+    const total = responder(range).reduce((sum, row) => sum + row.views, 0)
+    return route.fulfill({ json: weekdayReport(range, total, api.peakWeekday) })
   })
   await page.route("https://img.test/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ccc"/></svg>` }))
   if (options.clockAt !== undefined) {
@@ -119,7 +137,7 @@ async function openAnalytics(
     await page.clock.pauseAt(options.clockAt + 1_000)
   }
   await page.goto("http://admin.test/admin/analitica")
-  return { page, requests, peakRequests, errors }
+  return { page, requests, peakRequests, weekdayRequests, errors }
 }
 
 const waitForRequests = async (requests: unknown[], count: number) => {
@@ -202,6 +220,7 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
       "PRODUCTOS VISTOS 12",
       "PRODUCTO MÁS VISTO Auricular Malibu 245 vistas · 34,5% del total",
       "HORARIO PICO DE VISUALIZACIONES 14:00 – 15:00 28 visualizaciones 3,9% de las visualizaciones del período",
+      "DÍA CON MÁS VISUALIZACIONES Miércoles 255 visualizaciones 35,9% de las visualizaciones del período",
     ])
     assert.equal(report.ranking.length, 12, "el ranking lista todos los productos con vistas")
     assert.deepEqual(report.ranking.slice(0, 3), [
@@ -228,7 +247,9 @@ test("sin vistas en el período: empty state claro, sin métricas ni gráfico", 
   try {
     await page.getByText("Sin datos de visualización para este período.").waitFor()
     await page.locator(".admin-analytics-peak-hour").getByText("Sin datos", { exact: true }).waitFor()
-    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 1, "sólo la card de horario pico, en \"Sin datos\"")
+    await page.locator(".admin-analytics-peak-weekday").getByText("Sin datos", { exact: true }).waitFor()
+    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 2, "sólo las cards de pico, en \"Sin datos\"")
+    assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText(/Lunes|^[\d.]+ visualizaci/).count(), 0, "nunca \"Lunes, 0 visualizaciones\"")
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText("00:00").count(), 0, "nunca 00:00 con 0")
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText(/^[\d.]+ visualizaci/).count(), 0, "sin \"0 visualizaciones\"")
     assert.equal(await page.locator(".admin-analytics-bar-row").count(), 0)
@@ -252,7 +273,11 @@ for (const theme of ["dark", "light"] as const) {
           const ranking = Array.from(root.querySelectorAll(".admin-analytics-ranking-row:not(.admin-analytics-ranking-head)"))[0]
           const cells = Array.from(ranking.querySelectorAll<HTMLElement>("[role=cell]"))
           const metrics = Array.from(root.querySelectorAll(".admin-dashboard-kpi"), (card) => card.getBoundingClientRect())
+          const peakValues = Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-peak-hour .text-2xl, .admin-analytics-peak-weekday .text-2xl"))
           return {
+            peakValuesFit: peakValues.length === 2 && peakValues.every((value) => value.scrollWidth <= value.clientWidth + 1),
+            metricsHeights: metrics.map((rect) => Math.round(rect.height)),
+            metricsRects: metrics.map((rect) => ({ left: rect.left, right: rect.right, width: rect.width })),
             pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             outside,
             numbersFit: [cells[0], cells[2], cells[3]].every((cell) => cell.scrollWidth <= cell.clientWidth + 1),
@@ -277,8 +302,14 @@ for (const theme of ["dark", "light"] as const) {
         assert.equal(layout.pageOverflow, 0, "sin scroll horizontal")
         assert.deepEqual(layout.outside, [])
         assert.ok(layout.numbersFit, "posición, vistas y % entran completos")
-        assert.equal(layout.metricsTops.length, 4, "3 métricas + horario pico")
-        assert.equal(new Set(layout.metricsTops).size, width >= 1280 ? 1 : width >= 640 ? 2 : 4, "métricas: 4 en fila en desktop, 2 × 2 en tablet, apiladas en mobile")
+        assert.equal(layout.metricsTops.length, 5, "3 métricas + horario pico + día con más visualizaciones")
+        assert.equal(new Set(layout.metricsTops).size, width >= 1280 ? 2 : width >= 640 ? 3 : 5, "métricas: 3 + 2 en desktop, 2 columnas en tablet, apiladas en mobile")
+        assert.ok(layout.peakValuesFit, "\"14:00 – 15:00\" y \"Miércoles\" entran completos")
+        assert.ok(layout.metricsHeights.every((height) => height <= 140), `cards sin agrandarse: ${layout.metricsHeights}`)
+        if (width >= 640 && width < 1280) {
+          const [first, , , , last] = layout.metricsRects
+          assert.ok(Math.abs(last.width - (layout.metricsRects[1].right - first.left)) < 1, "tablet: la quinta card ocupa la fila completa, sin hueco")
+        }
         assert.equal(layout.barColor, theme === "dark" ? "rgb(57, 135, 229)" : "rgb(42, 120, 214)")
         assert.ok(layout.periodButtons.every((height) => height >= 28), "filtros con área táctil")
         const refresh = layout.refresh
@@ -377,8 +408,10 @@ test("error al refrescar: conserva los últimos datos, avisa discretamente y el 
     await waitForRequests(requests, 2)
     await page.getByText("No se pudo actualizar. Se muestran los últimos datos.").waitFor()
     assert.equal(await rankingRows(page).count(), 12, "el panel no se vacía")
-    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 4)
+    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 5)
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText("14:00 – 15:00").count(), 1, "horario pico: conserva el último dato válido")
+    assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText("Miércoles", { exact: true }).count(), 1, "día con más visualizaciones: conserva el último dato válido")
+    assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText("255 visualizaciones").count(), 1)
     await waitForText(page, "01:00")
 
     api.status = 200
@@ -426,6 +459,7 @@ test("pestaña dormida varios minutos: al volver hace UNA sola actualización", 
 // --- Horario pico de visualizaciones ---------------------------------------------
 
 const peakCard = (page: Page) => page.locator(".admin-analytics-peak-hour")
+const weekdayCard = (page: Page) => page.locator(".admin-analytics-peak-weekday")
 
 test("horario pico: usa exactamente el período global (Hoy, 7 días, 30 días y personalizado)", async () => {
   const { page, requests, peakRequests } = await openAnalytics(1440, "dark")
@@ -506,12 +540,86 @@ test("un solo timer para toda Analítica: el horario pico no agrega intervalos",
   await page.route("**/api/admin/analytics/peak-hour**", (route) => {
     const url = new URL(route.request().url())
     const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
-    return route.fulfill({ json: buildPeakHourReport(range, { hour: 14, views: 28, totalViews: 710 }) })
+    return route.fulfill({ json: buildPeakHourReport(range, { bucket: 14, views: 28, totalViews: 710 }) })
+  })
+  await page.route("**/api/admin/analytics/peak-weekday**", (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    return route.fulfill({ json: weekdayReport(range, 710) })
   })
   try {
     await page.goto("http://admin.test/admin/analitica")
     await peakCard(page).getByText("14:00 – 15:00").waitFor()
+    await weekdayCard(page).getByText("Miércoles", { exact: true }).waitFor()
     await page.waitForTimeout(300)
-    assert.deepEqual(intervals, [250], "exactamente un setInterval: el del ciclo global")
+    assert.deepEqual(intervals, [250], "exactamente un setInterval: el del ciclo global (ni horario pico ni día con más visualizaciones agregan otro)")
+  } finally { await page.close() }
+})
+
+// --- Día con más visualizaciones ---------------------------------------------------
+
+test("día con más visualizaciones: usa exactamente el período global (Hoy, 7 días, 30 días y personalizado)", async () => {
+  const { page, requests, weekdayRequests } = await openAnalytics(1440, "dark")
+  try {
+    await waitForRequests(weekdayRequests, 1)
+    await weekdayCard(page).getByText("Miércoles", { exact: true }).waitFor()
+    for (const [button, count] of [["Hoy", 2], ["Últimos 30 días", 3], ["Últimos 7 días", 4]] as const) {
+      await page.getByRole("button", { name: button }).click()
+      await waitForRequests(weekdayRequests, count)
+      await waitForRequests(requests, count)
+      assert.deepEqual(weekdayRequests[count - 1], requests[count - 1].range, `${button}: mismo período que Productos más vistos`)
+    }
+    assert.deepEqual(weekdayRequests[0], { from: addDays(TODAY, -6), to: TODAY })
+    assert.deepEqual(weekdayRequests[1], { from: TODAY, to: TODAY })
+    assert.deepEqual(weekdayRequests[2], { from: addDays(TODAY, -29), to: TODAY })
+
+    await page.getByRole("button", { name: "Personalizado" }).click()
+    const from = page.getByRole("textbox", { name: "Fecha inicial" })
+    await from.fill("01/10/2026")
+    await from.press("Tab")
+    await page.keyboard.press("Escape")
+    const to = page.getByRole("textbox", { name: "Fecha final" })
+    await to.fill("15/10/2026")
+    await to.press("Tab")
+    const deadline = Date.now() + 5_000
+    while (JSON.stringify(weekdayRequests.at(-1)) !== JSON.stringify({ from: "2026-10-01", to: "2026-10-15" }) && Date.now() < deadline) {
+      await page.waitForTimeout(50)
+    }
+    assert.deepEqual(weekdayRequests.at(-1), { from: "2026-10-01", to: "2026-10-15" })
+    assert.deepEqual(weekdayRequests.at(-1), requests.at(-1)?.range)
+  } finally { await page.close() }
+})
+
+test("día con más visualizaciones: con Hoy muestra el 100% de las visualizaciones del período", async () => {
+  const { page, weekdayRequests } = await openAnalytics(390, "light")
+  try {
+    await weekdayCard(page).getByText("255 visualizaciones").waitFor()
+    await page.getByRole("button", { name: "Hoy" }).click()
+    await waitForRequests(weekdayRequests, 2)
+    await weekdayCard(page).getByText("710 visualizaciones").waitFor()
+    assert.equal(await weekdayCard(page).getByText("100% de las visualizaciones del período").count(), 1)
+  } finally { await page.close() }
+})
+
+test("día con más visualizaciones: el ciclo global (00:00) y Actualizar ahora lo refrescan junto con las demás métricas", async () => {
+  const api: ApiControl = { status: 200, hold: null, peakWeekday: 3 }
+  const { page, requests, peakRequests, weekdayRequests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
+  try {
+    await waitForRequests(weekdayRequests, 1)
+    await weekdayCard(page).getByText("Miércoles", { exact: true }).waitFor()
+
+    api.peakWeekday = 6
+    await page.clock.runFor(60_000)
+    await waitForRequests(weekdayRequests, 2)
+    await weekdayCard(page).getByText("Sábado", { exact: true }).waitFor()
+    await waitForText(page, "01:00")
+    assert.deepEqual([requests.length, peakRequests.length, weekdayRequests.length], [2, 2, 2], "las tres métricas en el mismo ciclo, una consulta cada una")
+
+    api.peakWeekday = 7
+    await refreshButton(page).click()
+    await waitForRequests(weekdayRequests, 3)
+    await weekdayCard(page).getByText("Domingo", { exact: true }).waitFor()
+    await waitForText(page, "01:00")
+    assert.deepEqual([requests.length, peakRequests.length, weekdayRequests.length], [3, 3, 3])
   } finally { await page.close() }
 })
