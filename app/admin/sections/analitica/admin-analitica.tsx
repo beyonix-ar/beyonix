@@ -22,6 +22,7 @@ import { AnalyticsRefreshControl, AnalyticsRefreshProvider, useAnalyticsRefresh 
 import { PeakHourCard, PeakWeekdayCard, usePeakHourReport, usePeakWeekdayReport } from "./peak-views"
 import { ProductViewsChart } from "./product-views-chart"
 import { useAnalyticsReport } from "./use-analytics-report"
+import { useWeekdayViewsReport, WeekdayViewsSection } from "./weekday-views-chart"
 
 const viewsFormatter = new Intl.NumberFormat("es-AR")
 
@@ -69,11 +70,13 @@ function AnalyticsPage() {
   )
   const rangeKey = range ? `${range.from}:${range.to}` : null
 
-  // Productos más vistos, horario pico y día con más visualizaciones: tareas
-  // del mismo ciclo global, siempre con el período que muestran los filtros.
+  // Productos más vistos, horario pico, día con más visualizaciones y
+  // visualizaciones por día: tareas del mismo ciclo global, siempre con el
+  // período que muestran los filtros.
   const { report, loadError } = useAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", LOAD_ERROR, range, rangeKey)
   const peakHour = usePeakHourReport(range, rangeKey)
   const peakWeekday = usePeakWeekdayReport(range, rangeKey)
+  const weekdayViews = useWeekdayViewsReport(range, rangeKey)
 
   // Nuevo período: carga ya y el contador vuelve a 01:00 al terminar.
   useEffect(() => {
@@ -145,6 +148,8 @@ function AnalyticsPage() {
           <PeakWeekdayCard {...peakWeekday} />
         </div>
       )}
+
+      {range && <WeekdayViewsSection {...weekdayViews} />}
 
       {range && !report && !loadError && (
         <div aria-busy="true" aria-label="Cargando vistas" className="space-y-4">

@@ -18396,6 +18396,104 @@ html[data-admin-theme="light"] .admin-analytics-page {
   border-radius: 6px;
 }
 
+/* Visualizaciones por día de la semana: siempre 7 columnas (lunes a domingo)
+   que entran completas también en mobile. Mismo azul y tooltip que el Top 10. */
+.admin-analytics-page .admin-analytics-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.admin-analytics-page .admin-analytics-weekday {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 0;
+  border-radius: 8px;
+  outline: none;
+}
+
+/* El padding superior reserva lugar para el valor de la barra más alta. */
+.admin-analytics-page .admin-analytics-weekday-track {
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 160px;
+  padding-top: 20px;
+  box-shadow: inset 0 -1px 0 var(--admin-border-soft);
+}
+
+.admin-analytics-page .admin-analytics-weekday-bar {
+  position: relative;
+  display: block;
+  width: min(60%, 44px);
+  border-radius: 4px 4px 0 0;
+  background: var(--analytics-bar);
+}
+
+.admin-analytics-page .admin-analytics-weekday-value {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.admin-analytics-page .admin-analytics-weekday-tooltip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--admin-text);
+  background: var(--analytics-bar-tooltip-bg);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft), 0 8px 20px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+/* En los extremos el tooltip se alinea hacia adentro para no salirse de la página. */
+.admin-analytics-page .admin-analytics-weekday:nth-child(-n + 2) .admin-analytics-weekday-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.admin-analytics-page .admin-analytics-weekday:nth-last-child(-n + 2) .admin-analytics-weekday-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.admin-analytics-page .admin-analytics-weekday:hover .admin-analytics-weekday-tooltip,
+.admin-analytics-page .admin-analytics-weekday:focus .admin-analytics-weekday-tooltip {
+  opacity: 1;
+}
+
+.admin-analytics-page .admin-analytics-weekday:focus-visible {
+  box-shadow: 0 0 0 2px var(--admin-border-strong);
+}
+
+@media (max-width: 479px) {
+  .admin-analytics-page .admin-analytics-weekdays {
+    gap: 4px;
+  }
+
+  .admin-analytics-page .admin-analytics-weekday-track {
+    height: 132px;
+  }
+}
+
 .admin-analytics-page .admin-analytics-ranking-row {
   display: grid;
   grid-template-columns: 1.75rem minmax(0, 1fr) 4.5rem 5.5rem;

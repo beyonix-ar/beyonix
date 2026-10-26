@@ -1,11 +1,11 @@
 import type { AnalyticsDateRange } from "./product-view-report.ts"
 
 /**
- * Admin > Analítica > métricas "pico" de visualizaciones (horario y día de la
- * semana). La agregación en hora de Argentina la hacen
- * `admin_product_view_peak_hour` / `admin_product_view_peak_weekday` en SQL
- * (devuelven sólo el ganador y el total del período); acá se validan y se
- * arman los reportes para las cards.
+ * Admin > Analítica > visualizaciones por horario y por día de la semana. La
+ * agregación en hora de Argentina la hacen las RPC en SQL
+ * (`admin_product_view_peak_hour`, `admin_product_views_by_weekday` y
+ * `admin_product_view_peak_weekday`, que elige el ganador de esa misma
+ * distribución); acá se validan y se arman los reportes para la UI.
  */
 
 /** Fila de una RPC de pico: franja/día ganador, sus visualizaciones y el total del período. */
@@ -76,8 +76,49 @@ export function formatHourRange(hour: number) {
 }
 
 const WEEKDAY_NAMES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"] as const
+const WEEKDAY_SHORT_NAMES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"] as const
 
 /** Día ISO (1 = lunes … 7 = domingo) → "Lunes" … "Domingo". */
 export function formatWeekday(weekday: number) {
   return WEEKDAY_NAMES[weekday - 1]
+}
+
+/** Día ISO (1 = lunes … 7 = domingo) → "Lun" … "Dom". */
+export function formatWeekdayShort(weekday: number) {
+  return WEEKDAY_SHORT_NAMES[weekday - 1]
+}
+
+/** Visualizaciones de un día de la semana: suma de todas sus fechas dentro del período. */
+export interface WeekdayViews {
+  /** Día ISO en Argentina: 1 = lunes … 7 = domingo. */
+  weekday: number
+  views: number
+  /** Participación en las visualizaciones del período, 0–100 (0 si el período no tiene vistas). */
+  sharePercent: number
+}
+
+export interface WeekdayViewsReport {
+  range: AnalyticsDateRange
+  totalViews: number
+  /** Siempre los 7 días, de lunes a domingo; los días sin vistas valen 0. */
+  days: WeekdayViews[]
+}
+
+/**
+ * `admin_product_views_by_weekday` sólo devuelve los días con vistas; acá se
+ * completan los 7 (lunes a domingo) con 0 y se descartan filas inválidas.
+ */
+export function buildWeekdayViewsReport(range: AnalyticsDateRange, rows: { weekday: number; views: number }[]): WeekdayViewsReport {
+  const views = new Map<number, number>()
+  for (const row of rows) {
+    if (Number.isInteger(row.weekday) && row.weekday >= 1 && row.weekday <= 7 && Number.isFinite(row.views) && row.views > 0) {
+      views.set(row.weekday, row.views)
+    }
+  }
+  const totalViews = Array.from(views.values()).reduce((sum, count) => sum + count, 0)
+  const days = WEEKDAY_NAMES.map((_, index) => {
+    const count = views.get(index + 1) ?? 0
+    return { weekday: index + 1, views: count, sharePercent: totalViews > 0 ? (count / totalViews) * 100 : 0 }
+  })
+  return { range, totalViews, days }
 }

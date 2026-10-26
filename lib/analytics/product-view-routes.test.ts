@@ -292,3 +292,55 @@ test("Día con más visualizaciones: sin vistas → peak null; rango inválido 4
     assert.deepEqual(await response.json(), { error: "No se pudo cargar el día con más visualizaciones." })
   })
 })
+
+const weekdayViewsRequest = (query: string, token: string | null = "token") => new Request(`http://localhost/api/admin/analytics/views-by-weekday?${query}`, {
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
+})
+
+test("Visualizaciones por día: anon 401, cliente y operador 403; Admin y Super Admin reciben los 7 días", async () => {
+  const route = await import("../../app/api/admin/analytics/views-by-weekday/route")
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await route.GET(weekdayViewsRequest("from=2026-10-20&to=2026-10-26", null))).status, 401)
+    assert.equal((await route.GET(weekdayViewsRequest("from=2026-10-20&to=2026-10-26"))).status, 401)
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  for (const role of ["cliente", "operador"]) {
+    await withSupabase({ userId: "user", role }, async (calls) => {
+      assert.equal((await route.GET(weekdayViewsRequest("from=2026-10-20&to=2026-10-26"))).status, 403, role)
+      assert.ok(calls.every((call) => call.path === "/rest/v1/profiles"))
+    })
+  }
+  for (const role of ["admin", "super_admin"]) {
+    await withSupabase({ userId: "staff", role, rpc: () => Response.json([{ weekday: 1, view_count: "110" }, { weekday: 3, view_count: 145 }, { weekday: 6, view_count: "210" }]) }, async (calls) => {
+      const response = await route.GET(weekdayViewsRequest("from=2026-10-20&to=2026-10-26"))
+      assert.equal(response.status, 200, role)
+      assert.equal(response.headers.get("cache-control"), "private, no-store")
+      const report = await response.json() as { totalViews: number; days: { weekday: number; views: number; sharePercent: number }[] }
+      assert.equal(report.totalViews, 465)
+      assert.deepEqual(report.days.map((day) => [day.weekday, day.views]), [[1, 110], [2, 0], [3, 145], [4, 0], [5, 0], [6, 210], [7, 0]])
+      assert.ok(Math.abs(report.days[2].sharePercent - (145 / 465) * 100) < 1e-9)
+      const rpc = calls.find((call) => call.path === "/rest/v1/rpc/admin_product_views_by_weekday")
+      assert.deepEqual(rpc?.body, { p_from: "2026-10-20", p_to: "2026-10-26" })
+    })
+  }
+})
+
+test("Visualizaciones por día: sin vistas → 7 ceros; rango inválido 400; error de base 500 genérico", async () => {
+  const route = await import("../../app/api/admin/analytics/views-by-weekday/route")
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json([]) }, async () => {
+    const report = await (await route.GET(weekdayViewsRequest("from=2026-10-26&to=2026-10-26"))).json() as { totalViews: number; days: { views: number; sharePercent: number }[] }
+    assert.equal(report.totalViews, 0)
+    assert.deepEqual(report.days.map((day) => [day.views, day.sharePercent]), Array.from({ length: 7 }, () => [0, 0]))
+  })
+  await withSupabase({ userId: "staff", role: "admin" }, async (calls) => {
+    for (const query of ["", "from=2026-10-26&to=2026-10-20", "from=2025-01-01&to=2026-10-26", "from=2026-02-30&to=2026-03-01"]) {
+      assert.equal((await route.GET(weekdayViewsRequest(query))).status, 400, query)
+    }
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json({ message: "function does not exist" }, { status: 500 }) }, async () => {
+    const response = await route.GET(weekdayViewsRequest("from=2026-10-20&to=2026-10-26"))
+    assert.equal(response.status, 500)
+    assert.deepEqual(await response.json(), { error: "No se pudieron cargar las visualizaciones por día de la semana." })
+  })
+})

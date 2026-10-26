@@ -1,7 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { buildPeakHourReport, buildPeakWeekdayReport, formatHourRange, formatWeekday } from "./peak-views-report.ts"
+import {
+  buildPeakHourReport,
+  buildPeakWeekdayReport,
+  buildWeekdayViewsReport,
+  formatHourRange,
+  formatWeekday,
+  formatWeekdayShort,
+} from "./peak-views-report.ts"
 
 const RANGE = { from: "2026-10-20", to: "2026-10-26" }
 
@@ -56,4 +63,26 @@ test("día con más visualizaciones: sin datos o datos incoherentes → peak nul
   ]) {
     assert.deepEqual(buildPeakWeekdayReport(RANGE, row), { range: RANGE, totalViews: 0, peak: null }, JSON.stringify(row))
   }
+})
+
+test("por día de la semana: abreviaturas con tildes, de lunes a domingo", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(formatWeekdayShort), ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"])
+})
+
+test("por día de la semana: siempre 7 días en orden, los faltantes con 0, porcentaje sobre el total", () => {
+  const report = buildWeekdayViewsReport(RANGE, [{ weekday: 6, views: 210 }, { weekday: 1, views: 110 }, { weekday: 3, views: 145 }])
+  assert.equal(report.totalViews, 465)
+  assert.deepEqual(report.days.map((day) => [day.weekday, day.views]), [[1, 110], [2, 0], [3, 145], [4, 0], [5, 0], [6, 210], [7, 0]])
+  assert.ok(Math.abs(report.days[2].sharePercent - (145 / 465) * 100) < 1e-9)
+  assert.equal(report.days[1].sharePercent, 0)
+  assert.ok(Math.abs(report.days.reduce((sum, day) => sum + day.sharePercent, 0) - 100) < 1e-9)
+})
+
+test("por día de la semana: sin vistas → 7 ceros con 0%; filas inválidas se descartan", () => {
+  const empty = buildWeekdayViewsReport(RANGE, [])
+  assert.equal(empty.totalViews, 0)
+  assert.deepEqual(empty.days.map((day) => [day.weekday, day.views, day.sharePercent]), [1, 2, 3, 4, 5, 6, 7].map((weekday) => [weekday, 0, 0]))
+  const invalid = buildWeekdayViewsReport(RANGE, [{ weekday: 0, views: 5 }, { weekday: 8, views: 5 }, { weekday: 2.5, views: 5 }, { weekday: 4, views: Number.NaN }, { weekday: 5, views: -3 }, { weekday: 2, views: 7 }])
+  assert.equal(invalid.totalViews, 7)
+  assert.deepEqual(invalid.days.map((day) => day.views), [0, 7, 0, 0, 0, 0, 0])
 })
