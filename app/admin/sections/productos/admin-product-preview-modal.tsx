@@ -86,6 +86,7 @@ export function AdminProductPreviewModal({
   return (
     <ProductDetailsModal
       open
+      measureViews={false}
       product={product}
       images={safeImages}
       selectedImage={selectedImage}

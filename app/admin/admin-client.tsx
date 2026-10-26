@@ -21,6 +21,7 @@ import {
   Settings2,
   ShieldCheck,
   ShoppingCart,
+  TrendingUp,
   Truck,
   UserCog,
   Users,
@@ -352,7 +353,14 @@ export function AdminClient({ children }: { children: ReactNode }) {
     if (isOperator) return operational
 
     return [
-      ...operational.slice(0, 2),
+      operational[0],
+      {
+        key: "analitica",
+        label: "Analítica",
+        description: "Productos más vistos",
+        icon: <TrendingUp className="size-4" />,
+      },
+      operational[1],
       {
         key: "etiquetas",
         label: "Etiquetas",

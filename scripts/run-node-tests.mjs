@@ -337,6 +337,9 @@ const TEST_FILES = [
   "lib/pricing/financing-tier.test.ts",
   "lib/claims/claim-unit-selection.test.ts",
   "lib/reviews/rating-label.test.ts",
+  "lib/analytics/product-view-report.test.ts",
+  "lib/analytics/product-view-event.test.ts",
+  "lib/analytics/analytics-session.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
@@ -357,6 +360,7 @@ const TSX_TEST_FILES = [
 
   "lib/admin/dispatch-location.test.ts",
   "lib/admin/dispatch-records-sql.test.ts",
+  "lib/analytics/product-views-sql.test.ts",
   "lib/admin/dispatch-board-api.test.ts",
   "lib/admin/dispatch-filter-bar.test.tsx",
   "lib/admin/dispatch-history.test.ts",
@@ -397,6 +401,7 @@ const DB_TEST_FILES = [
   "lib/orders/automatic-cancellation-concurrency.test.mjs",
   "lib/orders/dispatch-cancellation-concurrency.test.mjs",
   "lib/orders/bundle-handover-cancellation-concurrency.test.mjs",
+  "lib/analytics/product-view-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
@@ -408,6 +413,7 @@ const DB_ROUTE_TEST_FILES = [
 // Módulos server-only que usan alias "@/..." (tsx + react-server), sin base.
 const SERVER_TSX_TEST_FILES = [
   "lib/labels/labels-routes.test.ts",
+  "lib/analytics/product-view-routes.test.ts",
   "lib/products/variant-parent-integrity-routes.test.ts",
   "lib/products/product-draft-publish-routes.test.ts",
   "lib/admin/purchase-barcode-edit-routes.test.ts",

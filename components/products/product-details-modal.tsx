@@ -6,6 +6,7 @@ import { X } from "lucide-react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import { getVariantOptionByValue } from "@/lib/products/product-variants"
+import { useProductViewTracking } from "@/hooks/use-product-view-tracking"
 
 import { ProductDescriptionSection } from "./product-description-section"
 import { ProductDetailsGallery } from "./product-details-gallery"
@@ -53,6 +54,9 @@ interface ProductDetailsModalProps {
 
   isInCart?: boolean
   cartQuantity?: number
+
+  /** Registra la apertura como `product_view` (tienda). La vista previa del Admin lo desactiva. */
+  measureViews?: boolean
 }
 
 export function ProductDetailsModal({
@@ -72,8 +76,11 @@ export function ProductDetailsModal({
   onViewCart,
   isInCart = false,
   cartQuantity = 0,
+  measureViews = true,
 }: ProductDetailsModalProps) {
   const [mounted, setMounted] = useState(false)
+
+  useProductViewTracking(measureViews && open && product ? product.id : null, "quick_view")
 
   useEffect(() => {
     setMounted(true)

@@ -4,6 +4,7 @@ import { useState } from "react"
 
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import { useCart } from "@/context/cart-context"
+import { useProductViewTracking } from "@/hooks/use-product-view-tracking"
 import {
   getDefaultVariantValue,
   getProductImagesByVariant,
@@ -28,6 +29,7 @@ export function ProductPageLayout({ producto }: ProductPageLayoutProps) {
   const [selectedColor, setSelectedColor] = useState(() =>
     getDefaultVariantValue(producto),
   )
+  useProductViewTracking(producto.id, "product_page")
   const {
     addToCart,
     decreaseQuantity,

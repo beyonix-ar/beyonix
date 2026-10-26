@@ -18321,3 +18321,100 @@ html[data-admin-theme="light"] .admin-claim-force-effects {
 html[data-admin-theme="light"] .admin-claim-force-effects p {
   color: #92400e;
 }
+
+/* Admin > Analítica. Estilo base de los próximos módulos de analítica:
+   filtros arriba, pocas métricas, un gráfico y el ranking. Las barras usan
+   el azul "BEYONIX Web" del Dashboard (validado contra cada superficie) y
+   clases propias sin utilidades rounded/border, para que los catch-all de
+   superficies del Admin no las pisen. */
+.admin-analytics-page {
+  --analytics-bar: #3987e5;
+  --analytics-bar-tooltip-bg: #0b1622;
+}
+
+html[data-admin-theme="light"] .admin-analytics-page {
+  --analytics-bar: #2a78d6;
+  --analytics-bar-tooltip-bg: #ffffff;
+}
+
+.admin-analytics-page .admin-analytics-periods {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+@media (max-width: 479px) {
+  .admin-analytics-page .admin-analytics-periods {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.admin-analytics-page .admin-analytics-bar-row {
+  position: relative;
+  outline: none;
+}
+
+.admin-analytics-page .admin-analytics-bar-track {
+  position: relative;
+  height: 10px;
+}
+
+.admin-analytics-page .admin-analytics-bar {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  background: var(--analytics-bar);
+}
+
+.admin-analytics-page .admin-analytics-bar-tooltip {
+  position: absolute;
+  top: 14px;
+  left: 0;
+  z-index: 1;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: var(--admin-text);
+  background: var(--analytics-bar-tooltip-bg);
+  box-shadow: inset 0 0 0 1px var(--admin-border-soft), 0 8px 20px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.admin-analytics-page .admin-analytics-bar-row:hover .admin-analytics-bar-tooltip,
+.admin-analytics-page .admin-analytics-bar-row:focus-visible .admin-analytics-bar-tooltip {
+  opacity: 1;
+}
+
+.admin-analytics-page .admin-analytics-bar-row:focus-visible {
+  box-shadow: 0 0 0 2px var(--admin-border-strong);
+  border-radius: 6px;
+}
+
+.admin-analytics-page .admin-analytics-ranking-row {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr) 4.5rem 5.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.25rem;
+  box-shadow: inset 0 -1px 0 var(--admin-border-soft);
+}
+
+.admin-analytics-page .admin-analytics-ranking-head {
+  padding-top: 0;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--admin-text-muted);
+}
+
+@media (max-width: 479px) {
+  .admin-analytics-page .admin-analytics-ranking-row {
+    grid-template-columns: 1.25rem minmax(0, 1fr) 3.25rem 3.5rem;
+    gap: 0.5rem;
+  }
+}
