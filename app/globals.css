@@ -8800,11 +8800,15 @@ span.admin-claim-status-finalized,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Modo margen objetivo: Ganancia neta | Ganancia al contado | Precio
+   calculado | Precio anterior, en cuatro columnas iguales. Cuando la card no
+   alcanza para las cuatro + los botones $ / % / ojo, los botones bajan a su
+   propia fila; más angosta todavía, la grilla pasa a 2 × 2. */
 .product-editor-screen .product-editor-price-fields-margin {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-@container (max-width: 28rem) {
+@container (max-width: 36rem) {
   .product-editor-screen .product-editor-price-row-margin {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -8812,6 +8816,22 @@ span.admin-claim-status-finalized,
   .product-editor-screen .product-editor-price-row-margin .product-editor-price-actions {
     justify-content: flex-start;
   }
+}
+
+@container (max-width: 30.5rem) {
+  .product-editor-screen .product-editor-price-fields-margin {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Ganancia neta / Ganancia al contado: contorno verde (mismo token de éxito
+   del admin en ambos temas); Precio calculado / anterior conservan el
+   contorno de control por defecto. */
+.product-editor-screen .admin-ds-control.product-editor-price-tone-profit,
+.product-editor-screen .admin-ds-control.product-editor-price-tone-profit:hover,
+.product-editor-screen .admin-ds-control.product-editor-price-tone-profit:focus,
+.product-editor-screen .admin-ds-control.product-editor-price-tone-profit:focus-visible {
+  border-color: var(--admin-success-border) !important;
 }
 
 .product-editor-screen .product-editor-title-input {

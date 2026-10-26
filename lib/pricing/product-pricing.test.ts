@@ -5,10 +5,12 @@ import {
   calculateMarginFromPrice,
   calculatePriceFromTargetMargin,
   calculateTargetMarginPrice,
+  getCashSaleProfitAmount,
   getPaymentScenarioRates,
   simulateProductProfitability,
 } from "./product-pricing.ts"
 import type { InstallmentsFinancingConfig } from "../products/installments.ts"
+import { getWorstCaseKnownCost } from "../business/product-costs.ts"
 
 const REAL_CONFIG: InstallmentsFinancingConfig = {
   baseProcessingPercent: 6.42,
@@ -404,4 +406,67 @@ test("cambiar transferDiscountPercent (site_settings.pricing) cambia el precio c
   assert.equal(result10!.worstCaseScenario.id, "transferencia")
   assert.equal(result30!.worstCaseScenario.id, "transferencia")
   assert.ok(result30!.commercialPrice > result10!.commercialPrice)
+})
+
+test("getCashSaleProfitAmount: piso en PESOS entre transferencia y MP 1 pago, no el worstCase por margen %", () => {
+  // MP 1 pago = 8% (6,42% + IVA, redondeado), transferencia = 10%.
+  const simulation = simulateProductProfitability({
+    price: 20_000,
+    cost: 10_000,
+    config: REAL_CONFIG,
+    transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
+  })!
+  // Transferencia: 18.000 - 10.000 = 8.000 (44,4% sobre 18.000).
+  // MP 1 pago:    18.400 - 10.000 = 8.400 (42% sobre 20.000) -> worstCase por margen.
+  assert.equal(simulation.worstCase.id, "mp_unico")
+  assert.equal(getCashSaleProfitAmount(simulation), 8_000)
+})
+
+test("getCashSaleProfitAmount: con margen objetivo usa el precio calculado y nunca un escenario financiado", () => {
+  const cost = 10_000
+  const target = calculateTargetMarginPrice({
+    cost,
+    targetMarginPercent: 40,
+    config: REAL_CONFIG,
+    transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
+  })!
+  const simulation = simulateProductProfitability({
+    price: target.commercialPrice,
+    cost,
+    config: REAL_CONFIG,
+    transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
+  })!
+  const cashProfits = simulation.scenarios
+    .filter((scenario) => scenario.priceBasis === "cash")
+    .map((scenario) => calculateMarginFromPrice(target.commercialPrice, cost, scenario.ratePercent, scenario.kind).profitAmount)
+  const profit = getCashSaleProfitAmount(simulation)
+  assert.equal(profit, Math.min(...cashProfits))
+  assert.ok(profit <= target.resultingProfitAmount)
+  for (const scenario of simulation.scenarios.filter((entry) => entry.priceBasis === "financed")) {
+    assert.ok(scenario.profitAmount >= profit - 1e-6, `${scenario.id} no puede bajar el piso de contado`)
+  }
+})
+
+test("getCashSaleProfitAmount: variantes con costos distintos usan el mayor costo conocido (misma política que el margen objetivo)", () => {
+  const knownUnitCost = getWorstCaseKnownCost([
+    { variantId: 1, variantName: "Negro", unitCost: 9_000 },
+    { variantId: 2, variantName: "Blanco", unitCost: 12_000 },
+  ])
+  assert.equal(knownUnitCost, 12_000)
+  const simulation = simulateProductProfitability({
+    price: 30_000,
+    cost: knownUnitCost,
+    config: REAL_CONFIG,
+    transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT,
+  })!
+  // Transferencia: 27.000 - 12.000 = 15.000 (la variante más cara fija el piso).
+  assert.equal(getCashSaleProfitAmount(simulation), 15_000)
+})
+
+test("getCashSaleProfitAmount: sin costo conocido no hay simulación de la cual informar ganancia", () => {
+  assert.equal(getWorstCaseKnownCost([{ variantId: 1, variantName: "Negro", unitCost: null }]), null)
+  assert.equal(
+    simulateProductProfitability({ price: 30_000, cost: null, config: REAL_CONFIG, transferDiscountPercent: TRANSFER_DISCOUNT_PERCENT }),
+    null,
+  )
 })

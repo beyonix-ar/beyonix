@@ -236,6 +236,22 @@ export function simulateProductProfitability({
   return { scenarios, worstCase }
 }
 
+/**
+ * Ganancia en PESOS de vender una unidad al precio de contado: el piso entre
+ * las modalidades de base contado (transferencia / MP 1 pago) de una
+ * simulación ya resuelta. Es el mínimo por MONTO, no el `worstCase` (que se
+ * elige por margen %): con bases de margen distintas, el escenario de menor
+ * margen puede no ser el de menor ganancia en pesos. Los escenarios
+ * financiados quedan afuera por la misma razón que en `worstCase`.
+ */
+export function getCashSaleProfitAmount(simulation: ProductProfitabilitySimulation): number {
+  return Math.min(
+    ...simulation.scenarios
+      .filter((scenario) => scenario.priceBasis === "cash")
+      .map((scenario) => scenario.profitAmount),
+  )
+}
+
 export interface CalculateTargetMarginPriceInput {
   cost: number
   targetMarginPercent: number

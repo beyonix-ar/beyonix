@@ -19,7 +19,7 @@ const stubs: Plugin = {
         }`,
       "navigation": `export function useRouter() { return { push: () => {} } }`,
       "use-site-settings": `export function useSiteSettings() { return { installmentsFinancing: {}, pricing: { transferDiscountPercent: 0 } } }`,
-      "product-pricing": `export const calculateTargetMarginPrice = () => null; export const simulateProductProfitability = () => null;`,
+      "product-pricing": `export const calculateTargetMarginPrice = () => null; export const simulateProductProfitability = () => null; export const getCashSaleProfitAmount = () => 0;`,
       "product-activation": `export const getProductActivationStatus = () => ({ ready: true, firstError: null, requirements: [], primaryVariant: null });`,
       "product-variants-editor": `import React from "react"; export function ProductVariantsEditor() { return <section aria-label="Variantes">Variantes</section> }; export function StockSummaryItem({label,value}) { return <div className="product-editor-metric">{label}: {value ?? 0}</div> }`,
       "product-specifications-editor": `import React from "react"; export function ProductSpecificationsEditor() { return <section aria-label="Especificaciones">Especificaciones</section> }`,

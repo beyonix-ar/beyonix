@@ -16,6 +16,7 @@ import {
 
 import {
   calculateTargetMarginPrice,
+  getCashSaleProfitAmount,
   simulateProductProfitability,
 } from "@/lib/pricing/product-pricing"
 
@@ -318,6 +319,12 @@ export function ProductoForm({
           config: installmentsFinancing,
           transferDiscountPercent: pricing.transferDiscountPercent,
         })
+      : null
+  // Misma política que el margen objetivo: con una variante vendible sin
+  // costo, la ganancia de esa variante es desconocida y no se informa.
+  const cashSaleProfitAmount =
+    profitabilitySimulation && missingVariantCosts.length === 0
+      ? getCashSaleProfitAmount(profitabilitySimulation)
       : null
   // Regla de negocio puramente de UI: el precio anterior (el que se muestra
   // tachado) nunca puede ser menor al precio actual, o el "descuento"
@@ -718,6 +725,7 @@ export function ProductoForm({
                 knownUnitCost={knownUnitCost}
                 targetMarginResult={targetMarginResult}
                 profitabilitySimulation={profitabilitySimulation}
+                cashSaleProfitAmount={cashSaleProfitAmount}
                 priceFormatter={productPriceFormatter}
                 variantCostsDiffer={variantCostsDiffer}
                 realVariantCosts={realVariantCosts}

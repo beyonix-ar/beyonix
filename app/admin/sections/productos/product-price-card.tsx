@@ -58,6 +58,8 @@ interface ProductPriceCardProps {
   knownUnitCost: number | null | undefined
   targetMarginResult: TargetMarginPriceResult | null
   profitabilitySimulation: ProductProfitabilitySimulation | null
+  /** Ganancia en pesos de una unidad al contado; `null` si el costo es desconocido. */
+  cashSaleProfitAmount: number | null
   priceFormatter: Intl.NumberFormat
   variantCostsDiffer: boolean
   realVariantCosts: ProductVariantCostInfo[]
@@ -89,6 +91,7 @@ export function ProductPriceCard({
   knownUnitCost,
   targetMarginResult,
   profitabilitySimulation,
+  cashSaleProfitAmount,
   priceFormatter,
   variantCostsDiffer,
   realVariantCosts,
@@ -103,6 +106,8 @@ export function ProductPriceCard({
       : Number.isFinite(currentPriceNumber) && currentPriceNumber > 0
         ? priceFormatter.format(currentPriceNumber)
         : "—"
+  const cashSaleProfitLabel =
+    cashSaleProfitAmount != null ? priceFormatter.format(cashSaleProfitAmount) : "—"
 
   return (
     <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
@@ -170,11 +175,7 @@ export function ProductPriceCard({
               label="Ganancia neta"
               labelClassName={fieldLabelClassName}
             >
-              {/* Input compacto explícito en 5rem (idéntico al ancho anterior):
-                  la columna de la grilla es más ancha sólo para que el label
-                  "Ganancia neta" quepa en una línea sin empujar este input
-                  hacia abajo; el input en sí no cambia de tamaño. */}
-              <span className="relative inline-flex w-20">
+              <span className="relative block">
                 <input
                   id="target_margin_percent"
                   min="0"
@@ -189,11 +190,23 @@ export function ProductPriceCard({
                       clampDigitsOnly(event.target.value, MAX_TARGET_MARGIN_DIGITS),
                     )
                   }
-                  className="admin-control-input admin-ds-control w-full !pl-3 !pr-6 text-sm font-medium text-white outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  className="admin-control-input admin-ds-control product-editor-price-tone-profit w-full !pl-3 !pr-6 text-sm font-medium text-white outline-none transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
                 <span className="pointer-events-none absolute right-2 top-1/2 z-10 -translate-y-1/2 text-sm font-black text-white">
                   %
                 </span>
+              </span>
+            </AdminFormField>
+
+            <AdminFormField
+              label="Ganancia al contado"
+              labelClassName={fieldLabelClassName}
+            >
+              <span
+                title="Ganancia de una unidad al precio de contado (peor caso entre transferencia y Mercado Pago 1 pago, sin envío)"
+                className="admin-control-input admin-ds-control product-editor-price-tone-profit flex h-11 w-full items-center justify-end px-2 text-base font-black text-white opacity-90"
+              >
+                {cashSaleProfitLabel}
               </span>
             </AdminFormField>
 
