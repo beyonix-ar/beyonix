@@ -8800,12 +8800,14 @@ span.admin-claim-status-finalized,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-/* Modo margen objetivo: Ganancia neta | Ganancia al contado | Precio
-   calculado | Precio anterior, en cuatro columnas iguales. Cuando la card no
-   alcanza para las cuatro + los botones $ / % / ojo, los botones bajan a su
-   propia fila; más angosta todavía, la grilla pasa a 2 × 2. */
+/* Modo margen objetivo, una sola fila: Ganancia neta (sólo un %, columna
+   compacta de ancho fijo) | Ganancia al contado | Precio calculado | Precio
+   anterior (estas tres, mismo ancho). Si la card no alcanza para las cuatro +
+   los botones $ / % / ojo, sólo los botones bajan a su propia fila; recién
+   cuando ni las cuatro entran sin recortar textos, la grilla pasa a 2 × 2. */
 .product-editor-screen .product-editor-price-fields-margin {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 5.25rem repeat(3, minmax(0, 1fr));
+  column-gap: 0.5rem;
 }
 
 @container (max-width: 36rem) {
@@ -8818,20 +8820,23 @@ span.admin-claim-status-finalized,
   }
 }
 
-@container (max-width: 30.5rem) {
+@container (max-width: 28.5rem) {
   .product-editor-screen .product-editor-price-fields-margin {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-/* Ganancia neta / Ganancia al contado: contorno verde (mismo token de éxito
-   del admin en ambos temas); Precio calculado / anterior conservan el
-   contorno de control por defecto. */
-.product-editor-screen .admin-ds-control.product-editor-price-tone-profit,
+/* Ganancia neta / Ganancia al contado: borde completo verde, el mismo tono
+   del botón % activo (.product-editor-pricing-mode-active) en ambos temas.
+   Precio calculado / anterior conservan el contorno de control por defecto. */
+.product-editor-screen .admin-ds-control.product-editor-price-tone-profit {
+  border-color: rgba(110, 231, 183, 0.75) !important;
+}
+
 .product-editor-screen .admin-ds-control.product-editor-price-tone-profit:hover,
 .product-editor-screen .admin-ds-control.product-editor-price-tone-profit:focus,
 .product-editor-screen .admin-ds-control.product-editor-price-tone-profit:focus-visible {
-  border-color: var(--admin-success-border) !important;
+  border-color: rgba(110, 231, 183, 0.9) !important;
 }
 
 .product-editor-screen .product-editor-title-input {

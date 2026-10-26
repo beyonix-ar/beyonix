@@ -36,7 +36,7 @@ const stubs: Plugin = {
       "producto-imagenes": `export async function uploadProductoDraftImages() { return [] } export async function deleteProductoImagesByUrls() {}`,
       "navigation": `export function useRouter() { return { push: (href) => { window.pushedHref = href } } }`,
       "use-site-settings": `export function useSiteSettings() { return { installmentsFinancing: {}, pricing: { transferDiscountPercent: 0 } } }`,
-      "product-pricing": `export const calculateTargetMarginPrice = () => null; export const simulateProductProfitability = () => null; export const getCashSaleProfitAmount = () => 0;`,
+      "product-pricing": `export const calculateTargetMarginPrice = () => null; export const simulateProductProfitability = () => null; export const getSinglePaymentProfitAmount = () => null;`,
       "product-variants-editor": `import React from "react";
         export function ProductVariantsEditor({ persistedVariantStates, onPersistedVariantStatesChange, onPersistedVariantsChange }) {
           const variant = { id: 9, producto_id: 9, nombre: "NEGRO", sku: "AUMN01", color_hex: "#000000", stock: 6, activo: false, orden: 1, created_at: "2026-10-09T00:00:00.000Z" };

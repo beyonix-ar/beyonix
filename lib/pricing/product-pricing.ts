@@ -236,19 +236,21 @@ export function simulateProductProfitability({
   return { scenarios, worstCase }
 }
 
+const SINGLE_PAYMENT_SCENARIO_ID = "mp_unico"
+
 /**
- * Ganancia en PESOS de vender una unidad al precio de contado: el piso entre
- * las modalidades de base contado (transferencia / MP 1 pago) de una
- * simulación ya resuelta. Es el mínimo por MONTO, no el `worstCase` (que se
- * elige por margen %): con bases de margen distintas, el escenario de menor
- * margen puede no ser el de menor ganancia en pesos. Los escenarios
- * financiados quedan afuera por la misma razón que en `worstCase`.
+ * Ganancia en PESOS de una unidad cobrada en 1 pago por Mercado Pago (débito
+ * o crédito en 1 pago, al precio de contado): exactamente el escenario
+ * "Mercado Pago — 1 pago" de la simulación ya resuelta, el mismo que muestra
+ * "Rentabilidad estimada". Transferencia no cuenta (el cliente paga otro
+ * precio, con descuento) y las cuotas tampoco.
  */
-export function getCashSaleProfitAmount(simulation: ProductProfitabilitySimulation): number {
-  return Math.min(
-    ...simulation.scenarios
-      .filter((scenario) => scenario.priceBasis === "cash")
-      .map((scenario) => scenario.profitAmount),
+export function getSinglePaymentProfitAmount(
+  simulation: ProductProfitabilitySimulation,
+): number | null {
+  return (
+    simulation.scenarios.find((scenario) => scenario.id === SINGLE_PAYMENT_SCENARIO_ID)
+      ?.profitAmount ?? null
   )
 }
 

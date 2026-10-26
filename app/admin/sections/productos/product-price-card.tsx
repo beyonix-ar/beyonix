@@ -58,8 +58,8 @@ interface ProductPriceCardProps {
   knownUnitCost: number | null | undefined
   targetMarginResult: TargetMarginPriceResult | null
   profitabilitySimulation: ProductProfitabilitySimulation | null
-  /** Ganancia en pesos de una unidad al contado; `null` si el costo es desconocido. */
-  cashSaleProfitAmount: number | null
+  /** Ganancia en pesos de una unidad en Mercado Pago 1 pago; `null` si el costo es desconocido. */
+  singlePaymentProfitAmount: number | null
   priceFormatter: Intl.NumberFormat
   variantCostsDiffer: boolean
   realVariantCosts: ProductVariantCostInfo[]
@@ -91,7 +91,7 @@ export function ProductPriceCard({
   knownUnitCost,
   targetMarginResult,
   profitabilitySimulation,
-  cashSaleProfitAmount,
+  singlePaymentProfitAmount,
   priceFormatter,
   variantCostsDiffer,
   realVariantCosts,
@@ -106,8 +106,8 @@ export function ProductPriceCard({
       : Number.isFinite(currentPriceNumber) && currentPriceNumber > 0
         ? priceFormatter.format(currentPriceNumber)
         : "—"
-  const cashSaleProfitLabel =
-    cashSaleProfitAmount != null ? priceFormatter.format(cashSaleProfitAmount) : "—"
+  const singlePaymentProfitLabel =
+    singlePaymentProfitAmount != null ? priceFormatter.format(singlePaymentProfitAmount) : "—"
 
   return (
     <AdminCard className="product-editor-panel flex min-w-0 flex-col space-y-2 p-2.5">
@@ -203,10 +203,10 @@ export function ProductPriceCard({
               labelClassName={fieldLabelClassName}
             >
               <span
-                title="Ganancia de una unidad al precio de contado (peor caso entre transferencia y Mercado Pago 1 pago, sin envío)"
+                title="Ganancia de una unidad cobrada en 1 pago por Mercado Pago (débito o crédito en 1 pago), sin envío"
                 className="admin-control-input admin-ds-control product-editor-price-tone-profit flex h-11 w-full items-center justify-end px-2 text-base font-black text-white opacity-90"
               >
-                {cashSaleProfitLabel}
+                {singlePaymentProfitLabel}
               </span>
             </AdminFormField>
 
