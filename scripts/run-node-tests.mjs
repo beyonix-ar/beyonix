@@ -341,6 +341,7 @@ const TEST_FILES = [
   "lib/analytics/product-view-event.test.ts",
   "lib/analytics/analytics-session.test.ts",
   "lib/analytics/refresh-scheduler.test.ts",
+  "lib/analytics/peak-hour-report.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN

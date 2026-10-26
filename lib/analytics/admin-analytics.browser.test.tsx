@@ -8,6 +8,7 @@ import tailwindcss from "@tailwindcss/postcss"
 
 import { addDays } from "../business/dashboard-sales-analytics.ts"
 import { argentinaDateKey } from "../business/dashboard-timezone.ts"
+import { buildPeakHourReport } from "./peak-hour-report.ts"
 import { buildProductViewReport, type AnalyticsDateRange, type ProductViewStatsRow } from "./product-view-report.ts"
 
 // Admin > Analítica > Productos más vistos con el componente REAL y el CSS del
@@ -70,6 +71,8 @@ type Responder = (range: AnalyticsDateRange) => ProductViewStatsRow[]
 interface ApiControl {
   status: number
   hold: Promise<void> | null
+  /** Hora pico que devuelve el endpoint simulado (cambia entre refresh para verificar la card). */
+  peakHour?: number
 }
 
 async function openAnalytics(
@@ -81,6 +84,7 @@ async function openAnalytics(
   const page = await browser.newPage({ viewport: { width, height: 900 } })
   const api = options.api ?? { status: 200, hold: null }
   const requests: { range: AnalyticsDateRange; authorization: string | null }[] = []
+  const peakRequests: AnalyticsDateRange[] = []
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Playwright evalúa las rutas en orden inverso: la del HTML va primero para que la API la pise.
@@ -97,6 +101,17 @@ async function openAnalytics(
     if (status !== 200) return route.fulfill({ status, json: { error: "No se pudieron cargar las vistas de productos." } })
     return route.fulfill({ json: buildProductViewReport(range, responder(range)) })
   })
+  await page.route("**/api/admin/analytics/peak-hour**", async (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    peakRequests.push(range)
+    const status = api.status
+    if (api.hold) await api.hold
+    if (status !== 200) return route.fulfill({ status, json: { error: "No se pudo cargar el horario pico de visualizaciones." } })
+    const rows = responder(range)
+    const total = rows.reduce((sum, row) => sum + row.views, 0)
+    return route.fulfill({ json: buildPeakHourReport(range, total > 0 ? { hour: api.peakHour ?? 14, views: 28, totalViews: total } : null) })
+  })
   await page.route("https://img.test/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ccc"/></svg>` }))
   if (options.clockAt !== undefined) {
     // Reloj simulado y detenido: el contador sólo avanza con runFor/fastForward.
@@ -104,7 +119,7 @@ async function openAnalytics(
     await page.clock.pauseAt(options.clockAt + 1_000)
   }
   await page.goto("http://admin.test/admin/analitica")
-  return { page, requests, errors }
+  return { page, requests, peakRequests, errors }
 }
 
 const waitForRequests = async (requests: unknown[], count: number) => {
@@ -186,6 +201,7 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
       "VISTAS TOTALES 710",
       "PRODUCTOS VISTOS 12",
       "PRODUCTO MÁS VISTO Auricular Malibu 245 vistas · 34,5% del total",
+      "HORARIO PICO DE VISUALIZACIONES 14:00 – 15:00 28 visualizaciones 3,9% de las visualizaciones del período",
     ])
     assert.equal(report.ranking.length, 12, "el ranking lista todos los productos con vistas")
     assert.deepEqual(report.ranking.slice(0, 3), [
@@ -211,7 +227,10 @@ test("sin vistas en el período: empty state claro, sin métricas ni gráfico", 
   const { page } = await openAnalytics(1440, "dark", () => [])
   try {
     await page.getByText("Sin datos de visualización para este período.").waitFor()
-    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 0)
+    await page.locator(".admin-analytics-peak-hour").getByText("Sin datos", { exact: true }).waitFor()
+    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 1, "sólo la card de horario pico, en \"Sin datos\"")
+    assert.equal(await page.locator(".admin-analytics-peak-hour").getByText("00:00").count(), 0, "nunca 00:00 con 0")
+    assert.equal(await page.locator(".admin-analytics-peak-hour").getByText(/^[\d.]+ visualizaci/).count(), 0, "sin \"0 visualizaciones\"")
     assert.equal(await page.locator(".admin-analytics-bar-row").count(), 0)
   } finally { await page.close() }
 })
@@ -258,7 +277,8 @@ for (const theme of ["dark", "light"] as const) {
         assert.equal(layout.pageOverflow, 0, "sin scroll horizontal")
         assert.deepEqual(layout.outside, [])
         assert.ok(layout.numbersFit, "posición, vistas y % entran completos")
-        assert.equal(new Set(layout.metricsTops).size, width >= 640 ? 1 : 3, "métricas: una fila en desktop, apiladas en mobile")
+        assert.equal(layout.metricsTops.length, 4, "3 métricas + horario pico")
+        assert.equal(new Set(layout.metricsTops).size, width >= 1280 ? 1 : width >= 640 ? 2 : 4, "métricas: 4 en fila en desktop, 2 × 2 en tablet, apiladas en mobile")
         assert.equal(layout.barColor, theme === "dark" ? "rgb(57, 135, 229)" : "rgb(42, 120, 214)")
         assert.ok(layout.periodButtons.every((height) => height >= 28), "filtros con área táctil")
         const refresh = layout.refresh
@@ -357,7 +377,8 @@ test("error al refrescar: conserva los últimos datos, avisa discretamente y el 
     await waitForRequests(requests, 2)
     await page.getByText("No se pudo actualizar. Se muestran los últimos datos.").waitFor()
     assert.equal(await rankingRows(page).count(), 12, "el panel no se vacía")
-    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 3)
+    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 4)
+    assert.equal(await page.locator(".admin-analytics-peak-hour").getByText("14:00 – 15:00").count(), 1, "horario pico: conserva el último dato válido")
     await waitForText(page, "01:00")
 
     api.status = 200
@@ -399,5 +420,98 @@ test("pestaña dormida varios minutos: al volver hace UNA sola actualización", 
     await waitForText(page, "01:00")
     await page.waitForTimeout(200)
     assert.equal(requests.length, 2, "no se acumulan refresh atrasados")
+  } finally { await page.close() }
+})
+
+// --- Horario pico de visualizaciones ---------------------------------------------
+
+const peakCard = (page: Page) => page.locator(".admin-analytics-peak-hour")
+
+test("horario pico: usa exactamente el período global (Hoy, 7 días, 30 días y personalizado)", async () => {
+  const { page, requests, peakRequests } = await openAnalytics(1440, "dark")
+  try {
+    await waitForRequests(peakRequests, 1)
+    await peakCard(page).getByText("14:00 – 15:00").waitFor()
+    for (const [button, count] of [["Hoy", 2], ["Últimos 30 días", 3], ["Últimos 7 días", 4]] as const) {
+      await page.getByRole("button", { name: button }).click()
+      await waitForRequests(peakRequests, count)
+      await waitForRequests(requests, count)
+      assert.deepEqual(peakRequests[count - 1], requests[count - 1].range, `${button}: mismo período que Productos más vistos`)
+    }
+    assert.deepEqual(peakRequests[1], { from: TODAY, to: TODAY })
+    assert.deepEqual(peakRequests[2], { from: addDays(TODAY, -29), to: TODAY })
+
+    await page.getByRole("button", { name: "Personalizado" }).click()
+    const from = page.getByRole("textbox", { name: "Fecha inicial" })
+    await from.fill("01/10/2026")
+    await from.press("Tab")
+    await page.keyboard.press("Escape")
+    const to = page.getByRole("textbox", { name: "Fecha final" })
+    await to.fill("15/10/2026")
+    await to.press("Tab")
+    const deadline = Date.now() + 5_000
+    while (JSON.stringify(peakRequests.at(-1)) !== JSON.stringify({ from: "2026-10-01", to: "2026-10-15" }) && Date.now() < deadline) {
+      await page.waitForTimeout(50)
+    }
+    assert.deepEqual(peakRequests.at(-1), { from: "2026-10-01", to: "2026-10-15" })
+    assert.deepEqual(peakRequests.at(-1), requests.at(-1)?.range)
+  } finally { await page.close() }
+})
+
+test("horario pico: el ciclo global (00:00) y Actualizar ahora lo refrescan junto con Productos más vistos", async () => {
+  const api: ApiControl = { status: 200, hold: null, peakHour: 14 }
+  const { page, requests, peakRequests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
+  try {
+    await waitForRequests(peakRequests, 1)
+    await peakCard(page).getByText("14:00 – 15:00").waitFor()
+
+    api.peakHour = 18
+    await page.clock.runFor(60_000)
+    await waitForRequests(peakRequests, 2)
+    await waitForRequests(requests, 2)
+    await peakCard(page).getByText("18:00 – 19:00").waitFor()
+    await waitForText(page, "01:00")
+    assert.equal(peakRequests.length, 2, "una consulta por ciclo")
+    assert.equal(requests.length, 2, "Productos más vistos en el mismo ciclo")
+
+    api.peakHour = 9
+    await refreshButton(page).click()
+    await waitForRequests(peakRequests, 3)
+    await peakCard(page).getByText("09:00 – 10:00").waitFor()
+    await waitForText(page, "01:00")
+    assert.deepEqual([requests.length, peakRequests.length], [3, 3])
+  } finally { await page.close() }
+})
+
+test("un solo timer para toda Analítica: el horario pico no agrega intervalos", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const intervals: number[] = []
+  await page.exposeFunction("__registrarIntervalo", (ms: number) => { intervals.push(ms) })
+  await page.addInitScript(() => {
+    const original = window.setInterval.bind(window)
+    window.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+      void (window as Window & { __registrarIntervalo?: (ms: number) => void }).__registrarIntervalo?.(Number(timeout ?? 0))
+      return original(handler, timeout, ...args)
+    }) as typeof window.setInterval
+  })
+  await page.route("http://admin.test/**", (route) => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><html data-admin-theme="dark"><head><meta charset="utf-8"><style>${css}</style></head><body><main class="beyonix-admin-main"><div id="root"></div></main><script>window.process={env:{NODE_ENV:"production"}}</script><script>${bundle}</script></body></html>`,
+  }))
+  await page.route("**/api/admin/analytics/product-views**", (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    return route.fulfill({ json: buildProductViewReport(range, ROWS) })
+  })
+  await page.route("**/api/admin/analytics/peak-hour**", (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    return route.fulfill({ json: buildPeakHourReport(range, { hour: 14, views: 28, totalViews: 710 }) })
+  })
+  try {
+    await page.goto("http://admin.test/admin/analitica")
+    await peakCard(page).getByText("14:00 – 15:00").waitFor()
+    await page.waitForTimeout(300)
+    assert.deepEqual(intervals, [250], "exactamente un setInterval: el del ciclo global")
   } finally { await page.close() }
 })

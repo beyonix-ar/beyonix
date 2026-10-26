@@ -13,18 +13,19 @@ import {
   type AnalyticsPeriodPreset,
   type ProductViewReport,
 } from "@/lib/analytics/product-view-report"
-import { supabase } from "@/lib/supabase/client"
 
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import { AdminHelpTip } from "../../components/admin-help-tip"
 import { AdminEmptyState, AdminPageHeader, AdminSkeleton } from "../../components/admin-controls"
 import { ProductThumbnail } from "../productos/product-thumbnail"
+import { fetchAnalyticsReport } from "./analytics-api"
 import {
   AnalyticsRefreshControl,
   AnalyticsRefreshProvider,
   useAnalyticsRefresh,
   useAnalyticsRefreshTask,
 } from "./analytics-refresh"
+import { PeakHourCard, usePeakHourReport } from "./peak-hour"
 import { ProductViewsChart } from "./product-views-chart"
 
 const viewsFormatter = new Intl.NumberFormat("es-AR")
@@ -33,13 +34,6 @@ const UNIQUE_VIEW_HELP =
   "Una vista es una apertura real del producto (página o vista rápida). Recargar o volver al mismo producto dentro de 30 minutos en la misma sesión no suma otra vista. No se cuentan la navegación del equipo ni los robots."
 
 const LOAD_ERROR = "No se pudieron cargar las vistas de productos."
-
-async function getAuthHeaders(): Promise<Record<string, string> | null> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : null
-}
 
 function MetricCard({ label, help, value, detail }: { label: string; help?: string; value: string; detail?: string }) {
   return (
@@ -89,14 +83,7 @@ function AnalyticsPage() {
   const loadProductViews = useCallback(async (signal: AbortSignal) => {
     if (!range || !rangeKey) return
     try {
-      const headers = await getAuthHeaders()
-      if (!headers) throw new Error("Tu sesión expiró. Volvé a ingresar.")
-      const response = await fetch(
-        `/api/admin/analytics/product-views?from=${range.from}&to=${range.to}`,
-        { headers, cache: "no-store", signal },
-      )
-      const body = (await response.json().catch(() => null)) as (ProductViewReport & { error?: string }) | null
-      if (!response.ok || !body || body.error) throw new Error(body?.error ?? LOAD_ERROR)
+      const body = await fetchAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", range, signal, LOAD_ERROR)
       if (signal.aborted) return
       setLoaded({ key: rangeKey, report: body })
       setFailure(null)
@@ -107,6 +94,8 @@ function AnalyticsPage() {
     }
   }, [range, rangeKey])
   useAnalyticsRefreshTask(loadProductViews)
+  // Horario pico: otra tarea del mismo ciclo global (mismo período, mismo refresh).
+  const peakHour = usePeakHourReport(range, rangeKey)
 
   // Nuevo período: carga ya y el contador vuelve a 01:00 al terminar.
   useEffect(() => {
@@ -162,6 +151,23 @@ function AnalyticsPage() {
         )}
       </section>
 
+      {range && (
+        <div className="admin-analytics-metrics grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+          {report && report.totalViews > 0 && report.topProduct && (
+            <>
+              <MetricCard label="Vistas totales" help={UNIQUE_VIEW_HELP} value={viewsFormatter.format(report.totalViews)} />
+              <MetricCard label="Productos vistos" value={viewsFormatter.format(report.productsViewed)} />
+              <MetricCard
+                label="Producto más visto"
+                value={report.topProduct.name}
+                detail={`${viewsLabel(report.topProduct.views)} · ${formatSharePercent(report.topProduct.sharePercent)} del total`}
+              />
+            </>
+          )}
+          <PeakHourCard {...peakHour} />
+        </div>
+      )}
+
       {range && !report && !loadError && (
         <div aria-busy="true" aria-label="Cargando vistas" className="space-y-4">
           <AdminSkeleton rows={4} />
@@ -184,16 +190,6 @@ function AnalyticsPage() {
 
       {report && report.totalViews > 0 && report.topProduct && (
         <>
-          <div className="grid gap-2.5 sm:grid-cols-3">
-            <MetricCard label="Vistas totales" help={UNIQUE_VIEW_HELP} value={viewsFormatter.format(report.totalViews)} />
-            <MetricCard label="Productos vistos" value={viewsFormatter.format(report.productsViewed)} />
-            <MetricCard
-              label="Producto más visto"
-              value={report.topProduct.name}
-              detail={`${viewsLabel(report.topProduct.views)} · ${formatSharePercent(report.topProduct.sharePercent)} del total`}
-            />
-          </div>
-
           <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
             <section className="admin-dashboard-filters min-w-0 rounded-2xl border p-4" aria-labelledby="analytics-top-title">
               <h2 id="analytics-top-title" className="mb-3 text-sm font-black text-white">

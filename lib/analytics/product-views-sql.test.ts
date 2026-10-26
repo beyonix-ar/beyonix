@@ -11,6 +11,7 @@ import { PGlite } from "@electric-sql/pglite"
 const MIGRATIONS = [
   "20261026100000_analytics_events_product_views.sql",
   "20261026120000_analytics_history_merge_snapshots.sql",
+  "20261026140000_analytics_peak_hour.sql",
 ].map((file) => readFileSync(`supabase/migrations/${file}`, "utf8"))
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -227,6 +228,40 @@ test("snapshot: los eventos previos a esta migración quedan cubiertos por el ba
   } finally { await db.close() }
 })
 
+test("horario pico: franja con más visualizaciones en hora de Argentina, empate a la más temprana, sin datos = sin filas", async () => {
+  const db = await createDb()
+  try {
+    const views = (at: string, times: number, product = 1) => db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+      select 'product_view', gen_random_uuid(), ${product}, '${at}'::timestamptz from generate_series(1, ${times})`)
+    const peak = async (from: string, to: string) => (await db.query<{ peak_hour: number; peak_views: number; total_views: number }>(
+      `select peak_hour, peak_views::int, total_views::int from public.admin_product_view_peak_hour('${from}', '${to}')`,
+    )).rows
+
+    // 20/10 (Argentina): 14 h = 28 (dos productos), 10 h = 9, 23 h = 4 cargadas en UTC (02:xx del 21).
+    await views("2026-10-20 14:05-03", 20)
+    await views("2026-10-20 14:59-03", 8, 2)
+    await views("2026-10-20 10:30-03", 9)
+    await views("2026-10-21 02:10+00", 4)
+    // 21/10: empate 10 h y 18 h (6 y 6); 25/10: 3 a las 00 h; 26/10 (hoy del test): 5 a las 09 h.
+    await views("2026-10-21 18:00-03", 6)
+    await views("2026-10-21 10:59-03", 6)
+    await views("2026-10-25 00:00-03", 3)
+    await views("2026-10-26 09:15-03", 5)
+
+    assert.deepEqual(await peak("2026-10-20", "2026-10-20"), [{ peak_hour: 14, peak_views: 28, total_views: 41 }], "A + B: las 02:10 UTC del 21 son las 23 h del 20 en Argentina (suman al 20)")
+    assert.deepEqual(await peak("2026-10-21", "2026-10-21"), [{ peak_hour: 10, peak_views: 6, total_views: 12 }], "G: empate → la más temprana")
+    assert.deepEqual(await peak("2026-10-26", "2026-10-26"), [{ peak_hour: 9, peak_views: 5, total_views: 5 }], "C: un solo día (Hoy)")
+    assert.deepEqual(await peak("2026-10-20", "2026-10-26"), [{ peak_hour: 14, peak_views: 28, total_views: 61 }], "D: 7 días")
+    assert.deepEqual(await peak("2026-09-27", "2026-10-26"), [{ peak_hour: 14, peak_views: 28, total_views: 61 }], "E: 30 días")
+    assert.deepEqual(await peak("2026-10-24", "2026-10-25"), [{ peak_hour: 0, peak_views: 3, total_views: 3 }], "F: personalizado, extremos inclusive")
+    assert.deepEqual(await peak("2026-10-22", "2026-10-24"), [], "H: sin vistas no devuelve 00:00 con 0")
+    assert.deepEqual(await peak("2026-10-21", "2026-10-20"), [], "rango invertido")
+
+    const ranking = await db.query<{ total: number }>("select sum(views)::int as total from public.admin_product_view_stats('2026-10-20', '2026-10-26')")
+    assert.equal(ranking.rows[0].total, 61, "mismo total que Productos más vistos")
+  } finally { await db.close() }
+})
+
 test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role sí", async () => {
   const db = await createDb()
   try {
@@ -244,6 +279,7 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
       await assert.rejects(db.query(`select public.record_product_view('${SESSION_B}'::uuid, 1)`), /permission denied/i, `${role}: record`)
       await assert.rejects(db.query("select * from public.admin_product_view_stats('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: stats`)
       await assert.rejects(db.query("select * from public.analytics_product_snapshots"), /permission denied/i, `${role}: snapshots`)
+      await assert.rejects(db.query("select * from public.admin_product_view_peak_hour('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: horario pico`)
       await assert.rejects(db.query("select public.analytics_product_image(1, null)"), /permission denied/i, `${role}: imagen`)
       await db.exec("reset role")
     }
