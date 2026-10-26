@@ -1493,11 +1493,16 @@ function VariantCard({
         >
           {leadingAccessory}
         </span>
-        <span className="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-[#07111b]">
+        <span
+          className={`relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 ${
+            summaryImage ? "bg-[#ffffff]" : "bg-[#07111b]"
+          }`}
+        >
           {summaryImage ? (
             <TransparencyAwareImage
               src={summaryImage}
               alt={`Imagen de ${nombre}`}
+              transparentBackground="#ffffff"
               className="size-full object-contain"
             />
           ) : (

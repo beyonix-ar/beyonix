@@ -16,12 +16,15 @@ interface TransparencyAwareImageProps
     "src"
   > {
   src: string
+  /** Fondo detrás de un PNG transparente; por defecto el plateado de catálogo. */
+  transparentBackground?: string
 }
 
 export function TransparencyAwareImage({
   src,
   onLoad,
   style,
+  transparentBackground = SILVER_IMAGE_BACKGROUND,
   ...props
 }: TransparencyAwareImageProps) {
   const {
@@ -46,7 +49,7 @@ export function TransparencyAwareImage({
         ...style,
         background:
           hasTransparentBackground
-            ? SILVER_IMAGE_BACKGROUND
+            ? transparentBackground
             : style?.background,
       }}
     />

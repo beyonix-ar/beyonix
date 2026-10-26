@@ -68,6 +68,25 @@ window.fetch = async (input, init) => {
       ? Response.json({ error: "Tiempo de espera agotado." }, { status })
       : Response.json({ item: { id: "nueva" }, productId: 9001, variantId: 99001, replayed: false }, { status })
   }
+  if (url.pathname === "/api/admin/costs/new-article" && init && init.method === "POST") {
+    const body = JSON.parse(init.body)
+    window.__articlePosts = [...(window.__articlePosts ?? []), body]
+    const variant = producto_variantes.find((item) => item.id === Number(body.variantId))
+    if (body.replaceBarcode && variant) {
+      const code = (body.barcode ?? "").trim() || null
+      const owner = code && producto_variantes.find((item) => item.id !== variant.id && item.codigo_barra === code)
+      if (owner) {
+        const product = productos.find((item) => item.id === owner.producto_id)
+        return Response.json({ error: "El código de barra " + code + " ya está asignado a " + product.nombre + " · " + owner.nombre + ". Usá un código distinto para esta variante." }, { status: 409 })
+      }
+      variant.codigo_barra = code
+    }
+    return Response.json({ productId: Number(body.productId), variantId: Number(body.variantId) })
+  }
+  if (url.pathname === "/api/admin/costs" && init && init.method === "PATCH") {
+    window.__patches = [...(window.__patches ?? []), JSON.parse(init.body)]
+    return Response.json({ item: { id: JSON.parse(init.body).id } })
+  }
   if (url.pathname === "/api/admin/costs") {
     const costRows = (await db.from("product_cost_entries").select("*").order("purchase_date", { ascending: false }).range(0, 999)).data.map(withPurchaseBarcode)
     return Response.json({
@@ -313,3 +332,98 @@ test("artículo nuevo: variante + compra en UNA request; doble click y reintento
     await page.close()
   }
 })
+
+const editPurchaseOf = async (page: Page, name: string) => {
+  await page.locator("table tbody tr", { hasText: name }).getByRole("button", { name: "Editar compra" }).click()
+  await page.getByRole("heading", { name: "Editar compra" }).waitFor()
+}
+const barcodeInput = (page: Page) => page.getByRole("textbox", { name: "Código de barra", exact: true })
+const sentBodies = (page: Page, key: "__articlePosts" | "__patches") =>
+  page.evaluate((name) => (window as unknown as Record<string, Record<string, unknown>[] | undefined>)[name] ?? [], key)
+
+test("editar compra: el código de barra de la variante es editable, se guarda en la variante y se ve al volver (A/B/E/F/H)", async () => {
+  const { page, errors } = await open()
+  try {
+    await editPurchaseOf(page, "Producto 1499 · Color 1499")
+    const input = barcodeInput(page)
+    assert.equal(await input.isEditable(), true, "el campo ya no está bloqueado")
+    assert.equal(await input.inputValue(), "7790000001499", "muestra el código actual de la variante")
+
+    await input.fill("7791234500017")
+    await page.getByRole("button", { name: "Actualizar", exact: true }).click()
+    await page.getByText("Compra actualizada correctamente.").waitFor()
+
+    const [article] = await sentBodies(page, "__articlePosts")
+    assert.deepEqual(
+      [article.productId, article.variantId, article.barcode, article.generateBarcode, article.replaceBarcode, article.purchaseId],
+      ["1499", "101499", "7791234500017", false, true, "c1"],
+    )
+    const [purchase] = await sentBodies(page, "__patches")
+    assert.deepEqual(
+      [purchase.id, purchase.quantity, purchase.unitCost, purchase.receivedQuantity, purchase.supplier, purchase.sku],
+      ["c1", "4", "1000", "4", "", "P-1499-V"],
+      "cantidad, costo, recepción, proveedor y SKU se mandan sin cambios",
+    )
+
+    // Refresh: la compra vuelve a cargarse con el código nuevo de la variante.
+    await editPurchaseOf(page, "Producto 1499 · Color 1499")
+    assert.equal(await barcodeInput(page).inputValue(), "7791234500017")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("editar compra: un código que ya usa otra variante bloquea el guardado y dice dónde está (C)", async () => {
+  const { page, errors } = await open()
+  try {
+    await editPurchaseOf(page, "Producto 1499 · Color 1499")
+    await barcodeInput(page).fill("BX-PRO-001400")
+    await page.getByRole("button", { name: "Actualizar", exact: true }).click()
+    await page.getByText("El código de barra BX-PRO-001400 ya está asignado a Producto 1400 · Color 1400", { exact: false }).waitFor()
+    assert.deepEqual(await sentBodies(page, "__patches"), [], "la compra no se guarda")
+    assert.equal(await page.getByRole("heading", { name: "Editar compra" }).count(), 1, "sigue editando con el valor ingresado")
+    assert.equal(await barcodeInput(page).inputValue(), "BX-PRO-001400")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("editar compra sin tocar el código: se guarda igual (idempotente) y una compra nueva sigue sin pisar códigos (D)", async () => {
+  const { page, errors } = await open()
+  try {
+    await editPurchaseOf(page, "Producto 1400 · Color 1400")
+    assert.equal(await barcodeInput(page).inputValue(), "BX-PRO-001400")
+    await page.getByRole("button", { name: "Actualizar", exact: true }).click()
+    await page.getByText("Compra actualizada correctamente.").waitFor()
+    const [article] = await sentBodies(page, "__articlePosts")
+    assert.equal(article.barcode, "BX-PRO-001400")
+    assert.equal(article.replaceBarcode, true)
+    assert.equal((await sentBodies(page, "__patches")).length, 1)
+
+    // Compra NUEVA de una variante con código: sigue mostrándose fijo.
+    assert.match(await scan(page, "BX-PRO-001400"), /Producto 1400/)
+    assert.equal(await barcodeInput(page).count(), 0)
+    assert.match((await page.locator("label", { hasText: "Código de barra" }).first().textContent()) ?? "", /BX-PRO-001400\s*BEYONIX/)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+for (const width of [390, 1440]) {
+  test(`editar compra: el código editable entra sin scroll horizontal a ${width}px (I)`, async () => {
+    const { page, errors } = await open()
+    try {
+      await page.setViewportSize({ width, height: 900 })
+      await editPurchaseOf(page, "Producto 1499 · Color 1499")
+      const box = await barcodeInput(page).boundingBox()
+      assert.ok(box && box.width >= 120 && box.x >= 0 && box.x + box.width <= width, `input visible y usable: ${JSON.stringify(box)}`)
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "sin scroll horizontal")
+      assert.deepEqual(errors, [])
+    } finally {
+      await page.close()
+    }
+  })
+}

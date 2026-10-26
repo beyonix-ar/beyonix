@@ -168,3 +168,61 @@ test("producto nuevo (borrador): sigue armando sus variantes antes del primer gu
     await page.close()
   }
 })
+
+test("miniatura de cada fila de variante: PNG transparente sobre blanco en tema oscuro y claro; sin imagen, placeholder oscuro", async () => {
+  const page = await open(`
+    // PNG real con fondo transparente (sólo el centro opaco), como una foto sin fondo.
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 16;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#111111";
+    context.fillRect(4, 4, 8, 8);
+    const png = canvas.toDataURL("image/png");
+    window.__initialProduct = 9;
+    window.__variants = [
+      ${JSON.stringify(variant(9, 9, "NEGRO", "#000000"))},
+      ${JSON.stringify(variant(15, 9, "ROSA", "#ECA2A2"))},
+      ${JSON.stringify(variant(16, 9, "VERDE", "#7FB77E"))},
+    ].map((item) => item.id === 16 ? item : { ...item, imagenes: [png] });
+    window.__getVariants = async () => window.__variants;
+    window.__delete = async () => { throw new Error("no usado") };
+  `)
+  try {
+    for (const theme of ["dark", "light"]) {
+      await page.evaluate((value) => { document.documentElement.dataset.adminTheme = value }, theme)
+      for (const name of ["NEGRO", "ROSA"]) {
+        const image = page.locator(`img[alt="Imagen de ${name}"]`).first()
+        await image.waitFor()
+        await page.waitForFunction((alt) => Boolean(document.querySelector<HTMLImageElement>(`img[alt="${alt}"]`)?.complete), `Imagen de ${name}`)
+        const colors = await image.evaluate((img) => ({
+          image: getComputedStyle(img).backgroundColor,
+          frame: getComputedStyle(img.parentElement!).backgroundColor,
+          fit: getComputedStyle(img).objectFit,
+          radius: getComputedStyle(img.parentElement!).borderTopLeftRadius,
+        }))
+        // El marco es blanco siempre; la imagen deja ver ese blanco (transparente)
+        // o, si detectó la transparencia, también se pinta blanca. Nunca plateado
+        // ni el fondo oscuro del panel.
+        assert.equal(colors.frame, "rgb(255, 255, 255)", `${name} (${theme}) con marco blanco`)
+        assert.ok(["rgba(0, 0, 0, 0)", "rgb(255, 255, 255)"].includes(colors.image), `${name} (${theme}) sin fondo oscuro ni plateado: ${colors.image}`)
+        assert.equal(colors.fit, "contain")
+        assert.notEqual(colors.radius, "0px", "conserva el borde redondeado")
+      }
+      // VERDE sin imágenes: sigue el placeholder (ícono) sobre fondo del panel.
+      const placeholderFrame = await page.locator('button[aria-label="Eliminar variante VERDE"]').first().evaluate((button) => {
+        const row = button.closest("li, [data-variant-row], article, div")!
+        const frames = Array.from(row.ownerDocument.querySelectorAll("span.size-11"))
+        const frame = frames.find((span) => !span.querySelector("img"))
+        const withImage = frames.find((span) => span.querySelector("img"))
+        return frame && withImage
+          ? { background: getComputedStyle(frame).backgroundColor, size: frame.getBoundingClientRect().width, imageFrameSize: withImage.getBoundingClientRect().width }
+          : null
+      })
+      assert.ok(placeholderFrame && placeholderFrame.background !== "rgb(255, 255, 255)", `placeholder sin fondo blanco (${theme}): ${placeholderFrame?.background}`)
+      assert.equal(placeholderFrame.imageFrameSize, placeholderFrame.size, "con imagen o sin imagen, la miniatura mide lo mismo")
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "sin scroll horizontal")
+    }
+  } finally {
+    await page.close()
+  }
+})

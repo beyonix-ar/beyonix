@@ -1190,6 +1190,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     openPreselectedPurchase(productId)
   }, [loading, data])
 
+  // Editar una compra de una variante existente: el código operativo de la
+  // variante se puede corregir (un proveedor puede mandar el mismo código para
+  // varios colores). En una compra nueva Compras sólo completa uno faltante.
+  const editsVariantBarcode = Boolean(editingProductId) && article.startsWith("v:")
+
   const persistedArticleBarcode = (() => {
     const [kind, productKey, variantKey] = article.split(":")
     const product = data?.catalog.find(
@@ -1285,8 +1290,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
           sku: productSku,
           colorHex: newArticleColorHex || null,
           colorName: newArticleColorNameValue || null,
-          barcode: persistedArticleBarcode || generateArticleBarcode ? null : newArticleBarcodeValue || null,
-          generateBarcode: !persistedArticleBarcode && generateArticleBarcode,
+          barcode:
+            (persistedArticleBarcode && !editsVariantBarcode) || generateArticleBarcode
+              ? null
+              : newArticleBarcodeValue || null,
+          generateBarcode:
+            (!persistedArticleBarcode || editsVariantBarcode) && generateArticleBarcode,
+          ...(editsVariantBarcode ? { replaceBarcode: true, purchaseId: editingProductId } : {}),
         }
         const attempt = getOrCreateIdempotencyAttempt(
           newArticleCreateAttemptRef.current,
@@ -1627,7 +1637,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                     />
                   </Field>
                   <Field label="Código de barra">
-                    {persistedArticleBarcode ? (
+                    {persistedArticleBarcode && !editsVariantBarcode ? (
                       <div className={`${inputClass} flex items-center justify-between gap-2`} title="El código se edita desde Productos">
                         <span className="truncate font-mono">{persistedArticleBarcode}</span>
                         <span className="shrink-0 text-10px font-black uppercase tracking-widest text-white/50">{barcodeOriginLabel(barcodeOrigin(persistedArticleBarcode))}</span>
@@ -1643,7 +1653,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                           value={newArticleBarcode}
                           onChange={(event) => setNewArticleBarcode(event.target.value)}
                           className={`${inputClass} min-w-0 flex-1`}
-                          placeholder="Escaneá el código del fabricante"
+                          placeholder={editsVariantBarcode ? "Vacío: se asigna un código BEYONIX" : "Escaneá el código del fabricante"}
+                          aria-label="Código de barra"
                           maxLength={64}
                         />
                         {(!article.startsWith("p:") || Boolean(newArticleColor)) && !newArticleBarcode.trim() && (
