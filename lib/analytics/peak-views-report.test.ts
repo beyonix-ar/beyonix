@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   buildPeakHourReport,
+  buildHourlyViewsReport,
   buildPeakWeekdayReport,
   buildWeekdayViewsReport,
   formatHourRange,
@@ -85,4 +86,24 @@ test("por día de la semana: sin vistas → 7 ceros con 0%; filas inválidas se 
   const invalid = buildWeekdayViewsReport(RANGE, [{ weekday: 0, views: 5 }, { weekday: 8, views: 5 }, { weekday: 2.5, views: 5 }, { weekday: 4, views: Number.NaN }, { weekday: 5, views: -3 }, { weekday: 2, views: 7 }])
   assert.equal(invalid.totalViews, 7)
   assert.deepEqual(invalid.days.map((day) => day.views), [0, 7, 0, 0, 0, 0, 0])
+})
+
+test("por hora del día: siempre 24 horas en orden (00 a 23), las faltantes con 0, porcentaje sobre el total", () => {
+  const report = buildHourlyViewsReport(RANGE, [{ hour: 20, views: 45 }, { hour: 0, views: 2 }, { hour: 9, views: 27 }, { hour: 23, views: 6 }, { hour: 8, views: 15 }, { hour: 10, views: 42 }, { hour: 2, views: 1 }, { hour: 18, views: 112 }])
+  assert.equal(report.totalViews, 250)
+  assert.deepEqual(report.hours.map((slot) => slot.hour), Array.from({ length: 24 }, (_, hour) => hour))
+  const views = Object.fromEntries(report.hours.map((slot) => [slot.hour, slot.views]))
+  assert.deepEqual([views[0], views[1], views[2], views[8], views[9], views[10], views[18], views[20], views[23]], [2, 0, 1, 15, 27, 42, 112, 45, 6])
+  assert.equal(report.hours[20].sharePercent, 18, "45 de 250 = 18%")
+  assert.equal(report.hours[1].sharePercent, 0)
+  assert.ok(Math.abs(report.hours.reduce((sum, slot) => sum + slot.sharePercent, 0) - 100) < 1e-9)
+})
+
+test("por hora del día: sin vistas → 24 ceros con 0%; filas inválidas se descartan", () => {
+  const empty = buildHourlyViewsReport(RANGE, [])
+  assert.equal(empty.totalViews, 0)
+  assert.deepEqual(empty.hours.map((slot) => [slot.hour, slot.views, slot.sharePercent]), Array.from({ length: 24 }, (_, hour) => [hour, 0, 0]))
+  const invalid = buildHourlyViewsReport(RANGE, [{ hour: -1, views: 5 }, { hour: 24, views: 5 }, { hour: 3.5, views: 5 }, { hour: 4, views: Number.NaN }, { hour: 5, views: -3 }, { hour: 6, views: 7 }])
+  assert.equal(invalid.totalViews, 7)
+  assert.deepEqual(invalid.hours.filter((slot) => slot.views > 0).map((slot) => [slot.hour, slot.views, slot.sharePercent]), [[6, 7, 100]])
 })

@@ -8,7 +8,7 @@ import tailwindcss from "@tailwindcss/postcss"
 
 import { addDays } from "../business/dashboard-sales-analytics.ts"
 import { argentinaDateKey } from "../business/dashboard-timezone.ts"
-import { buildPeakHourReport, buildPeakWeekdayReport, buildWeekdayViewsReport } from "./peak-views-report.ts"
+import { buildHourlyViewsReport, buildPeakHourReport, buildPeakWeekdayReport, buildWeekdayViewsReport } from "./peak-views-report.ts"
 import { buildProductViewReport, type AnalyticsDateRange, type ProductViewStatsRow } from "./product-view-report.ts"
 
 // Admin > Analítica > Productos más vistos con el componente REAL y el CSS del
@@ -71,8 +71,8 @@ type Responder = (range: AnalyticsDateRange) => ProductViewStatsRow[]
 interface ApiControl {
   status: number
   hold: Promise<void> | null
-  /** Hora pico que devuelve el endpoint simulado (cambia entre refresh para verificar la card). */
-  peakHour?: number
+  /** Visualizaciones de 00 a 23 que devuelven el gráfico por hora y, derivado de ellas, el horario pico. */
+  hourlyViews?: number[]
   /** Día ISO que devuelve el endpoint simulado de "Día con más visualizaciones". */
   peakWeekday?: number
   /** Visualizaciones de lunes a domingo que devuelve el endpoint simulado del gráfico por día. */
@@ -92,6 +92,25 @@ function weekdayViewsReport(range: AnalyticsDateRange, total: number, views?: nu
   return buildWeekdayViewsReport(range, counts.map((count, index) => ({ weekday: index + 1, views: count })))
 }
 
+/** Distribución de 00 a 23 que suma 710 (el total del ranking): pico a las 14 h con 62. */
+const HOURLY_VIEWS = [2, 1, 0, 0, 0, 1, 4, 10, 18, 27, 35, 40, 44, 38, 62, 50, 45, 48, 55, 60, 58, 48, 40, 24]
+
+/** `HOURLY_VIEWS` con la hora `hour` como pico (100 visualizaciones). */
+const hourlyWithPeak = (hour: number) => HOURLY_VIEWS.map((count, index) => (index === hour ? 100 : count))
+
+const hourlyCounts = (total: number, views?: number[]) => views ?? (total === 0 ? [] : HOURLY_VIEWS)
+
+function hourlyViewsReport(range: AnalyticsDateRange, total: number, views?: number[]) {
+  return buildHourlyViewsReport(range, hourlyCounts(total, views).map((count, hour) => ({ hour, views: count })))
+}
+
+/** Como `admin_product_view_peak_hour`: el máximo de la MISMA distribución, empate a la hora más temprana. */
+function peakHourReport(range: AnalyticsDateRange, total: number, views?: number[]) {
+  const counts = hourlyCounts(total, views)
+  const max = Math.max(0, ...counts)
+  return buildPeakHourReport(range, max > 0 ? { bucket: counts.indexOf(max), views: max, totalViews: counts.reduce((sum, count) => sum + count, 0) } : null)
+}
+
 async function openAnalytics(
   width: number,
   theme: "dark" | "light",
@@ -104,6 +123,7 @@ async function openAnalytics(
   const peakRequests: AnalyticsDateRange[] = []
   const weekdayRequests: AnalyticsDateRange[] = []
   const weekdayViewsRequests: AnalyticsDateRange[] = []
+  const hourlyRequests: AnalyticsDateRange[] = []
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Playwright evalúa las rutas en orden inverso: la del HTML va primero para que la API la pise.
@@ -127,9 +147,18 @@ async function openAnalytics(
     const status = api.status
     if (api.hold) await api.hold
     if (status !== 200) return route.fulfill({ status, json: { error: "No se pudo cargar el horario pico de visualizaciones." } })
-    const rows = responder(range)
-    const total = rows.reduce((sum, row) => sum + row.views, 0)
-    return route.fulfill({ json: buildPeakHourReport(range, total > 0 ? { bucket: api.peakHour ?? 14, views: 28, totalViews: total } : null) })
+    const total = responder(range).reduce((sum, row) => sum + row.views, 0)
+    return route.fulfill({ json: peakHourReport(range, total, api.hourlyViews) })
+  })
+  await page.route("**/api/admin/analytics/views-by-hour**", async (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    hourlyRequests.push(range)
+    const status = api.status
+    if (api.hold) await api.hold
+    if (status !== 200) return route.fulfill({ status, json: { error: "No se pudieron cargar las visualizaciones por hora del día." } })
+    const total = responder(range).reduce((sum, row) => sum + row.views, 0)
+    return route.fulfill({ json: hourlyViewsReport(range, total, api.hourlyViews) })
   })
   await page.route("**/api/admin/analytics/peak-weekday**", async (route) => {
     const url = new URL(route.request().url())
@@ -158,7 +187,7 @@ async function openAnalytics(
     await page.clock.pauseAt(options.clockAt + 1_000)
   }
   await page.goto("http://admin.test/admin/analitica")
-  return { page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, errors }
+  return { page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, hourlyRequests, errors }
 }
 
 const waitForRequests = async (requests: unknown[], count: number) => {
@@ -234,6 +263,22 @@ async function readWeekdayChart(page: Page) {
     }))
 }
 
+/** Columnas del gráfico por hora: etiqueta accesible, eje, alto de la barra y alto útil del track. */
+async function readHourlyChart(page: Page) {
+  await page.locator(".admin-analytics-hour").first().waitFor()
+  return page.locator(".admin-analytics-hours").evaluate((chart) =>
+    Array.from(chart.querySelectorAll<HTMLElement>(".admin-analytics-hour"), (column) => ({
+      label: column.getAttribute("aria-label") ?? "",
+      axis: column.querySelector(".admin-analytics-hour-label")?.textContent ?? "",
+      height: column.querySelector<HTMLElement>(".admin-analytics-hour-bar")!.getBoundingClientRect().height,
+      track: column.querySelector<HTMLElement>(".admin-analytics-hour-track")!.clientHeight,
+    })))
+}
+
+/** Visualizaciones de cada hora, leídas de la etiqueta accesible de su columna. */
+const hourlyValues = async (page: Page) =>
+  (await readHourlyChart(page)).map((column) => Number(/: ([\d.]+) visualizaci/.exec(column.label)?.[1].replace(/\./g, "")))
+
 async function readReport(page: Page) {
   await page.locator(".admin-analytics-ranking-row:not(.admin-analytics-ranking-head)").first().waitFor()
   return page.locator(".admin-analytics-page").evaluate((root) => {
@@ -259,7 +304,7 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
       "VISTAS TOTALES 710",
       "PRODUCTOS VISTOS 12",
       "PRODUCTO MÁS VISTO Auricular Malibu 245 vistas · 34,5% del total",
-      "HORARIO PICO DE VISUALIZACIONES 14:00 – 15:00 28 visualizaciones 3,9% de las visualizaciones del período",
+      "HORARIO PICO DE VISUALIZACIONES 14:00 – 15:00 62 visualizaciones 8,7% de las visualizaciones del período",
       "DÍA CON MÁS VISUALIZACIONES Miércoles 255 visualizaciones 35,9% de las visualizaciones del período",
     ])
     assert.equal(report.ranking.length, 12, "el ranking lista todos los productos con vistas")
@@ -290,9 +335,22 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
     assert.ok(chart.every((column) => column.valueOnBar), "cada valor va pegado sobre su barra")
     const tallest = chart.reduce((best, column) => (column.height > best.height ? column : best))
     assert.ok(tallest.label.startsWith(`${await weekdayCard(page).locator(".text-2xl").innerText()}:`), "la card y el gráfico coinciden en el día con más visualizaciones")
+    const hours = await readHourlyChart(page)
+    assert.equal(hours.length, 24, "las 24 horas")
+    assert.deepEqual(hours.map((column) => column.axis).filter(Boolean), ["00", "03", "06", "09", "12", "15", "18", "21"], "eje cada 3 horas")
+    assert.deepEqual(await hourlyValues(page), HOURLY_VIEWS)
+    assert.equal(hours[14].label, "14:00 – 15:00: 62 visualizaciones, 8,7% del total")
+    assert.equal(hours[2].label, "02:00 – 03:00: 0 visualizaciones, 0% del total")
+    assert.equal(hours[23].label, "23:00 – 00:00: 24 visualizaciones, 3,4% del total")
+    assert.ok(Math.abs(hours[14].height - hours[14].track) < 1, "la hora pico ocupa el alto")
+    assert.ok(Math.abs(hours[20].height / hours[14].height - 58 / 62) < 0.02, "barras proporcionales")
+    assert.equal(hours[2].height, 0)
+    const tallestHour = hours.reduce((best, column) => (column.height > best.height ? column : best))
+    assert.ok(tallestHour.label.startsWith(`${await peakCard(page).locator(".text-2xl").innerText()}:`), "la card y el gráfico coinciden en el horario pico")
+
     const order = await page.locator(".admin-analytics-page").evaluate((root) =>
-      [".admin-analytics-metrics", ".admin-analytics-weekday-section", "#analytics-top-title"].map((selector) => root.querySelector(selector)!.getBoundingClientRect().top))
-    assert.ok(order[0] < order[1] && order[1] < order[2], "cards → por día de la semana → productos más vistos")
+      [".admin-analytics-metrics", ".admin-analytics-weekday-section", ".admin-analytics-hour-section", "#analytics-top-title"].map((selector) => root.querySelector(selector)!.getBoundingClientRect().top))
+    assert.ok(order[0] < order[1] && order[1] < order[2] && order[2] < order[3], "cards → por día de la semana → por hora → productos más vistos")
   } finally { await page.close() }
 })
 
@@ -308,10 +366,15 @@ test("sin vistas en el período: empty state claro, sin métricas ni gráfico", 
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText(/^[\d.]+ visualizaci/).count(), 0, "sin \"0 visualizaciones\"")
     assert.equal(await page.locator(".admin-analytics-bar-row").count(), 0)
 
-    await page.getByText("Sin visualizaciones en este período").waitFor()
+    await page.locator(".admin-analytics-weekday-section").getByText("Sin visualizaciones en este período").waitFor()
     const chart = await readWeekdayChart(page)
     assert.deepEqual(chart.map((column) => [column.short, column.value, column.height]), ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((day) => [day, "0", 0]), "los 7 días visibles, en 0")
     assert.equal(chart[0].label, "Lunes: 0 visualizaciones, 0% del total")
+
+    const hours = await readHourlyChart(page)
+    assert.deepEqual(hours.map((column) => column.height), Array(24).fill(0), "las 24 horas visibles, en 0")
+    assert.equal(hours[20].label, "20:00 – 21:00: 0 visualizaciones, 0% del total")
+    assert.equal(await page.locator(".admin-analytics-hour-section").getByText("Sin visualizaciones en este período").count(), 1)
   } finally { await page.close() }
 })
 
@@ -324,7 +387,7 @@ for (const theme of ["dark", "light"] as const) {
         const layout = await page.evaluate(() => {
           const root = document.querySelector(".admin-analytics-page")!
           const rootRect = root.getBoundingClientRect()
-          const outside = Array.from(root.querySelectorAll<HTMLElement>(".admin-dashboard-kpi, .admin-analytics-bar-row, .admin-analytics-ranking-row, .admin-dash-segmented, .admin-analytics-weekday, .admin-analytics-weekday-tooltip"))
+          const outside = Array.from(root.querySelectorAll<HTMLElement>(".admin-dashboard-kpi, .admin-analytics-bar-row, .admin-analytics-ranking-row, .admin-dash-segmented, .admin-analytics-weekday, .admin-analytics-weekday-tooltip, .admin-analytics-hour, .admin-analytics-hour-tooltip"))
             .filter((element) => {
               const rect = element.getBoundingClientRect()
               return rect.left < rootRect.left - 1 || rect.right > rootRect.right + 1
@@ -348,6 +411,21 @@ for (const theme of ["dark", "light"] as const) {
                 }),
                 barColor: getComputedStyle(root.querySelector(".admin-analytics-weekday-bar")!).backgroundColor,
                 labelColor: getComputedStyle(columns[0].lastElementChild!.previousElementSibling!).color,
+              }
+            })(),
+            hours: (() => {
+              const columns = Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-hour"))
+              const chart = root.querySelector(".admin-analytics-hours")!.getBoundingClientRect()
+              const labels = columns.map((column) => column.querySelector<HTMLElement>(".admin-analytics-hour-label")!)
+                .filter((label) => label.textContent).map((label) => label.getBoundingClientRect())
+              return {
+                count: columns.length,
+                rows: new Set(columns.map((column) => Math.round(column.getBoundingClientRect().top))).size,
+                minWidth: Math.min(...columns.map((column) => column.getBoundingClientRect().width)),
+                labelsInside: labels.every((rect) => rect.left >= chart.left - 1 && rect.right <= chart.right + 1),
+                labelsOverlap: labels.some((rect, index) => index > 0 && rect.left < labels[index - 1].right + 2),
+                barColor: getComputedStyle(root.querySelector(".admin-analytics-hour-bar")!).backgroundColor,
+                labelColor: getComputedStyle(columns[0].querySelector(".admin-analytics-hour-label")!).color,
               }
             })(),
             peakValuesFit: peakValues.length === 2 && peakValues.every((value) => value.scrollWidth <= value.clientWidth + 1),
@@ -383,6 +461,11 @@ for (const theme of ["dark", "light"] as const) {
         assert.ok(layout.weekdays.textFits, "valores y días entran en su columna")
         assert.equal(layout.weekdays.barColor, layout.barColor, "mismo azul que el Top 10")
         assert.notEqual(layout.weekdays.labelColor, theme === "dark" ? "rgb(15, 23, 42)" : "rgb(248, 250, 252)", "días legibles en el tema")
+        assert.deepEqual([layout.hours.count, layout.hours.rows], [24, 1], "las 24 horas en una sola fila, sin scroll, también en mobile")
+        assert.ok(layout.hours.minWidth >= 10, `columnas por hora tocables: ${layout.hours.minWidth}px`)
+        assert.ok(layout.hours.labelsInside && !layout.hours.labelsOverlap, "eje sin textos superpuestos ni cortados")
+        assert.equal(layout.hours.barColor, layout.barColor, "mismo azul que el Top 10")
+        assert.notEqual(layout.hours.labelColor, theme === "dark" ? "rgb(15, 23, 42)" : "rgb(248, 250, 252)", "horas legibles en el tema")
         assert.ok(layout.peakValuesFit,"\"14:00 – 15:00\" y \"Miércoles\" entran completos")
         assert.ok(layout.metricsHeights.every((height) => height <= 140), `cards sin agrandarse: ${layout.metricsHeights}`)
         if (width >= 640 && width < 1280) {
@@ -492,6 +575,7 @@ test("error al refrescar: conserva los últimos datos, avisa discretamente y el 
     assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText("Miércoles", { exact: true }).count(), 1, "día con más visualizaciones: conserva el último dato válido")
     assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText("255 visualizaciones").count(), 1)
     assert.deepEqual((await readWeekdayChart(page)).map((column) => column.value), ["80", "95", "255", "120", "60", "70", "30"], "por día de la semana: conserva el último dato válido")
+    assert.deepEqual(await hourlyValues(page), HOURLY_VIEWS, "por hora del día: conserva el último dato válido")
     await waitForText(page, "01:00")
 
     api.status = 200
@@ -573,13 +657,13 @@ test("horario pico: usa exactamente el período global (Hoy, 7 días, 30 días y
 })
 
 test("horario pico: el ciclo global (00:00) y Actualizar ahora lo refrescan junto con Productos más vistos", async () => {
-  const api: ApiControl = { status: 200, hold: null, peakHour: 14 }
+  const api: ApiControl = { status: 200, hold: null }
   const { page, requests, peakRequests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
   try {
     await waitForRequests(peakRequests, 1)
     await peakCard(page).getByText("14:00 – 15:00").waitFor()
 
-    api.peakHour = 18
+    api.hourlyViews = hourlyWithPeak(18)
     await page.clock.runFor(60_000)
     await waitForRequests(peakRequests, 2)
     await waitForRequests(requests, 2)
@@ -588,7 +672,7 @@ test("horario pico: el ciclo global (00:00) y Actualizar ahora lo refrescan junt
     assert.equal(peakRequests.length, 2, "una consulta por ciclo")
     assert.equal(requests.length, 2, "Productos más vistos en el mismo ciclo")
 
-    api.peakHour = 9
+    api.hourlyViews = hourlyWithPeak(9)
     await refreshButton(page).click()
     await waitForRequests(peakRequests, 3)
     await peakCard(page).getByText("09:00 – 10:00").waitFor()
@@ -632,11 +716,17 @@ test("un solo timer para toda Analítica: el horario pico no agrega intervalos",
     const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
     return route.fulfill({ json: weekdayViewsReport(range, 710) })
   })
+  await page.route("**/api/admin/analytics/views-by-hour**", (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    return route.fulfill({ json: hourlyViewsReport(range, 710) })
+  })
   try {
     await page.goto("http://admin.test/admin/analitica")
     await peakCard(page).getByText("14:00 – 15:00").waitFor()
     await weekdayCard(page).getByText("Miércoles", { exact: true }).waitFor()
     await page.locator(".admin-analytics-weekday").first().waitFor()
+    await page.locator(".admin-analytics-hour").first().waitFor()
     await page.waitForTimeout(300)
     assert.deepEqual(intervals, [250], "exactamente un setInterval: el del ciclo global (ninguna métrica agrega otro)")
   } finally { await page.close() }
@@ -804,5 +894,132 @@ test("por día de la semana: el ciclo global (00:00) y Actualizar ahora lo refre
     await waitForText(page, "01:00")
     assert.deepEqual(await weekdayValues(page), ["7", "0", "0", "0", "0", "0", "0"])
     assert.deepEqual([requests.length, peakRequests.length, weekdayRequests.length, weekdayViewsRequests.length], [3, 3, 3, 3])
+  } finally { await page.close() }
+})
+
+// --- Visualizaciones por hora del día ---------------------------------------------
+
+test("por hora del día: usa exactamente el período global (Hoy, 7 días, 30 días y personalizado)", async () => {
+  const { page, requests, hourlyRequests } = await openAnalytics(1440, "dark")
+  try {
+    await waitForRequests(hourlyRequests, 1)
+    for (const [button, count] of [["Hoy", 2], ["Últimos 30 días", 3], ["Últimos 7 días", 4]] as const) {
+      await page.getByRole("button", { name: button }).click()
+      await waitForRequests(hourlyRequests, count)
+      await waitForRequests(requests, count)
+      assert.deepEqual(hourlyRequests[count - 1], requests[count - 1].range, `${button}: mismo período que Productos más vistos`)
+    }
+    assert.deepEqual(hourlyRequests[0], { from: addDays(TODAY, -6), to: TODAY })
+    assert.deepEqual(hourlyRequests[1], { from: TODAY, to: TODAY })
+    assert.deepEqual(hourlyRequests[2], { from: addDays(TODAY, -29), to: TODAY })
+
+    await page.getByRole("button", { name: "Personalizado" }).click()
+    const from = page.getByRole("textbox", { name: "Fecha inicial" })
+    await from.fill("01/10/2026")
+    await from.press("Tab")
+    await page.keyboard.press("Escape")
+    const to = page.getByRole("textbox", { name: "Fecha final" })
+    await to.fill("15/10/2026")
+    await to.press("Tab")
+    const deadline = Date.now() + 5_000
+    while (JSON.stringify(hourlyRequests.at(-1)) !== JSON.stringify({ from: "2026-10-01", to: "2026-10-15" }) && Date.now() < deadline) {
+      await page.waitForTimeout(50)
+    }
+    assert.deepEqual(hourlyRequests.at(-1), { from: "2026-10-01", to: "2026-10-15" })
+    assert.deepEqual(hourlyRequests.at(-1), requests.at(-1)?.range)
+  } finally { await page.close() }
+})
+
+test("por hora del día: tooltip con franja exacta, visualizaciones y % al pasar el mouse o enfocar, sin salirse de la página", async () => {
+  const { page } = await openAnalytics(390, "dark")
+  try {
+    await readHourlyChart(page)
+    const columns = page.locator(".admin-analytics-hour")
+    const tooltip = (index: number) => columns.nth(index).locator(".admin-analytics-hour-tooltip")
+    const visible = (index: number) => page.waitForFunction(
+      (position) => getComputedStyle(document.querySelectorAll(".admin-analytics-hour-tooltip")[position]).opacity === "1", index)
+    assert.equal(await tooltip(20).evaluate((element) => getComputedStyle(element).opacity), "0", "oculto en reposo")
+
+    await columns.nth(20).hover()
+    await visible(20)
+    assert.equal((await tooltip(20).innerText()).replace(/\s+/g, " ").trim(), "20:00 – 21:00 58 visualizaciones 8,2% del total")
+
+    await page.mouse.move(0, 0)
+    await columns.nth(4).focus()
+    await visible(4)
+    assert.equal((await tooltip(4).innerText()).replace(/\s+/g, " ").trim(), "04:00 – 05:00 0 visualizaciones 0% del total", "hora sin etiqueta en el eje y sin vistas: igual interactuable")
+
+    await columns.nth(23).focus()
+    await visible(23)
+    assert.equal((await tooltip(23).innerText()).replace(/\s+/g, " ").trim(), "23:00 – 00:00 24 visualizaciones 3,4% del total")
+
+    const bounds = await page.evaluate(() => Array.from(document.querySelectorAll(".admin-analytics-hour-tooltip"), (element) => {
+      const rect = element.getBoundingClientRect()
+      return rect.left >= 0 && rect.right <= document.documentElement.clientWidth
+    }))
+    assert.deepEqual(bounds, Array(24).fill(true), "ningún tooltip se sale de la pantalla en mobile")
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0)
+  } finally { await page.close() }
+})
+
+test("por hora del día: el ciclo global (00:00) y Actualizar ahora lo refrescan junto con el horario pico, que siempre es su barra más alta", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, hourlyRequests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
+  const peakMatchesChart = async () => {
+    const hours = await readHourlyChart(page)
+    const tallest = hours.reduce((best, column) => (column.height > best.height ? column : best))
+    return tallest.label.startsWith(`${await peakCard(page).locator(".text-2xl").innerText()}:`)
+  }
+  try {
+    await waitForRequests(hourlyRequests, 1)
+    await peakCard(page).getByText("14:00 – 15:00").waitFor()
+    assert.deepEqual(await hourlyValues(page), HOURLY_VIEWS)
+    assert.ok(await peakMatchesChart())
+
+    api.hourlyViews = hourlyWithPeak(20)
+    await page.clock.runFor(60_000)
+    await waitForRequests(hourlyRequests, 2)
+    await peakCard(page).getByText("20:00 – 21:00").waitFor()
+    await page.waitForFunction(() => document.querySelectorAll(".admin-analytics-hour")[20]?.getAttribute("aria-label")?.includes(": 100 visualizaciones"))
+    await waitForText(page, "01:00")
+    assert.ok(await peakMatchesChart(), "00:00: card y gráfico se actualizan juntos")
+    assert.deepEqual(
+      [requests.length, peakRequests.length, weekdayRequests.length, weekdayViewsRequests.length, hourlyRequests.length],
+      [2, 2, 2, 2, 2],
+      "las cinco métricas en el mismo ciclo, una consulta cada una",
+    )
+
+    // Empate 10 h = 20 h: gana la hora más temprana en la card y en el gráfico.
+    api.hourlyViews = HOURLY_VIEWS.map((count, hour) => (hour === 10 || hour === 20 ? 90 : count))
+    await refreshButton(page).click()
+    await waitForRequests(hourlyRequests, 3)
+    await peakCard(page).getByText("10:00 – 11:00").waitFor()
+    await waitForText(page, "01:00")
+    const values = await hourlyValues(page)
+    assert.deepEqual([values[10], values[20]], [90, 90])
+    assert.ok(await peakMatchesChart(), "empate: la primera barra más alta es la de la card")
+    assert.deepEqual(
+      [requests.length, peakRequests.length, weekdayRequests.length, weekdayViewsRequests.length, hourlyRequests.length],
+      [3, 3, 3, 3, 3],
+    )
+  } finally { await page.close() }
+})
+
+test("por hora del día: cambiar de período nunca muestra las horas del período anterior", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, hourlyRequests } = await openAnalytics(1440, "light", () => ROWS, { api })
+  try {
+    await waitForRequests(hourlyRequests, 1)
+    assert.deepEqual(await hourlyValues(page), HOURLY_VIEWS)
+    let release!: () => void
+    api.hold = new Promise((resolve) => { release = resolve })
+    api.hourlyViews = hourlyWithPeak(9)
+    await page.getByRole("button", { name: "Hoy" }).click()
+    await waitForRequests(hourlyRequests, 2)
+    await page.locator(".admin-analytics-hour-section[aria-busy=true]").waitFor()
+    assert.equal(await page.locator(".admin-analytics-hour").count(), 0, "mientras carga el nuevo período, sin barras del anterior")
+    api.hold = null
+    release()
+    await page.waitForFunction(() => document.querySelectorAll(".admin-analytics-hour")[9]?.getAttribute("aria-label")?.includes(": 100 visualizaciones"))
   } finally { await page.close() }
 })

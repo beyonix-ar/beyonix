@@ -3,9 +3,10 @@ import type { AnalyticsDateRange } from "./product-view-report.ts"
 /**
  * Admin > Analítica > visualizaciones por horario y por día de la semana. La
  * agregación en hora de Argentina la hacen las RPC en SQL
- * (`admin_product_view_peak_hour`, `admin_product_views_by_weekday` y
- * `admin_product_view_peak_weekday`, que elige el ganador de esa misma
- * distribución); acá se validan y se arman los reportes para la UI.
+ * (`admin_product_views_by_hour` y `admin_product_views_by_weekday`; los
+ * "pico" `admin_product_view_peak_hour` y `admin_product_view_peak_weekday`
+ * eligen el ganador de esas mismas distribuciones); acá se validan y se
+ * arman los reportes para la UI.
  */
 
 /** Fila de una RPC de pico: franja/día ganador, sus visualizaciones y el total del período. */
@@ -105,20 +106,49 @@ export interface WeekdayViewsReport {
 }
 
 /**
- * `admin_product_views_by_weekday` sólo devuelve los días con vistas; acá se
- * completan los 7 (lunes a domingo) con 0 y se descartan filas inválidas.
+ * Las RPC de distribución sólo devuelven los buckets con vistas: completa
+ * todos los de `min` a `max` con 0, descarta filas inválidas y calcula la
+ * participación de cada uno en el total.
  */
-export function buildWeekdayViewsReport(range: AnalyticsDateRange, rows: { weekday: number; views: number }[]): WeekdayViewsReport {
+function fillDistribution(rows: { bucket: number; views: number }[], min: number, max: number) {
   const views = new Map<number, number>()
   for (const row of rows) {
-    if (Number.isInteger(row.weekday) && row.weekday >= 1 && row.weekday <= 7 && Number.isFinite(row.views) && row.views > 0) {
-      views.set(row.weekday, row.views)
+    if (Number.isInteger(row.bucket) && row.bucket >= min && row.bucket <= max && Number.isFinite(row.views) && row.views > 0) {
+      views.set(row.bucket, row.views)
     }
   }
   const totalViews = Array.from(views.values()).reduce((sum, count) => sum + count, 0)
-  const days = WEEKDAY_NAMES.map((_, index) => {
-    const count = views.get(index + 1) ?? 0
-    return { weekday: index + 1, views: count, sharePercent: totalViews > 0 ? (count / totalViews) * 100 : 0 }
+  const buckets = Array.from({ length: max - min + 1 }, (_, index) => {
+    const count = views.get(min + index) ?? 0
+    return { bucket: min + index, views: count, sharePercent: totalViews > 0 ? (count / totalViews) * 100 : 0 }
   })
-  return { range, totalViews, days }
+  return { totalViews, buckets }
+}
+
+/** `admin_product_views_by_weekday` → siempre los 7 días (lunes a domingo), los faltantes con 0. */
+export function buildWeekdayViewsReport(range: AnalyticsDateRange, rows: { weekday: number; views: number }[]): WeekdayViewsReport {
+  const { totalViews, buckets } = fillDistribution(rows.map((row) => ({ bucket: row.weekday, views: row.views })), 1, 7)
+  return { range, totalViews, days: buckets.map(({ bucket, views, sharePercent }) => ({ weekday: bucket, views, sharePercent })) }
+}
+
+/** Visualizaciones de una franja horaria: suma de esa hora en todas las fechas del período. */
+export interface HourViews {
+  /** Hora de inicio de la franja (0–23, hora de Argentina). */
+  hour: number
+  views: number
+  /** Participación en las visualizaciones del período, 0–100 (0 si el período no tiene vistas). */
+  sharePercent: number
+}
+
+export interface HourlyViewsReport {
+  range: AnalyticsDateRange
+  totalViews: number
+  /** Siempre las 24 franjas, de 00 a 23; las horas sin vistas valen 0. */
+  hours: HourViews[]
+}
+
+/** `admin_product_views_by_hour` → siempre las 24 horas (00 a 23), las faltantes con 0. */
+export function buildHourlyViewsReport(range: AnalyticsDateRange, rows: { hour: number; views: number }[]): HourlyViewsReport {
+  const { totalViews, buckets } = fillDistribution(rows.map((row) => ({ bucket: row.hour, views: row.views })), 0, 23)
+  return { range, totalViews, hours: buckets.map(({ bucket, views, sharePercent }) => ({ hour: bucket, views, sharePercent })) }
 }

@@ -14,6 +14,7 @@ const MIGRATIONS = [
   "20261026140000_analytics_peak_hour.sql",
   "20261026160000_analytics_peak_weekday.sql",
   "20261026180000_analytics_views_by_weekday.sql",
+  "20261027100000_analytics_views_by_hour.sql",
 ].map((file) => readFileSync(`supabase/migrations/${file}`, "utf8"))
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -369,6 +370,87 @@ test("consistencia: \"Día con más visualizaciones\" es siempre el máximo de l
   } finally { await db.close() }
 })
 
+test("por hora del día: suma la misma hora de todas las fechas en hora de Argentina; sólo horas con vistas", async () => {
+  const db = await createDb()
+  try {
+    const views = (at: string, times: number, product = 1) => db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+      select 'product_view', gen_random_uuid(), ${product}, '${at}'::timestamptz from generate_series(1, ${times})`)
+    const byHour = async (from: string, to: string) => (await db.query<{ hour: number; view_count: number }>(
+      `select hour, view_count::int from public.admin_product_views_by_hour('${from}', '${to}')`,
+    )).rows.map((row) => [row.hour, row.view_count])
+    const peak = async (from: string, to: string) => (await db.query<{ peak_hour: number; peak_views: number; total_views: number }>(
+      `select peak_hour, peak_views::int, total_views::int from public.admin_product_view_peak_hour('${from}', '${to}')`,
+    )).rows
+
+    // 20 h de lunes 19, martes 20 y miércoles 21 (dos productos): 10 + 15 + 20 = 45.
+    await views("2026-10-19 20:10-03", 10)
+    await views("2026-10-20 20:45-03", 15)
+    await views("2026-10-21 20:00-03", 20, 2)
+    await views("2026-10-21 02:30+00", 4)    // 02 h UTC del 21 = 23:30 del 20 en Argentina
+    await views("2026-10-20 08:59-03", 3)
+    await views("2026-10-25 23:59-03", 1)
+    await views("2026-10-26 00:00-03", 2)    // 26 (hoy del test) a las 00 h: fuera de un rango que termina el 25
+    await views("2026-10-26 09:15-03", 5)
+    await views("2026-10-01 20:00-03", 7)    // sólo en 30 días
+    await views("2026-09-26 12:00-03", 9)    // fuera de 30 días
+
+    assert.deepEqual(await byHour("2026-10-19", "2026-10-21"), [[8, 3], [20, 45], [23, 4]], "A + C + H: la misma hora de varios días suma; sin filas para las horas sin vistas")
+    assert.deepEqual(await byHour("2026-10-20", "2026-10-20"), [[8, 3], [20, 15], [23, 4]], "B: las 02:30 UTC del 21 son las 23 h del 20 en Argentina")
+    assert.deepEqual(await byHour("2026-10-21", "2026-10-21"), [[20, 20]], "B: y no suman al 21")
+    assert.deepEqual(await byHour("2026-10-26", "2026-10-26"), [[0, 2], [9, 5]], "D: Hoy")
+    assert.deepEqual(await byHour("2026-10-20", "2026-10-26"), [[0, 2], [8, 3], [9, 5], [20, 35], [23, 5]], "E: 7 días")
+    assert.deepEqual(await byHour("2026-09-27", "2026-10-26"), [[0, 2], [8, 3], [9, 5], [20, 52], [23, 5]], "F: 30 días")
+    assert.deepEqual(await byHour("2026-10-24", "2026-10-25"), [[23, 1]], "G: personalizado, inicio inclusivo y fin exclusivo del día siguiente")
+    assert.deepEqual(await byHour("2026-10-22", "2026-10-23"), [], "I: sin vistas, sin filas (el servidor completa los 24 ceros)")
+    assert.deepEqual(await byHour("2026-10-21", "2026-10-20"), [], "rango invertido")
+
+    assert.deepEqual(await peak("2026-09-27", "2026-10-26"), [{ peak_hour: 20, peak_views: 52, total_views: 67 }], "L: el horario pico es la barra más alta, con el mismo total")
+    const ranking = await db.query<{ total: number }>("select sum(views)::int as total from public.admin_product_view_stats('2026-09-27', '2026-10-26')")
+    assert.equal(ranking.rows[0].total, 67, "mismo total que Productos más vistos")
+  } finally { await db.close() }
+})
+
+test("consistencia: \"Horario pico\" es siempre el máximo de la distribución por hora (empate a la más temprana)", async () => {
+  const db = await createDb()
+  try {
+    // Distribuciones pseudoaleatorias con empates frecuentes, cargadas en UTC y leídas en hora de Argentina.
+    let seed = 11
+    const next = () => (seed = (seed * 48271) % 2147483647) % 4
+    for (let slot = 0; slot < 24 * 20; slot += 1) {
+      const times = next()
+      if (times > 0) {
+        await db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+          select 'product_view', gen_random_uuid(), 1, timestamptz '2026-09-30 21:30+00' + interval '${slot * 97} minutes'
+          from generate_series(1, ${times})`)
+      }
+    }
+    // Empate explícito: 10 h y 20 h con 30 vistas cada una → 10:00 – 11:00.
+    await db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+      select 'product_view', gen_random_uuid(), 1, timestamptz '2026-11-20 10:15-03' + (g % 2) * interval '10 hours' from generate_series(1, 60) g`)
+
+    for (const [from, to] of [["2026-10-01", "2026-10-30"], ["2026-10-05", "2026-10-11"], ["2026-10-12", "2026-10-12"], ["2026-10-15", "2026-10-28"], ["2026-11-20", "2026-11-20"], ["2026-12-01", "2026-12-07"]]) {
+      const distribution = (await db.query<{ hour: number; view_count: number }>(
+        `select hour, view_count::int from public.admin_product_views_by_hour('${from}', '${to}')`,
+      )).rows
+      const peak = (await db.query<{ peak_hour: number; peak_views: number; total_views: number }>(
+        `select peak_hour, peak_views::int, total_views::int from public.admin_product_view_peak_hour('${from}', '${to}')`,
+      )).rows
+      if (distribution.length === 0) {
+        assert.deepEqual(peak, [], `${from}..${to}: sin vistas en ninguno de los dos`)
+        continue
+      }
+      const max = Math.max(...distribution.map((row) => row.view_count))
+      const expected = distribution.filter((row) => row.view_count === max).sort((a, b) => a.hour - b.hour)[0]
+      assert.deepEqual(peak, [{
+        peak_hour: expected.hour,
+        peak_views: max,
+        total_views: distribution.reduce((sum, row) => sum + row.view_count, 0),
+      }], `${from}..${to}`)
+    }
+    assert.deepEqual((await db.query("select peak_hour, peak_views::int from public.admin_product_view_peak_hour('2026-11-20', '2026-11-20')")).rows, [{ peak_hour: 10, peak_views: 30 }], "M: empate → la hora más temprana")
+  } finally { await db.close() }
+})
+
 test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role sí", async () => {
   const db = await createDb()
   try {
@@ -389,6 +471,7 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
       await assert.rejects(db.query("select * from public.admin_product_view_peak_hour('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: horario pico`)
       await assert.rejects(db.query("select * from public.admin_product_view_peak_weekday('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: día con más visualizaciones`)
       await assert.rejects(db.query("select * from public.admin_product_views_by_weekday('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: por día de la semana`)
+      await assert.rejects(db.query("select * from public.admin_product_views_by_hour('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: por hora del día`)
       await assert.rejects(db.query("select public.analytics_product_image(1, null)"), /permission denied/i, `${role}: imagen`)
       await db.exec("reset role")
     }
@@ -396,6 +479,8 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
     assert.equal((await db.query("select * from public.admin_product_view_stats('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.equal((await db.query("select * from public.admin_product_view_peak_weekday('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.equal((await db.query("select * from public.admin_product_views_by_weekday('2000-01-01', '2100-12-31')")).rows.length, 1)
+    assert.equal((await db.query("select * from public.admin_product_views_by_hour('2000-01-01', '2100-12-31')")).rows.length, 1)
+    assert.equal((await db.query("select * from public.admin_product_view_peak_hour('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.equal((await db.query<{ status: string }>(`select public.record_product_view('${SESSION_B}'::uuid, 1) as status`)).rows[0].status, "recorded")
     await db.exec("reset role")
   } finally { await db.close() }

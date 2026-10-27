@@ -344,3 +344,56 @@ test("Visualizaciones por día: sin vistas → 7 ceros; rango inválido 400; err
     assert.deepEqual(await response.json(), { error: "No se pudieron cargar las visualizaciones por día de la semana." })
   })
 })
+
+const hourlyViewsRequest = (query: string, token: string | null = "token") => new Request(`http://localhost/api/admin/analytics/views-by-hour?${query}`, {
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
+})
+
+test("Visualizaciones por hora: anon 401, cliente y operador 403; Admin y Super Admin reciben las 24 horas", async () => {
+  const route = await import("../../app/api/admin/analytics/views-by-hour/route")
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await route.GET(hourlyViewsRequest("from=2026-10-20&to=2026-10-26", null))).status, 401)
+    assert.equal((await route.GET(hourlyViewsRequest("from=2026-10-20&to=2026-10-26"))).status, 401)
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  for (const role of ["cliente", "operador"]) {
+    await withSupabase({ userId: "user", role }, async (calls) => {
+      assert.equal((await route.GET(hourlyViewsRequest("from=2026-10-20&to=2026-10-26"))).status, 403, role)
+      assert.ok(calls.every((call) => call.path === "/rest/v1/profiles"))
+    })
+  }
+  for (const role of ["admin", "super_admin"]) {
+    await withSupabase({ userId: "staff", role, rpc: () => Response.json([{ hour: 0, view_count: "2" }, { hour: 9, view_count: 27 }, { hour: 20, view_count: "45" }, { hour: 23, view_count: "176" }]) }, async (calls) => {
+      const response = await route.GET(hourlyViewsRequest("from=2026-10-20&to=2026-10-26"))
+      assert.equal(response.status, 200, role)
+      assert.equal(response.headers.get("cache-control"), "private, no-store")
+      const report = await response.json() as { totalViews: number; hours: { hour: number; views: number; sharePercent: number }[] }
+      assert.equal(report.totalViews, 250)
+      assert.equal(report.hours.length, 24)
+      assert.deepEqual(report.hours.filter((slot) => slot.views > 0).map((slot) => [slot.hour, slot.views]), [[0, 2], [9, 27], [20, 45], [23, 176]])
+      assert.equal(report.hours[20].sharePercent, 18)
+      const rpc = calls.find((call) => call.path === "/rest/v1/rpc/admin_product_views_by_hour")
+      assert.deepEqual(rpc?.body, { p_from: "2026-10-20", p_to: "2026-10-26" })
+    })
+  }
+})
+
+test("Visualizaciones por hora: sin vistas → 24 ceros; rango inválido 400; error de base 500 genérico", async () => {
+  const route = await import("../../app/api/admin/analytics/views-by-hour/route")
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json([]) }, async () => {
+    const report = await (await route.GET(hourlyViewsRequest("from=2026-10-26&to=2026-10-26"))).json() as { totalViews: number; hours: { views: number; sharePercent: number }[] }
+    assert.equal(report.totalViews, 0)
+    assert.deepEqual(report.hours.map((slot) => [slot.views, slot.sharePercent]), Array.from({ length: 24 }, () => [0, 0]))
+  })
+  await withSupabase({ userId: "staff", role: "admin" }, async (calls) => {
+    for (const query of ["", "from=2026-10-26&to=2026-10-20", "from=2025-01-01&to=2026-10-26", "from=2026-02-30&to=2026-03-01"]) {
+      assert.equal((await route.GET(hourlyViewsRequest(query))).status, 400, query)
+    }
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json({ message: "function does not exist" }, { status: 500 }) }, async () => {
+    const response = await route.GET(hourlyViewsRequest("from=2026-10-20&to=2026-10-26"))
+    assert.equal(response.status, 500)
+    assert.deepEqual(await response.json(), { error: "No se pudieron cargar las visualizaciones por hora del día." })
+  })
+})
