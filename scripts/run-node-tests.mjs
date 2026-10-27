@@ -343,6 +343,7 @@ const TEST_FILES = [
   "lib/analytics/analytics-session.test.ts",
   "lib/analytics/refresh-scheduler.test.ts",
   "lib/analytics/peak-views-report.test.ts",
+  "lib/analytics/session-stats-report.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN

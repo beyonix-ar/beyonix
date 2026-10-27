@@ -6,7 +6,7 @@ import type { PeakViewsRow } from "@/lib/analytics/peak-views-report"
 export type AnalyticsRpcRecord = Record<string, number | string | null>
 
 interface AnalyticsRpcEndpoint<Report> {
-  rpc: "admin_product_view_peak_hour" | "admin_product_view_peak_weekday" | "admin_product_views_by_weekday" | "admin_product_views_by_hour"
+  rpc: "admin_product_view_peak_hour" | "admin_product_view_peak_weekday" | "admin_product_views_by_weekday" | "admin_product_views_by_hour" | "admin_product_view_session_stats"
   errorMessage: string
   buildReport: (range: AnalyticsDateRange, records: AnalyticsRpcRecord[]) => Report
 }

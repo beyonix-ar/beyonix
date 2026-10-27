@@ -15,6 +15,7 @@ const MIGRATIONS = [
   "20261026160000_analytics_peak_weekday.sql",
   "20261026180000_analytics_views_by_weekday.sql",
   "20261027100000_analytics_views_by_hour.sql",
+  "20261027120000_analytics_session_stats.sql",
 ].map((file) => readFileSync(`supabase/migrations/${file}`, "utf8"))
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -451,6 +452,52 @@ test("consistencia: \"Horario pico\" es siempre el máximo de la distribución p
   } finally { await db.close() }
 })
 
+test("sesiones con visualizaciones: cada session_id cuenta una vez; mismas vistas y período que Productos más vistos", async () => {
+  const db = await createDb()
+  try {
+    const session = (letter: string) => `${letter.repeat(8)}-0000-4000-8000-000000000000`
+    const views = (letter: string, at: string, times: number, product = 1) => db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+      select 'product_view', '${session(letter)}'::uuid, ${product}, '${at}'::timestamptz + g * interval '1 second' from generate_series(1, ${times}) g`)
+    const stats = async (from: string, to: string) => (await db.query<{ total_views: number; unique_sessions: number }>(
+      `select total_views::int, unique_sessions::int from public.admin_product_view_session_stats('${from}', '${to}')`,
+    )).rows
+    const rankingTotal = async (from: string, to: string) => (await db.query<{ total: number }>(
+      `select coalesce(sum(views), 0)::int as total from public.admin_product_view_stats('${from}', '${to}')`,
+    )).rows[0].total
+
+    await views("a", "2026-10-20 10:00-03", 3)
+    await views("a", "2026-10-20 11:00-03", 2, 2)       // A: 5 vistas de 2 productos el 20
+    await views("b", "2026-10-21 12:00-03", 3)
+    await views("c", "2026-10-21 02:30+00", 1)          // 23:30 del 20 en Argentina
+    await views("a", "2026-10-26 09:00-03", 2, 3)       // la misma sesión A otro día del período
+    await views("f", "2026-10-26 00:00-03", 2)          // 26 (hoy del test) a las 00 h
+    await views("e", "2026-10-25 23:59-03", 1)
+    await views("d", "2026-10-01 15:00-03", 4)          // sólo en 30 días
+    await views("9", "2026-09-26 15:00-03", 2)          // fuera de 30 días
+
+    const cases: [string, string, number, number, string][] = [
+      ["2026-10-20", "2026-10-20", 6, 2, "A + timezone: 5 vistas de A son 1 sesión; las 02:30 UTC del 21 (C) son del 20"],
+      ["2026-10-21", "2026-10-21", 3, 1, "C no suma al 21"],
+      ["2026-10-26", "2026-10-26", 4, 2, "G: Hoy"],
+      ["2026-10-20", "2026-10-26", 14, 5, "B + H: 7 días, A cuenta una vez aunque vuelva otro día"],
+      ["2026-09-27", "2026-10-26", 18, 6, "I: 30 días"],
+      ["2026-10-24", "2026-10-25", 1, 1, "J: personalizado, inicio inclusivo y fin exclusivo del día siguiente"],
+      ["2026-10-22", "2026-10-23", 0, 0, "E: sin vistas, una fila en 0 (nunca vacío)"],
+    ]
+    for (const [from, to, totalViews, sessions, label] of cases) {
+      assert.deepEqual(await stats(from, to), [{ total_views: totalViews, unique_sessions: sessions }], label)
+      assert.equal(await rankingTotal(from, to), totalViews, `K + L: mismo total que "Vistas totales" (${label})`)
+    }
+    assert.deepEqual(await stats("2026-10-21", "2026-10-20"), [{ total_views: 0, unique_sessions: 0 }], "rango invertido")
+
+    // M: no puede existir una vista sin sesión (session_id NOT NULL), así que toda vista es atribuible.
+    await assert.rejects(
+      db.exec("insert into public.analytics_events (event_type, session_id, product_id) values ('product_view', null, 1)"),
+      /null value in column "session_id"/,
+    )
+  } finally { await db.close() }
+})
+
 test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role sí", async () => {
   const db = await createDb()
   try {
@@ -472,6 +519,7 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
       await assert.rejects(db.query("select * from public.admin_product_view_peak_weekday('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: día con más visualizaciones`)
       await assert.rejects(db.query("select * from public.admin_product_views_by_weekday('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: por día de la semana`)
       await assert.rejects(db.query("select * from public.admin_product_views_by_hour('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: por hora del día`)
+      await assert.rejects(db.query("select * from public.admin_product_view_session_stats('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: sesiones con visualizaciones`)
       await assert.rejects(db.query("select public.analytics_product_image(1, null)"), /permission denied/i, `${role}: imagen`)
       await db.exec("reset role")
     }
@@ -481,6 +529,7 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
     assert.equal((await db.query("select * from public.admin_product_views_by_weekday('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.equal((await db.query("select * from public.admin_product_views_by_hour('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.equal((await db.query("select * from public.admin_product_view_peak_hour('2000-01-01', '2100-12-31')")).rows.length, 1)
+    assert.deepEqual((await db.query("select total_views::int, unique_sessions::int from public.admin_product_view_session_stats('2000-01-01', '2100-12-31')")).rows, [{ total_views: 1, unique_sessions: 1 }])
     assert.equal((await db.query<{ status: string }>(`select public.record_product_view('${SESSION_B}'::uuid, 1) as status`)).rows[0].status, "recorded")
     await db.exec("reset role")
   } finally { await db.close() }

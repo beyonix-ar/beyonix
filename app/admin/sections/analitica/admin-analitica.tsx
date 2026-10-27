@@ -22,6 +22,7 @@ import { AnalyticsRefreshControl, AnalyticsRefreshProvider, useAnalyticsRefresh 
 import { HourlyViewsSection, useHourlyViewsReport } from "./hourly-views-chart"
 import { PeakHourCard, PeakWeekdayCard, usePeakHourReport, usePeakWeekdayReport } from "./peak-views"
 import { ProductViewsChart } from "./product-views-chart"
+import { SessionStatsCards, useSessionStatsReport } from "./session-stats"
 import { useAnalyticsReport } from "./use-analytics-report"
 import { useWeekdayViewsReport, WeekdayViewsSection } from "./weekday-views-chart"
 
@@ -32,9 +33,9 @@ const UNIQUE_VIEW_HELP =
 
 const LOAD_ERROR = "No se pudieron cargar las vistas de productos."
 
-function MetricCard({ label, help, value, detail }: { label: string; help?: string; value: string; detail?: string }) {
+function MetricCard({ label, help, value, detail, className = "" }: { label: string; help?: string; value: string; detail?: string; className?: string }) {
   return (
-    <div className="admin-dashboard-kpi min-w-0 rounded-2xl border px-4 py-3 xl:col-span-2">
+    <div className={`admin-dashboard-kpi ${className} min-w-0 rounded-2xl border px-4 py-3 xl:col-span-2`}>
       <p className="flex items-center gap-1 text-10px font-black uppercase tracking-widest text-white/52">
         {label}
         {help && <AdminHelpTip label={label} text={help} />}
@@ -71,10 +72,11 @@ function AnalyticsPage() {
   )
   const rangeKey = range ? `${range.from}:${range.to}` : null
 
-  // Productos más vistos, horario pico, día con más visualizaciones y
-  // visualizaciones por día y por hora: tareas del mismo ciclo global,
-  // siempre con el período que muestran los filtros.
+  // Productos más vistos, sesiones, horario pico, día con más
+  // visualizaciones y visualizaciones por día y por hora: tareas del mismo
+  // ciclo global, siempre con el período que muestran los filtros.
   const { report, loadError } = useAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", LOAD_ERROR, range, rangeKey)
+  const sessionStats = useSessionStatsReport(range, rangeKey)
   const peakHour = usePeakHourReport(range, rangeKey)
   const peakWeekday = usePeakWeekdayReport(range, rangeKey)
   const weekdayViews = useWeekdayViewsReport(range, rangeKey)
@@ -133,19 +135,23 @@ function AnalyticsPage() {
       </section>
 
       {range && (
-        // Desktop: 3 métricas de resumen arriba y las 2 de pico abajo (grilla de 6).
+        // Desktop (grilla de 6): 3 métricas de resumen, 2 de sesiones y 2 de pico.
+        // Tablet (2 columnas): "Producto más visto" ocupa su fila para que
+        // sesiones y pico queden de a pares.
         <div className="admin-analytics-metrics grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
           {report && report.totalViews > 0 && report.topProduct && (
             <>
               <MetricCard label="Vistas totales" help={UNIQUE_VIEW_HELP} value={viewsFormatter.format(report.totalViews)} />
               <MetricCard label="Productos vistos" value={viewsFormatter.format(report.productsViewed)} />
               <MetricCard
+                className="sm:max-xl:col-span-2"
                 label="Producto más visto"
                 value={report.topProduct.name}
                 detail={`${viewsLabel(report.topProduct.views)} · ${formatSharePercent(report.topProduct.sharePercent)} del total`}
               />
             </>
           )}
+          <SessionStatsCards {...sessionStats} />
           <PeakHourCard {...peakHour} />
           <PeakWeekdayCard {...peakWeekday} />
         </div>

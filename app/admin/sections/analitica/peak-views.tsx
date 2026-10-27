@@ -41,7 +41,7 @@ function PeakViewsCard({ className, label, help, value, peak, hasReport, loadErr
   const shown = peak && value ? value : hasReport ? "Sin datos" : loadError ? "—" : "…"
 
   return (
-    <div className={`admin-dashboard-kpi ${className} min-w-0 rounded-2xl border px-4 py-3 sm:max-xl:odd:last:col-span-2 xl:col-span-3`} aria-busy={!hasReport && !loadError}>
+    <div className={`admin-dashboard-kpi ${className} min-w-0 rounded-2xl border px-4 py-3 xl:col-span-3`} aria-busy={!hasReport && !loadError}>
       <p className="text-10px font-black uppercase leading-tight tracking-widest text-white/52">
         {label}{" "}
         <span className="inline-flex align-middle">

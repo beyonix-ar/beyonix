@@ -397,3 +397,54 @@ test("Visualizaciones por hora: sin vistas → 24 ceros; rango inválido 400; er
     assert.deepEqual(await response.json(), { error: "No se pudieron cargar las visualizaciones por hora del día." })
   })
 })
+
+const sessionStatsRequest = (query: string, token: string | null = "token") => new Request(`http://localhost/api/admin/analytics/session-stats?${query}`, {
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
+})
+
+test("Sesiones con visualizaciones: anon 401, cliente y operador 403; Admin y Super Admin reciben sesiones y promedio", async () => {
+  const route = await import("../../app/api/admin/analytics/session-stats/route")
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await route.GET(sessionStatsRequest("from=2026-10-20&to=2026-10-26", null))).status, 401)
+    assert.equal((await route.GET(sessionStatsRequest("from=2026-10-20&to=2026-10-26"))).status, 401)
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  for (const role of ["cliente", "operador"]) {
+    await withSupabase({ userId: "user", role }, async (calls) => {
+      assert.equal((await route.GET(sessionStatsRequest("from=2026-10-20&to=2026-10-26"))).status, 403, role)
+      assert.ok(calls.every((call) => call.path === "/rest/v1/profiles"))
+    })
+  }
+  for (const role of ["admin", "super_admin"]) {
+    await withSupabase({ userId: "staff", role, rpc: () => Response.json([{ total_views: "10", unique_sessions: "3" }]) }, async (calls) => {
+      const response = await route.GET(sessionStatsRequest("from=2026-10-20&to=2026-10-26"))
+      assert.equal(response.status, 200, role)
+      assert.equal(response.headers.get("cache-control"), "private, no-store")
+      const report = await response.json() as { totalViews: number; sessions: number; viewsPerSession: number }
+      assert.deepEqual([report.totalViews, report.sessions], [10, 3])
+      assert.ok(Math.abs(report.viewsPerSession - 10 / 3) < 1e-9)
+      const rpc = calls.find((call) => call.path === "/rest/v1/rpc/admin_product_view_session_stats")
+      assert.deepEqual(rpc?.body, { p_from: "2026-10-20", p_to: "2026-10-26" })
+    })
+  }
+})
+
+test("Sesiones con visualizaciones: sin vistas → 0 y promedio null; rango inválido 400; error de base 500 genérico", async () => {
+  const route = await import("../../app/api/admin/analytics/session-stats/route")
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json([{ total_views: 0, unique_sessions: 0 }]) }, async () => {
+    assert.deepEqual(await (await route.GET(sessionStatsRequest("from=2026-10-26&to=2026-10-26"))).json(), {
+      range: { from: "2026-10-26", to: "2026-10-26" }, totalViews: 0, sessions: 0, viewsPerSession: null,
+    })
+  })
+  await withSupabase({ userId: "staff", role: "admin" }, async (calls) => {
+    for (const query of ["", "from=2026-10-26&to=2026-10-20", "from=2025-01-01&to=2026-10-26", "from=2026-02-30&to=2026-03-01"]) {
+      assert.equal((await route.GET(sessionStatsRequest(query))).status, 400, query)
+    }
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json({ message: "function does not exist" }, { status: 500 }) }, async () => {
+    const response = await route.GET(sessionStatsRequest("from=2026-10-20&to=2026-10-26"))
+    assert.equal(response.status, 500)
+    assert.deepEqual(await response.json(), { error: "No se pudieron cargar las sesiones con visualizaciones." })
+  })
+})
