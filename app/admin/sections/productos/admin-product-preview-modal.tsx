@@ -98,7 +98,7 @@ export function AdminProductPreviewModal({
       onColorChange={handleColorChange}
       onAddToCart={() => {
         if (readOnly) return
-        addToCart(product, selectedColor, currentImage || undefined)
+        addToCart(product, selectedColor, currentImage || undefined, { track: false })
       }}
       onDecreaseCart={() => {
         if (readOnly) return

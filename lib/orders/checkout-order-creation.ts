@@ -153,6 +153,11 @@ export interface CheckoutOrderRequestPayload {
   expectedFinancedPricePolicy?: "cover_costs" | "same_as_cash" | null
   /** Aceptación explícita de términos y condiciones (checkbox obligatorio del checkout). */
   termsAccepted?: boolean | null
+  /**
+   * Sesión de Analítica del navegador (no la de reserva de stock). Sólo se
+   * usa para atribuir la compra en Analítica; inválida o ausente, se ignora.
+   */
+  analyticsSessionId?: string | null
 }
 
 export const CHECKOUT_TERMS_NOT_ACCEPTED_MESSAGE =

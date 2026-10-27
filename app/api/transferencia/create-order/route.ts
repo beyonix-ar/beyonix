@@ -63,6 +63,7 @@ import {
   deleteIncompleteCheckoutOrder,
   normalizeReservationSessionId,
 } from "@/lib/orders/checkout-inventory"
+import { linkOrderAnalyticsSession } from "@/lib/analytics/order-session"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
@@ -454,6 +455,7 @@ export async function POST(request: Request) {
     })
     if (!reservationExpiresAt) throw new CheckoutReservationExpiredError()
     incompleteOrderId = order.id
+    await linkOrderAnalyticsSession(admin, order.id, payload.analyticsSessionId)
 
     if (user && pricing.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {

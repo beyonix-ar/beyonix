@@ -8,7 +8,7 @@ const SEND_TIMEOUT_MS = 5_000
  * pudiera inicializarse, la vista se envía igual como anónima y la página del
  * producto ni se entera.
  */
-async function getAccessToken() {
+export async function getAccessToken() {
   try {
     const { supabase } = await import("@/lib/supabase/client")
     const { data } = await supabase.auth.getSession()

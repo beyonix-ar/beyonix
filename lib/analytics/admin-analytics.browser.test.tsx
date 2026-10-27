@@ -10,6 +10,14 @@ import { addDays } from "../business/dashboard-sales-analytics.ts"
 import { argentinaDateKey } from "../business/dashboard-timezone.ts"
 import { buildHourlyViewsReport, buildPeakHourReport, buildPeakWeekdayReport, buildWeekdayViewsReport } from "./peak-views-report.ts"
 import { buildProductViewReport, type AnalyticsDateRange, type ProductViewStatsRow } from "./product-view-report.ts"
+import {
+  buildCommerceReport,
+  buildProductConversionReport,
+  buildSearchReport,
+  type CommercePeriod,
+  type ProductConversionRow,
+  type SearchStatsRow,
+} from "./commerce-report.ts"
 import { buildPeriodComparisonReport, type PeriodCounts } from "./period-comparison.ts"
 import { buildSessionStatsReport } from "./session-stats-report.ts"
 
@@ -83,7 +91,44 @@ interface ApiControl {
   sessions?: number
   /** Período anterior de la comparación (por defecto `PREVIOUS_PERIOD` si hay vistas). */
   previous?: PeriodCounts
+  /** Conversión del período actual (por defecto `COMMERCE_CURRENT` si hay vistas). */
+  commerce?: CommercePeriod
 }
+
+/**
+ * Conversión: 220 sesiones con visualizaciones (las mismas de la card de
+ * sesiones). Actual 25% a carrito, 5% a compra, 13 compras, abandono 39/50
+ * (78%); anterior 20%, 4%, 10 compras, 32/45 (71,1%) → +5 pp, +1 pp, +30%,
+ * +6,9 pp (en rojo: subir el abandono es malo).
+ */
+const COMMERCE_CURRENT: CommercePeriod = {
+  viewedSessions: 220, cartSessions: 60, checkoutSessions: 28, funnelCart: 55, funnelCheckout: 26, funnelPurchase: 11,
+  purchases: 13, attributedPurchases: 11, revenue: 1_300_000, attributedRevenue: 1_100_000,
+  evaluatedCarts: 50, abandonedCarts: 25, abandonedCheckouts: 14, cartsInProgress: 10,
+}
+const COMMERCE_PREVIOUS: CommercePeriod = {
+  viewedSessions: 200, cartSessions: 45, checkoutSessions: 22, funnelCart: 40, funnelCheckout: 20, funnelPurchase: 8,
+  purchases: 10, attributedPurchases: 8, revenue: 900_000, attributedRevenue: 800_000,
+  evaluatedCarts: 45, abandonedCarts: 20, abandonedCheckouts: 12, cartsInProgress: 0,
+}
+const NO_COMMERCE: CommercePeriod = {
+  viewedSessions: 0, cartSessions: 0, checkoutSessions: 0, funnelCart: 0, funnelCheckout: 0, funnelPurchase: 0,
+  purchases: 0, attributedPurchases: 0, revenue: 0, attributedRevenue: 0,
+  evaluatedCarts: 0, abandonedCarts: 0, abandonedCheckouts: 0, cartsInProgress: 0,
+}
+const CONVERSION_ROWS: ProductConversionRow[] = [
+  { productId: 1, name: NAMES[0], slug: "producto-1", image: "https://img.test/malibu.svg", available: true, viewedSessions: 120, addedSessions: 30, purchasedSessions: 8 },
+  { productId: 2, name: NAMES[1], slug: "producto-2", image: null, available: true, viewedSessions: 90, addedSessions: 18, purchasedSessions: 3 },
+  { productId: 4, name: NAMES[3], slug: "producto-4", image: null, available: true, viewedSessions: 40, addedSessions: 4, purchasedSessions: 0 },
+  { productId: 3, name: NAMES[2], slug: "producto-3", image: null, available: false, viewedSessions: 30, addedSessions: 3, purchasedSessions: 1 },
+]
+const SEARCH_ROWS: SearchStatsRow[] = [
+  { kind: "total", term: null, searches: 48, sessions: 30 },
+  { kind: "top", term: "auriculares", searches: 20, sessions: 14 },
+  { kind: "top", term: "mate", searches: 12, sessions: 9 },
+  { kind: "top", term: "parlante", searches: 8, sessions: 6 },
+  { kind: "zero", term: "mouse gamer", searches: 6, sessions: 5 },
+]
 
 /** 600 vistas, 12 productos y 200 sesiones (3 por sesión) contra 710 / 12 / 220 (3,23): +18,3%, igual, +10%, +7,6%. */
 const PREVIOUS_PERIOD: PeriodCounts = { totalViews: 600, productsViewed: 12, sessions: 200 }
@@ -136,6 +181,9 @@ async function openAnalytics(
   const hourlyRequests: AnalyticsDateRange[] = []
   const sessionRequests: AnalyticsDateRange[] = []
   const comparisonRequests: AnalyticsDateRange[] = []
+  const commerceRequests: AnalyticsDateRange[] = []
+  const conversionRequests: AnalyticsDateRange[] = []
+  const searchRequests: AnalyticsDateRange[] = []
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Playwright evalúa las rutas en orden inverso: la del HTML va primero para que la API la pise.
@@ -215,6 +263,22 @@ async function openAnalytics(
     const current = { totalViews: total, productsViewed: rows.filter((row) => row.views > 0).length, sessions: total > 0 ? api.sessions ?? 220 : 0 }
     return route.fulfill({ json: buildPeriodComparisonReport(range, { current, previous: api.previous ?? (total > 0 ? PREVIOUS_PERIOD : NO_ACTIVITY) }) })
   })
+  const commercialRoute = (path: string, requestsLog: AnalyticsDateRange[], error: string, build: (range: AnalyticsDateRange, total: number) => unknown) =>
+    page.route(`**/api/admin/analytics/${path}?**`, async (route) => {
+      const url = new URL(route.request().url())
+      const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+      requestsLog.push(range)
+      const status = api.status
+      if (api.hold) await api.hold
+      if (status !== 200) return route.fulfill({ status, json: { error } })
+      return route.fulfill({ json: build(range, responder(range).reduce((sum, row) => sum + row.views, 0)) })
+    })
+  await commercialRoute("commerce", commerceRequests, "No se pudo cargar la conversión.", (range, total) =>
+    buildCommerceReport(range, { current: total > 0 ? api.commerce ?? COMMERCE_CURRENT : NO_COMMERCE, previous: total > 0 ? COMMERCE_PREVIOUS : NO_COMMERCE }))
+  await commercialRoute("product-conversion", conversionRequests, "No se pudo cargar la conversión por producto.", (range, total) =>
+    buildProductConversionReport(range, total > 0 ? CONVERSION_ROWS : []))
+  await commercialRoute("searches", searchRequests, "No se pudieron cargar las búsquedas.", (range, total) =>
+    buildSearchReport(range, total > 0 ? SEARCH_ROWS : [{ kind: "total", term: null, searches: 0, sessions: 0 }]))
   await page.route("https://img.test/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ccc"/></svg>` }))
   if (options.clockAt !== undefined) {
     // Reloj simulado y detenido: el contador sólo avanza con runFor/fastForward.
@@ -222,7 +286,10 @@ async function openAnalytics(
     await page.clock.pauseAt(options.clockAt + 1_000)
   }
   await page.goto("http://admin.test/admin/analitica")
-  return { page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, hourlyRequests, sessionRequests, comparisonRequests, errors }
+  return {
+    page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, hourlyRequests, sessionRequests, comparisonRequests,
+    commerceRequests, conversionRequests, searchRequests, errors,
+  }
 }
 
 const waitForRequests = async (requests: unknown[], count: number) => {
@@ -232,7 +299,7 @@ const waitForRequests = async (requests: unknown[], count: number) => {
 }
 
 /** Línea de variación de cada card comparada (Vistas, Productos, Sesiones, Por sesión), con su tono. */
-const changeTexts = (page: Page) => page.locator(".admin-analytics-change").evaluateAll((lines) =>
+const changeTexts = (page: Page) => page.locator(".admin-analytics-metrics .admin-analytics-change").evaluateAll((lines) =>
   lines.map((line) => [line.textContent?.replace(/\s+/g, " ").trim() ?? "", line.getAttribute("data-tone") ?? ""]))
 
 const CHANGE_TEXTS = [
@@ -342,7 +409,7 @@ const hourlyValues = async (page: Page) =>
 async function readReport(page: Page) {
   await page.locator(".admin-analytics-ranking-row:not(.admin-analytics-ranking-head)").first().waitFor()
   return page.locator(".admin-analytics-page").evaluate((root) => {
-    const metrics = Array.from(root.querySelectorAll<HTMLElement>(".admin-dashboard-kpi"), (card) => card.innerText.replace(/\s+/g, " ").trim())
+    const metrics = Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-metrics .admin-dashboard-kpi"), (card) => card.innerText.replace(/\s+/g, " ").trim())
     const ranking = Array.from(root.querySelectorAll(".admin-analytics-ranking-row:not(.admin-analytics-ranking-head)"), (row) =>
       Array.from(row.querySelectorAll("[role=cell]"), (cell) => cell.textContent?.trim() ?? ""))
     const bars = Array.from(root.querySelectorAll(".admin-analytics-bar-row"), (row) => ({
@@ -360,7 +427,7 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
   const { page } = await openAnalytics(1440, "dark")
   try {
     const report = await readReport(page)
-    await page.locator(".admin-analytics-change").first().waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").first().waitFor()
     assert.deepEqual((await readReport(page)).metrics, [
       "VISTAS TOTALES 710 +18,3% vs período anterior",
       "PRODUCTOS VISTOS 12 Sin variación",
@@ -425,13 +492,13 @@ test("sin vistas en el período: empty state claro, sin métricas ni gráfico", 
     await page.getByText("Sin datos de visualización para este período.").waitFor()
     await page.locator(".admin-analytics-peak-hour").getByText("Sin datos", { exact: true }).waitFor()
     await page.locator(".admin-analytics-peak-weekday").getByText("Sin datos", { exact: true }).waitFor()
-    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 4, "sólo sesiones (0 y —) y las cards de pico, en \"Sin datos\"")
+    assert.equal(await page.locator(".admin-analytics-metrics .admin-dashboard-kpi").count(), 4, "sólo sesiones (0 y —) y las cards de pico, en \"Sin datos\"")
     await page.locator(".admin-analytics-sessions").getByText("0", { exact: true }).waitFor()
     assert.equal(await page.locator(".admin-analytics-views-per-session .text-2xl").innerText(), "—", "sin sesiones: \"—\", nunca NaN, Infinity ni 0/0")
     assert.equal(await page.getByText(/NaN|Infinity/).count(), 0)
     await page.locator(".admin-analytics-sessions .admin-analytics-change").waitFor()
     assert.deepEqual(
-      await page.locator(".admin-analytics-change").evaluateAll((lines) => lines.map((line) => [line.textContent, line.getAttribute("data-tone")])),
+      await page.locator(".admin-analytics-metrics .admin-analytics-change").evaluateAll((lines) => lines.map((line) => [line.textContent, line.getAttribute("data-tone")])),
       [["Sin variación", "neutral"], ["Sin variación", "neutral"]],
       "D: sin vistas en ambos períodos, \"Sin variación\" (nunca 0/0)",
     )
@@ -462,14 +529,14 @@ for (const theme of ["dark", "light"] as const) {
         const layout = await page.evaluate(() => {
           const root = document.querySelector(".admin-analytics-page")!
           const rootRect = root.getBoundingClientRect()
-          const outside = Array.from(root.querySelectorAll<HTMLElement>(".admin-dashboard-kpi, .admin-analytics-bar-row, .admin-analytics-ranking-row, .admin-dash-segmented, .admin-analytics-weekday, .admin-analytics-weekday-tooltip, .admin-analytics-hour, .admin-analytics-hour-tooltip"))
+          const outside = Array.from(root.querySelectorAll<HTMLElement>(".admin-dashboard-kpi, .admin-analytics-bar-row, .admin-analytics-ranking-row, .admin-dash-segmented, .admin-analytics-weekday, .admin-analytics-weekday-tooltip, .admin-analytics-hour, .admin-analytics-hour-tooltip, .admin-analytics-funnel-step, .admin-analytics-conversion-row, .admin-analytics-search-row, .admin-analytics-cart-detail-row"))
             .filter((element) => {
               const rect = element.getBoundingClientRect()
-              return rect.left < rootRect.left - 1 || rect.right > rootRect.right + 1
+              return rect.width > 0 && (rect.left < rootRect.left - 1 || rect.right > rootRect.right + 1)
             }).map((element) => element.className)
           const ranking = Array.from(root.querySelectorAll(".admin-analytics-ranking-row:not(.admin-analytics-ranking-head)"))[0]
           const cells = Array.from(ranking.querySelectorAll<HTMLElement>("[role=cell]"))
-          const metrics = Array.from(root.querySelectorAll(".admin-dashboard-kpi"), (card) => card.getBoundingClientRect())
+          const metrics = Array.from(root.querySelectorAll(".admin-analytics-metrics .admin-dashboard-kpi"), (card) => card.getBoundingClientRect())
           const peakValues = Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-peak-hour .text-2xl, .admin-analytics-peak-weekday .text-2xl"))
           return {
             weekdays: (() => {
@@ -657,7 +724,7 @@ test("error al refrescar: conserva los últimos datos, avisa discretamente y el 
     await waitForRequests(requests, 2)
     await page.getByText("No se pudo actualizar. Se muestran los últimos datos.").waitFor()
     assert.equal(await rankingRows(page).count(), 12, "el panel no se vacía")
-    assert.equal(await page.locator(".admin-dashboard-kpi").count(), 7)
+    assert.equal(await page.locator(".admin-analytics-metrics .admin-dashboard-kpi").count(), 7)
     assert.equal(await page.locator(".admin-analytics-sessions .text-2xl").innerText(), "220", "sesiones: conserva el último dato válido")
     assert.equal(await page.locator(".admin-analytics-views-per-session .text-2xl").innerText(), "3,2")
     assert.deepEqual(await changeTexts(page), CHANGE_TEXTS, "comparación: conserva el último dato válido")
@@ -828,7 +895,7 @@ test("un solo timer para toda Analítica: el horario pico no agrega intervalos",
     await page.locator(".admin-analytics-weekday").first().waitFor()
     await page.locator(".admin-analytics-hour").first().waitFor()
     await page.locator(".admin-analytics-sessions").getByText("220", { exact: true }).waitFor()
-    await page.locator(".admin-analytics-change").first().waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").first().waitFor()
     await page.waitForTimeout(300)
     assert.deepEqual(intervals, [250], "exactamente un setInterval: el del ciclo global (ninguna métrica agrega otro)")
   } finally { await page.close() }
@@ -1215,11 +1282,11 @@ test("comparación: sube en verde, baja en rojo, igual neutral y Nueva actividad
   const { page, comparisonRequests, requests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
   try {
     await waitForRequests(comparisonRequests, 1)
-    await page.locator(".admin-analytics-change").nth(3).waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").nth(3).waitFor()
     assert.deepEqual(await changeTexts(page), CHANGE_TEXTS, "A + F: subas redondeadas a un decimal; Productos igual → Sin variación (C)")
     assert.deepEqual(comparisonRequests[0], requests[0].range, "mismo período que Vistas totales; el anterior lo deriva el servidor")
 
-    const colors = await page.locator(".admin-analytics-change").evaluateAll((lines) => lines.map((line) => ({
+    const colors = await page.locator(".admin-analytics-metrics .admin-analytics-change").evaluateAll((lines) => lines.map((line) => ({
       color: getComputedStyle(line).color,
       arrow: line.querySelector("svg") !== null,
       title: line.getAttribute("title") ?? "",
@@ -1233,7 +1300,7 @@ test("comparación: sube en verde, baja en rojo, igual neutral y Nueva actividad
     api.previous = { totalViews: 900, productsViewed: 10, sessions: 200 }
     await refreshButton(page).click()
     await waitForRequests(comparisonRequests, 2)
-    await page.waitForFunction(() => document.querySelector(".admin-analytics-change")?.textContent?.startsWith("-"))
+    await page.waitForFunction(() => document.querySelector(".admin-analytics-metrics .admin-analytics-change")?.textContent?.startsWith("-"))
     await waitForText(page, "01:00")
     assert.deepEqual(await changeTexts(page), [
       ["-21,1% vs período anterior", "negative"],
@@ -1241,13 +1308,13 @@ test("comparación: sube en verde, baja en rojo, igual neutral y Nueva actividad
       ["+10% vs período anterior", "positive"],
       ["-28,3% vs período anterior", "negative"],
     ], "B: el promedio compara 3,23 contra 4,5, no la variación de vistas sobre la de sesiones")
-    assert.equal(await page.locator(".admin-analytics-change").first().evaluate((line) => getComputedStyle(line).color), "rgb(252, 165, 165)", "negativo: rojo validado del Dashboard")
+    assert.equal(await page.locator(".admin-analytics-metrics .admin-analytics-change").first().evaluate((line) => getComputedStyle(line).color), "rgb(252, 165, 165)", "negativo: rojo validado del Dashboard")
 
     // E: período anterior sin actividad → Nueva actividad, nunca +Infinity%.
     api.previous = { totalViews: 0, productsViewed: 0, sessions: 0 }
     await refreshButton(page).click()
     await waitForRequests(comparisonRequests, 3)
-    await page.locator(".admin-analytics-change").first().getByText("Nueva actividad").waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").first().getByText("Nueva actividad").waitFor()
     assert.deepEqual(await changeTexts(page), Array(4).fill(["Nueva actividad", "positive"]))
     assert.equal(await page.getByText(/Infinity|NaN/).count(), 0)
   } finally { await page.close() }
@@ -1260,19 +1327,19 @@ test("comparación: el ciclo global (00:00) y Actualizar ahora la refrescan junt
   const counts = () => [opened.requests, opened.peakRequests, opened.weekdayRequests, opened.weekdayViewsRequests, opened.hourlyRequests, opened.sessionRequests, comparisonRequests].map((list) => list.length)
   try {
     await waitForRequests(comparisonRequests, 1)
-    await page.locator(".admin-analytics-change").first().getByText("+18,3%").waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").first().getByText("+18,3%").waitFor()
 
     api.previous = { totalViews: 710, productsViewed: 12, sessions: 220 }
     await page.clock.runFor(60_000)
     await waitForRequests(comparisonRequests, 2)
-    await page.waitForFunction(() => Array.from(document.querySelectorAll(".admin-analytics-change")).every((line) => line.textContent === "Sin variación"))
+    await page.waitForFunction(() => Array.from(document.querySelectorAll(".admin-analytics-metrics .admin-analytics-change")).every((line) => line.textContent === "Sin variación"))
     await waitForText(page, "01:00")
     assert.deepEqual(counts(), [2, 2, 2, 2, 2, 2, 2], "00:00: siete consultas, una por módulo, en el mismo ciclo")
 
     api.previous = PREVIOUS_PERIOD
     await refreshButton(page).click()
     await waitForRequests(comparisonRequests, 3)
-    await page.locator(".admin-analytics-change").first().getByText("+18,3%").waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").first().getByText("+18,3%").waitFor()
     await waitForText(page, "01:00")
     assert.deepEqual(counts(), [3, 3, 3, 3, 3, 3, 3], "Actualizar ahora: lo mismo")
   } finally { await page.close() }
@@ -1282,16 +1349,175 @@ test("comparación: al cambiar de período nunca muestra la variación del anter
   const api: ApiControl = { status: 200, hold: null }
   const { page, comparisonRequests } = await openAnalytics(390, "dark", () => ROWS, { api })
   try {
-    await page.locator(".admin-analytics-change").nth(3).waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").nth(3).waitFor()
     let release!: () => void
     api.hold = new Promise((resolve) => { release = resolve })
     api.previous = { totalViews: 0, productsViewed: 0, sessions: 0 }
     await page.getByRole("button", { name: "Últimos 30 días" }).click()
     await waitForRequests(comparisonRequests, 2)
     await page.locator(".admin-analytics-sessions[aria-busy=true]").waitFor()
-    assert.equal(await page.locator(".admin-analytics-change").count(), 0, "mientras carga el nuevo período, sin variaciones del anterior")
+    assert.equal(await page.locator(".admin-analytics-metrics .admin-analytics-change").count(), 0, "mientras carga el nuevo período, sin variaciones del anterior")
     api.hold = null
     release()
-    await page.locator(".admin-analytics-change").nth(3).getByText("Nueva actividad").waitFor()
+    await page.locator(".admin-analytics-metrics .admin-analytics-change").nth(3).getByText("Nueva actividad").waitFor()
+  } finally { await page.close() }
+})
+
+// --- Analítica comercial ---------------------------------------------------------------
+
+const commerceCardTexts = (page: Page) => page.locator(".admin-analytics-commerce-cards .admin-dashboard-kpi").evaluateAll((cards) =>
+  cards.map((card) => (card as HTMLElement).innerText.replace(/\s+/g, " ").trim()))
+
+async function readCommerce(page: Page) {
+  await page.locator(".admin-analytics-funnel-step").first().waitFor()
+  await page.locator(".admin-analytics-commerce-cards .admin-analytics-change").first().waitFor()
+  // Sin funciones con nombre dentro de evaluate: tsx (keepNames) las envuelve en __name, que no existe en el navegador.
+  return page.locator(".admin-analytics-page").evaluate((root) => ({
+    tones: Array.from(root.querySelectorAll(".admin-analytics-commerce-cards .admin-analytics-change"), (line) => line.getAttribute("data-tone")),
+    funnel: Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-funnel-step"), (step) => ({
+      text: step.innerText.replace(/\s+/g, " ").trim(),
+      width: step.querySelector<HTMLElement>(".admin-analytics-funnel-bar")!.getBoundingClientRect().width,
+      track: step.querySelector<HTMLElement>(".admin-analytics-funnel-track")!.getBoundingClientRect().width,
+    })),
+    cart: Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-cart-detail-row"), (row) => row.innerText.replace(/\s+/g, " ").trim()),
+    conversion: Array.from(root.querySelectorAll(".admin-analytics-conversion-row:not(.admin-analytics-conversion-head)"), (row) =>
+      Array.from(row.querySelectorAll("[role=cell]"), (cell) => cell.textContent?.trim() ?? "")),
+    searchTotals: root.querySelector<HTMLElement>(".admin-analytics-search-totals")!.innerText.replace(/\s+/g, " ").trim(),
+    searchLists: Array.from(root.querySelectorAll(".admin-analytics-search-list"), (list) =>
+      Array.from(list.querySelectorAll<HTMLElement>("li"), (item) => item.innerText.replace(/\s+/g, " ").trim())),
+  }))
+}
+
+test("conversión: cards con pp/%, funnel por sesiones, carritos y checkout, conversión por producto y búsquedas", async () => {
+  const { page, requests, commerceRequests, conversionRequests, searchRequests } = await openAnalytics(1440, "dark")
+  try {
+    const commerce = await readCommerce(page)
+    assert.deepEqual(await commerceCardTexts(page), [
+      "CONVERSIÓN A CARRITO 25% 55 sesiones de 220 con visualizaciones +5 pp vs período anterior",
+      "CONVERSIÓN A COMPRA 5% 11 sesiones con compra +1 pp vs período anterior",
+      "COMPRAS COMPLETADAS 13 11 atribuibles · $ 1.100.000 atribuidos +30% vs período anterior",
+      "CARRITOS ABANDONADOS 39 Tasa de abandono 78% +6,9 pp vs período anterior",
+    ].map((line) => line.replace(/\s/g, " ")))
+    assert.deepEqual(commerce.tones, ["positive", "positive", "positive", "negative"], "el abandono que sube va en rojo; las tasas comparan en puntos porcentuales")
+    assert.deepEqual(commerce.funnel.map((step) => step.text), [
+      "Visualización 220 sesiones 100% · inicio del funnel",
+      "Carrito 55 sesiones 25% del inicio · 25% de la etapa anterior",
+      "Checkout 26 sesiones 11,8% del inicio · 47,3% de la etapa anterior",
+      "Compra 11 sesiones 5% del inicio · 42,3% de la etapa anterior",
+    ])
+    assert.ok(Math.abs(commerce.funnel[0].width - commerce.funnel[0].track) < 1, "la primera etapa ocupa el ancho")
+    assert.ok(Math.abs(commerce.funnel[1].width / commerce.funnel[0].width - 0.25) < 0.01, "barras proporcionales al inicio")
+    assert.deepEqual(commerce.cart, [
+      "Sesiones con carrito +33,3% vs período anterior 60",
+      "Checkouts iniciados +27,3% vs período anterior 28",
+      "Abandonados antes del checkout 25",
+      "Checkouts abandonados 14",
+      "En curso (menos de 24 h) 10",
+    ])
+    assert.deepEqual(commerce.conversion[0], [`${NAMES[0]}`, "120", "30", "25%", "8", "6,7%"])
+    assert.deepEqual(commerce.conversion[3], [`${NAMES[2]}No publicado`, "30", "3", "10%", "1", "3,3%"])
+    assert.equal(commerce.searchTotals, "48 búsquedas · 30 sesiones buscaron")
+    assert.deepEqual(commerce.searchLists, [["1 auriculares 20", "2 mate 12", "3 parlante 8"], ["1 mouse gamer 6"]])
+
+    for (const list of [commerceRequests, conversionRequests, searchRequests]) assert.deepEqual(list[0], requests[0].range, "mismo período global")
+    const order = await page.locator(".admin-analytics-page").evaluate((root) =>
+      [".admin-analytics-metrics", ".admin-analytics-hour-section", ".admin-analytics-commerce", "#analytics-top-title", ".admin-analytics-product-conversion-section", ".admin-analytics-search-section"]
+        .map((selector) => root.querySelector(selector)!.getBoundingClientRect().top))
+    assert.ok(order.every((top, index) => index === 0 || top > order[index - 1]), `resumen → visualizaciones → conversión → productos → búsquedas: ${order}`)
+  } finally { await page.close() }
+})
+
+test("conversión sin datos: tasas en —, funnel en 0, sin búsquedas ni productos; nunca NaN", async () => {
+  const { page } = await openAnalytics(390, "light", () => [])
+  try {
+    await page.locator(".admin-analytics-funnel-step").first().waitFor()
+    await page.getByText("Sin sesiones con visualizaciones en este período").waitFor()
+    await page.locator(".admin-analytics-purchases .admin-analytics-change").waitFor()
+    assert.deepEqual((await commerceCardTexts(page)).map((text) => text.replace(/\s/g, " ")), [
+      "CONVERSIÓN A CARRITO — 0 sesiones de 0 con visualizaciones",
+      "CONVERSIÓN A COMPRA — 0 sesiones con compra",
+      "COMPRAS COMPLETADAS 0 0 atribuibles · $ 0 atribuidos Sin variación",
+      "CARRITOS ABANDONADOS 0 Tasa de abandono —",
+    ], "sin base no hay tasa ni variación de la tasa; 0 compras contra 0: sin variación")
+    assert.equal(await page.getByText("Sin productos vistos en este período").count(), 1)
+    assert.equal(await page.locator(".admin-analytics-search-section").getByText("Sin búsquedas en este período").count(), 2)
+    assert.equal(await page.getByText(/NaN|Infinity/).count(), 0)
+  } finally { await page.close() }
+})
+
+test("conversión: el ciclo global (00:00) y Actualizar ahora la refrescan; 10 consultas por ciclo, una por módulo", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const opened = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
+  const { page } = opened
+  const all = [opened.requests, opened.peakRequests, opened.weekdayRequests, opened.weekdayViewsRequests, opened.hourlyRequests,
+    opened.sessionRequests, opened.comparisonRequests, opened.commerceRequests, opened.conversionRequests, opened.searchRequests]
+  try {
+    await readCommerce(page)
+    assert.deepEqual(all.map((list) => list.length), Array(10).fill(1))
+
+    api.commerce = { ...COMMERCE_CURRENT, funnelPurchase: 22, purchases: 25, attributedPurchases: 22 }
+    await page.clock.runFor(60_000)
+    await waitForRequests(opened.commerceRequests, 2)
+    await page.locator(".admin-analytics-purchase-conversion").getByText("10%", { exact: true }).waitFor()
+    await waitForText(page, "01:00")
+    assert.deepEqual(all.map((list) => list.length), Array(10).fill(2), "00:00: los diez módulos en el mismo ciclo")
+
+    api.commerce = COMMERCE_CURRENT
+    await refreshButton(page).click()
+    await waitForRequests(opened.commerceRequests, 3)
+    await page.locator(".admin-analytics-purchase-conversion").getByText("5%", { exact: true }).waitFor()
+    await waitForText(page, "01:00")
+    assert.deepEqual(all.map((list) => list.length), Array(10).fill(3))
+  } finally { await page.close() }
+})
+
+test("conversión: un refresh fallido conserva los últimos datos; otro período nunca muestra los anteriores", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, commerceRequests } = await openAnalytics(1440, "light", () => ROWS, { clockAt: CLOCK_START, api })
+  try {
+    const before = await readCommerce(page)
+    const cardsBefore = await commerceCardTexts(page)
+    api.status = 500
+    await refreshButton(page).click()
+    await waitForRequests(commerceRequests, 2)
+    await page.getByText("No se pudo actualizar. Se muestran los últimos datos.").waitFor()
+    assert.deepEqual(await commerceCardTexts(page), cardsBefore, "cards intactas")
+    const after = await readCommerce(page)
+    assert.deepEqual([after.funnel.map((step) => step.text), after.conversion, after.searchLists], [before.funnel.map((step) => step.text), before.conversion, before.searchLists])
+
+    api.status = 200
+    let release!: () => void
+    api.hold = new Promise((resolve) => { release = resolve })
+    await page.getByRole("button", { name: "Hoy" }).click()
+    await waitForRequests(commerceRequests, 3)
+    await page.locator(".admin-analytics-cart-conversion[aria-busy=true]").waitFor()
+    assert.equal(await page.locator(".admin-analytics-cart-conversion .text-2xl").innerText(), "…")
+    assert.equal(await page.locator(".admin-analytics-funnel-step").count(), 0, "sin funnel del período anterior")
+    assert.equal(await page.locator(".admin-analytics-search-row").count(), 0, "sin búsquedas del período anterior")
+    api.hold = null
+    release()
+    await readCommerce(page)
+  } finally { await page.close() }
+})
+
+test("conversión en mobile: tabla por producto sin scroll (métricas con etiqueta), funnel y búsquedas dentro de la página", async () => {
+  const { page } = await openAnalytics(390, "dark")
+  try {
+    await readCommerce(page)
+    const layout = await page.evaluate(() => {
+      const row = document.querySelector(".admin-analytics-conversion-row:not(.admin-analytics-conversion-head)")!
+      const cells = Array.from(row.querySelectorAll<HTMLElement>(".admin-analytics-conversion-value"))
+      return {
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        labels: cells.map((cell) => getComputedStyle(cell, "::before").content),
+        cellsFit: cells.every((cell) => cell.scrollWidth <= cell.clientWidth + 1),
+        productFullRow: Math.abs(row.querySelector(".admin-analytics-conversion-product")!.getBoundingClientRect().width - row.getBoundingClientRect().width) < 12,
+        headHidden: getComputedStyle(document.querySelector(".admin-analytics-conversion-head")!).display === "none",
+      }
+    })
+    assert.equal(layout.overflow, 0)
+    assert.deepEqual(layout.labels, ["\"Vieron\"", "\"Agregaron\"", "\"Conv. carrito\"", "\"Compraron\"", "\"Conv. compra\""])
+    assert.ok(layout.cellsFit, "valores y etiquetas entran en su celda")
+    assert.ok(layout.productFullRow && layout.headHidden)
   } finally { await page.close() }
 })

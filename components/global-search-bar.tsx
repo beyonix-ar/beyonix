@@ -10,6 +10,8 @@ import { Search } from "lucide-react"
 
 import { useRouter } from "next/navigation"
 
+import { trackSearch } from "@/lib/analytics/track-commerce"
+
 interface SearchProduct {
   id: string
   nombre: string
@@ -107,6 +109,9 @@ export function GlobalSearchBar({
   const redirectSearch = (
     value: string
   ) => {
+    // Búsqueda ejecutada (Enter, botón o sugerencia): escribir no cuenta.
+    trackSearch(value)
+
     router.push(
       `/productos?search=${encodeURIComponent(value)}`
     )

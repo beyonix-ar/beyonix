@@ -19,10 +19,13 @@ import { AdminHelpTip } from "../../components/admin-help-tip"
 import { AdminEmptyState, AdminPageHeader, AdminSkeleton } from "../../components/admin-controls"
 import { ProductThumbnail } from "../productos/product-thumbnail"
 import { AnalyticsRefreshControl, AnalyticsRefreshProvider, useAnalyticsRefresh } from "./analytics-refresh"
+import { CommerceCards, CommerceSection, useCommerceReport } from "./commerce-section"
 import { HourlyViewsSection, useHourlyViewsReport } from "./hourly-views-chart"
 import { PeriodChange, usePeriodComparisonReport } from "./period-change"
 import { PeakHourCard, PeakWeekdayCard, usePeakHourReport, usePeakWeekdayReport } from "./peak-views"
+import { ProductConversionSection, useProductConversionReport } from "./product-conversion"
 import { ProductViewsChart } from "./product-views-chart"
+import { SearchSection, useSearchReport } from "./search-section"
 import { SessionStatsCards, useSessionStatsReport } from "./session-stats"
 import { useAnalyticsReport } from "./use-analytics-report"
 import { useWeekdayViewsReport, WeekdayViewsSection } from "./weekday-views-chart"
@@ -89,9 +92,9 @@ function AnalyticsPage() {
   )
   const rangeKey = range ? `${range.from}:${range.to}` : null
 
-  // Productos más vistos, sesiones, comparación con el período anterior,
-  // horario pico, día con más visualizaciones y visualizaciones por día y por
-  // hora: tareas del mismo ciclo global, siempre con el período de los filtros.
+  // Todos los módulos (resumen, comparación, visualizaciones, conversión,
+  // productos y búsquedas) son tareas del mismo ciclo global, siempre con el
+  // período de los filtros: un request por módulo y por ciclo.
   const { report, loadError } = useAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", LOAD_ERROR, range, rangeKey)
   const sessionStats = useSessionStatsReport(range, rangeKey)
   const { report: comparison } = usePeriodComparisonReport(range, rangeKey)
@@ -99,6 +102,9 @@ function AnalyticsPage() {
   const peakWeekday = usePeakWeekdayReport(range, rangeKey)
   const weekdayViews = useWeekdayViewsReport(range, rangeKey)
   const hourlyViews = useHourlyViewsReport(range, rangeKey)
+  const commerce = useCommerceReport(range, rangeKey)
+  const productConversion = useProductConversionReport(range, rangeKey)
+  const searches = useSearchReport(range, rangeKey)
 
   // Nuevo período: carga ya y el contador vuelve a 01:00 al terminar.
   useEffect(() => {
@@ -188,6 +194,13 @@ function AnalyticsPage() {
 
       {range && <HourlyViewsSection {...hourlyViews} />}
 
+      {range && (
+        <div className="admin-analytics-commerce space-y-4" aria-label="Conversión" role="region">
+          <CommerceCards {...commerce} />
+          <CommerceSection {...commerce} />
+        </div>
+      )}
+
       {range && !report && !loadError && (
         <div aria-busy="true" aria-label="Cargando vistas" className="space-y-4">
           <AdminSkeleton rows={4} />
@@ -264,6 +277,10 @@ function AnalyticsPage() {
           </div>
         </>
       )}
+
+      {range && <ProductConversionSection {...productConversion} />}
+
+      {range && <SearchSection {...searches} />}
     </div>
   )
 }

@@ -79,6 +79,7 @@ import {
   type InsufficientStockModalItem,
 } from "@/components/checkout/insufficient-stock-modal"
 import { storeGuestOrderToken } from "@/lib/orders/guest-order-token-client"
+import { currentAnalyticsSessionId, trackCheckoutStarted } from "@/lib/analytics/track-commerce"
 
 import {
   Separator,
@@ -475,6 +476,13 @@ export default function CheckoutPage() {
   } = useCart()
   const customerCredit = useCustomerCredit()
   const siteSettings = useSiteSettings()
+  const hasCartItems = items.length > 0
+
+  // Analítica: entrada real al checkout con carrito (nunca con el carrito
+  // vacío o todavía sin cargar). Uno por sesión: ver trackCheckoutStarted.
+  useEffect(() => {
+    if (isCartReady && hasCartItems) trackCheckoutStarted()
+  }, [isCartReady, hasCartItems])
 
   const [mounted, setMounted] =
     useState(false)
@@ -2012,6 +2020,8 @@ export default function CheckoutPage() {
           customerCreditAmount: customerCreditApplication.appliedAmount,
           mercadoPagoMode: effectiveMercadoPagoMode,
           termsAccepted: true,
+          // Sólo para atribuir la compra en Analítica (no es la sesión de reserva).
+          analyticsSessionId: currentAnalyticsSessionId(),
           expectedTotal: customerCreditCoversTotal ? undefined : expectedCheckoutTotal,
           // Cuota máxima sin interés que vio el cliente: si Mercado Pago ya no
           // la confirma, el servidor rechaza (409) en vez de cobrar otra cosa.

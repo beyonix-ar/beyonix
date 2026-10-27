@@ -69,8 +69,15 @@ export function buildPeriodComparisonReport(
   }
 }
 
-/** Variación de una métrica: igual, actividad nueva (antes 0) o porcentaje sobre el anterior. */
-export type MetricChange = { kind: "unchanged" } | { kind: "new" } | { kind: "change"; percent: number }
+/**
+ * Variación de una métrica: igual, actividad nueva (antes 0), porcentaje sobre
+ * el anterior o, para tasas, diferencia en puntos porcentuales.
+ */
+export type MetricChange =
+  | { kind: "unchanged" }
+  | { kind: "new" }
+  | { kind: "change"; percent: number }
+  | { kind: "points"; points: number }
 
 /**
  * `((actual - anterior) / anterior) * 100`. Un valor `null` (promedio sin
@@ -86,13 +93,46 @@ export function compareMetric(current: number | null, previous: number | null): 
 }
 
 /**
- * Tono de la variación según si subir es bueno para esa métrica (para todas
- * las de hoy lo es; queda parametrizado para métricas donde subir es malo).
+ * Tasas (0–1): diferencia en puntos porcentuales (8% vs 6% → +2 pp), no la
+ * variación relativa (+33%). `null` = sin base en ese período: sin tasa actual
+ * no se compara; sin tasa anterior es "nueva actividad". Diferencias menores
+ * a 0,05 pp son "sin variación".
+ */
+export function compareRate(current: number | null, previous: number | null): MetricChange | null {
+  if (current === null) return null
+  if (previous === null) return current > 0 ? { kind: "new" } : { kind: "unchanged" }
+  const points = (current - previous) * 100
+  return Math.abs(points) < 0.05 ? { kind: "unchanged" } : { kind: "points", points }
+}
+
+/** ¿La métrica subió? (`null` = sin cambio). */
+function rose(change: MetricChange): boolean | null {
+  switch (change.kind) {
+    case "unchanged":
+      return null
+    case "new":
+      return true
+    case "change":
+      return change.percent > 0
+    case "points":
+      return change.points > 0
+  }
+}
+
+/**
+ * Tono de la variación según si subir es bueno para esa métrica (vistas,
+ * sesiones y conversiones; para el abandono, subir es malo).
  */
 export function metricChangeTone(change: MetricChange, higherIsBetter = true): "positive" | "negative" | "neutral" {
-  if (change.kind === "unchanged") return "neutral"
-  const up = change.kind === "new" || change.percent > 0
+  const up = rose(change)
+  if (up === null) return "neutral"
   return up === higherIsBetter ? "positive" : "negative"
+}
+
+/** Dirección de la flecha (independiente de si es bueno o malo). */
+export function metricChangeDirection(change: MetricChange): "up" | "down" | "flat" {
+  const up = rose(change)
+  return up === null ? "flat" : up ? "up" : "down"
 }
 
 const percentFormatter = new Intl.NumberFormat("es-AR", { maximumFractionDigits: 1, signDisplay: "always" })
@@ -101,4 +141,9 @@ const percentFormatter = new Intl.NumberFormat("es-AR", { maximumFractionDigits:
 export function formatChangePercent(percent: number) {
   if (Math.abs(percent) < 0.05) return `${percent > 0 ? "+" : "-"}<0,1%`
   return `${percentFormatter.format(percent)}%`
+}
+
+/** 2 → "+2 pp"; -1.84 → "-1,8 pp". */
+export function formatChangePoints(points: number) {
+  return `${percentFormatter.format(points)} pp`
 }

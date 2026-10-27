@@ -82,6 +82,7 @@ import {
   ensureMercadoPagoOrderReference,
   getMercadoPagoOrderExternalReference,
 } from "@/lib/mercadopago/order-reference"
+import { linkOrderAnalyticsSession } from "@/lib/analytics/order-session"
 import { createAdminClient } from "@/lib/supabase/admin"
 import {
   claimActiveStoreBenefit,
@@ -664,6 +665,7 @@ export async function POST(request: Request) {
       reservationCommitment: "mercadopago",
     })
     if (!reservationExpiresAt) throw new CheckoutReservationExpiredError()
+    await linkOrderAnalyticsSession(admin, order.id, payload.analyticsSessionId)
 
     if (user && quote.customerCreditApplied > 0) {
       await applyCustomerCreditToOrder(admin, {

@@ -55,6 +55,7 @@ import {
   deleteIncompleteCheckoutOrder,
 } from "@/lib/orders/checkout-inventory"
 import { getPriceWithoutNationalTaxes } from "@/lib/pricing/financed-pricing"
+import { linkOrderAnalyticsSession } from "@/lib/analytics/order-session"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { getSiteSettings } from "@/lib/site-settings"
@@ -302,6 +303,7 @@ export async function POST(request: Request) {
       reservationSessionId: payload.reservationSessionId,
       reservationCommitment: "customer_credit",
     })
+    await linkOrderAnalyticsSession(admin, order.id, payload.analyticsSessionId)
 
     await applyCustomerCreditToOrder(admin, {
       userId: user.id,

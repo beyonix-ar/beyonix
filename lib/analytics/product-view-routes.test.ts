@@ -508,3 +508,166 @@ test("Comparación: Hoy contra ayer; rango inválido 400 sin consultar; error de
     assert.deepEqual(await response.json(), { error: "No se pudo cargar la comparación con el período anterior." })
   })
 })
+
+// --- Beacons comerciales -------------------------------------------------------------
+
+const EVENT_ID = "11111111-2222-4333-8444-555555555555"
+const rpcCalls = (calls: Call[], fn: string) => calls.filter((call) => call.path === `/rest/v1/rpc/${fn}`)
+
+test("add_to_cart: el usuario sale del token, nunca del payload; producto, variante e id de la acción a la RPC", async () => {
+  const route = await import("../../app/api/analytics/add-to-cart/route")
+  await withSupabase({ userId: "cliente-real", role: "cliente" }, async (calls) => {
+    const response = await route.POST(viewRequest(
+      { sessionId: SESSION, eventId: EVENT_ID, productId: 7, variantId: 91, userId: "otro", price: 1, quantity: 99 },
+      { Authorization: "Bearer token-cliente" },
+    ))
+    assert.equal(response.status, 204)
+    const [call] = rpcCalls(calls, "record_add_to_cart")
+    assert.deepEqual(call.body, {
+      p_session_id: SESSION, p_client_event_id: EVENT_ID, p_product_id: 7, p_variant_id: 91,
+      p_user_id: "cliente-real", p_device_type: "mobile", p_client_key: null,
+    })
+  })
+  await withSupabase({ userId: null }, async (calls) => {
+    for (const body of [{ sessionId: SESSION, productId: 7 }, { sessionId: SESSION, eventId: EVENT_ID, productId: -7 }, { sessionId: SESSION, eventId: EVENT_ID, productId: 7, variantId: "91" }]) {
+      assert.equal((await route.POST(viewRequest(body))).status, 400, JSON.stringify(body))
+    }
+    assert.equal(rpcCalls(calls, "record_add_to_cart").length, 0)
+  })
+})
+
+test("add_to_cart, search y checkout_started: equipo interno y robots no cuentan; base caída → 503 vacío", async () => {
+  const add = await import("../../app/api/analytics/add-to-cart/route")
+  const search = await import("../../app/api/analytics/search/route")
+  const checkout = await import("../../app/api/analytics/checkout-started/route")
+  const beacons = [
+    () => add.POST(viewRequest({ sessionId: SESSION, eventId: EVENT_ID, productId: 7 }, { Authorization: "Bearer staff" })),
+    () => search.POST(viewRequest({ sessionId: SESSION, eventId: EVENT_ID, query: "mate" }, { Authorization: "Bearer staff" })),
+    () => checkout.POST(viewRequest({ sessionId: SESSION }, { Authorization: "Bearer staff" })),
+  ]
+  for (const role of ["admin", "super_admin", "operador"]) {
+    await withSupabase({ userId: "staff", role }, async (calls) => {
+      for (const send of beacons) assert.equal((await send()).status, 204)
+      assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0, role)
+    })
+  }
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await checkout.POST(viewRequest({ sessionId: SESSION }, { "User-Agent": "Googlebot/2.1" }))).status, 204)
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0, "robot")
+  })
+  const warn = mock.method(console, "warn", () => {})
+  try {
+    await withSupabase({ userId: null, rpc: () => Response.json({ message: "boom", code: "XX000" }, { status: 500 }) }, async () => {
+      const response = await checkout.POST(viewRequest({ sessionId: SESSION }))
+      assert.equal(response.status, 503)
+      assert.equal(await response.text(), "")
+    })
+  } finally { warn.mock.restore() }
+})
+
+test("search: llega normalizada; con datos sensibles se descarta sin tocar la base; los resultados nunca vienen del cliente", async () => {
+  const route = await import("../../app/api/analytics/search/route")
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await route.POST(viewRequest({ sessionId: SESSION, eventId: EVENT_ID, query: "  Lámpara   ÑANDÚ ", results: 999 }))).status, 204)
+    const [call] = rpcCalls(calls, "record_search")
+    assert.deepEqual(call.body, {
+      p_session_id: SESSION, p_client_event_id: EVENT_ID, p_query: "lámpara ñandú", p_user_id: null, p_device_type: "mobile", p_client_key: null,
+    })
+    for (const query of ["ana@test.com", "11 4444 5555", "4509 9535 6623 3704", "   "]) {
+      assert.equal((await route.POST(viewRequest({ sessionId: SESSION, eventId: EVENT_ID, query }))).status, 204, query)
+    }
+    assert.equal(rpcCalls(calls, "record_search").length, 1, "lo sensible nunca llega a la base")
+    assert.ok(!JSON.stringify(calls).includes("ana@test.com"))
+    assert.equal((await route.POST(viewRequest({ sessionId: SESSION, eventId: EVENT_ID, query: 5 }))).status, 400)
+  })
+})
+
+test("checkout_started: sólo la sesión; orden, total o usuario del payload se ignoran", async () => {
+  const route = await import("../../app/api/analytics/checkout-started/route")
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await route.POST(viewRequest({ sessionId: SESSION, orderId: 123, total: 1, userId: "x" }))).status, 204)
+    assert.deepEqual(rpcCalls(calls, "record_checkout_started")[0].body, { p_session_id: SESSION, p_user_id: null, p_device_type: "mobile", p_client_key: null })
+    assert.equal((await route.POST(viewRequest({}))).status, 400)
+  })
+})
+
+// --- Reportes comerciales de Admin > Analítica ----------------------------------------
+
+const adminRequest = (path: string, query: string, token: string | null = "token") => new Request(`http://localhost/api/admin/analytics/${path}?${query}`, {
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
+})
+
+const FUNNEL_ROW = {
+  viewed_sessions: "1000", cart_sessions: "260", checkout_sessions: "125", funnel_cart: "250", funnel_checkout: "120", funnel_purchase: "60",
+  purchases: "70", attributed_purchases: "60", revenue: "700000.00", attributed_revenue: "600000.00",
+  evaluated_carts: "240", abandoned_carts: "120", abandoned_checkouts: "60", carts_in_progress: "20",
+}
+
+const COMMERCE_ENDPOINTS = [
+  { path: "commerce", load: () => import("../../app/api/admin/analytics/commerce/route"), rpc: "admin_commerce_funnel", error: "No se pudo cargar la conversión.",
+    rows: [{ period: "current", ...FUNNEL_ROW }, { period: "previous", ...FUNNEL_ROW, funnel_purchase: "50" }] },
+  { path: "product-conversion", load: () => import("../../app/api/admin/analytics/product-conversion/route"), rpc: "admin_product_conversion", error: "No se pudo cargar la conversión por producto.",
+    rows: [{ product_id: "1", product_name: "Auricular Legatus", product_slug: "legatus", product_image: null, product_available: true, viewed_sessions: "120", added_sessions: "30", purchased_sessions: "8" }] },
+  { path: "searches", load: () => import("../../app/api/admin/analytics/searches/route"), rpc: "admin_search_stats", error: "No se pudieron cargar las búsquedas.",
+    rows: [{ kind: "total", term: null, searches: "48", sessions: "30" }, { kind: "top", term: "auriculares", searches: "48", sessions: "30" }] },
+] as const
+
+test("reportes comerciales: anon 401, cliente y operador 403; Admin y Super Admin reciben sólo el agregado, private/no-store", async () => {
+  for (const endpoint of COMMERCE_ENDPOINTS) {
+    const route = await endpoint.load()
+    await withSupabase({ userId: null }, async (calls) => {
+      assert.equal((await route.GET(adminRequest(endpoint.path, "from=2026-10-21&to=2026-10-27", null))).status, 401, endpoint.path)
+      assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+    })
+    for (const role of ["cliente", "operador"]) {
+      await withSupabase({ userId: "user", role }, async (calls) => {
+        assert.equal((await route.GET(adminRequest(endpoint.path, "from=2026-10-21&to=2026-10-27"))).status, 403, `${endpoint.path} ${role}`)
+        assert.ok(calls.every((call) => call.path === "/rest/v1/profiles"))
+      })
+    }
+    for (const role of ["admin", "super_admin"]) {
+      await withSupabase({ userId: "staff", role, rpc: () => Response.json(endpoint.rows) }, async (calls) => {
+        const response = await route.GET(adminRequest(endpoint.path, "from=2026-10-21&to=2026-10-27"))
+        assert.equal(response.status, 200, `${endpoint.path} ${role}`)
+        assert.equal(response.headers.get("cache-control"), "private, no-store")
+        const rpc = calls.filter((call) => call.path.startsWith("/rest/v1/rpc/"))
+        assert.equal(rpc.length, 1, "una sola consulta por módulo")
+        assert.equal(rpc[0].path, `/rest/v1/rpc/${endpoint.rpc}`)
+        assert.deepEqual(rpc[0].body, endpoint.path === "commerce"
+          ? { p_from: "2026-10-21", p_to: "2026-10-27", p_previous_from: "2026-10-14", p_previous_to: "2026-10-20" }
+          : { p_from: "2026-10-21", p_to: "2026-10-27" })
+      })
+    }
+  }
+})
+
+test("reportes comerciales: contenido, rango inválido 400 sin consultar, error de base 500 genérico", async () => {
+  const [commerce, conversion, searches] = await Promise.all(COMMERCE_ENDPOINTS.map((endpoint) => endpoint.load()))
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json(COMMERCE_ENDPOINTS[0].rows) }, async () => {
+    const report = await (await commerce.GET(adminRequest("commerce", "from=2026-10-21&to=2026-10-27"))).json() as { previousRange: unknown; current: { funnelPurchase: number; revenue: number }; previous: { funnelPurchase: number } }
+    assert.deepEqual([report.current.funnelPurchase, report.current.revenue, report.previous.funnelPurchase], [60, 700000, 50])
+    assert.deepEqual(report.previousRange, { from: "2026-10-14", to: "2026-10-20" })
+  })
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json(COMMERCE_ENDPOINTS[1].rows) }, async () => {
+    const report = await (await conversion.GET(adminRequest("product-conversion", "from=2026-10-21&to=2026-10-27"))).json() as { products: { name: string; available: boolean; cartRate: number; purchaseRate: number }[] }
+    assert.deepEqual(report.products.map((row) => [row.name, row.available, row.cartRate]), [["Auricular Legatus", true, 0.25]])
+  })
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json(COMMERCE_ENDPOINTS[2].rows) }, async () => {
+    const report = await (await searches.GET(adminRequest("searches", "from=2026-10-21&to=2026-10-27"))).json() as { totalSearches: number; top: unknown[] }
+    assert.deepEqual([report.totalSearches, report.top], [48, [{ term: "auriculares", searches: 48 }]])
+  })
+  for (const [index, route] of [commerce, conversion, searches].entries()) {
+    const endpoint = COMMERCE_ENDPOINTS[index]
+    await withSupabase({ userId: "staff", role: "admin" }, async (calls) => {
+      for (const query of ["", "from=2026-10-26&to=2026-10-20", "from=2025-01-01&to=2026-10-26"]) {
+        assert.equal((await route.GET(adminRequest(endpoint.path, query))).status, 400, `${endpoint.path} ${query}`)
+      }
+      assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+    })
+    await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json({ message: "function does not exist" }, { status: 500 }) }, async () => {
+      const response = await route.GET(adminRequest(endpoint.path, "from=2026-10-21&to=2026-10-27"))
+      assert.equal(response.status, 500)
+      assert.deepEqual(await response.json(), { error: endpoint.error })
+    })
+  }
+})

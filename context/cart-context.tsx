@@ -38,6 +38,7 @@ import {
   releaseAbandonedCheckoutReservations,
 } from "@/lib/cart/checkout-abandonment"
 import { reserveCartStock } from "@/lib/cart/stock-reservations"
+import { trackAddToCart } from "@/lib/analytics/track-commerce"
 
 export interface CartItem {
   product: SupabaseProducto
@@ -67,7 +68,8 @@ interface CartContextType {
   cartSessionId: string
   isOpen: boolean
   isReady: boolean
-  addToCart: (product: SupabaseProducto, color: string, image?: string) => void
+  /** `track: false` para vistas previas del Admin (no son demanda de clientes). */
+  addToCart: (product: SupabaseProducto, color: string, image?: string, options?: { track?: boolean }) => void
   removeFromCart: (productId: number, color: string) => void
   updateQuantity: (productId: number, color: string, quantity: number) => void
   increaseQuantity: (productId: number, color: string) => void
@@ -358,6 +360,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     product: SupabaseProducto,
     color: string,
     image?: string,
+    options?: { track?: boolean },
   ) => {
     const variant = resolveCartVariant(product, color)
     const variantColor = variant?.value ?? DEFAULT_VARIANT_VALUE
@@ -370,6 +373,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     if (maxQuantity < 1) return
+
+    // Analítica: sólo si el carrito va a crecer de verdad, y fuera del
+    // updater (React puede ejecutarlo dos veces en Strict Mode).
+    const current = cartRef.current.find(
+      (item) => item.product.id === normalizedProduct.id && item.color === variantColor,
+    )
+    if (options?.track !== false && (current?.quantity ?? 0) < maxQuantity) {
+      trackAddToCart(normalizedProduct.id, current?.variantId ?? variant?.id ?? null)
+    }
 
     setCart((prev) => {
       const existing = prev.find(
@@ -466,6 +478,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }
 
   const increaseQuantity = (productId: number, color: string) => {
+    const item = cartRef.current.find((line) => line.product.id === productId && line.color === color)
+    // Misma regla que updateQuantity: sumar una unidad sólo si entra en el tope.
+    if (item && item.quantity + 1 <= Math.min(MAX_CART_ITEM_QUANTITY, getMaxPurchasableQuantity(item.product, item.color))) {
+      trackAddToCart(productId, item.variantId)
+    }
     updateQuantity(productId, color, getQuantity(productId, color) + 1)
   }
 

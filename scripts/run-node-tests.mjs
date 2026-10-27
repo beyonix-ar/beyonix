@@ -345,6 +345,7 @@ const TEST_FILES = [
   "lib/analytics/peak-views-report.test.ts",
   "lib/analytics/session-stats-report.test.ts",
   "lib/analytics/period-comparison.test.ts",
+  "lib/analytics/commerce-report.test.ts",
 ]
 
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
@@ -366,6 +367,8 @@ const TSX_TEST_FILES = [
   "lib/admin/dispatch-location.test.ts",
   "lib/admin/dispatch-records-sql.test.ts",
   "lib/analytics/product-views-sql.test.ts",
+  "lib/analytics/commerce-sql.test.ts",
+  "lib/analytics/analytics-permissions-sql.test.ts",
   "lib/admin/dispatch-board-api.test.ts",
   "lib/admin/dispatch-filter-bar.test.tsx",
   "lib/admin/dispatch-history.test.ts",

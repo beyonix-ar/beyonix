@@ -3,7 +3,7 @@ import { isValidAnalyticsRange, type AnalyticsDateRange } from "@/lib/analytics/
 import type { PeakViewsRow } from "@/lib/analytics/peak-views-report"
 
 /** Fila cruda de una RPC agregada de Analítica (bigint puede llegar como string). */
-export type AnalyticsRpcRecord = Record<string, number | string | null>
+export type AnalyticsRpcRecord = Record<string, number | string | boolean | null>
 
 interface AnalyticsRpcEndpoint<Report> {
   rpc:
@@ -13,6 +13,9 @@ interface AnalyticsRpcEndpoint<Report> {
     | "admin_product_views_by_hour"
     | "admin_product_view_session_stats"
     | "admin_product_view_period_comparison"
+    | "admin_commerce_funnel"
+    | "admin_product_conversion"
+    | "admin_search_stats"
   errorMessage: string
   /** Parámetros adicionales derivados del período ya validado (nunca del cliente). */
   rpcParams?: (range: AnalyticsDateRange) => Record<string, string>

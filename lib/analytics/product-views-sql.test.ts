@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
+import { ANALYTICS_MIGRATIONS, createAnalyticsDb, SESSION_A, SESSION_B, STORE_SCHEMA, USER } from "./analytics-db.test-helper.ts"
 import { previousAnalyticsRange } from "./period-comparison.ts"
 
 // Migraciones reales de Analítica (20261026100000 + 20261026120000) sobre
@@ -10,39 +10,8 @@ import { previousAnalyticsRange } from "./period-comparison.ts"
 // ranking por fechas de Argentina, histórico que sobrevive a borrados,
 // archivados y renombres, y permisos (anon/authenticated sin acceso).
 
-const MIGRATIONS = [
-  "20261026100000_analytics_events_product_views.sql",
-  "20261026120000_analytics_history_merge_snapshots.sql",
-  "20261026140000_analytics_peak_hour.sql",
-  "20261026160000_analytics_peak_weekday.sql",
-  "20261026180000_analytics_views_by_weekday.sql",
-  "20261027100000_analytics_views_by_hour.sql",
-  "20261027120000_analytics_session_stats.sql",
-  "20261027140000_analytics_period_comparison.sql",
-].map((file) => readFileSync(`supabase/migrations/${file}`, "utf8"))
-
-const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-const SESSION_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-const USER = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-
-async function createDb() {
-  const db = new PGlite()
-  await db.exec(`create role anon; create role authenticated; create role service_role;
-    create schema auth;
-    create table auth.users (id uuid primary key);
-    create table public.productos (id bigint primary key, nombre text not null, slug text not null, activo boolean default true, imagen_principal text);
-    create table public.producto_variantes (id bigint primary key, producto_id bigint not null);
-    create table public.imagenes_producto (id bigint primary key, producto_id bigint, url text not null, orden integer default 0);
-    insert into auth.users values ('${USER}');
-    insert into public.productos values
-      (1, 'Auricular Malibu', 'auricular-malibu', true, 'https://cdn.test/malibu.webp'),
-      (2, 'Soporte Notebook HUB', 'soporte-hub', true, ''),
-      (3, 'Pava 12V', 'pava-12v', true, null),
-      (4, 'Producto pausado', 'pausado', false, null);
-    insert into public.imagenes_producto values (10, 2, 'https://cdn.test/hub-2.webp', 2), (11, 2, 'https://cdn.test/hub-1.webp', 1);`)
-  for (const migration of MIGRATIONS) await db.exec(migration)
-  return db
-}
+const MIGRATIONS = ANALYTICS_MIGRATIONS
+const createDb = createAnalyticsDb
 
 async function record(db: PGlite, session: string, product: number, extra = "") {
   const result = await db.query<{ status: string }>(
@@ -98,8 +67,10 @@ test("product_view: guarda usuario, origen y dispositivo validados, sin datos pe
     assert.equal(await record(db, SESSION_A, 1, `, '${USER}'::uuid, 'quick_view', 'mobile', '${key}'`), "recorded")
     const { rows } = await db.query<Record<string, unknown>>("select * from public.analytics_events")
     assert.deepEqual(Object.keys(rows[0]).sort(), [
-      "client_key", "device_type", "event_type", "id", "occurred_at", "product_id", "session_id", "source", "user_id", "variant_id",
-    ])
+      "client_event_id", "client_key", "device_type", "event_type", "id", "occurred_at", "product_id",
+      "search_query", "search_results", "session_id", "source", "user_id", "variant_id",
+    ], "columnas tipadas, sin datos personales ni JSON libre")
+    assert.deepEqual([rows[0].client_event_id, rows[0].search_query, rows[0].search_results], [null, null, null])
     assert.equal(rows[0].user_id, USER)
     assert.equal(rows[0].source, "quick_view")
     assert.equal(rows[0].device_type, "mobile")
@@ -221,11 +192,7 @@ test("snapshot: una fila por producto, se actualiza sólo si cambió y el histó
 test("snapshot: los eventos previos a esta migración quedan cubiertos por el backfill", async () => {
   const db = new PGlite()
   try {
-    await db.exec(`create role anon; create role authenticated; create role service_role;
-      create schema auth; create table auth.users (id uuid primary key);
-      create table public.productos (id bigint primary key, nombre text not null, slug text not null, activo boolean default true, imagen_principal text);
-      create table public.producto_variantes (id bigint primary key, producto_id bigint not null);
-      create table public.imagenes_producto (id bigint primary key, producto_id bigint, url text not null, orden integer default 0);
+    await db.exec(`${STORE_SCHEMA}
       insert into public.productos values (1, 'Auricular Malibu', 'auricular-malibu', true, 'https://cdn.test/malibu.webp');`)
     await db.exec(MIGRATIONS[0])
     await db.exec(`select public.record_product_view('${SESSION_A}'::uuid, 1)`)

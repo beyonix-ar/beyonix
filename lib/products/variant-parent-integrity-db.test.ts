@@ -4,6 +4,8 @@ import { join } from "node:path"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
+import { ANALYTICS_MIGRATIONS } from "../analytics/analytics-db.test-helper.ts"
+
 // Migración 20261015130000 contra PostgreSQL real (PGlite): revisión de la
 // ficha comercial (lost updates), alta de variante desde Compras atómica,
 // borrar-o-archivar variantes y fusión que no pierde la ficha del absorbido
@@ -595,6 +597,53 @@ test("fusión + Analítica: A con 10 vistas y B con 5; fusionar B en A deja A co
       (await db.query<{ product_id: number }>("select product_id::int from public.analytics_product_snapshots")).rows,
       [{ product_id: keep.productId }],
     )
+  } finally {
+    await db.close()
+  }
+})
+
+test("fusión + Analítica endurecida: con service_role sin escritura directa, la fusión sigue moviendo eventos y snapshots", async () => {
+  const db = await setup()
+  try {
+    // Cadena completa de Analítica, incluido el hardening de permisos (20261027200000).
+    await db.exec(`create table auth.users (id uuid primary key);
+      create table public.ordenes (id bigint primary key, usuario_id uuid, total numeric not null, original_total numeric, estado text,
+        payment_status text, financial_status text, paid_at timestamptz, payment_confirmed_at timestamptz, payment_confirmed_amount numeric);
+      alter table public.orden_items add column orden_id bigint, add column cantidad integer, add column precio numeric;`)
+    for (const file of ANALYTICS_MIGRATIONS) await db.exec(file)
+    // Como en Supabase: service_role ignora RLS (las tablas de Analítica no tienen políticas).
+    await db.exec("alter role service_role bypassrls")
+    const keep = await completeProduct(db, "PRODUCTO A")
+    const absorbedId = (await db.query<{ id: number }>(
+      "insert into public.productos (nombre, slug, activo) values ('PRODUCTO B', 'producto-b', true) returning id",
+    )).rows[0].id
+
+    await db.exec("set role service_role")
+    try {
+      // Tracking real (RPC SECURITY DEFINER): eventos y snapshots de ambos productos.
+      for (const [product, sessions] of [[keep.productId, 3], [absorbedId, 2]] as const) {
+        for (let index = 0; index < sessions; index += 1) {
+          await db.query("select public.record_product_view(gen_random_uuid(), $1)", [product])
+        }
+      }
+      await assert.rejects(db.query("update public.analytics_events set product_id = $1", [keep.productId]), /permission denied/i, "sin UPDATE directo")
+      await assert.rejects(db.query("delete from public.analytics_product_snapshots"), /permission denied/i, "sin DELETE directo")
+
+      await db.query("select public.merge_catalog_products($1, $2, $3)", [keep.productId, absorbedId, actor])
+
+      assert.deepEqual(
+        (await db.query<{ product_id: number; views: number }>("select product_id::int, count(*)::int as views from public.analytics_events group by product_id")).rows,
+        [{ product_id: keep.productId, views: 5 }],
+        "la fusión reasignó los eventos sin permisos directos de service_role",
+      )
+      assert.deepEqual(
+        (await db.query<{ product_id: number }>("select product_id::int from public.analytics_product_snapshots")).rows,
+        [{ product_id: keep.productId }],
+        "y limpió el snapshot del absorbido",
+      )
+    } finally {
+      await db.exec("reset role")
+    }
   } finally {
     await db.close()
   }
