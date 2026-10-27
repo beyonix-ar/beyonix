@@ -10,6 +10,7 @@ import { addDays } from "../business/dashboard-sales-analytics.ts"
 import { argentinaDateKey } from "../business/dashboard-timezone.ts"
 import { buildHourlyViewsReport, buildPeakHourReport, buildPeakWeekdayReport, buildWeekdayViewsReport } from "./peak-views-report.ts"
 import { buildProductViewReport, type AnalyticsDateRange, type ProductViewStatsRow } from "./product-view-report.ts"
+import { buildPeriodComparisonReport, type PeriodCounts } from "./period-comparison.ts"
 import { buildSessionStatsReport } from "./session-stats-report.ts"
 
 // Admin > Analítica > Productos más vistos con el componente REAL y el CSS del
@@ -80,7 +81,13 @@ interface ApiControl {
   weekdayViews?: number[]
   /** Sesiones con visualizaciones del endpoint simulado (por defecto 220 de 710 vistas → 3,2). */
   sessions?: number
+  /** Período anterior de la comparación (por defecto `PREVIOUS_PERIOD` si hay vistas). */
+  previous?: PeriodCounts
 }
+
+/** 600 vistas, 12 productos y 200 sesiones (3 por sesión) contra 710 / 12 / 220 (3,23): +18,3%, igual, +10%, +7,6%. */
+const PREVIOUS_PERIOD: PeriodCounts = { totalViews: 600, productsViewed: 12, sessions: 200 }
+const NO_ACTIVITY: PeriodCounts = { totalViews: 0, productsViewed: 0, sessions: 0 }
 
 /** Mock del día con más visualizaciones: con "Hoy" sólo existe un día, así que concentra el total. */
 function weekdayReport(range: AnalyticsDateRange, total: number, weekday = 3) {
@@ -128,6 +135,7 @@ async function openAnalytics(
   const weekdayViewsRequests: AnalyticsDateRange[] = []
   const hourlyRequests: AnalyticsDateRange[] = []
   const sessionRequests: AnalyticsDateRange[] = []
+  const comparisonRequests: AnalyticsDateRange[] = []
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   // Playwright evalúa las rutas en orden inverso: la del HTML va primero para que la API la pise.
@@ -194,6 +202,19 @@ async function openAnalytics(
     const total = responder(range).reduce((sum, row) => sum + row.views, 0)
     return route.fulfill({ json: buildSessionStatsReport(range, { totalViews: total, sessions: total > 0 ? api.sessions ?? 220 : 0 }) })
   })
+  await page.route("**/api/admin/analytics/comparison**", async (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    comparisonRequests.push(range)
+    const status = api.status
+    if (api.hold) await api.hold
+    if (status !== 200) return route.fulfill({ status, json: { error: "No se pudo cargar la comparación con el período anterior." } })
+    const rows = responder(range)
+    const total = rows.reduce((sum, row) => sum + row.views, 0)
+    // El "actual" es exactamente lo que muestran Vistas totales, Productos vistos y Sesiones.
+    const current = { totalViews: total, productsViewed: rows.filter((row) => row.views > 0).length, sessions: total > 0 ? api.sessions ?? 220 : 0 }
+    return route.fulfill({ json: buildPeriodComparisonReport(range, { current, previous: api.previous ?? (total > 0 ? PREVIOUS_PERIOD : NO_ACTIVITY) }) })
+  })
   await page.route("https://img.test/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ccc"/></svg>` }))
   if (options.clockAt !== undefined) {
     // Reloj simulado y detenido: el contador sólo avanza con runFor/fastForward.
@@ -201,7 +222,7 @@ async function openAnalytics(
     await page.clock.pauseAt(options.clockAt + 1_000)
   }
   await page.goto("http://admin.test/admin/analitica")
-  return { page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, hourlyRequests, sessionRequests, errors }
+  return { page, requests, peakRequests, weekdayRequests, weekdayViewsRequests, hourlyRequests, sessionRequests, comparisonRequests, errors }
 }
 
 const waitForRequests = async (requests: unknown[], count: number) => {
@@ -209,6 +230,17 @@ const waitForRequests = async (requests: unknown[], count: number) => {
   while (requests.length < count && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 25))
   assert.ok(requests.length >= count, `esperaba ${count} consultas, hubo ${requests.length}`)
 }
+
+/** Línea de variación de cada card comparada (Vistas, Productos, Sesiones, Por sesión), con su tono. */
+const changeTexts = (page: Page) => page.locator(".admin-analytics-change").evaluateAll((lines) =>
+  lines.map((line) => [line.textContent?.replace(/\s+/g, " ").trim() ?? "", line.getAttribute("data-tone") ?? ""]))
+
+const CHANGE_TEXTS = [
+  ["+18,3% vs período anterior", "positive"],
+  ["Sin variación", "neutral"],
+  ["+10% vs período anterior", "positive"],
+  ["+7,6% vs período anterior", "positive"],
+]
 
 const lastRange = (requests: { range: AnalyticsDateRange }[]) => requests.at(-1)?.range
 
@@ -328,12 +360,13 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
   const { page } = await openAnalytics(1440, "dark")
   try {
     const report = await readReport(page)
-    assert.deepEqual(report.metrics, [
-      "VISTAS TOTALES 710",
-      "PRODUCTOS VISTOS 12",
+    await page.locator(".admin-analytics-change").first().waitFor()
+    assert.deepEqual((await readReport(page)).metrics, [
+      "VISTAS TOTALES 710 +18,3% vs período anterior",
+      "PRODUCTOS VISTOS 12 Sin variación",
       "PRODUCTO MÁS VISTO Auricular Malibu 245 vistas · 34,5% del total",
-      "SESIONES CON VISUALIZACIONES 220 Sesiones que vieron al menos un producto",
-      "VISUALIZACIONES POR SESIÓN 3,2 Promedio por sesión",
+      "SESIONES CON VISUALIZACIONES 220 Sesiones que vieron al menos un producto +10% vs período anterior",
+      "VISUALIZACIONES POR SESIÓN 3,2 Promedio por sesión +7,6% vs período anterior",
       "HORARIO PICO DE VISUALIZACIONES 14:00 – 15:00 62 visualizaciones 8,7% de las visualizaciones del período",
       "DÍA CON MÁS VISUALIZACIONES Miércoles 255 visualizaciones 35,9% de las visualizaciones del período",
     ])
@@ -396,6 +429,12 @@ test("sin vistas en el período: empty state claro, sin métricas ni gráfico", 
     await page.locator(".admin-analytics-sessions").getByText("0", { exact: true }).waitFor()
     assert.equal(await page.locator(".admin-analytics-views-per-session .text-2xl").innerText(), "—", "sin sesiones: \"—\", nunca NaN, Infinity ni 0/0")
     assert.equal(await page.getByText(/NaN|Infinity/).count(), 0)
+    await page.locator(".admin-analytics-sessions .admin-analytics-change").waitFor()
+    assert.deepEqual(
+      await page.locator(".admin-analytics-change").evaluateAll((lines) => lines.map((line) => [line.textContent, line.getAttribute("data-tone")])),
+      [["Sin variación", "neutral"], ["Sin variación", "neutral"]],
+      "D: sin vistas en ambos períodos, \"Sin variación\" (nunca 0/0)",
+    )
     assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText(/Lunes|^[\d.]+ visualizaci/).count(), 0, "nunca \"Lunes, 0 visualizaciones\"")
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText("00:00").count(), 0, "nunca 00:00 con 0")
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText(/^[\d.]+ visualizaci/).count(), 0, "sin \"0 visualizaciones\"")
@@ -621,6 +660,7 @@ test("error al refrescar: conserva los últimos datos, avisa discretamente y el 
     assert.equal(await page.locator(".admin-dashboard-kpi").count(), 7)
     assert.equal(await page.locator(".admin-analytics-sessions .text-2xl").innerText(), "220", "sesiones: conserva el último dato válido")
     assert.equal(await page.locator(".admin-analytics-views-per-session .text-2xl").innerText(), "3,2")
+    assert.deepEqual(await changeTexts(page), CHANGE_TEXTS, "comparación: conserva el último dato válido")
     assert.equal(await page.locator(".admin-analytics-peak-hour").getByText("14:00 – 15:00").count(), 1, "horario pico: conserva el último dato válido")
     assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText("Miércoles", { exact: true }).count(), 1, "día con más visualizaciones: conserva el último dato válido")
     assert.equal(await page.locator(".admin-analytics-peak-weekday").getByText("255 visualizaciones").count(), 1)
@@ -776,6 +816,11 @@ test("un solo timer para toda Analítica: el horario pico no agrega intervalos",
     const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
     return route.fulfill({ json: buildSessionStatsReport(range, { totalViews: 710, sessions: 220 }) })
   })
+  await page.route("**/api/admin/analytics/comparison**", (route) => {
+    const url = new URL(route.request().url())
+    const range = { from: url.searchParams.get("from") ?? "", to: url.searchParams.get("to") ?? "" }
+    return route.fulfill({ json: buildPeriodComparisonReport(range, { current: { totalViews: 710, productsViewed: 12, sessions: 220 }, previous: PREVIOUS_PERIOD }) })
+  })
   try {
     await page.goto("http://admin.test/admin/analitica")
     await peakCard(page).getByText("14:00 – 15:00").waitFor()
@@ -783,6 +828,7 @@ test("un solo timer para toda Analítica: el horario pico no agrega intervalos",
     await page.locator(".admin-analytics-weekday").first().waitFor()
     await page.locator(".admin-analytics-hour").first().waitFor()
     await page.locator(".admin-analytics-sessions").getByText("220", { exact: true }).waitFor()
+    await page.locator(".admin-analytics-change").first().waitFor()
     await page.waitForTimeout(300)
     assert.deepEqual(intervals, [250], "exactamente un setInterval: el del ciclo global (ninguna métrica agrega otro)")
   } finally { await page.close() }
@@ -1159,5 +1205,93 @@ test("sesiones: cambiar de período nunca muestra los valores del anterior", asy
     release()
     await page.locator(".admin-analytics-sessions").getByText("71", { exact: true }).waitFor()
     assert.equal(await perSessionValue(page), "10")
+  } finally { await page.close() }
+})
+
+// --- Comparación con el período anterior --------------------------------------------
+
+test("comparación: sube en verde, baja en rojo, igual neutral y Nueva actividad; flecha y signo además del color", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, comparisonRequests, requests } = await openAnalytics(1440, "dark", () => ROWS, { clockAt: CLOCK_START, api })
+  try {
+    await waitForRequests(comparisonRequests, 1)
+    await page.locator(".admin-analytics-change").nth(3).waitFor()
+    assert.deepEqual(await changeTexts(page), CHANGE_TEXTS, "A + F: subas redondeadas a un decimal; Productos igual → Sin variación (C)")
+    assert.deepEqual(comparisonRequests[0], requests[0].range, "mismo período que Vistas totales; el anterior lo deriva el servidor")
+
+    const colors = await page.locator(".admin-analytics-change").evaluateAll((lines) => lines.map((line) => ({
+      color: getComputedStyle(line).color,
+      arrow: line.querySelector("svg") !== null,
+      title: line.getAttribute("title") ?? "",
+    })))
+    assert.equal(colors[0].color, "rgb(110, 231, 183)", "positivo: verde validado del Dashboard")
+    assert.notEqual(colors[1].color, colors[0].color, "sin variación: neutral")
+    assert.ok(colors.every((line) => line.arrow), "cada línea tiene flecha o guion, no sólo color")
+    assert.match(colors[0].title, /^Comparado con el período inmediatamente anterior de la misma duración \(/)
+
+    // B: bajan las vistas y el promedio (900 / 200 = 4,5 → 3,2), sesiones +10%, productos 12 → 10.
+    api.previous = { totalViews: 900, productsViewed: 10, sessions: 200 }
+    await refreshButton(page).click()
+    await waitForRequests(comparisonRequests, 2)
+    await page.waitForFunction(() => document.querySelector(".admin-analytics-change")?.textContent?.startsWith("-"))
+    await waitForText(page, "01:00")
+    assert.deepEqual(await changeTexts(page), [
+      ["-21,1% vs período anterior", "negative"],
+      ["+20% vs período anterior", "positive"],
+      ["+10% vs período anterior", "positive"],
+      ["-28,3% vs período anterior", "negative"],
+    ], "B: el promedio compara 3,23 contra 4,5, no la variación de vistas sobre la de sesiones")
+    assert.equal(await page.locator(".admin-analytics-change").first().evaluate((line) => getComputedStyle(line).color), "rgb(252, 165, 165)", "negativo: rojo validado del Dashboard")
+
+    // E: período anterior sin actividad → Nueva actividad, nunca +Infinity%.
+    api.previous = { totalViews: 0, productsViewed: 0, sessions: 0 }
+    await refreshButton(page).click()
+    await waitForRequests(comparisonRequests, 3)
+    await page.locator(".admin-analytics-change").first().getByText("Nueva actividad").waitFor()
+    assert.deepEqual(await changeTexts(page), Array(4).fill(["Nueva actividad", "positive"]))
+    assert.equal(await page.getByText(/Infinity|NaN/).count(), 0)
+  } finally { await page.close() }
+})
+
+test("comparación: el ciclo global (00:00) y Actualizar ahora la refrescan junto con todo lo demás, sin timers propios", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const opened = await openAnalytics(1440, "light", () => ROWS, { clockAt: CLOCK_START, api })
+  const { page, comparisonRequests } = opened
+  const counts = () => [opened.requests, opened.peakRequests, opened.weekdayRequests, opened.weekdayViewsRequests, opened.hourlyRequests, opened.sessionRequests, comparisonRequests].map((list) => list.length)
+  try {
+    await waitForRequests(comparisonRequests, 1)
+    await page.locator(".admin-analytics-change").first().getByText("+18,3%").waitFor()
+
+    api.previous = { totalViews: 710, productsViewed: 12, sessions: 220 }
+    await page.clock.runFor(60_000)
+    await waitForRequests(comparisonRequests, 2)
+    await page.waitForFunction(() => Array.from(document.querySelectorAll(".admin-analytics-change")).every((line) => line.textContent === "Sin variación"))
+    await waitForText(page, "01:00")
+    assert.deepEqual(counts(), [2, 2, 2, 2, 2, 2, 2], "00:00: siete consultas, una por módulo, en el mismo ciclo")
+
+    api.previous = PREVIOUS_PERIOD
+    await refreshButton(page).click()
+    await waitForRequests(comparisonRequests, 3)
+    await page.locator(".admin-analytics-change").first().getByText("+18,3%").waitFor()
+    await waitForText(page, "01:00")
+    assert.deepEqual(counts(), [3, 3, 3, 3, 3, 3, 3], "Actualizar ahora: lo mismo")
+  } finally { await page.close() }
+})
+
+test("comparación: al cambiar de período nunca muestra la variación del anterior", async () => {
+  const api: ApiControl = { status: 200, hold: null }
+  const { page, comparisonRequests } = await openAnalytics(390, "dark", () => ROWS, { api })
+  try {
+    await page.locator(".admin-analytics-change").nth(3).waitFor()
+    let release!: () => void
+    api.hold = new Promise((resolve) => { release = resolve })
+    api.previous = { totalViews: 0, productsViewed: 0, sessions: 0 }
+    await page.getByRole("button", { name: "Últimos 30 días" }).click()
+    await waitForRequests(comparisonRequests, 2)
+    await page.locator(".admin-analytics-sessions[aria-busy=true]").waitFor()
+    assert.equal(await page.locator(".admin-analytics-change").count(), 0, "mientras carga el nuevo período, sin variaciones del anterior")
+    api.hold = null
+    release()
+    await page.locator(".admin-analytics-change").nth(3).getByText("Nueva actividad").waitFor()
   } finally { await page.close() }
 })

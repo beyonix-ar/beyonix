@@ -18331,12 +18331,16 @@ html[data-admin-theme="light"] .admin-claim-force-effects p {
   --analytics-bar: #3987e5;
   --analytics-bar-tooltip-bg: #0b1622;
   --analytics-warning: #fcd34d;
+  --analytics-up: #6ee7b7;
+  --analytics-down: #fca5a5;
 }
 
 html[data-admin-theme="light"] .admin-analytics-page {
   --analytics-bar: #2a78d6;
   --analytics-bar-tooltip-bg: #ffffff;
   --analytics-warning: #b45309;
+  --analytics-up: #047857;
+  --analytics-down: #b91c1c;
 }
 
 .admin-analytics-page .admin-analytics-periods {
@@ -18672,6 +18676,30 @@ html[data-admin-theme="light"] .admin-analytics-page {
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--admin-text-muted);
+}
+
+/* Variación contra el período anterior: flecha, signo y texto además del color
+   (mismos tonos validados que la variación del Dashboard). */
+.admin-analytics-page .admin-analytics-change {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--admin-text-soft);
+}
+
+.admin-analytics-page .admin-analytics-change[data-tone="positive"] {
+  color: var(--analytics-up);
+}
+
+.admin-analytics-page .admin-analytics-change[data-tone="negative"] {
+  color: var(--analytics-down);
+}
+
+.admin-analytics-page .admin-analytics-change-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--admin-text-muted);
 }
 

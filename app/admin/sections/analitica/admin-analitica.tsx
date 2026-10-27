@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Eye } from "lucide-react"
 
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
@@ -20,6 +20,7 @@ import { AdminEmptyState, AdminPageHeader, AdminSkeleton } from "../../component
 import { ProductThumbnail } from "../productos/product-thumbnail"
 import { AnalyticsRefreshControl, AnalyticsRefreshProvider, useAnalyticsRefresh } from "./analytics-refresh"
 import { HourlyViewsSection, useHourlyViewsReport } from "./hourly-views-chart"
+import { PeriodChange, usePeriodComparisonReport } from "./period-change"
 import { PeakHourCard, PeakWeekdayCard, usePeakHourReport, usePeakWeekdayReport } from "./peak-views"
 import { ProductViewsChart } from "./product-views-chart"
 import { SessionStatsCards, useSessionStatsReport } from "./session-stats"
@@ -29,11 +30,26 @@ import { useWeekdayViewsReport, WeekdayViewsSection } from "./weekday-views-char
 const viewsFormatter = new Intl.NumberFormat("es-AR")
 
 const UNIQUE_VIEW_HELP =
-  "Una vista es una apertura real del producto (página o vista rápida). Recargar o volver al mismo producto dentro de 30 minutos en la misma sesión no suma otra vista. No se cuentan la navegación del equipo ni los robots."
+  "Una vista es una apertura real del producto (página o vista rápida). Recargar o volver al mismo producto dentro de 30 minutos en la misma sesión no suma otra vista. No se cuentan la navegación del equipo ni los robots. La variación se compara con el período inmediatamente anterior de la misma duración."
 
 const LOAD_ERROR = "No se pudieron cargar las vistas de productos."
 
-function MetricCard({ label, help, value, detail, className = "" }: { label: string; help?: string; value: string; detail?: string; className?: string }) {
+function MetricCard({
+  label,
+  help,
+  value,
+  detail,
+  change,
+  className = "",
+}: {
+  label: string
+  help?: string
+  value: string
+  detail?: string
+  /** Línea de variación contra el período anterior. */
+  change?: ReactNode
+  className?: string
+}) {
   return (
     <div className={`admin-dashboard-kpi ${className} min-w-0 rounded-2xl border px-4 py-3 xl:col-span-2`}>
       <p className="flex items-center gap-1 text-10px font-black uppercase tracking-widest text-white/52">
@@ -42,6 +58,7 @@ function MetricCard({ label, help, value, detail, className = "" }: { label: str
       </p>
       <p className="mt-1 truncate text-2xl font-black tabular-nums text-white" title={value}>{value}</p>
       {detail && <p className="mt-0.5 truncate text-11px text-white/52">{detail}</p>}
+      {change}
     </div>
   )
 }
@@ -72,11 +89,12 @@ function AnalyticsPage() {
   )
   const rangeKey = range ? `${range.from}:${range.to}` : null
 
-  // Productos más vistos, sesiones, horario pico, día con más
-  // visualizaciones y visualizaciones por día y por hora: tareas del mismo
-  // ciclo global, siempre con el período que muestran los filtros.
+  // Productos más vistos, sesiones, comparación con el período anterior,
+  // horario pico, día con más visualizaciones y visualizaciones por día y por
+  // hora: tareas del mismo ciclo global, siempre con el período de los filtros.
   const { report, loadError } = useAnalyticsReport<ProductViewReport>("/api/admin/analytics/product-views", LOAD_ERROR, range, rangeKey)
   const sessionStats = useSessionStatsReport(range, rangeKey)
+  const { report: comparison } = usePeriodComparisonReport(range, rangeKey)
   const peakHour = usePeakHourReport(range, rangeKey)
   const peakWeekday = usePeakWeekdayReport(range, rangeKey)
   const weekdayViews = useWeekdayViewsReport(range, rangeKey)
@@ -141,8 +159,17 @@ function AnalyticsPage() {
         <div className="admin-analytics-metrics grid gap-2.5 sm:grid-cols-2 xl:grid-cols-6">
           {report && report.totalViews > 0 && report.topProduct && (
             <>
-              <MetricCard label="Vistas totales" help={UNIQUE_VIEW_HELP} value={viewsFormatter.format(report.totalViews)} />
-              <MetricCard label="Productos vistos" value={viewsFormatter.format(report.productsViewed)} />
+              <MetricCard
+                label="Vistas totales"
+                help={UNIQUE_VIEW_HELP}
+                value={viewsFormatter.format(report.totalViews)}
+                change={<PeriodChange comparison={comparison} metric="totalViews" />}
+              />
+              <MetricCard
+                label="Productos vistos"
+                value={viewsFormatter.format(report.productsViewed)}
+                change={<PeriodChange comparison={comparison} metric="productsViewed" />}
+              />
               <MetricCard
                 className="sm:max-xl:col-span-2"
                 label="Producto más visto"
@@ -151,7 +178,7 @@ function AnalyticsPage() {
               />
             </>
           )}
-          <SessionStatsCards {...sessionStats} />
+          <SessionStatsCards {...sessionStats} comparison={comparison} />
           <PeakHourCard {...peakHour} />
           <PeakWeekdayCard {...peakWeekday} />
         </div>

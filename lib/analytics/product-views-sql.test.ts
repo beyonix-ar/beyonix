@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
+import { previousAnalyticsRange } from "./period-comparison.ts"
+
 // Migraciones reales de Analítica (20261026100000 + 20261026120000) sobre
 // PostgreSQL embebido: vista única por sesión/producto, límites de abuso,
 // ranking por fechas de Argentina, histórico que sobrevive a borrados,
@@ -16,6 +18,7 @@ const MIGRATIONS = [
   "20261026180000_analytics_views_by_weekday.sql",
   "20261027100000_analytics_views_by_hour.sql",
   "20261027120000_analytics_session_stats.sql",
+  "20261027140000_analytics_period_comparison.sql",
 ].map((file) => readFileSync(`supabase/migrations/${file}`, "utf8"))
 
 const SESSION_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -498,6 +501,110 @@ test("sesiones con visualizaciones: cada session_id cuenta una vez; mismas vista
   } finally { await db.close() }
 })
 
+type ComparisonRow = {
+  current_total_views: number; current_products_viewed: number; current_sessions: number
+  previous_total_views: number; previous_products_viewed: number; previous_sessions: number
+}
+
+async function comparison(db: PGlite, from: string, to: string, previous = previousAnalyticsRange({ from, to })) {
+  return (await db.query<ComparisonRow>(
+    `select current_total_views::int, current_products_viewed::int, current_sessions::int,
+       previous_total_views::int, previous_products_viewed::int, previous_sessions::int
+     from public.admin_product_view_period_comparison('${from}', '${to}', '${previous.from}', '${previous.to}')`,
+  )).rows
+}
+
+/** "Vistas totales", "Productos vistos" y "Sesiones con visualizaciones" de un período, con las RPC existentes. */
+async function existingMetrics(db: PGlite, from: string, to: string) {
+  const ranking = (await db.query<{ total: number; products: number }>(
+    `select coalesce(sum(views), 0)::int as total, count(*)::int as products from public.admin_product_view_stats('${from}', '${to}')`,
+  )).rows[0]
+  const sessions = (await db.query<{ total_views: number; unique_sessions: number }>(
+    `select total_views::int, unique_sessions::int from public.admin_product_view_session_stats('${from}', '${to}')`,
+  )).rows[0]
+  return { totalViews: ranking.total, productsViewed: ranking.products, sessions: sessions.unique_sessions, sessionViews: sessions.total_views }
+}
+
+test("comparación: actual y anterior en una sola fila, días de Argentina, sin solapamiento", async () => {
+  const db = await createDb()
+  try {
+    const views = (session: string, product: number, at: string, times: number) => db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at)
+      select 'product_view', '${session}'::uuid, ${product}, '${at}'::timestamptz + g * interval '1 second' from generate_series(1, ${times}) g`)
+    // Hoy del test: 27/10. Ayer 26/10. 7 días: 21–27 vs 14–20.
+    await views(SESSION_A, 1, "2026-10-27 10:00-03", 6)
+    await views(SESSION_B, 2, "2026-10-27 00:00-03", 2)        // primer instante de hoy
+    await views(SESSION_B, 2, "2026-10-27 02:59+00", 3)        // 23:59 del 26 en Argentina: ayer
+    await views(SESSION_A, 3, "2026-10-26 12:00-03", 1)
+    await views(SESSION_A, 1, "2026-10-20 23:59-03", 4)        // último instante del período anterior a 7 días
+    await views(SESSION_B, 1, "2026-10-14 00:00-03", 2)        // primer instante del período anterior a 7 días
+    await views(SESSION_B, 1, "2026-10-13 23:59-03", 9)        // fuera de ambos
+
+    assert.deepEqual(await comparison(db, "2026-10-27", "2026-10-27"), [{
+      current_total_views: 8, current_products_viewed: 2, current_sessions: 2,
+      previous_total_views: 4, previous_products_viewed: 2, previous_sessions: 2,
+    }], "G + M: Hoy vs ayer; las 02:59 UTC del 27 son ayer en Argentina")
+    assert.deepEqual(await comparison(db, "2026-10-21", "2026-10-27"), [{
+      current_total_views: 12, current_products_viewed: 3, current_sessions: 2,
+      previous_total_views: 6, previous_products_viewed: 1, previous_sessions: 2,
+    }], "H + L: 21–27 vs 14–20; el 20 23:59 y el 14 00:00 sólo en el anterior, el 13 en ninguno")
+    assert.deepEqual(await comparison(db, "2026-11-01", "2026-11-05"), [{
+      current_total_views: 0, current_products_viewed: 0, current_sessions: 0,
+      previous_total_views: 8, previous_products_viewed: 2, previous_sessions: 2,
+    }], "actual sin vistas, anterior (27–31 oct) con las de hoy")
+    assert.deepEqual(await comparison(db, "2026-11-10", "2026-11-14"), [{
+      current_total_views: 0, current_products_viewed: 0, current_sessions: 0,
+      previous_total_views: 0, previous_products_viewed: 0, previous_sessions: 0,
+    }], "sin vistas en ninguno: una fila en 0")
+
+    const zeros = [{ current_total_views: 0, current_products_viewed: 0, current_sessions: 0, previous_total_views: 0, previous_products_viewed: 0, previous_sessions: 0 }]
+    assert.deepEqual(await comparison(db, "2026-10-21", "2026-10-27", { from: "2026-10-15", to: "2026-10-21" }), zeros, "solapado: se rechaza")
+    assert.deepEqual(await comparison(db, "2026-10-21", "2026-10-27", { from: "2026-10-13", to: "2026-10-19" }), zeros, "con hueco: se rechaza")
+    assert.deepEqual(await comparison(db, "2026-10-21", "2026-10-27", { from: "2026-10-15", to: "2026-10-20" }), zeros, "otra duración: se rechaza")
+    assert.deepEqual(await comparison(db, "2026-10-27", "2026-10-21", { from: "2026-10-14", to: "2026-10-20" }), zeros, "rango invertido")
+  } finally { await db.close() }
+})
+
+test("comparación: N–Q actual y anterior coinciden EXACTO con Vistas totales, Productos vistos y Sesiones de los reportes existentes", async () => {
+  const db = await createDb()
+  try {
+    await db.exec(`insert into public.productos select g, 'P' || g, 'p-' || g, true, null from generate_series(100, 140) g`)
+    // 70 días de vistas pseudoaleatorias (horas UTC variadas, sesiones repetidas entre días y productos).
+    let seed = 23
+    const next = (mod: number) => (seed = (seed * 48271) % 2147483647) % mod
+    const values: string[] = []
+    for (let slot = 0; slot < 70 * 6; slot += 1) {
+      const times = next(4)
+      for (let index = 0; index < times; index += 1) {
+        const session = `00000000-0000-4000-8000-${String(next(60)).padStart(12, "0")}`
+        values.push(`('product_view', '${session}'::uuid, ${100 + next(40)}, timestamptz '2026-08-20 01:30+00' + interval '${slot * 4} hours' + interval '${next(240)} minutes')`)
+      }
+    }
+    await db.exec(`insert into public.analytics_events (event_type, session_id, product_id, occurred_at) values ${values.join(",")}`)
+
+    const ranges = [
+      ["2026-10-27", "2026-10-27"], ["2026-10-21", "2026-10-27"], ["2026-09-28", "2026-10-27"],
+      ["2026-10-01", "2026-10-01"], ["2026-10-10", "2026-10-15"], ["2026-09-01", "2026-09-30"], ["2026-10-31", "2026-11-02"],
+    ] as const
+    for (const [from, to] of ranges) {
+      const previous = previousAnalyticsRange({ from, to })
+      const [row] = await comparison(db, from, to)
+      const current = await existingMetrics(db, from, to)
+      const before = await existingMetrics(db, previous.from, previous.to)
+      assert.deepEqual(
+        [row.current_total_views, row.current_products_viewed, row.current_sessions],
+        [current.totalViews, current.productsViewed, current.sessions],
+        `${from}..${to}: actual = Vistas totales / Productos vistos / Sesiones`,
+      )
+      assert.deepEqual(
+        [row.previous_total_views, row.previous_products_viewed, row.previous_sessions],
+        [before.totalViews, before.productsViewed, before.sessions],
+        `${from}..${to}: anterior (${previous.from}..${previous.to}) con la misma definición`,
+      )
+      assert.equal(current.sessionViews, current.totalViews, "Q: el promedio por sesión usa las mismas vistas")
+    }
+  } finally { await db.close() }
+})
+
 test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role sí", async () => {
   const db = await createDb()
   try {
@@ -520,6 +627,7 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
       await assert.rejects(db.query("select * from public.admin_product_views_by_weekday('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: por día de la semana`)
       await assert.rejects(db.query("select * from public.admin_product_views_by_hour('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: por hora del día`)
       await assert.rejects(db.query("select * from public.admin_product_view_session_stats('2026-01-01', '2026-12-31')"), /permission denied/i, `${role}: sesiones con visualizaciones`)
+      await assert.rejects(db.query("select * from public.admin_product_view_period_comparison('2026-10-21', '2026-10-27', '2026-10-14', '2026-10-20')"), /permission denied/i, `${role}: comparación`)
       await assert.rejects(db.query("select public.analytics_product_image(1, null)"), /permission denied/i, `${role}: imagen`)
       await db.exec("reset role")
     }
@@ -530,6 +638,7 @@ test("permisos: anon y authenticated no leen, escriben ni ejecutan; service_role
     assert.equal((await db.query("select * from public.admin_product_views_by_hour('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.equal((await db.query("select * from public.admin_product_view_peak_hour('2000-01-01', '2100-12-31')")).rows.length, 1)
     assert.deepEqual((await db.query("select total_views::int, unique_sessions::int from public.admin_product_view_session_stats('2000-01-01', '2100-12-31')")).rows, [{ total_views: 1, unique_sessions: 1 }])
+    assert.equal((await db.query("select * from public.admin_product_view_period_comparison('2026-10-21', '2026-10-27', '2026-10-14', '2026-10-20')")).rows.length, 1)
     assert.equal((await db.query<{ status: string }>(`select public.record_product_view('${SESSION_B}'::uuid, 1) as status`)).rows[0].status, "recorded")
     await db.exec("reset role")
   } finally { await db.close() }

@@ -6,8 +6,16 @@ import type { PeakViewsRow } from "@/lib/analytics/peak-views-report"
 export type AnalyticsRpcRecord = Record<string, number | string | null>
 
 interface AnalyticsRpcEndpoint<Report> {
-  rpc: "admin_product_view_peak_hour" | "admin_product_view_peak_weekday" | "admin_product_views_by_weekday" | "admin_product_views_by_hour" | "admin_product_view_session_stats"
+  rpc:
+    | "admin_product_view_peak_hour"
+    | "admin_product_view_peak_weekday"
+    | "admin_product_views_by_weekday"
+    | "admin_product_views_by_hour"
+    | "admin_product_view_session_stats"
+    | "admin_product_view_period_comparison"
   errorMessage: string
+  /** Parámetros adicionales derivados del período ya validado (nunca del cliente). */
+  rpcParams?: (range: AnalyticsDateRange) => Record<string, string>
   buildReport: (range: AnalyticsDateRange, records: AnalyticsRpcRecord[]) => Report
 }
 
@@ -29,6 +37,7 @@ export async function handleAnalyticsRpcRequest<Report>(request: Request, endpoi
   }
 
   const { data, error } = await auth.admin.rpc(endpoint.rpc, {
+    ...endpoint.rpcParams?.(range),
     p_from: range.from,
     p_to: range.to,
   })

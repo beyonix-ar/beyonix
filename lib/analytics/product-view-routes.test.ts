@@ -448,3 +448,63 @@ test("Sesiones con visualizaciones: sin vistas → 0 y promedio null; rango inv�
     assert.deepEqual(await response.json(), { error: "No se pudieron cargar las sesiones con visualizaciones." })
   })
 })
+
+const comparisonRequest = (query: string, token: string | null = "token") => new Request(`http://localhost/api/admin/analytics/comparison?${query}`, {
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
+})
+
+const COMPARISON_ROW = {
+  current_total_views: "100", current_products_viewed: "12", current_sessions: "20",
+  previous_total_views: 60, previous_products_viewed: "12", previous_sessions: "20",
+}
+
+test("Comparación: anon 401, cliente y operador 403; Admin y Super Admin reciben actual y anterior en una sola consulta", async () => {
+  const route = await import("../../app/api/admin/analytics/comparison/route")
+  await withSupabase({ userId: null }, async (calls) => {
+    assert.equal((await route.GET(comparisonRequest("from=2026-10-21&to=2026-10-27", null))).status, 401)
+    assert.equal((await route.GET(comparisonRequest("from=2026-10-21&to=2026-10-27"))).status, 401)
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  for (const role of ["cliente", "operador"]) {
+    await withSupabase({ userId: "user", role }, async (calls) => {
+      assert.equal((await route.GET(comparisonRequest("from=2026-10-21&to=2026-10-27"))).status, 403, role)
+      assert.ok(calls.every((call) => call.path === "/rest/v1/profiles"))
+    })
+  }
+  for (const role of ["admin", "super_admin"]) {
+    await withSupabase({ userId: "staff", role, rpc: () => Response.json([COMPARISON_ROW]) }, async (calls) => {
+      // El período anterior que mande el cliente se ignora: lo deriva el servidor.
+      const response = await route.GET(comparisonRequest("from=2026-10-21&to=2026-10-27&p_previous_from=2020-01-01&p_previous_to=2020-01-07"))
+      assert.equal(response.status, 200, role)
+      assert.equal(response.headers.get("cache-control"), "private, no-store")
+      const report = await response.json() as { previousRange: unknown; current: { totalViews: number; viewsPerSession: number }; previous: { totalViews: number; viewsPerSession: number } }
+      assert.deepEqual(report.previousRange, { from: "2026-10-14", to: "2026-10-20" })
+      assert.deepEqual([report.current.totalViews, report.current.viewsPerSession, report.previous.totalViews, report.previous.viewsPerSession], [100, 5, 60, 3])
+      const rpcCalls = calls.filter((call) => call.path.startsWith("/rest/v1/rpc/"))
+      assert.equal(rpcCalls.length, 1, "una sola consulta para las cuatro métricas y los dos períodos")
+      assert.equal(rpcCalls[0].path, "/rest/v1/rpc/admin_product_view_period_comparison")
+      assert.deepEqual(rpcCalls[0].body, { p_from: "2026-10-21", p_to: "2026-10-27", p_previous_from: "2026-10-14", p_previous_to: "2026-10-20" })
+    })
+  }
+})
+
+test("Comparación: Hoy contra ayer; rango inválido 400 sin consultar; error de base 500 genérico", async () => {
+  const route = await import("../../app/api/admin/analytics/comparison/route")
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json([COMPARISON_ROW]) }, async (calls) => {
+    await route.GET(comparisonRequest("from=2026-10-27&to=2026-10-27"))
+    assert.deepEqual(calls.find((call) => call.path === "/rest/v1/rpc/admin_product_view_period_comparison")?.body, {
+      p_from: "2026-10-27", p_to: "2026-10-27", p_previous_from: "2026-10-26", p_previous_to: "2026-10-26",
+    })
+  })
+  await withSupabase({ userId: "staff", role: "admin" }, async (calls) => {
+    for (const query of ["", "from=2026-10-26&to=2026-10-20", "from=2025-01-01&to=2026-10-26", "from=2026-02-30&to=2026-03-01"]) {
+      assert.equal((await route.GET(comparisonRequest(query))).status, 400, query)
+    }
+    assert.equal(calls.filter((call) => call.path.startsWith("/rest/v1/rpc/")).length, 0)
+  })
+  await withSupabase({ userId: "staff", role: "admin", rpc: () => Response.json({ message: "function does not exist" }, { status: 500 }) }, async () => {
+    const response = await route.GET(comparisonRequest("from=2026-10-21&to=2026-10-27"))
+    assert.equal(response.status, 500)
+    assert.deepEqual(await response.json(), { error: "No se pudo cargar la comparación con el período anterior." })
+  })
+})
