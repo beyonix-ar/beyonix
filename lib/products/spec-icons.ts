@@ -7,24 +7,27 @@
 // - La tienda muestra ícono + `texto` de la especificación; nunca un label.
 //
 // Cada entrada del catálogo usa un dibujo distinto y un nombre normalizado
-// único (lo verifican los tests).
+// único (lo verifican los tests). `name` es el nombre del componente de
+// lucide-react (versión instalada); su id oficial en kebab-case
+// ("battery-charging") se deriva con `specIconLucideId` y también se busca.
 import {
-  Accessibility, Activity, AirVent, AlarmClock, Anchor, AppWindow, Archive, Armchair, ArrowDownUp, Atom, AudioLines,
-  Award, Baby, Backpack, BadgeCheck, BadgePercent, Barcode, Bath, Battery, BatteryCharging, BatteryFull, BatteryLow,
-  Beaker, BedDouble, Bell, BicepsFlexed, Bike, Bluetooth, BookOpen, Box, BriefcaseBusiness, Brush, Cable, Calculator,
-  CalendarDays, Camera, Car, ChartNoAxesCombined, Check, ChefHat, CircuitBoard, Clipboard, Clock, Cloud, CloudDownload,
-  Coffee, Compass, Contact, CookingPot, Cpu, CreditCard, Crosshair, CupSoda, Database, Disc3, Dog, DoorOpen, Download,
-  Drill, Droplets, Dumbbell, Ear, Fan, Feather, FileText, Flame, FlaskConical, FlaskRound, Flashlight, Flower2,
-  FoldHorizontal, FolderOpen, Footprints, Fuel, Gamepad2, Gauge, Gift, GlassWater, Globe, GraduationCap, Grip, Hammer,
-  Hand, HardDrive, Headphones, Headset, Heart, Heater, Home, Hourglass, Image, Key, Keyboard, Lamp, LampDesk, Laptop,
-  Layers3, LayoutGrid, Leaf, Lightbulb, Link2, ListChecks, Lock, LockKeyhole, Magnet, MapPin, Maximize, Medal,
+  Accessibility, Activity, AirVent, AlarmClock, Anchor, AppWindow, Archive, Armchair, ArrowDownUp, ArrowUpDown, Atom,
+  AudioLines, Award, Baby, Backpack, BadgeCheck, BadgePercent, Barcode, Bath, Battery, BatteryCharging, BatteryFull,
+  BatteryLow, Beaker, BedDouble, Bell, BicepsFlexed, Bike, Bluetooth, BookOpen, BottleWine, Box, BriefcaseBusiness,
+  Brush, Cable, Calculator, CalendarDays, Camera, Car, CarFront, ChartNoAxesColumnIncreasing, ChartNoAxesCombined,
+  Check, ChefHat, CircleCheck, CircleDot, CircuitBoard, Clipboard, Clock, Cloud, CloudDownload, Coffee, Compass,
+  Contact, CookingPot, Cpu, CreditCard, Crosshair, CupSoda, Database, Disc3, Dog, DoorOpen, Download, Drill, Droplets,
+  Dumbbell, Ear, Fan, Feather, FileText, Flame, FlaskConical, FlaskRound, Flashlight, Flower2, FoldHorizontal,
+  FoldVertical, FolderOpen, Footprints, Fuel, Gamepad2, Gauge, Gift, GitBranch, GlassWater, Globe, GraduationCap, Grip,
+  Hammer, Hand, HardDrive, Headphones, Headset, Heart, Heater, Home, Hourglass, Image, Key, Keyboard, Lamp, LampDesk,
+  Laptop, Layers3, LayoutGrid, Leaf, Lightbulb, Link2, ListChecks, Lock, LockKeyhole, Magnet, MapPin, Maximize, Medal,
   MemoryStick, MessageCircle, Mic, Microwave, Milk, Minimize2, Monitor, MonitorUp, Mountain, Mouse, MousePointer2,
-  Move3d, Music, Navigation, Network, Notebook, NotebookPen, Package, PackageCheck, Paintbrush, Palette, PanelTop,
-  PanelsTopLeft, Paperclip, PenTool, Phone, Pin, Plane, Plug, PlugZap, PocketKnife, Printer, Projector, Puzzle, Radio,
-  Recycle, RefreshCcw, Repeat, Rocket, Rotate3d, Router, Ruler, Scan, ScanFace, Scissors, Settings, Shield,
-  ShieldCheck, Shirt, SlidersHorizontal, Smartphone, Smile, Snowflake, Sofa, Sparkles, Speaker, Sprout, Star, Sun,
-  Tablet, Tent, Thermometer, Timer, Truck, Tv, Umbrella, Usb, UtensilsCrossed, Video, Volume2, Watch, Waves, Weight,
-  Wifi, Wind, Wine, Wrench, Zap,
+  Move, Move3d, Music, Navigation, Network, Notebook, NotebookPen, Package, PackageCheck, Paintbrush, Palette,
+  PanelTop, PanelsTopLeft, Paperclip, PenLine, PenTool, Phone, Pin, Plane, Plug, PlugZap, PocketKnife, Power, Printer,
+  Projector, Puzzle, Radio, Recycle, RefreshCcw, Repeat, Rocket, Rotate3d, Router, Ruler, Scan, ScanFace, Scissors,
+  Settings, Shield, ShieldCheck, Shirt, SlidersHorizontal, Smartphone, Smile, Snowflake, Sofa, Sparkles, Speaker,
+  Sprout, Star, Sun, SwatchBook, Tablet, Tent, Thermometer, ThermometerSnowflake, ThermometerSun, Timer, Truck, Tv,
+  Umbrella, Usb, UtensilsCrossed, Video, Volume2, Watch, Waves, Weight, Wifi, Wind, Wine, Wrench, Zap, ZoomIn,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -45,6 +48,7 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Shield", Shield, "Protección", "resguardo", "defensa", "cubierta"),
   entry("Hammer", Hammer, "Durabilidad", "vida útil", "robusto", "golpes"),
   entry("Zap", Zap, "Potencia", "energía", "watts", "carga rápida"),
+  entry("Power", Power, "Encendido", "on off", "prender", "apagar", "botón de encendido"),
   entry("PlugZap", PlugZap, "Voltaje", "voltios", "220 v", "electricidad", "alimentación"),
   entry("BatteryFull", BatteryFull, "Autonomía", "duración", "batería completa", "horas"),
   entry("BicepsFlexed", BicepsFlexed, "Resistencia", "fuerza", "solidez", "carga máxima"),
@@ -52,15 +56,21 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Weight", Weight, "Peso", "kilogramos", "gramos", "kg"),
   entry("Layers3", Layers3, "Material", "composición", "fabricación", "capas", "construcción"),
   entry("Thermometer", Thermometer, "Temperatura", "grados", "térmico", "medición"),
-  entry("Droplets", Droplets, "Impermeable", "agua", "resistente al agua", "salpicaduras"),
+  entry("ThermometerSnowflake", ThermometerSnowflake, "Temperatura fría", "frío", "mantiene frío", "helado", "térmico"),
+  entry("ThermometerSun", ThermometerSun, "Temperatura caliente", "calor", "mantiene caliente", "caliente", "térmico"),
+  entry("Droplets", Droplets, "Impermeable", "agua", "resistente al agua", "salpicaduras", "líquidos"),
   entry("Move3d", Move3d, "Flexible", "movilidad", "adaptable", "articulado"),
+  entry("Move", Move, "Movimiento libre", "mover", "desplazar", "posición", "orientable"),
   entry("SlidersHorizontal", SlidersHorizontal, "Ajustable", "regulable", "configurable", "personalizable"),
+  entry("ChartNoAxesColumnIncreasing", ChartNoAxesColumnIncreasing, "Niveles", "intensidad", "escala", "barras", "graduable"),
   entry("FoldHorizontal", FoldHorizontal, "Plegable", "plegar", "cerrar", "guardar"),
+  entry("FoldVertical", FoldVertical, "Plegable vertical", "plegar", "cerrar", "vertical"),
   entry("Backpack", Backpack, "Portátil", "transportable", "mochila", "llevar"),
   entry("Minimize2", Minimize2, "Compacto", "pequeño", "reducido", "ocupa poco"),
   entry("ChartNoAxesCombined", ChartNoAxesCombined, "Rendimiento", "desempeño", "eficiencia", "estadísticas"),
   entry("Gauge", Gauge, "Velocidad", "rápido", "rpm", "medidor"),
-  entry("Network", Network, "Conectividad", "red", "conexión", "hub", "puertos"),
+  entry("Network", Network, "Conectividad", "red", "conexión", "hub", "puertos", "usb 3.0"),
+  entry("GitBranch", GitBranch, "Bifurcación", "divisor", "derivación", "múltiples salidas", "splitter"),
   entry("BadgeCheck", BadgeCheck, "Garantía", "respaldo", "oficial", "verificado"),
   entry("Award", Award, "Calidad", "premium", "certificación", "distinción"),
   entry("LayoutGrid", LayoutGrid, "Organización", "orden", "compartimentos", "divisiones"),
@@ -74,6 +84,7 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Bluetooth", Bluetooth, "Bluetooth", "inalámbrico", "emparejar"),
   entry("Wifi", Wifi, "Wi-Fi", "internet", "wireless", "red inalámbrica"),
   entry("Car", Car, "Auto", "vehículo", "automóvil", "12 v"),
+  entry("CarFront", CarFront, "Vehículo", "auto", "automóvil", "frente", "12 v"),
   entry("Home", Home, "Hogar", "casa", "doméstico"),
   entry("CookingPot", CookingPot, "Cocina", "olla", "gastronomía", "alimentos"),
   entry("BriefcaseBusiness", BriefcaseBusiness, "Oficina", "trabajo", "escritorio", "profesional"),
@@ -84,12 +95,13 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Dumbbell", Dumbbell, "Fitness", "gimnasio", "entrenamiento", "ejercicio"),
   entry("Coffee", Coffee, "Mate", "taza", "infusión", "bombilla", "café"),
   entry("Milk", Milk, "Botella", "envase", "recipiente"),
+  entry("BottleWine", BottleWine, "Botella de vino", "vino", "botella", "sacacorchos", "descorchar"),
   entry("FlaskRound", FlaskRound, "Termo", "térmico", "bebida caliente"),
   entry("Laptop", Laptop, "Notebook", "laptop", "computadora portátil"),
   entry("MonitorUp", MonitorUp, "Soporte para notebook", "elevador", "altura", "soporte"),
   entry("HardDrive", HardDrive, "Almacenamiento de datos", "disco", "transferencia", "gb"),
   entry("BatteryCharging", BatteryCharging, "Batería recargable", "recarga", "cargando"),
-  entry("Headphones", Headphones, "Auriculares", "vincha", "música"),
+  entry("Headphones", Headphones, "Auriculares", "vincha", "música", "sonido"),
   entry("Headset", Headset, "Auricular con micrófono", "llamadas", "gamer"),
   entry("Mic", Mic, "Micrófono", "voz", "grabar voz"),
   entry("Volume2", Volume2, "Control de volumen", "volumen de sonido", "subir volumen"),
@@ -101,6 +113,8 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Tablet", Tablet, "Tablet", "ipad", "pantalla táctil"),
   entry("Watch", Watch, "Reloj inteligente", "smartwatch", "pulsera"),
   entry("Monitor", Monitor, "Pantalla", "monitor", "display"),
+  entry("PanelsTopLeft", PanelsTopLeft, "Paneles", "triple panel", "paneles", "pantallas", "aluminio"),
+  entry("ZoomIn", ZoomIn, "Zoom", "aumento", "lupa", "ampliar", "aumentar"),
   entry("Tv", Tv, "Televisor", "tv", "smart tv"),
   entry("Projector", Projector, "Proyector", "imagen grande", "cine"),
   entry("Keyboard", Keyboard, "Teclado", "teclas", "escritura"),
@@ -129,6 +143,7 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Ruler", Ruler, "Dimensiones", "medidas", "tamaño", "largo", "ancho"),
   entry("Maximize", Maximize, "Tamaño amplio", "grande", "extensible"),
   entry("ArrowDownUp", ArrowDownUp, "Altura regulable", "subir", "bajar"),
+  entry("ArrowUpDown", ArrowUpDown, "Subir y bajar", "arriba", "abajo", "vertical", "elevación"),
   entry("Crosshair", Crosshair, "Precisión", "exacto", "puntería"),
   entry("Lock", Lock, "Bloqueo", "candado", "traba", "cierre"),
   entry("Key", Key, "Llave", "cerradura", "acceso"),
@@ -147,6 +162,7 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Leaf", Leaf, "Ecológico", "natural", "sustentable"),
   entry("Recycle", Recycle, "Reciclable", "reciclado", "reutilizar"),
   entry("RefreshCcw", RefreshCcw, "Reutilizable", "lavable", "renovable"),
+  entry("Repeat", Repeat, "Repetición", "ciclo", "repetir", "uso continuo"),
   entry("Sparkles", Sparkles, "Terminación premium", "acabado", "brillo"),
   entry("Star", Star, "Destacado", "favorito", "top"),
   entry("Smile", Smile, "Comodidad", "confort", "agradable"),
@@ -164,6 +180,7 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Waves", Waves, "Uso acuático", "pileta", "playa", "mar"),
   entry("Truck", Truck, "Envío", "entrega", "transporte"),
   entry("PackageCheck", PackageCheck, "Contenido de la caja", "incluye", "accesorios"),
+  entry("Package", Package, "Paquete", "caja", "embalaje", "empaque"),
   entry("Gift", Gift, "Regalo", "obsequio", "presente"),
   entry("Barcode", Barcode, "Código de barras", "ean", "código"),
   entry("Scan", Scan, "Escáner", "lectura", "escanear"),
@@ -172,7 +189,9 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("BookOpen", BookOpen, "Manual", "instrucciones", "lectura"),
   entry("GraduationCap", GraduationCap, "Educativo", "aprendizaje", "escuela"),
   entry("PenTool", PenTool, "Diseño", "trazo", "dibujo"),
+  entry("PenLine", PenLine, "Escritura", "lapicera", "marcador", "escribir", "punta"),
   entry("Palette", Palette, "Colores", "color", "tonos"),
+  entry("SwatchBook", SwatchBook, "Muestrario de colores", "paleta", "variedad de colores", "tonos", "colores"),
   entry("Paintbrush", Paintbrush, "Pintura", "pincel", "manualidades"),
   entry("Brush", Brush, "Limpieza", "cepillo", "limpiar"),
   entry("Scissors", Scissors, "Corte", "tijera", "recortar"),
@@ -195,11 +214,13 @@ export const SPEC_ICON_CATALOG: readonly SpecIconOption[] = [
   entry("Baby", Baby, "Bebé", "infantil", "niños"),
   entry("Dog", Dog, "Mascotas", "perro", "gato"),
   entry("Shirt", Shirt, "Indumentaria", "ropa", "remera", "talle"),
-  entry("Music", Music, "Música", "canciones", "melodía"),
+  entry("Music", Music, "Música", "canciones", "melodía", "sonido"),
   entry("Radio", Radio, "Radio", "fm", "am"),
   entry("MessageCircle", MessageCircle, "Atención al cliente", "consultas", "chat"),
   entry("Phone", Phone, "Teléfono", "llamada", "fijo"),
   entry("Check", Check, "Incluido", "sí", "tilde"),
+  entry("CircleCheck", CircleCheck, "Aprobado", "apto", "cumple", "ok", "verificado"),
+  entry("CircleDot", CircleDot, "Botón", "pulsador", "punto", "táctil", "un toque"),
   entry("Settings", Settings, "Configuración", "ajustes", "engranaje"),
 ]
 
@@ -228,11 +249,8 @@ const LEGACY_SPEC_ICONS: readonly SpecIconOption[] = [
   entry("MousePointer2", MousePointer2, "Puntero"),
   entry("Notebook", Notebook, "Cuaderno"),
   entry("NotebookPen", NotebookPen, "Anotaciones"),
-  entry("Package", Package, "Paquete"),
   entry("PanelTop", PanelTop, "Panel"),
-  entry("PanelsTopLeft", PanelsTopLeft, "Aluminio"),
   entry("Paperclip", Paperclip, "Clip"),
-  entry("Repeat", Repeat, "Repetición"),
   entry("Rocket", Rocket, "Alto rendimiento"),
 ]
 
@@ -292,7 +310,13 @@ function aliasLabelOf(value: unknown) {
   return typeof label === "string" && label.trim() ? label.trim() : null
 }
 
-/** Filas de `site_settings` → alias por iconName. v2 gana; de v1, el más reciente por ícono. */
+/**
+ * Filas de `site_settings` → alias por iconName. v2 gana; de v1, el más
+ * reciente por ícono. Un alias v1 (guardado antes de validar nombres únicos)
+ * se ignora si repite el nombre base de otro ícono del catálogo: p. ej. el v1
+ * "Repeat → Plegable" duplicaría "Plegable" (FoldHorizontal) ahora que Repeat
+ * se ofrece. El dato guardado no se toca.
+ */
 export function resolveSpecIconAliasRows(rows: readonly AliasRow[]): SpecIconAliases {
   const current: SpecIconAliases = {}
   const legacy = new Map<string, { label: string; updatedAt: string }>()
@@ -308,13 +332,24 @@ export function resolveSpecIconAliasRows(rows: readonly AliasRow[]): SpecIconAli
       if (iconName && (!previous || updatedAt > previous.updatedAt)) legacy.set(iconName, { label, updatedAt })
     }
   }
-  for (const [iconName, { label }] of legacy) current[iconName] ??= label
+  for (const [iconName, { label }] of legacy) {
+    const wanted = normalizeSpecIconLabel(label)
+    const repeatsBaseLabel = SPEC_ICON_CATALOG.some((option) => option.name !== iconName && normalizeSpecIconLabel(option.label) === wanted)
+    if (!repeatsBaseLabel) current[iconName] ??= label
+  }
   return current
 }
 
-/** Búsqueda por displayLabel, defaultLabel, iconName y keywords. */
+/** iconName → id oficial de Lucide: "BatteryCharging" → "battery-charging", "Volume2" → "volume-2". */
+export function specIconLucideId(iconName: string) {
+  return iconName.replace(/([a-z0-9])([A-Z])/g, "$1-$2").replace(/([a-zA-Z])(\d)/g, "$1-$2").toLowerCase()
+}
+
+/** Búsqueda por displayLabel, defaultLabel, iconName, id de Lucide y keywords. */
 export function matchesSpecIconSearch(option: SpecIconOption, query: string, aliases: Readonly<Record<string, string>>) {
   const wanted = normalizeSpecIconLabel(query)
   if (!wanted) return true
-  return normalizeSpecIconLabel([aliases[option.name] ?? "", option.label, option.name, ...option.keywords].join(" ")).includes(wanted)
+  return normalizeSpecIconLabel(
+    [aliases[option.name] ?? "", option.label, option.name, specIconLucideId(option.name), ...option.keywords].join(" "),
+  ).includes(wanted)
 }
