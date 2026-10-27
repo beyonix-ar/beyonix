@@ -67,6 +67,16 @@ import {
   getOrCreateIdempotencyAttempt,
   type IdempotencyAttempt,
 } from "@/lib/business/idempotency-attempt"
+import {
+  sanitizeAmount,
+  sanitizeCode,
+  sanitizeColorName,
+  sanitizeDocumentNumber,
+  sanitizeInteger,
+  validatePurchaseForm,
+  type PurchaseFormField,
+} from "@/lib/business/purchase-form-validation"
+import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 import { formatPrice } from "../productos/helpers"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import { AdminResponsiveTable } from "../../components/admin-responsive-table"
@@ -185,18 +195,19 @@ function getStoredOtherCost() {
   return window.localStorage.getItem(OTHER_COST_STORAGE_KEY) || DEFAULT_OTHER_COST
 }
 
-function numeric(value: string) {
-  return value.replace(/[^\d.,]/g, "").replace(",", ".")
-}
-
-function Field({ label, children, className = "" }: {
+// Error de validación: borde y etiqueta en rojo sólo en el campo con problemas.
+function Field({ label, children, className = "", invalid = false }: {
   label: string
   children: React.ReactNode
   className?: string
+  invalid?: boolean
 }) {
   return (
-    <label className={`min-w-0 ${className}`}>
-      <span className="mb-1.5 block text-center text-10px font-black uppercase tracking-widest text-white/42">
+    <label
+      data-invalid={invalid || undefined}
+      className={`min-w-0 ${className} ${invalid ? "[&_input:not([type=color])]:!border-red-400/70" : ""}`}
+    >
+      <span className={`mb-1.5 block text-center text-10px font-black uppercase tracking-widest ${invalid ? "text-red-300" : "text-white/42"}`}>
         {label}
       </span>
       {children}
@@ -204,39 +215,68 @@ function Field({ label, children, className = "" }: {
   )
 }
 
-function normalizeHex(value: string) {
-  const clean = value.trim()
-  return /^#[0-9a-fA-F]{6}$/.test(clean) ? clean.toUpperCase() : "#000000"
-}
+/** Color de un nuevo ingreso que crea variante: el negro que se ve es el valor real. */
+const DEFAULT_NEW_VARIANT_COLOR = "#000000"
 
-function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameChange }: {
+// El selector nativo siempre muestra un color: sólo se renderiza cuando hay un
+// valor real en el estado, para que lo visible y lo guardado no difieran. Sin
+// color (opcional) se ofrece "Agregar color", que carga el mismo valor que
+// elegirlo en la paleta.
+function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameChange, onClear }: {
   colorHex: string
   colorName: string
   onColorHexChange: (value: string) => void
   onColorNameChange: (value: string) => void
+  /** Sólo cuando el color es opcional: vuelve a "sin color". */
+  onClear?: () => void
 }) {
+  const hex = /^#[0-9a-fA-F]{6}$/.test(colorHex.trim()) ? colorHex.trim().toUpperCase() : ""
   return (
     <div className="relative">
       <input
         value={colorName}
-        placeholder="Por ej: Verde"
+        placeholder={hex ? deriveVariantNameFromColor(hex) : "Por ej: Verde"}
         aria-label="Nombre del color"
         maxLength={160}
-        onChange={(event) => onColorNameChange(event.target.value)}
-        className={`${inputClass} pl-11`}
+        disabled={!hex}
+        onChange={(event) => onColorNameChange(sanitizeColorName(event.target.value))}
+        className={`${inputClass} pl-11 ${onClear && hex ? "pr-9" : ""} disabled:cursor-not-allowed`}
       />
-      <span
-        className="absolute left-2 top-1/2 size-7 -translate-y-1/2 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20"
-        style={{ backgroundColor: normalizeHex(colorHex) }}
-      >
-        <input
-          type="color"
-          value={normalizeHex(colorHex)}
-          aria-label="Elegir color"
-          onChange={(event) => onColorHexChange(event.target.value.toUpperCase())}
-          className="absolute inset-0 size-full cursor-pointer opacity-0"
-        />
-      </span>
+      {hex ? (
+        <span
+          className="absolute left-2 top-1/2 size-7 -translate-y-1/2 cursor-pointer overflow-hidden rounded-lg border-2 border-white/20"
+          style={{ backgroundColor: hex }}
+        >
+          <input
+            type="color"
+            value={hex}
+            aria-label="Elegir color"
+            onChange={(event) => onColorHexChange(event.target.value.toUpperCase())}
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+          />
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label="Agregar color"
+          title="Agregar color"
+          onClick={() => onColorHexChange(DEFAULT_NEW_VARIANT_COLOR)}
+          className="absolute left-2 top-1/2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-white/25 text-white/55 transition hover:border-beyonix-sky/55 hover:text-white"
+        >
+          <Plus className="size-3.5" />
+        </button>
+      )}
+      {onClear && hex && (
+        <button
+          type="button"
+          aria-label="Quitar color"
+          title="Quitar color"
+          onClick={onClear}
+          className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-white/45 transition hover:text-white"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
     </div>
   )
 }
@@ -257,7 +297,7 @@ function MoneyInput({ value, onChange, placeholder = "0", ariaLabel }: {
         inputMode="decimal"
         placeholder={placeholder}
         aria-label={ariaLabel}
-        onChange={(event) => onChange(numeric(event.target.value))}
+        onChange={(event) => onChange(sanitizeAmount(event.target.value))}
         className={`${inputClass} pl-7`}
       />
     </div>
@@ -684,7 +724,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     "pendiente" | "parcial" | "recibida" | "anulada"
   >("recibida")
   const [unitCost, setUnitCost] = useState("")
-  const [freightCost, setFreightCost] = useState("")
+  // Sin flete es lo habitual: arranca en 0 y vacío también vale 0.
+  const [freightCost, setFreightCost] = useState("0")
+  // Tras un intento de guardar incompleto, el mensaje y los campos marcados se
+  // recalculan en vivo: al corregir un campo deja de marcarse.
+  const [productValidationShown, setProductValidationShown] = useState(false)
   const [otherCost, setOtherCost] = useState(getStoredOtherCost)
   const [productSupplier, setProductSupplier] = useState("")
   const [productDocumentType, setProductDocumentType] = useState("")
@@ -989,7 +1033,8 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setReceivedQuantity("")
     setPurchaseReception("recibida")
     setUnitCost("")
-    setFreightCost("")
+    setFreightCost("0")
+    setProductValidationShown(false)
     setOtherCost(getStoredOtherCost())
     setProductSupplier("")
     setProductDocumentType("")
@@ -1029,7 +1074,9 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       )?.toUpperCase() ?? "",
     )
     if (value === "custom" || selectedProduct?.standalone_key) {
-      setNewArticleColor("")
+      // Artículo nuevo = variante nueva: el negro que muestra el selector es
+      // su color real desde el primer render (igual que elegirlo en la paleta).
+      setNewArticleColor(value === "custom" ? DEFAULT_NEW_VARIANT_COLOR : "")
       setNewArticleColorName("")
       setNewArticleBarcode("")
     } else {
@@ -1130,13 +1177,14 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     setReceivedQuantity(String(item.received_quantity ?? item.quantity))
     setPurchaseReception(item.reception_status ?? "recibida")
     setUnitCost(String(item.unit_cost))
-    setFreightCost(Number(item.freight_cost) ? String(item.freight_cost) : "")
+    setFreightCost(String(Number(item.freight_cost) || 0))
     setOtherCost(Number(item.other_cost) ? String(item.other_cost) : "")
     setProductSupplier(item.supplier ?? "")
     setProductDocumentType(item.document_type ?? "")
     setProductDocumentNumber(item.document_number ?? "")
     setProductPaymentMethod(item.payment_method ?? "")
     setProductNotes(item.notes ?? "")
+    setProductValidationShown(false)
     setError("")
     setMessage("")
     requestAnimationFrame(() => {
@@ -1149,8 +1197,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     sku: string,
   ) => {
     const productId = Number(value.split(":")[1])
+    let product: BusinessCostCatalogProduct | undefined
     try {
-      rememberCatalogProduct((await getCostCatalogArticle(productId)) ?? undefined)
+      product = (await getCostCatalogArticle(productId)) ?? undefined
+      rememberCatalogProduct(product)
     } catch (cause) {
       setMessage("")
       setError(cause instanceof Error ? cause.message : "No se pudo cargar el artículo.")
@@ -1158,6 +1208,11 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
     }
     resetProductForm()
     setArticle(value)
+    // Producto con variantes elegido a nivel producto = variante nueva: el
+    // negro visible es el color real (ver DEFAULT_NEW_VARIANT_COLOR).
+    if (value.startsWith("p:") && product?.producto_variantes?.length) {
+      setNewArticleColor(DEFAULT_NEW_VARIANT_COLOR)
+    }
     setProductSku(sku.toUpperCase())
     setError("")
     setMessage("Completá la cantidad recibida y el costo para registrar el ingreso.")
@@ -1208,72 +1263,67 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
       : null
   })()
 
+  // Qué se está cargando y qué exige: lo usan la validación en vivo (campos
+  // marcados y mensaje) y el guardado, así no pueden diferir.
+  const isNewArticle = article === "custom"
+  const articleParts = article.split(":")
+  const articleProductId = articleParts[0] === "p" || articleParts[0] === "v" ? articleParts[1] : null
+  const articleVariantId = articleParts[0] === "v" ? articleParts[2] : null
+  const standaloneArticleName = isNewArticle
+    ? ""
+    : data?.catalog.find((product) => product.standalone_key && article === `c:${product.standalone_key}`)?.nombre.trim() ?? ""
+  const showsCatalogArticleFields = isNewArticle || Boolean(articleProductId)
+  // Un producto con variantes elegido a nivel producto sólo se compra como
+  // variante nueva (el selector no permite comprarlo sin variante).
+  const selectedProductHasVariants = articleParts[0] === "p" && Boolean(
+    data?.catalog.find((product) => !product.standalone_key && String(product.id) === articleProductId)?.producto_variantes?.length,
+  )
+  const colorRequired = isNewArticle || selectedProductHasVariants
+  // Color nuevo (artículo nuevo o color nuevo de un producto): la variante
+  // nace con esta compra, en una sola operación del servidor.
+  const createsVariant =
+    Boolean(newArticleColor.trim()) && (isNewArticle || (Boolean(articleProductId) && !articleVariantId))
+  const barcodeEditable = showsCatalogArticleFields && !(persistedArticleBarcode && !editsVariantBarcode) && !generateArticleBarcode
+  const productValidation = validatePurchaseForm({
+    hasArticle: isNewArticle || Boolean(articleProductId) || Boolean(standaloneArticleName),
+    isNewArticle,
+    articleName: customArticleName,
+    colorRequired,
+    colorHex: showsCatalogArticleFields ? newArticleColor : "",
+    colorName: showsCatalogArticleFields ? newArticleColorName : "",
+    createsVariant,
+    skuRequired: isNewArticle || createsVariant,
+    sku: productSku,
+    barcode: barcodeEditable ? newArticleBarcode : "",
+    purchaseDate,
+    quantity,
+    receptionStatus: purchaseReception,
+    receivedQuantity,
+    unitCost,
+    freightCost,
+    otherCost,
+    documentNumber: productDocumentNumber,
+  })
+  const invalidProductFields = new Set<PurchaseFormField>(productValidationShown ? productValidation.fields : [])
+  const productValidationMessage = productValidationShown && mode === "product" ? productValidation.message : null
+
   const saveProduct = async () => {
-    const isNewArticle = article === "custom"
-    const parts = article.split(":")
-    let productId = parts[0] === "p" || parts[0] === "v" ? parts[1] : null
-    let variantId = parts[0] === "v" ? parts[2] : null
-    const standaloneProduct = data?.catalog.find(
-      (product) => product.standalone_key && article === `c:${product.standalone_key}`,
-    )
+    let productId = articleProductId
+    let variantId = articleVariantId
     const newArticleName = customArticleName.trim()
     const newArticleColorHex = newArticleColor.trim()
     const newArticleColorNameValue = newArticleColorName.trim()
     const newArticleBarcodeValue = newArticleBarcode.trim()
-    const articleName = isNewArticle
-      ? ""
-      : standaloneProduct?.nombre.trim() ?? ""
-    const showsCatalogArticleFields = isNewArticle || Boolean(productId)
+    const articleName = standaloneArticleName
 
-    if (
-      (!productId && !isNewArticle && !articleName) ||
-      (isNewArticle && !newArticleName) ||
-      (isNewArticle && !productSku.trim()) ||
-      (isNewArticle && !newArticleColorHex) ||
-      (isNewArticle && !newArticleColorNameValue) ||
-      !purchaseDate ||
-      !quantity ||
-      !unitCost ||
-      (isNewArticle && !freightCost) ||
-      (purchaseReception === "parcial" && !receivedQuantity)
-    ) {
-      setError(
-        isNewArticle
-          ? "Completá nombre, SKU, color, cantidad, costo unitario y flete."
-          : "Completá artículo, fecha, cantidad y costo unitario.",
-      )
+    if (productValidation.message) {
+      setError("")
+      setMessage("")
+      setProductValidationShown(true)
       return
     }
-    if (
-      purchaseReception === "parcial" &&
-      (Number(receivedQuantity) <= 0 ||
-        Number(receivedQuantity) >= Number(quantity))
-    ) {
-      setError("La recepción parcial debe ser mayor que cero y menor que la cantidad comprada.")
-      return
-    }
-    if (
-      showsCatalogArticleFields &&
-      newArticleColorHex &&
-      !/^#[0-9A-Fa-f]{6}$/.test(newArticleColorHex)
-    ) {
-      setError("El color elegido no es válido.")
-      return
-    }
-    if (showsCatalogArticleFields && newArticleColorNameValue && !newArticleColorHex) {
-      setError("Elegí un color con el selector para poder ponerle nombre.")
-      return
-    }
-    // Color nuevo (artículo nuevo o color nuevo de un producto): la variante
-    // nace con esta compra, en una sola operación del servidor.
-    const createsVariant =
-      Boolean(newArticleColorHex) && (isNewArticle || (Boolean(productId) && !variantId))
     if (createsVariant && editingProductId) {
       setError("Una variante nueva se crea registrando una compra nueva, no editando una existente.")
-      return
-    }
-    if (createsVariant && !productSku.trim()) {
-      setError("Completá el SKU de la variante nueva.")
       return
     }
 
@@ -1346,7 +1396,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               : 0,
         receptionStatus: purchaseReception,
         unitCost,
-        freightCost,
+        freightCost: freightCost.trim() || "0",
         otherCost,
         supplier: productSupplier,
         documentType: productDocumentType,
@@ -1562,10 +1612,10 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
         </div>
       </section>
 
-      {(error || message) && (
-        <div className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold ${error ? "border-red-400/25 bg-red-400/10 text-red-200" : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"}`}>
-          {error ? <AlertTriangle className="size-4" /> : <Check className="size-4" />}
-          {error || message}
+      {(productValidationMessage || error || message) && (
+        <div role={productValidationMessage || error ? "alert" : "status"} className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-bold ${productValidationMessage || error ? "border-red-400/25 bg-red-400/10 text-red-200" : "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"}`}>
+          {productValidationMessage || error ? <AlertTriangle className="size-4" /> : <Check className="size-4" />}
+          {productValidationMessage || error || message}
         </div>
       )}
 
@@ -1607,7 +1657,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               </form>
             )}
             <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-5">
-              <Field label="Artículo" className="xl:col-span-2">
+              <Field label="Artículo" className="xl:col-span-2" invalid={invalidProductFields.has("article")}>
                 <ProductSelect
                   value={article}
                   products={data?.catalog ?? []}
@@ -1615,7 +1665,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                 />
               </Field>
               {article === "custom" && (
-                <Field label="Nombre del artículo" className="md:col-span-2 xl:col-span-2">
+                <Field label="Nombre del artículo" className="md:col-span-2 xl:col-span-2" invalid={invalidProductFields.has("articleName")}>
                   <HistoryAutocompleteInput
                     value={customArticleName}
                     suggestions={articleNameSuggestions}
@@ -1628,15 +1678,22 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
               )}
               {(article === "custom" || article.startsWith("p:") || article.startsWith("v:")) && (
                 <>
-                  <Field label={article === "custom" ? "Color" : "Color (opcional)"}>
+                  <Field
+                    label={colorRequired ? "Color" : "Color (opcional)"}
+                    invalid={invalidProductFields.has("color") || invalidProductFields.has("colorName")}
+                  >
                     <ColorPickerInput
                       colorHex={newArticleColor}
                       colorName={newArticleColorName}
                       onColorHexChange={setNewArticleColor}
                       onColorNameChange={(value) => setNewArticleColorName(value.toUpperCase())}
+                      onClear={colorRequired || article.startsWith("v:") ? undefined : () => {
+                        setNewArticleColor("")
+                        setNewArticleColorName("")
+                      }}
                     />
                   </Field>
-                  <Field label="Código de barra">
+                  <Field label="Código de barra" invalid={invalidProductFields.has("barcode")}>
                     {persistedArticleBarcode && !editsVariantBarcode ? (
                       <div className={`${inputClass} flex items-center justify-between gap-2`} title="El código se edita desde Productos">
                         <span className="truncate font-mono">{persistedArticleBarcode}</span>
@@ -1651,7 +1708,7 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                       <div className="flex gap-1.5">
                         <input
                           value={newArticleBarcode}
-                          onChange={(event) => setNewArticleBarcode(event.target.value)}
+                          onChange={(event) => setNewArticleBarcode(sanitizeCode(event.target.value))}
                           className={`${inputClass} min-w-0 flex-1`}
                           placeholder={editsVariantBarcode ? "Vacío: se asigna un código BEYONIX" : "Escaneá el código del fabricante"}
                           aria-label="Código de barra"
@@ -1667,36 +1724,36 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                   </Field>
                 </>
               )}
-              <Field label={article === "custom" || (article.startsWith("p:") && newArticleColor) ? "SKU" : "SKU (opcional)"}>
+              <Field label={isNewArticle || createsVariant ? "SKU" : "SKU (opcional)"} invalid={invalidProductFields.has("sku")}>
                 <input
                   value={productSku}
-                  onChange={(event) => setProductSku(event.target.value.toUpperCase())}
+                  onChange={(event) => setProductSku(sanitizeCode(event.target.value).toUpperCase())}
                   className={inputClass}
                   placeholder="Por ej: Aur-01"
                   maxLength={120}
                 />
               </Field>
-              <Field label="Fecha compra"><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
-              <Field label="Cantidad comprada"><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(event.target.value.replace(/\D/g, ""))} className={inputClass} placeholder="0" /></Field>
+              <Field label="Fecha compra" invalid={invalidProductFields.has("purchaseDate")}><AdminDatePicker title="Fecha compra" ariaLabel="Fecha de compra" value={purchaseDate} onChange={setPurchaseDate} centered /></Field>
+              <Field label="Cantidad comprada" invalid={invalidProductFields.has("quantity")}><input value={quantity} inputMode="numeric" onChange={(event) => setQuantity(sanitizeInteger(event.target.value))} className={inputClass} placeholder="0" /></Field>
               {purchaseReception === "parcial" && (
-                <Field label="Cantidad recibida">
+                <Field label="Cantidad recibida" invalid={invalidProductFields.has("receivedQuantity")}>
                   <input
                     value={receivedQuantity}
                     inputMode="numeric"
                     onChange={(event) =>
-                      setReceivedQuantity(event.target.value.replace(/\D/g, ""))
+                      setReceivedQuantity(sanitizeInteger(event.target.value))
                     }
                     className={inputClass}
                     placeholder="0"
                   />
                 </Field>
               )}
-              <Field label="Costo unitario"><MoneyInput value={unitCost} onChange={setUnitCost} /></Field>
+              <Field label="Costo unitario" invalid={invalidProductFields.has("unitCost")}><MoneyInput value={unitCost} onChange={setUnitCost} /></Field>
               <Field label="Proveedor"><HistoryAutocompleteInput value={productSupplier} suggestions={supplierSuggestions} onChange={setProductSupplier} placeholder="Opcional" /></Field>
-              <Field label="Flete"><MoneyInput value={freightCost} onChange={setFreightCost} /></Field>
-              <Field label="Otros costos"><MoneyInput value={otherCost} onChange={setOtherCost} /></Field>
+              <Field label="Flete" invalid={invalidProductFields.has("freightCost")}><MoneyInput value={freightCost} onChange={setFreightCost} /></Field>
+              <Field label="Otros costos" invalid={invalidProductFields.has("otherCost")}><MoneyInput value={otherCost} onChange={setOtherCost} /></Field>
               <Field label="Comprobante"><input value={productDocumentType} onChange={(event) => setProductDocumentType(event.target.value)} className={inputClass} placeholder="Factura, recibo" /></Field>
-              <Field label="Número"><input value={productDocumentNumber} onChange={(event) => setProductDocumentNumber(event.target.value)} className={inputClass} placeholder="Opcional" /></Field>
+              <Field label="Número" invalid={invalidProductFields.has("documentNumber")}><input value={productDocumentNumber} onChange={(event) => setProductDocumentNumber(sanitizeDocumentNumber(event.target.value))} className={inputClass} placeholder="Opcional" /></Field>
               <Field label="Medio pago"><HistoryAutocompleteInput value={productPaymentMethod} suggestions={paymentMethodSuggestions} onChange={setProductPaymentMethod} placeholder="Transferencia" /></Field>
               <Field label="Notas" className="xl:col-span-2"><HistoryAutocompleteInput value={productNotes} suggestions={notesSuggestions} onChange={setProductNotes} placeholder="Detalle adicional" /></Field>
             </div>

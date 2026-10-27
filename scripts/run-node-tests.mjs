@@ -284,6 +284,7 @@ const TEST_FILES = [
   "lib/business/commercial-circuit-consistency.test.ts",
   "lib/business/dashboard-financials.test.ts",
   "lib/business/product-costs.test.ts",
+  "lib/business/purchase-form-validation.test.ts",
   "lib/business/standalone-cost-items.test.ts",
   "lib/business/purchase-cost-audit.test.ts",
   "lib/business/historical-cost-snapshot.test.ts",

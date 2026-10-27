@@ -131,7 +131,7 @@ test.after(async () => {
   await browser?.close()
 })
 
-async function open(): Promise<{ page: Page; errors: string[] }> {
+async function open(search = ""): Promise<{ page: Page; errors: string[] }> {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
@@ -144,11 +144,11 @@ async function open(): Promise<{ page: Page; errors: string[] }> {
     }`,
   })
   await page.route("**/*", (route) =>
-    route.request().url() === "http://admin.test/"
+    route.request().url() === `http://admin.test/${search}`
       ? route.fulfill({ contentType: "text/html; charset=utf-8", body: adminPageHtml("dark", css, bundle) })
       : route.abort(),
   )
-  await page.goto("http://admin.test/")
+  await page.goto(`http://admin.test/${search}`)
   await page.getByText("Historial de compras").waitFor()
   return { page, errors }
 }
@@ -427,3 +427,156 @@ for (const width of [390, 1440]) {
     }
   })
 }
+// --- Validación del ingreso (mensaje dinámico, flete 0, tipos de campo, negro) ---
+
+const postedBodies = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __posts: { body: Record<string, unknown> }[] }).__posts.map((post) => post.body))
+const invalidLabels = (page: Page) =>
+  page.locator("label[data-invalid] > span").allTextContents()
+const alertText = (page: Page) => page.locator("[role='alert']").first().textContent()
+const saveButton = (page: Page) => page.getByRole("button", { name: "Guardar", exact: true })
+
+async function startNewArticle(page: Page) {
+  await articleButton(page).click()
+  await page.getByRole("option", { name: "Crear artículo nuevo" }).click()
+  await page.getByPlaceholder("Por ej: Auricular").fill("Pava 12V")
+}
+
+test("artículo nuevo: el mensaje nombra sólo lo que falta, marca esos campos y se actualiza al corregir (A–D, Q)", async () => {
+  const { page, errors } = await open()
+  try {
+    await startNewArticle(page)
+    await saveButton(page).click()
+    assert.equal(await alertText(page), "Falta completar SKU, Cantidad comprada y Costo unitario.")
+    assert.deepEqual(await invalidLabels(page), ["SKU", "Cantidad comprada", "Costo unitario"], "ni Color ni Flete aparecen como faltantes")
+    const borders = {
+      sku: await page.getByPlaceholder("Por ej: Aur-01").evaluate((input) => getComputedStyle(input).borderTopColor),
+      name: await page.getByPlaceholder("Por ej: Auricular").evaluate((input) => getComputedStyle(input).borderTopColor),
+    }
+    assert.notEqual(borders.sku, borders.name, `el campo con error se ve distinto: ${JSON.stringify(borders)}`)
+    assert.match(borders.sku, /^(rgba?|oklab|oklch|color)\(/)
+
+    await page.getByPlaceholder("Por ej: Aur-01").fill("pava-12v-neg")
+    assert.equal(await alertText(page), "Falta completar Cantidad comprada y Costo unitario.")
+    assert.deepEqual(await invalidLabels(page), ["Cantidad comprada", "Costo unitario"], "el SKU corregido deja de marcarse")
+
+    await field(page, "Cantidad comprada").locator("input").fill("2")
+    assert.equal(await alertText(page), "Falta completar Costo unitario.")
+    await field(page, "Costo unitario").locator("input").fill("8852")
+    await page.waitForFunction(() => !document.querySelector("label[data-invalid]") && !document.querySelector("[role='alert']"))
+    assert.deepEqual(await postedBodies(page), [], "nada se envió mientras faltaban datos")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("artículo nuevo: el negro visible es el color real y Flete arranca en 0 (E, F, P, Q, U)", async () => {
+  const { page, errors } = await open()
+  try {
+    await startNewArticle(page)
+    assert.equal(await page.getByLabel("Elegir color").inputValue(), "#000000", "el selector muestra negro")
+    assert.equal(await page.getByLabel("Nombre del color").getAttribute("placeholder"), "NEGRO")
+    assert.equal(await field(page, "Flete").locator("input").inputValue(), "0", "E")
+    assert.equal(await page.locator("label", { hasText: /^Color$/ }).count(), 1, "Color obligatorio, sin «(opcional)»")
+
+    await page.getByPlaceholder("Por ej: Aur-01").fill("pava-12v-neg")
+    await field(page, "Cantidad comprada").locator("input").fill("2")
+    await field(page, "Costo unitario").locator("input").fill("8852")
+    await saveButton(page).click()
+    await page.getByText("Compra guardada correctamente.").waitFor()
+    const [body] = await postedBodies(page)
+    const newVariant = body.newVariant as Record<string, unknown>
+    assert.deepEqual([newVariant.colorHex, newVariant.colorName, newVariant.sku], ["#000000", null, "PAVA-12V-NEG"], "P: sin abrir la paleta")
+    assert.deepEqual([body.freightCost, body.quantity, body.unitCost], ["0", "2", "8852"], "F/U: flete sin tocar = 0")
+    assert.equal(await field(page, "Flete").locator("input").inputValue(), "0", "el formulario nuevo vuelve a 0")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("tipos de campo: numéricos sin letras, cantidad entera, color sin números, SKU alfanumérico (G, I–O, R)", async () => {
+  const { page, errors } = await open()
+  try {
+    await startNewArticle(page)
+    const quantity = field(page, "Cantidad comprada").locator("input")
+    const freight = field(page, "Flete").locator("input")
+    const cost = field(page, "Costo unitario").locator("input")
+    const sku = page.getByPlaceholder("Por ej: Aur-01")
+    const colorName = page.getByLabel("Nombre del color")
+
+    await quantity.fill("3a.5")
+    assert.equal(await quantity.inputValue(), "35", "I/J: sin letras ni decimales")
+    await quantity.fill("2")
+    await cost.fill("abc")
+    assert.equal(await cost.inputValue(), "", "I")
+    await cost.fill("12500,50")
+    assert.equal(await cost.inputValue(), "12500.50", "K: coma decimal")
+    await freight.fill("-1500")
+    assert.equal(await freight.inputValue(), "1500", "H: sin negativos")
+    await freight.fill("$ 12.500,50")
+    assert.equal(await freight.inputValue(), "12500.50", "pegado en formato es-AR")
+    await freight.fill("")
+
+    await colorName.fill("Verde123")
+    assert.equal(await colorName.inputValue(), "VERDE", "M")
+    await colorName.fill("Azul Marino ñ")
+    assert.equal(await colorName.inputValue(), "AZUL MARINO Ñ", "L")
+    await page.getByLabel("Elegir color").fill("#eca2a2")
+    await sku.fill("legatus-negro-01 $")
+    assert.equal(await sku.inputValue(), "LEGATUS-NEGRO-01", "N")
+    await page.getByPlaceholder("Por ej: Auricular").fill("Hub USB 3.0")
+    assert.equal(await page.getByPlaceholder("Por ej: Auricular").inputValue(), "HUB USB 3.0", "O: nombre mixto intacto")
+
+    await saveButton(page).click()
+    await page.getByText("Compra guardada correctamente.").waitFor()
+    const [body] = await postedBodies(page)
+    const newVariant = body.newVariant as Record<string, unknown>
+    assert.deepEqual(
+      [newVariant.productName, newVariant.colorHex, newVariant.colorName, newVariant.sku, body.unitCost, body.freightCost],
+      ["HUB USB 3.0", "#ECA2A2", "AZUL MARINO Ñ", "LEGATUS-NEGRO-01", "12500.50", "0"],
+      "R: otro color sigue funcionando; G: flete vacío viaja como 0",
+    )
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("variante nueva desde Productos (Ir a Compras): negro real por defecto, sin abrir la paleta (P)", async () => {
+  const { page, errors } = await open("?producto=5")
+  try {
+    await page.getByText("Elegí el color y el SKU de la variante nueva", { exact: false }).waitFor()
+    assert.equal(await page.getByLabel("Elegir color").inputValue(), "#000000")
+    await page.getByPlaceholder("Por ej: Aur-01").fill("p-5-neg")
+    await field(page, "Cantidad comprada").locator("input").fill("3")
+    await field(page, "Costo unitario").locator("input").fill("1000")
+    await saveButton(page).click()
+    await page.getByText("Compra guardada correctamente.").waitFor()
+    const [body] = await postedBodies(page)
+    const newVariant = body.newVariant as Record<string, unknown>
+    assert.deepEqual([newVariant.productId, newVariant.colorHex, newVariant.sku], ["5", "#000000", "P-5-NEG"])
+    assert.equal(body.variantId, null, "T: variante y compra en la misma request atómica")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("editar una compra existente conserva el color de su variante (S)", async () => {
+  const { page, errors } = await open()
+  try {
+    await editPurchaseOf(page, "Producto 1400 · Color 1400")
+    assert.equal(await page.getByLabel("Elegir color").inputValue(), "#123456")
+    assert.equal(await page.getByLabel("Nombre del color").inputValue(), "COLOR 1400")
+    assert.equal(await field(page, "Flete").locator("input").inputValue(), "0")
+    await page.getByRole("button", { name: "Actualizar", exact: true }).click()
+    await page.getByText("Compra actualizada correctamente.").waitFor()
+    const [article] = await sentBodies(page, "__articlePosts")
+    assert.deepEqual([article.colorHex, article.colorName], ["#123456", "COLOR 1400"], "no se pisa con negro")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})

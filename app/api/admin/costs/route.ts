@@ -12,6 +12,23 @@ import {
 import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
 import { isReservedProductBarcode } from "@/lib/barcodes/codes"
 import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
+import {
+  BARCODE_FORMAT_MESSAGE,
+  COLOR_NAME_FORMAT_MESSAGE,
+  DOCUMENT_NUMBER_FORMAT_MESSAGE,
+  SKU_FORMAT_MESSAGE,
+  amountFormatMessage,
+  formatMissingFieldsMessage,
+  isBlankAmount,
+  isValidBarcode,
+  isValidColorName,
+  isValidDocumentNumber,
+  isValidSku,
+  parseAmount,
+  parseNonNegativeInteger,
+  parsePositiveInteger,
+  type PurchaseFormField,
+} from "@/lib/business/purchase-form-validation"
 import type {
   BusinessCostCatalogProduct,
   CatalogPurchaseTarget,
@@ -37,20 +54,68 @@ function text(value: unknown, max = 500) {
   return normalized ? normalized.slice(0, max) : null
 }
 
-function amount(value: unknown) {
-  if (value === "" || value == null) return 0
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
-}
+// Importes, cantidades y formatos con las mismas reglas que el formulario de
+// Compras (lib/business/purchase-form-validation): vacío en un importe = 0.
+const amount = parseAmount
+const nonNegativeInteger = parseNonNegativeInteger
 
 function positiveInteger(value: unknown) {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
-function nonNegativeInteger(value: unknown) {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
+/** Mensaje del primer formato inválido de los datos de la compra, o `null`. */
+function purchaseFormatError(body: Record<string, unknown> | null) {
+  const sku = text(body?.sku, 120)
+  if (sku && !isValidSku(sku)) return SKU_FORMAT_MESSAGE
+  const documentNumber = text(body?.documentNumber, 120)
+  if (documentNumber && !isValidDocumentNumber(documentNumber)) return DOCUMENT_NUMBER_FORMAT_MESSAGE
+  for (const [field, key] of [["unitCost", "unitCost"], ["freightCost", "freightCost"], ["otherCost", "otherCost"]] as const) {
+    if (amount(body?.[key]) == null) return amountFormatMessage(field)
+  }
+  if (amount(body?.taxCost) == null || amount(body?.commissionCost) == null) {
+    return "Los importes deben ser números válidos, mayores o iguales a cero."
+  }
+  return null
+}
+
+/**
+ * Primer problema de los datos de una compra (POST/PATCH), con los mismos
+ * mensajes que el formulario: "Falta completar …" con sólo los campos que
+ * faltan, después formatos y cantidades. `null` si la compra es válida.
+ */
+function purchaseValidationError(
+  body: Record<string, unknown> | null,
+  parsed: {
+    hasArticle: boolean
+    purchaseDate: string | null
+    quantity: number | null
+    unitCost: number | null
+    receptionStatus: string | null
+    requestedReceivedQuantity: number | null
+  },
+) {
+  const missing: PurchaseFormField[] = []
+  if (!parsed.hasArticle) missing.push("article")
+  if (!parsed.purchaseDate) missing.push("purchaseDate")
+  if (body?.quantity == null || (typeof body.quantity === "string" && !body.quantity.trim())) missing.push("quantity")
+  if (isBlankAmount(body?.unitCost)) missing.push("unitCost")
+  const missingMessage = formatMissingFieldsMessage(missing)
+  if (missingMessage) return missingMessage
+
+  const formatError = purchaseFormatError(body)
+  if (formatError) return formatError
+  if (!parsed.quantity) return "La cantidad comprada debe ser un número entero mayor que cero."
+  if (!parsed.receptionStatus) return "El estado de recepción no es válido."
+  const received = parsed.requestedReceivedQuantity
+  if (
+    received == null ||
+    received > parsed.quantity ||
+    (parsed.receptionStatus === "parcial" && (received <= 0 || received >= parsed.quantity))
+  ) {
+    return "La recepción parcial debe ser mayor que cero y menor que la cantidad comprada."
+  }
+  return null
 }
 
 function reception(value: unknown) {
@@ -77,6 +142,7 @@ function newVariantInput(value: unknown) {
   const productId = record.productId == null || record.productId === "" ? null : positiveInteger(record.productId)
   const productName = text(record.productName, 240)
   const colorHex = hexColor(record.colorHex)
+  const colorName = text(record.colorName, 160)
   const sku = text(record.sku, 120)
   const barcode = text(record.barcode, 64)
   const generateBarcode = record.generateBarcode === true
@@ -84,7 +150,10 @@ function newVariantInput(value: unknown) {
     return { variant: null, error: "Elegí el producto o escribí el nombre del artículo nuevo." }
   }
   if (!colorHex) return { variant: null, error: "Elegí un color válido para la variante nueva." }
+  if (colorName && !isValidColorName(colorName)) return { variant: null, error: COLOR_NAME_FORMAT_MESSAGE }
   if (!sku) return { variant: null, error: "La variante nueva necesita un SKU." }
+  if (!isValidSku(sku)) return { variant: null, error: SKU_FORMAT_MESSAGE }
+  if (barcode && !isValidBarcode(barcode)) return { variant: null, error: BARCODE_FORMAT_MESSAGE }
   if (barcode && generateBarcode) {
     return { variant: null, error: "Elegí escanear un código o generar uno BEYONIX, no ambos." }
   }
@@ -95,7 +164,7 @@ function newVariantInput(value: unknown) {
     variant: {
       productId,
       productName,
-      name: text(record.colorName, 160)?.toUpperCase() ?? deriveVariantNameFromColor(colorHex),
+      name: colorName?.toUpperCase() ?? deriveVariantNameFromColor(colorHex),
       sku,
       colorHex,
       barcode,
@@ -272,28 +341,23 @@ export async function POST(request: Request) {
     const variantId = body?.variantId ? positiveInteger(body.variantId) : null
     const articleName = text(body?.articleName, 180)
     const purchaseDate = date(body?.purchaseDate)
-    const quantity = positiveInteger(body?.quantity)
+    const quantity = parsePositiveInteger(body?.quantity)
     const unitCost = amount(body?.unitCost)
     const receptionStatus = reception(body?.receptionStatus)
     const requestedReceivedQuantity = nonNegativeInteger(
       body?.receivedQuantity ?? quantity,
     )
 
-    if (
-      (!productId && !articleName && !newVariant.variant) ||
-      !purchaseDate ||
-      !quantity ||
-      unitCost == null ||
-      !receptionStatus ||
-      requestedReceivedQuantity == null ||
-      requestedReceivedQuantity > quantity ||
-      (receptionStatus === "parcial" &&
-        (requestedReceivedQuantity <= 0 || requestedReceivedQuantity >= quantity))
-    ) {
-      return Response.json(
-        { error: "Artículo, fecha, cantidad y costo unitario son obligatorios." },
-        { status: 400 },
-      )
+    const invalidPurchase = purchaseValidationError(body, {
+      hasArticle: Boolean(productId || articleName || newVariant.variant),
+      purchaseDate,
+      quantity,
+      unitCost,
+      receptionStatus,
+      requestedReceivedQuantity,
+    })
+    if (invalidPurchase) {
+      return Response.json({ error: invalidPurchase }, { status: 400 })
     }
 
     if (variantId && !productId) {
@@ -639,29 +703,26 @@ export async function PATCH(request: Request) {
   const variantId = body?.variantId ? positiveInteger(body.variantId) : null
   const articleName = text(body?.articleName, 180)
   const purchaseDate = date(body?.purchaseDate)
-  const quantity = positiveInteger(body?.quantity)
+  const quantity = parsePositiveInteger(body?.quantity)
   const unitCost = amount(body?.unitCost)
   const receptionStatus = reception(body?.receptionStatus)
   const requestedReceivedQuantity = nonNegativeInteger(
     body?.receivedQuantity ?? quantity,
   )
 
-  if (
-    !id ||
-    (!productId && !articleName) ||
-    !purchaseDate ||
-    !quantity ||
-    unitCost == null ||
-    !receptionStatus ||
-    requestedReceivedQuantity == null ||
-    requestedReceivedQuantity > quantity ||
-    (receptionStatus === "parcial" &&
-      (requestedReceivedQuantity <= 0 || requestedReceivedQuantity >= quantity))
-  ) {
-    return Response.json(
-      { error: "Artículo, fecha, cantidad y costo unitario son obligatorios." },
-      { status: 400 },
-    )
+  if (!id) {
+    return Response.json({ error: "Movimiento inválido." }, { status: 400 })
+  }
+  const invalidPurchase = purchaseValidationError(body, {
+    hasArticle: Boolean(productId || articleName),
+    purchaseDate,
+    quantity,
+    unitCost,
+    receptionStatus,
+    requestedReceivedQuantity,
+  })
+  if (invalidPurchase) {
+    return Response.json({ error: invalidPurchase }, { status: 400 })
   }
 
   if (variantId && !productId) {

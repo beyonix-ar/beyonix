@@ -292,6 +292,75 @@ test("Compras: variante nueva + compra viajan en UNA sola RPC idempotente", asyn
   })
 })
 
+test("Compras: flete vacío = 0 y negro sin nombre se guarda como NEGRO; datos inválidos no llegan a la base (V)", async () => {
+  const route = await import("../../app/api/admin/costs/route")
+  await withSupabase((url, init) => {
+    if (url.pathname === "/rest/v1/rpc/create_variant_and_purchase") {
+      return Response.json({ replayed: false, productId: 12, variantId: 14, purchase: { id: "p-3", variant_id: 14 } })
+    }
+    if (url.pathname === "/rest/v1/rpc/save_product_purchase_atomic") return Response.json({ id: "p-1" })
+    if (url.pathname === "/rest/v1/producto_variantes") return Response.json({ id: 6 })
+    if ((url.pathname === "/rest/v1/productos" || url.pathname === "/rest/v1/mercadolibre_sales") && (init?.method ?? "GET") === "GET") {
+      return Response.json([])
+    }
+    return undefined
+  }, async (calls) => {
+    const base = {
+      ...purchaseFields,
+      quantity: "2",
+      unitCost: "8852",
+      newVariant: { productId: 12, colorHex: "#000000", colorName: null, sku: "ALEGRO-NEG", barcode: null, generateBarcode: false },
+    }
+    for (const freightCost of ["", "0", undefined]) {
+      calls.length = 0
+      const response = await route.POST(purchaseRequest({ ...base, freightCost }, `purchase:freight-${String(freightCost)}`))
+      assert.equal(response.status, 201, `flete ${JSON.stringify(freightCost)}`)
+      const args = calls.find((call) => call.path === "/rest/v1/rpc/create_variant_and_purchase")!.body as { p_variant: Record<string, unknown>; p_purchase: Record<string, unknown> }
+      assert.equal(args.p_purchase.freight_cost, 0, "flete vacío u omitido se guarda como 0")
+      assert.deepEqual([args.p_variant.color_hex, args.p_variant.name], ["#000000", "NEGRO"], "negro por defecto = negro real")
+    }
+    calls.length = 0
+    const decimal = await route.POST(purchaseRequest({ ...base, freightCost: "12500.50" }, "purchase:freight-decimal"))
+    assert.equal(decimal.status, 201)
+    assert.equal((calls.find((call) => call.path === "/rest/v1/rpc/create_variant_and_purchase")!.body as { p_purchase: { freight_cost: number } }).p_purchase.freight_cost, 12500.5)
+
+    calls.length = 0
+    const rejected: [Record<string, unknown>, RegExp][] = [
+      [{ ...base, freightCost: "-100" }, /Revisá Flete/],
+      [{ ...base, freightCost: "abc" }, /Revisá Flete/],
+      [{ ...base, freightCost: "Infinity" }, /Revisá Flete/],
+      [{ ...base, unitCost: "" }, /^Falta completar Costo unitario\.$/],
+      [{ ...base, quantity: "", unitCost: "" }, /^Falta completar Cantidad comprada y Costo unitario\.$/],
+      [{ ...base, quantity: "1.5" }, /número entero mayor que cero/],
+      [{ ...base, quantity: "abc" }, /número entero mayor que cero/],
+      [{ ...base, newVariant: { ...base.newVariant, colorName: "Verde123" } }, /sin números/],
+      [{ ...base, newVariant: { ...base.newVariant, sku: "ALEGRO NEG" } }, /El SKU sólo puede/],
+      [{ ...base, newVariant: { ...base.newVariant, barcode: "779 000" } }, /El código de barra sólo puede/],
+      [{ ...base, documentNumber: "0001$" }, /número de comprobante/],
+    ]
+    for (const [body, error] of rejected) {
+      const response = await route.POST(purchaseRequest(body, "purchase:invalid-0001"))
+      assert.equal(response.status, 400, JSON.stringify(body))
+      assert.match(((await response.json()) as { error: string }).error, error)
+    }
+    assert.equal(calls.length, 0, "nada inválido llega a la base")
+
+    // Editar: mismas reglas (flete vacío = 0; negativo rechazado).
+    const patch = (body: Record<string, unknown>) => route.PATCH(new Request("http://localhost/api/admin/costs", {
+      method: "PATCH",
+      headers: { Authorization: "Bearer test", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }))
+    const edit = { ...purchaseFields, id: "8b0f1f8e-0000-4000-8000-000000000001", productId: 12, variantId: 6 }
+    assert.equal((await patch({ ...edit, freightCost: "-1" })).status, 400)
+    assert.equal((await patch({ ...edit, unitCost: "" })).status, 400)
+    calls.length = 0
+    assert.equal((await patch({ ...edit, freightCost: "" })).status, 200)
+    const saved = calls.find((call) => call.path === "/rest/v1/rpc/save_product_purchase_atomic")!.body as { p_purchase: Record<string, unknown> }
+    assert.equal(saved.p_purchase.freight_cost, 0)
+  })
+})
+
 test("Compras: compra de una variante existente sigue por el camino normal, sin crear variantes", async () => {
   const route = await import("../../app/api/admin/costs/route")
   await withSupabase((url, init) => {
