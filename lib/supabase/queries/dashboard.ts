@@ -1,3 +1,7 @@
+import {
+  parseSystemHealthResponse,
+  type SystemHealthResponse,
+} from "@/lib/admin/system-health"
 import { supabase } from "@/lib/supabase/client"
 
 import type { SupabasePedido } from "@/lib/supabase/types"
@@ -48,22 +52,6 @@ export interface DashboardRecentActivity {
   meta?: string
   secondary?: string
   created_at: string
-}
-
-export interface DashboardSystemStatus {
-  id: "store" | "mercadopago" | "andreani" | "arca"
-  label: string
-  status: "ok" | "warning" | "error" | "disabled" | "unknown"
-  detail: string
-  checkedAt?: string
-  latencyMs?: number | null
-  verified?: boolean
-}
-
-export interface SystemHealthResponse {
-  checks: DashboardSystemStatus[]
-  checkedAt: string
-  pollAfterMs: number
 }
 
 export interface DashboardSearchItem {
@@ -152,7 +140,6 @@ export interface DashboardDataResponse {
   recentOrders: SupabasePedido[]
   commercialSales: DashboardCommercialSale[]
   recentActivity: DashboardRecentActivity[]
-  systemStatus: DashboardSystemStatus[]
   searchIndex: DashboardSearchItem[]
 }
 
@@ -249,7 +236,13 @@ export async function getDashboardData({
   }
 }
 
-export async function getSystemHealth() {
+export async function getSystemHealth({
+  force = false,
+  signal,
+}: {
+  force?: boolean
+  signal?: AbortSignal
+} = {}): Promise<SystemHealthResponse> {
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -258,24 +251,26 @@ export async function getSystemHealth() {
     throw new Error("La sesión administrativa venció.")
   }
 
-  const response = await fetch("/api/admin/system-health", {
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
+  const response = await fetch(
+    force ? "/api/admin/system-health?force=1" : "/api/admin/system-health",
+    {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      cache: "no-store",
+      signal,
     },
-    cache: "no-store",
-  })
-  const data = (await response.json().catch(() => null)) as
-    | SystemHealthResponse
-    | { error?: string }
-    | null
+  )
+  const data: unknown = await response.json().catch(() => null)
+  const health = response.ok ? parseSystemHealthResponse(data) : null
 
-  if (!response.ok || !data || !("checks" in data)) {
+  if (!health) {
     throw new Error(
-      data && "error" in data && typeof data.error === "string"
-        ? data.error
-        : "No se pudo verificar el estado del sistema.",
+      response.status === 401 || response.status === 403
+        ? "Sin permisos para consultar el estado del sistema."
+        : "No se pudo consultar el estado del sistema.",
     )
   }
 
-  return data
+  return health
 }

@@ -1,5 +1,7 @@
 import "server-only"
 
+import { createHash } from "node:crypto"
+
 import type {
   AndreaniAuthenticationResponse,
   AndreaniBranch,
@@ -78,13 +80,23 @@ interface AndreaniResolvedConfig {
  * ya solicitada por Andreani mientras QA es inestable). "shipment-creation"
  * habilita únicamente GET /login y POST /v2/ordenes-de-envio (creación B2C).
  * "shipment-read" habilita autenticación y las lecturas necesarias para
- * consultar una orden, sus trazas y su etiqueta ya creada. Ninguna capacidad
- * se otorga implícitamente.
+ * consultar una orden, sus trazas y su etiqueta ya creada.
+ * "authentication-check" habilita únicamente GET /login (health check de
+ * Admin): no tarifa, no consulta ni crea envíos. Ninguna capacidad se otorga
+ * implícitamente.
  */
 export type AndreaniProductionAccess =
   | "tariffs-only"
   | "shipment-creation"
   | "shipment-read"
+  | "authentication-check"
+
+const PRODUCTION_ACCESS_VALUES: ReadonlySet<string> = new Set<AndreaniProductionAccess>([
+  "tariffs-only",
+  "shipment-creation",
+  "shipment-read",
+  "authentication-check",
+])
 
 export interface AndreaniClientOptions {
   env?: NodeJS.ProcessEnv
@@ -211,9 +223,7 @@ export function resolveAndreaniConfig(
 
   if (
     environment === "PROD" &&
-    productionAccess !== "tariffs-only" &&
-    productionAccess !== "shipment-creation" &&
-    productionAccess !== "shipment-read"
+    !(productionAccess && PRODUCTION_ACCESS_VALUES.has(productionAccess))
   ) {
     throw new AndreaniError(
       "PRODUCTION_BLOCKED",
@@ -221,6 +231,19 @@ export function resolveAndreaniConfig(
     )
   }
 
+  return readAndreaniConfig(env, environment)
+}
+
+/**
+ * Validación de la configuración (ambiente, URL/host HTTPS esperado y
+ * credenciales presentes) SIN el guard de operaciones PROD: responde "¿la
+ * configuración es válida?", no "¿está permitido operar desde acá?". Toda
+ * request real sigue pasando por resolveAndreaniConfig + performFetch.
+ */
+function readAndreaniConfig(
+  env: NodeJS.ProcessEnv,
+  environment: AndreaniEnvironment,
+): AndreaniResolvedConfig {
   const missingVariables = REQUIRED_VARIABLES[environment].filter(
     (name) => !nonEmpty(env[name]),
   )
@@ -248,7 +271,7 @@ export function getAndreaniConfigurationStatus(
 
   try {
     environment = parseEnvironment(env)
-    resolveAndreaniConfig(env)
+    readAndreaniConfig(env, environment)
     return {
       environment,
       configured: true,
@@ -1393,8 +1416,16 @@ export class AndreaniClient {
     })
   }
 
+  /**
+   * Ambiente + URL + huella de las credenciales: si rotan usuario o
+   * contraseña, un token emitido para las anteriores no se reutiliza. La
+   * huella es un hash; las credenciales no quedan en la clave.
+   */
   private get cacheKey() {
-    return `${this.config.environment}:${this.config.baseUrl}`
+    const credentials = createHash("sha256")
+      .update(`${this.config.username}\u0000${this.config.password}`, "utf8")
+      .digest("hex")
+    return `${this.config.environment}:${this.config.baseUrl}:${credentials}`
   }
 
   private async performFetch(path: string, options: RequestOptions = {}) {
@@ -1416,7 +1447,10 @@ export class AndreaniClient {
         method === "GET" &&
         (pathname === "/login" ||
           /^\/v2\/ordenes-de-envio\/[^/]+(?:\/etiquetas)?$/.test(pathname) ||
-          /^\/v3\/envios\/[^/]+\/trazas$/.test(pathname)))
+          /^\/v3\/envios\/[^/]+\/trazas$/.test(pathname))) ||
+      (this.productionAccess === "authentication-check" &&
+        method === "GET" &&
+        pathname === "/login")
 
     if (this.config.environment === "PROD" && !productionRequestAllowed) {
       throw new AndreaniError(
@@ -1425,7 +1459,9 @@ export class AndreaniClient {
           ? "Andreani PROD solo admite autenticación y creación de envíos B2C con autorización explícita."
           : this.productionAccess === "shipment-read"
             ? "Andreani PROD solo admite consultar órdenes, tracking y etiquetas ya creadas."
-            : "Andreani PROD solo admite catálogos públicos, autenticación y consulta de tarifas.",
+            : this.productionAccess === "authentication-check"
+              ? "La verificación de Andreani PROD solo admite autenticación."
+              : "Andreani PROD solo admite catálogos públicos, autenticación y consulta de tarifas.",
       )
     }
 
@@ -2038,6 +2074,21 @@ export async function getAndreaniToken(
   authenticationOptions: AndreaniAuthenticationOptions = {},
 ): Promise<string> {
   return new AndreaniClient(options).authenticate(authenticationOptions)
+}
+
+/**
+ * Health check de Admin: GET /login real (sin reutilizar el token cacheado) y
+ * nada más -- en PROD el cliente sólo admite /login con esta capacidad. El
+ * token nuevo reemplaza al cacheado: si Andreani invalidara tokens anteriores
+ * al emitir uno nuevo, las operaciones siguen usando uno vigente.
+ */
+export async function verifyAndreaniAuthentication(
+  options: Omit<AndreaniClientOptions, "productionAccess"> = {},
+): Promise<void> {
+  await new AndreaniClient({
+    ...options,
+    productionAccess: "authentication-check",
+  }).authenticate({ forceRefresh: true })
 }
 
 export function isAndreaniReady(env: NodeJS.ProcessEnv = process.env) {

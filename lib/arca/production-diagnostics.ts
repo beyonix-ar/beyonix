@@ -54,20 +54,41 @@ export interface ArcaDiagnosticsReport {
   steps: ArcaDiagnosticStep[]
 }
 
+const DIAGNOSTIC_STEP_ORDER: readonly ArcaDiagnosticStepId[] = [
+  "configuration",
+  "fedummy",
+  "wsaa",
+  "points_of_sale",
+  "last_invoice",
+  "last_credit_note",
+]
+
+export interface ArcaDiagnosticsOptions {
+  /**
+   * Último paso a ejecutar (inclusive). El health check del Dashboard corta en
+   * "points_of_sale": no necesita consultar la numeración en cada comprobación.
+   */
+  through?: ArcaDiagnosticStepId
+}
+
 export async function runArcaConnectivityDiagnostics(
   deps: ArcaDiagnosticsDependencies,
+  { through = "last_credit_note" }: ArcaDiagnosticsOptions = {},
 ): Promise<ArcaDiagnosticsReport> {
   const steps: ArcaDiagnosticStep[] = []
   const { status, configuration } = deps.inspect()
+  const expectedSteps = DIAGNOSTIC_STEP_ORDER.indexOf(through) + 1
+  const includes = (id: ArcaDiagnosticStepId) => DIAGNOSTIC_STEP_ORDER.indexOf(id) < expectedSteps
   let nextNumber: number | null = null
   const report = (): ArcaDiagnosticsReport => {
-    const ok = steps.length === 6 && steps.every((step) => step.ok)
+    const ok = steps.length === expectedSteps && steps.every((step) => step.ok)
     const lastInvoice = steps.find((step) => step.id === "last_invoice")
     return {
       ok,
       environment: status.environment,
       pointOfSale: status.pointOfSale,
-      readyForFirstFiscalInvoice: ok && status.environment === "production",
+      readyForFirstFiscalInvoice:
+        ok && expectedSteps === DIAGNOSTIC_STEP_ORDER.length && status.environment === "production",
       nextInvoiceNumber: lastInvoice?.ok ? nextNumber : null,
       steps,
     }
@@ -89,6 +110,7 @@ export async function runArcaConnectivityDiagnostics(
     label: string,
     check: () => Promise<{ ok: boolean; detail: string }>,
   ) => {
+    if (!includes(id)) return false
     try {
       const result = await check()
       steps.push({ id, label, ...result })

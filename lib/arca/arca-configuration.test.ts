@@ -322,6 +322,16 @@ test("diagnóstico: WSAA rechazado se informa sin continuar; homologación nunca
   assert.equal(homologation.readyForFirstFiscalInvoice, false)
 })
 
+test("diagnóstico acotado (health): corta en punto de venta y nunca queda 'listo para fiscal'", async () => {
+  const { deps, calls } = diagnosticsDeps(productionEnv)
+  const report = await runArcaConnectivityDiagnostics(deps, { through: "points_of_sale" })
+  assert.equal(report.ok, true)
+  assert.equal(report.readyForFirstFiscalInvoice, false)
+  assert.equal(report.nextInvoiceNumber, null)
+  assert.deepEqual(report.steps.map((step) => step.id), ["configuration", "fedummy", "wsaa", "points_of_sale"])
+  assert.deepEqual(calls, ["dummy", "wsaa:production", "ptos"])
+})
+
 const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n")
 

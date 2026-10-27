@@ -127,7 +127,13 @@ function buildAssociatedVoucherXml(request: FecaeRequest) {
           </ar:CbtesAsoc>`
 }
 
-async function callWsfe(operation: string, body: string) {
+/** Timeout propio combinado con la señal de quien llama (health check). */
+function wsfeSignal(timeoutMs: number, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  return signal ? AbortSignal.any([timeout, signal]) : timeout
+}
+
+async function callWsfe(operation: string, body: string, signal?: AbortSignal) {
   // Guard central ANTES de WSAA/WSFE: ambiente, certificado, CUIT y clave.
   const configuration: ArcaConfiguration = requireArcaConfiguration()
   const credentials = await getWsaaCredentials(configuration)
@@ -155,7 +161,7 @@ async function callWsfe(operation: string, body: string) {
     },
     body: envelope,
     cache: "no-store",
-    signal: AbortSignal.timeout(30_000),
+    signal: wsfeSignal(30_000, signal),
   })
   const responseXml = await response.text()
   const document = parseXml<Record<string, any>>(responseXml)
@@ -173,7 +179,7 @@ async function callWsfe(operation: string, body: string) {
 }
 
 /** FEDummy no autentica, pero igual exige ARCA_ENV explícito. */
-async function callWsfePublic(operation: string, body = "") {
+async function callWsfePublic(operation: string, body = "", signal?: AbortSignal) {
   const environment = getArcaEnvironment()
   const envelope = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="${WSFE_NAMESPACE}">
@@ -193,7 +199,7 @@ async function callWsfePublic(operation: string, body = "") {
     },
     body: envelope,
     cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
+    signal: wsfeSignal(10_000, signal),
   })
   const responseXml = await response.text()
   const document = parseXml<Record<string, any>>(responseXml)
@@ -210,8 +216,8 @@ async function callWsfePublic(operation: string, body = "") {
   ]
 }
 
-export async function getWsfeHealth() {
-  const result = await callWsfePublic("FEDummy")
+export async function getWsfeHealth(signal?: AbortSignal) {
+  const result = await callWsfePublic("FEDummy", "", signal)
 
   return {
     appServer: String(result?.AppServer ?? ""),
@@ -231,8 +237,8 @@ export interface WsfePointOfSale {
  * Puntos de venta habilitados para Web Services del CUIT (solo lectura; no
  * emite). ARCA responde el error 602 "Sin Resultados" cuando no hay ninguno.
  */
-export async function feParamGetPtosVenta(): Promise<WsfePointOfSale[]> {
-  const result = await callWsfe("FEParamGetPtosVenta", "")
+export async function feParamGetPtosVenta(signal?: AbortSignal): Promise<WsfePointOfSale[]> {
+  const result = await callWsfe("FEParamGetPtosVenta", "", signal)
   const errors = parseMessages(result?.Errors, "Err")
   if (errors.some((error) => error.Code === "602")) return []
   if (errors.length) {

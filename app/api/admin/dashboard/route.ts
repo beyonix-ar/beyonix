@@ -1,6 +1,5 @@
 import { requireInternalUser } from "@/lib/auth/admin-api"
 import { canViewSensitiveNumbers } from "@/lib/auth/roles"
-import { getAndreaniConfigurationStatus } from "@/lib/andreani/client"
 import { getSiteSettings } from "@/lib/site-settings"
 import {
   getStandaloneHistoricalUnitCost,
@@ -74,13 +73,6 @@ interface RecentActivity {
   meta?: string
   secondary?: string
   created_at: string
-}
-
-interface SystemStatusItem {
-  id: "store" | "mercadopago" | "andreani" | "arca"
-  label: string
-  status: "ok" | "warning" | "error" | "unknown"
-  detail: string
 }
 
 // Venta cobrada = hubo pago confirmado (aunque después se cancele): la
@@ -432,19 +424,6 @@ const FINANCIAL_ORDER_SELECT = `
   credit_note_amount,
   created_at
 `
-
-function getAndreaniStatus(): SystemStatusItem {
-  const integration = getAndreaniConfigurationStatus()
-
-  return {
-    id: "andreani",
-    label: "Andreani",
-    status: integration.configured ? "unknown" : "warning",
-    detail: integration.configured
-      ? "QA configurado; operación automática deshabilitada"
-      : integration.message,
-  }
-}
 
 export async function GET(request: Request) {
   const auth = await requireInternalUser(request)
@@ -1703,27 +1682,6 @@ export async function GET(request: Request) {
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )
     .slice(0, 10)
-  const systemStatus: SystemStatusItem[] = [
-    {
-      id: "store",
-      label: "Tienda activa",
-      status: "ok",
-      detail: "Base de datos accesible",
-    },
-    {
-      id: "mercadopago",
-      label: "Mercado Pago",
-      status: "unknown",
-      detail: "Comprobación en segundo plano",
-    },
-    getAndreaniStatus(),
-    {
-      id: "arca",
-      label: "ARCA / Facturación electrónica",
-      status: "unknown",
-      detail: "Comprobación en segundo plano",
-    },
-  ]
   const searchOrders = (searchOrdersResult.data ?? []) as unknown as SupabasePedido[]
   // El username del cliente no vive en ordenes -- se resuelve por usuario_id
   // contra profiles, igual que en app/api/admin/pedidos/route.ts. Fallback a
@@ -1865,7 +1823,6 @@ export async function GET(request: Request) {
     })),
     commercialSales,
     recentActivity,
-    systemStatus,
     searchIndex,
   }
   dashboardServerCache.set(cacheKey, {

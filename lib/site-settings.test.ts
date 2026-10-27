@@ -3,8 +3,10 @@ import test from "node:test"
 
 import {
   DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
+  getFallbackSiteSettings,
   getSiteSettings,
   invalidateSiteSettingsCache,
+  isFailedReadFallbackSiteSettings,
   normalizeAndreaniCommercialSettings,
   normalizeSiteSettingsPatch,
   SiteSettingsUnavailableError,
@@ -45,7 +47,12 @@ test("la lectura cacheada (páginas no financieras) conserva el fallback a defau
   await withBrokenSupabaseAdminEnv(async () => {
     const settings = await getSiteSettings()
     assert.deepEqual(settings.andreaniCommercial, DEFAULT_ANDREANI_COMMERCIAL_SETTINGS)
+    assert.equal(isFailedReadFallbackSiteSettings(settings), true, "el health check distingue el respaldo por error")
   })
+})
+
+test("los defaults pedidos a propósito no se marcan como respaldo por error", () => {
+  assert.equal(isFailedReadFallbackSiteSettings(getFallbackSiteSettings()), false)
 })
 
 test("normalizeAndreaniCommercialSettings acepta enabled true/false explícito", () => {

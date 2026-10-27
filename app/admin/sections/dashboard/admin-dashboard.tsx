@@ -26,10 +26,11 @@ import {
 
 import {
   type DashboardSearchItem,
-  type DashboardSystemStatus,
   type DashboardRecentActivity,
 } from "@/lib/supabase/queries/dashboard"
 import { useDashboard } from "@/hooks/use-dashboard"
+import { useSystemHealth } from "@/hooks/use-system-health"
+import type { IntegrationHealthView } from "@/lib/admin/system-health"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import {
@@ -413,56 +414,40 @@ function GlobalAdminSearch({
   )
 }
 
-function SystemStatusPill({
-  item,
-  ready,
-}: {
-  item: DashboardSystemStatus
-  ready: boolean
-}) {
-  const effectiveStatus = ready ? item.status : "unknown"
+function SystemStatusPill({ item }: { item: IntegrationHealthView }) {
   const tone =
-    effectiveStatus === "ok"
+    item.status === "ok"
       ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
-      : effectiveStatus === "error"
+      : item.status === "error"
         ? "border-red-400/25 bg-red-400/10 text-red-200"
-        : effectiveStatus === "warning"
+        : item.status === "warning"
           ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
-          : effectiveStatus === "disabled"
+          : item.status === "disabled"
             ? "border-slate-400/20 bg-slate-400/8 text-slate-300"
           : "border-white/10 bg-white/5 text-white/52"
-  const label =
-    !ready
-      ? "Verificando"
-      : item.verified === false
-        ? "No verificable"
-        : item.status === "ok"
-          ? "Operativo"
-          : item.status === "error"
-            ? "Caído"
-            : item.status === "warning"
-              ? "Degradado"
-              : item.status === "disabled"
-                ? "Deshabilitado"
-                : "Sin verificar"
 
   return (
-    <div className="rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]">
+    <div
+      className="rounded-xl border border-beyonix-blue-light/14 bg-[rgba(3,7,13,0.72)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.025)]"
+      data-integration={item.id}
+      data-status={item.status}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-black text-white">{item.label}</p>
-          <p className="mt-1 line-clamp-2 text-11px leading-4 text-white/45">
-            {ready ? item.detail : "Ejecutando una comprobación real..."}
+          <p className="mt-1 line-clamp-2 text-11px leading-4 text-white/45" title={item.detail}>
+            {item.detail}
           </p>
-          {ready && item.checkedAt && (
+          {item.checkedAt && (
             <p className="mt-1 text-9px font-bold uppercase tracking-wide text-white/28">
               {item.latencyMs != null ? `${item.latencyMs} ms · ` : ""}
               {formatRelativeTime(item.checkedAt)}
+              {item.lastAttemptFailed ? " · Último intento falló" : ""}
             </p>
           )}
         </div>
         <span className={`shrink-0 rounded-full border px-2 py-0.5 text-9px font-black uppercase tracking-widest ${tone}`}>
-          {label}
+          {item.badge}
         </span>
       </div>
     </div>
@@ -578,17 +563,18 @@ export function AdminDashboard() {
     recentOrders,
     commercialSales,
     recentActivity,
-    systemStatus,
     searchIndex,
     loading,
     error,
     reloadDashboard,
-    healthRefreshing,
-    healthReady,
-    healthCheckedAt,
-    healthError,
-    refreshSystemHealth,
   } = useDashboard()
+  const {
+    state: systemHealth,
+    items: systemStatus,
+    refreshing: healthRefreshing,
+    refreshNow: refreshSystemHealth,
+  } = useSystemHealth()
+  const healthUpdatedAt = systemHealth.lastUpdatedAt
   const requestedTab = searchParams.get("tab")
   const [tab, setTab] = useState<DashboardTab>(
     isDashboardTab(requestedTab) ? requestedTab : "operativo",
@@ -820,14 +806,14 @@ export function AdminDashboard() {
                 id="system-status-title"
                 eyebrow="Sistema"
                 title="Estado de integraciones"
-                description="Comprobación real cada 30 segundos"
+                description="Comprobación real cada 60 segundos (solo lectura)"
                 action={
                   <div className="flex items-center gap-2">
-                    {healthCheckedAt && (
+                    {healthUpdatedAt && (
                       <span className="hidden text-right text-9px font-bold uppercase tracking-wide text-white/40 sm:block">
-                        Última comprobación
+                        Última actualización del panel
                         <span className="block text-white/55">
-                          {formatRelativeTime(healthCheckedAt)}
+                          {formatRelativeTime(healthUpdatedAt)}
                         </span>
                       </span>
                     )}
@@ -846,18 +832,14 @@ export function AdminDashboard() {
                   </div>
                 }
               />
-              {healthError && (
-                <p className="mb-2 rounded-lg border border-red-400/20 bg-red-400/8 px-3 py-2 text-10px font-semibold text-red-200">
-                  La última comprobación falló: {healthError}
+              {systemHealth.lastAttemptError && (
+                <p className="mb-2 rounded-lg border border-red-400/20 bg-red-400/8 px-3 py-2 text-10px font-semibold text-red-200" role="status">
+                  El último intento falló: {systemHealth.lastAttemptError} Se muestran los últimos resultados válidos.
                 </p>
               )}
               <div className={`grid gap-2 sm:grid-cols-2 ${sensitive ? "" : "xl:grid-cols-4"}`}>
                 {systemStatus.map((item) => (
-                  <SystemStatusPill
-                    key={item.id}
-                    item={item}
-                    ready={healthReady}
-                  />
+                  <SystemStatusPill key={item.id} item={item} />
                 ))}
               </div>
             </section>

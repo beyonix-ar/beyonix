@@ -475,6 +475,21 @@ export function invalidateSiteSettingsCache() {
   siteSettingsRequest = null
 }
 
+// Fallbacks entregados por una lectura fallida (no los defaults de quien llama
+// a getFallbackSiteSettings() a propósito): el health check de Admin necesita
+// distinguir "configuración leída" de "respaldo por error".
+const failedReadFallbacks = new WeakSet<SiteSettings>()
+
+function failedReadFallback() {
+  const settings = getFallbackSiteSettings()
+  failedReadFallbacks.add(settings)
+  return settings
+}
+
+export function isFailedReadFallbackSiteSettings(settings: SiteSettings) {
+  return failedReadFallbacks.has(settings)
+}
+
 export class SiteSettingsUnavailableError extends Error {
   constructor() {
     super(
@@ -517,7 +532,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
 
     if (error) {
       if (strict) throw new SiteSettingsUnavailableError()
-      return getFallbackSiteSettings()
+      return failedReadFallback()
     }
 
     const settingsByKey = new Map(
@@ -566,7 +581,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         ? error
         : new SiteSettingsUnavailableError()
     }
-    return getFallbackSiteSettings()
+    return failedReadFallback()
   }
 }
 
