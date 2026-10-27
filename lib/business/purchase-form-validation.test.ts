@@ -66,6 +66,16 @@ test("P/Q: variante nueva con el negro por defecto y sin nombre de color es vál
   assert.equal(validation.fields.includes("color"), false)
 })
 
+test("Color obligatorio en toda variante nueva: vacío bloquea con \"Falta completar Color.\"", () => {
+  for (const colorHex of ["", "   "]) {
+    assert.deepEqual(validatePurchaseForm({ ...complete, colorHex }), { fields: ["color"], message: "Falta completar Color." })
+    // Aunque el llamador no marque colorRequired, una variante nueva lo exige igual.
+    assert.equal(validatePurchaseForm({ ...complete, colorRequired: false, createsVariant: true, colorHex }).message, "Falta completar Color.")
+  }
+  assert.deepEqual(validatePurchaseForm({ ...complete, colorHex: "negro" }), { fields: ["color"], message: "El color elegido no es válido." })
+  assert.equal(validatePurchaseForm({ ...complete, colorHex: "#ECA2A2", colorName: "ROSA" }).message, null, "otro color sigue funcionando")
+})
+
 test("E–H: Flete vacío o 0 no bloquea; negativo o con letras sí", () => {
   for (const freightCost of ["0", "", "  ", "1500", "25000", "12500.50"]) {
     assert.equal(validatePurchaseForm({ ...complete, freightCost }).message, null, JSON.stringify(freightCost))

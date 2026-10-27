@@ -219,16 +219,16 @@ function Field({ label, children, className = "", invalid = false }: {
 const DEFAULT_NEW_VARIANT_COLOR = "#000000"
 
 // El selector nativo siempre muestra un color: sólo se renderiza cuando hay un
-// valor real en el estado, para que lo visible y lo guardado no difieran. Sin
-// color (opcional) se ofrece "Agregar color", que carga el mismo valor que
-// elegirlo en la paleta.
-function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameChange, onClear }: {
+// valor real en el estado, para que lo visible y lo guardado no difieran. Una
+// vez elegido, el color no se puede quitar (una variante nueva nunca queda sin
+// color). Sin color sólo se llega en compras sin variante nueva (producto
+// simple o variante existente sin color): "Agregar color" carga el mismo valor
+// que elegirlo en la paleta.
+function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameChange }: {
   colorHex: string
   colorName: string
   onColorHexChange: (value: string) => void
   onColorNameChange: (value: string) => void
-  /** Sólo cuando el color es opcional: vuelve a "sin color". */
-  onClear?: () => void
 }) {
   const hex = /^#[0-9a-fA-F]{6}$/.test(colorHex.trim()) ? colorHex.trim().toUpperCase() : ""
   return (
@@ -240,7 +240,7 @@ function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameCh
         maxLength={160}
         disabled={!hex}
         onChange={(event) => onColorNameChange(sanitizeColorName(event.target.value))}
-        className={`${inputClass} pl-11 ${onClear && hex ? "pr-9" : ""} disabled:cursor-not-allowed`}
+        className={`${inputClass} pl-11 disabled:cursor-not-allowed`}
       />
       {hex ? (
         <span
@@ -264,17 +264,6 @@ function ColorPickerInput({ colorHex, colorName, onColorHexChange, onColorNameCh
           className="absolute left-2 top-1/2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-white/25 text-white/55 transition hover:border-beyonix-sky/55 hover:text-white"
         >
           <Plus className="size-3.5" />
-        </button>
-      )}
-      {onClear && hex && (
-        <button
-          type="button"
-          aria-label="Quitar color"
-          title="Quitar color"
-          onClick={onClear}
-          className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-white/45 transition hover:text-white"
-        >
-          <X className="size-3.5" />
         </button>
       )}
     </div>
@@ -1278,11 +1267,13 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
   const selectedProductHasVariants = articleParts[0] === "p" && Boolean(
     data?.catalog.find((product) => !product.standalone_key && String(product.id) === articleProductId)?.producto_variantes?.length,
   )
-  const colorRequired = isNewArticle || selectedProductHasVariants
   // Color nuevo (artículo nuevo o color nuevo de un producto): la variante
   // nace con esta compra, en una sola operación del servidor.
   const createsVariant =
     Boolean(newArticleColor.trim()) && (isNewArticle || (Boolean(articleProductId) && !articleVariantId))
+  // Toda variante nueva lleva color: obligatorio (arranca en negro real) y,
+  // una vez elegido, no se puede quitar.
+  const colorRequired = isNewArticle || selectedProductHasVariants || createsVariant
   const barcodeEditable = showsCatalogArticleFields && !(persistedArticleBarcode && !editsVariantBarcode) && !generateArticleBarcode
   const productValidation = validatePurchaseForm({
     hasArticle: isNewArticle || Boolean(articleProductId) || Boolean(standaloneArticleName),
@@ -1687,10 +1678,6 @@ export function AdminCostsPanel({ onChanged }: { onChanged?: () => void }) {
                       colorName={newArticleColorName}
                       onColorHexChange={setNewArticleColor}
                       onColorNameChange={(value) => setNewArticleColorName(value.toUpperCase())}
-                      onClear={colorRequired || article.startsWith("v:") ? undefined : () => {
-                        setNewArticleColor("")
-                        setNewArticleColorName("")
-                      }}
                     />
                   </Field>
                   <Field label="Código de barra" invalid={invalidProductFields.has("barcode")}>

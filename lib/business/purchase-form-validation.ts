@@ -74,6 +74,7 @@ export const isValidSku = (value: string) => CODE_PATTERN.test(value.trim())
 export const isValidBarcode = (value: string) => CODE_PATTERN.test(value.trim())
 export const isValidDocumentNumber = (value: string) => DOCUMENT_NUMBER_PATTERN.test(value.trim())
 
+export const COLOR_FORMAT_MESSAGE = "El color elegido no es válido."
 export const COLOR_NAME_FORMAT_MESSAGE =
   "El nombre del color sólo puede tener letras, espacios, guiones o paréntesis (sin números)."
 export const SKU_FORMAT_MESSAGE =
@@ -148,7 +149,7 @@ export interface PurchaseFormInput {
   hasArticle: boolean
   isNewArticle: boolean
   articleName: string
-  /** La compra crea una variante nueva: el color es obligatorio. */
+  /** El color es obligatorio (artículo nuevo / producto con variantes); con `createsVariant` también. */
   colorRequired: boolean
   colorHex: string
   colorName: string
@@ -185,8 +186,9 @@ export function validatePurchaseForm(input: PurchaseFormInput): PurchaseFormVali
 
   if (!input.hasArticle) missing.push("article")
   if (input.isNewArticle && !input.articleName.trim()) missing.push("articleName")
-  if (input.colorRequired && !colorHex) missing.push("color")
-  if (colorHex && !isValidColorHex(colorHex)) invalid.push({ field: "color", message: "El color elegido no es válido." })
+  // Variante nueva ⇒ color obligatorio (el negro inicial cuenta como completo).
+  if ((input.colorRequired || input.createsVariant) && !colorHex) missing.push("color")
+  if (colorHex && !isValidColorHex(colorHex)) invalid.push({ field: "color", message: COLOR_FORMAT_MESSAGE })
   if (colorName && !colorHex) invalid.push({ field: "color", message: "Elegí un color con el selector para poder ponerle nombre." })
   if (input.createsVariant && colorName && !isValidColorName(colorName)) {
     invalid.push({ field: "colorName", message: COLOR_NAME_FORMAT_MESSAGE })

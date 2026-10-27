@@ -14,6 +14,7 @@ import { isReservedProductBarcode } from "@/lib/barcodes/codes"
 import { deriveVariantNameFromColor } from "@/lib/products/variant-color"
 import {
   BARCODE_FORMAT_MESSAGE,
+  COLOR_FORMAT_MESSAGE,
   COLOR_NAME_FORMAT_MESSAGE,
   DOCUMENT_NUMBER_FORMAT_MESSAGE,
   SKU_FORMAT_MESSAGE,
@@ -149,7 +150,14 @@ function newVariantInput(value: unknown) {
   if ((record.productId != null && record.productId !== "" && !productId) || (!productId && !productName)) {
     return { variant: null, error: "Elegí el producto o escribí el nombre del artículo nuevo." }
   }
-  if (!colorHex) return { variant: null, error: "Elegí un color válido para la variante nueva." }
+  // Mismos mensajes que el formulario: sin color, falta; con un valor que no
+  // es un hex, inválido. Una variante nueva nunca se crea sin color.
+  if (!colorHex) {
+    return {
+      variant: null,
+      error: text(record.colorHex, 7) ? COLOR_FORMAT_MESSAGE : formatMissingFieldsMessage(["color"]),
+    }
+  }
   if (colorName && !isValidColorName(colorName)) return { variant: null, error: COLOR_NAME_FORMAT_MESSAGE }
   if (!sku) return { variant: null, error: "La variante nueva necesita un SKU." }
   if (!isValidSku(sku)) return { variant: null, error: SKU_FORMAT_MESSAGE }

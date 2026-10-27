@@ -479,6 +479,11 @@ test("artículo nuevo: el negro visible es el color real y Flete arranca en 0 (E
     assert.equal(await page.getByLabel("Nombre del color").getAttribute("placeholder"), "NEGRO")
     assert.equal(await field(page, "Flete").locator("input").inputValue(), "0", "E")
     assert.equal(await page.locator("label", { hasText: /^Color$/ }).count(), 1, "Color obligatorio, sin «(opcional)»")
+    assert.deepEqual(
+      [await page.getByRole("button", { name: "Quitar color" }).count(), await page.getByRole("button", { name: "Agregar color" }).count()],
+      [0, 0],
+      "la variante nueva no se puede dejar sin color",
+    )
 
     await page.getByPlaceholder("Por ej: Aur-01").fill("pava-12v-neg")
     await field(page, "Cantidad comprada").locator("input").fill("2")
@@ -549,6 +554,8 @@ test("variante nueva desde Productos (Ir a Compras): negro real por defecto, sin
   try {
     await page.getByText("Elegí el color y el SKU de la variante nueva", { exact: false }).waitFor()
     assert.equal(await page.getByLabel("Elegir color").inputValue(), "#000000")
+    assert.equal(await page.locator("label", { hasText: /^Color$/ }).count(), 1, "obligatorio")
+    assert.equal(await page.getByRole("button", { name: /^(Quitar|Agregar) color$/ }).count(), 0)
     await page.getByPlaceholder("Por ej: Aur-01").fill("p-5-neg")
     await field(page, "Cantidad comprada").locator("input").fill("3")
     await field(page, "Costo unitario").locator("input").fill("1000")
@@ -575,6 +582,22 @@ test("editar una compra existente conserva el color de su variante (S)", async (
     await page.getByText("Compra actualizada correctamente.").waitFor()
     const [article] = await sentBodies(page, "__articlePosts")
     assert.deepEqual([article.colorHex, article.colorName], ["#123456", "COLOR 1400"], "no se pisa con negro")
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+test("color vacío en una variante nueva bloquea el guardado y el mensaje nombra sólo Color (4, 5)", async () => {
+  const { page, errors } = await open()
+  try {
+    // Compra vieja de un artículo no catalogado: al editarla es un artículo
+    // nuevo sin color cargado (el único camino en que el color queda vacío).
+    await editPurchaseOf(page, "CINTA DE EMBALAR")
+    await page.getByRole("button", { name: "Actualizar", exact: true }).click()
+    assert.equal(await alertText(page), "Falta completar Color.")
+    assert.deepEqual(await invalidLabels(page), ["Color"])
+    assert.deepEqual(await sentBodies(page, "__patches"), [], "no se guarda")
+    assert.deepEqual(await postedBodies(page), [])
     assert.deepEqual(errors, [])
   } finally {
     await page.close()
