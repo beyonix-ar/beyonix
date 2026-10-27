@@ -263,17 +263,31 @@ async function readWeekdayChart(page: Page) {
     }))
 }
 
-/** Columnas del gráfico por hora: etiqueta accesible, eje, alto de la barra y alto útil del track. */
+/** Columnas del gráfico por hora: etiqueta accesible, eje X visible, alto de la barra y alto útil del track. */
 async function readHourlyChart(page: Page) {
   await page.locator(".admin-analytics-hour").first().waitFor()
   return page.locator(".admin-analytics-hours").evaluate((chart) =>
-    Array.from(chart.querySelectorAll<HTMLElement>(".admin-analytics-hour"), (column) => ({
-      label: column.getAttribute("aria-label") ?? "",
-      axis: column.querySelector(".admin-analytics-hour-label")?.textContent ?? "",
-      height: column.querySelector<HTMLElement>(".admin-analytics-hour-bar")!.getBoundingClientRect().height,
-      track: column.querySelector<HTMLElement>(".admin-analytics-hour-track")!.clientHeight,
-    })))
+    Array.from(chart.querySelectorAll<HTMLElement>(".admin-analytics-hour"), (column) => {
+      const axis = column.querySelector<HTMLElement>(".admin-analytics-hour-label")!
+      return {
+        label: column.getAttribute("aria-label") ?? "",
+        axis: getComputedStyle(axis).visibility === "visible" ? axis.textContent ?? "" : "",
+        height: column.querySelector<HTMLElement>(".admin-analytics-hour-bar")!.getBoundingClientRect().height,
+        track: column.querySelector<HTMLElement>(".admin-analytics-hour-track")!.clientHeight,
+      }
+    }))
 }
+
+/** Eje Y del gráfico por hora: cada marca con su texto y si queda alineada con su línea guía. */
+const readHourlyAxis = (page: Page) => page.locator(".admin-analytics-hours-chart").evaluate((chart) => {
+  const lines = Array.from(chart.querySelectorAll<HTMLElement>(".admin-analytics-hours-grid span"), (line) => line.getBoundingClientRect().top)
+  const ticks = Array.from(chart.querySelectorAll<HTMLElement>(".admin-analytics-hours-y span"))
+  return {
+    ticks: ticks.map((tick) => tick.textContent ?? ""),
+    aligned: ticks.every((tick, index) => Math.abs(tick.getBoundingClientRect().top - lines[index]) < 1.5),
+    baseline: Math.abs(lines[0] - chart.querySelector<HTMLElement>(".admin-analytics-hour-track")!.getBoundingClientRect().bottom) < 1.5,
+  }
+})
 
 /** Visualizaciones de cada hora, leídas de la etiqueta accesible de su columna. */
 const hourlyValues = async (page: Page) =>
@@ -337,14 +351,16 @@ test("resumen, ranking, porcentajes, producto más visto y Top 10", async () => 
     assert.ok(tallest.label.startsWith(`${await weekdayCard(page).locator(".text-2xl").innerText()}:`), "la card y el gráfico coinciden en el día con más visualizaciones")
     const hours = await readHourlyChart(page)
     assert.equal(hours.length, 24, "las 24 horas")
-    assert.deepEqual(hours.map((column) => column.axis).filter(Boolean), ["00", "03", "06", "09", "12", "15", "18", "21"], "eje cada 3 horas")
+    assert.deepEqual(hours.map((column) => column.axis), Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0")), "eje X: las 24 horas rotuladas en desktop")
+    assert.deepEqual(await readHourlyAxis(page), { ticks: ["0", "20", "40", "60", "80"], aligned: true, baseline: true }, "eje Y: escala redonda hasta 80 (máximo 62), marcas sobre sus líneas guía")
     assert.deepEqual(await hourlyValues(page), HOURLY_VIEWS)
     assert.equal(hours[14].label, "14:00 – 15:00: 62 visualizaciones, 8,7% del total")
     assert.equal(hours[2].label, "02:00 – 03:00: 0 visualizaciones, 0% del total")
     assert.equal(hours[23].label, "23:00 – 00:00: 24 visualizaciones, 3,4% del total")
-    assert.ok(Math.abs(hours[14].height - hours[14].track) < 1, "la hora pico ocupa el alto")
+    assert.equal(hours[14].track, 120, "bloque compacto: 120 px de área de barras")
+    assert.ok(Math.abs(hours[14].height / hours[14].track - 62 / 80) < 0.01, "la altura sigue la escala del eje Y")
     assert.ok(Math.abs(hours[20].height / hours[14].height - 58 / 62) < 0.02, "barras proporcionales")
-    assert.equal(hours[2].height, 0)
+    assert.equal(hours[2].height, 2, "hora en 0: marca mínima, pero presente")
     const tallestHour = hours.reduce((best, column) => (column.height > best.height ? column : best))
     assert.ok(tallestHour.label.startsWith(`${await peakCard(page).locator(".text-2xl").innerText()}:`), "la card y el gráfico coinciden en el horario pico")
 
@@ -372,7 +388,8 @@ test("sin vistas en el período: empty state claro, sin métricas ni gráfico", 
     assert.equal(chart[0].label, "Lunes: 0 visualizaciones, 0% del total")
 
     const hours = await readHourlyChart(page)
-    assert.deepEqual(hours.map((column) => column.height), Array(24).fill(0), "las 24 horas visibles, en 0")
+    assert.deepEqual(hours.map((column) => column.height), Array(24).fill(2), "las 24 horas presentes, con la marca mínima de 0")
+    assert.deepEqual((await readHourlyAxis(page)).ticks, ["0", "1"], "sin vistas: eje Y 0 a 1, nunca NaN")
     assert.equal(hours[20].label, "20:00 – 21:00: 0 visualizaciones, 0% del total")
     assert.equal(await page.locator(".admin-analytics-hour-section").getByText("Sin visualizaciones en este período").count(), 1)
   } finally { await page.close() }
@@ -415,11 +432,17 @@ for (const theme of ["dark", "light"] as const) {
             })(),
             hours: (() => {
               const columns = Array.from(root.querySelectorAll<HTMLElement>(".admin-analytics-hour"))
-              const chart = root.querySelector(".admin-analytics-hours")!.getBoundingClientRect()
+              // Límites reales: no pisar el eje Y ni salirse del bloque del gráfico.
+              const chart = {
+                left: root.querySelector(".admin-analytics-hours-y")!.getBoundingClientRect().right + 2,
+                right: root.querySelector(".admin-analytics-hours-chart")!.getBoundingClientRect().right,
+              }
               const labels = columns.map((column) => column.querySelector<HTMLElement>(".admin-analytics-hour-label")!)
-                .filter((label) => label.textContent).map((label) => label.getBoundingClientRect())
+                .filter((label) => getComputedStyle(label).visibility === "visible").map((label) => label.getBoundingClientRect())
               return {
                 count: columns.length,
+                visibleLabels: labels.length,
+                sectionHeight: root.querySelector(".admin-analytics-hour-section")!.getBoundingClientRect().height,
                 rows: new Set(columns.map((column) => Math.round(column.getBoundingClientRect().top))).size,
                 minWidth: Math.min(...columns.map((column) => column.getBoundingClientRect().width)),
                 labelsInside: labels.every((rect) => rect.left >= chart.left - 1 && rect.right <= chart.right + 1),
@@ -464,6 +487,9 @@ for (const theme of ["dark", "light"] as const) {
         assert.deepEqual([layout.hours.count, layout.hours.rows], [24, 1], "las 24 horas en una sola fila, sin scroll, también en mobile")
         assert.ok(layout.hours.minWidth >= 10, `columnas por hora tocables: ${layout.hours.minWidth}px`)
         assert.ok(layout.hours.labelsInside && !layout.hours.labelsOverlap, "eje sin textos superpuestos ni cortados")
+        assert.ok([24, 8].includes(layout.hours.visibleLabels), `eje X: las 24 horas o cada 3 si no entran (${layout.hours.visibleLabels})`)
+        if (width >= 768) assert.equal(layout.hours.visibleLabels, 24, "con lugar, las 24 horas rotuladas")
+        assert.ok(layout.hours.sectionHeight <= 230, `bloque por hora compacto: ${layout.hours.sectionHeight}px`)
         assert.equal(layout.hours.barColor, layout.barColor, "mismo azul que el Top 10")
         assert.notEqual(layout.hours.labelColor, theme === "dark" ? "rgb(15, 23, 42)" : "rgb(248, 250, 252)", "horas legibles en el tema")
         assert.ok(layout.peakValuesFit,"\"14:00 – 15:00\" y \"Miércoles\" entran completos")

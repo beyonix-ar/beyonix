@@ -152,3 +152,16 @@ export function buildHourlyViewsReport(range: AnalyticsDateRange, rows: { hour: 
   const { totalViews, buckets } = fillDistribution(rows.map((row) => ({ bucket: row.hour, views: row.views })), 0, 23)
   return { range, totalViews, hours: buckets.map(({ bucket, views, sharePercent }) => ({ hour: bucket, views, sharePercent })) }
 }
+
+/**
+ * Escala del eje Y de un gráfico de visualizaciones: tope "redondo" (1, 2 o 5
+ * × 10ⁿ por marca) que nunca queda por debajo del máximo, con marcas enteras
+ * equiespaciadas desde 0 (como mucho 5). Sin vistas: 0 a 1.
+ */
+export function viewsAxisScale(max: number): { top: number; ticks: number[] } {
+  const target = Math.max(max, 1) / 4
+  const magnitude = 10 ** Math.floor(Math.log10(target))
+  const step = Math.max(1, [1, 2, 5, 10].map((factor) => factor * magnitude).find((candidate) => candidate >= target) ?? 10 * magnitude)
+  const top = Math.max(step, Math.ceil(max / step) * step)
+  return { top, ticks: Array.from({ length: top / step + 1 }, (_, index) => index * step) }
+}

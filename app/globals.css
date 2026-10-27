@@ -18494,10 +18494,63 @@ html[data-admin-theme="light"] .admin-analytics-page {
   }
 }
 
-/* Visualizaciones por hora del día: siempre 24 columnas compactas que entran
-   sin scroll también en mobile. Eje cada 3 horas; cada columna completa es
-   interactiva. Mismo azul y tooltip que el gráfico por día de la semana. */
+/* Visualizaciones por hora del día: histograma compacto (X = 24 horas,
+   Y = visualizaciones con líneas guía) que entra sin scroll también en
+   mobile. Cada columna completa es interactiva. Mismo azul y tooltip que el
+   gráfico por día de la semana. */
+.admin-analytics-page .admin-analytics-hours-chart {
+  --hours-plot: 120px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+}
+
+/* Eje Y: marcas de alto 0 repartidas de 0 al tope, centradas en cada línea guía. */
+.admin-analytics-page .admin-analytics-hours-y {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: space-between;
+  height: var(--hours-plot);
+}
+
+.admin-analytics-page .admin-analytics-hours-y span {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 0;
+  white-space: nowrap;
+}
+
+.admin-analytics-page .admin-analytics-hours-plot {
+  position: relative;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.admin-analytics-page .admin-analytics-hours-grid {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: var(--hours-plot);
+  pointer-events: none;
+}
+
+.admin-analytics-page .admin-analytics-hours-grid span {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 0;
+  border-top: 1px dashed var(--admin-border-soft);
+}
+
+.admin-analytics-page .admin-analytics-hours-grid span:first-child {
+  border-top-style: solid;
+}
+
 .admin-analytics-page .admin-analytics-hours {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(24, minmax(0, 1fr));
   gap: 3px;
@@ -18508,28 +18561,31 @@ html[data-admin-theme="light"] .admin-analytics-page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  padding: 4px 0;
-  border-radius: 6px;
+  border-radius: 4px;
   outline: none;
 }
 
 .admin-analytics-page .admin-analytics-hour-track {
-  box-sizing: border-box;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   width: 100%;
-  height: 140px;
-  box-shadow: inset 0 -1px 0 var(--admin-border-soft);
+  height: var(--hours-plot);
 }
 
 .admin-analytics-page .admin-analytics-hour-bar {
   display: block;
   width: min(70%, 22px);
-  border-radius: 3px 3px 0 0;
+  border-radius: 2px 2px 0 0;
   background: var(--analytics-bar);
+}
+
+/* Hora sin vistas: marca mínima para que las 24 sigan presentes. */
+.admin-analytics-page .admin-analytics-hour-bar[data-empty] {
+  height: 2px;
+  opacity: 0.35;
 }
 
 .admin-analytics-page .admin-analytics-hour:hover .admin-analytics-hour-bar,
@@ -18537,11 +18593,17 @@ html[data-admin-theme="light"] .admin-analytics-page {
   filter: brightness(1.15);
 }
 
-/* Etiquetas sólo cada 3 horas; el alto fijo alinea las columnas sin etiqueta. */
 .admin-analytics-page .admin-analytics-hour-label {
   height: 14px;
   line-height: 14px;
   white-space: nowrap;
+}
+
+/* Sin lugar para las 24 etiquetas, el eje X rotula cada 3 horas. */
+@container (max-width: 520px) {
+  .admin-analytics-page .admin-analytics-hour-label-minor {
+    visibility: hidden;
+  }
 }
 
 .admin-analytics-page .admin-analytics-hour-tooltip {
@@ -18585,12 +18647,13 @@ html[data-admin-theme="light"] .admin-analytics-page {
 }
 
 @media (max-width: 479px) {
-  .admin-analytics-page .admin-analytics-hours {
-    gap: 2px;
+  .admin-analytics-page .admin-analytics-hours-chart {
+    --hours-plot: 100px;
+    column-gap: 6px;
   }
 
-  .admin-analytics-page .admin-analytics-hour-track {
-    height: 116px;
+  .admin-analytics-page .admin-analytics-hours {
+    gap: 2px;
   }
 }
 

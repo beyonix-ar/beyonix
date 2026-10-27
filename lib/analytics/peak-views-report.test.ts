@@ -9,6 +9,7 @@ import {
   formatHourRange,
   formatWeekday,
   formatWeekdayShort,
+  viewsAxisScale,
 } from "./peak-views-report.ts"
 
 const RANGE = { from: "2026-10-20", to: "2026-10-26" }
@@ -106,4 +107,18 @@ test("por hora del día: sin vistas → 24 ceros con 0%; filas inválidas se des
   const invalid = buildHourlyViewsReport(RANGE, [{ hour: -1, views: 5 }, { hour: 24, views: 5 }, { hour: 3.5, views: 5 }, { hour: 4, views: Number.NaN }, { hour: 5, views: -3 }, { hour: 6, views: 7 }])
   assert.equal(invalid.totalViews, 7)
   assert.deepEqual(invalid.hours.filter((slot) => slot.views > 0).map((slot) => [slot.hour, slot.views, slot.sharePercent]), [[6, 7, 100]])
+})
+
+test("eje Y: tope redondo nunca menor al máximo, marcas enteras desde 0 (hasta 5), sin límite artificial", () => {
+  assert.deepEqual(viewsAxisScale(0), { top: 1, ticks: [0, 1] }, "sin vistas: 0 a 1")
+  assert.deepEqual(viewsAxisScale(1), { top: 1, ticks: [0, 1] })
+  assert.deepEqual(viewsAxisScale(3), { top: 3, ticks: [0, 1, 2, 3] })
+  assert.deepEqual(viewsAxisScale(7), { top: 8, ticks: [0, 2, 4, 6, 8] })
+  assert.deepEqual(viewsAxisScale(62), { top: 80, ticks: [0, 20, 40, 60, 80] })
+  assert.deepEqual(viewsAxisScale(100), { top: 100, ticks: [0, 50, 100] })
+  assert.deepEqual(viewsAxisScale(12_345), { top: 15_000, ticks: [0, 5_000, 10_000, 15_000] })
+  for (let max = 0; max <= 5_000; max += 7) {
+    const { top, ticks } = viewsAxisScale(max)
+    assert.ok(top >= max && ticks.length >= 2 && ticks.length <= 5 && ticks.every(Number.isInteger) && ticks.at(-1) === top, String(max))
+  }
 })

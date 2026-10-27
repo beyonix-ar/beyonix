@@ -1,6 +1,6 @@
 "use client"
 
-import { formatHourRange, type HourlyViewsReport } from "@/lib/analytics/peak-views-report"
+import { formatHourRange, viewsAxisScale, type HourlyViewsReport } from "@/lib/analytics/peak-views-report"
 import { formatSharePercent, type AnalyticsDateRange } from "@/lib/analytics/product-view-report"
 
 import { AdminSkeleton } from "../../components/admin-controls"
@@ -20,44 +20,63 @@ export function useHourlyViewsReport(range: AnalyticsDateRange | null, rangeKey:
 }
 
 /**
- * 24 columnas compactas (00 a 23, siempre todas, con 0 si no hubo vistas),
- * mismo azul que el resto de Analítica. Sin valores sobre las barras para no
- * saturar: el eje marca cada 3 horas y hover/foco/toque sobre cualquier
- * columna muestra la franja exacta, visualizaciones y participación.
+ * Histograma compacto: X = las 24 horas (00 a 23, siempre todas), Y =
+ * visualizaciones con escala "redonda" según el máximo del período y líneas
+ * guía. Las horas en 0 quedan como una marca mínima. Sin valores sobre las
+ * barras para no saturar: hover/foco/toque sobre cualquier columna muestra la
+ * franja exacta, visualizaciones y participación. En anchos chicos el eje X
+ * rotula cada 3 horas, pero las 24 columnas siguen siendo interactivas.
  */
 function HourlyViewsChart({ report }: { report: HourlyViewsReport }) {
-  const max = Math.max(...report.hours.map((slot) => slot.views))
+  const { top, ticks } = viewsAxisScale(Math.max(...report.hours.map((slot) => slot.views)))
+  const position = (views: number) => `${(views / top) * 100}%`
 
   return (
-    <ol className="admin-analytics-hours" aria-label="Visualizaciones por hora del día">
-      {report.hours.map((slot) => {
-        const range = formatHourRange(slot.hour)
-        const share = formatSharePercent(slot.sharePercent)
-        return (
-          <li
-            key={slot.hour}
-            className="admin-analytics-hour"
-            tabIndex={0}
-            aria-label={`${range}: ${viewsLabel(slot.views)}, ${share} del total`}
-          >
-            <span className="admin-analytics-hour-track" aria-hidden="true">
-              <span
-                className="admin-analytics-hour-bar"
-                style={{ height: `${max > 0 && slot.views > 0 ? Math.max((slot.views / max) * 100, 2) : 0}%` }}
-              />
-            </span>
-            <span className="admin-analytics-hour-label text-10px font-bold tabular-nums text-white/70" aria-hidden="true">
-              {slot.hour % 3 === 0 ? String(slot.hour).padStart(2, "0") : ""}
-            </span>
-            <span className="admin-analytics-hour-tooltip" role="presentation">
-              <span className="block font-black">{range}</span>
-              <span className="block font-bold">{viewsLabel(slot.views)}</span>
-              <span className="block font-semibold opacity-75">{share} del total</span>
-            </span>
-          </li>
-        )
-      })}
-    </ol>
+    <div className="admin-analytics-hours-chart">
+      <div className="admin-analytics-hours-y text-10px font-bold tabular-nums text-white/55" aria-hidden="true">
+        {ticks.map((tick) => (
+          <span key={tick}>{viewsFormatter.format(tick)}</span>
+        ))}
+      </div>
+      <div className="admin-analytics-hours-plot">
+        <div className="admin-analytics-hours-grid" aria-hidden="true">
+          {ticks.map((tick) => <span key={tick} style={{ bottom: position(tick) }} />)}
+        </div>
+        <ol className="admin-analytics-hours" aria-label="Visualizaciones por hora del día">
+          {report.hours.map((slot) => {
+            const range = formatHourRange(slot.hour)
+            const share = formatSharePercent(slot.sharePercent)
+            return (
+              <li
+                key={slot.hour}
+                className="admin-analytics-hour"
+                tabIndex={0}
+                aria-label={`${range}: ${viewsLabel(slot.views)}, ${share} del total`}
+              >
+                <span className="admin-analytics-hour-track" aria-hidden="true">
+                  <span
+                    className="admin-analytics-hour-bar"
+                    data-empty={slot.views === 0 || undefined}
+                    style={slot.views > 0 ? { height: position(slot.views) } : undefined}
+                  />
+                </span>
+                <span
+                  className={`admin-analytics-hour-label text-10px font-bold tabular-nums text-white/70${slot.hour % 3 === 0 ? "" : " admin-analytics-hour-label-minor"}`}
+                  aria-hidden="true"
+                >
+                  {String(slot.hour).padStart(2, "0")}
+                </span>
+                <span className="admin-analytics-hour-tooltip" role="presentation">
+                  <span className="block font-black">{range}</span>
+                  <span className="block font-bold">{viewsLabel(slot.views)}</span>
+                  <span className="block font-semibold opacity-75">{share} del total</span>
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      </div>
+    </div>
   )
 }
 
