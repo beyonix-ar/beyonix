@@ -12,11 +12,18 @@ export class ExternalSalesFileError extends Error {}
 
 type SheetCell = ReturnType<typeof readSheetMatrix>[number][number]
 
-function excelSerialToIsoDate(serial: number) {
-  return new Date(Math.round((serial - 25569) * 86_400_000)).toISOString().slice(0, 10)
+// Días entre el origen de cada sistema de fechas de Excel y 1970-01-01. Los
+// libros con "sistema de fechas 1904" (Excel para Mac antiguo) cuentan desde
+// 1904-01-01: leerlos con el origen de 1900 corre todas las fechas 4 años.
+const EXCEL_EPOCH_OFFSET_DAYS = { 1900: 25569, 1904: 24107 } as const
+
+export function excelSerialToIsoDate(serial: number, date1904 = false) {
+  if (!Number.isFinite(serial) || serial < 1) return null
+  const days = serial - EXCEL_EPOCH_OFFSET_DAYS[date1904 ? 1904 : 1900]
+  return new Date(Math.round(days * 86_400_000)).toISOString().slice(0, 10)
 }
 
-function cellText(cell: SheetCell): string {
+function cellText(cell: SheetCell, date1904: boolean): string {
   if (cell == null) return ""
   if (typeof cell === "boolean") return cell ? "Sí" : "No"
   if (typeof cell === "number") {
@@ -24,7 +31,10 @@ function cellText(cell: SheetCell): string {
     return Number.isInteger(cell) ? String(cell) : cell.toFixed(2).replace(".", ",")
   }
   if (typeof cell === "object") {
-    return "excelDate" in cell ? excelSerialToIsoDate(cell.excelDate) : "#ERROR"
+    // Una fecha que no se puede convertir queda como texto inválido para que
+    // el preview la marque como error en vez de importarla corrida.
+    if ("excelDate" in cell) return excelSerialToIsoDate(cell.excelDate, date1904) ?? `Fecha de Excel ${cell.excelDate}`
+    return "#ERROR"
   }
   return cell
 }
@@ -67,5 +77,6 @@ export function readExternalSalesFile(buffer: ArrayBuffer, fileName: string): st
   }
   const sheetName = workbook.SheetNames[0]
   if (!sheetName) throw new ExternalSalesFileError("El archivo no contiene hojas.")
-  return readSheetMatrix(workbook.Sheets[sheetName]).map((row) => row.map(cellText))
+  const date1904 = workbook.Workbook?.WBProps?.date1904 === true
+  return readSheetMatrix(workbook.Sheets[sheetName]).map((row) => row.map((cell) => cellText(cell, date1904)))
 }

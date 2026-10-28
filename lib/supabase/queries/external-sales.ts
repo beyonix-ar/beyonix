@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client"
+import type { ExternalSaleCostStatus } from "@/lib/business/external-sale-profitability"
 import type {
   ExternalSale,
   ExternalSaleActiveStatus,
@@ -14,6 +15,8 @@ import type {
 export interface ExternalSaleListItem extends ExternalSale {
   profit_amount: number | null
   profit_source: "declared" | "calculated" | null
+  cost_amount: number | null
+  cost_status: ExternalSaleCostStatus
 }
 
 export interface ExternalSaleFilters {

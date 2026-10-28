@@ -208,7 +208,13 @@ export function withReportedProfit<T extends Record<string, unknown>>(row: T) {
   delete publicRow.creation_request
   delete publicRow.creation_idempotency_key
   delete publicRow.content_hash
-  return { ...publicRow, profit_amount: profitability.profitAmount, profit_source: profitability.profitSource }
+  return {
+    ...publicRow,
+    profit_amount: profitability.profitAmount,
+    profit_source: profitability.profitSource,
+    cost_amount: profitability.merchandiseCost,
+    cost_status: profitability.costStatus,
+  }
 }
 
 export async function profileNames(admin: SupabaseClient, ids: Array<unknown>) {

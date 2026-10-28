@@ -13,7 +13,7 @@ const ENV_KEYS = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "
 type RpcCall = { name: string; body: Record<string, unknown> }
 
 async function withSupabase(
-  options: { role: string; rpc?: (call: RpcCall) => Response },
+  options: { role: string; rpc?: (call: RpcCall) => Response; rest?: (url: URL, init?: RequestInit) => Response | undefined },
   run: (rpcCalls: RpcCall[]) => Promise<void>,
 ) {
   const previous = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]))
@@ -31,7 +31,7 @@ async function withSupabase(
       rpcCalls.push(call)
       return options.rpc?.(call) ?? Response.json({ id: SALE, status: "completed", stock_effect: "consume", quantity: 1, gross_amount: 100 })
     }
-    return new Response("inesperado", { status: 599 })
+    return options.rest?.(url, init) ?? new Response("inesperado", { status: 599 })
   })
   try {
     await run(rpcCalls)
@@ -162,11 +162,51 @@ test("errores de la base: mensajes claros sin detalles internos", async () => {
   })
 })
 
-test("el endpoint anterior ya no escribe ventas externas", async () => {
+test("el endpoint anterior ya no escribe ventas externas; su GET sigue leyendo", async () => {
   const ledger = await import("../../app/api/admin/sales-ledger/route")
-  await withSupabase({ role: "admin" }, async (rpcCalls) => {
+  const restCalls: string[] = []
+  const rest = (url: URL, init?: RequestInit) => {
+    if (!/^\/rest\/v1\/(productos|product_cost_entries|external_sales|mercadolibre_sales)$/.test(url.pathname)) return undefined
+    restCalls.push(`${init?.method ?? "GET"} ${url.pathname}`)
+    if (url.pathname === "/rest/v1/external_sales") {
+      return Response.json([{ id: SALE, sale_date: "2026-03-15", product_name: "Auricular Ñandú", quantity: 1, gross_amount: 15000, status: "completed", notes: null }])
+    }
+    return Response.json([])
+  }
+  await withSupabase({ role: "admin", rest }, async (rpcCalls) => {
     assert.equal((await ledger.POST(json("POST", { channel: "external", saleDate: "2026-01-01", productName: "x", quantity: 1 }))).status, 410)
     assert.equal((await ledger.PATCH(json("PATCH", { channel: "external", id: SALE }))).status, 410)
-    assert.equal(rpcCalls.length, 0)
+    const removal = await ledger.DELETE(new Request(`http://localhost/api/admin/sales-ledger?channel=external&id=${SALE}`, {
+      method: "DELETE", headers: { Authorization: "Bearer test" },
+    }))
+    assert.equal(removal.status, 405)
+    assert.equal(rpcCalls.length, 0, "ninguna RPC (ni reverse_external_sale ni create)")
+    assert.equal(restCalls.length, 0, "ninguna escritura llegó a external_sales")
+
+    const read = await ledger.GET(new Request("http://localhost/api/admin/sales-ledger", { headers: { Authorization: "Bearer test" } }))
+    assert.equal(read.status, 200)
+    const body = await read.json() as { externalSales: Array<{ id: string; product_name: string }>; mlSales: unknown[] }
+    assert.deepEqual(body.externalSales.map((sale) => [sale.id, sale.product_name]), [[SALE, "Auricular Ñandú"]])
+    assert.deepEqual(body.mlSales, [])
+    assert.ok(restCalls.every((call) => call.startsWith("GET ")), "el GET sólo lee")
   })
+})
+
+test("contrato: ningún código de la app llama escrituras viejas de ventas externas", async () => {
+  const { readdirSync, readFileSync, statSync } = await import("node:fs")
+  const { join } = await import("node:path")
+  const files = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name)
+    return statSync(path).isDirectory() ? files(path) : /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : []
+  })
+  const sources = ["app", "components", "lib", "hooks", "context"].flatMap((dir) => {
+    try { return files(dir) } catch { return [] }
+  }).map((path) => ({ path, text: readFileSync(path, "utf8") }))
+  assert.ok(sources.length > 100)
+  const offenders = (pattern: RegExp) => sources.filter((source) => pattern.test(source.text)).map((source) => source.path)
+  assert.deepEqual(offenders(/\/api\/admin\/sales-ledger/), [], "ningún componente usa el endpoint viejo")
+  assert.deepEqual(offenders(/reverse_external_sale/), [], "nadie llama la RPC retirada")
+  assert.deepEqual(offenders(/from\(\s*["']external_sales["']\s*\)\s*\.\s*(insert|update|upsert|delete)/), [], "external_sales sólo se escribe por RPC")
+  const migration = readFileSync("supabase/migrations/20261027210000_external_sales_imports_and_lifecycle.sql", "utf8")
+  assert.match(migration, /drop function if exists public\.reverse_external_sale\(uuid, text, uuid, text\);/)
 })

@@ -355,6 +355,8 @@ const TEST_FILES = [
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
 // --conditions=react-server (los hooks de cliente no existen en ese build).
 const TSX_TEST_FILES = [
+  "lib/business/external-sales-file.test.ts",
+  "lib/admin/external-sales-import-modal.test.tsx",
   "lib/admin/dispatch-mobile-control.test.tsx",
   "lib/security/csp-report.test.ts",
   "lib/supabase/proxy-cookies.test.ts",

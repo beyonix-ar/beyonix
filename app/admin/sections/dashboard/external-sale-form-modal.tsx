@@ -339,7 +339,7 @@ export function ExternalSaleFormModal({
           <AdminFormField label="Precio final" help="Lo que pagó el cliente por esta fila.">
             <AdminTextInput title="Precio final" placeholder="0,00" inputMode="decimal" value={form.finalPrice} onChange={(value) => set("finalPrice", value)} />
           </AdminFormField>
-          <AdminFormField label="Envío" help="Costo de envío a cargo de BEYONIX.">
+          <AdminFormField label="Envío" help="Sólo el costo logístico que pagó BEYONIX. Si el cliente pagó su envío, dejalo en $0.">
             <AdminTextInput title="Envío" placeholder="0,00" inputMode="decimal" value={form.shippingAmount} onChange={(value) => set("shippingAmount", value)} />
           </AdminFormField>
           <AdminFormField label="Medio de pago" help="Dato declarado: no se verifica con Mercado Pago.">

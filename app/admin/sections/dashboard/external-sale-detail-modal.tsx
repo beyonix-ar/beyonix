@@ -11,6 +11,7 @@ import {
   EXTERNAL_SALE_REVERSAL_LABELS,
   EXTERNAL_SALE_STATUS_LABELS,
   EXTERNAL_SALE_STOCK_EFFECT_LABELS,
+  EXTERNAL_SALE_UNLINKED_SKU_WARNING,
   externalSaleCode,
   type ExternalSaleReturnCondition,
 } from "@/lib/business/external-sales"
@@ -222,20 +223,27 @@ export function ExternalSaleDetailModal({
             <Item label="SKU">{sale.sku ?? "—"}</Item>
             <Item label="Cantidad">{sale.quantity}</Item>
             <Item label="Precio final">{formatPrice(Number(sale.gross_amount))}</Item>
-            <Item label="Envío">{formatPrice(Number(sale.shipping_amount))}</Item>
+            <Item label="Envío (costo BEYONIX)">{formatPrice(Number(sale.shipping_amount))}</Item>
             <Item label="Ganancia">
               {sale.profit_amount == null ? "Sin costo conocido" : formatPrice(sale.profit_amount)}
               <span className="block text-10px text-white/45">{sale.profit_source === "declared" ? "Declarada" : sale.profit_source === "calculated" ? "Calculada con el costo histórico" : ""}</span>
             </Item>
             <Item label="Ganancia declarada">{sale.declared_profit == null ? "—" : formatPrice(Number(sale.declared_profit))}</Item>
+            <Item label="Costo de mercadería">{sale.cost_amount == null ? "Costo no determinable" : formatPrice(sale.cost_amount)}</Item>
             <Item label="Producto vinculado">
               {detail.catalog.product
                 ? `${detail.catalog.product.nombre}${detail.catalog.variant ? ` · ${detail.catalog.variant.nombre}` : ""}${detail.catalog.product.activo && (detail.catalog.variant?.activo ?? true) ? "" : " (archivado)"}`
-                : "Sin producto vinculado"}
+                : sale.stock_effect === "none" ? EXTERNAL_SALE_UNLINKED_SKU_WARNING : "Sin producto vinculado"}
             </Item>
             <Item label="Registrada">{dateTime(sale.created_at)} · {sale.created_by_name ?? "—"}</Item>
             {sale.notes && <div className="sm:col-span-2 lg:col-span-4"><Item label="Observación">{sale.notes}</Item></div>}
           </div>
+
+          {sale.cost_status === "inconsistent" && (
+            <AdminInfoBlock tone="warning">
+              Inconsistencia financiera: la ganancia declarada supera el ingreso neto de la venta. Se conserva la ganancia declarada; el costo no es determinable y no se suma al costo de ventas.
+            </AdminInfoBlock>
+          )}
 
           {detail.batch && (
             <AdminInfoBlock tone="neutral">
@@ -246,7 +254,7 @@ export function ExternalSaleDetailModal({
 
           {sale.source_values && (
             <details className="rounded-xl border border-white/8 bg-black/20 p-3 text-xs text-white/72">
-              <summary className="cursor-pointer font-black text-white">Valores originales importados</summary>
+              <summary className="cursor-pointer font-black text-white">Valores importados</summary>
               <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
                 {Object.entries(sale.source_values).map(([header, value]) => (
                   <div key={header} className="flex justify-between gap-3 border-b border-white/5 py-1">

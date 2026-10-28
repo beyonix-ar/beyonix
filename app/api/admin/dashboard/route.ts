@@ -859,8 +859,8 @@ export async function GET(request: Request) {
   const mlRows = sensitive
     ? marketplaceScan.rows
     : (mercadoLibreResult.data ?? []) as Array<Record<string, unknown>>
-  // Auditoría 5/7 (P1): reverse_external_sale marca status='reversed' en vez
-  // de borrar la fila (ver 20260921100000_external_sale_reversal.sql) --
+  // Una venta externa anulada (cancel_external_sale o deshacer tanda) queda
+  // con status='reversed' en vez de borrarse --
   // esas ventas ya no son ingreso real y se excluyen de los totales
   // financieros, igual que una orden cancelada. El registro histórico sigue
   // existiendo en la tabla, sólo no suma acá.
@@ -1062,6 +1062,7 @@ export async function GET(request: Request) {
   })
 
   let externalUnits = 0
+  let externalInconsistentProfitSales = 0
   const externalProfitability = new Map<
     string,
     ReturnType<typeof resolveExternalSaleReportedProfitability>
@@ -1105,6 +1106,7 @@ export async function GET(request: Request) {
     })
 
     externalUnits += quantity
+    if (profitability.costStatus === "inconsistent") externalInconsistentProfitSales += 1
     if (profitability.merchandiseCost != null) {
       coveredUnits += quantity
       costOfGoodsSold += profitability.merchandiseCost
@@ -1380,6 +1382,9 @@ export async function GET(request: Request) {
       : []),
     ...(adjustedCostCoveragePercent < 99.999
       ? [`Los costos cubren el ${adjustedCostCoveragePercent.toFixed(1)}% de las unidades vendidas o entregadas como gasto. Completá las compras faltantes para obtener rentabilidad exacta.`]
+      : []),
+    ...(externalInconsistentProfitSales > 0
+      ? [`${externalInconsistentProfitSales} ventas externas declaran una ganancia mayor que su ingreso neto: su costo no es determinable y quedan fuera de la cobertura de costos. Revisalas en Ventas externas.`]
       : []),
     ...(webOrdersWithoutItems.length > 0
       ? [`${webOrdersWithoutItems.length} pedidos pagos no tienen detalle de artículos y no pueden costearse.`]

@@ -12,7 +12,7 @@ import {
 
 type Context = { params: Promise<{ id: string }> }
 
-/** Detalle: datos principales, fila original importada, vínculo de catálogo, tanda e historial. */
+/** Detalle: datos principales, valores importados, vínculo de catálogo, tanda e historial. */
 export async function GET(request: Request, context: Context) {
   const auth = await authorizeExternalSales(request)
   if ("error" in auth) return auth.error

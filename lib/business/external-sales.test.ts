@@ -14,14 +14,14 @@ import {
   validateExternalSaleImportRow,
   type ExternalSalePreviewServerRow,
 } from "./external-sales.ts"
-import { resolveExternalSaleReportedProfitability } from "./external-sale-profitability.ts"
+import { resolveExternalSaleReportedProfitability, resolveExternalSaleUnitCost } from "./external-sale-profitability.ts"
 
 const TODAY = "2026-10-27"
 const HEADER = EXTERNAL_SALE_EXCEL_COLUMNS.map((column) => column.header).join("\t")
 const line = (cells: string[]) => cells.join("\t")
 const ROW_A = line(["15/03/2026", "Lucía Pérez", "WhatsApp", "AUR-1", "Auricular Ñandú", "2", "$ 11.000", "$ 0", "$ 30.000", "Transferencia", "Entregada", "$ 28.500,50", "$ 6.500", "Pagó en dos veces"])
 
-test("TSV del Excel actual: detecta encabezados, normaliza y conserva la fila original completa", () => {
+test("TSV del Excel actual: detecta encabezados, normaliza y conserva los valores importados", () => {
   const sheet = parseExternalSalesSheet(parseTabularText(`${HEADER}\n${ROW_A}\n`), TODAY)
   assert.equal(sheet.error, null)
   assert.equal(sheet.headerDetected, true)
@@ -51,7 +51,11 @@ test("TSV del Excel actual: detecta encabezados, normaliza y conserva la fila or
       Estado: "Entregada", "Precio Final": "$ 28.500,50", Ganancia: "$ 6.500", "Observación": "Pagó en dos veces",
     },
   })
-  assert.ok(!("cost" in (row.payload ?? {})), "Costo y Total no son campos de importación: quedan sólo en la fila original")
+  assert.ok(!("cost" in (row.payload ?? {})), "Costo y Total no son campos de importación: quedan sólo en los valores importados")
+
+  const long = parseExternalSalesSheet(parseTabularText(`${HEADER}\n${ROW_A.replace("Pagó en dos veces", `  Nota   con   espacios ${"x".repeat(600)}`)}`), TODAY).rows[0]
+  assert.equal(long.sourceValues["Observación"].length, 500, "valores importados: celdas limitadas a 500 caracteres")
+  assert.ok(long.sourceValues["Observación"].startsWith("Nota con espacios "), "espacios normalizados: no es una copia byte a byte")
 })
 
 test("sin fila de títulos: acepta las 14 columnas en el orden del Excel; con otro ancho pide los títulos", () => {
@@ -97,16 +101,35 @@ test("errores y advertencias por fila: nunca se convierten en cero", () => {
   assert.ok(parsed.every((row) => row.payload === null))
 })
 
-test("importes, fechas y textos en formato argentino", () => {
+test("importes en formato argentino: interpretación única y documentada, sin adivinar", () => {
   for (const [input, expected] of [
-    ["$ 12.345,67", 12345.67], ["12345.67", 12345.67], ["12.345", 12345], ["1.234.567", 1234567], ["1,5", 1.5],
-    ["1,234.56", 1234.56], ["-$ 1.500", -1500], ["(1.500)", -1500], ["0", 0], ["ARS 900", 900],
+    ["$ 12.345,67", 12345.67], ["12345,67", 12345.67], ["12.345", 12345], ["0", 0], ["$ 0", 0],
+    ["1.234.567", 1234567], ["1,5", 1.5], ["12345.67", 12345.67], ["ARS 900", 900],
+    ["-$ 1.500", -1500], ["$ -1.500,50", -1500.5], ["(1.500)", -1500], ["-0,5", -0.5], ["1,23", 1.23],
   ] as const) {
     assert.equal(parseExternalSaleAmount(input), expected, input)
   }
-  assert.equal(parseExternalSaleAmount(""), null)
-  assert.ok(Number.isNaN(parseExternalSaleAmount("12.34.5,6")))
-  assert.ok(Number.isNaN(parseExternalSaleAmount("doce")))
+  assert.equal(parseExternalSaleAmount(""), null, "vacío = sin dato (en Envío se toma $0)")
+  assert.equal(parseExternalSaleAmount("   "), null)
+  // "1,234": la coma es decimal (nunca 1234) y $1,234 no es un importe en
+  // centavos: se marca inválido en vez de redondear a $1,23 en silencio.
+  for (const invalid of ["1,234", "12345.678", "1,234,567", "1,234.56", "12.34.5,6", "1.2345,6", "doce", "1,", ",5", "1.5.0"]) {
+    assert.ok(Number.isNaN(parseExternalSaleAmount(invalid)), invalid)
+  }
+
+  const header = ["Fecha", "SKU", "Cant.", "Precio Final", "Envío", "Ganancia"].join("\t")
+  const rows = parseExternalSalesSheet(parseTabularText([
+    header,
+    ["01/03/2026", "AUR-1", "1", "$ 12.345,67", "", "-$ 2.000"].join("\t"),
+    ["01/03/2026", "AUR-1", "1", "12345,67", "0", "1.000"].join("\t"),
+    ["01/03/2026", "AUR-1", "1", "1000", "-500", ""].join("\t"),
+  ].join("\n")), TODAY).rows
+  assert.deepEqual(rows[0].payload && [rows[0].payload.gross_amount, rows[0].payload.shipping_amount, rows[0].payload.declared_profit], [12345.67, 0, -2000])
+  assert.deepEqual(rows[1].payload && [rows[1].payload.gross_amount, rows[1].payload.shipping_amount, rows[1].payload.declared_profit], [12345.67, 0, 1000])
+  assert.match(rows[2].errors.join(" "), /Envío inválido/, "el envío es un costo: nunca negativo")
+})
+
+test("fechas y textos en formato argentino", () => {
   assert.equal(parseExternalSaleDate("5/3/26"), "2026-03-05")
   assert.equal(parseExternalSaleDate("2026-03-05 14:30"), "2026-03-05")
   assert.equal(parseExternalSaleDate("29/02/2025"), null)
@@ -127,35 +150,42 @@ function server(index: number, overrides: Partial<ExternalSalePreviewServerRow> 
   }
 }
 
-test("preview: ✅ válida, ⚠️ archivado/histórico, ❌ SKU inexistente o sin stock, 🔁 posible duplicada", () => {
+test("preview: ✅ válida, ⚠️ archivado/SKU sin catálogo, ❌ sin stock o sin nombre, 🔁 posible duplicada", () => {
   const sheetRows = [
     line(["01/03/2026", "Ana", "WhatsApp", "AUR-1", "", "2", "", "", "", "", "", "100", "", ""]),
     line(["01/03/2026", "Ana", "WhatsApp", "AUR-1", "", "2", "", "", "", "", "", "100", "", ""]),
     line(["01/03/2026", "Beto", "WhatsApp", "ARCH-1", "", "1", "", "", "", "", "", "100", "", ""]),
-    line(["01/03/2026", "Caro", "WhatsApp", "VIEJO-1", "", "1", "", "", "", "", "", "100", "", ""]),
-    line(["01/03/2026", "Dani", "WhatsApp", "NO-EXISTE", "", "1", "", "", "", "", "", "100", "", ""]),
+    line(["01/03/2026", "Caro", "WhatsApp", "VIEJO-1", "Cargador discontinuado", "1", "", "", "", "", "", "100", "", ""]),
+    line(["01/03/2026", "Dani", "WhatsApp", "NO-EXISTE", "Funda sólo del Excel", "1", "", "", "", "", "", "100", "", ""]),
     line(["01/03/2026", "Eli", "WhatsApp", "AUR-1", "", "1", "", "", "", "", "", "200", "", ""]),
+    line(["01/03/2026", "Fede", "WhatsApp", "SIN-NOMBRE", "", "1", "", "", "", "", "", "100", "", ""]),
   ]
   const parsed = parseExternalSalesSheet(parseTabularText([HEADER, ...sheetRows].join("\n")), TODAY).rows
+  const unlinked = { product_id: null, product_name: null, available_units: null }
   const serverRows = [
     server(0), server(1),
     server(2, { resolution: "archived", product_id: 3 }),
-    server(3, { resolution: "historical", product_id: null, product_name: null, available_units: null }),
-    server(4, { resolution: "missing", product_id: null, product_name: null, available_units: null }),
+    server(3, { resolution: "historical", ...unlinked }),
+    server(4, { resolution: "missing", ...unlinked }),
     server(5, { duplicate_sale_numbers: [42] }),
+    server(6, { resolution: "missing", ...unlinked }),
   ]
 
   const historical = classifyExternalSalePreview(parsed, serverRows, "none")
-  assert.deepEqual(historical.map((row) => row.state), ["valid", "duplicate", "warning", "warning", "error", "duplicate"])
+  assert.deepEqual(historical.map((row) => row.state), ["valid", "duplicate", "warning", "warning", "warning", "duplicate", "error"])
   assert.deepEqual(historical[1].duplicateOf, { saleNumbers: [], inPaste: true })
   assert.deepEqual(historical[5].duplicateOf, { saleNumbers: [42], inPaste: false })
-  assert.match(historical[4].messages.join(" "), /no existe en el catálogo/)
+  assert.deepEqual(historical[4].messages, ["SKU histórico sin vínculo con catálogo actual."], "SKU que sólo figura en el Excel: histórica desvinculada")
+  assert.deepEqual(historical[3].messages, ["SKU histórico sin vínculo con catálogo actual."])
+  assert.match(historical[6].messages.join(" "), /Falta el nombre del producto/, "sin catálogo ni nombre no hay snapshot que mostrar")
 
-  // Nuevas: el stock disponible (3, ya sin reservas) se reparte entre filas del mismo artículo.
+  // Nuevas: el stock disponible (3, ya sin reservas) se reparte entre filas
+  // del mismo artículo, y el SKU sin catálogo es error: producto válido obligatorio.
   const fresh = classifyExternalSalePreview(parsed, serverRows, "consume")
-  assert.deepEqual(fresh.map((row) => row.state), ["valid", "error", "warning", "error", "error", "duplicate"])
+  assert.deepEqual(fresh.map((row) => row.state), ["valid", "error", "warning", "error", "error", "duplicate", "error"])
   assert.match(fresh[1].messages.join(" "), /Stock insuficiente: quedan 1 unidades/)
-  assert.match(fresh[3].messages.join(" "), /sólo puede importarse como histórica/)
+  assert.match(fresh[3].messages.join(" "), /una venta nueva necesita un producto válido/)
+  assert.match(fresh[4].messages.join(" "), /Sólo puede importarse como histórica/)
 })
 
 test("contrato API: valida forma y tipos de cada fila; el producto se identifica sólo por SKU", () => {
@@ -197,4 +227,40 @@ test("51. ganancia reportada: histórica conserva la declarada; nueva usa el cos
   assert.deepEqual([unknown.profitAmount, unknown.merchandiseCost, unknown.profitSource], [null, null, null])
   const negative = resolveExternalSaleReportedProfitability({ ...amounts, stockEffect: "none", declaredProfit: -500, merchandiseCost: null })
   assert.equal(negative.profitAmount, -500, "una pérdida declarada se conserva")
+  assert.equal(negative.costStatus, "known")
+  assert.equal(unknown.costStatus, "undeterminable")
+})
+
+test("ganancia declarada imposible: se conserva, el costo queda no determinable y se marca inconsistente", () => {
+  // Ingreso $10.000 y ganancia -$5.000: costo implícito $15.000, coherente.
+  const loss = resolveExternalSaleReportedProfitability({
+    grossAmount: 10000, feeAmount: 0, shippingAmount: 0, otherExpenseAmount: 0,
+    stockEffect: "none", declaredProfit: -5000, merchandiseCost: null,
+  })
+  assert.deepEqual([loss.profitAmount, loss.merchandiseCost, loss.costStatus], [-5000, 15000, "known"])
+
+  // Ganancia $12.000 sobre ingreso neto $10.000: el costo sería -$2.000. No se inventa.
+  const impossible = resolveExternalSaleReportedProfitability({
+    grossAmount: 10500, feeAmount: 0, shippingAmount: 500, otherExpenseAmount: 0,
+    stockEffect: "none", declaredProfit: 12000, merchandiseCost: 3000,
+  })
+  assert.equal(impossible.profitAmount, 12000, "la ganancia declarada no se oculta")
+  assert.equal(impossible.profitSource, "declared")
+  assert.equal(impossible.merchandiseCost, null, "costo no determinable, nunca negativo")
+  assert.equal(impossible.costStatus, "inconsistent")
+})
+
+test("envío = costo logístico de BEYONIX: resta del ingreso neto; $0 por defecto no cambia nada", () => {
+  const base = { grossAmount: 20000, feeAmount: 0, otherExpenseAmount: 0, stockEffect: "consume", declaredProfit: null, merchandiseCost: 8000 }
+  assert.equal(resolveExternalSaleReportedProfitability({ ...base, shippingAmount: 0 }).profitAmount, 12000)
+  assert.equal(resolveExternalSaleReportedProfitability({ ...base, shippingAmount: 1500 }).profitAmount, 10500)
+  const [row] = parseExternalSalesSheet(parseTabularText(`Fecha\tSKU\tCant.\tPrecio Final\n01/03/2026\tAUR-1\t1\t20000`), TODAY).rows
+  assert.equal(row.payload?.shipping_amount, 0, "sin columna Envío = sin costo para BEYONIX")
+})
+
+test("venta sin producto vinculado: $0 de costo manual es 'no informado', no costo cero", () => {
+  assert.equal(resolveExternalSaleUnitCost({ productId: null, historicalUnitCost: null, manualUnitCost: 0 }), null)
+  assert.equal(resolveExternalSaleUnitCost({ productId: null, historicalUnitCost: null, manualUnitCost: 1200 }), 1200)
+  // Con producto: sólo el costo histórico a la fecha, nunca el de hoy.
+  assert.equal(resolveExternalSaleUnitCost({ productId: 1, historicalUnitCost: null, manualUnitCost: 999 }), null)
 })

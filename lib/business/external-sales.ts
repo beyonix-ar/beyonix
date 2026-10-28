@@ -200,8 +200,20 @@ export function normalizeExternalSaleStatus(text: string): { code: ExternalSaleS
 }
 
 /**
- * Importe en formato argentino o de planilla: "$ 12.345,67", "12345.67",
- * "-1.500", "(1.500)". Devuelve null si la celda está vacía y NaN si no es un número.
+ * Importe en formato argentino, sin heurísticas por cantidad de dígitos
+ * después de la coma:
+ * - la coma es siempre el separador decimal ("1,234" = 1,234; "12345,67");
+ *   más de una coma es inválido;
+ * - el punto es separador de miles sólo en grupos de 3 ("12.345",
+ *   "1.234.567"); un único punto seguido de otra cantidad de dígitos es
+ *   decimal ("12345.67", como lo exporta una planilla);
+ * - con punto y coma, el punto agrupa miles y la coma va al final
+ *   ("$ 12.345,67"); el orden inverso ("1,234.56") es inválido;
+ * - más de 2 decimales es inválido: "1,234" sería $1,234 en formato
+ *   argentino, y en vez de redondearlo a $1,23 (o leerlo como 1234) se
+ *   marca para revisar.
+ * Acepta "$", "ARS", signo "-" y negativos entre paréntesis "(1.500)".
+ * Devuelve null si la celda está vacía y NaN si no es un número válido.
  */
 export function parseExternalSaleAmount(text: string): number | null {
   let value = cleanCell(text).replace(/ars|\$/gi, "").replace(/\s+/g, "")
@@ -216,25 +228,18 @@ export function parseExternalSaleAmount(text: string): number | null {
     value = value.slice(1)
   }
   if (!/^[\d.,]+$/.test(value) || !/\d/.test(value)) return Number.NaN
-  const lastComma = value.lastIndexOf(",")
-  const lastDot = value.lastIndexOf(".")
   let normalized: string
-  if (lastComma >= 0 && lastDot >= 0) {
-    const grouped = lastComma > lastDot ? /^\d{1,3}(\.\d{3})*,\d+$/ : /^\d{1,3}(,\d{3})*\.\d+$/
-    if (!grouped.test(value)) return Number.NaN
-    normalized = lastComma > lastDot
-      ? value.replace(/\./g, "").replace(",", ".")
-      : value.replace(/,/g, "")
-  } else if (lastComma >= 0) {
-    normalized = /^\d{1,3}(,\d{3})+$/.test(value) && value.split(",").length > 2
-      ? value.replace(/,/g, "")
-      : value.replace(",", ".")
+  if (value.includes(",")) {
+    if (!/^(\d+|\d{1,3}(\.\d{3})+),\d+$/.test(value)) return Number.NaN
+    normalized = value.replace(/\./g, "").replace(",", ".")
   } else if (/^\d{1,3}(\.\d{3})+$/.test(value)) {
     normalized = value.replace(/\./g, "")
-  } else {
+  } else if (/^\d+(\.\d+)?$/.test(value)) {
     normalized = value
+  } else {
+    return Number.NaN
   }
-  if ((normalized.match(/\./g) ?? []).length > 1) return Number.NaN
+  if ((normalized.split(".")[1] ?? "").length > 2) return Number.NaN
   const parsed = Number(normalized)
   if (!Number.isFinite(parsed)) return Number.NaN
   return Math.round((negative ? -parsed : parsed) * 100) / 100
@@ -465,6 +470,8 @@ export function parseExternalSalesSheet(matrix: string[][], today = argentinaTod
       const column = fields.indexOf(field)
       return column >= 0 ? cleanCell(cells[column]) : ""
     }
+    // Valores importados (no una copia exacta): espacios normalizados y cada
+    // celda limitada a 500 caracteres, igual que valida la API.
     const sourceValues: Record<string, string> = {}
     headers.forEach((header, column) => {
       const cell = cleanCell(cells[column])
@@ -601,10 +608,11 @@ export interface ExternalSalePreviewRow {
 }
 
 const RESOLUTION_ERRORS: Partial<Record<ExternalSaleSkuResolution, string>> = {
-  missing: "El SKU no existe en el catálogo.",
   needs_variant: "El SKU es de un producto con variantes: usá el SKU de la variante vendida.",
   conditioned: "El SKU es de stock reacondicionado y no se admite en ventas externas.",
 }
+
+export const EXTERNAL_SALE_UNLINKED_SKU_WARNING = "SKU histórico sin vínculo con catálogo actual."
 
 /**
  * Clasifica cada fila para el preview según el modo elegido. Con modo
@@ -636,12 +644,17 @@ export function classifyExternalSalePreview(
       } else if (server.resolution === "archived") {
         messages.push("El producto está archivado.")
         warned = true
-      } else if (server.resolution === "historical") {
+      } else if (server.resolution === "historical" || server.resolution === "missing") {
+        // Una histórica no mueve stock: puede quedar sin producto vinculado,
+        // conservando el SKU y el nombre del Excel. Una nueva no.
         if (mode === "consume") {
-          messages.push("El SKU ya no está en el catálogo: sólo puede importarse como histórica.")
+          messages.push("El SKU no está en el catálogo actual: una venta nueva necesita un producto válido. Sólo puede importarse como histórica.")
+          blocked = true
+        } else if (!parsed.payload?.product_name) {
+          messages.push(`${EXTERNAL_SALE_UNLINKED_SKU_WARNING} Falta el nombre del producto en la columna Producto.`)
           blocked = true
         } else {
-          messages.push("SKU histórico: ya no está en el catálogo. Se importa sin producto vinculado.")
+          messages.push(EXTERNAL_SALE_UNLINKED_SKU_WARNING)
           warned = true
         }
       }

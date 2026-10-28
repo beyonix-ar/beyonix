@@ -25,9 +25,10 @@ const SETUP_MIGRATIONS = [
   MIGRATION,
 ]
 
-async function setup() {
+async function setup(beforeMigrations = "") {
   const db = new PGlite()
   await db.exec(FIXTURE)
+  if (beforeMigrations) await db.exec(beforeMigrations)
   for (const file of SETUP_MIGRATIONS) await db.exec(read(file))
   await db.exec(`
     insert into auth.users values ('${ADMIN}'), ('${OPERATOR}');
@@ -96,7 +97,7 @@ const cancel = (db: PGlite, id: string, kind: string, condition: string | null, 
 
 const BASE = { aur: 10, funda: 8, arch: 2, negra: 5, azul: 3 }
 
-test("44. importación histórica: conserva fecha, precio, ganancia, origen y fila original sin mover stock", async () => {
+test("44. importación histórica: conserva fecha, precio, ganancia, origen y valores importados sin mover stock", async () => {
   const db = await setup()
   try {
     const rows = [
@@ -120,7 +121,7 @@ test("44. importación histórica: conserva fecha, precio, ganancia, origen y fi
     ])
     assert.equal(stored[1].product_name, "Funda Ñandú · Negra", "sin nombre en el Excel usa el del catálogo")
     assert.equal(stored[3].product_name, "Cargador discontinuado", "SKU histórico conserva el nombre del Excel")
-    assert.deepEqual(stored[0].source_values, sourceValues("AUR-1"), "conserva las 14 columnas originales, incluidas Costo y Total")
+    assert.deepEqual(stored[0].source_values, sourceValues("AUR-1"), "conserva los valores importados de las 14 columnas, incluidas Costo y Total")
     assert.equal(stored[0].status, "delivered")
     assert.equal(stored[0].channel, "whatsapp")
     assert.equal(stored[0].payment_method_code, "transfer")
@@ -159,10 +160,10 @@ test("45. importación nueva: descuenta producto y variante, respeta reservas y 
     assert.deepEqual(await one(db, "select (select count(*)::int from external_sales) sales, (select count(*)::int from external_sale_import_batches) batches"), before)
     assert.deepEqual(await stock(db), { ...BASE, aur: 5, funda: 6, azul: 1 })
 
-    // Un SKU que ya no está en el catálogo no puede descontar stock; uno con variantes exige la variante.
-    await assert.rejects(importBatch(db, [sale(2, { sku: "VIEJO-1" })], "consume"), /EXTERNAL_SALE_IMPORT_INVALID_ROW: fila 2: el SKU VIEJO-1 ya no está en el catálogo/)
+    // Un SKU que no está en el catálogo actual nunca descuenta stock: venta nueva = producto válido obligatorio.
+    await assert.rejects(importBatch(db, [sale(2, { sku: "VIEJO-1" })], "consume"), /EXTERNAL_SALE_IMPORT_INVALID_ROW: fila 2: el SKU VIEJO-1 no está en el catálogo actual: una venta nueva necesita un producto válido/)
+    await assert.rejects(importBatch(db, [sale(8, { sku: "NO-EXISTE" })], "consume"), /fila 8: el SKU NO-EXISTE no está en el catálogo actual/)
     await assert.rejects(importBatch(db, [sale(7, { sku: "FUN" })], "none"), /fila 7: el SKU FUN es de un producto con variantes/)
-    await assert.rejects(importBatch(db, [sale(8, { sku: "NO-EXISTE" })], "none"), /fila 8: el SKU NO-EXISTE no existe/)
     await assert.rejects(importBatch(db, [sale(9, { sale_date: "2999-01-01" })], "none"), /fila 9: la fecha de venta/)
     await assert.rejects(importBatch(db, [sale(9, { product_id: 1 })], "none"), /se identifica sólo por SKU/)
   } finally {
@@ -183,9 +184,12 @@ test("46. duplicados: idempotencia por tanda y advertencia confirmable para vent
     assert.equal((await stock(db)).aur, 8, "el retry no descuenta dos veces")
     await assert.rejects(importBatch(db, [sale(2, { quantity: 2 })], "consume", idempotencyKey), /IDEMPOTENCY_PAYLOAD_MISMATCH/)
     await assert.rejects(
-      db.query("insert into external_sales (product_name, origin, import_batch_id, source_row_number, stock_effect) values ('x', 'paste', $1, 2, 'none')", [first.batch_id]),
+      db.transaction(async (tx) => {
+        await tx.query("select set_config('beyonix.external_sale_write', 'rpc', true)")
+        await tx.query("insert into external_sales (product_name, origin, import_batch_id, source_row_number, stock_effect) values ('x', 'paste', $1, 2, 'none')", [first.batch_id])
+      }),
       /external_sales_batch_row_uidx/,
-      "misma tanda + misma fila no puede existir dos veces",
+      "misma tanda + misma fila no puede existir dos veces (aun dentro de una RPC)",
     )
 
     // Misma fecha, SKU, cliente, cantidad y precio: posible duplicada, no bloqueo definitivo.
@@ -235,7 +239,11 @@ test("47. edición: cantidad y SKU mueven stock sólo en ventas nuevas; versión
     // Más unidades que las disponibles: rechazado.
     await assert.rejects(update(db, created.id, 3, { quantity: 6 }), /EXTERNAL_SALE_STOCK_UNAVAILABLE: FUN-NEG tiene 5 unidades/)
     await assert.rejects(update(db, created.id, 3, { stock_effect: "none" }), /el campo stock_effect no se puede editar/)
-    await assert.rejects(db.query("update external_sales set stock_effect = 'none' where id = $1", [created.id]), /EXTERNAL_SALE_STOCK_EFFECT_IMMUTABLE/)
+    await assert.rejects(db.query("update external_sales set stock_effect = 'none' where id = $1", [created.id]), /EXTERNAL_SALE_WRITE_PATH_FORBIDDEN/)
+    await assert.rejects(db.transaction(async (tx) => {
+      await tx.query("select set_config('beyonix.external_sale_write', 'rpc', true)")
+      await tx.query("update external_sales set stock_effect = 'none' where id = $1", [created.id])
+    }), /EXTERNAL_SALE_STOCK_EFFECT_IMMUTABLE/, "ni siquiera una RPC puede cambiar Histórica/Nueva")
 
     // Histórica: cambiar SKU y cantidad no mueve stock.
     await importBatch(db, [sale(5, { customer_name: "Histórica" })], "none")
@@ -418,4 +426,117 @@ test("51. ventas externas no crean pedidos web, pagos ni eventos de analítica",
   const migration = read(MIGRATION)
   assert.doesNotMatch(migration, /insert into public\.(ordenes|orden_items|analytics_\w+|mercadopago\w*)/i)
   assert.doesNotMatch(migration, /delete from public\.external_sales/i, "las ventas nunca se borran físicamente")
+})
+
+// Vista vieja como estaba en producción (creada a mano desde supabase/sql/094):
+// sumaba ventas externas anuladas e Históricas y no veía variantes.
+const LEGACY_BREAKDOWN_VIEW = `
+  create view public.inventory_stock_breakdown with (security_invoker = true) as
+  select products.id as product_id, coalesce((
+    select sum(sales.quantity) from public.external_sales sales where sales.product_id = products.id
+  ), 0) as external_sold_quantity
+  from public.productos products;
+  grant select on public.inventory_stock_breakdown to anon, authenticated;
+`
+
+test("caminos viejos: reverse_external_sale e inventory_stock_breakdown retirados; escrituras directas bloqueadas", async () => {
+  const db = await setup(LEGACY_BREAKDOWN_VIEW)
+  try {
+    const retired = await one<Row>(db, `select
+      to_regprocedure('public.reverse_external_sale(uuid, text, uuid, text)') is null as reverse_gone,
+      to_regclass('public.inventory_stock_breakdown') is null as breakdown_gone`)
+    assert.deepEqual(retired, { reverse_gone: true, breakdown_gone: true })
+
+    await importBatch(db, [sale(2, { quantity: 2, customer_name: "Directa" })], "consume")
+    const target = await saleBy(db, "customer_name = 'Directa'")
+    assert.equal((await stock(db)).aur, 8)
+
+    // Lo que hacían /api/admin/sales-ledger y reverse_external_sale: rechazado aun con service_role.
+    for (const sql of [
+      "insert into external_sales (sale_date, product_id, product_name, quantity, gross_amount) values (current_date, 1, 'Bypass', 1, 100)",
+      `update external_sales set quantity = 1, gross_amount = 100 where id = '${target.id}'`,
+      `update external_sales set notes = 'cambio suelto' where id = '${target.id}'`,
+      `update external_sales set status = 'reversed', reversed_at = now(), reversal_reason = 'Reversión por camino viejo',
+        reversal_amount = 0, reversal_idempotency_key = 'legacy-reverse-001' where id = '${target.id}'`,
+    ]) {
+      await assert.rejects(db.query(sql), /EXTERNAL_SALE_WRITE_PATH_FORBIDDEN/, sql.slice(0, 40))
+    }
+    const after = await one<Row>(db, "select status, quantity, version, reversal_kind from external_sales where id = $1", [target.id])
+    assert.deepEqual(after, { status: "delivered", quantity: 2, version: 1, reversal_kind: null })
+    assert.equal((await stock(db)).aur, 8, "ningún camino viejo devolvió stock")
+
+    // El ciclo de vida nuevo sí: anulación con tipo, versión y stock.
+    const cancelled = await cancel(db, target.id, "entry_error", null, key("cancel"), 1)
+    assert.equal(cancelled.reversal_kind, "entry_error")
+    assert.equal((await stock(db)).aur, 10)
+  } finally {
+    await db.close()
+  }
+})
+
+test("SKU histórico sin catálogo y producto eliminado: la venta se conserva con sus snapshots", async () => {
+  const db = await setup()
+  try {
+    const result = await importBatch(db, [
+      sale(2, { sku: "SOLO-EXCEL-9", product_name: "Funda sólo del Excel", quantity: 2, gross_amount: 7000, declared_profit: 1500 }),
+      sale(3, { sku: "ARCH-1", product_name: "Parlante viejo", customer_name: "Con producto" }),
+    ], "none")
+    assert.equal(result.imported, 2)
+    assert.deepEqual(await stock(db), BASE, "las históricas desvinculadas no mueven stock")
+    const unlinked = await one<Row>(db, "select product_id, variant_id, sku, product_name, quantity, unit_price::text, gross_amount::text, stock_effect from external_sales where sku = 'SOLO-EXCEL-9'")
+    assert.deepEqual(unlinked, {
+      product_id: null, variant_id: null, sku: "SOLO-EXCEL-9", product_name: "Funda sólo del Excel",
+      quantity: 2, unit_price: "3500.00", gross_amount: "7000.00", stock_effect: "none",
+    })
+    await assert.rejects(importBatch(db, [sale(4, { sku: "SOLO-EXCEL-8", product_name: "" })], "none"), /fila 4: falta el nombre del producto/)
+    await assert.rejects(
+      importBatch(db, [sale(5, { sku: "SOLO-EXCEL-7", product_name: "Algo" })], "consume"),
+      /fila 5: el SKU SOLO-EXCEL-7 no está en el catálogo actual: una venta nueva necesita un producto válido/,
+    )
+    const manual = await one<{ r: Row }>(db, "select to_jsonb(public.create_external_sale_idempotent($1::jsonb, $2, $3)) as r", [
+      JSON.stringify({ sale_date: "2025-05-01", sku: "SOLO-EXCEL-6", product_name: "Cable viejo", quantity: 1, gross_amount: 900, channel: "direct", stock_effect: "consume", status: "completed" }),
+      ADMIN, key("manual"),
+    ]).catch((error: Error) => ({ r: { error: error.message } }))
+    assert.match(String(manual.r.error), /una venta nueva necesita un producto válido/, "alta manual Nueva: producto válido obligatorio")
+
+    // El producto se elimina: la venta sigue igual, con nombre y SKU propios.
+    const linked = await saleBy(db, "customer_name = 'Con producto'")
+    await db.query("delete from productos where id = 3")
+    const orphan = await one<Row>(db, "select product_id, sku, product_name, quantity, gross_amount::text, version from external_sales where id = $1", [linked.id])
+    assert.deepEqual(orphan, { product_id: null, sku: "ARCH-1", product_name: "Parlante viejo", quantity: 1, gross_amount: "15000.00", version: 1 })
+    const relink = await one<Row>(db, "select before_data ? 'source_values' as before_sv, after_data ? 'source_values' as after_sv, after_data ->> 'product_id' as product_id from audit_logs where record_id = $1 and action = 'UPDATE'", [linked.id])
+    assert.deepEqual(relink, { before_sv: false, after_sv: false, product_id: null }, "el cambio de vínculo queda auditado sin copiar los valores importados")
+  } finally {
+    await db.close()
+  }
+})
+
+test("auditoría: un evento explícito por operación, con email del actor y sin copiar source_values", async () => {
+  const db = await setup()
+  try {
+    const batch = await importBatch(db, [sale(2), sale(3, { customer_name: "B" }), sale(4, { customer_name: "C" })], "consume")
+    const counts = async () => one<{ n: number; with_values: number; without_email: number }>(db, `select count(*)::int n,
+      count(*) filter (where coalesce(before_data, '{}') ? 'source_values' or coalesce(after_data, '{}') ? 'source_values')::int with_values,
+      count(*) filter (where actor_email is null)::int without_email
+      from audit_logs where table_name = 'external_sales'`)
+    assert.deepEqual(await counts(), { n: 1, with_values: 0, without_email: 0 }, "una tanda de 3 ventas = 1 evento, no 3 copias de cada fila")
+
+    const target = await saleBy(db, "customer_name = 'B'")
+    await update(db, target.id, 1, { notes: "Retira el lunes" })
+    await cancel(db, (await saleBy(db, "customer_name = 'C'")).id, "return", "damaged")
+    assert.deepEqual(await counts(), { n: 3, with_values: 0, without_email: 0 })
+    const scopes = (await db.query<{ scope: string; email: string }>(
+      "select after_data ->> 'scope' scope, actor_email email from audit_logs where table_name = 'external_sales' order by id",
+    )).rows
+    assert.deepEqual(scopes, [
+      { scope: "external_sale_import", email: "admin@beyonix.test" },
+      { scope: "external_sale_edit", email: "admin@beyonix.test" },
+      { scope: "external_sale_return", email: "admin@beyonix.test" },
+    ])
+    const stored = await one<{ sv: Row }>(db, "select source_values sv from external_sales where id = $1", [target.id])
+    assert.equal(stored.sv.Producto, "Auricular Ñandú", "la trazabilidad de los valores importados sigue en la venta")
+    assert.ok(batch.batch_id)
+  } finally {
+    await db.close()
+  }
 })

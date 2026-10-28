@@ -40,6 +40,18 @@ function formatDate(value: string) {
 }
 
 /**
+ * Resultado del preview atado a la versión de la entrada que lo produjo.
+ * Cualquier cambio de texto o archivo sube la versión y descarta el preview,
+ * así que nunca se confirma una tanda distinta de la que se está viendo.
+ */
+interface PreviewSnapshot {
+  inputVersion: number
+  sheet: ParsedExternalSalesSheet
+  serverRows: ExternalSalePreviewServerRow[] | null
+  previousBatch: { id: string; created_at: string } | null
+}
+
+/**
  * Pegar filas de Excel o importar un archivo. Nada se escribe hasta confirmar:
  * el preview sólo lee la base (SKU, stock disponible y posibles duplicados).
  */
@@ -54,16 +66,24 @@ export function ExternalSalesImportModal({
 }) {
   const [text, setText] = useState("")
   const [fileName, setFileName] = useState<string | null>(null)
-  const [sheet, setSheet] = useState<ParsedExternalSalesSheet | null>(null)
-  const [serverRows, setServerRows] = useState<ExternalSalePreviewServerRow[] | null>(null)
-  const [previousBatch, setPreviousBatch] = useState<{ id: string; created_at: string } | null>(null)
+  const [inputVersion, setInputVersion] = useState(0)
+  const [snapshot, setSnapshot] = useState<PreviewSnapshot | null>(null)
+  const [pendingVersion, setPendingVersion] = useState<number | null>(null)
   const [mode, setMode] = useState<ExternalSaleStockEffect | null>(null)
   const [confirmed, setConfirmed] = useState<Set<number>>(new Set())
-  const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState("")
+  const versionRef = useRef(0)
+  const requestRef = useRef(0)
   const importingRef = useRef(false)
   const attempt = useRef<IdempotencyAttempt | null>(null)
+
+  // Sólo el preview de la entrada actual cuenta; uno viejo no se muestra ni se confirma.
+  const current = snapshot?.inputVersion === inputVersion ? snapshot : null
+  const sheet = current?.sheet ?? null
+  const serverRows = current?.serverRows ?? null
+  const previousBatch = current?.previousBatch ?? null
+  const loading = pendingVersion === inputVersion
 
   const preview = useMemo(
     () => (sheet ? classifyExternalSalePreview(sheet.rows, serverRows, mode) : []),
@@ -77,14 +97,31 @@ export function ExternalSalesImportModal({
     { valid: 0, warning: 0, duplicate: 0, error: 0 },
   )
 
-  const analyze = async (matrix: string[][]) => {
+  /** Invalida en el acto preview, confirmaciones y clave de la tanda anterior. */
+  const startInput = () => {
+    versionRef.current += 1
+    setInputVersion(versionRef.current)
+    setSnapshot(null)
+    setConfirmed(new Set())
     setError("")
-    setServerRows(null)
-    setPreviousBatch(null)
+    attempt.current = null
+    return versionRef.current
+  }
+
+  const changeMode = (next: ExternalSaleStockEffect) => {
+    if (importingRef.current) return
+    setMode(next)
+    setConfirmed(new Set())
+    attempt.current = null
+  }
+
+  const analyze = async (matrix: string[][], version: number) => {
+    if (version !== versionRef.current) return
+    setError("")
     setConfirmed(new Set())
     attempt.current = null
     const parsed = parseExternalSalesSheet(matrix)
-    setSheet(parsed)
+    setSnapshot({ inputVersion: version, sheet: parsed, serverRows: null, previousBatch: null })
     if (parsed.error) return
     const payloads = parsed.rows.flatMap((row) => (row.payload ? [row.payload] : []))
     if (payloads.length > EXTERNAL_SALE_IMPORT_MAX_ROWS) {
@@ -92,32 +129,50 @@ export function ExternalSalesImportModal({
       return
     }
     if (!payloads.length) return
-    setLoading(true)
+    const request = ++requestRef.current
+    // Una respuesta que llega tarde (otra entrada u otro preview posterior) se ignora.
+    const isLatest = () => request === requestRef.current && version === versionRef.current
+    setPendingVersion(version)
     try {
       const result = await previewExternalSalesImport(payloads)
-      setServerRows(result.rows)
-      setPreviousBatch(result.previous_batch)
+      if (!isLatest()) return
+      setSnapshot({ inputVersion: version, sheet: parsed, serverRows: result.rows, previousBatch: result.previous_batch })
     } catch (previewError) {
+      if (!isLatest()) return
       setError(previewError instanceof Error ? previewError.message : "No se pudo verificar las filas contra el catálogo.")
     } finally {
-      setLoading(false)
+      if (isLatest()) setPendingVersion(null)
     }
   }
 
+  const changeText = (value: string) => {
+    if (importingRef.current) return
+    setText(value)
+    startInput()
+  }
+
   const readFile = async (file: File) => {
+    if (importingRef.current) return
+    const version = startInput()
     setFileName(file.name)
-    setError("")
     try {
       const { readExternalSalesFile } = await import("@/lib/business/external-sales-file")
-      await analyze(readExternalSalesFile(await file.arrayBuffer(), file.name))
+      const matrix = readExternalSalesFile(await file.arrayBuffer(), file.name)
+      await analyze(matrix, version)
     } catch (fileError) {
-      setSheet(null)
+      if (version !== versionRef.current) return
       setError(fileError instanceof Error ? fileError.message : "No se pudo leer el archivo.")
     }
   }
 
+  const ready = Boolean(sheet && !sheet.error && serverRows)
+  // Confirmar exige un preview vigente y verificado de exactamente esta
+  // entrada (sin verificación en curso) y el modo elegido. Las filas con
+  // error o duplicadas sin confirmar no se envían.
+  const canConfirm = ready && !loading && !importing && mode !== null && importable.length > 0
+
   const confirm = async () => {
-    if (importingRef.current || !mode || !sheet || !serverRows || !importable.length) return
+    if (importingRef.current || !canConfirm || !mode || !sheet || current?.inputVersion !== versionRef.current) return
     const rows: ExternalSaleImportRowPayload[] = importable.map((row) => ({
       ...(row.parsed.payload as ExternalSaleImportRowPayload),
       ...(row.state === "duplicate" ? { confirm_duplicate: true } : {}),
@@ -153,8 +208,6 @@ export function ExternalSalesImportModal({
     }
   }
 
-  const ready = Boolean(sheet && !sheet.error && serverRows)
-
   return (
     <AdminModal
       open
@@ -173,7 +226,7 @@ export function ExternalSalesImportModal({
           )}
           <AdminSecondaryButton disabled={importing} onClick={onClose}>Cancelar</AdminSecondaryButton>
           {ready && (
-            <AdminPrimaryButton disabled={importing || !mode || !importable.length} onClick={() => void confirm()}>
+            <AdminPrimaryButton disabled={!canConfirm} onClick={() => void confirm()}>
               {importing ? "Importando…" : `Importar ${importable.length} ventas`}
             </AdminPrimaryButton>
           )}
@@ -187,11 +240,15 @@ export function ExternalSalesImportModal({
               title="Filas copiadas desde Excel"
               placeholder="Copiá las filas en Excel (incluida la fila de títulos) y pegalas acá."
               value={text}
-              onChange={setText}
+              disabled={importing}
+              onChange={changeText}
               className="min-h-36 font-mono text-xs"
             />
             <div className="flex justify-end">
-              <AdminSecondaryButton disabled={!text.trim() || loading} onClick={() => void analyze(parseTabularText(text))}>
+              <AdminSecondaryButton
+                disabled={!text.trim() || loading || importing}
+                onClick={() => void analyze(parseTabularText(text), versionRef.current)}
+              >
                 {loading ? "Verificando…" : "Previsualizar"}
               </AdminSecondaryButton>
             </div>
@@ -204,6 +261,7 @@ export function ExternalSalesImportModal({
               type="file"
               className="sr-only"
               aria-label="Archivo de ventas externas"
+              disabled={importing}
               accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
               onChange={(event) => {
                 const file = event.target.files?.[0]
@@ -213,6 +271,10 @@ export function ExternalSalesImportModal({
             />
           </label>
         )}
+
+        <p className="text-xs text-white/50">
+          Envío: sólo el costo logístico que pagó BEYONIX. Si el cliente pagó su envío, va $0 o vacío.
+        </p>
 
         {sheet?.error && <AdminInfoBlock tone="danger">{sheet.error}</AdminInfoBlock>}
         {error && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</p>}
@@ -237,11 +299,11 @@ export function ExternalSalesImportModal({
               })}
             </div>
 
-            <fieldset className="grid gap-2 sm:grid-cols-2">
+            <fieldset className="grid gap-2 sm:grid-cols-2" disabled={importing}>
               <legend className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">¿Qué ventas son?</legend>
               {(["none", "consume"] as const).map((option) => (
                 <label key={option} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/72 has-checked:border-beyonix-sky/50">
-                  <input type="radio" name="external-sales-import-mode" checked={mode === option} onChange={() => setMode(option)} className="mt-1" />
+                  <input type="radio" name="external-sales-import-mode" checked={mode === option} onChange={() => changeMode(option)} className="mt-1" />
                   <span>
                     <span className="block font-black text-white">{option === "none" ? "Históricas" : "Nuevas"}</span>
                     {option === "none"
@@ -289,9 +351,10 @@ export function ExternalSalesImportModal({
                             <label className="mt-1 flex items-center gap-2 text-sky-100">
                               <input
                                 type="checkbox"
+                                disabled={importing}
                                 checked={confirmed.has(row.parsed.sourceRowNumber)}
-                                onChange={(event) => setConfirmed((current) => {
-                                  const next = new Set(current)
+                                onChange={(event) => setConfirmed((selected) => {
+                                  const next = new Set(selected)
                                   if (event.target.checked) next.add(row.parsed.sourceRowNumber)
                                   else next.delete(row.parsed.sourceRowNumber)
                                   return next

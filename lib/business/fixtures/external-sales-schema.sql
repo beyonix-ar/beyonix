@@ -8,6 +8,7 @@ create table auth.users (id uuid primary key);
 create function auth.role() returns text language sql stable as $$
   select coalesce(nullif(current_setting('request.jwt.claim.role', true), ''), 'service_role') $$;
 create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+create function auth.jwt() returns jsonb language sql stable as $$ select null::jsonb $$;
 create table public.profiles (id uuid primary key, rol text not null, email text);
 create table public.audit_logs (id bigserial primary key, table_name text not null,
   action text not null check (action in ('INSERT', 'UPDATE', 'DELETE')), record_id text,

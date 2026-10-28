@@ -148,9 +148,11 @@ comment on column public.external_sales.stock_effect is
 comment on column public.external_sales.origin is
   'manual, paste (filas pegadas desde Excel) o file (archivo importado).';
 comment on column public.external_sales.source_values is
-  'Fila original del Excel tal como se pegó/importó (encabezado -> texto). Sólo trazabilidad: los filtros y reportes usan las columnas normalizadas.';
+  'Valores importados de la fila del Excel (encabezado -> texto), con espacios normalizados y cada celda limitada a 500 caracteres: no es una copia byte a byte. Sólo trazabilidad: los filtros y reportes usan las columnas normalizadas.';
 comment on column public.external_sales.gross_amount is
   'Precio final: lo que pagó el cliente por esta fila. Snapshot histórico, nunca se recalcula con precios actuales.';
+comment on column public.external_sales.shipping_amount is
+  'Costo logístico absorbido por BEYONIX (por defecto $0). Si el cliente pagó su envío directamente, no se carga acá.';
 comment on column public.external_sales.declared_profit is
   'Ganancia declarada (importada del Excel o cargada a mano). Para ventas históricas es la ganancia reportada; nunca se reemplaza por la calculada.';
 comment on column public.external_sales.content_hash is
@@ -409,11 +411,45 @@ create trigger refresh_inventory_after_external_sale
 after insert or update or delete on public.external_sales
 for each row execute function public.refresh_inventory_from_external_sale();
 
--- 5. Guardas de historial ---------------------------------------------------------
+-- 5. Guardas de historial y camino de escritura -----------------------------------
+-- Las ventas externas sólo se crean, editan y anulan por las RPC de esta
+-- migración, que marcan la transacción con beyonix.external_sale_write = 'rpc'.
+-- Fuera de ellas (endpoints viejos, SQL suelto) sólo se admite el cambio de
+-- vínculo de catálogo que hacen fusión/borrado forzado de productos y el
+-- ON DELETE SET NULL de productos.
+
+create or replace function public.external_sale_rpc_write()
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select coalesce(current_setting('beyonix.external_sale_write', true), '') = 'rpc';
+$$;
+
+create or replace function public.guard_external_sale_insert()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if not public.external_sale_rpc_write() then
+    raise exception 'EXTERNAL_SALE_WRITE_PATH_FORBIDDEN: las ventas externas se cargan desde Admin > Ventas externas.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_external_sale_insert on public.external_sales;
+create trigger guard_external_sale_insert
+before insert on public.external_sales
+for each row execute function public.guard_external_sale_insert();
 
 create or replace function public.guard_external_sale_history()
 returns trigger language plpgsql set search_path = public as $$
 begin
+  if not public.external_sale_rpc_write()
+     and (to_jsonb(new) - array['product_id', 'variant_id', 'updated_at'])
+         is distinct from (to_jsonb(old) - array['product_id', 'variant_id', 'updated_at']) then
+    raise exception 'EXTERNAL_SALE_WRITE_PATH_FORBIDDEN: las ventas externas se editan y anulan desde Admin > Ventas externas.';
+  end if;
   if old.status = 'reversed' then
     -- Existing super-admin force-delete RPCs detach catalog references while
     -- preserving the sale. Allow only that backend operation, never an edit.
@@ -442,6 +478,52 @@ begin
   return new;
 end;
 $$;
+
+-- Auditoría por fila de external_sales. Reemplaza al trigger genérico
+-- audit_log_change sólo en esta tabla (la función global no cambia): dentro
+-- de las RPC ya se escribe un evento explícito con actor, alcance y motivo,
+-- así que no se duplica; fuera de ellas (re-vinculación de catálogo) se
+-- registra como siempre, sin copiar source_values ni creation_request en
+-- cada UPDATE (son inmutables y quedan en la fila).
+create or replace function public.audit_external_sale_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor_user_id uuid := auth.uid();
+  v_actor_email text;
+begin
+  if public.external_sale_rpc_write() or current_setting('app.audit_skip', true) = 'true' then
+    return case when tg_op = 'DELETE' then old else new end;
+  end if;
+  select profiles.email into v_actor_email from public.profiles where profiles.id = v_actor_user_id;
+  insert into public.audit_logs (
+    table_name, action, record_id, actor_user_id, actor_email, before_data, after_data
+  ) values (
+    tg_table_name,
+    tg_op,
+    case when tg_op = 'DELETE' then old.id::text else new.id::text end,
+    v_actor_user_id,
+    coalesce(v_actor_email, auth.jwt() ->> 'email'),
+    case
+      when tg_op = 'DELETE' then to_jsonb(old)
+      when tg_op = 'UPDATE' then to_jsonb(old) - array['source_values', 'creation_request']
+    end,
+    case
+      when tg_op = 'INSERT' then to_jsonb(new)
+      when tg_op = 'UPDATE' then to_jsonb(new) - array['source_values', 'creation_request']
+    end
+  );
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+drop trigger if exists external_sales_audit_log_trigger on public.external_sales;
+create trigger external_sales_audit_log_trigger
+after insert or update or delete on public.external_sales
+for each row execute function public.audit_external_sale_change();
 
 -- 6. Helpers de las RPCs ------------------------------------------------------------
 
@@ -674,18 +756,19 @@ begin
         v.product_id := v_resolved.product_id;
         v.variant_id := v_resolved.variant_id;
         v_catalog_name := v_resolved.product_name || coalesce(' · ' || v_resolved.variant_name, '');
-      elsif v_resolved.resolution = 'historical' then
+      elsif v_resolved.resolution in ('historical', 'missing') then
+        -- SKU histórico sin vínculo con el catálogo actual (ya no existe o
+        -- sólo figura en el Excel): admisible únicamente como histórica,
+        -- que no mueve stock. Se conservan SKU y nombre del Excel.
         if p_stock_effect = 'consume' then
-          raise exception 'EXTERNAL_SALE_INVALID: %el SKU % ya no está en el catálogo: sólo puede cargarse como venta histórica.', v_prefix, v.sku;
+          raise exception 'EXTERNAL_SALE_INVALID: %el SKU % no está en el catálogo actual: una venta nueva necesita un producto válido. Sólo puede cargarse como venta histórica.', v_prefix, v.sku;
         end if;
         v.product_id := null;
         v.variant_id := null;
       elsif v_resolved.resolution = 'needs_variant' then
         raise exception 'EXTERNAL_SALE_INVALID: %el SKU % es de un producto con variantes: usá el SKU de la variante vendida.', v_prefix, v.sku;
-      elsif v_resolved.resolution = 'conditioned' then
-        raise exception 'EXTERNAL_SALE_INVALID: %el SKU % es de stock reacondicionado y no se admite en ventas externas.', v_prefix, v.sku;
       else
-        raise exception 'EXTERNAL_SALE_INVALID: %el SKU % no existe en el catálogo.', v_prefix, v.sku;
+        raise exception 'EXTERNAL_SALE_INVALID: %el SKU % es de stock reacondicionado y no se admite en ventas externas.', v_prefix, v.sku;
       end if;
     end if;
   end if;
@@ -731,6 +814,52 @@ begin
 end;
 $$;
 
+-- Serializa la comprobación de posibles duplicados entre transacciones
+-- concurrentes (dos tandas iguales con claves distintas, o una tanda y un
+-- alta manual). Se bloquea por huella (en 256 grupos, para acotar la
+-- cantidad de locks de una tanda grande) antes de comprobar y se mantiene
+-- hasta el commit: quien llega segundo espera y ve las filas del primero.
+-- No es una restricción: "Es una venta distinta" sigue permitiendo
+-- registrar ventas iguales. Orden global de locks: idempotencia -> huellas
+-- -> productos.
+create or replace function public.external_sale_lock_content_hashes(p_hashes text[])
+returns void
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_bucket integer;
+begin
+  for v_bucket in
+    select distinct hashtext(hashes.hash) & 255
+    from unnest(p_hashes) hashes(hash)
+    where hashes.hash is not null
+    order by 1
+  loop
+    perform pg_advisory_xact_lock(hashtext('external-sale-content'), v_bucket);
+  end loop;
+end;
+$$;
+
+-- Marca la transacción como escritura legítima de ventas externas (ver
+-- guard_external_sale_insert / guard_external_sale_history).
+create or replace function public.external_sale_begin_write(p_actor_id uuid)
+returns void
+language sql
+set search_path = public
+as $$
+  select set_config('beyonix.actor_id', p_actor_id::text, true),
+         set_config('beyonix.external_sale_write', 'rpc', true);
+$$;
+
+create or replace function public.external_sale_end_write()
+returns void
+language sql
+set search_path = public
+as $$
+  select set_config('beyonix.external_sale_write', '', true);
+$$;
+
 create or replace function public.external_sale_audit_payload(p_sale public.external_sales)
 returns jsonb
 language sql
@@ -738,6 +867,25 @@ immutable
 set search_path = public
 as $$
   select to_jsonb(p_sale) - array['creation_request', 'creation_idempotency_key', 'source_values'];
+$$;
+
+-- Evento explícito de las RPC: con actor y email para que Auditoría lo muestre.
+create or replace function public.external_sale_write_audit(
+  p_action text,
+  p_record_id text,
+  p_actor_id uuid,
+  p_before jsonb,
+  p_after jsonb
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.audit_logs (table_name, action, record_id, actor_user_id, actor_email, before_data, after_data)
+  select 'external_sales', p_action, p_record_id, p_actor_id,
+    (select profiles.email from public.profiles where profiles.id = p_actor_id),
+    p_before, p_after;
 $$;
 
 -- 7. Alta manual ----------------------------------------------------------------------
@@ -766,6 +914,10 @@ begin
   end if;
 
   v_input := public.external_sale_prepare(p_payload, v_stock_effect, true);
+  -- Una tanda concurrente con el mismo contenido espera a este alta y la ve.
+  perform public.external_sale_lock_content_hashes(array[public.external_sale_content_hash(
+    v_input.sale_date, v_input.sku, v_input.customer_name, v_input.quantity, v_input.gross_amount
+  )]);
   perform public.external_sale_lock_products(array[v_input.product_id]);
   if public.external_sale_consumes_stock(v_input.stock_effect, v_input.status, null, null) then
     v_available := public.external_sale_available_units(v_input.product_id, v_input.variant_id);
@@ -775,7 +927,7 @@ begin
     end if;
   end if;
 
-  perform set_config('beyonix.actor_id', p_actor_id::text, true);
+  perform public.external_sale_begin_write(p_actor_id);
   insert into public.external_sales (
     sale_date, product_id, variant_id, product_name, sku, quantity, unit_price, unit_cost,
     gross_amount, fee_type, fee_value, fee_amount, shipping_amount, other_expense_amount,
@@ -792,11 +944,11 @@ begin
     v_input.stock_effect, 'manual', p_actor_id, p_actor_id, p_idempotency_key, p_payload
   ) returning * into v_sale;
 
-  insert into public.audit_logs (table_name, action, record_id, actor_user_id, before_data, after_data)
-  values (
-    'external_sales', 'INSERT', v_sale.id::text, p_actor_id, null,
+  perform public.external_sale_write_audit(
+    'INSERT', v_sale.id::text, p_actor_id, null,
     public.external_sale_audit_payload(v_sale) || jsonb_build_object('scope', 'external_sale_create')
   );
+  perform public.external_sale_end_write();
   return v_sale;
 end;
 $$;
@@ -910,7 +1062,7 @@ begin
     end if;
   end if;
 
-  perform set_config('beyonix.actor_id', p_actor_id::text, true);
+  perform public.external_sale_begin_write(p_actor_id);
   update public.external_sales
   set sale_date = v_new.sale_date,
       customer_name = v_new.customer_name,
@@ -950,13 +1102,13 @@ begin
   where id = p_id
   returning * into v_new;
 
-  insert into public.audit_logs (table_name, action, record_id, actor_user_id, before_data, after_data)
-  values (
-    'external_sales', 'UPDATE', p_id::text, p_actor_id,
+  perform public.external_sale_write_audit(
+    'UPDATE', p_id::text, p_actor_id,
     public.external_sale_audit_payload(v_old),
     public.external_sale_audit_payload(v_new)
       || jsonb_build_object('scope', 'external_sale_edit', 'edit_reason', v_reason)
   );
+  perform public.external_sale_end_write();
   return v_new;
 end;
 $$;
@@ -1018,7 +1170,7 @@ begin
 
   v_before := v_sale;
   perform public.external_sale_lock_products(array[v_sale.product_id]);
-  perform set_config('beyonix.actor_id', p_actor_id::text, true);
+  perform public.external_sale_begin_write(p_actor_id);
 
   update public.external_sales
   set status = 'reversed',
@@ -1039,9 +1191,8 @@ begin
   where id = p_id
   returning * into v_sale;
 
-  insert into public.audit_logs (table_name, action, record_id, actor_user_id, before_data, after_data)
-  values (
-    'external_sales', 'UPDATE', p_id::text, p_actor_id,
+  perform public.external_sale_write_audit(
+    'UPDATE', p_id::text, p_actor_id,
     public.external_sale_audit_payload(v_before),
     public.external_sale_audit_payload(v_sale) || jsonb_build_object(
       'scope', case when p_kind = 'return' then 'external_sale_return' else 'external_sale_entry_error' end,
@@ -1050,6 +1201,7 @@ begin
         and not public.external_sale_consumes_stock(v_sale.stock_effect, v_sale.status, v_sale.reversal_kind, v_sale.return_condition)
     )
   );
+  perform public.external_sale_end_write();
   return v_sale;
 end;
 $$;
@@ -1246,26 +1398,39 @@ begin
       raise exception '%', replace(sqlerrm, 'EXTERNAL_SALE_INVALID:', 'EXTERNAL_SALE_IMPORT_INVALID_ROW:');
     end;
 
-    v_hash := public.external_sale_content_hash(
-      v_sale.sale_date, v_sale.sku, v_sale.customer_name, v_sale.quantity, v_sale.gross_amount
+    v_prepared := v_prepared || jsonb_build_array(
+      to_jsonb(v_sale) || jsonb_build_object(
+        'source_row_number', v_row_number,
+        'source_values', nullif(v_row -> 'source_values', 'null'::jsonb),
+        'duplicate_hash', public.external_sale_content_hash(
+          v_sale.sale_date, v_sale.sku, v_sale.customer_name, v_sale.quantity, v_sale.gross_amount
+        ),
+        'confirm_duplicate', coalesce((v_row ->> 'confirm_duplicate')::boolean, false)
+      )
     );
-    if coalesce((v_row ->> 'confirm_duplicate')::boolean, false) is not true and (
+  end loop;
+
+  -- Posibles duplicados: primero el lock por huella, después la comprobación,
+  -- para que dos tandas iguales confirmadas a la vez (con claves distintas)
+  -- no pasen ambas la advertencia. Las Históricas no siempre bloquean un
+  -- producto, por eso no alcanza con el lock por producto.
+  perform public.external_sale_lock_content_hashes(array(
+    select value ->> 'duplicate_hash' from jsonb_array_elements(v_prepared)
+  ));
+  for v_row in select value from jsonb_array_elements(v_prepared)
+  loop
+    v_hash := v_row ->> 'duplicate_hash';
+    if (v_row ->> 'confirm_duplicate')::boolean is not true and (
       v_hash = any(v_seen_hashes)
       or exists (
         select 1 from public.external_sales sales
         where sales.content_hash = v_hash and sales.status <> 'reversed'
       )
     ) then
-      raise exception 'EXTERNAL_SALE_POSSIBLE_DUPLICATE: la % parece repetida. Confirmá que es una venta distinta.', v_label;
+      raise exception 'EXTERNAL_SALE_POSSIBLE_DUPLICATE: la fila % parece repetida. Confirmá que es una venta distinta.',
+        v_row ->> 'source_row_number';
     end if;
     v_seen_hashes := array_append(v_seen_hashes, v_hash);
-
-    v_prepared := v_prepared || jsonb_build_array(
-      to_jsonb(v_sale) || jsonb_build_object(
-        'source_row_number', v_row_number,
-        'source_values', nullif(v_row -> 'source_values', 'null'::jsonb)
-      )
-    );
   end loop;
 
   -- Candados por producto en orden estable (los mismos que usa el checkout).
@@ -1303,7 +1468,7 @@ begin
     v_rows_read, jsonb_array_length(v_prepared), jsonb_array_length(v_prepared), p_idempotency_key
   ) returning id into v_batch_id;
 
-  perform set_config('beyonix.actor_id', p_actor_id::text, true);
+  perform public.external_sale_begin_write(p_actor_id);
   insert into public.external_sales (
     sale_date, product_id, variant_id, product_name, sku, quantity, unit_price, unit_cost,
     gross_amount, fee_type, fee_value, fee_amount, shipping_amount, other_expense_amount,
@@ -1324,9 +1489,10 @@ begin
   order by prepared.source_row_number;
   get diagnostics v_imported = row_count;
 
-  insert into public.audit_logs (table_name, action, record_id, actor_user_id, before_data, after_data)
-  values (
-    'external_sales', 'INSERT', 'external-sale-import:' || v_batch_id::text, p_actor_id, null,
+  -- Un único evento por tanda: cada venta ya guarda su tanda, fila y valores
+  -- importados, así que no se copian 2000 filas comerciales a audit_logs.
+  perform public.external_sale_write_audit(
+    'INSERT', 'external-sale-import:' || v_batch_id::text, p_actor_id, null,
     jsonb_build_object(
       'scope', 'external_sale_import',
       'batch_id', v_batch_id,
@@ -1337,6 +1503,7 @@ begin
       'rows_imported', v_imported
     )
   );
+  perform public.external_sale_end_write();
 
   return jsonb_build_object(
     'batch_id', v_batch_id, 'imported', v_imported, 'stock_mode', v_stock_mode, 'replayed', false
@@ -1406,7 +1573,7 @@ begin
     select sales.product_id from public.external_sales sales
     where sales.import_batch_id = p_batch_id and sales.stock_effect = 'consume'
   ));
-  perform set_config('beyonix.actor_id', p_actor_id::text, true);
+  perform public.external_sale_begin_write(p_actor_id);
 
   update public.external_sales
   set status = 'reversed',
@@ -1430,9 +1597,8 @@ begin
       revert_reason = v_reason
   where id = p_batch_id;
 
-  insert into public.audit_logs (table_name, action, record_id, actor_user_id, before_data, after_data)
-  values (
-    'external_sales', 'UPDATE', 'external-sale-import:' || p_batch_id::text, p_actor_id,
+  perform public.external_sale_write_audit(
+    'UPDATE', 'external-sale-import:' || p_batch_id::text, p_actor_id,
     jsonb_build_object('status', 'completed', 'rows_imported', v_batch.rows_imported),
     jsonb_build_object(
       'scope', 'external_sale_import_revert',
@@ -1442,15 +1608,41 @@ begin
       'revert_reason', v_reason
     )
   );
+  perform public.external_sale_end_write();
 
   return jsonb_build_object('batch_id', p_batch_id, 'reverted', v_reverted, 'status', 'reverted', 'replayed', false);
 end;
 $$;
 
--- 13. Permisos ------------------------------------------------------------------------------
+-- 13. Caminos viejos retirados ----------------------------------------------------------------
+-- reverse_external_sale (20260921100000) marcaba 'reversed' sin tipo de
+-- anulación, sin condición de devolución, sin versión ni tanda: era una vía
+-- privilegiada fuera del ciclo de vida. Su único consumidor
+-- (/api/admin/sales-ledger/[id]/reverse) ya no existe; cancel_external_sale
+-- la reemplaza.
+drop function if exists public.reverse_external_sale(uuid, text, uuid, text);
+
+-- inventory_stock_breakdown (creada a mano desde supabase/sql/09x, nunca por
+-- migración) sumaba ventas externas anuladas e Históricas, ignoraba sus
+-- variantes y tenía SELECT para anon. Ningún código la lee: el desglose
+-- vigente es inventory_movements.
+drop view if exists public.inventory_stock_breakdown;
+
+-- 14. Permisos ------------------------------------------------------------------------------
 -- external_sale_consumes_stock y external_sale_content_hash quedan con EXECUTE
 -- por defecto: son puras y las usan la vista inventory_movements (security
--- invoker) y un trigger.
+-- invoker) y un trigger. external_sale_rpc_write también: la usan los
+-- triggers de guarda, que corren con el rol de quien escribe.
+
+revoke all on function public.external_sale_lock_content_hashes(text[]) from public, anon, authenticated;
+revoke all on function public.external_sale_begin_write(uuid) from public, anon, authenticated;
+revoke all on function public.external_sale_end_write() from public, anon, authenticated;
+revoke all on function public.external_sale_write_audit(text, text, uuid, jsonb, jsonb) from public, anon, authenticated;
+revoke all on function public.audit_external_sale_change() from public, anon, authenticated;
+grant execute on function public.external_sale_lock_content_hashes(text[]) to service_role;
+grant execute on function public.external_sale_begin_write(uuid) to service_role;
+grant execute on function public.external_sale_end_write() to service_role;
+grant execute on function public.external_sale_write_audit(text, text, uuid, jsonb, jsonb) to service_role;
 
 revoke all on function public.external_sale_require_admin(uuid) from public, anon, authenticated;
 revoke all on function public.external_sale_resolve_sku(text) from public, anon, authenticated;

@@ -9,6 +9,12 @@ function finiteNonNegativeNumber(value: unknown) {
   return number != null && number >= 0 ? number : null
 }
 
+/**
+ * Costo unitario de una venta externa. Con producto vinculado sólo vale el
+ * costo histórico a la fecha de la venta (nunca el de hoy). Sin producto
+ * vinculado sólo un costo cargado a mano; $0 es el valor por defecto de la
+ * columna y significa "no informado", no "costo cero".
+ */
 export function resolveExternalSaleUnitCost({
   productId,
   historicalUnitCost,
@@ -22,7 +28,8 @@ export function resolveExternalSaleUnitCost({
     return finiteNonNegativeNumber(historicalUnitCost)
   }
 
-  return finiteNonNegativeNumber(manualUnitCost)
+  const manual = finiteNonNegativeNumber(manualUnitCost)
+  return manual != null && manual > 0 ? manual : null
 }
 
 export function getExternalSaleMerchandiseCost(
@@ -76,12 +83,24 @@ export function calculateExternalSaleProfitability({
 }
 
 /**
+ * known: costo de mercadería conocido (calculado o implícito).
+ * undeterminable: no hay costo histórico ni ganancia declarada.
+ * inconsistent: la ganancia declarada supera el ingreso neto; el costo
+ * implícito sería negativo y no se inventa.
+ */
+export type ExternalSaleCostStatus = "known" | "undeterminable" | "inconsistent"
+
+/**
  * Ganancia que reportan Dashboard y Ventas externas. Una venta histórica
  * (stock_effect = none) conserva la ganancia declarada en el Excel: nunca se
  * reemplaza por una calculada con costos posteriores. Una venta nueva usa el
  * costo de mercadería y sólo cae en la declarada si ese costo no se conoce.
  * Con ganancia declarada, el costo implícito (ingreso neto - ganancia)
- * mantiene el costo de ventas coherente con la ganancia informada.
+ * mantiene el costo de ventas coherente con la ganancia informada. Si la
+ * ganancia declarada supera el ingreso neto, se conserva la ganancia, el
+ * costo queda "no determinable" (null) y la fila se marca inconsistente: no
+ * suma al costo de ventas ni a la cobertura de costos, y quien reporta debe
+ * avisarlo en vez de ocultarlo.
  */
 export function resolveExternalSaleReportedProfitability({
   stockEffect,
@@ -100,20 +119,23 @@ export function resolveExternalSaleReportedProfitability({
     (stockEffect === "none" || computed.profitAmount == null)
 
   if (!useDeclared || computed.revenueAfterFees == null || declared == null) {
+    const known = computed.profitAmount != null
     return {
       ...computed,
-      merchandiseCost: computed.profitAmount == null ? null : finiteNonNegativeNumber(merchandiseCost),
-      profitSource: computed.profitAmount == null ? null : ("calculated" as const),
+      merchandiseCost: known ? finiteNonNegativeNumber(merchandiseCost) : null,
+      profitSource: known ? ("calculated" as const) : null,
+      costStatus: (known ? "known" : "undeterminable") as ExternalSaleCostStatus,
     }
   }
 
   const gross = finiteNumber(amounts.grossAmount) ?? 0
-  const impliedCost = computed.revenueAfterFees - declared
+  const impliedCost = Math.round((computed.revenueAfterFees - declared) * 100) / 100
   return {
     revenueAfterFees: computed.revenueAfterFees,
     profitAmount: declared,
     marginPercent: gross > 0 ? (declared / gross) * 100 : null,
     merchandiseCost: impliedCost >= 0 ? impliedCost : null,
     profitSource: "declared" as const,
+    costStatus: (impliedCost >= 0 ? "known" : "inconsistent") as ExternalSaleCostStatus,
   }
 }
