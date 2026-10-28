@@ -184,6 +184,8 @@ interface AdminModalProps {
   description?: string
   compact?: boolean
   wide?: boolean
+  /** Para tablas anchas: ~1340px en desktop, casi todo el ancho en notebooks. */
+  extraWide?: boolean
   children: ReactNode
   footer?: ReactNode
   onClose: () => void
@@ -1210,6 +1212,7 @@ export function AdminModal({
   description,
   compact = false,
   wide = false,
+  extraWide = false,
   children,
   footer,
   onClose,
@@ -1243,9 +1246,11 @@ export function AdminModal({
           "custom-scrollbar max-h-[calc(100dvh-2rem)] w-full overflow-y-auto shadow-2xl shadow-black",
           compact
             ? "max-w-md p-4"
-            : wide
-              ? "max-w-4xl p-5"
-              : "max-w-xl p-5",
+            : extraWide
+              ? "max-w-[1340px] p-5"
+              : wide
+                ? "max-w-4xl p-5"
+                : "max-w-xl p-5",
         )}
       >
         <div className={cn("flex items-start justify-between gap-4", compact ? "mb-3" : "mb-5")}>

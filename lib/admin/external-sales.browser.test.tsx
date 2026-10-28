@@ -229,7 +229,7 @@ test("Ventas externas en Chromium: pegar, preview vigente, duplicada, anulación
 
 const ROW_CABLE = ["15/06/2024", "Marta Peña", "WhatsApp", "CBCU01", "CABLE USB A USBC", "1", "", "Transferencia", "", "$ 4.500", "$ 1.200"]
 
-test("Pegar ventas en Chromium: CBCU01 Nueva/Histórica, cabecera sticky y sin scroll horizontal en desktop", async () => {
+test("Pegar ventas en Chromium: CBCU01 Nueva/Histórica, detalle por teclado e importación histórica", async () => {
   const { page, errors } = await open()
   try {
     await page.getByRole("button", { name: "Pegar ventas" }).click()
@@ -255,28 +255,6 @@ test("Pegar ventas en Chromium: CBCU01 Nueva/Histórica, cabecera sticky y sin s
     await page.keyboard.press("Enter")
     await cableRow.getByText(/La venta se conservará con el SKU y el nombre del Excel, sin modificar stock/).waitFor()
 
-    // Desktop (1440px): la tabla entra sin scroll horizontal y la cabecera queda fija al scrollear.
-    const layout = await dialog.locator("table").evaluate((table) => {
-      const scroller = table.parentElement!
-      scroller.scrollTop = scroller.scrollHeight
-      const header = table.querySelector("th")!.getBoundingClientRect()
-      const product = table.querySelector("tbody tr td:nth-child(6) span")!
-      return {
-        horizontalOverflow: scroller.scrollWidth - scroller.clientWidth,
-        dialogScroll: table.closest("[role=dialog]")!.scrollHeight - table.closest("[role=dialog]")!.clientHeight,
-        scrolled: scroller.scrollTop > 0,
-        headerPinned: Math.abs(header.top - scroller.getBoundingClientRect().top) < 2,
-        productLines: Math.round(product.getBoundingClientRect().height / parseFloat(getComputedStyle(product).lineHeight)),
-        textarea: document.querySelector("textarea")!.getBoundingClientRect().height,
-      }
-    })
-    assert.equal(layout.horizontalOverflow, 0, "sin scroll horizontal en desktop")
-    assert.equal(layout.dialogScroll, 0, "en desktop el modal entra entero: sólo scrollean el textarea y la tabla")
-    assert.equal(layout.scrolled, true)
-    assert.equal(layout.headerPinned, true, "la cabecera sigue visible")
-    assert.ok(layout.productLines <= 2, `producto en máximo 2 líneas (${layout.productLines})`)
-    assert.ok(layout.textarea >= 180 && layout.textarea <= 220, `textarea compacto con varias filas (${layout.textarea}px)`)
-
     await importButton(page).click()
     await page.getByText("15 ventas históricas importadas. El stock no se modificó.").waitFor()
     const state = await appState(page)
@@ -289,24 +267,77 @@ test("Pegar ventas en Chromium: CBCU01 Nueva/Histórica, cabecera sticky y sin s
   }
 })
 
-test("Pegar ventas en 1366px y mobile: el modal no desborda la página; la tabla scrollea por dentro", async () => {
-  for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) {
+const LAYOUT_ROWS = [ROW_CABLE, ...Array.from({ length: 14 }, (_, index) => [`${String(index + 1).padStart(2, "0")}/04/2026`,
+  `Cliente con un nombre bastante largo ${index}`, "WhatsApp", "AUR-1", "Auricular Ñandú con un nombre de producto realmente largo para probar el recorte",
+  "1", "", "Efectivo", "", "$ 9.000", ""])]
+
+test("Pegar ventas: modal horizontal en desktop (1920/1440/1366) y vertical en mobile, con la tabla como único scroll", async () => {
+  const viewports = [
+    { width: 1920, height: 1080, desktop: true },
+    { width: 1440, height: 900, desktop: true },
+    { width: 1366, height: 768, desktop: true },
+    { width: 390, height: 844, desktop: false },
+  ]
+  for (const { desktop, ...viewport } of viewports) {
     const { page, errors } = await open()
+    const at = `${viewport.width}x${viewport.height}`
     try {
       await page.setViewportSize(viewport)
       await page.getByRole("button", { name: "Pegar ventas" }).click()
-      await paste(page, tsv([ROW_CABLE, ROW_ANA]))
+      await paste(page, tsv(LAYOUT_ROWS))
+      await page.getByRole("radio", { name: /Históricas/ }).check()
       const metrics = await page.getByRole("dialog").evaluate((dialog) => {
-        const scroller = dialog.querySelector("table")!.parentElement!
+        const table = dialog.querySelector("table")!
+        const scroller = table.parentElement!
+        const textarea = dialog.querySelector("textarea")!
+        const modes = dialog.querySelector("fieldset")!.getBoundingClientRect()
+        const chips = dialog.querySelector('ul[aria-label="Resumen de validación"]')!.getBoundingClientRect()
+        const footerButton = [...dialog.querySelectorAll("button")].find((button) => /^Importar \d+ ventas?$/.test(button.textContent ?? ""))!
+        const validation = dialog.querySelector("tbody tr td:last-child p, tbody tr td:last-child summary span")!
+        scroller.scrollTop = scroller.scrollHeight
+        const header = table.querySelector("th")!.getBoundingClientRect()
+        const product = table.querySelector("tbody tr td:nth-child(6) span")!
+        // Sin funciones con nombre: tsx inyecta __name, que no existe en la página.
+        const [textareaLine, productLine, validationLine] = [textarea, product, validation].map((element) => parseFloat(getComputedStyle(element).lineHeight))
         return {
+          modalWidth: Math.round(dialog.getBoundingClientRect().width),
           pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
-          dialogOverflow: dialog.scrollWidth - dialog.clientWidth,
-          tableOverflow: scroller.scrollWidth - scroller.clientWidth,
+          dialogHorizontal: dialog.scrollWidth - dialog.clientWidth,
+          dialogVertical: dialog.scrollHeight - dialog.clientHeight,
+          tableHorizontal: scroller.scrollWidth - scroller.clientWidth,
+          tableHeight: Math.round(scroller.clientHeight),
+          tableScrolls: scroller.scrollTop > 0,
+          headerPinned: Math.abs(header.top - scroller.getBoundingClientRect().top) < 2,
+          // El tema fuerza un color de th semitransparente: la capa de imagen lo vuelve opaco.
+          headerOpaque: /gradient\(rgb\(\d+, \d+, \d+\)/.test(getComputedStyle(table.querySelector("th")!).backgroundImage),
+          footerVisible: footerButton.getBoundingClientRect().bottom <= window.innerHeight,
+          textareaRows: (textarea.clientHeight - 24) / textareaLine,
+          textareaScrolls: textarea.scrollHeight > textarea.clientHeight,
+          modesBesideChips: Math.abs(modes.bottom - chips.bottom) < 24 && chips.left > modes.right,
+          productLines: Math.round(product.getBoundingClientRect().height / productLine),
+          validationLines: Math.round(validation.getBoundingClientRect().height / validationLine),
         }
       })
-      assert.equal(metrics.pageOverflow, 0, `${viewport.width}px: sin scroll horizontal de página`)
-      assert.equal(metrics.dialogOverflow, 0, `${viewport.width}px: el modal no scrollea en horizontal`)
-      if (viewport.width >= 1024) assert.equal(metrics.tableOverflow, 0, `${viewport.width}px: la tabla entra completa`)
+      assert.equal(metrics.pageOverflow, 0, `${at}: sin scroll horizontal de página`)
+      assert.equal(metrics.dialogHorizontal, 0, `${at}: el modal no scrollea en horizontal`)
+      assert.equal(metrics.headerPinned, true, `${at}: cabecera sticky`)
+      assert.equal(metrics.headerOpaque, true, `${at}: la cabecera tapa las filas que pasan por debajo`)
+      assert.equal(metrics.tableScrolls, true, `${at}: la tabla scrollea por dentro`)
+      assert.equal(metrics.textareaScrolls, true, `${at}: el textarea scrollea por dentro`)
+      assert.ok(metrics.productLines <= 2, `${at}: producto en máximo 2 líneas`)
+      if (desktop) {
+        assert.ok(metrics.modalWidth >= 1200 && metrics.modalWidth <= 1400, `${at}: modal ancho (${metrics.modalWidth}px)`)
+        assert.ok(metrics.modalWidth <= viewport.width - 32, `${at}: respeta márgenes`)
+        assert.equal(metrics.dialogVertical, 0, `${at}: el modal entra entero, sin scroll propio`)
+        assert.equal(metrics.footerVisible, true, `${at}: footer visible`)
+        assert.equal(metrics.tableHorizontal, 0, `${at}: la tabla entra completa`)
+        assert.ok(metrics.tableHeight >= 190, `${at}: la tabla muestra varias filas (${metrics.tableHeight}px)`)
+        assert.ok(metrics.textareaRows >= 4 && metrics.textareaRows <= 5.5, `${at}: textarea de 4–5 filas (${metrics.textareaRows.toFixed(1)})`)
+        assert.equal(metrics.modesBesideChips, true, `${at}: Históricas/Nuevas y resumen en la misma franja`)
+        assert.equal(metrics.validationLines, 1, `${at}: “SKU histórico sin vínculo” entra en una línea`)
+      } else {
+        assert.ok(metrics.tableHorizontal > 0, `${at}: en mobile la tabla scrollea en horizontal por dentro`)
+      }
       assert.deepEqual(errors, [])
     } finally {
       await page.close()

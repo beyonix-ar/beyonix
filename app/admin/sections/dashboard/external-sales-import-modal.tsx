@@ -52,17 +52,17 @@ const MODE_OPTIONS: Array<{ value: ExternalSaleStockEffect; title: string; hint:
   { value: "consume", title: "Nuevas", hint: "Descuentan stock al confirmar." },
 ]
 
-// Anchos fijos para que Producto y Validación no desarmen la fila; Producto toma el resto.
+// Columnas cortas con ancho fijo; Cliente y Validación crecen con el modal y Producto toma el resto.
 const COLUMNS: Array<{ label: string; className: string }> = [
   { label: "Fila", className: "w-10" },
   { label: "Estado", className: "w-26" },
   { label: "Fecha", className: "w-21" },
-  { label: "Cliente", className: "w-24" },
-  { label: "SKU", className: "w-21" },
+  { label: "Cliente", className: "w-[15%]" },
+  { label: "SKU", className: "w-24" },
   { label: "Producto", className: "" },
-  { label: "Cant.", className: "w-11 text-center" },
-  { label: "Precio final", className: "w-23 text-right" },
-  { label: "Validación", className: "w-44" },
+  { label: "Cant.", className: "w-12 text-center" },
+  { label: "Precio final", className: "w-26 text-right" },
+  { label: "Validación", className: "w-[21%]" },
 ]
 
 function formatDate(value: string) {
@@ -276,7 +276,7 @@ export function ExternalSalesImportModal({
   return (
     <AdminModal
       open
-      wide
+      extraWide
       eyebrow="Ventas externas"
       title={source === "paste" ? "Pegar ventas" : "Importar archivo"}
       description="Nada se guarda hasta que confirmes. Revisá el preview y elegí si las ventas son Históricas o Nuevas."
@@ -303,7 +303,8 @@ export function ExternalSalesImportModal({
     >
       <div className="space-y-4">
         {source === "paste" ? (
-          <div className="space-y-2">
+          // Desktop: textarea ancho y, al costado, la acción y la nota de envío.
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_14rem] lg:gap-4">
             <AdminTextarea
               title="Filas copiadas desde Excel"
               placeholder="Copiá las filas en Excel (incluida la fila de títulos) y pegalas acá."
@@ -311,15 +312,16 @@ export function ExternalSalesImportModal({
               disabled={importing}
               onChange={changeText}
               wrap="off"
-              className="custom-scrollbar h-48 min-h-0 overflow-auto font-mono text-xs leading-5"
+              className="custom-scrollbar h-30 min-h-0 overflow-auto font-mono text-xs leading-5"
             />
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 lg:flex-col lg:flex-nowrap lg:items-stretch lg:justify-start">
               <p className="text-xs text-white/50">
                 Envío: sólo el costo logístico que pagó BEYONIX. Si el cliente pagó su envío, va $0 o vacío.
               </p>
               <AdminSecondaryButton
                 disabled={!text.trim() || loading || importing}
                 onClick={() => void analyze(parseTabularText(text), versionRef.current)}
+                className="lg:order-first"
               >
                 {loading ? "Verificando…" : "Previsualizar"}
               </AdminSecondaryButton>
@@ -359,57 +361,61 @@ export function ExternalSalesImportModal({
 
         {ready && (
           <>
-            <fieldset className="grid gap-2 sm:grid-cols-2" disabled={importing}>
-              <legend className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">¿Qué ventas son?</legend>
-              {MODE_OPTIONS.map((option) => (
-                <label
-                  key={option.value}
-                  className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 transition-colors hover:border-white/22 has-checked:border-beyonix-sky/70 has-checked:bg-beyonix-sky/10 has-focus-visible:ring-2 has-focus-visible:ring-beyonix-sky/40"
-                >
-                  <input
-                    type="radio"
-                    name="external-sales-import-mode"
-                    checked={mode === option.value}
-                    onChange={() => changeMode(option.value)}
-                    className="size-4 shrink-0 accent-beyonix-sky"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-black text-white/80 group-has-checked:text-white">{option.title}</span>
-                    <span className="block text-xs text-white/52">{option.hint}</span>
-                  </span>
-                  <CheckCircle2 aria-hidden="true" className="ml-auto hidden size-4 shrink-0 text-beyonix-sky group-has-checked:block" />
-                </label>
-              ))}
-            </fieldset>
-
-            <ul aria-label="Resumen de validación" className="flex flex-wrap gap-2 text-xs">
-              {(Object.keys(STATE_LABELS) as PreviewState[]).map((state) => {
-                const { count, className, icon: Icon } = STATE_LABELS[state]
-                return (
-                  <li
-                    key={state}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-lg border border-white/8 bg-black/25 px-2.5 py-1",
-                      counts[state] ? "text-white/82" : "text-white/40",
-                    )}
+            {/* Desktop: modo a la izquierda y resumen a la derecha, en una sola franja. */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+              <fieldset className="grid gap-2 sm:grid-cols-2 lg:w-[36rem] lg:shrink-0" disabled={importing}>
+                <legend className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">¿Qué ventas son?</legend>
+                {MODE_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 transition-colors hover:border-white/22 has-checked:border-beyonix-sky/70 has-checked:bg-beyonix-sky/10 has-focus-visible:ring-2 has-focus-visible:ring-beyonix-sky/40"
                   >
-                    <Icon aria-hidden="true" className={cn("size-3.5", counts[state] ? className : "text-white/30")} />
-                    <span><b className="font-black tabular-nums">{counts[state]}</b> {plural(counts[state], count)}</span>
-                  </li>
-                )
-              })}
-            </ul>
+                    <input
+                      type="radio"
+                      name="external-sales-import-mode"
+                      checked={mode === option.value}
+                      onChange={() => changeMode(option.value)}
+                      className="size-4 shrink-0 accent-beyonix-sky"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-black text-white/80 group-has-checked:text-white">{option.title}</span>
+                      <span className="block text-xs text-white/52">{option.hint}</span>
+                    </span>
+                    <CheckCircle2 aria-hidden="true" className="ml-auto hidden size-4 shrink-0 text-beyonix-sky group-has-checked:block" />
+                  </label>
+                ))}
+              </fieldset>
 
-            {/* Alto atado al viewport: en desktop el modal entra entero y sólo scrollea la tabla. */}
-            <div className="sales-ledger-scrollbar max-h-[max(12rem,calc(100dvh-42rem))] overflow-auto rounded-xl border border-white/8">
-              <table className="w-full min-w-[760px] table-fixed text-left text-xs">
+              <ul aria-label="Resumen de validación" className="flex flex-wrap gap-2 text-xs lg:justify-end lg:pb-1">
+                {(Object.keys(STATE_LABELS) as PreviewState[]).map((state) => {
+                  const { count, className, icon: Icon } = STATE_LABELS[state]
+                  return (
+                    <li
+                      key={state}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-lg border border-white/8 bg-black/25 px-2.5 py-1",
+                        counts[state] ? "text-white/82" : "text-white/40",
+                      )}
+                    >
+                      <Icon aria-hidden="true" className={cn("size-3.5", counts[state] ? className : "text-white/30")} />
+                      <span><b className="font-black tabular-nums">{counts[state]}</b> {plural(counts[state], count)}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+
+            {/* Alto atado al viewport y con tope: en desktop el modal entra entero y sólo scrollea la tabla. */}
+            <div className="sales-ledger-scrollbar max-h-[clamp(12rem,calc(100dvh-32rem),26rem)] overflow-auto rounded-xl border border-white/8">
+              <table className="w-full min-w-[920px] table-fixed text-left text-xs">
                 <thead className="text-10px font-black uppercase tracking-wider text-white/45">
                   <tr>
                     {COLUMNS.map((column) => (
                       <th
                         key={column.label}
                         scope="col"
-                        className={cn("sticky top-0 z-10 bg-[#07111B] px-2 py-2 leading-tight shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]", column.className)}
+                        // El tema admin fuerza en th un color semitransparente: una capa de imagen opaca evita que las filas se vean debajo al scrollear.
+                        className={cn("sticky top-0 z-10 bg-[linear-gradient(var(--admin-surface-raised),var(--admin-surface-raised))] px-2 py-2 leading-tight shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]", column.className)}
                       >
                         {column.label}
                       </th>
