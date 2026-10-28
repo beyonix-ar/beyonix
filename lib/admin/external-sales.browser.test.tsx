@@ -38,6 +38,8 @@ window.fetch = async (input, init) => {
     return json({ preview: { previous_batch: null, rows: body.rows.map((row, index) => ({
       index, resolution: "ok", product_id: 1, variant_id: null, product_name: "Auricular Ñandú", variant_name: null, available_units: 50,
       duplicate_sale_numbers: state.sales.filter((sale) => sale.status !== "reversed" && key(sale) === key(row)).map((sale) => sale.sale_number),
+      // SKU de una venta vieja que ya no existe en el catálogo.
+      ...(row.sku === "CBCU01" ? { resolution: "missing", product_id: null, product_name: null, available_units: null } : {}),
     })) } })
   }
   if (path === "/api/admin/external-sales/import") {
@@ -141,7 +143,7 @@ async function open(): Promise<{ page: Page; errors: string[] }> {
 const appState = (page: Page) => page.evaluate(() => (window as unknown as { __state: {
   previews: unknown[]; imports: Array<{ stockMode: string; rows: Array<Record<string, unknown>> }>; cancels: Array<Record<string, unknown>>
 } }).__state)
-const importButton = (page: Page) => page.getByRole("button", { name: /^Importar \d+ ventas$/ })
+const importButton = (page: Page) => page.getByRole("button", { name: /^Importar \d+ ventas?$/ })
 
 async function paste(page: Page, text: string) {
   await page.getByLabel("Filas copiadas desde Excel").fill(text)
@@ -222,5 +224,92 @@ test("Ventas externas en Chromium: pegar, preview vigente, duplicada, anulación
     assert.deepEqual(errors, [])
   } finally {
     await page.close()
+  }
+})
+
+const ROW_CABLE = ["15/06/2024", "Marta Peña", "WhatsApp", "CBCU01", "CABLE USB A USBC", "1", "", "Transferencia", "", "$ 4.500", "$ 1.200"]
+
+test("Pegar ventas en Chromium: CBCU01 Nueva/Histórica, cabecera sticky y sin scroll horizontal en desktop", async () => {
+  const { page, errors } = await open()
+  try {
+    await page.getByRole("button", { name: "Pegar ventas" }).click()
+    const many = Array.from({ length: 14 }, (_, index) => [`${String(index + 1).padStart(2, "0")}/04/2026`, `Cliente con un nombre bastante largo ${index}`,
+      "WhatsApp", "AUR-1", "Auricular Ñandú con un nombre de producto realmente largo para probar el recorte", "1", "", "Efectivo", "", "$ 9.000", ""])
+    await paste(page, tsv([ROW_CABLE, ...many]))
+    const dialog = page.getByRole("dialog")
+    const cableRow = dialog.locator("tbody tr").filter({ hasText: "CBCU01" })
+
+    await page.getByRole("radio", { name: /Nuevas/ }).check()
+    await cableRow.getByText("SKU no disponible para venta nueva").waitFor()
+    assert.match(await cableRow.textContent() ?? "", /Error/)
+    assert.match(await dialog.textContent() ?? "", /14 de 15 filas listas · 1 fila quedará afuera/)
+
+    await page.getByRole("radio", { name: /Históricas/ }).check()
+    await cableRow.getByText("SKU histórico sin vínculo", { exact: true }).waitFor()
+    assert.match(await cableRow.textContent() ?? "", /Advertencia/)
+    assert.doesNotMatch(await cableRow.textContent() ?? "", /Error/)
+    assert.equal(await importButton(page).textContent(), "Importar 15 ventas")
+
+    // Detalle completo con teclado: foco en el resumen y Enter lo despliega.
+    await cableRow.locator("summary").focus()
+    await page.keyboard.press("Enter")
+    await cableRow.getByText(/La venta se conservará con el SKU y el nombre del Excel, sin modificar stock/).waitFor()
+
+    // Desktop (1440px): la tabla entra sin scroll horizontal y la cabecera queda fija al scrollear.
+    const layout = await dialog.locator("table").evaluate((table) => {
+      const scroller = table.parentElement!
+      scroller.scrollTop = scroller.scrollHeight
+      const header = table.querySelector("th")!.getBoundingClientRect()
+      const product = table.querySelector("tbody tr td:nth-child(6) span")!
+      return {
+        horizontalOverflow: scroller.scrollWidth - scroller.clientWidth,
+        dialogScroll: table.closest("[role=dialog]")!.scrollHeight - table.closest("[role=dialog]")!.clientHeight,
+        scrolled: scroller.scrollTop > 0,
+        headerPinned: Math.abs(header.top - scroller.getBoundingClientRect().top) < 2,
+        productLines: Math.round(product.getBoundingClientRect().height / parseFloat(getComputedStyle(product).lineHeight)),
+        textarea: document.querySelector("textarea")!.getBoundingClientRect().height,
+      }
+    })
+    assert.equal(layout.horizontalOverflow, 0, "sin scroll horizontal en desktop")
+    assert.equal(layout.dialogScroll, 0, "en desktop el modal entra entero: sólo scrollean el textarea y la tabla")
+    assert.equal(layout.scrolled, true)
+    assert.equal(layout.headerPinned, true, "la cabecera sigue visible")
+    assert.ok(layout.productLines <= 2, `producto en máximo 2 líneas (${layout.productLines})`)
+    assert.ok(layout.textarea >= 180 && layout.textarea <= 220, `textarea compacto con varias filas (${layout.textarea}px)`)
+
+    await importButton(page).click()
+    await page.getByText("15 ventas históricas importadas. El stock no se modificó.").waitFor()
+    const state = await appState(page)
+    const cable = state.imports[0].rows.find((row) => row.sku === "CBCU01")
+    assert.equal(state.imports[0].stockMode, "none")
+    assert.deepEqual(cable && [cable.product_name, cable.customer_name, cable.gross_amount, cable.declared_profit], ["CABLE USB A USBC", "Marta Peña", 4500, 1200])
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+})
+
+test("Pegar ventas en 1366px y mobile: el modal no desborda la página; la tabla scrollea por dentro", async () => {
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) {
+    const { page, errors } = await open()
+    try {
+      await page.setViewportSize(viewport)
+      await page.getByRole("button", { name: "Pegar ventas" }).click()
+      await paste(page, tsv([ROW_CABLE, ROW_ANA]))
+      const metrics = await page.getByRole("dialog").evaluate((dialog) => {
+        const scroller = dialog.querySelector("table")!.parentElement!
+        return {
+          pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+          dialogOverflow: dialog.scrollWidth - dialog.clientWidth,
+          tableOverflow: scroller.scrollWidth - scroller.clientWidth,
+        }
+      })
+      assert.equal(metrics.pageOverflow, 0, `${viewport.width}px: sin scroll horizontal de página`)
+      assert.equal(metrics.dialogOverflow, 0, `${viewport.width}px: el modal no scrollea en horizontal`)
+      if (viewport.width >= 1024) assert.equal(metrics.tableOverflow, 0, `${viewport.width}px: la tabla entra completa`)
+      assert.deepEqual(errors, [])
+    } finally {
+      await page.close()
+    }
   }
 })

@@ -57,7 +57,7 @@ async function setup(source: "paste" | "file") {
   const button = (label: RegExp) => [...document.querySelectorAll("button")].find((node) => label.test(node.textContent?.trim() ?? ""))
   const click = async (node: Element | undefined) => { assert.ok(node); await act(async () => (node as HTMLElement).click()) }
   const dialogText = () => document.body.textContent ?? ""
-  const importButton = () => button(/^Importar \d+ ventas$/)
+  const importButton = () => button(/^Importar \d+ ventas?$/)
 
   return {
     previews, imports, imported, settle, button, click, dialogText, importButton,
@@ -88,6 +88,10 @@ async function setup(source: "paste" | "file") {
     },
     chooseHistorical: async () => {
       const radio = document.querySelector<HTMLInputElement>('input[name="external-sales-import-mode"]')!
+      await act(async () => radio.click())
+    },
+    chooseNew: async () => {
+      const radio = document.querySelectorAll<HTMLInputElement>('input[name="external-sales-import-mode"]')[1]
       await act(async () => radio.click())
     },
     async cleanup() {
@@ -180,6 +184,101 @@ test("C. archivo reemplazado: el preview anterior se elimina antes de verificar 
     await ui.settle()
     assert.equal(ui.imports[0].fileName, "ventas-2.csv")
     assert.deepEqual((ui.imports[0].rows as Array<Record<string, unknown>>).map((row) => row.customer_name), ["Beto"])
+  } finally {
+    await ui.cleanup()
+  }
+})
+
+// Venta real vieja cuyo SKU ya no existe en el catálogo.
+const CABLE_HEADER = "Fecha\tCliente\tSKU\tProducto\tCant.\tPrecio Final\tGanancia\tMedio de pago\tObservación"
+const TEXT_CABLE = [
+  CABLE_HEADER,
+  "15/06/2024\tMarta Peña\tCBCU01\tCABLE USB A USBC\t1\t4500\t1200\tTransferencia\tVenta vieja",
+  "16/06/2024\tBeto\tAUR-1\tAuricular Ñandú\t1\t9000\t\tEfectivo\t",
+].join("\n")
+const unlinked = { resolution: "missing", product_id: null, product_name: null, available_units: null }
+
+/** Fila de la tabla de preview por número de fila del Excel. */
+const previewRow = (sourceRow: number) =>
+  [...document.querySelectorAll("tbody tr")].find((tr) => tr.querySelector("td")?.textContent === String(sourceRow))
+
+async function previewCable(ui: Awaited<ReturnType<typeof setup>>) {
+  await ui.type(TEXT_CABLE)
+  await ui.click(ui.button(/^Previsualizar$/))
+  const [request] = ui.previews
+  await act(async () => request.resolve(Response.json({
+    preview: {
+      rows: request.rows.map((row, index) => ({
+        index, resolution: "ok", product_id: 1, variant_id: null, product_name: "Auricular Ñandú", variant_name: null,
+        available_units: 10, duplicate_sale_numbers: [], ...(row.sku === "CBCU01" ? unlinked : {}),
+      })),
+      previous_batch: null,
+    },
+  })))
+  await ui.settle()
+}
+
+test("CBCU01: Nueva → error; Histórica → advertencia importable; el cambio de modo actualiza la fila en el acto", async () => {
+  const ui = await setup("paste")
+  try {
+    await previewCable(ui)
+
+    // A. Nueva + SKU inexistente → error, queda afuera.
+    await ui.chooseNew()
+    assert.match(previewRow(2)?.textContent ?? "", /Error/)
+    assert.match(previewRow(2)?.textContent ?? "", /SKU no disponible para venta nueva/)
+    assert.equal(ui.importButton()?.textContent, "Importar 1 venta")
+    assert.match(ui.dialogText(), /1 de 2 filas listas · 1 fila quedará afuera/)
+
+    // C + B. Nueva → Histórica: la misma fila pasa a advertencia sin volver a previsualizar.
+    await ui.chooseHistorical()
+    assert.equal(ui.previews.length, 1, "el modo se aplica sobre el preview vigente")
+    const row = previewRow(2)?.textContent ?? ""
+    assert.match(row, /Advertencia/)
+    assert.match(row, /SKU histórico sin vínculo/)
+    assert.doesNotMatch(row, /Error|no disponible para venta nueva/, "no queda el error del modo anterior")
+    assert.equal(ui.importButton()?.textContent, "Importar 2 ventas")
+    assert.match(ui.dialogText(), /2 de 2 filas listas/)
+    assert.doesNotMatch(ui.dialogText(), /quedará afuera/)
+
+    await ui.click(ui.importButton())
+    await ui.settle()
+    assert.equal(ui.imports[0].stockMode, "none")
+    const cable = (ui.imports[0].rows as Array<Record<string, unknown>>).find((sale) => sale.sku === "CBCU01")
+    assert.deepEqual(
+      cable && [cable.product_name, cable.sale_date, cable.customer_name, cable.quantity, cable.gross_amount, cable.declared_profit, cable.payment_method, cable.notes],
+      ["CABLE USB A USBC", "2024-06-15", "Marta Peña", 1, 4500, 1200, "Transferencia", "Venta vieja"],
+    )
+    assert.equal("product_id" in (cable ?? {}), false, "el producto lo resuelve el servidor por SKU, nunca el navegador")
+  } finally {
+    await ui.cleanup()
+  }
+})
+
+test("E/F. validación corta con detalle completo desplegable, resumen compacto y cabecera sticky", async () => {
+  const ui = await setup("paste")
+  try {
+    await previewCable(ui)
+    await ui.chooseNew()
+    const cell = previewRow(2)?.querySelector("td:last-child")
+    const details = cell?.querySelector("details")
+    assert.ok(details, "el detalle se despliega con mouse, teclado o touch")
+    const summary = details.querySelector("summary")!
+    assert.match(summary.textContent ?? "", /^SKU no disponible para venta nueva/)
+    assert.match(summary.getAttribute("title") ?? "", /Una venta nueva necesita un producto válido para poder descontar stock/, "tooltip con el detalle")
+    assert.match(details.querySelector("ul")?.textContent ?? "", /El SKU no está en el catálogo actual\. Una venta nueva necesita un producto válido/)
+
+    await ui.chooseHistorical()
+    const historical = previewRow(2)?.querySelector("td:last-child summary")
+    assert.match(historical?.getAttribute("title") ?? "", /La venta se conservará con el SKU y el nombre del Excel, sin modificar stock/)
+
+    const chips = [...document.querySelectorAll('ul[aria-label="Resumen de validación"] li')].map((li) => li.textContent)
+    assert.deepEqual(chips, ["1 válida", "1 advertencia", "0 duplicadas", "0 errores"])
+
+    const headers = [...document.querySelectorAll("thead th")]
+    assert.deepEqual(headers.map((th) => th.textContent), ["Fila", "Estado", "Fecha", "Cliente", "SKU", "Producto", "Cant.", "Precio final", "Validación"])
+    assert.ok(headers.every((th) => /\bsticky\b/.test(th.className) && /\btop-0\b/.test(th.className)), "la cabecera queda visible al scrollear")
+    assert.match(document.querySelector("table")?.className ?? "", /\btable-fixed\b/)
   } finally {
     await ui.cleanup()
   }

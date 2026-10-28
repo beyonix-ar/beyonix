@@ -175,8 +175,11 @@ test("preview: ✅ válida, ⚠️ archivado/SKU sin catálogo, ❌ sin stock o 
   assert.deepEqual(historical.map((row) => row.state), ["valid", "duplicate", "warning", "warning", "warning", "duplicate", "error"])
   assert.deepEqual(historical[1].duplicateOf, { saleNumbers: [], inPaste: true })
   assert.deepEqual(historical[5].duplicateOf, { saleNumbers: [42], inPaste: false })
-  assert.deepEqual(historical[4].messages, ["SKU histórico sin vínculo con catálogo actual."], "SKU que sólo figura en el Excel: histórica desvinculada")
-  assert.deepEqual(historical[3].messages, ["SKU histórico sin vínculo con catálogo actual."])
+  const unlinkedDetail = "SKU histórico sin vínculo con catálogo actual. La venta se conservará con el SKU y el nombre del Excel, sin modificar stock."
+  assert.deepEqual(historical[4].messages, [unlinkedDetail], "SKU que sólo figura en el Excel: histórica desvinculada")
+  assert.deepEqual(historical[3].messages, [unlinkedDetail])
+  assert.deepEqual([historical[3].summary, historical[4].summary], ["SKU histórico sin vínculo", "SKU histórico sin vínculo"])
+  assert.deepEqual([historical[0].summary, historical[2].summary], [null, "Producto archivado"])
   assert.match(historical[6].messages.join(" "), /Falta el nombre del producto/, "sin catálogo ni nombre no hay snapshot que mostrar")
 
   // Nuevas: el stock disponible (3, ya sin reservas) se reparte entre filas
@@ -184,8 +187,40 @@ test("preview: ✅ válida, ⚠️ archivado/SKU sin catálogo, ❌ sin stock o 
   const fresh = classifyExternalSalePreview(parsed, serverRows, "consume")
   assert.deepEqual(fresh.map((row) => row.state), ["valid", "error", "warning", "error", "error", "duplicate", "error"])
   assert.match(fresh[1].messages.join(" "), /Stock insuficiente: quedan 1 unidades/)
-  assert.match(fresh[3].messages.join(" "), /una venta nueva necesita un producto válido/)
+  assert.match(fresh[3].messages.join(" "), /Una venta nueva necesita un producto válido para poder descontar stock/)
   assert.match(fresh[4].messages.join(" "), /Sólo puede importarse como histórica/)
+  assert.deepEqual([fresh[1].summary, fresh[4].summary], ["Stock insuficiente", "SKU no disponible para venta nueva"])
+})
+
+test("preview: SKU histórico CBCU01 sin catálogo es error en Nuevas y advertencia importable en Históricas", () => {
+  const row = line(["15/06/2024", "Marta Peña", "WhatsApp", "CBCU01", "CABLE USB A USBC", "2", "", "", "", "Transferencia", "", "9000", "3000", "Venta vieja"])
+  const parsed = parseExternalSalesSheet(parseTabularText([HEADER, row].join("\n")), TODAY).rows
+  const serverRows = [server(0, { resolution: "missing", product_id: null, product_name: null, available_units: null })]
+
+  const [fresh] = classifyExternalSalePreview(parsed, serverRows, "consume")
+  assert.equal(fresh.state, "error")
+  assert.equal(fresh.summary, "SKU no disponible para venta nueva")
+
+  const [historical] = classifyExternalSalePreview(parsed, serverRows, "none")
+  assert.equal(historical.state, "warning")
+  assert.equal(historical.summary, "SKU histórico sin vínculo")
+  assert.match(historical.messages[0], /sin modificar stock/)
+  assert.equal(historical.catalogName, null)
+  const payload = historical.parsed.payload
+  assert.deepEqual(
+    [payload?.sku, payload?.product_name, payload?.sale_date, payload?.customer_name, payload?.quantity, payload?.gross_amount,
+      payload?.declared_profit, payload?.payment_method, payload?.channel_label, payload?.notes],
+    ["CBCU01", "CABLE USB A USBC", "2024-06-15", "Marta Peña", 2, 9000, 3000, "Transferencia", "WhatsApp", "Venta vieja"],
+    "el snapshot del Excel se conserva tal cual",
+  )
+})
+
+test("preview: el resumen corto de un error de formato omite el valor; el detalle lo conserva", () => {
+  const row = line(["32/13/2026", "Ana", "WhatsApp", "AUR-1", "", "1", "", "", "", "", "", "100", "", ""])
+  const [preview] = classifyExternalSalePreview(parseExternalSalesSheet(parseTabularText([HEADER, row].join("\n")), TODAY).rows, [], "none")
+  assert.equal(preview.state, "error")
+  assert.equal(preview.summary, "Fecha inválida")
+  assert.deepEqual(preview.messages, ["Fecha inválida: “32/13/2026”."])
 })
 
 test("contrato API: valida forma y tipos de cada fila; el producto se identifica sólo por SKU", () => {

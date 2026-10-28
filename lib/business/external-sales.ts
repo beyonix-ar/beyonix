@@ -601,18 +601,32 @@ export interface ExternalSalePreviewRow {
   parsed: ParsedExternalSaleRow
   server: ExternalSalePreviewServerRow | null
   state: ExternalSalePreviewState
+  /** Detalle completo de cada problema, en orden. */
   messages: string[]
+  /** Frase corta del problema principal (el primer error, si no la primera advertencia). */
+  summary: string | null
   catalogName: string | null
   /** Posible duplicada: requiere confirmar "Es una venta distinta". */
   duplicateOf: { saleNumbers: number[]; inPaste: boolean } | null
 }
 
-const RESOLUTION_ERRORS: Partial<Record<ExternalSaleSkuResolution, string>> = {
-  needs_variant: "El SKU es de un producto con variantes: usá el SKU de la variante vendida.",
-  conditioned: "El SKU es de stock reacondicionado y no se admite en ventas externas.",
+const RESOLUTION_ERRORS: Partial<Record<ExternalSaleSkuResolution, { summary: string; detail: string }>> = {
+  needs_variant: {
+    summary: "SKU de producto con variantes",
+    detail: "El SKU es de un producto con variantes: usá el SKU de la variante vendida.",
+  },
+  conditioned: {
+    summary: "SKU reacondicionado no admitido",
+    detail: "El SKU es de stock reacondicionado y no se admite en ventas externas.",
+  },
 }
 
 export const EXTERNAL_SALE_UNLINKED_SKU_WARNING = "SKU histórico sin vínculo con catálogo actual."
+
+/** "Fecha inválida: “32/13”." → "Fecha inválida": el detalle queda en el mensaje completo. */
+function shortIssue(message: string) {
+  return message.split(":")[0].replace(/\.$/, "")
+}
 
 /**
  * Clasifica cada fila para el preview según el modo elegido. Con modo
@@ -629,47 +643,55 @@ export function classifyExternalSalePreview(
   let payloadIndex = 0
 
   return rows.map((parsed) => {
-    const messages = [...parsed.errors]
+    const messages: string[] = []
+    const issues: Array<{ summary: string; blocking: boolean }> = []
+    const report = (detail: string, blocking: boolean, summary = shortIssue(detail)) => {
+      messages.push(detail)
+      issues.push({ summary, blocking })
+    }
     const server = parsed.payload && serverRows ? serverRows[payloadIndex] ?? null : null
     if (parsed.payload) payloadIndex += 1
-    let blocked = parsed.errors.length > 0
-    let warned = parsed.warnings.length > 0
-    messages.push(...parsed.warnings)
+    for (const error of parsed.errors) report(error, true)
+    for (const warning of parsed.warnings) report(warning, false)
 
     if (server) {
       const resolutionError = RESOLUTION_ERRORS[server.resolution]
       if (resolutionError) {
-        messages.push(resolutionError)
-        blocked = true
+        report(resolutionError.detail, true, resolutionError.summary)
       } else if (server.resolution === "archived") {
-        messages.push("El producto está archivado.")
-        warned = true
+        report("El producto está archivado.", false, "Producto archivado")
       } else if (server.resolution === "historical" || server.resolution === "missing") {
         // Una histórica no mueve stock: puede quedar sin producto vinculado,
         // conservando el SKU y el nombre del Excel. Una nueva no.
         if (mode === "consume") {
-          messages.push("El SKU no está en el catálogo actual: una venta nueva necesita un producto válido. Sólo puede importarse como histórica.")
-          blocked = true
+          report(
+            "El SKU no está en el catálogo actual. Una venta nueva necesita un producto válido para poder descontar stock. Sólo puede importarse como histórica.",
+            true,
+            "SKU no disponible para venta nueva",
+          )
         } else if (!parsed.payload?.product_name) {
-          messages.push(`${EXTERNAL_SALE_UNLINKED_SKU_WARNING} Falta el nombre del producto en la columna Producto.`)
-          blocked = true
+          report(`${EXTERNAL_SALE_UNLINKED_SKU_WARNING} Falta el nombre del producto en la columna Producto.`, true, "SKU histórico sin nombre de producto")
         } else {
-          messages.push(EXTERNAL_SALE_UNLINKED_SKU_WARNING)
-          warned = true
+          report(
+            `${EXTERNAL_SALE_UNLINKED_SKU_WARNING} La venta se conservará con el SKU y el nombre del Excel, sin modificar stock.`,
+            false,
+            "SKU histórico sin vínculo",
+          )
         }
       }
-      if (!blocked && mode === "consume" && server.product_id != null && parsed.payload) {
+      if (!issues.some((issue) => issue.blocking) && mode === "consume" && server.product_id != null && parsed.payload) {
         const target = `${server.product_id}:${server.variant_id ?? ""}`
         const remaining = remainingByTarget.get(target) ?? Math.max(server.available_units ?? 0, 0)
         if (parsed.payload.quantity > remaining) {
-          messages.push(`Stock insuficiente: quedan ${remaining} unidades disponibles (descontando reservas web).`)
-          blocked = true
+          report(`Stock insuficiente: quedan ${remaining} unidades disponibles (descontando reservas web).`, true)
         } else {
           remainingByTarget.set(target, remaining - parsed.payload.quantity)
         }
       }
     }
 
+    const blocked = issues.some((issue) => issue.blocking)
+    const warned = issues.length > 0
     let duplicateOf: ExternalSalePreviewRow["duplicateOf"] = null
     if (parsed.duplicateKey) {
       const inPaste = seenKeys.has(parsed.duplicateKey)
@@ -688,7 +710,8 @@ export function classifyExternalSalePreview(
         : warned
           ? "warning"
           : "valid"
-    return { parsed, server, state, messages, catalogName, duplicateOf }
+    const summary = (issues.find((issue) => issue.blocking) ?? issues[0])?.summary ?? null
+    return { parsed, server, state, messages, summary, catalogName, duplicateOf }
   })
 }
 

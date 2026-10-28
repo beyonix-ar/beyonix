@@ -480,14 +480,20 @@ test("SKU histórico sin catálogo y producto eliminado: la venta se conserva co
     const result = await importBatch(db, [
       sale(2, { sku: "SOLO-EXCEL-9", product_name: "Funda sólo del Excel", quantity: 2, gross_amount: 7000, declared_profit: 1500 }),
       sale(3, { sku: "ARCH-1", product_name: "Parlante viejo", customer_name: "Con producto" }),
+      sale(6, { sku: "CBCU01", product_name: "CABLE USB A USBC", customer_name: "Marta Peña", sale_date: "2024-06-15", quantity: 1, gross_amount: 4500, declared_profit: 1200, payment_method: "Transferencia", notes: "Venta vieja" }),
     ], "none")
-    assert.equal(result.imported, 2)
+    assert.equal(result.imported, 3)
     assert.deepEqual(await stock(db), BASE, "las históricas desvinculadas no mueven stock")
     const unlinked = await one<Row>(db, "select product_id, variant_id, sku, product_name, quantity, unit_price::text, gross_amount::text, stock_effect from external_sales where sku = 'SOLO-EXCEL-9'")
     assert.deepEqual(unlinked, {
       product_id: null, variant_id: null, sku: "SOLO-EXCEL-9", product_name: "Funda sólo del Excel",
       quantity: 2, unit_price: "3500.00", gross_amount: "7000.00", stock_effect: "none",
     })
+    const cable = await one<Row>(db, "select product_id, variant_id, product_name, sale_date::text, customer_name, quantity, gross_amount::text, declared_profit::text, payment_method, notes, stock_effect from external_sales where sku = 'CBCU01'")
+    assert.deepEqual(cable, {
+      product_id: null, variant_id: null, product_name: "CABLE USB A USBC", sale_date: "2024-06-15", customer_name: "Marta Peña", quantity: 1,
+      gross_amount: "4500.00", declared_profit: "1200.00", payment_method: "Transferencia", notes: "Venta vieja", stock_effect: "none",
+    }, "CBCU01 histórica: snapshot completo, sin vínculo y sin mover stock")
     await assert.rejects(importBatch(db, [sale(4, { sku: "SOLO-EXCEL-8", product_name: "" })], "none"), /fila 4: falta el nombre del producto/)
     await assert.rejects(
       importBatch(db, [sale(5, { sku: "SOLO-EXCEL-7", product_name: "Algo" })], "consume"),

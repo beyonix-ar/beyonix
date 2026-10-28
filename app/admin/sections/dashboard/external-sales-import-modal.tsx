@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useRef, useState } from "react"
-import { AlertTriangle, CheckCircle2, Copy, FileSpreadsheet, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Copy, FileSpreadsheet, Info, XCircle } from "lucide-react"
 
 import { getOrCreateIdempotencyAttempt, type IdempotencyAttempt } from "@/lib/business/idempotency-attempt"
+import { cn } from "@/lib/utils"
 import {
   EXTERNAL_SALE_IMPORT_MAX_ROWS,
   classifyExternalSalePreview,
@@ -28,15 +29,77 @@ import {
 
 const MAX_REQUEST_BYTES = 3_500_000
 
-const STATE_LABELS: Record<ExternalSalePreviewRow["state"], { label: string; className: string; icon: typeof CheckCircle2 }> = {
-  valid: { label: "Válida", className: "text-emerald-300", icon: CheckCircle2 },
-  warning: { label: "Advertencia", className: "text-amber-200", icon: AlertTriangle },
-  duplicate: { label: "Posible duplicada", className: "text-sky-200", icon: Copy },
-  error: { label: "Error", className: "text-red-300", icon: XCircle },
+type PreviewState = ExternalSalePreviewRow["state"]
+
+const STATE_LABELS: Record<PreviewState, {
+  label: string
+  /** Singular y plural para el resumen: "1 advertencia", "3 advertencias". */
+  count: [string, string]
+  className: string
+  /** Fila sin pintar entera: tono apenas perceptible y borde izquierdo (`edgeClassName`). */
+  rowClassName: string
+  edgeClassName: string
+  icon: typeof CheckCircle2
+}> = {
+  valid: { label: "Válida", count: ["válida", "válidas"], className: "text-emerald-300", rowClassName: "", edgeClassName: "border-l-transparent", icon: CheckCircle2 },
+  warning: { label: "Advertencia", count: ["advertencia", "advertencias"], className: "text-amber-200", rowClassName: "bg-amber-300/3", edgeClassName: "border-l-amber-300/60", icon: AlertTriangle },
+  duplicate: { label: "Duplicada", count: ["duplicada", "duplicadas"], className: "text-sky-200", rowClassName: "bg-sky-300/3", edgeClassName: "border-l-sky-300/60", icon: Copy },
+  error: { label: "Error", count: ["error", "errores"], className: "text-red-300", rowClassName: "bg-red-400/5", edgeClassName: "border-l-red-400/70", icon: XCircle },
 }
+
+const MODE_OPTIONS: Array<{ value: ExternalSaleStockEffect; title: string; hint: string }> = [
+  { value: "none", title: "Históricas", hint: "Ya ocurrieron y no modifican stock." },
+  { value: "consume", title: "Nuevas", hint: "Descuentan stock al confirmar." },
+]
+
+// Anchos fijos para que Producto y Validación no desarmen la fila; Producto toma el resto.
+const COLUMNS: Array<{ label: string; className: string }> = [
+  { label: "Fila", className: "w-10" },
+  { label: "Estado", className: "w-26" },
+  { label: "Fecha", className: "w-21" },
+  { label: "Cliente", className: "w-24" },
+  { label: "SKU", className: "w-21" },
+  { label: "Producto", className: "" },
+  { label: "Cant.", className: "w-11 text-center" },
+  { label: "Precio final", className: "w-23 text-right" },
+  { label: "Validación", className: "w-44" },
+]
 
 function formatDate(value: string) {
   return value.split("-").reverse().join("/")
+}
+
+function plural(count: number, [one, many]: [string, string]) {
+  return count === 1 ? one : many
+}
+
+/** Frase corta del problema y, si aporta, el detalle completo desplegable (mouse, teclado y touch). */
+function RowValidation({ row }: { row: ExternalSalePreviewRow }) {
+  if (!row.summary) return null
+  const { className, icon: Icon } = STATE_LABELS[row.state === "duplicate" ? "warning" : row.state]
+  const hasDetail = row.messages.length > 1 || row.messages[0]?.replace(/\.$/, "") !== row.summary
+  const headline = (
+    <>
+      <Icon aria-hidden="true" className={cn("mt-0.5 size-3.5 shrink-0", className)} />
+      <span className="line-clamp-2 font-semibold text-white/82">{row.summary}</span>
+    </>
+  )
+  if (!hasDetail) return <p className="flex items-start gap-1.5">{headline}</p>
+  return (
+    <details className="group">
+      <summary
+        title={row.messages.join(" ")}
+        className="flex cursor-pointer list-none items-start gap-1.5 rounded outline-none focus-visible:ring-2 focus-visible:ring-beyonix-sky/50 [&::-webkit-details-marker]:hidden"
+      >
+        {headline}
+        <Info aria-hidden="true" className="mt-0.5 size-3 shrink-0 text-white/40 group-open:text-white/75" />
+        <span className="sr-only">Ver detalle</span>
+      </summary>
+      <ul className="mt-1.5 space-y-1 border-l border-white/12 pl-2 text-11px leading-4 text-white/62">
+        {row.messages.map((message) => <li key={message}>{message}</li>)}
+      </ul>
+    </details>
+  )
 }
 
 /**
@@ -96,6 +159,8 @@ export function ExternalSalesImportModal({
     (acc, row) => ({ ...acc, [row.state]: acc[row.state] + 1 }),
     { valid: 0, warning: 0, duplicate: 0, error: 0 },
   )
+  // Errores y duplicadas sin confirmar no se envían.
+  const leftOut = preview.length - importable.length
 
   /** Invalida en el acto preview, confirmaciones y clave de la tanda anterior. */
   const startInput = () => {
@@ -217,17 +282,20 @@ export function ExternalSalesImportModal({
       description="Nada se guarda hasta que confirmes. Revisá el preview y elegí si las ventas son Históricas o Nuevas."
       onClose={() => { if (!importingRef.current) onClose() }}
       footer={
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-white/8 pt-4">
           {ready && (
-            <p className="mr-auto text-xs text-white/58">
-              Se importarán {importable.length} de {preview.length} filas.
-              {counts.error ? ` ${counts.error} con error quedan afuera.` : ""}
+            <p className="mr-auto text-xs leading-5" aria-live="polite">
+              <span className="font-bold text-white/85">{importable.length} de {preview.length} {preview.length === 1 ? "fila lista" : "filas listas"}</span>
+              {leftOut > 0 && (
+                <span className="text-white/50"> · {leftOut} {plural(leftOut, ["fila quedará afuera", "filas quedarán afuera"])}</span>
+              )}
+              {mode === null && <span className="block text-amber-200/85">Elegí si son Históricas o Nuevas para importar.</span>}
             </p>
           )}
           <AdminSecondaryButton disabled={importing} onClick={onClose}>Cancelar</AdminSecondaryButton>
           {ready && (
             <AdminPrimaryButton disabled={!canConfirm} onClick={() => void confirm()}>
-              {importing ? "Importando…" : `Importar ${importable.length} ventas`}
+              {importing ? "Importando…" : `Importar ${importable.length} ${importable.length === 1 ? "venta" : "ventas"}`}
             </AdminPrimaryButton>
           )}
         </div>
@@ -242,9 +310,13 @@ export function ExternalSalesImportModal({
               value={text}
               disabled={importing}
               onChange={changeText}
-              className="min-h-36 font-mono text-xs"
+              wrap="off"
+              className="custom-scrollbar h-48 min-h-0 overflow-auto font-mono text-xs leading-5"
             />
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-white/50">
+                Envío: sólo el costo logístico que pagó BEYONIX. Si el cliente pagó su envío, va $0 o vacío.
+              </p>
               <AdminSecondaryButton
                 disabled={!text.trim() || loading || importing}
                 onClick={() => void analyze(parseTabularText(text), versionRef.current)}
@@ -254,27 +326,28 @@ export function ExternalSalesImportModal({
             </div>
           </div>
         ) : (
-          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-beyonix-sky/30 bg-black/20 p-4 text-sm text-white/72">
-            <FileSpreadsheet className="size-5 text-beyonix-sky" />
-            <span>{fileName ?? "Elegí un archivo .xlsx, .xls o .csv (se lee la primera hoja)."}</span>
-            <input
-              type="file"
-              className="sr-only"
-              aria-label="Archivo de ventas externas"
-              disabled={importing}
-              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void readFile(file)
-                event.target.value = ""
-              }}
-            />
-          </label>
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-beyonix-sky/30 bg-black/20 p-4 text-sm text-white/72">
+              <FileSpreadsheet className="size-5 text-beyonix-sky" />
+              <span>{fileName ?? "Elegí un archivo .xlsx, .xls o .csv (se lee la primera hoja)."}</span>
+              <input
+                type="file"
+                className="sr-only"
+                aria-label="Archivo de ventas externas"
+                disabled={importing}
+                accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void readFile(file)
+                  event.target.value = ""
+                }}
+              />
+            </label>
+            <p className="text-xs text-white/50">
+              Envío: sólo el costo logístico que pagó BEYONIX. Si el cliente pagó su envío, va $0 o vacío.
+            </p>
+          </div>
         )}
-
-        <p className="text-xs text-white/50">
-          Envío: sólo el costo logístico que pagó BEYONIX. Si el cliente pagó su envío, va $0 o vacío.
-        </p>
 
         {sheet?.error && <AdminInfoBlock tone="danger">{sheet.error}</AdminInfoBlock>}
         {error && <p role="alert" className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</p>}
@@ -286,89 +359,128 @@ export function ExternalSalesImportModal({
 
         {ready && (
           <>
-            <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
-              {(Object.keys(STATE_LABELS) as Array<keyof typeof STATE_LABELS>).map((state) => {
-                const { label, className, icon: Icon } = STATE_LABELS[state]
-                return (
-                  <div key={state} className="rounded-xl border border-white/8 bg-black/25 p-2">
-                    <Icon className={`mx-auto size-4 ${className}`} />
-                    <p className="mt-1 font-black text-white">{counts[state]}</p>
-                    <p className="text-white/50">{label}</p>
-                  </div>
-                )
-              })}
-            </div>
-
             <fieldset className="grid gap-2 sm:grid-cols-2" disabled={importing}>
               <legend className="mb-2 text-11px font-black uppercase tracking-widest text-white/48">¿Qué ventas son?</legend>
-              {(["none", "consume"] as const).map((option) => (
-                <label key={option} className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/72 has-checked:border-beyonix-sky/50">
-                  <input type="radio" name="external-sales-import-mode" checked={mode === option} onChange={() => changeMode(option)} className="mt-1" />
-                  <span>
-                    <span className="block font-black text-white">{option === "none" ? "Históricas" : "Nuevas"}</span>
-                    {option === "none"
-                      ? "Ya ocurrieron y el stock físico actual las contempla: no modifican el stock. Se cuentan en su fecha real."
-                      : "Recién realizadas: descuentan stock al confirmar, sin tocar unidades reservadas por la tienda web."}
+              {MODE_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  className="group flex cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 transition-colors hover:border-white/22 has-checked:border-beyonix-sky/70 has-checked:bg-beyonix-sky/10 has-focus-visible:ring-2 has-focus-visible:ring-beyonix-sky/40"
+                >
+                  <input
+                    type="radio"
+                    name="external-sales-import-mode"
+                    checked={mode === option.value}
+                    onChange={() => changeMode(option.value)}
+                    className="size-4 shrink-0 accent-beyonix-sky"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-black text-white/80 group-has-checked:text-white">{option.title}</span>
+                    <span className="block text-xs text-white/52">{option.hint}</span>
                   </span>
+                  <CheckCircle2 aria-hidden="true" className="ml-auto hidden size-4 shrink-0 text-beyonix-sky group-has-checked:block" />
                 </label>
               ))}
             </fieldset>
 
-            <div className="sales-ledger-scrollbar max-h-[45vh] overflow-auto rounded-xl border border-white/8">
-              <table className="w-full min-w-[920px] text-left text-xs">
-                <thead className="sticky top-0 bg-[#07111B] text-10px font-black uppercase tracking-widest text-white/45">
+            <ul aria-label="Resumen de validación" className="flex flex-wrap gap-2 text-xs">
+              {(Object.keys(STATE_LABELS) as PreviewState[]).map((state) => {
+                const { count, className, icon: Icon } = STATE_LABELS[state]
+                return (
+                  <li
+                    key={state}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg border border-white/8 bg-black/25 px-2.5 py-1",
+                      counts[state] ? "text-white/82" : "text-white/40",
+                    )}
+                  >
+                    <Icon aria-hidden="true" className={cn("size-3.5", counts[state] ? className : "text-white/30")} />
+                    <span><b className="font-black tabular-nums">{counts[state]}</b> {plural(counts[state], count)}</span>
+                  </li>
+                )
+              })}
+            </ul>
+
+            {/* Alto atado al viewport: en desktop el modal entra entero y sólo scrollea la tabla. */}
+            <div className="sales-ledger-scrollbar max-h-[max(12rem,calc(100dvh-42rem))] overflow-auto rounded-xl border border-white/8">
+              <table className="w-full min-w-[760px] table-fixed text-left text-xs">
+                <thead className="text-10px font-black uppercase tracking-wider text-white/45">
                   <tr>
-                    {["Fila", "Estado", "Fecha", "Cliente", "SKU", "Producto", "Cant.", "Precio final", "Validación"].map((label) => (
-                      <th key={label} className="px-2 py-2">{label}</th>
+                    {COLUMNS.map((column) => (
+                      <th
+                        key={column.label}
+                        scope="col"
+                        className={cn("sticky top-0 z-10 bg-[#07111B] px-2 py-2 leading-tight shadow-[inset_0_-1px_0_rgb(255_255_255/0.08)]", column.className)}
+                      >
+                        {column.label}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {preview.map((row) => {
-                    const { label, className, icon: Icon } = STATE_LABELS[row.state]
+                    const { label, className, rowClassName, edgeClassName, icon: Icon } = STATE_LABELS[row.state]
                     const payload = row.parsed.payload
                     const values = row.parsed.sourceValues
+                    const customer = payload?.customer_name ?? values.Cliente ?? null
+                    const sku = payload?.sku ?? values.SKU ?? null
+                    const product = payload?.product_name ?? row.catalogName ?? values.Producto ?? null
                     return (
-                      <tr key={row.parsed.sourceRowNumber} className="border-t border-white/6 align-top text-white/72">
-                        <td className="px-2 py-2 tabular-nums text-white/45">{row.parsed.sourceRowNumber}</td>
-                        <td className={`whitespace-nowrap px-2 py-2 font-bold ${className}`}>
-                          <Icon className="mr-1 inline size-3.5" />{label}
+                      <tr key={row.parsed.sourceRowNumber} className={cn("border-t border-white/6 align-top text-white/72", rowClassName)}>
+                        <td className={cn("border-l-2 px-2 py-2 tabular-nums text-white/45", edgeClassName)}>{row.parsed.sourceRowNumber}</td>
+                        <td className={cn("px-2 py-2 font-bold", className)}>
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <Icon aria-hidden="true" className="size-3.5 shrink-0" />{label}
+                          </span>
                         </td>
-                        <td className="whitespace-nowrap px-2 py-2">{payload ? formatDate(payload.sale_date) : values.Fecha ?? "—"}</td>
-                        <td className="px-2 py-2">{payload?.customer_name ?? "—"}</td>
-                        <td className="px-2 py-2 font-mono">{payload?.sku ?? values.SKU ?? "—"}</td>
+                        <td className="whitespace-nowrap px-2 py-2 tabular-nums">{payload ? formatDate(payload.sale_date) : values.Fecha || "—"}</td>
                         <td className="px-2 py-2">
-                          {payload?.product_name ?? row.catalogName ?? "—"}
+                          <span className="line-clamp-2 break-words" title={customer ?? undefined}>{customer || "—"}</span>
+                        </td>
+                        <td className="px-2 py-2">
+                          <span className="block truncate font-mono" title={sku ?? undefined}>{sku || "—"}</span>
+                        </td>
+                        <td className="px-2 py-2">
+                          <span className="line-clamp-2 break-words" title={product ?? undefined}>{product || "—"}</span>
                           {row.catalogName && payload?.product_name && row.catalogName !== payload.product_name && (
-                            <span className="block text-10px text-white/40">Catálogo: {row.catalogName}</span>
+                            <span className="block truncate text-10px text-white/40" title={row.catalogName}>Catálogo: {row.catalogName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-2 tabular-nums">{payload?.quantity ?? "—"}</td>
-                        <td className="px-2 py-2 tabular-nums">{payload ? formatPrice(payload.gross_amount) : "—"}</td>
+                        <td className="px-2 py-2 text-center tabular-nums">{payload?.quantity ?? "—"}</td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums">{payload ? formatPrice(payload.gross_amount) : "—"}</td>
                         <td className="px-2 py-2">
-                          {row.messages.map((message) => <p key={message}>{message}</p>)}
+                          <RowValidation row={row} />
                           {row.duplicateOf && (
-                            <label className="mt-1 flex items-center gap-2 text-sky-100">
-                              <input
-                                type="checkbox"
-                                disabled={importing}
-                                checked={confirmed.has(row.parsed.sourceRowNumber)}
-                                onChange={(event) => setConfirmed((selected) => {
-                                  const next = new Set(selected)
-                                  if (event.target.checked) next.add(row.parsed.sourceRowNumber)
-                                  else next.delete(row.parsed.sourceRowNumber)
-                                  return next
-                                })}
-                              />
-                              Es una venta distinta
-                              <span className="text-white/45">
-                                ({row.duplicateOf.inPaste ? "repetida en estas filas" : ""}
+                            <div className={cn("space-y-1", row.summary && "mt-1.5")}>
+                              <p className="flex items-start gap-1.5 font-semibold text-sky-100">
+                                <Copy aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-sky-200" />
+                                Posible duplicada
+                              </p>
+                              <p className="truncate text-11px text-white/45">
+                                {row.duplicateOf.inPaste ? "Repetida en estas filas" : ""}
                                 {row.duplicateOf.inPaste && row.duplicateOf.saleNumbers.length ? " · " : ""}
-                                {row.duplicateOf.saleNumbers.slice(0, 3).map(externalSaleCode).join(", ")})
-                              </span>
-                            </label>
+                                {row.duplicateOf.saleNumbers.slice(0, 3).map(externalSaleCode).join(", ")}
+                              </p>
+                              <label className="flex items-center gap-2 text-sky-100">
+                                <input
+                                  type="checkbox"
+                                  disabled={importing}
+                                  checked={confirmed.has(row.parsed.sourceRowNumber)}
+                                  onChange={(event) => setConfirmed((selected) => {
+                                    const next = new Set(selected)
+                                    if (event.target.checked) next.add(row.parsed.sourceRowNumber)
+                                    else next.delete(row.parsed.sourceRowNumber)
+                                    return next
+                                  })}
+                                />
+                                Es una venta distinta
+                              </label>
+                            </div>
                           )}
-                          {!row.messages.length && !row.duplicateOf && <span className="text-white/35">OK</span>}
+                          {!row.summary && !row.duplicateOf && (
+                            <span className="inline-flex items-center gap-1 text-white/35">
+                              <CheckCircle2 aria-hidden="true" className="size-3.5" />OK
+                            </span>
+                          )}
                         </td>
                       </tr>
                     )
