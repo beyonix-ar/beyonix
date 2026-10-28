@@ -7,11 +7,11 @@ const read = (path: string) => readFileSync(join(process.cwd(), path), "utf8")
 
 test("Q. los paneles distinguen error inicial de vacío y ofrecen retry", () => {
   const costs = read("app/admin/sections/dashboard/admin-costs-panel.tsx")
-  const external = read("app/admin/sections/dashboard/admin-sales-ledger.tsx")
+  const external = read("app/admin/sections/dashboard/admin-external-sales.tsx")
   const marketplace = read("app/admin/sections/dashboard/admin-mercadolibre-sales.tsx")
 
   assert.match(costs, /!loading && error && !data/)
-  assert.match(external, /!loading && error && rows\.length === 0/)
+  assert.match(external, /!loading && error && sales\.length === 0/)
   assert.match(marketplace, /!loading && error && sales\.length === 0/)
   for (const source of [costs, external, marketplace]) assert.match(source, /Reintentar/)
 })

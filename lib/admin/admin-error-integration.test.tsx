@@ -34,7 +34,7 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
   let replacementLoadFails = false
   let receptionCalls = 0
   let orderFailure: "network" | "404" | "403" | "timeout" | null = "network"
-  const sale = { id: "sale-1", sale_date: "2026-09-19", product_id: 1, variant_id: 1, product_name: "Auricular Ñandú", sku: "SKU-1", quantity: 2, gross_amount: 50000, net_amount: 45000, unit_cost: 1000, fee_amount: 5000, status: "completed", created_at: "2026-09-19T12:00:00Z" }
+  const sale = { id: "sale-1", sale_number: 7, sale_date: "2026-09-19", product_id: 1, variant_id: 1, product_name: "Auricular Ñandú", sku: "SKU-1", quantity: 2, gross_amount: 50000, net_amount: 45000, unit_cost: 1000, fee_amount: 5000, shipping_amount: 0, customer_name: "Lucía", channel: "whatsapp", stock_effect: "consume", origin: "manual", version: 1, profit_amount: 20000, profit_source: "calculated", status: "completed", created_at: "2026-09-19T12:00:00Z" }
   const impact = { kind: "purchase", id: "123", product: "Auricular Ñandú", variant: "Azul", sku: "SKU-1", receivedQuantity: 3, totalCost: 10000, currentStock: 5, projectedStock: 2, affectedSales: 1, variants: 1, references: [], confirmation: "ELIMINAR COMPRA 123", fingerprint: "version-1" }
   const fetchMock = mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input)
@@ -59,13 +59,20 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     }
     if (path === "/api/admin/integrations/andreani/test") return Response.json({ configured: false, environment: "QA" })
     if (path.includes("local-test.invalid") || path.includes("banner")) return Response.json([])
-    if (path === "/api/admin/sales-ledger") return Response.json({ catalog: [], externalSales: [{ ...sale, status: reversed ? "reversed" : "completed", reversal_reason: reversed ? "Venta duplicada por error" : null, reversal_amount: reversed ? 45000 : null, reversed_by_name: reversed ? "Administración" : null }], mlSales: [] })
-    if (path === "/api/admin/sales-ledger/sale-1/reverse") {
+    const externalSale = () => ({ ...sale, status: reversed ? "reversed" : "completed", reversal_kind: reversed ? "entry_error" : null, reversal_reason: reversed ? "Venta duplicada por error" : null, reversal_amount: reversed ? 50000 : null })
+    if (path === "/api/admin/external-sales") return Response.json({ sales: [externalSale()], truncated: false })
+    if (path === "/api/admin/external-sales/sale-1") {
+      return Response.json({ sale: { ...externalSale(), source_values: null, created_by_name: "Administración", reversed_by_name: reversed ? "Administración" : null }, batch: null, catalog: { product: { id: 1, nombre: "Auricular Ñandú", sku: "SKU-1", activo: true }, variant: null }, history: [] })
+    }
+    if (path === "/api/admin/external-sales/sale-1/cancel") {
       const payload = JSON.parse(String(init?.body))
+      assert.equal(payload.kind, "entry_error")
+      assert.equal(payload.returnCondition, null)
       assert.equal(payload.reason, "Venta duplicada por error")
+      assert.equal(payload.version, 1)
       assert.ok(payload.idempotencyKey)
       reversalCalls++; reversed = true
-      return Response.json({ reversed: true })
+      return Response.json({ sale: externalSale() })
     }
     if (path === "/api/admin/mercadolibre-sales/sale-1/return-review") return Response.json({ error: "Esta devolución fue modificada por otro administrador. Recargá los datos antes de continuar." }, { status: 409 })
     if (path.startsWith("/api/admin/pedidos/123/replacements")) {
@@ -179,23 +186,30 @@ test("componentes reales: alertas/facturación error ≠ vacío, retry y borrado
     const { saveMercadoLibreReturnReview } = await import("../supabase/queries/mercadolibre-sales")
     await assert.rejects(saveMercadoLibreReturnReview("sale-1", { expectedApprovedAt: null, receivedQuantity: 1, sellableQuantity: 1, discountedQuantity: 0, nonSellableQuantity: 0, discountPercent: null, discountReason: "", nonSellableReason: "", notes: "" }), /modificada por otro administrador/)
 
-    const { AdminSalesLedger } = await import("../../app/admin/sections/dashboard/admin-sales-ledger")
-    await render(<AdminSalesLedger channel="external" />)
-    const reverse = [...document.querySelectorAll("button")].find((button) => button.getAttribute("aria-label")?.includes("Reversar"))!
-    assert.ok(reverse)
-    await act(async () => reverse.click())
-    const dialog = document.querySelector('[role="dialog"]')!
-    assert.match(dialog.textContent || "", /no reintegra dinero automáticamente/)
-    const confirmReverse = [...dialog.querySelectorAll("button")].find((button) => button.textContent === "Confirmar reversión")!
-    assert.equal(confirmReverse.disabled, true)
-    const reason = dialog.querySelector("textarea")!
+    const { AdminExternalSales } = await import("../../app/admin/sections/dashboard/admin-external-sales")
+    await render(<AdminExternalSales />)
     const textareaSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, "value")!.set!
+    assert.match(document.body.textContent || "", /Auricular Ñandú/)
+    assert.match(document.body.textContent || "", /VE-000007/)
+    const view = [...document.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === "Ver venta VE-000007")!
+    await act(async () => view.click())
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    const dialog = document.querySelector('[role="dialog"]')!
+    assert.match(dialog.textContent || "", /Nueva · descuenta stock/)
+    await act(async () => [...dialog.querySelectorAll("button")].find((button) => button.textContent === "Registrar devolución / Anular venta")!.click())
+    assert.match(dialog.textContent || "", /No reintegra dinero al cliente/)
+    const confirmCancel = () => [...dialog.querySelectorAll("button")].find((button) => button.textContent === "Anular venta")!
+    assert.equal(confirmCancel().disabled, true, "sin tipo ni motivo no se puede anular")
+    await act(async () => dialog.querySelector<HTMLInputElement>('input[name="external-sale-cancel-kind"]')!.click())
+    assert.match(dialog.textContent || "", /Se devuelven 2 unidades al stock vendible/)
+    const reason = dialog.querySelector("textarea")!
     await act(async () => { textareaSetter.call(reason, "Venta duplicada por error"); reason.dispatchEvent(new dom.window.Event("input", { bubbles: true })) })
-    assert.equal(confirmReverse.disabled, false)
-    await act(async () => { confirmReverse.click(); confirmReverse.click() })
-    assert.equal(reversalCalls, 1)
-    assert.match(document.body.textContent || "", /Reversada/)
-    assert.match(document.body.textContent || "", /Administración/)
+    assert.equal(confirmCancel().disabled, false)
+    await act(async () => { confirmCancel().click(); confirmCancel().click() })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    assert.equal(reversalCalls, 1, "doble click: una sola anulación")
+    assert.match(document.body.textContent || "", /Venta anulada por error de carga/)
+    assert.match(document.body.textContent || "", /Anulada/)
 
     const { OrderReplacementManager } = await import("../../app/admin/sections/pedidos/order-replacements")
     let updated = 0

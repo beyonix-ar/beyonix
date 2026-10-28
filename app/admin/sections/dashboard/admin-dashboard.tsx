@@ -61,8 +61,8 @@ const AdminCostsPanel = dynamic(
   () => import("./admin-costs-panel").then((module) => module.AdminCostsPanel),
   { loading: DashboardPanelLoading, ssr: false },
 )
-const AdminSalesLedger = dynamic(
-  () => import("./admin-sales-ledger").then((module) => module.AdminSalesLedger),
+const AdminExternalSales = dynamic(
+  () => import("./admin-external-sales").then((module) => module.AdminExternalSales),
   { loading: DashboardPanelLoading, ssr: false },
 )
 const AdminMercadoLibreSales = dynamic(
@@ -738,7 +738,7 @@ export function AdminDashboard() {
       {tab === "costos" ? (
         <AdminCostsPanel onChanged={() => void reloadDashboard()} />
       ) : tab === "externas" ? (
-        <AdminSalesLedger channel="external" />
+        <AdminExternalSales />
       ) : tab === "ml" ? (
         <AdminMercadoLibreSales />
       ) : tab === "operativo" ? (

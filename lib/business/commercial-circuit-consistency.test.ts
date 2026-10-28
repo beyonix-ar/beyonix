@@ -61,7 +61,11 @@ test("las ventas externas catalogadas usan el mismo libro de compras que web y M
   assert.match(dashboardRoute, /resolveExternalSaleUnitCost\(\{/)
   assert.match(
     dashboardRoute,
-    /externalMerchandiseCosts\.set\(String\(row\.id\), merchandiseCost\)/,
+    /merchandiseCost: getExternalSaleMerchandiseCost\(unitCost, quantity\)/,
+  )
+  assert.match(
+    dashboardRoute,
+    /externalProfitability\.set\(String\(row\.id\), profitability\)/,
   )
 })
 
@@ -83,16 +87,16 @@ test("el costo y la ganancia por venta externa no duplican el descuento del cost
   )?.[0] ?? ""
 
   assert.notEqual(externalMapping, "")
+  // Costo y ganancia salen de un único cálculo (el mismo que suma al costo de
+  // ventas), que además respeta la ganancia declarada de ventas históricas.
   assert.match(
     externalMapping,
-    /externalMerchandiseCosts\.get\(String\(row\.id\)\)/,
+    /externalProfitability\.get\(String\(row\.id\)\)/,
   )
-  assert.match(
-    externalMapping,
-    /calculateExternalSaleProfitability\(\{/,
-  )
+  assert.doesNotMatch(externalMapping, /resolveExternalSaleReportedProfitability|calculateExternalSaleProfitability/)
   assert.doesNotMatch(externalMapping, /Number\(row\.unit_cost \?\? 0\) \* quantity/)
-  assert.match(externalMapping, /marginPercent: profitability\.marginPercent/)
+  assert.match(externalMapping, /marginPercent: profitability\?\.marginPercent/)
+  assert.equal(dashboardRoute.match(/resolveExternalSaleReportedProfitability\(\{/g)?.length, 1)
 })
 
 test("el costo histórico respeta fecha y variante sin usar costos futuros", () => {

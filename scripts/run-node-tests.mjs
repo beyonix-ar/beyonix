@@ -288,6 +288,8 @@ const TEST_FILES = [
   "lib/business/standalone-cost-items.test.ts",
   "lib/business/purchase-cost-audit.test.ts",
   "lib/business/historical-cost-snapshot.test.ts",
+  "lib/business/external-sales.test.ts",
+  "lib/business/external-sales-db.test.ts",
   "lib/business/return-profitability.test.ts",
   "lib/orders/return-reception-unification.test.ts",
   "lib/orders/credit-note-reception.test.ts",
@@ -413,6 +415,7 @@ const DB_TEST_FILES = [
   "lib/orders/dispatch-cancellation-concurrency.test.mjs",
   "lib/orders/bundle-handover-cancellation-concurrency.test.mjs",
   "lib/analytics/product-view-concurrency.test.mjs",
+  "lib/business/external-sales-concurrency.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
@@ -439,6 +442,7 @@ const SERVER_TSX_TEST_FILES = [
   "lib/reviews/reviews-routes.test.ts",
   "lib/cart/shipping-bonus-terms.test.ts",
   "lib/admin/system-health-routes.test.ts",
+  "lib/admin/external-sales-routes.test.ts",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))

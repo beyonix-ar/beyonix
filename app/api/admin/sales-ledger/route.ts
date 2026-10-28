@@ -490,12 +490,20 @@ export async function GET(request: Request) {
   })
 }
 
+// Las ventas externas se escriben sólo por /api/admin/external-sales (RPC con
+// versión, tipo de stock explícito y reservas web). Este endpoint queda para
+// lectura y para las ventas manuales de Mercado Libre.
+function externalSalesMoved() {
+  return errorResponse("Las ventas externas se cargan y editan desde Admin > Ventas externas.", 410)
+}
+
 export async function POST(request: Request) {
   const auth = await authorize(request)
   if ("error" in auth) return auth.error
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
   const saleChannel = channel(body?.channel)
   if (!body || !saleChannel) return errorResponse("El canal de venta no es válido.")
+  if (saleChannel === "external") return externalSalesMoved()
 
   const normalized = normalizePayload(body, auth.user.id)
   if (!("value" in normalized)) {
@@ -511,37 +519,20 @@ export async function POST(request: Request) {
   )
   if (targetError) return errorResponse(targetError)
 
-  const payload = (() => {
-    if (saleChannel !== "ml") {
-      return variantId
-        ? { ...normalizedValue, variant_id: variantId }
-        : normalizedValue
-    }
-    const manualMlSale = { ...normalizedValue }
-    delete manualMlSale.created_by
-    return {
-      ...manualMlSale,
-      sale_date: `${String(manualMlSale.sale_date)}T12:00:00-03:00`,
-      imported_by: auth.user.id,
-      imported_at: new Date().toISOString(),
-      raw_data: {
-        origin: "manual",
-        beyonix_cost_mapping: {
-          product_id: productId,
-          variant_id: variantId,
-        },
+  const manualMlSale = { ...normalizedValue }
+  delete manualMlSale.created_by
+  const payload = {
+    ...manualMlSale,
+    sale_date: `${String(manualMlSale.sale_date)}T12:00:00-03:00`,
+    imported_by: auth.user.id,
+    imported_at: new Date().toISOString(),
+    raw_data: {
+      origin: "manual",
+      beyonix_cost_mapping: {
+        product_id: productId,
+        variant_id: variantId,
       },
-    }
-  })()
-
-  if (saleChannel === "external") {
-    const key = request.headers.get("Idempotency-Key")?.trim()
-    if (!key || key.length < 8 || key.length > 240) return errorResponse("Falta una clave de operación válida.")
-    const { data, error } = await auth.admin.rpc("create_external_sale_idempotent", {
-      p_payload: payload, p_actor_id: auth.user.id, p_idempotency_key: key,
-    })
-    if (error) return databaseError(error.message)
-    return Response.json({ item: normalizeResponseRow(data as Record<string, unknown>) }, { status: 201 })
+    },
   }
 
   let result = await auth.admin
@@ -583,6 +574,7 @@ export async function PATCH(request: Request) {
   const saleChannel = channel(body?.channel)
   const id = text(body?.id, 80)
   if (!body || !saleChannel || !id) return errorResponse("La venta indicada no es válida.")
+  if (saleChannel === "external") return externalSalesMoved()
 
   const normalized = normalizePayload(body, auth.user.id, true)
   if (!("value" in normalized)) {
@@ -598,44 +590,28 @@ export async function PATCH(request: Request) {
   )
   if (targetError) return errorResponse(targetError)
 
-  let payload: Record<string, unknown>
-  if (saleChannel === "ml") {
-    const { data: currentSale, error: currentSaleError } = await auth.admin
-      .from("mercadolibre_sales")
-      .select("raw_data")
-      .eq("id", id)
-      .maybeSingle()
-    if (currentSaleError || !currentSale) {
-      return errorResponse("No se pudo recuperar el origen de la venta.", 500)
-    }
-    const currentRawData =
-      currentSale.raw_data && typeof currentSale.raw_data === "object"
-        ? currentSale.raw_data as Record<string, unknown>
-        : {}
-    payload = {
-      ...normalizedValue,
-      sale_date: `${String(normalizedValue.sale_date)}T12:00:00-03:00`,
-      raw_data: {
-        ...currentRawData,
-        beyonix_cost_mapping: {
-          product_id: productId,
-          variant_id: variantId,
-        },
-      },
-    }
-  } else {
-    payload = variantId
-      ? { ...normalizedValue, variant_id: variantId }
-      : { ...normalizedValue, variant_id: null }
+  const { data: currentSale, error: currentSaleError } = await auth.admin
+    .from("mercadolibre_sales")
+    .select("raw_data")
+    .eq("id", id)
+    .maybeSingle()
+  if (currentSaleError || !currentSale) {
+    return errorResponse("No se pudo recuperar el origen de la venta.", 500)
   }
-
-  if (saleChannel === "external") {
-    const { data, error } = await auth.admin.from("external_sales")
-      .update(payload).eq("id", id).eq("status", "completed")
-      .select(columnsFor("external")).returns<Record<string, unknown>[]>().maybeSingle()
-    if (error) return databaseError(error.message)
-    if (!data) return errorResponse("La venta ya no existe o fue reversada. Actualizá los datos.", 409)
-    return Response.json({ item: normalizeResponseRow(data) })
+  const currentRawData =
+    currentSale.raw_data && typeof currentSale.raw_data === "object"
+      ? currentSale.raw_data as Record<string, unknown>
+      : {}
+  const payload = {
+    ...normalizedValue,
+    sale_date: `${String(normalizedValue.sale_date)}T12:00:00-03:00`,
+    raw_data: {
+      ...currentRawData,
+      beyonix_cost_mapping: {
+        product_id: productId,
+        variant_id: variantId,
+      },
+    },
   }
 
   let result = await auth.admin

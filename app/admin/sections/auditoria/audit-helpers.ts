@@ -500,10 +500,21 @@ function getBulkEventType(log: SupabaseAuditLog) {
   return typeof eventType === "string" && eventType ? eventType : null
 }
 
+// Eventos de las RPC de ventas externas (after_data.scope, con actor y motivo).
+const EXTERNAL_SALE_AUDIT_TITLES: Record<string, string> = {
+  external_sale_create: "Venta externa registrada",
+  external_sale_edit: "Venta externa editada",
+  external_sale_entry_error: "Venta externa anulada (error de carga)",
+  external_sale_return: "Devolución de venta externa",
+  external_sale_import: "Importación de ventas externas",
+  external_sale_import_revert: "Importación de ventas externas deshecha",
+}
+
 function formatOperationalSummary(log: SupabaseAuditLog): AuditDescription | null {
   const data = (log.action === "DELETE" ? log.before_data : log.after_data) ?? {}
   const labels: Record<string, string> = {
-    external_sales: data.status === "reversed" ? "Venta externa reversada" : "Venta externa registrada / actualizada",
+    external_sales: EXTERNAL_SALE_AUDIT_TITLES[String(data.scope)]
+      ?? (data.status === "reversed" ? "Venta externa reversada" : "Venta externa registrada / actualizada"),
     order_replacements: "Reemplazo registrado", order_credit_notes: "Nota de crédito",
     mercadopago_order_refunds: "Reintegro por Mercado Pago", order_refund_proofs: "Comprobante de reintegro",
     order_claims: "Reclamo actualizado", mercadolibre_return_reviews: "Revisión física de Mercado Libre",

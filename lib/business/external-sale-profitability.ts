@@ -74,3 +74,46 @@ export function calculateExternalSaleProfitability({
         : null,
   }
 }
+
+/**
+ * Ganancia que reportan Dashboard y Ventas externas. Una venta histórica
+ * (stock_effect = none) conserva la ganancia declarada en el Excel: nunca se
+ * reemplaza por una calculada con costos posteriores. Una venta nueva usa el
+ * costo de mercadería y sólo cae en la declarada si ese costo no se conoce.
+ * Con ganancia declarada, el costo implícito (ingreso neto - ganancia)
+ * mantiene el costo de ventas coherente con la ganancia informada.
+ */
+export function resolveExternalSaleReportedProfitability({
+  stockEffect,
+  declaredProfit,
+  merchandiseCost,
+  ...amounts
+}: Parameters<typeof calculateExternalSaleProfitability>[0] & {
+  stockEffect: unknown
+  declaredProfit: unknown
+}) {
+  const computed = calculateExternalSaleProfitability({ ...amounts, merchandiseCost })
+  const declared = declaredProfit == null || declaredProfit === "" ? null : finiteNumber(declaredProfit)
+  const useDeclared =
+    declared != null &&
+    computed.revenueAfterFees != null &&
+    (stockEffect === "none" || computed.profitAmount == null)
+
+  if (!useDeclared || computed.revenueAfterFees == null || declared == null) {
+    return {
+      ...computed,
+      merchandiseCost: computed.profitAmount == null ? null : finiteNonNegativeNumber(merchandiseCost),
+      profitSource: computed.profitAmount == null ? null : ("calculated" as const),
+    }
+  }
+
+  const gross = finiteNumber(amounts.grossAmount) ?? 0
+  const impliedCost = computed.revenueAfterFees - declared
+  return {
+    revenueAfterFees: computed.revenueAfterFees,
+    profitAmount: declared,
+    marginPercent: gross > 0 ? (declared / gross) * 100 : null,
+    merchandiseCost: impliedCost >= 0 ? impliedCost : null,
+    profitSource: "declared" as const,
+  }
+}

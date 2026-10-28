@@ -12,8 +12,8 @@ import {
   resolveReportedUnitCost,
 } from "@/lib/business/product-costs"
 import {
-  calculateExternalSaleProfitability,
   getExternalSaleMerchandiseCost,
+  resolveExternalSaleReportedProfitability,
   resolveExternalSaleUnitCost,
 } from "@/lib/business/external-sale-profitability"
 import {
@@ -662,7 +662,7 @@ export async function GET(request: Request) {
           (from, to) =>
             auth.admin
               .from("external_sales")
-              .select("id, sale_date, product_id, variant_id, product_name, sku, quantity, unit_cost, costo_unitario_historico, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference, status")
+              .select("id, sale_date, product_id, variant_id, product_name, sku, quantity, unit_cost, costo_unitario_historico, gross_amount, fee_amount, shipping_amount, other_expense_amount, net_amount, payment_method, reference, status, stock_effect, declared_profit")
               .order("id", { ascending: true })
               .range(from, to),
         )
@@ -1062,7 +1062,10 @@ export async function GET(request: Request) {
   })
 
   let externalUnits = 0
-  const externalMerchandiseCosts = new Map<string, number | null>()
+  const externalProfitability = new Map<
+    string,
+    ReturnType<typeof resolveExternalSaleReportedProfitability>
+  >()
   externalRows.forEach((row) => {
     const quantity = Math.max(Number(row.quantity ?? 0), 0)
     const saleDate = String(row.sale_date ?? "")
@@ -1089,14 +1092,24 @@ export async function GET(request: Request) {
       historicalUnitCost,
       manualUnitCost: row.unit_cost,
     })
-    const merchandiseCost = getExternalSaleMerchandiseCost(unitCost, quantity)
+    // Ventas históricas importadas: la ganancia declarada en el Excel manda
+    // (ver resolveExternalSaleReportedProfitability).
+    const profitability = resolveExternalSaleReportedProfitability({
+      stockEffect: row.stock_effect,
+      declaredProfit: row.declared_profit,
+      grossAmount: row.gross_amount,
+      feeAmount: row.fee_amount,
+      shippingAmount: row.shipping_amount,
+      otherExpenseAmount: row.other_expense_amount,
+      merchandiseCost: getExternalSaleMerchandiseCost(unitCost, quantity),
+    })
 
     externalUnits += quantity
-    if (merchandiseCost != null) {
+    if (profitability.merchandiseCost != null) {
       coveredUnits += quantity
-      costOfGoodsSold += merchandiseCost
+      costOfGoodsSold += profitability.merchandiseCost
     }
-    externalMerchandiseCosts.set(String(row.id), merchandiseCost)
+    externalProfitability.set(String(row.id), profitability)
   })
 
   const totalCostableUnits =
@@ -1572,18 +1585,8 @@ export async function GET(request: Request) {
         ...externalRows.map((row) => {
           const quantity = Number(row.quantity ?? 0)
           const grossAmount = Number(row.gross_amount ?? 0)
-          const feeAmount = Number(row.fee_amount ?? 0)
-          const shippingAmount = Number(row.shipping_amount ?? 0)
-          const otherExpenseAmount = Number(row.other_expense_amount ?? 0)
-          const costAmount =
-            externalMerchandiseCosts.get(String(row.id)) ?? null
-          const profitability = calculateExternalSaleProfitability({
-            grossAmount,
-            feeAmount,
-            shippingAmount,
-            otherExpenseAmount,
-            merchandiseCost: costAmount,
-          })
+          const profitability = externalProfitability.get(String(row.id))
+          const costAmount = profitability?.merchandiseCost ?? null
 
           return {
             id: `external-${String(row.id)}`,
@@ -1596,8 +1599,8 @@ export async function GET(request: Request) {
             quantity,
             grossAmount,
             costAmount,
-            profitAmount: profitability.profitAmount,
-            marginPercent: profitability.marginPercent,
+            profitAmount: profitability?.profitAmount ?? null,
+            marginPercent: profitability?.marginPercent ?? null,
             orderId: row.reference ? String(row.reference) : null,
           }
         }),
