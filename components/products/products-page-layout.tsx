@@ -42,6 +42,12 @@ import {
 import { getImageUrlFromMediaIndex } from "@/lib/products/product-video"
 import { SITE_SETTINGS } from "@/config/site-settings"
 import { useCatalogFilters } from "./use-catalog-filters"
+import { CatalogPartialNotice, CatalogStatus } from "./catalog-status"
+import {
+  getCatalogViewState,
+  isCatalogPartiallyLoaded,
+  type CatalogLoadStatus,
+} from "@/lib/products/catalog-view-state"
 
 interface StoreBanner {
   id: string
@@ -70,6 +76,8 @@ export function ProductsPageLayout({
 }: ProductsPageLayoutProps) {
   const [products, setProducts] = useState<SupabaseProducto[]>(initialProducts)
   const [categories, setCategories] = useState<SupabaseCategoria[]>(initialCategories)
+  const [loadStatus, setLoadStatus] = useState<CatalogLoadStatus>("loading")
+  const [reloadNonce, setReloadNonce] = useState(0)
   const [productsBanners, setProductsBanners] = useState<StoreBanner[]>([])
   const [activeBannerIndex, setActiveBannerIndex] = useState(0)
   const {
@@ -114,24 +122,46 @@ export function ProductsPageLayout({
     // en segundo plano el catálogo completo para que el filtrado
     // client-side (categorías, color, precio, ofertas) tenga el
     // universo entero, sin bloquear el contenido inicial.
-    async function loadProducts() {
-      try {
-        const [productsData, categoriesData] = await Promise.all([
-          getStoreProductos(),
-          initialCategories.length
-            ? Promise.resolve(initialCategories)
-            : getStoreCategorias(),
-        ])
+    // Un fallo de productos queda como estado de error (con Reintentar), nunca
+    // como catálogo vacío; un fallo de categorías no bloquea los productos.
+    let active = true
 
-        setProducts(productsData)
-        setCategories(categoriesData)
-      } catch (error) {
-        console.error(error)
+    async function loadProducts() {
+      const [productsResult, categoriesResult] = await Promise.allSettled([
+        getStoreProductos(),
+        initialCategories.length
+          ? Promise.resolve(initialCategories)
+          : getStoreCategorias(),
+      ])
+
+      if (!active) return
+
+      if (categoriesResult.status === "fulfilled") {
+        setCategories(categoriesResult.value)
+      } else {
+        console.error(categoriesResult.reason)
+      }
+
+      if (productsResult.status === "fulfilled") {
+        setProducts(productsResult.value)
+        setLoadStatus("ready")
+      } else {
+        console.error(productsResult.reason)
+        setLoadStatus("error")
       }
     }
 
-    loadProducts()
-  }, [initialCategories])
+    void loadProducts()
+
+    return () => {
+      active = false
+    }
+  }, [initialCategories, reloadNonce])
+
+  const retryLoadProducts = () => {
+    setLoadStatus("loading")
+    setReloadNonce((current) => current + 1)
+  }
 
   useEffect(() => {
     let active = true
@@ -212,6 +242,16 @@ export function ProductsPageLayout({
           selectedColor
         )
       : false
+
+  const catalogViewState = getCatalogViewState({
+    loadStatus,
+    totalProducts: products.length,
+    visibleProducts: filteredProducts.length,
+  })
+  const catalogPartiallyLoaded = isCatalogPartiallyLoaded({
+    loadStatus,
+    visibleProducts: filteredProducts.length,
+  })
 
   const hasCarousel =
     productsBanners.length > 1
@@ -383,17 +423,29 @@ export function ProductsPageLayout({
               setSortBy={setSortBy}
             />
 
-            <ProductsGrid
-              products={
-                filteredProducts
-              }
-              onOpenPreview={
-                openDetails
-              }
-              onAddToCart={
-                handleAddToCart
-              }
-            />
+            {catalogPartiallyLoaded && (
+              <CatalogPartialNotice onRetry={retryLoadProducts} />
+            )}
+
+            {catalogViewState === "results" ? (
+              <ProductsGrid
+                products={
+                  filteredProducts
+                }
+                onOpenPreview={
+                  openDetails
+                }
+                onAddToCart={
+                  handleAddToCart
+                }
+              />
+            ) : (
+              <CatalogStatus
+                state={catalogViewState}
+                onRetry={retryLoadProducts}
+                onClearFilters={clearAll}
+              />
+            )}
           </div>
         </div>
       </section>

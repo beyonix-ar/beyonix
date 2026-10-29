@@ -12,6 +12,7 @@ import {
 } from "@/lib/store-config"
 import { cartCheckoutButtonState } from "@/lib/cart/cart-checkout-button"
 import { calculateCartTotals } from "@/lib/cart/cart-totals"
+import { getCartSummaryTotalPresentation } from "@/lib/cart/cart-summary-total"
 import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
@@ -49,6 +50,7 @@ export function CartSummary({
     siteSettings.shipping,
   )
   const shippingCoveredByBeyonix = customerCredit.balance > 0
+  const totalPresentation = getCartSummaryTotalPresentation(shippingCoveredByBeyonix)
   const displayedTotal = totals.productsTotal
   const maxApplicableCredit = getMaxApplicableCustomerCredit(
     customerCredit.balance,
@@ -153,11 +155,17 @@ export function CartSummary({
           <Separator />
 
           <div className="flex justify-between text-base font-bold">
-            <span className="beyonix-cart-item-title text-white">Total</span>
+            <span className="beyonix-cart-item-title text-white">{totalPresentation.label}</span>
             <span className="beyonix-cart-item-title text-white">
               {formatPrice(creditApplication.externalAmountDue)}
             </span>
           </div>
+
+          {totalPresentation.note && (
+            <p data-cart-shipping-note className="beyonix-cart-item-meta text-xs leading-snug text-white/60">
+              {totalPresentation.note}
+            </p>
+          )}
 
           {interestFreeText && (
             <p data-interest-free-global className="beyonix-cart-item-meta text-xs leading-snug text-white/60">

@@ -184,8 +184,20 @@ export function CartDrawer({
 
         {/* Empty */}
         {items.length === 0 ? (
-          <div className="beyonix-cart-drawer-empty flex flex-1 items-center justify-center text-white/70">
-            Tu carrito está vacío
+          <div className="beyonix-cart-drawer-empty flex flex-1 flex-col items-center justify-center gap-4 px-4 text-center text-white/70">
+            <p>Tu carrito está vacío</p>
+            <Button
+              type="button"
+              size="lg"
+              className="beyonix-cart-checkout-btn h-10 w-full max-w-xs bg-[#112A43] text-sm font-semibold text-white transition-colors hover:bg-[#1E4A73]"
+              onClick={() => {
+                onClose()
+
+                router.push("/productos")
+              }}
+            >
+              Explorar productos
+            </Button>
           </div>
         ) : (
           <>

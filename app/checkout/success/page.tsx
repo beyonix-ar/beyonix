@@ -15,6 +15,7 @@ import {
 } from "@/components/checkout/checkout-status-layout"
 import { useCart } from "@/context/cart-context"
 import { getGuestOrderToken } from "@/lib/orders/guest-order-token-client"
+import { getPublicErrorMessage } from "@/lib/public-error-message"
 import type { TransferBankDetails } from "@/lib/payments/transfer-bank-details"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
@@ -122,9 +123,7 @@ function CheckoutSuccessContent() {
       } catch (error) {
         if (active) {
           setOrderError(
-            error instanceof Error
-              ? error.message
-              : "No se pudo recuperar el pedido.",
+            getPublicErrorMessage(error, "No pudimos recuperar el pedido."),
           )
         }
       } finally {
@@ -176,9 +175,7 @@ function CheckoutSuccessContent() {
       setOrder(data.order)
     } catch (error) {
       setOrderError(
-        error instanceof Error
-          ? error.message
-          : "No se pudo actualizar el pedido.",
+        getPublicErrorMessage(error, "No pudimos actualizar el pedido."),
       )
     }
   }

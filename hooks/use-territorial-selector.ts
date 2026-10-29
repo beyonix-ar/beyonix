@@ -32,6 +32,7 @@ import {
   type CheckoutLocalityOption,
   type CheckoutPostalCodeResult,
 } from "@/lib/andreani/checkout-quote-client"
+import { getPublicErrorMessage } from "@/lib/public-error-message"
 
 export interface TerritorialSelectOption {
   value: string
@@ -237,9 +238,7 @@ export function useTerritorialSelector(
         if (isStale()) return
         setPostalCodeOptions([])
         setPostalCodeLoadError(
-          error instanceof Error
-            ? error.message
-            : "No pudimos cargar los códigos postales.",
+          getPublicErrorMessage(error, "No pudimos cargar los códigos postales."),
         )
       })
       .finally(() => {

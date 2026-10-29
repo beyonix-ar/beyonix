@@ -87,7 +87,6 @@ import {
 
 import {
   CART_STOCK_ISSUES_MESSAGE,
-  STOCK_CHANGED_MESSAGE,
   getCartStockIssueMessage,
   getCartStockIssues,
   getMaxPurchasableQuantity,
@@ -190,6 +189,11 @@ import {
   calculateCustomerCreditApplication,
   getMaxApplicableCustomerCredit,
 } from "@/lib/customer-credit"
+import {
+  PUBLIC_ERROR_MESSAGES,
+  getPublicErrorMessage,
+  toPublicMessage,
+} from "@/lib/public-error-message"
 
 import {
   cn,
@@ -1279,9 +1283,7 @@ export default function CheckoutPage() {
         setLocalityLoadError("No pudimos cargar las localidades. Intentá nuevamente.")
         setShippingMessageTone("error")
         setShippingMessage(
-          error instanceof Error
-            ? error.message
-            : "No pudimos cargar las localidades.",
+          getPublicErrorMessage(error, "No pudimos cargar las localidades."),
         )
       })
       .finally(() => {
@@ -1376,9 +1378,7 @@ export default function CheckoutPage() {
         if (isStale()) return
         setPostalCodeOptions([])
         setPostalCodeLoadError(
-          error instanceof Error
-            ? error.message
-            : "No pudimos cargar los códigos postales.",
+          getPublicErrorMessage(error, "No pudimos cargar los códigos postales."),
         )
       })
       .finally(() => {
@@ -1524,9 +1524,7 @@ export default function CheckoutPage() {
       setShippingMessage(
         timedOut
           ? "La cotización tardó demasiado. Intentá nuevamente."
-          : errorMessage !== "QUOTE_FAILED"
-            ? errorMessage
-            : "No pudimos calcular el envío. Intentá nuevamente.",
+          : getPublicErrorMessage(error, PUBLIC_ERROR_MESSAGES.shippingQuote),
       )
     }
 
@@ -2070,7 +2068,7 @@ export default function CheckoutPage() {
         setCommercialUpdateNotice(
           Number.isFinite(serverTotal)
             ? `${COMMERCIAL_UPDATE_NOTICE} Nuevo total: ${formatPrice(serverTotal)}. Revisalo y volvé a presionar Pagar.`
-            : data.error || COMMERCIAL_UPDATE_NOTICE,
+            : toPublicMessage(data.error, COMMERCIAL_UPDATE_NOTICE),
         )
         // También pueden haber cambiado las cuotas sin interés confirmadas.
         invalidateInterestFreeInstallments()
@@ -2081,8 +2079,7 @@ export default function CheckoutPage() {
       if (customerCreditCoversTotal) {
         if (!response.ok || !data.order_id || !data.redirect_url) {
           setCheckoutError(
-            data.error ||
-              STOCK_CHANGED_MESSAGE,
+            toPublicMessage(data.error, PUBLIC_ERROR_MESSAGES.generic),
           )
           return
         }
@@ -2098,8 +2095,7 @@ export default function CheckoutPage() {
       if (selectedPayment === "transferencia") {
         if (!response.ok || !data.order_id || !data.redirect_url) {
           setCheckoutError(
-            data.error ||
-              STOCK_CHANGED_MESSAGE,
+            toPublicMessage(data.error, PUBLIC_ERROR_MESSAGES.generic),
           )
           return
         }
@@ -2118,17 +2114,14 @@ export default function CheckoutPage() {
 
       if (!response.ok || !data.init_point) {
         setCheckoutError(
-          data.error ||
-            STOCK_CHANGED_MESSAGE,
+          toPublicMessage(data.error, PUBLIC_ERROR_MESSAGES.generic),
         )
         return
       }
 
       window.location.href = data.init_point
     } catch {
-      setCheckoutError(
-        STOCK_CHANGED_MESSAGE,
-      )
+      setCheckoutError(PUBLIC_ERROR_MESSAGES.generic)
     } finally {
       submissionInFlightRef.current = false
       setIsProcessing(false)
