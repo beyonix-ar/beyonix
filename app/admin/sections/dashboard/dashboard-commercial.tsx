@@ -611,8 +611,8 @@ export function DashboardCommercialView({
             </p>
           </KpiCard>
           <KpiCard
-            label="Resultado estimado"
-            help="Considera ventas, costos y gastos cargados en el sistema. Pendiente si falta algún costo o la lectura está incompleta."
+            label="Ganancia limpia"
+            help="Ganancia después de costos y gastos registrados."
             value={
               !expensesApply
                 ? "—"
@@ -852,8 +852,8 @@ export function DashboardCommercialView({
             <FinancialMetric label="Resultado comercial" value={financialSummary.contributionResult == null ? "Pendiente" : maskAmount(financialSummary.contributionResult, hidden)} detail="Ventas netas − costo mercadería" tone={financialSummary.contributionResult == null ? "warning" : financialSummary.contributionResult >= 0 ? "positive" : "danger"} help="Resultado de las ventas antes de gastos generales. Pendiente mientras haya ventas sin costo." />
             <FinancialMetric label="Gastos pagados" value={maskAmount(financialSummary.operatingExpensesPaid, hidden)} detail="Gastos registrados" tone={financialSummary.operatingExpensesPaid > 0 ? "warning" : "neutral"} help="Sólo los gastos cargados en el sistema y pagados, más el costo de mercadería entregada como gasto." />
             <FinancialMetric label="Gastos pendientes" value={maskAmount(financialSummary.operatingExpensesPending, hidden)} detail="No se restan del resultado" tone={financialSummary.operatingExpensesPending > 0 ? "danger" : "neutral"} />
-            <FinancialMetric label="Resultado estimado" value={financialSummary.operatingResult == null ? "Pendiente" : maskAmount(financialSummary.operatingResult, hidden)} detail="Con gastos registrados" tone={financialSummary.operatingResult == null ? "warning" : financialSummary.operatingResult >= 0 ? "positive" : "danger"} help="Considera ventas, costos y gastos cargados en el sistema." />
-            <FinancialMetric label="Margen estimado" value={financialSummary.operatingMarginPercent == null ? "Pendiente" : hidden ? "****" : formatPercent(financialSummary.operatingMarginPercent)} detail="Resultado estimado / facturación" tone={financialSummary.operatingMarginPercent == null ? "warning" : financialSummary.operatingMarginPercent >= 0 ? "positive" : "danger"} />
+            <FinancialMetric label="Ganancia limpia" value={financialSummary.operatingResult == null ? "Pendiente" : maskAmount(financialSummary.operatingResult, hidden)} detail="Con gastos registrados" tone={financialSummary.operatingResult == null ? "warning" : financialSummary.operatingResult >= 0 ? "positive" : "danger"} help="Ganancia después de costos y gastos registrados." />
+            <FinancialMetric label="Margen estimado" value={financialSummary.operatingMarginPercent == null ? "Pendiente" : hidden ? "****" : formatPercent(financialSummary.operatingMarginPercent)} detail="Ganancia limpia / facturación" tone={financialSummary.operatingMarginPercent == null ? "warning" : financialSummary.operatingMarginPercent >= 0 ? "positive" : "danger"} />
           </MetricGroup>
         </div>
 

@@ -152,7 +152,7 @@ test("panel comercial: facturación, neto, costo y resultado responden al mismo 
     assert.match(kpi("Costo mercadería").detail, /100,0% con costo/)
     assert.match(kpi("Resultado comercial").value, /4\.900/)
     // Sólo el gasto del período (1.000), no el de hace 300 días.
-    assert.match(kpi("Resultado estimado").value, /3\.900/)
+    assert.match(kpi("Ganancia limpia").value, /3\.900/)
 
     const text = document.body.textContent ?? ""
     assert.match(text, /Histórico/)
@@ -171,7 +171,7 @@ test("panel comercial: con lectura incompleta no reconstruye resultados ni muest
   await renderView(ledger, summary, ({ kpi }) => {
     assert.equal(kpi("Resultado comercial").value, "Pendiente")
     assert.equal(kpi("Resultado comercial").detail, "Lectura incompleta")
-    assert.equal(kpi("Resultado estimado").value, "Pendiente")
+    assert.equal(kpi("Ganancia limpia").value, "Pendiente")
     assert.equal(kpi("Costo mercadería").detail, "Lectura incompleta")
     assert.doesNotMatch(document.body.textContent ?? "", /100,0% con costo/)
   })
@@ -205,7 +205,7 @@ test("panel comercial: venta sana + NC sin atribuir con devolución sin NC → f
     assert.equal(kpi("Ventas netas").value, "Pendiente")
     assert.equal(kpi("Resultado comercial").value, "Pendiente")
     assert.equal(kpi("Resultado comercial").detail, "Devolución sin atribuir")
-    assert.equal(kpi("Resultado estimado").value, "Pendiente")
+    assert.equal(kpi("Ganancia limpia").value, "Pendiente")
     // Operaciones y unidades no dependen del monto revertido.
     assert.equal(kpi("Operaciones").value, "2")
 
@@ -220,7 +220,7 @@ test("panel comercial: venta sana + NC sin atribuir con devolución sin NC → f
     }
     assert.equal(historic("Ventas netas"), "Pendiente")
     assert.equal(historic("Resultado comercial"), "Pendiente")
-    assert.equal(historic("Resultado estimado"), "Pendiente")
+    assert.equal(historic("Ganancia limpia"), "Pendiente")
     assert.equal(historic("Margen estimado"), "Pendiente")
   })
 })
@@ -247,14 +247,14 @@ test("panel comercial: con la NC atribuible (al producto o al envío) la factura
   })
 })
 
-test("panel comercial: mercadería entregada como gasto sin costo deja Pendiente el resultado estimado", async () => {
+test("panel comercial: mercadería entregada como gasto sin costo deja Pendiente la ganancia limpia", async () => {
   const ledger = buildLedger([
     { expense_date: dateKeyDaysAgo(3), amount: 0, status: "pagado", expense_type: "product", product_id: 99, variant_id: null, quantity: 1 },
   ])
   await renderView(ledger, buildSummary(ledger, { operatingResult: null }), ({ kpi }) => {
     // La venta tiene costo: el resultado comercial sigue siendo válido.
     assert.match(kpi("Resultado comercial").value, /4\.900/)
-    assert.equal(kpi("Resultado estimado").value, "Pendiente")
-    assert.equal(kpi("Resultado estimado").detail, "Falta costo de mercadería entregada como gasto")
+    assert.equal(kpi("Ganancia limpia").value, "Pendiente")
+    assert.equal(kpi("Ganancia limpia").detail, "Falta costo de mercadería entregada como gasto")
   })
 })
