@@ -63,6 +63,25 @@ export interface MercadoLibrePhysicalReview {
 }
 
 /**
+ * Fila de inventory_return_movements → revisión física. Pantalla ML y
+ * Dashboard la convierten con esta misma función antes de costear.
+ */
+export function toMercadoLibrePhysicalReview(
+  review: {
+    sellable_quantity?: unknown
+    discounted_quantity?: unknown
+    non_sellable_quantity?: unknown
+  } | null | undefined,
+): MercadoLibrePhysicalReview | null {
+  if (!review) return null
+  return {
+    sellableQuantity: Math.max(0, number(review.sellable_quantity)),
+    discountedQuantity: Math.max(0, number(review.discounted_quantity)),
+    nonSellableQuantity: Math.max(0, number(review.non_sellable_quantity)),
+  }
+}
+
+/**
  * Auditoría 5/7 (P1): review_mercadolibre_return ya clasifica físicamente
  * cada devolución (sellable/discounted/no vendible, ver
  * inventory_return_movements), pero el costeo del dashboard sólo miraba el
@@ -74,6 +93,12 @@ export interface MercadoLibrePhysicalReview {
  * devoluciones web -- discounted también recupera costo porque pasa a stock
  * condicionado para reventa, no se pierde), sólo non_sellable se mantiene
  * costeable.
+ *
+ * Sin revisión física, sólo return_units (cantidad explícita informada por
+ * ML) recupera costo. Ni el reembolso (total o parcial), ni el tracking, ni
+ * un estado o resultado de devolución prueban cuántas unidades volvieron,
+ * que llegaron o que sirven: ante la duda se conserva el costo. Una venta
+ * cancelada nunca despachó mercadería, por eso no tiene unidades costeables.
  */
 export function getMercadoLibreCostableUnits(
   row: Record<string, unknown>,
@@ -96,19 +121,7 @@ export function getMercadoLibreCostableUnits(
 
   if (cancelled) return 0
 
-  const returned =
-    status.includes("devol") ||
-    status.includes("reembolso") ||
-    number(parsed.cancellations_refunds) < 0 ||
-    Boolean(String(parsed.return_tracking_number ?? "").trim()) ||
-    Boolean(String(parsed.return_result ?? "").trim())
-  const reportedReturnedUnits = Math.max(
-    0,
-    Math.trunc(number(parsed.return_units)),
-  )
-  const returnedUnits = returned
-    ? reportedReturnedUnits || quantity
-    : reportedReturnedUnits
+  const returnedUnits = Math.max(0, Math.trunc(number(parsed.return_units)))
 
   return Math.max(0, quantity - Math.min(quantity, returnedUnits))
 }

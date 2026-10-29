@@ -17,6 +17,7 @@ import {
 import {
   getMercadoLibreCostableUnits,
   getMercadoLibreCostMapping,
+  toMercadoLibrePhysicalReview,
   type MercadoLibreCostMapping,
 } from "@/lib/mercadolibre/sale-costing"
 import { reconcileUnlinkedMercadoLibreSalesByExactSku } from "@/lib/mercadolibre/sku-reconciliation"
@@ -233,7 +234,12 @@ export async function GET(request: Request) {
   const costedRows = rows.map((row) => {
     const mapping: MercadoLibreCostMapping | null =
       getMercadoLibreCostMapping(row)
-    const costableUnits = getMercadoLibreCostableUnits(row)
+    const returnReview = returnReviewBySale.get(String(row.id)) ?? null
+    // Misma regla que el Dashboard: la revisión física manda sobre el autoreporte de ML.
+    const costableUnits = getMercadoLibreCostableUnits(
+      row,
+      toMercadoLibrePhysicalReview(returnReview),
+    )
     const dynamicUnitCost = mapping && row.sale_date
       ? mapping.standalone_key
         ? getStandaloneHistoricalUnitCost(
@@ -255,7 +261,7 @@ export async function GET(request: Request) {
 
     return {
       ...row,
-      return_review: returnReviewBySale.get(String(row.id)) ?? null,
+      return_review: returnReview,
       costing: {
         match_key: row.sku
           ? `sku:${String(row.sku)}`

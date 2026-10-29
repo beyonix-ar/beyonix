@@ -13,7 +13,20 @@ const argentinaDateFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 })
 
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/
+
 export function getArgentinaDateParts(value: Date | string): ZonedDateParts {
+  // Una fecha comercial sin hora (ventas externas, gastos) ya es un día
+  // argentino: pasarla por Date la leería como medianoche UTC, que en
+  // Argentina todavía es el día anterior.
+  const dateOnly = typeof value === "string" ? DATE_ONLY.exec(value) : null
+  if (dateOnly) {
+    return {
+      year: Number(dateOnly[1]),
+      month: Number(dateOnly[2]) - 1,
+      day: Number(dateOnly[3]),
+    }
+  }
   const date = typeof value === "string" ? new Date(value) : value
   const parts = argentinaDateFormatter.formatToParts(date)
   const valueFor = (type: Intl.DateTimeFormatPartTypes) =>

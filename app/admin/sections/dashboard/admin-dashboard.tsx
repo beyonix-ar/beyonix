@@ -562,6 +562,7 @@ export function AdminDashboard() {
     lowStock,
     recentOrders,
     commercialSales,
+    paidExpensesByDate,
     recentActivity,
     searchIndex,
     loading,
@@ -926,6 +927,7 @@ export function AdminDashboard() {
       ) : (
         <DashboardCommercialView
           sales={commercialSales}
+          paidExpensesByDate={paidExpensesByDate}
           financialSummary={financialSummary}
           pendingRefundOperations={stats.reintegrosPendientes}
         />

@@ -127,7 +127,7 @@ export interface RevenueReversalOrder {
   customer_credit_restored_amount?: number | string | null
 }
 
-function getNonInvoicedReversalAmount(order: RevenueReversalOrder) {
+function getEconomicReversalAmount(order: RevenueReversalOrder) {
   const orderTotal = financialAmount(order.original_total ?? order.total)
   if (order.refund_amount == null) return orderTotal
 
@@ -143,105 +143,128 @@ function getNonInvoicedReversalAmount(order: RevenueReversalOrder) {
  * evitar los dos mecanismos que existían antes (webCompletedRefunds +
  * pendingRefunds) descontando la misma plata por caminos distintos. Un solo
  * status por orden, ramas mutuamente excluyentes:
- *  - "completed": ya hay una NC autorizada (banco o saldo, misma fuente que
- *    antes) o la orden quedó refunded sin factura -- se descuenta íntegro.
+ *  - "completed": el dinero ya volvió (refunded) o hay una NC autorizada.
+ *    La reversión económica no espera a la NC: una orden facturada y
+ *    reintegrada deja de ser ingreso aunque su NC siga pendiente. La NC es
+ *    conciliación fiscal; cuando se autoriza se toma el mayor de los dos
+ *    montos (describen la misma devolución), nunca la suma.
  *  - "pending": financial_status=refund_pending sin NC autorizada todavía
  *    (P0 confirmado en Auditoría 5/7: esta ventana normal de operación no
  *    descontaba nada de netSales/trueProfit, así que una orden cancelada con
  *    reintegro pendiente contaba como venta íntegra).
  *  - "none": ninguna reversión en curso.
  * No se muta payment_status (instrucción explícita): la clasificación se
- * arma sólo a partir de financial_status/invoice_status/refund_amount.
+ * arma sólo a partir de financial_status/refunded_at/refund_amount y NC.
  */
 export function getOrderRevenueReversal(
   order: RevenueReversalOrder,
   authorizedCreditAmount: number,
 ): OrderRevenueReversal {
+  const orderTotal = financialAmount(order.original_total ?? order.total)
+  const capped = (amount: number) => (orderTotal > 0 ? Math.min(orderTotal, amount) : amount)
   const authorizedAmount = financialAmount(authorizedCreditAmount)
-  if (authorizedAmount > 0) {
-    const orderTotal = financialAmount(order.original_total ?? order.total)
-    const completedAmount =
-      authorizedAmount + financialAmount(order.customer_credit_restored_amount)
-    return {
-      status: "completed",
-      amount: orderTotal > 0 ? Math.min(orderTotal, completedAmount) : completedAmount,
-    }
-  }
+  const economicallyRefunded =
+    order.financial_status === "refunded" || Boolean(order.refunded_at)
 
-  const nonInvoicedRefunded =
-    order.invoice_status !== "authorized" &&
-    (order.financial_status === "refunded" || Boolean(order.refunded_at))
-  if (nonInvoicedRefunded) {
+  if (authorizedAmount > 0 || economicallyRefunded) {
+    const fiscalAmount = authorizedAmount > 0
+      ? authorizedAmount + financialAmount(order.customer_credit_restored_amount)
+      : 0
+    const economicAmount = economicallyRefunded ? getEconomicReversalAmount(order) : 0
     return {
       status: "completed",
-      amount: getNonInvoicedReversalAmount(order),
+      amount: capped(Math.max(fiscalAmount, economicAmount)),
     }
   }
 
   if (order.financial_status === "refund_pending") {
     return {
       status: "pending",
-      amount: getNonInvoicedReversalAmount(order),
+      amount: getEconomicReversalAmount(order),
     }
   }
 
   return { status: "none", amount: 0 }
 }
 
-/**
- * Ventas netas del canal web: bruto menos toda reversión de ingreso
- * (completada o pendiente, fuente única de arriba). Los descuentos por
- * transferencia ya están incorporados en original_total al crear la orden,
- * por lo que restarlos otra vez duplicaría el descuento. La comisión de MP
- * es un costo separado de trueProfit y no modifica el ingreso de la venta.
- */
-export function calculateWebNetSales(input: {
-  grossSales: number
-  revenueReversed: number
-}): number {
-  return input.grossSales - input.revenueReversed
-}
-
-export function calculateMarketplaceNet(input: {
-  grossSales: number
-  fees: number
-  shipping: number
-  refunds: number
-}): number {
-  return (
-    input.grossSales - input.fees - input.shipping - input.refunds
-  )
-}
-
+/** Valor de las unidades recibidas en devolución que ninguna NC acreditó todavía. */
 export function calculatePendingRefundAdjustment(input: {
   unitPrice: number
   receivedQuantity: number
   creditedQuantity: number
-  orderReversalStatus: OrderRevenueReversalStatus
 }): number {
-  if (input.orderReversalStatus !== "none") return 0
-
   const received = financialAmount(input.receivedQuantity)
   const credited = Math.min(received, financialAmount(input.creditedQuantity))
   return financialAmount(input.unitPrice) * Math.max(0, received - credited)
 }
 
-export function calculateTrueProfit(input: {
-  netSales: number
-  webShippingCost: number
-  costOfGoodsSold: number
-  operatingExpenses: number
-  pendingReturnAdjustment: number
-  mercadoPagoFees: number
+/**
+ * Parte de una NC autorizada que no se puede atribuir: lo que no está
+ * vinculado a un ítem (order_credit_note_items) ni declarado como envío
+ * original devuelto (original_shipping_refunded). Puede ser un ajuste
+ * distinto o el mismo producto devuelto sin vincular: no se sabe.
+ */
+export function getUnattributedCreditNoteAmount(note: {
+  total_amount: number | string
+  original_shipping_refunded?: number | string | null
+  order_credit_note_items?: Array<{ total_amount: number | string }>
 }): number {
-  return (
-    input.netSales -
-    input.webShippingCost -
-    input.costOfGoodsSold -
-    input.operatingExpenses -
-    input.pendingReturnAdjustment -
-    input.mercadoPagoFees
+  const linkedItems = (note.order_credit_note_items ?? []).reduce(
+    (total, item) => total + financialAmount(item.total_amount),
+    0,
   )
+  return Math.max(
+    0,
+    financialAmount(note.total_amount) - linkedItems - financialAmount(note.original_shipping_refunded),
+  )
+}
+
+export interface OrderReversalWithPendingReturns {
+  amount: number
+  /** NC sin atribuir + devolución física sin NC: no se sabe si son la misma reversión. */
+  ambiguous: boolean
+}
+
+/**
+ * Reversión total de una orden sumando las devoluciones físicas todavía sin
+ * NC. Se compara por monto, no por "hay alguna reversión": una NC autorizada
+ * sólo por el envío no cubre el producto devuelto. Las NC vinculadas a ítems
+ * o al envío acreditan conceptos distintos de las unidades pendientes
+ * (creditedQuantity las excluye), así que se suman; el reintegro económico
+ * puede ser esa misma devolución, así que se toma el mayor, nunca la suma.
+ * Si además hay una parte de NC sin atribuir, no se puede saber si cubre la
+ * devolución: el monto devuelto es la cota que no duplica (la NC sin
+ * atribuir absorbe la devolución), sólo para repartir líneas internamente,
+ * y la orden queda marcada como ambigua: facturación, neto y resultado de
+ * esa orden no se informan. Tope: el total de la orden.
+ */
+export function getOrderReversalWithPendingReturns(input: {
+  reversal: OrderRevenueReversal
+  authorizedCreditAmount: number
+  unattributedCreditAmount: number
+  restoredCreditOutsideCreditNotes: number
+  pendingReturnAmount: number
+  orderTotal: number
+}): OrderReversalWithPendingReturns {
+  const authorized = financialAmount(input.authorizedCreditAmount)
+  const fiscal = authorized > 0
+    ? authorized + financialAmount(input.restoredCreditOutsideCreditNotes)
+    : 0
+  const unattributed = Math.min(authorized, financialAmount(input.unattributedCreditAmount))
+  const pendingReturn = financialAmount(input.pendingReturnAmount)
+  const orderTotal = financialAmount(input.orderTotal)
+  const reversalWith = (additionalPending: number) => {
+    const amount = Math.max(financialAmount(input.reversal.amount), fiscal + additionalPending)
+    return orderTotal > 0 ? Math.min(orderTotal, amount) : amount
+  }
+  // Cota baja: la NC sin atribuir es la misma devolución. Cota alta: son
+  // conceptos distintos. Si difieren, el dato no alcanza para decidir.
+  const sameReversal = reversalWith(Math.max(0, pendingReturn - unattributed))
+  const distinctReversals = reversalWith(pendingReturn)
+  return {
+    amount: sameReversal,
+    ambiguous: distinctReversals - sameReversal > 0.005,
+  }
 }
 
 /**

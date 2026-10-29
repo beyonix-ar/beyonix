@@ -16,8 +16,13 @@ import {
 
 import type {
   DashboardCommercialSale,
+  DashboardDataResponse,
   DashboardFinancialSummary,
 } from "@/lib/supabase/queries/dashboard"
+import {
+  calculateOperatingResult,
+  summarizeSaleFinancials,
+} from "@/lib/business/commercial-sale-financials"
 import { argentinaDateKey } from "@/lib/business/dashboard-timezone"
 import {
   countSaleOperations,
@@ -44,6 +49,7 @@ type SortKey =
   | "paymentMethod"
   | "quantity"
   | "grossAmount"
+  | "netAmount"
   | "costAmount"
   | "profitAmount"
   | "marginPercent"
@@ -63,15 +69,20 @@ const TABLE_COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
   { key: "paymentMethod", label: "Método de pago", numeric: false },
   { key: "quantity", label: "Unidades", numeric: true },
   { key: "grossAmount", label: "Facturación", numeric: true },
+  { key: "netAmount", label: "Neto", numeric: true },
   { key: "costAmount", label: "Costo mercadería", numeric: true },
-  { key: "profitAmount", label: "Resultado bruto", numeric: true },
-  { key: "marginPercent", label: "Margen bruto", numeric: true },
+  { key: "profitAmount", label: "Resultado", numeric: true },
+  { key: "marginPercent", label: "Margen", numeric: true },
   { key: "ticket", label: "Precio unitario", numeric: true },
 ]
 
-function maskAmount(value: number, hidden: boolean) {
+/** null = monto no determinable (devolución sin atribuir): nunca se muestra una cota. */
+function maskAmount(value: number | null, hidden: boolean) {
+  if (value == null) return "Pendiente"
   return hidden ? HIDDEN_AMOUNT : formatPrice(value)
 }
+
+const UNDETERMINED_NOTE = "Hay una devolución sin atribuir."
 
 function formatRange(range: SalesDateRange) {
   const format = (key: string, withYear: boolean) => {
@@ -95,25 +106,55 @@ function readHiddenPreference() {
   }
 }
 
-function sumAmount(rows: DashboardCommercialSale[]) {
-  return rows.reduce((total, sale) => total + sale.grossAmount, 0)
+/** null si alguna línea tiene facturación no determinable: una venta sana no la rescata. */
+function sumAmount(rows: DashboardCommercialSale[]): number | null {
+  return rows.reduce<number | null>(
+    (total, sale) => (total == null || sale.grossAmount == null ? null : total + sale.grossAmount),
+    0,
+  )
 }
 
 function sumUnits(rows: DashboardCommercialSale[]) {
   return rows.reduce((total, sale) => total + sale.quantity, 0)
 }
 
+function formatPercent(value: number) {
+  return `${value.toFixed(1).replace(".", ",")}%`
+}
+
+/**
+ * "90% con costo · 8% inferido": el costo inferido no vale como costo de
+ * compra. Con la lectura incompleta no se sabe qué falta: no hay porcentaje.
+ */
+function describeCostCoverage(coverage: number, inferred: number, complete: boolean) {
+  if (!complete) return "Lectura incompleta"
+  return `${formatPercent(coverage)} con costo${inferred > 0.05 ? ` · ${formatPercent(inferred)} inferido` : ""}`
+}
+
 function VariationBadge({
   current,
   previous,
+  previousUndetermined = false,
   comparison,
   hidden,
 }: {
-  current: number
+  current: number | null
   previous: number | null
+  /** El período de comparación incluye una facturación no determinable. */
+  previousUndetermined?: boolean
   comparison: SalesDateRange | null
   hidden: boolean
 }) {
+  if (current === null) {
+    return <p className="mt-1.5 text-11px text-amber-200/80">{UNDETERMINED_NOTE}</p>
+  }
+  if (comparison && previousUndetermined) {
+    return (
+      <p className="mt-1.5 text-11px text-white/45">
+        {formatRange(comparison)} tiene una devolución sin atribuir
+      </p>
+    )
+  }
   if (previous === null || !comparison) {
     return <p className="mt-1.5 text-11px text-white/45">Sin período comparable</p>
   }
@@ -174,10 +215,12 @@ function FilterField({ label, children }: { label: string; children: React.React
 
 export function DashboardCommercialView({
   sales,
+  paidExpensesByDate,
   financialSummary,
   pendingRefundOperations,
 }: {
   sales: DashboardCommercialSale[]
+  paidExpensesByDate: DashboardDataResponse["paidExpensesByDate"]
   financialSummary: DashboardFinancialSummary
   pendingRefundOperations: number
 }) {
@@ -224,8 +267,12 @@ export function DashboardCommercialView({
     [comparison, dimensionSales],
   )
 
+  // Los ajustes de pedido (NC o reintegro sin ítem) no son un producto.
   const productOptions = useMemo(
-    () => Array.from(new Set(sales.map((sale) => sale.productName))).sort((a, b) => a.localeCompare(b, "es")),
+    () =>
+      Array.from(new Set(sales.filter((sale) => sale.kind === "sale").map((sale) => sale.productName))).sort((a, b) =>
+        a.localeCompare(b, "es"),
+      ),
     [sales],
   )
   const categoryOptions = useMemo(
@@ -239,8 +286,9 @@ export function DashboardCommercialView({
   const revenue = sumAmount(periodSales)
   const operations = countSaleOperations(periodSales)
   const units = sumUnits(periodSales)
-  const ticket = operations > 0 ? revenue / operations : 0
+  const ticket = revenue == null ? null : operations > 0 ? revenue / operations : 0
   const previousRevenue = comparisonSales ? sumAmount(comparisonSales) : null
+  const previousRevenueUndetermined = Boolean(comparisonSales) && previousRevenue == null
   const previousOperations = comparisonSales ? countSaleOperations(comparisonSales) : null
   const previousUnits = comparisonSales ? sumUnits(comparisonSales) : null
   const previousTicket =
@@ -249,16 +297,48 @@ export function DashboardCommercialView({
         ? previousRevenue / previousOperations
         : 0
       : null
+  // Mismas líneas y mismas fórmulas que el resumen histórico, recortadas al período.
+  const periodFinancials = useMemo(() => summarizeSaleFinancials(periodSales), [periodSales])
+  const previousFinancials = comparisonSales ? summarizeSaleFinancials(comparisonSales) : null
+  const previousNetSales = previousFinancials?.netSales ?? null
+  const previousNetUndetermined = previousFinancials != null && previousFinancials.netSales == null
+  // El backend decide si la lectura alcanza: con datos incompletos no se
+  // reconstruye un resultado a partir de las líneas que sí llegaron.
+  const datasetComplete = financialSummary.complete
+  const periodContribution = datasetComplete ? periodFinancials.contributionResult : null
+  // Los gastos generales no tienen canal ni producto: sólo se restan sin esos filtros.
+  const expensesApply = channel === "todos" && !product && !category
+  const periodExpenseTotals = useMemo(
+    () =>
+      (range ? paidExpensesByDate : []).reduce(
+        (totals, expense) => {
+          if (!range || expense.date < range.from || expense.date > range.to) return totals
+          return {
+            amount: totals.amount + expense.amount,
+            costMissing: totals.costMissing || expense.costMissing,
+          }
+        },
+        { amount: 0, costMissing: false },
+      ),
+    [paidExpensesByDate, range],
+  )
+  const periodExpenses = periodExpenseTotals.amount
+  // Mercadería entregada como gasto sin costo: su costo no se asume 0.
+  const periodOperatingResult = expensesApply && !periodExpenseTotals.costMissing
+    ? calculateOperatingResult(periodContribution, periodExpenses)
+    : null
 
   const quickReferences = useMemo(() => {
     const monthPrefix = todayKey.slice(0, 7)
     const yearPrefix = todayKey.slice(0, 4)
-    return dimensionSales.reduce(
+    const add = (total: number | null, value: number | null) =>
+      total == null || value == null ? null : total + value
+    return dimensionSales.reduce<Record<"today" | "month" | "year", number | null>>(
       (totals, sale) => {
         const key = argentinaDateKey(sale.date)
-        if (key === todayKey) totals.today += sale.grossAmount
-        if (key.startsWith(monthPrefix) && key <= todayKey) totals.month += sale.grossAmount
-        if (key.startsWith(yearPrefix) && key <= todayKey) totals.year += sale.grossAmount
+        if (key === todayKey) totals.today = add(totals.today, sale.grossAmount)
+        if (key.startsWith(monthPrefix) && key <= todayKey) totals.month = add(totals.month, sale.grossAmount)
+        if (key.startsWith(yearPrefix) && key <= todayKey) totals.year = add(totals.year, sale.grossAmount)
         return totals
       },
       { today: 0, month: 0, year: 0 },
@@ -272,33 +352,36 @@ export function DashboardCommercialView({
       ...item,
       total,
       operations: countSaleOperations(rows),
-      share: revenue > 0 ? (total / revenue) * 100 : 0,
+      // Sin facturación determinable no hay participación que mostrar.
+      share: revenue == null || total == null ? null : revenue > 0 ? (total / revenue) * 100 : 0,
     }
   })
   const topProducts = Array.from(
     periodSales
+      .filter((sale) => sale.kind === "sale")
       .reduce((map, sale) => {
         const current = map.get(sale.productName) ?? { label: sale.productName, units: 0, amount: 0 }
         current.units += sale.quantity
-        current.amount += sale.grossAmount
+        current.amount = current.amount == null || sale.grossAmount == null ? null : current.amount + sale.grossAmount
         map.set(sale.productName, current)
         return map
-      }, new Map<string, { label: string; units: number; amount: number }>())
+      }, new Map<string, { label: string; units: number; amount: number | null }>())
       .values(),
   )
-    .sort((a, b) => b.units - a.units || b.amount - a.amount)
+    .sort((a, b) => b.units - a.units || (b.amount ?? 0) - (a.amount ?? 0))
     .slice(0, 8)
   const topUnits = Math.max(1, ...topProducts.map((item) => item.units))
 
   const tableRows = [...periodSales].sort((a, b) => {
-    const ticketA = a.quantity ? a.grossAmount / a.quantity : 0
-    const ticketB = b.quantity ? b.grossAmount / b.quantity : 0
+    const ticketA = a.quantity ? (a.grossAmount ?? 0) / a.quantity : 0
+    const ticketB = b.quantity ? (b.grossAmount ?? 0) / b.quantity : 0
     const values: Record<SortKey, number> = {
       productName: a.productName.localeCompare(b.productName, "es"),
       channel: a.channel.localeCompare(b.channel, "es"),
       paymentMethod: a.paymentMethod.localeCompare(b.paymentMethod, "es"),
       quantity: b.quantity - a.quantity,
-      grossAmount: b.grossAmount - a.grossAmount,
+      grossAmount: (b.grossAmount ?? 0) - (a.grossAmount ?? 0),
+      netAmount: (b.netAmount ?? 0) - (a.netAmount ?? 0),
       costAmount: (b.costAmount ?? 0) - (a.costAmount ?? 0),
       profitAmount: (b.profitAmount ?? 0) - (a.profitAmount ?? 0),
       marginPercent: (b.marginPercent ?? 0) - (a.marginPercent ?? 0),
@@ -462,10 +545,10 @@ export function DashboardCommercialView({
         <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             label="Facturación"
-            help="Facturación bruta del período: ventas web pagas (netas de notas de crédito autorizadas), Mercado Libre y ventas externas. No descuenta comisiones ni envíos."
+            help="Ventas del período menos reintegros, notas de crédito y anulaciones (también las que no corresponden a un producto). No descuenta comisiones ni envíos. Pendiente si una devolución no puede atribuirse a su nota de crédito."
             value={maskAmount(revenue, hidden)}
           >
-            <VariationBadge current={revenue} previous={previousRevenue} comparison={comparison} hidden={hidden} />
+            <VariationBadge current={revenue} previous={previousRevenue} previousUndetermined={previousRevenueUndetermined} comparison={comparison} hidden={hidden} />
           </KpiCard>
           <KpiCard
             label="Operaciones"
@@ -479,14 +562,74 @@ export function DashboardCommercialView({
             help="Facturación del período dividida por la cantidad de operaciones."
             value={maskAmount(ticket, hidden)}
           >
-            <VariationBadge current={ticket} previous={previousTicket} comparison={comparison} hidden={hidden} />
+            <VariationBadge current={ticket} previous={previousTicket} previousUndetermined={previousRevenueUndetermined} comparison={comparison} hidden={hidden} />
           </KpiCard>
           <KpiCard
             label="Unidades vendidas"
-            help="Unidades vendidas en el período, descontando las acreditadas con nota de crédito."
+            help="Unidades vendidas en el período, netas de reversiones. Web: descuenta las acreditadas con nota de crédito. Mercado Libre: descuenta canceladas y devueltas con evidencia (revisión física o unidades informadas por ML), igual que la pantalla Ventas ML. Externas: descuenta las devoluciones dañadas."
             value={units.toLocaleString("es-AR")}
           >
             <VariationBadge current={units} previous={previousUnits} comparison={comparison} hidden={false} />
+          </KpiCard>
+        </div>
+
+        <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            label="Ventas netas"
+            help="Facturación menos comisiones, logística absorbida y otros gastos directos. En Mercado Libre es el Total liquidado."
+            value={maskAmount(periodFinancials.netSales, hidden)}
+          >
+            <VariationBadge current={periodFinancials.netSales} previous={previousNetSales} previousUndetermined={previousNetUndetermined} comparison={comparison} hidden={hidden} />
+          </KpiCard>
+          <KpiCard
+            label="Costo mercadería"
+            help="Costo histórico de lo vendido (promedio ponderado a la fecha de venta). El costo inferido sale de la ganancia declarada en ventas externas históricas."
+            value={maskAmount(periodFinancials.costOfGoodsSold, hidden)}
+          >
+            <p className="mt-1.5 text-11px text-white/52">
+              {describeCostCoverage(periodFinancials.costCoveragePercent, periodFinancials.inferredCostPercent, datasetComplete)}
+            </p>
+          </KpiCard>
+          <KpiCard
+            label="Resultado comercial"
+            help="Ventas netas menos costo de mercadería. Sin gastos generales. Pendiente mientras alguna venta del período no tenga costo, una devolución no pueda atribuirse a su nota de crédito o la lectura esté incompleta."
+            value={periodContribution == null ? "Pendiente" : maskAmount(periodContribution, hidden)}
+          >
+            <p className="mt-1.5 text-11px text-white/52">
+              {!datasetComplete
+                ? "Lectura incompleta"
+                : periodContribution == null
+                  ? [
+                      periodFinancials.linesWithoutCost > 0
+                        ? `${periodFinancials.linesWithoutCost} ${periodFinancials.linesWithoutCost === 1 ? "línea" : "líneas"} sin costo`
+                        : null,
+                      periodFinancials.ambiguousReversalLines > 0 ? "Devolución sin atribuir" : null,
+                    ].filter(Boolean).join(" · ")
+                  : periodFinancials.contributionMarginPercent == null
+                    ? "Sin facturación"
+                    : `Margen ${hidden ? "**%" : formatPercent(periodFinancials.contributionMarginPercent)}`}
+            </p>
+          </KpiCard>
+          <KpiCard
+            label="Resultado estimado"
+            help="Considera ventas, costos y gastos cargados en el sistema. Pendiente si falta algún costo o la lectura está incompleta."
+            value={
+              !expensesApply
+                ? "—"
+                : periodOperatingResult == null
+                  ? "Pendiente"
+                  : maskAmount(periodOperatingResult, hidden)
+            }
+          >
+            <p className="mt-1.5 text-11px text-white/52">
+              {!expensesApply
+                ? "Sólo con todos los canales y productos"
+                : !datasetComplete
+                  ? "Lectura incompleta"
+                  : periodExpenseTotals.costMissing
+                    ? "Falta costo de mercadería entregada como gasto"
+                    : `Gastos registrados: ${maskAmount(periodExpenses, hidden)}`}
+            </p>
           </KpiCard>
         </div>
 
@@ -538,11 +681,11 @@ export function DashboardCommercialView({
                 <div className="admin-dash-bar-track mt-1.5">
                   <span
                     className="admin-dash-bar"
-                    style={{ width: `${item.share}%`, backgroundColor: CHANNEL_COLOR[item.source] }}
+                    style={{ width: `${item.share ?? 0}%`, backgroundColor: CHANNEL_COLOR[item.source] }}
                   />
                 </div>
                 <p className="mt-1 text-11px text-white/45">
-                  {hidden ? "**%" : `${item.share.toFixed(1).replace(".", ",")}%`} · {item.operations}{" "}
+                  {item.share == null ? "Pendiente" : hidden ? "**%" : `${item.share.toFixed(1).replace(".", ",")}%`} · {item.operations}{" "}
                   {item.operations === 1 ? "operación" : "operaciones"}
                 </p>
               </li>
@@ -593,7 +736,7 @@ export function DashboardCommercialView({
           }
         />
         <div className="custom-scrollbar max-h-[34rem] overflow-auto">
-          <table className="w-full min-w-[980px] text-left text-sm">
+          <table className="w-full min-w-[1080px] text-left text-sm">
             <thead className="sticky top-0 z-[1] bg-[var(--admin-surface)] text-11px uppercase tracking-widest text-white/50">
               <tr>
                 {TABLE_COLUMNS.map((column) => (
@@ -620,7 +763,7 @@ export function DashboardCommercialView({
             </thead>
             <tbody>
               {tableRows.slice(0, TABLE_LIMIT).map((sale) => {
-                const unitPrice = sale.quantity ? sale.grossAmount / sale.quantity : 0
+                const unitPrice = sale.grossAmount == null ? null : sale.quantity ? sale.grossAmount / sale.quantity : 0
                 return (
                   <tr key={sale.id} className="border-t border-white/6">
                     <td className="px-3 py-2.5 font-bold text-white">
@@ -644,8 +787,20 @@ export function DashboardCommercialView({
                     <td className="px-3 py-2.5 text-white/65">{sale.paymentMethod}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-white/65">{sale.quantity}</td>
                     <td className="px-3 py-2.5 text-right font-bold tabular-nums text-white">{maskAmount(sale.grossAmount, hidden)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-white/65">{sale.costAmount == null ? "—" : maskAmount(sale.costAmount, hidden)}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-white/65">{sale.profitAmount == null ? "—" : maskAmount(sale.profitAmount, hidden)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-white/65">{maskAmount(sale.netAmount, hidden)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-white/65">
+                      {sale.costAmount == null ? "—" : maskAmount(sale.costAmount, hidden)}
+                      {sale.costSource === "inferred" && (
+                        <span className="block text-10px text-white/45" title="Deducido de la ganancia declarada: no es un costo de compra.">
+                          inferido
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-white/65">
+                      {sale.reversalAmbiguous ? (
+                        <span title="Nota de crédito sin ítem y devolución sin nota: no se sabe si son la misma reversión.">Pendiente</span>
+                      ) : sale.profitAmount == null ? "—" : maskAmount(sale.profitAmount, hidden)}
+                    </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-white/65">
                       {hidden ? "****" : sale.marginPercent == null ? "—" : `${sale.marginPercent.toFixed(1).replace(".", ",")}%`}
                     </td>
@@ -664,8 +819,8 @@ export function DashboardCommercialView({
       <section className="rounded-2xl border p-4" aria-labelledby="cash-title">
         <DashboardSectionHeader
           id="cash-title"
-          eyebrow="Acumulado histórico"
-          title="Caja y obligaciones"
+          eyebrow="Histórico"
+          title="Resultado acumulado"
           description={`Corte ${new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" }).format(new Date(financialSummary.generatedAt))} · ${financialSummary.ordersScanned} pedidos web · ${financialSummary.externalRowsScanned} externas · ${financialSummary.marketplaceRowsScanned} ML`}
           action={<span className="admin-dash-note">No responde a los filtros de arriba</span>}
         />
@@ -674,8 +829,8 @@ export function DashboardCommercialView({
           <MetricGroup title="Ventas y cobros">
             <FinancialMetric label="Ventas brutas" value={maskAmount(financialSummary.grossSales, hidden)} detail="Web + externas + Mercado Libre" />
             <FinancialMetric label="Descuentos" value={maskAmount(financialSummary.transferDiscounts, hidden)} detail="Por transferencia" />
-            <FinancialMetric label="Reintegrado" value={maskAmount(financialSummary.completedRefunds, hidden)} detail="Web + Mercado Libre" tone={financialSummary.completedRefunds > 0 ? "danger" : "neutral"} />
-            <FinancialMetric label="Ventas netas" value={maskAmount(financialSummary.netSales, hidden)} detail="Luego de cargos y reintegros" tone="positive" help="Ventas brutas menos reversiones web (cancelaciones y notas de crédito) y, en Mercado Libre y ventas externas, comisiones, envíos y otros gastos." />
+            <FinancialMetric label="Reintegrado" value={maskAmount(financialSummary.completedRefunds, hidden)} detail="Web, ML y externas dañadas" tone={financialSummary.completedRefunds > 0 ? "danger" : "neutral"} help="Reintegros y notas de crédito web (el reintegro cuenta aunque la NC siga pendiente), anulaciones de Mercado Libre y devoluciones externas con mercadería dañada." />
+            <FinancialMetric label="Ventas netas" value={maskAmount(financialSummary.netSales, hidden)} detail="Luego de reintegros, comisiones y envíos" tone="positive" help="Ventas brutas menos reintegros, comisiones, logística absorbida y otros gastos directos, igual en los tres canales. En Mercado Libre es el Total liquidado." />
             <FinancialMetric label="Cobros web" value={maskAmount(financialSummary.externalCollected, hidden)} detail="Cobrado por pasarelas" help="Lo cobrado por Mercado Pago o transferencia en pedidos web pagos, sin el saldo interno aplicado." />
             <FinancialMetric label="Saldo aplicado" value={maskAmount(financialSummary.customerCreditUsed, hidden)} detail="Saldo interno usado" help="Saldo a favor de clientes usado como medio de pago en pedidos web." />
             <FinancialMetric label="Reintegro pendiente" value={maskAmount(financialSummary.pendingRefunds, hidden)} detail={`${pendingRefundOperations} ${pendingRefundOperations === 1 ? "operación" : "operaciones"}`} tone={financialSummary.pendingRefunds > 0 ? "warning" : "neutral"} help="Dinero que todavía hay que devolver a clientes." />
@@ -685,19 +840,20 @@ export function DashboardCommercialView({
             <FinancialMetric label="Envíos cobrados" value={maskAmount(financialSummary.shippingCharged, hidden)} detail="Cobrado al cliente" />
             <FinancialMetric label="Costo logístico" value={maskAmount(financialSummary.shippingCost, hidden)} detail="Web + externas + Mercado Libre" tone={financialSummary.shippingCost > 0 ? "warning" : "neutral"} />
             <FinancialMetric label="Resultado envíos web" value={maskAmount(financialSummary.shippingBalance, hidden)} detail="Cobrado menos costo web" tone={financialSummary.shippingBalance >= 0 ? "positive" : "danger"} help="Envíos cobrados a clientes web menos la tarifa de Andreani cotizada en cada pedido." />
-            <FinancialMetric label="Comisiones" value={maskAmount(financialSummary.salesFees, hidden)} detail="Externas + Mercado Libre" tone={financialSummary.salesFees > 0 ? "warning" : "neutral"} />
-            <FinancialMetric label="Facturado ARCA" value={maskAmount(financialSummary.invoicedAmount, hidden)} detail={`${financialSummary.invoicedOrders} comprobantes`} />
+            <FinancialMetric label="Comisiones" value={maskAmount(financialSummary.salesFees, hidden)} detail="Mercado Pago, ML y externas" tone={financialSummary.salesFees > 0 ? "warning" : "neutral"} />
+            <FinancialMetric label="Otros directos" value={maskAmount(financialSummary.otherDirectCosts, hidden)} detail="Externas y ajustes ML" help="Otros gastos de ventas externas y conceptos del Total de Mercado Libre (ingresos por envío, bonificaciones). Negativo = a favor." />
+            <FinancialMetric label="Ventas con factura" value={maskAmount(financialSummary.invoicedAmount, hidden)} detail={`${financialSummary.invoicedOrders} pedidos web`} help="Total de pedidos web con factura ARCA autorizada. No es el neto fiscal: no descuenta notas de crédito." />
             <FinancialMetric label="Cobertura ARCA" value={`${invoiceCoverage.toFixed(1).replace(".", ",")}%`} detail={`${financialSummary.ordersWithoutInvoice} pedidos sin factura`} tone={financialSummary.ordersWithoutInvoice > 0 ? "warning" : "positive"} help="Pedidos web pagos con factura autorizada sobre el total de pedidos web pagos." />
           </MetricGroup>
 
           <MetricGroup title="Costos y resultado">
             <FinancialMetric label="Compras mercadería" value={maskAmount(financialSummary.inventoryPurchases, hidden)} detail="Capital comprado" />
-            <FinancialMetric label="Costo vendido" value={maskAmount(financialSummary.costOfGoodsSold, hidden)} detail={`${financialSummary.costCoveragePercent.toFixed(1).replace(".", ",")}% de unidades con costo`} help="Costo histórico de la mercadería vendida. El porcentaje indica cuántas unidades tienen costo cargado." />
-            <FinancialMetric label="Gastos pagados" value={maskAmount(financialSummary.operatingExpensesPaid, hidden)} detail="Operación e impuestos" tone={financialSummary.operatingExpensesPaid > 0 ? "warning" : "neutral"} />
-            <FinancialMetric label="Gastos pendientes" value={maskAmount(financialSummary.operatingExpensesPending, hidden)} detail="Obligaciones abiertas" tone={financialSummary.operatingExpensesPending > 0 ? "danger" : "neutral"} />
-            <FinancialMetric label="Resultado conocido" value={maskAmount(financialSummary.knownOperatingResult, hidden)} detail="Antes de mercadería y gastos" tone={financialSummary.knownOperatingResult >= 0 ? "positive" : "danger"} help="Ventas netas menos el costo de envíos web y las comisiones de Mercado Pago. Todavía no descuenta mercadería ni gastos." />
-            <FinancialMetric label="Ganancia real" value={financialSummary.trueProfit == null ? "Pendiente" : maskAmount(financialSummary.trueProfit, hidden)} detail="Con costos y gastos" tone={financialSummary.trueProfit == null ? "warning" : financialSummary.trueProfit >= 0 ? "positive" : "danger"} help="Resultado conocido menos costo de mercadería, gastos pagados y devoluciones pendientes. Solo se calcula cuando todas las unidades tienen costo cargado." />
-            <FinancialMetric label="Margen real" value={financialSummary.trueMarginPercent == null ? "Pendiente" : hidden ? "****" : `${financialSummary.trueMarginPercent.toFixed(1).replace(".", ",")}%`} detail="Ganancia real / ventas brutas" tone={financialSummary.trueMarginPercent == null ? "warning" : financialSummary.trueMarginPercent >= 0 ? "positive" : "danger"} />
+            <FinancialMetric label="Costo vendido" value={maskAmount(financialSummary.costOfGoodsSold, hidden)} detail={describeCostCoverage(financialSummary.costCoveragePercent, financialSummary.inferredCostPercent, financialSummary.complete)} help="Costo histórico de la mercadería vendida o perdida en devoluciones. El costo inferido sale de la ganancia declarada en ventas externas históricas y no es un costo de compra." />
+            <FinancialMetric label="Resultado comercial" value={financialSummary.contributionResult == null ? "Pendiente" : maskAmount(financialSummary.contributionResult, hidden)} detail="Ventas netas − costo mercadería" tone={financialSummary.contributionResult == null ? "warning" : financialSummary.contributionResult >= 0 ? "positive" : "danger"} help="Resultado de las ventas antes de gastos generales. Pendiente mientras haya ventas sin costo." />
+            <FinancialMetric label="Gastos pagados" value={maskAmount(financialSummary.operatingExpensesPaid, hidden)} detail="Gastos registrados" tone={financialSummary.operatingExpensesPaid > 0 ? "warning" : "neutral"} help="Sólo los gastos cargados en el sistema y pagados, más el costo de mercadería entregada como gasto." />
+            <FinancialMetric label="Gastos pendientes" value={maskAmount(financialSummary.operatingExpensesPending, hidden)} detail="No se restan del resultado" tone={financialSummary.operatingExpensesPending > 0 ? "danger" : "neutral"} />
+            <FinancialMetric label="Resultado estimado" value={financialSummary.operatingResult == null ? "Pendiente" : maskAmount(financialSummary.operatingResult, hidden)} detail="Con gastos registrados" tone={financialSummary.operatingResult == null ? "warning" : financialSummary.operatingResult >= 0 ? "positive" : "danger"} help="Considera ventas, costos y gastos cargados en el sistema." />
+            <FinancialMetric label="Margen estimado" value={financialSummary.operatingMarginPercent == null ? "Pendiente" : hidden ? "****" : formatPercent(financialSummary.operatingMarginPercent)} detail="Resultado estimado / facturación" tone={financialSummary.operatingMarginPercent == null ? "warning" : financialSummary.operatingMarginPercent >= 0 ? "positive" : "danger"} />
           </MetricGroup>
         </div>
 

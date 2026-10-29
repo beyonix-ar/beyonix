@@ -19,6 +19,8 @@ function source(relativePath: string) {
 }
 
 const dashboardRoute = source("app/api/admin/dashboard/route.ts")
+// El cálculo del dashboard vive en el agregado puro que usa la ruta.
+const dashboardLedger = source("lib/business/dashboard-commercial-ledger.ts")
 const mercadoLibreSalesRoute = source("app/api/admin/mercadolibre-sales/route.ts")
 
 // Auditoría 3/7 (P0 confirmado y corregido en Fase 1): dashboard/route.ts
@@ -33,13 +35,16 @@ const mercadoLibreSalesRoute = source("app/api/admin/mercadolibre-sales/route.ts
 // SELECT a product_cost_entries traiga las columnas que esa lógica necesita.
 
 test("dashboard NO reimplementa localmente el cálculo de costo -- usa las funciones canónicas de product-costs.ts", () => {
+  assert.match(dashboardRoute, /buildDashboardLedger\(\{/)
   assert.match(
-    dashboardRoute,
-    /import \{\s*[\s\S]*?buildProductCostLedgers,[\s\S]*?getHistoricalUnitCost,[\s\S]*?getReceivedCostContribution,[\s\S]*?\} from "@\/lib\/business\/product-costs"/,
+    dashboardLedger,
+    /import \{\s*[\s\S]*?buildProductCostLedgers,[\s\S]*?getHistoricalUnitCost,[\s\S]*?getReceivedCostContribution,[\s\S]*?\} from "\.\/product-costs\.ts"/,
   )
-  assert.doesNotMatch(dashboardRoute, /function buildCostLedgers\(/)
-  assert.doesNotMatch(dashboardRoute, /function getUnitCost\(/)
-  assert.match(dashboardRoute, /getHistoricalUnitCost\(\s*costLedgers,\s*productId,\s*variantId,\s*saleDate,?\s*\)/)
+  for (const code of [dashboardRoute, dashboardLedger]) {
+    assert.doesNotMatch(code, /function buildCostLedgers\(/)
+    assert.doesNotMatch(code, /function getUnitCost\(/)
+  }
+  assert.match(dashboardLedger, /getHistoricalUnitCost\(\s*costLedgers,\s*productId,\s*variantId,\s*saleDate,?\s*\)/)
 })
 
 test("el SELECT de dashboard a product_cost_entries incluye reception_status y received_quantity (contrato de columnas del P0)", () => {
@@ -55,17 +60,13 @@ test("las ventas externas catalogadas usan el mismo libro de compras que web y M
     /from\("external_sales"\)\s*\.select\("id, sale_date, product_id, variant_id,/,
   )
   assert.match(
-    dashboardRoute,
+    dashboardLedger,
     /getHistoricalUnitCost\(costLedgers, productId, variantId, saleDate\)/,
   )
-  assert.match(dashboardRoute, /resolveExternalSaleUnitCost\(\{/)
+  assert.match(dashboardLedger, /resolveExternalSaleUnitCost\(\{/)
   assert.match(
-    dashboardRoute,
+    dashboardLedger,
     /merchandiseCost: getExternalSaleMerchandiseCost\(unitCost, quantity\)/,
-  )
-  assert.match(
-    dashboardRoute,
-    /externalProfitability\.set\(String\(row\.id\), profitability\)/,
   )
 })
 
@@ -82,21 +83,13 @@ test("mercadolibre-sales trae reception_status/received_quantity en AMBOS SELECT
 })
 
 test("el costo y la ganancia por venta externa no duplican el descuento del costo", () => {
-  const externalMapping = dashboardRoute.match(
-    /\.\.\.externalRows\.map\(\(row\) => \{[\s\S]*?\n\s{8}\}\),/,
-  )?.[0] ?? ""
-
-  assert.notEqual(externalMapping, "")
   // Costo y ganancia salen de un único cálculo (el mismo que suma al costo de
   // ventas), que además respeta la ganancia declarada de ventas históricas.
-  assert.match(
-    externalMapping,
-    /externalProfitability\.get\(String\(row\.id\)\)/,
-  )
-  assert.doesNotMatch(externalMapping, /resolveExternalSaleReportedProfitability|calculateExternalSaleProfitability/)
-  assert.doesNotMatch(externalMapping, /Number\(row\.unit_cost \?\? 0\) \* quantity/)
-  assert.match(externalMapping, /marginPercent: profitability\?\.marginPercent/)
-  assert.equal(dashboardRoute.match(/resolveExternalSaleReportedProfitability\(\{/g)?.length, 1)
+  assert.equal(dashboardLedger.match(/resolveExternalSaleReportedProfitability\(\{/g)?.length, 1)
+  assert.doesNotMatch(dashboardLedger, /calculateExternalSaleProfitability/)
+  assert.doesNotMatch(dashboardLedger, /Number\(row\.unit_cost \?\? 0\) \* quantity/)
+  assert.match(dashboardLedger, /costAmount: profitability\.merchandiseCost/)
+  assert.doesNotMatch(dashboardRoute, /resolveExternalSaleReportedProfitability|getHistoricalUnitCost/)
 })
 
 test("el costo histórico respeta fecha y variante sin usar costos futuros", () => {

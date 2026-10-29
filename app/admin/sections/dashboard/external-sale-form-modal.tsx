@@ -265,7 +265,7 @@ export function ExternalSaleFormModal({
       title={editing ? "Editar venta" : "Nueva venta"}
       description={editing
         ? "Los cambios de SKU o cantidad mueven stock sólo si la venta es Nueva."
-        : "Registrá una venta realizada fuera de la tienda web y de Mercado Libre."}
+        : "Sólo ventas hechas fuera de la tienda web y de Mercado Libre: las de esos canales ya se registran solas."}
       onClose={() => { if (!savingRef.current) onClose() }}
       footer={
         <div className="flex flex-wrap justify-end gap-2">

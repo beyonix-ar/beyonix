@@ -25,8 +25,11 @@ interface ChartSeries {
   id: SeriesId
   label: string
   color: string
-  valueOf: (point: SalesEvolutionPoint) => number
+  /** null: el bucket incluye una facturación no determinable (hueco en la curva, nunca 0). */
+  valueOf: (point: SalesEvolutionPoint) => number | null
+  undeterminedAt: (point: SalesEvolutionPoint) => boolean
   periodTotal: number
+  undetermined: boolean
 }
 
 const SERIES_COLOR: Record<SeriesId, string> = {
@@ -82,8 +85,29 @@ function formatAxisAmount(value: number, hidden: boolean) {
   }).format(value)
 }
 
-function amount(value: number, hidden: boolean) {
+function amount(value: number | null, hidden: boolean, undetermined = false) {
+  if (undetermined || value == null) return "Pendiente"
   return hidden ? HIDDEN_AMOUNT : formatPrice(value)
+}
+
+/**
+ * Tramos continuos de índices con valor: un null corta la curva (no se
+ * conecta por encima del hueco ni se dibuja como 0).
+ */
+export function getChartSegments(values: Array<number | null>, from = 0, to = values.length - 1) {
+  const segments: Array<Array<{ index: number; value: number }>> = []
+  let current: Array<{ index: number; value: number }> = []
+  for (let index = from; index <= to; index += 1) {
+    const value = values[index]
+    if (value == null) {
+      if (current.length) segments.push(current)
+      current = []
+    } else {
+      current.push({ index, value })
+    }
+  }
+  if (current.length) segments.push(current)
+  return segments
 }
 
 function SegmentedControl<T extends string>({
@@ -159,44 +183,54 @@ export function SalesEvolutionChart({
 
   const channelSeries = useMemo<ChartSeries[]>(
     () =>
-      SALES_CHANNELS.map((channel) => ({
-        id: channel.key,
-        label: channel.label,
-        color: SERIES_COLOR[channel.key],
-        valueOf: (point: SalesEvolutionPoint) => point.values[channel.key],
-        periodTotal: points.reduce((sum, point) => sum + point.values[channel.key], 0),
-      })),
+      SALES_CHANNELS.map((channel) => {
+        const undeterminedAt = (point: SalesEvolutionPoint) =>
+          point.undeterminedChannels.includes(channel.key)
+        return {
+          id: channel.key,
+          label: channel.label,
+          color: SERIES_COLOR[channel.key],
+          valueOf: (point: SalesEvolutionPoint) => (undeterminedAt(point) ? null : point.values[channel.key]),
+          undeterminedAt,
+          periodTotal: points.reduce((sum, point) => sum + point.values[channel.key], 0),
+          undetermined: points.some(undeterminedAt),
+        }
+      }),
     [points],
   )
   const periodTotal = useMemo(
     () => points.reduce((sum, point) => sum + point.total, 0),
     [points],
   )
+  const hasUndetermined = points.some((point) => point.undeterminedChannels.length > 0)
   const series = useMemo<ChartSeries[]>(() => {
     if (effectiveView === "total") {
+      const undeterminedAt = (point: SalesEvolutionPoint) => point.undeterminedChannels.length > 0
       return [
         {
           id: lockedChannel?.key ?? "total",
           label: lockedChannel?.label ?? "Total",
           color: SERIES_COLOR[lockedChannel?.key ?? "total"],
-          valueOf: (point: SalesEvolutionPoint) => point.total,
+          valueOf: (point: SalesEvolutionPoint) => (undeterminedAt(point) ? null : point.total),
+          undeterminedAt,
           periodTotal,
+          undetermined: points.some(undeterminedAt),
         },
       ]
     }
     return channelSeries.filter(
       (item) =>
-        item.periodTotal > 0 &&
+        (item.periodTotal > 0 || item.undetermined) &&
         !mutedChannels.includes(item.id as SalesChannelKey),
     )
-  }, [channelSeries, effectiveView, lockedChannel, mutedChannels, periodTotal])
+  }, [channelSeries, effectiveView, lockedChannel, mutedChannels, periodTotal, points])
 
   const height = width < 640 ? 230 : 290
   const plotWidth = width - PADDING.left - PADDING.right
   const plotHeight = height - PADDING.top - PADDING.bottom
   const maxValue = Math.max(
     0,
-    ...series.flatMap((item) => points.map((point) => item.valueOf(point))),
+    ...series.flatMap((item) => points.map((point) => item.valueOf(point) ?? 0)),
   )
   const axis = getNiceAxis(maxValue, width < 640 ? 3 : 4)
   const xAt = (index: number) =>
@@ -215,12 +249,23 @@ export function SalesEvolutionChart({
   const lastPoint = points.at(-1)
   const lastIsPartial = Boolean(lastPoint?.partial && points.length > 1)
   const showMarkers = points.length <= 45 && plotWidth / Math.max(1, points.length) >= 12
-  const hasSales = periodTotal > 0
+  const hasSales = periodTotal > 0 || hasUndetermined
 
+  const seriesSegments = (item: ChartSeries, from: number, to: number) =>
+    getChartSegments(points.map((point) => item.valueOf(point)), from, to)
+  // Un subpath "M … L …" por tramo continuo: el hueco queda sin trazo.
+  const segmentPath = (segment: Array<{ index: number; value: number }>) =>
+    segment
+      .map(({ index, value }, offset) => `${offset ? "L" : "M"} ${xAt(index).toFixed(1)} ${yAt(value).toFixed(1)}`)
+      .join(" ")
   const buildPath = (item: ChartSeries, from: number, to: number) =>
-    points
-      .slice(from, to + 1)
-      .map((point, offset) => `${offset ? "L" : "M"} ${xAt(from + offset).toFixed(1)} ${yAt(item.valueOf(point)).toFixed(1)}`)
+    seriesSegments(item, from, to).map(segmentPath).join(" ")
+  // El área también se cierra por tramo: no rellena por debajo del hueco.
+  const buildAreaPath = (item: ChartSeries) =>
+    seriesSegments(item, 0, points.length - 1)
+      .filter((segment) => segment.length > 1)
+      .map((segment) =>
+        `${segmentPath(segment)} L ${xAt(segment[segment.length - 1].index)} ${yAt(0)} L ${xAt(segment[0].index)} ${yAt(0)} Z`)
       .join(" ")
 
   const solidEnd = lastIsPartial ? points.length - 2 : points.length - 1
@@ -228,7 +273,7 @@ export function SalesEvolutionChart({
   const tooltipRows = activePoint
     ? [...series]
         .map((item) => ({ item, value: item.valueOf(activePoint) }))
-        .sort((a, b) => b.value - a.value)
+        .sort((a, b) => (b.value ?? -1) - (a.value ?? -1))
     : []
 
   const moveActive = (index: number) =>
@@ -240,8 +285,10 @@ export function SalesEvolutionChart({
     const rows = points.map((point) => [
       point.start,
       point.end,
-      ...columns.map((item) => item.valueOf(point).toFixed(2)),
-      ...(effectiveView === "total" ? [] : [point.total.toFixed(2)]),
+      ...columns.map((item) => item.valueOf(point)?.toFixed(2) ?? "Pendiente"),
+      ...(effectiveView === "total"
+        ? []
+        : [point.undeterminedChannels.length ? "Pendiente" : point.total.toFixed(2)]),
     ])
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`
     const csv = [header, ...rows].map((row) => row.map(escape).join(";")).join("\r\n")
@@ -323,7 +370,7 @@ export function SalesEvolutionChart({
         <div className="mt-3 flex flex-wrap gap-2" aria-label="Canales del gráfico">
           {channelSeries.map((item) => {
             const muted = mutedChannels.includes(item.id as SalesChannelKey)
-            const empty = item.periodTotal <= 0
+            const empty = item.periodTotal <= 0 && !item.undetermined
             return (
               <button
                 key={item.id}
@@ -343,7 +390,7 @@ export function SalesEvolutionChart({
                 <span className="admin-dash-legend-key" style={{ backgroundColor: item.color }} aria-hidden="true" />
                 <span className="text-white/72">{item.label}</span>
                 <span className="font-black tabular-nums text-white">
-                  {empty ? "Sin ventas" : amount(item.periodTotal, hidden)}
+                  {empty ? "Sin ventas" : amount(item.periodTotal, hidden, item.undetermined)}
                 </span>
               </button>
             )
@@ -417,19 +464,16 @@ export function SalesEvolutionChart({
                 </text>
               ))}
 
-              {series.length === 1 && points.length > 1 && (
-                <path
-                  d={`${buildPath(series[0], 0, points.length - 1)} L ${xAt(points.length - 1)} ${yAt(0)} L ${xAt(0)} ${yAt(0)} Z`}
-                  fill={`url(#${gradientId})`}
-                />
+              {series.length === 1 && points.length > 1 && Boolean(buildAreaPath(series[0])) && (
+                <path d={buildAreaPath(series[0])} fill={`url(#${gradientId})`} />
               )}
 
               {series.map((item) => (
                 <g key={item.id}>
-                  {solidEnd > 0 && (
+                  {solidEnd > 0 && Boolean(buildPath(item, 0, solidEnd)) && (
                     <path d={buildPath(item, 0, solidEnd)} fill="none" stroke={item.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
                   )}
-                  {lastIsPartial && (
+                  {lastIsPartial && seriesSegments(item, points.length - 2, points.length - 1).some((segment) => segment.length > 1) && (
                     <path
                       d={buildPath(item, points.length - 2, points.length - 1)}
                       fill="none"
@@ -440,17 +484,35 @@ export function SalesEvolutionChart({
                     />
                   )}
                   {(showMarkers || points.length === 1) &&
-                    points.map((point, index) => (
+                    points.map((point, index) => {
+                      const value = item.valueOf(point)
+                      return value == null ? null : (
                       <circle
                         key={point.key}
                         cx={xAt(index)}
-                        cy={yAt(item.valueOf(point))}
+                        cy={yAt(value)}
                         r={points.length === 1 ? 5 : 3}
                         fill={item.color}
                         stroke="var(--sales-chart-surface)"
                         strokeWidth="2"
                       />
-                    ))}
+                      )
+                    })}
+                  {/* Un punto aislado entre huecos no tiene trazo: se marca igual. */}
+                  {!(showMarkers || points.length === 1) &&
+                    seriesSegments(item, 0, points.length - 1)
+                      .filter((segment) => segment.length === 1)
+                      .map(([{ index, value }]) => (
+                        <circle
+                          key={points[index].key}
+                          cx={xAt(index)}
+                          cy={yAt(value)}
+                          r={3}
+                          fill={item.color}
+                          stroke="var(--sales-chart-surface)"
+                          strokeWidth="2"
+                        />
+                      ))}
                 </g>
               ))}
 
@@ -463,17 +525,21 @@ export function SalesEvolutionChart({
                     y2={PADDING.top + plotHeight}
                     stroke="var(--sales-chart-crosshair)"
                   />
-                  {series.map((item) => (
-                    <circle
-                      key={item.id}
-                      cx={xAt(activeIndex)}
-                      cy={yAt(item.valueOf(activePoint))}
-                      r="5"
-                      fill={item.color}
-                      stroke="var(--sales-chart-surface)"
-                      strokeWidth="2"
-                    />
-                  ))}
+                  {series.map((item) => {
+                    const value = item.valueOf(activePoint)
+                    // Sin valor no hay punto: el tooltip dice Pendiente.
+                    return value == null ? null : (
+                      <circle
+                        key={item.id}
+                        cx={xAt(activeIndex)}
+                        cy={yAt(value)}
+                        r="5"
+                        fill={item.color}
+                        stroke="var(--sales-chart-surface)"
+                        strokeWidth="2"
+                      />
+                    )
+                  })}
                 </g>
               )}
 
@@ -509,14 +575,20 @@ export function SalesEvolutionChart({
                 {tooltipRows.map(({ item, value }) => (
                   <p key={item.id} className="admin-sales-chart-tooltip-row">
                     <span className="admin-dash-legend-key" style={{ backgroundColor: item.color }} aria-hidden="true" />
-                    <span className="admin-sales-chart-tooltip-value">{amount(value, hidden)}</span>
+                    <span className="admin-sales-chart-tooltip-value">{amount(value, hidden, item.undeterminedAt(activePoint))}</span>
                     <span className="admin-sales-chart-tooltip-label">{item.label}</span>
                   </p>
                 ))}
                 {effectiveView === "channels" && series.length > 1 && (
                   <p className="admin-sales-chart-tooltip-row admin-sales-chart-tooltip-total">
                     <span className="admin-sales-chart-tooltip-value">
-                      {amount(series.reduce((sum, item) => sum + item.valueOf(activePoint), 0), hidden)}
+                      {amount(
+                        series.reduce<number | null>((sum, item) => {
+                          const value = item.valueOf(activePoint)
+                          return sum == null || value == null ? null : sum + value
+                        }, 0),
+                        hidden,
+                      )}
                     </span>
                     <span className="admin-sales-chart-tooltip-label">Total visible</span>
                   </p>
@@ -534,6 +606,11 @@ export function SalesEvolutionChart({
                     <line x1="0" x2="18" y1="2" y2="2" stroke="currentColor" strokeWidth="2" strokeDasharray="4 3" />
                   </svg>
                   Último tramo incompleto (período en curso o recortado)
+                </span>
+              )}
+              {hasUndetermined && (
+                <span className="text-amber-200/80">
+                  Hay una devolución sin atribuir: la curva excluye esa facturación y sus tramos figuran como Pendiente.
                 </span>
               )}
             </div>
@@ -559,10 +636,10 @@ export function SalesEvolutionChart({
                 <tr key={point.key} className="border-t border-white/6">
                   <th scope="row" className="px-3 py-2 font-semibold text-white/72">{formatBucketLabel(point, grouping)}</th>
                   {(effectiveView === "total" ? series : channelSeries).map((item) => (
-                    <td key={item.id} className="px-3 py-2 text-right tabular-nums text-white/72">{amount(item.valueOf(point), hidden)}</td>
+                    <td key={item.id} className="px-3 py-2 text-right tabular-nums text-white/72">{amount(item.valueOf(point), hidden, item.undeterminedAt(point))}</td>
                   ))}
                   {effectiveView === "channels" && (
-                    <td className="px-3 py-2 text-right font-black tabular-nums text-white">{amount(point.total, hidden)}</td>
+                    <td className="px-3 py-2 text-right font-black tabular-nums text-white">{amount(point.total, hidden, point.undeterminedChannels.length > 0)}</td>
                   )}
                 </tr>
               ))}

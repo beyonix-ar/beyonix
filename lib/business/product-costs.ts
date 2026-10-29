@@ -164,12 +164,22 @@ export function getHistoricalUnitCost(
  * vigente. Nunca al revés -- una vez congelado, editar o borrar una compra
  * pasada no puede reescribir una ganancia ya reportada (ver migración
  * 20260918140000_historical_cost_snapshot.sql).
+ *
+ * El snapshot es numeric(12,2) y SQL lo congela con round(costo / unidades, 2):
+ * el recálculo dinámico se redondea igual para que una venta reporte el mismo
+ * costo antes y después de congelarse.
  */
 export function resolveReportedUnitCost(
   snapshot: number | null | undefined,
   dynamic: number | null,
 ): number | null {
-  return snapshot != null ? snapshot : dynamic
+  if (snapshot != null) return snapshot
+  return dynamic == null ? null : roundUnitCost(dynamic)
+}
+
+/** Igual que round(numeric, 2) de Postgres (mitad hacia arriba) para costos ≥ 0. */
+export function roundUnitCost(value: number) {
+  return Math.round(Number((value * 100).toPrecision(15))) / 100
 }
 
 export interface ProductVariantSummary {

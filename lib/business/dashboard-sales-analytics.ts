@@ -36,7 +36,8 @@ export interface CommercialSaleLike {
   id: string
   date: string
   channel: SalesChannelSource
-  grossAmount: number
+  /** null: facturación no determinable (reversión sin atribuir). */
+  grossAmount: number | null
   productName: string
   categoryName: string | null
   orderId: string | null
@@ -50,6 +51,11 @@ export interface SalesEvolutionPoint {
   total: number
   /** El bucket no está cubierto completo por el período (inicio/fin recortado o en curso). */
   partial: boolean
+  /**
+   * Canales con alguna venta de facturación no determinable en el bucket:
+   * su valor (y el total) sólo suma la parte determinable y no es exacto.
+   */
+  undeterminedChannels: SalesChannelKey[]
 }
 
 export const SALES_PERIOD_PRESETS: { value: SalesPeriodPreset; label: string }[] = [
@@ -238,6 +244,7 @@ export function buildSalesEvolution(
       values: emptyChannelValues(),
       total: 0,
       partial: cursor < range.from || end > range.to,
+      undeterminedChannels: [],
     })
     cursor = nextBucket(cursor, grouping)
   }
@@ -248,6 +255,12 @@ export function buildSalesEvolution(
     const channel = getChannelKey(sale.channel)
     const index = indexByKey.get(getBucketStart(dateKey, grouping))
     if (!channel || index === undefined) continue
+    if (sale.grossAmount == null) {
+      if (!points[index].undeterminedChannels.includes(channel)) {
+        points[index].undeterminedChannels.push(channel)
+      }
+      continue
+    }
     const amount = Number.isFinite(sale.grossAmount) ? sale.grossAmount : 0
     points[index].values[channel] += amount
     points[index].total += amount
@@ -285,20 +298,24 @@ export function filterCommercialSales<T extends CommercialSaleLike>(
  * Mercado Libre agrupa por `orderId`. Las ventas externas se cuentan por fila
  * porque su referencia es texto libre y puede repetirse entre operaciones.
  * Un pedido revertido por completo (NC autorizada, importe 0) no es operación.
+ * Un pedido con facturación no determinable sigue contando: la venta existió
+ * y lo que está en duda es cuánto se revirtió.
  */
 export function countSaleOperations(
   sales: Pick<CommercialSaleLike, "id" | "channel" | "orderId" | "grossAmount">[],
 ) {
-  const amounts = new Map<string, number>()
+  const amounts = new Map<string, number | null>()
   for (const sale of sales) {
     const channel = getChannelKey(sale.channel) ?? "unknown"
     const operation =
       channel === "external" ? sale.id : (sale.orderId ?? sale.id)
     const key = `${channel}:${operation}`
-    amounts.set(key, (amounts.get(key) ?? 0) + sale.grossAmount)
+    const stored = amounts.get(key)
+    const current = stored === undefined ? 0 : stored
+    amounts.set(key, current == null || sale.grossAmount == null ? null : current + sale.grossAmount)
   }
   let count = 0
-  for (const amount of amounts.values()) if (amount > 0) count += 1
+  for (const amount of amounts.values()) if (amount == null || amount > 0) count += 1
   return count
 }
 

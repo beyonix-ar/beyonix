@@ -283,6 +283,7 @@ const TEST_FILES = [
   "lib/orders/claim-replacement-flow.test.ts",
   "lib/business/commercial-circuit-consistency.test.ts",
   "lib/business/dashboard-financials.test.ts",
+  "lib/business/dashboard-commercial-ledger.test.ts",
   "lib/business/product-costs.test.ts",
   "lib/business/purchase-form-validation.test.ts",
   "lib/business/standalone-cost-items.test.ts",
@@ -357,6 +358,7 @@ const TEST_FILES = [
 const TSX_TEST_FILES = [
   "lib/business/external-sales-file.test.ts",
   "lib/admin/external-sales-import-modal.test.tsx",
+  "lib/admin/dashboard-commercial-view.test.tsx",
   "lib/admin/dispatch-mobile-control.test.tsx",
   "lib/security/csp-report.test.ts",
   "lib/supabase/proxy-cookies.test.ts",

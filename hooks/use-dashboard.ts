@@ -21,6 +21,7 @@ interface DashboardState {
   lowStock: LowStockItem[]
   recentOrders: SupabasePedido[]
   commercialSales: DashboardCommercialSale[]
+  paidExpensesByDate: DashboardDataResponse["paidExpensesByDate"]
   recentActivity: DashboardRecentActivity[]
   searchIndex: DashboardSearchItem[]
 }
@@ -76,6 +77,7 @@ export function useDashboard({
     lowStock: [],
     recentOrders: [],
     commercialSales: [],
+    paidExpensesByDate: [],
     recentActivity: [],
     searchIndex: [],
   })
@@ -94,6 +96,7 @@ export function useDashboard({
         lowStock: response.lowStock,
         recentOrders: response.recentOrders,
         commercialSales: response.commercialSales,
+        paidExpensesByDate: response.paidExpensesByDate,
         recentActivity: response.recentActivity,
         searchIndex: response.searchIndex,
       })

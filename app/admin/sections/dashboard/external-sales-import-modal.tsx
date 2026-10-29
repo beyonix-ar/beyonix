@@ -279,7 +279,7 @@ export function ExternalSalesImportModal({
       extraWide
       eyebrow="Ventas externas"
       title={source === "paste" ? "Pegar ventas" : "Importar archivo"}
-      description="Nada se guarda hasta que confirmes. Revisá el preview y elegí si las ventas son Históricas o Nuevas."
+      description="Nada se guarda hasta que confirmes. No pegues ventas ya registradas en la web o en Mercado Libre: se contarían dos veces."
       onClose={() => { if (!importingRef.current) onClose() }}
       footer={
         <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-white/8 pt-4">

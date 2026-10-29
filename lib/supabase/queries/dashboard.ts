@@ -4,6 +4,7 @@ import {
 } from "@/lib/admin/system-health"
 import { supabase } from "@/lib/supabase/client"
 
+import type { CommercialSale, PaidExpenseDay } from "@/lib/business/dashboard-commercial-ledger"
 import type { SupabasePedido } from "@/lib/supabase/types"
 
 class DashboardDataError extends Error {
@@ -28,21 +29,8 @@ export interface LowStockItem {
   color_hex?: string
 }
 
-export interface DashboardCommercialSale {
-  id: string
-  date: string
-  channel: "BEYONIX Web" | "MercadoLibre Marketplace" | "Ventas externas"
-  paymentMethod: string
-  productName: string
-  categoryName: string | null
-  sku: string | null
-  quantity: number
-  grossAmount: number
-  costAmount: number | null
-  profitAmount: number | null
-  marginPercent: number | null
-  orderId: string | null
-}
+/** Línea comercial con la semántica única de commercial-sale-financials.ts. */
+export type DashboardCommercialSale = CommercialSale
 
 export interface DashboardRecentActivity {
   id: string
@@ -84,14 +72,30 @@ export interface DashboardStats {
   stockNegativo: number
 }
 
+/**
+ * Resumen histórico (todo el período). Mismas fórmulas que las líneas
+ * comerciales: suma de commercialSales + gastos registrados.
+ *   ventas netas      = bruto − reversiones − comisiones − logística − otros directos
+ *   resultado comercial = ventas netas − costo de mercadería
+ *   resultado estimado  = resultado comercial − gastos registrados pagados
+ */
 export interface DashboardFinancialSummary {
   webGrossSales: number
   marketplaceGrossSales: number
   externalGrossSales: number
   grossSales: number
+  /** Reintegros/NC web, anulaciones ML y devoluciones externas dañadas. */
   completedRefunds: number
   pendingRefunds: number
-  netSales: number
+  /** Ítems web recibidos en devolución sin NC todavía (ya restados del neto). */
+  pendingReturnAdjustment: number
+  /** Facturación ajustada: bruto − reversiones. */
+  /** null: alguna venta tiene una reversión no atribuible (ver reversalAmbiguous). */
+  billedSales: number | null
+  netSales: number | null
+  webNetSales: number | null
+  marketplaceNet: number | null
+  externalNet: number | null
   externalCollected: number
   customerCreditUsed: number
   shippingCharged: number
@@ -101,20 +105,21 @@ export interface DashboardFinancialSummary {
   webMercadoPagoFees: number
   marketplaceFees: number
   marketplaceRefunds: number
-  salesFees: number
   marketplaceShipping: number
-  marketplaceNet: number
-  externalNet: number
+  salesFees: number
+  /** Otros gastos directos de externas + ajustes del Total ML (negativo = a favor). */
+  otherDirectCosts: number
   inventoryPurchases: number
   costOfGoodsSold: number
-  pendingReturnAdjustment: number
+  contributionResult: number | null
   operatingExpensesPaid: number
   productExpenseEconomicCost: number
   operatingExpensesPending: number
-  knownOperatingResult: number
-  trueProfit: number | null
-  trueMarginPercent: number | null
+  operatingResult: number | null
+  operatingMarginPercent: number | null
   costCoveragePercent: number
+  inferredCostPercent: number
+  /** Pedidos web con factura autorizada (original_total): no es el neto fiscal. */
   invoicedAmount: number
   paidOrders: number
   invoicedOrders: number
@@ -139,6 +144,8 @@ export interface DashboardDataResponse {
   lowStock: LowStockItem[]
   recentOrders: SupabasePedido[]
   commercialSales: DashboardCommercialSale[]
+  /** Gastos pagados (y costo de gastos tipo producto) por día, para el resultado del período. */
+  paidExpensesByDate: PaidExpenseDay[]
   recentActivity: DashboardRecentActivity[]
   searchIndex: DashboardSearchItem[]
 }

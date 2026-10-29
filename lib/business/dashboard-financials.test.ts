@@ -2,16 +2,19 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
-  calculateMarketplaceNet,
   calculateMercadoPagoFees,
   calculatePendingRefundAdjustment,
-  calculateTrueProfit,
-  calculateWebNetSales,
   getCustomerCreditRestoredOutsideCreditNotes,
+  getOrderReversalWithPendingReturns,
   getOrderRevenueReversal,
   getProductExpenseEconomicCost,
+  getUnattributedCreditNoteAmount,
   isDashboardPaidSale,
 } from "./dashboard-financials.ts"
+import {
+  buildSaleFinancials,
+  calculateOperatingResult,
+} from "./commercial-sale-financials.ts"
 import { getMercadoLibreCostableUnits } from "../mercadolibre/sale-costing.ts"
 import {
   buildProductCostLedgers,
@@ -26,17 +29,15 @@ const mpSnapshot = {
 test("A. un pago MP normal descuenta exactamente el fee real persistido", () => {
   const fee = calculateMercadoPagoFees([mpSnapshot])
   assert.equal(fee, 3_630)
-  assert.equal(
-    calculateTrueProfit({
-      netSales: 50_000,
-      webShippingCost: 0,
-      costOfGoodsSold: 0,
-      operatingExpenses: 0,
-      pendingReturnAdjustment: 0,
-      mercadoPagoFees: fee,
-    }),
-    46_370,
-  )
+  const sale = buildSaleFinancials({
+    grossSales: 50_000,
+    feeAmount: fee,
+    costableUnits: 1,
+    costAmount: 0,
+    costSource: "historical",
+  })
+  assert.equal(sale.netAmount, 46_370)
+  assert.equal(sale.profitAmount, 46_370)
 })
 
 test("B-C. refund_pending y refunded son ramas excluyentes y mantienen el fee MP", () => {
@@ -52,17 +53,41 @@ test("B-C. refund_pending y refunded son ramas excluyentes y mantienen el fee MP
   assert.deepEqual(completed, { status: "completed", amount: 50_000 })
 
   for (const reversal of [pending, completed]) {
-    const netSales = calculateWebNetSales({ grossSales: 50_000, revenueReversed: reversal.amount })
-    assert.equal(netSales, 0)
-    assert.equal(calculateTrueProfit({
-      netSales,
-      webShippingCost: 0,
-      costOfGoodsSold: 0,
-      operatingExpenses: 0,
-      pendingReturnAdjustment: 0,
-      mercadoPagoFees: calculateMercadoPagoFees([mpSnapshot]),
-    }), -3_630)
+    const sale = buildSaleFinancials({
+      grossSales: 50_000,
+      reversalAmount: reversal.amount,
+      feeAmount: calculateMercadoPagoFees([mpSnapshot]),
+      costableUnits: 0,
+      costAmount: 0,
+      costSource: "none",
+    })
+    assert.equal(sale.grossAmount, 0)
+    assert.equal(sale.netAmount, -3_630)
+    assert.equal(sale.profitAmount, -3_630)
   }
+})
+
+test("refund económico con factura y NC pendiente revierte el ingreso; la NC posterior no lo duplica", () => {
+  const order = {
+    financial_status: "refunded",
+    refunded_at: "2026-10-20T12:00:00Z",
+    invoice_status: "authorized",
+    refund_amount: 10_000,
+    original_total: 10_000,
+  }
+  assert.deepEqual(getOrderRevenueReversal(order, 0), { status: "completed", amount: 10_000 })
+  // Cuando la NC se autoriza describe la misma devolución: mayor, no suma.
+  assert.deepEqual(getOrderRevenueReversal(order, 10_000), { status: "completed", amount: 10_000 })
+  // Reintegro parcial ya hecho y NC parcial por un monto menor: sigue el económico.
+  assert.deepEqual(
+    getOrderRevenueReversal({ ...order, refund_amount: 6_000 }, 4_000),
+    { status: "completed", amount: 6_000 },
+  )
+  // Facturada sin reintegro ni NC: sigue siendo venta.
+  assert.deepEqual(
+    getOrderRevenueReversal({ invoice_status: "authorized", original_total: 10_000 }, 0),
+    { status: "none", amount: 0 },
+  )
 })
 
 test("D-E. reversión parcial y saldo más pago externo revierten el monto económico correcto", () => {
@@ -88,37 +113,90 @@ test("D-E. reversión parcial y saldo más pago externo revierten el monto econ�
   )
 })
 
-test("F-G. devolución física pendiente se ajusta una vez y se anula ante reversión de orden", () => {
+test("F-G. devolución física pendiente se compara por monto con la reversión ya reconocida", () => {
   assert.equal(calculatePendingRefundAdjustment({
     unitPrice: 10_000,
     receivedQuantity: 2,
     creditedQuantity: 1,
-    orderReversalStatus: "none",
   }), 10_000)
-  assert.equal(calculatePendingRefundAdjustment({
-    unitPrice: 10_000,
-    receivedQuantity: 2,
-    creditedQuantity: 0,
-    orderReversalStatus: "pending",
+
+  const order = { original_total: 11_000, total: 11_000 }
+  const base = { unattributedCreditAmount: 0, restoredCreditOutsideCreditNotes: 0, pendingReturnAmount: 10_000, orderTotal: 11_000 }
+  const none = getOrderRevenueReversal(order, 0)
+  assert.deepEqual(
+    getOrderReversalWithPendingReturns({ ...base, reversal: none, authorizedCreditAmount: 0 }),
+    { amount: 10_000, ambiguous: false },
+  )
+  // NC autorizada identificada como envío (1.000): no cubre el producto devuelto.
+  const shippingNote = getOrderRevenueReversal(order, 1_000)
+  assert.deepEqual(
+    getOrderReversalWithPendingReturns({ ...base, reversal: shippingNote, authorizedCreditAmount: 1_000 }),
+    { amount: 11_000, ambiguous: false },
+  )
+  // Reintegro económico de toda la orden: ya incluye la devolución, no se suma.
+  const refunded = getOrderRevenueReversal({ ...order, financial_status: "refunded", refund_amount: 11_000 }, 0)
+  assert.deepEqual(
+    getOrderReversalWithPendingReturns({ ...base, reversal: refunded, authorizedCreditAmount: 0 }),
+    { amount: 11_000, ambiguous: false },
+  )
+  // refund_pending de toda la orden: tampoco se suma.
+  const pending = getOrderRevenueReversal({ ...order, financial_status: "refund_pending", refund_amount: 11_000 }, 0)
+  assert.deepEqual(
+    getOrderReversalWithPendingReturns({ ...base, reversal: pending, authorizedCreditAmount: 0 }),
+    { amount: 11_000, ambiguous: false },
+  )
+})
+
+test("NC sin ítem ni envío + devolución sin NC: se usa la cota que no duplica y se marca ambigua", () => {
+  const order = { original_total: 11_000, total: 11_000 }
+  const generalNote = getOrderRevenueReversal(order, 10_000)
+  assert.deepEqual(
+    getOrderReversalWithPendingReturns({
+      reversal: generalNote, authorizedCreditAmount: 10_000, unattributedCreditAmount: 10_000,
+      restoredCreditOutsideCreditNotes: 0, pendingReturnAmount: 10_000, orderTotal: 11_000,
+    }),
+    { amount: 10_000, ambiguous: true },
+  )
+  // Si un reintegro ya revirtió toda la orden, la atribución no cambia el monto.
+  const refunded = getOrderRevenueReversal({ ...order, financial_status: "refunded", refund_amount: 11_000 }, 10_000)
+  assert.deepEqual(
+    getOrderReversalWithPendingReturns({
+      reversal: refunded, authorizedCreditAmount: 10_000, unattributedCreditAmount: 10_000,
+      restoredCreditOutsideCreditNotes: 0, pendingReturnAmount: 10_000, orderTotal: 11_000,
+    }),
+    { amount: 11_000, ambiguous: false },
+  )
+  // Lo no atribuido es lo que no está vinculado a ítems ni declarado como envío.
+  assert.equal(getUnattributedCreditNoteAmount({ total_amount: 10_000, order_credit_note_items: [] }), 10_000)
+  assert.equal(getUnattributedCreditNoteAmount({ total_amount: 1_000, original_shipping_refunded: 1_000 }), 0)
+  assert.equal(getUnattributedCreditNoteAmount({
+    total_amount: 11_000, original_shipping_refunded: 1_000, order_credit_note_items: [{ total_amount: 10_000 }],
   }), 0)
 })
 
-test("H. el refund de marketplace reduce netSales y trueProfit una sola vez", () => {
-  const marketplaceNet = calculateMarketplaceNet({
+test("reintegros múltiples: con NC autorizadas manda la suma fiscal aunque refund_amount guarde sólo el último", () => {
+  // Dos NC liquidadas (6.000 + 4.000); la ruta de liquidación deja en
+  // refund_amount el total de la última nota (4.000).
+  assert.deepEqual(
+    getOrderRevenueReversal({ financial_status: "refunded", refund_amount: 4_000, original_total: 10_000 }, 10_000),
+    { status: "completed", amount: 10_000 },
+  )
+})
+
+test("H. el neto de marketplace descuenta reembolso, cargos y envío una sola vez", () => {
+  const sale = buildSaleFinancials({
     grossSales: 100_000,
-    fees: 15_000,
-    shipping: 5_000,
-    refunds: 20_000,
+    reversalAmount: 20_000,
+    feeAmount: 15_000,
+    shippingCost: 5_000,
+    reportedNetAmount: 60_000,
+    costableUnits: 1,
+    costAmount: 25_000,
+    costSource: "historical",
   })
-  assert.equal(marketplaceNet, 60_000)
-  assert.equal(calculateTrueProfit({
-    netSales: marketplaceNet,
-    webShippingCost: 0,
-    costOfGoodsSold: 25_000,
-    operatingExpenses: 0,
-    pendingReturnAdjustment: 0,
-    mercadoPagoFees: 0,
-  }), 35_000)
+  assert.equal(sale.otherCosts, 0)
+  assert.equal(sale.netAmount, 60_000)
+  assert.equal(sale.profitAmount, 35_000)
 })
 
 test("I-K. ML recupera costo vendible/discounted y conserva non-sellable", () => {
@@ -140,6 +218,32 @@ test("I-K. ML recupera costo vendible/discounted y conserva non-sellable", () =>
   }), 3)
 })
 
+test("ML: sólo la revisión física o return_units recuperan costo", () => {
+  const sale = (parsed: Record<string, unknown>) =>
+    ({ quantity: 2, gross_amount: 10_000, raw_data: { parsed } })
+  // Reembolso parcial sin return_units ni revisión: costo completo.
+  assert.equal(getMercadoLibreCostableUnits(sale({ status: "Entregada", cancellations_refunds: -3_000 })), 2)
+  assert.equal(getMercadoLibreCostableUnits(sale({ status: "Devolución parcial", cancellations_refunds: -3_000 })), 2)
+  // A. Reembolso total + tracking de devolución, sin cantidad ni revisión: costo completo.
+  assert.equal(getMercadoLibreCostableUnits(sale({
+    status: "Devolución en camino", cancellations_refunds: -10_000, return_tracking_number: "TRK-1",
+  })), 2)
+  // E. Devolución entregada al vendedor y reembolsada, sin revisión ni cantidad: costo completo.
+  assert.equal(getMercadoLibreCostableUnits(sale({
+    status: "Devolución finalizada. Te devolvimos el dinero", cancellations_refunds: -10_000,
+    return_tracking_number: "TRK-2", return_result: "Entregada al vendedor",
+  })), 2)
+  assert.equal(getMercadoLibreCostableUnits(sale({ status: "Reembolsada", cancellations_refunds: -10_000 })), 2)
+  // B. return_units = 1: se recupera una unidad.
+  assert.equal(getMercadoLibreCostableUnits(sale({ status: "Devolución finalizada", cancellations_refunds: -10_000, return_units: 1 })), 1)
+  // C-D. La revisión física manda: 1 vendible + 1 dañada recupera 1; 2 vendibles, todo.
+  const refundedWithTracking = sale({ status: "Devolución finalizada", cancellations_refunds: -10_000, return_tracking_number: "TRK-3" })
+  assert.equal(getMercadoLibreCostableUnits(refundedWithTracking, { sellableQuantity: 1, discountedQuantity: 0, nonSellableQuantity: 1 }), 1)
+  assert.equal(getMercadoLibreCostableUnits(refundedWithTracking, { sellableQuantity: 2, discountedQuantity: 0, nonSellableQuantity: 0 }), 0)
+  // Cancelada: nunca se despachó.
+  assert.equal(getMercadoLibreCostableUnits(sale({ status: "Cancelada por el comprador", cancellations_refunds: -10_000 })), 0)
+})
+
 test("N. donación/sorteo registra costo económico sin crear ingreso ni duplicar OPEX", () => {
   const ledgers = buildProductCostLedgers([{
     product_id: 9,
@@ -158,25 +262,19 @@ test("N. donación/sorteo registra costo económico sin crear ingreso ni duplica
   )
   const productCost = getProductExpenseEconomicCost(3, historicalUnitCost)
   assert.equal(productCost, 7_500)
-  assert.equal(calculateTrueProfit({
-    netSales: 0,
-    webShippingCost: 0,
-    costOfGoodsSold: 0,
-    operatingExpenses: productCost,
-    pendingReturnAdjustment: 0,
-    mercadoPagoFees: 0,
-  }), -7_500)
+  assert.equal(calculateOperatingResult(0, productCost), -7_500)
 })
 
-test("O. el subsidio logístico usa costo real y no vuelve a restar el envío marketplace", () => {
-  assert.equal(calculateTrueProfit({
-    netSales: 55_000,
-    webShippingCost: 8_000,
-    costOfGoodsSold: 20_000,
-    operatingExpenses: 2_000,
-    pendingReturnAdjustment: 0,
-    mercadoPagoFees: 0,
-  }), 25_000)
+test("O. el subsidio logístico web usa costo real y se resta una sola vez", () => {
+  const sale = buildSaleFinancials({
+    grossSales: 55_000,
+    shippingCost: 8_000,
+    costableUnits: 1,
+    costAmount: 20_000,
+    costSource: "historical",
+  })
+  assert.equal(sale.netAmount, 47_000)
+  assert.equal(calculateOperatingResult(sale.profitAmount, 2_000), 25_000)
 })
 
 test("venta cobrada = hubo pago confirmado, aunque después se cancele o reintegre", () => {

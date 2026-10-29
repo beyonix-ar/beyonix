@@ -16,3 +16,13 @@ test("P. una venta a las 23:30 de Argentina cae en el día, mes y año local cor
   assert.equal(matchesArgentinaMetricMonth(sale, "11", "2025", localReference), true)
   assert.equal(matchesArgentinaMetricYear(sale, "2025", localReference), true)
 })
+
+test("una fecha comercial YYYY-MM-DD es un día argentino, no medianoche UTC", () => {
+  assert.equal(argentinaDateKey("2026-05-01"), "2026-05-01")
+  assert.equal(argentinaDateKey("2026-01-01"), "2026-01-01")
+  assert.equal(isSameArgentinaDay("2026-05-01", "2026-05-01T23:30:00.000-03:00"), true)
+  assert.equal(matchesArgentinaMetricMonth("2026-05-01", "4", "2026", "2026-05-15T12:00:00.000Z"), true)
+  assert.equal(matchesArgentinaMetricYear("2026-01-01", "2026", "2026-05-15T12:00:00.000Z"), true)
+  // Con hora sigue convirtiéndose: 00:30 UTC del 1/5 es 30/4 en Argentina.
+  assert.equal(argentinaDateKey("2026-05-01T00:30:00.000Z"), "2026-04-30")
+})

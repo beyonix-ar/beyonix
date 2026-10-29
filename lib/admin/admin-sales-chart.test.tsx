@@ -102,3 +102,94 @@ test("gráfico de ventas: series por canal, leyenda, tooltip, totales, ocultamie
     }
   }
 })
+
+test("gráfico de ventas: un tramo indeterminado es un hueco, nunca un punto en $0", async () => {
+  const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" })
+  const originals = new Map<string, PropertyDescriptor | undefined>()
+  for (const [key, value] of Object.entries({
+    window: dom.window,
+    document: dom.window.document,
+    HTMLElement: dom.window.HTMLElement,
+    Node: dom.window.Node,
+    navigator: dom.window.navigator,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  })) {
+    originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key))
+    Object.defineProperty(globalThis, key, { value, configurable: true, writable: true })
+  }
+
+  const { SalesEvolutionChart, getChartSegments } = await import("../../app/admin/sections/dashboard/sales-evolution-chart")
+  const { createRoot } = await import("react-dom/client")
+  const root = createRoot(document.getElementById("root")!)
+  type ChartProps = Parameters<typeof SalesEvolutionChart>[0]
+  const render = async (props: Partial<ChartProps>) =>
+    act(async () => {
+      root.render(createElement(SalesEvolutionChart, { sales: [], range: RANGE, channelFilter: "todos", hidden: false, ...props }))
+    })
+  const svg = () => document.querySelector("svg[role=img]")!
+  const seriesPath = (variable: string) =>
+    [...svg().querySelectorAll("path[stroke]")].find((path) => path.getAttribute("stroke") === `var(${variable})`)
+  // Coordenadas y de cada subpath "M x y" / "L x y".
+  const pathPoints = (d: string) =>
+    [...d.matchAll(/([ML]) ([\d.]+) ([\d.]+)/g)].map(([, command, , y]) => ({ command, y: Number(y) }))
+  const baselineY = () =>
+    Number([...svg().querySelectorAll("line")].find((line) => line.getAttribute("stroke") === "var(--sales-chart-baseline)")?.getAttribute("y1"))
+  const press = async (key: string) => {
+    await act(async () => {
+      svg().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true }))
+    })
+  }
+  const tooltip = () => document.querySelector(".admin-sales-chart-tooltip")?.textContent ?? ""
+
+  // Día 1 = 10.000 · Día 2 = indeterminado · Día 3 = 12.000.
+  const web = (day: number, grossAmount: number | null) =>
+    ({ date: `2026-10-0${day}T15:00:00.000Z`, channel: "BEYONIX Web" as const, grossAmount })
+
+  try {
+    // El dato que recibe la serie es null, no 0: corta en dos tramos.
+    assert.deepEqual(getChartSegments([10_000, null, 12_000]), [
+      [{ index: 0, value: 10_000 }],
+      [{ index: 2, value: 12_000 }],
+    ])
+
+    await render({ sales: [web(1, 10_000), web(2, null), web(3, 12_000)], channelFilter: "BEYONIX Web" })
+    const line = seriesPath("--sales-chart-web")
+    assert.ok(line, "línea de la serie")
+    const points = pathPoints(line.getAttribute("d") ?? "")
+    // Dos subpaths de un punto: no hay "L" que cruce el hueco ni vértice en el eje 0.
+    assert.deepEqual(points.map((point) => point.command), ["M", "M"])
+    assert.ok(points.every((point) => point.y < baselineY()), "ningún vértice en $0")
+    // Marcadores sólo en los días con dato; el área tampoco rellena el hueco.
+    assert.equal(svg().querySelectorAll(`circle[fill="var(--sales-chart-web)"]`).length, 2)
+    assert.equal(svg().querySelector("path[fill^='url(']"), null, "sin área a través del hueco")
+
+    await press("Home")
+    await press("ArrowRight")
+    assert.match(tooltip(), /Pendiente/)
+    assert.doesNotMatch(tooltip(), /\$\s?0(?![\d.,])/)
+    assert.equal(svg().querySelectorAll("circle[r='5']").length, 0, "sin punto activo en $0")
+
+    // Web indeterminado el día 2, ML determinable los tres días.
+    const ml = (day: number, grossAmount: number) =>
+      ({ date: `2026-10-0${day}T15:00:00.000Z`, channel: "MercadoLibre Marketplace" as const, grossAmount })
+    await render({ sales: [web(1, 10_000), web(2, null), web(3, 12_000), ml(1, 5_000), ml(2, 5_000), ml(3, 6_000)] })
+    assert.deepEqual(pathPoints(seriesPath("--sales-chart-web")?.getAttribute("d") ?? "").map((point) => point.command), ["M", "M"])
+    const mlPoints = pathPoints(seriesPath("--sales-chart-ml")?.getAttribute("d") ?? "")
+    assert.deepEqual(mlPoints.map((point) => point.command), ["M", "L", "L"], "ML sigue continua")
+    assert.ok(mlPoints.every((point) => point.y < baselineY()))
+
+    await press("Home")
+    await press("ArrowRight")
+    assert.match(tooltip(), /Pendiente.*BEYONIX Web/)
+    assert.match(tooltip(), /5\.000.*Mercado Libre/)
+    assert.match(tooltip(), /Pendiente.*Total visible/)
+    // El punto activo sólo existe para ML.
+    assert.equal(svg().querySelectorAll("circle[r='5']").length, 1)
+  } finally {
+    await act(async () => root.unmount())
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+      else Reflect.deleteProperty(globalThis, key)
+    }
+  }
+})
