@@ -137,6 +137,7 @@ const TEST_FILES = [
   "lib/andreani/checkout-quote.test.ts",
   "lib/andreani/parcel-quote.test.ts",
   "lib/andreani/checkout-quote-client.test.ts",
+  "lib/andreani/checkout-quote-address-flow.test.ts",
   "lib/andreani/order-shipment.test.ts",
   "lib/andreani/label-tracking-routes.test.ts",
   "lib/andreani/tracking-sync-cron-auth.test.ts",
@@ -270,6 +271,8 @@ const TEST_FILES = [
   "app/checkout/pending/checkout-pending-page.test.ts",
   "lib/public-error-message.test.ts",
   "lib/cart/cart-summary-total.test.ts",
+  "lib/cart/commercial-change-notice.test.ts",
+  "lib/cart/pricing-conflict-race.test.ts",
   "lib/products/catalog-view-state.test.ts",
   "lib/orders/delivery-date-authorization.test.ts",
   "lib/orders/credit-note-remaining.test.ts",
@@ -360,6 +363,7 @@ const TEST_FILES = [
 // Tests con componentes React reales (JSX + JSDOM): corren con tsx y SIN
 // --conditions=react-server (los hooks de cliente no existen en ese build).
 const TSX_TEST_FILES = [
+  "lib/cart/site-settings-refresh.test.ts",
   "lib/business/external-sales-file.test.ts",
   "lib/admin/external-sales-import-modal.test.tsx",
   "lib/admin/dashboard-commercial-view.test.tsx",

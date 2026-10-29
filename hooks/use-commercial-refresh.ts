@@ -1,18 +1,23 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef } from "react"
 
 import { useCart } from "@/context/cart-context"
 import { refreshSiteSettings } from "@/hooks/use-site-settings"
 import {
   COMMERCIAL_REFRESH_INTERVAL_MS,
-  shouldRunCommercialRefresh,
+  createCommercialRefreshRunner,
+  getCommercialChangeCause,
+  getCommercialUpdateNotice,
+  type CommercialChangeSignals,
 } from "@/lib/cart/cart-catalog-refresh"
 
-export interface CommercialRefreshResult {
-  cartChanged: boolean
-  settingsChanged: boolean
-  removedCount: number
+export type CommercialRefreshResult = CommercialChangeSignals
+
+/** Aviso al cliente según la causa detectada (null si no hubo cambio). */
+export function getCommercialChangeNotice(result: CommercialRefreshResult): string | null {
+  const cause = getCommercialChangeCause(result)
+  return cause ? getCommercialUpdateNotice(cause, result.removedCount) : null
 }
 
 /**
@@ -36,51 +41,40 @@ export function useCommercialRefresh({
 }) {
   const { refreshCartCatalog } = useCart()
   const onChangeRef = useRef(onChange)
-  const stateRef = useRef({ inFlight: false, lastRunAt: 0 })
 
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
 
-  const runRefresh = useCallback(
-    async (force = false) => {
-      const state = stateRef.current
-      const now = Date.now()
-      if (
-        !shouldRunCommercialRefresh({
-          visible: document.visibilityState === "visible",
-          inFlight: state.inFlight,
-          lastRunAt: state.lastRunAt,
-          now,
-          force,
-        })
-      ) {
-        return null
-      }
-
-      state.inFlight = true
-      state.lastRunAt = now
-      try {
-        const [cart, settings] = await Promise.all([
-          refreshCartCatalog(),
-          refreshSiteSettings(),
-        ])
-        const result: CommercialRefreshResult = {
-          cartChanged: cart.changed,
-          settingsChanged: settings.changed,
-          removedCount: cart.removedCount,
-        }
-        if (result.cartChanged || result.settingsChanged) {
-          onChangeRef.current(result)
-        }
-        return result
-      } catch {
-        // Sólo UX: un fallo de red no bloquea nada (Pagar revalida server-side).
-        return null
-      } finally {
-        state.inFlight = false
-      }
-    },
+  const runRefresh = useMemo(
+    () =>
+      createCommercialRefreshRunner(
+        async (): Promise<CommercialRefreshResult | null> => {
+          try {
+            const [cart, settings] = await Promise.all([
+              refreshCartCatalog(),
+              refreshSiteSettings(),
+            ])
+            const result: CommercialRefreshResult = {
+              cartChanged: cart.changed,
+              priceChanged: cart.priceChanged,
+              availabilityChanged: cart.availabilityChanged,
+              removedCount: cart.removedCount,
+              settingsChanged: settings.changed,
+              shippingSettingsChanged: settings.shippingChanged,
+              otherSettingsChanged: settings.otherChanged,
+            }
+            if (result.cartChanged || result.settingsChanged) {
+              onChangeRef.current(result)
+            }
+            return result
+          } catch {
+            // Sólo UX: un fallo de red no bloquea nada (Pagar revalida server-side).
+            return null
+          }
+        },
+        { isVisible: () => document.visibilityState === "visible" },
+      ),
     [refreshCartCatalog],
   )
 

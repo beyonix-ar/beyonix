@@ -229,6 +229,21 @@ export function mapCartItemsToQuoteItems(
  * accidental del array nunca generan una clave distinta para el mismo
  * destino/carrito.
  */
+/**
+ * Dirección SÓLO para la clave de caché/comparación: ignora tildes,
+ * mayúsculas y espacios sobrantes, pero conserva la puntuación ("12/34" no es
+ * "1234"). Nunca se envía a Andreani ni participa del token: la cotización
+ * usa la dirección real del cliente.
+ */
+function normalizeAddressForQuoteKey(direccion: string | undefined) {
+  return (direccion ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+}
+
 export function buildShippingQuoteKey(
   input: CheckoutQuoteDestinationInput,
 ): string {
@@ -236,7 +251,7 @@ export function buildShippingQuoteKey(
     cpDestino: input.cpDestino.trim().toUpperCase(),
     localidad: normalizeArgentineLocationKey(input.localidad),
     provincia: normalizeArgentineProvinceKey(input.provincia),
-    direccion: input.direccion?.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase() || "",
+    direccion: normalizeAddressForQuoteKey(input.direccion),
     items: canonicalizeCheckoutQuoteItems(input.items),
   })
 }

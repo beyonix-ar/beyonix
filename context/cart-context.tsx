@@ -59,6 +59,17 @@ export interface CartCatalogRefreshResult {
   /** Cambió precio, cuotas, stock o se quitó alguna línea del carrito. */
   changed: boolean
   removedCount: number
+  /** Cambió el precio/descuento de una línea que sigue en el carrito. */
+  priceChanged: boolean
+  /** Cambió el stock vendible de una línea que sigue en el carrito. */
+  availabilityChanged: boolean
+}
+
+const NO_CART_CATALOG_CHANGE: CartCatalogRefreshResult = {
+  changed: false,
+  removedCount: 0,
+  priceChanged: false,
+  availabilityChanged: false,
 }
 
 interface CartContextType {
@@ -557,20 +568,25 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const refreshCartCatalog = useCallback(async (): Promise<CartCatalogRefreshResult> => {
     const productIds = cartRef.current.map((item) => item.product.id)
-    if (!productIds.length) return { changed: false, removedCount: 0 }
+    if (!productIds.length) return NO_CART_CATALOG_CHANGE
 
     // La reserva vigente de ESTE checkout no se descuenta a sí misma.
     const freshProducts = await getStoreCartProducts(productIds, {
       excludeSessionId: cartSessionIdRef.current || null,
     })
     const snapshot = reconcileCartWithCatalog(cartRef.current, freshProducts)
-    if (!snapshot.changed) return { changed: false, removedCount: 0 }
+    if (!snapshot.changed) return NO_CART_CATALOG_CHANGE
 
     // Se reconcilia sobre el estado MÁS reciente (el cliente pudo cambiar
     // cantidades mientras volvía la consulta); sin cambios -> misma
     // referencia, sin re-render.
     setCart((prev) => reconcileCartWithCatalog(prev, freshProducts).items)
-    return { changed: true, removedCount: snapshot.removed.length }
+    return {
+      changed: true,
+      removedCount: snapshot.removed.length,
+      priceChanged: snapshot.priceChanged,
+      availabilityChanged: snapshot.availabilityChanged,
+    }
   }, [])
 
   const { total, itemCount } = useMemo(() => {

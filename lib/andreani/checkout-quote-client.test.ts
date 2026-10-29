@@ -84,6 +84,40 @@ test("buildShippingQuoteKey: localidad con/sin tilde genera la misma clave", () 
   assert.equal(a, b)
 })
 
+function keyForAddress(direccion: string) {
+  return buildShippingQuoteKey({ cpDestino: "5000", localidad: "Córdoba", provincia: "Córdoba", direccion, items: savedItems })
+}
+
+test("buildShippingQuoteKey: dirección con/sin tilde genera la misma clave", () => {
+  assert.equal(keyForAddress("Colón 1234"), keyForAddress("Colon 1234"))
+  assert.equal(keyForAddress("San Martín 500"), keyForAddress("San Martin 500"))
+})
+
+test("buildShippingQuoteKey: dirección con distinto casing genera la misma clave", () => {
+  assert.equal(keyForAddress("CÓRDOBA 1500"), keyForAddress("cordoba 1500"))
+})
+
+test("buildShippingQuoteKey: espacios sobrantes en la dirección no cambian la clave", () => {
+  assert.equal(keyForAddress("  Colón   1234  "), keyForAddress("Colón 1234"))
+  assert.equal(keyForAddress("San\tMartín  500"), keyForAddress("San Martin 500"))
+})
+
+test("buildShippingQuoteKey: otra altura u otra calle siguen siendo otra clave", () => {
+  assert.notEqual(keyForAddress("Colon 1234"), keyForAddress("Colon 1235"))
+  assert.notEqual(keyForAddress("Colón 1234"), keyForAddress("San Martín 1234"))
+  assert.notEqual(keyForAddress("Ruta 2 345"), keyForAddress("Ruta 23 45"))
+  // La puntuación estructural se conserva: "12/34" no colisiona con "1234".
+  assert.notEqual(keyForAddress("Calle 12/34"), keyForAddress("Calle 1234"))
+  assert.notEqual(keyForAddress("Mitre 1234, Piso 2"), keyForAddress("Mitre 12342"))
+  assert.notEqual(keyForAddress("Colón 1234"), keyForAddress(""))
+})
+
+test("buildShippingQuoteKey: normaliza sólo la clave, no la dirección del cliente", () => {
+  const input = { cpDestino: "5000", localidad: "Córdoba", provincia: "Córdoba", direccion: "Av. Colón 1234", items: savedItems }
+  buildShippingQuoteKey(input)
+  assert.equal(input.direccion, "Av. Colón 1234")
+})
+
 test("buildShippingQuoteKey: alias CABA / Capital Federal generan la misma clave", () => {
   const a = buildShippingQuoteKey({
     cpDestino: "1000",

@@ -30,7 +30,8 @@ interface CustomerCreditContextType {
   movements: CustomerCreditMovement[]
   movementsLoading: boolean
   appliedAmount: number
-  reload: () => Promise<void>
+  /** true si el saldo quedó releído (o no hay sesión); false si falló y se conserva el anterior. */
+  reload: () => Promise<boolean>
   loadMovements: () => Promise<void>
   setAppliedAmount: (amount: number) => void
   clearAppliedAmount: () => void
@@ -131,7 +132,7 @@ export function CustomerCreditProvider({
       setError("")
       setMovements([])
       clearAppliedAmount()
-      return
+      return true
     }
 
     setLoading(true)
@@ -154,12 +155,14 @@ export function CustomerCreditProvider({
       setBalance(nextBalance)
       setBalanceUserId(user.id)
       storeBalance(user.id, nextBalance)
+      return true
     } catch (loadError) {
       setError(
         loadError instanceof Error
           ? loadError.message
           : "No pudimos cargar tu saldo."
       )
+      return false
     } finally {
       setLoading(false)
     }

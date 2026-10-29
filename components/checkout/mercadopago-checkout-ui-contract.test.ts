@@ -116,10 +116,12 @@ test("el checkout reacciona al 409 PRICING_CHANGED: refresca, avisa el nuevo tot
   assert.ok(start >= 0)
   const block = checkout.slice(start, checkout.indexOf("return\n      }", start))
   assert.match(block, /refreshCommercialData\(true\)/)
-  assert.match(block, /setCommercialUpdateNotice\(/)
+  assert.match(block, /setPricingConflict\(\{/)
+  assert.match(block, /newTotalLabel: serverTotal === null \? null : formatPrice\(serverTotal\)/)
   assert.doesNotMatch(block, /window\.location/)
-  // Mercado Pago y transferencia mandan el total visto; la compra con saldo no cobra nada externo.
+  // Mercado Pago y transferencia mandan el total visto (el del resumen); la compra con saldo no cobra nada externo.
   assert.match(checkout, /expectedTotal: customerCreditCoversTotal \? undefined : expectedCheckoutTotal,/)
+  assert.match(checkout, /const expectedCheckoutTotal = finalTotal\r?\n/)
 })
 
 test("carrito y checkout avisan cuando cambian precios o condiciones (nunca en silencio)", () => {
@@ -127,10 +129,13 @@ test("carrito y checkout avisan cuando cambian precios o condiciones (nunca en s
   const drawer = readSource("../cart/cart-drawer.tsx")
   const refreshLib = readSource("../../lib/cart/cart-catalog-refresh.ts")
 
-  assert.match(refreshLib, /"Los precios o condiciones de tu compra fueron actualizados\."/)
+  // El aviso depende de la causa detectada; nunca el genérico de antes.
+  assert.doesNotMatch(refreshLib, /Los precios o condiciones de tu compra fueron actualizados/)
   assert.match(checkout, /useCommercialRefresh\(\{/)
-  assert.match(checkout, /onChange: \(\) => setCommercialUpdateNotice\(COMMERCIAL_UPDATE_NOTICE\)/)
+  assert.match(checkout, /onChange: \(result\) => setCommercialChange\(getDetectedCommercialChange\(result\)\)/)
+  assert.match(checkout, /const commercialUpdateNotice = getCheckoutCommercialNotice\(\{/)
   assert.match(wrapper, /useCommercialRefresh\(\{/)
+  assert.match(wrapper, /setCommercialUpdateNotice\(getCommercialChangeNotice\(result\)\)/)
   assert.match(drawer, /role="status"/)
 })
 

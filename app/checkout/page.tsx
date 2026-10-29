@@ -116,7 +116,17 @@ import {
   type MercadoPagoCheckoutMode,
   getMercadoPagoFinancingCandidates,
 } from "@/lib/pricing/checkout-pricing"
-import { COMMERCIAL_UPDATE_NOTICE } from "@/lib/cart/cart-catalog-refresh"
+import {
+  buildPricingSelectionKey,
+  finishPricingConflictSync,
+  getCheckoutCommercialNotice,
+  getDetectedCommercialChange,
+  getPricingConflictStatus,
+  getPricingConflictStatusMessage,
+  pricingConflictBlocksPayment as isPricingConflictBlockingPayment,
+  type DetectedCommercialChange,
+  type PricingConflict,
+} from "@/lib/cart/cart-catalog-refresh"
 import { variantSwatchStyle } from "@/lib/products/variant-swatch"
 import { isRandomColorName } from "@/lib/products/color-mode"
 import {
@@ -180,6 +190,7 @@ import {
   resolvePostalCodeFromCatalog,
   type CheckoutLocalityOption,
   type CheckoutPostalCodeResult,
+  type CheckoutQuoteDestinationInput,
   type CheckoutQuoteRawOption,
 } from "@/lib/andreani/checkout-quote-client"
 import {
@@ -507,19 +518,15 @@ export default function CheckoutPage() {
     Boolean(cartSessionId) && termsAcceptedSessionId === cartSessionId
   // Confirmación antes de ir a Mercado Pago (la preferencia se crea al confirmar).
   const [mercadoPagoConfirmOpen, setMercadoPagoConfirmOpen] = useState(false)
-  // Aviso de "precios o condiciones actualizados" (refresco en vivo o 409
-  // PRICING_CHANGED del servidor): un total nunca cambia en silencio.
-  const [commercialUpdateNotice, setCommercialUpdateNotice] =
-    useState<string | null>(null)
-  // Total recalculado por el servidor en un 409 PRICING_CHANGED, ligado al
-  // total que mostraba la pantalla en ese momento. Si después del refresco
-  // la pantalla sigue mostrando lo mismo, se reenvía el total del servidor
-  // (el cliente ya lo vio en el aviso); si la pantalla cambió, se usa el
-  // nuevo total de pantalla.
-  const [serverConfirmedTotal, setServerConfirmedTotal] = useState<{
-    displayedTotal: number
-    serverTotal: number
-  } | null>(null)
+  // Último cambio detectado por el refresco en vivo: un total nunca cambia
+  // en silencio (ver getCheckoutCommercialNotice).
+  const [commercialChange, setCommercialChange] =
+    useState<DetectedCommercialChange | null>(null)
+  // 409 PRICING_CHANGED pendiente: su nuevo total manda en el aviso y no se
+  // vuelve a pagar hasta que el resumen visible lo muestre.
+  const [pricingConflict, setPricingConflict] =
+    useState<PricingConflict | null>(null)
+  const pricingConflictIdRef = useRef(0)
 
   const [
     isProcessing,
@@ -609,6 +616,15 @@ export default function CheckoutPage() {
   // Así, cuando el efecto sí se dispara por otro motivo (CP/localidad/carrito),
   // usa la dirección más actual sin geocodificar en cada tecla.
   const latestStreetAddressRef = useRef({ calle: "", numero: "" })
+  // Destino real (sin normalizar) para el payload de la cotización: la clave
+  // `shippingQuotePayload` sólo decide CUÁNDO cotizar, nunca QUÉ se envía.
+  const latestShippingQuoteDestinationRef = useRef<CheckoutQuoteDestinationInput>({
+    cpDestino: "",
+    localidad: "",
+    provincia: "",
+    direccion: "",
+    items: [],
+  })
   const provinceSelectOptions = useMemo(
     () =>
       ARGENTINA_PROVINCES.map((province) => ({
@@ -1168,13 +1184,9 @@ export default function CheckoutPage() {
     ? getCheckoutInstallmentsOptionCopy(mercadoPagoPricing.interestFreeInstallmentCounts)
     : null
   // Total que se envía como `expectedTotal` (Mercado Pago y transferencia):
-  // sólo para que el servidor rechace (409) si recalcula otro monto; nunca
-  // se usa para cobrar.
-  const expectedCheckoutTotal =
-    serverConfirmedTotal &&
-    Math.abs(serverConfirmedTotal.displayedTotal - finalTotal) <= 0.009
-      ? serverConfirmedTotal.serverTotal
-      : finalTotal
+  // siempre el MISMO que muestra el resumen, sólo para que el servidor
+  // rechace (409) si recalcula otro monto; nunca se usa para cobrar.
+  const expectedCheckoutTotal = finalTotal
   const priceWithoutNationalTaxesTotal = getPriceWithoutNationalTaxes(
     finalTotal,
     siteSettings.pricing.nationalTaxesIncidencePercent,
@@ -1182,10 +1194,12 @@ export default function CheckoutPage() {
 
   // Cambios administrativos (precio, stock, cuotas, fees, transferencia,
   // envío) mientras el checkout está abierto: se refrescan carrito y
-  // configuración y se avisa. Sólo UX -- Pagar revalida todo server-side.
+  // configuración y se avisa según la causa. Cotizar el envío del destino
+  // elegido no pasa por acá: es un paso normal y el resumen ya lo refleja.
+  // Sólo UX -- Pagar revalida todo server-side.
   const refreshCommercialData = useCommercialRefresh({
     enabled: mounted && isCartReady && items.length > 0,
-    onChange: () => setCommercialUpdateNotice(COMMERCIAL_UPDATE_NOTICE),
+    onChange: (result) => setCommercialChange(getDetectedCommercialChange(result)),
   })
 
   useEffect(() => {
@@ -1400,7 +1414,10 @@ export default function CheckoutPage() {
     direccion: formData.direccion,
     items: mapCartItemsToQuoteItems(items),
   }
+  // Clave normalizada: SÓLO para caché/comparación (dispara la cotización
+  // cuando cambia el destino real). La cotización envía los datos reales.
   const shippingQuotePayload = buildShippingQuoteKey(shippingQuoteDestination)
+  latestShippingQuoteDestinationRef.current = shippingQuoteDestination
   latestStreetAddressRef.current = {
     calle: formData.calle.trim(),
     numero: formData.numero.trim(),
@@ -1413,23 +1430,48 @@ export default function CheckoutPage() {
   // cuenta y es la autoridad final.
   const isDestinationQuotable = isQuotableDestination(shippingQuoteDestination)
 
+  // Lo que eligió el cliente al recibir un 409 (incluido el destino canónico
+  // de la cotización): si lo cambia, el total del servidor ya no corresponde
+  // a lo que ve y el próximo intento revalida.
+  const pricingSelectionKey = buildPricingSelectionKey({
+    paymentOption: selectedPaymentOption,
+    shippingProvider: selectedShippingOption?.provider,
+    shippingType: selectedShippingOption?.type,
+    sucursalId: selectedSucursalId,
+    storeBenefitId: selectedStoreBenefitId,
+    destinationKey: shippingQuotePayload,
+    items,
+  })
+  const pricingConflictStatus = getPricingConflictStatus({
+    conflict: pricingConflict,
+    selectionKey: pricingSelectionKey,
+    visibleTotal: finalTotal,
+    installmentsPending: isMercadoPagoPayment && interestFreeConfirmationPending,
+  })
+  // Con un 409 vigente no se vuelve a pagar mientras se sincroniza, si no se
+  // pudo releer el saldo o si el resumen no muestra el total del servidor.
+  const pricingConflictBlocksPayment = isPricingConflictBlockingPayment(pricingConflictStatus)
+  const pricingConflictStatusMessage = getPricingConflictStatusMessage(pricingConflictStatus)
+  const commercialUpdateNotice = getCheckoutCommercialNotice({
+    change: commercialChange,
+    conflict: pricingConflictStatus === "none" ? null : pricingConflict,
+  })
+  const retryPricingConflictCredit = (conflictId: number) => {
+    void customerCredit.reload().then((creditReloaded) => {
+      setPricingConflict((conflict) => finishPricingConflictSync(conflict, conflictId, { creditReloaded }))
+    })
+  }
+
   useEffect(() => {
     shippingQuoteCurrentRef.current = shippingQuoteCurrent
   }, [shippingQuoteCurrent])
 
   useEffect(() => {
-    const payload = JSON.parse(shippingQuotePayload) as {
-      cpDestino: string
-      localidad: string
-      provincia: string
-      direccion: string
-      items: Array<{
-        productId: number
-        quantity: number
-        variantId: number | null
-        conditionedStockId: string | null
-      }>
-    }
+    // Datos reales del destino (dirección con tildes y puntuación tal como
+    // la tiene el checkout): nunca se reconstruyen desde la clave normalizada,
+    // porque el token se firma con lo que se envía y el pedido lo valida
+    // contra la dirección real.
+    const payload = latestShippingQuoteDestinationRef.current
     const requestId = ++shippingRequestIdRef.current
     const isStale = () => shippingRequestIdRef.current !== requestId
 
@@ -1924,7 +1966,8 @@ export default function CheckoutPage() {
     !reservationExpired &&
     !hasKnownStockConflict &&
     isSelectedPaymentValid &&
-    termsAccepted
+    termsAccepted &&
+    !pricingConflictBlocksPayment
 
   // "Pagar": valida y, si es Mercado Pago, primero abre la confirmación. La
   // preferencia se crea recién en submitCheckout (al confirmar): cancelar el
@@ -1937,6 +1980,7 @@ export default function CheckoutPage() {
     if (!hasMatchingStockReservation || reservationPending || reservationExpired) return
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid) return
     if (!termsAccepted) return
+    if (pricingConflictBlocksPayment) return
 
     if (hasBlockedWords(formData.direccion)) {
       setCheckoutError("La dirección contiene texto no permitido.")
@@ -1956,6 +2000,7 @@ export default function CheckoutPage() {
     if (submissionInFlightRef.current) return
     if (!hasMatchingStockReservation || reservationPending || reservationExpired) return
     if (!isFormValid || !selectedShippingOption || !isSelectedPaymentValid || !termsAccepted) return
+    if (pricingConflictBlocksPayment) return
 
     submissionInFlightRef.current = true
     setIsProcessing(true)
@@ -2061,18 +2106,30 @@ export default function CheckoutPage() {
       // el que estaba en pantalla: no se redirige a pagar. Se refrescan
       // catálogo/configuración y se muestra el nuevo total antes de reintentar.
       if (response.status === 409 && data?.code === "PRICING_CHANGED") {
-        const serverTotal = Number(data.total)
-        if (Number.isFinite(serverTotal)) {
-          setServerConfirmedTotal({ displayedTotal: finalTotal, serverTotal })
-        }
-        setCommercialUpdateNotice(
-          Number.isFinite(serverTotal)
-            ? `${COMMERCIAL_UPDATE_NOTICE} Nuevo total: ${formatPrice(serverTotal)}. Revisalo y volvé a presionar Pagar.`
-            : toPublicMessage(data.error, COMMERCIAL_UPDATE_NOTICE),
-        )
+        const parsedTotal = Number(data.total)
+        const serverTotal = Number.isFinite(parsedTotal) ? parsedTotal : null
+        const conflictId = ++pricingConflictIdRef.current
+        // El servidor sólo informa el nuevo total: sin causa detectada no se
+        // afirma cuál fue. Un refresco (el forzado o uno que ya estaba en
+        // curso) puede precisar la causa, pero el nuevo total se conserva.
+        setCommercialChange(null)
+        setPricingConflict({
+          id: conflictId,
+          serverTotal,
+          newTotalLabel: serverTotal === null ? null : formatPrice(serverTotal),
+          selectionKey: pricingSelectionKey,
+          syncing: true,
+          creditSyncFailed: false,
+        })
         // También pueden haber cambiado las cuotas sin interés confirmadas.
         invalidateInterestFreeInstallments()
-        void refreshCommercialData(true)
+        // Si ya había un refresco en curso, el forzado se encadena después:
+        // la sincronización termina con datos leídos luego del 409. Si el
+        // saldo no se pudo releer, no se da por sincronizado.
+        void Promise.allSettled([refreshCommercialData(true), customerCredit.reload()]).then(([, credit]) => {
+          const creditReloaded = credit.status === "fulfilled" && credit.value
+          setPricingConflict((conflict) => finishPricingConflictSync(conflict, conflictId, { creditReloaded }))
+        })
         return
       }
 
@@ -3380,14 +3437,33 @@ export default function CheckoutPage() {
 
               {commercialUpdateNotice && (
                 <CheckoutNotice tone="warning" className="mt-4">
-                  <span role="status">{commercialUpdateNotice}</span>{" "}
-                  <button
-                    type="button"
-                    onClick={() => setCommercialUpdateNotice(null)}
-                    className="cursor-pointer text-xs font-semibold underline underline-offset-2"
-                  >
-                    Entendido
-                  </button>
+                  <span role="status">
+                    {commercialUpdateNotice}
+                    {pricingConflictStatusMessage && ` ${pricingConflictStatusMessage}`}
+                  </span>{" "}
+                  {pricingConflictStatus === "credit_failed" && pricingConflict && (
+                    <button
+                      type="button"
+                      onClick={() => retryPricingConflictCredit(pricingConflict.id)}
+                      disabled={customerCredit.loading}
+                      className="cursor-pointer text-xs font-semibold underline underline-offset-2 disabled:cursor-default disabled:opacity-60"
+                    >
+                      Reintentar
+                    </button>
+                  )}
+                  {/* Con un 409 sin resolver el aviso no se descarta: explica por qué Pagar está bloqueado. */}
+                  {!pricingConflictBlocksPayment && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCommercialChange(null)
+                        setPricingConflict(null)
+                      }}
+                      className="cursor-pointer text-xs font-semibold underline underline-offset-2"
+                    >
+                      Entendido
+                    </button>
+                  )}
                 </CheckoutNotice>
               )}
 
@@ -3425,7 +3501,8 @@ export default function CheckoutPage() {
                 disabled={
                   isProcessing ||
                   financedSelectionUnavailable ||
-                  (isMercadoPagoFinanced && interestFreeConfirmationPending)
+                  (isMercadoPagoFinanced && interestFreeConfirmationPending) ||
+                  pricingConflictBlocksPayment
                 }
                 onClick={() => void submitCheckout()}
               >

@@ -5,8 +5,11 @@ import { useCallback, useState } from "react"
 import { CartDrawer } from "./cart-drawer"
 import { useCart } from "@/context/cart-context"
 import { useCheckoutShippingPrefetch } from "@/hooks/use-checkout-shipping-prefetch"
-import { useCommercialRefresh } from "@/hooks/use-commercial-refresh"
-import { COMMERCIAL_UPDATE_NOTICE } from "@/lib/cart/cart-catalog-refresh"
+import {
+  getCommercialChangeNotice,
+  useCommercialRefresh,
+  type CommercialRefreshResult,
+} from "@/hooks/use-commercial-refresh"
 
 export function CartWrapper() {
   const {
@@ -28,7 +31,7 @@ export function CartWrapper() {
   useCommercialRefresh({
     enabled: isOpen && cart.length > 0,
     onChange: useCallback(
-      () => setCommercialUpdateNotice(COMMERCIAL_UPDATE_NOTICE),
+      (result: CommercialRefreshResult) => setCommercialUpdateNotice(getCommercialChangeNotice(result)),
       [],
     ),
   })

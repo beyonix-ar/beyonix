@@ -13,6 +13,7 @@ import {
   type StockSettings,
 } from "@/lib/site-settings"
 import { DEFAULT_SHIPPING_SETTINGS, type ShippingBonusSettings } from "@/lib/store-config"
+import { diffCommercialSettings } from "@/lib/cart/cart-catalog-refresh"
 import type { PublicInterestFreeOffer } from "@/lib/pricing/interest-free-communication"
 import {
   DEFAULT_FINANCED_PRICE_POLICY,
@@ -65,12 +66,15 @@ export async function refreshSiteSettings() {
   const previous = lastSettingsData
   invalidateSiteSettingsClientCache()
   const data = await fetchSiteSettings()
-  const changed = JSON.stringify(previous ?? null) !== JSON.stringify(data)
-  // Sin cambios no se notifica: nada se re-renderiza.
-  if (changed) {
+  // Los hooks montados reciben cualquier diferencia (incluida la primera
+  // lectura); sin diferencias no se notifica y nada se re-renderiza.
+  if (JSON.stringify(previous ?? null) !== JSON.stringify(data)) {
     for (const listener of siteSettingsListeners) listener(data)
   }
-  return { data, changed }
+  // Para el aviso al cliente sólo cuenta un cambio comercial real contra una
+  // lectura anterior válida: la primera carga (previous === null) es la base.
+  const { changed, shippingChanged, otherChanged } = diffCommercialSettings(previous?.settings, data.settings)
+  return { data, changed, shippingChanged, otherChanged }
 }
 
 function fetchSiteSettings() {
