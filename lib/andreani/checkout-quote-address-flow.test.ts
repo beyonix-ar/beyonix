@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import test from "node:test"
 
 import {
+  buildShippingQuoteCacheKey,
   buildShippingQuoteKey,
   getShippingQuoteOptions,
   mapCartItemsToQuoteItems,
@@ -137,7 +138,102 @@ test("contrato: el checkout cotiza con el destino real, nunca reconstruido desde
   assert.match(checkout, /const payload = latestShippingQuoteDestinationRef\.current\n/)
   assert.match(checkout, /const requestPayload = \{ \.\.\.payload, \.\.\.latestStreetAddressRef\.current \}/)
   assert.match(checkout, /getShippingQuoteOptions\(requestPayload\)/)
-  // La clave sigue siendo lo que dispara la cotización y la huella del 409.
-  assert.match(checkout, /\}, \[isDestinationQuotable, shippingQuotePayload\]\)/)
+  // La clave estricta (la de la firma) dispara la cotización; la huella UX
+  // sigue siendo la del 409.
+  assert.match(checkout, /const shippingQuoteCacheKey = buildShippingQuoteCacheKey\(shippingQuoteDestination\)\n/)
+  assert.match(checkout, /\}, \[isDestinationQuotable, shippingQuoteCacheKey\]\)/)
   assert.match(checkout, /destinationKey: shippingQuotePayload,/)
+})
+
+// Caché real: sin resetear entre pasos. La huella UX puede considerar iguales
+// dos escrituras, pero el caché sólo entrega un token si la firma las trata igual.
+async function quoteThenChangeAddress(firstAddress: string, secondAddress: string) {
+  await withQuoteServer(async (requests) => {
+    const first = { ...destination, direccion: firstAddress }
+    const second = { ...destination, direccion: secondAddress }
+
+    const [optionA] = await getShippingQuoteOptions(first)
+    assert.equal(requests.length, 1)
+
+    // La huella UX (409) sigue igual; la clave del caché/token no.
+    assert.equal(buildShippingQuoteKey(second), buildShippingQuoteKey(first))
+    assert.notEqual(buildShippingQuoteCacheKey(second), buildShippingQuoteCacheKey(first))
+
+    const [optionB] = await getShippingQuoteOptions(second)
+    assert.equal(requests.length, 2, "debe recotizar en vez de devolver el token anterior")
+    assert.equal(requests[1].direccion, secondAddress)
+    assert.notEqual(optionB.quoteToken, optionA.quoteToken)
+
+    // El token A nunca valida el pedido B; el token B sí.
+    assert.throws(() => validateOrder(optionA.quoteToken!, secondAddress), CheckoutShippingQuoteError)
+    const shipping = validateOrder(optionB.quoteToken!, `${secondAddress}. Referencias: Timbre 2`)
+    assert.equal(shipping.costReal, 42_860)
+    assert.equal(shipping.costCharged, 17_860)
+
+    // La entrada original sigue vigente para su propia escritura.
+    const [againA] = await getShippingQuoteOptions(first)
+    assert.equal(requests.length, 2)
+    assert.equal(againA.quoteToken, optionA.quoteToken)
+    assert.equal(validateOrder(againA.quoteToken!, firstAddress).costReal, 42_860)
+  })
+}
+
+test("caché real: Av. Colón -> Av. Colon recotiza y el nuevo token valida el pedido", async () => {
+  await quoteThenChangeAddress("Av. Colón 1234", "Av. Colon 1234")
+})
+
+test("caché real: Peña -> Pena recotiza y no reutiliza el token incompatible", async () => {
+  await quoteThenChangeAddress("Peña 500", "Pena 500")
+})
+
+test("caché real: la misma dirección exacta reutiliza la cotización y su token sigue válido", async () => {
+  await withQuoteServer(async (requests) => {
+    const [first] = await getShippingQuoteOptions(destination)
+    const [second] = await getShippingQuoteOptions({ ...destination })
+    assert.equal(requests.length, 1)
+    assert.equal(second.quoteToken, first.quoteToken)
+    assert.equal(validateOrder(second.quoteToken!, ORIGINAL_ADDRESS).costReal, 42_860)
+  })
+})
+
+test("caché real: mayúsculas y espacios que la firma ignora reutilizan un token válido", async () => {
+  await withQuoteServer(async (requests) => {
+    const [first] = await getShippingQuoteOptions({ ...destination, direccion: "Av. Colón 1234" })
+    const variant = "  AV. COLÓN   1234 "
+    const [second] = await getShippingQuoteOptions({ ...destination, direccion: variant })
+    assert.equal(requests.length, 1)
+    assert.equal(second.quoteToken, first.quoteToken)
+    assert.equal(validateOrder(second.quoteToken!, variant).costReal, 42_860)
+  })
+})
+
+test("invariante: dos direcciones con la misma clave de caché siempre validan el mismo token", () => {
+  const previousSecret = process.env.CHECKOUT_SHIPPING_QUOTE_SECRET
+  process.env.CHECKOUT_SHIPPING_QUOTE_SECRET = QUOTE_SECRET
+  try {
+    const variants = [
+      "Av. Colón 1234", "Av. Colon 1234", "AV. COLÓN 1234", " av.  colón 1234 ", "Av. Colón 1234",
+      "Peña 500", "Pena 500", "PEÑA 500", "Güemes 10", "Guemes 10",
+      "Av. Colón 1234. Referencias: Timbre 2",
+    ]
+    for (const quoted of variants) {
+      const token = createCheckoutShippingQuoteToken({ ...destination, direccion: quoted, sucursalId: null }, QUOTE_OPTION)
+      for (const ordered of variants) {
+        const sameCacheEntry =
+          buildShippingQuoteCacheKey({ ...destination, direccion: quoted }) ===
+          buildShippingQuoteCacheKey({ ...destination, direccion: ordered })
+        let valid = true
+        try {
+          validateOrder(token, ordered)
+        } catch (error) {
+          assert.ok(error instanceof CheckoutShippingQuoteError)
+          valid = false
+        }
+        assert.equal(valid, sameCacheEntry, `${quoted} -> ${ordered}`)
+      }
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.CHECKOUT_SHIPPING_QUOTE_SECRET
+    else process.env.CHECKOUT_SHIPPING_QUOTE_SECRET = previousSecret
+  }
 })

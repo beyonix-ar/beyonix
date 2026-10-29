@@ -25,6 +25,7 @@ import {
   canonicalizeCheckoutQuoteItems,
   type CheckoutQuoteItemInput,
 } from "../cart/checkout-shipping-items.ts"
+import { normalizeCheckoutQuoteBindingAddress } from "../cart/checkout-shipping-binding.ts"
 import type { AndreaniBranchWithDistance } from "./types.ts"
 
 export type { CheckoutQuoteItemInput }
@@ -230,10 +231,10 @@ export function mapCartItemsToQuoteItems(
  * destino/carrito.
  */
 /**
- * Dirección SÓLO para la clave de caché/comparación: ignora tildes,
- * mayúsculas y espacios sobrantes, pero conserva la puntuación ("12/34" no es
- * "1234"). Nunca se envía a Andreani ni participa del token: la cotización
- * usa la dirección real del cliente.
+ * Dirección SÓLO para la huella UX del destino: ignora tildes, mayúsculas y
+ * espacios sobrantes, pero conserva la puntuación ("12/34" no es "1234").
+ * Nunca se envía a Andreani ni decide si un token se reutiliza: para eso
+ * está `buildShippingQuoteCacheKey`.
  */
 function normalizeAddressForQuoteKey(direccion: string | undefined) {
   return (direccion ?? "")
@@ -244,6 +245,11 @@ function normalizeAddressForQuoteKey(direccion: string | undefined) {
     .replace(/\s+/g, " ")
 }
 
+/**
+ * Huella UX del destino+carrito (409, selección del cliente): "Colón 1234" y
+ * "Colon 1234" son el mismo destino. NO sirve para reutilizar cotizaciones:
+ * el token firma la dirección con tildes (ver `buildShippingQuoteCacheKey`).
+ */
 export function buildShippingQuoteKey(
   input: CheckoutQuoteDestinationInput,
 ): string {
@@ -252,6 +258,26 @@ export function buildShippingQuoteKey(
     localidad: normalizeArgentineLocationKey(input.localidad),
     provincia: normalizeArgentineProvinceKey(input.provincia),
     direccion: normalizeAddressForQuoteKey(input.direccion),
+    items: canonicalizeCheckoutQuoteItems(input.items),
+  })
+}
+
+/**
+ * Clave del caché de cotizaciones/tokens: sólo dos destinos que el servidor
+ * firma igual comparten entrada. La dirección usa la misma normalización que
+ * el binding del token (`normalizeCheckoutQuoteBindingAddress`), así que
+ * "Colón"/"Colon" o "Peña"/"Pena" fuerzan una cotización nueva, mientras que
+ * mayúsculas y espacios -- que la firma ignora -- siguen reutilizando.
+ * Localidad/provincia/CP/ítems ya se canonicalizan igual que la firma.
+ */
+export function buildShippingQuoteCacheKey(
+  input: CheckoutQuoteDestinationInput,
+): string {
+  return JSON.stringify({
+    cpDestino: input.cpDestino.trim().toUpperCase(),
+    localidad: normalizeArgentineLocationKey(input.localidad),
+    provincia: normalizeArgentineProvinceKey(input.provincia),
+    direccion: normalizeCheckoutQuoteBindingAddress(input.direccion),
     items: canonicalizeCheckoutQuoteItems(input.items),
   })
 }
@@ -405,7 +431,7 @@ export function peekPostalCodesForLocality(
 export function getShippingQuoteOptions(
   input: CheckoutQuoteDestinationInput,
 ): Promise<CheckoutQuoteRawOption[]> {
-  const key = buildShippingQuoteKey(input)
+  const key = buildShippingQuoteCacheKey(input)
 
   return loadWithCache(
     quoteCache,
@@ -450,7 +476,7 @@ export function getShippingQuoteOptions(
 export function peekShippingQuoteOptions(
   input: CheckoutQuoteDestinationInput,
 ): CheckoutQuoteRawOption[] | null {
-  return peek(quoteCache, buildShippingQuoteKey(input))
+  return peek(quoteCache, buildShippingQuoteCacheKey(input))
 }
 
 /**

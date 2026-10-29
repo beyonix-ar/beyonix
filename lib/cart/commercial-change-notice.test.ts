@@ -97,7 +97,7 @@ test("B/C. cotizar o recotizar por cambio de destino no genera señales de cambi
 
   const checkout = readFileSync(new URL("../../app/checkout/page.tsx", import.meta.url), "utf8")
   const quoteEffectStart = checkout.indexOf("const handleQuoteFailure = ")
-  const quoteEffectEnd = checkout.indexOf("}, [isDestinationQuotable, shippingQuotePayload])")
+  const quoteEffectEnd = checkout.indexOf("}, [isDestinationQuotable, shippingQuoteCacheKey])")
   assert.ok(quoteEffectStart > 0 && quoteEffectEnd > quoteEffectStart)
   assert.doesNotMatch(checkout.slice(quoteEffectStart, quoteEffectEnd), /setCommercialChange|setPricingConflict/)
   // Sólo lo activan el refresco comercial y el 409 (más el botón para cerrarlo).

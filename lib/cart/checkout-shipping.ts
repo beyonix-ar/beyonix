@@ -20,6 +20,7 @@ import {
   markupPercentToBasisPoints,
   toCents,
 } from "../shipping/shipping-pricing.ts"
+import { normalizeCheckoutQuoteBindingAddress } from "./checkout-shipping-binding.ts"
 
 export type CheckoutShippingType = "sucursal" | "domicilio"
 
@@ -246,8 +247,7 @@ function canonicalizeQuoteBinding(
   const cpDestino = binding.cpDestino?.trim().toUpperCase() ?? ""
   const localidad = normalizeArgentineLocationKey(binding.localidad ?? "")
   const provincia = normalizeArgentineProvinceKey(binding.provincia ?? "")
-  const direccion = (binding.direccion ?? "").split(/\.\s*Referencias:/i)[0]
-    .normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase()
+  const direccion = normalizeCheckoutQuoteBindingAddress(binding.direccion)
   const branchId = binding.sucursalId == null ? null : Number(binding.sucursalId)
   if (direccion.length > 500 || (branchId !== null && (!Number.isSafeInteger(branchId) || branchId <= 0))) invalidQuote()
   const sucursalId = branchId === null ? null : String(branchId)

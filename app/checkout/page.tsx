@@ -176,6 +176,7 @@ import {
   type AndreaniBranchWithDistance,
 } from "@/lib/andreani/types"
 import {
+  buildShippingQuoteCacheKey,
   buildShippingQuoteKey,
   CheckoutCatalogError,
   findCanonicalLocality,
@@ -1414,9 +1415,12 @@ export default function CheckoutPage() {
     direccion: formData.direccion,
     items: mapCartItemsToQuoteItems(items),
   }
-  // Clave normalizada: SÓLO para caché/comparación (dispara la cotización
-  // cuando cambia el destino real). La cotización envía los datos reales.
+  // Huella UX (ignora tildes): SÓLO para comparar la selección del 409. La
+  // cotización envía los datos reales.
   const shippingQuotePayload = buildShippingQuoteKey(shippingQuoteDestination)
+  // Clave estricta (misma regla que la firma del token): dispara la
+  // cotización, así "Colón" -> "Colon" nunca conserva un token incompatible.
+  const shippingQuoteCacheKey = buildShippingQuoteCacheKey(shippingQuoteDestination)
   latestShippingQuoteDestinationRef.current = shippingQuoteDestination
   latestStreetAddressRef.current = {
     calle: formData.calle.trim(),
@@ -1622,7 +1626,7 @@ export default function CheckoutPage() {
         clearTimeout(slowNoticeTimer)
         if (!isStale()) setShippingLoading(false)
       })
-  }, [isDestinationQuotable, shippingQuotePayload])
+  }, [isDestinationQuotable, shippingQuoteCacheKey])
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement>
