@@ -14,6 +14,7 @@ import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 import { cn } from "@/lib/utils"
+import { getCheckoutEntryHref } from "@/lib/cart/checkout-entry"
 import { lockDocumentScroll } from "@/lib/admin/scroll-lock"
 
 import { CartItemRow } from "./cart-item"
@@ -51,6 +52,9 @@ interface CartDrawerProps {
     productId: number,
     color: string
   ) => void
+
+  /** Sin sesión, "Finalizar compra" pasa primero por /login (vuelve al checkout). */
+  isAuthenticated?: boolean
 }
 
 export function CartDrawer({
@@ -61,6 +65,7 @@ export function CartDrawer({
   onDismissCommercialUpdateNotice,
   onUpdateQuantity,
   onRemoveItem,
+  isAuthenticated = false,
 }: CartDrawerProps) {
   const router = useRouter()
   const [mounted, setMounted] = useState(false)
@@ -236,7 +241,7 @@ export function CartDrawer({
                 onCheckout={() => {
                   onClose()
 
-                  router.push("/checkout")
+                  router.push(getCheckoutEntryHref(isAuthenticated))
                 }}
                 onContinueShopping={onClose}
                 checkoutBlockedReason={

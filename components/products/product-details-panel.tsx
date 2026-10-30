@@ -21,10 +21,7 @@ import {
 } from "@/lib/products/product-variants"
 import { getPriceWithoutNationalTaxes, getTransferPrice } from "@/lib/pricing/financed-pricing"
 import { getProductInterestFreeMessage } from "@/lib/pricing/interest-free-communication"
-import {
-  MAX_CART_ITEM_QUANTITY,
-  getQuantityLimitMessage,
-} from "@/lib/cart/stock-status"
+import { getQuantityLimitMessage } from "@/lib/cart/stock-status"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 
 interface ProductDetailsPanelProps {
@@ -165,7 +162,7 @@ export function ProductDetailsPanel({
           cartQuantity={cartQuantity}
           maxReached={
             // selectedStock ya es el disponible (físico - reservas activas).
-            cartQuantity >= Math.min(MAX_CART_ITEM_QUANTITY, selectedStock)
+            cartQuantity >= selectedStock
           }
           limitMessage={getQuantityLimitMessage(
             product,

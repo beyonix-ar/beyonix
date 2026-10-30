@@ -47,6 +47,7 @@ import {
 import {
   useAuth,
 } from "@/context/auth-context"
+import { getCheckoutEntryHref } from "@/lib/cart/checkout-entry"
 import {
   useCart,
 } from "@/context/cart-context"
@@ -91,6 +92,8 @@ import {
   getCartStockIssues,
   getMaxPurchasableQuantity,
   getQuantityLimitMessage,
+  RESERVATION_AUTH_REQUIRED_MESSAGE,
+  RESERVATION_BLOCKED_MESSAGE,
   getStockStatus,
   getStockStatusLabel,
   type StockStatus,
@@ -480,6 +483,9 @@ export default function CheckoutPage() {
     user,
     isLoading,
   } = useAuth()
+  useEffect(() => {
+    if (!isLoading && !user) router.replace(getCheckoutEntryHref(false))
+  }, [isLoading, user, router])
   const {
     cart: items,
     cartSessionId,
@@ -1828,8 +1834,16 @@ export default function CheckoutPage() {
       setCheckoutError("Uno de los productos de tu compra acaba de quedarse sin stock. Revisá las cantidades antes de continuar.")
       return
     }
+    if (result.code === "RESERVATION_BLOCKED") {
+      setCheckoutError(RESERVATION_BLOCKED_MESSAGE)
+      return
+    }
+    if (result.code === "AUTH_REQUIRED") {
+      setCheckoutError(RESERVATION_AUTH_REQUIRED_MESSAGE)
+      return
+    }
     setCheckoutError(result.code === "INVALID_QUANTITY"
-      ? "Podés comprar hasta 3 unidades por producto o variante. Revisá tu carrito."
+      ? "Revisá las cantidades de tu carrito e intentá nuevamente."
       : "No pudimos reservar los productos. Revisá tu carrito e intentá nuevamente.")
   }
 
@@ -2288,6 +2302,8 @@ export default function CheckoutPage() {
     !postalCodesLoading &&
     !postalCodeLoadError &&
     postalCodeOptions.length === 0
+
+  if (isLoading || !user) return null
 
   if (!mounted || !isCartReady) {
     return null

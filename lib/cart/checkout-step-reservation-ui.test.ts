@@ -8,7 +8,8 @@ import {
   reservationMatchesCart,
   reservationSecondsLeft,
 } from "./checkout-step-reservation.ts"
-import { MAX_CART_ITEM_QUANTITY, PURCHASE_LIMIT_MESSAGE } from "./stock-status.ts"
+import { getMaxPurchasableQuantity, getQuantityLimitMessage } from "./stock-status.ts"
+import type { SupabaseProducto } from "../supabase/types.ts"
 
 // Las secciones se buscan con literales "\n": normalizar para no depender
 // del fin de línea del checkout (CRLF en Windows con autocrlf).
@@ -121,14 +122,17 @@ test("13. una reserva vencida recuperada no crea otra automáticamente", () => {
   assert.doesNotMatch(reservation.slice(reservation.indexOf("export async function getCartStockReservation"), reservation.indexOf("/** Backend preparado")), /reserve_cart_stock/)
 })
 
-test("14. carrito y checkout muestran el tope de 3; backend lo sigue validando", () => {
-  assert.equal(MAX_CART_ITEM_QUANTITY, 3)
-  assert.match(cart, /Math\.min\(nextQuantity, MAX_CART_ITEM_QUANTITY\)/)
-  // El tope se explica con el motivo real (límite de 3, reservas ajenas o sin stock).
-  assert.equal(PURCHASE_LIMIT_MESSAGE, "Podés comprar hasta 3 unidades por producto o variante.")
+test("14. sin tope fijo por línea: carrito y checkout topean con el stock disponible; backend sólo exige 1..999", () => {
+  const plenty = { id: 1, nombre: "Trípode", precio: 1, stock: 12, producto_variantes: [] } as unknown as SupabaseProducto
+  assert.equal(getMaxPurchasableQuantity(plenty), 12)
+  assert.equal(getQuantityLimitMessage(plenty, "default", 5), null, "5 de 12: se puede seguir sumando")
+  assert.doesNotMatch(cart, /MAX_CART_ITEM_QUANTITY|Math\.min\(nextQuantity/)
+  // El tope se explica con el motivo real (reservas ajenas o sin stock).
   assert.match(checkout, /getQuantityLimitMessage\(item\.product, item\.color, item\.quantity\)/)
   assert.match(read("../../components/cart/cart-item.tsx"), /getQuantityLimitMessage\(product, color, quantity\)/)
-  assert.match(reservation, /item\.quantity > 3/)
+  assert.match(reservation, /item\.quantity > MAX_CHECKOUT_ITEM_QUANTITY/)
+  assert.doesNotMatch(reservation, /item\.quantity > 3/)
+  assert.doesNotMatch(checkout, /hasta 3 unidades/)
 })
 
 test("cambios explícitos del resumen reemplazan la reserva antes de cambiar el carrito", () => {

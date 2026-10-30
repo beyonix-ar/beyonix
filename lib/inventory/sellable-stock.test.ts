@@ -12,8 +12,6 @@ import {
 import { describeStockReservation } from "./stock-reservation-details.ts"
 import {
   CART_STOCK_ISSUES_MESSAGE,
-  MAX_CART_ITEM_QUANTITY,
-  PURCHASE_LIMIT_MESSAGE,
   STOCK_LIMIT_EXHAUSTED_MESSAGE,
   STOCK_LIMIT_RESERVED_MESSAGE,
   STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE,
@@ -113,10 +111,10 @@ test("catálogo: producto sin variantes físico 5, reservado 2 -> se puede compr
   assert.equal(getMaxPurchasableQuantity(result), 3)
 })
 
-test("catálogo: máximo 3 por producto aunque haya más disponible", () => {
+test("catálogo: sin tope fijo, el máximo comprable es todo el disponible", () => {
   const [result] = applyAvailableStock([product({ stock: 10 })], [total(1, 1)])
   assert.equal(result.stock, 9)
-  assert.equal(getMaxPurchasableQuantity(result), MAX_CART_ITEM_QUANTITY)
+  assert.equal(getMaxPurchasableQuantity(result), 9)
 })
 
 test("disponible 0 -> agotado: no se puede agregar, pero el producto sigue visible (físico > 0)", () => {
@@ -264,9 +262,10 @@ test("bloqueo del +: distingue reservas ajenas (A), stock agotado (B) y límite 
   // Sin datos de reservas (producto leído sin la RPC) nunca culpa a una reserva.
   assert.equal(getQuantityLimitMessage(product({ stock: 2 }), "default", 2), STOCK_LIMIT_EXHAUSTED_MESSAGE)
 
-  // Límite de compra: hay stock de sobra.
+  // Sin tope fijo: con stock de sobra no hay límite que explicar.
   const [plenty] = applyAvailableStock([product({ stock: 10 })], [total(1, 2)])
-  assert.equal(getQuantityLimitMessage(plenty, "default", 3), PURCHASE_LIMIT_MESSAGE)
+  assert.equal(getQuantityLimitMessage(plenty, "default", 3), null)
+  assert.equal(getQuantityLimitMessage(plenty, "default", 7), null)
 
   // Variantes: la reserva de Negra no explica el bloqueo de Verde.
   const [variants] = applyAvailableStock([

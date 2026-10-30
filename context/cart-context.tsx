@@ -17,17 +17,21 @@ import {
   getSafeSupabaseSession,
   supabase,
 } from "@/lib/supabase/client"
+import { DEFAULT_VARIANT_VALUE } from "@/lib/products/product-variants"
 import {
-  DEFAULT_VARIANT_VALUE,
-  FALLBACK_PRODUCT_IMAGE,
-  getDefaultVariantValue,
-  getProductImagesByVariant,
-  getVariantOptionByValue,
-} from "@/lib/products/product-variants"
+  getProductImage,
+  normalizeCart,
+  resolveCartVariant,
+  toFiniteNumber,
+  type CartItem,
+} from "@/lib/cart/cart-items"
 import {
-  MAX_CART_ITEM_QUANTITY,
-  getMaxPurchasableQuantity,
-} from "@/lib/cart/stock-status"
+  resolveCartOnSignIn,
+  resolveCartOnSignOut,
+  type CartAuthOwner,
+  type GuestCartHandoff,
+} from "@/lib/cart/guest-cart-handoff"
+import { getMaxPurchasableQuantity } from "@/lib/cart/stock-status"
 import { createCartSessionId } from "@/lib/cart/cart-session-id"
 import { reconcileCartWithCatalog } from "@/lib/cart/cart-catalog-refresh"
 import { getStoreCartProducts } from "@/lib/supabase/queries/store"
@@ -40,20 +44,7 @@ import {
 import { reserveCartStock } from "@/lib/cart/stock-reservations"
 import { trackAddToCart } from "@/lib/analytics/track-commerce"
 
-export interface CartItem {
-  product: SupabaseProducto
-  color: string
-  image: string
-  quantity: number
-  variantId: number | null
-  conditionedStockId: string | null
-  variantName: string | null
-  colorHex: string | null
-  secondaryColorHex?: string | null
-  unitPrice: number
-  originalUnitPrice: number | null
-  discountReason: string | null
-}
+export type { CartItem }
 
 export interface CartCatalogRefreshResult {
   /** Cambió precio, cuotas, stock o se quitó alguna línea del carrito. */
@@ -106,137 +97,6 @@ function getUserCartStorageKey(userId: string) {
   return `${USER_CART_STORAGE_PREFIX}:${userId}`
 }
 
-function toFiniteNumber(value: unknown, fallback = 0) {
-  const numberValue = typeof value === "number" ? value : Number(value)
-
-  return Number.isFinite(numberValue) ? numberValue : fallback
-}
-
-function getProductImage(product: SupabaseProducto, image?: string) {
-  return image || getProductImagesByVariant(product)[0] || FALLBACK_PRODUCT_IMAGE
-}
-
-function resolveCartVariant(product: SupabaseProducto, color?: string) {
-  const value =
-    color && color !== DEFAULT_VARIANT_VALUE
-      ? color
-      : getDefaultVariantValue(product)
-
-  return getVariantOptionByValue(product, value)
-}
-
-function normalizeCartItem(item: unknown): CartItem | null {
-  if (!item || typeof item !== "object") return null
-
-  const rawItem = item as Record<string, unknown>
-  const rawProduct = rawItem.product
-
-  if (!rawProduct || typeof rawProduct !== "object") return null
-
-  const productRecord = rawProduct as Record<string, unknown>
-  const id = toFiniteNumber(productRecord.id, NaN)
-  const precio = toFiniteNumber(productRecord.precio, NaN)
-  const quantity = Math.trunc(toFiniteNumber(rawItem.quantity, 1))
-  const nombre = productRecord.nombre
-
-  if (
-    !Number.isFinite(id) ||
-    !Number.isFinite(precio) ||
-    typeof nombre !== "string" ||
-    quantity < 1
-  ) {
-    return null
-  }
-
-  const product = {
-    ...productRecord,
-    id,
-    nombre,
-    precio,
-  } as SupabaseProducto
-
-  const rawColor =
-    typeof rawItem.color === "string"
-      ? rawItem.color
-      : DEFAULT_VARIANT_VALUE
-  const variant = resolveCartVariant(product, rawColor)
-  const variantId = toFiniteNumber(rawItem.variantId, variant?.id ?? NaN)
-  const storedUnitPrice = toFiniteNumber(rawItem.unitPrice, NaN)
-
-  return {
-    product,
-    color: variant?.value ?? rawColor,
-    image:
-      typeof rawItem.image === "string" && rawItem.image.trim()
-        ? rawItem.image
-        : variant?.images[0] ?? getProductImage(product),
-    quantity,
-    variantId: Number.isFinite(variantId) ? variantId : null,
-    conditionedStockId:
-      typeof rawItem.conditionedStockId === "string"
-        ? rawItem.conditionedStockId
-        : variant?.conditionedStockId ?? null,
-    variantName:
-      typeof rawItem.variantName === "string"
-        ? rawItem.variantName
-        : variant?.name ?? null,
-    colorHex:
-      typeof rawItem.colorHex === "string"
-        ? rawItem.colorHex
-        : variant?.colorHex ?? null,
-    secondaryColorHex:
-      typeof rawItem.secondaryColorHex === "string"
-        ? rawItem.secondaryColorHex
-        : variant?.secondaryColorHex ?? null,
-    unitPrice: Number.isFinite(storedUnitPrice)
-      ? Math.max(storedUnitPrice, 0)
-      : variant?.price ?? product.precio,
-    originalUnitPrice:
-      typeof rawItem.originalUnitPrice === "number"
-        ? rawItem.originalUnitPrice
-        : variant?.originalPrice ?? null,
-    discountReason:
-      typeof rawItem.discountReason === "string"
-        ? rawItem.discountReason
-        : variant?.reason ?? null,
-  }
-}
-
-function normalizeCart(items: unknown) {
-  if (!Array.isArray(items)) return []
-
-  return items.reduce<CartItem[]>((acc, item) => {
-    const normalized = normalizeCartItem(item)
-
-    if (!normalized) return acc
-
-    const existing = acc.find(
-      (cartItem) =>
-        cartItem.product.id === normalized.product.id &&
-        cartItem.color === normalized.color,
-    )
-    // Una línea sin stock disponible NO se descarta en silencio: el snapshot
-    // guardado puede estar desactualizado (p. ej. una reserva ajena que ya
-    // venció). El refresco de catálogo trae el disponible vigente y el
-    // carrito marca la línea hasta que el cliente la corrija.
-
-    if (existing) {
-      existing.quantity = Math.min(
-        existing.quantity + normalized.quantity,
-        MAX_CART_ITEM_QUANTITY,
-      )
-      return acc
-    }
-
-    normalized.quantity = Math.min(
-      normalized.quantity,
-      MAX_CART_ITEM_QUANTITY,
-    )
-    acc.push(normalized)
-    return acc
-  }, [])
-}
-
 export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([])
   const [cartSessionId, setCartSessionId] = useState("")
@@ -245,6 +105,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const cartRef = useRef<CartItem[]>([])
   const cartSessionIdRef = useRef("")
+  const cartOwnerRef = useRef<CartAuthOwner>({ kind: "unknown" })
+  const guestCartHandoffRef = useRef<GuestCartHandoff | null>(null)
 
   useEffect(() => {
     cartRef.current = cart
@@ -300,23 +162,60 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cart, currentUserId, hasHydrated])
 
   useEffect(() => {
-    const restoreUserCart = (userId: string) => {
-      const stored = localStorage.getItem(getUserCartStorageKey(userId))
-      const storedCart = stored ? normalizeCart(JSON.parse(stored)) : []
+    const readStoredAccountCart = (userId: string) => {
+      try {
+        const stored = localStorage.getItem(getUserCartStorageKey(userId))
+        return stored ? normalizeCart(JSON.parse(stored)) : []
+      } catch {
+        localStorage.removeItem(getUserCartStorageKey(userId))
+        return []
+      }
+    }
 
-      setCurrentUserId(userId)
-      setCart(storedCart)
-
-      if (storedCart.length > 0) {
-        sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(storedCart))
+    const writeCartStorage = (userId: string | null, nextCart: CartItem[]) => {
+      if (nextCart.length > 0) {
+        sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextCart))
+        if (userId) localStorage.setItem(getUserCartStorageKey(userId), JSON.stringify(nextCart))
       } else {
         sessionStorage.removeItem(CART_STORAGE_KEY)
+        if (userId) localStorage.removeItem(getUserCartStorageKey(userId))
+      }
+    }
+
+    // Ver `lib/cart/guest-cart-handoff.ts`: un invitado confirmado conserva
+    // su carrito al iniciar sesión (se une con el de la cuenta); una sesión
+    // ya existente restaura el de la cuenta como siempre. Se escribe en
+    // storage en el acto para que un segundo SIGNED_IN/TOKEN_REFRESHED lea
+    // el carrito ya unido y no vuelva a sumar.
+    const restoreUserCart = (userId: string) => {
+      const { cart: nextCart, handoff } = resolveCartOnSignIn({
+        owner: cartOwnerRef.current,
+        userId,
+        currentCart: cartRef.current,
+        storedAccountCart: readStoredAccountCart(userId),
+      })
+
+      cartOwnerRef.current = { kind: "user", userId }
+      if (handoff && window.location.pathname.startsWith("/login")) {
+        guestCartHandoffRef.current = handoff
+      }
+      setCurrentUserId(userId)
+      setCart(nextCart)
+      writeCartStorage(userId, nextCart)
+    }
+
+    const markGuestIfUnknown = () => {
+      if (cartOwnerRef.current.kind === "unknown") {
+        cartOwnerRef.current = { kind: "guest" }
       }
     }
 
     getSafeSupabaseSession()
       .then((session) => {
-        if (!session?.user) return
+        if (!session?.user) {
+          markGuestIfUnknown()
+          return
+        }
 
         try {
           restoreUserCart(session.user.id)
@@ -334,6 +233,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "INITIAL_SESSION" && !session?.user) {
+        markGuestIfUnknown()
+        return
+      }
+
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
         const user = session?.user
 
@@ -353,11 +257,25 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       if (event !== "SIGNED_OUT") return
 
+      // Un logout real vacía el carrito como siempre. Sólo si la sesión
+      // recién traspasada se rechaza enseguida (seguimos en /login) se
+      // devuelve el carrito del invitado y el de la cuenta queda como estaba.
+      const { cart: nextCart, restoreAccount } = resolveCartOnSignOut(
+        guestCartHandoffRef.current,
+      )
+      guestCartHandoffRef.current = null
+      cartOwnerRef.current = { kind: "guest" }
+      if (restoreAccount) writeCartStorage(restoreAccount.userId, restoreAccount.cart)
+
       setCurrentUserId(null)
-      setCart([])
+      setCart(nextCart)
       setIsOpen(false)
       localStorage.removeItem(CART_STORAGE_KEY)
-      sessionStorage.removeItem(CART_STORAGE_KEY)
+      if (nextCart.length > 0) {
+        sessionStorage.setItem(CART_STORAGE_KEY, JSON.stringify(nextCart))
+      } else {
+        sessionStorage.removeItem(CART_STORAGE_KEY)
+      }
       sessionStorage.removeItem(CART_SESSION_STORAGE_KEY)
       const nextSessionId = createCartSessionId()
       sessionStorage.setItem(CART_SESSION_STORAGE_KEY, nextSessionId)
@@ -455,8 +373,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const clampedQuantity = Math.min(nextQuantity, MAX_CART_ITEM_QUANTITY)
-
     setCart((prev) =>
       prev.map((item) => {
         if (item.product.id !== productId || item.color !== color) {
@@ -466,15 +382,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
         // Bajar siempre se permite (así se corrige una línea marcada); subir
         // no puede superar el disponible actual.
         if (
-          clampedQuantity > item.quantity &&
-          clampedQuantity > getMaxPurchasableQuantity(item.product, item.color)
+          nextQuantity > item.quantity &&
+          nextQuantity > getMaxPurchasableQuantity(item.product, item.color)
         ) {
           return item
         }
 
         return {
           ...item,
-          quantity: clampedQuantity,
+          quantity: nextQuantity,
         }
       }),
     )
@@ -491,7 +407,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const increaseQuantity = (productId: number, color: string) => {
     const item = cartRef.current.find((line) => line.product.id === productId && line.color === color)
     // Misma regla que updateQuantity: sumar una unidad sólo si entra en el tope.
-    if (item && item.quantity + 1 <= Math.min(MAX_CART_ITEM_QUANTITY, getMaxPurchasableQuantity(item.product, item.color))) {
+    if (item && item.quantity + 1 <= getMaxPurchasableQuantity(item.product, item.color)) {
       trackAddToCart(productId, item.variantId)
     }
     updateQuantity(productId, color, getQuantity(productId, color) + 1)
@@ -540,6 +456,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const checkoutReleaseInFlightRef = useRef(false)
+
+  // Fuera de /login la sesión ya fue aceptada (o nunca hubo traspaso): desde
+  // ahí un SIGNED_OUT es un logout real y vacía el carrito como siempre.
+  useEffect(() => {
+    if (!pathname?.startsWith("/login")) guestCartHandoffRef.current = null
+  }, [pathname])
   useEffect(() => {
     if (!hasHydrated || isCheckoutPath(pathname)) return
     try {

@@ -16,3 +16,19 @@ export function getSafeRedirect(redirect: string | null): string {
   if (!/^\/(?!\/|\\)/.test(redirect)) return "/"
   return redirect
 }
+
+/**
+ * URL de /login que conserva a dónde volver después de autenticarse. El
+ * destino pasa siempre por `getSafeRedirect`: lo externo o inválido se
+ * descarta y el login vuelve al Home como siempre.
+ */
+export function buildLoginHref(
+  redirect: string | null,
+  params: Record<string, string> = {},
+): string {
+  const search = new URLSearchParams(params)
+  const safeRedirect = getSafeRedirect(redirect)
+  if (safeRedirect !== "/") search.set("redirect", safeRedirect)
+  const query = search.toString()
+  return query ? `/login?${query}` : "/login"
+}

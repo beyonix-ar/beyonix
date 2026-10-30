@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react"
 
 import { CartDrawer } from "./cart-drawer"
+import { useAuth } from "@/context/auth-context"
 import { useCart } from "@/context/cart-context"
 import { useCheckoutShippingPrefetch } from "@/hooks/use-checkout-shipping-prefetch"
 import {
@@ -19,6 +20,7 @@ export function CartWrapper() {
     removeFromCart,
     updateQuantity,
   } = useCart()
+  const { user } = useAuth()
   const [commercialUpdateNotice, setCommercialUpdateNotice] =
     useState<string | null>(null)
 
@@ -52,6 +54,7 @@ export function CartWrapper() {
       onUpdateQuantity={(productId, color, quantity) => {
         updateQuantity(productId, color, quantity)
       }}
+      isAuthenticated={Boolean(user)}
     />
   )
 }

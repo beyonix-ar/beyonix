@@ -15,6 +15,7 @@ const store = read("lib/supabase/queries/store.ts")
 const storeServer = read("lib/supabase/queries/store-server.ts")
 const favorites = read("app/cuenta/favoritos/favoritos-client.tsx")
 const cartContext = read("context/cart-context.tsx")
+const cartItems = read("lib/cart/cart-items.ts")
 const cartItem = read("components/cart/cart-item.tsx")
 const cartDrawer = read("components/cart/cart-drawer.tsx")
 const cartSummary = read("components/cart/cart-summary.tsx")
@@ -55,18 +56,19 @@ test("listados y detalle: todo el catálogo público pasa por prepareStoreProduc
 test("carrito: el refresco excluye la reserva propia y no borra líneas por stock", () => {
   assert.match(store, /export async function getStoreCartProducts\(\s*productIds: number\[\],\s*options: \{ excludeSessionId\?: string \| null \} = \{\},/)
   assert.match(cartContext, /getStoreCartProducts\(productIds, \{\s*excludeSessionId: cartSessionIdRef\.current \|\| null,/)
-  const normalize = between(cartContext, "function normalizeCart(", "\nexport function CartProvider")
+  const normalize = between(cartItems, "export function normalizeCart(", "\n}\n")
   assert.doesNotMatch(normalize, /getProductStock|if \(!hasStock\) return acc/)
 })
 
-test("carrito: tope = min(3, disponible); bajar siempre se permite para corregir", () => {
+test("carrito: tope = disponible (sin tope fijo); bajar siempre se permite para corregir", () => {
   const add = between(cartContext, "const addToCart = (", "const removeFromCart")
   assert.match(add, /const maxQuantity = getMaxPurchasableQuantity\(product, variantColor\)/)
   assert.match(add, /if \(existing\.quantity >= maxQuantity\) return prev/)
   const update = between(cartContext, "const updateQuantity = (", "const getQuantity")
-  assert.match(update, /clampedQuantity > item\.quantity &&\s*clampedQuantity > getMaxPurchasableQuantity\(item\.product, item\.color\)/)
-  assert.match(detailsPanel, /cartQuantity >= Math\.min\(MAX_CART_ITEM_QUANTITY, selectedStock\)/)
-  assert.match(productCard, /quantity >= Math\.min\(MAX_CART_ITEM_QUANTITY, defaultVariant\.stock\)/)
+  assert.match(update, /nextQuantity > item\.quantity &&\s*nextQuantity > getMaxPurchasableQuantity\(item\.product, item\.color\)/)
+  assert.match(detailsPanel, /cartQuantity >= selectedStock\n/)
+  assert.match(productCard, /quantity >= defaultVariant\.stock\n/)
+  assert.doesNotMatch(cartContext + detailsPanel + productCard, /MAX_CART_ITEM_QUANTITY/)
 })
 
 test("carrito: informa la línea, deshabilita Finalizar compra y no avanza con cantidad inválida", () => {

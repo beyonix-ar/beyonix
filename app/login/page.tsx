@@ -30,7 +30,7 @@ import { useAuth } from "@/context/auth-context"
 import { useBackNavigation } from "@/hooks/use-back-navigation"
 import { useTerritorialSelector } from "@/hooks/use-territorial-selector"
 import { FORGOT_PASSWORD_GENERIC_MESSAGE } from "@/lib/auth/forgot-password-messages"
-import { getSafeRedirect } from "@/lib/auth/safe-redirect"
+import { buildLoginHref, getSafeRedirect } from "@/lib/auth/safe-redirect"
 import { supabase } from "@/lib/supabase/client"
 import {
   FIELD_LIMITS,
@@ -465,7 +465,9 @@ function LoginContent() {
           if (!sessionError) {
             setResendMessageIsError(false)
             setResendMessage(
-              "Email confirmado. Te llevaremos al Home en un segundo..."
+              redirect === "/"
+                ? "Email confirmado. Te llevaremos al Home en un segundo..."
+                : "Email confirmado. Te llevamos de vuelta en un segundo..."
             )
             timeout = window.setTimeout(() => {
               window.location.assign(redirect)
@@ -722,7 +724,7 @@ function LoginContent() {
         window.history.replaceState(
           null,
           "",
-          `/login?verificar-email=${encodeURIComponent(normalizedEmail)}`
+          buildLoginHref(redirect, { "verificar-email": normalizedEmail })
         )
         registerRedirectTimeout.current = null
       }, 900)
@@ -957,7 +959,7 @@ function LoginContent() {
                 setFinishingConfirmation(false)
                 confirmationCompletionStarted.current = false
                 setMode("login")
-                router.replace("/login", { scroll: false })
+                router.replace(buildLoginHref(redirect), { scroll: false })
               }}
               className="mt-3 flex h-11 w-full cursor-pointer items-center justify-center rounded-xl text-sm font-semibold text-[var(--account-text-secondary)] underline decoration-2 decoration-transparent underline-offset-4 transition-colors duration-200 hover:text-[var(--account-accent)] hover:decoration-[var(--account-accent)] active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-beyonix-blue-light/25 disabled:cursor-not-allowed disabled:opacity-50"
             >

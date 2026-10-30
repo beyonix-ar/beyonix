@@ -96,7 +96,25 @@ test("Fase 5: sin stock disponible la línea NO se borra en silencio; queda marc
   ])
 })
 
-test("Fase 5: un cambio del disponible dentro del rango comprable (0 a 3) refresca la línea", () => {
+test("sin tope fijo: con 5 en el carrito sólo importa el disponible hasta 6; avisa recién cuando no alcanza", () => {
+  const items = [makeItem(makeProduct({ stock: 12 }), { quantity: 5 })]
+  // 12 -> 8: sigue pudiendo sumar; sin re-render ni aviso.
+  const plenty = reconcileCartWithCatalog(items, [makeProduct({ stock: 8 })])
+  assert.equal(plenty.changed, false)
+  assert.equal(plenty.items, items)
+  // 12 -> 5: ya no puede sumar, pero las 5 elegidas siguen valiendo.
+  const atLimit = reconcileCartWithCatalog(items, [makeProduct({ stock: 5 })])
+  assert.equal(atLimit.availabilityChanged, true)
+  assert.deepEqual(getCartStockIssues(atLimit.items), [])
+  // 12 -> 4: la línea queda marcada (no se borra) para que el cliente la corrija.
+  const short = reconcileCartWithCatalog(items, [makeProduct({ stock: 4 })])
+  assert.equal(short.removed.length, 0)
+  assert.deepEqual(getCartStockIssues(short.items), [
+    { productId: 101, color: "default", requested: 5, available: 4 },
+  ])
+})
+
+test("Fase 5: un cambio del disponible que afecta a la línea (hasta cantidad + 1) la refresca", () => {
   const items = [makeItem(makeProduct({ stock: 3 }), { quantity: 3 })]
   // 3 -> 2 sigue siendo "Últimas unidades": igual debe refrescar el snapshot.
   const reduced = reconcileCartWithCatalog(items, [makeProduct({ stock: 2 })])

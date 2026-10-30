@@ -44,6 +44,7 @@ import {
 } from "../../components/admin-controls"
 import { AdminDatePicker } from "../../components/admin-date-picker"
 import { formatPrice } from "../productos/helpers"
+import { ReservationAbusePanel } from "./reservation-abuse-panel"
 
 
 
@@ -1353,6 +1354,8 @@ export function AdminClientes({
         onCreate={createBlockedIdentifier}
         onRemove={removeBlockedIdentifier}
       />
+
+      <ReservationAbusePanel />
 
       <AdminFiltersBar>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-admin-client-filters">

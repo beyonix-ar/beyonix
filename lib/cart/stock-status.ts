@@ -17,9 +17,6 @@ export const INSUFFICIENT_STOCK_MESSAGE_SINGULAR =
   "La cantidad que seleccionaste supera el stock disponible. Reducí la cantidad para poder continuar con la compra."
 export const INSUFFICIENT_STOCK_MESSAGE_PLURAL =
   "Las cantidades que seleccionaste superan el stock disponible de algunos productos. Reducí las cantidades para poder continuar con la compra."
-// Límite de compra por producto/variante, también exigido por la RPC de reserva.
-export const MAX_CART_ITEM_QUANTITY = 3
-
 export function assertCatalogStock(
   quantity: number,
   product: { stock: number | null; activo?: boolean | null },
@@ -41,12 +38,12 @@ export function getProductStock(product: SupabaseProducto, variantValue?: string
 }
 
 /**
- * Tope del selector de cantidad: el menor entre el límite de compra (3) y el
- * stock DISPONIBLE de esa variante (físico - reservas activas, ver
- * lib/inventory/sellable-stock.ts). Sólo UX: reserve_cart_stock es la autoridad.
+ * Tope del selector de cantidad: el stock DISPONIBLE de esa variante (físico -
+ * reservas activas, ver lib/inventory/sellable-stock.ts). No hay un tope fijo
+ * por línea. Sólo UX: reserve_cart_stock es la autoridad.
  */
 export function getMaxPurchasableQuantity(product: SupabaseProducto, variantValue?: string | null) {
-  return Math.min(MAX_CART_ITEM_QUANTITY, getProductStock(product, variantValue))
+  return getProductStock(product, variantValue)
 }
 
 export const STOCK_LIMIT_RESERVED_MESSAGE =
@@ -55,7 +52,10 @@ export const STOCK_LIMIT_RESERVED_MESSAGE =
 export const STOCK_LIMIT_RESERVED_NEUTRAL_MESSAGE =
   "Hay unidades temporalmente reservadas. Si la reserva vence o se cancela, volverán a estar disponibles."
 export const STOCK_LIMIT_EXHAUSTED_MESSAGE = "No hay más unidades disponibles."
-export const PURCHASE_LIMIT_MESSAGE = "Podés comprar hasta 3 unidades por producto o variante."
+// Antiabuso: público y neutro, sin motivo, contador ni datos técnicos.
+export const RESERVATION_BLOCKED_MESSAGE =
+  "Temporalmente no podemos procesar nuevas reservas desde tu cuenta. Intentá nuevamente más adelante."
+export const RESERVATION_AUTH_REQUIRED_MESSAGE = "Iniciá sesión para continuar con tu compra."
 
 /**
  * Físico y disponible de la variante elegida. `physical_*` sólo existe si el
@@ -103,8 +103,7 @@ export function getQuantityLimitMessage(
   quantity: number,
 ) {
   const { available, physical, foreignReserved } = getVariantStockBreakdown(product, variantValue)
-  if (quantity < Math.min(MAX_CART_ITEM_QUANTITY, available)) return null
-  if (available >= MAX_CART_ITEM_QUANTITY) return PURCHASE_LIMIT_MESSAGE
+  if (quantity < available) return null
   if (physical <= quantity) return STOCK_LIMIT_EXHAUSTED_MESSAGE
   return physical - foreignReserved <= quantity
     ? STOCK_LIMIT_RESERVED_MESSAGE

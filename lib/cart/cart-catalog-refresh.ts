@@ -29,10 +29,19 @@ export interface RefreshableCartItem {
 }
 
 /**
+ * Cuánto disponible importa para esta línea: si alcanza para lo que ya eligió
+ * y si puede sumar una unidad más (disponible = físico - reservas activas).
+ * Más allá de `cantidad + 1` un cambio de stock no cambia nada para el
+ * cliente, así que no re-renderiza ni genera aviso.
+ */
+function getRelevantPurchasableQuantity(item: RefreshableCartItem) {
+  return Math.min(getMaxPurchasableQuantity(item.product, item.color), item.quantity + 1)
+}
+
+/**
  * Lo que, si cambia, cambia lo que el cliente paga o puede comprar. Del stock
- * sólo cuenta el estado agotado/bajo/disponible y cuánto se puede comprar
- * (0 a 3, disponible = físico - reservas activas): un cambio fuera de ese
- * rango no re-renderiza el carrito.
+ * sólo cuenta el estado agotado/bajo/disponible y el disponible relevante
+ * para la línea (`getRelevantPurchasableQuantity`).
  */
 function getCartItemCommercialKey(item: RefreshableCartItem) {
   return JSON.stringify([
@@ -46,7 +55,7 @@ function getCartItemCommercialKey(item: RefreshableCartItem) {
     item.discountReason,
     item.product.precio,
     getStockStatus(item.product, item.color),
-    getMaxPurchasableQuantity(item.product, item.color),
+    getRelevantPurchasableQuantity(item),
   ])
 }
 
@@ -58,7 +67,7 @@ function getCartItemPriceKey(item: RefreshableCartItem) {
 function getCartItemAvailabilityKey(item: RefreshableCartItem) {
   return JSON.stringify([
     getStockStatus(item.product, item.color),
-    getMaxPurchasableQuantity(item.product, item.color),
+    getRelevantPurchasableQuantity(item),
   ])
 }
 

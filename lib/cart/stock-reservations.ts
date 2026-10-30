@@ -1,8 +1,12 @@
 "use server"
 
+import { headers } from "next/headers"
+
+import { getValidTrustedClientIp } from "@/lib/auth/trusted-client-ip"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeReservationSessionId } from "@/lib/orders/checkout-inventory"
+import { MAX_CHECKOUT_ITEM_QUANTITY } from "@/lib/orders/checkout-order-creation"
 
 export interface StockReservationItem {
   productId: number
@@ -18,6 +22,10 @@ export type StockReservationErrorCode =
   | "RESERVATION_EXPIRED"
   | "RESERVATION_LOCKED_TO_ORDER"
   | "INVALID_SESSION"
+  /** Reservar stock exige cuenta (el antiabuso identifica por usuario). */
+  | "AUTH_REQUIRED"
+  /** Antiabuso: la cuenta o la IP no pueden crear reservas nuevas por ahora. */
+  | "RESERVATION_BLOCKED"
   | "INTERNAL_ERROR"
 
 export type StockReservationResult =
@@ -35,6 +43,7 @@ const ERROR_CODES: readonly StockReservationErrorCode[] = [
   "RESERVATION_EXPIRED",
   "RESERVATION_LOCKED_TO_ORDER",
   "INVALID_SESSION",
+  "AUTH_REQUIRED",
 ]
 
 function reservationErrorCode(message?: string): StockReservationErrorCode {
@@ -118,7 +127,8 @@ export async function reserveCartStock({
   if (!normalizedSessionId) return { success: false, code: "INVALID_SESSION" }
   if (!Array.isArray(items) || items.length > 50 || items.some((item) =>
     !item || typeof item !== "object" ||
-    !Number.isSafeInteger(item.quantity) || item.quantity < 1 || item.quantity > 3,
+    !Number.isSafeInteger(item.quantity) || item.quantity < 1 ||
+    item.quantity > MAX_CHECKOUT_ITEM_QUANTITY,
   )) return { success: false, code: "INVALID_QUANTITY" }
   if (items.some((item) =>
     !Number.isSafeInteger(item.productId) || item.productId <= 0 ||
@@ -126,6 +136,21 @@ export async function reserveCartStock({
   )) return { success: false, code: "INVALID_VARIANT" }
 
   const supabase = await createClient()
+  if (items.length > 0) {
+    const { data: auth } = await supabase.auth.getUser()
+    if (!auth.user) return { success: false, code: "AUTH_REQUIRED" }
+    // IP confiable del proxy (nunca una cabecera arbitraria del cliente). Sólo
+    // el servidor la registra; reserve_cart_stock la usa para el bloqueo por IP.
+    const clientIp = getValidTrustedClientIp(await headers())
+    if (clientIp) {
+      const { error: ipError } = await createAdminClient().rpc("register_checkout_reservation_client_ip", {
+        p_session_id: normalizedSessionId,
+        p_user_id: auth.user.id,
+        p_client_ip: clientIp,
+      })
+      if (ipError) return { success: false, code: "INTERNAL_ERROR" }
+    }
+  }
   const { data, error } = await supabase.rpc("reserve_cart_stock", {
     p_session_id: normalizedSessionId,
     p_items: items,
@@ -143,9 +168,11 @@ export async function reserveCartStock({
 
   const response = data as {
     reserved?: boolean
+    blocked?: boolean
     expires_at?: string
     reservation_started_at?: string
   } | null
+  if (response?.blocked === true) return { success: false, code: "RESERVATION_BLOCKED" }
   if (!response?.expires_at || !response.reservation_started_at) {
     return { success: false, code: "INTERNAL_ERROR" }
   }
