@@ -135,25 +135,20 @@ export async function reserveCartStock({
     (item.variantId != null && (!Number.isSafeInteger(item.variantId) || item.variantId <= 0)),
   )) return { success: false, code: "INVALID_VARIANT" }
 
-  const supabase = await createClient()
-  if (items.length > 0) {
-    const { data: auth } = await supabase.auth.getUser()
-    if (!auth.user) return { success: false, code: "AUTH_REQUIRED" }
-    // IP confiable del proxy (nunca una cabecera arbitraria del cliente). Sólo
-    // el servidor la registra; reserve_cart_stock la usa para el bloqueo por IP.
-    const clientIp = getValidTrustedClientIp(await headers())
-    if (clientIp) {
-      const { error: ipError } = await createAdminClient().rpc("register_checkout_reservation_client_ip", {
-        p_session_id: normalizedSessionId,
-        p_user_id: auth.user.id,
-        p_client_ip: clientIp,
-      })
-      if (ipError) return { success: false, code: "INTERNAL_ERROR" }
-    }
-  }
-  const { data, error } = await supabase.rpc("reserve_cart_stock", {
+  // reserve_cart_stock es sólo service_role: el usuario sale del JWT validado
+  // acá (nunca del cliente) y también se exige para liberar ([]) una sesión
+  // con dueño.
+  const { data: auth } = await (await createClient()).auth.getUser()
+  const userId = auth.user?.id ?? null
+  if (items.length > 0 && !userId) return { success: false, code: "AUTH_REQUIRED" }
+  // IP confiable del proxy (nunca una cabecera arbitraria del cliente); el
+  // gate de reserve_cart_stock la evalúa en la misma transacción.
+  const clientIp = items.length > 0 ? getValidTrustedClientIp(await headers()) : null
+  const { data, error } = await createAdminClient().rpc("reserve_cart_stock", {
     p_session_id: normalizedSessionId,
     p_items: items,
+    p_user_id: userId,
+    p_client_ip: clientIp,
   })
   if (error) {
     const code = reservationErrorCode(error.message)

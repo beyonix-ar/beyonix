@@ -46,15 +46,30 @@ test("IP: sólo X-Real-IP del proxy y sólo si es una IP válida; nunca X-Forwar
   assert.equal(getValidTrustedClientIp(new Headers({ "x-real-ip": "2001:db8::1" })), "2001:db8::1")
 })
 
-test("reserva: exige cuenta, registra la IP con service_role y traduce el bloqueo a un código público", () => {
+test("reserva (camino de la app): usuario del JWT validado + IP del proxy, por service_role, y bloqueo con código público", () => {
   const reservations = read("lib/cart/stock-reservations.ts")
   const reserve = reservations.slice(reservations.indexOf("export async function reserveCartStock"))
-  assert.match(reserve, /if \(items\.length > 0\) \{\n\s+const \{ data: auth \} = await supabase\.auth\.getUser\(\)\n\s+if \(!auth\.user\) return \{ success: false, code: "AUTH_REQUIRED" \}/)
-  assert.match(reserve, /getValidTrustedClientIp\(await headers\(\)\)/)
-  assert.match(reserve, /createAdminClient\(\)\.rpc\("register_checkout_reservation_client_ip"/)
-  assert.ok(reserve.indexOf("register_checkout_reservation_client_ip") < reserve.indexOf('rpc("reserve_cart_stock"'))
+  const rpc = reserve.indexOf('rpc("reserve_cart_stock"')
+  // Identidad: sólo del JWT validado por el servidor (getUser), nunca del body.
+  assert.match(reserve, /const \{ data: auth \} = await \(await createClient\(\)\)\.auth\.getUser\(\)\n\s+const userId = auth\.user\?\.id \?\? null\n\s+if \(items\.length > 0 && !userId\) return \{ success: false, code: "AUTH_REQUIRED" \}/)
+  assert.ok(reserve.indexOf("AUTH_REQUIRED") < rpc, "sin usuario válido no se llama a la RPC")
+  assert.match(reserve, /const clientIp = items\.length > 0 \? getValidTrustedClientIp\(await headers\(\)\) : null/)
+  assert.match(reserve, /createAdminClient\(\)\.rpc\("reserve_cart_stock", \{\n\s+p_session_id: normalizedSessionId,\n\s+p_items: items,\n\s+p_user_id: userId,\n\s+p_client_ip: clientIp,\n\s+\}\)/)
+  assert.doesNotMatch(reserve, /register_checkout_reservation_client_ip|supabase\.rpc\("reserve_cart_stock"/)
   assert.match(reserve, /if \(response\?\.blocked === true\) return \{ success: false, code: "RESERVATION_BLOCKED" \}/)
   assert.doesNotMatch(reserve, /x-forwarded-for|cf-connecting-ip/)
+})
+
+test("grants: reserve_cart_stock sólo service_role; la firma pública anterior desaparece", () => {
+  const migration = read("supabase/migrations/20261029130000_reservation_abuse_protection.sql")
+  assert.match(migration, /\ndrop function public\.reserve_cart_stock\(text, jsonb\);\n/)
+  assert.ok(migration.indexOf("drop function public.reserve_cart_stock(text, jsonb)") < migration.indexOf("create function public.reserve_cart_stock("))
+  assert.doesNotMatch(migration, /create or replace function public\.reserve_cart_stock/)
+  assert.doesNotMatch(migration, /grant[^;]*reserve_cart_stock[^;]*(anon|authenticated)/)
+  assert.match(migration, /revoke all on function public\.reserve_cart_stock\(text, jsonb, uuid, inet\) from public, anon, authenticated;\ngrant execute on function public\.reserve_cart_stock\(text, jsonb, uuid, inet\) to service_role;/)
+  assert.match(migration, /if auth\.role\(\) is distinct from 'service_role' then raise exception 'INVALID_SESSION'; end if;/)
+  // El registro de IP ya no es un paso aparte que se pueda omitir.
+  assert.doesNotMatch(migration, /register_checkout_reservation_client_ip/)
 })
 
 test("cliente bloqueado: mensaje público y neutro, sin motivo, contador, IP ni datos técnicos", () => {
@@ -77,19 +92,24 @@ test("Admin: lectura y acciones sólo para admin/super_admin; la IP se valida y 
 })
 
 test("reserve_cart_stock antiabuso = la versión anterior + gate + foto, sin tocar las reglas de stock", () => {
-  const extract = (file: string) =>
-    read(`supabase/migrations/${file}`).match(/create or replace function public\.reserve_cart_stock\(p_session_id text, p_items jsonb\)[\s\S]*?\n\$\$;/)?.[0] ?? ""
-  const previous = extract("20261029120000_remove_fixed_checkout_quantity_cap.sql")
-  const current = extract("20261029130000_reservation_abuse_protection.sql")
+  const previous = read("supabase/migrations/20261029120000_remove_fixed_checkout_quantity_cap.sql")
+    .match(/create or replace function public\.reserve_cart_stock\(p_session_id text, p_items jsonb\)[\s\S]*?\n\$\$;/)?.[0] ?? ""
+  const current = read("supabase/migrations/20261029130000_reservation_abuse_protection.sql")
+    .match(/create function public\.reserve_cart_stock\([\s\S]*?\n\$\$;/)?.[0] ?? ""
   assert.ok(previous && current)
 
   const gateStart = current.indexOf("\n  -- Antiabuso:")
   const gateEnd = current.indexOf("  end if;\n", current.indexOf("v_block := public.reservation_abuse_gate")) + "  end if;\n  end if;\n".length
-  const candidate = "  if jsonb_array_length(p_items) > 0 then\n    perform public.reservation_abuse_record_candidate(p_session_id, auth.uid());\n  end if;\n\n"
+  const candidate = "  if jsonb_array_length(p_items) > 0 then\n    perform public.reservation_abuse_record_candidate(p_session_id, p_user_id);\n  end if;\n\n"
+  const serviceRoleGuard = "  -- Defensa adicional al GRANT: sólo el servidor (service_role) informa\n  -- usuario e IP.\n  if auth.role() is distinct from 'service_role' then raise exception 'INVALID_SESSION'; end if;\n"
   const stripped = (current.slice(0, gateStart) + current.slice(gateEnd))
+    .replace("create function public.reserve_cart_stock(\n  p_session_id text, p_items jsonb, p_user_id uuid, p_client_ip inet\n)", "create or replace function public.reserve_cart_stock(p_session_id text, p_items jsonb)")
     .replace("  v_block text;\n", "")
+    .replace(serviceRoleGuard, "")
     .replace(candidate, "")
-  assert.equal(stripped, previous)
+  // Único cambio de contrato restante: el usuario viene del servidor, no de auth.uid().
+  assert.doesNotMatch(stripped, /auth\.uid\(\)/)
+  assert.equal(stripped, previous.replaceAll("auth.uid()", "p_user_id"))
 
   // Gate: después de los locks por producto y antes de tocar cualquier fila de stock.
   const gate = current.indexOf("public.reservation_abuse_gate(")

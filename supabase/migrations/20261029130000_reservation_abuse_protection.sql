@@ -14,6 +14,12 @@
 -- La evaluación es perezosa y no agrega cron: corre al intentar reservar y
 -- al consultar Admin. Idempotente: una falta por sesión (índice único) y
 -- todo bajo pg_advisory_xact_lock(93002, usuario).
+--
+-- Acceso: reserve_cart_stock pasa a ser sólo de service_role. El navegador
+-- llega por el server action de BEYONIX, que valida el JWT (usuario real) y
+-- toma la IP confiable (X-Real-IP del proxy); ambos entran como parámetros y
+-- el gate de usuario + IP corre dentro de la misma función, sin paso previo
+-- que una llamada REST directa pueda omitir.
 begin;
 
 create table public.reservation_abuse_states (
@@ -80,8 +86,8 @@ create table public.reservation_ip_blocks (
   blocked_at timestamptz not null default now()
 );
 
--- IP confiable (X-Real-IP del proxy) que el servidor registra antes de
--- reservar. Sólo service_role escribe: el navegador nunca la informa.
+-- Última IP confiable (X-Real-IP del proxy) de la sesión, registrada por
+-- reserve_cart_stock. Sólo service_role la informa: el navegador nunca.
 create table public.checkout_reservation_client_ips (
   session_id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -237,15 +243,19 @@ as $$
   );
 $$;
 
-create or replace function public.reservation_abuse_gate(p_user_id uuid, p_session_id text)
+-- La IP de esta llamada manda; sin IP en la llamada se usa la última que el
+-- servidor registró para la sesión de ese usuario (nunca una inventada).
+create or replace function public.reservation_abuse_gate(p_user_id uuid, p_session_id text, p_client_ip inet)
 returns text language plpgsql security definer set search_path = public
 as $$
 declare
-  v_ip inet;
+  v_ip inet := p_client_ip;
 begin
   perform public.reservation_abuse_evaluate_user(p_user_id);
-  select client_ip into v_ip from public.checkout_reservation_client_ips
-  where session_id = p_session_id and user_id = p_user_id;
+  if v_ip is null then
+    select client_ip into v_ip from public.checkout_reservation_client_ips
+    where session_id = p_session_id and user_id = p_user_id;
+  end if;
   return public.reservation_abuse_block_reason(p_user_id, v_ip, clock_timestamp());
 end;
 $$;
@@ -345,7 +355,15 @@ create trigger reservation_abuse_reset_after_purchase
 after insert or update of estado, payment_status on public.ordenes
 for each row execute function public.reservation_abuse_reset_after_purchase();
 
-create or replace function public.reserve_cart_stock(p_session_id text, p_items jsonb)
+-- La firma anterior (text, jsonb) tomaba el usuario de auth.uid() y tenía
+-- EXECUTE para anon/authenticated: una llamada REST directa reservaba sin
+-- pasar por el servidor ni por el bloqueo por IP. Se reemplaza por una
+-- versión sólo service_role con usuario e IP provistos por el servidor.
+drop function public.reserve_cart_stock(text, jsonb);
+
+create function public.reserve_cart_stock(
+  p_session_id text, p_items jsonb, p_user_id uuid, p_client_ip inet
+)
 returns jsonb language plpgsql security definer set search_path = public
 as $$
 declare
@@ -360,6 +378,9 @@ declare
   v_take integer;
   v_block text;
 begin
+  -- Defensa adicional al GRANT: sólo el servidor (service_role) informa
+  -- usuario e IP.
+  if auth.role() is distinct from 'service_role' then raise exception 'INVALID_SESSION'; end if;
   if p_session_id is null or length(btrim(p_session_id)) < 8
      or length(p_session_id) > 160 then
     raise exception 'INVALID_SESSION';
@@ -376,7 +397,7 @@ begin
 
   if found then
     if v_session.order_id is not null then raise exception 'RESERVATION_LOCKED_TO_ORDER'; end if;
-    if v_session.user_id is not null and v_session.user_id is distinct from auth.uid() then
+    if v_session.user_id is not null and v_session.user_id is distinct from p_user_id then
       raise exception 'INVALID_SESSION';
     end if;
     if v_session.expires_at <= v_now then raise exception 'RESERVATION_EXPIRED'; end if;
@@ -418,14 +439,21 @@ begin
     perform pg_advisory_xact_lock(93000, v_product_id::integer);
   end loop;
 
-  -- Antiabuso: una reserva nueva exige cuenta y que la cuenta (o la IP
-  -- registrada por el servidor para esta sesión) no esté bloqueada. Se
-  -- evalúa DESPUÉS de los locks de producto (mismo orden que los pagos:
-  -- producto -> usuario) y ANTES de tocar una sola fila de stock. Bloqueado
-  -- se devuelve sin excepción para conservar las faltas recién evaluadas.
+  -- Antiabuso: una reserva nueva exige cuenta y que ni la cuenta ni la IP
+  -- confiable de esta llamada estén bloqueadas. Se evalúa DESPUÉS de los
+  -- locks de producto (mismo orden que los pagos: producto -> usuario) y
+  -- ANTES de tocar una sola fila de stock. Bloqueado se devuelve sin
+  -- excepción para conservar las faltas recién evaluadas.
   if jsonb_array_length(p_items) > 0 then
-    if auth.uid() is null then raise exception 'AUTH_REQUIRED'; end if;
-    v_block := public.reservation_abuse_gate(auth.uid(), p_session_id);
+    if p_user_id is null then raise exception 'AUTH_REQUIRED'; end if;
+    if p_client_ip is not null then
+      insert into public.checkout_reservation_client_ips (session_id, user_id, client_ip)
+      values (p_session_id, p_user_id, p_client_ip)
+      on conflict (session_id) do update
+      set client_ip = excluded.client_ip, seen_at = now()
+      where checkout_reservation_client_ips.user_id = excluded.user_id;
+    end if;
+    v_block := public.reservation_abuse_gate(p_user_id, p_session_id, p_client_ip);
     if v_block is not null then
       return jsonb_build_object('reserved', false, 'blocked', true);
     end if;
@@ -448,10 +476,10 @@ begin
   if not exists (select 1 from public.checkout_reservation_sessions where session_id = p_session_id) then
     insert into public.checkout_reservation_sessions
       (session_id, user_id, reservation_started_at, expires_at)
-    values (p_session_id, auth.uid(), v_now, v_now + public.checkout_step_reservation_ttl())
+    values (p_session_id, p_user_id, v_now, v_now + public.checkout_step_reservation_ttl())
     returning * into v_session;
-  elsif v_session.user_id is null and auth.uid() is not null then
-    update public.checkout_reservation_sessions set user_id = auth.uid()
+  elsif v_session.user_id is null and p_user_id is not null then
+    update public.checkout_reservation_sessions set user_id = p_user_id
     where session_id = p_session_id;
   end if;
 
@@ -502,7 +530,7 @@ begin
         else
           insert into public.stock_reservations
             (session_id, user_id, product_id, variant_id, conditioned_stock_id, quantity, expires_at)
-          values (p_session_id, coalesce(v_session.user_id, auth.uid()),
+          values (p_session_id, coalesce(v_session.user_id, p_user_id),
                   v_item.product_id, v_variant.id, null, v_take, v_session.expires_at);
         end if;
         v_remaining := v_remaining - v_take;
@@ -519,39 +547,18 @@ begin
     insert into public.stock_reservations
       (session_id, user_id, product_id, variant_id, conditioned_stock_id,
        quantity, expires_at)
-    values (p_session_id, coalesce(v_session.user_id, auth.uid()),
+    values (p_session_id, coalesce(v_session.user_id, p_user_id),
             v_item.product_id, v_item.variant_id, v_item.conditioned_stock_id,
             v_item.quantity, v_session.expires_at);
   end loop;
 
   if jsonb_array_length(p_items) > 0 then
-    perform public.reservation_abuse_record_candidate(p_session_id, auth.uid());
+    perform public.reservation_abuse_record_candidate(p_session_id, p_user_id);
   end if;
 
   return jsonb_build_object('reserved', jsonb_array_length(p_items) > 0,
                             'reservation_started_at', v_session.reservation_started_at,
                             'expires_at', v_session.expires_at);
-end;
-$$;
-
--- Servidor (service_role): registra la IP confiable de la sesión antes de
--- reservar. Una sesión ajena no se puede reclamar.
-create or replace function public.register_checkout_reservation_client_ip(
-  p_session_id text, p_user_id uuid, p_client_ip inet
-)
-returns void language plpgsql security definer set search_path = public
-as $$
-begin
-  if auth.role() <> 'service_role' then raise exception 'INVALID_SESSION'; end if;
-  if p_session_id is null or length(btrim(p_session_id)) < 8 or length(p_session_id) > 160
-     or p_user_id is null or p_client_ip is null then
-    return;
-  end if;
-  insert into public.checkout_reservation_client_ips (session_id, user_id, client_ip)
-  values (p_session_id, p_user_id, p_client_ip)
-  on conflict (session_id) do update
-  set client_ip = excluded.client_ip, seen_at = now()
-  where checkout_reservation_client_ips.user_id = excluded.user_id;
 end;
 $$;
 
@@ -661,11 +668,12 @@ revoke all on function public.reservation_abuse_normalize(uuid, timestamptz) fro
 revoke all on function public.reservation_abuse_add_strike(uuid, text, text, timestamptz) from public, anon, authenticated, service_role;
 revoke all on function public.reservation_abuse_evaluate_user(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.reservation_abuse_block_reason(uuid, inet, timestamptz) from public, anon, authenticated, service_role;
-revoke all on function public.reservation_abuse_gate(uuid, text) from public, anon, authenticated, service_role;
+revoke all on function public.reservation_abuse_gate(uuid, text, inet) from public, anon, authenticated, service_role;
 revoke all on function public.reservation_abuse_record_candidate(text, uuid) from public, anon, authenticated, service_role;
 revoke all on function public.reservation_abuse_reset_after_purchase() from public, anon, authenticated, service_role;
-revoke all on function public.register_checkout_reservation_client_ip(text, uuid, inet) from public, anon, authenticated;
-grant execute on function public.register_checkout_reservation_client_ip(text, uuid, inet) to service_role;
+-- Reserva: sólo el servidor. anon/authenticated no pueden llamarla por REST.
+revoke all on function public.reserve_cart_stock(text, jsonb, uuid, inet) from public, anon, authenticated;
+grant execute on function public.reserve_cart_stock(text, jsonb, uuid, inet) to service_role;
 revoke all on function public.evaluate_reservation_abuse() from public, anon, authenticated;
 grant execute on function public.evaluate_reservation_abuse() to service_role;
 revoke all on function public.admin_set_reservation_block(uuid, text, uuid, text) from public, anon, authenticated;
