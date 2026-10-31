@@ -462,6 +462,7 @@ const SERVER_TSX_TEST_FILES = [
   "lib/cart/shipping-bonus-terms.test.ts",
   "lib/admin/system-health-routes.test.ts",
   "lib/admin/external-sales-routes.test.ts",
+  "lib/admin/mercadolibre-import-routes.test.ts",
 ]
 
 const missing = [...TEST_FILES, ...TSX_TEST_FILES, ...DB_TEST_FILES, ...DB_ROUTE_TEST_FILES, ...SERVER_TSX_TEST_FILES].filter((file) => !existsSync(file))

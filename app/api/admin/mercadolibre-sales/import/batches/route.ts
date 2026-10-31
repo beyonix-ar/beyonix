@@ -2,7 +2,7 @@ import { requireInternalUser } from "@/lib/auth/admin-api"
 import {
   describeMercadoLibreImportError,
   isMissingImportMigration,
-  parseMercadoLibreImportMode,
+  validateMercadoLibreImportChoice,
 } from "@/lib/mercadolibre/import-validation"
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await auth.admin
     .from("mercadolibre_import_batches")
-    .select("id, created_at, finished_at, imported_by, source_file_name, file_kind, sheet_name, import_mode, rows_read, rows_valid, rows_invalid, rows_duplicate_in_file, inserted, updated, unchanged, status, error_message, invalid_rows, reverted_at, reverted_count")
+    .select("id, created_at, finished_at, imported_by, source_file_name, file_kind, sheet_name, import_mode, stock_effect, rows_read, rows_valid, rows_invalid, rows_duplicate_in_file, inserted, updated, unchanged, status, error_message, invalid_rows, reverted_at, reverted_count")
     .order("created_at", { ascending: false })
     .limit(20)
   if (error) return migrationOrGeneric(error.message, "No se pudo cargar el historial de importaciones.")
@@ -91,14 +91,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Los datos de la importación llegaron incompletos." }, { status: 400 })
   }
 
-  // El modo decide si las ventas nuevas mueven stock: nunca se asume.
-  const importMode = parseMercadoLibreImportMode(body.importMode)
-  if (!importMode) {
-    return Response.json(
-      { error: "Elegí si la importación es histórica (no modifica stock) o de ventas actuales (descuenta stock)." },
-      { status: 400 },
-    )
-  }
+  // Tipo e impacto en stock son dos decisiones explícitas; nunca se asumen.
+  const choice = validateMercadoLibreImportChoice(body.importMode, body.stockEffect)
+  if (!choice.ok) return Response.json({ error: choice.error }, { status: 400 })
   const fileSha256 = typeof body.fileSha256 === "string" && /^[0-9a-f]{64}$/.test(body.fileSha256) ? body.fileSha256 : null
   const fileKind = body.fileKind === "xlsx" || body.fileKind === "xls" || body.fileKind === "csv" ? body.fileKind : null
   const invalidRows = Array.isArray(body.invalidRows)
@@ -128,7 +123,8 @@ export async function POST(request: Request) {
       file_sha256: fileSha256,
       file_kind: fileKind,
       sheet_name: shortText(body.sheetName, 120),
-      import_mode: importMode,
+      import_mode: choice.mode,
+      stock_effect: choice.effect,
       columns,
       rows_read: count(body.rowsRead),
       rows_valid: count(body.rowsValid),

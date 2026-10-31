@@ -80,6 +80,13 @@ export function buildUniqueCatalogTargetsBySku(
   )
 }
 
+/**
+ * Vincula por SKU exacto las ventas pendientes que NO afectan stock
+ * (stock_effect = none): sólo completa costo/trazabilidad, nunca mueve
+ * inventario. Una venta consume sin vínculo (legado: hoy el importador no la
+ * admite) sólo se vincula por una acción explícita del administrador, porque
+ * vincularla genera su salida de stock.
+ */
 export async function reconcileUnlinkedMercadoLibreSalesByExactSku(
   admin: AdminClient,
   {
@@ -110,6 +117,7 @@ export async function reconcileUnlinkedMercadoLibreSalesByExactSku(
     .from("mercadolibre_sales")
     .select("id", { count: "exact", head: true })
     .is("product_id", null)
+    .eq("stock_effect", "none")
     .not("sku", "is", null)
   if (countError) return { linked: 0, errors: [countError.message] }
 
@@ -125,6 +133,7 @@ export async function reconcileUnlinkedMercadoLibreSalesByExactSku(
         .from("mercadolibre_sales")
         .select("id, sku, raw_data")
         .is("product_id", null)
+        .eq("stock_effect", "none")
         .not("sku", "is", null)
         .order("id", { ascending: true })
         .range(from, from + 999),
@@ -167,7 +176,8 @@ export async function reconcileUnlinkedMercadoLibreSalesByExactSku(
           },
         })
         .eq("id", sale.id)
-        .is("product_id", null),
+        .is("product_id", null)
+        .eq("stock_effect", "none"),
     ]
   })
 

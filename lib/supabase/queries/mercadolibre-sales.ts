@@ -4,6 +4,7 @@ import {
   MERCADOLIBRE_IMPORT_CHUNK_ROWS,
   type MercadoLibreImportMode,
   type MercadoLibrePreviewStatus,
+  type MercadoLibreStockEffect,
 } from "@/lib/mercadolibre/import-validation"
 import type { MercadoLibreProductMatch, ProductChannelMappingType } from "@/lib/mercadolibre/product-matching"
 import { buildReturnReviewRequest, type ReturnReviewPayload } from "@/lib/mercadolibre/return-review-client"
@@ -238,6 +239,8 @@ export async function importMercadoLibreReport(input: {
   fileName: string
   fileSha256: string
   importMode: MercadoLibreImportMode
+  /** Si las ventas nuevas descuentan stock (current exige consume). */
+  stockEffect: MercadoLibreStockEffect
   /** Confirmación explícita para guardar líneas sin producto (sin costo). */
   allowUnlinked: boolean
   onProgress?: (done: number, total: number) => void
@@ -249,6 +252,7 @@ export async function importMercadoLibreReport(input: {
       fileName: input.fileName,
       fileSha256: input.fileSha256,
       importMode: input.importMode,
+      stockEffect: input.stockEffect,
       fileKind: report.fileKind,
       sheetName: report.sheetName,
       columns: report.columns.map(({ key, header, column }) => ({ key, header, column })),
@@ -304,6 +308,7 @@ export interface MercadoLibreImportBatch {
   source_file_name: string | null
   file_kind: string | null
   import_mode: MercadoLibreImportMode
+  stock_effect: MercadoLibreStockEffect
   rows_read: number
   rows_valid: number
   rows_invalid: number

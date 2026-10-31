@@ -3,8 +3,25 @@ import test from "node:test"
 
 import {
   describeMercadoLibreImportError,
+  validateMercadoLibreImportChoice,
   validateMercadoLibreServerRows,
 } from "./import-validation.ts"
+
+test("tipo e impacto en stock: sólo historical+consume, historical+none y current+consume", () => {
+  assert.deepEqual(validateMercadoLibreImportChoice("historical", "consume"), { ok: true, mode: "historical", effect: "consume" })
+  assert.deepEqual(validateMercadoLibreImportChoice("historical", "none"), { ok: true, mode: "historical", effect: "none" })
+  assert.deepEqual(validateMercadoLibreImportChoice("current", "consume"), { ok: true, mode: "current", effect: "consume" })
+  assert.deepEqual(validateMercadoLibreImportChoice("current", "none"), { ok: false, error: "Una importación de ventas actuales siempre descuenta stock." })
+  // Nunca se asume: ambos son obligatorios.
+  assert.equal(validateMercadoLibreImportChoice("historical", undefined).ok, false)
+  assert.equal(validateMercadoLibreImportChoice(undefined, "consume").ok, false)
+  assert.equal(validateMercadoLibreImportChoice("historical", "CONSUME").ok, false)
+  assert.match(describeMercadoLibreImportError("ML_IMPORT_UNLINKED_CONSUME: la fila 7 descuenta stock", ""), /descuenta stock y hay líneas sin producto vinculado/)
+  assert.match(
+    describeMercadoLibreImportError("column mercadolibre_import_batches.stock_effect does not exist", ""),
+    /20261031160000/,
+  )
+})
 
 function serverRow(overrides: Record<string, unknown> = {}) {
   return {

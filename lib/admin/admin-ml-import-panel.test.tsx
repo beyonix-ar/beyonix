@@ -112,19 +112,48 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.match(summary, /SKU exacto/)
     assert.match(summary, /Sin vincular: 1 línea(?!s)/)
 
-    // Sin tipo de importación elegido no se puede confirmar.
+    const radio = (name: string, value: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`)!
+    const pick = async (name: string, value: string) => {
+      await act(async () => radio(name, value).click())
+      await settle()
+    }
+    const allowUnlinkedBox = () => [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .find((node) => node.closest("label")?.textContent?.includes("Importar sin vincular"))
+
+    // Dos decisiones, ninguna preseleccionada; "Descontar stock" se muestra primero.
     assert.equal(button("Importar 2 líneas")!.disabled, true)
-    assert.match(summary, /Elegí el tipo de importación para continuar/)
-    const historical = document.querySelector<HTMLInputElement>('input[name="ml-import-mode"][value="historical"]')!
-    await act(async () => historical.click())
-    await settle()
-    assert.match(text(), /Importación histórica — no modifica stock actual/)
-    assert.match(text(), /Histórica · no se modifica/)
-    // Una línea sigue sin vincular: hace falta aceptarlo explícitamente.
+    assert.match(summary, /Elegí el tipo de importación y el stock para continuar/)
+    assert.equal(document.querySelectorAll('input[name="ml-import-mode"]:checked, input[name="ml-stock-effect"]:checked').length, 0)
+    assert.deepEqual([...document.querySelectorAll<HTMLInputElement>('input[name="ml-stock-effect"]')].map((node) => node.value), ["consume", "none"])
+    assert.doesNotMatch(summary, /no modifica stock actual/)
+
+    // Histórica sola no alcanza: falta el stock.
+    await pick("ml-import-mode", "historical")
     assert.equal(button("Importar 2 líneas")!.disabled, true)
-    const allowUnlinked = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
-      .find((node) => node.closest("label")?.textContent?.includes("Importar sin vincular"))!
-    await act(async () => allowUnlinked.click())
+
+    // Histórica + descontar: con una línea sin vínculo no hay "Importar sin vincular".
+    await pick("ml-stock-effect", "consume")
+    assert.match(text(), /Importación histórica · descuenta stock/)
+    assert.match(text(), /Descuenta stock/)
+    assert.match(text(), /Sin vínculo · bloquea/)
+    assert.match(text(), /Para descontar stock todas las líneas deben estar vinculadas: falta 1\./)
+    assert.equal(allowUnlinkedBox(), undefined)
+    assert.equal(button("Importar 2 líneas")!.disabled, true)
+
+    // Actual fija "Descontar stock" y no permite "Ya reflejado".
+    await pick("ml-import-mode", "current")
+    assert.match(text(), /Ventas actuales · descuenta stock/)
+    assert.equal(radio("ml-stock-effect", "consume").checked, true)
+    assert.equal(radio("ml-stock-effect", "none").disabled, true)
+
+    // Volver a Histórica obliga a elegir de nuevo; "Ya reflejado" permite importar sin vincular.
+    await pick("ml-import-mode", "historical")
+    assert.equal(document.querySelectorAll('input[name="ml-stock-effect"]:checked').length, 0)
+    await pick("ml-stock-effect", "none")
+    assert.match(text(), /Importación histórica · stock ya reflejado/)
+    assert.match(text(), /No modifica stock/)
+    assert.equal(button("Importar 2 líneas")!.disabled, true)
+    await act(async () => allowUnlinkedBox()!.click())
     await settle()
     assert.equal(button("Importar 2 líneas")!.disabled, false)
 
@@ -141,19 +170,20 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.equal(batchRequest.rowsRead, 5)
     assert.equal(typeof batchRequest.fileSha256, "string")
     assert.equal(batchRequest.importMode, "historical")
+    assert.equal(batchRequest.stockEffect, "none")
     const sent = calls.find((call) => call.path === "/api/admin/mercadolibre-sales/import")!.body!
     assert.deepEqual((sent.rows as Array<{ operation_id: string }>).map((row) => row.operation_id), ["2000000000000001", "2000000000000002"])
     assert.equal(sent.allowUnlinked, true)
     assert.equal(calls.at(-2)?.body?.status ?? calls.find((call) => call.method === "PATCH")?.body?.status, "completed")
     assert.equal(document.querySelector('[aria-current="step"]')?.textContent, "5Resultado")
-    assert.match(text(), /Importación completa: ventas-octubre\.xlsx2 ventas nuevas · 0 actualizadas · 1 sin cambios · 1 fila repetida ignorada · 1 fila inválida no importada · 1 vinculada a un producto · histórica: el stock no se modificó\./)
+    assert.match(text(), /Importación completa: ventas-octubre\.xlsx2 ventas nuevas · 0 actualizadas · 1 sin cambios · 1 fila repetida ignorada · 1 fila inválida no importada · 1 vinculada a un producto · el stock no se modificó\./)
     assert.equal(imported, 1)
 
     // Historial con reversión confirmada por cantidad.
     batches = [{
       id: "6f1d1a62-6c55-4f43-9d55-3a4f1a2b7c10", created_at: "2026-10-14T15:00:00.000Z", finished_at: "2026-10-14T15:00:05.000Z",
       imported_by_email: "admin@beyonix.test", source_file_name: "ventas-octubre.xlsx", file_kind: "xlsx",
-      import_mode: "historical", rows_read: 5, rows_valid: 3, rows_invalid: 1, rows_duplicate_in_file: 1, inserted: 2, updated: 0, unchanged: 0,
+      import_mode: "historical", stock_effect: "none", rows_read: 5, rows_valid: 3, rows_invalid: 1, rows_duplicate_in_file: 1, inserted: 2, updated: 0, unchanged: 0,
       status: "completed", error_message: null, invalid_rows: [], reverted_at: null, reverted_count: 0, reversible_sales: 2, kept_sales: 0,
     }]
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Actualizar historial de importaciones"]')!.click())

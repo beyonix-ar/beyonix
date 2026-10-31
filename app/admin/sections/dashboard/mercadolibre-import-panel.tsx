@@ -20,7 +20,11 @@ import {
   type MercadoLibreImportRow,
   type ParsedMercadoLibreReport,
 } from "@/lib/mercadolibre/sales-report"
-import type { MercadoLibreImportMode, MercadoLibrePreviewStatus } from "@/lib/mercadolibre/import-validation"
+import type {
+  MercadoLibreImportMode,
+  MercadoLibrePreviewStatus,
+  MercadoLibreStockEffect,
+} from "@/lib/mercadolibre/import-validation"
 import {
   MERCADOLIBRE_MATCH_ORIGIN_LABEL,
   groupUnlinkedMercadoLibreRows,
@@ -68,17 +72,74 @@ const STATUS_CLASS: Record<MercadoLibrePreviewStatus, string> = {
 }
 
 const IMPORT_MODES: Array<{ id: MercadoLibreImportMode; label: string; detail: string }> = [
-  {
-    id: "historical",
-    label: "Histórica",
-    detail: "Ventas pasadas que el stock actual ya refleja. Registra ventas y finanzas; no modifica stock.",
-  },
-  {
-    id: "current",
-    label: "Ventas actuales",
-    detail: "Ventas que todavía no salieron del stock de BEYONIX. Las líneas vinculadas descuentan stock.",
-  },
+  { id: "historical", label: "Histórica", detail: "Ventas ocurridas en el pasado." },
+  { id: "current", label: "Actual", detail: "Ventas de hoy: siempre descuentan stock." },
 ]
+
+// "Descontar stock" primero: es la opción habitual, pero no se preselecciona.
+const STOCK_EFFECTS: Array<{ id: MercadoLibreStockEffect; label: string; detail: string }> = [
+  { id: "consume", label: "Descontar stock", detail: "Cada línea vinculada sale del inventario." },
+  { id: "none", label: "Ya reflejado · no modificar", detail: "El stock actual ya incluye estas ventas." },
+]
+
+function choiceBanner(mode: MercadoLibreImportMode | null, effect: MercadoLibreStockEffect | null) {
+  if (!mode || !effect) return null
+  if (mode === "current") return "Ventas actuales · descuenta stock"
+  return effect === "consume" ? "Importación histórica · descuenta stock" : "Importación histórica · stock ya reflejado"
+}
+
+function ChoiceGroup<T extends string>({
+  legend,
+  name,
+  options,
+  value,
+  disabledOption,
+  onChange,
+}: {
+  legend: string
+  name: string
+  options: Array<{ id: T; label: string; detail: string }>
+  value: T | null
+  disabledOption?: (id: T) => boolean
+  onChange: (id: T) => void
+}) {
+  return (
+    <fieldset className="min-w-0 rounded-xl border border-white/8 bg-black/20 px-3 py-2.5">
+      <legend className="px-1 text-9px font-black uppercase tracking-widest text-white/45">{legend}</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const optionDisabled = disabledOption?.(option.id) ?? false
+          return (
+            <label
+              key={option.id}
+              className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 text-xs leading-5 transition ${
+                optionDisabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"
+              } ${
+                value === option.id
+                  ? "border-beyonix-sky/50 bg-beyonix-blue/30 text-white"
+                  : "border-white/8 bg-black/20 text-white/60 hover:border-white/20"
+              }`}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={option.id}
+                checked={value === option.id}
+                disabled={optionDisabled}
+                onChange={() => onChange(option.id)}
+                className="mt-1 accent-sky-400"
+              />
+              <span className="min-w-0">
+                <span className="block font-black">{option.label}</span>
+                <span className="block text-11px text-white/50">{option.detail}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+}
 
 function matchLabel(match: MercadoLibreProductMatch | null) {
   if (!match) return "Sin vincular"
@@ -196,13 +257,27 @@ export function MercadoLibreImportPanel({
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [result, setResult] = useState<MercadoLibreImportResult | null>(null)
   const [historyKey, setHistoryKey] = useState(0)
-  // Sin modo por defecto: confundir una importación histórica con ventas
-  // actuales movería (o dejaría de mover) stock real.
+  // Tipo e impacto en stock sin valor por defecto: el impacto es inmutable
+  // una vez importado, así que siempre lo elige el administrador.
   const [importMode, setImportMode] = useState<MercadoLibreImportMode | null>(null)
+  const [stockEffect, setStockEffect] = useState<MercadoLibreStockEffect | null>(null)
   const [allowUnlinked, setAllowUnlinked] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
   const busy = step === "analyzing" || step === "importing"
+  const banner = choiceBanner(importMode, stockEffect)
+
+  // Actual siempre descuenta; al volver a Histórica hay que elegir de nuevo.
+  const chooseImportMode = (mode: MercadoLibreImportMode) => {
+    setImportMode(mode)
+    setStockEffect(mode === "current" ? "consume" : null)
+    setAllowUnlinked(false)
+  }
+  const chooseStockEffect = (effect: MercadoLibreStockEffect) => {
+    if (importMode === "current" && effect === "none") return
+    setStockEffect(effect)
+    setAllowUnlinked(false)
+  }
   useEffect(() => {
     onBusyChange?.(busy)
   }, [busy, onBusyChange])
@@ -218,6 +293,7 @@ export function MercadoLibreImportPanel({
     setProgress(null)
     setResult(null)
     setImportMode(null)
+    setStockEffect(null)
     setAllowUnlinked(false)
   }
 
@@ -279,7 +355,14 @@ export function MercadoLibreImportPanel({
     () => (report && preview ? groupUnlinkedMercadoLibreRows(report.rows, preview.matches) : []),
     [preview, report],
   )
-  const canImport = Boolean(rowsToWrite.length && importMode && (unlinkedToWrite === 0 || allowUnlinked))
+  // Descontar stock exige todas las líneas vinculadas; sin impacto en stock se
+  // puede aceptar explícitamente dejarlas pendientes.
+  const canImport = Boolean(
+    rowsToWrite.length &&
+      importMode &&
+      stockEffect &&
+      (unlinkedToWrite === 0 || (stockEffect === "none" && allowUnlinked)),
+  )
 
   // Después de guardar un vínculo manual se vuelve a pedir la comparación: el
   // servidor es quien decide cómo queda vinculada cada línea.
@@ -294,7 +377,7 @@ export function MercadoLibreImportPanel({
   }, [fileSha256, report])
 
   const runImport = async () => {
-    if (!report || !preview || !canImport || !importMode || busy) return
+    if (!report || !preview || !canImport || !importMode || !stockEffect || busy) return
     setStep("importing")
     setImportError(null)
     setProgress({ done: 0, total: 1 })
@@ -304,7 +387,8 @@ export function MercadoLibreImportPanel({
         fileName,
         fileSha256,
         importMode,
-        allowUnlinked,
+        stockEffect,
+        allowUnlinked: stockEffect === "none" && allowUnlinked,
         onProgress: (done, total) => setProgress({ done, total }),
       })
       setResult({ ...imported, unchanged: imported.unchanged + counts.unchanged + counts.stale })
@@ -403,45 +487,35 @@ export function MercadoLibreImportPanel({
               </p>
             )}
 
-            <fieldset className="rounded-xl border border-white/8 bg-black/20 px-3 py-2.5" disabled={step === "importing"}>
-              <legend className="px-1 text-9px font-black uppercase tracking-widest text-white/45">Tipo de importación</legend>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {IMPORT_MODES.map((mode) => (
-                  <label
-                    key={mode.id}
-                    className={`flex cursor-pointer items-start gap-2 rounded-lg border px-2.5 py-2 text-xs leading-5 transition ${
-                      importMode === mode.id
-                        ? "border-beyonix-sky/50 bg-beyonix-blue/30 text-white"
-                        : "border-white/8 bg-black/20 text-white/60 hover:border-white/20"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="ml-import-mode"
-                      value={mode.id}
-                      checked={importMode === mode.id}
-                      onChange={() => setImportMode(mode.id)}
-                      className="mt-1 accent-sky-400"
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-black">{mode.label}</span>
-                      <span className="block text-11px text-white/50">{mode.detail}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
+            <fieldset className="grid gap-2 md:grid-cols-2" disabled={step === "importing"}>
+              <ChoiceGroup
+                legend="Tipo de importación"
+                name="ml-import-mode"
+                options={IMPORT_MODES}
+                value={importMode}
+                onChange={chooseImportMode}
+              />
+              <ChoiceGroup
+                legend="Stock"
+                name="ml-stock-effect"
+                options={STOCK_EFFECTS}
+                value={stockEffect}
+                disabledOption={(id) => importMode === "current" && id === "none"}
+                onChange={chooseStockEffect}
+              />
             </fieldset>
 
-            {importMode === "historical" && (
-              <p role="status" className="flex items-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-3 py-2 text-sm font-black text-sky-100">
-                <History className="size-4 shrink-0" />
-                Importación histórica — no modifica stock actual
-              </p>
-            )}
-            {importMode === "current" && (
-              <p role="status" className="flex items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-sm font-black text-amber-100">
-                <AlertTriangle className="size-4 shrink-0" />
-                Ventas actuales — las líneas vinculadas descuentan stock
+            {banner && (
+              <p
+                role="status"
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-black ${
+                  stockEffect === "consume"
+                    ? "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    : "border-sky-400/30 bg-sky-400/10 text-sky-100"
+                }`}
+              >
+                {stockEffect === "consume" ? <AlertTriangle className="size-4 shrink-0" /> : <History className="size-4 shrink-0" />}
+                {banner}
               </p>
             )}
 
@@ -574,11 +648,11 @@ export function MercadoLibreImportPanel({
                             </span>
                           </td>
                           <td className="px-2.5 py-2 text-10px font-bold">
-                            {importMode === "historical"
-                              ? "Histórica · no se modifica"
-                              : importMode === "current"
-                                ? match ? "Descuenta stock" : "No descuenta (sin vincular)"
-                                : "Elegí el tipo"}
+                            {stockEffect === "consume"
+                              ? match ? "Descuenta stock" : "Sin vínculo · bloquea"
+                              : stockEffect === "none"
+                                ? "No modifica stock"
+                                : "Elegí el stock"}
                           </td>
                           <td className="px-2.5 py-2 text-10px leading-4">
                             {returned ? (
@@ -622,7 +696,14 @@ export function MercadoLibreImportPanel({
               </div>
             )}
 
-            {unlinkedToWrite > 0 && (
+            {unlinkedToWrite > 0 && stockEffect === "consume" && (
+              <p role="alert" className="flex items-start gap-2 rounded-xl border border-amber-300/22 bg-amber-300/6 px-3 py-2 text-xs leading-5 text-amber-100">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                Para descontar stock todas las líneas deben estar vinculadas: {unlinkedToWrite === 1 ? "falta 1" : `faltan ${unlinkedToWrite}`}.
+              </p>
+            )}
+
+            {unlinkedToWrite > 0 && stockEffect === "none" && (
               <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-amber-300/22 bg-amber-300/6 px-3 py-2 text-xs leading-5 text-amber-100">
                 <input
                   type="checkbox"
@@ -643,12 +724,12 @@ export function MercadoLibreImportPanel({
                 {!rowsToWrite.length
                   ? "No hay ventas nuevas ni cambios para importar."
                   : `Se guardarán ${plural(rowsToWrite.length, "línea", "líneas")} (${counts.new} nuevas, ${counts.changed} actualizadas). Las filas inválidas y las ya cargadas sin cambios no se tocan. ${
-                      importMode === "historical"
-                        ? "Importación histórica: no modifica stock ni crea reservas."
-                        : importMode === "current"
-                          ? "Las líneas nuevas vinculadas a un producto descuentan stock."
-                          : "Elegí el tipo de importación para continuar."
-                    }${unlinkedToWrite && !allowUnlinked ? " Vinculá las líneas pendientes o marcá “Importar sin vincular”." : ""}`}
+                      !importMode || !stockEffect
+                        ? "Elegí el tipo de importación y el stock para continuar."
+                        : stockEffect === "consume"
+                          ? "Las líneas nuevas descuentan stock."
+                          : "No modifica stock ni crea reservas."
+                    }${unlinkedToWrite && stockEffect === "none" && !allowUnlinked ? " Vinculá las líneas pendientes o marcá “Importar sin vincular”." : ""}`}
               </p>
               <div className="flex shrink-0 gap-2">
                 <AdminSecondaryButton icon={<X className="size-3.5" />} onClick={reset} disabled={step === "importing"}>
@@ -682,7 +763,7 @@ export function MercadoLibreImportPanel({
               {result.duplicateRows ? ` · ${plural(result.duplicateRows, "fila repetida ignorada", "filas repetidas ignoradas")}` : ""}
               {report?.invalidRows.length ? ` · ${plural(report.invalidRows.length, "fila inválida no importada", "filas inválidas no importadas")}` : ""}
               {result.linked ? ` · ${plural(result.linked, "vinculada a un producto", "vinculadas a un producto")}` : ""}
-              {importMode === "historical" ? " · histórica: el stock no se modificó" : ""}.
+              {stockEffect === "none" ? " · el stock no se modificó" : stockEffect === "consume" ? " · las vinculadas descontaron stock" : ""}.
             </p>
           </div>
         )}
@@ -805,7 +886,7 @@ export function MercadoLibreImportHistory({
                     <span className="min-w-0 break-all">{batch.source_file_name ?? "Archivo sin nombre"}</span>
                     <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-10px font-black ${status.className}`}>{status.label}</span>
                     <span className="inline-flex rounded-md border border-white/12 bg-white/5 px-1.5 py-0.5 text-10px font-black text-white/60">
-                      {batch.import_mode === "historical" ? "Histórica · sin stock" : "Actual · con stock"}
+                      {batch.import_mode === "historical" ? "Histórica" : "Actual"} · {batch.stock_effect === "none" ? "sin stock" : "descuenta stock"}
                     </span>
                   </p>
                   <p className="mt-0.5 text-11px leading-5 text-white/45">

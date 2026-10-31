@@ -115,7 +115,21 @@ function isMissingMappingsMigration(message: string) {
   )
 }
 
+const STOCK_EFFECT_MIGRATION_MESSAGE =
+  "Falta aplicar la migración 20261031160000_mercadolibre_import_stock_effect_decoupling.sql."
+
+/** stock_effect del lote (20261031160000) todavía no existe en la base. */
+function isMissingStockEffectMigration(message: string) {
+  return (
+    /mercadolibre_import_batches/i.test(message) &&
+    /stock_effect/i.test(message) &&
+    /does not exist|schema cache|could not find/i.test(message)
+  )
+}
+
 const KNOWN_ERRORS: Array<[RegExp, string]> = [
+  [/ML_IMPORT_UNLINKED_CONSUME/, "Esta importación descuenta stock y hay líneas sin producto vinculado. Vinculalas antes de importar; este bloque no se guardó."],
+  [/mercadolibre_import_batches_mode_effect_check/, "Una importación de ventas actuales siempre descuenta stock."],
   [/ML_IMPORT_UNLINKED/, "Hay líneas sin producto vinculado. Vinculalas o marcá “Importar sin vincular”; este bloque no se guardó."],
   [/ML_IMPORT_MODE_IMMUTABLE|ML_SALE_STOCK_EFFECT_IMMUTABLE/, "El efecto sobre el stock de una importación o venta ya cargada no se puede cambiar."],
   [/STOCK_INSUFICIENTE/, "La importación dejaría stock negativo en productos vinculados. Revisá el stock o la vinculación de SKU; este bloque no se guardó."],
@@ -131,6 +145,7 @@ const KNOWN_ERRORS: Array<[RegExp, string]> = [
 /** Mensaje para el usuario: los errores de la base se traducen; nunca se muestra SQL. */
 export function describeMercadoLibreImportError(message: string | null | undefined, fallback: string) {
   const source = message ?? ""
+  if (isMissingStockEffectMigration(source)) return STOCK_EFFECT_MIGRATION_MESSAGE
   if (isMissingMappingsMigration(source)) return MAPPINGS_MIGRATION_MESSAGE
   for (const [pattern, friendly] of KNOWN_ERRORS) {
     if (pattern.test(source)) return friendly
@@ -142,18 +157,41 @@ export function describeMercadoLibreImportError(message: string | null | undefin
 
 export function isMissingImportMigration(message: string | null | undefined) {
   const source = message ?? ""
-  return isMissingMappingsMigration(source) || BATCHES_MIGRATION_PATTERN.test(source)
+  return isMissingStockEffectMigration(source) || isMissingMappingsMigration(source) || BATCHES_MIGRATION_PATTERN.test(source)
 }
 
 /** Resultado de comparar una fila del archivo con lo ya cargado. */
 export type MercadoLibrePreviewStatus = "new" | "unchanged" | "changed" | "stale"
 
 /**
- * historical: ventas pasadas que el stock actual ya refleja (nunca mueven stock).
- * current: ventas que BEYONIX procesa como operación actual (descuentan stock al vincularse).
+ * historical: ventas ocurridas en el pasado (reconstrucción histórica).
+ * current: ventas que BEYONIX procesa como operación actual.
+ * El tipo NO decide el stock: eso es MercadoLibreStockEffect.
  */
 export type MercadoLibreImportMode = "historical" | "current"
 
+/** consume: las ventas nuevas descuentan stock. none: el stock ya las refleja. */
+export type MercadoLibreStockEffect = "consume" | "none"
+
 export function parseMercadoLibreImportMode(value: unknown): MercadoLibreImportMode | null {
   return value === "historical" || value === "current" ? value : null
+}
+
+export function parseMercadoLibreStockEffect(value: unknown): MercadoLibreStockEffect | null {
+  return value === "consume" || value === "none" ? value : null
+}
+
+/** historical+consume, historical+none y current+consume; current+none nunca. */
+export function validateMercadoLibreImportChoice(
+  mode: unknown,
+  effect: unknown,
+): { ok: true; mode: MercadoLibreImportMode; effect: MercadoLibreStockEffect } | { ok: false; error: string } {
+  const importMode = parseMercadoLibreImportMode(mode)
+  const stockEffect = parseMercadoLibreStockEffect(effect)
+  if (!importMode) return { ok: false, error: "Elegí si la importación es histórica o de ventas actuales." }
+  if (!stockEffect) return { ok: false, error: "Elegí si las ventas descuentan stock o si el stock ya las refleja." }
+  if (importMode === "current" && stockEffect === "none") {
+    return { ok: false, error: "Una importación de ventas actuales siempre descuenta stock." }
+  }
+  return { ok: true, mode: importMode, effect: stockEffect }
 }

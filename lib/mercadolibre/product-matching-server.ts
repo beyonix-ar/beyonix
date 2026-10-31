@@ -42,6 +42,7 @@ interface ExistingSaleRow {
   product_id: number | null
   unit_cost: number | null
   raw_data: Record<string, unknown> | null
+  stock_effect?: string | null
 }
 
 export interface MercadoLibreMatchableServerRow {
@@ -99,7 +100,17 @@ export interface MercadoLibreMatchingData {
   catalog: MercadoLibreCatalogProduct[]
   context: MercadoLibreMatchingContext
   preservedByIdentity: Map<string, PreservedCostMapping>
+  /** Identidades de ventas que ya existen en BEYONIX. */
+  existingIdentities: Set<string>
+  /**
+   * Ventas consume legadas sin producto: vincularlas genera su salida de
+   * stock, así que nunca se vinculan solas (sólo por acción explícita).
+   */
+  pendingManualLink: Set<string>
 }
+
+type MatchingInput = Pick<MercadoLibreMatchingData, "context" | "preservedByIdentity"> &
+  Partial<Pick<MercadoLibreMatchingData, "existingIdentities" | "pendingManualLink">>
 
 /** Catálogo, vínculos explícitos activos y vínculos ya guardados de esas ventas. */
 export async function loadMercadoLibreMatchingData(
@@ -113,7 +124,7 @@ export async function loadMercadoLibreMatchingData(
       Promise.resolve(
         admin
           .from("mercadolibre_sales")
-          .select("id, sale_date, operation_id, order_id, sku, product_name, product_id, unit_cost, raw_data")
+          .select("id, sale_date, operation_id, order_id, sku, product_name, product_id, unit_cost, raw_data, stock_effect")
           .in("operation_id", operationIds.slice(index, index + 400)),
       ),
     )
@@ -148,29 +159,41 @@ export async function loadMercadoLibreMatchingData(
   })
 
   const preservedByIdentity = new Map<string, PreservedCostMapping>()
+  const existingIdentities = new Set<string>()
+  const pendingManualLink = new Set<string>()
   for (const result of existingResults) {
     for (const sale of (result.data ?? []) as ExistingSaleRow[]) {
+      const identity = getMercadoLibreSaleIdentity({ ...sale, raw_data: sale.raw_data ?? undefined })
+      existingIdentities.add(identity)
+      if (sale.stock_effect === "consume" && sale.product_id == null) pendingManualLink.add(identity)
       const mapping = getPreservedCostMapping(sale)
-      if (mapping) {
-        preservedByIdentity.set(getMercadoLibreSaleIdentity({ ...sale, raw_data: sale.raw_data ?? undefined }), mapping)
-      }
+      if (mapping) preservedByIdentity.set(identity, mapping)
     }
   }
 
-  return { catalog, context, preservedByIdentity }
+  return { catalog, context, preservedByIdentity, existingIdentities, pendingManualLink }
 }
 
 export interface ResolvedMercadoLibreRow {
   match: MercadoLibreProductMatch | null
   preserved: PreservedCostMapping | null
+  /** La venta ya existe en BEYONIX (reimportación). */
+  existing: boolean
+  /** Venta consume legada sin vínculo: sólo se vincula a mano. */
+  pendingManualLink: boolean
 }
 
 export function resolveMercadoLibreServerRow(
   row: MercadoLibreMatchableServerRow,
-  data: Pick<MercadoLibreMatchingData, "context" | "preservedByIdentity">,
+  data: MatchingInput,
 ): ResolvedMercadoLibreRow {
-  const preserved = data.preservedByIdentity.get(getMercadoLibreSaleIdentity(row)) ?? null
-  return { match: resolveMercadoLibreProductMatch(row, data.context, preserved), preserved }
+  const identity = getMercadoLibreSaleIdentity(row)
+  const existing = data.existingIdentities?.has(identity) ?? data.preservedByIdentity.has(identity)
+  if (data.pendingManualLink?.has(identity)) {
+    return { match: null, preserved: null, existing: true, pendingManualLink: true }
+  }
+  const preserved = data.preservedByIdentity.get(identity) ?? null
+  return { match: resolveMercadoLibreProductMatch(row, data.context, preserved), preserved, existing, pendingManualLink: false }
 }
 
 /**
@@ -180,14 +203,17 @@ export function resolveMercadoLibreServerRow(
  */
 export function buildMercadoLibreImportPayload<T extends MercadoLibreMatchableServerRow>(
   rows: T[],
-  data: Pick<MercadoLibreMatchingData, "context" | "preservedByIdentity">,
+  data: MatchingInput,
   options: { actorId: string; mappedAt: string },
 ) {
   let unlinked = 0
+  // Sin vínculo y todavía inexistentes: son las que un lote consume no admite.
+  let newUnlinked = 0
   const payload = rows.map((row): T & { product_id?: number; unit_cost?: number } => {
-    const { match, preserved } = resolveMercadoLibreServerRow(row, data)
+    const { match, preserved, existing } = resolveMercadoLibreServerRow(row, data)
     if (!match) {
       unlinked += 1
+      if (!existing) newUnlinked += 1
       return row
     }
 
@@ -223,5 +249,5 @@ export function buildMercadoLibreImportPayload<T extends MercadoLibreMatchableSe
       },
     }
   })
-  return { payload, unlinked }
+  return { payload, unlinked, newUnlinked }
 }

@@ -67,14 +67,40 @@ export async function POST(request: Request) {
     )
   }
 
-  const { payload, unlinked } = buildMercadoLibreImportPayload(integrityResult.rows, matchingData, {
+  const { payload, unlinked, newUnlinked } = buildMercadoLibreImportPayload(integrityResult.rows, matchingData, {
     actorId: auth.user.id,
     mappedAt: new Date().toISOString(),
   })
 
-  // Nunca se importan líneas sin producto en silencio: el administrador tiene
-  // que vincularlas o aceptar explícitamente dejarlas pendientes (sin costo).
-  if (unlinked > 0 && body.allowUnlinked !== true) {
+  // Nunca se importan líneas sin producto en silencio. Si el lote descuenta
+  // stock no hay excepción posible para una venta nueva: cada salida necesita
+  // su producto. Una venta ya existente sin vínculo (legado consume o none)
+  // conserva su estado y sólo se vincula a mano. Si el lote no descuenta, el
+  // administrador puede aceptar explícitamente dejarlas pendientes (sin costo
+  // ni movimiento de stock).
+  let batchConsumes = false
+  if (unlinked > 0) {
+    const { data: batch, error: batchError } = await auth.admin
+      .from("mercadolibre_import_batches")
+      .select("stock_effect")
+      .eq("id", batchId)
+      .maybeSingle()
+    if (batchError) {
+      console.error("ML_IMPORT_BATCH_LOOKUP_ERROR", batchError.message)
+      return Response.json(
+        { error: describeMercadoLibreImportError(batchError.message, "No se pudo verificar la importación. No se guardó ningún cambio de este bloque.") },
+        { status: isMissingImportMigration(batchError.message) ? 503 : 500 },
+      )
+    }
+    batchConsumes = batch?.stock_effect === "consume"
+    if (batchConsumes && newUnlinked > 0) {
+      return Response.json(
+        { error: describeMercadoLibreImportError("ML_IMPORT_UNLINKED_CONSUME", ""), unlinked: newUnlinked },
+        { status: 409 },
+      )
+    }
+  }
+  if (unlinked > 0 && !batchConsumes && body.allowUnlinked !== true) {
     return Response.json(
       { error: describeMercadoLibreImportError("ML_IMPORT_UNLINKED", ""), unlinked },
       { status: 409 },

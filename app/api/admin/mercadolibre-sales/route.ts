@@ -483,6 +483,14 @@ export async function PATCH(request: Request) {
       })
       .eq("id", row.id)
     if (updateError) {
+      // Una venta que descuenta stock nunca queda sin producto ni con una
+      // variante inválida: la base lo rechaza.
+      if (/ML_CONSUME_SALE_LINK_REQUIRED/.test(updateError.message)) {
+        return Response.json(
+          { error: "Esta venta descuenta stock: vinculala a un producto y, si tiene variantes, a la variante exacta. No puede quedar sin producto." },
+          { status: 409 },
+        )
+      }
       return Response.json(
         { error: "No se pudo guardar la vinculación de costos." },
         { status: 500 },
