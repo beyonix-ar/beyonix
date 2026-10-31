@@ -34,6 +34,8 @@ const TEST_FILES = [
   "lib/mercadolibre/import-batches-sql.test.ts",
   "lib/mercadolibre/sku-reconciliation.test.ts",
   "lib/mercadolibre/sale-costing.test.ts",
+  "lib/mercadolibre/product-matching.test.ts",
+  "lib/mercadolibre/historical-import-sql.test.ts",
   "lib/inventory/stock-metrics.test.ts",
   "lib/inventory/inventory-reconciliation.test.ts",
   "lib/inventory/inventory-sql-contract.test.ts",

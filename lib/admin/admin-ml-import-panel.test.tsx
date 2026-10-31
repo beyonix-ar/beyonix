@@ -42,6 +42,13 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
       const rows = body?.rows as Array<{ operation_id: string }>
       return Response.json({
         statuses: rows.map((row) => (row.operation_id.endsWith("3") ? "unchanged" : "new")),
+        // La venta ...2 no tiene vínculo seguro: queda "Sin vincular".
+        matches: rows.map((row) =>
+          row.operation_id.endsWith("2")
+            ? null
+            : { origin: "exact_sku", productId: 7, variantId: null, mappingId: null, manual: false },
+        ),
+        catalog: [{ id: 7, nombre: "Auricular Ñandú", sku: "AUR-1", activo: true, producto_variantes: [] }],
         previousImport: null,
       })
     }
@@ -102,6 +109,24 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.match(summary, /Fila 11 \(venta 2000000000000004\): ‘Ingresos por productos’ no es un número válido \(“veinte mil”\)/)
     assert.match(summary, /Total bruto\$\s?50\.000/)
     assert.ok(button("Importar 2 líneas"), "sólo se envían las nuevas o con cambios")
+    assert.match(summary, /SKU exacto/)
+    assert.match(summary, /Sin vincular: 1 línea(?!s)/)
+
+    // Sin tipo de importación elegido no se puede confirmar.
+    assert.equal(button("Importar 2 líneas")!.disabled, true)
+    assert.match(summary, /Elegí el tipo de importación para continuar/)
+    const historical = document.querySelector<HTMLInputElement>('input[name="ml-import-mode"][value="historical"]')!
+    await act(async () => historical.click())
+    await settle()
+    assert.match(text(), /Importación histórica — no modifica stock actual/)
+    assert.match(text(), /Histórica · no se modifica/)
+    // Una línea sigue sin vincular: hace falta aceptarlo explícitamente.
+    assert.equal(button("Importar 2 líneas")!.disabled, true)
+    const allowUnlinked = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+      .find((node) => node.closest("label")?.textContent?.includes("Importar sin vincular"))!
+    await act(async () => allowUnlinked.click())
+    await settle()
+    assert.equal(button("Importar 2 líneas")!.disabled, false)
 
     await act(async () => button("Importar 2 líneas")!.click())
     await settle()
@@ -115,23 +140,25 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.equal(batchRequest.rowsInvalid, 1)
     assert.equal(batchRequest.rowsRead, 5)
     assert.equal(typeof batchRequest.fileSha256, "string")
+    assert.equal(batchRequest.importMode, "historical")
     const sent = calls.find((call) => call.path === "/api/admin/mercadolibre-sales/import")!.body!
     assert.deepEqual((sent.rows as Array<{ operation_id: string }>).map((row) => row.operation_id), ["2000000000000001", "2000000000000002"])
+    assert.equal(sent.allowUnlinked, true)
     assert.equal(calls.at(-2)?.body?.status ?? calls.find((call) => call.method === "PATCH")?.body?.status, "completed")
     assert.equal(document.querySelector('[aria-current="step"]')?.textContent, "5Resultado")
-    assert.match(text(), /Importación completa: ventas-octubre\.xlsx2 ventas nuevas · 0 actualizadas · 1 sin cambios · 1 fila repetida ignorada · 1 fila inválida no importada · 1 vinculada al inventario\./)
+    assert.match(text(), /Importación completa: ventas-octubre\.xlsx2 ventas nuevas · 0 actualizadas · 1 sin cambios · 1 fila repetida ignorada · 1 fila inválida no importada · 1 vinculada a un producto · histórica: el stock no se modificó\./)
     assert.equal(imported, 1)
 
     // Historial con reversión confirmada por cantidad.
     batches = [{
       id: "6f1d1a62-6c55-4f43-9d55-3a4f1a2b7c10", created_at: "2026-10-14T15:00:00.000Z", finished_at: "2026-10-14T15:00:05.000Z",
       imported_by_email: "admin@beyonix.test", source_file_name: "ventas-octubre.xlsx", file_kind: "xlsx",
-      rows_read: 5, rows_valid: 3, rows_invalid: 1, rows_duplicate_in_file: 1, inserted: 2, updated: 0, unchanged: 0,
+      import_mode: "historical", rows_read: 5, rows_valid: 3, rows_invalid: 1, rows_duplicate_in_file: 1, inserted: 2, updated: 0, unchanged: 0,
       status: "completed", error_message: null, invalid_rows: [], reverted_at: null, reverted_count: 0, reversible_sales: 2, kept_sales: 0,
     }]
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label="Actualizar historial de importaciones"]')!.click())
     await settle()
-    assert.match(text(), /ventas-octubre\.xlsxCompleta.*admin@beyonix\.test · 5 filas · 2 nuevas/)
+    assert.match(text(), /ventas-octubre\.xlsxCompletaHistórica · sin stock.*admin@beyonix\.test · 5 filas · 2 nuevas/)
     await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label^="Revertir importación"]')!.click())
     assert.match(document.querySelector('[role="dialog"]')?.textContent ?? "", /Se van a eliminar 2 ventas que creó esta importación/)
     batches = []

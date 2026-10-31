@@ -64,8 +64,12 @@ export interface MercadoLibreReportSummary {
   returnSales: number
   cancelledSales: number
   units: number
+  /** Sólo unidades devueltas informadas explícitamente por ML. */
   returnedUnits: number
+  /** Devoluciones sin "Unidades devueltas" informadas: cantidad física desconocida. */
+  unknownPhysicalReturnLines: number
   cancelledUnits: number
+  /** Exacto sólo si unknownPhysicalReturnLines = 0; si no, es un máximo. */
   netUnits: number
   productRevenue: number
   saleFees: number
@@ -159,6 +163,7 @@ const NUMERIC_FIELDS = new Set<MercadoLibreFieldKey>([
 ])
 
 const UNIT_FIELDS = new Set<MercadoLibreFieldKey>(["units", "return_units", "claim_units"])
+const OPTIONAL_UNIT_FIELDS = new Set<MercadoLibreFieldKey>(["return_units", "claim_units"])
 
 type CellValue = string | number | boolean | null | { excelDate: number } | { formulaError: string }
 
@@ -260,15 +265,38 @@ export function getMercadoLibreTotalDifference(
   return rounded(number(fields.total) - components)
 }
 
-export function getMercadoLibreCostableUnits(row: MercadoLibreImportRow) {
-  const fields = row.raw_data.parsed
-  const units = Math.max(0, Math.trunc(number(fields.units) || row.quantity || 0))
-  if (isCancelledRow(fields)) return 0
+export interface MercadoLibreReturnEvidence {
+  /** Reembolso financiero (|Anulaciones y reembolsos|). No prueba que volvió mercadería. */
+  refundAmount: number
+  isReturn: boolean
+  /**
+   * Unidades devueltas informadas explícitamente por ML. null = desconocidas
+   * (columna vacía): no se asume ni una ni todas.
+   */
+  physicalReturnedUnits: number | null
+  /** Total ML − suma de sus conceptos; ≠ 0 se concilia como otros costos. */
+  totalDifference: number
+}
 
-  const reportedReturnedUnits = Math.max(0, Math.trunc(number(fields.return_units)))
-  const returnedUnits = isReturnRow(fields) ? reportedReturnedUnits || units : reportedReturnedUnits
-
-  return Math.max(0, units - Math.min(units, returnedUnits))
+/**
+ * Separa reembolso financiero, devolución física y discrepancia del Total.
+ * Un estado "Devolución finalizada con reembolso" no equivale a "volvió al
+ * stock": sólo una cantidad explícita es evidencia de unidades devueltas.
+ */
+export function getMercadoLibreReturnEvidence(fields: Partial<MercadoLibreFieldMap>): MercadoLibreReturnEvidence {
+  const reported = fields.return_units
+  const physicalReturnedUnits =
+    typeof reported === "number" && Number.isFinite(reported) ? Math.max(0, Math.trunc(reported)) : null
+  // Misma tolerancia que la conciliación del análisis (±1 $, con o sin el
+  // costo por medidas declaradas).
+  const withoutDeclared = getMercadoLibreTotalDifference(fields, false)
+  const withDeclared = getMercadoLibreTotalDifference(fields, true)
+  return {
+    refundAmount: computeMercadoLibreAmounts(fields).refunds,
+    isReturn: isReturnRow(fields as MercadoLibreFieldMap),
+    physicalReturnedUnits,
+    totalDifference: Math.abs(withoutDeclared) <= 1 || Math.abs(withDeclared) <= 1 ? 0 : withDeclared,
+  }
 }
 
 function createSummary(rows: MercadoLibreImportRow[]): MercadoLibreReportSummary {
@@ -278,9 +306,9 @@ function createSummary(rows: MercadoLibreImportRow[]): MercadoLibreReportSummary
       const returned = isReturnRow(fields)
       const cancelled = !returned && isCancelledRow(fields)
       const units = number(fields.units)
-      const returnedUnits = returned
-        ? Math.max(number(fields.return_units), units)
-        : number(fields.return_units)
+      // Sólo cuenta unidades devueltas informadas explícitamente: un estado de
+      // devolución o un reembolso no prueban cuántas volvieron.
+      const returnedUnits = Math.min(units, number(fields.return_units))
 
       summary.sales += 1
       summary.completedSales += returned || cancelled ? 0 : 1
@@ -288,6 +316,7 @@ function createSummary(rows: MercadoLibreImportRow[]): MercadoLibreReportSummary
       summary.cancelledSales += cancelled ? 1 : 0
       summary.units += units
       summary.returnedUnits += returnedUnits
+      summary.unknownPhysicalReturnLines += returned && fields.return_units == null ? 1 : 0
       summary.cancelledUnits += cancelled ? units : 0
       summary.productRevenue += number(fields.product_revenue)
       summary.saleFees += number(fields.sale_fee)
@@ -324,6 +353,7 @@ function createSummary(rows: MercadoLibreImportRow[]): MercadoLibreReportSummary
       cancelledSales: 0,
       units: 0,
       returnedUnits: 0,
+      unknownPhysicalReturnLines: 0,
       cancelledUnits: 0,
       netUnits: 0,
       productRevenue: 0,
@@ -345,6 +375,18 @@ function createSummary(rows: MercadoLibreImportRow[]): MercadoLibreReportSummary
       claims: 0,
     },
   )
+}
+
+/**
+ * Texto de unidades devueltas/netas. Con alguna devolución sin cantidad
+ * informada no se afirma un neto exacto: null ≠ 0.
+ */
+export function describeMercadoLibreReturnedUnits(
+  summary: Pick<MercadoLibreReportSummary, "returnedUnits" | "netUnits" | "unknownPhysicalReturnLines">,
+) {
+  const unknown = summary.unknownPhysicalReturnLines
+  if (!unknown) return `${summary.returnedUnits} devueltas · ${summary.netUnits} netas`
+  return `${summary.returnedUnits} devueltas confirmadas · devoluciones físicas desconocidas en ${unknown} ${unknown === 1 ? "línea" : "líneas"}`
 }
 
 export function summarizeMercadoLibreRows(rows: MercadoLibreImportRow[]) {
@@ -647,6 +689,12 @@ export function parseMercadoLibreSalesReport(
       const value = cell(key)
       if (value && typeof value === "object" && "formulaError" in value) {
         messages.push(`‘${label(key)}’ tiene un error de fórmula (${value.formulaError})`)
+        fields[key] = null
+        continue
+      }
+      // Unidades devueltas / en reclamo vacías = ML no las informó: quedan
+      // desconocidas (null), nunca 0 ni "todas".
+      if (OPTIONAL_UNIT_FIELDS.has(key) && cellIsEmpty(value)) {
         fields[key] = null
         continue
       }

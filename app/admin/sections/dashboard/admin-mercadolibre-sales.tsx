@@ -27,6 +27,7 @@ import {
 
 import {
   MERCADOLIBRE_FIELD_KEYS,
+  describeMercadoLibreReturnedUnits,
   summarizeMercadoLibreRows,
   type MercadoLibreFieldMap,
   type MercadoLibreImportRow,
@@ -787,7 +788,7 @@ export function AdminMercadoLibreSales() {
           <SummaryCard
             label="Unidades vendidas"
             value={String(summary.units)}
-            helper={`${summary.returnedUnits} devueltas · ${summary.netUnits} netas`}
+            helper={describeMercadoLibreReturnedUnits(summary)}
             icon={<Package className="size-4" />}
           />
           <SummaryCard

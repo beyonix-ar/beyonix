@@ -113,7 +113,7 @@ export async function POST(
 
   const { data: currentSale, error: currentSaleError } = await auth.admin
     .from("mercadolibre_sales")
-    .select("id, sku, product_id, raw_data")
+    .select("id, sku, product_id, raw_data, stock_effect")
     .eq("id", id)
     .maybeSingle()
 
@@ -127,6 +127,15 @@ export async function POST(
     return Response.json(
       { error: "La venta de Mercado Libre ya no existe." },
       { status: 404 },
+    )
+  }
+
+  // Venta histórica: nunca descontó stock y el stock actual ya refleja lo que
+  // haya vuelto; un reingreso físico duplicaría unidades.
+  if (currentSale.stock_effect === "none") {
+    return Response.json(
+      { error: "Es una venta histórica: el stock actual ya refleja lo que haya vuelto, por eso no se registra la devolución física." },
+      { status: 409 },
     )
   }
 

@@ -96,13 +96,28 @@ export function validateMercadoLibreServerRows(input: unknown): ServerRowsResult
       fee_amount: fee,
       shipping_amount: shipping,
       net_amount: net,
-      raw_data: raw,
+      // Vínculo de producto y efecto sobre el stock los decide el servidor.
+      raw_data: Object.fromEntries(Object.entries(raw).filter(([key]) => !key.startsWith("beyonix_"))),
     })
   }
   return { ok: true, rows }
 }
 
+const BATCHES_MIGRATION_PATTERN = /schema cache|does not exist|import_mercadolibre_sales_batch|mercadolibre_import_batches/i
+const MAPPINGS_MIGRATION_MESSAGE =
+  "Falta aplicar la migración 20261031150000_mercadolibre_historical_import_and_product_mappings.sql."
+
+/** Objetos que agrega 20261031150000 y todavía no existen en la base. */
+function isMissingMappingsMigration(message: string) {
+  return (
+    /product_channel_mappings|import_mode|stock_effect/i.test(message) &&
+    /does not exist|schema cache|could not find/i.test(message)
+  )
+}
+
 const KNOWN_ERRORS: Array<[RegExp, string]> = [
+  [/ML_IMPORT_UNLINKED/, "Hay líneas sin producto vinculado. Vinculalas o marcá “Importar sin vincular”; este bloque no se guardó."],
+  [/ML_IMPORT_MODE_IMMUTABLE|ML_SALE_STOCK_EFFECT_IMMUTABLE/, "El efecto sobre el stock de una importación o venta ya cargada no se puede cambiar."],
   [/STOCK_INSUFICIENTE/, "La importación dejaría stock negativo en productos vinculados. Revisá el stock o la vinculación de SKU; este bloque no se guardó."],
   [/ML_IMPORT_RETURN_CONFLICT/, "Una venta ya tiene unidades recibidas en devolución y el archivo informa menos unidades. Este bloque no se guardó."],
   [/ML_IMPORT_CONFLICT/, "El archivo tiene la misma venta repetida con datos distintos. Este bloque no se guardó."],
@@ -110,12 +125,13 @@ const KNOWN_ERRORS: Array<[RegExp, string]> = [
   [/ML_IMPORT_BATCH_NOT_FOUND/, "No se encontró la importación. Volvé a analizar el archivo."],
   [/ML_IMPORT_BATCH_NOT_REVERSIBLE/, "Esta importación ya fue revertida o todavía está en curso."],
   [/ML_IMPORT_REVERT_CHANGED/, "Las ventas de esta importación cambiaron mientras confirmabas. Recargá el historial y volvé a intentarlo."],
-  [/schema cache|does not exist|import_mercadolibre_sales_batch|mercadolibre_import_batches/i, "Falta aplicar la migración 20261015100000_mercadolibre_import_batches.sql."],
+  [BATCHES_MIGRATION_PATTERN, "Falta aplicar la migración 20261015100000_mercadolibre_import_batches.sql."],
 ]
 
 /** Mensaje para el usuario: los errores de la base se traducen; nunca se muestra SQL. */
 export function describeMercadoLibreImportError(message: string | null | undefined, fallback: string) {
   const source = message ?? ""
+  if (isMissingMappingsMigration(source)) return MAPPINGS_MIGRATION_MESSAGE
   for (const [pattern, friendly] of KNOWN_ERRORS) {
     if (pattern.test(source)) return friendly
   }
@@ -125,8 +141,19 @@ export function describeMercadoLibreImportError(message: string | null | undefin
 }
 
 export function isMissingImportMigration(message: string | null | undefined) {
-  return /schema cache|does not exist|import_mercadolibre_sales_batch|mercadolibre_import_batches/i.test(message ?? "")
+  const source = message ?? ""
+  return isMissingMappingsMigration(source) || BATCHES_MIGRATION_PATTERN.test(source)
 }
 
 /** Resultado de comparar una fila del archivo con lo ya cargado. */
 export type MercadoLibrePreviewStatus = "new" | "unchanged" | "changed" | "stale"
+
+/**
+ * historical: ventas pasadas que el stock actual ya refleja (nunca mueven stock).
+ * current: ventas que BEYONIX procesa como operación actual (descuentan stock al vincularse).
+ */
+export type MercadoLibreImportMode = "historical" | "current"
+
+export function parseMercadoLibreImportMode(value: unknown): MercadoLibreImportMode | null {
+  return value === "historical" || value === "current" ? value : null
+}

@@ -2,8 +2,10 @@ import { supabase } from "@/lib/supabase/client"
 import type { MercadoLibreImportRow, ParsedMercadoLibreReport } from "@/lib/mercadolibre/sales-report"
 import {
   MERCADOLIBRE_IMPORT_CHUNK_ROWS,
+  type MercadoLibreImportMode,
   type MercadoLibrePreviewStatus,
 } from "@/lib/mercadolibre/import-validation"
+import type { MercadoLibreProductMatch, ProductChannelMappingType } from "@/lib/mercadolibre/product-matching"
 import { buildReturnReviewRequest, type ReturnReviewPayload } from "@/lib/mercadolibre/return-review-client"
 import { AdminRequestError } from "@/lib/admin/request-error"
 
@@ -138,12 +140,24 @@ export async function hashMercadoLibreFile(buffer: ArrayBuffer) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
+export interface MercadoLibreMappingCatalogProduct {
+  id: number
+  nombre: string
+  sku: string | null
+  activo: boolean
+  producto_variantes: Array<{ id: number; nombre: string; sku: string | null; activo: boolean }>
+}
+
 export interface MercadoLibreImportPreview {
   statuses: MercadoLibrePreviewStatus[]
+  /** Vínculo resuelto en el servidor para cada línea; null = sin vincular. */
+  matches: Array<MercadoLibreProductMatch | null>
+  /** Catálogo para el selector manual (sólo si quedan líneas sin vincular). */
+  catalog: MercadoLibreMappingCatalogProduct[] | null
   previousImport: { id: string; created_at: string; source_file_name: string | null } | null
 }
 
-/** Compara el archivo con lo ya cargado. No escribe nada. */
+/** Compara el archivo con lo ya cargado y resuelve vínculos. No escribe nada. */
 export async function previewMercadoLibreImport(
   rows: MercadoLibreImportRow[],
   fileSha256: string,
@@ -151,6 +165,8 @@ export async function previewMercadoLibreImport(
 ): Promise<MercadoLibreImportPreview> {
   const chunks = chunkMercadoLibreRows(rows)
   const statuses: MercadoLibrePreviewStatus[] = []
+  const matches: MercadoLibreImportPreview["matches"] = []
+  let catalog: MercadoLibreImportPreview["catalog"] = null
   let previousImport: MercadoLibreImportPreview["previousImport"] = null
   for (const [index, chunk] of chunks.entries()) {
     const result = await request("/api/admin/mercadolibre-sales/import/preview", {
@@ -159,10 +175,35 @@ export async function previewMercadoLibreImport(
       signal: AbortSignal.timeout(60_000),
     })
     statuses.push(...((result?.statuses ?? []) as MercadoLibrePreviewStatus[]))
+    const chunkMatches = Array.isArray(result?.matches) ? (result.matches as MercadoLibreImportPreview["matches"]) : []
+    matches.push(...chunk.map((_, position) => chunkMatches[position] ?? null))
+    catalog ??= Array.isArray(result?.catalog) ? (result.catalog as MercadoLibreMappingCatalogProduct[]) : null
     previousImport ??= (result?.previousImport ?? null) as MercadoLibreImportPreview["previousImport"]
     onProgress?.(index + 1, chunks.length)
   }
-  return { statuses, previousImport }
+  return { statuses, matches, catalog, previousImport }
+}
+
+export interface MercadoLibreProductMappingInput {
+  type: ProductChannelMappingType
+  sku?: string | null
+  listingId?: string | null
+  variant?: string | null
+  productId: number
+  variantId: number | null
+}
+
+/** Guarda un vínculo explícito reutilizable por futuras importaciones. */
+export async function saveMercadoLibreProductMapping(input: MercadoLibreProductMappingInput) {
+  const data = await request("/api/admin/mercadolibre-sales/mappings", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  return data?.mapping as { id: string } | undefined
+}
+
+export async function deactivateMercadoLibreProductMapping(id: string) {
+  return request(`/api/admin/mercadolibre-sales/mappings?id=${encodeURIComponent(id)}`, { method: "DELETE" })
 }
 
 export interface MercadoLibreImportResult {
@@ -196,6 +237,9 @@ export async function importMercadoLibreReport(input: {
   report: ParsedMercadoLibreReport
   fileName: string
   fileSha256: string
+  importMode: MercadoLibreImportMode
+  /** Confirmación explícita para guardar líneas sin producto (sin costo). */
+  allowUnlinked: boolean
   onProgress?: (done: number, total: number) => void
 }): Promise<MercadoLibreImportResult> {
   const { report } = input
@@ -204,6 +248,7 @@ export async function importMercadoLibreReport(input: {
     body: JSON.stringify({
       fileName: input.fileName,
       fileSha256: input.fileSha256,
+      importMode: input.importMode,
       fileKind: report.fileKind,
       sheetName: report.sheetName,
       columns: report.columns.map(({ key, header, column }) => ({ key, header, column })),
@@ -222,7 +267,7 @@ export async function importMercadoLibreReport(input: {
     try {
       const result = await request("/api/admin/mercadolibre-sales/import", {
         method: "POST",
-        body: JSON.stringify({ batchId, rows: chunk }),
+        body: JSON.stringify({ batchId, rows: chunk, allowUnlinked: input.allowUnlinked }),
         signal: AbortSignal.timeout(120_000),
       })
       totals.inserted += Number(result?.inserted ?? 0)
@@ -258,6 +303,7 @@ export interface MercadoLibreImportBatch {
   imported_by_email: string | null
   source_file_name: string | null
   file_kind: string | null
+  import_mode: MercadoLibreImportMode
   rows_read: number
   rows_valid: number
   rows_invalid: number
