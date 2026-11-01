@@ -377,16 +377,60 @@ function createSummary(rows: MercadoLibreImportRow[]): MercadoLibreReportSummary
   )
 }
 
+export type MercadoLibreReturnedUnitsDisplay = Pick<
+  MercadoLibreReportSummary,
+  "returnedUnits" | "netUnits" | "unknownPhysicalReturnLines"
+> & {
+  /** Líneas con algunas unidades confirmadas y el resto sin determinar. */
+  partialPhysicalReturnLines?: number
+}
+
 /**
  * Texto de unidades devueltas/netas. Con alguna devolución sin cantidad
- * informada no se afirma un neto exacto: null ≠ 0.
+ * determinada (desconocida o parcial) no se afirma un neto exacto: null ≠ 0.
  */
-export function describeMercadoLibreReturnedUnits(
-  summary: Pick<MercadoLibreReportSummary, "returnedUnits" | "netUnits" | "unknownPhysicalReturnLines">,
-) {
+export function describeMercadoLibreReturnedUnits(summary: MercadoLibreReturnedUnitsDisplay) {
   const unknown = summary.unknownPhysicalReturnLines
-  if (!unknown) return `${summary.returnedUnits} devueltas · ${summary.netUnits} netas`
-  return `${summary.returnedUnits} devueltas confirmadas · devoluciones físicas desconocidas en ${unknown} ${unknown === 1 ? "línea" : "líneas"}`
+  const partial = summary.partialPhysicalReturnLines ?? 0
+  const returned = `${summary.returnedUnits} ${summary.returnedUnits === 1 ? "devuelta confirmada" : "devueltas confirmadas"}`
+  if (!unknown && !partial) return `${returned} · ${summary.netUnits} ${summary.netUnits === 1 ? "neta" : "netas"}`
+  return [
+    returned,
+    unknown ? `devoluciones físicas desconocidas en ${unknown} ${unknown === 1 ? "línea" : "líneas"}` : "",
+    partial ? `devolución física parcial en ${partial} ${partial === 1 ? "línea" : "líneas"}` : "",
+  ].filter(Boolean).join(" · ")
+}
+
+/**
+ * Sólo para mostrar: aplica sobre el resumen del reporte la revisión física
+ * registrada en BEYONIX. Las unidades recibidas en la revisión reemplazan a
+ * "Unidades devueltas" del reporte de esa línea. Si el reporte no informaba
+ * la cantidad (null), la revisión sólo la determina cuando recibió todas las
+ * unidades de la línea; si recibió menos, el resto sigue sin determinar
+ * (parcial): no se afirma que no volvieron. Sin revisión, null sigue
+ * desconocido.
+ */
+export function applyMercadoLibrePhysicalReturnReviews(
+  summary: Pick<MercadoLibreReportSummary, "units" | "returnedUnits" | "cancelledUnits" | "unknownPhysicalReturnLines">,
+  reviewed: Array<{ row: MercadoLibreImportRow; receivedQuantity: number }>,
+): Required<MercadoLibreReturnedUnitsDisplay> {
+  let { returnedUnits, unknownPhysicalReturnLines } = summary
+  let partialPhysicalReturnLines = 0
+  for (const { row, receivedQuantity } of reviewed) {
+    const fields = row.raw_data.parsed
+    const units = number(fields.units)
+    const received = Math.min(units, Math.max(0, receivedQuantity))
+    returnedUnits += received - Math.min(units, number(fields.return_units))
+    if (fields.return_units != null) continue
+    if (isReturnRow(fields)) unknownPhysicalReturnLines -= 1
+    if (received < units) partialPhysicalReturnLines += 1
+  }
+  return {
+    returnedUnits,
+    unknownPhysicalReturnLines: Math.max(0, unknownPhysicalReturnLines),
+    partialPhysicalReturnLines,
+    netUnits: Math.max(0, summary.units - returnedUnits - summary.cancelledUnits),
+  }
 }
 
 export function summarizeMercadoLibreRows(rows: MercadoLibreImportRow[]) {

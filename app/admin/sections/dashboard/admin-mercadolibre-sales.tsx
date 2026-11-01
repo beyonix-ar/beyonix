@@ -27,6 +27,7 @@ import {
 
 import {
   MERCADOLIBRE_FIELD_KEYS,
+  applyMercadoLibrePhysicalReturnReviews,
   describeMercadoLibreReturnedUnits,
   summarizeMercadoLibreRows,
   type MercadoLibreFieldMap,
@@ -55,6 +56,7 @@ import {
   AdminSecondaryButton,
   AdminSelect,
 } from "../../components/admin-controls"
+import { AdminHelpTip } from "../../components/admin-help-tip"
 import { MercadoLibreImportPanel } from "./mercadolibre-import-panel"
 
 function number(value: unknown) {
@@ -171,12 +173,15 @@ function SummaryCard({
   label,
   value,
   helper,
+  help,
   icon,
   tone = "neutral",
 }: {
   label: string
   value: string
   helper: string
+  /** Una frase: qué refleja la tarjeta. */
+  help: string
   icon: React.ReactNode
   tone?: "neutral" | "positive" | "warning" | "danger"
 }) {
@@ -191,8 +196,9 @@ function SummaryCard({
       <span className="mx-auto flex size-6 items-center justify-center rounded-md bg-beyonix-blue/20 text-beyonix-sky">
         {icon}
       </span>
-      <p className="mt-1.5 text-9px font-black uppercase tracking-widest text-white/40">
-        {label}
+      <p className="mt-1.5 flex items-center justify-center gap-1 text-9px font-black uppercase tracking-widest text-white/40">
+        <span>{label}</span>
+        <AdminHelpTip label={label} text={help} />
       </p>
       <p className={`mt-0.5 text-base font-black tabular-nums ${valueClass}`}>{value}</p>
       <p
@@ -388,6 +394,21 @@ export function AdminMercadoLibreSales() {
   const summary = useMemo(
     () => summarizeMercadoLibreRows(importedRows),
     [importedRows],
+  )
+  // El subtexto de unidades refleja la revisión física vigente, no sólo el reporte original.
+  const returnedUnitsLabel = useMemo(
+    () =>
+      describeMercadoLibreReturnedUnits(
+        applyMercadoLibrePhysicalReturnReviews(
+          summary,
+          sales.flatMap((sale, index) =>
+            sale.return_review
+              ? [{ row: importedRows[index], receivedQuantity: number(sale.return_review.received_quantity) }]
+              : [],
+          ),
+        ),
+      ),
+    [importedRows, sales, summary],
   )
   const costSummary = useMemo(
     () => summarizeMercadoLibreCosting(sales, Boolean(costingError)),
@@ -780,25 +801,29 @@ export function AdminMercadoLibreSales() {
 
         <div className="mt-2.5 grid grid-cols-2 gap-2 xl:grid-cols-4">
           <SummaryCard
-            label="Ventas"
+            label="Líneas de venta"
             value={String(summary.sales)}
-            helper={`${summary.completedSales} efectivas · ${summary.returnSales} devueltas · ${summary.cancelledSales} canceladas`}
+            helper={`${summary.completedSales} ${summary.completedSales === 1 ? "efectiva" : "efectivas"} · ${summary.returnSales} ${summary.returnSales === 1 ? "devuelta" : "devueltas"} · ${summary.cancelledSales} ${summary.cancelledSales === 1 ? "cancelada" : "canceladas"}`}
+            help="Líneas importadas del reporte, incluidas devoluciones y cancelaciones."
             icon={<CheckCircle2 className="size-4" />}
           />
           <SummaryCard
-            label="Unidades vendidas"
+            label="Unidades informadas"
             value={String(summary.units)}
-            helper={describeMercadoLibreReturnedUnits(summary)}
+            helper={returnedUnitsLabel}
+            help="Unidades originales informadas por ML, antes de descontar devoluciones."
             icon={<Package className="size-4" />}
           />
           <SummaryCard
             label="Ingresos por productos"
             value={formatPrice(summary.productRevenue)}
             helper="Bruto antes de cargos y reembolsos"
+            help="Bruto de productos informado por ML, sin envíos, cargos ni reembolsos."
             icon={<CircleDollarSign className="size-4" />}
           />
           <SummaryCard
-            label="Ganancia obtenida"
+            label="Resultado comercial ML"
+            help="Neto de Mercado Libre menos costo de mercadería; excluye gastos generales."
             value={
               costSummary.profit == null
                 ? "Pendiente"
@@ -823,14 +848,14 @@ export function AdminMercadoLibreSales() {
         </div>
 
         <div className="mt-2 grid grid-cols-2 gap-2 xl:grid-cols-4 2xl:grid-cols-8">
-          <SummaryCard label="Cargos por venta" value={formatPrice(Math.abs(summary.saleFees))} helper={`Suma aplicada en ${summary.salesWithSaleFee} operaciones`} icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
-          <SummaryCard label="Costo fijo" value={formatPrice(Math.abs(summary.fixedCosts))} helper="Cargos fijos" icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
-          <SummaryCard label="Costo por cuotas" value={formatPrice(Math.abs(summary.installmentCosts))} helper="Financiación" icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
-          <SummaryCard label="Envío acreditado por ML" value={formatPrice(summary.shippingIncome)} helper={`${formatPrice(summary.shippingIncomeOnEffectiveSales)} en ventas · ${formatPrice(summary.shippingIncomeOnReturns)} en devoluciones`} icon={<Truck className="size-3.5" />} />
-          <SummaryCard label="Envío descontado por ML" value={formatPrice(Math.abs(summary.shippingCosts + summary.declaredShippingCosts))} helper="Costo logístico total descontado" icon={<Truck className="size-3.5" />} tone="warning" />
-          <SummaryCard label="Reembolsos" value={formatPrice(Math.abs(summary.cancellationsRefunds))} helper={`${summary.returnSales} devoluciones`} icon={<RotateCcw className="size-3.5" />} tone={summary.returnSales ? "danger" : "neutral"} />
-          <SummaryCard label="Envío descontado en devoluciones" value={formatPrice(summary.returnShippingCosts)} helper="Ya incluido arriba; no es un cargo adicional" icon={<RotateCcw className="size-3.5" />} tone={summary.returnShippingCosts ? "danger" : "neutral"} />
-          <SummaryCard label="Reclamos" value={String(summary.claims)} helper="Con unidades o mediación" icon={<AlertTriangle className="size-3.5" />} tone={summary.claims ? "warning" : "neutral"} />
+          <SummaryCard label="Cargos por venta" value={formatPrice(Math.abs(summary.saleFees))} helper={`Suma aplicada en ${summary.salesWithSaleFee} ${summary.salesWithSaleFee === 1 ? "operación" : "operaciones"}`} help="Comisiones por venta de ML, sin incluir costos fijos ni cuotas." icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
+          <SummaryCard label="Costo fijo" value={formatPrice(Math.abs(summary.fixedCosts))} helper="Cargos fijos" help="Importes fijos cobrados por ML en las líneas de venta." icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
+          <SummaryCard label="Costo por cuotas" value={formatPrice(Math.abs(summary.installmentCosts))} helper="Financiación" help="Cargos de financiación por cuotas, separados de otras comisiones." icon={<CircleDollarSign className="size-3.5" />} tone="warning" />
+          <SummaryCard label="Envío acreditado por ML" value={formatPrice(summary.shippingIncome)} helper={`${formatPrice(summary.shippingIncomeOnEffectiveSales)} en ventas · ${formatPrice(summary.shippingIncomeOnReturns)} en devoluciones`} help="Ingresos por envío informados por ML, incluidos los de devoluciones." icon={<Truck className="size-3.5" />} />
+          <SummaryCard label="Envío descontado por ML" value={formatPrice(Math.abs(summary.shippingCosts + summary.declaredShippingCosts))} helper="Costo logístico total descontado" help="Costos logísticos descontados por ML, incluidos los de devoluciones." icon={<Truck className="size-3.5" />} tone="warning" />
+          <SummaryCard label="Reembolsos" value={formatPrice(Math.abs(summary.cancellationsRefunds))} helper={`${summary.returnSales} ${summary.returnSales === 1 ? "devolución" : "devoluciones"}`} help="Importes reembolsados, mostrados positivos y ya incluidos en el neto ML." icon={<RotateCcw className="size-3.5" />} tone={summary.returnSales ? "danger" : "neutral"} />
+          <SummaryCard label="Del envío descontado: devoluciones" value={formatPrice(summary.returnShippingCosts)} helper="Ya incluido arriba; no es un cargo adicional" help="Parte del envío descontado correspondiente a devoluciones; no se suma aparte." icon={<RotateCcw className="size-3.5" />} tone={summary.returnShippingCosts ? "danger" : "neutral"} />
+          <SummaryCard label="Reclamos" value={String(summary.claims)} helper="Con unidades o mediación" help="Líneas con unidades reclamadas o reclamo abierto, cerrado o mediado." icon={<AlertTriangle className="size-3.5" />} tone={summary.claims ? "warning" : "neutral"} />
         </div>
       </section>
 

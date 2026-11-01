@@ -32,6 +32,7 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
 
   const calls: Array<{ method: string; path: string; body: Record<string, unknown> | null }> = []
   let batches: unknown[] = []
+  let failNextImport = false
   const fetchMock = mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input)
     const method = init?.method ?? "GET"
@@ -53,7 +54,12 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
       })
     }
     if (path === "/api/admin/mercadolibre-sales/import/batches" && method === "POST") return Response.json({ batchId: "6f1d1a62-6c55-4f43-9d55-3a4f1a2b7c10" })
+    if (path === "/api/admin/mercadolibre-sales/mappings" && method === "POST") return Response.json({ mapping: { id: "mapping-1" } })
     if (path === "/api/admin/mercadolibre-sales/import") {
+      if (failNextImport) {
+        failNextImport = false
+        return Response.json({ error: "Falla simulada del servidor." }, { status: 409 })
+      }
       return Response.json({ inserted: (body?.rows as unknown[]).length, updated: 0, unchanged: 0, duplicateRows: 0, linked: 1 })
     }
     if (path === "/api/admin/mercadolibre-sales/import/batches" && method === "PATCH") return Response.json({ batch: { status: body?.status } })
@@ -112,6 +118,20 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.match(summary, /SKU exacto/)
     assert.match(summary, /Sin vincular: 1 línea(?!s)/)
 
+    // El selector de vínculo manual sigue funcionando: elegir destino habilita "Vincular" y se guarda.
+    const vincular = () => [...document.querySelectorAll("button")].find((node) => node.textContent?.trim() === "Vincular")!
+    assert.equal(vincular().disabled, true)
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label^="Producto BEYONIX para"]')!.click())
+    const target = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((node) => node.textContent?.includes("Auricular Ñandú"))
+    assert.ok(target, "el catálogo aparece en el selector")
+    await act(async () => target.click())
+    assert.equal(vincular().disabled, false)
+    await act(async () => vincular().click())
+    await settle()
+    const mapping = calls.find((call) => call.method === "POST" && call.path === "/api/admin/mercadolibre-sales/mappings")
+    assert.equal(mapping?.body?.productId, 7)
+    assert.equal(mapping?.body?.variantId, null)
+
     const radio = (name: string, value: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`)!
     const pick = async (name: string, value: string) => {
       await act(async () => radio(name, value).click())
@@ -127,12 +147,19 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.deepEqual([...document.querySelectorAll<HTMLInputElement>('input[name="ml-stock-effect"]')].map((node) => node.value), ["consume", "none"])
     assert.doesNotMatch(summary, /no modifica stock actual/)
 
-    // Histórica sola no alcanza: falta el stock.
+    // Histórica sola no alcanza: falta el stock. La opción elegida queda marcada como activa.
+    const optionState = (name: string, value: string) => radio(name, value).closest("label")?.getAttribute("data-state")
+    assert.equal(optionState("ml-import-mode", "historical"), "idle")
     await pick("ml-import-mode", "historical")
+    assert.equal(optionState("ml-import-mode", "historical"), "selected")
+    assert.equal(optionState("ml-import-mode", "current"), "idle")
+    assert.equal(optionState("ml-stock-effect", "consume"), "idle")
     assert.equal(button("Importar 2 líneas")!.disabled, true)
 
     // Histórica + descontar: con una línea sin vínculo no hay "Importar sin vincular".
     await pick("ml-stock-effect", "consume")
+    assert.equal(optionState("ml-stock-effect", "consume"), "selected")
+    assert.equal(optionState("ml-stock-effect", "none"), "idle")
     assert.match(text(), /Importación histórica · descuenta stock/)
     assert.match(text(), /Descuenta stock/)
     assert.match(text(), /Sin vínculo · bloquea/)
@@ -157,6 +184,17 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     await settle()
     assert.equal(button("Importar 2 líneas")!.disabled, false)
 
+    // Si la importación falla, "Resultado" no se marca como completado.
+    const resultStep = () => [...document.querySelectorAll('ol[aria-label="Pasos de la importación"] li')].at(-1)!
+    failNextImport = true
+    await act(async () => button("Importar 2 líneas")!.click())
+    await settle()
+    assert.match(document.querySelector('[role="alert"]')?.textContent ?? "", /La importación se detuvo.*Falla simulada del servidor\./)
+    assert.equal(document.querySelector('[aria-current="step"]')?.textContent, "3Revisar resumen")
+    assert.equal(resultStep().getAttribute("data-state"), "pending")
+    assert.doesNotMatch(text(), /Importación completa/)
+    calls.length = 0
+
     await act(async () => button("Importar 2 líneas")!.click())
     await settle()
     const sequence = calls.filter((call) => call.method !== "GET" && !call.path.includes("/preview")).map((call) => `${call.method} ${call.path}`)
@@ -177,7 +215,12 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     assert.equal(calls.at(-2)?.body?.status ?? calls.find((call) => call.method === "PATCH")?.body?.status, "completed")
     assert.equal(document.querySelector('[aria-current="step"]')?.textContent, "5Resultado")
     assert.match(text(), /Importación completa: ventas-octubre\.xlsx2 ventas nuevas · 0 actualizadas · 1 sin cambios · 1 fila repetida ignorada · 1 fila inválida no importada · 1 vinculada a un producto · el stock no se modificó\./)
-    assert.equal(imported, 1)
+    // Éxito real: los cinco pasos, incluido "Resultado", quedan completados.
+    assert.deepEqual(
+      [...document.querySelectorAll('ol[aria-label="Pasos de la importación"] li')].map((node) => node.getAttribute("data-state")),
+      ["done", "done", "done", "done", "done"],
+    )
+    assert.equal(imported, 2, "también se refresca después del intento fallido")
 
     // Historial con reversión confirmada por cantidad.
     batches = [{
@@ -197,6 +240,17 @@ test("importación ML: analizar, revisar resumen, importar por lote, archivo equ
     const revert = calls.find((call) => call.path.endsWith("/revert"))!
     assert.deepEqual(revert.body, { expectedCount: 2 })
     assert.match(text(), /2 ventas eliminadas de “ventas-octubre\.xlsx”/)
+
+    // Preview: la cantidad física que se muestra es la del XLSX, no la revisión guardada.
+    const devolucion = { status: "Devolución finalizada con reembolso al comprador", cancellations_refunds: -20000, total: -4550 }
+    await choose("devoluciones.xlsx", buildMercadoLibreWorkbook([
+      saleRow({ sale_number: "2000000000000011", ...devolucion }),
+      saleRow({ sale_number: "2000000000000015", ...devolucion, return_units: 2 }),
+    ]))
+    assert.equal(document.querySelector('[aria-current="step"]')?.textContent, "3Revisar resumen")
+    assert.match(text(), /Física según XLSX: desconocida/)
+    assert.match(text(), /Física según XLSX: 2 unidades/)
+    assert.doesNotMatch(text(), /Física: /)
 
     // Una cancelación con reembolso no es una devolución física pendiente.
     assert.equal(isMercadoLibreReturn({ raw_data: { parsed: { status: "Cancelada por el comprador", cancellations_refunds: -10000 } } }), false)

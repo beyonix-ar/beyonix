@@ -119,8 +119,8 @@ export function MercadoLibreUnlinkedResolver({
                 </p>
               </div>
               {group.mappingType ? (
-                <div className="flex w-full shrink-0 gap-1.5 lg:w-96">
-                  <div className="min-w-0 flex-1">
+                <div className="flex w-full shrink-0 gap-1.5 lg:w-auto">
+                  <div className="min-w-0 flex-1 lg:w-[22.5rem] lg:flex-none">
                     <AdminSelect
                       title="Producto BEYONIX"
                       ariaLabel={`Producto BEYONIX para ${group.sku ?? group.title}`}

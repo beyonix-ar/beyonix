@@ -109,30 +109,33 @@ function ChoiceGroup<T extends string>({
       <div className="grid gap-2 sm:grid-cols-2">
         {options.map((option) => {
           const optionDisabled = disabledOption?.(option.id) ?? false
+          const selected = value === option.id
           return (
             <label
               key={option.id}
-              className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 text-xs leading-5 transition ${
+              data-state={selected ? "selected" : "idle"}
+              className={`flex items-start gap-2 rounded-lg border px-2.5 py-2 text-xs leading-5 transition focus-within:ring-2 focus-within:ring-beyonix-sky/40 ${
                 optionDisabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"
               } ${
-                value === option.id
-                  ? "border-beyonix-sky/50 bg-beyonix-blue/30 text-white"
-                  : "border-white/8 bg-black/20 text-white/60 hover:border-white/20"
+                selected
+                  ? "border-beyonix-sky/75 bg-beyonix-blue/45 text-white ring-1 ring-beyonix-sky/30"
+                  : `border-white/15 bg-white/3 text-white/75 ${optionDisabled ? "" : "hover:border-beyonix-sky/40 hover:bg-white/6"}`
               }`}
             >
               <input
                 type="radio"
                 name={name}
                 value={option.id}
-                checked={value === option.id}
+                checked={selected}
                 disabled={optionDisabled}
                 onChange={() => onChange(option.id)}
-                className="mt-1 accent-sky-400"
+                className="mt-0.5 size-4 shrink-0 cursor-[inherit] accent-sky-400"
               />
-              <span className="min-w-0">
-                <span className="block font-black">{option.label}</span>
-                <span className="block text-11px text-white/50">{option.detail}</span>
+              <span className="min-w-0 flex-1">
+                <span className={`block font-black ${selected ? "text-white" : ""}`}>{option.label}</span>
+                <span className={`block text-11px ${selected ? "text-white/75" : "text-white/50"}`}>{option.detail}</span>
               </span>
+              {selected && <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-beyonix-sky" />}
             </label>
           )
         })}
@@ -153,8 +156,8 @@ function returnLabel(row: MercadoLibreImportRow) {
     financial: evidence.refundAmount ? `Reembolso ${formatPrice(evidence.refundAmount)}` : "Sin reembolso",
     physical:
       evidence.physicalReturnedUnits == null
-        ? "Física: desconocida"
-        : `Física: ${plural(evidence.physicalReturnedUnits, "unidad", "unidades")}`,
+        ? "Física según XLSX: desconocida"
+        : `Física según XLSX: ${plural(evidence.physicalReturnedUnits, "unidad", "unidades")}`,
   }
 }
 
@@ -208,16 +211,18 @@ function Stat({
   )
 }
 
-function StepIndicator({ step }: { step: Step }) {
+/** `succeeded`: el resultado mostrado es una importación completa; sólo así el último paso queda en verde. */
+function StepIndicator({ step, succeeded }: { step: Step; succeeded: boolean }) {
   const current = STEPS.findIndex((item) => item.id === step)
   return (
     <ol className="mt-3 grid grid-cols-5 gap-1.5" aria-label="Pasos de la importación">
       {STEPS.map((item, index) => {
-        const state = index < current ? "done" : index === current ? "current" : "pending"
+        const state = index < current || (index === current && succeeded) ? "done" : index === current ? "current" : "pending"
         return (
           <li
             key={item.id}
-            aria-current={state === "current" ? "step" : undefined}
+            data-state={state}
+            aria-current={index === current ? "step" : undefined}
             className={`min-w-0 rounded-lg border px-2 py-1.5 text-center text-10px font-black leading-tight ${
               state === "current"
                 ? "border-beyonix-sky/50 bg-beyonix-blue/35 text-white"
@@ -449,7 +454,7 @@ export function MercadoLibreImportPanel({
           )}
         </div>
 
-        <StepIndicator step={step} />
+        <StepIndicator step={step} succeeded={step === "done" && result !== null} />
 
         {analysisError && (
           <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-red-400/25 bg-red-400/10 px-3 py-2.5 text-sm text-red-100">
