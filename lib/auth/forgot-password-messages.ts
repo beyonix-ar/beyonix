@@ -1,6 +1,6 @@
 /**
  * Mensaje público único de "olvidé mi contraseña", compartido entre el
- * servidor (`lib/auth/forgot-password.ts`) y el cliente (`app/login/page.tsx`)
+ * servidor (`lib/auth/forgot-password.ts`) y el cliente (`app/recuperar-contrasena/page.tsx`)
  * para que nunca puedan desalinearse. Sin "server-only": el cliente lo
  * necesita para mostrar el mismo texto sin depender de lo que devuelva la
  * respuesta (que, por diseño, siempre es este mismo texto).
@@ -10,4 +10,4 @@
  * para una cuenta existente e inexistente.
  */
 export const FORGOT_PASSWORD_GENERIC_MESSAGE =
-  "Si existe una cuenta asociada a los datos ingresados, te enviaremos un correo con las instrucciones para recuperar tu contraseña."
+  "Si existe una cuenta asociada, te enviaremos un enlace para restablecer tu contraseña."

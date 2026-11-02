@@ -40,6 +40,32 @@ export function resolveTrustedSiteUrl(request?: Request): string | null {
   return safeParseOrigin(origin ?? "")?.origin ?? "http://localhost:3000"
 }
 
+const LOCAL_HOSTNAMES = ["localhost", "127.0.0.1"]
+
+/**
+ * Variante estricta para enlaces de autenticación (recuperación de
+ * contraseña): la URL sale EXCLUSIVAMENTE de `NEXT_PUBLIC_SITE_URL`, en
+ * todos los entornos. Nunca lee `Origin`, `Host` ni ningún header.
+ *
+ * - Producción (`NODE_ENV=production`, incluye QA desplegado): https y
+ *   hostname no local; cada entorno configura su propia variable.
+ * - Desarrollo/test: además se acepta `http://localhost` / `127.0.0.1`.
+ * - Ausente o inválida: `null` -> quien llama no envía nada (falla cerrado).
+ */
+export function resolveConfiguredSiteUrl(): string | null {
+  const parsed = safeParseOrigin(process.env.NEXT_PUBLIC_SITE_URL?.trim() ?? "")
+  if (!parsed || parsed.username || parsed.password) return null
+
+  const isLocal = LOCAL_HOSTNAMES.includes(parsed.hostname)
+  if (process.env.NODE_ENV === "production") {
+    if (parsed.protocol !== "https:" || isLocal) return null
+  } else if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLocal)) {
+    return null
+  }
+
+  return parsed.origin
+}
+
 function safeParseOrigin(value: string) {
   try {
     return new URL(value)

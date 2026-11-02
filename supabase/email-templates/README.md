@@ -134,14 +134,37 @@ https://<tu-dominio-de-producción>/reset-password
 https://<tu-dominio-de-producción>/confirmar-email
 ```
 
-**Sobre el `localhost` que puede aparecer al probar en desarrollo**:
-`resolveTrustedSiteUrl` (`lib/site-url.ts`) usa `NEXT_PUBLIC_SITE_URL`
-siempre que esté configurada, sin importar el entorno. El header `Origin`
-del navegador sólo se usa como último recurso, y únicamente cuando
-`NODE_ENV !== "production"` y esa variable no está configurada. En
-producción, si `NEXT_PUBLIC_SITE_URL` falta, no es HTTPS, o apunta a
-`localhost`/`127.0.0.1`, la función devuelve `null` y el llamador corta la
-operación (falla cerrado). Cubierto por tests en `lib/site-url.test.ts`.
+**URL de la app para recuperación de contraseña**: `app/api/auth/forgot-password`
+usa `resolveConfiguredSiteUrl` (`lib/site-url.ts`), que lee **sólo**
+`NEXT_PUBLIC_SITE_URL` en todos los entornos y nunca headers (`Origin`,
+`Host`). PROD/QA (`NODE_ENV=production`): https y host no local; local: además
+`http://localhost`. Si falta o es inválida no se envía nada y la respuesta
+pública sigue siendo la neutra. Cubierto por `lib/site-url.test.ts`.
+
+**Qué dominio termina en el enlace del email**: el template usa
+`{{ .SiteURL }}`, es decir la Site URL del proyecto de Supabase, **no** el
+`redirectTo` que manda el servidor. Por eso cualquier entorno que comparta
+este proyecto de Supabase genera enlaces al dominio de esa Site URL, y ningún
+header del request puede alterarlo. Verificado por Management API (lectura,
+2026-11-01): `site_url = https://beyonix.com.ar`, el `href` del template de
+recovery del Dashboard es `{{ .SiteURL }}/reset-password?token_hash={{ .TokenHash }}&type=recovery`
+(igual al del repo; el resto del HTML del Dashboard difiere del archivo),
+`https://beyonix.com.ar/reset-password` está en Redirect URLs y la expiración
+del OTP es 3600 s. Si en el futuro QA usa otro proyecto de Supabase, su Site
+URL debe ser la de QA.
+
+### Checklist E2E posterior al deploy (manual, cuenta de prueba)
+
+1. Solicitar recuperación en `/recuperar-contrasena` con una cuenta real de prueba (probar con email y con username).
+2. Recibir el email (revisar spam).
+3. Verificar que el enlace empieza con `https://beyonix.com.ar/reset-password?token_hash=` y `type=recovery`.
+4. Abrir el enlace.
+5. Hacer click en `Continuar con la recuperación`.
+6. Establecer una nueva contraseña que cumpla la política.
+7. Iniciar sesión con la nueva contraseña.
+8. Confirmar que la contraseña anterior ya no funciona.
+9. Reabrir el mismo enlace: debe mostrar enlace inválido/expirado.
+10. En los logs del servidor, buscar `password-reset:` del intento: `resetRequested=true`, sin `internalError` ni `providerErrorCode`.
 
 También confirmar **Authentication > Providers > Email > Email OTP
 Expiration** (segundos) según la política que se quiera para cada flujo.

@@ -152,17 +152,63 @@ test("estado de éxito: copy exacto pedido y botón explícito 'Iniciar sesión'
   assert.match(page, /href="\/login" aria-label="Iniciar sesión"/)
 })
 
-test("el login reutiliza el MISMO campo identifier para \"olvidé mi contraseña\" (username o email), sin duplicar UI", () => {
+test("\"¿Olvidaste tu contraseña?\" del login sólo navega a /recuperar-contrasena: no valida el campo del login ni llama a la API", () => {
   const login = source("app/login/page.tsx")
 
-  const handlerIndex = login.indexOf("const handleForgotPassword = async () => {")
-  assert.ok(handlerIndex >= 0)
-  const handlerBody = login.slice(handlerIndex, handlerIndex + 1500)
+  assert.doesNotMatch(login, /handleForgotPassword/)
+  assert.doesNotMatch(login, /Ingresá tu usuario o email para recuperar la contraseña/)
+  assert.doesNotMatch(login, /\/api\/auth\/forgot-password/)
 
-  // Ya no exige "@" en el identificador: acepta username o email por igual.
-  assert.doesNotMatch(handlerBody, /includes\("@"\)/)
-  assert.match(handlerBody, /\/api\/auth\/forgot-password/)
-  assert.match(handlerBody, /identifier: recoveryIdentifier/)
+  const linkIndex = login.indexOf("¿Olvidaste tu contraseña?")
+  assert.ok(linkIndex >= 0)
+  const linkBlock = login.slice(linkIndex - 400, linkIndex)
+  assert.match(linkBlock, /<Link\s+href=\{recoverPasswordHref\}/)
+  // El ?redirect= que se propaga es el ya sanitizado por getSafeRedirect.
+  assert.match(login, /const redirect = getSafeRedirect\(searchParams\.get\("redirect"\)\)/)
+  assert.match(login, /`\/recuperar-contrasena\?\$\{new URLSearchParams\(\{ redirect \}\)\}`/)
+})
+
+test("/recuperar-contrasena: un único campo, mismo endpoint server-side y mensaje neutro compartido", () => {
+  const page = source("app/recuperar-contrasena/page.tsx")
+
+  assert.match(page, /Recuperar contraseña/)
+  assert.match(page, /Ingresá tu email o usuario para recibir un enlace de recuperación\./)
+  assert.match(page, /Email o usuario/)
+  assert.match(page, /Enviar enlace de recuperación/)
+  assert.match(page, /Volver a iniciar sesión/)
+  assert.equal([...page.matchAll(/<input\b/g)].length, 1)
+
+  assert.match(page, /fetch\("\/api\/auth\/forgot-password"/)
+  assert.match(page, /setMessage\(FORGOT_PASSWORD_GENERIC_MESSAGE\)/)
+  // Nunca llama al proveedor directo desde el navegador ni resuelve usernames acá.
+  assert.doesNotMatch(page, /resetPasswordForEmail/)
+  assert.doesNotMatch(page, /get_profile_email_by_username/)
+  // "Volver a iniciar sesión" reusa el sanitizador de redirects.
+  assert.match(page, /buildLoginHref\(searchParams\.get\("redirect"\)\)/)
+})
+
+test("mensaje neutro exacto de recuperación", async () => {
+  const { FORGOT_PASSWORD_GENERIC_MESSAGE } = await import("./forgot-password-messages.ts")
+  assert.equal(
+    FORGOT_PASSWORD_GENERIC_MESSAGE,
+    "Si existe una cuenta asociada, te enviaremos un enlace para restablecer tu contraseña.",
+  )
+})
+
+test("/recuperar-contrasena usa el navbar canónico (misma rama de LayoutShell que /reset-password)", () => {
+  const layoutShell = source("components/layout-shell.tsx")
+  const declaration = layoutShell.slice(
+    layoutShell.indexOf("const isPasswordReset"),
+    layoutShell.indexOf("const isAuthPage"),
+  )
+  assert.match(declaration, /"\/recuperar-contrasena"/)
+})
+
+test("Registro: el título del primer bloque es \"Datos de acceso\" sin el prefijo \"01 ·\"", () => {
+  const login = source("app/login/page.tsx")
+
+  assert.match(login, />\s*Datos de acceso\s*</)
+  assert.doesNotMatch(login, /01 · Datos de acceso/)
 })
 
 // --- Contraste del cartel de "olvidé mi contraseña" (reporte real de usuario) ---
@@ -312,6 +358,7 @@ test("el botón de confirmación se deshabilita mientras se procesa el click (co
 test("sin ningún link interno (<Link>) apunta a /reset-password: nada dispara un prefetch de Next.js sobre esta ruta", () => {
   const filesToCheck = [
     "app/login/page.tsx",
+    "app/recuperar-contrasena/page.tsx",
     "components/account/auth-forms.tsx",
     "context/auth-context.tsx",
   ]
@@ -334,29 +381,20 @@ test("lib/auth/recovery-link.ts soporta token_hash+type=recovery llamando a veri
   assert.match(recoveryLink, /token_hash: params\.tokenHash,/)
 })
 
-test("el form embebido de /cuenta (auth-forms.tsx) también pasa por el endpoint server-side de recuperación, no llama a resetPasswordForEmail directo", () => {
+test("el form embebido de /cuenta (auth-forms.tsx) navega a /recuperar-contrasena, no llama a resetPasswordForEmail directo ni valida su propio campo", () => {
   const authForms = source("components/account/auth-forms.tsx")
 
-  assert.doesNotMatch(authForms, /await supabase\.auth\.resetPasswordForEmail/)
-  assert.match(authForms, /\/api\/auth\/forgot-password/)
+  assert.doesNotMatch(authForms, /resetPasswordForEmail/)
+  assert.doesNotMatch(authForms, /handleForgotPassword/)
+  assert.match(authForms, /<Link\s+href="\/recuperar-contrasena"/)
   assert.doesNotMatch(
     authForms,
     /localStorage\.setItem\("beyonix-password-recovery", "true"\)/,
   )
 })
 
-test("\"olvidé mi contraseña\" muestra un cartel propio con ícono + título neutro \"Revisá tu correo\" (nunca confirma que la cuenta existe)", () => {
-  const login = source("app/login/page.tsx")
+test("/reset-password con enlace inválido ofrece pedir uno nuevo en /recuperar-contrasena", () => {
+  const page = source("app/reset-password/page.tsx")
 
-  assert.match(login, /forgotPasswordMessage/)
-  assert.match(login, /MailCheck/)
-  assert.match(login, /Revisá tu correo/)
-
-  // Este cartel es un estado propio, distinto del `success` genérico
-  // (compartido con "cuenta creada"/"email confirmado"): no debe pisarlo ni
-  // reusar su texto para otros flujos.
-  const forgotHandlerIndex = login.indexOf("const handleForgotPassword = async () => {")
-  const handlerBody = login.slice(forgotHandlerIndex, forgotHandlerIndex + 1500)
-  assert.doesNotMatch(handlerBody, /setSuccess\(data\?\.message/)
-  assert.match(handlerBody, /setForgotPasswordMessage\(data\?\.message/)
+  assert.match(page, /<Link href="\/recuperar-contrasena" aria-label="Solicitar un nuevo enlace">/)
 })

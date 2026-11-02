@@ -1,7 +1,17 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { FORGOT_PASSWORD_GENERIC_MESSAGE, requestPasswordRecovery } from "./forgot-password.ts"
+import {
+  FORGOT_PASSWORD_GENERIC_MESSAGE,
+  FORGOT_PASSWORD_MAX_JITTER_MS,
+  FORGOT_PASSWORD_MIN_RESPONSE_MS,
+  finalizeForgotPasswordResponse,
+  requestPasswordRecovery,
+  type ForgotPasswordTiming,
+  type RequestPasswordRecoveryInput,
+} from "./forgot-password.ts"
+
+type AdminClient = Exclude<RequestPasswordRecoveryInput["admin"], () => unknown>
 
 function captureLogs(run: () => Promise<unknown>) {
   const originalLog = console.log
@@ -36,10 +46,22 @@ interface FakeAdminOptions {
     ipDay?: number
   }
   resetPasswordError?: { message: string; code?: string } | null
-  /** Simula que la tabla password_reset_attempts todavía no existe (migración pendiente). */
+  /** Simula la migración pendiente: la RPC/tabla de rate limit no existe. */
   tableMissing?: boolean
   /** Emails que SÍ tienen una fila real en `profiles` (para accountExistsForEmail, sólo diagnóstico/log). */
   knownEmails?: string[]
+  /** La RPC atómica falla al contar (error de PostgREST/red). */
+  countError?: boolean
+  /** La RPC atómica responde sin error pero con un formato inválido (no boolean). */
+  countNull?: boolean
+  /** La RPC atómica falla al registrar el intento. */
+  insertError?: boolean
+  /** La purga de filas viejas falla (no debe bloquear). */
+  purgeError?: boolean
+  /** La RPC de username -> email falla. */
+  rpcError?: boolean
+  /** resetPasswordForEmail lanza (no devuelve `{ error }`). */
+  resetPasswordThrows?: boolean
 }
 
 function createFakeAdmin(options: FakeAdminOptions = {}) {
@@ -53,52 +75,27 @@ function createFakeAdmin(options: FakeAdminOptions = {}) {
   const calls = {
     inserts: [] as Array<{ identifier_hash: string; ip_hash: string | null }>,
     deletes: 0,
+    admissions: 0,
     rpc: [] as Array<{ fn: string; args: unknown }>,
     resetPasswordForEmail: [] as Array<{ email: string; redirectTo: string }>,
   }
 
+  // Sólo quedan dos usos de `from()`: la purga y el diagnóstico en profiles.
+  // Contar/insertar intentos ya no existe en TS (lo hace la RPC atómica).
   function makeQuery(table: string) {
-    const state: {
-      mode: "count" | "insert" | "delete" | "canary" | "profiles-email" | null
-      filterKey: string | null
-      since: string | null
-    } = {
-      mode: null,
-      filterKey: null,
-      since: null,
-    }
+    const state: { filterKey: string | null } = { filterKey: null }
 
     const builder = {
-      select(_columns: string, opts?: { count?: string; head?: boolean }) {
-        if (table === "profiles") {
-          state.mode = "profiles-email"
-          return builder
-        }
-        // La canaria de existencia (rateLimitTableExists) hace un select SIN
-        // `head: true` -- mismo criterio que el código real, para que el
-        // fake sólo pueda "ver" la tabla ausente por ese camino.
-        state.mode = opts?.head ? "count" : "canary"
-        return builder
-      },
-      insert(payload: { identifier_hash: string; ip_hash: string | null }) {
-        state.mode = "insert"
-        calls.inserts.push(payload)
+      select() {
+        assert.equal(table, "profiles", "el rate limit no debe consultarse por tabla desde TS")
         return builder
       },
       delete() {
-        state.mode = "delete"
-        return builder
-      },
-      eq(column: string, value: string) {
-        state.filterKey = `${column}:${value}`
+        assert.equal(table, "password_reset_attempts")
         return builder
       },
       ilike(column: string, value: string) {
         state.filterKey = `${column}:${value.toLowerCase()}`
-        return builder
-      },
-      gte(_column: string, since: string) {
-        state.since = since
         return builder
       },
       limit() {
@@ -106,55 +103,49 @@ function createFakeAdmin(options: FakeAdminOptions = {}) {
       },
       lt() {
         calls.deletes += 1
-        return Promise.resolve({ error: null })
+        return Promise.resolve({
+          error: options.purgeError ? { message: "purge failed", code: "57014" } : null,
+        })
       },
       then(resolve: (value: unknown) => void) {
-        if (state.mode === "profiles-email") {
-          const email = state.filterKey?.replace(/^email:/, "") ?? ""
-          const exists = (options.knownEmails ?? []).some(
-            (known) => known.toLowerCase() === email,
-          )
-          return resolve({ data: exists ? [{ id: "fake-id" }] : [], error: null })
-        }
-
-        if (state.mode === "canary") {
-          return resolve({
-            data: options.tableMissing ? null : [],
-            error: options.tableMissing
-              ? { message: 'relation "password_reset_attempts" does not exist' }
-              : null,
-          })
-        }
-
-        if (state.mode === "insert") {
-          return resolve({ error: null })
-        }
-
-        // mode === "count": decide qué contador devolver según el filtro y
-        // la ventana (hora vs día) que pidió el código real.
-        const isHourWindow =
-          state.since !== null &&
-          Date.now() - Date.parse(state.since) <= 65 * 60 * 1000
-        const isIdentifier = state.filterKey?.startsWith("identifier_hash:")
-        const count = isIdentifier
-          ? isHourWindow
-            ? counts.identifierHour
-            : counts.identifierDay
-          : isHourWindow
-            ? counts.ipHour
-            : counts.ipDay
-
-        return resolve({ count })
+        const email = state.filterKey?.replace(/^email:/, "") ?? ""
+        const exists = (options.knownEmails ?? []).some(
+          (known) => known.toLowerCase() === email,
+        )
+        return resolve({ data: exists ? [{ id: "fake-id" }] : [], error: null })
       },
     }
 
     return builder
   }
 
+  // Espejo de admit_password_reset_attempt: decide con los conteos previos
+  // configurados y registra el intento SIEMPRE (también si queda limitado).
+  function admitPasswordResetAttempt(args: { p_identifier_hash: string; p_ip_hash: string | null }) {
+    if (options.tableMissing) {
+      return { data: null, error: { message: "function admit_password_reset_attempt does not exist", code: "PGRST202" } }
+    }
+    if (options.countError) return { data: null, error: { message: "count failed", code: "57014" } }
+    if (options.insertError) return { data: null, error: { message: "insert failed", code: "42501" } }
+    if (options.countNull) return { data: null, error: null }
+    calls.inserts.push({ identifier_hash: args.p_identifier_hash, ip_hash: args.p_ip_hash })
+    const hasIp = args.p_ip_hash !== null
+    const allowed =
+      counts.identifierHour < 3 &&
+      counts.identifierDay < 6 &&
+      (!hasIp || (counts.ipHour < 8 && counts.ipDay < 20))
+    return { data: allowed, error: null }
+  }
+
   const admin = {
     from: (table: string) => makeQuery(table),
     rpc: async (fn: string, args: unknown) => {
+      if (fn === "admit_password_reset_attempt") {
+        calls.admissions += 1
+        return admitPasswordResetAttempt(args as { p_identifier_hash: string; p_ip_hash: string | null })
+      }
       calls.rpc.push({ fn, args })
+      if (options.rpcError) return { data: null, error: { message: "rpc failed", code: "PGRST301" } }
       const username = (args as { username_input: string }).username_input
       const email = options.usernameEmails?.[username] ?? null
       return { data: email, error: null }
@@ -162,12 +153,13 @@ function createFakeAdmin(options: FakeAdminOptions = {}) {
     auth: {
       resetPasswordForEmail: async (email: string, opts: { redirectTo: string }) => {
         calls.resetPasswordForEmail.push({ email, redirectTo: opts.redirectTo })
+        if (options.resetPasswordThrows) throw new Error(`fetch failed for ${email}`)
         return { error: options.resetPasswordError ?? null }
       },
     },
   }
 
-  return { admin: admin as unknown as Parameters<typeof requestPasswordRecovery>[0]["admin"], calls }
+  return { admin: admin as unknown as AdminClient, calls }
 }
 
 const SITE_URL = "https://beyonix.com.ar"
@@ -350,32 +342,36 @@ test("cada solicitud registra un intento de rate limit (hash, nunca el identific
   assert.equal(calls.inserts[0].ip_hash?.length, 64)
 })
 
-test("sin siteUrl resuelto (canónica no configurada): falla cerrado sin intentar enviar nada", async () => {
+test("sin siteUrl resuelto (canónica no configurada): no envía nada y responde neutro", async () => {
   const { admin, calls } = createFakeAdmin()
 
-  const result = await requestPasswordRecovery({
-    admin,
-    identifierRaw: "cliente@example.com",
-    ip: "1.2.3.4",
-    siteUrl: null,
-  })
+  const { result, logLines } = await captureLogs(() =>
+    requestPasswordRecovery({
+      admin,
+      identifierRaw: "cliente@example.com",
+      ip: "1.2.3.4",
+      siteUrl: null,
+    }),
+  )
 
-  assert.equal(result.ok, false)
+  assert.deepEqual(result, { ok: true, message: FORGOT_PASSWORD_GENERIC_MESSAGE })
   assert.equal(calls.resetPasswordForEmail.length, 0)
+  assert.equal(parsedPasswordResetLogs(logLines)[0].internalError, "SITE_URL_UNAVAILABLE")
 })
 
-test("si la tabla de rate limit todavía no existe (migración pendiente): falla cerrado, NUNCA manda el email sin protección", async () => {
+test("si la tabla de rate limit todavía no existe (migración pendiente): falla cerrado, NUNCA manda el email, respuesta neutra", async () => {
   const { admin, calls } = createFakeAdmin({ tableMissing: true })
 
-  const result = await requestPasswordRecovery({
-    admin,
-    identifierRaw: "cliente@example.com",
-    ip: "1.2.3.4",
-    siteUrl: SITE_URL,
-  })
+  const { result } = await captureLogs(() =>
+    requestPasswordRecovery({
+      admin,
+      identifierRaw: "cliente@example.com",
+      ip: "1.2.3.4",
+      siteUrl: SITE_URL,
+    }),
+  )
 
-  assert.equal(result.ok, false)
-  if (!result.ok) assert.equal(result.status, 503)
+  assert.deepEqual(result, { ok: true, message: FORGOT_PASSWORD_GENERIC_MESSAGE })
   assert.equal(calls.resetPasswordForEmail.length, 0)
 })
 
@@ -539,4 +535,259 @@ test("ningún log de este flujo imprime el email/username completo en texto plan
   const allOutput = JSON.stringify([...logLines, ...errorLines])
   assert.doesNotMatch(allOutput, /muy-secreto@gmail\.com/)
   assert.doesNotMatch(allOutput, /\benzitop\b/)
+})
+
+// --- Fail closed del rate limit, timing uniforme, excepciones y logs ---
+
+function spyTiming() {
+  let clock = 0
+  const sleeps: number[] = []
+  const timing: ForgotPasswordTiming = {
+    now: () => clock,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+      clock += ms
+    },
+    jitter: () => 0,
+  }
+  return { timing, sleeps }
+}
+
+const NEUTRAL = { ok: true, message: FORGOT_PASSWORD_GENERIC_MESSAGE }
+
+async function run(
+  options: FakeAdminOptions,
+  input: Partial<RequestPasswordRecoveryInput> = {},
+) {
+  const fake = createFakeAdmin(options)
+  const { timing, sleeps } = spyTiming()
+  const captured = await captureLogs(() =>
+    requestPasswordRecovery({
+      admin: fake.admin,
+      identifierRaw: "cliente@example.com",
+      ip: "1.2.3.4",
+      siteUrl: SITE_URL,
+      timing,
+      ...input,
+    }),
+  )
+  return { ...captured, calls: fake.calls, sleeps, events: parsedPasswordResetLogs(captured.logLines) }
+}
+
+test("A. fallo al contar intentos => no envía email, respuesta neutra, error observable", async () => {
+  for (const options of [{ countError: true }, { countNull: true }] satisfies FakeAdminOptions[]) {
+    const { result, calls, events, errorLines } = await run(options)
+
+    assert.deepEqual(result, NEUTRAL)
+    assert.equal(calls.resetPasswordForEmail.length, 0)
+    assert.equal(calls.inserts.length, 0)
+    assert.equal(events[0].internalError, "RATE_LIMIT_STORAGE_ERROR")
+    assert.equal(errorLines[0][0], "FORGOT_PASSWORD_FAIL_CLOSED")
+  }
+})
+
+test("B. fallo al registrar el intento => no envía email, respuesta neutra", async () => {
+  const { result, calls, events } = await run({ insertError: true })
+
+  assert.deepEqual(result, NEUTRAL)
+  assert.equal(calls.resetPasswordForEmail.length, 0)
+  assert.equal(events[0].internalError, "RATE_LIMIT_STORAGE_ERROR")
+})
+
+test("una purga fallida NO bloquea (no debilita el límite) pero queda registrada", async () => {
+  const { result, calls, errorLines } = await run({ purgeError: true })
+
+  assert.deepEqual(result, NEUTRAL)
+  assert.equal(calls.resetPasswordForEmail.length, 1)
+  assert.equal(errorLines[0][0], "FORGOT_PASSWORD_RATE_LIMIT_PURGE_ERROR")
+})
+
+test("C. rate limit alcanzado => no envía, mismo body/status que un envío normal y que un fallo interno", async () => {
+  const limited = await run({ attemptCounts: { identifierDay: 6 } })
+  const normal = await run({})
+  const broken = await run({ insertError: true })
+
+  assert.equal(limited.calls.resetPasswordForEmail.length, 0)
+  assert.equal(normal.calls.resetPasswordForEmail.length, 1)
+  assert.deepEqual(limited.result, normal.result)
+  assert.deepEqual(broken.result, normal.result)
+  assert.equal(limited.events[0].rateLimited, true)
+})
+
+test("D. sin IP confiable el límite por identificador sigue operativo", async () => {
+  const limited = await run({ attemptCounts: { identifierHour: 3 } }, { ip: null })
+  assert.equal(limited.calls.resetPasswordForEmail.length, 0)
+  assert.equal(limited.calls.inserts[0].ip_hash, null)
+
+  const allowed = await run({ attemptCounts: { ipHour: 999 } }, { ip: null })
+  assert.equal(allowed.calls.resetPasswordForEmail.length, 1)
+})
+
+test("E. variantes de mayúsculas/espacios comparten la misma clave de rate limit", async () => {
+  const hashes = new Set<string>()
+  for (const identifierRaw of ["Usuario", "usuario", " usuario ", "USUARIO"]) {
+    const { calls } = await run({}, { identifierRaw })
+    hashes.add(calls.inserts[0].identifier_hash)
+  }
+  assert.equal(hashes.size, 1)
+
+  const emailHashes = new Set<string>()
+  for (const identifierRaw of ["Cliente@Example.com", " cliente@example.com "]) {
+    const { calls } = await run({}, { identifierRaw })
+    emailHashes.add(calls.inserts[0].identifier_hash)
+  }
+  assert.equal(emailHashes.size, 1)
+})
+
+test("timing: todo camino (normal, inexistente, limitado, fallos, excepción, formato) pasa una única vez por la finalización con el mismo piso", async () => {
+  const throwingFactory = () => {
+    throw new Error("Supabase admin no configurado")
+  }
+  const scenarios: Array<[string, FakeAdminOptions, Partial<RequestPasswordRecoveryInput>]> = [
+    ["email existente", { knownEmails: ["cliente@example.com"] }, {}],
+    ["username inexistente", {}, { identifierRaw: "nadie" }],
+    ["rate limited", { attemptCounts: { identifierHour: 3 } }, {}],
+    ["conteo fallido", { countError: true }, {}],
+    ["insert fallido", { insertError: true }, {}],
+    ["proveedor con error", { resetPasswordError: { message: "x", code: "unexpected_failure" } }, {}],
+    ["proveedor lanza", { resetPasswordThrows: true }, {}],
+    ["rpc lanza", { rpcError: true }, { identifierRaw: "alguien" }],
+    ["sin site url", {}, { siteUrl: null }],
+    ["admin no construible", {}, { admin: throwingFactory }],
+    ["formato inválido", {}, { identifierRaw: "" }],
+  ]
+
+  for (const [name, options, input] of scenarios) {
+    const { sleeps } = await run(options, input)
+    assert.deepEqual(sleeps, [FORGOT_PASSWORD_MIN_RESPONSE_MS], name)
+  }
+})
+
+test("timing: el piso incluye jitter acotado y no se duerme si ya se superó", async () => {
+  const sleeps: number[] = []
+  const timing: ForgotPasswordTiming = {
+    now: () => 0,
+    sleep: async (ms) => {
+      sleeps.push(ms)
+    },
+    jitter: () => FORGOT_PASSWORD_MAX_JITTER_MS,
+  }
+  await finalizeForgotPasswordResponse(0, { ok: true, message: "x" }, timing)
+  assert.deepEqual(sleeps, [FORGOT_PASSWORD_MIN_RESPONSE_MS + FORGOT_PASSWORD_MAX_JITTER_MS])
+
+  const late: ForgotPasswordTiming = { ...timing, now: () => 10_000 }
+  await finalizeForgotPasswordResponse(0, { ok: true, message: "x" }, late)
+  assert.equal(sleeps.length, 1)
+})
+
+test("timing: el trabajo dependiente de la cuenta (RPC, profiles, proveedor) corre DESPUÉS de responder vía defer", async () => {
+  for (const identifierRaw of ["cliente@example.com", "antares", "nadie"]) {
+    const deferred: Array<() => Promise<void>> = []
+    const { result, calls } = await run(
+      { usernameEmails: { antares: "antares@example.com" } },
+      { identifierRaw, defer: (task) => deferred.push(task) },
+    )
+
+    assert.deepEqual(result, NEUTRAL)
+    assert.equal(calls.rpc.length, 0, identifierRaw)
+    assert.equal(calls.resetPasswordForEmail.length, 0, identifierRaw)
+    assert.equal(deferred.length, 1, identifierRaw)
+
+    await captureLogs(() => deferred[0]())
+    assert.equal(calls.resetPasswordForEmail.length, identifierRaw === "nadie" ? 0 : 1, identifierRaw)
+  }
+})
+
+test("rate limited / fallo de la RPC atómica no programan ningún envío diferido ni llaman a Supabase Auth", async () => {
+  const cases: FakeAdminOptions[] = [
+    { attemptCounts: { identifierHour: 3 } },
+    { attemptCounts: { ipDay: 20 } },
+    { insertError: true },
+    { countError: true },
+    { countNull: true },
+    { tableMissing: true },
+  ]
+  for (const options of cases) {
+    const deferred: Array<() => Promise<void>> = []
+    const { result, calls } = await run(options, { defer: (task) => deferred.push(task) })
+    assert.deepEqual(result, NEUTRAL, JSON.stringify(options))
+    assert.equal(deferred.length, 0, JSON.stringify(options))
+    assert.equal(calls.resetPasswordForEmail.length, 0, JSON.stringify(options))
+    assert.equal(calls.rpc.length, 0, JSON.stringify(options))
+  }
+})
+
+test("sólo una admisión de la RPC atómica programa el envío diferido", async () => {
+  const deferred: Array<() => Promise<void>> = []
+  const { calls } = await run({}, { defer: (task) => deferred.push(task) })
+  assert.equal(calls.admissions, 1)
+  assert.equal(deferred.length, 1)
+})
+
+test("la decisión es UNA llamada a admit_password_reset_attempt con hashes (IP null si no hay IP confiable); sin COUNT/INSERT desde TS", async () => {
+  const withIp = await run({}, { identifierRaw: " Cliente@Example.com ", ip: "203.0.113.7" })
+  assert.equal(withIp.calls.admissions, 1)
+  assert.match(withIp.calls.inserts[0].identifier_hash, /^[0-9a-f]{64}$/)
+  assert.match(withIp.calls.inserts[0].ip_hash ?? "", /^[0-9a-f]{64}$/)
+
+  const withoutIp = await run({}, { ip: null })
+  assert.equal(withoutIp.calls.admissions, 1)
+  assert.equal(withoutIp.calls.inserts[0].ip_hash, null)
+
+  const { readFileSync } = await import("node:fs")
+  const source = readFileSync("lib/auth/forgot-password.ts", "utf8")
+  assert.match(source, /admin\.rpc\("admit_password_reset_attempt"/)
+  assert.doesNotMatch(source, /\.insert\(/)
+  assert.doesNotMatch(source, /count: "exact"/)
+  assert.doesNotMatch(source, /isPasswordResetRateLimited/)
+})
+
+test("excepciones: resolución de username, proveedor y cliente admin => respuesta neutra y error observable", async () => {
+  const rpc = await run({ rpcError: true }, { identifierRaw: "alguien" })
+  assert.deepEqual(rpc.result, NEUTRAL)
+  assert.equal(rpc.calls.resetPasswordForEmail.length, 0)
+  assert.equal(rpc.events.at(-1)?.internalError, "USERNAME_LOOKUP_ERROR")
+  assert.equal(rpc.errorLines[0][0], "FORGOT_PASSWORD_FAIL_CLOSED")
+
+  const provider = await run({ resetPasswordThrows: true })
+  assert.deepEqual(provider.result, NEUTRAL)
+  assert.equal(provider.events.at(-1)?.internalError, "PROVIDER_CALL_FAILED")
+  assert.doesNotMatch(JSON.stringify(provider.errorLines), /cliente@example\.com|fetch failed/)
+
+  const admin = await run({}, {
+    admin: () => {
+      throw new Error("Supabase admin no configurado")
+    },
+  })
+  assert.deepEqual(admin.result, NEUTRAL)
+  assert.equal(admin.events[0].internalError, "ADMIN_CLIENT_UNAVAILABLE")
+})
+
+test("logs: sin email, username, IP, token ni mensaje crudo del proveedor; providerErrorCode normalizado", async () => {
+  const { logLines, errorLines, events } = await run(
+    {
+      usernameEmails: { enzitop: "muy-secreto@gmail.com" },
+      resetPasswordError: {
+        message: "SMTP 550 muy-secreto@gmail.com token=eyJhbGciOi",
+        code: "smtp error for muy-secreto@gmail.com",
+      },
+    },
+    { identifierRaw: "EnziTop", ip: "203.0.113.7" },
+  )
+
+  const output = JSON.stringify([...logLines, ...errorLines])
+  assert.doesNotMatch(output, /muy-secreto|enzitop|203\.0\.113\.7|eyJhbGciOi|SMTP 550/i)
+  assert.equal(events[0].providerErrorCode, "provider_error_unknown")
+})
+
+test("logs: el correlationId es aleatorio por request y no deriva del identificador", async () => {
+  const first = await run({})
+  const second = await run({})
+  const firstId = first.events[0].correlationId
+  const secondId = second.events[0].correlationId
+
+  assert.notEqual(firstId, secondId)
+  const { createHash } = await import("node:crypto")
+  const digest = createHash("sha256").update("cliente@example.com").digest("hex")
+  assert.equal(digest.startsWith(firstId), false)
 })

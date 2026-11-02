@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Check, Eye, EyeOff, Hash, Lock, Mail, MapPin, User } from "lucide-react"
 
@@ -27,14 +28,11 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
   const [password, setPassword] = useState("")
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
   const [loading, setLoading] = useState(false)
-  const [resetLoading, setResetLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    setSuccess("")
     setLoading(true)
 
     const result = await login(identifier, password)
@@ -46,50 +44,6 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
     }
 
     router.push("/cuenta")
-  }
-
-  const handleForgotPassword = async () => {
-    const recoveryIdentifier = identifier.trim()
-
-    if (!recoveryIdentifier) {
-      setError("Ingresá tu usuario o email para recuperar la contraseña.")
-      setSuccess("")
-      return
-    }
-
-    setError("")
-    setSuccess("")
-    setResetLoading(true)
-
-    try {
-      // Misma ruta server-side que app/login/page.tsx (lib/auth/forgot-password.ts):
-      // aplica rate limiting persistente, resuelve username->email SOLO
-      // server-side y devuelve siempre el mismo mensaje genérico. Antes esta
-      // pantalla llamaba a supabase.auth.resetPasswordForEmail() directo
-      // desde el navegador -- sin rate limit propio (spam de emails a
-      // cualquier dirección) y sólo aceptaba email, nunca username.
-      const response = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier: recoveryIdentifier }),
-      })
-      const data = (await response.json().catch(() => null)) as
-        | { message?: string; error?: string }
-        | null
-
-      if (!response.ok) {
-        setError(data?.error || "No se pudo enviar el email.")
-        return
-      }
-
-      setSuccess(
-        data?.message || "Te enviamos un email para restablecer tu contraseña."
-      )
-    } catch {
-      setError("No se pudo enviar el email. Inténtalo de nuevo.")
-    } finally {
-      setResetLoading(false)
-    }
   }
 
   return (
@@ -124,25 +78,17 @@ export function LoginForm({ onSwitch }: { onSwitch: () => void }) {
       />
 
       <div className="flex justify-end">
-        <button
-          type="button"
-          aria-label="Recuperar contraseña"
-          onClick={handleForgotPassword}
-          disabled={resetLoading}
-          className="text-sm font-medium text-beyonix-cyan transition-colors hover:text-white disabled:opacity-50 cursor-pointer"
+        <Link
+          href="/recuperar-contrasena"
+          className="text-sm font-medium text-beyonix-cyan transition-colors hover:text-white cursor-pointer"
         >
-          {resetLoading ? "Enviando..." : "¿Olvidaste tu contraseña?"}
-        </button>
+          ¿Olvidaste tu contraseña?
+        </Link>
       </div>
 
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/8 px-4 py-3">
           <p className="text-sm text-red-400">{error}</p>
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/8 px-4 py-3">
-          <p className="text-sm text-emerald-400">{success}</p>
         </div>
       )}
 

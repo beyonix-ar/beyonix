@@ -1,8 +1,13 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 import test from "node:test"
 
-import { logPasswordResetAttempt } from "./password-reset-log.ts"
+import {
+  createPasswordResetCorrelationId,
+  logPasswordResetAttempt,
+  normalizeProviderErrorCode,
+} from "./password-reset-log.ts"
 
 function captureConsoleLog(run: () => void) {
   const original = console.log
@@ -26,6 +31,7 @@ test("logPasswordResetAttempt emite exactamente los campos declarados, en JSON",
       resetRequested: true,
       rateLimited: false,
       providerErrorCode: null,
+      internalError: null,
       correlationId: "abc123def456",
     })
   })
@@ -38,6 +44,7 @@ test("logPasswordResetAttempt emite exactamente los campos declarados, en JSON",
     "accountResolved",
     "correlationId",
     "identifierType",
+    "internalError",
     "providerErrorCode",
     "rateLimited",
     "resetRequested",
@@ -46,43 +53,45 @@ test("logPasswordResetAttempt emite exactamente los campos declarados, en JSON",
   assert.equal(parsed.accountResolved, true)
 })
 
-test("un providerErrorCode se propaga tal cual al log (para diagnóstico), nunca se oculta", () => {
-  const lines = captureConsoleLog(() => {
-    logPasswordResetAttempt({
-      identifierType: "email",
-      accountResolved: true,
-      resetRequested: true,
-      rateLimited: false,
-      providerErrorCode: "over_email_send_rate_limit",
-      correlationId: "abc123def456",
-    })
-  })
+test("providerErrorCode: sólo códigos conocidos de GoTrue pasan; cualquier otro valor/mensaje se colapsa", () => {
+  assert.equal(
+    normalizeProviderErrorCode({ code: "over_email_send_rate_limit", message: "x" }),
+    "over_email_send_rate_limit",
+  )
+  assert.equal(
+    normalizeProviderErrorCode({ code: "cliente@example.com falló", message: "SMTP 550 cliente@example.com" }),
+    "provider_error_unknown",
+  )
+  assert.equal(normalizeProviderErrorCode({ message: "Error sin código" }), "provider_error_unknown")
+  assert.equal(normalizeProviderErrorCode(new Error("boom")), "provider_error_unknown")
+  assert.equal(normalizeProviderErrorCode(null), "provider_error_unknown")
+})
 
-  const parsed = JSON.parse(lines[0][1] as string)
-  assert.equal(parsed.providerErrorCode, "over_email_send_rate_limit")
+test("correlationId es aleatorio por request y no se deriva del identificador", () => {
+  const first = createPasswordResetCorrelationId()
+  const second = createPasswordResetCorrelationId()
+
+  assert.match(first, /^[0-9a-f]{16}$/)
+  assert.notEqual(first, second)
+  const sha = createHash("sha256").update("cliente@example.com").digest("hex")
+  assert.equal(sha.startsWith(first), false)
 })
 
 const SOURCE = readFileSync("lib/auth/password-reset-log.ts", "utf8")
 
 test("la interfaz de log declara sólo campos diagnósticos, ningún campo que porte el dato sensible en sí", () => {
-  // Se revisa la firma de la interfaz (no los comentarios, que a propósito
-  // NOMBRAN "JWT"/"access token" para documentar qué NO hay que loguear).
   const interfaceBody = SOURCE.slice(
     SOURCE.indexOf("export interface PasswordResetLogEvent"),
-    SOURCE.indexOf("export function logPasswordResetAttempt"),
+    SOURCE.indexOf("export function createPasswordResetCorrelationId"),
   ).replace(/\/\*\*[\s\S]*?\*\//g, "")
 
   assert.doesNotMatch(interfaceBody, /accessToken|access_token/i)
   assert.doesNotMatch(interfaceBody, /service_role/i)
   assert.doesNotMatch(interfaceBody, /\bjwt\b/i)
   assert.doesNotMatch(interfaceBody, /recoveryUrl|redirectTo/i)
-  // No hay un campo "email"/"username" (sólo identifierType, la CATEGORÍA
-  // "email"|"username", no el valor real).
   assert.doesNotMatch(interfaceBody, /\bemail\s*:\s*string/)
   assert.doesNotMatch(interfaceBody, /\busername\s*:\s*string/)
-})
-
-test("correlationId documentado como prefijo corto no reversible, no el identificador completo", () => {
-  assert.match(SOURCE, /prefijo corto/i)
-  assert.match(SOURCE, /no reversible/i)
+  assert.doesNotMatch(interfaceBody, /\bip\s*:/)
+  // providerErrorCode es una unión cerrada, no un string libre.
+  assert.match(interfaceBody, /providerErrorCode: PasswordResetProviderErrorCode \| null/)
 })

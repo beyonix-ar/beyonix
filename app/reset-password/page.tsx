@@ -461,7 +461,7 @@ function ResetPasswordContent() {
                     </div>
 
                     <BeyonixButton asChild className="w-full" size="lg">
-                      <Link href="/login" aria-label="Solicitar un nuevo enlace">
+                      <Link href="/recuperar-contrasena" aria-label="Solicitar un nuevo enlace">
                         <LockKeyhole className="size-4" />
                         Solicitar un nuevo enlace
                       </Link>

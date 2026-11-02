@@ -53,6 +53,9 @@ export function LayoutShell({
   const isPasswordReset =
     pathname.startsWith(
       "/reset-password"
+    ) ||
+    pathname.startsWith(
+      "/recuperar-contrasena"
     )
 
   const isAuthPage =
@@ -75,7 +78,7 @@ export function LayoutShell({
     return children
   }
 
-  // /reset-password se siente parte de BEYONIX desde el primer momento: usa
+  // /reset-password y /recuperar-contrasena se sienten parte de BEYONIX desde el primer momento: usa
   // el navbar canónico igual que el resto de la tienda. Sin Footer/cookie
   // banner a propósito -- es una pantalla de una sola tarea (recuperar
   // acceso), no una página de contenido general.

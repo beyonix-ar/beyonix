@@ -435,6 +435,7 @@ const DB_TEST_FILES = [
   "lib/orders/bundle-handover-cancellation-concurrency.test.mjs",
   "lib/analytics/product-view-concurrency.test.mjs",
   "lib/business/external-sales-concurrency.test.mjs",
+  "lib/auth/password-reset-atomic-rate-limit-db.test.mjs",
 ]
 
 // PostgreSQL embebido que además ejercita rutas reales (necesita tsx y
