@@ -56,7 +56,7 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic"
 
-const LAST_UPDATED = "6 de octubre de 2026"
+const LAST_UPDATED = "3 de noviembre de 2026"
 const PAYMENT_PROOF_MAX_MB = PAYMENT_PROOF_MAX_SIZE / 1024 / 1024
 
 const LEGAL_SECTIONS = [
@@ -383,7 +383,7 @@ export default async function TerminosPage() {
                 <LegalListItem>Los productos se comercializan como 100% nuevos y sin uso.</LegalListItem>
                 <LegalListItem>La disponibilidad depende del producto y, cuando exista, de la variante seleccionada.</LegalListItem>
                 <LegalListItem>Agregar un artículo al carrito no garantiza su reserva definitiva; el stock vuelve a verificarse al crear la orden.</LegalListItem>
-                <LegalListItem>Ante una diferencia excepcional de stock, BEYONIX contactará al cliente y reintegrará íntegramente lo pagado o, si el cliente lo acepta, ofrecerá una alternativa.</LegalListItem>
+                <LegalListItem>Si por una diferencia excepcional de stock un producto ya no estuviera disponible, BEYONIX lo informará al cliente y buscará cumplir la compra cuando sea posible. Si no lo es, podrá ofrecer una alternativa equivalente, que el cliente puede aceptar o no, o cancelar la compra con el reintegro íntegro de lo pagado.</LegalListItem>
               </LegalList>
               <p>
                 Las reseñas y contenidos aportados por usuarios deben ser auténticos y respetuosos.
@@ -403,6 +403,11 @@ export default async function TerminosPage() {
                 Los importes se expresan en pesos argentinos (ARS). El precio aplicable es el que
                 figura en el resumen final al confirmar la compra. Un cambio posterior del catálogo
                 no modifica una operación ya confirmada.
+              </p>
+              <p>
+                El precio publicado de contado puede ser distinto del total a pagar en cuotas. Cuando
+                exista esa diferencia, el total aplicable se muestra antes de confirmar la compra, para
+                que el cliente pueda revisarlo antes de pagar.
               </p>
               <LegalList>
                 <LegalListItem>Las ofertas pueden estar limitadas por tiempo, stock, producto, categoría o alcance informado.</LegalListItem>
@@ -431,7 +436,7 @@ export default async function TerminosPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><CreditCard className="size-4 text-beyonix-cyan" /><strong className="text-white">Mercado Pago</strong></div>
-                  <p className="mt-2 text-xs leading-6 text-white/58">El pago se procesa en Mercado Pago con los medios que esa plataforma tenga habilitados al momento de pagar (por ejemplo, tarjetas o dinero en cuenta). Mercado Pago y, cuando corresponda, la entidad emisora deciden la aprobación o el rechazo; BEYONIX no interviene en esa decisión ni almacena los datos completos de la tarjeta. Las cuotas, recargos o promociones bancarias son las que Mercado Pago informe antes de confirmar.</p>
+                  <p className="mt-2 text-xs leading-6 text-white/58">El pago se procesa en Mercado Pago con los medios que esa plataforma tenga habilitados al momento de pagar (por ejemplo, tarjetas o dinero en cuenta). Mercado Pago y, cuando corresponda, la entidad emisora deciden la aprobación o el rechazo; BEYONIX no interviene en esa decisión ni almacena los datos completos de la tarjeta. Las promociones bancarias son las que Mercado Pago informe antes de confirmar.</p>
                 </div>
                 <div className="beyonix-legal-neutral-box rounded-xl border border-white/8 bg-black/22 p-4">
                   <div className="flex items-center gap-2.5"><Landmark className="size-4 text-beyonix-cyan" /><strong className="text-white">Transferencia bancaria</strong></div>
@@ -443,6 +448,22 @@ export default async function TerminosPage() {
                   </p>
                 </div>
               </div>
+              <p>
+                <strong className="font-bold text-white">Pago en cuotas.</strong> BEYONIX puede ofrecer
+                pago en cuotas mediante Mercado Pago. La disponibilidad de cuotas está sujeta a las
+                condiciones vigentes de Mercado Pago y del medio de pago seleccionado: la cantidad de
+                cuotas puede depender del monto, la tarjeta, el emisor y las condiciones de Mercado Pago
+                en ese momento. El precio financiado puede ser distinto del precio de contado. Antes de
+                confirmar la compra se informan, cuando corresponde, la cantidad de cuotas, el importe
+                de cada cuota, el total financiado y la información financiera aplicable.
+              </p>
+              <p>
+                La disponibilidad final del plan se valida nuevamente al momento del pago, y las
+                condiciones de financiación pueden cambiar entre la primera consulta y la confirmación.
+                Si Mercado Pago informa un cambio relevante, BEYONIX le pide al cliente revisar las
+                opciones y confirmar nuevamente. La operación no se crea con condiciones distintas de
+                las aceptadas sin esa nueva confirmación.
+              </p>
               <p>
                 Al llegar al último paso de la compra, BEYONIX reserva el stock de los productos.{" "}
                 <strong className="font-bold text-white">
@@ -481,7 +502,9 @@ export default async function TerminosPage() {
                 <strong className="text-white">Origen del saldo a favor.</strong>{" "}
                 El cliente no puede cargar saldo por su cuenta ni por ningún medio de pago. El saldo a favor
                 sólo se genera por reintegros, devoluciones, cancelaciones u otros créditos otorgados
-                directamente por BEYONIX, y queda disponible para aplicarse en compras futuras.
+                directamente por BEYONIX, y queda disponible para aplicarse en compras futuras. Es una
+                opción: cuando corresponde devolver dinero, el saldo a favor reemplaza al reintegro sólo
+                si el cliente lo acepta.
               </div>
             </LegalSection>
 
@@ -495,21 +518,24 @@ export default async function TerminosPage() {
               <LegalList>
                 <LegalListItem>El pedido avanza una vez validado el pago o acreditado el saldo a favor aplicable.</LegalListItem>
                 <LegalListItem>Antes del despacho, el cliente puede solicitar la cancelación desde el detalle de la compra, siempre que todavía no exista envío creado o movimiento logístico.</LegalListItem>
-                <LegalListItem>Si el pago ya fue confirmado, la cancelación genera un reintegro pendiente. BEYONIX iniciará la gestión dentro de un máximo de 5 días hábiles desde la aprobación del caso y el cumplimiento de las condiciones aplicables.</LegalListItem>
-                <LegalListItem>BEYONIX emite comprobantes a consumidor final. Si existe factura y corresponde revertir la operación, se emitirá la nota de crédito aplicable.</LegalListItem>
-                <LegalListItem>La factura electrónica autorizada por ARCA queda disponible desde la cuenta cuando finaliza su emisión.</LegalListItem>
+                <LegalListItem>Si el pago ya fue confirmado, la cancelación genera un reintegro. BEYONIX iniciará la gestión dentro de un máximo de 5 días hábiles desde que la cancelación queda confirmada.</LegalListItem>
+                <LegalListItem>BEYONIX emite la factura electrónica de cada compra a consumidor final, disponible desde la cuenta una vez emitida. Si la operación se revierte, se emite la nota de crédito correspondiente.</LegalListItem>
               </LegalList>
               <p>
                 El cliente debe proporcionar nombre, DNI, email y domicilio correctos para la
-                documentación como consumidor final y el envío. BEYONIX podrá cancelar una orden por falta de pago,
-                imposibilidad objetiva de validación, fraude comprobable o indisponibilidad
-                sobreviniente, restituyendo íntegramente cualquier importe cobrado.
+                facturación y el envío. BEYONIX podrá cancelar una orden por falta de pago,
+                imposibilidad objetiva de validación o fraude comprobable, restituyendo íntegramente
+                cualquier importe cobrado. Si un producto dejara de estar disponible después de la
+                compra, se aplica lo indicado en la sección &quot;Productos, variantes y
+                disponibilidad&quot;.
               </p>
               <p>
-                En la sección &quot;Mis compras&quot; un pedido puede figurar como <strong>rechazado</strong> cuando
-                nunca llegó a confirmarse el pago (por ejemplo, un comprobante de transferencia inválido) —
-                en ese caso no existe ningún cobro que reintegrar — o como <strong>cancelado</strong> cuando el
-                pago ya estaba confirmado, situación en la que aplica el reintegro pendiente descripto arriba.
+                En &quot;Mis compras&quot; un pedido figura como <strong>rechazado</strong> cuando el pago
+                o la operación no pudieron ser aceptados, y como <strong>cancelado</strong> cuando el
+                pedido dejó de continuar: por ejemplo, porque venció el plazo para pagar, se canceló el
+                intento de pago o la compra se canceló después. Si antes de la cancelación se cobró
+                dinero, BEYONIX realizará el reintegro que corresponda; si nunca hubo un cobro, no hay
+                dinero que reintegrar.
               </p>
             </LegalSection>
 
@@ -528,8 +554,10 @@ export default async function TerminosPage() {
                 se informa antes de confirmar el pago.
               </p>
               <LegalList>
-                <LegalListItem>El despacho se prepara dentro de un máximo de 48 horas hábiles desde la acreditación del pago, salvo aviso particular o fuerza mayor.</LegalListItem>
-                <LegalListItem>El tiempo de tránsito depende del destino, la modalidad, la operación del transportista, fines de semana, feriados y eventos de fuerza mayor.</LegalListItem>
+                <LegalListItem>El despacho se prepara dentro de un plazo estimado de hasta 48 horas hábiles desde la acreditación del pago, salvo aviso particular o fuerza mayor.</LegalListItem>
+                <LegalListItem>El tiempo de tránsito es estimado y depende del destino, la modalidad, la operación del transportista, fines de semana, feriados y eventos de fuerza mayor.</LegalListItem>
+                <LegalListItem>Entregar el paquete al transportista no libera a BEYONIX de sus obligaciones frente al cliente: si el envío se pierde, se daña o no llega, BEYONIX gestiona la solución con el cliente.</LegalListItem>
+                <LegalListItem>Cuando exista una bonificación de envío, sus condiciones vigentes se informan en esta página y el costo final se muestra antes de pagar.</LegalListItem>
                 <LegalListItem>El seguimiento se informa en el detalle del pedido cuando existe número o enlace disponible.</LegalListItem>
                 <LegalListItem>El cliente debe revisar destinatario, teléfono, código postal, localidad, provincia, calle, número y referencias antes de pagar.</LegalListItem>
                 <LegalListItem>Una visita fallida, un retiro vencido o datos incorrectos pueden generar devolución al remitente y necesidad de coordinar un nuevo despacho.</LegalListItem>
@@ -562,14 +590,16 @@ export default async function TerminosPage() {
                 <p className="mt-2">
                   Permite revocar la aceptación de una compra online sin indicar motivo y sin penalidad.
                   Se solicita desde el link &quot;BOTÓN DE ARREPENTIMIENTO&quot;, visible en el pie
-                  de las páginas de la tienda, sin iniciar sesión ni registrarse. Dentro
-                  de las 24 horas siguientes, BEYONIX informa por el mismo medio el código de
-                  identificación del trámite.
+                  de las páginas de la tienda, sin iniciar sesión ni registrarse. El número de pedido
+                  ayuda a ubicar la compra, pero no es indispensable: alcanza con datos que permitan
+                  identificarla. Dentro de las 24 horas siguientes, BEYONIX informa por el mismo medio
+                  el código de identificación con el que queda registrado el trámite.
                 </p>
                 <p className="mt-2">
                   BEYONIX genera la etiqueta de envío de Andreani a su cargo e indica cómo embalar el
-                  producto. El cliente lo entrega en una sucursal Andreani habilitada, con sus accesorios
-                  y elementos recibidos; no se realizan retiros a domicilio. Los gastos de devolución
+                  producto. La restitución se realiza mediante la entrega del producto por parte del
+                  cliente en una sucursal Andreani, con sus accesorios y elementos recibidos.
+                  BEYONIX no realiza retiros ni cambios de productos en domicilio. Los gastos de devolución
                   corren por cuenta de BEYONIX. Una vez restituido el producto, se reintegra lo pagado
                   por el medio de pago utilizado o, sólo si el cliente lo acepta expresamente, como saldo
                   a favor; si hubo factura, se emite la nota de crédito correspondiente.
@@ -595,7 +625,7 @@ export default async function TerminosPage() {
                       uso efectivo. Debe devolverse completo, con sus accesorios y elementos recibidos.
                     </p>
                     <p className="mt-3 border-t border-white/8 pt-3 text-white/64">
-                      BEYONIX podrá verificar la operación, el plazo y el estado del producto antes de coordinar la restitución.
+                      Para coordinar la restitución, BEYONIX identifica la operación y el plazo; el estado del producto se constata al recibirlo.
                     </p>
                   </div>
                 </div>
@@ -607,7 +637,8 @@ export default async function TerminosPage() {
                   Los cambios voluntarios por color, modelo o preferencia personal son diferentes al
                   derecho de arrepentimiento y estarán sujetos al estado del producto, disponibilidad
                   de stock y políticas comerciales de BEYONIX. En estos casos, el costo de envío o
-                  reenvío queda a cargo del cliente, salvo que BEYONIX indique lo contrario.
+                  reenvío queda a cargo del cliente, salvo que BEYONIX indique lo contrario. El producto
+                  se devuelve en una sucursal Andreani; no se realizan cambios ni retiros en domicilio.
                 </p>
               </div>
             </LegalSection>
@@ -650,13 +681,23 @@ export default async function TerminosPage() {
               </p>
               <p>
                 Cuando corresponda un reintegro, BEYONIX iniciará la gestión dentro de un máximo de
-                5 días hábiles desde la aprobación del caso. La acreditación final puede depender del
-                medio de pago, la entidad bancaria, Mercado Pago o los ciclos de cierre aplicables.
+                5 días hábiles. Si el producto debe volver, el plazo se cuenta desde su recepción y,
+                cuando corresponda, la inspección necesaria para identificarlo y constatar su estado.
+                Esa verificación es logística: no condiciona derechos que la ley reconoce al cliente.
+                La acreditación final puede depender del medio de pago, la entidad bancaria, Mercado
+                Pago o los ciclos de cierre aplicables.
               </p>
               <p>
-                Cuando corresponda devolver el producto, BEYONIX genera el envío con Andreani e informa por el
-                chat cómo embalarlo. El cliente lo entrega en una sucursal Andreani habilitada; no se realizan
-                retiros a domicilio.
+                La modalidad de restitución de productos utilizada por BEYONIX es mediante entrega del
+                producto por parte del cliente en una sucursal Andreani, utilizando la etiqueta o
+                instrucciones provistas por BEYONIX cuando corresponda. BEYONIX informa por el chat cómo
+                embalarlo. BEYONIX no realiza retiros ni cambios de productos en domicilio.
+              </p>
+              <p>
+                Entregar el producto en la sucursal no implica que el cliente deba pagar el envío: el
+                costo logístico de la devolución lo asume BEYONIX cuando corresponde legalmente o según
+                la resolución del caso. Si se resuelve un reemplazo, la nueva unidad se envía al cliente
+                por el circuito de envío habitual.
               </p>
             </LegalSection>
 
@@ -681,7 +722,7 @@ export default async function TerminosPage() {
               </p>
               <LegalList>
                 <LegalListItem>BEYONIX gestiona la garantía frente al cliente durante el plazo indicado.</LegalListItem>
-                <LegalListItem>Cuando el producto deba trasladarse para cumplir la garantía legal, el transporte y los seguros correspondientes son a cargo de los responsables de la garantía: BEYONIX genera la etiqueta de Andreani y el cliente entrega el producto en una sucursal habilitada.</LegalListItem>
+                <LegalListItem>Cuando el producto deba trasladarse para cumplir la garantía legal, el transporte y los seguros correspondientes son a cargo de los responsables de la garantía: BEYONIX genera la etiqueta de Andreani y el cliente entrega el producto en una sucursal Andreani. No se realizan retiros a domicilio.</LegalListItem>
                 <LegalListItem>El tiempo en que el producto esté fuera de uso por la reparación prolonga el plazo de garantía.</LegalListItem>
                 <LegalListItem>Si la reparación no resulta satisfactoria, el cliente puede optar por las alternativas del artículo 17 de la Ley 24.240: sustitución por un producto de idénticas características, devolución con reintegro del importe pagado o una quita proporcional del precio.</LegalListItem>
               </LegalList>
@@ -754,8 +795,9 @@ export default async function TerminosPage() {
             >
               <p>
                 Estos términos rigen desde la fecha de actualización indicada. Las modificaciones
-                futuras se publicarán en esta página y no alterarán retroactivamente las condiciones
-                de una compra ya confirmada, salvo que resulten más favorables o sean exigidas por ley.
+                futuras se publicarán en esta página y se aplicarán a las operaciones posteriores a su
+                publicación: no alteran retroactivamente las condiciones aceptadas en una compra
+                anterior, salvo que resulten más favorables o sean exigidas por ley.
               </p>
               <p>
                 Se aplica la legislación de la República Argentina, especialmente la Ley 24.240 de

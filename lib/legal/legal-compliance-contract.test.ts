@@ -53,7 +53,26 @@ test("términos: normativa vigente, sin la resolución derogada como vigente ni 
   assert.doesNotMatch(terms, /cargas de saldo/, "el cliente no puede cargar saldo")
   assert.match(terms, /disposici%C3%B3n-954-2025/)
   assert.match(terms, /Los gastos de devolución\s+corren por cuenta de BEYONIX/)
-  assert.match(terms, /no se realizan retiros a domicilio/)
+  // Restitución sólo por sucursal Andreani: sin retiro ni cambio en domicilio y sin excepciones.
+  assert.match(terms, /entrega del\s+producto por parte del cliente en una sucursal Andreani/)
+  assert.match(terms, /BEYONIX no realiza retiros ni cambios de productos en domicilio/)
+  assert.doesNotMatch(terms, /evaluará una\s+alternativa|modalidad habitual|coordinar otra modalidad|casos excepcionales|podrá retirarse/)
+  // Llevarlo a la sucursal no traslada el costo logístico que corresponde a BEYONIX.
+  assert.match(terms, /costo logístico de la devolución lo asume BEYONIX cuando corresponde legalmente/)
+  // Financiación: sin promesa de "sin interés"; cambios de plan exigen nueva confirmación.
+  assert.doesNotMatch(terms, /sin inter[eé]s/i)
+  assert.match(terms, /El precio financiado puede ser distinto del precio de contado/)
+  assert.match(terms, /La disponibilidad de cuotas está sujeta a las\s+condiciones vigentes de Mercado Pago y del medio de pago seleccionado/)
+  assert.match(terms, /sin esa nueva confirmación/)
+  // Reintegros: sin plazo atado a una "aprobación" discrecional.
+  assert.doesNotMatch(terms, /desde la aprobación del caso/)
+  // Estados: "cancelado" no implica pago confirmado; el reintegro depende de un cobro real.
+  assert.doesNotMatch(terms, /cancelado<\/strong>[^.]*pago ya estaba confirmado/)
+  assert.match(terms, /Si antes de la cancelación se cobró\s+dinero, BEYONIX realizará el reintegro que corresponda/)
+  assert.match(terms, /si nunca hubo un cobro, no hay\s+dinero que reintegrar/)
+  // Arrepentimiento: sin login ni número de pedido obligatorio.
+  assert.match(terms, /sin iniciar sesión ni registrarse/)
+  assert.match(terms, /no es indispensable/)
   assert.match(terms, /TRANSFER_PAYMENT_EXPIRATION_HOURS/)
   assert.match(terms, /artículo 17 de la Ley 24\.240/)
   assert.match(terms, /AAIP_PERSONAL_DATA_NOTICE/)
