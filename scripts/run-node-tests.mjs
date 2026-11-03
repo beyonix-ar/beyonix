@@ -460,6 +460,7 @@ const SERVER_TSX_TEST_FILES = [
   "lib/admin/purchase-barcode-edit-routes.test.ts",
   "lib/security/proxy-csp.test.ts",
   "lib/orders/admin-pending-facts-server.test.ts",
+  "lib/orders/local-delivery-status-route.test.ts",
   "lib/orders/financial-resolution-server.test.ts",
   "lib/orders/automatic-cancellation-worker.test.ts",
   "lib/arca/fiscal-history-routes.test.ts",

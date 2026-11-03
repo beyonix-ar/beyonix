@@ -5,6 +5,7 @@ import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { canChangeOrderStatus } from "@/lib/orders/order-status-authorization"
+import { getGenericStatusChangeLocalDeliveryError } from "@/lib/orders/local-delivery-status"
 import { activatePendingItemWarranties } from "@/lib/orders/warranty-activation"
 
 // BLOQUEANTE 1 (auditoría Andreani Parte 3/4): "cancelado" NO es un estado
@@ -61,6 +62,25 @@ const ANDREANI_PHYSICAL_STATUSES = [
   "en_devolucion",
   "devuelto_beyonix",
 ]
+
+/**
+ * Datos leídos sobre los que se validó el cambio: tienen que seguir iguales
+ * al escribir (estado de origen, cancelación, estado financiero, evidencia de
+ * pago, cambio pendiente, proveedor/Envío BEYONIX, entrega y envío Andreani).
+ */
+const STATUS_CHANGE_UNCHANGED_COLUMNS = [
+  "estado",
+  "cancelled_at",
+  "financial_status",
+  "payment_status",
+  "paid_at",
+  "payment_confirmed_amount",
+  "order_change_status",
+  "shipping_provider",
+  "envio_proveedor",
+  "delivered_at",
+  "andreani_envio_id",
+] as const
 
 function normalizeExternalUrl(value: unknown) {
   if (typeof value !== "string") return null
@@ -148,7 +168,7 @@ export async function PATCH(
 
   const { data: currentOrder, error: currentOrderError } = await auth.admin
     .from("ordenes")
-    .select("id, estado, delivered_at, payment_status, paid_at, financial_status, order_change_status, andreani_envio_id, andreani_estado, andreani_creation_environment, andreani_tracking_event_at, shipping_provider, envio_proveedor")
+    .select("id, estado, delivered_at, cancelled_at, payment_status, paid_at, payment_confirmed_amount, financial_status, order_change_status, andreani_envio_id, andreani_estado, andreani_creation_environment, andreani_tracking_event_at, shipping_provider, envio_proveedor")
     .eq("id", orderId)
     .maybeSingle()
 
@@ -157,6 +177,13 @@ export async function PATCH(
       { error: "No encontramos el pedido." },
       { status: 404 },
     )
+  }
+
+  // Envío BEYONIX: En camino/Entregado sólo por el circuito local
+  // (advanceLocalDelivery), ningún rol puede saltarlo por esta ruta.
+  const localDeliveryError = getGenericStatusChangeLocalDeliveryError(currentOrder, estado)
+  if (localDeliveryError) {
+    return NextResponse.json({ error: localDeliveryError }, { status: 409 })
   }
 
   if (currentOrder.estado === "cancelado" || ["cancelled", "refund_pending", "refunded"].includes(currentOrder.financial_status ?? "")) {
@@ -244,17 +271,32 @@ export async function PATCH(
       ? { envio_proveedor: shippingProvider }
       : {}),
   }
-  const { data, error } = await auth.admin
+  // UPDATE condicional: sólo escribe si todo lo validado arriba sigue igual
+  // que en la lectura. Si entre medio otro proceso canceló, avanzó el
+  // circuito local, cambió el estado financiero o el pago, afecta 0 filas y
+  // se responde conflicto en vez de pisar ese cambio.
+  let conditionalUpdate = auth.admin
     .from("ordenes")
     .update(statusUpdate)
     .eq("id", orderId)
-    .select()
-    .single()
+  for (const column of STATUS_CHANGE_UNCHANGED_COLUMNS) {
+    const value: unknown = currentOrder[column]
+    conditionalUpdate = value === null || value === undefined
+      ? conditionalUpdate.is(column, null)
+      : conditionalUpdate.eq(column, value)
+  }
+  const { data, error } = await conditionalUpdate.select().maybeSingle()
 
-  if (error || !data) {
+  if (error) {
     return NextResponse.json(
-      { error: error?.message || "No se pudo actualizar el estado del pedido." },
+      { error: "No se pudo actualizar el estado del pedido." },
       { status: 500 },
+    )
+  }
+  if (!data) {
+    return NextResponse.json(
+      { error: "El pedido cambió mientras lo actualizabas. Actualizá y volvé a intentar." },
+      { status: 409 },
     )
   }
 

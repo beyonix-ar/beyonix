@@ -17,9 +17,9 @@ import { createRoot } from "react-dom/client"
 import { LocalDeliveryPanel } from "@/app/admin/sections/despachos/local-delivery-panel"
 import { getLocalDeliveryStage, getLocalDeliveryTransitionError } from "@/lib/orders/local-delivery-status"
 const orders = [
-  { id: 11, estado: "pagado", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", cliente_nombre: "Ana Pérez", cliente_direccion: "Córdoba 1234", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: "3415550000" },
-  { id: 12, estado: "en_camino", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", cliente_nombre: "Ñandú SRL", cliente_direccion: "Oroño 55", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
-  { id: 13, estado: "entregado", delivered_at: "2026-11-03T14:00:00Z", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", cliente_nombre: "Luis", cliente_direccion: "Mitre 10", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
+  { id: 11, estado: "pagado", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Ana Pérez", cliente_direccion: "Córdoba 1234", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: "3415550000" },
+  { id: 12, estado: "en_camino", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Ñandú SRL", cliente_direccion: "Oroño 55", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
+  { id: 13, estado: "entregado", delivered_at: "2026-11-03T14:00:00Z", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Luis", cliente_direccion: "Mitre 10", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
 ]
 // Efectos que fallaron y quedan para "Reintentar avisos".
 const pending = { 13: ["delivered_email"] }

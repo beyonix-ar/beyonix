@@ -1,17 +1,23 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
-import { activatePendingItemWarranties } from "@/lib/orders/warranty-activation"
+import { startPendingItemWarranties } from "@/lib/orders/warranty-activation"
 import { getLocalDeliveryStage, isLocalDeliveryAction } from "@/lib/orders/local-delivery-status"
 import {
   advanceLocalDelivery,
   getMissingLocalDeliveryEffects,
-  LOCAL_DELIVERY_EFFECTS_BY_STAGE,
+  isPendingWarrantyItem,
+  parseLocalDeliveryEffectRecord,
   retryLocalDeliveryEffects,
+  summarizeLocalDeliveryEffects,
   type LocalDeliveryEffect,
+  type LocalDeliveryEffectRecord,
+  type LocalDeliveryEffectState,
   type LocalDeliveryOrderRecord,
   type LocalDeliveryServiceDeps,
+  type LocalDeliveryWarrantyItem,
 } from "@/lib/orders/local-delivery-service"
 import { LOCAL_DELIVERY_PROVIDER } from "@/lib/shipping/local-delivery"
+import { CONFIRMED_PAYMENT_STATUSES } from "@/lib/orders/order-payment-status"
 
 // Envío BEYONIX: circuito local mínimo, separado de Andreani (sin etiqueta,
 // guía ni Bulto). Lo opera cualquier operador interno: a diferencia de
@@ -21,9 +27,17 @@ const LIST_COLUMNS =
 const ORDER_COLUMNS =
   "id,estado,shipping_provider,envio_proveedor,delivered_at,cancelled_at,financial_status,order_change_status,paid_at,payment_status,payment_confirmed_amount,shipping_cost_real,cliente_email,cliente_nombre"
 const RECENTLY_DELIVERED_DAYS = 3
-// Marcas de efectos en order_audit_events (metadata.localDeliveryEffect).
-const EFFECT_ACTIONS = ["order_status_changed", "local_delivery_email_sent"]
-const ALL_EFFECTS = new Set<string>(Object.values(LOCAL_DELIVERY_EFFECTS_BY_STAGE).flat())
+// Filas de efectos en order_audit_events (metadata.localDeliveryEffect +
+// metadata.localDeliveryEffectState). Append-only: nunca se borran.
+const EMAIL_ACTION_BY_STATE: Record<LocalDeliveryEffectState, string> = {
+  reserved: "local_delivery_email_reserved",
+  completed: "local_delivery_email_sent",
+  failed: "local_delivery_email_failed",
+  superseded: "local_delivery_email_superseded",
+}
+const WARRANTY_ACTION = "order_item_warranty_started"
+const EFFECT_ACTIONS = ["order_status_changed", WARRANTY_ACTION, ...Object.values(EMAIL_ACTION_BY_STATE)]
+const WARRANTY_COLUMNS = "id,warranty_started_at,warranty_expires_at,warranty_status,warranty_months"
 
 type AdminClient = Exclude<Awaited<ReturnType<typeof requireOperator>>, { error: unknown }>["admin"]
 
@@ -40,13 +54,39 @@ type LocalDeliveryRow = {
   cp_destino: string | null
 }
 
-function effectOf(metadata: unknown): LocalDeliveryEffect | null {
-  const value = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).localDeliveryEffect : null
-  return typeof value === "string" && ALL_EFFECTS.has(value) ? value as LocalDeliveryEffect : null
+type EligibilityFilterable<Q> = {
+  eq(column: string, value: string): Q
+  is(column: string, value: null): Q
+  not(column: string, operator: string, value: null): Q
+  gt(column: string, value: number): Q
+  in(column: string, values: readonly string[]): Q
 }
 
-function isPendingWarrantyItem(item: { warranty_status: string | null }) {
-  return item.warranty_status === null || item.warranty_status === "pending_delivery"
+/**
+ * Condiciones de `getLocalDeliveryEligibilityError` evaluadas por la base en
+ * el mismo statement: Envío BEYONIX, evidencia real de pago
+ * (hasConfirmedPaymentEvidence) y sin cancelación. refund_pending, refunded y
+ * cancelled quedan afuera por `financial_status = payment_confirmed`.
+ */
+function whereLocalDeliveryEligible<Q extends EligibilityFilterable<Q>>(query: Q): Q {
+  return query
+    .eq("shipping_provider", LOCAL_DELIVERY_PROVIDER)
+    .eq("financial_status", "payment_confirmed")
+    .is("cancelled_at", null)
+    .not("paid_at", "is", null)
+    .gt("payment_confirmed_amount", 0)
+    .in("payment_status", CONFIRMED_PAYMENT_STATUSES)
+}
+
+function effectRecords(rows: Array<{ metadata: unknown; created_at: string }>) {
+  return rows
+    .map((row) => parseLocalDeliveryEffectRecord(row.metadata, row.created_at))
+    .filter((record): record is LocalDeliveryEffectRecord => record !== null)
+}
+
+function effectAction(effect: LocalDeliveryEffect, state: LocalDeliveryEffectState) {
+  if (effect.endsWith("_email")) return EMAIL_ACTION_BY_STATE[state]
+  return effect === "delivered_warranty" ? WARRANTY_ACTION : "order_status_changed"
 }
 
 function serviceDeps(admin: AdminClient, actorId: string): LocalDeliveryServiceDeps {
@@ -57,54 +97,53 @@ function serviceDeps(admin: AdminClient, actorId: string): LocalDeliveryServiceD
       return data as LocalDeliveryOrderRecord | null
     },
     async transitionOrder({ orderId, fromEstado, action, deliveredAt }) {
-      // Atómico: estado de origen, proveedor, pago confirmado y sin
+      // Atómico: estado de origen, proveedor, evidencia de pago y sin
       // cancelación tienen que seguir siendo ciertos al escribir.
-      const { data, error } = await admin
+      const query = admin
         .from("ordenes")
         .update({ estado: action, ...(deliveredAt ? { delivered_at: deliveredAt } : {}) })
         .eq("id", orderId)
         .eq("estado", fromEstado)
-        .eq("shipping_provider", LOCAL_DELIVERY_PROVIDER)
-        .eq("financial_status", "payment_confirmed")
-        .is("cancelled_at", null)
+      const { data, error } = await whereLocalDeliveryEligible<typeof query>(query)
         .select(ORDER_COLUMNS)
         .maybeSingle()
       if (error) throw new Error("ORDER_TRANSITION_FAILED")
       return data as LocalDeliveryOrderRecord | null
     },
-    async loadEffectMarkers(orderId) {
+    async loadEffectRecords(orderId) {
       const { data, error } = await admin
-        .from("order_audit_events").select("metadata").eq("order_id", orderId).in("action", EFFECT_ACTIONS)
-      if (error) throw new Error("EFFECT_MARKERS_READ_FAILED")
-      return new Set((data ?? []).map((row) => effectOf(row.metadata)).filter((effect): effect is LocalDeliveryEffect => effect !== null))
+        .from("order_audit_events").select("metadata,created_at").eq("order_id", orderId).in("action", EFFECT_ACTIONS)
+      if (error) throw new Error("EFFECT_RECORDS_READ_FAILED")
+      return effectRecords(data ?? [])
     },
-    async recordEffect(orderId, effect, metadata) {
-      const isEmail = effect.endsWith("_email")
-      const newEstado = typeof metadata.newEstado === "string" ? metadata.newEstado : null
-      const { data, error } = await admin.from("order_audit_events").insert({
+    async recordEffect(orderId, effect, state, metadata) {
+      const action = effectAction(effect, state)
+      const isStatus = action === "order_status_changed"
+      const isWarranty = action === WARRANTY_ACTION
+      const { error } = await admin.from("order_audit_events").insert({
         order_id: orderId,
         actor_type: "admin",
         actor_id: actorId,
-        action: isEmail ? "local_delivery_email_sent" : "order_status_changed",
-        previous_status: isEmail ? null : (typeof metadata.previousEstado === "string" ? metadata.previousEstado : null),
-        new_status: isEmail ? null : newEstado,
-        metadata: { ...metadata, shippingProvider: LOCAL_DELIVERY_PROVIDER, localDeliveryEffect: effect },
-      }).select("id").single()
-      if (error || !data) throw new Error("EFFECT_RECORD_FAILED")
-      return String(data.id)
+        action,
+        previous_status: isStatus && typeof metadata.previousEstado === "string" ? metadata.previousEstado : isWarranty ? "pending_delivery" : null,
+        new_status: isStatus && typeof metadata.newEstado === "string" ? metadata.newEstado : isWarranty ? "active" : null,
+        metadata: { ...metadata, shippingProvider: LOCAL_DELIVERY_PROVIDER, localDeliveryEffect: effect, localDeliveryEffectState: state },
+      })
+      if (error) throw new Error("EFFECT_RECORD_FAILED")
     },
-    async removeEffect(markerId) {
-      const { error } = await admin.from("order_audit_events").delete().eq("id", markerId).eq("action", "local_delivery_email_sent")
-      if (error) throw new Error("EFFECT_RELEASE_FAILED")
+    async activateWarranties(orderId, deliveredAt) {
+      if (!await startPendingItemWarranties(admin, { orderId, deliveredAt })) throw new Error("WARRANTY_READ_FAILED")
     },
-    activateWarranties(orderId, deliveredAt) {
-      return activatePendingItemWarranties(admin, { orderId, deliveredAt, actorType: "admin", actorId })
-    },
-    async countPendingWarranties(orderId) {
-      const { data, error } = await admin.from("orden_items").select("warranty_status")
-        .eq("orden_id", orderId).is("warranty_started_at", null).is("warranty_expires_at", null)
+    async loadWarrantyItems(orderId) {
+      const { data, error } = await admin.from("orden_items").select(WARRANTY_COLUMNS).eq("orden_id", orderId)
       if (error) throw new Error("WARRANTY_READ_FAILED")
-      return (data ?? []).filter(isPendingWarrantyItem).length
+      return (data ?? []) as LocalDeliveryWarrantyItem[]
+    },
+    async authorizeEmail(orderId, expectedEstado) {
+      const query = admin.from("ordenes").select("id").eq("id", orderId).eq("estado", expectedEstado)
+      const { data, error } = await whereLocalDeliveryEligible<typeof query>(query).maybeSingle()
+      if (error) throw new Error("EMAIL_AUTHORIZATION_FAILED")
+      return data !== null
     },
     sendStateEmail: (order) => sendOrderStateEmail(order),
     now: () => new Date().toISOString(),
@@ -116,10 +155,10 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error
 
   const deliveredSince = new Date(Date.now() - RECENTLY_DELIVERED_DAYS * 86_400_000).toISOString()
-  const base = () => auth.admin.from("ordenes").select(LIST_COLUMNS)
-    .eq("shipping_provider", LOCAL_DELIVERY_PROVIDER)
-    .eq("financial_status", "payment_confirmed")
-    .is("cancelled_at", null)
+  const base = () => {
+    const query = auth.admin.from("ordenes").select(LIST_COLUMNS)
+    return whereLocalDeliveryEligible<typeof query>(query)
+  }
   const [active, delivered] = await Promise.all([
     base().in("estado", ["pagado", "preparado", "en_camino"]).order("id", { ascending: true }).limit(200),
     base().eq("estado", "entregado").gte("delivered_at", deliveredSince).order("delivered_at", { ascending: false }).limit(50),
@@ -132,22 +171,17 @@ export async function GET(request: Request) {
   // Efectos pendientes (auditoría, garantía, email) para "Reintentar avisos".
   const [markers, warranties] = ids.length
     ? await Promise.all([
-        auth.admin.from("order_audit_events").select("order_id,metadata").in("order_id", ids).in("action", EFFECT_ACTIONS),
-        auth.admin.from("orden_items").select("orden_id,warranty_status").in("orden_id", ids)
+        auth.admin.from("order_audit_events").select("order_id,metadata,created_at").in("order_id", ids).in("action", EFFECT_ACTIONS),
+        auth.admin.from("orden_items").select("orden_id,warranty_started_at,warranty_expires_at,warranty_status").in("orden_id", ids)
           .is("warranty_started_at", null).is("warranty_expires_at", null),
       ])
     : [{ data: [], error: null }, { data: [], error: null }]
   if (markers.error || warranties.error) {
     return Response.json({ error: "No se pudieron cargar las entregas locales." }, { status: 500 })
   }
-  const completed = new Map<number, Set<LocalDeliveryEffect>>()
-  for (const row of markers.data ?? []) {
-    const effect = effectOf(row.metadata)
-    if (!effect) continue
-    const set = completed.get(row.order_id) ?? new Set<LocalDeliveryEffect>()
-    set.add(effect)
-    completed.set(row.order_id, set)
-  }
+  const rowsByOrder = new Map<number, Array<{ metadata: unknown; created_at: string }>>()
+  for (const row of markers.data ?? []) rowsByOrder.set(row.order_id, [...(rowsByOrder.get(row.order_id) ?? []), row])
+  const nowMs = Date.now()
   const pendingWarranties = new Map<number, number>()
   for (const item of warranties.data ?? []) {
     if (isPendingWarrantyItem(item)) pendingWarranties.set(item.orden_id, (pendingWarranties.get(item.orden_id) ?? 0) + 1)
@@ -159,7 +193,11 @@ export async function GET(request: Request) {
       return {
         ...row,
         stage,
-        pendingEffects: getMissingLocalDeliveryEffects(stage, completed.get(row.id) ?? new Set(), pendingWarranties.get(row.id) ?? 0),
+        pendingEffects: getMissingLocalDeliveryEffects(
+          stage,
+          summarizeLocalDeliveryEffects(effectRecords(rowsByOrder.get(row.id) ?? []), nowMs),
+          pendingWarranties.get(row.id) ?? 0,
+        ),
       }
     }),
   }, { headers: { "Cache-Control": "no-store" } })

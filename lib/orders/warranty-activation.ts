@@ -27,6 +27,34 @@ export async function activatePendingItemWarranties(
     actorId: string | null
   },
 ) {
+  const result = await startPendingItemWarranties(admin, { orderId, deliveredAt })
+  if (!result || !result.updates.length) return
+
+  await appendOrderAuditEvent(admin, {
+    orderId,
+    actorType,
+    actorId,
+    action: "order_item_warranty_started",
+    previousStatus: "pending_delivery",
+    newStatus: "active",
+    metadata: {
+      delivered_at: deliveredAt,
+      previous: result.previousByItemId,
+      next: result.updates,
+    },
+  })
+}
+
+/**
+ * Activación por ítem SIN auditoría: cada UPDATE sólo aplica si el ítem
+ * todavía no tiene garantía iniciada, así que repetirla nunca duplica ni
+ * pisa una garantía. `null` si no se pudieron leer los ítems. Envío BEYONIX
+ * la usa para auditar una sola vez, recién cuando verificó todos los ítems.
+ */
+export async function startPendingItemWarranties(
+  admin: AdminClient,
+  { orderId, deliveredAt }: { orderId: number; deliveredAt: string },
+) {
   const { data: items, error: itemsError } = await admin
     .from("orden_items")
     .select("id, warranty_started_at, warranty_expires_at, warranty_status, warranty_months")
@@ -37,7 +65,7 @@ export async function activatePendingItemWarranties(
       orderId,
       message: itemsError.message,
     })
-    return
+    return null
   }
 
   const pendingItems = (items ?? []).filter(
@@ -49,7 +77,7 @@ export async function activatePendingItemWarranties(
         item.warranty_status === "pending_delivery"),
   )
 
-  if (!pendingItems.length) return
+  if (!pendingItems.length) return { previousByItemId: {}, updates: [], failedItemIds: [] }
 
   const previousByItemId = Object.fromEntries(
     pendingItems.map((item) => [
@@ -78,6 +106,7 @@ export async function activatePendingItemWarranties(
     }
   })
 
+  const failedItemIds: number[] = []
   for (const update of updates) {
     const { error } = await admin
       .from("orden_items")
@@ -97,20 +126,9 @@ export async function activatePendingItemWarranties(
         itemId: update.id,
         message: error.message,
       })
+      failedItemIds.push(update.id)
     }
   }
 
-  await appendOrderAuditEvent(admin, {
-    orderId,
-    actorType,
-    actorId,
-    action: "order_item_warranty_started",
-    previousStatus: "pending_delivery",
-    newStatus: "active",
-    metadata: {
-      delivered_at: deliveredAt,
-      previous: previousByItemId,
-      next: updates,
-    },
-  })
+  return { previousByItemId, updates, failedItemIds }
 }

@@ -10,6 +10,7 @@ import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
 import { LocalDeliveryOrderCard } from "./local-delivery-order-card"
 import { isLocalDeliveryOrder, LOCAL_DELIVERY_NAME } from "@/lib/shipping/local-delivery"
+import { getGenericStatusChangeLocalDeliveryError } from "@/lib/orders/local-delivery-status"
 import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
 import { FinancialResolutionWizard, useFinancialResolutionView } from "./financial-resolution-wizard"
 import { CancellationJourneyPanel } from "./cancellation-journey-panel"
@@ -7347,6 +7348,14 @@ export function AdminPedidos({
     const estadoActual = pedido.estado
 
     if (estadoActual === nextEstado) return
+
+    // Envío BEYONIX: En camino/Entregado sólo desde Despachos → Entregas
+    // locales (mismo rechazo que aplica el servidor).
+    const localDeliveryError = getGenericStatusChangeLocalDeliveryError(pedido, nextEstado)
+    if (localDeliveryError) {
+      setNotice({ type: "error", message: localDeliveryError })
+      return
+    }
 
     // BLOQUEANTE 1 (auditoría Andreani Parte 3/4): "Cancelado" ya no se
     // aplica vía PATCH genérico de estado (el backend lo rechaza -- ver
