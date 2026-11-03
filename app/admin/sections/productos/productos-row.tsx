@@ -976,7 +976,7 @@ export function ProductosRow({
             onClick={() =>
               onEdit(producto)
             }
-            className="flex size-9 items-center justify-center rounded-xl border border-beyonix-sky/25 bg-beyonix-blue/10 text-beyonix-sky transition-colors hover:border-beyonix-sky/50 hover:bg-beyonix-blue/20 hover:text-white cursor-pointer"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-beyonix-sky/25 bg-beyonix-blue/10 text-beyonix-sky transition-colors hover:border-beyonix-sky/50 hover:bg-beyonix-blue/20 hover:text-white cursor-pointer"
           >
             <Pencil className="size-3.5" />
           </button>}
@@ -1088,7 +1088,7 @@ export function ProductosRow({
                             title={`Editar únicamente ${variante.nombre}`}
                             aria-label={`Editar variante ${variante.nombre}`}
                             onClick={() => startEditVariant(variante)}
-                            className="flex size-8 cursor-pointer items-center justify-center rounded-lg border border-beyonix-sky/22 bg-beyonix-blue/8 text-beyonix-sky transition hover:border-beyonix-sky/45 hover:text-white"
+                            className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-beyonix-sky/22 bg-beyonix-blue/8 text-beyonix-sky transition hover:border-beyonix-sky/45 hover:text-white"
                           >
                             <Pencil className="size-3.5" />
                           </button>
