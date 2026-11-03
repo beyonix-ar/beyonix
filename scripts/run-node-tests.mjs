@@ -48,8 +48,11 @@ const TEST_FILES = [
   "lib/products/product-activation.test.ts",
   "lib/products/product-variant-state-db.test.ts",
   "lib/products/variant-parent-integrity-db.test.ts",
+  "lib/products/featured-products.test.ts",
+  "lib/products/featured-position-db.test.ts",
   "lib/products/installments.test.ts",
   "lib/pricing/product-pricing.test.ts",
+  "lib/pricing/product-cash-profit.test.ts",
   "lib/pricing/financed-pricing.test.ts",
   "lib/pricing/installments-checkout-total.test.ts",
   "lib/pricing/installments-without-surcharge-sql.test.ts",
@@ -416,6 +419,7 @@ const TSX_TEST_FILES = [
 // paralelo evita competir por procesos Windows con los demás tests de DB.
 const DB_TEST_FILES = [
   "lib/fixtures/isolated-postgres.test.mjs",
+  "lib/products/featured-position-concurrency.test.mjs",
   "lib/cart/checkout-step-reservations.test.mjs",
   "lib/cart/random-stock-reservations.test.mjs",
   "lib/cart/checkout-quantity-cap-db.test.mjs",
@@ -459,6 +463,7 @@ const SERVER_TSX_TEST_FILES = [
   "lib/arca/invoice-pdf-environment.test.ts",
   "lib/arca/invoice-pdf-data.test.ts",
   "scripts/arca-homologation/harness.test.ts",
+  "lib/products/featured-cash-profit-routes.test.ts",
   "lib/reviews/reviews-routes.test.ts",
   "lib/cart/shipping-bonus-terms.test.ts",
   "lib/admin/system-health-routes.test.ts",

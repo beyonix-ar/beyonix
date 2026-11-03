@@ -14,8 +14,10 @@ const stubs: Plugin = {
         export function useProductoForm() {
           const [form, setForm] = useState({ nombre: "Apoyabrazos ergonómico", slug: "apoyabrazos", sku: "AP01", categoria_id: "1", precio: "20000", precio_anterior: "25000", pricingMode: "manual", targetMarginPercent: "", descripcion: "", video_url: "", peso_empaquetado_kg: "1", largo_paquete_cm: "20", ancho_paquete_cm: "10", alto_paquete_cm: "5", destacado: false, activo: false });
           const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+          const [featuredPosition, setFeaturedPosition] = useState(null);
+          const applyFeatured = async (next) => { setForm((current) => ({ ...current, destacado: next.destacado })); setFeaturedPosition(next.featuredPosition); return { ...next, catalogRevision: 1 } };
           window.formValue = form;
-          return { form, error: "", success: "", saving: false, savedId: null, categorias: [{ id: 1, nombre: "Accesorios" }, { id: 2, nombre: "Hogar" }], logisticsFieldError: null, knownUnitCost: null, variantCosts: [], missingVariantCosts: [], priceRecalculation: null, setField, showError: () => {}, submit: async () => { window.saveCalls = (window.saveCalls || 0) + 1 }, handleNombreChange: (value) => setField("nombre", value) };
+          return { form, error: "", success: "", saving: false, savedId: null, categorias: [{ id: 1, nombre: "Accesorios" }, { id: 2, nombre: "Hogar" }], logisticsFieldError: null, knownUnitCost: null, variantCosts: [], missingVariantCosts: [], priceRecalculation: null, featuredPosition, setField, showError: () => {}, applyFeatured, submit: async () => { window.saveCalls = (window.saveCalls || 0) + 1 }, handleNombreChange: (value) => setField("nombre", value) };
         }`,
       "navigation": `export function useRouter() { return { push: () => {} } }`,
       "use-site-settings": `export function useSiteSettings() { return { installmentsFinancing: {}, pricing: { transferDiscountPercent: 0 } } }`,
@@ -226,8 +228,14 @@ test("título, destacado, vista previa, guardado y cancelación comparten el est
     const title = page.getByRole("textbox", { name: "Nombre del producto" })
     await title.fill("Nuevo título Ñandú")
     assert.equal(await page.evaluate(() => (window as unknown as { formValue: { nombre: string } }).formValue.nombre), "Nuevo título Ñandú")
+    // Misma UX que la columna Acciones: la estrella abre el panel de destacado.
     await page.getByRole("button", { name: "Destacado" }).click()
+    const featuredPanel = page.getByRole("dialog", { name: /^Destacado de / })
+    await featuredPanel.getByRole("spinbutton", { name: "Posición" }).fill("3")
+    await featuredPanel.getByRole("button", { name: "Destacar" }).click()
+    await featuredPanel.waitFor({ state: "detached" })
     assert.equal(await page.getByRole("button", { name: "Destacado" }).getAttribute("aria-pressed"), "true")
+    assert.match(await page.getByRole("button", { name: "Destacado" }).textContent() ?? "", /3/)
     assert.equal(await page.evaluate(() => (window as unknown as { formValue: { destacado: boolean } }).formValue.destacado), true)
     await page.getByRole("button", { name: "Categoría" }).click()
     await page.getByRole("option", { name: "Hogar" }).click()

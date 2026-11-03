@@ -31,6 +31,15 @@ const stubs: Plugin = {
           }
           return { id, catalog_revision: revision + 1 }
         }
+        export async function setProductoFeatured(id, next, revision) {
+          window.featuredCalls = [...(window.featuredCalls || []), { id, next, revision }]
+          if (window.nextFeaturedError) {
+            const message = window.nextFeaturedError
+            window.nextFeaturedError = null
+            throw new Error(message)
+          }
+          return { destacado: next.destacado, featuredPosition: next.destacado ? next.featuredPosition : null, catalogRevision: revision + 1 }
+        }
         export async function createProductoCompleto() { throw new Error("no se usa") }`,
       "producto-especificaciones": `export async function saveDraftProductoEspecificaciones() {}`,
       "producto-imagenes": `export async function uploadProductoDraftImages() { return [] } export async function deleteProductoImagesByUrls() {}`,
@@ -95,7 +104,8 @@ test.before(async () => {
   const result = await build({
     stdin: {
       contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { ProductoForm } from "./app/admin/sections/productos/producto-form.tsx";
-        createRoot(document.getElementById("root")).render(<ProductoForm producto={${JSON.stringify(PRODUCT)}} onSaved={(message) => { window.savedCalls = (window.savedCalls || 0) + 1; window.savedMessage = message }} onCancel={() => { window.cancelCalls = (window.cancelCalls || 0) + 1 }} />);`,
+        window.addEventListener("beyonix:admin-route-reselect", (event) => { window.reselected = [...(window.reselected || []), event.detail] });
+        createRoot(document.getElementById("root")).render(<ProductoForm producto={${JSON.stringify(PRODUCT)}} onSaved={(message) => { window.savedCalls = (window.savedCalls || 0) + 1; window.savedMessage = message }} onCancel={() => { window.cancelCalls = (window.cancelCalls || 0) + 1 }} onFeaturedChange={(id, state) => { window.listFeatured = { id, ...state } }} />);`,
       resolveDir: process.cwd(), loader: "tsx", sourcefile: "product-editor-unsaved-fixture.tsx",
     },
     bundle: true, platform: "browser", format: "iife", write: false,
@@ -110,7 +120,7 @@ test.after(async () => { await browser?.close() })
 
 async function openEditor(width = 1440, theme: "dark" | "light" = "dark") {
   const page = await browser.newPage({ viewport: { width, height: 900 } })
-  const html = `<!doctype html><html lang="es" data-admin-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div class="beyonix-admin-shell min-h-screen text-white lg:flex"><nav aria-label="Secciones"><a href="/admin/pedidos">Pedidos</a> <a href="/admin/productos#variantes">Ancla</a></nav><main class="beyonix-admin-main min-w-0 flex-1"><div id="root"></div></main></div><script>${bundle}</script></body></html>`
+  const html = `<!doctype html><html lang="es" data-admin-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div class="beyonix-admin-shell min-h-screen text-white lg:flex"><nav aria-label="Secciones"><a href="/admin/pedidos">Pedidos</a> <a href="/admin/productos">Productos</a> <a href="/admin/productos#variantes">Ancla</a></nav><main class="beyonix-admin-main min-w-0 flex-1"><div id="root"></div></main></div><script>${bundle}</script></body></html>`
   await page.route("http://beyonix.test/**", (route) => route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }))
   await page.goto("http://beyonix.test/admin/productos")
   await page.getByRole("textbox", { name: "Nombre del producto" }).waitFor()
@@ -251,6 +261,70 @@ for (const [width, theme] of [[1440, "dark"], [1440, "light"], [390, "dark"], [3
     } finally { await page.close() }
   })
 }
+
+test("Productos del menú lateral con cambios: mismo aviso; seguir editando conserva y salir vuelve al listado", async () => {
+  const page = await openEditor()
+  try {
+    await page.locator("#precio").fill("23400")
+    await unsavedBadge(page).waitFor()
+
+    await page.getByRole("link", { name: "Productos", exact: true }).click()
+    await leaveDialog(page).waitFor()
+    assert.equal(await read<number | undefined>(page, "cancelCalls"), undefined, "no sale sin confirmar")
+    await leaveDialog(page).getByRole("button", { name: "Seguir editando" }).click()
+    assert.equal(await page.locator("#precio").inputValue(), "23400", "seguir editando conserva la edición")
+    assert.equal(await read<string[] | undefined>(page, "reselected"), undefined)
+
+    await page.getByRole("link", { name: "Productos", exact: true }).click()
+    await leaveDialog(page).getByRole("button", { name: "Salir sin guardar" }).click()
+    assert.equal(await read<number>(page, "cancelCalls"), 1)
+    assert.deepEqual(await read<string[]>(page, "reselected"), ["/admin/productos"], "vuelve al listado principal de Productos")
+    assert.equal(await read<string | undefined>(page, "pushedHref"), undefined, "misma sección: sin navegación extra")
+  } finally { await page.close() }
+})
+
+test("estrella del editor: mismo panel que el listado, guarda al instante con la revisión y avanza la revisión", async () => {
+  const page = await openEditor()
+  try {
+    const star = page.getByRole("button", { name: /^No destacado\./ })
+    await star.click()
+    const panel = page.getByRole("dialog", { name: "Destacado de AURICULAR INALÁMBRICO MALIBU" })
+    await panel.getByRole("spinbutton", { name: "Posición" }).fill("2")
+    await panel.getByRole("button", { name: "Destacar" }).click()
+    await panel.waitFor({ state: "detached" })
+
+    const [call] = await read<Array<{ id: number; next: { destacado: boolean; featuredPosition: number }; revision: number }>>(page, "featuredCalls")
+    assert.deepEqual(call, { id: 9, next: { destacado: true, featuredPosition: 2 }, revision: 3 })
+    assert.deepEqual(await read(page, "listFeatured"), { id: 9, destacado: true, featuredPosition: 2, catalogRevision: 4 }, "el listado lo refleja")
+    const featured = page.getByRole("button", { name: /^Destacado en la posición 2\./ })
+    assert.equal(await featured.getAttribute("aria-pressed"), "true")
+    assert.equal(await unsavedBadge(page).count(), 0, "ya guardado: no es un cambio pendiente")
+
+    // El guardado de la ficha usa la revisión nueva y no pisa el destacado.
+    await page.locator("#precio").fill("21000")
+    await page.getByRole("button", { name: "Guardar cambios" }).click()
+    await page.waitForFunction(() => (window as unknown as { updateCalls?: unknown[] }).updateCalls?.length === 1)
+    const [update] = await read<Array<{ payload: { destacado: boolean }; revision: number }>>(page, "updateCalls")
+    assert.equal(update.revision, 4)
+    assert.equal(update.payload.destacado, true)
+  } finally { await page.close() }
+})
+
+test("estrella del editor: posición ocupada se muestra en el panel y no cambia nada", async () => {
+  const page = await openEditor()
+  try {
+    await page.evaluate(() => { (window as unknown as { nextFeaturedError: string }).nextFeaturedError = 'La posición 1 ya está ocupada por "TRÍPODE ÑANDÚ".' })
+    await page.getByRole("button", { name: /^No destacado\./ }).click()
+    const panel = page.getByRole("dialog", { name: /^Destacado de / })
+    await panel.getByRole("spinbutton", { name: "Posición" }).fill("1")
+    await panel.getByRole("spinbutton", { name: "Posición" }).press("Enter")
+    await panel.getByRole("alert").filter({ hasText: 'ocupada por "TRÍPODE ÑANDÚ"' }).waitFor()
+    assert.equal(await page.getByRole("button", { name: /^No destacado\./ }).getAttribute("aria-pressed"), "false")
+    assert.equal(await read(page, "listFeatured"), undefined)
+    await page.keyboard.press("Escape")
+    await panel.waitFor({ state: "detached" })
+  } finally { await page.close() }
+})
 
 const DRAFT_MESSAGE = "Guardado como borrador. Completá los datos pendientes para publicarlo."
 const pendingItems = (page: Page) => page.locator('section[aria-label="Checklist de publicación"] li[data-complete="false"]').evaluateAll((items) => items.map((item) => item.textContent?.replace(/^Falta: /, "").trim()))

@@ -146,6 +146,8 @@ export interface SupabaseProducto {
   categoria_id: number | null
 
   destacado: boolean
+  /** Posición manual en Home (1 = primero); `null` = destacado sin posición. Ver lib/products/featured-products.ts. */
+  featured_position?: number | null
   activo: boolean
 
   imagen_principal: string | null

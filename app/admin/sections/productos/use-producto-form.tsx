@@ -33,9 +33,15 @@ import {
   createProductoCompleto,
   getCategorias,
   getProductPricing,
+  setProductoFeatured,
   updateProductoCatalog,
+  type ProductFeaturedResult,
   type ProductVariantCostInfo,
 } from "@/lib/supabase/queries/productos"
+import {
+  getFeaturedState,
+  type ProductFeaturedState,
+} from "@/lib/products/featured-products"
 
 import { slugify } from "./helpers"
 import { hasProductFormChanges } from "./product-form-dirty"
@@ -276,6 +282,11 @@ export function useProductoForm({
   )
   // Un doble click no dispara dos guardados.
   const submittingRef = useRef(false)
+  // Posición en Home. El destacado se guarda al instante (mismo control y
+  // misma API que el listado), no con "Guardar": nunca queda pendiente.
+  const [featuredPosition, setFeaturedPosition] = useState<number | null>(
+    () => getFeaturedState(producto ?? {}).featuredPosition,
+  )
 
   const [form, setForm] = useState<ProductoFormState>(() => getInitialFormState(producto))
   // Última versión guardada de la ficha: contra ella se calcula si hay
@@ -364,6 +375,23 @@ export function useProductoForm({
     setSuccess("")
     setError(message)
     setLogisticsFieldError(null)
+  }
+
+  /**
+   * Destacado y posición persistidos al instante con la revisión de la ficha
+   * que tiene el editor: si otra pestaña o usuario la cambió, se rechaza igual
+   * que el guardado. Lo guardado entra también en la versión base, así que no
+   * marca "Cambios sin guardar" ni lo pisa el próximo guardado de la ficha.
+   */
+  const applyFeatured = async (next: ProductFeaturedState): Promise<ProductFeaturedResult> => {
+    const productId = producto?.id ?? savedId
+    if (!productId) throw new Error("Guardá el producto antes de destacarlo.")
+    const result = await setProductoFeatured(productId, next, catalogRevisionRef.current)
+    catalogRevisionRef.current = result.catalogRevision
+    setFeaturedPosition(result.featuredPosition)
+    setForm((current) => ({ ...current, destacado: result.destacado }))
+    setSavedForm((current) => ({ ...current, destacado: result.destacado }))
+    return result
   }
 
   const handleNombreChange = (
@@ -774,9 +802,11 @@ export function useProductoForm({
     missingVariantCosts,
     priceRecalculation,
     hasUnsavedFormChanges,
+    featuredPosition,
 
     setField,
     showError,
+    applyFeatured,
 
     submit,
 

@@ -5,6 +5,10 @@ import type {
   SupabaseProducto,
 } from "@/lib/supabase/types"
 import { hasPurchasableStock } from "@/lib/cart/stock-status"
+import {
+  orderFeaturedProducts,
+  queryFeaturedProducts,
+} from "@/lib/products/featured-products"
 import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
 import { attachStoreConditionedStock } from "@/lib/supabase/queries/store-conditioned"
 import {
@@ -114,16 +118,16 @@ export async function getStoreCartProducts(
 }
 
 export async function getFeaturedProductos() {
-  const { data, error } =
-    await supabase
-      .from("productos")
-      .select(PRODUCT_SELECT)
-      .eq("activo", true)
-      .eq("destacado", true)
-      .order("created_at", {
-        ascending: false,
-      })
-      .limit(12)
+  const { data, error } = await queryFeaturedProducts((withPosition) =>
+    orderFeaturedProducts(
+      supabase
+        .from("productos")
+        .select(PRODUCT_SELECT)
+        .eq("activo", true)
+        .eq("destacado", true),
+      withPosition,
+    ).limit(12),
+  )
 
   if (error) {
     throw error

@@ -11,9 +11,11 @@ import {
   getProductosPage,
   getProductVariantIssues,
   deleteProducto,
+  setProductoFeatured,
   toggleProductoActivo,
   type ProductosPageOptions,
 } from "@/lib/supabase/queries/productos"
+import type { ProductFeaturedState } from "@/lib/products/featured-products"
 
 export function useProductos({
   enabled = true,
@@ -163,7 +165,7 @@ export function useProductos({
           setProductos((prev) =>
             prev.map((product) =>
               product.id === id
-                ? { ...product, activo: false, destacado: false }
+                ? { ...product, activo: false, destacado: false, featured_position: null }
                 : product
             )
           )
@@ -222,6 +224,29 @@ export function useProductos({
       }
     }
 
+  /** Refleja en la fila un destacado ya guardado (desde la tabla o el editor). */
+  const applyFeaturedLocally = useCallback(
+    (productId: number, state: ProductFeaturedState) => {
+      setProductos((prev) =>
+        prev.map((product) =>
+          product.id === productId
+            ? { ...product, destacado: state.destacado, featured_position: state.featuredPosition }
+            : product,
+        ),
+      )
+    },
+    [],
+  )
+
+  /** Lanza el error de la API (posición ocupada, permisos…) para mostrarlo en el control. */
+  const handleFeaturedChange = async (
+    producto: SupabaseProducto,
+    next: ProductFeaturedState,
+  ) => {
+    const result = await setProductoFeatured(producto.id, next)
+    applyFeaturedLocally(producto.id, result)
+  }
+
   return {
     productos,
     total,
@@ -241,5 +266,10 @@ export function useProductos({
 
     toggleProductoActivo:
       handleToggle,
+
+    setProductoFeatured:
+      handleFeaturedChange,
+
+    applyFeaturedLocally,
   }
 }

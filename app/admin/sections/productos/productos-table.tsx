@@ -2,6 +2,7 @@
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Package } from "lucide-react"
 
+import type { ProductFeaturedState } from "@/lib/products/featured-products"
 import type { SupabaseProducto } from "@/lib/supabase/types"
 import type { StockSettings } from "@/lib/site-settings"
 
@@ -28,6 +29,7 @@ interface ProductosTableProps {
   onDelete: (id: number) => void
   onMerge: (producto: SupabaseProducto) => void
   onToggleActivo: (producto: SupabaseProducto) => void
+  onFeaturedChange: (producto: SupabaseProducto, next: ProductFeaturedState) => Promise<void>
 }
 
 interface SortableHeaderProps {
@@ -91,6 +93,7 @@ export function ProductosTable({
   onDelete,
   onMerge,
   onToggleActivo,
+  onFeaturedChange,
 }: ProductosTableProps) {
   if (loading) {
     return <AdminSkeleton rows={5} />
@@ -149,6 +152,7 @@ export function ProductosTable({
           onDelete={onDelete}
           onMerge={onMerge}
           onToggleActivo={onToggleActivo}
+          onFeaturedChange={onFeaturedChange}
         />
       ))}
     </AdminTable>

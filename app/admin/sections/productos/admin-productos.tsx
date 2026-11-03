@@ -6,6 +6,8 @@ import { Check, ImageIcon, Search } from "lucide-react"
 
 import { useAuth } from "@/context/auth-context"
 import { getAdminCapabilities } from "@/lib/admin/admin-capabilities"
+import { useAdminRouteReselect } from "@/lib/admin/admin-route-reselect"
+import { ADMIN_ROUTES } from "@/lib/admin/admin-routes"
 import { ForceDeleteDialog } from "../../components/force-delete-dialog"
 import { useCategorias } from "@/hooks/use-categorias"
 import { useProductColors } from "@/hooks/use-product-colors"
@@ -168,6 +170,8 @@ export function AdminProductos() {
     actionError,
     deleteProducto,
     toggleProductoActivo,
+    setProductoFeatured,
+    applyFeaturedLocally,
     reloadProductos,
   } = useProductos({
     enabled: view === "productos",
@@ -359,12 +363,24 @@ export function AdminProductos() {
     }
   }
 
+  // "Productos" del menú lateral estando ya en Productos: siempre al listado
+  // principal y arriba, desde el editor o desde Categorías. Con cambios sin
+  // guardar, el editor intercepta antes el click y sólo avisa si se confirma.
+  const goToProductsRoot = () => {
+    setEditando(undefined)
+    setView("productos")
+    window.scrollTo({ top: 0, left: 0 })
+    document.querySelector<HTMLElement>(".beyonix-admin-main")?.scrollTo({ top: 0, left: 0 })
+  }
+  useAdminRouteReselect(ADMIN_ROUTES.productos, goToProductsRoot)
+
   if (editando !== undefined) {
     return (
       <ProductoForm
         producto={editando}
         onSaved={handleSaved}
         onCancel={() => setEditando(undefined)}
+        onFeaturedChange={applyFeaturedLocally}
       />
     )
   }
@@ -446,6 +462,7 @@ export function AdminProductos() {
             onDelete={handleDelete}
             onMerge={handleMerge}
             onToggleActivo={toggleProductoActivo}
+            onFeaturedChange={setProductoFeatured}
           />
           {!loading && total > 0 && (
             <div className="flex flex-col gap-3 rounded-2xl border border-white/8 bg-black/30 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">

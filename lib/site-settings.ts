@@ -35,6 +35,7 @@ import {
   MERCADOPAGO_OBSERVATION_SAMPLE_SIZE,
   normalizeMercadoPagoCostsMode,
   resolveInstallmentsFinancing,
+  type MercadoPagoCostSource,
   type MercadoPagoCostsMode,
   type MercadoPagoObservationSourceRow,
   type MercadoPagoObservedCosts,
@@ -697,6 +698,43 @@ export async function getMercadoPagoCostsOverview(): Promise<MercadoPagoCostsOve
     financingPolicyEvent: financingEvents.error ? null : financingEvents.controlling,
     upcomingFinancingPolicyEvent: financingEvents.error ? null : financingEvents.upcoming,
     ...resolveInstallmentsFinancing(manual, mode, observed),
+  }
+}
+
+/** Costo de Mercado Pago en 1 pago con su origen, para proyecciones de Admin. */
+export interface SinglePaymentCostSettings {
+  /** Configuración EFECTIVA (la misma que usan checkout y el editor de producto). */
+  installmentsFinancing: InstallmentsFinancingConfig
+  /** De dónde sale la comisión base: un pago real observado o el valor manual. */
+  baseSource: MercadoPagoCostSource
+  /** El Admin confirmó explícitamente la comisión base y el IVA manuales. */
+  manualBaseConfirmed: boolean
+  transferDiscountPercent: number
+}
+
+/**
+ * Lectura fresca, sólo Admin, del costo de Mercado Pago en 1 pago y de su
+ * origen: la proyección de ganancia no puede presentar como real una
+ * comisión que nadie configuró ni se observó. Falla (nunca cae a defaults).
+ */
+export async function getSinglePaymentCostSettings(): Promise<SinglePaymentCostSettings> {
+  const admin = createAdminClient()
+  const [financingResult, pricingResult] = await Promise.all([
+    admin.from("site_settings").select("value").eq("key", "installments_financing").maybeSingle(),
+    admin.from("site_settings").select("value").eq("key", "pricing").maybeSingle(),
+  ])
+  if (financingResult.error || pricingResult.error) throw new SiteSettingsUnavailableError()
+
+  const stored = normalizeStoredInstallmentsFinancingSettings(financingResult.data?.value)
+  const { mode, confirmedManualCosts } = stored
+  const observed = mode === "automatic" ? await loadMercadoPagoObservedCosts(admin) : null
+  const resolved = resolveInstallmentsFinancing(stored, mode, observed)
+
+  return {
+    installmentsFinancing: resolved.effective,
+    baseSource: resolved.sources.base,
+    manualBaseConfirmed: Boolean(confirmedManualCosts?.base && confirmedManualCosts?.iva),
+    transferDiscountPercent: normalizePricingSettings(pricingResult.data?.value).transferDiscountPercent,
   }
 }
 

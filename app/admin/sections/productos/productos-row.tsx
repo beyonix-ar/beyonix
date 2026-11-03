@@ -68,7 +68,10 @@ import {
   uploadProductoVariantImages,
 } from "@/lib/supabase/queries/producto-imagenes"
 
+import { getFeaturedState, type ProductFeaturedState } from "@/lib/products/featured-products"
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
+import { ProductCashProfitPopover } from "./product-cash-profit-popover"
+import { ProductFeaturedControl } from "./product-featured-control"
 import { DraftImageUploader } from "./draft-image-uploader"
 import { AdminVariantItem } from "./admin-variant-item"
 import {
@@ -97,6 +100,10 @@ interface ProductosRowProps {
   onToggleActivo: (
     producto: SupabaseProducto
   ) => void
+  onFeaturedChange: (
+    producto: SupabaseProducto,
+    next: ProductFeaturedState,
+  ) => Promise<void>
 }
 
 const stockColor = (stock: number, settings: StockSettings) => {
@@ -150,9 +157,10 @@ export function ProductosRow({
   onDelete,
   onMerge,
   onToggleActivo,
+  onFeaturedChange,
 }: ProductosRowProps) {
   const { user } = useAuth()
-  const { canManageCatalog } = getAdminCapabilities(user?.rol)
+  const { canManageCatalog, canManageFinancials } = getAdminCapabilities(user?.rol)
   const [open, setOpen] =
     useState(false)
 
@@ -943,6 +951,24 @@ export function ProductosRow({
         </button>
 
         <div className="admin-product-actions flex items-center justify-center gap-1.5">
+          <ProductFeaturedControl
+            variant="row"
+            productName={producto.nombre}
+            state={getFeaturedState(producto)}
+            disabledReason={canManageCatalog ? null : "Sin permiso para cambiar destacados."}
+            onChange={(next) => onFeaturedChange(producto, next)}
+          />
+
+          {canManageFinancials && (
+            <ProductCashProfitPopover
+              productId={producto.id}
+              productName={producto.nombre}
+              price={producto.precio}
+              active={producto.activo === true}
+              catalogRevision={producto.catalog_revision ?? null}
+            />
+          )}
+
           {canManageCatalog && <button
             type="button"
             aria-label={`Editar ${producto.nombre}`}

@@ -43,6 +43,7 @@ import {
   ADMIN_SENSITIVE_DANGER,
 } from "@/lib/admin/admin-sensitive-visuals"
 import { AdminNotificationGroupsProvider } from "@/context/admin-notifications-context"
+import { notifyAdminRouteReselect } from "@/lib/admin/admin-route-reselect"
 import { ROLE_LABELS, type UserRole } from "@/lib/auth/roles"
 import {
   ADMIN_ROUTES,
@@ -627,7 +628,12 @@ export function AdminClient({ children }: { children: ReactNode }) {
             reorderable={isSuperAdmin}
             dragging={draggedSection === item.key}
             dragOver={dragOverSection === item.key && draggedSection !== item.key}
-            onClick={() => setMobileOpen(false)}
+            onClick={() => {
+              setMobileOpen(false)
+              if (pathname === ADMIN_ROUTES[item.key]) {
+                notifyAdminRouteReselect(ADMIN_ROUTES[item.key])
+              }
+            }}
             onDragStart={(event) => {
               setDraggedSection(item.key)
               event.dataTransfer.effectAllowed = "move"

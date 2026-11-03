@@ -10,9 +10,10 @@ import {
   Pencil,
   Play,
   Save,
-  Star,
   X,
 } from "lucide-react"
+import type { ProductFeaturedState } from "@/lib/products/featured-products"
+import { isSameAdminLocation, notifyAdminRouteReselect } from "@/lib/admin/admin-route-reselect"
 
 import {
   calculateTargetMarginPrice,
@@ -35,6 +36,7 @@ import { ProductVariantsEditor, StockSummaryItem } from "./product-variants-edit
 import type { ProductVariantDistribution } from "@/lib/supabase/queries/producto-variantes"
 import { AdminProductPreviewModal } from "./admin-product-preview-modal"
 import { ProductPriceCard } from "./product-price-card"
+import { ProductFeaturedControl } from "./product-featured-control"
 import { ProductRequirementsPopover, PublicationChecklist } from "./product-requirements-popover"
 import { useProductoForm } from "./use-producto-form"
 import {
@@ -88,6 +90,8 @@ interface ProductoFormProps {
   /** Guardado exitoso; `message` es el aviso a mostrar en el listado. */
   onSaved: (message: string) => void
   onCancel: () => void
+  /** Destacado/posición ya guardados desde el editor (el listado los refleja). */
+  onFeaturedChange?: (productId: number, state: ProductFeaturedState) => void
 }
 
 export const DRAFT_SAVED_MESSAGE =
@@ -110,6 +114,7 @@ export function ProductoForm({
   producto,
   onSaved,
   onCancel,
+  onFeaturedChange,
 }: ProductoFormProps) {
   const [draftVariants, setDraftVariants] = useState<DraftProductoVariante[]>([])
   const [
@@ -158,8 +163,10 @@ export function ProductoForm({
     missingVariantCosts,
     priceRecalculation,
     hasUnsavedFormChanges,
+    featuredPosition,
     setField,
     showError,
+    applyFeatured,
     submit,
     handleNombreChange,
   } = useProductoForm({
@@ -185,7 +192,11 @@ export function ProductoForm({
     const href = pendingLeave?.href ?? null
     setPendingLeave(null)
     onCancel()
-    if (href) router.push(href)
+    if (!href) return
+    // Link a la sección actual ("Productos" del menú lateral): Next no remonta
+    // la página, así que se avisa para volver a su vista principal.
+    if (isSameAdminLocation(href)) notifyAdminRouteReselect(href)
+    else router.push(href)
   }
 
   useEffect(() => {
@@ -647,16 +658,22 @@ export function ProductoForm({
         </div>
 
         <div className="product-editor-window-actions flex shrink-0 flex-wrap items-center justify-end gap-1.5 max-sm:min-w-0 max-sm:shrink">
-          <AdminSecondaryButton
-            size="icon"
-            title={form.destacado ? "Quitar destacado" : "Destacar producto"}
-            aria-label="Destacado"
-            aria-pressed={form.destacado}
-            onClick={() => setField("destacado", !form.destacado)}
-            disabled={busy}
-          >
-            <Star className={`size-4 ${form.destacado ? "fill-amber-300 text-amber-300" : "text-white/65"}`} />
-          </AdminSecondaryButton>
+          <ProductFeaturedControl
+            variant="toolbar"
+            productName={form.nombre.trim() || "este producto"}
+            state={{ destacado: form.destacado, featuredPosition: form.destacado ? featuredPosition : null }}
+            disabledReason={
+              !currentProductoId
+                ? "Guardá el producto para poder destacarlo."
+                : busy
+                  ? "Esperá a que termine el guardado."
+                  : null
+            }
+            onChange={async (next) => {
+              const result = await applyFeatured(next)
+              if (currentProductoId) onFeaturedChange?.(currentProductoId, result)
+            }}
+          />
           <AdminSecondaryButton
             size="icon"
             title="Vista previa"

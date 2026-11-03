@@ -15,6 +15,8 @@ import {
   fetchActiveReservationTotals,
 } from "@/lib/inventory/sellable-stock"
 import type { StockReservationDetail } from "@/lib/inventory/stock-reservation-details"
+import type { ProductCashProfitEstimate } from "@/lib/pricing/product-cash-profit"
+import type { ProductFeaturedState } from "@/lib/products/featured-products"
 import { attachProductReviewSummaries } from "@/lib/reviews/product-review-summary"
 import { getAdminProductoVariantes } from "@/lib/supabase/queries/producto-variantes"
 
@@ -875,6 +877,114 @@ export async function getProductPricing(id: number): Promise<ProductPricingInfo>
         ? result.recalculationBlockedReason
         : null,
   }
+}
+
+export interface ProductFeaturedResult extends ProductFeaturedState {
+  catalogRevision: number
+}
+
+export class ProductFeaturedError extends Error {
+  constructor(message: string, readonly code: string | null) {
+    super(message)
+    this.name = "ProductFeaturedError"
+  }
+}
+
+/** Destacar / cambiar posición / quitar destacado (atómico, validado en la base). */
+export async function setProductoFeatured(
+  id: number,
+  next: ProductFeaturedState,
+  expectedRevision: number | null = null,
+): Promise<ProductFeaturedResult> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  if (!session?.access_token) {
+    throw new ProductFeaturedError("La sesión administrativa venció. Volvé a iniciar sesión.", null)
+  }
+
+  const response = await fetch(`/api/admin/products/${id}/featured`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      destacado: next.destacado,
+      featuredPosition: next.destacado ? next.featuredPosition : null,
+      ...(expectedRevision != null ? { expectedRevision } : {}),
+    }),
+    cache: "no-store",
+  })
+  const result = (await response.json().catch(() => null)) as Record<string, unknown> | null
+
+  if (!response.ok || typeof result?.destacado !== "boolean" || typeof result.catalogRevision !== "number") {
+    throw new ProductFeaturedError(
+      typeof result?.error === "string" ? result.error : "No se pudo actualizar el destacado.",
+      typeof result?.code === "string" ? result.code : null,
+    )
+  }
+
+  return {
+    destacado: result.destacado,
+    featuredPosition: typeof result.featuredPosition === "number" ? result.featuredPosition : null,
+    catalogRevision: result.catalogRevision,
+  }
+}
+
+/** Estado del producto que el listado ya conoce y que cambia la ganancia estimada. */
+export interface ProductCashProfitSnapshot {
+  price: number | null
+  active: boolean
+  /** `productos.catalog_revision` si el listado lo tiene (sube con cualquier cambio de la ficha). */
+  catalogRevision?: number | null
+}
+
+// Ganancia estimada: se pide sólo al abrir el ojo. UNA entrada por producto,
+// válida mientras el estado conocido (precio, activo, revisión) sea el mismo y
+// no pasen 60 s; si ese estado cambió, se descarta y se consulta de nuevo. El
+// TTL sólo cubre cambios ajenos a esta vista (stock, reservas, costos).
+const CASH_PROFIT_CACHE_MS = 60_000
+const cashProfitCache = new Map<number, { snapshot: string; expiresAt: number; value: Promise<ProductCashProfitEstimate> }>()
+
+export function getProductCashProfit(
+  id: number,
+  { price, active, catalogRevision = null }: ProductCashProfitSnapshot,
+): Promise<ProductCashProfitEstimate> {
+  const snapshot = `${price ?? ""}:${active ? 1 : 0}:${catalogRevision ?? ""}`
+  const cached = cashProfitCache.get(id)
+  if (cached && cached.snapshot === snapshot && cached.expiresAt > Date.now()) return cached.value
+
+  const value = (async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!session?.access_token) {
+      throw new Error("La sesión administrativa venció. Volvé a iniciar sesión.")
+    }
+    const response = await fetch(`/api/admin/products/${id}/cash-profit`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: "no-store",
+    })
+    const result = (await response.json().catch(() => null)) as
+      | ProductCashProfitEstimate
+      | { error?: string }
+      | null
+    if (!response.ok || !result || !("status" in result)) {
+      throw new Error(
+        (result && "error" in result && result.error) ||
+          "No se pudo calcular la ganancia estimada.",
+      )
+    }
+    return result
+  })()
+
+  const entry = { snapshot, expiresAt: Date.now() + CASH_PROFIT_CACHE_MS, value }
+  cashProfitCache.set(id, entry)
+  value.catch(() => {
+    if (cashProfitCache.get(id) === entry) cashProfitCache.delete(id)
+  })
+  return value
 }
 
 /** Qué compone el "Reservado" de un producto (reservas activas, sin datos del cliente). */
