@@ -950,7 +950,7 @@ export function ProductosRow({
             : "Inactivo"}
         </button>
 
-        <div className="admin-product-actions flex items-center justify-center gap-1.5">
+        <div className="admin-product-actions flex items-center justify-center gap-1.5 *:shrink-0">
           <ProductFeaturedControl
             variant="row"
             productName={producto.nombre}

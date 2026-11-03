@@ -155,7 +155,7 @@ test.before(async () => {
           }} />
         }
         function Actions({ id, name, initial, disabledReason }) {
-          return <div className="admin-product-actions flex items-center justify-center gap-1.5" data-row={id}>
+          return <div className="admin-product-actions flex items-center justify-center gap-1.5 *:shrink-0" data-row={id}>
             <Featured id={id} name={name} initial={initial} disabledReason={disabledReason} />
             <ProductCashProfitPopover productId={id} productName={name} price={30000} />
             <button type="button" aria-label={"Editar " + name} className="flex size-9 items-center justify-center rounded-xl border">E</button>
@@ -416,7 +416,7 @@ test("ojo: pasar el mouse por el listado no dispara consultas; quedarse sobre el
   } finally { await page.close() }
 })
 
-for (const [width, theme] of [[1920, "dark"], [1920, "light"], [1280, "dark"], [390, "light"]] as const) {
+for (const [width, theme] of [[1920, "dark"], [1920, "light"], [1600, "dark"], [1280, "dark"], [390, "light"]] as const) {
   test(`columna Acciones: 4 botones alineados, mismo alto y sin desbordar a ${width}px (${theme})`, async () => {
     const page = await open("controls", width, theme)
     try {
@@ -424,6 +424,8 @@ for (const [width, theme] of [[1920, "dark"], [1920, "light"], [1280, "dark"], [
         const box = actions.getBoundingClientRect()
         const buttons = Array.from(actions.querySelectorAll("button"), (button) => button.getBoundingClientRect())
         return {
+          count: buttons.filter((rect) => rect.width > 0 && rect.height > 0).length,
+          widths: [...new Set(buttons.slice(1).map((rect) => Math.round(rect.width)))],
           inside: buttons.every((rect) => rect.left >= box.left - 0.5 && rect.right <= box.right + 0.5),
           heights: [...new Set(buttons.map((rect) => Math.round(rect.height)))],
           centers: [...new Set(buttons.map((rect) => Math.round(rect.top + rect.height / 2)))],
@@ -432,6 +434,8 @@ for (const [width, theme] of [[1920, "dark"], [1920, "light"], [1280, "dark"], [
         }
       }))
       for (const [index, row] of layout.entries()) {
+        assert.equal(row.count, 4, `fila ${index + 1}: deben verse los 4 controles`)
+        assert.equal(row.widths.length, 1, `fila ${index + 1}: ojo, lápiz y menú con anchos distintos ${row.widths}`)
         assert.ok(row.inside, `fila ${index + 1}: botones fuera de la columna`)
         assert.equal(row.heights.length, 1, `fila ${index + 1}: alturas distintas ${row.heights}`)
         assert.ok(row.centers.length === 1, `fila ${index + 1}: desalineados ${row.centers}`)
