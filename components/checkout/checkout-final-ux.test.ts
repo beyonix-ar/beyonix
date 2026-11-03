@@ -377,7 +377,9 @@ test("28-30. confirmación: contado muestra total y medios; cuotas muestra total
   assert.match(modal, /title="Vas a continuar a Mercado Pago"/)
 
   const financed = modal.slice(modal.indexOf('data-mercadopago-confirm="financed"'), modal.indexOf('data-mercadopago-confirm="cash"'))
-  assert.match(financed, /Elegiste pagar con tarjeta de crédito en cuotas sin interés\./)
+  // "sin interés" sólo con same_as_cash (getCheckoutInstallmentsLabels).
+  assert.match(financed, /\{installmentsLabels\.confirmation\}/)
+  assert.doesNotMatch(financed, /sin interés/)
   assert.match(financed, /\{financedPriceCopy\.total\}: \{formatPrice\(finalTotal\)\}/)
   // Hasta cuántas cuotas y cuáles: la cantidad se elige en Mercado Pago.
   assert.match(financed, /\{selectedInstallmentsCopy\.headline\}\. \{selectedInstallmentsCopy\.available\}: elegís la cantidad en Mercado Pago\./)
@@ -570,7 +572,7 @@ test("visual 7. confirmación con crédito: aclaración destacada ('Importante')
 test("visual 8. cuotas: sólo las confirmadas por Mercado Pago, mismo total en todas, sin prometer una lista fija", () => {
   // Sin confirmación (consultando o error) no hay ninguna opción de cuotas.
   assert.match(checkout, /const offeredInstallmentPlans = financedPreviewPricing\.installmentPlans/)
-  assert.match(checkout, /Consultando cuotas sin interés disponibles…/)
+  assert.match(checkout, /\{installmentsLabels\.pending\}/)
   assert.match(checkout, /Mismo total en cualquier cantidad de cuotas\. CFTEA: \{cfteaSummary\}/)
   assert.doesNotMatch(checkout, /[Ss]olo 2, 3 o 6|únicamente 2, 3 o 6|2, 3 o 6 cuotas|title="Crédito con Mercado Pago"/)
 })

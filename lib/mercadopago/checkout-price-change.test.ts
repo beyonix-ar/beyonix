@@ -28,6 +28,7 @@ import {
   type CheckoutPricingSettings,
   type MercadoPagoCheckoutMode,
 } from "../pricing/checkout-pricing.ts"
+import { getCheckoutInstallmentsLabels } from "../pricing/financed-pricing.ts"
 import { computeCustomerCheckoutFingerprint } from "../orders/checkout-order-creation.ts"
 
 // Bug real reproducido: TRIPODE a ~$46.000, intento "en cuotas" creado por
@@ -694,6 +695,48 @@ test("política: el checkout envía la versión visible y la preferencia devuelv
   assert.match(checkout, /expectedFinancedPricePolicy: siteSettings\.financedPricePolicy/)
   assert.match(ROUTE, /payload\.expectedFinancedPricePolicy !== siteSettings\.financedPricePolicy/)
   assert.match(ROUTE, /code: "PRICING_CHANGED"/)
+})
+
+// 409 cuando las cuotas que vio el cliente ya no están confirmadas: el texto
+// humano depende de la política vigente (leída fresca en la ruta); status,
+// código, claves del JSON y la detección del cambio no cambian.
+const installmentsChangedResponse = () => {
+  const start = ROUTE.indexOf("// Cuotas que Mercado Pago ya no confirma")
+  assert.ok(start > 0, "bloque del 409 de cuotas")
+  return ROUTE.slice(start, ROUTE.indexOf("{ status: 409 },", start) + "{ status: 409 },".length)
+}
+
+test("create-preference 409 de cuotas (A, cover_costs): mismo código, sin \"sin interés\" y copy neutral", () => {
+  const message = getCheckoutInstallmentsLabels("cover_costs").installmentsChanged
+  assert.equal(message, "Las cuotas disponibles para tu compra cambiaron. Revisá las opciones de pago y volvé a confirmar.")
+  assert.doesNotMatch(message, /sin inter[eé]s/i)
+})
+
+test("create-preference 409 de cuotas (B, same_as_cash): conserva \"cuotas sin interés\" (total en cuotas = contado)", () => {
+  assert.equal(
+    getCheckoutInstallmentsLabels("same_as_cash").installmentsChanged,
+    "Las cuotas sin interés disponibles para tu compra cambiaron. Revisá las opciones de pago y volvé a confirmar.",
+  )
+})
+
+test("create-preference 409 de cuotas (C): status, código, estructura y detección intactos; texto según la política vigente", () => {
+  const block = installmentsChangedResponse()
+  // Detección sin cambios: modo cuotas sin quote o cuota elegida ya no confirmada.
+  assert.match(block, /mode === "financed" &&\s*\(!quote \|\|\s*\(selectedInstallmentCount != null &&\s*!pricing\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)\)\)/)
+  // Misma respuesta: 409, PRICING_CHANGED y las mismas claves en el mismo orden.
+  assert.match(block, /\{ status: 409 \},$/)
+  const body = block.slice(block.indexOf("NextResponse.json("), block.indexOf("{ status: 409 }"))
+  assert.deepEqual([...body.matchAll(/^\s+(\w+):/gm)].map((match) => match[1]), ["code", "error", "total", "mode"])
+  assert.match(body, /code: "PRICING_CHANGED",/)
+  assert.match(body, /total: pricing\.cash\.externalAmountDue,/)
+  assert.match(body, /mode: "cash",/)
+  // El texto sale del copy central con la política leída fresca (getSiteSettings({ fresh: true })).
+  assert.match(body, /error: getCheckoutInstallmentsLabels\(siteSettings\.financedPricePolicy\)\.installmentsChanged,/)
+  assert.match(ROUTE, /getSiteSettings\(\{ fresh: true \}\)/)
+  // Ningún texto fijo de la ruta promete "sin interés" (los comentarios no son respuesta).
+  const literals = ROUTE.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
+  assert.doesNotMatch(literals, /sin inter[eé]s/i)
+  assert.doesNotMatch(ROUTE, /INSTALLMENTS_CHANGED_MESSAGE/)
 })
 
 function expiredOrderFromPreviousSession(state: ReturnType<typeof evaluate>) {

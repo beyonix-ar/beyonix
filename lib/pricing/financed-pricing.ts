@@ -37,6 +37,8 @@ import {
   type InstallmentsFinancingConfig,
 } from "../products/installments.ts"
 
+import type { FinancedPricePolicy } from "./financed-price-policy.ts"
+
 export type { InstallmentCount, InstallmentsFinancingConfig } from "../products/installments.ts"
 
 export function getCashPrice(product: { precio: number }): number {
@@ -97,10 +99,50 @@ export function getFinancedPrice(
 }
 
 /**
- * Copy de cara al cliente para las cuotas, igual en toda la tienda: siempre
- * "sin interés", nunca "sin recargo".
+ * Copy de cara al cliente para cuotas cuyo total es el de contado
+ * (`same_as_cash`): "sin interés", nunca "sin recargo". Con `cover_costs` el
+ * total en cuotas es mayor que el contado y NUNCA se dice "sin interés".
  */
 export const INSTALLMENTS_COPY = "cuotas sin interés"
+
+/** Importe en el formato visual de precios de la tienda: "$12.306" (sin espacio). */
+export function formatInstallmentsAmount(amount: number): string {
+  const safeAmount = Number.isFinite(amount) ? amount : 0
+  return `$${safeAmount.toLocaleString("es-AR", {
+    minimumFractionDigits: Number.isInteger(safeAmount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
+/**
+ * Textos fijos de la opción de cuotas del checkout (opción, panel de medios,
+ * resumen, confirmación y el 409 de create-preference cuando cambian las
+ * cuotas). "sin interés" sólo con `same_as_cash`; con esa
+ * política tampoco se presenta un "precio financiado".
+ */
+export function getCheckoutInstallmentsLabels(policy: FinancedPricePolicy) {
+  return policy === "same_as_cash"
+    ? {
+        financedBadge: "Mismo precio que contado",
+        financedTotalLabel: "Total (igual al contado)",
+        optionTitle: "Mercado Pago · Cuotas sin interés",
+        unavailable: "Sin cuotas sin interés confirmadas para este total.",
+        pending: "Consultando cuotas sin interés disponibles…",
+        confirmation: "Elegiste pagar con tarjeta de crédito en cuotas sin interés.",
+        brandsLabel: "Tarjetas con cuotas sin interés confirmadas",
+        installmentsChanged: "Las cuotas sin interés disponibles para tu compra cambiaron. Revisá las opciones de pago y volvé a confirmar.",
+      }
+    : {
+        financedBadge: "Precio financiado",
+        financedTotalLabel: "Total financiado",
+        optionTitle: "Cuotas con Mercado Pago",
+        unavailable: "Sin cuotas confirmadas para este total.",
+        pending: "Consultando cuotas disponibles…",
+        confirmation: "Elegiste pagar con tarjeta de crédito en cuotas con Mercado Pago.",
+        brandsLabel: "Tarjetas con cuotas confirmadas",
+        installmentsChanged: "Las cuotas disponibles para tu compra cambiaron. Revisá las opciones de pago y volvé a confirmar.",
+      }
+}
 
 const INSTALLMENT_COUNT_LIST_FORMAT = new Intl.ListFormat("es-AR", {
   style: "long",
@@ -109,20 +151,34 @@ const INSTALLMENT_COUNT_LIST_FORMAT = new Intl.ListFormat("es-AR", {
 
 /**
  * Copy de la ÚNICA opción de cuotas del checkout a partir de las cuotas que
- * Mercado Pago confirmó sin interés: "Hasta 6 cuotas sin interés" /
- * "Disponibles: 2, 3 y 6 cuotas". BEYONIX no preselecciona la cantidad: el
- * cliente la elige dentro de Mercado Pago, hasta el máximo confirmado. `null`
- * sin cuotas confirmadas (sólo 1 pago).
+ * Mercado Pago confirmó: "Disponibles: 2, 3 y 6 cuotas" y el encabezado
+ * según la política -- `same_as_cash`: "Hasta 6 cuotas sin interés";
+ * `cover_costs`: "6 cuotas de $X" sobre `financedTotal` (o "Hasta 6 cuotas"
+ * sin total). BEYONIX no preselecciona la cantidad: el cliente la elige
+ * dentro de Mercado Pago, hasta el máximo confirmado. `null` sin cuotas
+ * confirmadas (sólo 1 pago).
  */
-export function getCheckoutInstallmentsOptionCopy(counts: readonly number[]) {
+export function getCheckoutInstallmentsOptionCopy(
+  counts: readonly number[],
+  policy: FinancedPricePolicy,
+  financedTotal: number | null,
+) {
   const sorted = [...new Set(counts)]
     .filter((count) => Number.isInteger(count) && count > 1)
     .sort((a, b) => a - b)
   const maxCount = sorted.at(-1)
   if (maxCount == null) return null
+  const installmentCount = INSTALLMENT_COUNTS.find((count) => count === maxCount)
+  const installmentAmount = financedTotal == null || installmentCount == null
+    ? null
+    : getInstallmentAmount(financedTotal, installmentCount)
   return {
     maxCount,
-    headline: `Hasta ${maxCount} ${INSTALLMENTS_COPY}`,
+    headline: policy === "same_as_cash"
+      ? `Hasta ${maxCount} ${INSTALLMENTS_COPY}`
+      : installmentAmount == null
+        ? `Hasta ${maxCount} cuotas`
+        : `${maxCount} cuotas de ${formatInstallmentsAmount(installmentAmount)}`,
     available: `Disponibles: ${INSTALLMENT_COUNT_LIST_FORMAT.format(sorted.map(String))} cuotas`,
   }
 }

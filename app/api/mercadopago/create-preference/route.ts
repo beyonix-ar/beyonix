@@ -54,6 +54,7 @@ import {
   type CheckoutPricingSettings,
 } from "@/lib/pricing/checkout-pricing"
 import type { InstallmentCount } from "@/lib/products/installments"
+import { getCheckoutInstallmentsLabels } from "@/lib/pricing/financed-pricing"
 import {
   MERCADOPAGO_MAX_ATTEMPTS_PER_DAY,
   MERCADOPAGO_MAX_ATTEMPTS_PER_HOUR,
@@ -120,8 +121,6 @@ const ALREADY_PAID_MESSAGE =
   "Esta compra ya fue pagada y no puede iniciarse nuevamente."
 const PRICING_CHANGED_MESSAGE =
   "Los precios o condiciones de tu compra se actualizaron. Revisá el nuevo total antes de pagar."
-const INSTALLMENTS_CHANGED_MESSAGE =
-  "Las cuotas sin interés disponibles para tu compra cambiaron. Revisá las opciones de pago y volvé a confirmar."
 
 const accessToken = process.env.MERCADOPAGO_ACCESS_TOKEN
 
@@ -376,7 +375,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           code: "PRICING_CHANGED",
-          error: INSTALLMENTS_CHANGED_MESSAGE,
+          // "sin interés" sólo con same_as_cash (total en cuotas = contado).
+          error: getCheckoutInstallmentsLabels(siteSettings.financedPricePolicy).installmentsChanged,
           total: pricing.cash.externalAmountDue,
           mode: "cash",
         },

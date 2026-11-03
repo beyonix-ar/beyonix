@@ -17,10 +17,13 @@ interface ProductPurchaseBoxProps {
   transferPrice?: number | null
   transferDiscountPercent?: number
   /**
-   * Regla GLOBAL vigente de cuotas sin interés ("Hasta N cuotas sin interés a
-   * partir de $X"), confirmada por Mercado Pago. `null`: no se comunica nada.
+   * Cuotas que Mercado Pago confirma para este producto ("6 cuotas de $X" o,
+   * si el total en cuotas es el de contado, "Hasta N cuotas sin interés").
+   * `null`: no se comunica nada.
    */
   interestFreeText?: string | null
+  /** "Total financiado: $Y" cuando el total en cuotas difiere del contado. */
+  financedTotalText?: string | null
   priceWithoutNationalTaxesCash?: number | null
   isInCart?: boolean
   cartQuantity?: number
@@ -55,6 +58,7 @@ export function ProductPurchaseBox({
   transferPrice = null,
   transferDiscountPercent = 0,
   interestFreeText = null,
+  financedTotalText = null,
   priceWithoutNationalTaxesCash = null,
   isInCart = false,
   cartQuantity = 0,
@@ -130,6 +134,11 @@ export function ProductPurchaseBox({
       {interestFreeText && (
         <p data-interest-free-global className="beyonix-modal-title mb-2 text-14px font-semibold text-white">
           {interestFreeText}
+          {financedTotalText && (
+            <span data-financed-total className="beyonix-modal-muted block text-12px font-medium text-white/55">
+              {financedTotalText}
+            </span>
+          )}
         </p>
       )}
 

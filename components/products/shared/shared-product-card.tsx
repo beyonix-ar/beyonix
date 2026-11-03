@@ -66,7 +66,7 @@ export default function SharedProductCard({
     increaseQuantity,
     decreaseQuantity,
   } = useCart()
-  const { pricing, interestFreeOffer, installmentsFinancing } = useSiteSettings()
+  const { pricing, interestFreeOffer, installmentsFinancing, financedPricePolicy } = useSiteSettings()
   const feedbackTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isFavorite, setIsFavorite] =
@@ -94,13 +94,14 @@ export default function SharedProductCard({
     defaultVariant.price,
     defaultVariant.originalPrice
   )
-  // Sólo si el precio en cuotas de ESTE producto alcanza el mínimo que
+  // Sólo si el total en cuotas de ESTE producto alcanza el mínimo que
   // Mercado Pago confirma para ese plan; si no, no se promete nada.
-  const installmentLabel = getProductInterestFreeMessage(
+  const installmentsMessage = getProductInterestFreeMessage(
     interestFreeOffer,
     defaultVariant.price,
     installmentsFinancing,
-  )?.text ?? null
+    financedPricePolicy,
+  )
   const priceWithoutNationalTaxes = getPriceWithoutNationalTaxes(
     defaultVariant.price,
     pricing.nationalTaxesIncidencePercent,
@@ -317,7 +318,10 @@ export default function SharedProductCard({
                 discountPercentage
               }
               installmentLabel={
-                installmentLabel
+                installmentsMessage?.text ?? null
+              }
+              installmentDetail={
+                installmentsMessage?.financedTotalText ?? null
               }
               priceWithoutNationalTaxes={priceWithoutNationalTaxes}
               quantity={quantity}

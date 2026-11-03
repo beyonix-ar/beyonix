@@ -72,13 +72,13 @@ export function ProductDetailsPanel({
     !previewedColor && selectedOption?.isRandom
       ? RANDOM_VARIANT_LABEL
       : formatColorName(previewedColor?.name ?? selectedOption?.name ?? "")
-  const { pricing, interestFreeOffer, installmentsFinancing } = useSiteSettings()
+  const { pricing, interestFreeOffer, installmentsFinancing, financedPricePolicy } = useSiteSettings()
   const cashPrice = selectedOption?.price ?? product.precio
   const transferPrice = getTransferPrice(cashPrice, pricing.transferDiscountPercent)
-  // Sólo el plan que el precio financiado de esta variante alcanza (nunca
-  // el de transferencia); lo que se cobra lo define el total del checkout.
-  const interestFreeText =
-    getProductInterestFreeMessage(interestFreeOffer, cashPrice, installmentsFinancing)?.text ?? null
+  // Sólo el plan que el total en cuotas de esta variante alcanza (nunca el
+  // de transferencia); lo que se cobra lo define el total del checkout.
+  const installmentsMessage =
+    getProductInterestFreeMessage(interestFreeOffer, cashPrice, installmentsFinancing, financedPricePolicy)
   const priceWithoutNationalTaxesCash = getPriceWithoutNationalTaxes(
     cashPrice,
     pricing.nationalTaxesIncidencePercent,
@@ -156,7 +156,8 @@ export function ProductDetailsPanel({
           }
           transferPrice={transferPrice}
           transferDiscountPercent={pricing.transferDiscountPercent}
-          interestFreeText={interestFreeText}
+          interestFreeText={installmentsMessage?.text ?? null}
+          financedTotalText={installmentsMessage?.financedTotalText ?? null}
           priceWithoutNationalTaxesCash={priceWithoutNationalTaxesCash}
           isInCart={isInCart}
           cartQuantity={cartQuantity}

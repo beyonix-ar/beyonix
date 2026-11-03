@@ -103,6 +103,7 @@ import {
   calculateCartTotals,
 } from "@/lib/cart/cart-totals"
 import {
+  getCheckoutInstallmentsLabels,
   getCheckoutInstallmentsOptionCopy,
   getPriceWithoutNationalTaxes,
 } from "@/lib/pricing/financed-pricing"
@@ -983,11 +984,13 @@ export default function CheckoutPage() {
     nationalTaxesIncidencePercent: siteSettings.pricing.nationalTaxesIncidencePercent,
     financedPricePolicy: siteSettings.financedPricePolicy,
   }
-  // Con "mismo precio que contado" nunca se presenta un "precio financiado".
-  const financedPriceCopy =
-    siteSettings.financedPricePolicy === "same_as_cash"
-      ? { badge: "Mismo precio que contado", total: "Total (igual al contado)" }
-      : { badge: "Precio financiado", total: "Total financiado" }
+  // "sin interés" sólo con same_as_cash (total en cuotas = contado); con esa
+  // política tampoco se presenta un "precio financiado".
+  const installmentsLabels = getCheckoutInstallmentsLabels(siteSettings.financedPricePolicy)
+  const financedPriceCopy = {
+    badge: installmentsLabels.financedBadge,
+    total: installmentsLabels.financedTotalLabel,
+  }
   const mercadoPagoBaseInput = {
     lines: checkoutPricingLines,
     shippingCharged: totals.shipping,
@@ -1173,12 +1176,13 @@ export default function CheckoutPage() {
   const offeredInstallmentPlans = financedPreviewPricing.installmentPlans
   const installmentsOptionCopy = getCheckoutInstallmentsOptionCopy(
     offeredInstallmentPlans.map((plan) => plan.count),
+    siteSettings.financedPricePolicy,
+    financedPreviewQuote?.externalAmountDue ?? null,
   )
-  // Comunicación GLOBAL vigente (la misma de Home/PDP/tarjetas/carrito):
-  // mantiene la opción de cuotas en pantalla de forma estable ("Hasta N
-  // cuotas sin interés a partir de $X") aunque el total todavía no alcance.
+  // Comunicación GLOBAL vigente (la misma del carrito): mantiene la opción
+  // de cuotas en pantalla de forma estable aunque el total todavía no alcance.
   // Lo que se cobra lo decide siempre la consulta en vivo sobre el total real.
-  const globalInterestFreeMessage = getInterestFreeMessage(siteSettings.interestFreeOffer)
+  const globalInterestFreeMessage = getInterestFreeMessage(siteSettings.interestFreeOffer, siteSettings.financedPricePolicy)
   // Marcas con las que Mercado Pago confirmó EN VIVO la cuota máxima para
   // este total: nunca se presenta compatibilidad universal si no existe.
   const financedPreviewTier = financedPreviewPricing.offeredInstallmentCount
@@ -1188,7 +1192,11 @@ export default function CheckoutPage() {
       : []
   // Copy de la modalidad ya elegida (con el saldo que efectivamente aplica).
   const selectedInstallmentsCopy = isMercadoPagoFinanced
-    ? getCheckoutInstallmentsOptionCopy(mercadoPagoPricing.interestFreeInstallmentCounts)
+    ? getCheckoutInstallmentsOptionCopy(
+        mercadoPagoPricing.interestFreeInstallmentCounts,
+        siteSettings.financedPricePolicy,
+        finalTotal,
+      )
     : null
   // Total que se envía como `expectedTotal` (Mercado Pago y transferencia):
   // siempre el MISMO que muestra el resumen, sólo para que el servidor
@@ -2931,16 +2939,16 @@ export default function CheckoutPage() {
                     />
 
                     {/* Cuotas: UNA sola opción con las cuotas que Mercado Pago
-                        confirma sin interés para el total real. Todas cobran
-                        el mismo total financiado (costo del tier más alto
-                        confirmado); la cantidad se elige en Mercado Pago. */}
+                        confirma para el total real. Todas cobran el mismo
+                        total financiado (costo del tier más alto confirmado);
+                        la cantidad se elige en Mercado Pago. */}
                     {installmentsOptionCopy && financedPreviewQuote ? (
                       <CheckoutPaymentOptionCard
                         option="mercadopago_installments"
                         checked={selectedPaymentOption === "mercadopago_installments"}
                         onSelect={selectPaymentOption}
                         icon={CreditCard}
-                        title="Mercado Pago · Cuotas sin interés"
+                        title={installmentsLabels.optionTitle}
                         description={installmentsOptionCopy.headline}
                         badge={<span className="checkout-badge checkout-badge-info">{financedPriceCopy.badge}</span>}
                         highlight={
@@ -2957,8 +2965,8 @@ export default function CheckoutPage() {
                         checked={false}
                         onSelect={selectPaymentOption}
                         icon={CreditCard}
-                        title="Mercado Pago · Cuotas sin interés"
-                        description={globalInterestFreeMessage?.text ?? "Sin cuotas sin interés confirmadas para este total."}
+                        title={installmentsLabels.optionTitle}
+                        description={globalInterestFreeMessage?.text ?? installmentsLabels.unavailable}
                         highlight={
                           <span data-installments-global-pending>
                             {interestFreeConfirmationPending
@@ -2972,7 +2980,7 @@ export default function CheckoutPage() {
 
                     {interestFreeConfirmationPending && !globalInterestFreeMessage && (
                       <p data-installments-pending className="text-xs font-medium text-white/55">
-                        Consultando cuotas sin interés disponibles…
+                        {installmentsLabels.pending}
                       </p>
                     )}
                   </fieldset>
@@ -2990,6 +2998,7 @@ export default function CheckoutPage() {
                     <CheckoutPaymentMediaPanel
                       option={selectedPaymentOption}
                       installmentBrands={liveMaxCountBrands}
+                      installmentsLabels={installmentsLabels}
                       transferDiscountPercent={siteSettings.pricing.transferDiscountPercent}
                     />
                   </div>
@@ -3550,7 +3559,7 @@ export default function CheckoutPage() {
           {isMercadoPagoFinanced ? (
             <div data-mercadopago-confirm="financed">
               <p className="beyonix-modal-body text-[13px] leading-5 text-white/65">
-                Elegiste pagar con tarjeta de crédito en cuotas sin interés.
+                {installmentsLabels.confirmation}
               </p>
               <p className="beyonix-modal-title mt-2 text-[15px] font-bold text-white">
                 {financedPriceCopy.total}: {formatPrice(finalTotal)}

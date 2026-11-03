@@ -82,12 +82,14 @@ export function HeroSection({
     ? Math.round((1 - finalPrice / originalPrice) * 100)
     : 0
   const hasSale = discountPercentage > 0
-  const { interestFreeOffer, installmentsFinancing } = useSiteSettings()
-  // Regla GLOBAL vigente de la tienda (Home): el mayor rango que Mercado Pago
-  // confirma hoy. Nunca una característica fija del producto.
-  const installmentLabel = featuredProduct
-    ? getProductInterestFreeMessage(interestFreeOffer, finalPrice, installmentsFinancing)?.text ?? null
+  const { interestFreeOffer, installmentsFinancing, financedPricePolicy } = useSiteSettings()
+  // Mismo mensaje por producto que tarjetas y ficha: el mayor plan que
+  // Mercado Pago confirma hoy para el total en cuotas de este precio.
+  const installmentsMessage = featuredProduct
+    ? getProductInterestFreeMessage(interestFreeOffer, finalPrice, installmentsFinancing, financedPricePolicy)
     : null
+  const installmentLabel = installmentsMessage?.text ?? null
+  const installmentDetail = installmentsMessage?.financedTotalText ?? null
 
   const openFeaturedProduct = () => {
     if (!featuredProduct) {
@@ -217,11 +219,20 @@ export function HeroSection({
                       )}
 
                       {!!installmentLabel && (
-                        <span className="beyonix-installment-badge inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
+                        <span
+                          data-installments-badge
+                          className="beyonix-installment-badge inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky"
+                        >
                           {installmentLabel}
                         </span>
                       )}
                     </div>
+                  )}
+
+                  {!!installmentLabel && installmentDetail && (
+                    <p data-installments-total className="beyonix-modal-muted mt-1 text-11px font-medium text-white/55 tabular-nums">
+                      {installmentDetail}
+                    </p>
                   )}
                 </div>
 

@@ -11,6 +11,7 @@ import {
   type CheckoutPricingSettings,
 } from "../../lib/pricing/checkout-pricing.ts"
 import {
+  formatInstallmentsAmount,
   getCheckoutInstallmentsOptionCopy,
   type InterestFreeLookup,
 } from "../../lib/pricing/financed-pricing.ts"
@@ -69,18 +70,25 @@ test("el checkout muestra UNA sola opción de cuotas (no una tarjeta por 2, 3 y 
   assert.equal((list.match(/<CheckoutPaymentOptionCard/g) ?? []).length, 4)
   assert.equal((list.match(/option="mercadopago_installments"/g) ?? []).length, 2)
   assert.match(list, /\{installmentsOptionCopy && financedPreviewQuote \? \([\s\S]*\) : \([\s\S]*\)\}/)
-  assert.match(list, /description=\{globalInterestFreeMessage\?\.text \?\? "Sin cuotas sin interés confirmadas para este total\."\}/)
+  assert.match(list, /description=\{globalInterestFreeMessage\?\.text \?\? installmentsLabels\.unavailable\}/)
   assert.match(list, /\n\s+disabled\n/)
   assert.match(list, /title="Mercado Pago · 1 pago"/)
-  assert.match(list, /title="Mercado Pago · Cuotas sin interés"/)
+  assert.equal((list.match(/title=\{installmentsLabels\.optionTitle\}/g) ?? []).length, 2)
+  assert.doesNotMatch(list, /sin interés/)
   assert.doesNotMatch(list, /\.map\(\(plan\) =>/)
   assert.doesNotMatch(checkout, /mercadopago_installments_(2|3|6|\$\{)/)
 })
 
-test("MP confirma 2 y 3 -> 'Hasta 3 cuotas sin interés', 'Disponibles: 2 y 3 cuotas' y precio con el costo de 3", () => {
+test("MP confirma 2 y 3 -> cover_costs '3 cuotas de $X' / same_as_cash 'Hasta 3 cuotas sin interés', 'Disponibles: 2 y 3 cuotas' y precio con el costo de 3", () => {
   const pricing = pricingWith(() => [2, 3])
-  const copy = getCheckoutInstallmentsOptionCopy(pricing.installmentPlans.map((plan) => plan.count))
-  assert.deepEqual(copy, {
+  const counts = pricing.installmentPlans.map((plan) => plan.count)
+  const total = pricing.financed!.externalAmountDue
+  assert.deepEqual(getCheckoutInstallmentsOptionCopy(counts, "cover_costs", total), {
+    maxCount: 3,
+    headline: `3 cuotas de ${formatInstallmentsAmount(total / 3)}`,
+    available: "Disponibles: 2 y 3 cuotas",
+  })
+  assert.deepEqual(getCheckoutInstallmentsOptionCopy(counts, "same_as_cash", total), {
     maxCount: 3,
     headline: "Hasta 3 cuotas sin interés",
     available: "Disponibles: 2 y 3 cuotas",
@@ -89,11 +97,19 @@ test("MP confirma 2 y 3 -> 'Hasta 3 cuotas sin interés', 'Disponibles: 2 y 3 cu
   assert.equal(pricing.financed?.preferenceMaxInstallments, 3)
 })
 
-test("MP confirma 2, 3 y 6 -> 'Hasta 6 cuotas sin interés', 'Disponibles: 2, 3 y 6 cuotas' y precio con el costo de 6", () => {
+test("MP confirma 2, 3 y 6 -> cover_costs '6 cuotas de $X' / same_as_cash 'Hasta 6 cuotas sin interés', 'Disponibles: 2, 3 y 6 cuotas' y precio con el costo de 6", () => {
   const twoThree = pricingWith(() => [2, 3])
   const pricing = pricingWith(() => [2, 3, 6])
-  const copy = getCheckoutInstallmentsOptionCopy(pricing.installmentPlans.map((plan) => plan.count))
-  assert.deepEqual(copy, {
+  const counts = pricing.installmentPlans.map((plan) => plan.count)
+  const total = pricing.financed!.externalAmountDue
+  assert.deepEqual(getCheckoutInstallmentsOptionCopy(counts, "cover_costs", total), {
+    maxCount: 6,
+    headline: `6 cuotas de ${formatInstallmentsAmount(total / 6)}`,
+    available: "Disponibles: 2, 3 y 6 cuotas",
+  })
+  // Sin total todavía: neutral, nunca "sin interés".
+  assert.equal(getCheckoutInstallmentsOptionCopy(counts, "cover_costs", null)?.headline, "Hasta 6 cuotas")
+  assert.deepEqual(getCheckoutInstallmentsOptionCopy(counts, "same_as_cash", total), {
     maxCount: 6,
     headline: "Hasta 6 cuotas sin interés",
     available: "Disponibles: 2, 3 y 6 cuotas",
@@ -105,7 +121,7 @@ test("MP confirma 2, 3 y 6 -> 'Hasta 6 cuotas sin interés', 'Disponibles: 2, 3 
 })
 
 test("sin cuotas confirmadas se muestra la opción de cuotas deshabilitada", () => {
-  assert.equal(getCheckoutInstallmentsOptionCopy([]), null)
+  assert.equal(getCheckoutInstallmentsOptionCopy([], "cover_costs", null), null)
   assert.equal(pricingWith(() => []).financed, null)
   assert.match(paymentList(), /\{installmentsOptionCopy && financedPreviewQuote \? \(/)
   assert.match(paymentList(), /\n\s+disabled\n/)

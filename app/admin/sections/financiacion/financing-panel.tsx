@@ -509,7 +509,8 @@ export function FinancingPanel({
   const enabled = draft.interestFreeEnabled
   // Máximo sin interés que confirma Mercado Pago (BEYONIX nunca pasa de 6).
   const confirmedMax = getConfirmedInterestFreeMax(reference)
-  const publicMessage = getInterestFreeMessage(overview?.interestFreeOffer)
+  // El texto público vigente: con la política guardada (la que ve la tienda).
+  const publicMessage = getInterestFreeMessage(overview?.interestFreeOffer, savedPolicy)
   const resolved = resolveInstallmentsFinancing(stored, draft.mode, observed)
   const effective: InstallmentsFinancingConfig = resolved.effective
   const baseKnown = resolved.sources.base === "observed" || draft.confirmed.base

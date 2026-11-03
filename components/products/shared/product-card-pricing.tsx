@@ -7,6 +7,8 @@ interface ProductCardPricingProps {
   originalPrice?: number
   discountPercentage?: number | null
   installmentLabel?: string | null
+  /** "Total financiado: $Y", visible debajo del badge cuando el total en cuotas difiere del contado. */
+  installmentDetail?: string | null
   priceWithoutNationalTaxes?: number | null
 
   quantity: number
@@ -30,6 +32,7 @@ export function ProductCardPricing({
   originalPrice,
   discountPercentage,
   installmentLabel = null,
+  installmentDetail = null,
   priceWithoutNationalTaxes = null,
 
   quantity,
@@ -85,7 +88,10 @@ export function ProductCardPricing({
             )}
 
             {!!installmentLabel && (
-              <span className="beyonix-installment-badge inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky">
+              <span
+                data-installments-badge
+                className="beyonix-installment-badge inline-flex min-h-24px items-center rounded-full border border-beyonix-blue-light/24 bg-beyonix-blue/22 px-3 py-1.5 text-12px font-medium leading-none text-beyonix-sky"
+              >
                 {installmentLabel}
               </span>
             )}
@@ -96,6 +102,12 @@ export function ProductCardPricing({
               </span>
             )}
           </div>
+
+          {!!installmentLabel && installmentDetail && (
+            <p data-installments-total className="beyonix-modal-muted mt-1 text-10px font-medium leading-3 text-white/55 tabular-nums">
+              {installmentDetail}
+            </p>
+          )}
         </div>
       </div>
 

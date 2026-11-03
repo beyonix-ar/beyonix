@@ -30,7 +30,8 @@ test("opciones: transferencia, Mercado Pago · 1 pago (contado) y UNA sola opci�
   assert.match(checkout, /description="Precio contado"/)
   // Cuotas: UNA opción, sólo si Mercado Pago confirmó alguna cuota sin interés.
   assert.match(checkout, /\{installmentsOptionCopy && financedPreviewQuote \? \(\s*<CheckoutPaymentOptionCard\s+option="mercadopago_installments"/)
-  assert.match(checkout, /title="Mercado Pago · Cuotas sin interés"/)
+  // Título según la política: "Cuotas con Mercado Pago" (cover_costs) o "… sin interés" (same_as_cash).
+  assert.match(checkout, /title=\{installmentsLabels\.optionTitle\}/)
   // Nunca una tarjeta por cada cantidad de cuotas.
   assert.doesNotMatch(checkout, /offeredInstallmentPlans\.map\(\(plan\) => \(\s*<CheckoutPaymentOptionCard/)
   assert.doesNotMatch(checkout, /mercadopago_installments_\$\{/)

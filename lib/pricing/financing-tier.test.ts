@@ -132,11 +132,12 @@ test("CASO G: MP cambia la disponibilidad entre la pantalla y el servidor -> otr
   const route = readFileSync(new URL("../../app/api/mercadopago/create-preference/route.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n")
   // Cuota elegida que ya no está confirmada: 409 antes de cualquier efecto.
   assert.match(route, /!pricing\.interestFreeInstallmentCounts\.includes\(selectedInstallmentCount\)/)
-  assert.match(route, /code: "PRICING_CHANGED",\s*error: INSTALLMENTS_CHANGED_MESSAGE/)
+  assert.match(route, /code: "PRICING_CHANGED",[^\n]*\n[^\n]*\n\s*error: getCheckoutInstallmentsLabels\(siteSettings\.financedPricePolicy\)\.installmentsChanged,/)
   // Total o tier distinto al mostrado: 409.
   assert.match(route, /Math\.abs\(expectedTotal - quote\.externalAmountDue\) > 0\.009/)
   assert.match(route, /expectedMaxInstallments !== quote\.preferenceMaxInstallments/)
-  assert.ok(route.indexOf("INSTALLMENTS_CHANGED_MESSAGE,") < route.indexOf(".insert(orderPayload"))
+  assert.ok(route.indexOf(".installmentsChanged,") > 0)
+  assert.ok(route.indexOf(".installmentsChanged,") < route.indexOf(".insert(orderPayload"))
 })
 
 test("CASO H: MP falla -> sin cuotas, 1 pago a precio contado y sin 'sin interés'", () => {

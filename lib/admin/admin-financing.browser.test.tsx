@@ -374,7 +374,7 @@ for (const theme of ["light", "dark"] as const) {
       for (const count of [2, 3, 6]) {
         assert.equal(await page.locator(`[data-availability-row='${count}']`).getAttribute("data-availability"), "available", String(count))
       }
-      await page.locator("[data-public-message]").getByText("“Hasta 6 cuotas sin interés a partir de $ 67.000 con Visa”").waitFor()
+      await page.locator("[data-public-message]").getByText("“Hasta 6 cuotas con total financiado desde $67.000 con Visa”").waitFor()
       await page.locator("[data-mercadopago-status='synced']").getByText("Sincronizado").waitFor()
       assert.equal(await block(page, "costos").getByText("No disponible hoy").count(), 0)
       // Sin controles de mínimos propios.
@@ -394,7 +394,7 @@ for (const theme of ["light", "dark"] as const) {
       for (const count of [3, 6]) {
         assert.equal(await page.locator(`[data-availability-row='${count}']`).getAttribute("data-availability"), "unavailable")
       }
-      await page.locator("[data-public-message]").getByText("“Hasta 2 cuotas sin interés a partir de $ 31.000”").waitFor()
+      await page.locator("[data-public-message]").getByText("“Hasta 2 cuotas con total financiado desde $31.000”").waitFor()
       for (const label of ["3 cuotas", "6 cuotas"]) {
         const row = costRow(page, label)
         await row.getByText("No disponible hoy").waitFor()
@@ -438,7 +438,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.locator("[data-check-reference]").click()
       await block(page, "cuotas").getByText("Hasta 6 cuotas sin interés", { exact: true }).waitFor()
       await page.locator("[data-mercadopago-status='synced']").waitFor()
-      await page.locator("[data-public-message]").getByText("Hasta 6 cuotas sin interés a partir de $ 67.000 con Visa", { exact: false }).waitFor()
+      await page.locator("[data-public-message]").getByText("Hasta 6 cuotas con total financiado desde $67.000 con Visa", { exact: false }).waitFor()
       assert.equal(await page.evaluate("window.__referenceChecks"), 1)
     } finally {
       await page.close()

@@ -47,8 +47,11 @@ test("PDP/modal (product-purchase-box.tsx): una sola línea de cuotas, sin tabla
   assert.match(source, /\{interestFreeText && \(/)
   assert.doesNotMatch(source, /maxInstallmentPlan|installmentPlans|Ver opciones de financiación|installmentsWithoutSurcharge/)
   const communication = readSource("../../lib/pricing/interest-free-communication.ts")
-  // El texto global usa el mismo copy "cuotas sin interés".
-  assert.match(communication, /`Hasta \$\{tier\.count\} \$\{INSTALLMENTS_COPY\} a partir de \$\{AMOUNT_FORMAT\.format\(tier\.minimumAmount\)\}/)
+  // "cuotas sin interés" sólo si el total en cuotas es el de contado
+  // (same_as_cash); con cover_costs, "N cuotas de $X" y el total financiado.
+  assert.match(communication, /`Hasta \$\{tier\.count\} \$\{INSTALLMENTS_COPY\} a partir de \$\{minimum\}/)
+  assert.match(communication, /`\$\{tier\.count\} cuotas de \$\{formatInstallmentsAmount\(installmentAmount\)\}/)
+  assert.match(source, /\{financedTotalText && \(/)
 })
 
 test("PDP se sirve a través de product-details-panel.tsx en la página de producto y en el modal -- un solo lugar para corregir", () => {
@@ -76,9 +79,11 @@ test("checkout: la opción de cuotas, el resumen y la confirmación usan INSTALL
   const checkout = readSource("../../app/checkout/page.tsx")
   const financed = readSource("../../lib/pricing/financed-pricing.ts")
 
-  // Un solo copy de cuotas: "Hasta N cuotas sin interés" sale de INSTALLMENTS_COPY.
-  assert.match(financed, /headline: `Hasta \$\{maxCount\} \$\{INSTALLMENTS_COPY\}`/)
-  assert.match(checkout, /getCheckoutInstallmentsOptionCopy\(\s*offeredInstallmentPlans\.map\(\(plan\) => plan\.count\),\s*\)/)
+  // "Hasta N cuotas sin interés" (INSTALLMENTS_COPY) sólo con same_as_cash;
+  // con cover_costs, "N cuotas de $X" sobre el total financiado.
+  assert.match(financed, /\? `Hasta \$\{maxCount\} \$\{INSTALLMENTS_COPY\}`/)
+  assert.match(financed, /: `\$\{maxCount\} cuotas de \$\{formatInstallmentsAmount\(installmentAmount\)\}`/)
+  assert.match(checkout, /getCheckoutInstallmentsOptionCopy\(\s*offeredInstallmentPlans\.map\(\(plan\) => plan\.count\),\s*siteSettings\.financedPricePolicy,\s*financedPreviewQuote\?\.externalAmountDue \?\? null,\s*\)/)
   assert.match(checkout, /`Tarjeta de crédito · \$\{selectedInstallmentsCopy\.headline\}`/)
   assert.doesNotMatch(checkout, /cuotas fijas/)
 

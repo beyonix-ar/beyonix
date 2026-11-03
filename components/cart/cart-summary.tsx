@@ -62,9 +62,10 @@ export function CartSummary({
     requestedAmount: maxApplicableCredit,
   })
   const showCustomerCreditRow = creditApplication.appliedAmount > 0
-  // Regla GLOBAL de compra, mismo texto que en Home/PDP/tarjetas: no cambia
-  // al tocar + / −; el checkout decide con el total real.
-  const interestFreeText = getInterestFreeMessage(siteSettings.interestFreeOffer)?.text ?? null
+  // Regla GLOBAL de compra: no cambia al tocar + / −; el checkout decide con
+  // el total real. El mínimo de Mercado Pago aplica al total en cuotas.
+  const interestFreeText =
+    getInterestFreeMessage(siteSettings.interestFreeOffer, siteSettings.financedPricePolicy)?.text ?? null
 
   useEffect(() => {
     if (customerCredit.loading && customerCredit.balance <= 0) return

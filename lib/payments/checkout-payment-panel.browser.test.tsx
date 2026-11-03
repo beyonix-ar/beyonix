@@ -14,6 +14,7 @@ import { CreditCard, Landmark, Wallet } from "lucide-react"
 import { CheckoutPaymentMediaPanel, CheckoutPaymentOptionCard } from "@/components/checkout/checkout-payment-media-panel"
 import { PaymentMethodLogoStrip } from "@/components/payments/payment-method-logo-tile"
 import { usePaymentMethodLogos } from "@/lib/payments/use-payment-method-logos"
+import { getCheckoutInstallmentsLabels } from "@/lib/pricing/financed-pricing"
 
 function Strip() {
   const logos = usePaymentMethodLogos() ?? []
@@ -25,6 +26,7 @@ function Fixture() {
   const [policy, setPolicy] = useState("same")
   const [brands, setBrands] = useState(["visa", "master"])
   const [discount, setDiscount] = useState(10)
+  const labels = getCheckoutInstallmentsLabels(policy === "same" ? "same_as_cash" : "cover_costs")
   return h("div", { className: "checkout-page", "data-checkout-step": "3" },
     h("main", { className: "checkout-main-panel", style: { maxWidth: 760, margin: "24px auto", padding: 20 } },
       h("h2", { style: { marginBottom: 16 } }, "Método de pago"),
@@ -32,9 +34,9 @@ function Fixture() {
         h("fieldset", { className: "grid gap-2 min-w-0", "data-payment-options": true },
           h(CheckoutPaymentOptionCard, { option: "transferencia", checked: option === "transferencia", onSelect: setOption, icon: Landmark, title: "Transferencia bancaria", description: "Datos bancarios al confirmar", badge: h("span", { className: "checkout-badge checkout-badge-success" }, "10% OFF"), amountLabel: "Total transferencia", amount: option === "transferencia" ? "$90.000" : undefined }),
           h(CheckoutPaymentOptionCard, { option: "mercadopago_cash", checked: option === "mercadopago_cash", onSelect: setOption, icon: Wallet, title: "Mercado Pago · 1 pago", description: "Precio contado", amountLabel: "Total", amount: "$100.000" }),
-          h(CheckoutPaymentOptionCard, { option: "mercadopago_installments", checked: option === "mercadopago_installments", onSelect: setOption, icon: CreditCard, title: "Mercado Pago · Cuotas sin interés", description: "Hasta 6 cuotas sin interés", amountLabel: "Total financiado", amount: policy === "same" ? "$100.000" : "$118.000" }),
+          h(CheckoutPaymentOptionCard, { option: "mercadopago_installments", checked: option === "mercadopago_installments", onSelect: setOption, icon: CreditCard, title: labels.optionTitle, description: policy === "same" ? "Hasta 6 cuotas sin interés" : "6 cuotas de $19.667", amountLabel: labels.financedTotalLabel, amount: policy === "same" ? "$100.000" : "$118.000" }),
         ),
-        h(CheckoutPaymentMediaPanel, { option, installmentBrands: brands, transferDiscountPercent: discount }),
+        h(CheckoutPaymentMediaPanel, { option, installmentBrands: brands, installmentsLabels: labels, transferDiscountPercent: discount }),
       ),
       h("div", { style: { marginTop: 16 } },
         h("button", { type: "button", "data-policy": "same", onClick: () => setPolicy("same") }, "Mismo precio que contado"),
@@ -309,8 +311,13 @@ for (const theme of ["light", "dark"] as const) {
         assert.equal(await page.locator("[data-payment-options] input:checked").inputValue(), "mercadopago_installments")
         await page.locator('[data-policy="cover"]').click()
         assert.match(await page.locator('[data-payment-option="mercadopago_installments"]').innerText(), /\$118\.000/)
+        // cover_costs: panel REAL con título neutral; nunca "sin interés".
+        assert.equal((await page.locator("[data-payment-media] h3").innerText()).trim(), "Cuotas con Mercado Pago")
+        assert.equal(await page.locator("[data-media-installments] ul").getAttribute("aria-label"), "Tarjetas con cuotas confirmadas")
+        assert.doesNotMatch(await page.locator(".checkout-payment-layout").innerText(), /sin interés/i)
         await page.locator('[data-policy="same"]').click()
         assert.match(await page.locator('[data-payment-option="mercadopago_installments"]').innerText(), /\$100\.000/)
+        assert.equal((await page.locator("[data-payment-media] h3").innerText()).trim(), "Mercado Pago · Cuotas sin interés")
         await page.locator('[data-brands="none"]').click()
         assert.equal(await page.locator("[data-media-installments] [data-media-brand]").count(), 0)
         await assertNoOverflow(page, width)

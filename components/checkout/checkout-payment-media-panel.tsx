@@ -14,6 +14,7 @@ import {
   type PublicPaymentMethodLogo,
 } from "@/lib/payments/payment-method-logos"
 import { usePaymentMethodLogos } from "@/lib/payments/use-payment-method-logos"
+import type { getCheckoutInstallmentsLabels } from "@/lib/pricing/financed-pricing"
 import { cn } from "@/lib/utils"
 
 export type CheckoutPaymentOption = "transferencia" | "mercadopago_cash" | "mercadopago_installments"
@@ -126,22 +127,24 @@ function MediaBrand({ name, logo = null, confirmed = false }: { name: string; lo
   )
 }
 
-const PANEL_TITLES: Record<CheckoutPaymentOption, string> = {
-  transferencia: "Transferencia bancaria",
-  mercadopago_cash: "Mercado Pago · 1 pago",
-  mercadopago_installments: "Mercado Pago · Cuotas sin interés",
-}
-
 export function CheckoutPaymentMediaPanel({
   option,
   installmentBrands,
+  installmentsLabels,
   transferDiscountPercent,
 }: {
   option: CheckoutPaymentOption | null
   installmentBrands: readonly string[]
+  /** Textos de cuotas según la política vigente: "sin interés" sólo con `same_as_cash`. */
+  installmentsLabels: ReturnType<typeof getCheckoutInstallmentsLabels>
   /** Descuento vigente de la tienda (siteSettings.pricing), el mismo que usa el total. */
   transferDiscountPercent: number
 }) {
+  const panelTitles: Record<CheckoutPaymentOption, string> = {
+    transferencia: "Transferencia bancaria",
+    mercadopago_cash: "Mercado Pago · 1 pago",
+    mercadopago_installments: installmentsLabels.optionTitle,
+  }
   const confirmedBrands = installmentBrands.filter((brand) => brand === "visa" || brand === "master")
   const logos = usePaymentMethodLogos() ?? []
   const cashLogoGroups = getCheckoutCashLogoGroups(logos)
@@ -153,7 +156,7 @@ export function CheckoutPaymentMediaPanel({
     <aside className="checkout-payment-media" data-payment-media={option ?? "none"} aria-label="Medios de pago">
       <div className="checkout-payment-media-heading">
         <p className="checkout-payment-media-kicker">Medios de pago</p>
-        {option ? <h3>{PANEL_TITLES[option]}</h3> : null}
+        {option ? <h3>{panelTitles[option]}</h3> : null}
       </div>
 
       {option === "transferencia" ? (
@@ -175,7 +178,7 @@ export function CheckoutPaymentMediaPanel({
         <div className="checkout-payment-media-content" data-media-installments>
           <p className="checkout-payment-media-title">Tarjetas de crédito con cuotas confirmadas</p>
           {confirmedBrands.length > 0 ? (
-            <ul className="checkout-payment-media-brands" aria-label="Tarjetas con cuotas sin interés confirmadas">
+            <ul className="checkout-payment-media-brands" aria-label={installmentsLabels.brandsLabel}>
               {confirmedBrands.map((brand) => (
                 <MediaBrand key={brand} name={INSTALLMENT_BRANDS[brand]} logo={findCreditLogo(logos, brand)} confirmed />
               ))}
