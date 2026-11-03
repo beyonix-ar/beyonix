@@ -8,6 +8,7 @@ import {
   type OrderCancellationRefundState,
 } from "../orders/order-cancellation-refund-state.ts"
 import { validatePassword } from "../validation/account-fields.ts"
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
 import { isRandomColorName, RANDOM_VARIANT_LABEL } from "../products/color-mode.ts"
 import {
   getShippingStage,
@@ -71,6 +72,7 @@ export function getCustomerShippingMilestone(
     case "in_transit":
       return { label: SHIPPING_STAGE_LABELS.in_transit, detail: "Tu pedido está en camino." }
     case "dispatched": {
+      if (isLocalDeliveryOrder(order)) return { label: "Preparando", detail: "Tu pedido está siendo preparado." }
       const andreani = Boolean(order.andreani_tracking) ||
         [order.shipping_provider, order.envio_proveedor].some((provider) => (provider ?? "").toLowerCase() === "andreani")
       return {
@@ -406,7 +408,33 @@ const SHIPPING_STEP_DETAILS: Record<ShippingStage, { reached: string; pending: s
   delivered: { reached: "Tu pedido fue entregado.", pending: "Último paso del recorrido." },
 }
 
+/**
+ * Envío BEYONIX: entrega local sin transporte externo ni guía. El cliente ve
+ * sólo Preparando → En camino → Entregado (mismas etapas que ya derivan de
+ * `ordenes.estado`), nunca "Despachado" ni textos de Andreani.
+ */
+const LOCAL_DELIVERY_STEPS: Array<{ stage: ShippingStage; label: string; reached: string; pending: string }> = [
+  { stage: "preparing", label: "Preparando", reached: "Tu pedido está siendo preparado.", pending: "Este paso empieza cuando se confirme el pago." },
+  { stage: "in_transit", label: "En camino", reached: "Tu pedido está en camino.", pending: "Te avisamos cuando salga a entregarse." },
+  { stage: "delivered", label: "Entregado", reached: "Tu pedido fue entregado.", pending: "Último paso de la entrega." },
+]
+
+function getLocalDeliveryProgressSteps(order: SupabasePedido, isPaid: boolean): OrderProgressStep[] {
+  const stage = getCustomerShippingStage(order, isPaid)
+  // "Listo"/"Despachado" no existen en la entrega local: siguen siendo Preparando.
+  const reachedIndex = stage === null
+    ? -1
+    : Math.max(0, LOCAL_DELIVERY_STEPS.findIndex((step) => step.stage === stage))
+  return LOCAL_DELIVERY_STEPS.map((step, index) => {
+    const reached = index <= reachedIndex
+    const isCurrent = index === reachedIndex
+    const tone: OrderProgressTone = !reached ? "pending" : isCurrent && step.stage !== "delivered" ? "current" : "done"
+    return { label: step.label, detail: reached ? step.reached : step.pending, tone }
+  })
+}
+
 function getShippingProgressSteps(order: SupabasePedido, isPaid: boolean): OrderProgressStep[] {
+  if (isLocalDeliveryOrder(order)) return getLocalDeliveryProgressSteps(order, isPaid)
   const estado = order.estado.toLowerCase()
   const stage = getCustomerShippingStage(order, isPaid)
   const reachedIndex = shippingStageIndex(stage)

@@ -41,6 +41,13 @@ import {
   type MercadoPagoObservedCosts,
   type ResolvedInstallmentsFinancing,
 } from "./mercadopago/observed-costs.ts"
+import {
+  INVALID_LOCAL_DELIVERY_SETTINGS,
+  LOCAL_DELIVERY_SETTINGS_KEY,
+  normalizeStoredLocalDeliverySettings,
+  toPublicLocalDeliverySettings,
+  type PublicLocalDeliverySettings,
+} from "./shipping/local-delivery.ts"
 
 export interface SiteSettings {
   shipping: ShippingBonusSettings
@@ -62,6 +69,8 @@ export interface SiteSettings {
   financedPricePolicy: FinancedPricePolicy
   andreaniCommercial: AndreaniCommercialSettings
   pricing: PricingSettings
+  /** Envío BEYONIX (entrega local), sin el costo interno. */
+  localDelivery: PublicLocalDeliverySettings
 }
 
 /** Evento de financiación que controla (o va a controlar) la política, para Admin. */
@@ -412,6 +421,8 @@ export function getFallbackSiteSettings(): SiteSettings {
     financedPricePolicy: DEFAULT_FINANCED_PRICE_POLICY,
     andreaniCommercial: DEFAULT_ANDREANI_COMMERCIAL_SETTINGS,
     pricing: DEFAULT_PRICING_SETTINGS,
+    // Respaldo ante una lectura fallida: Envío BEYONIX no se ofrece (fail closed).
+    localDelivery: toPublicLocalDeliverySettings(INVALID_LOCAL_DELIVERY_SETTINGS),
   }
 }
 
@@ -529,6 +540,7 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         "pricing",
         MERCADOPAGO_INTEREST_FREE_REFERENCE_KEY,
         FINANCED_PRICE_POLICY_KEY,
+        LOCAL_DELIVERY_SETTINGS_KEY,
       ])
 
     if (error) {
@@ -567,6 +579,13 @@ async function loadSiteSettings(strict: boolean): Promise<SiteSettings> {
         settingsByKey.get("andreani_commercial"),
       ),
       pricing: normalizePricingSettings(settingsByKey.get("pricing")),
+      // Pública: el costo interno nunca sale de acá.
+      localDelivery: toPublicLocalDeliverySettings(
+        normalizeStoredLocalDeliverySettings(
+          settingsByKey.get(LOCAL_DELIVERY_SETTINGS_KEY),
+          settingsByKey.has(LOCAL_DELIVERY_SETTINGS_KEY),
+        ),
+      ),
     }
 
     if (requestGeneration === siteSettingsCacheGeneration) {

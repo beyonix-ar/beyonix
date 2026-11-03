@@ -8,6 +8,8 @@ import { OrderReplacements } from "./order-replacements"
 import { LegacyCreditNotePanel } from "./legacy-credit-note-panel"
 import { PaymentIncidentsPanel } from "./payment-incidents-panel"
 import { OrderDispatchStatus } from "./order-dispatch-status"
+import { LocalDeliveryOrderCard } from "./local-delivery-order-card"
+import { isLocalDeliveryOrder, LOCAL_DELIVERY_NAME } from "@/lib/shipping/local-delivery"
 import { OrderPreparationPanel } from "../despachos/order-preparation-panel"
 import { FinancialResolutionWizard, useFinancialResolutionView } from "./financial-resolution-wizard"
 import { CancellationJourneyPanel } from "./cancellation-journey-panel"
@@ -4542,6 +4544,8 @@ function PedidoDetailModal({
   const usesAndreaniDispatch = (pedido.shipping_provider || pedido.envio_proveedor || "")
     .toLowerCase()
     .includes("andreani")
+  // Envío BEYONIX: entrega local, sin acciones de Andreani (ver LocalDeliveryOrderCard).
+  const localDelivery = isLocalDeliveryOrder(pedido)
   const detailTabs = useMemo(
     () => [
       {
@@ -5558,7 +5562,9 @@ function PedidoDetailModal({
                       Envío
                     </p>
                     <h3 className="mt-0.5 text-base font-black text-[var(--beyonix-text-primary)]">
-                      {pedido.shipping_type === "sucursal"
+                      {localDelivery
+                        ? `${LOCAL_DELIVERY_NAME} · domicilio`
+                        : pedido.shipping_type === "sucursal"
                         ? "Retiro en sucursal"
                         : "Envío a domicilio"}
                     </h3>
@@ -5580,7 +5586,9 @@ function PedidoDetailModal({
               <ShippingProgressTimeline pedido={pedido} />
             </section>
 
-            <OrderDispatchStatus orderId={pedido.id} onOpenArmado={usesAndreaniDispatch ? () => showDetailView("armado") : undefined} />
+            {!localDelivery && (
+              <OrderDispatchStatus orderId={pedido.id} onOpenArmado={usesAndreaniDispatch ? () => showDetailView("armado") : undefined} />
+            )}
 
             <div className="grid gap-2.5 lg:grid-cols-5">
               <section className="admin-order-shipping-card admin-order-shipping-destination-card rounded-lg border p-3 lg:col-span-3">
@@ -5657,6 +5665,9 @@ function PedidoDetailModal({
                     <p className="text-9px font-bold uppercase tracking-widest text-beyonix-gray-300">
                       Transportista
                     </p>
+                    {localDelivery ? (
+                      <p className="mt-1.5 text-sm font-black text-[var(--beyonix-text-primary)]">{LOCAL_DELIVERY_NAME}</p>
+                    ) : (
                     <div className="mt-1.5">
                       <AdminSelect
                         title="Modalidad logística"
@@ -5670,7 +5681,8 @@ function PedidoDetailModal({
                         <option value="otro">Otro</option>
                       </AdminSelect>
                     </div>
-                    {shippingModality === "otro" && (
+                    )}
+                    {!localDelivery && shippingModality === "otro" && (
                       <div className="admin-order-shipping-custom-provider mt-2 space-y-2 rounded-lg border border-beyonix-blue-500/35 bg-beyonix-gray-900 p-2.5">
                         <label className="block">
                           <span className="text-8px font-medium uppercase tracking-widest text-beyonix-gray-300">
@@ -5761,6 +5773,9 @@ function PedidoDetailModal({
               </section>
             </div>
 
+            {localDelivery ? (
+              <LocalDeliveryOrderCard pedido={pedido} />
+            ) : (
             <section className="admin-order-shipping-card admin-order-shipping-operation-card rounded-lg border p-3">
               <div className="flex items-center gap-2.5">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-beyonix-blue-500/50 bg-beyonix-blue-900 text-[var(--beyonix-text-primary)]">
@@ -5981,6 +5996,7 @@ function PedidoDetailModal({
                 </div>
               </div>
             </section>
+            )}
           </div>
           )}
             </>

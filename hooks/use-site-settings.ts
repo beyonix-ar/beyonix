@@ -20,6 +20,7 @@ import {
   isFinancedPricePolicy,
   type FinancedPricePolicy,
 } from "@/lib/pricing/financed-price-policy"
+import type { PublicLocalDeliverySettings } from "@/lib/shipping/local-delivery"
 
 interface SiteSettingsResponse {
   settings?: {
@@ -30,6 +31,7 @@ interface SiteSettingsResponse {
     pricing?: PricingSettings
     interestFreeOffer?: PublicInterestFreeOffer | null
     financedPricePolicy?: FinancedPricePolicy
+    localDelivery?: PublicLocalDeliverySettings
   }
 }
 
@@ -133,6 +135,8 @@ export function useSiteSettings() {
   const [interestFreeOffer, setInterestFreeOffer] = useState<PublicInterestFreeOffer | null>(null)
   // Sólo informativo en el cliente: el servidor recalcula con la política vigente.
   const [financedPricePolicy, setFinancedPricePolicy] = useState<FinancedPricePolicy>(DEFAULT_FINANCED_PRICE_POLICY)
+  // Envío BEYONIX: sin configuración leída no se ofrece (el servidor revalida igual).
+  const [localDelivery, setLocalDelivery] = useState<PublicLocalDeliverySettings | null>(null)
 
   useEffect(() => {
     let active = true
@@ -160,6 +164,7 @@ export function useSiteSettings() {
           ? data.settings.financedPricePolicy
           : DEFAULT_FINANCED_PRICE_POLICY,
       )
+      setLocalDelivery(data.settings?.localDelivery ?? null)
     }
 
     siteSettingsListeners.add(applySettings)
@@ -174,6 +179,7 @@ export function useSiteSettings() {
         setInstallmentsFinancing(DEFAULT_INSTALLMENTS_FINANCING_SETTINGS)
         setPricing(DEFAULT_PRICING_SETTINGS)
         setInterestFreeOffer(null)
+        setLocalDelivery(null)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -194,5 +200,6 @@ export function useSiteSettings() {
     pricing,
     interestFreeOffer,
     financedPricePolicy,
+    localDelivery,
   }
 }

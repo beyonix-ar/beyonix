@@ -468,6 +468,8 @@ export function createCommercialRefreshRunner<T>(
 
 interface CommercialSettingsInput {
   shipping?: unknown
+  /** Envío BEYONIX: un cambio cuenta como cambio de envío. */
+  localDelivery?: unknown
   installmentsFinancing?: unknown
   pricing?: unknown
   customerCreditPayments?: unknown
@@ -483,7 +485,11 @@ interface CommercialSettingsInput {
  * nada para el cliente.
  */
 export function getCommercialSettingsSignature(settings: CommercialSettingsInput) {
-  return JSON.stringify([settings.shipping ?? null, getOtherCommercialSettingsSignature(settings)])
+  return JSON.stringify([getShippingSettingsSignature(settings), getOtherCommercialSettingsSignature(settings)])
+}
+
+function getShippingSettingsSignature(settings: CommercialSettingsInput) {
+  return JSON.stringify([settings.shipping ?? null, settings.localDelivery ?? null])
 }
 
 function getOtherCommercialSettingsSignature(settings: CommercialSettingsInput) {
@@ -507,7 +513,7 @@ export function diffCommercialSettings(
   next: CommercialSettingsInput | null | undefined,
 ): { changed: boolean; shippingChanged: boolean; otherChanged: boolean } {
   if (!previous || !next) return { changed: false, shippingChanged: false, otherChanged: false }
-  const shippingChanged = JSON.stringify(previous.shipping ?? null) !== JSON.stringify(next.shipping ?? null)
+  const shippingChanged = getShippingSettingsSignature(previous) !== getShippingSettingsSignature(next)
   const otherChanged = getOtherCommercialSettingsSignature(previous) !== getOtherCommercialSettingsSignature(next)
   return { changed: shippingChanged || otherChanged, shippingChanged, otherChanged }
 }

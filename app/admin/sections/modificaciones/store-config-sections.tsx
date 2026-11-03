@@ -1,6 +1,7 @@
 "use client"
 
-import { Boxes, Percent, Truck, Wallet } from "lucide-react"
+import { Bike, Boxes, Percent, Plus, Truck, Wallet, X } from "lucide-react"
+import { useState } from "react"
 
 import type { ShippingBonusSettings } from "@/lib/store-config"
 import type {
@@ -11,11 +12,16 @@ import type {
 import { getTransferPrice } from "@/lib/pricing/financed-pricing"
 import type { ShippingQuoteSettings } from "@/lib/shipping/shipping-quote-settings"
 import {
+  LOCAL_DELIVERY_NAME,
+  normalizeLocalDeliveryPostalCode,
+  type LocalDeliverySettings,
+} from "@/lib/shipping/local-delivery"
+import {
   buildShippingPriceBreakdown,
   markupPercentToBasisPoints,
   SHIPPING_MARKUP_MAX_PERCENT,
 } from "@/lib/shipping/shipping-pricing"
-import { AdminSelect, AdminTextInput } from "../../components/admin-controls"
+import { AdminSecondaryButton, AdminSelect, AdminTextInput } from "../../components/admin-controls"
 import { AdminHelpTip } from "../../components/admin-help-tip"
 import {
   ConfigChip,
@@ -549,6 +555,210 @@ export function ShippingQuoteSection({ saved, disabled, saving, feedback, onSave
       ) : (
         <p className="mt-1.5 text-12px leading-4 text-white/62">
           El resultado se redondea al múltiplo de $10 y después se aplica la bonificación de envío vigente.
+        </p>
+      )}
+    </ConfigSection>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Envío BEYONIX (entrega local)
+// ─────────────────────────────────────────────────────────────
+
+export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave }: ConfigSectionProps<LocalDeliverySettings>) {
+  const block = useConfigEditing({
+    enabled: saved.enabled,
+    customerPrice: String(saved.customerPrice),
+    internalCost: String(saved.internalDeliveryCost),
+    freeThreshold: String(saved.freeThreshold),
+    postalCodes: saved.postalCodes,
+  })
+  const { draft, editing } = block
+  const [postalCodeDraft, setPostalCodeDraft] = useState("")
+  const [postalCodeError, setPostalCodeError] = useState("")
+  const next: LocalDeliverySettings = {
+    enabled: draft.enabled,
+    customerPrice: parseAmount(draft.customerPrice),
+    internalDeliveryCost: parseAmount(draft.internalCost),
+    freeThreshold: parseAmount(draft.freeThreshold),
+    postalCodes: draft.postalCodes,
+  }
+  // Mismas reglas que el servidor (parseLocalDeliverySettingsPatch).
+  const validationError = !draft.customerPrice || !draft.internalCost
+    ? "Completá el precio al cliente y el costo interno (pueden ser $0)."
+    : next.freeThreshold <= 0
+      ? "El monto de envío gratis debe ser mayor a $0."
+      : next.enabled && next.postalCodes.length === 0
+        ? "Agregá al menos un código postal para activar Envío BEYONIX."
+        : ""
+  const dirty =
+    next.enabled !== saved.enabled ||
+    next.customerPrice !== saved.customerPrice ||
+    next.internalDeliveryCost !== saved.internalDeliveryCost ||
+    next.freeThreshold !== saved.freeThreshold ||
+    next.postalCodes.join(",") !== saved.postalCodes.join(",")
+  const inputsDisabled = disabled || saving
+
+  const addPostalCode = () => {
+    const code = normalizeLocalDeliveryPostalCode(postalCodeDraft)
+    if (!code) {
+      setPostalCodeError("Ingresá un código postal de 4 números.")
+      return
+    }
+    if (draft.postalCodes.includes(code)) {
+      setPostalCodeError(`El código postal ${code} ya está en la lista.`)
+      return
+    }
+    block.setField("postalCodes", [...draft.postalCodes, code].sort())
+    setPostalCodeDraft("")
+    setPostalCodeError("")
+  }
+  const cancel = () => {
+    setPostalCodeDraft("")
+    setPostalCodeError("")
+    block.cancel()
+  }
+
+  return (
+    <ConfigSection
+      icon={<Bike className={iconClassName} />}
+      title={LOCAL_DELIVERY_NAME}
+      feedback={feedback}
+      data-config-block="local-delivery"
+      data-config-mode={editing ? "edit" : "read"}
+      actions={
+        <ConfigEditActions
+          editing={editing}
+          dirty={dirty}
+          saving={saving}
+          disabled={disabled}
+          canSave={!validationError}
+          onEdit={block.start}
+          onCancel={cancel}
+          onSave={() => onSave(next)}
+        />
+      }
+    >
+      <p className="mb-2 text-12px leading-4 text-white/62">
+        Entrega local propia para los códigos postales habilitados. Independiente de la bonificación de Andreani.
+      </p>
+      <ConfigValueList>
+        <ConfigValueRow label="Estado" editing={editing}>
+          {editing ? (
+            <AdminSelect
+              title="Estado de Envío BEYONIX"
+              value={draft.enabled ? "on" : "off"}
+              centered
+              leadingIcon={<span className="admin-config-dot size-2 rounded-full" data-tone={draft.enabled ? "success" : "neutral"} />}
+              wrapperClassName="w-full sm:w-36"
+              triggerClassName="admin-modifications-status-select !h-8 !min-h-8 !text-sm !font-bold"
+              optionClassName="font-bold hover:!bg-beyonix-blue/25"
+              disabled={inputsDisabled}
+              onChange={(value) => block.setField("enabled", value === "on")}
+            >
+              <option value="on">Activado</option>
+              <option value="off">Desactivado</option>
+            </AdminSelect>
+          ) : (
+            <ConfigChip tone={saved.enabled ? "success" : "neutral"} data-local-delivery-state={saved.enabled ? "active" : "inactive"}>
+              {saved.enabled ? "Activado" : "Desactivado"}
+            </ConfigChip>
+          )}
+        </ConfigValueRow>
+        <ConfigValueRow label="Costo al cliente" editing={editing}>
+          {editing ? (
+            <MoneyInput
+              ariaLabel="Precio de Envío BEYONIX al cliente"
+              value={draft.customerPrice}
+              disabled={inputsDisabled}
+              onChange={(value) => block.setField("customerPrice", value)}
+            />
+          ) : (
+            formatARS(saved.customerPrice)
+          )}
+        </ConfigValueRow>
+        <ConfigValueRow
+          label={<>Costo interno <AdminHelpTip label="Costo interno" text="Lo que cuesta cada entrega (por pedido entregado), aunque el cliente no pague el envío. No se muestra al cliente." /></>}
+          editing={editing}
+        >
+          {editing ? (
+            <MoneyInput
+              ariaLabel="Costo interno por entrega de Envío BEYONIX"
+              value={draft.internalCost}
+              disabled={inputsDisabled}
+              onChange={(value) => block.setField("internalCost", value)}
+            />
+          ) : (
+            formatARS(saved.internalDeliveryCost)
+          )}
+        </ConfigValueRow>
+        <ConfigValueRow label="Gratis desde" editing={editing}>
+          {editing ? (
+            <MoneyInput
+              ariaLabel="Subtotal de productos desde el que Envío BEYONIX es gratis"
+              value={draft.freeThreshold}
+              disabled={inputsDisabled}
+              onChange={(value) => block.setField("freeThreshold", value)}
+            />
+          ) : (
+            formatARS(saved.freeThreshold)
+          )}
+        </ConfigValueRow>
+        <ConfigValueRow label="Códigos postales" data-local-delivery-postal-codes="">
+          {(editing ? draft.postalCodes : saved.postalCodes).length ? (
+            <span className="flex flex-wrap justify-end gap-1.5">
+              {(editing ? draft.postalCodes : saved.postalCodes).map((code) => (
+                <ConfigChip key={code} tone="neutral" data-postal-code={code} className="inline-flex items-center gap-1">
+                  {code}
+                  {editing ? (
+                    <button
+                      type="button"
+                      aria-label={`Eliminar código postal ${code}`}
+                      title="Eliminar"
+                      disabled={inputsDisabled}
+                      onClick={() => block.setField("postalCodes", draft.postalCodes.filter((item) => item !== code))}
+                      className="inline-flex size-4 cursor-pointer items-center justify-center rounded text-white/62 hover:text-white disabled:cursor-not-allowed"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  ) : null}
+                </ConfigChip>
+              ))}
+            </span>
+          ) : (
+            "Sin códigos postales"
+          )}
+        </ConfigValueRow>
+      </ConfigValueList>
+      {editing ? (
+        <div className="mt-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-end" data-local-delivery-add>
+          <AdminTextInput
+            title="Código postal a habilitar"
+            ariaLabel="Código postal a habilitar"
+            value={postalCodeDraft}
+            placeholder="Ej. 2000"
+            inputMode="numeric"
+            maxLength={8}
+            className={fieldClassName}
+            disabled={inputsDisabled}
+            onChange={(value) => {
+              setPostalCodeDraft(value.replace(/[^0-9a-zA-Z]/g, ""))
+              setPostalCodeError("")
+            }}
+          />
+          <AdminSecondaryButton type="button" size="sm" disabled={inputsDisabled || !postalCodeDraft} onClick={addPostalCode}>
+            <Plus className="size-3.5" />
+            Agregar código postal
+          </AdminSecondaryButton>
+        </div>
+      ) : null}
+      {editing && (postalCodeError || validationError) ? (
+        <p role="alert" className="admin-config-feedback mt-1.5 text-12px font-semibold leading-4" data-tone="danger">
+          {postalCodeError || validationError}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-12px leading-4 text-white/62">
+          Por debajo de {formatARS(next.freeThreshold)} de productos el cliente paga {formatARS(next.customerPrice)}; desde ahí, gratis.
         </p>
       )}
     </ConfigSection>

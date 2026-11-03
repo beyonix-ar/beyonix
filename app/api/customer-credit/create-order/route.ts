@@ -24,6 +24,7 @@ import {
   restoreStoreBenefitFromSupersededOrder,
 } from "@/lib/customer-store-benefits"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { getOrderPreparationFollowUp } from "@/lib/orders/shipping-email-copy"
 import { appendOrderAuditEvent } from "@/lib/orders/order-audit"
 import { safeErrorMetadata } from "@/lib/security/safe-error"
 import {
@@ -40,6 +41,7 @@ import {
   loadAndValidateCheckoutOrderCatalog,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
+  loadCheckoutLocalDeliverySettings,
   normalizeCheckoutOrderShipping,
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
@@ -126,9 +128,10 @@ export async function POST(request: Request) {
       items,
     )
     const baseTotals = calculateCartTotals(catalog.cartRows)
-    const [siteSettings, shippingQuoteSettings] = await Promise.all([
+    const [siteSettings, shippingQuoteSettings, localDelivery] = await Promise.all([
       getSiteSettings({ fresh: true }),
       getShippingQuoteSettings(),
+      loadCheckoutLocalDeliverySettings(payload.shipping),
     ])
     const normalizedShipping = normalizeCheckoutOrderShipping({
       shipping: payload.shipping,
@@ -138,6 +141,7 @@ export async function POST(request: Request) {
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
       markupPercent: shippingQuoteSettings.logisticsMarkupPercent,
+      localDelivery,
     })
     const shippingBranch = await resolveCheckoutOrderShippingBranch(
       payload.shipping,
@@ -369,7 +373,7 @@ export async function POST(request: Request) {
       html: `
         <h1>Pedido recibido</h1>
         <p>Hola ${order.cliente_nombre ?? ""}, tu pedido BX-${1000 + order.id} fue pagado con saldo a favor.</p>
-        <p>Cuando sea despachado te vamos a enviar el número o link de seguimiento.</p>
+        <p>${getOrderPreparationFollowUp(order)}</p>
       `,
     })
 

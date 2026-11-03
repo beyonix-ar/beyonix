@@ -55,6 +55,8 @@ test("Despachos avanza solo tras cada confirmación: etiqueta → pedidos para B
     }
     if (url.endsWith("/batches/9") && body?.action === "handover") { bundle!.status = "handed_over"; return Response.json(batchDetail()) }
     if (url.endsWith("/batches/9")) return Response.json(batchDetail())
+    // Entregas locales (Envío BEYONIX): fuera del circuito de Bultos.
+    if (url.endsWith("/local")) return Response.json({ orders: [] })
     const params = new URL(url, "https://beyonix.test").searchParams
     searches.push(params)
     const rows = (bundle

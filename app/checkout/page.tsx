@@ -215,6 +215,23 @@ import {
   cn,
 } from "@/lib/utils"
 import { FreeShippingBar } from "@/components/cart/free-shipping-bar"
+import {
+  LOCAL_DELIVERY_NAME,
+  LOCAL_DELIVERY_PROVIDER,
+  LOCAL_DELIVERY_SUBTITLE,
+  quoteLocalDelivery,
+} from "@/lib/shipping/local-delivery"
+import {
+  getCheckoutShippingOptionKey,
+  isCheckoutShippingSelectionLost,
+  keepPendingLocalDeliverySelection,
+  LOCAL_DELIVERY_OPTION_KEY,
+  resolveCheckoutShippingSelection,
+  sortCheckoutShippingOptions,
+  type CheckoutShippingModality,
+  type CheckoutShippingOptionKey,
+  type CheckoutShippingProvider,
+} from "@/lib/shipping/checkout-shipping-options"
 import { Footer } from "@/components/footer"
 import { useSiteSettings } from "@/hooks/use-site-settings"
 import { useScrollOnStepChange } from "@/hooks/use-scroll-on-step-change"
@@ -396,14 +413,18 @@ const initialCheckoutFormData = {
   referencias: "",
 }
 
-type ShippingType = "sucursal" | "domicilio"
+type ShippingType = CheckoutShippingModality
 
 interface ShippingOption {
+  /** Identidad única proveedor:modalidad (Envío BEYONIX y Andreani domicilio son ambos "domicilio"). */
+  key: CheckoutShippingOptionKey
   type: ShippingType
   label: string
+  description?: string
+  /** Andreani: precio logístico cotizado. Envío BEYONIX: importe final al cliente. */
   price: number
   quoteToken: string
-  provider: "andreani"
+  provider: CheckoutShippingProvider
   quoteStatus: "quoted" | "pending"
   /** Sucursales Andreani reales disponibles para el destino cotizado, ordenadas por cercanía cuando se pudo geocodificar el domicilio. Sólo presente en la opción "sucursal". */
   branches?: AndreaniBranchWithDistance[]
@@ -569,9 +590,9 @@ export default function CheckoutPage() {
   const [shippingLoading, setShippingLoading] = useState(false)
   const [shippingQuoteCurrent, setShippingQuoteCurrent] = useState(false)
   const [
-    selectedShippingType,
-    setSelectedShippingType,
-  ] = useState<ShippingType | null>(null)
+    selectedShippingKey,
+    setSelectedShippingKey,
+  ] = useState<CheckoutShippingOptionKey | null>(null)
   const [shippingOptions, setShippingOptions] =
     useState<ShippingOption[]>([])
   const [selectedSucursalId, setSelectedSucursalId] =
@@ -618,6 +639,9 @@ export default function CheckoutPage() {
   // dejar que una respuesta de catálogo le gane a un destino que la
   // cotización real ya confirmó válido.
   const shippingQuoteCurrentRef = useRef(false)
+  // ¿Envío BEYONIX se ofrece en este render? Lo lee la cotización de Andreani
+  // al elegir la opción sugerida (la primera del orden fijo).
+  const localDeliveryAvailableRef = useRef(false)
   // Última calle/numero tipeados, leídos al momento de armar una cotización
   // real (no forman parte de la clave de caché ni disparan una cotización
   // nueva por sí solos -- ver `shippingQuoteDestination`/`buildShippingQuoteKey`).
@@ -903,21 +927,47 @@ export default function CheckoutPage() {
     (total, item) => total + item.quantity,
     0,
   )
-  const selectedShippingOption =
-    selectedShippingType
-      ? shippingOptions.find(
-          (option) =>
-            option.type ===
-            selectedShippingType
-        ) ?? null
+  // Envío BEYONIX: sale de la configuración pública + CP + subtotal de
+  // productos, sin esperar a Andreani (un error de Andreani no lo oculta).
+  // Sólo UX: el servidor lo recalcula con la configuración fresca.
+  const localDeliveryQuote =
+    siteSettings.localDelivery && items.length > 0 && isQuotableDestination(formData)
+      ? quoteLocalDelivery(siteSettings.localDelivery, formData.cpDestino, baseTotals.productsTotal)
       : null
+  const localDeliveryOption: ShippingOption | null = localDeliveryQuote
+    ? {
+        key: LOCAL_DELIVERY_OPTION_KEY,
+        type: "domicilio",
+        label: LOCAL_DELIVERY_NAME,
+        description: LOCAL_DELIVERY_SUBTITLE,
+        price: localDeliveryQuote.costCharged,
+        quoteToken: "",
+        provider: LOCAL_DELIVERY_PROVIDER,
+        quoteStatus: "quoted",
+      }
+    : null
+  localDeliveryAvailableRef.current = localDeliveryOption !== null
+  const visibleShippingOptions = sortCheckoutShippingOptions(
+    localDeliveryOption ? [localDeliveryOption, ...shippingOptions] : shippingOptions,
+  )
+  const selectedShippingOption =
+    selectedShippingKey
+      ? visibleShippingOptions.find((option) => option.key === selectedShippingKey) ?? null
+      : null
+  const selectedShippingType = selectedShippingOption?.type ?? null
+  const isLocalDeliverySelected = selectedShippingOption?.provider === LOCAL_DELIVERY_PROVIDER
+  // Envío BEYONIX elegido que dejó de ofrecerse (CP, carrito o configuración):
+  // queda sin selección y el cliente vuelve a elegir.
+  const localDeliverySelectionLost = isCheckoutShippingSelectionLost(selectedShippingKey, visibleShippingOptions)
   const shippingCostReal =
-    selectedShippingOption?.price ?? 0
-  const hasAndreaniQuote = selectedShippingOption?.quoteStatus === "quoted"
+    isLocalDeliverySelected ? 0 : selectedShippingOption?.price ?? 0
+  const hasAndreaniQuote = !isLocalDeliverySelected && selectedShippingOption?.quoteStatus === "quoted"
   const customerCreditIncludesShippingBenefit = customerCredit.balance > 0
+  // El saldo a favor bonifica sólo el envío de Andreani (regla existente):
+  // nunca vuelve gratis a Envío BEYONIX.
   const customerCreditCoversShipping =
     customerCreditIncludesShippingBenefit &&
-    selectedShippingOption != null &&
+    hasAndreaniQuote &&
     shippingCostReal > 0
   const shippingBonus =
     hasAndreaniQuote
@@ -930,7 +980,9 @@ export default function CheckoutPage() {
           )
       : 0
   const shippingCostCharged =
-    selectedShippingOption && hasAndreaniQuote
+    isLocalDeliverySelected && localDeliveryOption
+      ? localDeliveryOption.price
+      : selectedShippingOption && hasAndreaniQuote
       ? customerCreditCoversShipping
         ? 0
         : calculateCustomerShippingCost(
@@ -1497,7 +1549,9 @@ export default function CheckoutPage() {
       setShippingLoading(false)
       setShippingQuoteCurrent(false)
       setShippingOptions([])
-      setSelectedShippingType(null)
+      // Una elección de Envío BEYONIX queda pendiente: si el nuevo destino no
+      // es elegible, el cliente vuelve a elegir (nunca se cambia sola).
+      setSelectedShippingKey(keepPendingLocalDeliverySelection)
       setSelectedSucursalId(null)
       setShippingMessageTone("info")
       setShippingMessage(
@@ -1513,7 +1567,7 @@ export default function CheckoutPage() {
       setShippingLoading(false)
       setShippingQuoteCurrent(false)
       setShippingOptions([])
-      setSelectedShippingType(null)
+      setSelectedShippingKey(keepPendingLocalDeliverySelection)
       setSelectedSucursalId(null)
       setShippingMessage("")
       return
@@ -1532,6 +1586,7 @@ export default function CheckoutPage() {
           return []
         }
         return [{
+          key: getCheckoutShippingOptionKey("andreani", option.type),
           type: option.type,
           label: getShippingOptionLabel(option.type),
           price,
@@ -1557,12 +1612,11 @@ export default function CheckoutPage() {
           ? current
           : null,
       )
-      setSelectedShippingType((current) =>
-        current && options.some((option) => option.type === current)
-          ? current
-          : options.find((option) => option.type === "domicilio")?.type ??
-            options[0].type,
-      )
+      // Envío BEYONIX (si se ofrece) primero, después Andreani domicilio.
+      const selectable = localDeliveryAvailableRef.current
+        ? [{ key: LOCAL_DELIVERY_OPTION_KEY }, ...options]
+        : options
+      setSelectedShippingKey((current) => resolveCheckoutShippingSelection(current, selectable))
       // La cotización quedó validada internamente (shippingQuoteCurrent ya
       // lo refleja) -- no hace falta mostrarle al cliente una confirmación
       // técnica neutra. Los mensajes de error reales siguen su propio
@@ -1768,11 +1822,12 @@ export default function CheckoutPage() {
     !isLoading &&
     !customerCredit.loading &&
     !siteSettings.loading
+  // Envío BEYONIX no depende de la cotización de Andreani (ni de que termine
+  // de cargar): se valida contra la configuración vigente.
   const isShippingStepValid =
     Boolean(
       selectedShippingOption &&
-        shippingQuoteCurrent &&
-        !shippingLoading &&
+        (isLocalDeliverySelected || (shippingQuoteCurrent && !shippingLoading)) &&
         isDestinationQuotable &&
         (selectedShippingType !== "sucursal" || selectedSucursalId !== null),
     )
@@ -2073,17 +2128,25 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           reservationSessionId: cartSessionId,
           customer: customerData,
-          shipping: {
-            provider: selectedShippingOption.provider,
-            type: selectedShippingOption.type,
-            quoteToken: selectedShippingOption.type === "sucursal"
-              ? selectedShippingOption.branches?.find((branch) => branch.id === selectedSucursalId)?.quoteToken
-              : selectedShippingOption.quoteToken,
-            sucursalId:
-              selectedShippingOption.type === "sucursal"
-                ? selectedSucursalId
-                : undefined,
-          },
+          shipping: isLocalDeliverySelected
+            ? {
+                // Sin token: el servidor recalcula todo con la configuración
+                // fresca; el importe visto sólo sirve para exigir revisar (409).
+                provider: selectedShippingOption.provider,
+                type: selectedShippingOption.type,
+                expectedCostCharged: selectedShippingOption.price,
+              }
+            : {
+                provider: selectedShippingOption.provider,
+                type: selectedShippingOption.type,
+                quoteToken: selectedShippingOption.type === "sucursal"
+                  ? selectedShippingOption.branches?.find((branch) => branch.id === selectedSucursalId)?.quoteToken
+                  : selectedShippingOption.quoteToken,
+                sucursalId:
+                  selectedShippingOption.type === "sucursal"
+                    ? selectedSucursalId
+                    : undefined,
+              },
           storeBenefitId: selectedStoreBenefit?.id ?? null,
           paymentMethodId: selectedPayment || "customer_credit",
           customerCreditAmount: customerCreditApplication.appliedAmount,
@@ -2125,6 +2188,15 @@ export default function CheckoutPage() {
       ) {
         setReservationStockError(false)
         setInsufficientStockItems(data.items)
+        return
+      }
+
+      // Envío BEYONIX ya no vale como se mostró (configuración, CP o carrito
+      // cambiaron): se relee la configuración para recalcular la opción y el
+      // cliente revisa antes de reintentar. Nunca se crea el pedido igual.
+      if (response.status === 409 && isLocalDeliverySelected && !data?.code) {
+        setCheckoutError(toPublicMessage(data?.error, PUBLIC_ERROR_MESSAGES.generic))
+        void refreshCommercialData(true)
         return
       }
 
@@ -2768,14 +2840,18 @@ export default function CheckoutPage() {
                         Actualizando tarifa…
                       </p>
                     )}
-                    {shippingOptions.map((option) => {
+                    {visibleShippingOptions.map((option) => {
                       const selected =
-                        selectedShippingType === option.type
+                        selectedShippingKey === option.key
+                      const isLocalOption = option.provider === LOCAL_DELIVERY_PROVIDER
                       const optionHasQuote = option.quoteStatus === "quoted"
+                      // La bonificación por saldo a favor es sólo de Andreani.
                       const optionShippingCoveredByBeyonix =
-                        optionHasQuote && customerCreditIncludesShippingBenefit
+                        !isLocalOption && optionHasQuote && customerCreditIncludesShippingBenefit
                       const optionShippingCostCharged =
-                        !optionHasQuote
+                        isLocalOption
+                          ? option.price
+                          : !optionHasQuote
                           ? 0
                           : optionShippingCoveredByBeyonix
                           ? 0
@@ -2787,10 +2863,11 @@ export default function CheckoutPage() {
 
                       return (
                         <button
-                          key={option.type}
+                          key={option.key}
                           type="button"
+                          data-shipping-option={option.key}
                           onClick={() => {
-                            setSelectedShippingType(option.type)
+                            setSelectedShippingKey(option.key)
                             setShippingSelectionMissing(false)
                             // Volver a domicilio no debe arrastrar una
                             // selección de sucursal anterior si el cliente
@@ -2819,6 +2896,11 @@ export default function CheckoutPage() {
                             <span className="block text-sm font-semibold text-white">
                               {option.label}
                             </span>
+                            {option.description && (
+                              <span className="block text-xs text-white/55">
+                                {option.description}
+                              </span>
+                            )}
                           </span>
                           <span className="flex shrink-0 items-center gap-2 text-right">
                             {selected && (
@@ -2829,7 +2911,8 @@ export default function CheckoutPage() {
                             <span className={optionShippingCostCharged === 0 ? "text-sm font-semibold text-emerald-400" : "text-sm font-semibold text-white"}>
                               {!optionHasQuote
                                 ? "A confirmar"
-                                : optionShippingCoveredByBeyonix
+                                : optionShippingCoveredByBeyonix ||
+                                    (isLocalOption && optionShippingCostCharged === 0)
                                 ? "GRATIS"
                                 : optionShippingCostCharged === 0
                                   ? "Sin cargo"
@@ -2840,6 +2923,12 @@ export default function CheckoutPage() {
                       )
                     })}
                   </div>
+
+                  {localDeliverySelectionLost && isDestinationQuotable && (
+                    <CheckoutNotice tone="error">
+                      {LOCAL_DELIVERY_NAME} no está disponible para este código postal. Elegí otro método de envío.
+                    </CheckoutNotice>
+                  )}
 
                   {selectedShippingType === "sucursal" && hasAndreaniQuote && (
                     <div className="space-y-2">
@@ -2861,7 +2950,7 @@ export default function CheckoutPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setSelectedShippingType("domicilio")
+                              setSelectedShippingKey(getCheckoutShippingOptionKey("andreani", "domicilio"))
                               setSelectedSucursalId(null)
                             }}
                             className="text-xs font-semibold text-beyonix-sky hover:underline"
@@ -3124,13 +3213,28 @@ export default function CheckoutPage() {
               </div>
 
               <div className="my-2.5 rounded-lg border border-beyonix-blue-light/14 bg-[#10151C] px-3 py-2 shadow-inner shadow-black/20">
-                <FreeShippingBar
-                  subtotal={baseTotals.productsTotal}
-                  coveredByBeyonix={customerCreditIncludesShippingBenefit}
-                  settings={siteSettings.shipping}
-                  shippingCostReal={hasAndreaniQuote ? shippingCostReal : undefined}
-                  shippingBonus={hasAndreaniQuote ? shippingBonus : undefined}
-                />
+                {isLocalDeliverySelected && siteSettings.localDelivery ? (
+                  // Envío BEYONIX: su propio umbral (independiente de Andreani) y
+                  // sin la bonificación por saldo a favor.
+                  <FreeShippingBar
+                    subtotal={baseTotals.productsTotal}
+                    settings={{
+                      ...siteSettings.shipping,
+                      freeShippingMode: "full",
+                      freeShippingMinAmount: siteSettings.localDelivery.freeThreshold,
+                    }}
+                    shippingCostReal={siteSettings.localDelivery.customerPrice}
+                    shippingBonus={Math.max(0, siteSettings.localDelivery.customerPrice - shippingCostCharged)}
+                  />
+                ) : (
+                  <FreeShippingBar
+                    subtotal={baseTotals.productsTotal}
+                    coveredByBeyonix={customerCreditIncludesShippingBenefit}
+                    settings={siteSettings.shipping}
+                    shippingCostReal={hasAndreaniQuote ? shippingCostReal : undefined}
+                    shippingBonus={hasAndreaniQuote ? shippingBonus : undefined}
+                  />
+                )}
               </div>
 
               <div className="custom-scrollbar max-h-[clamp(300px,38vh,390px)] space-y-1.5 overflow-y-auto pr-1">
@@ -3387,7 +3491,7 @@ export default function CheckoutPage() {
                         : !selectedShippingOption
                         ? "text-white/45"
                         : totals.shipping === 0 &&
-                            (shippingBonus > 0 || customerCreditCoversShipping)
+                            (shippingBonus > 0 || customerCreditCoversShipping || isLocalDeliverySelected)
                           ? "font-semibold text-[var(--checkout-offer-text)]"
                           : "text-white"
                     }>
@@ -3403,7 +3507,7 @@ export default function CheckoutPage() {
                         : !selectedShippingOption
                         ? "A definir"
                         : totals.shipping === 0 &&
-                            (shippingBonus > 0 || customerCreditCoversShipping)
+                            (shippingBonus > 0 || customerCreditCoversShipping || isLocalDeliverySelected)
                           ? "GRATIS"
                           : qualifiesForMainShippingBonus && shippingBonus > 0
                             ? (

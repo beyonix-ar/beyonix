@@ -39,6 +39,8 @@ test("Despachos: una tabla, fecha de hoy, filtros combinados, Pedido/Bulto sin d
   globalThis.fetch = async (input) => {
     const url = String(input)
     if (url.includes("/orders/")) return Response.json({ error: "No disponible en esta prueba." }, { status: 404 })
+    // Entregas locales (Envío BEYONIX): fuera de la tabla de despachos.
+    if (url.endsWith("/local")) return Response.json({ orders: [] })
     if (url.endsWith("/batches/2")) return Response.json({ batch: { id: 2, code: "DSP-2", display_number: 2, status: "open", created_at: `${today}T11:00:00-03:00`, closed_at: null, handed_over_at: null, handed_over_by: null, verification_round: 1 }, items: [], blockedCount: 0, cancelledCount: 0, expectedCount: 10, verifiedCount: 0, missingCount: 10, requiresRevalidation: false, parcelCount: 10, operatorName: null })
     const params = new URL(url, "https://beyonix.test").searchParams
     requests.push(params)

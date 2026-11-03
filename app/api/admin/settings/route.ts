@@ -13,19 +13,28 @@ import {
   SHIPPING_QUOTE_SETTINGS_KEY,
   type ShippingQuoteSettings,
 } from "@/lib/shipping/shipping-quote-settings"
+import {
+  LOCAL_DELIVERY_SETTINGS_KEY,
+  LocalDeliverySettingsError,
+  parseLocalDeliverySettingsPatch,
+  type LocalDeliverySettings,
+} from "@/lib/shipping/local-delivery"
+import { getLocalDeliverySettings } from "@/lib/shipping/local-delivery-settings"
 
 const MANAGE_ROLES = ["admin", "super_admin"] as const
 
 // El recargo logístico ("Cotización de envíos") se lee y guarda aparte de
 // SiteSettings: esa configuración se publica en /api/store/settings y el
-// porcentaje es un dato interno.
+// porcentaje es un dato interno. Lo mismo Envío BEYONIX: el costo interno de
+// cada entrega nunca forma parte de la configuración pública.
 async function loadAdminSettings() {
-  const [settings, mercadoPagoCosts, shippingQuote] = await Promise.all([
+  const [settings, mercadoPagoCosts, shippingQuote, localDelivery] = await Promise.all([
     getSiteSettings({ fresh: true }),
     getMercadoPagoCostsOverview(),
     getShippingQuoteSettings(),
+    getLocalDeliverySettings(),
   ])
-  return { settings, mercadoPagoCosts, shippingQuote }
+  return { settings, mercadoPagoCosts, shippingQuote, localDelivery }
 }
 
 export async function GET(request: Request) {
@@ -41,21 +50,25 @@ export async function PATCH(request: Request) {
 
   let changes: ReturnType<typeof normalizeSiteSettingsPatch>
   let shippingQuoteChange: ShippingQuoteSettings | null = null
+  let localDeliveryChange: LocalDeliverySettings | null = null
   try {
     const body: unknown = await request.json()
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid")
-    const { shippingQuote, ...rest } = body as Record<string, unknown>
+    const { shippingQuote, localDelivery, ...rest } = body as Record<string, unknown>
     if (shippingQuote !== undefined) shippingQuoteChange = parseShippingQuoteSettingsPatch(shippingQuote)
-    changes = Object.keys(rest).length || !shippingQuoteChange ? normalizeSiteSettingsPatch(rest) : []
+    if (localDelivery !== undefined) localDeliveryChange = parseLocalDeliverySettingsPatch(localDelivery)
+    changes = Object.keys(rest).length || (!shippingQuoteChange && !localDeliveryChange) ? normalizeSiteSettingsPatch(rest) : []
   } catch (error) {
-    const message = error instanceof Error && error.name === "ShippingMarkupError"
+    const message = error instanceof Error &&
+      (error.name === "ShippingMarkupError" || error instanceof LocalDeliverySettingsError)
       ? error.message
       : "La configuración no es válida."
     return Response.json({ error: message }, { status: 400 })
   }
-  const [before, shippingQuoteBefore] = await Promise.all([
+  const [before, shippingQuoteBefore, localDeliveryBefore] = await Promise.all([
     getSiteSettings({ fresh: true }),
     getShippingQuoteSettings(),
+    localDeliveryChange ? getLocalDeliverySettings() : Promise.resolve(null),
   ])
 
   // Política de precio financiado: mientras un evento de financiación la
@@ -96,6 +109,7 @@ export async function PATCH(request: Request) {
   }
   const otherChanges: Array<{ key: string; value: unknown }> = changes.filter(({ field }) => field !== "financedPricePolicy")
   if (shippingQuoteChange) otherChanges.push({ key: SHIPPING_QUOTE_SETTINGS_KEY, value: shippingQuoteChange })
+  if (localDeliveryChange) otherChanges.push({ key: LOCAL_DELIVERY_SETTINGS_KEY, value: localDeliveryChange })
   const { error } = otherChanges.length ? await auth.admin.from("site_settings").upsert(
     otherChanges.map(({ key, value }) => ({
       key, value, updated_by: auth.user.id, updated_at: updatedAt,
@@ -112,16 +126,22 @@ export async function PATCH(request: Request) {
   const { error: auditError } = await auth.admin.from("audit_logs").insert({
     table_name: "site_settings",
     action: "UPDATE",
-    record_id: [...changes.map(({ key }) => key), ...(shippingQuoteChange ? [SHIPPING_QUOTE_SETTINGS_KEY] : [])].join(","),
+    record_id: [
+      ...changes.map(({ key }) => key),
+      ...(shippingQuoteChange ? [SHIPPING_QUOTE_SETTINGS_KEY] : []),
+      ...(localDeliveryChange ? [LOCAL_DELIVERY_SETTINGS_KEY] : []),
+    ].join(","),
     actor_user_id: auth.user.id,
     actor_email: auth.user.email ?? auth.profile.email,
     before_data: {
       ...Object.fromEntries(changes.map(({ field }) => [field, before[field]])),
       ...(shippingQuoteChange ? { shippingQuote: shippingQuoteBefore } : {}),
+      ...(localDeliveryChange ? { localDelivery: localDeliveryBefore } : {}),
     },
     after_data: {
       ...Object.fromEntries(changes.map(({ field, value }) => [field, value])),
       ...(shippingQuoteChange ? { shippingQuote: shippingQuoteChange } : {}),
+      ...(localDeliveryChange ? { localDelivery: localDeliveryChange } : {}),
     },
   })
   if (auditError) {

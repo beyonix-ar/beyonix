@@ -4,11 +4,12 @@ interface SendOrderStatusEmailPayload {
   html: string
 }
 
+/** `true` sólo si Resend confirmó el envío (nunca lanza). */
 export async function sendOrderStatusEmail({
   to,
   subject,
   html,
-}: SendOrderStatusEmailPayload) {
+}: SendOrderStatusEmailPayload): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY
   const from =
     process.env.STORE_EMAIL_FROM ||
@@ -18,7 +19,7 @@ export async function sendOrderStatusEmail({
 
   if (!apiKey || !from || !to) {
     console.log("Email omitido: Resend no configurado o destinatario faltante")
-    return
+    return false
   }
 
   try {
@@ -39,8 +40,11 @@ export async function sendOrderStatusEmail({
 
     if (!response.ok) {
       console.log("No se pudo enviar email de pedido", await response.text())
+      return false
     }
+    return true
   } catch (error) {
     console.log("Error enviando email de pedido", error)
+    return false
   }
 }

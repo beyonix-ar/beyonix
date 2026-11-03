@@ -1,6 +1,7 @@
 import "server-only"
 
 import { sendOrderStatusEmail } from "../email/send-order-status-email.ts"
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
 
 export function getOrderCode(orderId: number) {
   return `BX-${1000 + orderId}`
@@ -13,6 +14,8 @@ interface OrderForStatusEmail {
   cliente_nombre?: string | null
   tracking_number?: string | null
   tracking_url?: string | null
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
 }
 
 /** Hitos de envío con email propio (uno por hito: nunca dos "enviado" seguidos). */
@@ -31,41 +34,42 @@ const SHIPPING_MILESTONE_EMAILS: Record<string, { subject: string; title: string
  * cliente (enviado, en_camino, en_sucursal, entregado, cancelado).
  * Compartido entre el cambio manual (admin) y la sincronización automática
  * de tracking Andreani -- ambos caminos deben mandar exactamente el mismo
- * email, una sola vez por transición real.
+ * email, una sola vez por transición real. Devuelve `true` sólo si el email
+ * se envió (false si la transición no tiene email o el envío falló).
  */
-export async function sendOrderStateEmail(order: OrderForStatusEmail) {
+export async function sendOrderStateEmail(order: OrderForStatusEmail): Promise<boolean> {
   const orderCode = getOrderCode(order.id)
 
+  // Envío BEYONIX: lo entrega BEYONIX, sin guía ni seguimiento externo.
+  const localDelivery = isLocalDeliveryOrder(order)
   const milestone = SHIPPING_MILESTONE_EMAILS[order.estado ?? ""]
   if (milestone) {
-    await sendOrderStatusEmail({
+    return sendOrderStatusEmail({
       to: order.cliente_email,
       subject: `${milestone.subject} ${orderCode}`,
       html: `
         <h1>${milestone.title}</h1>
         <p>Hola ${order.cliente_nombre ?? ""}, tu pedido ${orderCode} ${milestone.body}.</p>
-        ${order.tracking_number ? `<p>Seguimiento: ${order.tracking_number}</p>` : ""}
-        ${order.tracking_url ? `<p><a href="${order.tracking_url}">Ver seguimiento</a></p>` : ""}
+        ${!localDelivery && order.tracking_number ? `<p>Seguimiento: ${order.tracking_number}</p>` : ""}
+        ${!localDelivery && order.tracking_url ? `<p><a href="${order.tracking_url}">Ver seguimiento</a></p>` : ""}
       `,
     })
-    return
   }
 
   if (order.estado === "entregado") {
-    await sendOrderStatusEmail({
+    return sendOrderStatusEmail({
       to: order.cliente_email,
       subject: `Pedido entregado ${orderCode}`,
       html: `
         <h1>Pedido entregado</h1>
-        <p>Hola ${order.cliente_nombre ?? ""}, tu pedido ${orderCode} figura como entregado.</p>
+        <p>Hola ${order.cliente_nombre ?? ""}, ${localDelivery ? `tu pedido ${orderCode} fue entregado.` : `tu pedido ${orderCode} figura como entregado.`}</p>
         <p>Si necesitás ayuda con la compra, podés iniciar un reclamo desde tu cuenta.</p>
       `,
     })
-    return
   }
 
   if (order.estado === "cancelado") {
-    await sendOrderStatusEmail({
+    return sendOrderStatusEmail({
       to: order.cliente_email,
       subject: `Compra cancelada ${orderCode}`,
       html: `
@@ -75,4 +79,6 @@ export async function sendOrderStateEmail(order: OrderForStatusEmail) {
       `,
     })
   }
+
+  return false
 }

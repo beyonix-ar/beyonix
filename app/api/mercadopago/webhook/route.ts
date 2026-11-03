@@ -3,6 +3,7 @@ import { safeErrorMetadata } from "@/lib/security/safe-error"
 
 import { reverseCustomerCreditForOrder } from "@/lib/customer-credit/server"
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
+import { getOrderPreparationFollowUp } from "@/lib/orders/shipping-email-copy"
 import {
   getMercadoPagoPayment,
   processCustomerCreditTopupPayment,
@@ -50,6 +51,8 @@ interface OrderRow {
   payment_id?: string | null
   payment_status?: string | null
   pricing_snapshot?: { mercadoPagoModality?: string | null } | null
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
 }
 
 /**
@@ -160,7 +163,7 @@ async function handleWebhook(request: Request) {
 
     const orderQuery = supabase
       .from("ordenes")
-      .select("id, created_at, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, pricing_snapshot")
+      .select("id, created_at, estado, total, external_amount_due, credit_balance_used, cliente_email, cliente_nombre, financial_status, payment_method_id, payment_id, payment_status, mercadopago_checkout_fingerprint, mercadopago_reference, mercadopago_reference_assigned_at, shipping_provider, envio_proveedor, pricing_snapshot")
     const { data: order, error: orderError } = await (
       externalReference.kind === "order"
         ? orderQuery.eq("mercadopago_reference", externalReference.reference)
@@ -575,7 +578,7 @@ async function handleWebhook(request: Request) {
       html: `
         <h1>Recibimos tu pedido</h1>
         <p>Hola ${orderRow.cliente_nombre ?? ""}, tu pedido fue recibido y está en preparación.</p>
-        <p>Cuando sea despachado te vamos a enviar el número o link de seguimiento.</p>
+        <p>${getOrderPreparationFollowUp(orderRow)}</p>
       `,
     })
 

@@ -8,6 +8,7 @@
  */
 
 import type { SupabasePedido, SupabasePedidoItem } from "../supabase/types.ts"
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
 import {
   getMercadoLibreCostableUnits,
   getMercadoLibreCostMapping,
@@ -217,8 +218,19 @@ function getPaymentMethodLabel(order: SupabasePedido) {
  * Costo logístico web = tarifa de Andreani cotizada (snapshot de la orden).
  * shipping_cost_real incluye recargo logístico y ajuste comercial: usarlo
  * inflaría el costo. Órdenes previas al snapshot conservan el dato anterior.
+ *
+ * Envío BEYONIX: shipping_cost_real es el costo PREVISTO de la entrega
+ * (snapshot). El cadete cobra por pedido entregado, así que el costo se
+ * devenga recién con la entrega (estado entregado o delivered_at): antes,
+ * o si se cancela sin entregar, el costo efectivo es $0.
  */
-function getWebShippingCost(order: SupabasePedido) {
+export function getWebShippingCost(
+  order: Pick<SupabasePedido, "shipping_provider_quote_amount" | "shipping_cost_real" | "andreani_costo" | "shipping_provider" | "envio_proveedor" | "estado" | "delivered_at">,
+) {
+  if (isLocalDeliveryOrder(order)) {
+    const delivered = order.estado === "entregado" || Boolean(order.delivered_at)
+    return delivered ? amount(order.shipping_cost_real) : 0
+  }
   return amount(
     order.shipping_provider_quote_amount ?? order.shipping_cost_real ?? order.andreani_costo,
   )

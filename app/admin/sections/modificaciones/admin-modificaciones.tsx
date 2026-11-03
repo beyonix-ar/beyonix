@@ -31,6 +31,7 @@ import { ConfigGroup, type ConfigFeedback } from "./config-ui"
 import { FinancingShortcutCard } from "./financing-shortcut-card"
 import {
   CustomerCreditSection,
+  LocalDeliverySection,
   PricingSection,
   ShippingQuoteSection,
   ShippingSection,
@@ -40,6 +41,10 @@ import {
   DEFAULT_SHIPPING_QUOTE_SETTINGS,
   type ShippingQuoteSettings,
 } from "@/lib/shipping/shipping-quote-settings"
+import {
+  DEFAULT_LOCAL_DELIVERY_SETTINGS,
+  type LocalDeliverySettings,
+} from "@/lib/shipping/local-delivery"
 
 interface AdminSettings {
   shipping: ShippingBonusSettings
@@ -54,6 +59,8 @@ interface SettingsResponse {
   mercadoPagoCosts?: MercadoPagoCostsOverview
   /** Interno: nunca forma parte de la configuración pública. */
   shippingQuote?: ShippingQuoteSettings
+  /** Incluye el costo interno por entrega (sólo Admin). */
+  localDelivery?: LocalDeliverySettings
   error?: string
 }
 
@@ -63,11 +70,12 @@ interface SettingsPatch {
   stock?: StockSettings
   pricing?: PricingSettings
   shippingQuote?: ShippingQuoteSettings
+  localDelivery?: LocalDeliverySettings
 }
 
-type SectionId = "stock" | "shipping" | "shippingQuote" | "pricing" | "customerCredit"
+type SectionId = "stock" | "shipping" | "shippingQuote" | "localDelivery" | "pricing" | "customerCredit"
 
-const SECTION_IDS: SectionId[] = ["stock", "shipping", "shippingQuote", "pricing", "customerCredit"]
+const SECTION_IDS: SectionId[] = ["stock", "shipping", "shippingQuote", "localDelivery", "pricing", "customerCredit"]
 
 const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   shipping: DEFAULT_SHIPPING_SETTINGS,
@@ -94,6 +102,7 @@ export function AdminModificaciones() {
   const [settings, setSettings] = useState<AdminSettings>(DEFAULT_ADMIN_SETTINGS)
   const [mercadoPagoCosts, setMercadoPagoCosts] = useState<MercadoPagoCostsOverview | null>(null)
   const [shippingQuote, setShippingQuote] = useState<ShippingQuoteSettings>(DEFAULT_SHIPPING_QUOTE_SETTINGS)
+  const [localDelivery, setLocalDelivery] = useState<LocalDeliverySettings>(DEFAULT_LOCAL_DELIVERY_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [loadError, setLoadError] = useState("")
@@ -105,6 +114,7 @@ export function AdminModificaciones() {
     stock: 0,
     shipping: 0,
     shippingQuote: 0,
+    localDelivery: 0,
     pricing: 0,
     customerCredit: 0,
   })
@@ -120,6 +130,7 @@ export function AdminModificaciones() {
     setSettings(toAdminSettings(data.settings ?? {}))
     if (data.mercadoPagoCosts) setMercadoPagoCosts(data.mercadoPagoCosts)
     if (data.shippingQuote) setShippingQuote(data.shippingQuote)
+    if (data.localDelivery) setLocalDelivery(data.localDelivery)
   }
 
   const loadSettings = async () => {
@@ -263,6 +274,12 @@ export function AdminModificaciones() {
             saved={shippingQuote}
             {...sectionProps("shippingQuote")}
             onSave={(next) => void saveSection("shippingQuote", { shippingQuote: next })}
+          />
+          <LocalDeliverySection
+            key={`local-delivery-${versions.localDelivery}`}
+            saved={localDelivery}
+            {...sectionProps("localDelivery")}
+            onSave={(next) => void saveSection("localDelivery", { localDelivery: next })}
           />
           <PricingSection
             key={`pricing-${versions.pricing}`}

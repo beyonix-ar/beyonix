@@ -36,7 +36,7 @@ window.fetch = async (input, init) => {
   }
   if (path === "/api/admin/settings") {
     if (init && init.method === "PATCH") window.__patches.push(JSON.parse(init.body))
-    return Response.json({ settings: ${JSON.stringify(SETTINGS)}, mercadoPagoCosts: costs, shippingQuote: { logisticsMarkupPercent: 3 } })
+    return Response.json({ settings: ${JSON.stringify(SETTINGS)}, mercadoPagoCosts: costs, shippingQuote: { logisticsMarkupPercent: 3 }, localDelivery: { enabled: true, customerPrice: 2500, internalDeliveryCost: 2500, freeThreshold: 50000, postalCodes: ["2000"] } })
   }
   return Response.json({})
 }
@@ -124,7 +124,7 @@ for (const theme of ["light", "dark"] as const) {
       assert.deepEqual(groups, [
         { id: "integraciones", label: "Integraciones", blocks: ["andreani"] },
         { id: "inventario", label: "Inventario", blocks: ["stock"] },
-        { id: "comercial", label: "Comercial", blocks: ["shipping", "shipping-quote", "pricing"] },
+        { id: "comercial", label: "Comercial", blocks: ["shipping", "shipping-quote", "local-delivery", "pricing"] },
         { id: "pagos", label: "Pagos", blocks: ["financing", "customer-credit"] },
         { id: "visuales", label: "Visuales", blocks: ["banners"] },
       ])
@@ -310,6 +310,55 @@ for (const theme of ["light", "dark"] as const) {
 
       assert.deepEqual(await patches(page), [{ shippingQuote: { logisticsMarkupPercent: 5.5 } }])
       for (const name of ["stock", "shipping", "pricing"]) assert.equal(await mode(page, name), "read", name)
+    } finally {
+      await page.close()
+    }
+  })
+
+  test(`${theme}: Envío BEYONIX: valores, agregar/quitar CP, validaciones y guardado propio`, async () => {
+    const page = await open(theme, costsOverview("manual", null))
+    try {
+      const block = configBlock(page, "local-delivery")
+      assert.equal(await mode(page, "local-delivery"), "read")
+      assert.equal(await rowValue(page, "local-delivery", "Estado"), "Activado")
+      assert.equal(await rowValue(page, "local-delivery", "Costo al cliente"), "$ 2.500")
+      assert.equal(await rowValue(page, "local-delivery", "Costo interno"), "$ 2.500")
+      assert.equal(await rowValue(page, "local-delivery", "Gratis desde"), "$ 50.000")
+      assert.equal(await block.locator("[data-postal-code]").allInnerTexts().then((codes) => codes.map((code) => code.trim())).then(String), "2000")
+      assert.equal(await block.locator("input").count(), 0, "lectura primero")
+
+      await edit(page, "local-delivery")
+      const postalInput = block.getByLabel("Código postal a habilitar")
+      const addButton = block.getByRole("button", { name: "Agregar código postal" })
+      // Duplicado y formato inválido se rechazan sin tocar la lista.
+      await postalInput.fill("2000")
+      await addButton.click()
+      await block.getByRole("alert").getByText(/ya está en la lista/).waitFor()
+      await postalInput.fill("21")
+      await addButton.click()
+      await block.getByRole("alert").getByText(/4 números/).waitFor()
+      // Agregar Funes (normalizado) y quitar 2000.
+      await postalInput.fill("S2132")
+      await addButton.click()
+      await block.locator("[data-postal-code='2132']").waitFor()
+      await block.getByRole("button", { name: "Eliminar código postal 2000" }).click()
+      assert.equal(await block.locator("[data-postal-code='2000']").count(), 0)
+      // Activada sin CP no se puede guardar.
+      await block.getByRole("button", { name: "Eliminar código postal 2132" }).click()
+      await block.getByRole("alert").getByText(/al menos un código postal/).waitFor()
+      assert.equal(await saveButton(page, "local-delivery").isDisabled(), true)
+      await postalInput.fill("2132")
+      await addButton.click()
+      // Precio $0 permitido (siempre gratis); el costo interno sigue aparte.
+      await block.getByLabel("Precio de Envío BEYONIX al cliente").fill("0")
+      await block.getByLabel("Costo interno por entrega de Envío BEYONIX").fill("2800")
+      await saveButton(page, "local-delivery").click()
+      await block.getByText(/Guardado\./).waitFor()
+
+      assert.deepEqual(await patches(page), [{
+        localDelivery: { enabled: true, customerPrice: 0, internalDeliveryCost: 2800, freeThreshold: 50000, postalCodes: ["2132"] },
+      }])
+      for (const name of ["stock", "shipping", "shipping-quote", "pricing"]) assert.equal(await mode(page, name), "read", name)
     } finally {
       await page.close()
     }

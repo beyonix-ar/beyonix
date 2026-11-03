@@ -19,8 +19,14 @@ import {
 } from "./conditioned-checkout.ts"
 import {
   normalizeCheckoutShipping,
+  normalizeLocalDeliveryShipping,
   type NormalizedCheckoutShipping,
 } from "../cart/checkout-shipping.ts"
+import {
+  isLocalDeliveryProvider,
+  type LocalDeliverySettings,
+} from "../shipping/local-delivery.ts"
+import { getLocalDeliverySettings } from "../shipping/local-delivery-settings.ts"
 import { parseArgentineStreetAddress } from "../andreani/address-parsing.ts"
 import {
   ANDREANI_EMAIL_MAX_LENGTH,
@@ -119,6 +125,8 @@ export interface CheckoutOrderShippingInput {
   provider?: string
   type?: "sucursal" | "domicilio"
   quoteToken?: string
+  /** Envío BEYONIX: importe que vio el cliente (sólo para detectar cambios, ver normalizeLocalDeliveryShipping). */
+  expectedCostCharged?: number | null
   /** idgla de la sucursal Andreani elegida por el cliente. Sólo relevante cuando type === "sucursal"; se reverifica server-side, nunca se persiste tal cual. */
   sucursalId?: string | number
 }
@@ -237,6 +245,8 @@ interface CheckoutOrderShippingParams {
   settings: ShippingBonusSettings
   /** Recargo logístico vigente (Admin → Configuración → Cotización de envíos). */
   markupPercent: number
+  /** Envío BEYONIX leído fresco; obligatorio cuando el cliente eligió esa modalidad. */
+  localDelivery?: LocalDeliverySettings | null
 }
 
 export interface CheckoutOrderPricingSnapshot {
@@ -626,7 +636,13 @@ export function normalizeCheckoutOrderShipping({
   customerCreditApplied = false,
   settings,
   markupPercent,
-}: CheckoutOrderShippingParams) {
+  localDelivery,
+}: CheckoutOrderShippingParams): NormalizedCheckoutShipping {
+  // Envío BEYONIX: reglas propias e independientes de la bonificación de
+  // Andreani; el saldo a favor nunca lo vuelve gratis.
+  if (isLocalDeliveryProvider(shipping?.provider)) {
+    return normalizeLocalDeliveryShipping(shipping, customer?.cpDestino, productsTotal, localDelivery)
+  }
   return normalizeCheckoutShipping(
     shipping,
     {
@@ -640,6 +656,17 @@ export function normalizeCheckoutOrderShipping({
     productsTotal,
     { customerCreditApplied, settings, markupPercent },
   )
+}
+
+/**
+ * Configuración fresca de Envío BEYONIX, sólo si el cliente eligió esa
+ * modalidad (Andreani no paga esta lectura). Estricta: una falla de lectura
+ * corta la compra en vez de validar el envío con valores supuestos.
+ */
+export function loadCheckoutLocalDeliverySettings(
+  shipping: CheckoutOrderShippingInput | null | undefined,
+): Promise<LocalDeliverySettings | null> {
+  return isLocalDeliveryProvider(shipping?.provider) ? getLocalDeliverySettings() : Promise.resolve(null)
 }
 
 /**
@@ -689,12 +716,14 @@ export function getCheckoutOrderShippingFields(
     shipping_cost_charged: shipping.costCharged,
     free_shipping_applied: shipping.freeShippingApplied,
     // Snapshot permanente: un cambio posterior del recargo en Admin nunca
-    // recalcula estas órdenes.
-    shipping_provider_quote_amount: shipping.pricing.providerAmount,
-    shipping_markup_percent: shipping.pricing.markupPercent,
-    shipping_markup_amount: shipping.pricing.markupAmount,
-    shipping_rounding_amount: shipping.pricing.roundingAmount,
-    shipping_benefit_amount: shipping.benefitAmount,
+    // recalcula estas órdenes. Envío BEYONIX no tiene tarifa de proveedor:
+    // el snapshot queda completo en NULL (ordenes_shipping_snapshot_complete_check)
+    // y su historia vive en shipping_cost_real/shipping_cost_charged.
+    shipping_provider_quote_amount: shipping.pricing?.providerAmount ?? null,
+    shipping_markup_percent: shipping.pricing?.markupPercent ?? null,
+    shipping_markup_amount: shipping.pricing?.markupAmount ?? null,
+    shipping_rounding_amount: shipping.pricing?.roundingAmount ?? null,
+    shipping_benefit_amount: shipping.pricing ? shipping.benefitAmount : null,
     shipping_estimate: shipping.estimate,
     andreani_sucursal_id: branch?.id ?? null,
     andreani_sucursal_codigo: branch?.codigo ?? null,

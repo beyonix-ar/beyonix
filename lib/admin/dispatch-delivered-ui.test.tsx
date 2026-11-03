@@ -20,6 +20,8 @@ test("Bulto entregado en la tabla única: historial con actores, paquetes y reti
   const requests: string[] = []
   globalThis.fetch = async (input) => {
     const url = String(input)
+    // Entregas locales (Envío BEYONIX): fuera de la tabla de despachos.
+    if (url.endsWith("/local")) return Response.json({ orders: [] })
     requests.push(url)
     if (url.includes("/batches/7?history")) return Response.json({ batch, orderCount: 1, parcelCount: 3, pickingBy: ["Pedro"], preparedBy: ["Lucía"], assembledBy: "Juan", controlledBy: ["Lucía"], deliveredBy: "María", items: [
       { orderId: 12, parcelCount: 3, removedAt: null, removalReason: null, cancelled: false, preparedBy: "Lucía", controlledBy: "Lucía", removedBy: null },

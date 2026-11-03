@@ -25,6 +25,7 @@ import {
   loadAndValidateCheckoutOrderCatalog,
   normalizeCheckoutOrderCustomer,
   normalizeCheckoutOrderItems,
+  loadCheckoutLocalDeliverySettings,
   normalizeCheckoutOrderShipping,
   resolveCheckoutOrderShippingBranch,
   InsufficientStockError,
@@ -243,9 +244,10 @@ export async function POST(request: Request) {
       items,
     )
     const pricingLines = buildCheckoutPricingLines(items, catalog)
-    const [siteSettings, shippingQuoteSettings] = await Promise.all([
+    const [siteSettings, shippingQuoteSettings, localDelivery] = await Promise.all([
       getSiteSettings({ fresh: true }),
       getShippingQuoteSettings(),
+      loadCheckoutLocalDeliverySettings(payload.shipping),
     ])
     const pricingSettings: CheckoutPricingSettings = {
       installmentsFinancing: siteSettings.installmentsFinancing,
@@ -264,6 +266,7 @@ export async function POST(request: Request) {
       customerCreditApplied: requestedCredit > 0,
       settings: siteSettings.shipping,
       markupPercent: shippingQuoteSettings.logisticsMarkupPercent,
+      localDelivery,
     })
     const shippingBranch = await resolveCheckoutOrderShippingBranch(
       payload.shipping,

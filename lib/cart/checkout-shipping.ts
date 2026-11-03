@@ -21,6 +21,12 @@ import {
   toCents,
 } from "../shipping/shipping-pricing.ts"
 import { normalizeCheckoutQuoteBindingAddress } from "./checkout-shipping-binding.ts"
+import {
+  LOCAL_DELIVERY_PROVIDER,
+  quoteLocalDelivery,
+  toPublicLocalDeliverySettings,
+  type LocalDeliverySettings,
+} from "../shipping/local-delivery.ts"
 
 export type CheckoutShippingType = "sucursal" | "domicilio"
 
@@ -30,6 +36,11 @@ export interface CheckoutShippingInput {
   quoteToken?: string | null
   /** Se conserva solo por compatibilidad; nunca es una fuente de verdad. */
   costReal?: number | null
+  /**
+   * Envío BEYONIX: importe que el cliente vio. Nunca decide el cobro; sólo
+   * detecta (409) que la configuración o el carrito cambiaron.
+   */
+  expectedCostCharged?: number | null
 }
 
 export interface CheckoutShippingQuoteItem {
@@ -90,17 +101,36 @@ export interface CheckoutShippingQuoteOption {
   estimate: CheckoutShippingEstimate
 }
 
-export interface NormalizedCheckoutShipping {
-  provider: "andreani"
+interface NormalizedCheckoutShippingBase {
   type: CheckoutShippingType
   costReal: number
   costCharged: number
   freeShippingApplied: boolean
-  pricing: CheckoutShippingPricing
   /** Parte del precio logístico cubierta por BEYONIX (costReal - costCharged). */
   benefitAmount: number
+}
+
+export interface NormalizedAndreaniCheckoutShipping extends NormalizedCheckoutShippingBase {
+  provider: "andreani"
+  pricing: CheckoutShippingPricing
   estimate: CheckoutShippingEstimate
 }
+
+/**
+ * Envío BEYONIX: `costReal` es el costo interno previsto de la entrega y
+ * `costCharged`, lo que paga el cliente (puede ser 0). Sin tarifa de
+ * proveedor ni bultos estimados.
+ */
+export interface NormalizedLocalCheckoutShipping extends NormalizedCheckoutShippingBase {
+  provider: typeof LOCAL_DELIVERY_PROVIDER
+  type: "domicilio"
+  pricing: null
+  estimate: null
+}
+
+export type NormalizedCheckoutShipping =
+  | NormalizedAndreaniCheckoutShipping
+  | NormalizedLocalCheckoutShipping
 
 interface CanonicalCheckoutShippingQuoteBinding {
   cpDestino: string
@@ -469,7 +499,7 @@ export function normalizeCheckoutShipping(
     now?: number
     secret?: string
   },
-): NormalizedCheckoutShipping {
+): NormalizedAndreaniCheckoutShipping {
   const verifiedQuote = verifyCheckoutShippingQuote(shipping, binding, options)
   const costReal = verifiedQuote.costReal
 
@@ -513,5 +543,46 @@ export function normalizeCheckoutShipping(
     pricing: verifiedQuote.pricing,
     benefitAmount: fromCents(Math.round(costReal * 100) - Math.round(costCharged * 100)),
     estimate: verifiedQuote.estimate,
+  }
+}
+
+/**
+ * Envío BEYONIX, recalculado entero en el servidor con la configuración
+ * fresca, el CP del pedido y el subtotal de productos del catálogo. Del
+ * navegador sólo se toma la elección (proveedor + modalidad) y el importe
+ * que vio, para exigir revisar (409) si ya no coincide: modalidad
+ * desactivada, CP fuera de la lista, precio o umbral cambiados, o un
+ * carrito que cruzó el umbral. El saldo a favor no participa: es una forma
+ * de pago, no cambia el precio del envío.
+ */
+export function normalizeLocalDeliveryShipping(
+  shipping: CheckoutShippingInput | null | undefined,
+  postalCode: string | null | undefined,
+  productsTotal: number,
+  settings: LocalDeliverySettings | null | undefined,
+): NormalizedLocalCheckoutShipping {
+  if (
+    !settings ||
+    shipping?.provider !== LOCAL_DELIVERY_PROVIDER ||
+    shipping.type !== "domicilio" ||
+    typeof shipping.expectedCostCharged !== "number"
+  ) {
+    invalidQuote()
+  }
+  const quote = quoteLocalDelivery(toPublicLocalDeliverySettings(settings), postalCode, productsTotal)
+  if (!quote) invalidQuote()
+  const expectedCents = toMoneyCentsAllowingZero(shipping.expectedCostCharged)
+  if (Math.round(quote.costCharged * 100) !== expectedCents) invalidQuote()
+
+  const costReal = settings.internalDeliveryCost
+  return {
+    provider: LOCAL_DELIVERY_PROVIDER,
+    type: "domicilio",
+    costReal,
+    costCharged: quote.costCharged,
+    freeShippingApplied: quote.freeShipping,
+    benefitAmount: Math.max(0, costReal - quote.costCharged),
+    pricing: null,
+    estimate: null,
   }
 }

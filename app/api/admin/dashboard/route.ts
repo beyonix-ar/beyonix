@@ -281,6 +281,7 @@ const FINANCIAL_ORDER_SELECT = `
   mercadopago_payment_snapshot,
   shipping_provider,
   envio_proveedor,
+  delivered_at,
   shipping_cost_real,
   shipping_cost_charged,
   shipping_provider_quote_amount,

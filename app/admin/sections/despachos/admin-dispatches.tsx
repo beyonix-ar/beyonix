@@ -20,6 +20,7 @@ import { DispatchRecordsTable } from "./dispatch-records-table"
 import { DeliveredBatchPanel } from "./delivered-batch-panel"
 import { dispatchRequest } from "./dispatch-request"
 import { GeneralBundlePanel } from "./general-bundle-panel"
+import { LocalDeliveryPanel } from "./local-delivery-panel"
 import { OrderPreparationPanel } from "./order-preparation-panel"
 
 type Board = { rows: DispatchRecord[]; total: number; page: number; holds: DispatchHold[]; users: DispatchUser[] }
@@ -309,6 +310,8 @@ export function AdminDispatches({ initialBatchId, initialOrderId, initialResolve
       {canCreateBundle && <div className="dispatch-selection-footer mt-3 flex flex-wrap items-center justify-between gap-2"><span>{selectedOrders.length} seleccionados</span><AdminPrimaryButton disabled={busy || selectedOrders.length === 0} onClick={createLot}>Crear bulto</AdminPrimaryButton></div>}
       {totalPages > 1 && <DispatchPagination page={page} pages={totalPages} onPage={setPage} />}
     </AdminSection>}
+
+    {listView && <LocalDeliveryPanel refreshSignal={board} />}
 
     </div>
   </div>
