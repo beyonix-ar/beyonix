@@ -69,6 +69,7 @@ import {
   isInvoiceGenerating,
 } from "@/lib/account/account-utils"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
+import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { getCustomerTransferReservationState } from "@/lib/orders/transfer-reservation-display"
@@ -95,6 +96,8 @@ function isOrderDetailDispatched(order: SupabasePedido) {
   // Corte calculado por el servidor (QR final del Bulto, lib/orders/dispatch-cutoff).
   if (typeof order.dispatch_cutoff_reached === "boolean") return order.dispatch_cutoff_reached
   const status = (order.estado ?? "").toLowerCase()
+  // Envío BEYONIX: sólo su estado local; nunca tracking ni estado Andreani residual.
+  if (isLocalDeliveryOrder(order)) return status === "en_camino" || status === "entregado"
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
 
   return (
@@ -118,6 +121,7 @@ function isOrderDetailDispatched(order: SupabasePedido) {
 
 function isOrderDetailDelivered(order: SupabasePedido) {
   const status = (order.estado ?? "").toLowerCase()
+  if (isLocalDeliveryOrder(order)) return status === "entregado" || Boolean(order.delivered_at)
   const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
   return status === "entregado" || Boolean(order.delivered_at) || andreaniStatus.includes("entregado")
 }
@@ -728,6 +732,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const status = getClientOrderStatusBadge(order)
   const isCancelled = (order.estado ?? "").toLowerCase() === "cancelado"
   const orderDelivered = isOrderDetailDelivered(order)
+  const localDelivery = isLocalDeliveryOrder(order)
   const orderTracking = resolveOrderTrackingLink(order)
   const trackingNumber = orderTracking.trackingNumber ?? ""
   const trackingUrl = orderTracking.url
@@ -1140,7 +1145,7 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
               </div>
             </section>
 
-            {order.shipping_type === "sucursal" && (
+            {order.shipping_type === "sucursal" && !localDelivery && (
               <section className="customer-order-branch-delivery rounded-2xl border border-[var(--account-border-subtle)] bg-[var(--account-surface-raised)] p-3.5 sm:p-4">
                 <h2 className="text-sm font-bold text-[var(--account-text-primary)]">
                   Entrega: Sucursal Andreani
@@ -1262,7 +1267,21 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                     </div>
                   )}
 
-                  {!orderDelivered && (
+                  {!orderDelivered && localDelivery && (
+                    <div
+                      className={cn(
+                        "flex min-w-0 flex-col justify-center",
+                        showPaymentProofSection &&
+                          "border-t border-[var(--account-border-subtle)] pt-3 sm:border-t-0 sm:pt-0 sm:pl-3",
+                      )}
+                    >
+                      <p className="text-xs font-normal text-[var(--account-text-primary)]">
+                        Envío BEYONIX: entrega local, sin número de seguimiento.
+                      </p>
+                    </div>
+                  )}
+
+                  {!orderDelivered && !localDelivery && (
                     <div
                       className={cn(
                         "flex min-w-0 flex-col justify-center",

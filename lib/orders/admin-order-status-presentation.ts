@@ -8,6 +8,7 @@
  *   pendiente o incidencia leve, azul en curso, neutro terminal).
  */
 
+import { andreaniHandedOverAt, hasAndreaniShippingEvidenceScope } from "./dispatch-cutoff.ts"
 import { ORDER_CANCELLATION_REFUND_LABELS } from "./order-cancellation-refund-state.ts"
 import {
   getDispatchProgress,
@@ -48,6 +49,9 @@ export interface AdminDispatchOrder {
   andreani_handed_over_at?: string | null
   andreani_envio_id?: string | null
   andreani_creation_status?: string | null
+  /** Proveedor efectivo: con Envío BEYONIX los campos Andreani residuales se ignoran. */
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
   /** Pickeo en Despachos (admin_pending_facts del listado). */
   admin_pending_facts?: { dispatch?: { packageStatus?: "preparing" | "prepared" | null } | null } | null
 }
@@ -91,7 +95,7 @@ export function getAdminDispatchStatus(
 
   const byEstado = DISPATCH_BY_ESTADO[order.estado]
   // QR final: Despachado (nunca "Entregado" ni "En camino" por sí solo), aunque se cancele después.
-  if (order.andreani_handed_over_at && (!byEstado || byEstado.key === "ready")) return HANDED_OVER
+  if (andreaniHandedOverAt(order) && (!byEstado || byEstado.key === "ready")) return HANDED_OVER
   if (byEstado) return byEstado
 
   if (order.estado !== "cancelado") {
@@ -99,8 +103,8 @@ export function getAdminDispatchStatus(
     // El envío Andreani se genera al terminar el pickeo: ya está listo para despachar.
     if (
       progress === "ready" ||
-      String(order.andreani_envio_id ?? "").trim() ||
-      ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? "")
+      (hasAndreaniShippingEvidenceScope(order) && (String(order.andreani_envio_id ?? "").trim() ||
+        ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? "")))
     ) return READY
     if (progress === "preparing") return PREPARING
   }
@@ -120,9 +124,9 @@ export function getAdminShippingStage(
   order: AdminDispatchOrder & ShippingStageOrder,
   paymentConfirmed: boolean,
 ): ShippingStage | null {
-  const shipmentGenerated = Boolean(String(order.andreani_envio_id ?? "").trim()) ||
-    ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? "")
-  const dispatchProgress = getDispatchProgress(order.andreani_handed_over_at, order.admin_pending_facts?.dispatch?.packageStatus) ??
+  const shipmentGenerated = hasAndreaniShippingEvidenceScope(order) && (Boolean(String(order.andreani_envio_id ?? "").trim()) ||
+    ANDREANI_SHIPMENT_IN_PROGRESS.has(order.andreani_creation_status ?? ""))
+  const dispatchProgress = getDispatchProgress(andreaniHandedOverAt(order), order.admin_pending_facts?.dispatch?.packageStatus) ??
     (shipmentGenerated ? "ready" : null)
   return getShippingStage(order, { paymentConfirmed, dispatchProgress })
 }

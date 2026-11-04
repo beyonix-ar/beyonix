@@ -1,3 +1,5 @@
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
+
 /**
  * Andreani no documenta un parámetro oficial para precargar un número de
  * tracking en su página pública de seguimiento (auditado 2026-08-25: la
@@ -13,6 +15,8 @@ interface OrderTrackingSource {
   andreani_tracking?: string | null
   tracking_number?: string | null
   tracking_url?: string | null
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
 }
 
 export interface ResolvedOrderTracking {
@@ -36,10 +40,15 @@ function normalizeUrl(value?: string | null) {
  * creado por BEYONIX vía Andreani o cargado manualmente para un
  * transportista distinto. Cada pedido usa su propio
  * `andreani_tracking`/`tracking_number`; nunca un valor fijo.
+ *
+ * Envío BEYONIX no tiene seguimiento: el proveedor manda y cualquier
+ * tracking residual (Andreani o manual) se ignora.
  */
 export function resolveOrderTrackingLink(
   order: OrderTrackingSource,
 ): ResolvedOrderTracking {
+  if (isLocalDeliveryOrder(order)) return { trackingNumber: null, url: null, isAndreani: false }
+
   const andreaniTracking =
     typeof order.andreani_tracking === "string" ? order.andreani_tracking.trim() : ""
 

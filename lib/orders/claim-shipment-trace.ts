@@ -1,4 +1,5 @@
 import type { SupabaseOrderClaim, SupabasePedido } from "../supabase/types.ts"
+import { hasAndreaniShippingEvidenceScope } from "./dispatch-cutoff.ts"
 
 /** Estados que un super admin puede forzar en el reenvío (force_order_claim_shipment_status). */
 export const CLAIM_FORCEABLE_STATUSES = ["en_transito", "en_sucursal", "entregada", "cancelada"] as const
@@ -93,15 +94,18 @@ export function getClaimForceEffects(status: ClaimForceableStatus): string[] {
 
 /** El pedido y cada tramo de postventa conservan identidad y tracking propios. */
 export function buildClaimShipmentTrace(order: SupabasePedido, claim: SupabaseOrderClaim): ClaimShipmentTraceRow[] {
+  // Envío original Envío BEYONIX: sin número, tracking, estado ni ambiente
+  // Andreani residuales. Los tramos de postventa (legs) conservan su Andreani real.
+  const andreani = hasAndreaniShippingEvidenceScope(order)
   const original: ClaimShipmentTraceRow = {
     key: `order-${order.id}`,
     shipmentId: null,
-    title: "Envío original",
-    number: order.andreani_envio_id ?? null,
-    tracking: order.andreani_tracking || order.tracking_number || null,
-    status: order.andreani_estado || (order.delivered_at ? "Entregado" : order.estado || "Sin generar"),
-    date: order.delivered_at || order.andreani_created_at || order.created_at || null,
-    environment: order.andreani_creation_environment ?? null,
+    title: andreani ? "Envío original" : "Envío original (Envío BEYONIX)",
+    number: andreani ? order.andreani_envio_id ?? null : null,
+    tracking: andreani ? order.andreani_tracking || order.tracking_number || null : null,
+    status: (andreani ? order.andreani_estado : null) || (order.delivered_at ? "Entregado" : order.estado || "Sin generar"),
+    date: order.delivered_at || (andreani ? order.andreani_created_at : null) || order.created_at || null,
+    environment: andreani ? order.andreani_creation_environment ?? null : null,
     simulated: false,
     override: null,
     overrideNote: null,

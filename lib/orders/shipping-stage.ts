@@ -1,3 +1,5 @@
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
+
 /**
  * Etapas visibles del envío, iguales para Admin y para el cliente:
  * Preparando pedido → Listo para despachar → Despachado → En camino → Entregado.
@@ -57,11 +59,17 @@ export interface ShippingStageOrder {
   andreani_estado?: string | null
   /** Seguimiento cargado a mano (transporte distinto de Andreani). */
   tracking_number?: string | null
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
 }
 
 /**
  * Etapa visible del pedido; null mientras el pago no esté confirmado. El QR
  * final por sí solo nunca pasa de "Despachado".
+ *
+ * Envío BEYONIX: el proveedor manda. Sólo cuentan los estados locales reales
+ * (Preparando → En camino → Entregado); cualquier dato Andreani residual
+ * (estado, tracking, Bulto) se ignora.
  */
 export function getShippingStage(
   order: ShippingStageOrder,
@@ -69,6 +77,10 @@ export function getShippingStage(
 ): ShippingStage | null {
   const estado = (order.estado ?? "").toLowerCase()
   if (estado === "entregado" || order.delivered_at) return "delivered"
+  if (isLocalDeliveryOrder(order)) {
+    if (estado === "en_camino") return "in_transit"
+    return paymentConfirmed ? "preparing" : null
+  }
   if (IN_TRANSIT_ESTADOS.has(estado) || isAndreaniTransportStatus(order.andreani_estado)) return "in_transit"
   // `enviado`: Andreani admitió el paquete, todavía sin movimiento de transporte.
   if (estado === "enviado" || dispatchProgress === "dispatched" || order.tracking_number?.trim()) return "dispatched"

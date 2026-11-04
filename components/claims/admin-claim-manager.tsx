@@ -48,7 +48,7 @@ import {
   isClaimVisibleForMode,
 } from "@/lib/orders/claim-visibility"
 import { shouldPollSingleClaim } from "@/lib/orders/claim-polling"
-import { isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
+import { isOrderDeliveryReached, isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import {
   getClaimReplacedUnitsByItem,
   getReplacementFlow,
@@ -250,10 +250,9 @@ function getStatusTone(status: OrderClaimStatus, cancellation = false) {
   return "bg-slate-800 text-slate-100 border-slate-400/45"
 }
 
+// Envío original: el estado Andreani residual de un pedido Envío BEYONIX no cuenta como entrega.
 function isOrderDelivered(order: SupabasePedido) {
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
-  return estado === "entregado" || Boolean(order.delivered_at) || andreaniStatus.includes("entregado")
+  return isOrderDeliveryReached(order)
 }
 
 /** Mismo corte que approve_order_claim_cancellation: el QR final del Bulto. */

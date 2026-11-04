@@ -791,6 +791,9 @@ export interface CustomerOrderSummary {
   delivered_at?: string | null
   payment_proof_url?: string | null
   payment_proof_uploaded_at?: string | null
+  /** Proveedor del envío: con Envío BEYONIX ("beyonix") se ignora cualquier dato Andreani residual. */
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
   shipping_type?: "sucursal" | "domicilio" | null
   tracking_number?: string | null
   tracking_url?: string | null

@@ -21,6 +21,8 @@ const TEST_FILES = [
   "lib/orders/dispatch-andreani-db.test.ts",
   "lib/orders/local-delivery-dispatch-db.test.ts",
   "lib/orders/bundle-handover-cancellation-db.test.ts",
+  "lib/orders/local-delivery-provider-isolation-db.test.ts",
+  "lib/orders/provider-evidence.test.ts",
   "lib/orders/cancellation-journey.test.ts",
   "lib/orders/shipping-parcel-measures-db.test.ts",
   "lib/orders/catalog-random-db.test.ts",

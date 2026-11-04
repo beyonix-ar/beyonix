@@ -3,6 +3,12 @@
 // servidor (lib/barcodes/render.ts) y llega ya validado.
 
 import type { LocalDeliveryLabel } from "../shipping/local-delivery-label.ts"
+import {
+  fitLocalDeliveryLabel,
+  LOCAL_DELIVERY_LABEL_GEOMETRY as LD,
+  LOCAL_DELIVERY_LABEL_TOO_LONG,
+  localDeliveryPhoneText,
+} from "../shipping/local-delivery-label-layout.ts"
 
 export type LabelFormat = "a4" | "single"
 
@@ -70,24 +76,44 @@ function labelBody(label: PrintableLabel, svg: string) {
   return `<div class="title">Bulto general</div><div class="code">${escapeHtml(label.code)}</div><div class="barcode">${svg}</div>`
 }
 
-// Jerarquía para el cadete: marca y pedido arriba, destinatario y dirección
-// grandes, teléfono bien visible, bulto X/N y el BX-PKG abajo. Sin importes,
-// pago, CUIT ni productos.
+// Jerarquía para el cadete: servicio, pedido y bulto X/N arriba; destinatario,
+// dirección, referencia, localidad/CP y teléfono COMPLETOS (sin cortes: el
+// tamaño se adapta con fitLocalDeliveryLabel); Code 128 con zona de silencio,
+// BX-PKG legible y fecha abajo. Sin importes, pago, CUIT ni productos.
 function localDeliveryLabelBody(label: LocalDeliveryLabel, svg: string) {
+  const layout = fitLocalDeliveryLabel(label)
+  if (!layout) throw new Error(LOCAL_DELIVERY_LABEL_TOO_LONG)
+  const sizes = `--ld-lh:${layout.lineHeight};--ld-recipient:${layout.recipient}pt;--ld-address:${layout.address}pt;--ld-reference:${layout.reference}pt;--ld-city:${layout.city}pt;--ld-phone:${layout.phone}pt`
   const city = [label.locality, label.province].filter(Boolean).join(", ")
-  return `<header class="ld-head"><span class="ld-brand">BEYONIX</span><span class="ld-service">${escapeHtml(LOCAL_DELIVERY_TITLE)}</span><span class="ld-date">${escapeHtml(label.date)}</span></header>
-    <div class="ld-row"><span class="ld-order">PEDIDO ${escapeHtml(label.orderCode)}</span><span class="ld-parcel">BULTO ${label.index}/${label.count}</span></div>
-    <div class="ld-body">
-      <div class="ld-main">
-        <div class="ld-field"><span class="ld-label">DESTINATARIO</span><span class="ld-recipient">${escapeHtml(shortName(label.recipient, 48))}</span></div>
-        <div class="ld-field"><span class="ld-label">DIRECCIÓN</span><span class="ld-address">${escapeHtml(label.address)}</span>${label.reference ? `<span class="ld-reference">Ref.: ${escapeHtml(label.reference)}</span>` : ""}<span class="ld-city">${escapeHtml(city)} · <strong>CP ${escapeHtml(label.postalCode)}</strong></span></div>
-      </div>
-      <div class="ld-field ld-contact"><span class="ld-label">TEL</span><span class="ld-phone">${escapeHtml(label.phone ?? "—")}</span></div>
+  const field = (name: string, className: string, value: string) =>
+    `<span class="ld-label">${name}</span><span class="ld-value ${className}">${value}</span>`
+  return `<header class="ld-head"><span class="ld-brand">${escapeHtml(LOCAL_DELIVERY_TITLE)}</span><span class="ld-order">PEDIDO ${escapeHtml(label.orderCode)}</span><span class="ld-parcel">BULTO ${label.index}/${label.count}</span></header>
+    <div class="ld-body" style="${sizes}">
+      ${field("DESTINATARIO", "ld-recipient", escapeHtml(label.recipient))}
+      ${field("DIRECCIÓN", "ld-address", escapeHtml(label.address))}
+      ${label.reference ? field("REFERENCIA", "ld-reference", escapeHtml(label.reference)) : ""}
+      ${field("LOCALIDAD", "ld-city", `${escapeHtml(city)} · <strong>CP ${escapeHtml(label.postalCode)}</strong>`)}
+      ${field("TELÉFONO", "ld-phone", escapeHtml(localDeliveryPhoneText(label.phone)))}
     </div>
-    <div class="barcode">${svg.replace("<svg ", '<svg preserveAspectRatio="none" ')}</div><div class="code">${escapeHtml(label.code)}</div>`
+    <div class="barcode">${svg.replace("<svg ", '<svg preserveAspectRatio="none" ')}</div>
+    <div class="ld-foot"><span class="ld-date">${escapeHtml(label.date)}</span><span class="code">${escapeHtml(label.code)}</span><span></span></div>`
 }
 
 const LOCAL_DELIVERY_TITLE = "ENVÍO BEYONIX"
+
+/**
+ * Última barrera antes del diálogo de impresión: mide la etiqueta Envío
+ * BEYONIX ya maquetada en el navegador y devuelve el error si cualquier zona
+ * (cabecera, datos de entrega, pie o la etiqueta entera) quedara cortada.
+ */
+export function findClippedLocalDeliveryLabel(document: Document): string | null {
+  for (const label of document.querySelectorAll<HTMLElement>(".label.local_delivery")) {
+    for (const box of [label, ...label.querySelectorAll<HTMLElement>(".ld-head, .ld-body, .ld-foot")]) {
+      if (box.scrollHeight > box.clientHeight + 1 || box.scrollWidth > box.clientWidth + 1) return LOCAL_DELIVERY_LABEL_TOO_LONG
+    }
+  }
+  return null
+}
 
 export function buildLabelsDocument(
   labels: readonly PrintableLabel[],
@@ -142,27 +168,27 @@ export function buildLabelsDocument(
     .batch .barcode svg { max-height: 16mm; }
     .parcel .barcode, .prepared .barcode { width: 100%; margin: 2mm 0 0; padding-inline: 2mm; }
     .parcel .barcode svg, .prepared .barcode svg { width: 100%; max-height: 22mm; object-fit: contain; }
-    .local_delivery { align-items: stretch; justify-content: flex-start; text-align: left; padding: 1.5mm 2.5mm; gap: 0.4mm; }
-    .ld-head, .ld-row { display: flex; align-items: baseline; justify-content: space-between; gap: 2mm; }
-    .ld-head { border-bottom: 0.3mm solid #000; padding-bottom: 0.4mm; }
-    .ld-brand { font-weight: 900; letter-spacing: 0.18em; font-size: 8pt; }
-    .ld-service { font-weight: 900; font-size: 9pt; letter-spacing: 0.04em; }
-    .ld-date { font-size: 7pt; }
+    /* Envío BEYONIX: alturas fijas que suman 50,8 mm (LOCAL_DELIVERY_LABEL_GEOMETRY); los textos nunca se cortan, se adaptan.
+       Datos de entrega en peso 700: en Windows, Arial 800/900 es Arial Black (más ancha que las métricas de la estimación).
+       Sin overflow: hidden en las zonas: el acento de Á/Ñ en la primera línea nunca se recorta (la barrera mide scrollHeight/scrollWidth). */
+    .local_delivery { align-items: stretch; justify-content: flex-start; text-align: left; padding: ${LD.paddingBlockMm}mm ${LD.paddingInlineMm}mm; gap: ${LD.sectionGapMm}mm; }
+    .ld-head { flex: none; height: ${LD.headHeightMm}mm; display: flex; align-items: center; justify-content: space-between; gap: 2mm; border-bottom: 0.3mm solid #000; white-space: nowrap; }
+    .ld-brand { font-weight: 900; letter-spacing: 0.08em; font-size: 8pt; }
     .ld-order { font-weight: 900; font-size: 9pt; }
-    .ld-parcel { font-weight: 900; font-size: 11pt; border: 0.4mm solid #000; padding: 0 1.5mm; }
-    .ld-body { display: grid; grid-template-columns: minmax(0, 1fr) 27mm; column-gap: 2mm; flex-shrink: 0; }
-    .ld-main { display: flex; flex-direction: column; gap: 0.3mm; min-width: 0; }
-    .ld-contact { border-left: 0.3mm solid #000; padding-left: 1.5mm; }
-    .ld-field { display: flex; flex-direction: column; line-height: 1.12; min-width: 0; }
-    .ld-label { font-size: 5.5pt; font-weight: 700; letter-spacing: 0.08em; }
-    .ld-recipient { font-weight: 800; font-size: 9pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ld-address { font-weight: 700; font-size: 8.5pt; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .ld-reference { font-size: 7pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ld-city { font-size: 8pt; }
-    .ld-phone { font-weight: 900; font-size: 10pt; letter-spacing: 0.02em; overflow-wrap: anywhere; }
+    .ld-parcel { font-weight: 900; font-size: 10.5pt; line-height: 1.05; border: 0.4mm solid #000; padding: 0 1.5mm; }
+    .ld-body { flex: none; height: ${LD.bodyHeightMm}mm; display: grid; grid-template-columns: ${LD.fieldLabelWidthMm}mm minmax(0, 1fr); column-gap: ${LD.columnGapMm}mm; row-gap: ${LD.rowGapMm}mm; align-content: start; align-items: baseline; }
+    .ld-label { font-size: ${LD.fieldLabelPt}pt; font-weight: 700; line-height: 1.1; white-space: nowrap; }
+    .ld-value { min-width: 0; line-height: var(--ld-lh); overflow-wrap: anywhere; }
+    .ld-recipient { font-weight: 700; font-size: var(--ld-recipient); }
+    .ld-address { font-weight: 700; font-size: var(--ld-address); }
+    .ld-reference { font-size: var(--ld-reference); }
+    .ld-city { font-size: var(--ld-city); }
+    .ld-phone { font-weight: 700; font-size: var(--ld-phone); }
     /* Barras anchas para el lector (estiradas en horizontal, como permite Code 128) y zona de silencio a los costados. */
-    .local_delivery .barcode { margin: auto 0 0; padding-inline: 7mm; }
-    .local_delivery .barcode svg { display: block; width: 100%; height: 9mm; }
-    .local_delivery .code { text-align: center; font-size: 8pt; }
+    .local_delivery .barcode { flex: none; height: ${LD.barcodeHeightMm}mm; margin: 0; padding-inline: ${LD.barcodeQuietZoneMm}mm; }
+    .local_delivery .barcode svg { display: block; width: 100%; height: ${LD.barcodeHeightMm}mm; max-height: none; }
+    .ld-foot { flex: none; height: ${LD.footHeightMm}mm; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; }
+    .ld-date { font-size: 6.5pt; }
+    .local_delivery .code { text-align: center; font-size: 8pt; line-height: 1; }
   </style></head><body><main class="sheet">${items}</main></body></html>`
 }

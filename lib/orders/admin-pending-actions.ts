@@ -18,6 +18,7 @@ import {
 } from "./cancellation-next-action.ts"
 import { claimNeedsAdminAttention } from "./claim-attention.ts"
 import { getCreditNoteState } from "./credit-note-state.ts"
+import { andreaniHandedOverAt } from "./dispatch-cutoff.ts"
 import { isOrderPaymentConfirmed } from "./order-payment-status.ts"
 import { getOpenPaymentIncidents, type PaymentIncidentAuditEvent } from "./payment-incidents.ts"
 
@@ -327,7 +328,8 @@ function addDispatchWork(
   automatic: Set<string>,
 ) {
   const dispatch = order.admin_pending_facts?.dispatch
-  if (order.andreani_handed_over_at || dispatch?.batchStatus === "handed_over") return
+  // QR final residual de un pedido Envío BEYONIX no es evidencia de despacho (proveedor efectivo).
+  if (andreaniHandedOverAt(order) || dispatch?.batchStatus === "handed_over") return
   // La entrega al transporte es UNA acción por tanda (Despachos/campana); el pedido sólo informa.
   if (dispatch?.batchId && dispatch.batchStatus === "closed") {
     automatic.add("En tanda lista para entregar al transporte")
@@ -354,7 +356,7 @@ export function getAdminOrderWork(order: AdminPendingActionsOrder): AdminOrderWo
   if (physicalHold) {
     add("dispatch_physical_return", `/admin/despachos?resolve=${order.id ?? ""}`)
     automatic.add("Reintegro en pausa hasta el retiro físico")
-  } else if (dispatch?.blocked && dispatch.batchId && dispatch.batchStatus !== "handed_over" && !order.andreani_handed_over_at) {
+  } else if (dispatch?.blocked && dispatch.batchId && dispatch.batchStatus !== "handed_over" && !andreaniHandedOverAt(order)) {
     // ── Despacho bloqueado: aunque el pedido esté cancelado, sigue en la tanda ──
     add("dispatch_blocked", `/admin/despachos?batch=${dispatch.batchId}`)
   }

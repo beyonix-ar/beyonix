@@ -38,7 +38,9 @@ const MIGRATIONS = [
 // A: estructural, compatible con el código anterior. B: guarda estricta de En camino (después del deploy).
 const MIGRATION_A = "supabase/migrations/20261103120000_local_delivery_parcels_labels.sql"
 const MIGRATION_B = "supabase/migrations/20261103130000_local_delivery_in_transit_parcels_guard.sql"
-type MigrationStage = "none" | "A" | "AB"
+// C: order_change_status bajo lock en En camino + registro atómico de etiquetas generadas.
+const MIGRATION_C = "supabase/migrations/20261104120000_local_delivery_change_guard_and_label_generation.sql"
+type MigrationStage = "none" | "A" | "AB" | "ABC"
 
 const LOCAL = 1041
 const LOCAL_RESIDUAL = 1042
@@ -75,7 +77,8 @@ async function setup(stage: MigrationStage = "A") {
   `)
   await db.exec("select refresh_inventory_stock(1); select refresh_inventory_stock(2);")
   if (stage !== "none") await db.exec(read(MIGRATION_A))
-  if (stage === "AB") await db.exec(read(MIGRATION_B))
+  if (stage === "AB" || stage === "ABC") await db.exec(read(MIGRATION_B))
+  if (stage === "ABC") await db.exec(read(MIGRATION_C))
   return db
 }
 
@@ -254,7 +257,7 @@ const markInTransitRpc = async (db: PGlite, orderId: number, fromEstado = "pagad
   (await db.query<{ id: number; estado: string }>("select id, estado from mark_local_delivery_in_transit($1,$2,$3)", [orderId, fromEstado, actor])).rows
 const estadoOf = async (db: PGlite, orderId: number) => (await db.query<{ estado: string }>("select estado from ordenes where id=$1", [orderId])).rows[0].estado
 
-for (const stage of ["A", "AB"] as const) {
+for (const stage of ["A", "AB", "ABC"] as const) {
   test(`código nuevo con ${stage}: En camino atómico sólo con todos los bultos del armado vigente confirmados`, async () => {
     const db = await setup(stage)
     assert.deepEqual(await markInTransitRpc(db, LOCAL), [], "sin preparación: 0 filas")
@@ -325,4 +328,122 @@ test("permisos: las funciones nuevas sólo para service_role con operador verifi
   await defineParcels(db, LOCAL, 1)
   await db.query("select set_config('request.jwt.claim.role','authenticated',false)")
   await assert.rejects(confirm(db, LOCAL, "BX-PKG-2041-01"), /DISPATCH_FORBIDDEN|permission denied/)
+})
+
+// ── Migración C ─────────────────────────────────────────────────────────────
+
+const preparedLocal = async () => {
+  const db = await setup("ABC")
+  await pick(db, LOCAL)
+  await defineParcels(db, LOCAL, 1)
+  await confirm(db, LOCAL, "BX-PKG-2041-01")
+  return db
+}
+const auditActions = async (db: PGlite, orderId: number) =>
+  (await db.query<{ action: string }>("select action from order_audit_events where order_id=$1 order by id", [orderId])).rows.map((row) => row.action)
+
+test("C: En camino atómico rechaza bajo lock los cambios pendientes (misma lista que el servicio); el resto avanza", async () => {
+  for (const status of ["change_requested", "extra_payment_pending"]) {
+    const db = await preparedLocal()
+    const before = await auditActions(db, LOCAL)
+    await db.query("update ordenes set order_change_status=$2 where id=$1", [LOCAL, status])
+    assert.deepEqual(await markInTransitRpc(db, LOCAL), [], status)
+    assert.equal(await estadoOf(db, LOCAL), "pagado", status)
+    assert.deepEqual(await auditActions(db, LOCAL), before, `${status}: 0 efectos`)
+  }
+  for (const status of [null, "change_approved", "rejected"]) {
+    const db = await preparedLocal()
+    await db.query("update ordenes set order_change_status=$2 where id=$1", [LOCAL, status])
+    assert.deepEqual(await markInTransitRpc(db, LOCAL), [{ id: LOCAL, estado: "en_camino" }], String(status))
+  }
+})
+
+test("C: sin C, la RPC anterior dejaba avanzar con un cambio pendiente (regresión cubierta)", async () => {
+  const db = await setup("AB")
+  await pick(db, LOCAL)
+  await defineParcels(db, LOCAL, 1)
+  await confirm(db, LOCAL, "BX-PKG-2041-01")
+  await db.query("update ordenes set order_change_status='change_requested' where id=$1", [LOCAL])
+  assert.deepEqual(await markInTransitRpc(db, LOCAL), [{ id: LOCAL, estado: "en_camino" }])
+})
+
+type Generated = { packageId: number; attempt: number; parcelCount: number; reprint: boolean }
+const recordGenerated = async (db: PGlite, orderId: number, packageId: number, attempt: number, barcodes: string[]) =>
+  (await db.query<{ result: Generated }>("select record_local_delivery_labels_generated($1,$2,$3,$4,$5) result", [orderId, actor, packageId, attempt, barcodes])).rows[0].result
+const currentPackage = async (db: PGlite, orderId: number) =>
+  (await db.query<{ id: number; attempt_number: number }>("select id, attempt_number from order_packages where order_id=$1", [orderId])).rows[0]
+const generatedEvents = async (db: PGlite, orderId: number) =>
+  (await db.query<{ metadata: { attempt: number; barcodes: string[]; reprint: boolean } }>(
+    "select metadata from order_audit_events where order_id=$1 and action='local_delivery_labels_generated' order by id", [orderId])).rows.map((row) => row.metadata)
+
+test("C: generación de etiquetas = evento 'generated' del intento vigente; regenerar = mismos BX-PKG con reprint", async () => {
+  const db = await setup("ABC")
+  await pick(db, LOCAL)
+  await defineParcels(db, LOCAL, 2)
+  const pkg = await currentPackage(db, LOCAL)
+  const codes = ["BX-PKG-2041-01", "BX-PKG-2041-02"]
+  assert.equal((await recordGenerated(db, LOCAL, pkg.id, 1, codes)).reprint, false)
+  assert.equal((await recordGenerated(db, LOCAL, pkg.id, 1, codes)).reprint, true)
+  assert.deepEqual((await generatedEvents(db, LOCAL)).map((event) => [event.attempt, event.barcodes, event.reprint]), [[1, codes, false], [1, codes, true]])
+  assert.equal((await auditActions(db, LOCAL)).includes("local_delivery_labels_printed"), false, "nunca afirma una impresión física")
+  // Un evento con el nombre anterior del mismo intento también cuenta como generación previa.
+  await db.query("select reset_order_preparation($1,$2,$3,$4)", [LOCAL, actor, key(), "Rearmado por caja dañada"])
+  for (const code of CODES[LOCAL]) await scan(db, LOCAL, code)
+  await defineParcels(db, LOCAL, 1)
+  await db.query("insert into order_audit_events(order_id,action,metadata) values ($1,'local_delivery_labels_printed',jsonb_build_object('packageId',$2::bigint,'attempt',2))", [LOCAL, pkg.id])
+  assert.equal((await recordGenerated(db, LOCAL, pkg.id, 2, ["BX-PKG-2041-R2-01"])).reprint, true)
+})
+
+test("C: después de un rearmado, las etiquetas del intento anterior NO se registran ni se devuelven (DISPATCH_PARCEL_STALE)", async () => {
+  const db = await setup("ABC")
+  await pick(db, LOCAL)
+  await defineParcels(db, LOCAL, 1)
+  const pkg = await currentPackage(db, LOCAL)
+  // La ruta leyó el intento 1 y, antes de registrar, otro operador rearma.
+  const stale = ["BX-PKG-2041-01"]
+  await db.query("select reset_order_preparation($1,$2,$3,$4)", [LOCAL, actor, key(), "Rearmado por caja dañada"])
+  await assert.rejects(recordGenerated(db, LOCAL, pkg.id, 1, stale), /DISPATCH_PARCEL_STALE/, "intento viejo, pickeo pendiente")
+  for (const code of CODES[LOCAL]) await scan(db, LOCAL, code)
+  await defineParcels(db, LOCAL, 2)
+  await assert.rejects(recordGenerated(db, LOCAL, pkg.id, 1, stale), /DISPATCH_PARCEL_STALE/, "intento viejo")
+  await assert.rejects(recordGenerated(db, LOCAL, pkg.id, 2, ["BX-PKG-2041-R2-01"]), /DISPATCH_PARCEL_STALE/, "incompleto")
+  await assert.rejects(recordGenerated(db, LOCAL, pkg.id, 2, ["BX-PKG-2041-R2-02", "BX-PKG-2041-R2-01"]), /DISPATCH_PARCEL_STALE/, "otro orden")
+  await assert.rejects(recordGenerated(db, LOCAL, pkg.id + 99, 2, ["BX-PKG-2041-R2-01", "BX-PKG-2041-R2-02"]), /DISPATCH_PARCEL_STALE/, "otra preparación")
+  assert.deepEqual(await generatedEvents(db, LOCAL), [], "0 efectos")
+  assert.equal((await recordGenerated(db, LOCAL, pkg.id, 2, ["BX-PKG-2041-R2-01", "BX-PKG-2041-R2-02"])).reprint, false)
+})
+
+test("C: generación rechazada para cancelados, Andreani y sin permisos", async () => {
+  const db = await setup("ABC")
+  await pick(db, LOCAL)
+  await defineParcels(db, LOCAL, 1)
+  const pkg = await currentPackage(db, LOCAL)
+  for (const change of ["financial_status='refund_pending'", "cancelled_at=now()"]) {
+    await db.query(`update ordenes set ${change} where id=$1`, [LOCAL])
+    await assert.rejects(recordGenerated(db, LOCAL, pkg.id, 1, ["BX-PKG-2041-01"]), /LOCAL_DELIVERY_LABEL_ORDER_CANCELLED/, change)
+    await db.query("update ordenes set financial_status='payment_confirmed', cancelled_at=null where id=$1", [LOCAL])
+  }
+  await pick(db, ANDREANI)
+  const andreani = await currentPackage(db, ANDREANI)
+  await assert.rejects(recordGenerated(db, ANDREANI, andreani.id, 1, []), /DISPATCH_LOCAL_DELIVERY_ONLY/)
+  await db.query("select set_config('request.jwt.claim.role','authenticated',false)")
+  await assert.rejects(recordGenerated(db, LOCAL, pkg.id, 1, ["BX-PKG-2041-01"]), /DISPATCH_FORBIDDEN|permission denied/)
+  assert.deepEqual(await generatedEvents(db, LOCAL), [])
+})
+
+test("compatibilidad: A+B → C con el código anterior (auditoría directa de etiquetas, misma RPC de En camino) y Andreani igual", async () => {
+  const before = await setup("AB")
+  const db = await setup("ABC")
+  for (const target of [before, db]) {
+    await pick(target, LOCAL)
+    await defineParcels(target, LOCAL, 1)
+    // Ruta de etiquetas anterior: insert directo en la auditoría existente.
+    await target.query("insert into order_audit_events(order_id,actor_type,actor_id,action,metadata) values ($1,'admin',$2,'local_delivery_labels_printed','{}'::jsonb)", [LOCAL, actor])
+    await confirm(target, LOCAL, "BX-PKG-2041-01")
+    assert.deepEqual(await markInTransitRpc(target, LOCAL), [{ id: LOCAL, estado: "en_camino" }])
+  }
+  // Andreani: mismos motivos de bloqueo con y sin C.
+  assert.deepEqual(await reasons(db, ANDREANI), await reasons(before, ANDREANI))
+  // El residuo Andreani de LOCAL_RESIDUAL ya no lo bloquea con C.
+  assert.ok(!(await reasons(db, LOCAL_RESIDUAL)).includes("tracking_in_circuit"))
 })

@@ -164,7 +164,8 @@ async function setup({ recovery = true } = {}) {
     alter table ordenes add column if not exists shipping_cost_charged numeric default 0,
       add column if not exists invoice_created_at timestamptz, add column if not exists invoice_arca_environment text,
       add column if not exists invoice_requested_at timestamptz, add column if not exists refund_amount numeric,
-      add column if not exists refunded_at timestamptz, add column if not exists credit_note_status text;
+      add column if not exists refunded_at timestamptz, add column if not exists credit_note_status text,
+      add column if not exists shipping_provider text, add column if not exists envio_proveedor text;
     alter table orden_items add column if not exists precio numeric, add column if not exists producto_id bigint,
       add column if not exists variante_id bigint, add column if not exists conditioned_name text;
     alter table order_credit_notes add column if not exists voucher_number integer, add column if not exists authorized_at timestamptz,
@@ -797,5 +798,41 @@ test("N. un fallo que se repite agota los reintentos → 'Requiere acción' con 
     assert.deepEqual(env.mp.posts, [], "sin NC autorizada nunca se mueve dinero")
     assert.equal(getAutomaticCancellationStatus({ ...exhausted, estado: "cancelado", invoice_queued_at: new Date().toISOString() } as never,
       { enabled: true, cutoffAt: "2020-01-01T00:00:00Z" })?.state, "requires_action")
+  } finally { await env.db.close() }
+})
+
+test("H2. Envío BEYONIX con datos Andreani residuales → automático; Andreani moderno o legacy con envío → manual", async () => {
+  const env = await setup()
+  try {
+    // Proveedor efectivo en la base: order_is_local_delivery (migración A) + migración C. Este
+    // fixture no tiene el esquema de Despachos: las funciones de C que lo usan se crean sin
+    // validar el cuerpo (no se ejecutan acá); las guardas del worker sí se reemplazan y se ejercitan.
+    const migrationA = read("supabase/migrations/20261103120000_local_delivery_parcels_labels.sql")
+    const isLocal = migrationA.slice(migrationA.indexOf("create or replace function public.order_is_local_delivery"), migrationA.indexOf("/** Todos los bultos"))
+    await env.db.exec(isLocal)
+    // Como en producción: 20261023100000 reemplazó el bloque "despachado" del reintegro MP por el corte canónico.
+    const refundDef = (await env.db.query<{ d: string }>("select pg_get_functiondef('public.begin_mercadopago_order_refund(bigint,uuid)'::regprocedure) d")).rows[0].d
+    const productionRefund = refundDef.replace(/if lower\(coalesce\(v_order\.estado, ''\)\) in \([^;]*raise exception 'ORDER_ALREADY_DISPATCHED';/,
+      "if public.order_dispatch_cutoff_reached(v_order) then\n    raise exception 'ORDER_ALREADY_DISPATCHED';")
+    assert.notEqual(productionRefund, refundDef)
+    await env.db.exec(productionRefund)
+    await env.db.exec("set check_function_bodies = off")
+    await env.db.exec(read("supabase/migrations/20261104120000_local_delivery_change_guard_and_label_generation.sql"))
+    await env.db.exec("set check_function_bodies = on")
+    const residue = "andreani_handed_over_at=now(), andreani_envio_id='ENV-RES', tracking_number='TRK-RES', andreani_tracking='360000009999', andreani_estado='En transito'"
+    // Residuos previos a la cancelación: la guarda de logística de cancelados no deja escribirlos después.
+    const trigger = (await env.db.query<{ tgname: string }>("select tgname from pg_trigger where tgfoid='guard_cancelled_order_logistics'::regproc")).rows[0].tgname
+    await env.db.exec(`alter table ordenes disable trigger ${trigger}`)
+    await cancelledSale(env.db, { id: 71 })
+    await env.db.query(`update ordenes set shipping_provider='beyonix', ${residue} where id=71`)
+    await cancelledSale(env.db, { id: 72 })
+    await env.db.query(`update ordenes set shipping_provider='andreani', ${residue} where id=72`)
+    await cancelledSale(env.db, { id: 73 })
+    await env.db.query("update ordenes set shipping_provider=null, envio_proveedor=null, andreani_tracking='360000000073' where id=73")
+    await env.db.exec(`alter table ordenes enable trigger ${trigger}`)
+    const summary = await env.run()
+    assert.deepEqual([summary.completed, summary.manual], [1, 2], JSON.stringify({ summary, error: (await order(env.db, 71)).auto_cancellation_error }))
+    await assertClosedOnce(env, 71)
+    for (const id of [72, 73]) assert.notEqual((await order(env.db, id)).financial_status, "refunded", `${id}: Andreani sigue manual`)
   } finally { await env.db.close() }
 })

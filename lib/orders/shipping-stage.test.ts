@@ -7,6 +7,7 @@ import {
   getOrderProgressSteps,
 } from "../account/account-utils.ts"
 import type { SupabasePedido } from "../supabase/types.ts"
+import { ANDREANI_PUBLIC_TRACKING_PAGE_URL, resolveOrderTrackingLink } from "../andreani/public-tracking.ts"
 import { getAdminDispatchStatus, getAdminShippingStage } from "./admin-order-status-presentation.ts"
 import { getDispatchProgress, getShippingStage, SHIPPING_STAGE_LABELS, type DispatchProgress } from "./shipping-stage.ts"
 
@@ -111,4 +112,62 @@ test("I. Admin y cliente muestran la misma etapa para los mismos hechos", () => 
 test("sin pago confirmado no hay etapas de preparación", () => {
   assert.equal(getShippingStage({ estado: "pendiente" }, { paymentConfirmed: false, dispatchProgress: null }), null)
   assert.equal(getShippingStage({ estado: "pendiente" }, { paymentConfirmed: false, dispatchProgress: "ready" }), null)
+})
+
+// ── Envío BEYONIX: el proveedor manda sobre cualquier residuo Andreani ──────
+const ANDREANI_RESIDUE: Partial<SupabasePedido> = {
+  shipping_provider: "beyonix", shipping_type: "sucursal", dispatch_progress: "dispatched",
+  andreani_tracking: "360000009999", andreani_estado: "Entregado", tracking_number: "TRK-RESIDUAL",
+  tracking_url: "https://www.andreani.com/?tab=seguir-envio", andreani_sucursal_nombre: "Sucursal Rosario Centro",
+  andreani_sucursal_direccion: "San Lorenzo 1000", andreani_sucursal_localidad: "Rosario", andreani_sucursal_cp: "2000",
+}
+const localOrder = (extra: Partial<SupabasePedido> = {}) => customer("dispatched", { ...ANDREANI_RESIDUE, ...extra })
+const ANDREANI_TEXT = /andreani|sucursal|retir|despachad|seguimiento/i
+
+test("BEYONIX A: tracking Andreani/manual residual nunca es visible", () => {
+  for (const order of [localOrder(), localOrder({ estado: "en_camino" }), localOrder({ shipping_provider: null, envio_proveedor: "beyonix" })]) {
+    assert.deepEqual(resolveOrderTrackingLink(order), { trackingNumber: null, url: null, isAndreani: false })
+  }
+})
+
+test("BEYONIX B: andreani_estado residual (entregado/en distribución) no altera el estado local", () => {
+  for (const andreani_estado of ["Entregado", "En distribución", "En camino", "Visita fallida"]) {
+    const order = localOrder({ estado: "pagado", andreani_estado })
+    assert.equal(getShippingStage(order, { paymentConfirmed: true, dispatchProgress: "dispatched" }), "preparing", andreani_estado)
+    assert.equal(customerLabel(order), "Preparando", andreani_estado)
+    assert.deepEqual(getOrderProgressSteps(order).slice(-3).map((step) => [step.label, step.tone]),
+      [["Preparando", "current"], ["En camino", "pending"], ["Entregado", "pending"]], andreani_estado)
+  }
+  const inTransit = localOrder({ estado: "en_camino" })
+  assert.equal(customerLabel(inTransit), "En camino")
+  assert.equal(currentStep(inTransit), "En camino")
+  const delivered = localOrder({ estado: "entregado", delivered_at: "2026-11-04T15:00:00Z" })
+  assert.equal(customerLabel(delivered), "Entregado")
+  assert.deepEqual(getOrderProgressSteps(delivered).slice(-3).map((step) => step.tone), ["done", "done", "done"])
+  assert.equal(getShippingStage(localOrder({ estado: "pendiente" }), { paymentConfirmed: false, dispatchProgress: "dispatched" }), null)
+})
+
+test("BEYONIX C: sucursal, retiro, Despachado ni textos Andreani residuales en hitos ni pasos", () => {
+  for (const estado of ["pagado", "preparado", "en_camino", "entregado"]) {
+    const order = localOrder({ estado })
+    const texts = JSON.stringify([getCustomerShippingMilestone(order, true), getOrderProgressSteps(order), getClientOrderStatusBadge(order).label])
+    assert.doesNotMatch(texts, ANDREANI_TEXT, estado)
+  }
+})
+
+test("BEYONIX D: Andreani moderno y legacy (sin shipping_provider) conservan tracking y etapas", () => {
+  const modern = customer(null, { estado: "en_camino" })
+  assert.equal(resolveOrderTrackingLink(modern).trackingNumber, "360000000001012")
+  assert.equal(customerLabel(modern), "En camino")
+  for (const legacy of [
+    customer(null, { shipping_provider: null, envio_proveedor: null, andreani_estado: "En distribución" }),
+    customer(null, { shipping_provider: null, envio_proveedor: "andreani", andreani_estado: "En distribución" }),
+  ]) {
+    assert.deepEqual(resolveOrderTrackingLink(legacy), { trackingNumber: "360000000001012", url: ANDREANI_PUBLIC_TRACKING_PAGE_URL, isAndreani: true })
+    assert.equal(getShippingStage(legacy, { paymentConfirmed: true, dispatchProgress: null }), "in_transit")
+    assert.equal(customerLabel(legacy), "En camino")
+  }
+  const legacyDelivered = customer(null, { shipping_provider: null, estado: "en_camino", andreani_estado: "Entregado" })
+  assert.equal(getShippingStage(legacyDelivered, { paymentConfirmed: true, dispatchProgress: null }), "in_transit", "regla Andreani existente sin cambios")
+  assert.equal(customerLabel(customer("dispatched")), "Despachado", "Andreani sigue mostrando Despachado")
 })

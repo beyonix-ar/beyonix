@@ -95,13 +95,15 @@ const preparedTables = (parcelCount: number) => ({
   order_package_parcels: Array.from({ length: parcelCount }, (_, index) => ({ barcode: `BX-PKG-1041-0${index + 1}`, parcel_index: index + 1, parcel_count: parcelCount })),
 })
 
-test("D: Envío BEYONIX imprime una etiqueta propia por bulto y registra la impresión; reimprimir conserva los códigos", async () => {
+const GENERATED_RPC = "/rest/v1/rpc/record_local_delivery_labels_generated"
+const rpcError = (message: string) => Response.json({ code: "P0001", message, details: null, hint: null }, { status: 400 })
+
+test("D: Envío BEYONIX genera una etiqueta propia por bulto y registra la GENERACIÓN (no la impresión) del intento vigente; regenerar conserva los códigos", async () => {
   const { POST } = await import("../../app/api/admin/dispatch/orders/[id]/local-label/route")
-  let printedBefore = 0
-  const responder: Responder = (call) => call.method === "HEAD" && call.path === "/rest/v1/order_audit_events"
-    ? new Response(null, { status: 200, headers: { "content-range": `*/${printedBefore}` } }) : undefined
-  const runs: Array<{ codes: string[]; audit: Record<string, unknown> }> = []
+  const runs: string[][] = []
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    const responder: Responder = (call) => call.path === GENERATED_RPC
+      ? Response.json({ packageId: 9, attempt: 1, parcelCount: 2, reprint: attempt > 0 }) : undefined
     await withRoutes("operador", preparedTables(2), async (calls) => {
       const response = await POST(post({}), params)
       assert.equal(response.status, 200)
@@ -110,18 +112,43 @@ test("D: Envío BEYONIX imprime una etiqueta propia por bulto y registra la impr
       assert.deepEqual([labels[0].recipient, labels[0].address, labels[0].reference, labels[0].postalCode, labels[0].phone], ["María José Peña", "Córdoba 1234", "Portón verde", "2000", "341 555-0000"])
       const serialized = JSON.stringify(labels)
       for (const forbidden of ["45000", "total", "payment", "andreani"]) assert.equal(serialized.toLowerCase().includes(forbidden), false, forbidden)
-      const insert = calls.find((call) => call.method === "POST" && call.path === "/rest/v1/order_audit_events")
-      assert.ok(insert, "registra la impresión en la auditoría existente")
-      const metadata = (insert.body as { action: string; metadata: Record<string, unknown> })
-      assert.equal(metadata.action, "local_delivery_labels_printed")
-      runs.push({ codes: labels.map((label) => String(label.code)), audit: metadata.metadata })
+      const generated = calls.find((call) => call.path === GENERATED_RPC)
+      assert.ok(generated, "registra la generación bajo lock en la base")
+      assert.deepEqual(generated.body, { p_order_id: 41, p_actor_id: "actor", p_package_id: 9, p_attempt: 1, p_barcodes: ["BX-PKG-1041-01", "BX-PKG-1041-02"] })
+      assert.equal(calls.some((call) => call.path === "/rest/v1/order_audit_events"), false, "sin insert directo ni evento 'printed'")
+      runs.push(labels.map((label) => String(label.code)))
       assert.deepEqual(external(calls), [])
     }, responder)
-    printedBefore += 1
   }
-  assert.deepEqual(runs[1].codes, runs[0].codes, "reimpresión = mismos BX-PKG")
-  assert.deepEqual([runs[0].audit.reprint, runs[1].audit.reprint], [false, true])
-  assert.deepEqual(runs[0].audit.barcodes, ["BX-PKG-1041-01", "BX-PKG-1041-02"])
+  assert.deepEqual(runs[1], runs[0], "regenerar = mismos BX-PKG")
+})
+
+test("D2: rearmado entre la lectura y el registro => 409 y NO se devuelven las etiquetas del intento anterior", async () => {
+  const { POST } = await import("../../app/api/admin/dispatch/orders/[id]/local-label/route")
+  for (const [message, status, expected] of [
+    ["DISPATCH_PARCEL_STALE", 409, /preparación del pedido cambió/],
+    ["LOCAL_DELIVERY_LABEL_ORDER_CANCELLED", 409, /cancelado/],
+    ["unexpected failure", 500, /No se pudo registrar la generación/],
+  ] as const) {
+    await withRoutes("operador", preparedTables(1), async () => {
+      const response = await POST(post({}), params)
+      assert.equal(response.status, status, message)
+      const payload = await response.json() as { labels?: unknown; error?: string }
+      assert.equal(payload.labels, undefined, `${message}: sin etiquetas`)
+      assert.match(payload.error ?? "", expected)
+    }, (call) => call.path === GENERATED_RPC ? rpcError(message) : undefined)
+  }
+})
+
+test("D3: datos de entrega que no entran legibles => 409 con mensaje claro, sin registrar ni devolver etiquetas", async () => {
+  const { POST } = await import("../../app/api/admin/dispatch/orders/[id]/local-label/route")
+  const huge = order({ cliente_direccion: `${"Calle muy larga con muchísimo texto ".repeat(10)}123. Referencias: ${"referencia extensa ".repeat(16)}` })
+  await withRoutes("operador", { ...preparedTables(1), ordenes: huge }, async (calls) => {
+    const response = await POST(post({}), params)
+    assert.equal(response.status, 409)
+    assert.equal((await response.json()).error, "Los datos de entrega son demasiado largos para esta etiqueta. Revisalos antes de imprimir.")
+    assert.equal(calls.some((call) => call.path === GENERATED_RPC), false)
+  })
 })
 
 test("E: Andreani no usa la etiqueta BEYONIX; sin bultos definidos tampoco se imprime", async () => {
@@ -130,7 +157,7 @@ test("E: Andreani no usa la etiqueta BEYONIX; sin bultos definidos tampoco se im
     const response = await POST(post({}), params)
     assert.equal(response.status, 409)
     assert.match((await response.json()).error, /no usa Envío BEYONIX/)
-    assert.equal(calls.some((call) => call.method === "POST" && call.path === "/rest/v1/order_audit_events"), false)
+    assert.equal(calls.some((call) => call.path === GENERATED_RPC || call.path === "/rest/v1/order_audit_events"), false)
   })
   await withRoutes("operador", { ...preparedTables(1), order_packages: { id: 9, status: "prepared", attempt_number: 1, parcel_count: null, parcels_defined_at: null } }, async () => {
     assert.equal((await POST(post({}), params)).status, 409)

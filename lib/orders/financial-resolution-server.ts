@@ -9,7 +9,7 @@ import { MERCADOPAGO_REFUND_PENDING_MESSAGE, settleMercadoPagoOrderRefund, valid
 import { requireArcaConfiguration } from "@/lib/arca/configuration"
 import { processArcaInvoice, type ArcaInvoiceResult } from "@/lib/arca/invoice-automation"
 import { createWsfeInvoiceGateway } from "@/lib/arca/wsfe-invoice-gateway"
-import { isOrderDispatchCutoffReached } from "./dispatch-cutoff"
+import { andreaniHandedOverAt, isOrderDispatchCutoffReached } from "./dispatch-cutoff"
 import { ensureSaleInvoiced, hasPendingInvoiceObligation } from "./fiscal-sequencing"
 import {
   deriveFinancialReturnContext, deriveMerchandiseSituation, financialHumanStatus, getEffectiveFinancialResolutionStatus, getFinancialResolutionMode, resolveOrderFinancialOptions,
@@ -19,9 +19,9 @@ import {
 type Admin = ReturnType<typeof createAdminClient>
 type ReturnInspection = { id: number; physical_state: ReturnPhysicalState; decision: ReturnMoneyDecision; reason: string | null; customer_message: string | null; amount: number; inspected_by: string; inspected_at: string }
 type Resolution = { id: string; order_id: number; choice: FinancialChoice; amount: number; status: string; lease_key: string | null; lease_until: string | null; updated_at: string | null; note_id: string | null; last_error: string | null }
-type Order = { id: number; usuario_id: string | null; financial_status: string | null; payment_method_id: string | null; payment_status: string | null; paid_at: string | null; payment_id: string | null; payment_confirmed_amount: number | null; external_amount_due: number | null; invoice_status: string | null; invoice_cae: string | null; credit_note_required: boolean | null; andreani_handed_over_at: string | null; tracking_number: string | null; andreani_tracking: string | null; andreani_envio_id: string | null; andreani_estado: string | null; estado: string | null; mercadopago_reference: string | null; mercadopago_reference_assigned_at: string | null; credit_balance_used: number | null; original_total: number | null; total: number | null; shipping_cost_charged: number | null; invoice_queued_at: string | null }
+type Order = { id: number; usuario_id: string | null; financial_status: string | null; payment_method_id: string | null; payment_status: string | null; paid_at: string | null; payment_id: string | null; payment_confirmed_amount: number | null; external_amount_due: number | null; invoice_status: string | null; invoice_cae: string | null; credit_note_required: boolean | null; andreani_handed_over_at: string | null; shipping_provider: string | null; envio_proveedor: string | null; tracking_number: string | null; andreani_tracking: string | null; andreani_envio_id: string | null; andreani_estado: string | null; estado: string | null; mercadopago_reference: string | null; mercadopago_reference_assigned_at: string | null; credit_balance_used: number | null; original_total: number | null; total: number | null; shipping_cost_charged: number | null; invoice_queued_at: string | null }
 
-const orderColumns = "id,usuario_id,financial_status,payment_method_id,payment_status,paid_at,payment_id,payment_confirmed_amount,external_amount_due,invoice_status,invoice_cae,invoice_queued_at,credit_note_required,andreani_handed_over_at,tracking_number,andreani_tracking,andreani_envio_id,andreani_estado,estado,mercadopago_reference,mercadopago_reference_assigned_at,credit_balance_used,original_total,total,shipping_cost_charged"
+const orderColumns = "id,usuario_id,financial_status,payment_method_id,payment_status,paid_at,payment_id,payment_confirmed_amount,external_amount_due,invoice_status,invoice_cae,invoice_queued_at,credit_note_required,andreani_handed_over_at,tracking_number,andreani_tracking,andreani_envio_id,andreani_estado,shipping_provider,envio_proveedor,estado,mercadopago_reference,mercadopago_reference_assigned_at,credit_balance_used,original_total,total,shipping_cost_charged"
 const fail = (message: string): never => { throw new Error(message) }
 
 async function one<T>(promise: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T> {
@@ -88,7 +88,9 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   // "Ya salió de BEYONIX" (QR final del Bulto); un envío creado y retirado del Bulto no cuenta.
   const shipmentCreated = isOrderDispatchCutoffReached(order, Boolean(packageResult.data))
   // Cancelación ya despachada: el dinero espera la recepción e inspección (record_order_return_inspection).
-  const returnInspectionRequired = order.estado === "cancelado" && (shipmentCreated || Boolean(order.andreani_handed_over_at))
+  // QR final residual de un pedido Envío BEYONIX no exige devolución física (proveedor efectivo).
+  const handedOverAt = andreaniHandedOverAt(order)
+  const returnInspectionRequired = order.estado === "cancelado" && (shipmentCreated || Boolean(handedOverAt))
   const openClaimIds = claims.filter((claim) => !["cerrado", "rechazado"].includes(claim.status)).map((claim) => claim.id)
   const [unitsResult, exceptionsResult] = openClaimIds.length
     ? await Promise.all([
@@ -100,7 +102,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   if (exceptionsResult.error) throw new Error(exceptionsResult.error.message)
   const claimBlock = typeof claimGateResult.data === "string" ? claimGateResult.data : null
   const returnContext = deriveFinancialReturnContext({
-    handedOverAt: order.andreani_handed_over_at, claimBlock,
+    handedOverAt, claimBlock,
     units: ((unitsResult.data ?? []) as Array<{ claim_id: number; role: string; location: string }>)
       .map((unit) => ({ claimId: unit.claim_id, role: unit.role, location: unit.location })),
     exceptionClaimIds: ((exceptionsResult.data ?? []) as Array<{ claim_id: number }>).map((row) => row.claim_id),
@@ -117,7 +119,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   let remotePaymentVerified = false
   let installments = false
   // Sin opción ofrecible (resolución elegida o pedido fuera de refund_pending) no se consulta MP.
-  if (verifyRemote && !resolution && order.financial_status === "refund_pending" && mpRefundCandidate && !shipmentCreated && order.payment_method_id === "mercadopago" && order.payment_id && amount > 0 && !order.andreani_handed_over_at) {
+  if (verifyRemote && !resolution && order.financial_status === "refund_pending" && mpRefundCandidate && !shipmentCreated && order.payment_method_id === "mercadopago" && order.payment_id && amount > 0 && !handedOverAt) {
     try {
       const payment = await getMercadoPagoPayment(order.payment_id)
       remotePaymentVerified = validateRefundablePayment(payment, { order, expectedPaymentId: order.payment_id, expectedAmount: amount }) === null
@@ -127,7 +129,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
   const facts: FinancialResolutionFacts = {
     paymentMethod: order.payment_method_id, paymentApproved: amount > 0 && !!order.paid_at && ["approved", "confirmed", "confirmado"].includes(order.payment_status ?? "") && order.financial_status === "refund_pending",
     paymentIdValid: !!order.payment_id && /^\d+$/.test(order.payment_id), amount, mpAmount: Number(order.payment_confirmed_amount ?? 0),
-    financialStatus: order.financial_status, preparedAt, handedOverAt: order.andreani_handed_over_at,
+    financialStatus: order.financial_status, preparedAt, handedOverAt,
     trackingInCircuit, shipmentCreated, priorRefund: (proofResult.data ?? []).length > 0 || refunds.some((refund) => refund.status === "confirmed"),
     refundInProgress: refunds.some((refund) => ["processing", "needs_reconciliation"].includes(refund.status)),
     fiscalConflict, receptionPending: returnPending, inspectionPending: returnPending,
@@ -147,7 +149,7 @@ export async function loadFinancialResolution(admin: Admin, orderId: number, ver
     returnInspection, returnInspectionRequired, merchandise,
     mode: getFinancialResolutionMode({ financialStatus: order.financial_status, hasResolution: !!resolution, options, receptionOptions, moneyRejected,
       returnInspectionPending: returnInspectionRequired && !returnInspection && order.financial_status === "refund_pending" && facts.paymentApproved && !physicalHoldActive }),
-    status: financialHumanStatus(resolution ? getEffectiveFinancialResolutionStatus(resolution) : null), requiresReturn: !!order.andreani_handed_over_at }
+    status: financialHumanStatus(resolution ? getEffectiveFinancialResolutionStatus(resolution) : null), requiresReturn: !!handedOverAt }
 }
 
 async function updateResolution(admin: Admin, resolution: Resolution, status: "requires_action" | "manual_pending" | "completed", actorId: string, error: string | null = null) {

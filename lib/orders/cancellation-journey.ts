@@ -14,6 +14,7 @@ import { getCancellationNextAction, type CancellationNextActionOrder } from "./c
 import { getCreditNoteState, type CreditNoteStateOrder } from "./credit-note-state.ts"
 import { hasPendingInvoiceObligation } from "./fiscal-sequencing.ts"
 import type { AdminPendingFacts } from "./admin-pending-actions.ts"
+import { andreaniHandedOverAt } from "./dispatch-cutoff.ts"
 
 export type CancellationJourneyStepKey = "cancellation" | "merchandise" | "money" | "credit_note" | "refund" | "finished"
 export type CancellationJourneyStepStatus = "done" | "current" | "processing" | "waiting" | "not_required" | "attention"
@@ -46,6 +47,8 @@ export type CancellationJourneyOrder = CancellationNextActionOrder & CreditNoteS
   cancellation_requested_at?: string | null
   refunded_at?: string | null
   andreani_handed_over_at?: string | null
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
   admin_pending_facts?: AdminPendingFacts | null
 }
 
@@ -104,7 +107,7 @@ export function getCancellationJourney(order: CancellationJourneyOrder): Cancell
     push("merchandise", "done", "Devolución recibida e inspeccionada.")
   } else if (inspectionPending) {
     push("merchandise", "current", "Registrá cómo volvió la mercadería y decidí la devolución del dinero.")
-  } else if (order.andreani_handed_over_at) {
+  } else if (andreaniHandedOverAt(order)) {
     push("merchandise", "attention", "El pedido ya se entregó al transportista: la mercadería vuelve con la devolución.")
   } else {
     push("merchandise", "done", "No había mercadería preparada: el stock volvió automáticamente.")

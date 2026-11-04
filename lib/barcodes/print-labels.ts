@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client"
 
-import { buildLabelsDocument, type BatchLabelDetails, type LabelFormat, type PrintableLabel } from "./labels-document"
+import { buildLabelsDocument, findClippedLocalDeliveryLabel, type BatchLabelDetails, type LabelFormat, type PrintableLabel } from "./labels-document"
 import QRCode from "qrcode"
 
 async function fetchBarcodeSvgs(codes: string[]) {
@@ -23,7 +23,8 @@ export async function printLabels(labels: readonly PrintableLabel[], format: Lab
   const barcodeCodes = [...new Set(labels.filter((label) => !qrLabels.includes(label)).map((label) => label.code))]
   const svgs = barcodeCodes.length ? await fetchBarcodeSvgs(barcodeCodes) : {}
   for (const label of qrLabels) if (label.kind === "batch" && label.details?.url) svgs[label.code] = await QRCode.toString(label.details.url, { type: "svg", margin: 0, errorCorrectionLevel: "M" })
-  await printHtmlDocument(buildLabelsDocument(labels, svgs, format))
+  const localDelivery = labels.some((label) => label.kind === "local_delivery")
+  await printHtmlDocument(buildLabelsDocument(labels, svgs, format), localDelivery ? findClippedLocalDeliveryLabel : undefined)
 }
 
 export async function saveBatchLabelsPdf(codes: readonly string[], format: LabelFormat, details?: Readonly<Record<string, BatchLabelDetails>>) {
@@ -44,8 +45,9 @@ export async function saveBatchLabelsPdf(codes: readonly string[], format: Label
 }
 
 // Imprime desde un iframe aislado: la página del admin no cambia y el diálogo
-// de impresión recibe sólo la hoja de etiquetas.
-export function printHtmlDocument(html: string) {
+// de impresión recibe sólo la hoja de etiquetas. `validate` mide el documento
+// ya maquetado: si devuelve un error, no se abre el diálogo de impresión.
+export function printHtmlDocument(html: string, validate?: (document: Document) => string | null) {
   return new Promise<void>((resolve, reject) => {
     const frame = document.createElement("iframe")
     frame.setAttribute("aria-hidden", "true")
@@ -55,6 +57,8 @@ export function printHtmlDocument(html: string) {
     frame.onload = () => {
       const target = frame.contentWindow
       if (!target) { frame.remove(); reject(new Error("No se pudo abrir la impresión.")); return }
+      const problem = validate?.(target.document) ?? null
+      if (problem) { frame.remove(); reject(new Error(problem)); return }
       target.addEventListener("afterprint", cleanup, { once: true })
       window.setTimeout(cleanup, 5 * 60_000)
       target.focus()

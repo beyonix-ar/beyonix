@@ -50,3 +50,5 @@ pnpm-debug.log*
 .browser-run.log
 .test-run.log
 .test-os-shim.cjs
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

@@ -53,7 +53,8 @@ test("admin: no existe ningún editor que permita cambiar shipping_type después
 test("cliente (detalle): la entrega en sucursal muestra sucursal/dirección reales, nunca el andreani_sucursal_id como dato visible", () => {
   const client = source("app/cuenta/cuenta-client.tsx")
 
-  assert.match(client, /order\.shipping_type === "sucursal" && \(/)
+  // Envío BEYONIX nunca muestra una sucursal Andreani residual.
+  assert.match(client, /order\.shipping_type === "sucursal" && !localDelivery && \(/)
   assert.match(client, /Entrega: Sucursal Andreani/)
   assert.match(client, /order\.andreani_sucursal_nombre/)
   assert.match(client, /order\.andreani_sucursal_direccion/)

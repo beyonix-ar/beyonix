@@ -34,6 +34,7 @@ import {
   WARRANTY_CLAIM_WINDOW_MONTHS,
 } from "@/lib/order-claims"
 import { getCustomerClaimPollIntervalMs } from "@/lib/orders/claim-polling"
+import { hasAndreaniShippingEvidenceScope, isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import {
   buildClaimUnits,
   getInitialClaimSelection,
@@ -164,27 +165,8 @@ function isOrderDelivered(order: SupabasePedido) {
 function isOrderDispatched(order: SupabasePedido) {
   // Corte calculado por el servidor (QR final del Bulto, lib/orders/dispatch-cutoff).
   if (typeof order.dispatch_cutoff_reached === "boolean") return order.dispatch_cutoff_reached
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
-  const dispatchedStatuses = [
-    "enviado",
-    "en_camino",
-    "visita_fallida",
-    "en_sucursal",
-    "retiro_pendiente",
-    "retiro_vencido",
-    "en_devolucion",
-    "devuelto_beyonix",
-    "entregado",
-  ]
-
-  return (
-    dispatchedStatuses.includes(estado) ||
-    Boolean(order.tracking_number || order.andreani_tracking || order.andreani_envio_id) ||
-    ["camino", "tránsito", "transito", "distribución", "distribucion", "reparto", "visita", "entregado"].some(
-      (status) => andreaniStatus.includes(status),
-    )
-  )
+  // Sin dato del servidor: misma regla canónica (Envío BEYONIX ignora residuos Andreani).
+  return isOrderDispatchCutoffReached(order)
 }
 
 function isOrderCancelled(order: SupabasePedido) {
@@ -1283,7 +1265,7 @@ export function CustomerClaimExperience({
               <p className="mt-1 text-xs leading-5 text-[var(--account-text-secondary)]">
                 Cuando recibas tu compra, si hay algún problema, vas a poder reclamar desde esta sección.
               </p>
-              {(order.tracking_number || order.andreani_tracking) && (
+              {hasAndreaniShippingEvidenceScope(order) && (order.tracking_number || order.andreani_tracking) && (
                 <p className="mt-2 text-xs font-bold text-[var(--account-text-secondary)]">
                   Seguimiento: {order.tracking_number || order.andreani_tracking}
                 </p>

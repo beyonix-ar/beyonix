@@ -68,6 +68,10 @@ test("el select del listado es explícito y sólo pide campos internos necesario
   for (const visibilityField of ["admin_visible_at", "andreani_envio_id", "customer_hidden_at"]) {
     assert.match(select, new RegExp(`\\b${visibilityField}\\b`))
   }
+  // Sin el proveedor, una tarjeta Envío BEYONIX mostraría tracking/estado Andreani residual.
+  for (const providerField of ["shipping_provider", "envio_proveedor"]) {
+    assert.match(select, new RegExp(`\\b${providerField}\\b`))
+  }
 })
 
 test("el listado pliega el vencimiento de transferencias en la misma request (sin round trip extra)", () => {

@@ -7,6 +7,8 @@ type Context = { params: Promise<{ id: string }> }
 
 const ORDER_COLUMNS = "id,estado,cancelled_at,financial_status,shipping_provider,envio_proveedor,cliente_nombre,cliente_direccion,localidad,provincia,cp_destino,cliente_telefono"
 const CANCELLED_FINANCIAL = ["cancellation_requested", "refund_pending", "refunded", "cancelled"]
+const CANCELLED_MESSAGE = "Pedido cancelado — no se generan etiquetas de entrega."
+const NOT_LOCAL_MESSAGE = "Este pedido no usa Envío BEYONIX: imprimí su etiqueta Andreani."
 
 type OrderRow = LocalDeliveryLabelOrder & {
   estado: string | null
@@ -19,8 +21,8 @@ type OrderRow = LocalDeliveryLabelOrder & {
 /**
  * Etiqueta propia Envío BEYONIX: datos de entrega de cada bulto físico del
  * intento vigente (uno por BX-PKG). Sólo Despachos (operador/Admin), nunca
- * público. Reimprimir devuelve exactamente los mismos códigos: no crea bultos
- * ni cambia el pedido; sólo deja la impresión en el historial.
+ * público. Regenerar (reimprimir) devuelve exactamente los mismos códigos: no
+ * crea bultos ni cambia el pedido; sólo deja la generación en el historial.
  */
 export async function POST(request: Request, context: Context) {
   const id = validId((await context.params).id)
@@ -32,9 +34,9 @@ export async function POST(request: Request, context: Context) {
   if (error) return Response.json({ error: "No se pudo cargar el pedido." }, { status: 500 })
   const order = data as OrderRow | null
   if (!order) return Response.json({ error: "Pedido no encontrado." }, { status: 404 })
-  if (!isLocalDeliveryOrder(order)) return Response.json({ error: "Este pedido no usa Envío BEYONIX: imprimí su etiqueta Andreani." }, { status: 409 })
+  if (!isLocalDeliveryOrder(order)) return Response.json({ error: NOT_LOCAL_MESSAGE }, { status: 409 })
   if (order.estado === "cancelado" || order.cancelled_at || CANCELLED_FINANCIAL.includes(order.financial_status ?? "")) {
-    return Response.json({ error: "Pedido cancelado — no se imprimen etiquetas de entrega." }, { status: 409 })
+    return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
   }
 
   const pkgResult = await auth.admin.from("order_packages").select("id,status,attempt_number,parcel_count,parcels_defined_at").eq("order_id", id).maybeSingle()
@@ -55,17 +57,24 @@ export async function POST(request: Request, context: Context) {
     throw cause
   }
 
-  // Trazabilidad con la auditoría existente: primera impresión o reimpresión
-  // (mismos BX-PKG). Sin registro no se imprime.
-  const previous = await auth.admin.from("order_audit_events").select("id", { count: "exact", head: true })
-    .eq("order_id", id).eq("action", "local_delivery_labels_printed")
-    .eq("metadata->>packageId", String(pkg.id)).eq("metadata->>attempt", String(pkg.attempt_number))
-  if (previous.error) return Response.json({ error: "No se pudo registrar la impresión. Reintentá." }, { status: 500 })
-  const audit = await auth.admin.from("order_audit_events").insert({
-    order_id: id, actor_type: "admin", actor_id: auth.user.id, action: "local_delivery_labels_printed",
-    metadata: { packageId: pkg.id, attempt: pkg.attempt_number, parcelCount: pkg.parcel_count, barcodes: labels.map((label) => label.code), reprint: (previous.count ?? 0) > 0 },
+  // Registro atómico de la GENERACIÓN (no de la impresión física, que el
+  // servidor no puede saber): bajo el lock del pedido y su preparación, la base
+  // confirma que el intento y sus BX-PKG siguen vigentes y decide primera
+  // generación vs regeneración. Si hubo un rearmado entre la lectura y este
+  // punto, estas etiquetas no se devuelven. Sin registro no se imprime.
+  const recorded = await auth.admin.rpc("record_local_delivery_labels_generated", {
+    p_order_id: id, p_actor_id: auth.user.id, p_package_id: pkg.id, p_attempt: pkg.attempt_number,
+    p_barcodes: labels.map((label) => label.code),
   })
-  if (audit.error) return Response.json({ error: "No se pudo registrar la impresión. Reintentá." }, { status: 500 })
+  if (recorded.error) {
+    const message = recorded.error.message ?? ""
+    if (message.includes("DISPATCH_PARCEL_STALE")) {
+      return Response.json({ error: "La preparación del pedido cambió (rearmado o bultos nuevos). Actualizá el pedido y volvé a generar las etiquetas." }, { status: 409 })
+    }
+    if (message.includes("LOCAL_DELIVERY_LABEL_ORDER_CANCELLED")) return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
+    if (message.includes("DISPATCH_LOCAL_DELIVERY_ONLY")) return Response.json({ error: NOT_LOCAL_MESSAGE }, { status: 409 })
+    return Response.json({ error: "No se pudo registrar la generación de las etiquetas. Reintentá." }, { status: 500 })
+  }
 
   return Response.json({ labels }, { headers: { "Cache-Control": "private, no-store" } })
 }

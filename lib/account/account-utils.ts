@@ -60,6 +60,13 @@ export function getCustomerShippingMilestone(
   order: CustomerShippingOrder,
   paymentConfirmed = false,
 ): CustomerShippingMilestone | null {
+  // Envío BEYONIX: sólo Preparando → En camino → Entregado, nunca sucursal,
+  // retiro ni "Despachado" (aunque queden datos Andreani residuales).
+  if (isLocalDeliveryOrder(order)) {
+    const stage = getCustomerShippingStage(order, paymentConfirmed)
+    const step = LOCAL_DELIVERY_STEPS.find((candidate) => candidate.stage === stage)
+    return step ? { label: step.label, detail: step.reached } : null
+  }
   const estado = (order.estado ?? "").toLowerCase()
   if (estado === "en_sucursal") return { label: "En sucursal", detail: "Tu pedido llegó a la sucursal. Ya podés retirarlo." }
   if (estado === "retiro_pendiente") return { label: "Listo para retirar", detail: "Tu pedido te espera en la sucursal." }
@@ -72,7 +79,6 @@ export function getCustomerShippingMilestone(
     case "in_transit":
       return { label: SHIPPING_STAGE_LABELS.in_transit, detail: "Tu pedido está en camino." }
     case "dispatched": {
-      if (isLocalDeliveryOrder(order)) return { label: "Preparando", detail: "Tu pedido está siendo preparado." }
       const andreani = Boolean(order.andreani_tracking) ||
         [order.shipping_provider, order.envio_proveedor].some((provider) => (provider ?? "").toLowerCase() === "andreani")
       return {

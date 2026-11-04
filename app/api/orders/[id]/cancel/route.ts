@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 
 import { sendOrderStatusEmail } from "@/lib/email/send-order-status-email"
 import { buildCustomerCancelledOrderNotification } from "@/lib/orders/customer-cancellation-notification"
-import { isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
+import { isOrderDeliveryReached, isOrderDispatchCutoffReached } from "@/lib/orders/dispatch-cutoff"
 import { isCustomerOrderOwner } from "@/lib/orders/customer-order-ownership"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
@@ -18,6 +18,8 @@ type CancelableOrder = {
   andreani_envio_id?: string | null
   andreani_estado?: string | null
   andreani_handed_over_at?: string | null
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
   delivered_at?: string | null
   invoice_status?: string | null
   invoice_cae?: string | null
@@ -59,15 +61,9 @@ function getOrderCode(orderId: number) {
   return `BX-${1000 + orderId}`
 }
 
+// Envío BEYONIX: el estado Andreani residual nunca cuenta como entrega.
 function isOrderDelivered(order: CancelableOrder) {
-  const estado = (order.estado ?? "").toLowerCase()
-  const andreaniStatus = (order.andreani_estado ?? "").toLowerCase()
-
-  return (
-    estado === "entregado" ||
-    Boolean(order.delivered_at) ||
-    andreaniStatus.includes("entregado")
-  )
+  return isOrderDeliveryReached(order)
 }
 
 /**
@@ -136,7 +132,7 @@ export async function POST(
   const [{ data: order, error: orderError }, packageResult] = await Promise.all([
     admin
       .from("ordenes")
-      .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, andreani_handed_over_at, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount")
+      .select("id, usuario_id, cliente_email, cliente_nombre, estado, tracking_number, andreani_tracking, andreani_envio_id, andreani_estado, andreani_handed_over_at, shipping_provider, envio_proveedor, delivered_at, invoice_status, invoice_cae, invoice_number, invoice_point, payment_status, payment_proof_url, payment_proof_uploaded_at, financial_status, credit_balance_used, paid_at, payment_confirmed_amount")
       .eq("id", orderId)
       .maybeSingle(),
     admin.from("order_packages").select("id").eq("order_id", orderId).maybeSingle(),

@@ -44,6 +44,7 @@ import {
   ORDER_CANCELLATION_REFUND_LABELS,
 } from "@/lib/orders/order-cancellation-refund-state"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
+import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { supabase } from "@/lib/supabase/client"
 import {
@@ -276,7 +277,10 @@ export function MisOrdenes({ onBack }: { onBack: () => void }) {
                 ? formatOrderCardDate(order.delivered_at).split(" · ")[0]
                 : hasTrackingNumber
                   ? null
-                  : "Te avisaremos cuando el pedido esté en camino"
+                  // Envío BEYONIX no tiene seguimiento: el detalle es el de su etapa local real.
+                  : isLocalDeliveryOrder(order)
+                    ? getCustomerShippingMilestone(order, paymentConfirmed)?.detail ?? "Te avisaremos cuando el pedido esté en camino"
+                    : "Te avisaremos cuando el pedido esté en camino"
             // Reclamo o conversación (también una consulta cerrada o de un
             // pedido cancelado): "Ver reclamo" abre exactamente esa.
             const existingClaim = selectCustomerHistoryClaim(order.order_claims ?? [])

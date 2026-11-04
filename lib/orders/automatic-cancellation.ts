@@ -6,6 +6,7 @@ import { emitCreditNote } from "@/lib/arca/credit-note-emission"
 import { parseArcaEnvironment } from "@/lib/arca/environment"
 import { allocateEffectiveOrderItemAmounts, roundCreditMoney } from "@/lib/orders/credit-note-calculations"
 import { finalizeCreditNote } from "@/lib/orders/credit-note-finalization"
+import { hasAndreaniShippingEvidenceScope } from "@/lib/orders/dispatch-cutoff"
 import { reconcileMercadoPagoOrderRefund, refundMercadoPagoOrderPayment } from "@/lib/mercadopago/order-refund"
 
 type Admin = ReturnType<typeof createAdminClient>
@@ -16,7 +17,7 @@ type Order = {
   invoice_point: number | null; invoice_number: number | null; invoice_created_at: string | null
   invoice_arca_environment: string | null; invoice_queued_at: string | null; credit_note_required: boolean
   andreani_handed_over_at: string | null; andreani_envio_id: string | null; tracking_number: string | null
-  andreani_tracking: string | null; auto_cancellation_attempts: number
+  andreani_tracking: string | null; shipping_provider: string | null; envio_proveedor: string | null; auto_cancellation_attempts: number
 }
 type Note = {
   id: string; status: string; destination: string; cae: string | null; finalized_at: string | null
@@ -37,7 +38,7 @@ const defaultDependencies: AutomaticCancellationDependencies = {
   emitCreditNote, finalizeCreditNote, refundMercadoPagoOrderPayment, reconcileMercadoPagoOrderRefund,
 }
 
-const orderColumns = "id,estado,financial_status,payment_method_id,payment_confirmed_amount,credit_balance_used,total,shipping_cost_charged,invoice_status,invoice_cae,invoice_point,invoice_number,invoice_created_at,invoice_arca_environment,invoice_queued_at,credit_note_required,andreani_handed_over_at,andreani_envio_id,tracking_number,andreani_tracking,auto_cancellation_attempts"
+const orderColumns = "id,estado,financial_status,payment_method_id,payment_confirmed_amount,credit_balance_used,total,shipping_cost_charged,invoice_status,invoice_cae,invoice_point,invoice_number,invoice_created_at,invoice_arca_environment,invoice_queued_at,credit_note_required,andreani_handed_over_at,andreani_envio_id,tracking_number,andreani_tracking,shipping_provider,envio_proveedor,auto_cancellation_attempts"
 const noteColumns = "id,status,destination,cae,finalized_at,external_amount,total_amount,voucher_number,created_by,operation_type"
 
 function arcaDate(value: string | null) {
@@ -114,6 +115,13 @@ async function setCancellationNoteMetadata(admin: Admin, order: Order, noteId: s
   if (error) throw new Error(error.message)
 }
 
+// Evidencia de envío que deja la cancelación en manual. Con Envío BEYONIX los
+// campos Andreani/seguimiento residuales no cuentan (proveedor efectivo).
+function hasShippingEvidence(order: Order) {
+  return hasAndreaniShippingEvidenceScope(order) &&
+    Boolean(order.andreani_handed_over_at || order.andreani_envio_id || order.tracking_number || order.andreani_tracking)
+}
+
 export async function processAutomaticCancellation(
   admin: Admin, orderId: number, gateway: ArcaInvoiceGateway, pointOfSale: number,
   deps: AutomaticCancellationDependencies = defaultDependencies,
@@ -121,7 +129,7 @@ export async function processAutomaticCancellation(
   const order = await loadOrder(admin, orderId)
   if (order.financial_status === "refunded") return { status: "completed" }
   if (order.estado !== "cancelado" || order.financial_status !== "refund_pending" || !order.invoice_queued_at ||
-      order.andreani_handed_over_at || order.andreani_envio_id || order.tracking_number || order.andreani_tracking) {
+      hasShippingEvidence(order)) {
     return { status: "manual", reason: "CANCELLED_ORDER_NOT_ELIGIBLE" }
   }
   if (order.invoice_status !== "authorized" || !order.invoice_cae || !order.invoice_point || !order.invoice_number) {

@@ -1,4 +1,5 @@
 import { orderCode } from "../admin/dispatch.ts"
+import { fitLocalDeliveryLabel, LOCAL_DELIVERY_LABEL_TOO_LONG } from "./local-delivery-label-layout.ts"
 
 /**
  * Etiqueta logística propia de Envío BEYONIX: una por bulto físico
@@ -44,14 +45,21 @@ export class LocalDeliveryLabelError extends Error {}
 
 const clean = (value: string | null | undefined) => value?.trim().replace(/\s+/g, " ") || null
 
-// El checkout guarda "Calle 1234. Referencias: …" en cliente_direccion.
-const REFERENCE_SEPARATOR = /\.\s*Referencias:\s*/i
+// El checkout guarda "Calle 1234. Referencias: …" en cliente_direccion, siempre
+// con este separador exacto. Criterio conservador: sólo se separa si aparece UNA
+// vez y deja texto a ambos lados. Si es ambiguo (más de una vez, p. ej. porque la
+// dirección o la referencia también lo contienen) todo queda como dirección
+// completa: nunca se descarta ni se reasigna contenido.
+const REFERENCE_SEPARATOR = ". Referencias: "
 
 export function splitDeliveryAddress(value: string | null | undefined) {
   const text = clean(value) ?? ""
-  const match = REFERENCE_SEPARATOR.exec(text)
-  if (!match) return { address: text, reference: null }
-  return { address: text.slice(0, match.index).trim(), reference: clean(text.slice(match.index + match[0].length)) }
+  const at = text.indexOf(REFERENCE_SEPARATOR)
+  if (at < 0 || text.indexOf(REFERENCE_SEPARATOR, at + 1) >= 0) return { address: text, reference: null }
+  const address = text.slice(0, at).trim()
+  const reference = clean(text.slice(at + REFERENCE_SEPARATOR.length))
+  if (!address || !reference) return { address: text, reference: null }
+  return { address, reference }
 }
 
 export function formatLocalDeliveryLabelDate(value: string) {
@@ -60,7 +68,8 @@ export function formatLocalDeliveryLabelDate(value: string) {
 
 /**
  * Una etiqueta por bulto del intento vigente, en orden 1..N. Falla si faltan
- * datos de entrega: una etiqueta sin dirección o CP no sirve al cadete.
+ * datos de entrega (una etiqueta sin dirección o CP no sirve al cadete) o si
+ * no entran legibles en 101,6 × 50,8 mm: nunca se genera una etiqueta cortada.
  */
 export function buildLocalDeliveryLabels(
   order: LocalDeliveryLabelOrder,
@@ -80,6 +89,11 @@ export function buildLocalDeliveryLabels(
   if (sorted.length !== count || sorted.some((parcel, position) => parcel.parcel_count !== count || parcel.parcel_index !== position + 1)) {
     throw new LocalDeliveryLabelError("Los bultos del pedido no están completos. Actualizá el pedido.")
   }
+  const phone = clean(order.cliente_telefono)
+  const province = clean(order.provincia)
+  if (!fitLocalDeliveryLabel({ recipient, address, reference, locality, province, postalCode, phone })) {
+    throw new LocalDeliveryLabelError(LOCAL_DELIVERY_LABEL_TOO_LONG)
+  }
   const date = formatLocalDeliveryLabelDate(definedAt)
   return sorted.map((parcel) => ({
     kind: "local_delivery",
@@ -91,9 +105,9 @@ export function buildLocalDeliveryLabels(
     address,
     reference,
     locality,
-    province: clean(order.provincia),
+    province,
     postalCode,
-    phone: clean(order.cliente_telefono),
+    phone,
     date,
   }))
 }
