@@ -2,8 +2,9 @@ import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
 import { hasConfirmedPaymentEvidence } from "./order-payment-status.ts"
 
 /**
- * Circuito operativo de Envío BEYONIX, separado del de Andreani (sin etiqueta,
- * guía ni Bulto): Preparando → En camino → Entregado.
+ * Circuito operativo de Envío BEYONIX, separado del de Andreani (sin guía,
+ * etiqueta ni Bulto general Andreani; usa el pickeo común y su propia
+ * etiqueta por bulto): Preparando → En camino → Entregado.
  *
  * Reutiliza estados existentes de `ordenes.estado`:
  * - Preparando = pago confirmado sin salir ("pagado"; "preparado" es el
@@ -131,4 +132,26 @@ export function getGenericStatusChangeLocalDeliveryError(
     return null
   }
   return "Los pedidos con Envío BEYONIX avanzan sólo desde Despachos → Entregas locales (Preparando → En camino → Entregado)."
+}
+
+/** Preparación física del pedido local (pickeo + bultos BX-PKG del intento vigente). */
+export interface LocalDeliveryPreparation {
+  packageStatus: "preparing" | "prepared" | null
+  parcelCount: number | null
+  confirmedParcels: number
+}
+
+/**
+ * `null` si el pedido está listo para entregarse al cadete: pickeo completo,
+ * bultos definidos y la etiqueta Envío BEYONIX de cada bulto confirmada
+ * (escaneada). Misma regla que local_delivery_parcels_ready en la base, que
+ * la vuelve a exigir al pasar a En camino.
+ */
+export function getLocalDeliveryPreparationError(preparation: LocalDeliveryPreparation) {
+  if (!preparation.packageStatus) return "Prepará el pedido en Despachos: pickeo, bultos y etiquetas."
+  if (preparation.packageStatus !== "prepared") return "Completá el pickeo del pedido en Despachos."
+  if (!preparation.parcelCount) return "Definí los bultos del pedido en Despachos."
+  const missing = preparation.parcelCount - preparation.confirmedParcels
+  if (missing > 0) return missing === 1 ? "Falta confirmar 1 etiqueta BEYONIX." : `Faltan confirmar ${missing} etiquetas BEYONIX.`
+  return null
 }

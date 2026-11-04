@@ -16,7 +16,7 @@ export type DispatchNextStep =
   | { screen: "list" }
 
 export type DispatchStepFacts =
-  | { kind: "order"; orderId: number; stage: DispatchStage; blocked: boolean; batchId: number | null }
+  | { kind: "order"; orderId: number; stage: DispatchStage; blocked: boolean; batchId: number | null; localDelivery?: boolean }
   | { kind: "batch"; batchId: number; status: string; blocked: boolean }
 
 export function getNextDispatchStep(facts: DispatchStepFacts): DispatchNextStep {
@@ -26,14 +26,16 @@ export function getNextDispatchStep(facts: DispatchStepFacts): DispatchNextStep 
     return facts.status === "handed_over" ? { screen: "list" } : { screen: "batch", batchId: facts.batchId }
   }
   if (facts.blocked) return { screen: "current" }
+  // Envío BEYONIX listo: vuelve a Despachos, donde "Entregas locales" lo marca En camino. Nunca va a un Bulto general.
+  if (facts.localDelivery) return facts.stage === "ready" ? { screen: "list" } : { screen: "current" }
   if (facts.stage === "ready") return { screen: "bundle_list", orderId: facts.orderId }
   if ((facts.stage === "in_batch" || facts.stage === "batch_closed") && facts.batchId) return { screen: "batch", batchId: facts.batchId }
   if (facts.stage === "handed_over") return { screen: "list" }
   return { screen: "current" }
 }
 
-export function orderStepFacts(detail: Pick<OrderDispatchDetail, "order" | "stage" | "packingBlocked" | "hold" | "batch">): DispatchStepFacts {
-  return { kind: "order", orderId: detail.order.id, stage: detail.stage, blocked: detail.packingBlocked || Boolean(detail.hold), batchId: detail.batch?.id ?? null }
+export function orderStepFacts(detail: Pick<OrderDispatchDetail, "order" | "stage" | "packingBlocked" | "hold" | "batch"> & { localDelivery?: unknown }): DispatchStepFacts {
+  return { kind: "order", orderId: detail.order.id, stage: detail.stage, blocked: detail.packingBlocked || Boolean(detail.hold), batchId: detail.batch?.id ?? null, localDelivery: Boolean(detail.localDelivery) }
 }
 
 export function batchStepFacts(detail: Pick<BatchDispatchDetail, "batch" | "items" | "blockedCount">): DispatchStepFacts {

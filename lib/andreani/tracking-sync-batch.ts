@@ -5,7 +5,9 @@ import type { createAdminClient } from "../supabase/admin.ts"
 import { AndreaniError, sanitizeAndreaniMessage, type AndreaniClientOptions } from "./client.ts"
 import {
   ANDREANI_ORDER_TRACKING_SELECT,
+  ANDREANI_PROVIDER_FILTER,
   syncAndreaniOrderTracking,
+  withAndreaniProvider,
   type AndreaniOrderTrackingRow,
 } from "./order-tracking-sync.ts"
 import { ORDER_STATES_CLOSED_TO_AUTO_SYNC } from "./tracking-status-mapping.ts"
@@ -58,6 +60,7 @@ async function deferFailedOrder(admin: AdminClient, orderId: number, now: Date, 
     .from("ordenes")
     .update({ andreani_tracking_checked_at: retryCheckedAt } as never)
     .eq("id", orderId)
+    .or(ANDREANI_PROVIDER_FILTER)
   if (error) {
     console.error("ANDREANI_TRACKING_SYNC_DEFER_ERROR", { orderId, message: sanitizeAndreaniMessage(error.message) })
   }
@@ -98,7 +101,9 @@ export async function runAndreaniTrackingSyncBatch(
     .select(ANDREANI_ORDER_TRACKING_SELECT)
     .not("andreani_envio_id", "is", null)
     .not("estado", "in", closedStatesList)
-    .or(`andreani_tracking_checked_at.is.null,andreani_tracking_checked_at.lt.${staleBefore}`)
+    // Proveedor Andreani canónico DENTRO de la consulta, antes del limit: un
+    // pedido Envío BEYONIX con andreani_envio_id residual nunca ocupa un lugar.
+    .or(withAndreaniProvider(["andreani_tracking_checked_at.is.null", `andreani_tracking_checked_at.lt.${staleBefore}`]))
     .order("andreani_tracking_checked_at", { ascending: true, nullsFirst: true })
     .limit(batchSize)
 
@@ -135,6 +140,8 @@ export async function runAndreaniTrackingSyncBatch(
         actorId: null,
         clientOptions: dependencies.clientOptions,
       })
+      // Pasó a Envío BEYONIX durante la consulta: no se escribió nada.
+      if (result.providerChanged) continue
       updated += 1
       if (result.statusChanged) statusChanged += 1
       unknownEvents += result.newHistoryEvents.filter((event) => !event.recognized).length

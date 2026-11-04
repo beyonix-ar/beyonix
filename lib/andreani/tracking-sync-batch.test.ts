@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 
+import { matchesPostgrestOr } from "./fixtures/postgrest-filter.ts"
 import { runAndreaniTrackingSyncBatch } from "./tracking-sync-batch.ts"
 
 const qaClientEnv: NodeJS.ProcessEnv = {
@@ -32,54 +34,72 @@ function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
   const auditEvents: Array<Record<string, unknown>> = []
   const historyRows: Array<Record<string, unknown>> = []
   const updates: Array<{ id: unknown; payload: Record<string, unknown> }> = []
+  const listedLimits: number[] = []
+
+  // Pedidos Andreani salvo que el test diga otra cosa; mismo WHERE que la base.
+  for (const row of seedOrders) if (!("shipping_provider" in row)) row.shipping_provider = "andreani"
+  type Predicate = (row: Record<string, unknown>) => boolean
+  const matching = (predicates: Predicate[]) => seedOrders.find((candidate) => predicates.every((predicate) => predicate(candidate)))
 
   function ordenesTable() {
     return {
       select() {
+        // Listado del lote (filtros de selección no simulados) o verificación puntual por id.
+        const predicates: Predicate[] = []
         const chain = {
           not: () => chain,
-          or: () => chain,
+          or: (expression: string) => { predicates.push((row) => matchesPostgrestOr(row, expression)); return chain },
+          eq: (col: string, val: unknown) => { predicates.push((row) => row[col] === val); return chain },
           order: () => chain,
-          limit: async (n: number) => ({
-            data: seedOrders.slice(0, n).map((row) => ({ ...row })),
-            error: null,
-          }),
+          // Como la base: el filtro (antigüedad + proveedor) se aplica ANTES del limit.
+          limit: async (n: number) => {
+            listedLimits.push(n)
+            return {
+              data: seedOrders.filter((row) => predicates.every((predicate) => predicate(row))).slice(0, n).map((row) => ({ ...row })),
+              error: null,
+            }
+          },
+          maybeSingle: async () => {
+            const row = matching(predicates)
+            return { data: row ? { id: row.id } : null, error: null }
+          },
         }
         return chain
       },
       update(payload: Record<string, unknown>) {
-        const filters: Array<{ col: string; val: unknown }> = []
-            let eventPredicate: (row: Record<string, unknown>) => boolean = () => true
+        const predicates: Predicate[] = []
+        let id: unknown
+        const apply = () => {
+          const row = matching(predicates)
+          if (row) {
+            Object.assign(row, payload)
+            updates.push({ id, payload })
+          }
+          return row
+        }
         const builder = {
           then(resolve: (value: { error: null }) => unknown) {
-            const row = seedOrders.find((candidate) => filters.every((filter) => candidate[filter.col] === filter.val))
-            if (row) Object.assign(row, payload)
-            updates.push({ id: filters.find((filter) => filter.col === "id")?.val, payload })
+            apply()
             return resolve({ error: null })
           },
-              or(expression: string) {
-                const timestamp = expression.split(".lte.")[1]
-                eventPredicate = (row) => row.andreani_tracking_event_at == null ||
-                  Date.parse(String(row.andreani_tracking_event_at)) <= Date.parse(timestamp)
-                return builder
-              },
-              is(col: string) {
-                eventPredicate = (row) => row[col] == null
-                return builder
-              },
+          or(expression: string) {
+            predicates.push((row) => matchesPostgrestOr(row, expression))
+            return builder
+          },
+          is(col: string) {
+            predicates.push((row) => row[col] == null)
+            return builder
+          },
           eq(col: string, val: unknown) {
-            filters.push({ col, val })
+            if (col === "id") id = val
+            predicates.push((row) => row[col] === val)
             return builder
           },
           select() {
             return {
               async maybeSingle() {
-                const row = seedOrders.find((candidate) =>
-                  filters.every((filter) => candidate[filter.col] === filter.val) && eventPredicate(candidate),
-                )
-                if (!row) return { data: null, error: null }
-                Object.assign(row, payload)
-                return { data: { ...row }, error: null }
+                const row = apply()
+                return { data: row ? { ...row } : null, error: null }
               },
             }
           },
@@ -116,7 +136,7 @@ function createFakeAdmin(seedOrders: FakeOrdenRow[]) {
     },
   }
 
-  return { admin, auditEvents, historyRows, updates }
+  return { admin, auditEvents, historyRows, updates, listedLimits }
 }
 
 function silenceConsole<T>(run: () => Promise<T>) {
@@ -367,4 +387,120 @@ test("el lote cuenta eventos desconocidos nuevos y no los vuelve a contar en la 
   assert.equal(second.unknownEvents, 0)
   assert.equal(historyRows.length, 2)
   assert.equal(orders[0].estado, "en_camino")
+})
+
+test("Envío BEYONIX con andreani_envio_id residual: el cron nunca lo consulta ni lo mueve; Andreani sigue igual", async () => {
+  const base = { delivered_at: null, andreani_creation_environment: "QA" as const, cliente_email: null, cliente_nombre: null, tracking_number: null, tracking_url: null }
+  const orders: FakeOrdenRow[] = [
+    { ...base, id: 1, estado: "pagado", andreani_envio_id: "ENV-RESIDUAL", andreani_tracking: "tracking-ENV-RESIDUAL", shipping_provider: "beyonix" },
+    { ...base, id: 2, estado: "pagado", andreani_envio_id: "ENV2", andreani_tracking: "tracking-ENV2", shipping_provider: "andreani" },
+  ]
+  const { admin, updates } = createFakeAdmin(orders)
+  const consulted: string[] = []
+  const andreaniFetch = fakeAndreaniFetch({
+    "tracking-ENV-RESIDUAL": [{ Fecha: "2026-08-26T15:11:00.0000000", Evento: "EnvioEntregado", Estado: "Entregado" }],
+    "tracking-ENV2": [{ Fecha: "2026-08-26T15:11:00.0000000", Evento: "EnvioEntregado", Estado: "Entregado" }],
+  })
+  const result = await runAndreaniTrackingSyncBatch(admin as never, {
+    clientOptions: { env: qaClientEnv, fetch: async (input) => { consulted.push(String(input)); return andreaniFetch(input) } },
+  })
+  assert.equal(result.errors, 0)
+  assert.equal(orders[0].estado, "pagado", "el pedido local no se mueve")
+  assert.equal(updates.some((update) => update.id === 1), false)
+  assert.equal(consulted.some((url) => url.includes("RESIDUAL")), false, "nunca se consulta a Andreani por él")
+  assert.equal(orders[1].estado, "entregado", "Andreani sin regresión")
+})
+
+test("sync manual (botón Consultar): un pedido Envío BEYONIX se rechaza sin llamar a Andreani", async () => {
+  const { syncAndreaniOrderTracking } = await import("./order-tracking-sync.ts")
+  let calls = 0
+  await assert.rejects(syncAndreaniOrderTracking({} as never, {
+    id: 1, estado: "pagado", delivered_at: null, andreani_envio_id: "ENV-RESIDUAL", andreani_tracking: null, andreani_creation_environment: "QA",
+    shipping_type: "domicilio", cliente_email: null, cliente_nombre: null, tracking_number: null, tracking_url: null, shipping_provider: "beyonix",
+  }, { actorType: "admin", actorId: null, clientOptions: { env: qaClientEnv, fetch: async () => { calls += 1; return jsonResponse({}) } } }), /usa Envío BEYONIX/)
+  assert.equal(calls, 0)
+})
+
+test("cron/lote: un pedido leído como Andreani que pasa a Envío BEYONIX durante la consulta => 0 writes, sin historial ni auditoría; el resto sigue igual", async () => {
+  const base = { delivered_at: null, andreani_creation_environment: "QA" as const, cliente_email: null, cliente_nombre: null, tracking_number: null, tracking_url: null }
+  const orders: FakeOrdenRow[] = [
+    { ...base, id: 1, estado: "pagado", andreani_envio_id: "ENV1", andreani_tracking: "tracking-ENV1", shipping_provider: "andreani" },
+    { ...base, id: 2, estado: "pagado", andreani_envio_id: "ENV2", andreani_tracking: "tracking-ENV2", shipping_provider: "andreani" },
+  ]
+  const { admin, auditEvents, historyRows, updates } = createFakeAdmin(orders)
+  const delivered = [{ Fecha: "2026-08-26T15:11:00.0000000", Evento: "EnvioEntregado", Estado: "Entregado" }]
+  const andreaniFetch = fakeAndreaniFetch({ "tracking-ENV1": delivered, "tracking-ENV2": delivered })
+  const before = { ...orders[0] }
+  const result = await runAndreaniTrackingSyncBatch(admin as never, {
+    clientOptions: {
+      env: qaClientEnv,
+      fetch: async (input) => {
+        // Mientras Andreani responde por ENV1, otro proceso pasa ese pedido a Envío BEYONIX.
+        if (String(input).includes("tracking-ENV1")) orders[0].shipping_provider = "beyonix"
+        return andreaniFetch(input)
+      },
+    },
+  })
+  assert.deepEqual(orders[0], { ...before, shipping_provider: "beyonix" }, "estado y tracking intactos")
+  assert.equal(updates.some((update) => update.id === 1), false, "0 writes")
+  assert.equal(historyRows.some((row) => row.order_id === 1), false)
+  assert.equal(auditEvents.some((event) => event.order_id === 1), false)
+  assert.deepEqual([result.updated, result.statusChanged, result.errors], [1, 1, 0])
+  assert.equal(orders[1].estado, "entregado", "Andreani sin regresión")
+})
+
+test("cron/lote: el reintento diferido de un pedido que falló tampoco escribe si ya no es Andreani", async () => {
+  const orders: FakeOrdenRow[] = [{ id: 1, estado: "pagado", delivered_at: null, andreani_envio_id: "ENV1", andreani_tracking: "tracking-ENV1", andreani_creation_environment: "QA", cliente_email: null, cliente_nombre: null, tracking_number: null, tracking_url: null, shipping_provider: "andreani" }]
+  const { admin, updates } = createFakeAdmin(orders)
+  const result = await silenceConsole(() => runAndreaniTrackingSyncBatch(admin as never, {
+    clientOptions: {
+      env: qaClientEnv,
+      fetch: async () => {
+        orders[0].shipping_provider = "beyonix"
+        return new Response("caído", { status: 500 })
+      },
+    },
+  }))
+  assert.equal(result.errors, 1)
+  assert.deepEqual(updates, [], "sin andreani_tracking_checked_at ni ningún otro write")
+})
+
+test("saturación: 20 pedidos Envío BEYONIX con andreani_envio_id residual al frente no ocupan lugares; entran los 10 Andreani válidos (limit 15)", async () => {
+  const base = { delivered_at: null, andreani_creation_environment: "QA" as const, cliente_email: null, cliente_nombre: null, tracking_number: null, tracking_url: null, estado: "pagado" }
+  const residual: FakeOrdenRow[] = Array.from({ length: 20 }, (_, index) => ({ ...base, id: index + 1, andreani_envio_id: `RES${index + 1}`, andreani_tracking: `tracking-RES${index + 1}`, shipping_provider: "beyonix" }))
+  const andreani: FakeOrdenRow[] = Array.from({ length: 10 }, (_, index) => ({ ...base, id: 100 + index, andreani_envio_id: `AND${index}`, andreani_tracking: `tracking-AND${index}`, shipping_provider: "andreani" }))
+  const { admin, listedLimits } = createFakeAdmin([...residual, ...andreani])
+  const consulted: string[] = []
+  const andreaniFetch = fakeAndreaniFetch({})
+  const result = await runAndreaniTrackingSyncBatch(admin as never, {
+    batchSize: 15,
+    clientOptions: { env: qaClientEnv, fetch: async (input) => { consulted.push(String(input)); return andreaniFetch(input) } },
+  })
+  assert.deepEqual(listedLimits, [15])
+  assert.deepEqual([result.checked, result.updated, result.errors], [10, 10, 0])
+  assert.equal(consulted.some((url) => url.includes("RES")), false, "los residuales nunca se consultan")
+  assert.equal(andreani.every((row) => row.andreani_tracking_checked_at), true, "los 10 Andreani se sincronizaron")
+  assert.equal(residual.some((row) => row.andreani_tracking_checked_at), false)
+})
+
+test("selección del lote: regla canónica de Andreani (shipping_provider o envio_proveedor legacy), sin incluir BEYONIX", async () => {
+  const base = { delivered_at: null, andreani_creation_environment: "QA" as const, cliente_email: null, cliente_nombre: null, tracking_number: null, tracking_url: null, estado: "pagado" }
+  const orders: FakeOrdenRow[] = [
+    { ...base, id: 1, andreani_envio_id: "E1", andreani_tracking: "tracking-E1", shipping_provider: "Andreani" },
+    { ...base, id: 2, andreani_envio_id: "E2", andreani_tracking: "tracking-E2", shipping_provider: null, envio_proveedor: "andreani" },
+    { ...base, id: 3, andreani_envio_id: "E3", andreani_tracking: "tracking-E3", shipping_provider: "beyonix", envio_proveedor: "andreani" },
+    { ...base, id: 4, andreani_envio_id: "E4", andreani_tracking: "tracking-E4", shipping_provider: null, envio_proveedor: "beyonix" },
+  ]
+  const { admin } = createFakeAdmin(orders)
+  const result = await runAndreaniTrackingSyncBatch(admin as never, { clientOptions: { env: qaClientEnv, fetch: fakeAndreaniFetch({}) } })
+  assert.equal(result.checked, 2)
+  assert.deepEqual(orders.filter((row) => row.andreani_tracking_checked_at).map((row) => row.id), [1, 2])
+})
+
+test("cron: reutiliza el lote (misma selección y mismos writes), sin consultas propias a pedidos", () => {
+  const cron = readFileSync(new URL("../../app/api/cron/andreani-sync-tracking/route.ts", import.meta.url), "utf8")
+  assert.match(cron, /await runAndreaniTrackingSyncBatch\(admin, \{ deadlineMs: startedAt \+ PEDIDOS_TIME_BUDGET_MS \}\)/)
+  assert.doesNotMatch(cron, /from\("ordenes"\)/)
+  const batch = readFileSync(new URL("./tracking-sync-batch.ts", import.meta.url), "utf8")
+  assert.match(batch, /\.or\(withAndreaniProvider\(\["andreani_tracking_checked_at\.is\.null", `andreani_tracking_checked_at\.lt\.\$\{staleBefore\}`\]\)\)\s+\.order\("andreani_tracking_checked_at", \{ ascending: true, nullsFirst: true \}\)\s+\.limit\(batchSize\)/)
 })

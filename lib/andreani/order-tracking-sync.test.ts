@@ -1,12 +1,31 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import { matchesPostgrestOr } from "./fixtures/postgrest-filter.ts"
+
 import {
+  ANDREANI_PROVIDER_FILTER,
   fetchAndreaniOrderTrackingSnapshot,
   resolveAndreaniTrackingEnvironment,
   syncAndreaniOrderTracking,
+  withAndreaniProvider,
   type AndreaniOrderTrackingRow,
 } from "./order-tracking-sync.ts"
+
+test("filtro de proveedor: coalesce(shipping_provider, envio_proveedor) = andreani, combinado en un único or=() de PostgREST", () => {
+  assert.equal(ANDREANI_PROVIDER_FILTER, "shipping_provider.ilike.andreani,and(shipping_provider.is.null,envio_proveedor.ilike.andreani)")
+  assert.equal(withAndreaniProvider(["andreani_tracking_event_at.is.null"]),
+    "and(andreani_tracking_event_at.is.null,shipping_provider.ilike.andreani),and(andreani_tracking_event_at.is.null,and(shipping_provider.is.null,envio_proveedor.ilike.andreani))")
+  const cases: Array<[Record<string, unknown>, boolean]> = [
+    [{ shipping_provider: "andreani" }, true],
+    [{ shipping_provider: "Andreani" }, true],
+    [{ shipping_provider: null, envio_proveedor: "andreani" }, true],
+    [{ shipping_provider: "beyonix", envio_proveedor: "andreani" }, false],
+    [{ shipping_provider: "", envio_proveedor: "andreani" }, false],
+    [{ shipping_provider: null, envio_proveedor: null }, false],
+  ]
+  for (const [row, expected] of cases) assert.equal(matchesPostgrestOr(row, ANDREANI_PROVIDER_FILTER), expected, JSON.stringify(row))
+})
 
 const qaClientEnv: NodeJS.ProcessEnv = {
   NODE_ENV: "test",
@@ -156,7 +175,10 @@ interface FakeOrdenesRow extends Record<string, unknown> {
   delivered_at: string | null
 }
 
-function createFakeAdmin(ordenes: FakeOrdenesRow[]) {
+/** Hooks para simular otro proceso: después del UPDATE principal y después de guardar el historial. */
+function createFakeAdmin(ordenes: FakeOrdenesRow[], hooks: { afterUpdate?: () => void; afterHistory?: () => void } = {}) {
+  // Los pedidos del fake son Andreani salvo que el test diga otra cosa.
+  for (const row of ordenes) if (!("shipping_provider" in row)) row.shipping_provider = "andreani"
   const auditEvents: Array<Record<string, unknown>> = []
   // Simula UNIQUE(dedupe_key) + ON CONFLICT DO NOTHING de andreani_tracking_events.
   const historyRows: Array<Record<string, unknown>> = []
@@ -164,30 +186,43 @@ function createFakeAdmin(ordenes: FakeOrdenesRow[]) {
   const admin = {
     from(table: string) {
       if (table === "ordenes") {
+        // Mismo WHERE que la base: id/estado, evento y proveedor Andreani.
+        type Predicate = (row: Record<string, unknown>) => boolean
+        const matching = (predicates: Predicate[]) => ordenes.find((candidate) => predicates.every((predicate) => predicate(candidate)))
         return {
+          select() {
+            const predicates: Predicate[] = []
+            const chain = {
+              eq(col: string, val: unknown) { predicates.push((row) => row[col] === val); return chain },
+              or(expression: string) { predicates.push((row) => matchesPostgrestOr(row, expression)); return chain },
+              async maybeSingle() {
+                const row = matching(predicates)
+                return { data: row ? { id: row.id } : null, error: null }
+              },
+            }
+            return chain
+          },
           update(payload: Record<string, unknown>) {
-            const filters: Array<{ col: string; val: unknown }> = []
-            let eventPredicate: (row: Record<string, unknown>) => boolean = () => true
+            const predicates: Predicate[] = []
             const apply = () => {
-              const row = ordenes.find((candidate) =>
-                filters.every((filter) => candidate[filter.col] === filter.val) && eventPredicate(candidate),
-              )
-              if (row) Object.assign(row, payload)
+              const row = matching(predicates)
+              if (row) {
+                Object.assign(row, payload)
+                hooks.afterUpdate?.()
+              }
               return row
             }
             const builder = {
               or(expression: string) {
-                const timestamp = expression.split(".lte.")[1]
-                eventPredicate = (row) => row.andreani_tracking_event_at == null ||
-                  Date.parse(String(row.andreani_tracking_event_at)) <= Date.parse(timestamp)
+                predicates.push((row) => matchesPostgrestOr(row, expression))
                 return builder
               },
               is(col: string) {
-                eventPredicate = (row) => row[col] == null
+                predicates.push((row) => row[col] == null)
                 return builder
               },
               eq(col: string, val: unknown) {
-                filters.push({ col, val })
+                predicates.push((row) => row[col] === val)
                 return builder
               },
               select() {
@@ -213,6 +248,7 @@ function createFakeAdmin(ordenes: FakeOrdenesRow[]) {
             assert.deepEqual(options, { onConflict: "dedupe_key", ignoreDuplicates: true })
             const inserted = rows.filter((row) => !historyRows.some((existing) => existing.dedupe_key === row.dedupe_key))
             historyRows.push(...inserted)
+            hooks.afterHistory?.()
             return { select: async () => ({ data: inserted.map((row) => ({ dedupe_key: row.dedupe_key })), error: null }) }
           },
         }
@@ -488,4 +524,105 @@ test("si el historial no se puede guardar, el tracking igual se aplica y lo desc
   } finally {
     console.error = originalError
   }
+})
+
+// ── Carrera: el pedido deja de ser Andreani mientras se espera la respuesta ──
+
+for (const [label, change] of [
+  ["shipping_provider pasa a beyonix", { shipping_provider: "beyonix" }],
+  ["proveedor legacy (envio_proveedor) deja de ser Andreani", { shipping_provider: null, envio_proveedor: "beyonix" }],
+] as const) {
+  test(`carrera: ${label} durante la consulta => 0 writes, estado/tracking intactos, sin historial ni auditoría`, async () => {
+    const row: FakeOrdenesRow = { id: 2, estado: "pagado", delivered_at: null, andreani_estado: "Pendiente de ingreso", andreani_tracking: "360003080248490", andreani_tracking_event_at: null, andreani_tracking_review_event: null }
+    const { admin, auditEvents, historyRows } = createFakeAdmin([row])
+    const before = { ...row }
+    const result = await syncAndreaniOrderTracking(admin as never, baseOrder(), {
+      actorType: "system", actorId: null,
+      clientOptions: {
+        env: qaClientEnv,
+        fetch: async (input) => {
+          const url = new URL(String(input))
+          if (url.pathname === "/login") return jsonResponse({ token: "token-prueba" })
+          if (url.pathname.endsWith("/trazas")) {
+            // Leído como Andreani; antes de que vuelva la respuesta, otro proceso lo pasa a Envío BEYONIX.
+            Object.assign(row, change)
+            return jsonResponse({ eventos: [
+              { Fecha: "2026-08-26T15:11:00.0000000", Evento: "EnvioEntregado", Estado: "Entregado" },
+              { Fecha: "2026-08-26T15:12:00.0000000", Evento: "EventoDesconocidoX", Estado: "Raro" },
+            ] })
+          }
+          return jsonResponse({ estado: "Creada", tipo: "B2C", bultos: [{ numeroDeBulto: "1", numeroDeEnvio: "360003080248490" }] })
+        },
+      },
+    })
+    assert.equal(result.providerChanged, true)
+    assert.equal(result.statusChanged, false)
+    assert.deepEqual(result.newHistoryEvents, [])
+    assert.deepEqual(row, { ...before, ...change }, "ni estado, ni tracking, ni marca de revisión")
+    assert.deepEqual(historyRows, [], "sin historial Andreani")
+    assert.deepEqual(auditEvents, [], "sin auditoría Andreani")
+  })
+}
+
+test("carrera: un conflicto de estado en un pedido que SIGUE siendo Andreani conserva el comportamiento anterior (historial sí)", async () => {
+  const row: FakeOrdenesRow = { id: 2, estado: "cancelado", delivered_at: null }
+  const { admin, historyRows } = createFakeAdmin([row])
+  const result = await syncAndreaniOrderTracking(admin as never, baseOrder({ estado: "pagado" }), {
+    actorType: "system", actorId: null,
+    clientOptions: { env: qaClientEnv, fetch: trackingFetch(() => [{ Fecha: "2026-08-26T15:11:00.0000000", Evento: "EnvioEntregado", Estado: "Entregado" }]) },
+  })
+  assert.equal(result.providerChanged, undefined)
+  assert.equal(row.estado, "cancelado")
+  assert.equal(historyRows.length, 1)
+})
+
+// ── Historial y auditoría posteriores al UPDATE ─────────────────────────────
+
+const deliveredWithUnknown = () => [
+  { Fecha: "2026-08-26T15:11:00.0000000", Evento: "EnvioEntregado", Estado: "Entregado" },
+  { Fecha: "2026-08-26T15:12:00.0000000", Evento: "EventoDesconocidoY", Estado: "Raro" },
+]
+
+test("provider cambia DESPUÉS del UPDATE legítimo y antes del historial: sin historial Andreani ni auditoría de evento desconocido", async () => {
+  const row: FakeOrdenesRow = { id: 2, estado: "pagado", delivered_at: null, andreani_tracking_review_event: null }
+  let fired = false
+  const { admin, auditEvents, historyRows } = createFakeAdmin([row], {
+    afterUpdate: () => { if (!fired) { fired = true; row.shipping_provider = "beyonix" } },
+  })
+  const result = await syncAndreaniOrderTracking(admin as never, baseOrder(), {
+    actorType: "system", actorId: null, clientOptions: { env: qaClientEnv, fetch: trackingFetch(deliveredWithUnknown) },
+  })
+  // El cambio de estado ocurrió mientras era Andreani (es legítimo y se audita una vez).
+  assert.equal(result.statusChanged, true)
+  assert.equal(result.providerChanged, true)
+  assert.deepEqual(result.newHistoryEvents, [])
+  assert.deepEqual(historyRows, [], "sin historial Andreani posterior")
+  assert.deepEqual(auditEvents.map((event) => event.action), ["andreani_tracking_auto_status_changed"], "sin auditoría de evento desconocido")
+  assert.equal(row.andreani_tracking_review_event, null)
+})
+
+test("provider cambia mientras se guarda el historial: no se marca revisión ni se audita el evento desconocido", async () => {
+  const row: FakeOrdenesRow = { id: 2, estado: "pagado", delivered_at: null, andreani_tracking_review_event: null }
+  const { admin, auditEvents, historyRows } = createFakeAdmin([row], {
+    afterHistory: () => { row.shipping_provider = "beyonix" },
+  })
+  await syncAndreaniOrderTracking(admin as never, baseOrder(), {
+    actorType: "system", actorId: null, clientOptions: { env: qaClientEnv, fetch: trackingFetch(deliveredWithUnknown) },
+  })
+  assert.equal(historyRows.length, 2, "el historial se guardó mientras seguía siendo Andreani")
+  assert.equal(auditEvents.some((event) => event.action === "andreani_tracking_unknown_event"), false)
+  assert.equal(row.andreani_tracking_review_event, null)
+})
+
+test("pedido que sigue siendo Andreani: historial, marca de revisión y auditoría de evento desconocido como antes", async () => {
+  const row: FakeOrdenesRow = { id: 2, estado: "pagado", delivered_at: null, andreani_tracking_review_event: null }
+  const { admin, auditEvents, historyRows } = createFakeAdmin([row])
+  const result = await syncAndreaniOrderTracking(admin as never, baseOrder(), {
+    actorType: "system", actorId: null, clientOptions: { env: qaClientEnv, fetch: trackingFetch(deliveredWithUnknown) },
+  })
+  assert.equal(result.statusChanged, true)
+  assert.equal(result.providerChanged, undefined)
+  assert.equal(historyRows.length, 2)
+  assert.deepEqual(auditEvents.map((event) => event.action).sort(), ["andreani_tracking_auto_status_changed", "andreani_tracking_unknown_event"])
+  assert.match(String(row.andreani_tracking_review_event), /EventoDesconocidoY/)
 })

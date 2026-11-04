@@ -46,11 +46,26 @@ export async function createDispatchAndreaniShipment(
   return createAndreaniShipmentForOrder(admin, orderId, { itemQuantities: preparation.quantities })
 }
 
-/** Etiqueta Andreani del envío del pedido, contra el ambiente donde se creó. */
+/**
+ * Proveedor canónico del pedido (misma regla que la creación del envío y que
+ * coalesce(shipping_provider, envio_proveedor) en la base).
+ */
+export function isAndreaniShippingOrder(order: { shipping_provider?: string | null; envio_proveedor?: string | null }) {
+  return (order.shipping_provider ?? order.envio_proveedor)?.toLowerCase() === "andreani"
+}
+
+export const ANDREANI_LABEL_WRONG_PROVIDER_MESSAGE = "Este pedido no usa Andreani: no tiene etiqueta Andreani."
+
+/**
+ * Etiqueta Andreani del envío del pedido, contra el ambiente donde se creó.
+ * Exige proveedor Andreani: un pedido Envío BEYONIX con un andreani_envio_id
+ * residual nunca descarga una etiqueta Andreani.
+ */
 export async function fetchAndreaniOrderLabel(admin: AdminClient, orderId: number, formato: "pdf" | "zpl") {
   const { data: order, error } = await admin.from("ordenes")
-    .select("andreani_envio_id, andreani_creation_environment").eq("id", orderId).maybeSingle()
+    .select("andreani_envio_id, andreani_creation_environment, shipping_provider, envio_proveedor").eq("id", orderId).maybeSingle()
   if (error || !order) throw new AndreaniError("VALIDATION_ERROR", "No encontramos el pedido.")
+  if (!isAndreaniShippingOrder(order)) throw new AndreaniError("VALIDATION_ERROR", ANDREANI_LABEL_WRONG_PROVIDER_MESSAGE)
   const envioId = typeof order.andreani_envio_id === "string" ? order.andreani_envio_id.trim() : ""
   if (!envioId) throw new AndreaniError("VALIDATION_ERROR", "El pedido todavía no tiene un envío Andreani generado.")
   // Nunca contra el ambiente configurado hoy: el envío vive donde se creó.

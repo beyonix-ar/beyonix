@@ -1,10 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Bike, CheckCircle2, RotateCcw, Truck } from "lucide-react"
+import { Bike, CheckCircle2, PackageCheck, RotateCcw, Truck } from "lucide-react"
 
 import { AdminButton, AdminEmptyState, AdminPrimaryButton, AdminSection } from "@/app/admin/components/admin-controls"
 import { orderCode } from "@/lib/admin/dispatch"
+import { dispatchLocationHref } from "@/lib/admin/dispatch-location"
 import {
   getNextLocalDeliveryAction,
   LOCAL_DELIVERY_STAGE_LABELS,
@@ -26,6 +27,8 @@ interface LocalDeliveryRecord {
   cp_destino: string | null
   /** Auditoría, garantía o email que fallaron y se pueden reintentar. */
   pendingEffects?: LocalDeliveryEffect[]
+  /** Preparando: qué falta (pickeo, bultos, etiquetas BEYONIX) para entregarlo al cadete. */
+  preparationError?: string | null
 }
 
 type PanelAction = LocalDeliveryAction | "retry_effects"
@@ -38,7 +41,8 @@ const STAGE_TONE: Record<LocalDeliveryStage, string> = {
 
 /**
  * Envío BEYONIX: entregas locales propias, fuera del circuito de Andreani
- * (sin etiqueta, guía ni Bulto). Preparando → En camino → Entregado.
+ * (sin guía, etiqueta ni Bulto general Andreani; el pickeo, los bultos y la
+ * etiqueta BEYONIX se hacen en Despachos). Preparando → En camino → Entregado.
  */
 export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown }) {
   const [orders, setOrders] = useState<LocalDeliveryRecord[] | null>(null)
@@ -101,6 +105,8 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
             // Sólo el siguiente paso: Preparando → En camino → Entregado.
             const next = getNextLocalDeliveryAction(order.stage)
             const pending = order.pendingEffects ?? []
+            // En camino exige pickeo, bultos y etiquetas BEYONIX confirmadas (el servidor lo vuelve a validar).
+            const notReady = next === "en_camino" ? order.preparationError ?? null : null
             return (
               <li key={order.id} data-local-delivery-order={order.id} data-local-delivery-stage={order.stage}
                 className="flex flex-col gap-2 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -115,6 +121,7 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
                     {[order.cliente_nombre, order.cliente_direccion, order.localidad, order.cp_destino && `CP ${order.cp_destino}`, order.cliente_telefono]
                       .filter(Boolean).join(" · ")}
                   </p>
+                  {notReady && <p className="mt-0.5 text-xs font-bold text-amber-200" data-local-delivery-preparation="">{notReady}</p>}
                   {pending.length > 0 && (
                     <p className="mt-0.5 text-xs font-bold text-amber-200" data-local-delivery-pending={pending.join(",")}>
                       Pendiente: {[...new Set(pending.map((effect) => LOCAL_DELIVERY_EFFECT_LABELS[effect]))].join(", ")}
@@ -129,7 +136,13 @@ export function LocalDeliveryPanel({ refreshSignal }: { refreshSignal?: unknown 
                       </AdminButton>
                     )}
                     {next === "en_camino" && (
-                      <AdminButton size="sm" disabled={busy} icon={<Truck className="size-4" />} onClick={() => void advance(order, "en_camino")}>
+                      // Mismo pickeo, bultos y etiqueta BEYONIX de Despachos (sin Andreani).
+                      <a href={dispatchLocationHref({ orderId: order.id, batchId: null })} className="admin-ds-button admin-ds-button-secondary inline-flex min-h-8 cursor-pointer items-center justify-center gap-2 px-3 py-1.5 text-xs font-black" data-local-delivery-prepare="">
+                        <PackageCheck className="size-4" />{notReady ? "Preparar" : "Ver preparación"}
+                      </a>
+                    )}
+                    {next === "en_camino" && (
+                      <AdminButton size="sm" disabled={busy || Boolean(notReady)} icon={<Truck className="size-4" />} onClick={() => void advance(order, "en_camino")}>
                         Marcar en camino
                       </AdminButton>
                     )}

@@ -4,12 +4,13 @@ import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { AndreaniError, normalizeAndreaniError } from "@/lib/andreani/client"
 import { createDispatchAndreaniShipment } from "@/lib/andreani/dispatch-shipment"
 import { quoteOrderParcels } from "@/lib/andreani/parcel-quote"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchLabelConfirmation, type DispatchScanResult } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_ORDER_ACTIONS, dispatchActionProviderError, dispatchError, getOrderDispatch, isRequestKey, validId, type DispatchLabelConfirmation, type DispatchOrderAction, type DispatchScanResult, type LocalParcelConfirmation } from "@/lib/admin/dispatch"
+import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
 import { parseParcelMeasures, ParcelMeasuresError } from "@/lib/shipping/parcel-measures"
 
 type Context = { params: Promise<{ id: string }> }
 type Body = {
-  action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown; variantId?: unknown
+  action?: string; code?: string; requestKey?: string; reason?: string; parcels?: unknown; variantId?: unknown; parcelCount?: unknown
   orderItemId?: unknown; quantity?: unknown; problem?: string; settlement?: string; agreement?: string; force?: boolean
 }
 
@@ -47,16 +48,34 @@ export async function POST(request: Request, context: Context) {
   const auth = await requireOperator(request)
   if ("error" in auth) return auth.error
   const body = await request.json().catch(() => null) as Body | null
-  if (!body || !["start", "scan", "reset", "adjust", "ship", "confirm_label"].includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
+  if (!body || !(DISPATCH_ORDER_ACTIONS as readonly string[]).includes(body.action ?? "")) return Response.json({ error: "Acción inválida." }, { status: 400 })
   const { data: order, error: orderError } = await auth.admin.from("ordenes")
-    .select("estado,cancelled_at,financial_status,andreani_envio_id").eq("id", id).maybeSingle()
+    .select("estado,cancelled_at,financial_status,andreani_envio_id,shipping_provider,envio_proveedor").eq("id", id).maybeSingle()
   if (orderError || !order) return Response.json({ error: "No se pudo verificar el pedido." }, { status: 500 })
   if (order.estado === "cancelado" || order.cancelled_at || ["cancellation_requested", "refund_pending", "refunded"].includes(order.financial_status ?? "")) {
     return Response.json({ error: "Pedido cancelado — no requiere preparación." }, { status: 409 })
   }
+  // Circuitos separados: Envío BEYONIX nunca crea envío ni confirma etiqueta
+  // Andreani; Andreani nunca define bultos ni confirma etiquetas BEYONIX.
+  const providerError = dispatchActionProviderError(isLocalDeliveryOrder(order), body.action as DispatchOrderAction, order.estado)
+  if (providerError) return Response.json({ error: providerError }, { status: 409 })
   let scan: DispatchScanResult | null = null
   let labelConfirmation: DispatchLabelConfirmation | null = null
-  if (body.action === "confirm_label") {
+  let parcelConfirmation: LocalParcelConfirmation | null = null
+  if (body.action === "local_parcels") {
+    const count = Number(body.parcelCount)
+    if (!Number.isInteger(count) || count < 1 || count > 50 || !isRequestKey(body.requestKey)) return Response.json({ error: "Indicá entre 1 y 50 bultos." }, { status: 400 })
+    const result = await auth.admin.rpc("set_order_package_parcels", { p_order_id: id, p_parcel_count: count, p_actor_id: auth.user.id, p_request_key: body.requestKey })
+    if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
+  } else if (body.action === "confirm_parcel") {
+    // El BX-PKG pegado en el bulto se valida en la base, bajo lock del pedido:
+    // releerlo es idempotente; otro pedido o un rearmado anterior se rechazan.
+    const code = body.code?.trim() ?? ""
+    if (!code || code.length > 128) return Response.json({ error: "Escaneá o escribí el código BX-PKG del bulto." }, { status: 400 })
+    const result = await auth.admin.rpc("confirm_local_delivery_parcel", { p_order_id: id, p_code: code, p_actor_id: auth.user.id })
+    if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
+    parcelConfirmation = result.data as LocalParcelConfirmation
+  } else if (body.action === "confirm_label") {
     // El seguimiento leído se valida en la base contra el envío persistido del
     // pedido, bajo lock: releer la misma etiqueta es idempotente y otra se rechaza.
     const code = body.code?.trim() ?? ""
@@ -141,7 +160,7 @@ export async function POST(request: Request, context: Context) {
     if (result.error) return Response.json({ error: dispatchError(result.error) }, { status: 409 })
   }
   try {
-    return await detailResponse(auth, id, { scan, labelConfirmation })
+    return await detailResponse(auth, id, { scan, labelConfirmation, parcelConfirmation })
   } catch {
     return Response.json({ error: "La operación se guardó, pero no se pudo actualizar la vista. Recargá el pedido." }, { status: 503 })
   }

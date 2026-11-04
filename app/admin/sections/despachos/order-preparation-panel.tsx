@@ -5,11 +5,13 @@ import { AlertTriangle, ArrowRight, CheckCircle2, Download, History, PackageChec
 
 import { AdminBadge, AdminButton, AdminCard, AdminModal, AdminPrimaryButton, AdminRowMenu, AdminTextarea, AdminTextInput, AdminTrackingValue, type AdminRowMenuAction } from "@/app/admin/components/admin-controls"
 import { ADMIN_DISPATCH_CHANGED_EVENT } from "@/hooks/use-admin-notifications"
-import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, orderCode, type DispatchLabelConfirmation, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { DISPATCH_ADJUSTMENT_PROBLEMS, DISPATCH_ADJUSTMENT_SETTLEMENTS, DISPATCH_STAGE_LABELS, LOCAL_DISPATCH_STAGE_LABELS, orderCode, type DispatchLabelConfirmation, type DispatchSaleItem, type DispatchScanResult, type DispatchShippingInfo, type DispatchVariantCandidate, type LocalParcelConfirmation, type OrderDispatchDetail } from "@/lib/admin/dispatch"
+import { LOCAL_DELIVERY_NAME } from "@/lib/shipping/local-delivery"
 import { getNextDispatchStep, orderStepFacts, type DispatchNextStep } from "@/lib/admin/dispatch-next-step"
 import { dispatchBatchName } from "@/lib/admin/dispatch-queue"
 import { playScanFeedback } from "@/lib/admin/scan-feedback"
 import { openAndreaniLabel } from "./andreani-label"
+import { printLocalDeliveryLabels } from "./local-delivery-label"
 import { CancellationResolution } from "./cancellation-resolution"
 import { DifferenceResolution, type DifferenceInput } from "./difference-resolution"
 import { DispatchRequestError, dispatchRequest } from "./dispatch-request"
@@ -20,11 +22,11 @@ type ScanFeedback = { tone: "success" | "warning" | "error"; message: string }
 /** Qué puede hacer quien mira el pedido (lo decide el servidor y lo vuelve a validar al ejecutar). */
 type Viewer = { costsVisible: boolean; canShip: boolean; canForce: boolean }
 type Detail = OrderDispatchDetail & { viewer?: Viewer }
-type OrderResponse = Detail & { scan?: DispatchScanResult | null; labelConfirmation?: DispatchLabelConfirmation | null }
+type OrderResponse = Detail & { scan?: DispatchScanResult | null; labelConfirmation?: DispatchLabelConfirmation | null; parcelConfirmation?: LocalParcelConfirmation | null }
 /** Código de grupo en un renglón aleatorio: falta confirmar la variante física. */
 type PendingVariant = { code: string; productName: string | null; candidates: DispatchVariantCandidate[] }
 type OrderLine = OrderDispatchDetail["lines"][number]
-type Dialog = "ship" | "force" | "reset" | "difference"
+type Dialog = "ship" | "force" | "reset" | "difference" | "local_parcels"
 type PrimaryAction = { label: string; icon?: ReactNode; onClick?: () => void; disabled?: boolean; hint?: string }
 
 export const DISPATCH_STAGE_TONE = { pending: "info", packing: "info", shipment: "info", label: "warning", ready: "success", in_batch: "info", batch_closed: "success", handed_over: "success" } as const
@@ -194,6 +196,34 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
     })
   }
 
+  /**
+   * Envío BEYONIX: confirmación física de cada bulto escaneando el BX-PKG de
+   * su etiqueta pegada. Releer el mismo no duplica; otro pedido o una etiqueta
+   * de un armado anterior se rechazan sin cambiar nada.
+   */
+  function confirmParcel(code: string) {
+    if (busyRef.current) return
+    setLabelCode(code)
+    void run(async () => {
+      try {
+        const updated = await dispatchRequest<OrderResponse>(`/orders/${orderId}`, { action: "confirm_parcel", code })
+        setDetail(updated)
+        setLabelCode("")
+        const result = updated.parcelConfirmation
+        const duplicate = Boolean(result?.duplicate)
+        setFeedback({ tone: duplicate ? "warning" : "success", message: result
+          ? `${duplicate ? "✓ Bulto ya confirmado" : "✓ Bulto confirmado"} · ${result.parcelIndex} de ${result.parcelCount} · ${result.confirmed}/${result.parcelCount} listos`
+          : "✓ Bulto confirmado" })
+        playScanFeedback(duplicate ? "warning" : "success")
+        advance(updated)
+      } catch (cause) {
+        if (!(cause instanceof DispatchRequestError && cause.retryable)) setLabelCode("")
+        setFeedback({ tone: "error", message: cause instanceof Error ? cause.message : "No se pudo confirmar el bulto." })
+        playScanFeedback("error")
+      }
+    })
+  }
+
   function openDialog(next: Dialog) { actionKey.current = null; setDialogError(""); setReason(""); setDialog(next) }
 
   if (loading && !detail) return <p role="status" className="text-sm text-white/70">Cargando pedido…</p>
@@ -220,11 +250,20 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
   const pendingLines = detail.lines.filter((line) => line.scanned_quantity < line.expected_quantity)
   // Pendientes que sólo frenan el Bulto general (p. ej. factura): se informan recién ahí.
 
+  // Envío BEYONIX: mismo pickeo, bultos propios y etiqueta BEYONIX (nunca Andreani).
+  const local = detail.localDelivery
+  const stageLabel = (local ? LOCAL_DISPATCH_STAGE_LABELS[stage] : undefined) ?? DISPATCH_STAGE_LABELS[stage]
+  const localParcelsDefined = Boolean(local && pkg?.parcel_count && detail.parcels.length)
   const printLabel = (mode: "print" | "download") => void run(async () => {
     await openAndreaniLabel(orderId, mode)
     setNotice(mode === "print" ? "Etiqueta Andreani lista para imprimir. Pegala en el paquete y escaneá su seguimiento." : "Etiqueta Andreani descargada.")
     await load()
   })
+  const printLocalLabels = () => void run(async () => {
+    const count = await printLocalDeliveryLabels(orderId)
+    setNotice(`${count === 1 ? "Etiqueta BEYONIX lista" : `${count} etiquetas BEYONIX listas`} para imprimir. Pegá cada una en su bulto y escaneá su código.`)
+  })
+  const openLocalParcels = () => { setParcelInput(String(pkg?.parcel_count ?? 1)); openDialog("local_parcels") }
   const openShip = () => {
     const count = pkg?.parcel_count ?? (shippingInfo.estimate?.parcels.length || 1)
     setParcelInput(String(count))
@@ -234,6 +273,11 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
 
   let primary: PrimaryAction | null = null
   if (stage === "pending") primary = { label: "Empezar preparación", icon: <PackageCheck className="size-5" />, disabled: packingBlocked, onClick: () => post({ action: "start" }) }
+  else if (local) {
+    if (stage === "packing") primary = { label: "Definir bultos", icon: <PackageCheck className="size-5" />, disabled: true, hint: `Completá el pickeo: ${remaining === 1 ? "falta 1 unidad" : `faltan ${remaining} unidades`}.` }
+    else if (stage === "shipment") primary = { label: "Definir bultos", icon: <PackageCheck className="size-5" />, disabled: packingBlocked, onClick: openLocalParcels }
+    else if (stage === "label") primary = { label: "Imprimir etiqueta BEYONIX", icon: <Printer className="size-5" />, disabled: packingBlocked, onClick: printLocalLabels }
+  }
   else if (stage === "packing") primary = { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: true, hint: `Completá el pickeo: ${remaining === 1 ? "falta 1 unidad" : `faltan ${remaining} unidades`}.` }
   else if (stage === "shipment") primary = shipmentUncertain
     ? { label: "Generar envío Andreani", icon: <Truck className="size-5" />, disabled: true, hint: "Envío en revisión: requiere conciliación manual antes de reintentar." }
@@ -249,20 +293,22 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
     primary = { label: `Abrir ${dispatchBatchName(detail.batch)}`, icon: <ArrowRight className="size-5" />, onClick: () => goTo(`/admin/despachos?batch=${batchId}`) }
   }
 
-  const labelItems: AdminRowMenuAction[] = shipment.created ? [
+  const labelItems: AdminRowMenuAction[] = local ? (localParcelsDefined
+    ? [{ key: "local-print", label: "Reimprimir etiquetas BEYONIX", icon: <Printer className="size-4" />, disabled: busy || stage === "handed_over", onSelect: printLocalLabels }]
+    : []) : shipment.created ? [
     ...(identified ? [{ key: "print", label: "Reimprimir etiqueta Andreani", icon: <Printer className="size-4" />, disabled: busy, onSelect: () => printLabel("print") }] : []),
     { key: "download", label: "Guardar PDF de etiqueta Andreani", icon: <Download className="size-4" />, disabled: busy, onSelect: () => printLabel("download") },
   ] : []
   const orderItems: AdminRowMenuAction[] = [
     { key: "history", label: "Ver historial", icon: <History className="size-4" />, onSelect: () => goTo(`/admin/pedidos/${orderId}?tab=historial`) },
     ...(stage === "packing" && pendingLines.length && !packingBlocked ? [{ key: "difference", label: "Resolver diferencia", icon: <Scale className="size-4" />, onSelect: () => openDialog("difference") }] : []),
-    ...(pkg && !inBatch && !handedOver ? [{ key: "reset", label: "Reiniciar preparación", icon: <RotateCcw className="size-4" />, tone: "danger" as const, onSelect: () => openDialog("reset") }] : []),
+    ...(pkg && !inBatch && !handedOver && stage !== "handed_over" ? [{ key: "reset", label: "Reiniciar preparación", icon: <RotateCcw className="size-4" />, tone: "danger" as const, onSelect: () => openDialog("reset") }] : []),
   ]
   const shipmentItems: AdminRowMenuAction[] = [
     ...(shipment.created ? [{ key: "tracking", label: "Ver seguimiento", icon: <Truck className="size-4" />, onSelect: () => goTo(`/admin/pedidos/${orderId}?tab=envio`) }] : []),
   ]
   // Excepciones: sólo Super Admin, con motivo y auditoría.
-  const exceptionItems: AdminRowMenuAction[] = viewer.canForce && stage === "packing" && !shipment.created && !packingBlocked
+  const exceptionItems: AdminRowMenuAction[] = !local && viewer.canForce && stage === "packing" && !shipment.created && !packingBlocked
     ? [{ key: "force", label: "Generar envío con pickeo incompleto", icon: <AlertTriangle className="size-4" />, tone: "danger", onSelect: () => openDialog("force") }]
     : []
   const lastAdjustment = new Map(detail.adjustments.map((adjustment) => [adjustment.orderItemId, adjustment]))
@@ -291,7 +337,8 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
         {shipment.created && (shipment.tracking
           ? <span className="inline-flex items-center gap-1.5">Andreani: <AdminTrackingValue value={shipment.tracking} label={`seguimiento del pedido ${code}`} /></span>
           : <span>Andreani: envío {shipment.envioId}</span>)}
-        <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{DISPATCH_STAGE_LABELS[stage]}</AdminBadge>
+        {local && <span>{LOCAL_DELIVERY_NAME}</span>}
+        <AdminBadge tone={packingBlocked ? "danger" : DISPATCH_STAGE_TONE[stage]}>{stageLabel}</AdminBadge>
         {stage !== "ready" && <span>{units} de {detail.expectedUnits} unidades</span>}
       </div>
       <div className="dispatch-order-actions flex flex-wrap gap-2 px-3 py-2 sm:px-4" aria-label="Acciones secundarias">
@@ -322,13 +369,24 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
             cameraTitle={`Pickeo ${code}`} cameraHint="Encuadrá el código de barras del producto" continuousCamera feedback={feedback} />
           <LastScan feedback={feedback} />
         </div>}
-        {stage === "label" && <div className="dispatch-scanner dispatch-label-confirm min-w-0 space-y-1">
+        {local && localParcelsDefined && <LocalParcelList parcels={detail.parcels} />}
+        {local && stage === "label" && <div className="dispatch-scanner dispatch-label-confirm min-w-0 space-y-1" data-local-parcel-confirm="">
+          <p className="dispatch-subheading">Confirmar bultos · {local.preparation.confirmedParcels} de {local.preparation.parcelCount}</p>
+          <ScanField label="Escaneá el código BX-PKG de cada bulto" placeholder="Escaneá la etiqueta BEYONIX del bulto" submitLabel="Confirmar"
+            value={labelCode} onChange={setLabelCode} onScan={confirmParcel} busy={busy} disabled={packingBlocked}
+            autoFocus={dialog === null} camera={false} cameraTitle={`Bultos ${code}`} cameraHint="Encuadrá el código de la etiqueta BEYONIX" feedback={feedback} />
+        </div>}
+        {local && stage === "ready" && <p role="status" className="dispatch-label-confirmed flex flex-wrap items-center gap-2 text-sm font-bold">
+          <AdminBadge tone="success"><CheckCircle2 className="size-4" />Bultos confirmados</AdminBadge>
+          <span className="text-xs font-normal opacity-75">Marcalo En camino desde Entregas locales cuando se lo entregues al cadete.</span>
+        </p>}
+        {!local && stage === "label" && <div className="dispatch-scanner dispatch-label-confirm min-w-0 space-y-1">
           <p className="dispatch-subheading">Confirmar etiqueta</p>
           <ScanField label="Escaneá o escribí el seguimiento" placeholder="Escaneá o escribí el seguimiento" submitLabel="Confirmar"
             value={labelCode} onChange={setLabelCode} onScan={confirmLabel} busy={busy} disabled={packingBlocked}
             autoFocus={dialog === null} camera={false} cameraTitle={`Etiqueta ${code}`} cameraHint="Encuadrá el código de la etiqueta Andreani" feedback={feedback} />
         </div>}
-        {stage === "ready" && identified && <p role="status" className="dispatch-label-confirmed flex flex-wrap items-center gap-2 text-sm font-bold">
+        {!local && stage === "ready" && identified && <p role="status" className="dispatch-label-confirmed flex flex-wrap items-center gap-2 text-sm font-bold">
           <AdminBadge tone="success"><CheckCircle2 className="size-4" />Etiqueta confirmada</AdminBadge>
           {pkg?.identified_at && <span className="text-xs font-normal opacity-75">{dateTime(pkg.identified_at)}</span>}
         </p>}
@@ -360,6 +418,14 @@ export function OrderPreparationPanel({ orderId, onDone, onAdvance, footer }: {
       }} className="h-14 text-2xl font-black" />
       {validParcels ? <ParcelMeasuresEditor drafts={parcelDrafts} disabled={busy} estimate={shippingInfo.estimate} onChange={(drafts) => { setParcelDrafts(drafts); actionKey.current = null }} /> : null}
       {dialogError && <p role="alert" className="mt-3 text-sm font-bold text-red-300">{dialogError}</p>}
+    </AdminModal>
+    <AdminModal open={dialog === "local_parcels"} compact title="Definir bultos" description={`${code} · ${LOCAL_DELIVERY_NAME}: cantidad de bultos físicos. Cada uno lleva su etiqueta BEYONIX con código propio.`} onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2">
+      <AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton>
+      <AdminPrimaryButton disabled={busy || !validParcels} onClick={() => post({ action: "local_parcels", parcelCount: parcelValue }, () => { setDialog(null); setNotice("Bultos definidos. Imprimí las etiquetas BEYONIX y pegá cada una en su bulto.") })}>{busy ? "Guardando…" : "Confirmar bultos"}</AdminPrimaryButton>
+    </div>}>
+      <AdminTextInput title="Cantidad de bultos" placeholder="Ej.: 2" inputMode="numeric" value={parcelInput} onChange={(value) => { setParcelInput(value.replace(/\D/g, "").slice(0, 2)); actionKey.current = null }} className="h-14 text-2xl font-black" />
+      <p className="mt-2 text-xs text-white/60">Para cambiar la cantidad después, hay que reiniciar la preparación: las etiquetas nuevas tienen otro código.</p>
+      {dialogError && <p role="alert" className="mt-2 text-sm font-bold text-red-300">{dialogError}</p>}
     </AdminModal>
     <AdminModal open={dialog === "force"} compact title="Generar envío con pickeo incompleto" description={`Excepción de Super Admin: ${code} tiene ${units} de ${detail.expectedUnits} unidades pickeadas. Queda registrada con tu usuario y el motivo.`} onClose={() => setDialog(null)} footer={<div className="flex justify-end gap-2">
       <AdminButton onClick={() => setDialog(null)}>Cancelar</AdminButton>
@@ -402,6 +468,18 @@ export function ProductLine({ item, line, adjusted }: { item: DispatchSaleItem; 
     <td className="dispatch-product-price" data-label="Precio unitario">{price == null ? "—" : money(price)}</td>
     <td className="dispatch-product-total" data-label="Total">{price == null ? "—" : money(price * expected)}</td>
   </tr>
+}
+
+/** Envío BEYONIX: bultos del intento vigente con su código y si la etiqueta ya se escaneó. */
+function LocalParcelList({ parcels }: { parcels: OrderDispatchDetail["parcels"] }) {
+  return <ul className="dispatch-local-parcels mb-2 flex flex-wrap gap-2 text-xs" aria-label="Bultos del pedido">
+    {parcels.map((parcel) => <li key={parcel.id} data-local-parcel={parcel.barcode} data-confirmed={parcel.label_confirmed_at ? "true" : "false"}>
+      <AdminBadge tone={parcel.label_confirmed_at ? "success" : "warning"}>
+        {parcel.label_confirmed_at ? <CheckCircle2 className="size-3.5" /> : null}
+        Bulto {parcel.parcel_index}/{parcel.parcel_count} · <span className="font-mono">{parcel.barcode}</span>
+      </AdminBadge>
+    </li>)}
+  </ul>
 }
 
 /** Resultado del último escaneo, siempre visible junto al campo de lectura. */

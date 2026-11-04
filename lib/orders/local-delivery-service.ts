@@ -1,15 +1,17 @@
 import {
   getLocalDeliveryActionSourceEstados,
+  getLocalDeliveryPreparationError,
   getLocalDeliveryRetryError,
   getLocalDeliveryStage,
   getLocalDeliveryTransitionError,
   type LocalDeliveryAction,
   type LocalDeliveryOrderState,
+  type LocalDeliveryPreparation,
   type LocalDeliveryStage,
 } from "./local-delivery-status.ts"
 
 /**
- * Avance de Envío BEYONIX con efectos recuperables, sin migraciones:
+ * Avance de Envío BEYONIX con efectos recuperables:
  *
  * 1. Transición: un único UPDATE condicional (estado de origen, proveedor,
  *    pago confirmado y sin cancelación en el mismo WHERE). Si otra operación
@@ -216,6 +218,8 @@ export interface LocalDeliveryServiceDeps {
   authorizeEmail(orderId: number, expectedEstado: string): Promise<boolean>
   /** `true` sólo si el proveedor de email confirmó el envío. */
   sendStateEmail(order: LocalDeliveryOrderRecord): Promise<boolean>
+  /** Pickeo y bultos BX-PKG del intento vigente. Lanza si no se pudo leer. */
+  loadPreparation(orderId: number): Promise<LocalDeliveryPreparation>
   now(): string
 }
 
@@ -425,6 +429,12 @@ export function advanceLocalDelivery(
     if (!order) return { status: 404, body: { error: "No encontramos el pedido." } }
     const transitionError = getLocalDeliveryTransitionError(order, action)
     if (transitionError) return { status: 409, body: { error: transitionError } }
+    // En camino = el cadete se lleva los bultos: tienen que estar todos
+    // armados y con su etiqueta confirmada (la base lo vuelve a exigir).
+    if (action === "en_camino") {
+      const preparationError = getLocalDeliveryPreparationError(await deps.loadPreparation(orderId))
+      if (preparationError) return { status: 409, body: { error: preparationError } }
+    }
 
     const fromEstado = order.estado ?? ""
     if (!getLocalDeliveryActionSourceEstados(action).includes(fromEstado)) {

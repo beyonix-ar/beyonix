@@ -20,6 +20,8 @@ const orders = [
   { id: 11, estado: "pagado", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Ana Pérez", cliente_direccion: "Córdoba 1234", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: "3415550000" },
   { id: 12, estado: "en_camino", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Ñandú SRL", cliente_direccion: "Oroño 55", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
   { id: 13, estado: "entregado", delivered_at: "2026-11-03T14:00:00Z", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Luis", cliente_direccion: "Mitre 10", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null },
+  // Preparando sin todos los bultos confirmados: no puede salir con el cadete.
+  { id: 14, estado: "pagado", shipping_provider: "beyonix", financial_status: "payment_confirmed", paid_at: "2026-11-03T12:00:00Z", payment_status: "approved", payment_confirmed_amount: 45000, cliente_nombre: "Sofía", cliente_direccion: "Oroño 55", localidad: "ROSARIO", cp_destino: "2000", cliente_telefono: null, preparationError: "Falta confirmar 1 etiqueta BEYONIX." },
 ]
 // Efectos que fallaron y quedan para "Reintentar avisos".
 const pending = { 13: ["delivered_email"] }
@@ -82,8 +84,13 @@ for (const theme of ["dark", "light"] as const) for (const width of [390, 1280])
       assert.equal(await order(11).getAttribute("data-local-delivery-stage"), "preparing")
       assert.match(await order(11).innerText(), /BX-1011[\s\S]*Preparando[\s\S]*Ana Pérez · Córdoba 1234 · ROSARIO · CP 2000/i)
       assert.equal(await order(12).getAttribute("data-local-delivery-stage"), "in_transit")
-      // Sin acciones ni textos de Andreani (etiqueta, guía, Bulto, seguimiento).
-      assert.doesNotMatch(await panel.innerText(), /andreani|etiqueta|bulto|seguimiento/i)
+      // Sin acciones ni textos de Andreani (guía, seguimiento): bultos y etiquetas son los propios BEYONIX.
+      assert.doesNotMatch(await panel.innerText(), /andreani|guía|seguimiento/i)
+      // Faltan bultos confirmados: En camino deshabilitado, con el motivo y acceso a la preparación.
+      assert.match(await order(14).innerText(), /Falta confirmar 1 etiqueta BEYONIX/)
+      assert.equal(await order(14).getByRole("button", { name: "Marcar en camino" }).isDisabled(), true)
+      assert.equal(await order(14).getByRole("link", { name: "Preparar" }).getAttribute("href"), "/admin/despachos?order=14")
+      assert.equal(await order(11).getByRole("link", { name: "Ver preparación" }).count(), 1)
       // Sólo el próximo paso: Preparando no ofrece "Marcar entregado"; En camino no ofrece "Marcar en camino".
       assert.equal(await order(11).getByRole("button", { name: "Marcar entregado" }).count(), 0)
       assert.equal(await order(12).getByRole("button", { name: "Marcar en camino" }).count(), 0)

@@ -9,11 +9,13 @@ import {
   type CheckoutOrderShippingInput,
 } from "./checkout-order-creation.ts"
 import {
+  getLocalDeliveryPreparationError,
   getLocalDeliveryRetryError,
   getLocalDeliveryStage,
   getLocalDeliveryTransitionError,
   getNextLocalDeliveryAction,
   type LocalDeliveryOrderState,
+  type LocalDeliveryPreparation,
 } from "./local-delivery-status.ts"
 import {
   advanceLocalDelivery,
@@ -294,8 +296,10 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
     state: {} as Partial<Record<LocalDeliveryEffectState, number>>,
   }
   /** Hooks para simular otro proceso entre pasos. */
-  const hooks: { onReserve?: (attemptId: string) => void } = {}
+  const hooks: { onReserve?: (attemptId: string) => void; beforeTransition?: () => void } = {}
   let authorizations = 0
+  /** Pickeo y bultos del pedido (por defecto, listo para el cadete). */
+  const preparation: LocalDeliveryPreparation = { packageStatus: "prepared", parcelCount: 1, confirmedParcels: 1 }
   // Mismo WHERE que whereLocalDeliveryEligible en la ruta.
   const eligibleInDb = () => order.shipping_provider === "beyonix" && !order.cancelled_at && hasConfirmedPaymentEvidence(order)
   let clock = Date.parse("2026-11-03T15:00:00.000Z")
@@ -304,8 +308,11 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
     async loadOrder() { return { ...order } },
     async transitionOrder({ fromEstado, action, deliveredAt }) {
       await Promise.resolve()
-      // Mismo WHERE que el UPDATE real.
+      hooks.beforeTransition?.()
+      // Mismo WHERE que el UPDATE real; En camino además exige, al escribir,
+      // los bultos vigentes confirmados (mark_local_delivery_in_transit).
       if (order.estado !== fromEstado || !eligibleInDb()) return null
+      if (action === "en_camino" && getLocalDeliveryPreparationError(preparation)) return null
       order.estado = action
       if (deliveredAt) order.delivered_at = deliveredAt
       return { ...order }
@@ -322,6 +329,7 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
       rows.push({ effect, state, metadata, createdAt: now() })
       if (state === "reserved" && typeof metadata.attemptId === "string") hooks.onReserve?.(metadata.attemptId)
     },
+    async loadPreparation() { return { ...preparation } },
     async authorizeEmail(_orderId, expectedEstado) {
       await Promise.resolve()
       const ok = order.estado === expectedEstado && eligibleInDb()
@@ -358,7 +366,7 @@ function localDeliveryStore(initial: Partial<LocalDeliveryOrderRecord> = {}) {
   const completed = () => rows.filter((row) => row.state === "completed").map((row) => row.effect).sort()
   const rowsOf = (effect: LocalDeliveryEffect) => rows.filter((row) => row.effect === effect).map((row) => row.state)
   const advanceClock = (ms: number) => { clock += ms }
-  return { order, deps, rows, warranties, emails, failures, completed, rowsOf, advanceClock, hooks, authorizations: () => authorizations }
+  return { order, deps, rows, warranties, emails, failures, completed, rowsOf, advanceClock, hooks, preparation, authorizations: () => authorizations }
 }
 
 test("avance completo: cada efecto una sola vez (historial, garantía, email) y el costo del cadete en la auditoría de la entrega", async () => {
@@ -1001,4 +1009,72 @@ test("devoluciones siguen por sucursal Andreani: Envío BEYONIX es sólo la entr
   for (const file of ["lib/andreani/claim-shipments.ts", "lib/orders/claim-server.ts"]) {
     assert.doesNotMatch(readFileSync(file, "utf8"), /beyonix:|LOCAL_DELIVERY|local-delivery/, file)
   }
+})
+
+// ── En camino exige la preparación física completa ──────────────────────────
+
+test("En camino: sin preparación, pickeo incompleto, bultos sin definir o etiquetas sin confirmar => 409 sin efectos", async () => {
+  const cases: Array<[LocalDeliveryPreparation, RegExp]> = [
+    [{ packageStatus: null, parcelCount: null, confirmedParcels: 0 }, /Prepará el pedido en Despachos/],
+    [{ packageStatus: "preparing", parcelCount: null, confirmedParcels: 0 }, /Completá el pickeo/],
+    [{ packageStatus: "prepared", parcelCount: null, confirmedParcels: 0 }, /Definí los bultos/],
+    [{ packageStatus: "prepared", parcelCount: 2, confirmedParcels: 1 }, /Falta confirmar 1 etiqueta BEYONIX/],
+    [{ packageStatus: "prepared", parcelCount: 3, confirmedParcels: 0 }, /Faltan confirmar 3 etiquetas BEYONIX/],
+  ]
+  for (const [preparation, message] of cases) {
+    const store = localDeliveryStore()
+    Object.assign(store.preparation, preparation)
+    const result = await advanceLocalDelivery(store.deps, 7, "en_camino")
+    assert.equal(result.status, 409)
+    assert.match(result.body.error ?? "", message)
+    assert.equal(store.order.estado, "pagado")
+    assert.deepEqual(store.rows, [])
+    assert.deepEqual(store.emails, [])
+  }
+})
+
+test("En camino: todos los bultos confirmados => avanza; Entregado no vuelve a exigir bultos", async () => {
+  const store = localDeliveryStore()
+  Object.assign(store.preparation, { packageStatus: "prepared", parcelCount: 2, confirmedParcels: 2 })
+  assert.equal((await advanceLocalDelivery(store.deps, 7, "en_camino")).status, 200)
+  Object.assign(store.preparation, { packageStatus: null, parcelCount: null, confirmedParcels: 0 })
+  assert.equal((await advanceLocalDelivery(store.deps, 7, "entregado")).status, 200)
+})
+
+test("En camino: el guard de la base (bultos que cambian entre el chequeo y el UPDATE) es conflicto, no error", () => {
+  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8")
+  assert.match(route, /if \(error\?\.message\?\.includes\("LOCAL_DELIVERY_PARCELS_NOT_READY"\)\) return null/)
+  // Despliegue en dos pasos: A (estructural) no instala la guarda; B la activa después del deploy.
+  const migrationA = readFileSync("supabase/migrations/20261103120000_local_delivery_parcels_labels.sql", "utf8")
+  assert.doesNotMatch(migrationA, /create trigger guard_local_delivery_in_transit/)
+  const migrationB = readFileSync("supabase/migrations/20261103130000_local_delivery_in_transit_parcels_guard.sql", "utf8")
+  assert.match(migrationB, /create trigger guard_local_delivery_in_transit before update of estado on public\.ordenes/)
+})
+
+test("En camino: rearmado, bultos redefinidos o confirmación perdida entre la validación y el write => 409, sigue Preparando, sin efectos", async () => {
+  const races: Array<[string, Partial<LocalDeliveryPreparation>]> = [
+    ["rearmado (vuelve a pickeo)", { packageStatus: "preparing", parcelCount: null, confirmedParcels: 0 }],
+    ["rearmado con bultos nuevos sin confirmar", { packageStatus: "prepared", parcelCount: 3, confirmedParcels: 0 }],
+    ["un bulto deja de pertenecer al armado vigente", { packageStatus: "prepared", parcelCount: 2, confirmedParcels: 1 }],
+  ]
+  for (const [label, change] of races) {
+    const store = localDeliveryStore()
+    Object.assign(store.preparation, { packageStatus: "prepared", parcelCount: 2, confirmedParcels: 2 })
+    // La validación previa vio todo listo; otro proceso cambia la preparación antes del write.
+    store.hooks.beforeTransition = () => Object.assign(store.preparation, change)
+    const result = await advanceLocalDelivery(store.deps, 7, "en_camino")
+    assert.equal(result.status, 409, label)
+    assert.equal(store.order.estado, "pagado", label)
+    assert.deepEqual(store.rows, [], label)
+    assert.deepEqual(store.emails, [], label)
+  }
+})
+
+test("En camino: la ruta usa la RPC atómica (bultos verificados en el mismo write), no un UPDATE con snapshot previo", () => {
+  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8")
+  assert.match(route, /if \(action === "en_camino"\) \{[\s\S]*?\.rpc\("mark_local_delivery_in_transit", \{ p_order_id: orderId, p_from_estado: fromEstado, p_actor_id: actorId \}\)/)
+  const migrationA = readFileSync("supabase/migrations/20261103120000_local_delivery_parcels_labels.sql", "utf8")
+  const rpc = migrationA.slice(migrationA.indexOf("create or replace function public.mark_local_delivery_in_transit"))
+  assert.match(rpc, /from public\.ordenes where id = p_order_id for update;\s+if not found then return; end if;\s+perform 1 from public\.order_packages where order_id = p_order_id for update;/)
+  assert.match(rpc, /or not public\.local_delivery_parcels_ready\(p_order_id\) then\s+return;/)
 })

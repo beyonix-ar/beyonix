@@ -1,6 +1,8 @@
 import type { createAdminClient } from "@/lib/supabase/admin"
 import { compareParcelQuote } from "../shipping/shipping-pricing.ts"
 import { SHIPPING_STAGE_LABELS } from "../orders/shipping-stage.ts"
+import { getLocalDeliveryPreparationError, type LocalDeliveryPreparation } from "../orders/local-delivery-status.ts"
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
 
 export type DispatchAdmin = ReturnType<typeof createAdminClient>
 /** Identificación física del pedido preparado: etiqueta Andreani impresa (o, histórico, BX-PREP impresa o escrita a mano). */
@@ -14,7 +16,7 @@ export type DispatchVariantCandidate = { variantId: number; name: string | null;
 export type DispatchScanResult =
   | { requiresVariant: false; orderItemId: number; scanned: number; expected: number; status: string; duplicate: boolean }
   | { requiresVariant: true; productId: number; productName: string | null; candidates: DispatchVariantCandidate[]; status: string }
-export type DispatchParcel = { id: number; parcel_index: number; parcel_count: number; barcode: string; attempt_number: number; scanned?: boolean; weight_kg?: number | null; length_cm?: number | null; width_cm?: number | null; height_cm?: number | null }
+export type DispatchParcel = { id: number; parcel_index: number; parcel_count: number; barcode: string; attempt_number: number; scanned?: boolean; /** Envío BEYONIX: etiqueta propia escaneada en el bulto. */ label_confirmed_at?: string | null; weight_kg?: number | null; length_cm?: number | null; width_cm?: number | null; height_cm?: number | null }
 export type DispatchEstimatedParcel = { lengthCm: number; widthCm: number; heightCm: number; volumeCm3: number; weightKg: number }
 /** Estimación usada en checkout (referencia del operador) y recotización con bultos reales (sólo Admin). */
 export type DispatchShippingInfo = {
@@ -34,6 +36,26 @@ export const DISPATCH_VERIFICATION_METHOD_LABELS: Record<DispatchVerificationMet
   scanner: "Lector", camera: "Cámara", manual_code: "Código ingresado", manual_selection: "Confirmación manual", legacy_parcels: "Histórico · paquetes BX-PKG escaneados",
 }
 export type DispatchVerificationResult = { orderId: number; code: string; method: DispatchVerificationMethod; duplicate: boolean; expected: number; verified: number }
+/** Etiqueta Envío BEYONIX confirmada al escanear el BX-PKG del bulto (confirm_local_delivery_parcel). */
+export type LocalParcelConfirmation = { orderId: number; code: string; parcelIndex: number; parcelCount: number; confirmed: number; complete: boolean; duplicate: boolean }
+/** Acciones del pedido en Despachos (app/api/admin/dispatch/orders/[id]). */
+export const DISPATCH_ORDER_ACTIONS = ["start", "scan", "reset", "adjust", "ship", "confirm_label", "local_parcels", "confirm_parcel"] as const
+export type DispatchOrderAction = typeof DISPATCH_ORDER_ACTIONS[number]
+const ANDREANI_ONLY_ACTIONS: readonly DispatchOrderAction[] = ["ship", "confirm_label"]
+const LOCAL_DELIVERY_ONLY_ACTIONS: readonly DispatchOrderAction[] = ["local_parcels", "confirm_parcel"]
+
+/**
+ * Circuitos separados por proveedor sobre el MISMO pickeo: Envío BEYONIX nunca
+ * crea envío ni confirma etiqueta Andreani; Andreani nunca define bultos ni
+ * confirma etiquetas BEYONIX. Un pedido local que ya salió no se rearma.
+ */
+export function dispatchActionProviderError(localDelivery: boolean, action: DispatchOrderAction, estado: string | null) {
+  if (localDelivery && ANDREANI_ONLY_ACTIONS.includes(action)) return "Este pedido usa Envío BEYONIX: no lleva envío ni etiqueta Andreani."
+  if (!localDelivery && LOCAL_DELIVERY_ONLY_ACTIONS.includes(action)) return "Los bultos con etiqueta BEYONIX son sólo para pedidos con Envío BEYONIX."
+  if (localDelivery && action === "reset" && ["en_camino", "entregado"].includes(estado ?? "")) return "El pedido ya salió con el cadete: no se puede rearmar."
+  return null
+}
+
 /** Etiqueta Andreani confirmada al leer su seguimiento (confirm_order_andreani_label). */
 export type DispatchLabelConfirmation = { orderId: number; code: string; duplicate: boolean; confirmedAt: string | null }
 export type DispatchOrder = { id: number; estado: string; financial_status: string | null; payment_status: string | null; invoice_status: string | null; total?: number | null; shipping_provider: string | null; envio_proveedor: string | null; cancelled_at: string | null; andreani_handed_over_at: string | null; andreani_handed_over_batch_id: number | null; created_at: string; andreani_created_at?: string | null; cliente_nombre: string | null; andreani_envio_id: string | null; andreani_tracking: string | null; andreani_creation_status: string | null }
@@ -128,6 +150,27 @@ export function dispatchStage(input: { package: StagePackage | null; shipmentCre
   if (input.package.status === "preparing") return "packing"
   if (!input.shipmentCreated) return "shipment"
   return input.package.identification_method ? "ready" : "label"
+}
+
+/**
+ * Envío BEYONIX reutiliza las etapas con su propio significado: pickeo →
+ * "shipment" (pedido completo: faltan los bultos) → "label" (falta confirmar
+ * etiquetas BEYONIX) → "ready" (listo para entregar al cadete). Nunca hay
+ * envío, etiqueta ni Bulto general Andreani.
+ */
+export function localDispatchStage(pkg: Pick<DispatchPackage, "status"> | null, preparation: LocalDeliveryPreparation, dispatched: boolean): DispatchStage {
+  if (dispatched) return "handed_over"
+  if (!pkg) return "pending"
+  if (pkg.status === "preparing") return "packing"
+  if (!preparation.parcelCount) return "shipment"
+  return getLocalDeliveryPreparationError(preparation) ? "label" : "ready"
+}
+
+export const LOCAL_DISPATCH_STAGE_LABELS: Partial<Record<DispatchStage, string>> = {
+  shipment: "Pedido completo · faltan bultos",
+  label: "Falta confirmar etiquetas",
+  ready: "Listo para el cadete",
+  handed_over: "Entregado al cadete",
 }
 
 /** Listo para el Bulto general: pickeo completo, envío Andreani creado y etiqueta confirmada (escaneada). */
@@ -291,6 +334,13 @@ export function dispatchError(error: { message: string; details?: string | null 
     DISPATCH_RESOLUTION_CODE_IS_PRODUCT: "Ese código es de un producto. Escaneá la etiqueta Andreani del pedido.",
     DISPATCH_RESOLUTION_LABEL_REQUIRED: "Este pedido ya estaba preparado: escaneá su etiqueta Andreani, no el número de pedido.",
     DISPATCH_HANDOVER_CODE_MISMATCH: "El código no corresponde a este Bulto.",
+    DISPATCH_LOCAL_DELIVERY_ONLY: "Los bultos con etiqueta BEYONIX son sólo para pedidos con Envío BEYONIX.",
+    DISPATCH_LOCAL_DELIVERY_NO_ANDREANI: "Este pedido usa Envío BEYONIX: no lleva etiqueta Andreani.",
+    DISPATCH_LOCAL_PARCELS_PENDING: "Definí los bultos del pedido antes de confirmar etiquetas.",
+    DISPATCH_LOCAL_PARCELS_DEFINED: "Los bultos ya están definidos. Para cambiar la cantidad, reiniciá la preparación (las etiquetas nuevas tendrán otro código).",
+    DISPATCH_LOCAL_PARCEL_CODE_REQUIRED: "Escaneá el código BX-PKG de la etiqueta BEYONIX del bulto.",
+    DISPATCH_LOCAL_ALREADY_DISPATCHED: "El pedido ya salió con el cadete: no se puede rearmar.",
+    LOCAL_DELIVERY_PARCELS_NOT_READY: "Faltan bultos o etiquetas BEYONIX por confirmar.",
   }
   const code = Object.keys(messages).sort((left, right) => right.length - left.length).find((key) => error.message.includes(key))
   let message = code ? messages[code] : error.message.includes("dispatch_batch_items_active_order_unique") ? "Este pedido ya pertenece a otro Bulto general." : fallback
@@ -387,9 +437,26 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const { shipping_estimate: estimate, shipping_provider_quote_amount: checkoutQuote, shipping_parcel_quote_status: quoteStatus, shipping_parcel_quote_amount: quoteAmount, shipping_parcel_quote_request_key: quoteKey, total, ...orderFields } = orderResult.data as unknown as DispatchOrder & DispatchOrderShippingRow
   const order: DispatchOrder = options.includeCosts ? { ...orderFields, total: total == null ? null : Number(total) } : orderFields
   const shipping = dispatchShippingInfo({ estimate, checkoutQuote, quoteStatus, quoteAmount, quoteKey, requestKey: (pkg as { parcels_request_key?: string | null } | null)?.parcels_request_key ?? null, includeCosts: Boolean(options.includeCosts) })
-  const shipmentCreated = andreaniShipmentCreated(order)
-  const stage = dispatchStage({ package: pkg, shipmentCreated, batchStatus: batch?.status ?? null, handedOver: Boolean(order.andreani_handed_over_at) })
-  const shipment = { created: shipmentCreated, envioId: order.andreani_envio_id, tracking: order.andreani_tracking, creationStatus: order.andreani_creation_status }
+  // Envío BEYONIX: nunca usa envío, etiqueta ni Bulto Andreani (ni con un
+  // andreani_envio_id residual); su avance es pickeo → bultos → etiquetas.
+  const localDelivery = isLocalDeliveryOrder(order)
+  let orderParcels = pkg ? parcels.get(pkg.id) ?? [] : []
+  if (localDelivery && orderParcels.length) {
+    const confirmations = await admin.from("order_package_parcels").select("id,label_confirmed_at").in("id", orderParcels.map((parcel) => parcel.id))
+    if (confirmations.error) throw confirmations.error
+    const confirmedAt = new Map((confirmations.data ?? []).map((row) => [row.id, row.label_confirmed_at as string | null]))
+    orderParcels = orderParcels.map((parcel) => ({ ...parcel, label_confirmed_at: confirmedAt.get(parcel.id) ?? null }))
+  }
+  const localPreparation: LocalDeliveryPreparation | null = localDelivery
+    ? { packageStatus: pkg?.status ?? null, parcelCount: pkg?.parcel_count ?? null, confirmedParcels: orderParcels.filter((parcel) => parcel.label_confirmed_at).length }
+    : null
+  const shipmentCreated = !localDelivery && andreaniShipmentCreated(order)
+  const stage = localPreparation
+    ? localDispatchStage(pkg, localPreparation, ["en_camino", "entregado"].includes(order.estado))
+    : dispatchStage({ package: pkg, shipmentCreated, batchStatus: batch?.status ?? null, handedOver: Boolean(order.andreani_handed_over_at) })
+  const shipment = localDelivery
+    ? { created: false, envioId: null, tracking: null, creationStatus: null }
+    : { created: shipmentCreated, envioId: order.andreani_envio_id, tracking: order.andreani_tracking, creationStatus: order.andreani_creation_status }
   const cancelled = order.estado === "cancelado" || order.cancelled_at != null || ["cancellation_requested", "refund_pending", "refunded"].includes(order.financial_status ?? "")
   const holdRow = holdResult.data as HoldRow | null
   const hold = holdRow ? dispatchHold(holdRow, holdRow.batch_id && holdRow.batch_id === batch?.id ? batch.code : null) : null
@@ -397,11 +464,13 @@ export async function getOrderDispatch(admin: DispatchAdmin, orderId: number, op
   const packingBlock = blocks.find(blocksPacking)
   // Con diferencias registradas, lo que sale es lo esperado por renglón (no lo vendido).
   const expectedUnits = pkg ? lines.reduce((sum, line) => sum + line.expected_quantity, 0) : (itemsResult.data ?? []).reduce((sum, item) => sum + Number(item.cantidad), 0)
-  return { order, package: pkg, lines, saleItems, parcels: pkg ? parcels.get(pkg.id) ?? [] : [], stage, itemCount: itemsResult.data?.length ?? 0, expectedUnits, membership, batch, shipping, hold, shipment, adjustments,
+  return { order, package: pkg, lines, saleItems, parcels: orderParcels, stage,
+    localDelivery: localPreparation ? { preparation: localPreparation, preparationError: getLocalDeliveryPreparationError(localPreparation) } : null, itemCount: itemsResult.data?.length ?? 0, expectedUnits, membership, batch, shipping, hold, shipment, adjustments,
     blocked: cancelled || blocks.length > 0, blockReason: hold ? "Cancelado con pickeo iniciado — requiere resolución física" : cancelled ? "Pedido cancelado — no requiere preparación" : blocks[0] ? dispatchBlockReason((packingBlock ?? blocks[0]).reason) : null,
     // Lo que frena el pickeo. Factura y envío pendientes sólo se informan.
     packingBlocked: cancelled || Boolean(packingBlock),
-    pendingBeforeDispatch: blocks.filter((block) => !blocksPacking(block)).map((block) => dispatchBlockReason(block.reason)) }
+    // Envío BEYONIX queda "envío pendiente" para Andreani a propósito: no se informa.
+    pendingBeforeDispatch: blocks.filter((block) => !blocksPacking(block) && !(localDelivery && block.reason === "shipment_pending")).map((block) => dispatchBlockReason(block.reason)) }
 }
 
 type RandomScanRow = { order_item_id: number; physical_variant_id: number | null; variant_identification: string | null }

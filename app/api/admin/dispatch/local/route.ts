@@ -1,7 +1,12 @@
 import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { sendOrderStateEmail } from "@/lib/orders/order-status-notifications"
 import { startPendingItemWarranties } from "@/lib/orders/warranty-activation"
-import { getLocalDeliveryStage, isLocalDeliveryAction } from "@/lib/orders/local-delivery-status"
+import {
+  getLocalDeliveryPreparationError,
+  getLocalDeliveryStage,
+  isLocalDeliveryAction,
+  type LocalDeliveryPreparation,
+} from "@/lib/orders/local-delivery-status"
 import {
   advanceLocalDelivery,
   getMissingLocalDeliveryEffects,
@@ -19,8 +24,8 @@ import {
 import { LOCAL_DELIVERY_PROVIDER } from "@/lib/shipping/local-delivery"
 import { CONFIRMED_PAYMENT_STATUSES } from "@/lib/orders/order-payment-status"
 
-// Envío BEYONIX: circuito local mínimo, separado de Andreani (sin etiqueta,
-// guía ni Bulto). Lo opera cualquier operador interno: a diferencia de
+// Envío BEYONIX: circuito local mínimo, separado de Andreani (sin guía ni
+// Bulto general Andreani). Lo opera cualquier operador interno: a diferencia de
 // Andreani, nadie más informa "en camino" o "entregado".
 const LIST_COLUMNS =
   "id,estado,created_at,paid_at,delivered_at,cliente_nombre,cliente_telefono,cliente_direccion,localidad,cp_destino"
@@ -78,6 +83,35 @@ function whereLocalDeliveryEligible<Q extends EligibilityFilterable<Q>>(query: Q
     .in("payment_status", CONFIRMED_PAYMENT_STATUSES)
 }
 
+const NO_PREPARATION: LocalDeliveryPreparation = { packageStatus: null, parcelCount: null, confirmedParcels: 0 }
+
+/** Pickeo y bultos confirmados del intento vigente de cada pedido. Lanza si no se pudo leer. */
+async function loadLocalPreparations(admin: AdminClient, orderIds: number[]) {
+  const preparations = new Map<number, LocalDeliveryPreparation>()
+  if (!orderIds.length) return preparations
+  const packages = await admin.from("order_packages").select("id,order_id,status,attempt_number,parcel_count").in("order_id", orderIds)
+  if (packages.error) throw new Error("PREPARATION_READ_FAILED")
+  const rows = (packages.data ?? []) as Array<{ id: number; order_id: number; status: "preparing" | "prepared"; attempt_number: number; parcel_count: number | null }>
+  const defined = rows.filter((row) => row.parcel_count)
+  const confirmed = new Map<number, number>()
+  if (defined.length) {
+    const parcels = await admin.from("order_package_parcels").select("package_id,attempt_number,parcel_count")
+      .in("package_id", defined.map((row) => row.id)).not("label_confirmed_at", "is", null)
+    if (parcels.error) throw new Error("PREPARATION_READ_FAILED")
+    const current = new Map(defined.map((row) => [row.id, row]))
+    for (const parcel of parcels.data ?? []) {
+      const pkg = current.get(parcel.package_id)
+      if (pkg && parcel.attempt_number === pkg.attempt_number && parcel.parcel_count === pkg.parcel_count) {
+        confirmed.set(pkg.id, (confirmed.get(pkg.id) ?? 0) + 1)
+      }
+    }
+  }
+  for (const row of rows) {
+    preparations.set(row.order_id, { packageStatus: row.status, parcelCount: row.parcel_count, confirmedParcels: confirmed.get(row.id) ?? 0 })
+  }
+  return preparations
+}
+
 function effectRecords(rows: Array<{ metadata: unknown; created_at: string }>) {
   return rows
     .map((row) => parseLocalDeliveryEffectRecord(row.metadata, row.created_at))
@@ -97,7 +131,20 @@ function serviceDeps(admin: AdminClient, actorId: string): LocalDeliveryServiceD
       return data as LocalDeliveryOrderRecord | null
     },
     async transitionOrder({ orderId, fromEstado, action, deliveredAt }) {
-      // Atómico: estado de origen, proveedor, evidencia de pago y sin
+      if (action === "en_camino") {
+        // Preparando → En camino en una sola operación de la base: bajo lock
+        // del pedido y su preparación vuelve a exigir proveedor, estado, pago,
+        // sin cancelación y TODOS los bultos del armado vigente confirmados.
+        // Un rearmado o cambio de bultos entre la validación y el write => 0 filas.
+        const { data, error } = await admin
+          .rpc("mark_local_delivery_in_transit", { p_order_id: orderId, p_from_estado: fromEstado, p_actor_id: actorId })
+          .select(ORDER_COLUMNS)
+          .maybeSingle()
+        if (error?.message?.includes("LOCAL_DELIVERY_PARCELS_NOT_READY")) return null
+        if (error) throw new Error("ORDER_TRANSITION_FAILED")
+        return data as LocalDeliveryOrderRecord | null
+      }
+      // Entregado: estado de origen, proveedor, evidencia de pago y sin
       // cancelación tienen que seguir siendo ciertos al escribir.
       const query = admin
         .from("ordenes")
@@ -107,6 +154,9 @@ function serviceDeps(admin: AdminClient, actorId: string): LocalDeliveryServiceD
       const { data, error } = await whereLocalDeliveryEligible<typeof query>(query)
         .select(ORDER_COLUMNS)
         .maybeSingle()
+      // El guard de la base (bultos sin confirmar entre el chequeo y el UPDATE)
+      // es un conflicto, no un error técnico: no avanza ni dispara efectos.
+      if (error?.message?.includes("LOCAL_DELIVERY_PARCELS_NOT_READY")) return null
       if (error) throw new Error("ORDER_TRANSITION_FAILED")
       return data as LocalDeliveryOrderRecord | null
     },
@@ -146,6 +196,9 @@ function serviceDeps(admin: AdminClient, actorId: string): LocalDeliveryServiceD
       return data !== null
     },
     sendStateEmail: (order) => sendOrderStateEmail(order),
+    async loadPreparation(orderId) {
+      return (await loadLocalPreparations(admin, [orderId])).get(orderId) ?? NO_PREPARATION
+    },
     now: () => new Date().toISOString(),
   }
 }
@@ -186,13 +239,22 @@ export async function GET(request: Request) {
   for (const item of warranties.data ?? []) {
     if (isPendingWarrantyItem(item)) pendingWarranties.set(item.orden_id, (pendingWarranties.get(item.orden_id) ?? 0) + 1)
   }
+  let preparations: Map<number, LocalDeliveryPreparation>
+  try {
+    preparations = await loadLocalPreparations(auth.admin, rows.filter((row) => getLocalDeliveryStage(row) === "preparing").map((row) => row.id))
+  } catch {
+    return Response.json({ error: "No se pudieron cargar las entregas locales." }, { status: 500 })
+  }
 
   return Response.json({
     orders: rows.map((row) => {
       const stage = getLocalDeliveryStage(row)
+      const preparation = preparations.get(row.id) ?? NO_PREPARATION
       return {
         ...row,
         stage,
+        // Preparando: qué falta (pickeo, bultos, etiquetas) para entregarlo al cadete.
+        ...(stage === "preparing" ? { preparation, preparationError: getLocalDeliveryPreparationError(preparation) } : {}),
         pendingEffects: getMissingLocalDeliveryEffects(
           stage,
           summarizeLocalDeliveryEffects(effectRecords(rowsByOrder.get(row.id) ?? []), nowMs),

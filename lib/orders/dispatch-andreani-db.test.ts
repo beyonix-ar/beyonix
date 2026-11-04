@@ -36,6 +36,10 @@ const MIGRATIONS = [
   "supabase/migrations/20261017110000_super_admin_force_cancellation.sql",
 ]
 const LABEL_SCAN_MIGRATION = "supabase/migrations/20261021100000_dispatch_andreani_label_scan_confirmation.sql"
+const LOCAL_DELIVERY_MIGRATIONS = [
+  "supabase/migrations/20261103120000_local_delivery_parcels_labels.sql",
+  "supabase/migrations/20261103130000_local_delivery_in_transit_parcels_guard.sql",
+]
 
 /** legacy: hasta 20261017110000, donde imprimir la etiqueta identificaba el pedido. */
 async function setup(options: { legacy?: boolean } = {}) {
@@ -68,7 +72,11 @@ async function setup(options: { legacy?: boolean } = {}) {
       (1,1031,1,11,3,12500.50),(2,1031,2,null,1,8000),(3,1032,1,12,1,9000),(4,1033,1,12,1,9000);
   `)
   await db.exec("select refresh_inventory_stock(1); select refresh_inventory_stock(2);")
-  if (!options.legacy) await db.exec(read(LABEL_SCAN_MIGRATION))
+  if (!options.legacy) {
+    await db.exec(read(LABEL_SCAN_MIGRATION))
+    // Envío BEYONIX en Despachos: Andreani tiene que seguir funcionando igual.
+    for (const file of LOCAL_DELIVERY_MIGRATIONS) await db.exec(read(file))
+  }
   return db
 }
 

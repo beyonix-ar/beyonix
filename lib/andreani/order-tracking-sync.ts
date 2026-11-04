@@ -4,6 +4,7 @@ import type { createAdminClient } from "../supabase/admin.ts"
 import { appendOrderAuditEvent, type OrderAuditActorType } from "../orders/order-audit.ts"
 import { sendOrderStateEmail } from "../orders/order-status-notifications.ts"
 import { activatePendingItemWarranties } from "../orders/warranty-activation.ts"
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
 
 import {
   AndreaniError,
@@ -45,11 +46,32 @@ export interface AndreaniOrderTrackingRow {
   cliente_nombre: string | null
   tracking_number: string | null
   tracking_url: string | null
+  /** Envío BEYONIX nunca se sincroniza con Andreani, aunque tenga un envío residual. */
+  shipping_provider?: string | null
+  envio_proveedor?: string | null
+}
+
+/**
+ * Proveedor Andreani canónico (lower(coalesce(shipping_provider,
+ * envio_proveedor)) = 'andreani', igual que la base y la creación del envío)
+ * como alternativas de un or=() de PostgREST. Todo write derivado de una
+ * respuesta Andreani lo exige EN EL MISMO WHERE: si el pedido pasó a Envío
+ * BEYONIX mientras se esperaba a Andreani, el UPDATE afecta 0 filas.
+ */
+const ANDREANI_PROVIDER_CONDITIONS = [
+  "shipping_provider.ilike.andreani",
+  "and(shipping_provider.is.null,envio_proveedor.ilike.andreani)",
+] as const
+export const ANDREANI_PROVIDER_FILTER = ANDREANI_PROVIDER_CONDITIONS.join(",")
+
+/** (alguna de `alternatives`) Y proveedor Andreani, en un único or=() (sin combinar dos `.or()`). */
+export function withAndreaniProvider(alternatives: readonly string[]) {
+  return alternatives.flatMap((alternative) => ANDREANI_PROVIDER_CONDITIONS.map((provider) => `and(${alternative},${provider})`)).join(",")
 }
 
 /** Columnas que necesita `syncAndreaniOrderTracking` (cron y botón "Consultar"). */
 export const ANDREANI_ORDER_TRACKING_SELECT =
-  "id, estado, delivered_at, andreani_tracking, andreani_envio_id, andreani_creation_environment, shipping_type, cliente_email, cliente_nombre, tracking_number, tracking_url"
+  "id, estado, delivered_at, andreani_tracking, andreani_envio_id, andreani_creation_environment, shipping_type, cliente_email, cliente_nombre, tracking_number, tracking_url, shipping_provider, envio_proveedor"
 
 export interface AndreaniOrderTrackingSnapshot {
   logisticsEstado: string
@@ -155,6 +177,8 @@ export interface AndreaniOrderTrackingSyncResult {
   newEstado: AndreaniAutoOrderTransition | null
   /** Eventos que esta consulta agregó al historial (vacío si ya estaban). */
   newHistoryEvents: AndreaniTrackingHistoryEvent[]
+  /** El pedido dejó de ser Andreani durante la consulta: no se escribió nada. */
+  providerChanged?: boolean
 }
 
 /**
@@ -174,6 +198,10 @@ export async function syncAndreaniOrderTracking(
     clientOptions?: AndreaniClientOptions
   },
 ): Promise<AndreaniOrderTrackingSyncResult> {
+  // Un andreani_envio_id residual nunca mueve un pedido Envío BEYONIX.
+  if (isLocalDeliveryOrder(order)) {
+    throw new AndreaniError("VALIDATION_ERROR", "Este pedido usa Envío BEYONIX: no tiene seguimiento Andreani.")
+  }
   const snapshot = await fetchAndreaniOrderTrackingSnapshot(order, options.clientOptions)
   const checkedAt = new Date().toISOString()
 
@@ -200,10 +228,11 @@ export async function syncAndreaniOrderTracking(
   let query = admin.from("ordenes").update(updatePayload as never)
     .eq("id", order.id).eq("estado", order.estado)
   // La comparación ocurre en el UPDATE: una respuesta atrasada no puede
-  // reemplazar eventos más recientes persistidos por otro admin o el cron.
+  // reemplazar eventos más recientes persistidos por otro admin o el cron,
+  // y el pedido tiene que seguir siendo Andreani al escribir.
   query = eventAt
-    ? query.or(`andreani_tracking_event_at.is.null,andreani_tracking_event_at.lte.${eventAt}`)
-    : query.is("andreani_tracking_event_at", null)
+    ? query.or(withAndreaniProvider(["andreani_tracking_event_at.is.null", `andreani_tracking_event_at.lte.${eventAt}`]))
+    : query.is("andreani_tracking_event_at", null).or(ANDREANI_PROVIDER_FILTER)
 
   const { data, error } = await query
     .select("id, estado, delivered_at, cliente_email, cliente_nombre, tracking_number, tracking_url")
@@ -245,6 +274,14 @@ export async function syncAndreaniOrderTracking(
     await sendOrderStateEmail(data)
   }
 
+  // Historial y auditoría posteriores sólo si el pedido SIGUE siendo Andreani
+  // (pudo pasar a Envío BEYONIX durante la consulta o después del UPDATE).
+  // Un conflicto de estado/evento en un pedido Andreani conserva el
+  // comportamiento anterior (el historial se registra igual).
+  if (!await isStillAndreaniOrder(admin, order.id)) {
+    return { snapshot, checkedAt, statusChanged, newEstado: statusChanged ? autoTransition : null, newHistoryEvents: [], providerChanged: true }
+  }
+
   const historyScope = { orderId: order.id, tracking: snapshot.resolvedTracking }
   const historyEvents = collectAndreaniTrackingHistoryEvents(historyScope, snapshot)
   // La transición se atribuye al primer evento (cronológico) que prueba el
@@ -276,6 +313,13 @@ export async function syncAndreaniOrderTracking(
   }
 }
 
+/** Relee con el filtro canónico: `true` sólo si el pedido sigue siendo Andreani. Lanza si no se pudo leer. */
+async function isStillAndreaniOrder(admin: AdminClient, orderId: number) {
+  const { data, error } = await admin.from("ordenes").select("id").eq("id", orderId).or(ANDREANI_PROVIDER_FILTER).maybeSingle()
+  if (error) throw new AndreaniError("REQUEST_FAILED", "Andreani respondió, pero no se pudo verificar el pedido.")
+  return Boolean(data)
+}
+
 /**
  * Evento que BEYONIX no sabe interpretar: no cambia `ordenes.estado` (el
  * resto del tracking sigue aplicándose), queda crudo en el historial, en un
@@ -294,6 +338,10 @@ async function flagUnrecognizedOrderTrackingEvents(
   if (unrecognized.length === 0) return
   logUnrecognizedAndreaniEvents(scope, unrecognized)
 
+  // Ni marca de revisión ni auditoría de evento Andreani sobre un pedido que
+  // dejó de ser Andreani mientras se guardaba el historial.
+  if (!await isStillAndreaniOrder(admin, orderId)) return
+
   const [first] = unrecognized
   const { error } = await admin
     .from("ordenes")
@@ -303,6 +351,7 @@ async function flagUnrecognizedOrderTrackingEvents(
     } as never)
     .eq("id", orderId)
     .is("andreani_tracking_review_event", null)
+    .or(ANDREANI_PROVIDER_FILTER)
   if (error) {
     console.error("ANDREANI_TRACKING_REVIEW_FLAG_ERROR", { orderId, message: error.message })
   }
