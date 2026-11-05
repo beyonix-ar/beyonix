@@ -40,6 +40,12 @@ export const LOCAL_DELIVERY_LABEL_TIERS: readonly LocalDeliveryLabelLayout[] = [
 /**
  * Geometría en mm (la usa el CSS de la etiqueta: misma fuente de verdad).
  * Alto: 1,2 + 5,4 (cabecera) + 0,6 + 29,2 (cuerpo) + 0,6 + 9 (barras) + 0,6 + 3 (código) + 1,2 = 50,8.
+ * QR de gestión de entrega del pedido, dos ubicaciones (nunca se sacrifica un
+ * dato de entrega para meterlo):
+ * - "side" (preferida): 18 mm a la derecha de los datos, separado 1,5 mm; el
+ *   ancho útil de los textos descuenta esa columna.
+ * - "footer" (sólo si los datos no entran al lado del QR): 12,6 mm a la
+ *   derecha de las barras y el código, y los datos recuperan el ancho completo.
  */
 export const LOCAL_DELIVERY_LABEL_GEOMETRY = {
   paddingBlockMm: 1.2,
@@ -54,13 +60,27 @@ export const LOCAL_DELIVERY_LABEL_GEOMETRY = {
   fieldLabelPt: 5,
   columnGapMm: 1.5,
   rowGapMm: 0.5,
+  qrSizeMm: 18,
+  qrGapMm: 1.5,
+  qrCaptionPt: 5,
+  qrFooterSizeMm: 12.6,
 } as const
+
+export type LocalDeliveryQrPlacement = "side" | "footer"
+
+/** Escalón de textos elegido y ubicación del QR. */
+export interface LocalDeliveryLabelFit extends LocalDeliveryLabelLayout {
+  qr: LocalDeliveryQrPlacement
+}
 
 const G = LOCAL_DELIVERY_LABEL_GEOMETRY
 const PT_TO_MM = 25.4 / 72
-const VALUE_WIDTH_MM = 101.6 - 2 * G.paddingInlineMm - G.fieldLabelWidthMm - G.columnGapMm
+const FULL_VALUE_WIDTH_MM = 101.6 - 2 * G.paddingInlineMm - G.fieldLabelWidthMm - G.columnGapMm
 /** Margen de seguridad: ancho útil al 94 % y 0,8 mm de alto libre. */
-const WRAP_WIDTH_MM = VALUE_WIDTH_MM * 0.94
+const WRAP_WIDTH_MM: Record<LocalDeliveryQrPlacement, number> = {
+  side: (FULL_VALUE_WIDTH_MM - G.qrSizeMm - G.qrGapMm) * 0.94,
+  footer: FULL_VALUE_WIDTH_MM * 0.94,
+}
 const HEIGHT_BUDGET_MM = G.bodyHeightMm - 0.8
 
 // Anchos de Arial Bold en milésimas de em. Letras acentuadas = su base.
@@ -81,7 +101,7 @@ function charWidthEm(char: string) {
 }
 
 /** Líneas que ocupa `text` en `widthMm` a `fontPt` (corte por palabras; una palabra más larga que la línea se parte). */
-export function estimateLabelLines(text: string, fontPt: number, widthMm = WRAP_WIDTH_MM) {
+export function estimateLabelLines(text: string, fontPt: number, widthMm = WRAP_WIDTH_MM.side) {
   const maxEm = widthMm / (fontPt * PT_TO_MM)
   const space = charWidthEm(" ")
   let lines = 1
@@ -127,10 +147,11 @@ const LOCAL_DELIVERY_NO_PHONE = "—"
 export const localDeliveryPhoneText = (phone: string | null) => phone ?? LOCAL_DELIVERY_NO_PHONE
 
 /** Alto estimado (mm) del cuerpo con un escalón dado. */
-export function estimateLocalDeliveryBodyHeight(fields: LocalDeliveryLabelFields, layout: LocalDeliveryLabelLayout) {
+export function estimateLocalDeliveryBodyHeight(fields: LocalDeliveryLabelFields, layout: LocalDeliveryLabelLayout, qr: LocalDeliveryQrPlacement = "side") {
+  const width = WRAP_WIDTH_MM[qr]
   const labelRow = G.fieldLabelPt * PT_TO_MM * 1.1
   const row = (text: string, fontPt: number) =>
-    Math.max(labelRow, estimateLabelLines(text, fontPt) * fontPt * PT_TO_MM * layout.lineHeight)
+    Math.max(labelRow, estimateLabelLines(text, fontPt, width) * fontPt * PT_TO_MM * layout.lineHeight)
   const rows = [
     row(fields.recipient, layout.recipient),
     row(fields.address, layout.address),
@@ -142,6 +163,10 @@ export function estimateLocalDeliveryBodyHeight(fields: LocalDeliveryLabelFields
 }
 
 /** El escalón más grande en el que entra todo; `null` si ni el mínimo alcanza. */
-export function fitLocalDeliveryLabel(fields: LocalDeliveryLabelFields): LocalDeliveryLabelLayout | null {
-  return LOCAL_DELIVERY_LABEL_TIERS.find((layout) => estimateLocalDeliveryBodyHeight(fields, layout) <= HEIGHT_BUDGET_MM) ?? null
+export function fitLocalDeliveryLabel(fields: LocalDeliveryLabelFields): LocalDeliveryLabelFit | null {
+  for (const qr of ["side", "footer"] as const) {
+    const layout = LOCAL_DELIVERY_LABEL_TIERS.find((tier) => estimateLocalDeliveryBodyHeight(fields, tier, qr) <= HEIGHT_BUDGET_MM)
+    if (layout) return { ...layout, qr }
+  }
+  return null
 }

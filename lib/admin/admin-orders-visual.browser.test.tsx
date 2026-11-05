@@ -960,3 +960,40 @@ test("CSS: sin guerra de especificidad -- exclusiones semánticas explícitas", 
   const controls = readFileSync("app/admin/components/admin-controls.tsx", "utf8")
   assert.match(controls, /className=\{wrapperClassName \? `relative block \$\{wrapperClassName\}` : "relative block w-full"\}/)
 })
+
+// ───────────────────── Envío BEYONIX: subestado local ─────────────────────
+
+const LOCAL = { shipping_provider: "beyonix", envio_proveedor: null, estado: "en_camino", invoice_status: "authorized" }
+const LOCAL_PEDIDOS = [
+  order(31, { ...LOCAL, local_delivery_outcome: { status: "returning", failedAttempts: 2, reservation: null } }),
+  order(32, { ...LOCAL, local_delivery_outcome: { status: "returned", failedAttempts: 2, reservation: { status: "active", expiresAt: "2099-11-09T03:00:00.000Z" } } }),
+  order(33, { ...LOCAL, local_delivery_outcome: { status: "pending", failedAttempts: 0, reservation: null } }),
+]
+
+for (const theme of ["light", "dark"] as const) {
+  test(`Envío BEYONIX (${theme}): Regresando/Devuelto a BEYONIX en lugar de "En camino" (listado y ficha)`, async () => {
+    for (const width of [1440, 390]) {
+      const page = await open(theme, { width, pedidos: LOCAL_PEDIDOS })
+      try {
+        const rows = (await page.evaluate(`[...document.querySelectorAll(".admin-orders-list-row")].map((row) => [...row.querySelectorAll(".admin-order-semantic-badge, .admin-order-dispatch-badge")].filter((b) => b.getBoundingClientRect().width > 0).map((b) => b.textContent.trim()).join(" | "))`)) as string[]
+        assert.equal(rows.length, 3, JSON.stringify(rows))
+        assert.match(rows.join("\n"), /Regresando a BEYONIX/)
+        assert.match(rows.join("\n"), /Devuelto a BEYONIX/)
+        for (const row of rows.filter((text) => /Regresando|Devuelto/.test(text))) assert.doesNotMatch(row, /En camino/, row)
+        assert.ok(rows.some((text) => /En camino/.test(text)), "el pendiente sigue En camino")
+        if (process.env.ADMIN_SCREENSHOTS_DIR) await page.screenshot({ path: `${process.env.ADMIN_SCREENSHOTS_DIR}/admin-pedidos-beyonix-${theme}-${width}.png`, fullPage: true })
+      } finally {
+        await page.close()
+      }
+    }
+    const detail = await open(theme, { width: 1440, pedidos: LOCAL_PEDIDOS, orderId: 32, tab: "envio" })
+    try {
+      const card = detail.locator("[data-local-delivery-order-card]")
+      await card.waitFor()
+      assert.equal((await card.locator("[data-local-delivery-stage]").innerText()).trim(), "Devuelto a BEYONIX")
+      if (process.env.ADMIN_SCREENSHOTS_DIR) await detail.screenshot({ path: `${process.env.ADMIN_SCREENSHOTS_DIR}/admin-pedido-devuelto-${theme}.png`, fullPage: true })
+    } finally {
+      await detail.close()
+    }
+  })
+}

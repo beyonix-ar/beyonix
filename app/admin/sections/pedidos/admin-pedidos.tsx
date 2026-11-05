@@ -123,6 +123,7 @@ import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-ori
 import {
   ADMIN_EXECUTIVE_STATUS,
   getAdminDispatchStatus,
+  getAdminLocalDeliveryExecutiveStatus,
   getAdminExecutiveStatusFromEstado,
   getAdminShippingStage,
   type AdminOrderStatusPresentation,
@@ -873,6 +874,10 @@ function getExecutiveOrderStatus(pedido: SupabasePedido): AdminOrderStatusPresen
   if (needsCreditNoteReminder(pedido)) return ADMIN_EXECUTIVE_STATUS.credit_note_missing
   if (needsInvoiceReminder(pedido)) return ADMIN_EXECUTIVE_STATUS.invoice_pending
   if (needsShippingReminder(pedido)) return ADMIN_EXECUTIVE_STATUS.shipping_pending
+  // Envío BEYONIX: Regresando/Devuelto a BEYONIX (u otro resultado del cadete)
+  // en lugar de "En camino" aunque ordenes.estado no cambie.
+  const localDeliveryStatus = getAdminLocalDeliveryExecutiveStatus(pedido)
+  if (localDeliveryStatus) return localDeliveryStatus
   return getAdminExecutiveStatusFromEstado(getDisplayedOrderStatus(pedido))
 }
 

@@ -48,7 +48,7 @@ export function expandLabels(labels: readonly PrintableLabel[]) {
   })
 }
 
-function labelBody(label: PrintableLabel, svg: string) {
+function labelBody(label: PrintableLabel, svg: string, qrSvgs: Readonly<Record<string, string>>) {
   const barcode = `<div class="barcode">${svg}</div><div class="code">${escapeHtml(label.code)}</div>`
   if (label.kind === "product") {
     return `<div class="brand">BEYONIX</div>
@@ -64,7 +64,7 @@ function labelBody(label: PrintableLabel, svg: string) {
     return `<div class="internal-title">Pedido ${escapeHtml(label.orderCode)}</div>
       <div class="barcode">${svg}</div>`
   }
-  if (label.kind === "local_delivery") return localDeliveryLabelBody(label, svg)
+  if (label.kind === "local_delivery") return localDeliveryLabelBody(label, svg, qrSvgs[label.deliveryUrl] ?? "")
   if (label.details?.url) return `<div class="title">${escapeHtml(label.details.displayName)}</div>
     <div class="batch-count">${label.details.orderCodes.length} ${label.details.orderCodes.length === 1 ? "pedido" : "pedidos"}</div>
     <div class="batch-date">${escapeHtml(label.details.date ?? "")}</div>
@@ -78,9 +78,10 @@ function labelBody(label: PrintableLabel, svg: string) {
 
 // Jerarquía para el cadete: servicio, pedido y bulto X/N arriba; destinatario,
 // dirección, referencia, localidad/CP y teléfono COMPLETOS (sin cortes: el
-// tamaño se adapta con fitLocalDeliveryLabel); Code 128 con zona de silencio,
-// BX-PKG legible y fecha abajo. Sin importes, pago, CUIT ni productos.
-function localDeliveryLabelBody(label: LocalDeliveryLabel, svg: string) {
+// tamaño se adapta con fitLocalDeliveryLabel) con el QR de gestión de entrega
+// del pedido a la derecha; Code 128 con zona de silencio, BX-PKG legible y
+// fecha abajo. Sin importes, pago, CUIT ni productos.
+function localDeliveryLabelBody(label: LocalDeliveryLabel, svg: string, qrSvg: string) {
   const layout = fitLocalDeliveryLabel(label)
   if (!layout) throw new Error(LOCAL_DELIVERY_LABEL_TOO_LONG)
   const sizes = `--ld-lh:${layout.lineHeight};--ld-recipient:${layout.recipient}pt;--ld-address:${layout.address}pt;--ld-reference:${layout.reference}pt;--ld-city:${layout.city}pt;--ld-phone:${layout.phone}pt`
@@ -88,15 +89,23 @@ function localDeliveryLabelBody(label: LocalDeliveryLabel, svg: string) {
   const field = (name: string, className: string, value: string) =>
     `<span class="ld-label">${name}</span><span class="ld-value ${className}">${value}</span>`
   return `<header class="ld-head"><span class="ld-brand">${escapeHtml(LOCAL_DELIVERY_TITLE)}</span><span class="ld-order">PEDIDO ${escapeHtml(label.orderCode)}</span><span class="ld-parcel">BULTO ${label.index}/${label.count}</span></header>
-    <div class="ld-body" style="${sizes}">
-      ${field("DESTINATARIO", "ld-recipient", escapeHtml(label.recipient))}
-      ${field("DIRECCIÓN", "ld-address", escapeHtml(label.address))}
-      ${label.reference ? field("REFERENCIA", "ld-reference", escapeHtml(label.reference)) : ""}
-      ${field("LOCALIDAD", "ld-city", `${escapeHtml(city)} · <strong>CP ${escapeHtml(label.postalCode)}</strong>`)}
-      ${field("TELÉFONO", "ld-phone", escapeHtml(localDeliveryPhoneText(label.phone)))}
+    <div class="ld-main">
+      <div class="ld-body" style="${sizes}">
+        ${field("DESTINATARIO", "ld-recipient", escapeHtml(label.recipient))}
+        ${field("DIRECCIÓN", "ld-address", escapeHtml(label.address))}
+        ${label.reference ? field("REFERENCIA", "ld-reference", escapeHtml(label.reference)) : ""}
+        ${field("LOCALIDAD", "ld-city", `${escapeHtml(city)} · <strong>CP ${escapeHtml(label.postalCode)}</strong>`)}
+        ${field("TELÉFONO", "ld-phone", escapeHtml(localDeliveryPhoneText(label.phone)))}
+      </div>
+      ${layout.qr === "side" ? `<div class="ld-qr"><div class="ld-qr-code">${qrSvg}</div><span class="ld-qr-caption">GESTIÓN DE ENTREGA</span></div>` : ""}
     </div>
-    <div class="barcode">${svg.replace("<svg ", '<svg preserveAspectRatio="none" ')}</div>
-    <div class="ld-foot"><span class="ld-date">${escapeHtml(label.date)}</span><span class="code">${escapeHtml(label.code)}</span><span></span></div>`
+    <div class="ld-bottom">
+      <div class="ld-bottom-main">
+        <div class="barcode">${svg.replace("<svg ", '<svg preserveAspectRatio="none" ')}</div>
+        <div class="ld-foot"><span class="ld-date">${escapeHtml(label.date)}</span><span class="code">${escapeHtml(label.code)}</span><span></span></div>
+      </div>
+      ${layout.qr === "footer" ? `<div class="ld-qr ld-qr-footer"><div class="ld-qr-code">${qrSvg}</div></div>` : ""}
+    </div>`
 }
 
 const LOCAL_DELIVERY_TITLE = "ENVÍO BEYONIX"
@@ -108,7 +117,7 @@ const LOCAL_DELIVERY_TITLE = "ENVÍO BEYONIX"
  */
 export function findClippedLocalDeliveryLabel(document: Document): string | null {
   for (const label of document.querySelectorAll<HTMLElement>(".label.local_delivery")) {
-    for (const box of [label, ...label.querySelectorAll<HTMLElement>(".ld-head, .ld-body, .ld-foot")]) {
+    for (const box of [label, ...label.querySelectorAll<HTMLElement>(".ld-head, .ld-main, .ld-body, .ld-qr, .ld-bottom, .ld-foot")]) {
       if (box.scrollHeight > box.clientHeight + 1 || box.scrollWidth > box.clientWidth + 1) return LOCAL_DELIVERY_LABEL_TOO_LONG
     }
   }
@@ -123,6 +132,9 @@ export function buildLabelsDocument(
   const expanded = expandLabels(labels)
   const missing = expanded.find((label) => !svgs[label.code])
   if (missing) throw new Error(`Falta el código de barras de ${missing.code}.`)
+  // Envío BEYONIX: el QR de gestión de entrega es obligatorio (se indexa por su URL).
+  const missingQr = expanded.find((label) => label.kind === "local_delivery" && !svgs[label.deliveryUrl])
+  if (missingQr) throw new Error(`Falta el QR de entrega de ${missingQr.code}.`)
   const product = expanded.every((label) => label.kind === "product")
   const localDelivery = expanded.every((label) => label.kind === "local_delivery")
   const internal = expanded.every((label) => label.kind === "parcel" || label.kind === "prepared" || label.kind === "batch")
@@ -141,7 +153,7 @@ export function buildLabelsDocument(
     : `@page { size: ${size.singleWidth}mm ${size.singleHeight}mm; margin: 0; }
        .sheet { display: block; }
        .label { width: ${size.singleWidth}mm; height: ${size.singleHeight}mm; page-break-after: always; break-after: page; }`
-  const items = expanded.map((label) => `<section class="label ${label.kind}">${labelBody(label, svgs[label.code])}</section>`).join("")
+  const items = expanded.map((label) => `<section class="label ${label.kind}">${labelBody(label, svgs[label.code], svgs)}</section>`).join("")
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Etiquetas BEYONIX</title><style>
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -176,7 +188,8 @@ export function buildLabelsDocument(
     .ld-brand { font-weight: 900; letter-spacing: 0.08em; font-size: 8pt; }
     .ld-order { font-weight: 900; font-size: 9pt; }
     .ld-parcel { font-weight: 900; font-size: 10.5pt; line-height: 1.05; border: 0.4mm solid #000; padding: 0 1.5mm; }
-    .ld-body { flex: none; height: ${LD.bodyHeightMm}mm; display: grid; grid-template-columns: ${LD.fieldLabelWidthMm}mm minmax(0, 1fr); column-gap: ${LD.columnGapMm}mm; row-gap: ${LD.rowGapMm}mm; align-content: start; align-items: baseline; }
+    .ld-main { flex: none; height: ${LD.bodyHeightMm}mm; display: flex; gap: ${LD.qrGapMm}mm; }
+    .ld-body { flex: 1 1 auto; min-width: 0; height: ${LD.bodyHeightMm}mm; display: grid; grid-template-columns: ${LD.fieldLabelWidthMm}mm minmax(0, 1fr); column-gap: ${LD.columnGapMm}mm; row-gap: ${LD.rowGapMm}mm; align-content: start; align-items: baseline; }
     .ld-label { font-size: ${LD.fieldLabelPt}pt; font-weight: 700; line-height: 1.1; white-space: nowrap; }
     .ld-value { min-width: 0; line-height: var(--ld-lh); overflow-wrap: anywhere; }
     .ld-recipient { font-weight: 700; font-size: var(--ld-recipient); }
@@ -184,6 +197,15 @@ export function buildLabelsDocument(
     .ld-reference { font-size: var(--ld-reference); }
     .ld-city { font-size: var(--ld-city); }
     .ld-phone { font-weight: 700; font-size: var(--ld-phone); }
+    .ld-qr { flex: none; width: ${LD.qrSizeMm}mm; height: ${LD.bodyHeightMm}mm; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0.6mm; }
+    .ld-qr-code { width: ${LD.qrSizeMm}mm; height: ${LD.qrSizeMm}mm; }
+    .ld-qr-code svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+    /* Fallback (datos que no entran al lado del QR): QR de 12,6 mm junto a las barras y el código; los datos usan el ancho completo. */
+    .ld-bottom { flex: none; height: ${LD.barcodeHeightMm + LD.sectionGapMm + LD.footHeightMm}mm; display: flex; gap: ${LD.qrGapMm}mm; }
+    .ld-bottom-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: ${LD.sectionGapMm}mm; }
+    .ld-qr-footer { width: ${LD.qrFooterSizeMm}mm; height: ${LD.qrFooterSizeMm}mm; }
+    .ld-qr-footer .ld-qr-code { width: ${LD.qrFooterSizeMm}mm; height: ${LD.qrFooterSizeMm}mm; }
+    .ld-qr-caption { width: 100%; font-size: ${LD.qrCaptionPt}pt; font-weight: 700; line-height: 1.1; text-align: center; overflow-wrap: anywhere; }
     /* Barras anchas para el lector (estiradas en horizontal, como permite Code 128) y zona de silencio a los costados. */
     .local_delivery .barcode { flex: none; height: ${LD.barcodeHeightMm}mm; margin: 0; padding-inline: ${LD.barcodeQuietZoneMm}mm; }
     .local_delivery .barcode svg { display: block; width: 100%; height: ${LD.barcodeHeightMm}mm; max-height: none; }

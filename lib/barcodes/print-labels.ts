@@ -23,6 +23,10 @@ export async function printLabels(labels: readonly PrintableLabel[], format: Lab
   const barcodeCodes = [...new Set(labels.filter((label) => !qrLabels.includes(label)).map((label) => label.code))]
   const svgs = barcodeCodes.length ? await fetchBarcodeSvgs(barcodeCodes) : {}
   for (const label of qrLabels) if (label.kind === "batch" && label.details?.url) svgs[label.code] = await QRCode.toString(label.details.url, { type: "svg", margin: 0, errorCorrectionLevel: "M" })
+  // Envío BEYONIX: un QR de gestión de entrega por pedido (mismo en todos sus bultos), con zona de silencio.
+  for (const url of new Set(labels.flatMap((label) => label.kind === "local_delivery" ? [label.deliveryUrl] : []))) {
+    svgs[url] = await QRCode.toString(url, { type: "svg", margin: 2, errorCorrectionLevel: "M" })
+  }
   const localDelivery = labels.some((label) => label.kind === "local_delivery")
   await printHtmlDocument(buildLabelsDocument(labels, svgs, format), localDelivery ? findClippedLocalDeliveryLabel : undefined)
 }

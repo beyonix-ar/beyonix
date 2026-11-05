@@ -10,6 +10,7 @@
 
 import { andreaniHandedOverAt, hasAndreaniShippingEvidenceScope } from "./dispatch-cutoff.ts"
 import { ORDER_CANCELLATION_REFUND_LABELS } from "./order-cancellation-refund-state.ts"
+import type { LocalDeliveryOutcomeStatus } from "../shipping/local-delivery-outcome.ts"
 import {
   getDispatchProgress,
   getShippingStage,
@@ -54,6 +55,8 @@ export interface AdminDispatchOrder {
   envio_proveedor?: string | null
   /** Pickeo en Despachos (admin_pending_facts del listado). */
   admin_pending_facts?: { dispatch?: { packageStatus?: "preparing" | "prepared" | null } | null } | null
+  /** Envío BEYONIX: resultado del cadete (QR) calculado por el servidor. */
+  local_delivery_outcome?: { status: LocalDeliveryOutcomeStatus } | null
 }
 
 const DISPATCH_BY_ESTADO: Partial<Record<string, AdminDispatchStatus>> = {
@@ -69,6 +72,31 @@ const DISPATCH_BY_ESTADO: Partial<Record<string, AdminDispatchStatus>> = {
   // Admisión de Andreani sin movimiento de transporte: sigue siendo Despachado.
   enviado: { key: "shipped", label: SHIPPING_STAGE_LABELS.dispatched, tone: "info" },
   preparado: { key: "ready", label: SHIPPING_STAGE_LABELS.ready, tone: "info" },
+}
+
+/**
+ * Envío BEYONIX: ordenes.estado sigue en "en_camino" durante los intentos, la
+ * incidencia y el regreso; el subestado local manda en la presentación (nunca
+ * "En camino" para un pedido que regresa o ya regresó a BEYONIX).
+ */
+const LOCAL_DELIVERY_DISPATCH: Partial<Record<LocalDeliveryOutcomeStatus, AdminDispatchStatus>> = {
+  first_attempt_failed: { key: "delivery_incident", label: "Primer intento fallido", tone: "warning" },
+  incident: { key: "delivery_incident", label: "Incidencia de entrega", tone: "warning" },
+  returning: { key: "returning", label: "Regresando a BEYONIX", tone: "warning" },
+  returned: { key: "returned", label: "Devuelto a BEYONIX", tone: "neutral" },
+}
+
+function getLocalDeliveryOutcomeDispatch(order: Pick<AdminDispatchOrder, "estado" | "local_delivery_outcome">) {
+  if (order.estado !== "en_camino" || !order.local_delivery_outcome) return null
+  return LOCAL_DELIVERY_DISPATCH[order.local_delivery_outcome.status] ?? null
+}
+
+/** Estado ejecutivo de un pedido Envío BEYONIX con resultado del cadete; `null` si no aplica. */
+export function getAdminLocalDeliveryExecutiveStatus(
+  order: Pick<AdminDispatchOrder, "estado" | "local_delivery_outcome">,
+): AdminOrderStatusPresentation | null {
+  const dispatch = getLocalDeliveryOutcomeDispatch(order)
+  return dispatch ? { label: dispatch.label, tone: dispatch.tone } : null
 }
 
 /** QR final del Bulto (BEYONIX -> Andreani); después manda el estado del transporte. */
@@ -92,6 +120,9 @@ export function getAdminDispatchStatus(
   if (order.estado === "entregado" || order.delivered_at) {
     return DISPATCH_BY_ESTADO.entregado as AdminDispatchStatus
   }
+
+  const localOutcome = getLocalDeliveryOutcomeDispatch(order)
+  if (localOutcome) return localOutcome
 
   const byEstado = DISPATCH_BY_ESTADO[order.estado]
   // QR final: Despachado (nunca "Entregado" ni "En camino" por sí solo), aunque se cancele después.

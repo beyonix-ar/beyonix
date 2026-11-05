@@ -36,7 +36,7 @@ window.fetch = async (input, init) => {
   }
   if (path === "/api/admin/settings") {
     if (init && init.method === "PATCH") window.__patches.push(JSON.parse(init.body))
-    return Response.json({ settings: ${JSON.stringify(SETTINGS)}, mercadoPagoCosts: costs, shippingQuote: { logisticsMarkupPercent: 3 }, localDelivery: { enabled: true, customerPrice: 2500, internalDeliveryCost: 2500, freeThreshold: 50000, postalCodes: ["2000"] } })
+    return Response.json({ settings: ${JSON.stringify(SETTINGS)}, mercadoPagoCosts: costs, shippingQuote: { logisticsMarkupPercent: 3 }, localDelivery: { enabled: true, customerPrice: 2500, internalDeliveryCost: 2500, freeThreshold: 50000, postalCodes: ["2000"], returnReservationDays: 3 } })
   }
   return Response.json({})
 }
@@ -324,6 +324,7 @@ for (const theme of ["light", "dark"] as const) {
       assert.equal(await rowValue(page, "local-delivery", "Costo al cliente"), "$ 2.500")
       assert.equal(await rowValue(page, "local-delivery", "Costo interno"), "$ 2.500")
       assert.equal(await rowValue(page, "local-delivery", "Gratis desde"), "$ 50.000")
+      assert.equal(await rowValue(page, "local-delivery", "Días de reserva por devolución"), "3 días")
       assert.equal(await block.locator("[data-postal-code]").allInnerTexts().then((codes) => codes.map((code) => code.trim())).then(String), "2000")
       assert.equal(await block.locator("input").count(), 0, "lectura primero")
 
@@ -352,11 +353,19 @@ for (const theme of ["light", "dark"] as const) {
       // Precio $0 permitido (siempre gratis); el costo interno sigue aparte.
       await block.getByLabel("Precio de Envío BEYONIX al cliente").fill("0")
       await block.getByLabel("Costo interno por entrega de Envío BEYONIX").fill("2800")
+      // Días de reserva por devolución: 1–30 (fuera de rango no se guarda).
+      const reservationDays = block.getByRole("textbox", { name: "Días de reserva por devolución" })
+      await reservationDays.fill("31")
+      await block.getByRole("alert").getByText(/de 1 a 30/).waitFor()
+      assert.equal(await saveButton(page, "local-delivery").isDisabled(), true)
+      await reservationDays.fill("0")
+      assert.equal(await saveButton(page, "local-delivery").isDisabled(), true)
+      await reservationDays.fill("5")
       await saveButton(page, "local-delivery").click()
       await block.getByText(/Guardado\./).waitFor()
 
       assert.deepEqual(await patches(page), [{
-        localDelivery: { enabled: true, customerPrice: 0, internalDeliveryCost: 2800, freeThreshold: 50000, postalCodes: ["2132"] },
+        localDelivery: { enabled: true, customerPrice: 0, internalDeliveryCost: 2800, freeThreshold: 50000, postalCodes: ["2132"], returnReservationDays: 5 },
       }])
       for (const name of ["stock", "shipping", "shipping-quote", "pricing"]) assert.equal(await mode(page, name), "read", name)
     } finally {

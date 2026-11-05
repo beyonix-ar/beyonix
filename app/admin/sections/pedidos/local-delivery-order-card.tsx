@@ -6,6 +6,7 @@ import { Bike } from "lucide-react"
 import type { SupabasePedido } from "@/lib/supabase/types"
 import { getLocalDeliveryStage, LOCAL_DELIVERY_STAGE_LABELS } from "@/lib/orders/local-delivery-status"
 import { LOCAL_DELIVERY_NAME } from "@/lib/shipping/local-delivery"
+import { getAdminLocalDeliveryExecutiveStatus } from "@/lib/orders/admin-order-status-presentation"
 
 const formatPrice = (value: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(value)
@@ -17,6 +18,8 @@ const formatPrice = (value: number) =>
  */
 export function LocalDeliveryOrderCard({ pedido }: { pedido: SupabasePedido }) {
   const stage = getLocalDeliveryStage(pedido)
+  // Resultado del cadete (Regresando/Devuelto a BEYONIX…) antes que "En camino".
+  const outcomeLabel = getAdminLocalDeliveryExecutiveStatus(pedido)?.label
   const charged = pedido.shipping_cost_charged
   // El costo interno no llega a operadores (ver /api/admin/pedidos).
   const internalCost = pedido.shipping_cost_real
@@ -35,7 +38,7 @@ export function LocalDeliveryOrderCard({ pedido }: { pedido: SupabasePedido }) {
       <dl className="admin-order-shipping-facts mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-lg border p-2.5 lg:grid-cols-3">
         <div>
           <dt className="text-9px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">Estado</dt>
-          <dd className="mt-0.5 text-sm font-black text-[var(--beyonix-text-primary)]" data-local-delivery-stage={stage}>{LOCAL_DELIVERY_STAGE_LABELS[stage]}</dd>
+          <dd className="mt-0.5 text-sm font-black text-[var(--beyonix-text-primary)]" data-local-delivery-stage={stage}>{outcomeLabel ?? LOCAL_DELIVERY_STAGE_LABELS[stage]}</dd>
         </div>
         <div>
           <dt className="text-9px font-bold uppercase tracking-widest text-[var(--beyonix-text-muted)]">Cobrado al cliente</dt>

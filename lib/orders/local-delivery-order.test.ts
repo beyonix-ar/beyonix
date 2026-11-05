@@ -38,6 +38,7 @@ import { sendOrderStateEmail } from "./order-status-notifications.ts"
 import { hasConfirmedPaymentEvidence } from "./order-payment-status.ts"
 import { DEFAULT_SHIPPING_SETTINGS } from "../store-config.ts"
 import type { LocalDeliverySettings } from "../shipping/local-delivery.ts"
+import type { LocalDeliveryOutcomeStatus } from "../shipping/local-delivery-outcome.ts"
 
 const SETTINGS: LocalDeliverySettings = {
   enabled: true,
@@ -45,6 +46,7 @@ const SETTINGS: LocalDeliverySettings = {
   internalDeliveryCost: 2_500,
   freeThreshold: 50_000,
   postalCodes: ["2000"],
+  returnReservationDays: 3,
 }
 const CUSTOMER = { cpDestino: "2000", localidad: "ROSARIO", provincia: "SANTA FE", direccion: "Córdoba 1234" }
 const ITEMS = [{ productId: 1, quantity: 1, variantId: null, conditionedStockId: null }]
@@ -869,6 +871,41 @@ test("aviso En camino fallido + Entregado: no bloquea, queda superseded, nunca s
   assert.deepEqual(store.rowsOf("in_transit_email"), ["reserved", "failed", "superseded"])
 })
 
+test("aviso En camino pendiente + pedido Regresando/Devuelto a BEYONIX: el reintento lo marca superseded y nunca lo envía", async () => {
+  for (const outcome of ["returning", "returned"] as const) {
+    const store = localDeliveryStore()
+    let status: LocalDeliveryOutcomeStatus | null = "pending"
+    store.deps.loadOutcomeStatus = async () => status
+    store.failures.email = 1
+    const inTransit = await advanceLocalDelivery(store.deps, 7, "en_camino")
+    assert.deepEqual(inTransit.body.pendingEffects, ["in_transit_email"])
+    status = outcome
+    // ordenes.estado sigue "en_camino": sin el subestado local, el reintento mandaría "En camino" tarde.
+    const retried = await retryLocalDeliveryEffects(store.deps, 7)
+    assert.equal(retried.status, 200)
+    assert.deepEqual(retried.body.pendingEffects, [], outcome)
+    assert.deepEqual(store.rowsOf("in_transit_email"), ["reserved", "failed", "superseded"], outcome)
+    assert.deepEqual(store.emails, [], `${outcome}: ningún email tardío`)
+    await retryLocalDeliveryEffects(store.deps, 7)
+    assert.deepEqual(store.emails, [], `${outcome}: tampoco en un segundo reintento (sin duplicados)`)
+  }
+  // Carrera: el regreso se registra después de reservar el email y antes de autorizarlo.
+  const store = localDeliveryStore()
+  let status: LocalDeliveryOutcomeStatus | null = "pending"
+  store.deps.loadOutcomeStatus = async () => status
+  store.hooks.onReserve = () => { status = "returning" }
+  await advanceLocalDelivery(store.deps, 7, "en_camino")
+  assert.deepEqual(store.emails, [], "la autorización revalida el subestado")
+  await retryLocalDeliveryEffects(store.deps, 7)
+  assert.deepEqual(store.emails, [])
+  assert.equal(store.rowsOf("in_transit_email").at(-1), "superseded")
+  // Sin regreso (pendiente o primer intento fallido) el aviso sale normalmente.
+  const normal = localDeliveryStore()
+  normal.deps.loadOutcomeStatus = async () => "first_attempt_failed"
+  await advanceLocalDelivery(normal.deps, 7, "en_camino")
+  assert.deepEqual(normal.emails, ["en_camino"])
+})
+
 test("efectos pendientes por etapa (para el listado de Despachos)", () => {
   const done = (...effects: LocalDeliveryEffect[]) => new Map(effects.map((effect) => [effect, "completed" as const]))
   assert.deepEqual(getMissingLocalDeliveryEffects("preparing", new Map(), 0), [])
@@ -882,7 +919,8 @@ test("efectos pendientes por etapa (para el listado de Despachos)", () => {
 })
 
 test("ruta y panel: transición atómica en el WHERE, reintento explícito y sólo el próximo paso visible", () => {
-  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8")
+  // Las dependencias del servicio viven en lib/orders/local-delivery-deps.ts (compartidas con el cadete).
+  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8") + readFileSync("lib/orders/local-delivery-deps.ts", "utf8")
   assert.match(route, /requireOperator\(request\)/)
   // Transición, autorización del email y listado comparten el mismo WHERE.
   assert.match(route, /\.eq\("shipping_provider", LOCAL_DELIVERY_PROVIDER\)\s+\.eq\("financial_status", "payment_confirmed"\)\s+\.is\("cancelled_at", null\)\s+\.not\("paid_at", "is", null\)\s+\.gt\("payment_confirmed_amount", 0\)\s+\.in\("payment_status", CONFIRMED_PAYMENT_STATUSES\)/)
@@ -896,7 +934,7 @@ test("ruta y panel: transición atómica en el WHERE, reintento explícito y só
   assert.match(route, /sendOrderStateEmail\(order\)/)
   assert.doesNotMatch(route.replace(/^\s*\/\/.*$/gm, ""), /andreani|tracking_number|etiqueta/i)
   const panel = readFileSync("app/admin/sections/despachos/local-delivery-panel.tsx", "utf8")
-  assert.match(panel, /const next = getNextLocalDeliveryAction\(order\.stage\)/)
+  assert.match(panel, /const next = blocked \? null : getNextLocalDeliveryAction\(order\.stage\)/)
   assert.match(panel, /\{next === "en_camino" && \(/)
   assert.match(panel, /\{next === "entregado" && \(/)
   assert.match(panel, /Reintentar avisos/)
@@ -1042,8 +1080,10 @@ test("En camino: todos los bultos confirmados => avanza; Entregado no vuelve a e
 })
 
 test("En camino: el guard de la base (bultos que cambian entre el chequeo y el UPDATE) es conflicto, no error", () => {
-  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8")
-  assert.match(route, /if \(error\?\.message\?\.includes\("LOCAL_DELIVERY_PARCELS_NOT_READY"\)\) return null/)
+  // Las dependencias del servicio viven en lib/orders/local-delivery-deps.ts (compartidas con el cadete).
+  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8") + readFileSync("lib/orders/local-delivery-deps.ts", "utf8")
+  assert.match(route, /const CONFLICT_ERRORS = \["LOCAL_DELIVERY_PARCELS_NOT_READY", "LOCAL_DELIVERY_RETURN_IN_PROGRESS"\]/)
+  assert.match(route, /if \(isConflict\(error\?\.message\)\) return null/)
   // Despliegue en dos pasos: A (estructural) no instala la guarda; B la activa después del deploy.
   const migrationA = readFileSync("supabase/migrations/20261103120000_local_delivery_parcels_labels.sql", "utf8")
   assert.doesNotMatch(migrationA, /create trigger guard_local_delivery_in_transit/)
@@ -1071,8 +1111,9 @@ test("En camino: rearmado, bultos redefinidos o confirmación perdida entre la v
 })
 
 test("En camino: la ruta usa la RPC atómica (bultos verificados en el mismo write), no un UPDATE con snapshot previo", () => {
-  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8")
-  assert.match(route, /if \(action === "en_camino"\) \{[\s\S]*?\.rpc\("mark_local_delivery_in_transit", \{ p_order_id: orderId, p_from_estado: fromEstado, p_actor_id: actorId \}\)/)
+  // Las dependencias del servicio viven en lib/orders/local-delivery-deps.ts (compartidas con el cadete).
+  const route = readFileSync("app/api/admin/dispatch/local/route.ts", "utf8") + readFileSync("lib/orders/local-delivery-deps.ts", "utf8")
+  assert.match(route, /if \(action === "en_camino"\) \{[\s\S]*?\.rpc\("mark_local_delivery_in_transit", \{ p_order_id: orderId, p_from_estado: fromEstado, p_actor_id: actor\.id \}\)/)
   const migrationA = readFileSync("supabase/migrations/20261103120000_local_delivery_parcels_labels.sql", "utf8")
   const rpc = migrationA.slice(migrationA.indexOf("create or replace function public.mark_local_delivery_in_transit"))
   assert.match(rpc, /from public\.ordenes where id = p_order_id for update;\s+if not found then return; end if;\s+perform 1 from public\.order_packages where order_id = p_order_id for update;/)

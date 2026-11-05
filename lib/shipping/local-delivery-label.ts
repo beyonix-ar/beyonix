@@ -23,6 +23,11 @@ export interface LocalDeliveryLabel {
   phone: string | null
   /** Fecha en que se definieron los bultos (no cambia al reimprimir). */
   date: string
+  /**
+   * URL del QR de gestión de entrega: UNA por pedido (todos los bultos llevan
+   * el mismo QR, cada uno su BX-PKG). Sólo contiene el token aleatorio.
+   */
+  deliveryUrl: string
 }
 
 export interface LocalDeliveryLabelOrder {
@@ -75,6 +80,7 @@ export function buildLocalDeliveryLabels(
   order: LocalDeliveryLabelOrder,
   parcels: readonly LocalDeliveryLabelParcel[],
   definedAt: string,
+  deliveryUrl: string,
 ): LocalDeliveryLabel[] {
   const { address, reference } = splitDeliveryAddress(order.cliente_direccion)
   const recipient = clean(order.cliente_nombre)
@@ -109,5 +115,6 @@ export function buildLocalDeliveryLabels(
     postalCode,
     phone,
     date,
+    deliveryUrl,
   }))
 }

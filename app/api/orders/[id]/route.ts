@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
 import { toCustomerOrderDto } from "@/lib/orders/customer-order-dto"
 import { attachDispatchCutoff } from "@/lib/orders/dispatch-cutoff-server"
+import { attachCustomerLocalDeliveryOutcomes } from "@/lib/orders/local-delivery-outcomes-server"
 import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reservation-window"
 import { isCustomerOrderVisible } from "@/lib/orders/order-visibility"
 import type { SupabasePedido } from "@/lib/supabase/types"
@@ -82,7 +83,7 @@ export async function GET(
   let withReservation: SupabasePedido
   try {
     const [attached] = await attachTransferReservationDeadlines(admin, [order as unknown as SupabasePedido])
-    withReservation = (await attachDispatchCutoff(admin, [attached]))[0]
+    withReservation = (await attachCustomerLocalDeliveryOutcomes(admin, await attachDispatchCutoff(admin, [attached])))[0]
   } catch {
     return NextResponse.json(
       { error: "No se pudo cargar la compra." },

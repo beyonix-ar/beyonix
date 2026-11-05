@@ -1,3 +1,10 @@
+import {
+  LOCAL_DELIVERY_RESERVATION_DAYS_DEFAULT,
+  LOCAL_DELIVERY_RESERVATION_DAYS_MAX,
+  LOCAL_DELIVERY_RESERVATION_DAYS_MIN,
+  normalizeLocalDeliveryReservationDays,
+} from "./local-delivery-outcome.ts"
+
 /**
  * Envío BEYONIX: entrega local propia, elegible por código postal.
  *
@@ -36,10 +43,16 @@ export interface LocalDeliverySettings {
   freeThreshold: number
   /** Códigos postales habilitados, normalizados y sin duplicados. */
   postalCodes: string[]
+  /**
+   * Días calendario que los productos de un pedido devuelto a BEYONIX (dos
+   * intentos fallidos) quedan reservados para el cliente. Cada reserva congela
+   * el valor con el que empezó.
+   */
+  returnReservationDays: number
 }
 
-/** Lo que puede ver el navegador: sin el costo interno. */
-export type PublicLocalDeliverySettings = Omit<LocalDeliverySettings, "internalDeliveryCost">
+/** Lo que puede ver el navegador: sin el costo interno ni datos operativos. */
+export type PublicLocalDeliverySettings = Omit<LocalDeliverySettings, "internalDeliveryCost" | "returnReservationDays">
 
 /**
  * Configuración inicial de la modalidad mientras Admin no guardó otra: sólo
@@ -52,6 +65,7 @@ export const DEFAULT_LOCAL_DELIVERY_SETTINGS: LocalDeliverySettings = {
   internalDeliveryCost: 2_500,
   freeThreshold: 50_000,
   postalCodes: ["2000"],
+  returnReservationDays: LOCAL_DELIVERY_RESERVATION_DAYS_DEFAULT,
 }
 
 export class LocalDeliverySettingsError extends Error {
@@ -107,11 +121,16 @@ export function normalizeStoredLocalDeliverySettings(value: unknown, present: bo
   }
 }
 
-/** Valor enviado por Admin (estricto): cualquier dato inválido se rechaza con un mensaje claro. */
+/**
+ * Valor enviado por Admin (estricto): cualquier dato inválido se rechaza con un
+ * mensaje claro. `returnReservationDays` es opcional para que la configuración
+ * guardada antes de existir siga siendo válida: sin él se usa el valor inicial
+ * (la ruta de Admin conserva el guardado si un cliente anterior no lo envía).
+ */
 export function parseLocalDeliverySettingsPatch(value: unknown): LocalDeliverySettings {
   const fields = ["enabled", "customerPrice", "internalDeliveryCost", "freeThreshold", "postalCodes"]
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-      Object.keys(value).some((key) => !fields.includes(key)) ||
+      Object.keys(value).some((key) => !fields.includes(key) && key !== "returnReservationDays") ||
       fields.some((key) => !Object.hasOwn(value, key))) {
     throw new LocalDeliverySettingsError("La configuración de Envío BEYONIX no es válida.")
   }
@@ -140,7 +159,18 @@ export function parseLocalDeliverySettingsPatch(value: unknown): LocalDeliverySe
   if (source.enabled && postalCodes.length === 0) {
     throw new LocalDeliverySettingsError("Agregá al menos un código postal para activar Envío BEYONIX.")
   }
-  return { enabled: source.enabled, customerPrice, internalDeliveryCost, freeThreshold, postalCodes: uniquePostalCodes(postalCodes) }
+  const returnReservationDays = source.returnReservationDays === undefined
+    ? LOCAL_DELIVERY_RESERVATION_DAYS_DEFAULT
+    : normalizeLocalDeliveryReservationDays(source.returnReservationDays)
+  if (returnReservationDays === null) {
+    throw new LocalDeliverySettingsError(
+      `Los días de reserva por devolución deben ser un número entero de ${LOCAL_DELIVERY_RESERVATION_DAYS_MIN} a ${LOCAL_DELIVERY_RESERVATION_DAYS_MAX}.`,
+    )
+  }
+  return {
+    enabled: source.enabled, customerPrice, internalDeliveryCost, freeThreshold,
+    postalCodes: uniquePostalCodes(postalCodes), returnReservationDays,
+  }
 }
 
 export function toPublicLocalDeliverySettings(settings: LocalDeliverySettings): PublicLocalDeliverySettings {

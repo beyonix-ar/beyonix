@@ -24,20 +24,24 @@ const parcels = (count: number, attempt = 1) => Array.from({ length: count }, (_
   parcel_count: count,
 }))
 const DEFINED_AT = "2026-11-03T15:30:00.000Z"
-const svgs = (codes: string[]) => Object.fromEntries(codes.map((code) => [code, `<svg data-code="${code}"></svg>`]))
+const DELIVERY_URL = "https://www.beyonix.com.ar/delivery/AbCdEfGhIjKlMnOpQrStUv"
+const svgs = (codes: string[]) => Object.fromEntries([...codes, DELIVERY_URL].map((code) => [code, `<svg data-code="${code}"></svg>`]))
 
 test("etiqueta: un bulto con pedido, destinatario, dirección, referencia, CP, localidad, teléfono, fecha y BX-PKG", () => {
-  const [label] = buildLocalDeliveryLabels(ORDER, parcels(1), DEFINED_AT)
+  const [label] = buildLocalDeliveryLabels(ORDER, parcels(1), DEFINED_AT, DELIVERY_URL)
   assert.deepEqual(label, {
     kind: "local_delivery", code: "BX-PKG-2041-01", orderCode: "BX-2041", index: 1, count: 1,
     recipient: "María José Peña", address: "Córdoba 1234 Piso 3 Dto B", reference: "Portón verde, timbre 2",
     locality: "Rosario", province: "Santa Fe", postalCode: "2000", phone: "341 555-0000", date: "03/11/2026",
+    deliveryUrl: DELIVERY_URL,
   })
+  // El QR sólo lleva el token: ni el id del pedido ni datos del cliente.
+  assert.doesNotMatch(label.deliveryUrl, /1041|2041|Mar[ií]a|C[oó]rdoba/)
   assert.equal(isPrintableBarcode(label.code), true, "Code 128 imprimible con los lectores actuales")
 })
 
 test("etiqueta: varios bultos => una por bulto, 1/N … N/N, mismo destino y barcode distinto", () => {
-  const labels = buildLocalDeliveryLabels(ORDER, parcels(3).reverse(), DEFINED_AT)
+  const labels = buildLocalDeliveryLabels(ORDER, parcels(3).reverse(), DEFINED_AT, DELIVERY_URL)
   assert.deepEqual(labels.map((label) => [label.index, label.count, label.code]), [
     [1, 3, "BX-PKG-2041-01"], [2, 3, "BX-PKG-2041-02"], [3, 3, "BX-PKG-2041-03"],
   ])
@@ -46,21 +50,21 @@ test("etiqueta: varios bultos => una por bulto, 1/N … N/N, mismo destino y bar
 })
 
 test("etiqueta: reimprimir el mismo intento da exactamente los mismos códigos; un rearmado usa -R<n> sin colisionar", () => {
-  const first = buildLocalDeliveryLabels(ORDER, parcels(2), DEFINED_AT)
-  const reprint = buildLocalDeliveryLabels(ORDER, parcels(2), DEFINED_AT)
+  const first = buildLocalDeliveryLabels(ORDER, parcels(2), DEFINED_AT, DELIVERY_URL)
+  const reprint = buildLocalDeliveryLabels(ORDER, parcels(2), DEFINED_AT, DELIVERY_URL)
   assert.deepEqual(reprint, first)
-  const rearmed = buildLocalDeliveryLabels(ORDER, parcels(2, 2), "2026-11-04T10:00:00.000Z")
+  const rearmed = buildLocalDeliveryLabels(ORDER, parcels(2, 2), "2026-11-04T10:00:00.000Z", DELIVERY_URL)
   assert.deepEqual(rearmed.map((label) => label.code), ["BX-PKG-2041-R2-01", "BX-PKG-2041-R2-02"])
   assert.equal(rearmed.some((label) => first.some((old) => old.code === label.code)), false)
 })
 
 test("etiqueta: sin datos de entrega o con bultos incompletos no se imprime", () => {
-  assert.throws(() => buildLocalDeliveryLabels({ ...ORDER, cliente_direccion: " " }, parcels(1), DEFINED_AT), LocalDeliveryLabelError)
-  assert.throws(() => buildLocalDeliveryLabels({ ...ORDER, cp_destino: null }, parcels(1), DEFINED_AT), LocalDeliveryLabelError)
-  assert.throws(() => buildLocalDeliveryLabels(ORDER, [], DEFINED_AT), /Definí los bultos/)
-  assert.throws(() => buildLocalDeliveryLabels(ORDER, parcels(3).slice(0, 2), DEFINED_AT), /no están completos/)
+  assert.throws(() => buildLocalDeliveryLabels({ ...ORDER, cliente_direccion: " " }, parcels(1), DEFINED_AT, DELIVERY_URL), LocalDeliveryLabelError)
+  assert.throws(() => buildLocalDeliveryLabels({ ...ORDER, cp_destino: null }, parcels(1), DEFINED_AT, DELIVERY_URL), LocalDeliveryLabelError)
+  assert.throws(() => buildLocalDeliveryLabels(ORDER, [], DEFINED_AT, DELIVERY_URL), /Definí los bultos/)
+  assert.throws(() => buildLocalDeliveryLabels(ORDER, parcels(3).slice(0, 2), DEFINED_AT, DELIVERY_URL), /no están completos/)
   // Sin teléfono se imprime igual (el cadete ve "—"), sin referencia tampoco.
-  const [label] = buildLocalDeliveryLabels({ ...ORDER, cliente_telefono: null, cliente_direccion: "Mitre 10" }, parcels(1), DEFINED_AT)
+  const [label] = buildLocalDeliveryLabels({ ...ORDER, cliente_telefono: null, cliente_direccion: "Mitre 10" }, parcels(1), DEFINED_AT, DELIVERY_URL)
   assert.deepEqual([label.phone, label.address, label.reference], [null, "Mitre 10", null])
   assert.deepEqual(splitDeliveryAddress("Oroño 55.  Referencias:  casa  azul "), { address: "Oroño 55", reference: "casa azul" })
 })
@@ -95,32 +99,39 @@ const LONG_ORDER: LocalDeliveryLabelOrder = {
 
 test("composición adaptativa: casos normales usan el tamaño mayor; datos largos bajan el escalón sin cortar nada", () => {
   const fields = (order: LocalDeliveryLabelOrder) => {
-    const [label] = buildLocalDeliveryLabels(order, parcels(1), DEFINED_AT)
+    const [label] = buildLocalDeliveryLabels(order, parcels(1), DEFINED_AT, DELIVERY_URL)
     return label
   }
-  assert.equal(fitLocalDeliveryLabel(fields(ORDER)), LOCAL_DELIVERY_LABEL_TIERS[0], "normal: escalón mayor")
+  // Escalón de textos (sin la ubicación del QR) dentro de la lista de escalones.
+  const tierIndex = (fit: ReturnType<typeof fitLocalDeliveryLabel>) =>
+    fit ? LOCAL_DELIVERY_LABEL_TIERS.findIndex((tier) => tier.address === fit.address && tier.lineHeight === fit.lineHeight) : -1
+  assert.deepEqual(fitLocalDeliveryLabel(fields(ORDER)), { ...LOCAL_DELIVERY_LABEL_TIERS[0], qr: "side" }, "normal: escalón mayor y QR grande al costado")
   const long = fitLocalDeliveryLabel(fields(LONG_ORDER))
   assert.ok(long, "el caso extremo realista entra")
-  assert.ok(LOCAL_DELIVERY_LABEL_TIERS.indexOf(long) > 0, "con letra más chica")
+  assert.ok(tierIndex(long) > 0, "con letra más chica")
+  assert.equal(long.qr, "side", "el caso extremo realista conserva el QR grande")
   assert.ok(long.address >= 7 && long.recipient >= 7 && long.phone >= 7 && long.city >= 7 && long.reference >= 6.5, "siempre legible")
   // Un único campo largo no achica todo indiscriminadamente: sigue siendo más grande que el mínimo.
   const longAddress = fitLocalDeliveryLabel(fields({ ...ORDER, cliente_direccion: `${"Avenida Presidente Domingo Faustino Sarmiento ".repeat(2)}1234` }))
-  assert.ok(longAddress && LOCAL_DELIVERY_LABEL_TIERS.indexOf(longAddress) < LOCAL_DELIVERY_LABEL_TIERS.length - 1)
+  assert.ok(longAddress && tierIndex(longAddress) < LOCAL_DELIVERY_LABEL_TIERS.length - 1)
+  // Datos que no entran al lado del QR: el QR baja junto a las barras y los textos recuperan el ancho (nada se corta).
+  const doubled = fitLocalDeliveryLabel(fields({ ...LONG_ORDER, cliente_direccion: `${"Avenida Presidente Domingo Faustino Sarmiento 12345 Piso 14 Departamento B Torre Norte ".repeat(2).trim()}. Referencias: ${"Entre Bv. Oroño y Balcarce, portón de rejas verde al lado de la farmacia, tocar timbre 2B y esperar ".repeat(2).trim()}` }))
+  assert.equal(doubled?.qr, "footer")
   assert.ok(estimateLabelLines("Córdoba 1234", 11) === 1 && estimateLabelLines("W".repeat(200), 7) > 2, "palabras imposibles se parten")
 })
 
 test("composición adaptativa: si ni el escalón mínimo alcanza, NO se genera la etiqueta (mensaje claro, sin imprimir cortado)", () => {
   const huge = { ...LONG_ORDER, cliente_direccion: `${"Calle muy larga con muchísimo texto ".repeat(8)}123. Referencias: ${"referencia extensa ".repeat(14)}` }
-  assert.throws(() => buildLocalDeliveryLabels(huge, parcels(1), DEFINED_AT), (error: Error) =>
+  assert.throws(() => buildLocalDeliveryLabels(huge, parcels(1), DEFINED_AT, DELIVERY_URL), (error: Error) =>
     error instanceof LocalDeliveryLabelError && error.message === LOCAL_DELIVERY_LABEL_TOO_LONG)
   assert.equal(LOCAL_DELIVERY_LABEL_TOO_LONG, "Los datos de entrega son demasiado largos para esta etiqueta. Revisalos antes de imprimir.")
   // El documento de impresión aplica la misma regla aunque reciba la etiqueta directo.
-  const [label] = buildLocalDeliveryLabels(ORDER, parcels(1), DEFINED_AT)
+  const [label] = buildLocalDeliveryLabels(ORDER, parcels(1), DEFINED_AT, DELIVERY_URL)
   assert.throws(() => buildLabelsDocument([{ ...label, address: "X".repeat(900) }], svgs([label.code]), "single"), new RegExp(LOCAL_DELIVERY_LABEL_TOO_LONG))
 })
 
 test("impresión: HTML 101,6 × 50,8 mm con jerarquía para el cadete, escapado y sin datos financieros", () => {
-  const labels = buildLocalDeliveryLabels({ ...ORDER, cliente_nombre: "Ana <b>Ñandú</b>" }, parcels(2), DEFINED_AT)
+  const labels = buildLocalDeliveryLabels({ ...ORDER, cliente_nombre: "Ana <b>Ñandú</b>" }, parcels(2), DEFINED_AT, DELIVERY_URL)
   const html = buildLabelsDocument(labels, svgs(labels.map((label) => label.code)), "single")
   assert.match(html, /@page \{ size: 101\.6mm 50\.8mm; margin: 0; \}/)
   for (const text of ["BEYONIX", "ENVÍO BEYONIX", "PEDIDO BX-2041", "BULTO 1/2", "BULTO 2/2", "DESTINATARIO", "Ana &lt;b&gt;Ñandú&lt;/b&gt;",

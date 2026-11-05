@@ -1,0 +1,17 @@
+[Unit]
+Description=BEYONIX - Vencer reservas de pedidos devueltos (Envío BEYONIX)
+After=network-online.target pm2-beyonix.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Mismo patrón que beyonix-expire-transfer-orders.service (ver README): el
+# CRON_SECRET nunca viaja en argv -- curl lee el header del archivo privado
+# /etc/beyonix/curl-verify-transfer-orders.conf (600, root:root) con --config.
+# flock -n evita corridas superpuestas (la RPC además es segura si se pisan).
+ExecStart=/usr/bin/flock -n /run/lock/beyonix-expire-local-delivery-reservations.lock \
+  /usr/bin/curl --fail --silent --show-error --max-time 120 \
+  --config /etc/beyonix/curl-verify-transfer-orders.conf \
+  -o /dev/null \
+  http://127.0.0.1:3000/api/cron/expire-local-delivery-reservations

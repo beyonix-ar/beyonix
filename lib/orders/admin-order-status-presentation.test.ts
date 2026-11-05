@@ -6,6 +6,7 @@ import {
   ADMIN_EXECUTIVE_STATUS,
   getAdminDispatchStatus,
   getAdminExecutiveStatusFromEstado,
+  getAdminLocalDeliveryExecutiveStatus,
 } from "./admin-order-status-presentation.ts"
 
 function readSource(path: string) {
@@ -283,4 +284,25 @@ test("modal Rechazar pedido: select compacto y contenido dentro del modal", () =
   // El menú del AdminSelect se porta dentro del diálogo y copia el ancho del trigger.
   const controls = readSource("../../app/admin/components/admin-controls.tsx")
   assert.match(controls, /wrapperRef\.current\?\.closest\('\[role="dialog"\]'\) \?\? document\.body/)
+})
+
+test("Envío BEYONIX: el subestado local manda sobre ordenes.estado = en_camino (nunca 'En camino' si regresa o regresó)", () => {
+  const local = (status: "pending" | "first_attempt_failed" | "incident" | "returning" | "returned" | "delivered") =>
+    ({ estado: "en_camino", shipping_provider: "beyonix", local_delivery_outcome: { status } })
+  assert.deepEqual(getAdminDispatchStatus(local("returning")), { key: "returning", label: "Regresando a BEYONIX", tone: "warning" })
+  assert.deepEqual(getAdminDispatchStatus(local("returned")), { key: "returned", label: "Devuelto a BEYONIX", tone: "neutral" })
+  assert.equal(getAdminDispatchStatus(local("first_attempt_failed")).label, "Primer intento fallido")
+  assert.equal(getAdminDispatchStatus(local("incident")).label, "Incidencia de entrega")
+  assert.equal(getAdminDispatchStatus(local("pending")).label, "En camino", "sin resultado: sigue En camino")
+  assert.equal(getAdminLocalDeliveryExecutiveStatus(local("returning"))?.label, "Regresando a BEYONIX")
+  assert.equal(getAdminLocalDeliveryExecutiveStatus(local("returned"))?.label, "Devuelto a BEYONIX")
+  assert.equal(getAdminLocalDeliveryExecutiveStatus(local("pending")), null)
+  // Entregado o cancelado: manda el estado del pedido, no un subestado viejo.
+  assert.equal(getAdminDispatchStatus({ estado: "entregado", local_delivery_outcome: { status: "delivered" } }).label, "Entregado")
+  assert.equal(getAdminLocalDeliveryExecutiveStatus({ estado: "cancelado", local_delivery_outcome: { status: "returned" } }), null)
+  // Andreani y pedidos sin resultado local: sin cambios.
+  assert.equal(getAdminDispatchStatus({ estado: "en_camino", shipping_provider: "andreani" }).label, "En camino")
+  // El listado y la ficha usan este estado antes del genérico por ordenes.estado.
+  const page = readSource("../../app/admin/sections/pedidos/admin-pedidos.tsx")
+  assert.match(page, /const localDeliveryStatus = getAdminLocalDeliveryExecutiveStatus\(pedido\)\s+if \(localDeliveryStatus\) return localDeliveryStatus\s+return getAdminExecutiveStatusFromEstado\(getDisplayedOrderStatus\(pedido\)\)/)
 })

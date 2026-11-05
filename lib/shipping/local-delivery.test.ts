@@ -23,6 +23,7 @@ const SETTINGS: LocalDeliverySettings = {
   internalDeliveryCost: 2_500,
   freeThreshold: 50_000,
   postalCodes: ["2000"],
+  returnReservationDays: 3,
 }
 const PUBLIC = toPublicLocalDeliverySettings(SETTINGS)
 
@@ -54,8 +55,11 @@ test("A. setting ausente (nunca guardado) → configuración inicial válida", (
 })
 
 test("B. setting presente y válido → exactamente lo guardado", () => {
-  const stored = { enabled: true, customerPrice: 3_100, internalDeliveryCost: 2_700, freeThreshold: 70_000, postalCodes: ["2000", "2132"] }
+  const stored = { enabled: true, customerPrice: 3_100, internalDeliveryCost: 2_700, freeThreshold: 70_000, postalCodes: ["2000", "2132"], returnReservationDays: 5 }
   assert.deepEqual(normalizeStoredLocalDeliverySettings(stored, true), stored)
+  // Guardado antes de existir los días de reserva: sigue activo y toma el valor inicial (3).
+  const legacy = { enabled: true, customerPrice: 3_100, internalDeliveryCost: 2_700, freeThreshold: 70_000, postalCodes: ["2000", "2132"] }
+  assert.deepEqual(normalizeStoredLocalDeliverySettings(legacy, true), { ...legacy, returnReservationDays: 3 })
   assert.deepEqual(normalizeStoredLocalDeliverySettings({ ...stored, enabled: false }, true).enabled, false)
 })
 
@@ -139,7 +143,7 @@ test("costo al cliente, costo interno y umbral se guardan tal como los edita Adm
     freeThreshold: 60_000,
     postalCodes: ["2000"],
   })
-  assert.deepEqual(next, { enabled: true, customerPrice: 3_000, internalDeliveryCost: 2_800, freeThreshold: 60_000, postalCodes: ["2000"] })
+  assert.deepEqual(next, { enabled: true, customerPrice: 3_000, internalDeliveryCost: 2_800, freeThreshold: 60_000, postalCodes: ["2000"], returnReservationDays: 3 })
   assert.equal(getLocalDeliveryCustomerCost(next, 59_999), 3_000)
   assert.equal(getLocalDeliveryCustomerCost(next, 60_000), 0)
 })
@@ -155,6 +159,10 @@ test("validaciones de Admin: importes >= 0, umbral > 0, CP válido, sin duplicad
     [{ ...SETTINGS, enabled: "sí" }, /activado/],
     [{ ...SETTINGS, extra: 1 }, /no es válida/],
     [{ enabled: true }, /no es válida/],
+    [{ ...SETTINGS, returnReservationDays: 0 }, /días de reserva/],
+    [{ ...SETTINGS, returnReservationDays: 31 }, /días de reserva/],
+    [{ ...SETTINGS, returnReservationDays: 2.5 }, /días de reserva/],
+    [{ ...SETTINGS, returnReservationDays: "3" }, /días de reserva/],
   ]
   for (const [value, message] of invalid) {
     assert.throws(() => parseLocalDeliverySettingsPatch(value), (error: unknown) =>
@@ -163,6 +171,11 @@ test("validaciones de Admin: importes >= 0, umbral > 0, CP válido, sin duplicad
   // Precio $0 permitido (siempre gratis) y desactivada sin CP también.
   assert.equal(parseLocalDeliverySettingsPatch({ ...SETTINGS, customerPrice: 0 }).customerPrice, 0)
   assert.deepEqual(parseLocalDeliverySettingsPatch({ ...SETTINGS, enabled: false, postalCodes: [] }).postalCodes, [])
+  // Días de reserva por devolución: entero 1–30 (bordes incluidos).
+  assert.equal(parseLocalDeliverySettingsPatch({ ...SETTINGS, returnReservationDays: 1 }).returnReservationDays, 1)
+  assert.equal(parseLocalDeliverySettingsPatch({ ...SETTINGS, returnReservationDays: 30 }).returnReservationDays, 30)
+  // Nunca viaja al navegador.
+  assert.equal("returnReservationDays" in toPublicLocalDeliverySettings(SETTINGS), false)
   // Se guarda normalizado y ordenado.
   assert.deepEqual(parseLocalDeliverySettingsPatch({ ...SETTINGS, postalCodes: ["S2132", "2000"] }).postalCodes, ["2000", "2132"])
 })

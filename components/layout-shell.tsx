@@ -68,7 +68,14 @@ export function LayoutShell({
       "/checkout"
     )
 
-  useClientPresence(!isAuthPage && !isPasswordReset)
+  // Página del cadete (QR de Envío BEYONIX): una sola tarea, sin menú,
+  // header, footer ni banners, y sin presencia de cliente.
+  const isCourierPage =
+    pathname.startsWith(
+      "/delivery/"
+    )
+
+  useClientPresence(!isAuthPage && !isPasswordReset && !isCourierPage)
 
   // Checkout layout: cada página de /checkout* maneja su propio header
   // (incluida la campana de notificaciones para staff/admin) -- /checkout
@@ -92,6 +99,10 @@ export function LayoutShell({
   }
 
   if (isAuthPage) {
+    return children
+  }
+
+  if (isCourierPage) {
     return children
   }
 

@@ -9,6 +9,7 @@ import {
 } from "../orders/order-cancellation-refund-state.ts"
 import { validatePassword } from "../validation/account-fields.ts"
 import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
+import { getCustomerLocalDeliveryNotice } from "../shipping/local-delivery-outcome.ts"
 import { isRandomColorName, RANDOM_VARIANT_LABEL } from "../products/color-mode.ts"
 import {
   getShippingStage,
@@ -42,7 +43,7 @@ export interface CustomerShippingMilestone {
 }
 
 type CustomerShippingOrder = ShippingStageOrder &
-  Partial<Pick<SupabasePedido, "shipping_provider" | "envio_proveedor" | "andreani_tracking" | "dispatch_progress">>
+  Partial<Pick<SupabasePedido, "shipping_provider" | "envio_proveedor" | "andreani_tracking" | "dispatch_progress" | "local_delivery_outcome">>
 
 /** Etapa visible del envío (misma regla que Admin, ver lib/orders/shipping-stage). */
 export function getCustomerShippingStage(order: CustomerShippingOrder, paymentConfirmed: boolean): ShippingStage | null {
@@ -63,6 +64,10 @@ export function getCustomerShippingMilestone(
   // Envío BEYONIX: sólo Preparando → En camino → Entregado, nunca sucursal,
   // retiro ni "Despachado" (aunque queden datos Andreani residuales).
   if (isLocalDeliveryOrder(order)) {
+    // Resultado del cadete (intento fallido, regreso, devuelto): mientras el
+    // pedido sigue "en_camino", el aviso local reemplaza al genérico.
+    const notice = (order.estado ?? "").toLowerCase() === "en_camino" ? getCustomerLocalDeliveryNotice(order.local_delivery_outcome) : null
+    if (notice) return { label: notice.label, detail: notice.paragraphs[0] ?? notice.title }
     const stage = getCustomerShippingStage(order, paymentConfirmed)
     const step = LOCAL_DELIVERY_STEPS.find((candidate) => candidate.stage === stage)
     return step ? { label: step.label, detail: step.reached } : null

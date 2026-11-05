@@ -1,3 +1,4 @@
+import type { CustomerLocalDeliveryOutcome } from "../shipping/local-delivery-outcome.ts"
 import type {
   ClaimShipmentCreationStatus,
   ClaimShipmentCustomerSource,
@@ -476,6 +477,8 @@ export interface SupabasePedido {
   dispatch_cutoff_reached?: boolean
   /** Calculado por el servidor para el cliente (lib/orders/shipping-stage): pickeo, listo o QR final. */
   dispatch_progress?: DispatchProgress | null
+  /** Calculado por el servidor (Envío BEYONIX): resultado del cadete, retorno y reserva. */
+  local_delivery_outcome?: CustomerLocalDeliveryOutcome | null
 }
 
 export interface SupabaseMercadoPagoOrderRefund {

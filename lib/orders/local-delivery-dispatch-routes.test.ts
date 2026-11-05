@@ -9,6 +9,7 @@ type Call = { method: string; host: string; path: string; body: unknown; filters
 type Responder = (call: Call) => Response | undefined
 
 const SUPABASE = "https://dispatch-routes.invalid"
+const QR_TOKEN = "tokenDePruebaAbCdEfGhIjK"
 
 async function withRoutes(role: string, tables: Record<string, unknown>, run: (calls: Call[]) => Promise<void>, responder?: Responder) {
   const previousEnv = { ...process.env }
@@ -26,6 +27,8 @@ async function withRoutes(role: string, tables: Record<string, unknown>, run: (c
     const custom = responder?.(call)
     if (custom) return custom
     if (call.path === "/rest/v1/profiles") return Response.json({ id: "actor", email: null, rol: role })
+    // Token del QR de gestión de entrega (lo crea la base una sola vez por pedido).
+    if (call.path === "/rest/v1/rpc/ensure_local_delivery_shipment") return Response.json(QR_TOKEN)
     if (call.method === "HEAD") return new Response(null, { status: 200, headers: { "content-range": "*/0" } })
     const table = call.path.replace("/rest/v1/", "")
     if (call.method === "GET" && table in tables) return Response.json(tables[table])
@@ -110,6 +113,11 @@ test("D: Envío BEYONIX genera una etiqueta propia por bulto y registra la GENER
       const { labels } = await response.json() as { labels: Array<Record<string, unknown>> }
       assert.deepEqual(labels.map((label) => [label.kind, label.index, label.count, label.orderCode]), [["local_delivery", 1, 2, "BX-1041"], ["local_delivery", 2, 2, "BX-1041"]])
       assert.deepEqual([labels[0].recipient, labels[0].address, labels[0].reference, labels[0].postalCode, labels[0].phone], ["María José Peña", "Córdoba 1234", "Portón verde", "2000", "341 555-0000"])
+      // Un único QR por pedido (mismo en cada bulto), con el token y nunca el id del pedido.
+      assert.deepEqual([...new Set(labels.map((label) => label.deliveryUrl))], [`http://localhost:3000/delivery/${QR_TOKEN}`])
+      const ensured = calls.find((call) => call.path === "/rest/v1/rpc/ensure_local_delivery_shipment")
+      assert.equal((ensured?.body as { p_order_id?: number } | undefined)?.p_order_id, 41)
+      assert.match(String((ensured?.body as { p_token?: string } | undefined)?.p_token), /^[A-Za-z0-9_-]{22}$/, "token aleatorio de 128 bits generado en el servidor")
       const serialized = JSON.stringify(labels)
       for (const forbidden of ["45000", "total", "payment", "andreani"]) assert.equal(serialized.toLowerCase().includes(forbidden), false, forbidden)
       const generated = calls.find((call) => call.path === GENERATED_RPC)

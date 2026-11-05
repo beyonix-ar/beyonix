@@ -2,6 +2,8 @@ import { requireOperator } from "@/app/api/admin/clientes/_auth"
 import { validId } from "@/lib/admin/dispatch"
 import { buildLocalDeliveryLabels, LocalDeliveryLabelError, type LocalDeliveryLabelOrder } from "@/lib/shipping/local-delivery-label"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
+import { createLocalDeliveryAccessToken, localDeliveryCourierUrl } from "@/lib/shipping/local-delivery-outcome"
+import { resolveTrustedSiteUrl } from "@/lib/site-url"
 
 type Context = { params: Promise<{ id: string }> }
 
@@ -49,9 +51,24 @@ export async function POST(request: Request, context: Context) {
     .eq("package_id", pkg.id).eq("attempt_number", pkg.attempt_number).eq("parcel_count", pkg.parcel_count).order("parcel_index")
   if (parcelsResult.error) return Response.json({ error: "No se pudieron cargar los bultos." }, { status: 500 })
 
+  // QR de gestión de entrega: URL pública confiable (nunca el Origin de la
+  // request en producción) + token aleatorio del pedido. Reimprimir devuelve
+  // el mismo token (la base lo crea una sola vez, bajo lock del pedido).
+  const siteUrl = resolveTrustedSiteUrl(request)
+  if (!siteUrl) return Response.json({ error: "Falta configurar la URL pública del sitio para el QR de entrega." }, { status: 500 })
+  const ensured = await auth.admin.rpc("ensure_local_delivery_shipment", {
+    p_order_id: id, p_actor_id: auth.user.id, p_token: createLocalDeliveryAccessToken(),
+  })
+  if (ensured.error || typeof ensured.data !== "string") {
+    const message = ensured.error?.message ?? ""
+    if (message.includes("LOCAL_DELIVERY_LABEL_ORDER_CANCELLED")) return Response.json({ error: CANCELLED_MESSAGE }, { status: 409 })
+    if (message.includes("DISPATCH_LOCAL_DELIVERY_ONLY")) return Response.json({ error: NOT_LOCAL_MESSAGE }, { status: 409 })
+    return Response.json({ error: "No se pudo generar el QR de entrega. Reintentá." }, { status: 500 })
+  }
+
   let labels: ReturnType<typeof buildLocalDeliveryLabels>
   try {
-    labels = buildLocalDeliveryLabels(order, parcelsResult.data ?? [], pkg.parcels_defined_at)
+    labels = buildLocalDeliveryLabels(order, parcelsResult.data ?? [], pkg.parcels_defined_at, localDeliveryCourierUrl(siteUrl, ensured.data))
   } catch (cause) {
     if (cause instanceof LocalDeliveryLabelError) return Response.json({ error: cause.message }, { status: 409 })
     throw cause

@@ -1,0 +1,10 @@
+[Unit]
+Description=BEYONIX - Vencer reservas de devoluciones locales cada 15 minutos
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=beyonix-expire-local-delivery-reservations.service
+
+[Install]
+WantedBy=timers.target

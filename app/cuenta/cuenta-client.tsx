@@ -70,6 +70,7 @@ import {
 } from "@/lib/account/account-utils"
 import { resolveOrderTrackingLink } from "@/lib/andreani/public-tracking"
 import { isLocalDeliveryOrder } from "@/lib/shipping/local-delivery"
+import { getCustomerLocalDeliveryNotice } from "@/lib/shipping/local-delivery-outcome"
 import { deriveOrderCancellationInfo } from "@/lib/orders/order-cancellation-origin"
 import { isOrderPaymentConfirmed } from "@/lib/orders/order-payment-status"
 import { getCustomerTransferReservationState } from "@/lib/orders/transfer-reservation-display"
@@ -733,6 +734,10 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
   const isCancelled = (order.estado ?? "").toLowerCase() === "cancelado"
   const orderDelivered = isOrderDetailDelivered(order)
   const localDelivery = isLocalDeliveryOrder(order)
+  // Envío BEYONIX: intento fallido, regreso o devuelto (mientras sigue "en_camino").
+  const localDeliveryNotice = localDelivery && !isCancelled && order.estado === "en_camino"
+    ? getCustomerLocalDeliveryNotice(order.local_delivery_outcome, serverNow ? Date.parse(serverNow) : undefined)
+    : null
   const orderTracking = resolveOrderTrackingLink(order)
   const trackingNumber = orderTracking.trackingNumber ?? ""
   const trackingUrl = orderTracking.url
@@ -741,7 +746,8 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
     ? getLatestFormalCustomerClaim(order.order_claims)
     : getLatestCustomerClaim(order.order_claims)
   const existingHelpMessage = !orderDelivered && existingClaim?.failure_type === "consulta_pedido"
-  const showPreDeliveryHelp = !isCancelled && !orderDelivered && !showClaimHelp
+  // Con el aviso de retorno, "Contactar a BEYONIX" ya abre el mismo chat de ayuda.
+  const showPreDeliveryHelp = !isCancelled && !orderDelivered && !showClaimHelp && !localDeliveryNotice?.showContact
   const claimHelpTitle = existingClaim
     ? existingHelpMessage
       ? "Ver mensaje de ayuda"
@@ -1348,6 +1354,41 @@ export function CompraDetalleClient({ orderId }: { orderId: number }) {
                         )}
                       </div>
                     </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {localDeliveryNotice && (
+              <section
+                className={cn(
+                  "customer-local-delivery-outcome rounded-2xl border bg-[var(--account-surface-raised)] p-3.5 sm:p-4",
+                  localDeliveryNotice.tone === "warning" ? "border-[var(--account-warning-border)]" : "border-[var(--account-border-highlight)]",
+                )}
+                data-local-delivery-outcome={order.local_delivery_outcome?.status}
+                aria-label="Estado de la entrega"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-bold text-[var(--account-text-primary)]">{localDeliveryNotice.title}</h2>
+                    {localDeliveryNotice.paragraphs.map((paragraph) => (
+                      <p key={paragraph} className="mt-1 text-xs font-medium leading-5 text-[var(--account-text-secondary)]">{paragraph}</p>
+                    ))}
+                  </div>
+                  {localDeliveryNotice.showContact && (
+                    <button
+                      type="button"
+                      aria-label={`Contactar a BEYONIX por el pedido ${formatPublicOrderId(order.id)}`}
+                      title="Contactar a BEYONIX"
+                      onClick={() => router.push(`/cuenta/compras/${order.id}/ayuda`)}
+                      className={cn(
+                        beyonixHoverBorder,
+                        "inline-flex h-9 w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border-beyonix-blue-500/50 bg-beyonix-blue-700 px-4 text-xs font-black text-white transition-colors duration-200 hover:border-beyonix-blue-300 hover:bg-beyonix-blue-500 focus-visible:ring-2 focus-visible:ring-beyonix-blue-500 sm:w-auto",
+                      )}
+                    >
+                      <MessageCircle className="size-3.5" />
+                      Contactar a BEYONIX
+                    </button>
                   )}
                 </div>
               </section>

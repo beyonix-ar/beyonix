@@ -6,11 +6,12 @@ import test from "node:test"
 import { build } from "esbuild"
 import { BarcodeFormat, BinaryBitmap, DecodeHintType, HybridBinarizer, MultiFormatReader, RGBLuminanceSource } from "@zxing/library"
 import { chromium, type Browser, type Page } from "playwright-core"
+import QRCode from "qrcode"
 
 import { buildLabelsDocument } from "../barcodes/labels-document.ts"
 import { renderCode128Svg } from "../barcodes/render.ts"
 import { buildLocalDeliveryLabels, LocalDeliveryLabelError, type LocalDeliveryLabel, type LocalDeliveryLabelOrder } from "./local-delivery-label.ts"
-import { LOCAL_DELIVERY_LABEL_TOO_LONG, localDeliveryCityLine } from "./local-delivery-label-layout.ts"
+import { fitLocalDeliveryLabel, LOCAL_DELIVERY_LABEL_TOO_LONG, localDeliveryCityLine } from "./local-delivery-label-layout.ts"
 
 // Etiqueta Envío BEYONIX 101,6 × 50,8 mm maquetada por Chromium con el HTML
 // real de impresión y el Code 128 real (bwip-js): ningún dato de entrega queda
@@ -25,6 +26,9 @@ const MM_TO_PX = 96 / 25.4
 /** 2,12 px CSS → ~203 dpi. */
 const PRINTER_SCALE = 203 / 96
 const DEFINED_AT = "2026-11-03T15:30:00.000Z"
+const DELIVERY_URL = "https://www.beyonix.com.ar/delivery/AbCdEfGhIjKlMnOpQrStUv"
+// Mismo QR que genera la impresión real (lib/barcodes/print-labels.ts).
+let QR_SVG = ""
 const BASE: LocalDeliveryLabelOrder = {
   id: 1041, cliente_nombre: "María José Peña", cliente_direccion: "Córdoba 1234 Piso 3 Dto B. Referencias: Portón verde, timbre 2",
   localidad: "Rosario", provincia: "Santa Fe", cp_destino: "2000", cliente_telefono: "341 555-0000",
@@ -68,6 +72,7 @@ let guardBundle: string
 const screenshotsDir = process.env.LABEL_SCREENSHOTS_DIR
 
 test.before(async () => {
+  QR_SVG = await QRCode.toString(DELIVERY_URL, { type: "svg", margin: 2, errorCorrectionLevel: "M" })
   const result = await build({
     stdin: { contents: `import { findClippedLocalDeliveryLabel } from "./lib/barcodes/labels-document.ts"; window.__findClipped = findClippedLocalDeliveryLabel`, resolveDir: process.cwd(), loader: "ts" },
     bundle: true, format: "iife", write: false, logLevel: "error",
@@ -80,7 +85,7 @@ test.before(async () => {
 test.after(async () => { await browser?.close() })
 
 function documentFor(labels: LocalDeliveryLabel[]) {
-  const svgs = Object.fromEntries(labels.map((label) => [label.code, renderCode128Svg(label.code)]))
+  const svgs = { ...Object.fromEntries(labels.map((label) => [label.code, renderCode128Svg(label.code)])), [DELIVERY_URL]: QR_SVG }
   return buildLabelsDocument(labels, svgs, "single")
 }
 
@@ -94,7 +99,7 @@ async function openDocument(html: string) {
   return { page, errors }
 }
 
-function decodeCode128(png: Buffer) {
+function decode(png: Buffer, format: BarcodeFormat) {
   const image = PNG.sync.read(png)
   const luminance = new Uint8ClampedArray(image.width * image.height)
   for (let index = 0; index < luminance.length; index += 1) {
@@ -102,9 +107,11 @@ function decodeCode128(png: Buffer) {
     luminance[index] = (image.data[offset] * 299 + image.data[offset + 1] * 587 + image.data[offset + 2] * 114) / 1000
   }
   const reader = new MultiFormatReader()
-  reader.setHints(new Map<DecodeHintType, unknown>([[DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128]], [DecodeHintType.TRY_HARDER, true]]))
+  reader.setHints(new Map<DecodeHintType, unknown>([[DecodeHintType.POSSIBLE_FORMATS, [format]], [DecodeHintType.TRY_HARDER, true]]))
   return reader.decode(new BinaryBitmap(new HybridBinarizer(new RGBLuminanceSource(luminance, image.width, image.height)))).getText()
 }
+const decodeCode128 = (png: Buffer) => decode(png, BarcodeFormat.CODE_128)
+const decodeQr = (png: Buffer) => decode(png, BarcodeFormat.QR_CODE)
 
 type Measured = {
   size: { width: number; height: number }
@@ -112,6 +119,7 @@ type Measured = {
   values: Record<string, string>
   truncating: string[]
   barcode: { left: number; right: number; height: number; labelLeft: number; labelRight: number }
+  qr: { width: number; height: number; inside: boolean; overlaps: string[] }
 }
 
 const measure = (page: Page, index: number) => page.locator(".label.local_delivery").nth(index).evaluate((label): Measured => {
@@ -133,15 +141,28 @@ const measure = (page: Page, index: number) => page.locator(".label.local_delive
       (element.matches(".ld-head, .ld-head *, .ld-body, .ld-body *, .ld-foot, .ld-foot *") && style.overflow !== "visible")
   }).map((element) => element.className)
   const svg = label.querySelector(".barcode svg")!.getBoundingClientRect()
+  // QR de gestión de entrega: dentro de la etiqueta y sin tocar ningún texto ni el Code 128.
+  // Sin funciones con nombre: tsx las envuelve con __name, que no existe en la página.
+  const qr = label.querySelector(".ld-qr-code svg")!.getBoundingClientRect()
+  const overlaps: string[] = []
+  for (const element of label.querySelectorAll<Element>(".ld-value, .ld-label, .ld-head > *, .ld-foot > *, .barcode svg, .ld-qr-caption")) {
+    const range = document.createRange()
+    range.selectNodeContents(element)
+    const rects = [...range.getClientRects(), ...(element.matches(".barcode svg, .ld-qr-caption") ? [element.getBoundingClientRect()] : [])]
+    if (rects.some((rect) => rect.left < qr.right - 0.5 && rect.right > qr.left + 0.5 && rect.top < qr.bottom - 0.5 && rect.bottom > qr.top + 0.5)) {
+      overlaps.push(String(element.getAttribute("class")))
+    }
+  }
   return {
     size: { width: box.width, height: box.height }, overflow, values, truncating,
     barcode: { left: svg.left, right: svg.right, height: svg.height, labelLeft: box.left, labelRight: box.right },
+    qr: { width: qr.width, height: qr.height, inside: qr.left >= box.left && qr.right <= box.right && qr.top >= box.top && qr.bottom <= box.bottom, overlaps },
   }
 })
 
 for (const item of CASES) {
   test(`etiqueta ${item.name}: 101,6 × 50,8 mm, todos los datos completos y visibles, Code 128 decodificable`, async () => {
-    const labels = buildLocalDeliveryLabels(item.order, item.parcels ?? parcels(1), DEFINED_AT)
+    const labels = buildLocalDeliveryLabels(item.order, item.parcels ?? parcels(1), DEFINED_AT, DELIVERY_URL)
     const { page, errors } = await openDocument(documentFor(labels))
     try {
       assert.equal(await page.evaluate(() => (window as unknown as { __findClipped(document: Document): string | null }).__findClipped(document)), null)
@@ -165,6 +186,13 @@ for (const item of CASES) {
         const labelLocator = page.locator(".label.local_delivery").nth(index)
         assert.equal(decodeCode128(await labelLocator.locator(".barcode").screenshot()), label.code, "Code 128 decodificable a ~203 dpi")
         assert.match(await labelLocator.locator(".ld-head").innerText(), new RegExp(`BULTO ${label.index}/${label.count}`))
+        // QR: 18 mm al lado de los datos (12,6 mm junto a las barras si los datos no entran), dentro de la
+        // etiqueta, sin superponerse y decodificable a ~203 dpi (mismo QR en todos los bultos).
+        const qrMm = fitLocalDeliveryLabel(label)?.qr === "footer" ? 12.6 : 18
+        assert.ok(Math.abs(measured.qr.width - qrMm * MM_TO_PX) < 1 && Math.abs(measured.qr.height - qrMm * MM_TO_PX) < 1, JSON.stringify(measured.qr))
+        assert.ok(measured.qr.inside, "QR dentro de la etiqueta")
+        assert.deepEqual(measured.qr.overlaps, [], "QR sin superposición")
+        assert.equal(decodeQr(await labelLocator.locator(".ld-qr-code").screenshot()), DELIVERY_URL, "QR decodificable a ~203 dpi")
         if (screenshotsDir) writeFileSync(join(screenshotsDir, `etiqueta-${item.name}-${label.index}de${label.count}.png`), await labelLocator.screenshot())
       }
       assert.deepEqual(errors, [])
@@ -174,12 +202,12 @@ for (const item of CASES) {
 
 test("caso que no entra legible: no se genera ni se imprime (mensaje claro)", () => {
   const absurd = { ...BASE, cliente_nombre: LONG_NAME, cliente_direccion: address(`${LONG_ADDRESS} `.repeat(4).trim(), `${LONG_REFERENCE} `.repeat(4).trim()), cliente_telefono: LONG_PHONE }
-  assert.throws(() => buildLocalDeliveryLabels(absurd, parcels(1), DEFINED_AT), (error: Error) =>
+  assert.throws(() => buildLocalDeliveryLabels(absurd, parcels(1), DEFINED_AT, DELIVERY_URL), (error: Error) =>
     error instanceof LocalDeliveryLabelError && error.message === LOCAL_DELIVERY_LABEL_TOO_LONG)
 })
 
 test("barrera de impresión: también dentro del iframe 0×0 de impresión detecta cualquier recorte y bloquea", async () => {
-  const html = documentFor(buildLocalDeliveryLabels(BASE, parcels(2), DEFINED_AT))
+  const html = documentFor(buildLocalDeliveryLabels(BASE, parcels(2), DEFINED_AT, DELIVERY_URL))
   const page = await browser.newPage()
   try {
     await page.setContent("<!doctype html><html><body></body></html>")

@@ -17,6 +17,11 @@ import {
   type LocalDeliverySettings,
 } from "@/lib/shipping/local-delivery"
 import {
+  LOCAL_DELIVERY_RESERVATION_DAYS_MAX,
+  LOCAL_DELIVERY_RESERVATION_DAYS_MIN,
+  normalizeLocalDeliveryReservationDays,
+} from "@/lib/shipping/local-delivery-outcome"
+import {
   buildShippingPriceBreakdown,
   markupPercentToBasisPoints,
   SHIPPING_MARKUP_MAX_PERCENT,
@@ -572,6 +577,7 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
     internalCost: String(saved.internalDeliveryCost),
     freeThreshold: String(saved.freeThreshold),
     postalCodes: saved.postalCodes,
+    returnReservationDays: String(saved.returnReservationDays),
   })
   const { draft, editing } = block
   const [postalCodeDraft, setPostalCodeDraft] = useState("")
@@ -582,6 +588,7 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
     internalDeliveryCost: parseAmount(draft.internalCost),
     freeThreshold: parseAmount(draft.freeThreshold),
     postalCodes: draft.postalCodes,
+    returnReservationDays: Number(draft.returnReservationDays),
   }
   // Mismas reglas que el servidor (parseLocalDeliverySettingsPatch).
   const validationError = !draft.customerPrice || !draft.internalCost
@@ -590,13 +597,16 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
       ? "El monto de envío gratis debe ser mayor a $0."
       : next.enabled && next.postalCodes.length === 0
         ? "Agregá al menos un código postal para activar Envío BEYONIX."
-        : ""
+        : normalizeLocalDeliveryReservationDays(next.returnReservationDays) === null
+          ? `Los días de reserva por devolución deben ser un número entero de ${LOCAL_DELIVERY_RESERVATION_DAYS_MIN} a ${LOCAL_DELIVERY_RESERVATION_DAYS_MAX}.`
+          : ""
   const dirty =
     next.enabled !== saved.enabled ||
     next.customerPrice !== saved.customerPrice ||
     next.internalDeliveryCost !== saved.internalDeliveryCost ||
     next.freeThreshold !== saved.freeThreshold ||
-    next.postalCodes.join(",") !== saved.postalCodes.join(",")
+    next.postalCodes.join(",") !== saved.postalCodes.join(",") ||
+    next.returnReservationDays !== saved.returnReservationDays
   const inputsDisabled = disabled || saving
 
   const addPostalCode = () => {
@@ -702,6 +712,27 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
             />
           ) : (
             formatARS(saved.freeThreshold)
+          )}
+        </ConfigValueRow>
+        <ConfigValueRow
+          label={<>Días de reserva por devolución <AdminHelpTip label="Días de reserva por devolución" text="Si un pedido vuelve a BEYONIX tras dos intentos fallidos, sus productos quedan reservados para el cliente esta cantidad de días calendario (vence a las 00:00). Un cambio sólo aplica a las devoluciones que se reciban después." /></>}
+          editing={editing}
+          data-local-delivery-reservation-days=""
+        >
+          {editing ? (
+            <AdminTextInput
+              title="Días de reserva por devolución"
+              placeholder="3"
+              ariaLabel="Días de reserva por devolución"
+              value={draft.returnReservationDays}
+              inputMode="numeric"
+              maxLength={2}
+              className="w-full sm:w-24"
+              disabled={inputsDisabled}
+              onChange={(value) => block.setField("returnReservationDays", value.replace(/D/g, ""))}
+            />
+          ) : (
+            `${saved.returnReservationDays} ${saved.returnReservationDays === 1 ? "día" : "días"}`
           )}
         </ConfigValueRow>
         <ConfigValueRow label="Códigos postales" data-local-delivery-postal-codes="">

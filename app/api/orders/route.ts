@@ -6,6 +6,7 @@ import { expireOverdueTransferOrders } from "@/lib/orders/transfer-expiration"
 import { toCustomerSafeOrderAuditEvents } from "@/lib/orders/customer-order-audit-view"
 import { toCustomerOrderDto } from "@/lib/orders/customer-order-dto"
 import { attachDispatchCutoff } from "@/lib/orders/dispatch-cutoff-server"
+import { attachCustomerLocalDeliveryOutcomes } from "@/lib/orders/local-delivery-outcomes-server"
 import { attachCustomerClaimReads } from "@/lib/orders/customer-claim-access"
 import { attachTransferReservationDeadlines } from "@/lib/orders/transfer-reservation-window"
 import { isCustomerOrderVisible } from "@/lib/orders/order-visibility"
@@ -76,7 +77,8 @@ export async function GET() {
   // que esperan el pago (sólo lectura: nunca la renueva).
   let withReservations: CustomerOrderSummary[]
   try {
-    withReservations = await attachDispatchCutoff(admin, await attachTransferReservationDeadlines(admin, [...merged.values()]))
+    withReservations = await attachCustomerLocalDeliveryOutcomes(admin,
+      await attachDispatchCutoff(admin, await attachTransferReservationDeadlines(admin, [...merged.values()])))
   } catch {
     return NextResponse.json(
       { error: "No se pudieron cargar tus compras." },

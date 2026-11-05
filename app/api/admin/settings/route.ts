@@ -51,12 +51,17 @@ export async function PATCH(request: Request) {
   let changes: ReturnType<typeof normalizeSiteSettingsPatch>
   let shippingQuoteChange: ShippingQuoteSettings | null = null
   let localDeliveryChange: LocalDeliverySettings | null = null
+  let localDeliveryKeepsReservationDays = false
   try {
     const body: unknown = await request.json()
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid")
     const { shippingQuote, localDelivery, ...rest } = body as Record<string, unknown>
     if (shippingQuote !== undefined) shippingQuoteChange = parseShippingQuoteSettingsPatch(shippingQuote)
-    if (localDelivery !== undefined) localDeliveryChange = parseLocalDeliverySettingsPatch(localDelivery)
+    if (localDelivery !== undefined) {
+      localDeliveryChange = parseLocalDeliverySettingsPatch(localDelivery)
+      // Un cliente de Admin anterior no envía los días de reserva: se conserva lo guardado.
+      localDeliveryKeepsReservationDays = !Object.hasOwn(localDelivery as object, "returnReservationDays")
+    }
     changes = Object.keys(rest).length || (!shippingQuoteChange && !localDeliveryChange) ? normalizeSiteSettingsPatch(rest) : []
   } catch (error) {
     const message = error instanceof Error &&
@@ -70,6 +75,9 @@ export async function PATCH(request: Request) {
     getShippingQuoteSettings(),
     localDeliveryChange ? getLocalDeliverySettings() : Promise.resolve(null),
   ])
+  if (localDeliveryChange && localDeliveryBefore && localDeliveryKeepsReservationDays) {
+    localDeliveryChange = { ...localDeliveryChange, returnReservationDays: localDeliveryBefore.returnReservationDays }
+  }
 
   // Política de precio financiado: mientras un evento de financiación la
   // controla, no se cambia a mano (nunca se pisa en silencio la

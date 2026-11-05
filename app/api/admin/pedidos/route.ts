@@ -3,6 +3,8 @@ import type { createAdminClient } from "@/lib/supabase/admin"
 import { ORDER_CLAIM_BUCKET } from "@/lib/order-claims"
 import type { AdminPendingFacts } from "@/lib/orders/admin-pending-actions"
 import { loadAdminPendingFacts } from "@/lib/orders/admin-pending-facts-server"
+import { loadLocalDeliveryOutcomeSummaries } from "@/lib/orders/local-delivery-outcomes-server"
+import type { CustomerLocalDeliveryOutcome } from "@/lib/shipping/local-delivery-outcome"
 import { getPaymentIncidents, isPaymentIncidentAction, PAYMENT_INCIDENT_ACTIONS } from "@/lib/orders/payment-incidents"
 import type {
   SupabasePedido,
@@ -147,10 +149,18 @@ export async function GET(request: Request) {
       console.error("ADMIN_PENDING_FACTS_ERROR", { message: error instanceof Error ? error.message : String(error) })
       return new Map<number, AdminPendingFacts>()
     })
+  // Envío BEYONIX: resultado del cadete (Regresando/Devuelto a BEYONIX, etc.)
+  // para que la presentación no muestre "En camino" con ordenes.estado igual.
+  // Si falla, el listado sigue con la presentación por estado.
+  const localOutcomesPromise = loadLocalDeliveryOutcomeSummaries(auth.admin, pedidos)
+    .catch((error: unknown) => {
+      console.error("ADMIN_LOCAL_DELIVERY_OUTCOMES_ERROR", { message: error instanceof Error ? error.message : String(error) })
+      return new Map<number, CustomerLocalDeliveryOutcome>()
+    })
 
   if (notificationView) {
     const orderIds = pedidos.map((pedido) => pedido.id)
-    const [claimsResult, creditNotesResult, mpRefundsResult, pendingFacts] = await Promise.all([
+    const [claimsResult, creditNotesResult, mpRefundsResult, pendingFacts, localOutcomes] = await Promise.all([
       auth.admin
         .from("order_claims")
         .select("*, order_claim_messages(*)")
@@ -170,6 +180,7 @@ export async function GET(request: Request) {
         .in("order_id", orderIds)
         .order("created_at", { ascending: false }),
       pendingFactsPromise,
+      localOutcomesPromise,
     ])
     // Sólo los incidentes de pago (con su resolución): la campana cuenta los
     // abiertos y deja de contarlos apenas se resuelven.
@@ -229,6 +240,7 @@ export async function GET(request: Request) {
         order_refund_proofs: [],
         order_audit_events: incidentsByOrder.get(pedido.id) ?? [],
         admin_pending_facts: pendingFacts.get(pedido.id) ?? null,
+        local_delivery_outcome: localOutcomes.get(pedido.id) ?? null,
       })),
       total: pedidos.length,
     })
@@ -492,12 +504,13 @@ export async function GET(request: Request) {
     }
   }
 
-  const pendingFacts = await pendingFactsPromise
+  const [pendingFacts, localOutcomes] = await Promise.all([pendingFactsPromise, localOutcomesPromise])
 
   return Response.json({
     pedidos: pedidos.map((pedido) => ({
       ...pedido,
       admin_pending_facts: pendingFacts.get(pedido.id) ?? null,
+      local_delivery_outcome: localOutcomes.get(pedido.id) ?? null,
       total: auth.profile.rol === "operador" ? 0 : pedido.total,
       shipping_cost_real:
         auth.profile.rol === "operador" ? null : pedido.shipping_cost_real,

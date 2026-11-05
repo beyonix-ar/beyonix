@@ -9,6 +9,7 @@ import {
   type LocalDeliveryPreparation,
   type LocalDeliveryStage,
 } from "./local-delivery-status.ts"
+import { isInTransitEmailObsolete, type LocalDeliveryOutcomeStatus } from "../shipping/local-delivery-outcome.ts"
 
 /**
  * Avance de Envío BEYONIX con efectos recuperables:
@@ -220,6 +221,12 @@ export interface LocalDeliveryServiceDeps {
   sendStateEmail(order: LocalDeliveryOrderRecord): Promise<boolean>
   /** Pickeo y bultos BX-PKG del intento vigente. Lanza si no se pudo leer. */
   loadPreparation(orderId: number): Promise<LocalDeliveryPreparation>
+  /**
+   * Resultado de la entrega local informado por el cadete (QR); `null` sin
+   * QR emitido. Con el pedido regresando, devuelto o entregado, el aviso de
+   * En camino quedó obsoleto. Lanza si no se pudo leer.
+   */
+  loadOutcomeStatus?(orderId: number): Promise<LocalDeliveryOutcomeStatus | null>
   now(): string
 }
 
@@ -271,6 +278,9 @@ async function authorizeEmailAttempt(
   expectedEstado: string,
 ) {
   if (!await deps.authorizeEmail(orderId, expectedEstado)) return false
+  // Revalidado DESPUÉS de persistir la reserva: un regreso registrado antes de
+  // esta lectura frena el aviso de En camino.
+  if (effect === "in_transit_email" && isInTransitEmailObsolete(await deps.loadOutcomeStatus?.(orderId))) return false
   const rows = (await deps.loadEffectRecords(orderId)).filter((row) => row.effect === effect)
   if (rows.some((row) => row.state === "completed" || row.state === "superseded")) return false
   return activeReservations(rows, Date.parse(deps.now()))[0]?.attemptId === attemptId
@@ -304,6 +314,13 @@ async function runEmailEffect(
   // Corte temprano: un pedido ya inválido ni siquiera reserva.
   const fresh = await deps.loadOrder(orderId)
   if (!fresh || getLocalDeliveryRetryError(fresh) || getLocalDeliveryStage(fresh) !== EFFECT_STAGE[effect]) return false
+  // Pedido regresando o devuelto a BEYONIX (sigue "en_camino"): el aviso de
+  // En camino ya no corresponde. Se marca superseded y nunca se envía (mismo
+  // criterio que Entregado sobre un aviso de En camino pendiente).
+  if (effect === "in_transit_email" && isInTransitEmailObsolete(await deps.loadOutcomeStatus?.(orderId))) {
+    await deps.recordEffect(orderId, effect, "superseded", { supersededBy: "local_delivery_outcome" })
+    return true
+  }
   const expectedEstado = fresh.estado ?? ""
 
   const attemptId = globalThis.crypto.randomUUID()
