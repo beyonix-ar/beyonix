@@ -40,8 +40,29 @@
 --       la elegibilidad del worker de cancelación automática (NC y reintegro MP)
 --       y la retención por "despachado" de super_admin_cancel_order:
 --       se reemplaza sólo esa condición sobre la definición vigente.
+--       FALLA CERRADO: cada una de las 14 guardas debe estar exactamente una
+--       vez en su forma anterior (se reemplaza) o exactamente una vez en su
+--       forma nueva (re-ejecución). Función ausente, guarda ausente, duplicada
+--       o ambas formas a la vez => EXCEPTION y no se aplica nada de C.
+-- 0. Proveedor efectivo normalizado (igual que lib/shipping/local-delivery
+--    isLocalDeliveryOrder): shipping_provider NULL, '' o sólo espacios cuenta
+--    como ausente y se usa el legacy envio_proveedor.
+-- 6. sync_dispatch_blocks(): la salida anticipada por andreani_handed_over_at
+--    (QR final del Bulto) sólo aplica a pedidos Andreani; en Envío BEYONIX ese
+--    residuo ya no resuelve todos los bloqueos.
+-- 7. Resincroniza con sync_dispatch_blocks() los pedidos Envío BEYONIX con
+--    preparación que tengan bloqueos automáticos activos o QR final residual:
+--    los bloqueos persistidos con la regla anterior (p. ej. tracking_in_circuit
+--    por tracking_number residual) se resuelven con su semántica normal.
 
 begin;
+
+-- 0. Proveedor efectivo ------------------------------------------------------
+create or replace function public.order_is_local_delivery(p_order public.ordenes)
+returns boolean language sql immutable
+set search_path = pg_catalog, public, pg_temp as $$
+  select lower(btrim(coalesce(nullif(btrim(p_order.shipping_provider), ''), p_order.envio_proveedor, ''))) = 'beyonix'
+$$;
 
 -- 1. Preparando → En camino, atómico (misma firma y locks que en A) -----------
 create or replace function public.mark_local_delivery_in_transit(
@@ -153,7 +174,7 @@ declare o public.ordenes%rowtype; v_reasons text[] := '{}'; v_provider text; v_a
 begin
   select * into o from public.ordenes where id = p_order_id;
   if not found then raise exception 'DISPATCH_ORDER_NOT_FOUND'; end if;
-  v_provider := lower(coalesce(o.shipping_provider,o.envio_proveedor,''));
+  v_provider := lower(btrim(coalesce(nullif(btrim(o.shipping_provider),''),o.envio_proveedor,'')));
   v_andreani_scope := not public.order_is_local_delivery(o);
   if o.paid_at is null and coalesce(o.payment_confirmed_amount,0) <= 0
      and coalesce(o.payment_status,'') not in ('confirmado','approved','confirmed')
@@ -209,16 +230,46 @@ begin
   return v_reasons;
 end $$;
 
+-- 6. Sincronización de bloqueos persistidos -----------------------------------
+-- Igual que 20261005100000 salvo que el QR final residual de un pedido Envío
+-- BEYONIX no corta la sincronización (sus motivos salen de 4).
+create or replace function public.sync_dispatch_blocks(p_order_id bigint)
+returns void language plpgsql security definer
+set search_path = pg_catalog, public, pg_temp as $$
+declare v_order public.ordenes%rowtype; v_reasons text[]; v_reason text;
+begin
+  -- Shared row lock serializes cancellation/claim/refund/dispatch transitions.
+  select * into v_order from public.ordenes where id = p_order_id for update;
+  if not found then return; end if;
+  if not exists (select 1 from public.order_packages where order_id = p_order_id) then return; end if;
+  if v_order.andreani_handed_over_at is not null and not public.order_is_local_delivery(v_order) then
+    update public.dispatch_blocks set resolved_at = now(), resolution_reason = 'Tanda entregada a Andreani'
+      where order_id = p_order_id and source = 'automatic' and resolved_at is null;
+    return;
+  end if;
+  v_reasons := public.dispatch_order_block_reasons(p_order_id);
+  update public.dispatch_blocks set resolved_at = now(), resolution_reason = 'Condición operativa restablecida'
+  where order_id = p_order_id and source = 'automatic' and resolved_at is null
+    and not (reason = any(v_reasons));
+  foreach v_reason in array v_reasons loop
+    insert into public.dispatch_blocks(order_id, reason, source)
+    values (p_order_id, v_reason, 'automatic') on conflict do nothing;
+  end loop;
+end $$;
+
 -- 5. Guardas Andreani dentro de las RPC de cancelación y preparación ----------
 -- Se reemplaza sólo la condición indicada de la definición vigente (mismo
--- método que 20261023100000). Si ya está reemplazada o esa versión no tiene la
--- guarda, no hace nada; si aparece más de una vez, la migración falla (nunca se
--- aplica a medias). Una función ausente (bases de prueba parciales) se saltea.
+-- método que 20261023100000), fallando cerrado:
+--   forma anterior 1 vez y nueva 0 => se reemplaza (y se verifica el resultado);
+--   forma anterior 0 y nueva 1     => ya aplicada (re-ejecución idempotente);
+--   cualquier otro caso o función ausente => EXCEPTION (se revierte todo C).
 do $migration$
 declare
   v_target record;
   v_definition text;
-  v_matches integer;
+  v_old integer;
+  v_new integer;
+  v_checked integer := 0;
 begin
   for v_target in
     select * from (values
@@ -267,25 +318,52 @@ begin
        $new$v_dispatched := (v_order.andreani_handed_over_at is not null and not public.order_is_local_delivery(v_order))$new$)
     ) as t(signature, old_text, new_text)
   loop
+    v_checked := v_checked + 1;
     if to_regprocedure(v_target.signature) is null then
-      raise notice 'Función % ausente: sin cambios', v_target.signature;
-      continue;
+      raise exception 'LOCAL_DELIVERY_GUARD_FUNCTION_MISSING: %', v_target.signature;
     end if;
     v_definition := pg_get_functiondef(to_regprocedure(v_target.signature));
-    if position(v_target.new_text in v_definition) > 0 then continue; end if;
-    v_matches := (length(v_definition) - length(replace(v_definition, v_target.old_text, ''))) / length(v_target.old_text);
-    if v_matches = 0 then
-      -- Esa versión de la función no tiene esta guarda Andreani: nada que neutralizar.
-      raise notice 'Guarda Andreani ausente en %: sin cambios', v_target.signature;
-      continue;
-    end if;
-    if v_matches > 1 then
-      raise exception 'Guarda Andreani ambigua en % (%)', v_target.signature, v_matches;
+    v_old := (length(v_definition) - length(replace(v_definition, v_target.old_text, ''))) / length(v_target.old_text);
+    v_new := (length(v_definition) - length(replace(v_definition, v_target.new_text, ''))) / length(v_target.new_text);
+    if v_old = 0 and v_new = 1 then continue; end if;
+    if v_old <> 1 or v_new <> 0 then
+      raise exception 'LOCAL_DELIVERY_GUARD_UNEXPECTED: % (anterior=%, nueva=%): %',
+        v_target.signature, v_old, v_new, v_target.old_text;
     end if;
     execute replace(v_definition, v_target.old_text, v_target.new_text);
+    v_definition := pg_get_functiondef(to_regprocedure(v_target.signature));
+    if position(v_target.old_text in v_definition) > 0 or position(v_target.new_text in v_definition) = 0 then
+      raise exception 'LOCAL_DELIVERY_GUARD_NOT_APPLIED: %: %', v_target.signature, v_target.old_text;
+    end if;
   end loop;
+  if v_checked <> 14 then
+    raise exception 'LOCAL_DELIVERY_GUARD_COUNT: % de 14', v_checked;
+  end if;
 end
 $migration$;
+
+-- 7. Bloqueos persistidos con la regla anterior --------------------------------
+-- Sólo pedidos Envío BEYONIX con preparación (sin ella sync_dispatch_blocks no
+-- hace nada) y con algo que la regla anterior pudo dejar mal: un bloqueo
+-- automático activo, o el QR final residual que resolvía todos los bloqueos.
+-- Reutiliza sync_dispatch_blocks (idempotente): resuelve lo que ya no aplica y
+-- crea lo que sí; nunca borra filas ni toca bloqueos manuales.
+do $resync$
+declare v_id bigint;
+begin
+  for v_id in
+    select o.id from public.ordenes o
+    where public.order_is_local_delivery(o)
+      and exists (select 1 from public.order_packages p where p.order_id = o.id)
+      and (o.andreani_handed_over_at is not null
+        or exists (select 1 from public.dispatch_blocks b
+                   where b.order_id = o.id and b.source = 'automatic' and b.resolved_at is null))
+    order by o.id
+  loop
+    perform public.sync_dispatch_blocks(v_id);
+  end loop;
+end
+$resync$;
 
 revoke all on function public.record_local_delivery_labels_generated(bigint, uuid, bigint, integer, text[])
   from public, anon, authenticated;

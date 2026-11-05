@@ -193,7 +193,11 @@ export function isLocalDeliveryProvider(provider: string | null | undefined) {
   return (provider ?? "").trim().toLowerCase() === LOCAL_DELIVERY_PROVIDER
 }
 
-/** Proveedor logístico persistido de un pedido (columna nueva o legado). */
+/**
+ * Proveedor logístico persistido de un pedido (columna nueva o legado). Un
+ * shipping_provider NULL, vacío o sólo con espacios cuenta como ausente: mismo
+ * criterio que public.order_is_local_delivery (migración 20261104120000).
+ */
 export function isLocalDeliveryOrder(order: { shipping_provider?: string | null; envio_proveedor?: string | null }) {
-  return isLocalDeliveryProvider(order.shipping_provider || order.envio_proveedor)
+  return isLocalDeliveryProvider(order.shipping_provider?.trim() || order.envio_proveedor)
 }

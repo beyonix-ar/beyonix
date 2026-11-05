@@ -5,6 +5,8 @@ import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
 import { isOrderDispatchCutoffReached, type DispatchCutoffOrder } from "./dispatch-cutoff.ts"
+import { isLocalDeliveryOrder } from "../shipping/local-delivery.ts"
+import { readMigrationCGuards } from "./fixtures/migration-c-guard-stubs.ts"
 
 // Proveedor efectivo (migración C, 20261104120000) contra las migraciones
 // reales de Despachos, cancelación (cliente, Admin, Super Admin) y resolución
@@ -59,6 +61,9 @@ const CANCELLATION_FUNCTIONS = [
     "create or replace function public.admin_cancel_order(", "revoke all on function public.admin_cancel_order"),
   between("supabase/migrations/20261014140000_automatic_cancellation_fiscal_refund.sql",
     "create or replace function public.begin_mercadopago_order_refund(", "revoke all on function public.begin_mercadopago_order_refund"),
+  // Versión vigente de la NC de 12 parámetros (con las 4 guardas del worker que reemplaza C).
+  between("supabase/migrations/20261014140000_automatic_cancellation_fiscal_refund.sql",
+    "create or replace function public.begin_partial_credit_note(", "revoke all on function public.begin_partial_credit_note"),
 ]
 const MIGRATION_A = "supabase/migrations/20261103120000_local_delivery_parcels_labels.sql"
 const MIGRATION_B = "supabase/migrations/20261103130000_local_delivery_in_transit_parcels_guard.sql"
@@ -244,6 +249,173 @@ test("Super Admin: la retención por 'despachado' no usa el QR final residual de
     assert.equal(await retained(beyonix()), null)
     assert.notEqual(await retained(andreani()), null)
   } finally { await db.close() }
+})
+
+const activeBlocks = async (db: PGlite, id: number) =>
+  (await db.query<{ reason: string }>(
+    "select reason from dispatch_blocks where order_id=$1 and source='automatic' and resolved_at is null order by reason", [id],
+  )).rows.map((row) => row.reason)
+
+test("histórico A+B → bloqueo persistido → C: el tracking_in_circuit residual se resuelve y el pedido BEYONIX completa el flujo", async () => {
+  const db = await setup("AB")
+  try {
+    // Pedido BEYONIX que empezó la preparación y después recibió residuos Andreani.
+    const id = await insertOrder(db, { shipping_provider: "beyonix" })
+    await db.query("select begin_order_preparation($1,$2)", [id, actor])
+    await db.query("update ordenes set tracking_number='TRK-RES', andreani_estado='En transito' where id=$1", [id])
+    await db.query("select sync_dispatch_blocks($1)", [id])
+    // Despachos (lib/admin/dispatch getOrderDispatch) lee estas filas activas para bloquear la preparación.
+    assert.deepEqual(await activeBlocks(db, id), ["shipment_pending", "tracking_in_circuit"], "A+B persiste el bloqueo falso")
+
+    // QR final residual: con A+B la salida anticipada resolvía TODOS los bloqueos (incluso los reales).
+    const handed = await insertOrder(db, { shipping_provider: "beyonix", ...HANDED_OVER })
+    await db.query("insert into order_packages(order_id) values ($1)", [handed])
+    await db.query("select sync_dispatch_blocks($1)", [handed])
+    assert.deepEqual(await activeBlocks(db, handed), [], "A+B: 'Tanda entregada a Andreani' sobre un pedido local")
+
+    // Andreani moderno y legacy con QR final: la regla de A+B se mantiene.
+    const andreaniHanded = await insertOrder(db, andreani())
+    const legacyHanded = await insertOrder(db, { shipping_provider: null, envio_proveedor: "andreani", ...RESIDUE })
+    for (const order of [andreaniHanded, legacyHanded]) {
+      await db.query("insert into order_packages(order_id) values ($1)", [order])
+      await db.query("insert into dispatch_blocks(order_id,reason,source) values ($1,'claim','automatic')", [order])
+      await db.query("select sync_dispatch_blocks($1)", [order])
+      assert.deepEqual(await activeBlocks(db, order), [])
+    }
+
+    await db.exec(read(MIGRATION_C))
+
+    assert.deepEqual(await activeBlocks(db, id), ["shipment_pending"], "C resincroniza el bloqueo persistido")
+    const resolved = (await db.query<{ resolution_reason: string }>(
+      "select resolution_reason from dispatch_blocks where order_id=$1 and reason='tracking_in_circuit'", [id])).rows
+    assert.deepEqual(resolved, [{ resolution_reason: "Condición operativa restablecida" }], "se resuelve, no se borra")
+    // Su preparación no tiene renglones: items_changed es un motivo real que el QR residual ocultaba.
+    assert.deepEqual(await activeBlocks(db, handed), ["items_changed", "shipment_pending"], "el QR residual ya no oculta los motivos reales")
+
+    // Flujo completo del pedido resincronizado.
+    await db.query("select scan_order_preparation_code($1,$2,$3,$4)", [id, "BAR-A-BLUE", actor, key()])
+    await db.query("select set_order_package_parcels($1,1,$2,$3)", [id, actor, key()])
+    const pkg = (await db.query<{ id: number; status: string }>("select id,status from order_packages where order_id=$1", [id])).rows[0]
+    assert.equal(pkg.status, "prepared")
+    const code = `BX-PKG-${1000 + id}-01`
+    await db.query("select record_local_delivery_labels_generated($1,$2,$3,1,$4)", [id, actor, pkg.id, [code]])
+    assert.equal((await db.query<{ c: { complete: boolean } }>("select confirm_local_delivery_parcel($1,$2,$3) c", [id, code, actor])).rows[0].c.complete, true)
+    assert.deepEqual((await db.query<{ id: number }>("select id from mark_local_delivery_in_transit($1,'pagado',$2)", [id, actor])).rows, [{ id }])
+    assert.equal((await db.query<{ estado: string }>("select estado from ordenes where id=$1", [id])).rows[0].estado, "en_camino")
+
+    // Andreani con QR final: sigue cerrando sus bloqueos como antes.
+    for (const order of [andreaniHanded, legacyHanded]) {
+      await db.query("insert into dispatch_blocks(order_id,reason,source) values ($1,'claim','automatic')", [order])
+      await db.query("select sync_dispatch_blocks($1)", [order])
+      assert.deepEqual(await activeBlocks(db, order), [], `${order}: Andreani sin cambios`)
+    }
+
+    // Re-ejecutar C (incluida la resincronización) no cambia nada.
+    const before = (await db.query("select id,order_id,reason,resolved_at from dispatch_blocks order by id")).rows
+    await db.exec(read(MIGRATION_C))
+    assert.deepEqual((await db.query("select id,order_id,reason,resolved_at from dispatch_blocks order by id")).rows, before)
+  } finally { await db.close() }
+})
+
+test("provider vacío: SQL order_is_local_delivery = TS isLocalDeliveryOrder; NULL, '' y espacios caen al legacy", async () => {
+  const db = await setup("ABC")
+  try {
+    const cases: Array<[string | null, string | null, boolean]> = [
+      ["", "beyonix", true],
+      ["   ", "beyonix", true],
+      [null, "beyonix", true],
+      ["beyonix", null, true],
+      [" BEYONIX ", null, true],
+      ["beyonix", "andreani", true],
+      ["andreani", "beyonix", false],
+      ["", "andreani", false],
+      [null, "andreani", false],
+      [null, null, false],
+    ]
+    for (const [shippingProvider, legacy, expected] of cases) {
+      const id = await insertOrder(db, { shipping_provider: shippingProvider, envio_proveedor: legacy })
+      const sql = (await db.query<{ l: boolean }>("select order_is_local_delivery(o) l from ordenes o where id=$1", [id])).rows[0].l
+      const name = JSON.stringify([shippingProvider, legacy])
+      assert.equal(sql, expected, `SQL ${name}`)
+      assert.equal(isLocalDeliveryOrder({ shipping_provider: shippingProvider, envio_proveedor: legacy }), expected, `TS ${name}`)
+      const blockReasons = await reasons(db, id)
+      assert.equal(blockReasons.includes("wrong_carrier"), shippingProvider === null && legacy === null, `wrong_carrier ${name}`)
+    }
+  } finally { await db.close() }
+})
+
+/** Las 14 guardas (función, forma anterior, forma nueva) tal como las declara la migración C. */
+const C_GUARDS = readMigrationCGuards()
+const occurrences = (text: string, part: string) => text.split(part).length - 1
+const functionDefinition = async (db: PGlite, signature: string) =>
+  (await db.query<{ d: string }>("select pg_get_functiondef($1::regprocedure) d", [signature])).rows[0].d
+
+test("migración C falla cerrado: 14/14 antiguas aplica, 14/14 nuevas re-aplica; guarda ausente, función ausente, duplicada o mixta abortan sin cambios parciales", async () => {
+  assert.equal(C_GUARDS.length, 14)
+  // Caso normal: A+B tiene las 14 formas anteriores exactamente una vez.
+  const normal = await setup("AB")
+  try {
+    for (const guard of C_GUARDS) {
+      const text = await functionDefinition(normal, guard.signature)
+      assert.deepEqual([occurrences(text, guard.oldText), occurrences(text, guard.newText)], [1, 0], `A+B ${guard.signature}`)
+    }
+    await normal.exec(read(MIGRATION_C))
+    for (const guard of C_GUARDS) {
+      const text = await functionDefinition(normal, guard.signature)
+      assert.deepEqual([occurrences(text, guard.oldText), occurrences(text, guard.newText)], [0, 1], `C ${guard.signature}`)
+    }
+    // Segunda ejecución: las 14 nuevas se reconocen.
+    await normal.exec(read(MIGRATION_C))
+    for (const guard of C_GUARDS) {
+      const text = await functionDefinition(normal, guard.signature)
+      assert.deepEqual([occurrences(text, guard.oldText), occurrences(text, guard.newText)], [0, 1], `C→C ${guard.signature}`)
+    }
+  } finally { await normal.close() }
+
+  const redefine = async (db: PGlite, signature: string, change: (definition: string) => string) => {
+    const definition = await functionDefinition(db, signature)
+    const changed = change(definition)
+    assert.notEqual(changed, definition)
+    await db.exec(changed)
+  }
+  const superAdminGuard = C_GUARDS.find((guard) => guard.signature.startsWith("public.super_admin_cancel_order"))!
+  const reset = C_GUARDS.find((guard) => guard.signature.startsWith("public.reset_order_preparation"))!
+  const customerClaimed = C_GUARDS.find((guard) => guard.signature.startsWith("public.request_customer_order_cancellation_with_claim"))!
+  const failures: Array<[string, (db: PGlite) => Promise<void>, RegExp]> = [
+    ["guarda ausente (última de la lista: 13 ya reemplazadas antes de fallar)",
+      (db) => redefine(db, superAdminGuard.signature, (d) => d.replace(superAdminGuard.oldText, "v_dispatched := (v_order.andreani_handed_over_at is not null)")),
+      /LOCAL_DELIVERY_GUARD_UNEXPECTED: public\.super_admin_cancel_order.*anterior=0, nueva=0/],
+    ["función ausente",
+      async (db) => { await db.exec("drop function public.begin_mercadopago_order_refund(bigint,uuid)") },
+      /LOCAL_DELIVERY_GUARD_FUNCTION_MISSING: public\.begin_mercadopago_order_refund/],
+    ["guarda duplicada",
+      (db) => redefine(db, reset.signature, (d) => d.replace(reset.oldText, `${reset.oldText}\n  -- ${reset.oldText}\n`)),
+      /LOCAL_DELIVERY_GUARD_UNEXPECTED: public\.reset_order_preparation.*anterior=2, nueva=0/],
+    ["forma anterior y nueva a la vez",
+      (db) => redefine(db, customerClaimed.signature, (d) => d.replace(customerClaimed.oldText, `${customerClaimed.oldText}\n  -- ${customerClaimed.newText}\n`)),
+      /LOCAL_DELIVERY_GUARD_UNEXPECTED: public\.request_customer_order_cancellation_with_claim.*anterior=1, nueva=1/],
+  ]
+  for (const [name, mutate, expected] of failures) {
+    const db = await setup("AB")
+    try {
+      const local = await insertOrder(db, { shipping_provider: "beyonix" })
+      await db.query("select begin_order_preparation($1,$2)", [local, actor])
+      await db.query("update ordenes set tracking_number='TRK-RES' where id=$1", [local])
+      await db.query("select sync_dispatch_blocks($1)", [local])
+      await mutate(db)
+      const snapshot = async () => ({
+        functions: (await db.query("select p.oid::regprocedure::text s, pg_get_functiondef(p.oid) d from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' order by 1")).rows,
+        blocks: (await db.query("select * from dispatch_blocks order by id")).rows,
+      })
+      const before = await snapshot()
+      await assert.rejects(db.exec(read(MIGRATION_C)), expected, name)
+      await db.exec("rollback")
+      assert.deepEqual(await snapshot(), before, `${name}: sin cambios parciales`)
+      assert.equal((await db.query<{ r: string | null }>(
+        "select to_regprocedure('public.record_local_delivery_labels_generated(bigint,uuid,bigint,integer,text[])')::text r")).rows[0].r, null)
+      assert.deepEqual(await activeBlocks(db, local), ["shipment_pending", "tracking_in_circuit"], `${name}: resincronización revertida`)
+    } finally { await db.close() }
+  }
 })
 
 test("migración C: guardas reemplazadas exactamente una vez, re-ejecutable sin cambios y RPC con la misma firma", async () => {

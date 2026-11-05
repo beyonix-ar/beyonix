@@ -5,12 +5,74 @@ import test from "node:test"
 import {
   billedVsCustomer,
   calculateCollectedShippingExtra,
+  loadLogisticsOrders,
+  LOGISTICS_ANDREANI_PROVIDER_FILTER,
   LogisticsRangeError,
   normalizeLogisticsSummary,
   orderBilledVsCustomer,
   parseLogisticsRange,
   toLogisticsOrderRow,
 } from "./logistics.ts"
+
+type ProviderRow = { shipping_provider: string | null; envio_proveedor: string | null }
+
+/** Evalúa el subconjunto de filtros lógicos de PostgREST que usa el listado (or/and, eq, is.null). */
+function matchesPostgrestOr(filter: string, row: ProviderRow): boolean {
+  const split = (text: string) => {
+    const parts: string[] = []
+    let depth = 0
+    let current = ""
+    for (const char of text) {
+      if (char === "," && depth === 0) { parts.push(current); current = ""; continue }
+      if (char === "(") depth += 1
+      if (char === ")") depth -= 1
+      current += char
+    }
+    parts.push(current)
+    return parts
+  }
+  const evaluate = (node: string): boolean => {
+    const group = /^(and|or)\((.*)\)$/.exec(node)
+    if (group) {
+      const results = split(group[2]).map(evaluate)
+      return group[1] === "and" ? results.every(Boolean) : results.some(Boolean)
+    }
+    const [column, operator, ...rest] = node.split(".")
+    const value = row[column as keyof ProviderRow]
+    const expected = rest.join(".")
+    if (operator === "is" && expected === "null") return value === null
+    if (operator === "eq") return value === expected
+    throw new Error(`filtro no soportado: ${node}`)
+  }
+  return evaluate(`or(${filter})`)
+}
+
+test("listado logístico: proveedor efectivo; un shipping_provider explícito BEYONIX gana al legacy Andreani", async () => {
+  let captured: string | null = null
+  const query = {
+    select: () => query,
+    or: (filter: string) => { captured = filter; return query },
+    gte: () => query,
+    lt: () => query,
+    order: () => query,
+    range: async () => ({ data: [], error: null, count: 0 }),
+  }
+  const admin = { from: () => query } as unknown as Parameters<typeof loadLogisticsOrders>[0]
+  await loadLogisticsOrders(admin, parseLogisticsRange(null, null), 1)
+  assert.equal(captured, LOGISTICS_ANDREANI_PROVIDER_FILTER)
+
+  const cases: Array<[string, ProviderRow, boolean]> = [
+    ["Andreani moderno", { shipping_provider: "andreani", envio_proveedor: null }, true],
+    ["Andreani moderno con legacy beyonix", { shipping_provider: "andreani", envio_proveedor: "beyonix" }, true],
+    ["Andreani legacy (provider NULL)", { shipping_provider: null, envio_proveedor: "andreani" }, true],
+    ["Andreani legacy (provider vacío)", { shipping_provider: "", envio_proveedor: "andreani" }, true],
+    ["BEYONIX explícito con legacy andreani residual", { shipping_provider: "beyonix", envio_proveedor: "andreani" }, false],
+    ["BEYONIX moderno", { shipping_provider: "beyonix", envio_proveedor: null }, false],
+    ["BEYONIX legacy", { shipping_provider: null, envio_proveedor: "beyonix" }, false],
+    ["sin proveedor", { shipping_provider: null, envio_proveedor: null }, false],
+  ]
+  for (const [name, row, expected] of cases) assert.equal(matchesPostgrestOr(LOGISTICS_ANDREANI_PROVIDER_FILTER, row), expected, name)
+})
 
 test("período por defecto: mes en curso en hora Argentina, hasta fin del día de hoy", () => {
   // 2026-10-01 01:30 UTC = 30/09 22:30 en Argentina: todavía es septiembre.

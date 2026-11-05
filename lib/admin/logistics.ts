@@ -258,12 +258,19 @@ export function toLogisticsOrderRow(record: OrderLogisticsRecord, parcels: numbe
 
 const ORDER_COLUMNS = "id,created_at,estado,andreani_estado,andreani_tracking,tracking_number,shipping_provider_quote_amount,shipping_markup_percent,shipping_markup_amount,shipping_cost_charged,shipping_cost_real,shipping_benefit_amount,shipping_parcel_quote_status,shipping_parcel_quote_amount"
 
+/**
+ * Pedidos Andreani por proveedor efectivo: shipping_provider explícito manda;
+ * el legacy envio_proveedor sólo cuenta si shipping_provider está ausente o vacío.
+ */
+export const LOGISTICS_ANDREANI_PROVIDER_FILTER =
+  "shipping_provider.eq.andreani,and(envio_proveedor.eq.andreani,or(shipping_provider.is.null,shipping_provider.eq.))"
+
 export async function loadLogisticsOrders(admin: AdminClient, range: LogisticsRange, page: number) {
   const offset = (page - 1) * LOGISTICS_PAGE_SIZE
   const { data, error, count } = await admin
     .from("ordenes")
     .select(ORDER_COLUMNS, { count: "exact" })
-    .or("shipping_provider.eq.andreani,envio_proveedor.eq.andreani")
+    .or(LOGISTICS_ANDREANI_PROVIDER_FILTER)
     .gte("created_at", range.startIso)
     .lt("created_at", range.endIso)
     .order("created_at", { ascending: false })

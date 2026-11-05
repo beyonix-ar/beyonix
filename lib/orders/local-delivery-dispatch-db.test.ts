@@ -4,6 +4,8 @@ import { join } from "node:path"
 import test from "node:test"
 import { PGlite } from "@electric-sql/pglite"
 
+import { missingMigrationCGuardFunctionStubsSql } from "./fixtures/migration-c-guard-stubs.ts"
+
 // Envío BEYONIX en Despachos (20261103120000 = A, 20261103130000 = B) contra las migraciones reales:
 // pickeo común, bultos físicos BX-PKG, confirmación de cada etiqueta, guard de
 // "En camino" y separación total del circuito Andreani.
@@ -78,7 +80,10 @@ async function setup(stage: MigrationStage = "A") {
   await db.exec("select refresh_inventory_stock(1); select refresh_inventory_stock(2);")
   if (stage !== "none") await db.exec(read(MIGRATION_A))
   if (stage === "AB" || stage === "ABC") await db.exec(read(MIGRATION_B))
-  if (stage === "ABC") await db.exec(read(MIGRATION_C))
+  if (stage === "ABC") {
+    await db.exec(missingMigrationCGuardFunctionStubsSql())
+    await db.exec(read(MIGRATION_C))
+  }
   return db
 }
 

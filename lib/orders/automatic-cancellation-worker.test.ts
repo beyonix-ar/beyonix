@@ -8,6 +8,7 @@ import { settleMercadoPagoOrderRefund, type MercadoPagoOrderReconciliationResult
 import { AUTO_CANCELLATION_MAX_ATTEMPTS, runAutomaticCancellationBatch, type AutomaticCancellationDependencies } from "./automatic-cancellation.ts"
 import { getAutomaticCancellationStatus } from "./automatic-cancellation-state.ts"
 import { admin as adminId, customer, read, setupCombinedPaymentDb } from "./fixtures/combined-payment-db.ts"
+import { missingMigrationCGuardFunctionStubsSql } from "./fixtures/migration-c-guard-stubs.ts"
 
 // Worker de cancelaciones automáticas (NC C → reintegro) con las RPCs SQL
 // REALES de claim/lease/release, reserva de NC (begin_partial_credit_note),
@@ -817,6 +818,17 @@ test("H2. Envío BEYONIX con datos Andreani residuales → automático; Andreani
     assert.notEqual(productionRefund, refundDef)
     await env.db.exec(productionRefund)
     await env.db.exec("set check_function_bodies = off")
+    // C falla cerrado: este fixture trae una aprobación de cancelación anterior a sus guardas
+    // Andreani; se carga la definición vigente (20260916100000) como en producción.
+    const andreaniGuards = read("supabase/migrations/20260916100000_block_cancellation_during_andreani_creation.sql")
+    const approveStart = andreaniGuards.indexOf("create or replace function public.approve_order_claim_cancellation(")
+    await env.db.exec(andreaniGuards.slice(approveStart, andreaniGuards.indexOf("revoke all on function public.approve_order_claim_cancellation", approveStart)))
+    await env.db.exec(missingMigrationCGuardFunctionStubsSql())
+    // Sin esquema de Despachos: tablas vacías mínimas para la resincronización de bloqueos de C.
+    await env.db.exec(`
+      create table if not exists public.order_packages (id bigint, order_id bigint);
+      create table if not exists public.dispatch_blocks (order_id bigint, reason text, source text, resolved_at timestamptz);
+    `)
     await env.db.exec(read("supabase/migrations/20261104120000_local_delivery_change_guard_and_label_generation.sql"))
     await env.db.exec("set check_function_bodies = on")
     const residue = "andreani_handed_over_at=now(), andreani_envio_id='ENV-RES', tracking_number='TRK-RES', andreani_tracking='360000009999', andreani_estado='En transito'"
