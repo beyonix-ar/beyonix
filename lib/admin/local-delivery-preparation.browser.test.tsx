@@ -53,7 +53,8 @@ test("Envío BEYONIX: definir bultos, imprimir etiqueta BEYONIX y confirmar cada
           if (path.endsWith("/local-label")) return Response.json({ labels: parcels().map((parcel) => ({
             kind: "local_delivery", code: parcel.barcode, orderCode: "BX-1011", index: parcel.parcel_index, count: parcelCount,
             recipient: "María José Peña", address: "Córdoba 1234", reference: "Portón verde", locality: "Rosario", province: "Santa Fe",
-            postalCode: "2000", phone: "341 555-0000", date: "03/11/2026" })) })
+            postalCode: "2000", phone: "341 555-0000", date: "03/11/2026",
+            deliveryUrl: "https://beyonix.com.ar/delivery/q8Jv2mN4pT7xR1sK9wZ3bH6cY0dF5gLe" })) })
           if (body.action === "local_parcels") { parcelCount = body.parcelCount; return Response.json(detail()) }
           if (body.action === "confirm_parcel") {
             const parcel = parcels().find((item) => item.barcode === String(body.code).trim().toUpperCase())
@@ -122,6 +123,9 @@ test("Envío BEYONIX: definir bultos, imprimir etiqueta BEYONIX y confirmar cada
         assert.ok(printed.includes(text), `${label}: ${text}`)
       }
       assert.doesNotMatch(printed, /Andreani|\$|total|pago/i, `${label}: sin datos financieros ni Andreani`)
+      // QR de gestión de entrega: el mismo en cada bulto, generado desde deliveryUrl.
+      assert.equal(printed.match(/<div class="ld-qr-code"><svg/g)?.length, 2, `${label}: un QR por etiqueta`)
+      assert.equal(printed.includes("q8Jv2mN4pT7xR1sK9wZ3bH6cY0dF5gLe"), false, `${label}: el token no se imprime como texto`)
 
       // Confirmación física: código equivocado, luego cada BX-PKG con el lector.
       const input = page.getByRole("textbox", { name: "Escaneá el código BX-PKG de cada bulto" })
