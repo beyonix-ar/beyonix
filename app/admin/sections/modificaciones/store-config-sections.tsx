@@ -729,7 +729,7 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
               maxLength={2}
               className="w-full sm:w-24"
               disabled={inputsDisabled}
-              onChange={(value) => block.setField("returnReservationDays", value.replace(/D/g, ""))}
+              onChange={(value) => block.setField("returnReservationDays", value.replace(/\D/g, ""))}
             />
           ) : (
             `${saved.returnReservationDays} ${saved.returnReservationDays === 1 ? "día" : "días"}`
@@ -737,9 +737,15 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
         </ConfigValueRow>
         <ConfigValueRow label="Códigos postales" data-local-delivery-postal-codes="">
           {(editing ? draft.postalCodes : saved.postalCodes).length ? (
-            <span className="flex flex-wrap justify-end gap-1.5">
+            <span className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
               {(editing ? draft.postalCodes : saved.postalCodes).map((code) => (
-                <ConfigChip key={code} tone="neutral" data-postal-code={code} className="inline-flex items-center gap-1">
+                <ConfigChip
+                  key={code}
+                  tone="neutral"
+                  data-postal-code={code}
+                  data-editing={editing ? "true" : undefined}
+                  className="admin-config-postal-chip gap-1 tabular-nums"
+                >
                   {code}
                   {editing ? (
                     <button
@@ -748,9 +754,9 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
                       title="Eliminar"
                       disabled={inputsDisabled}
                       onClick={() => block.setField("postalCodes", draft.postalCodes.filter((item) => item !== code))}
-                      className="inline-flex size-4 cursor-pointer items-center justify-center rounded text-white/62 hover:text-white disabled:cursor-not-allowed"
+                      className="admin-config-postal-chip-remove inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-full disabled:cursor-not-allowed"
                     >
-                      <X className="size-3" />
+                      <X className="size-3" strokeWidth={2.5} />
                     </button>
                   ) : null}
                 </ConfigChip>
@@ -762,7 +768,7 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
         </ConfigValueRow>
       </ConfigValueList>
       {editing ? (
-        <div className="mt-1.5 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-end" data-local-delivery-add>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end" data-local-delivery-add>
           <AdminTextInput
             title="Código postal a habilitar"
             ariaLabel="Código postal a habilitar"
@@ -770,7 +776,7 @@ export function LocalDeliverySection({ saved, disabled, saving, feedback, onSave
             placeholder="Ej. 2000"
             inputMode="numeric"
             maxLength={8}
-            className={fieldClassName}
+            className="h-8 w-full text-center text-sm font-bold tabular-nums sm:w-28"
             disabled={inputsDisabled}
             onChange={(value) => {
               setPostalCodeDraft(value.replace(/[^0-9a-zA-Z]/g, ""))

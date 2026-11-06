@@ -2866,6 +2866,47 @@ html[data-admin-theme="light"] .beyonix-admin-main .admin-config-page .bx-surfac
   color: var(--admin-config-chip-danger) !important;
 }
 
+/* Envío BEYONIX → Códigos postales: chip compacto con la × integrada
+   (anula el estilo rojo global de los botones "Eliminar" sólo aquí). */
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip {
+  min-height: 1.5rem;
+  padding: 0.1875rem 0.625rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  transition: border-color 150ms ease;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip[data-editing="true"] {
+  padding-right: 0.25rem;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip[data-editing="true"]:has(.admin-config-postal-chip-remove:not(:disabled):hover) {
+  border-color: var(--admin-config-info-border);
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip .admin-config-postal-chip-remove {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--admin-config-neutral-dot) !important;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip .admin-config-postal-chip-remove:not(:disabled):hover {
+  background: var(--admin-config-info-bg) !important;
+  color: var(--admin-config-info-dot) !important;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip .admin-config-postal-chip-remove:focus-visible {
+  outline: 2px solid var(--admin-config-info-dot);
+  outline-offset: 1px;
+}
+
+.beyonix-admin-main .admin-config-page .admin-config-postal-chip .admin-config-postal-chip-remove:disabled {
+  opacity: 0.4;
+}
+
 /* Admin → Financiación → Medios de pago: lista de logos (misma superficie que los subpaneles). */
 .beyonix-admin-main .admin-config-page .admin-payment-method-list {
   border: 1px solid var(--admin-config-subpanel-border);
