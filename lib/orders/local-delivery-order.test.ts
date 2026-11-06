@@ -1135,11 +1135,17 @@ test("email de pago confirmado: Envío BEYONIX anuncia la preparación sin prome
   }
 })
 
-test("devoluciones siguen por sucursal Andreani: Envío BEYONIX es sólo la entrega inicial", () => {
-  // Ningún flujo de devolución/reclamo conoce el proveedor local.
-  for (const file of ["lib/andreani/claim-shipments.ts", "lib/orders/claim-server.ts"]) {
-    assert.doesNotMatch(readFileSync(file, "utf8"), /beyonix:|LOCAL_DELIVERY|local-delivery/, file)
-  }
+test("devoluciones de reclamos: Envío BEYONIX por retiro de cadete, separado de Andreani y del retorno por visitas fallidas", () => {
+  // La integración Andreani de postventa no conoce el proveedor local (nunca
+  // genera sucursales, etiquetas ni tracking para Envío BEYONIX).
+  assert.doesNotMatch(readFileSync("lib/andreani/claim-shipments.ts", "utf8"), /["']beyonix["']|beyonix:|LOCAL_DELIVERY|local-delivery|local_pickup/)
+  const migration = readFileSync("supabase/migrations/20261106120000_claim_local_pickups.sql", "utf8")
+  const code = migration.replace(/--.*$/gm, "")
+  // La base rechaza operaciones Andreani de postventa para pedidos Envío BEYONIX.
+  assert.match(code, /before insert on public\.order_claim_shipments[\s\S]*guard_order_claim_shipment_carrier/)
+  assert.match(code, /raise exception 'CLAIM_LOGISTICS_LOCAL_DELIVERY'/)
+  // El retiro por cadete del reclamo nunca toca el retorno logístico (dos visitas fallidas).
+  assert.doesNotMatch(code, /local_delivery_shipments|local_delivery_return|receive_local_delivery_return/)
 })
 
 // ── En camino exige la preparación física completa ──────────────────────────

@@ -476,9 +476,11 @@ export function ClaimAndreaniShipmentPanel({
       )}
 
       {canManage && showMethod && localMethod && view.methodChoices.some((choice) => choice.direction === localMethod && choice.available) && (
-        <ClaimLocalMethodForm claimId={claim.id} method={localMethod}
+        <ClaimLocalMethodForm key={localMethod} claimId={claim.id} method={localMethod}
           choice={view.methodChoices.find((choice) => choice.direction === localMethod) ?? null}
-          onCancel={() => setLocalMethod(null)} onClaimChange={onClaimChange} />
+          // Sólo cierra el formulario que pidió cerrarse (otra opción elegida mientras tanto queda abierta).
+          onCancel={() => { const method = localMethod; setLocalMethod((current) => current === method ? null : current) }}
+          onClaimChange={onClaimChange} />
       )}
 
       {/* Envío BEYONIX: el retiro vive en su paso; lo que falta recibir también en Inspección. */}
